@@ -55,3 +55,13 @@ test("a project on a peer: every href of it carries its host, and parses back; a
     resetHosts();
   }
 });
+
+test("the Merge Queue tab, and one run under it; nothing else takes a page under a tab", async () => {
+  const { projectsRouteFromHash, mergeRunHref, projectTabHref } = await import("./projects-route");
+  assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/merge-queue"), { kind: "project", projectId: "prj_1", tab: "merge-queue" });
+  assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/merge-queue/mr_42"), { kind: "project", projectId: "prj_1", tab: "merge-queue", run: "mr_42" });
+  assert.equal(projectsRouteFromHash("#/projects/prj_1/branches/mr_42"), null);
+  assert.equal(projectsRouteFromHash("#/projects/prj_1/merge-queue/a%20b"), null);
+  assert.equal(projectTabHref("prj_1", "merge-queue"), "#/projects/prj_1/merge-queue");
+  assert.equal(mergeRunHref("prj_1", "mr_42"), "#/projects/prj_1/merge-queue/mr_42");
+});

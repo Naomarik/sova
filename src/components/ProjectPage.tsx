@@ -13,6 +13,7 @@ import { PreviewsCard } from "./PreviewsCard";
 import { ActionMenu } from "./ActionMenu";
 import { costFigure, createProjectCost, ProjectCostCard } from "./ProjectCostCard";
 import { ProjectServicesTab } from "./ProjectServicesTab";
+import { MergeQueueTab } from "./MergeQueueTab";
 import { PlaybookReviewBanner } from "./PlaybookReview";
 import { ProjectDeployPanel } from "./ProjectDeployPanel";
 import { createRuntimePoll, ProjectSoftwareCard } from "./ProjectSoftwareCard";
@@ -80,6 +81,8 @@ export interface ProjectOrgPart {
 export function ProjectPage(props: {
   project: ProjectSummary;
   tab: ProjectTab;
+  /** On the Merge Queue tab: one run's page. */
+  run?: string;
   titleRef(el: HTMLHeadingElement): void;
   onProject(p: ProjectSummary): void;
   refetchProject(): void;
@@ -334,6 +337,16 @@ export function ProjectPage(props: {
             {/* Its copies on this host and their verbs (§app.project-services/services-ui). */}
             <ProjectServicesTab projectId={projectId} archived={!!archived()} />
           </Match>
+          <Match when={tab() === "merge-queue"}>
+            {/* One branch at a time onto the target: what's checking, the line, what waits for you, recent landings. */}
+            <MergeQueueTab
+              projectId={projectId}
+              root={project().root}
+              name={project().name}
+              run={props.run}
+              chatTitle={(path) => props.sessions?.()?.find((s) => s.path === path || s.id === path)?.title}
+            />
+          </Match>
           <Match when={tab() === "cost"}>
             <ProjectCostCard projectId={projectId} poll={cost} />
           </Match>
@@ -386,7 +399,7 @@ export function ProjectPage(props: {
   );
 }
 
-const TAB_LABEL: Record<ProjectTab, string> = { overview: "Overview", requirements: "Requirements", branches: "Branches", cost: "Cost", settings: "Settings" };
+const TAB_LABEL: Record<ProjectTab, string> = { overview: "Overview", requirements: "Requirements", branches: "Branches", "merge-queue": "Merge Queue", cost: "Cost", settings: "Settings" };
 
 /** The page's tab strip, as the org page's: a tab per view (the tab is in the URL, each pick a history
     entry), Left/Right moving focus along it (wrapping), Home/End jumping; Enter or Space selects.

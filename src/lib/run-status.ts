@@ -1,11 +1,11 @@
 /**
  * The run-status row's right end (§app.overseer/confirm): one cluster, in a fixed order, with the
- * Inputs trigger (or the box held for it) last. Only the cluster's first part takes the auto
+ * worktrees control just before the Inputs trigger (or the box held for it), which is last. Only the cluster's first part takes the auto
  * margin, so the row has exactly two ends and nothing floats between them, whichever parts are
  * present. Open alignments and option cards are not in this row: they are the composer's waiting
  * badge, inside the message box (§chat.composer/waiting-badge).
  */
-export type RunStatusEndPart = "running" | "inputs" | "inputs-held";
+export type RunStatusEndPart = "running" | "worktrees" | "inputs" | "inputs-held";
 
 export interface RunStatusEndItem {
   part: RunStatusEndPart;
@@ -13,9 +13,11 @@ export interface RunStatusEndItem {
   lead: boolean;
 }
 
-export function runStatusEnd(has: { running?: boolean; inputs?: boolean; inputsHeld?: boolean }): RunStatusEndItem[] {
+export function runStatusEnd(has: { running?: boolean; worktrees?: boolean; inputs?: boolean; inputsHeld?: boolean }): RunStatusEndItem[] {
   const order: [RunStatusEndPart, boolean | undefined][] = [
     ["running", has.running],
+    // The worktrees control sits just left of the inputs trigger.
+    ["worktrees", has.worktrees],
     ["inputs", has.inputs],
     ["inputs-held", !has.inputs && has.inputsHeld],
   ];

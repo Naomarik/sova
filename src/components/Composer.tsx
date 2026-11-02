@@ -66,6 +66,8 @@ import { Icon, type IconName } from "./ui";
 import type { RunDetail, RunStep } from "../lib/live";
 import { hostOf } from "../lib/mesh";
 import { createVoiceInput, VoiceButton, VoiceStrip } from "./VoiceInput";
+import { WorktreesControl } from "./WorktreesControl";
+import type { QueueWorktree } from "./WorktreesModal";
 
 /** The session pane's element id: ONE pane, five tabs, so every trigger controls the same id. */
 const PANE_ID = "session-pane";
@@ -187,6 +189,13 @@ export function Composer(props: {
   /** The branch has inputs whose count isn't known yet (lib/known-before-mount): the inputs
       trigger's box is held, empty, until `inputCount` says. */
   inputsPending?: boolean;
+  /** This chat's tracked worktrees with their merge-queue state: the status row's worktrees control,
+      just left of the inputs trigger, hidden while there are none. */
+  worktrees?: QueueWorktree[];
+  /** The chat's title, for the Worktrees modal's subtitle. */
+  worktreesTitle?: string;
+  /** A Land, Cancel or other queue action went through: reload the rows. */
+  onWorktreesChanged?(): void;
   autofocus?: boolean;
   /** This session's slash commands; the "/" autocomplete is off without them. */
   commands?: SlashCommand[];
@@ -459,12 +468,13 @@ export function Composer(props: {
   const inputsHeld = () => !inputsRow() && !!props.inputsPending && !!props.onShowTimeline;
 
   const runningRow = () => (props.autonomy && props.autonomy.running > 0 ? props.autonomy : null);
+  const worktreesRow = () => (props.worktrees && props.worktrees.length > 0 ? props.worktrees : null);
   /** The waiting badge's counts and look; the box's text makes room for it only while it shows. */
   const waiting = createWaiting(() => props.waiting);
   /** The row's right-hand cluster, in order; its parts as strings, so a chip keeps its node (and
       its open menu) while the others come and go. */
   const endItems = createMemo(() =>
-    runStatusEnd({ running: !!runningRow(), inputs: !!inputsRow(), inputsHeld: inputsHeld() }),
+    runStatusEnd({ running: !!runningRow(), worktrees: !!worktreesRow(), inputs: !!inputsRow(), inputsHeld: inputsHeld() }),
   );
   const endParts = createMemo(() => endItems().map((p) => p.part), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
   const leadClass = (part: string) => (endItems()[0]?.part === part ? " run-status-lead" : "");
@@ -885,7 +895,7 @@ export function Composer(props: {
     <>
         {/* One row, whichever of the three has something to say (they can coexist: the inputs
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
-        <Show when={controls().status || props.memory || workersRow() || inputsRow() || inputsHeld() || runningRow()}>
+        <Show when={controls().status || props.memory || workersRow() || inputsRow() || inputsHeld() || runningRow() || worktreesRow()}>
           <p class="run-status">
             {/* One dot leads the row while anything works — the turn, a stop, a rare state, a
                 compaction or a subagent — and nothing else in the row pulses. */}
@@ -980,6 +990,9 @@ export function Composer(props: {
                         {r().running} of {r().cap} running
                       </button>
                     )}
+                  </Match>
+                  <Match when={part === "worktrees" && worktreesRow()}>
+                    {(rows) => <WorktreesControl rows={rows()} title={props.worktreesTitle ?? "This chat"} class={leadClass(part).trim() || undefined} onChanged={props.onWorktreesChanged} />}
                   </Match>
                   <Match when={part === "inputs" && inputsRow()}>
                     {(row) => (

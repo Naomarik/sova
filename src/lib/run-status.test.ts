@@ -14,7 +14,7 @@ test("with every part present: running, then inputs last; one lead", () => {
 });
 
 test("every combination has at most one lead, it is the first part, and inputs is last", () => {
-  const keys = ["running", "inputs", "inputsHeld"] as const;
+  const keys = ["running", "worktrees", "inputs", "inputsHeld"] as const;
   for (let mask = 0; mask < 1 << keys.length; mask++) {
     const has = Object.fromEntries(keys.map((k, i) => [k, !!(mask & (1 << i))]));
     const items = runStatusEnd(has);
@@ -31,4 +31,11 @@ test("the row never carries an alignment or card part", () => {
   assert.deepEqual(every.map((p) => p.part), ["running", "inputs"]);
   assert.deepEqual(runStatusEnd({ inputs: true }), [{ part: "inputs", lead: true }]);
   assert.deepEqual(runStatusEnd({ inputsHeld: true }), [{ part: "inputs-held", lead: true }]);
+});
+
+test("the worktrees control sits just left of the inputs trigger, after running", () => {
+  assert.deepEqual(parts({ running: true, worktrees: true, inputs: true }), ["running", "worktrees", "inputs"]);
+  assert.deepEqual(parts({ worktrees: true, inputsHeld: true }), ["worktrees", "inputs-held"]);
+  assert.deepEqual(leads({ worktrees: true, inputs: true }), ["worktrees"]);
+  assert.deepEqual(parts({ worktrees: true }), ["worktrees"]);
 });

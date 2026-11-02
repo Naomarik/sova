@@ -159,6 +159,7 @@ import { SubagentLimitRow } from "./SubagentLimitRow";
 import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
+import type { QueueWorktree } from "./WorktreesModal";
 
 export type ChatRefusal = "busy" | "recent";
 
@@ -254,6 +255,10 @@ export function ChatView(props: {
   onRewound?(info: { path: string; entryId: string }): void;
   /** This session's teams (polled insight), so the status row can name team members as such. */
   teams?: TeamInfo[];
+  /** This session's tracked worktrees with their merge-queue state (polled insight): the composer's worktrees control. */
+  worktrees?: QueueWorktree[];
+  worktreesTitle?: string;
+  onWorktreesChanged?(): void;
   /** This pane's turn-error state, for the workspace's roll-up: the latest
       turn-error message while it is current, or null. Current means the last turn ended in an
       error and no newer turn has started — a fresh turn (or a rewind) clears it, so the workspace
@@ -2556,6 +2561,9 @@ export function ChatView(props: {
         }
         onShowTimeline={props.onShowTimeline}
         inputCount={inputCount() ?? 0}
+        worktrees={props.overseer ? undefined : props.worktrees}
+        worktreesTitle={props.worktreesTitle}
+        onWorktreesChanged={props.onWorktreesChanged}
         inputsPending={inputsPending(inputCount(), items(), !!props.summary?.() && knownInputs(props.summary()!))}
         waiting={{
           get aligns() {

@@ -1,6 +1,6 @@
 // The projects pages (§app/projects): `#/projects` lists the projects registered on this host (and
-// the peers'), `#/projects/<id>` is one project on its Overview, `…/requirements`, `…/branches`, `…/cost`
-// and `…/settings` on its other tabs (Requirements only while an organization places it), and
+// the peers'), `#/projects/<id>` is one project on its Overview, `…/requirements`, `…/branches`,
+// `…/merge-queue` (and one run of it, `…/merge-queue/<run>`), `…/cost` and `…/settings` on its other tabs (Requirements only while an organization places it), and
 // `…/overseer` is that project's overseer (§app/project-overseer). `?host=<id>` names the peer that
 // holds the project (§mesh.remote-sessions/org-pages). Ids are the server's (`prj_…`): plain
 // characters that never need encoding, so anything else in the hash is not this route.
@@ -10,13 +10,13 @@ import { hostOf, projectHostOf, sessionHrefOn } from "./mesh";
 const ID_RE = /^[A-Za-z0-9_-]+$/;
 
 /** A project page's tabs; Overview is the bare address. Requirements exists only while placed. */
-export const PROJECT_TABS = ["overview", "requirements", "branches", "cost", "settings"] as const;
+export const PROJECT_TABS = ["overview", "requirements", "branches", "merge-queue", "cost", "settings"] as const;
 export type ProjectTab = (typeof PROJECT_TABS)[number];
 
 export type ProjectsRoute =
   | { kind: "list" }
   /** No tab = Overview. */
-  | { kind: "project"; projectId: string; tab?: Exclude<ProjectTab, "overview">; host?: string }
+  | { kind: "project"; projectId: string; tab?: Exclude<ProjectTab, "overview">; host?: string; /** On the Merge Queue tab: one run's page. */ run?: string }
   | { kind: "overseer"; projectId: string; host?: string };
 
 export const PROJECTS_HREF = "#/projects";
@@ -37,9 +37,11 @@ export function projectsRouteFromHash(hash: string): ProjectsRoute | null {
 
 function hashRoute(hash: string): ProjectsRoute | null {
   if (hash === PROJECTS_HREF || hash === `${PROJECTS_HREF}/`) return { kind: "list" };
-  const m = /^#\/projects\/([^/]+)(?:\/(requirements|branches|cost|settings|overseer))?\/?$/.exec(hash);
+  const m = /^#\/projects\/([^/]+)(?:\/(requirements|branches|merge-queue|cost|settings|overseer))?(?:\/([^/]+))?\/?$/.exec(hash);
   if (!m || !ID_RE.test(m[1]!)) return null;
   const projectId = m[1]!;
+  // Only the Merge Queue tab has a page under it: one run, by its id.
+  if (m[3] !== undefined) return m[2] === "merge-queue" && ID_RE.test(m[3]) ? { kind: "project", projectId, tab: "merge-queue", run: m[3] } : null;
   if (m[2] === undefined) return { kind: "project", projectId };
   if (m[2] === "overseer") return { kind: "overseer", projectId };
   return { kind: "project", projectId, tab: m[2] as Exclude<ProjectTab, "overview"> };
@@ -53,6 +55,8 @@ const onHost = (id: string, tail: string): string => {
 export const projectHref = (projectId: string): string => onHost(projectId, "");
 /** One tab of a project's page; Overview is the bare project address. */
 export const projectTabHref = (projectId: string, tab: ProjectTab): string => onHost(projectId, tab === "overview" ? "" : `/${tab}`);
+/** One run of a project's merge queue: its steps, why each ran, and their logs. */
+export const mergeRunHref = (projectId: string, run: string): string => onHost(projectId, `/merge-queue/${run}`);
 export const projectOverseerHref = (projectId: string): string => onHost(projectId, "/overseer");
 /** A session a project's page links to, on the host that holds it: a peer's listed session by its
     path, else the project's own host (a session its page names before any list does). */

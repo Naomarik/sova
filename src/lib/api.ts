@@ -1469,6 +1469,17 @@ export async function runDeployVerb(root: string, verb: DeployVerb, body: Record
     throw err;
   }
 }
+/** A merge-queue verb as the operator (merge.status, merge.add, merge.cancel, …): `project` is the project's root or a
+    worktree of it. A refusal is a result too, never thrown. */
+export async function runMergeVerb(project: string | null, verb: `merge.${string}`, body: Record<string, unknown> = {}): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", project ? { ...body, project } : body));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);

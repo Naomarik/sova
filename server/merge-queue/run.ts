@@ -161,6 +161,28 @@ export function makeRunMerge(deps: RunDeps = {}): RunMerge {
   });
 }
 
+/**
+ * `services` through the project engine: the copy run as an instance of its own (`up` of the services a check needs,
+ * on the engine's own slot and ports), stopped (`down`) after the checks. A refusal (over the copy limit, a port
+ * taken) is the machine's, never the branch's.
+ */
+export function engineServices(engine: { run: (verb: string, body: unknown, caller: { kind: "operator" }) => Promise<{ ok: boolean; instance: string | null; slot: number | null; error?: { code: string; message: string } }> }): NonNullable<RunDeps["services"]> {
+  return async ({ copy, names, log }) => {
+    log(`up ${names.join(", ")} in ${copy}\n`);
+    const r = await engine.run("up", { checkout: copy, services: names }, { kind: "operator" });
+    if (!r.ok || !r.instance || r.slot === null) throw new Error(r.error ? `${r.error.code}: ${r.error.message}` : "the engine started nothing");
+    log(`instance ${r.instance}, slot ${r.slot}\n`);
+    const instance = r.instance;
+    return {
+      slot: r.slot,
+      down: async () => {
+        const d = await engine.run("down", { instance }, { kind: "operator" });
+        log(`down ${instance}: ${d.ok ? "stopped" : d.error?.message ?? "failed"}\n`);
+      },
+    };
+  };
+}
+
 /** The default run, wired with no services helper and the default reviewer (review-step.ts). */
 export const runMerge: RunMerge = makeRunMerge();
 

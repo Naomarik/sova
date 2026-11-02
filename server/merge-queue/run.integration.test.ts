@@ -10,7 +10,7 @@ import type { RunInput, RunOutcome } from "./contract";
 import { mergeCopyPath } from "./copy";
 import { Fixture, git, REPO_ROOT } from "./fixtures/repo";
 import { deliverReview, type StartReviewer } from "./review-step";
-import { makeRunMerge, type RunDeps } from "./run";
+import { engineServices, makeRunMerge, type RunDeps } from "./run";
 
 const fixtures: Fixture[] = [];
 after(() => {
@@ -305,6 +305,25 @@ describe("a merge run", () => {
     expect(r.out.verdict).toBe("machine");
     expect(r.out.why).toMatch(/worktree the queue didn't make \(branch merge\)/);
     expect(readFileSync(mine, "utf8")).toBe("unsaved\n");
+  });
+
+  test("one test command that needs a service: the service runs in the copy on its own slot's port, then stops", async () => {
+    const { ProjectEngine } = await import("../project-services/engine");
+    const { DetachedDriver } = await import("../project-services/drivers");
+    const fx = fixture({ checks: "test-command", requireService: { portBase: 47610 } });
+    const engine = new ProjectEngine({ driver: new DetachedDriver() });
+    const r = await run(fx, fx.branch("svc", { "src/app.txt": "svc\n" }), { deps: { services: engineServices(engine) } });
+    expect(r.out.verdict).toBe("passed");
+    const runner = callsAt(fx, "runner");
+    expect(runner).toHaveLength(1);
+    expect(runner[0]!.result).toBe("pass");
+    expect(runner[0]!.cwd).toBe(mergeCopyPath(fx.project));
+    expect(r.steps.get("services")).toMatchObject({ result: "passed" });
+    expect(r.log("services")).toMatch(/down .*: stopped/);
+    // Without anything that can start services, it's the machine's problem, never the branch's.
+    const r2 = await run(fx, fx.branch("svc2", { "src/app.txt": "svc2\n" }));
+    expect(r2.out).toMatchObject({ verdict: "machine" });
+    expect(r2.out.why).toMatch(/need svc running/);
   });
 
   test("every step's log exists from its first line", async () => {

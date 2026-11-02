@@ -340,10 +340,25 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 	});
 }
 
-/** Whether `target` is the branch the project's branches land into: master, main, or the main checkout's branch. */
+/** Whether `target` is the branch the project's branches land into: master, main, the main checkout's branch, or the
+ *  merge queue's declared target (`.sova/project.json` `merge.target`, as the main checkout's HEAD or the target
+ *  branch itself commits it; absent or unreadable: only the other three). */
 async function landsThroughQueue(git: Git, cwd: string, target: string): Promise<boolean> {
 	if (target === "master" || target === "main") return true;
 	const r = await git(["worktree", "list", "--porcelain"], cwd);
-	const main = r.code === 0 ? /^branch refs\/heads\/(.+)$/m.exec(r.stdout.split("\n\n")[0] ?? "")?.[1] : undefined;
-	return main === target;
+	const first = r.code === 0 ? (r.stdout.split("\n\n")[0] ?? "") : "";
+	const main = /^branch refs\/heads\/(.+)$/m.exec(first)?.[1];
+	if (main === target) return true;
+	const mainPath = /^worktree (.+)$/m.exec(first)?.[1] ?? cwd;
+	for (const rev of ["HEAD", `refs/heads/${target}`]) {
+		const shown = await git(["show", `${rev}:.sova/project.json`], mainPath);
+		if (shown.code !== 0) continue;
+		try {
+			const declared = (JSON.parse(shown.stdout) as { merge?: { target?: unknown } } | null)?.merge?.target;
+			if (declared === target) return true;
+		} catch {
+			// not JSON: nothing declared
+		}
+	}
+	return false;
 }

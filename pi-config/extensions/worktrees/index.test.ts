@@ -149,6 +149,34 @@ test("under Sova, worktree merge into the branch others land into is refused (th
 	}
 });
 
+test("under Sova, merge into the merge queue's declared target (merge.target, not master) is refused too; with no declaration it merges", async () => {
+	const r = repo();
+	try {
+		sh(r.main, "branch", "release");
+		sh(r.main, "branch", "other");
+		mkdirSync(join(r.main, ".sova"));
+		writeFileSync(join(r.main, ".sova", "project.json"), JSON.stringify({ version: 1, merge: { target: "release", checks: "none" } }));
+		sh(r.main, "add", ".sova/project.json");
+		sh(r.main, "commit", "-q", "-m", "declare release");
+		const f = fakePi();
+		worktrees(f.pi, { mergeQueue: true });
+		const c = f.ctx(r.main);
+		await f.fire("session_start", c);
+		await f.call(c, { action: "create", name: "d" });
+		const t = join(r.root, ".worktrees", "repo-d");
+		writeFileSync(join(t, "d.txt"), "d\n");
+		sh(t, "add", "d.txt");
+		sh(t, "commit", "-q", "-m", "d");
+		const before = sh(r.main, "rev-parse", "release");
+		await assert.rejects(f.call(c, { action: "merge", path: t, target: "release" }), /release is the branch others land into: branches reach it only through Sova's merge queue/);
+		assert.equal(sh(r.main, "rev-parse", "release"), before, "nothing merged");
+		const out = await f.call(c, { action: "merge", path: t, target: "other" });
+		assert.match(out.content[0].text, /^Merged feat\/d into other/);
+	} finally {
+		r.done();
+	}
+});
+
 test("worktree merge records the merge and sends the card; a plain-git merge in a turn is detected after it", async () => {
 	const r = repo();
 	try {

@@ -978,7 +978,8 @@ function CodingSessions(props: {
     if (working() || !po().worktrees.fresh()) return;
     setWorking(w.sessionId);
     try {
-      const no = refusal(await land(w.worktree));
+      // The head this page read (CodingWorktree.head): the queue pins it, never a newer one.
+      const no = refusal(await land(w.worktree, { commit: w.head }));
       if (no) throw new Error(no);
       po().worktrees.refetch();
       setErrors(({ [w.sessionId]: _, ...rest }) => rest);

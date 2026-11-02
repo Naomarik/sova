@@ -492,7 +492,7 @@ function ReadyRow(props: { root: string; ready: MergeReady; review: boolean; onC
   const act = useAct(props.onChanged);
   const [askSpecs, setAskSpecs] = createSignal(false);
   const doLand = (o: LandOptions = {}) =>
-    void act.run("land", () => landBranch(props.root, r().branch, o), `Queued ${r().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
+    void act.run("land", () => landBranch(props.root, r().branch, { ...o, commit: r().commit }), `Queued ${r().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
   return (
     <li class="list-row mq-row" data-branch={r().branch} data-state="ready">
       <div class="list-main">

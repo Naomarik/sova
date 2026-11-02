@@ -14,7 +14,7 @@ import { QueueChip } from "./WorktreesModal";
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
 /** A proposed run's words from the registry the page reads, or null while nothing is proposed. */
-export function proposedRun(v: ProjectRuntimeView | undefined): (PlaybookReviewWords & { path?: string }) | null {
+export function proposedRun(v: ProjectRuntimeView | undefined): (PlaybookReviewWords & { path?: string; commit?: string }) | null {
   const pb = v?.playbook;
   if (!v || v.playbookState !== "proposed" || !pb) return null;
   return {
@@ -24,6 +24,8 @@ export function proposedRun(v: ProjectRuntimeView | undefined): (PlaybookReviewW
     ...(pb.branchHash ? { hash: pb.branchHash } : {}),
     proposes: pb.proposes,
     ...(pb.path ? { path: pb.path } : {}),
+    // The branch tip whose definition the review read: Land pins it, as the old hash check did.
+    ...(pb.commit ? { commit: pb.commit } : {}),
   };
 }
 
@@ -35,7 +37,7 @@ export function proposedRun(v: ProjectRuntimeView | undefined): (PlaybookReviewW
  */
 export function MergeRunButton(props: {
   projectId: string;
-  run: Pick<PlaybookReviewWords, "hash" | "target" | "branch">;
+  run: Pick<PlaybookReviewWords, "hash" | "target" | "branch"> & { commit?: string };
   class?: string;
   onDone?(view?: ProjectRuntimeView): void;
 }) {
@@ -55,7 +57,7 @@ export function MergeRunButton(props: {
     setBusy(true);
     setError(null);
     try {
-      const no = refusal(await landBranch(root, props.run.branch));
+      const no = refusal(await landBranch(root, props.run.branch, { commit: props.run.commit }));
       if (no) {
         setError(no);
         announce(no);

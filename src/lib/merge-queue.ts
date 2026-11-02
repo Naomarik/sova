@@ -67,6 +67,8 @@ export interface QueueRow {
   reason?: string;
   /** "1 newer commit not included". */
   newer?: string;
+  /** The branch against the target's head: "3 commits · +40 −2". */
+  size?: string;
   /** Notes on it (the merge thread's first), each with what kind it is. */
   notes: { label: string; text: string }[];
   action: RowAction;
@@ -99,10 +101,26 @@ export function notesOf(notes: readonly MergeNote[] | undefined): { label: strin
 }
 
 export type QueueRowInput = Pick<SessionWorktreeInfo, "status" | "exists" | "readiness" | "branch"> &
-  Partial<Pick<SessionWorktreeInfo, "merge" | "mergedInto" | "gone">> & { queue?: WorktreeQueueInfo; mergeProject?: MergeProjectInfo };
+  Partial<Pick<SessionWorktreeInfo, "merge" | "mergedInto" | "gone" | "mergeStats">> & { queue?: WorktreeQueueInfo; mergeProject?: MergeProjectInfo };
+
+/** "3 commits · +40 −2": the branch's side against the target's head. */
+export const sizeWords = (s: { ahead: number; added: number; removed: number } | undefined): string | undefined =>
+  s ? `${s.ahead} ${s.ahead === 1 ? "commit" : "commits"} · +${s.added} −${s.removed}` : undefined;
+
+/** The commit a Land pins: the head the row's numbers were read at, else the one readiness found finished. */
+export const shownCommit = (w: Partial<Pick<SessionWorktreeInfo, "readiness" | "mergeStats">>): string | undefined =>
+  w.mergeStats?.head ?? w.readiness?.landing?.commit;
+
+/** Rows past the queue (landed, merged, gone) carry no size: there's nothing left to land. */
+const SIZED: RowKey[] = ["ready", "uncommitted", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "needs-fix", "drafts-changed"];
 
 /** The words for one worktree, from its tracked state, its readiness and its queue entry. */
 export function queueRow(w: QueueRowInput): QueueRow {
+  const r = queueRowOf(w);
+  const size = SIZED.includes(r.key) ? sizeWords(w.mergeStats) : undefined;
+  return size ? { ...r, size } : r;
+}
+function queueRowOf(w: QueueRowInput): QueueRow {
   const e = w.queue;
   const base = { notes: notesOf(e?.notes), newer: newerWords(e?.newerCommits) ?? undefined, run: e?.run };
   if (e) {

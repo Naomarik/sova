@@ -1,7 +1,7 @@
 import { createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { SessionWorktreeInfo } from "../../shared/protocol";
-import { queueRow, rowsSummary, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
+import { queueRow, rowsSummary, shownCommit, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, land, refusal, type LandOptions } from "../lib/merge-queue-client";
 import { mergeRunHref, projectTabHref } from "../lib/projects-route";
 import { tildePath } from "../lib/format";
@@ -118,7 +118,7 @@ export function WorktreeQueueRow(props: {
     }
   };
   const doLand = (o: LandOptions = {}) =>
-    void run("Land", () => land(w().path, o), `Queued ${w().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
+    void run("Land", () => land(w().path, { ...o, commit: shownCommit(w()) }), `Queued ${w().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
   const e = () => entry()!;
 
   return (
@@ -133,6 +133,7 @@ export function WorktreeQueueRow(props: {
         <div class="wt-queue-facts">
           <QueueChip row={row()} />
           <Show when={row().detail}>{(d) => <span class="text-caption text-mono">{d()}</span>}</Show>
+          <Show when={row().size}>{(z) => <span class="text-caption text-mono wt-queue-size">{z()}</span>}</Show>
           {props.chips}
         </div>
         <Show when={row().newer}>{(n) => <p class="list-meta wt-queue-reason">{n()}</p>}</Show>

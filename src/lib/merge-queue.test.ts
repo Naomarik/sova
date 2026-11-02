@@ -146,6 +146,17 @@ test("the onboarding's check list: Name: command per line, the rest named back",
   });
 });
 
+test("row numbers: on live rows only; Land pins the head they were read at", async () => {
+  const { sizeWords, shownCommit } = await import("./merge-queue");
+  const stats = { ahead: 1, added: 5, removed: 0, head: "h0" };
+  assert.equal(sizeWords(stats), "1 commit · +5 −0");
+  assert.equal(queueRow(wt({ readiness: ready, mergeStats: stats })).size, "1 commit · +5 −0");
+  assert.equal(queueRow(wt({ mergeStats: stats, queue: q({ state: "landed" }) })).size, undefined);
+  assert.equal(shownCommit({ mergeStats: { ...stats, head: "h1" }, readiness: { ...ready, landing: { state: "ready", commit: "h2" } } }), "h1");
+  assert.equal(shownCommit({ readiness: { ...ready, landing: { state: "ready", commit: "h2" } } }), "h2");
+  assert.equal(shownCommit({}), undefined);
+});
+
 test("times and the waiting head", () => {
   assert.equal(clock(48_000), "0:48");
   assert.equal(clock(3_725_000), "1:02:05");

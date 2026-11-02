@@ -42,11 +42,15 @@ export async function readQueue(project: string): Promise<MergeQueueView> {
 }
 
 export interface LandOptions {
+  /** The commit the user was shown: the queue pins exactly it, never a newer head. */
+  commit?: string;
   /** "Land Without Review": this merge skips the review step. */
   withoutReview?: boolean;
   /** "Land Without Its Specs…": its drafts stay drafts. */
   withoutSpecs?: boolean;
 }
+
+const opts = (o: LandOptions) => ({ ...(o.commit ? { commit: o.commit } : {}), ...(o.withoutReview ? { withoutReview: true } : {}), ...(o.withoutSpecs ? { withoutSpecs: true } : {}) });
 
 /** Each action: the verb's answer, and readers told to reload. */
 async function act(project: string | null, verb: `merge.${string}`, body: Record<string, unknown>): Promise<VerbResult> {
@@ -56,11 +60,10 @@ async function act(project: string | null, verb: `merge.${string}`, body: Record
 }
 
 /** Land: queue a worktree's branch at its head commit (the approval pins it and its drafts). */
-export const land = (worktree: string, o: LandOptions = {}, chat?: string) =>
-  act(null, "merge.add", { checkout: worktree, ...(o.withoutReview ? { withoutReview: true } : {}), ...(o.withoutSpecs ? { withoutSpecs: true } : {}), ...(chat ? { chat } : {}) });
+export const land = (worktree: string, o: LandOptions = {}) =>
+  act(null, "merge.add", { checkout: worktree, ...opts(o) });
 /** Land on the queue's own rows, by branch. */
-export const landBranch = (project: string, branch: string, o: LandOptions = {}) =>
-  act(project, "merge.add", { branch, ...(o.withoutReview ? { withoutReview: true } : {}), ...(o.withoutSpecs ? { withoutSpecs: true } : {}) });
+export const landBranch = (project: string, branch: string, o: LandOptions = {}) => act(project, "merge.add", { branch, ...opts(o) });
 export const cancelEntry = (e: Pick<MergeEntry, "id">) => act(null, "merge.cancel", { entry: e.id });
 /** The user's answer to an entry that waits for them: Accept, Send Back, Land Anyway. */
 export const answerEntry = (e: Pick<MergeEntry, "id">, answer: MergeAnswer) => act(null, "merge.answer", { entry: e.id, answer });

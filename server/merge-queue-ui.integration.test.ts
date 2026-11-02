@@ -71,6 +71,8 @@ const wt = (branch: string, x: Partial<SessionWorktreeInfo> = {}): SessionWorktr
   runningWorkers: 0,
   readiness: { path: "", branch, state: "ready", landing: { state: "ready", commit: sha("d") } },
   mergeProject,
+  // The numbers and the head they were read at (the commit a Land pins).
+  mergeStats: { ahead: 3, added: 40, removed: 2, head: sha("d") } as SessionWorktreeInfo["mergeStats"],
   ...x,
 });
 
@@ -194,6 +196,7 @@ const tree = (s: SessionSummary, branch: string) => ({
   workers: 0,
   createdAt: iso(50),
   worktree: `/w/.worktrees/sova-${branch.split("/")[1]}`,
+  head: sha("8"),
   state: "open",
   merged: false,
   ahead: 2,
@@ -215,7 +218,7 @@ const RUNTIME = {
   drift: null,
   proof: null,
   registered: null,
-  playbook: { label: "Project verbs playbook", branch: "sova/project-verbs", target: "master", branchHash: `sha256:${"f".repeat(64)}`, proposes: "definition" },
+  playbook: { label: "Project verbs playbook", branch: "sova/project-verbs", target: "master", branchHash: `sha256:${"f".repeat(64)}`, commit: sha("7"), proposes: "definition" },
   can: { onboard: false },
   feed: [],
 };
@@ -227,6 +230,8 @@ interface Opened {
   ctx: BrowserContext;
   /** Each verb call: its name and body. */
   calls: { verb: string; body: Record<string, unknown> }[];
+  /** From now on the server answers the worktree rows through `f`. */
+  move(f: (rows: SessionWorktreeInfo[]) => SessionWorktreeInfo[]): void;
 }
 
 /** Sova at `width` on `hash`, every request answered: the session, its worktrees, the project, its queue. */
@@ -238,6 +243,8 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
   const calls: Opened["calls"] = [];
   /** Try It on Main: each dryRun starts a run; the view's tryRun ends it, failing the first time, passing after. */
   let tries = 0;
+  /** Set by a test: what the server answers from now on (a branch that moved after the page read it). */
+  let moved: ((rows: SessionWorktreeInfo[]) => SessionWorktreeInfo[]) | undefined;
   let tryRun: MergeRun | undefined;
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
   const ok = (verb: string, merge: unknown) => ({ v: 1, verb, project: ROOT_DIR, instance: null, slot: null, generation: null, checkout: null, branch: null, ok: true, changed: true, state: "stopped", steps: [], services: [], data: [], links: [], defHash: null, merge });
@@ -277,7 +284,7 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
       return route.fulfill(json(p.endsWith("runtime/merge") ? RUNTIME : WORKTREES));
     }
     if (p === "/api/transcript") return route.fulfill(json({ items: [], context: null }));
-    if (p === "/api/insights/session") return route.fulfill(json({ outline: null, compactions: [], teams: [], workers: [], worktrees: o.rows ?? ALL_ROWS }));
+    if (p === "/api/insights/session") return route.fulfill(json({ outline: null, compactions: [], teams: [], workers: [], worktrees: moved ? moved(o.rows ?? ALL_ROWS) : (o.rows ?? ALL_ROWS) }));
     if (p === "/api/projects") return route.fulfill(json({ projects: [PROJECT] }));
     if (p === `/api/projects/${PID}`) return route.fulfill(json(PROJECT));
     if (p === "/api/overseer/attention") return route.fulfill(json({ generatedAt: T0, counts: { act: 0, decide: 0, fyi: 0 }, items: [] }));
@@ -295,7 +302,7 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
   });
   await page.goto(`${ORIGIN}/${hash}`);
   assert.equal(await page.evaluate(() => innerWidth), width);
-  return { page, ctx, calls };
+  return { page, ctx, calls, move: (f) => (moved = f) };
 }
 
 /** MQ_UI_SHOTS=<dir>: keep a screenshot of each screen (by hand, for a look). */
@@ -348,6 +355,9 @@ for (const width of [1280, 390]) {
       const modal = page.getByRole("dialog", { name: "Worktrees" });
       await modal.waitFor();
       assert.match(await words(modal), /2 ready · 1 queued · 1 landed/);
+      // Each live row carries its numbers against master; a landed one doesn't.
+      assert.match(await words(modal.locator('[data-branch="feat/composer-drafts"]')), /3 commits · \+40 −2/);
+      assert.doesNotMatch(await words(modal.locator('[data-branch="feat/composer-hints"]')), /commits ·/);
       assert.match(await words(modal), /Queued · 2nd/);
       assert.match(await words(modal), /starts in ~4 min · takes ~9 min/);
       assert.match(await words(modal), /1 newer commit not included/);
@@ -374,9 +384,11 @@ for (const width of [1280, 390]) {
       assert.match(text, /Leaves a workaround in land\.ts/);
       await shot(page, `${width}-modal-all`);
 
+      // The branch moves after the page read it: Land still pins the commit the row showed.
+      o.move((rows) => rows.map((r) => ({ ...r, mergeStats: { ahead: 4, added: 41, removed: 2, head: sha("e") } as SessionWorktreeInfo["mergeStats"] })));
       await modal.getByRole("button", { name: "Land feat/composer-drafts", exact: true }).click();
       await called(o, "merge.add");
-      assert.deepEqual(lastCall(o, "merge.add").body, { checkout: "/w/.worktrees/sova-composer-drafts" });
+      assert.deepEqual(lastCall(o, "merge.add").body, { checkout: "/w/.worktrees/sova-composer-drafts", commit: sha("d") });
 
       // Escape on the open ▾ closes the menu, not the modal.
       await modal.getByRole("button", { name: "More ways to land feat/composer-shortcuts" }).click();
@@ -443,6 +455,7 @@ for (const width of [1280, 390]) {
       const text = await words(section);
       for (const word of ["Ready", "Queued · 2nd", "Uncommitted", "Needs a fix", "Behaviour differs", "Review flagged", "Landed"]) assert.match(text, new RegExp(word), word);
       assert.match(text, /2 ready · 1 queued · 1 behaviour differs · 1 review flagged · 1 needs a fix · 1 uncommitted · 1 landed/);
+      assert.match(await words(section.locator('[data-branch="feat/composer-drafts"]')), /3 commits · \+40 −2/);
       await section.getByRole("button", { name: "Cancel landing fix/paste-images" }).click();
       await called(o, "merge.cancel");
       await section.getByRole("button", { name: "Land feat/composer-drafts", exact: true }).click();
@@ -490,6 +503,7 @@ for (const width of [1280, 390]) {
       await ready.getByRole("button", { name: "Land feat/ready-one", exact: true }).click();
       await until("a land from the ready list", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "feat/ready-one"));
       assert.equal(lastCall(o, "merge.add").body.project, ROOT_DIR);
+      assert.equal(lastCall(o, "merge.add").body.commit, sha("9"), "the ready row's shown commit is pinned");
       await ready.getByRole("button", { name: "More ways to land feat/ready-one" }).click();
       await page.getByRole("menuitem", { name: "Land feat/ready-one without review" }).click();
       await until("a land without review", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "feat/ready-one" && c.body.withoutReview === true));
@@ -517,12 +531,14 @@ for (const width of [1280, 390]) {
       await landRun.click();
       await until("a land of the run's branch", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "sova/project-verbs"));
       assert.equal(lastCall(o, "merge.add").body.project, ROOT_DIR);
+      assert.equal(lastCall(o, "merge.add").body.commit, sha("7"), "the run's reviewed tip is pinned");
       // A coding row: its ⋯ holds Land (not Merge Branch); Land queues its worktree.
       const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
       await cart.getByRole("button", { name: /^Actions · / }).click();
       assert.equal(await page.getByRole("menuitem", { name: /^Merge Branch/ }).count(), 0);
       await page.getByRole("menuitem", { name: "Land sova/fix-cart on master" }).click();
       await until("a land of the coding worktree", () => o.calls.some((c) => c.verb === "merge.add" && c.body.checkout === "/w/.worktrees/sova-fix-cart"));
+      assert.equal(lastCall(o, "merge.add").body.commit, sha("8"), "the row's shown head is pinned");
       // A queued row's Land says why it can't.
       await badge.getByRole("button", { name: /^Actions · / }).click();
       assert.equal(await page.getByRole("menuitem", { name: "Land sova/fix-badge on master" }).getAttribute("aria-disabled"), "true");

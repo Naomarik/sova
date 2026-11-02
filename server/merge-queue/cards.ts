@@ -38,6 +38,9 @@ interface CardsRecord {
   done: Record<string, string>;
   /** Hidden lines for the model's next turn. */
   lines: CardLine[];
+  /** Wakes written with their outcome and not yet taken by the chat. One no process is sending any more (Sova stopped
+   *  between the write and the send) becomes the hidden line; it is never sent again, so it can never be a second turn. */
+  wakes?: CardLine[];
 }
 
 export interface CardsDeps {
@@ -73,6 +76,8 @@ export class MergeCards {
   private readonly git: Git;
   /** Keys being raised now (the place is read first): never twice at once. */
   private readonly pending = new Set<string>();
+  /** Wakes this process is sending now (their record's `wakes` entry is theirs, not stale). */
+  private readonly waking = new Set<string>();
 
   constructor(private readonly deps: CardsDeps) {
     this.git = deps.git ?? realGit;
@@ -91,7 +96,7 @@ export class MergeCards {
     if (existsSync(f)) {
       try {
         const r = JSON.parse(readFileSync(f, "utf8")) as CardsRecord;
-        if (Array.isArray(r.cards)) return { session, cards: r.cards, done: r.done ?? {}, lines: r.lines ?? [] };
+        if (Array.isArray(r.cards)) return { session, cards: r.cards, done: r.done ?? {}, lines: r.lines ?? [], ...(r.wakes?.length ? { wakes: r.wakes } : {}) };
       } catch (err) {
         this.deps.log?.(`[merge-queue] cards of ${session} unreadable (${err instanceof Error ? err.message : err}); starting over`);
       }
@@ -125,6 +130,7 @@ export class MergeCards {
   /** The hidden lines given after `since` (the chat's last card note), once each; null: none. */
   noteFor(session: string, since: string | null): string | null {
     const from = since ? Date.parse(since) || 0 : 0;
+    this.settleStaleWakes(session);
     const lines = this.read(session).lines.filter((l) => Date.parse(l.at) > from);
     return lines.length ? lines.map((l) => l.text).join("\n") : null;
   }
@@ -135,6 +141,17 @@ export class MergeCards {
     if (rec.done[key]) return;
     rec.done[key] = this.iso();
     rec.lines.push({ key, at: this.iso(), text });
+    this.write(rec);
+  }
+
+  /** Wakes left pending by a process that no longer sends them: each becomes the hidden line, once; never resent. */
+  settleStaleWakes(session: string): void {
+    const rec = this.read(session);
+    const stale = (rec.wakes ?? []).filter((w) => !this.waking.has(w.key));
+    if (!stale.length) return;
+    rec.wakes = (rec.wakes ?? []).filter((w) => this.waking.has(w.key));
+    if (!rec.wakes.length) delete rec.wakes;
+    for (const w of stale) if (!rec.lines.some((l) => l.key === w.key)) rec.lines.push({ key: w.key, at: this.iso(), text: w.text.slice(MERGE_QUEUE_SENT_PREFIX.length).trim() });
     this.write(rec);
   }
 
@@ -231,7 +248,12 @@ export class MergeCards {
       rec.done[key] = this.iso();
       let wake: string | null = null;
       if (LINE_KINDS.includes(kind)) rec.lines.push({ key, at: this.iso(), text: lineText(kind as "landed" | "drafts-changed", e, card) });
-      if (WAKE_KINDS.includes(kind)) wake = wakeText(kind === "sent-back" ? "sent-back" : "needs-fix", e, extra.run);
+      if (WAKE_KINDS.includes(kind)) {
+        wake = wakeText(kind === "sent-back" ? "sent-back" : "needs-fix", e, extra.run);
+        // Pending in the same write as done[key]: a stop before the chat takes it leaves it to become the hidden line.
+        rec.wakes = [...(rec.wakes ?? []).filter((w) => w.key !== key), { key, at: this.iso(), text: wake }];
+        this.waking.add(key);
+      }
       this.write(rec);
       this.publish(rec);
       if (wake) await this.sendWake(session, key, wake);
@@ -241,18 +263,35 @@ export class MergeCards {
   }
 
   private async sendWake(session: string, key: string, text: string): Promise<void> {
-    if (!this.deps.wake) return this.fallback(session, key, text);
     try {
-      await this.deps.wake(session, text);
-    } catch (err) {
-      this.deps.log?.(`[merge-queue] wake of ${session} not taken (${err instanceof Error ? err.message : err}): it is the hidden line at its next turn`);
-      this.fallback(session, key, text);
+      if (!this.deps.wake) return this.fallback(session, key, text);
+      try {
+        await this.deps.wake(session, text);
+        this.clearWake(session, key);
+      } catch (err) {
+        this.deps.log?.(`[merge-queue] wake of ${session} not taken (${err instanceof Error ? err.message : err}): it is the hidden line at its next turn`);
+        this.fallback(session, key, text);
+      }
+    } finally {
+      this.waking.delete(key);
     }
+  }
+
+  private clearWake(session: string, key: string): void {
+    const rec = this.read(session);
+    if (!rec.wakes?.some((w) => w.key === key)) return;
+    rec.wakes = rec.wakes.filter((w) => w.key !== key);
+    if (!rec.wakes.length) delete rec.wakes;
+    this.write(rec);
   }
 
   private fallback(session: string, key: string, text: string): void {
     const rec = this.read(session);
-    if (rec.lines.some((l) => l.key === key)) return;
+    if (rec.wakes) {
+      rec.wakes = rec.wakes.filter((w) => w.key !== key);
+      if (!rec.wakes.length) delete rec.wakes;
+    }
+    if (rec.lines.some((l) => l.key === key)) return this.write(rec);
     rec.lines.push({ key, at: this.iso(), text: text.slice(MERGE_QUEUE_SENT_PREFIX.length).trim() });
     this.write(rec);
   }
@@ -289,6 +328,7 @@ export class MergeCards {
       bySession.set(e.session, [...(bySession.get(e.session) ?? []), e]);
     }
     for (const [session, list] of bySession) {
+      this.settleStaleWakes(session);
       const heads = new Map<string, string | undefined>();
       for (const e of list) if (!heads.has(e.branch)) heads.set(e.branch, await this.headOf(view.root, e.branch));
       const rec = this.read(session);

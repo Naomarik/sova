@@ -18,7 +18,7 @@ const landed = (k: ReturnType<typeof makeKit>, id: string) =>
   }, `${id} landed`);
 
 /** A kit whose queue raises real cards: notify → cards, publish → sync; `last` is the chat's last transcript entry. */
-function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFails?: boolean } = {}) {
+function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFails?: boolean; wakeHangs?: boolean } = {}) {
   const chat = { last: "e1" as string | null };
   const wakes: { session: string; text: string }[] = [];
   const published: { session: string; cards: MergeCard[] }[] = [];
@@ -45,6 +45,10 @@ function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFa
       lastEntry: async () => chat.last,
       wake: async (session, text) => {
         if (o.wakeFails) throw new Error("archived");
+        if (o.wakeHangs) {
+          wakes.push({ session, text });
+          return new Promise<void>(() => {});
+        }
         wakes.push({ session, text });
       },
       publish: (session, list) => published.push({ session, cards: list }),
@@ -165,6 +169,32 @@ describe("a branch's card in its own chat", () => {
       } finally {
         await t.k.done();
       }
+    }
+  });
+
+  test("a stop between the hand-back's write and its send: the wake becomes the hidden line once, never a second turn", async () => {
+    const t = cardKit({ wakeHangs: true });
+    try {
+      const q = await t.k.q();
+      t.k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
+      t.k.repo.branch("feat/stop", { "s.txt": "s\n" });
+      const { entry } = await q.add({ branch: "feat/stop", by: "land-button", session: "s1" });
+      await until(async () => (await t.k.entry(entry.id)).state === "needs-fix", "needs-fix");
+      await until(() => t.wakes.length === 1, "the wake sent (never answered)");
+      assert.equal(t.cards.noteFor("s1", null), null, "while this process still sends it, it is no line");
+      // Sova stops here: a fresh store on the same records.
+      const fresh = t.restart();
+      const note = fresh.noteFor("s1", null);
+      assert.ok(note, "the hand-back survives the stop as the hidden line");
+      assert.match(note!, /^feat\/stop didn't land: unit failed: src\/a\.test\.ts/);
+      assert.equal(fresh.noteFor("s1", null), note, "once");
+      // A later view or outcome for the same entry sends no second wake and adds no second line.
+      await fresh.sync(await q.view());
+      await fresh.outcome("needs-fix", await t.k.entry(entry.id), { root: t.k.repo.root });
+      assert.equal(t.wakes.length, 1, "never resent");
+      assert.equal(fresh.noteFor("s1", null)!.split("\n").filter((l) => l.startsWith("feat/stop didn't land")).length, 1);
+    } finally {
+      await t.k.done();
     }
   });
 

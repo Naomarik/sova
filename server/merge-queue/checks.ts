@@ -11,6 +11,7 @@ import { dirname, join } from "node:path";
 import type { CheckPick, CheckSource, ChecksDeclared, RunStep } from "../../shared/merge-queue";
 import type { Argv, MergeCheckDecl, ProjectDef } from "../../shared/project-contract";
 import { portsFor, render } from "../../shared/project-contract";
+import { inheritedEnv } from "../project-services/env-allow";
 import { runProc, type Proc } from "./copy";
 
 /** What the project declares for its checks. */
@@ -84,11 +85,9 @@ export const picksOf = (list: readonly PlannedCheck[]): CheckPick[] =>
 
 // ---- environment ----------------------------------------------------------------------------------
 
-/** What a check inherits from the server: nothing secret, nothing that points at a chat or a repository. */
-const ENV_ALLOW = ["PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ", "XDG_RUNTIME_DIR", "XDG_STATE_HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME", "SHELL", "TMPDIR", "PI_CODING_AGENT_DIR", "SOVA_SPEC_CORE", "SOVA_RUNTIME", "SOVA_BUN"];
-/** mise's own settings (where its tools, trust and state live), so a check's mise is the server's; never one that
- *  reads as a credential (MISE_GITHUB_TOKEN). */
-const inherits = (k: string) => ENV_ALLOW.includes(k) || (k.startsWith("MISE_") && !/TOKEN|SECRET|KEY|PASSWORD|CREDENTIAL/i.test(k));
+/** What a check inherits from the server: the engine's own allow-list (no secret, no chat or repository variable;
+ *  the XDG homes and mise's settings, so its mise is the server's), plus where the agent dir and spec tools are. */
+const CHECK_EXTRA = ["PI_CODING_AGENT_DIR", "SOVA_SPEC_CORE", "SOVA_RUNTIME", "SOVA_BUN"];
 
 /** The facts a run gives its processes and templates. */
 export interface CopyScope {
@@ -129,9 +128,7 @@ export function templateVarsOf(def: ProjectDef, s: CopyScope): Record<string, st
 }
 
 export function envOf(def: ProjectDef, s: CopyScope, extra: { step?: string; out?: string; picked?: boolean } = {}): Record<string, string> {
-  const e: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) if (v !== undefined && inherits(k)) e[k] = v;
-  e.LANG ??= "C.UTF-8";
+  const e: Record<string, string> = inheritedEnv(process.env, CHECK_EXTRA);
   Object.assign(e, {
     SOVA_V: "1",
     SOVA_PROJECT: s.project,

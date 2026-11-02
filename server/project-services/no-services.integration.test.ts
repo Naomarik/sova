@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
@@ -42,6 +42,26 @@ test("doctor finds the definition valid; up runs setup and starts nothing; down 
   const down = await engine.run("down", { instance: up.instance }, op);
   assert.equal(down.ok, true, JSON.stringify(down.error));
   assert.deepEqual(down.services, []);
+});
+
+test("a hook the engine starts (setup) sees the server's mise settings and XDG homes, never a mise token", async () => {
+  const other = join(parent, "probe");
+  const seen = join(parent, "seen.json");
+  mkdirSync(join(other, ".sova"), { recursive: true });
+  writeFileSync(join(other, ".sova", "project.json"), JSON.stringify({ version: 1, setup: [{ id: "env", run: ["node", "-e", `require('fs').writeFileSync(${JSON.stringify(seen)}, JSON.stringify({ m: process.env.MISE_STATE_DIR ?? null, x: process.env.XDG_DATA_HOME ?? null, t: process.env.MISE_GITHUB_TOKEN ?? null }))`] }] }));
+  execFileSync("git", ["init", "-q", "-b", "main", other]);
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "add", "-A"], { cwd: other });
+  execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "probe"], { cwd: other });
+  Object.assign(process.env, { MISE_STATE_DIR: "/ws/mise-state", XDG_DATA_HOME: "/ws/data", MISE_GITHUB_TOKEN: "secret" });
+  try {
+    const up = await engine.run("up", { project: other }, op);
+    assert.equal(up.ok, true, JSON.stringify(up.error));
+    assert.deepEqual(JSON.parse(readFileSync(seen, "utf8")), { m: "/ws/mise-state", x: "/ws/data", t: null });
+  } finally {
+    delete process.env.MISE_STATE_DIR;
+    delete process.env.XDG_DATA_HOME;
+    delete process.env.MISE_GITHUB_TOKEN;
+  }
 });
 
 test("its test command runs", async () => {

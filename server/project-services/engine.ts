@@ -41,6 +41,7 @@ import {
 } from "../../shared/project-contract";
 import { numberedPorts, overLimitSentence, slotLayoutOf, unavailableSentence, type CopyLimit } from "../../shared/project-slots";
 import { COPY_SLOT_TOP } from "../../shared/project-contract";
+import { inheritedEnv } from "./env-allow";
 import { countsAsRunning, limitInForce, runningCopies } from "./copy-limit";
 import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
@@ -251,17 +252,8 @@ const canonical = (p: string) => {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
-/** The variables a service or hook process inherits from the server: nothing secret. */
-const ENV_ALLOW = ["PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ", "XDG_RUNTIME_DIR", "SHELL", "TMPDIR"];
-function baseEnv(): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const k of ENV_ALLOW) {
-    const v = process.env[k];
-    if (v !== undefined) out[k] = v;
-  }
-  out.LANG ??= "C.UTF-8";
-  return out;
-}
+/** The variables a service or hook process inherits from the server: nothing secret (env-allow.ts). */
+const baseEnv = (): Record<string, string> => inheritedEnv();
 
 function tcpOpen(port: number, timeoutMs = 1_000): Promise<boolean> {
   return new Promise((done) => {

@@ -151,7 +151,7 @@ describe("review", () => {
     const v = await h.waitView((v) => v.state === "paused", "paused on the reviewer");
     assert.equal(v.paused?.kind, "reviewer", JSON.stringify(v.paused));
     assert.notEqual((await h.entry(e.id)).state, "needs-fix");
-    assert.equal(h.notices.length, 0);
+    assert.equal(h.notices.filter((n) => n.kind !== "approved").length, 0, "no chat is told (the approval card aside)");
     assert.ok(h.reviews.length >= 2, `retried (${h.reviews.length} reviewers)`);
   });
 

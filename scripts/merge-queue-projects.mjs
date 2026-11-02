@@ -23,6 +23,7 @@
 //   P5 conflict, differs   two branches set one number differently: behaviour differs, Send Back
 //   P6 review ok / block   the review kit declared on the target (outside, Resume): a docstring fix lands (review
 //                          ok); planted debt is flagged, Send Back
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -67,6 +68,7 @@ function project(name) {
   const origin = join(BASE, `${name}-origin.git`);
   const wt = join(BASE, ".worktrees");
   if (p.synthetic) makePlain(root, origin, p.target);
+  else resetClone(name, root, origin, wt, p.target);
   check(existsSync(root), `the clone ${root} exists (made by hand: git clone --no-hardlinks, origin replaced)`);
   const remotes = git(root, "remote", "-v");
   check(!/github\.com|git@/.test(remotes) && remotes.includes(origin), `${name}'s only remote is the local bare origin (${remotes})`);
@@ -81,6 +83,26 @@ function project(name) {
     return head();
   };
   return { name, ...p, root, origin, wt, q, head, originHead, branch, commitOutside };
+}
+
+/** Every run starts from the clone's refs/qa/baseline (its target with the exported kits; made once by hand): the
+ *  target reset there and force-pushed to the local bare origin, qa/* branches and their worktrees removed, rerere's
+ *  recorded resolutions dropped (S2f covers rerere). Earlier runs' outside commits (a declared review kit, a broken
+ *  test) never leak into the next. */
+function resetClone(name, root, origin, wt, target) {
+  if (!gitOk(root, "rev-parse", "-q", "--verify", "refs/qa/baseline")) return log(`${name}: no refs/qa/baseline; running on the clone as it is`);
+  for (const line of git(root, "worktree", "list", "--porcelain").split("\n")) {
+    const w = line.startsWith("worktree ") ? line.slice(9) : null;
+    if (w && w.startsWith(join(wt, `${name}-`))) spawnSync("git", ["-C", root, "worktree", "remove", "--force", w]);
+  }
+  git(root, "worktree", "prune");
+  git(root, "checkout", "-q", "-B", target, "refs/qa/baseline");
+  git(root, "reset", "-q", "--hard", "refs/qa/baseline");
+  git(root, "clean", "-qfd");
+  for (const b of git(root, "for-each-ref", "--format=%(refname:short)", "refs/heads/qa").split("\n").filter(Boolean)) git(root, "branch", "-q", "-D", b);
+  rmSync(join(root, ".git", "rr-cache"), { recursive: true, force: true });
+  git(root, "push", "-q", "-f", "origin", target);
+  log(`${name}: reset to its baseline ${git(root, "rev-parse", "--short", target)}`);
 }
 
 /** A fresh plain repo: one module, a node:test file, no .sova at all; a local bare origin. */
@@ -344,6 +366,8 @@ async function main() {
   mkdirSync(LOGS, { recursive: true });
   assertRealUnchanged();
   R.set("head", sova.prepare());
+  // The clones are reset to their baselines (project()), so this server's queue records of them start fresh too.
+  rmSync(join(sova.agent, "sova", "merge-queue"), { recursive: true, force: true });
   await sova.start(LOGS);
   try {
     const ps = names.map(project);

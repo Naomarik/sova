@@ -80,7 +80,7 @@ describe("blame", () => {
     const now = await h.entry(e.id);
     assert.equal(now.state, "queued", "back in line, not blamed");
     assert.equal(fx.head(), base);
-    assert.equal(h.notices.length, 0, "no chat is told");
+    assert.equal(h.notices.filter((n) => n.kind !== "approved").length, 0, "no chat is told (the approval card aside)");
     assert.ok(now.runs.length >= 2, `retried once (${now.runs.length} runs)`);
     const run = h.run(now.runs.at(-1)!);
     assert.notEqual(run.blame, "branch");

@@ -243,9 +243,10 @@ async function cases() {
 
   await kase("E5", "conflict, behaviour differs: waits for the user; Send Back", async (ev) => {
     const base = head();
+    // One limit both branches set differently, in a file nothing tests (NOTE_MAX was asserted by queue.test.ts, so
+    // the first branch was rightly sent back): an add/add conflict on one line, a behaviour choice.
     const setConst = (v) => (dir) => {
-      const f = join(dir, "shared/merge-queue.ts");
-      writeFileSync(f, readFileSync(f, "utf8").replace(/export const NOTE_MAX = \d+;/, `export const NOTE_MAX = ${v};`));
+      writeFileSync(join(dir, "shared/e2e-limit.ts"), `/** How many rows the e2e probe lists. */\nexport const E2E_LIMIT = ${v};\n`);
     };
     const a = branch("max-a", setConst(280), { from: base });
     const b = branch("max-b", setConst(320), { from: base });

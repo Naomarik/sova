@@ -1,22 +1,15 @@
 /**
- * The user's answers on a branch's Landing card (§chat.offers/sova-landing; §chat.worktrees/landing-answers):
- * Land It (a go-ahead) or Not Yet for a branch at one commit, the user's go-ahead typed in the branch's own
- * chat (`worktree land`, `by: "owner-chat"`), and Go on a Ready to land row of an Overseer card the user applied
- * (`by: "overseer-card"`, §app.overseer/card-land), kept per user outside every repository:
+ * The user's go-aheads to land a branch at one commit, kept per user outside every repository:
  *
  *   <state root>/landing.json
- *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs?, in?, drafts? } ], "notYet": [ { branch, commit, session?, at, in? } ],
- *     "docsEntries": [ { branch, sha, parent, at, drafts } ] }
+ *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs?, withoutReview?, in?, drafts? } ], "notYet": [ ... ],
+ *     "docsEntries": [ ... ] }
  *
- * `in` (optional, additive) is the session the answer was given in, when that isn't the branch's own: the Merge
- * Captain's chat, for a row of its landing card or its driver's `go` (`by: "captain-chat"`). `drafts` (Land It) is
- * the branch's spec drafts as they were then, so a later change to them holds the branch.
- *
- * Sova's server writes it (a click on a Landing card, or Go on an Overseer card's land row), and so does the
- * `worktree` tool's `land` (the user's typed word, read by `typedGoAhead`, never a message another sender sent:
- * `newestUserMessage`); the merge round's driver reads it as the user's word and appends the docs entries it commits
- * itself, the only spec-only commits a go-ahead carries across. Every writer holds the file's lock (withLandingLock).
- * Nothing enforces it: no merge needs a recorded go-ahead.
+ * The `worktree` tool's `land` writes one (`by: "owner-chat"`) for the user's word typed in the branch's own chat
+ * (read by `typedGoAhead`, never a message another sender sent: `newestUserMessage`). Sova's merge queue reads those
+ * records and queues the branch at that commit (server/merge-queue/ingest.ts). `withoutSpecs`: its drafts stay
+ * behind; `withoutReview`: no review step. The other `by` values, `notYet` and `docsEntries` are older records, read
+ * so a file holding them stays valid. Every writer holds the file's lock (withLandingLock).
  *
  * Node builtins only (the extension runs in every chat). Writes re-read the file, merge and replace it
  * atomically; a damaged file reads as no records.
@@ -28,9 +21,8 @@ import { dirname, join, resolve } from "node:path";
 export const LANDING_FILE_NAME = "landing.json";
 /** Records kept per list, newest last. */
 export const LANDING_KEPT = 200;
-/** Who recorded a go-ahead: a Land It click, the user's word typed in the branch's own chat (`worktree land`), the
- *  user's word in the Merge Captain's chat (the round driver's `go`), Go on an Overseer card's Ready to land row the
- *  user applied, or (records from before the merge guard was removed) a Merge Branch press. */
+/** Who recorded a go-ahead: the user's word typed in the branch's own chat (`worktree land`, "owner-chat"); the other
+ *  values are older records' (kept readable). */
 export type GoAheadBy = "land-it" | "owner-chat" | "captain-chat" | "overseer-card" | "page";
 export const GO_AHEAD_BY: readonly GoAheadBy[] = ["land-it", "owner-chat", "captain-chat", "overseer-card", "page"];
 
@@ -45,9 +37,11 @@ export interface GoAhead {
 	by: GoAheadBy;
 	/** Merge Without Specs…: the user agreed its spec drafts stay behind. */
 	withoutSpecs?: true;
+	/** "land it, skip review": the merge queue lands it without its review step. */
+	withoutReview?: true;
 	/** The session it was given in, when not the branch's own. */
 	in?: string;
-	/** Land It: the branch's spec drafts as they were at the click (one hash over the files under each draft's spec/,
+	/** The branch's spec drafts as they were at the approval (one hash over the files under each draft's spec/,
 	    each draft's own hash, the names), so a later change to them holds the branch. */
 	drafts?: DraftsSeen;
 }
@@ -105,7 +99,7 @@ function cleanGoAhead(v: unknown): GoAhead | null {
 	if (!isRec(v) || !str(v.branch) || typeof v.commit !== "string" || !SHA.test(v.commit) || !str(v.at)) return null;
 	if (typeof v.by !== "string" || !(GO_AHEAD_BY as readonly string[]).includes(v.by)) return null;
 	const drafts = cleanDrafts(v.drafts);
-	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at, by: v.by as GoAheadBy, ...(v.withoutSpecs === true ? { withoutSpecs: true as const } : {}), ...(str(v.in) ? { in: v.in } : {}), ...(drafts ? { drafts } : {}) };
+	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at, by: v.by as GoAheadBy, ...(v.withoutSpecs === true ? { withoutSpecs: true as const } : {}), ...(v.withoutReview === true ? { withoutReview: true as const } : {}), ...(str(v.in) ? { in: v.in } : {}), ...(drafts ? { drafts } : {}) };
 }
 
 const HEX = /^[0-9a-f]{64}$/;
@@ -270,13 +264,14 @@ const NOT_NOW = /\b(?:don'?t|dont|do not|never|not|no|should|shall|why|what|how|
  * The user's go-ahead in their own words (§chat.worktrees/tool, `land`): the first line asks to land or merge
  * ("land it", "ok, merge it", "go ahead and land feat/x"), the verb within its first 40 characters and nothing
  * before it that asks, waits or refuses, and "not yet", "don't" or "do not" nowhere in that line. "without
- * specs" anywhere in the message lands it without its specs. → {withoutSpecs} | null (not a go-ahead).
+ * specs" anywhere in the message lands it without its specs; "skip review" / "without review" / "no review" lands it
+ * without the merge queue's review step. → {withoutSpecs, withoutReview} | null (not a go-ahead).
  */
-export function typedGoAhead(text: string): { withoutSpecs: boolean } | null {
+export function typedGoAhead(text: string): { withoutSpecs: boolean; withoutReview: boolean } | null {
 	if (typeof text !== "string" || NOT_TYPED.test(text)) return null;
 	const line = (text.trim().split("\n")[0] ?? "").toLowerCase();
 	const verb = /\b(?:land|merge)\b/.exec(line);
 	if (!verb || verb.index > 40 || NOT_NOW.test(line.slice(0, verb.index))) return null;
 	if (/\bnot yet\b|\bdon'?t\b|\bdo not\b/.test(line)) return null;
-	return { withoutSpecs: /\bwithout (?:its |the |any )?specs?\b/i.test(text) };
+	return { withoutSpecs: /\bwithout (?:its |the |any )?specs?\b/i.test(text), withoutReview: /\b(?:skip(?:ping)? (?:the |its )?review|without (?:the |its |a |any )?review|no review)\b/i.test(text) };
 }

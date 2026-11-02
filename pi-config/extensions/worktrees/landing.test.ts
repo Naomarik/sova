@@ -56,9 +56,12 @@ test("the file lives in the chat's state root, else the agent dir's sova folder"
 
 test("typedGoAhead: the user's word to land now, never a question, a condition, a refusal or a message Sova or another session sent", () => {
 	for (const t of ["land it", "Land it.", "merge it", "ok, merge it", "yes land it", "go ahead and land feat/x", "please land this now", "lgtm, land it\nthanks"])
-		assert.deepEqual(typedGoAhead(t), { withoutSpecs: false }, t);
-	assert.deepEqual(typedGoAhead("land it without its specs"), { withoutSpecs: true });
-	assert.deepEqual(typedGoAhead("merge it\n(without specs, they can follow)"), { withoutSpecs: true });
+		assert.deepEqual(typedGoAhead(t), { withoutSpecs: false, withoutReview: false }, t);
+	assert.deepEqual(typedGoAhead("land it without its specs"), { withoutSpecs: true, withoutReview: false });
+	assert.deepEqual(typedGoAhead("merge it\n(without specs, they can follow)"), { withoutSpecs: true, withoutReview: false });
+	for (const t of ["land it, skip review", "land it, skip the review", "land it without review", "merge it, no review needed"])
+		assert.deepEqual(typedGoAhead(t), { withoutSpecs: false, withoutReview: true }, t);
+	assert.deepEqual(typedGoAhead("land it without specs, skip review"), { withoutSpecs: true, withoutReview: true });
 	for (const t of [
 		"don't land it",
 		"do not merge it yet",

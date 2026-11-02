@@ -161,6 +161,8 @@ export interface MergeEntry {
   runs: string[];
   /** Checks the merge thread added (merge.extend); never removes a required one. */
   picks: CheckPick[];
+  /** conflict: the files the last merge conflicted on (before any judgement). */
+  conflictFiles?: string[];
   conflict?: ConflictJudgement;
   review?: ReviewVerdict;
   notes: MergeNote[];
@@ -302,6 +304,8 @@ export interface MergeQueueView {
   review: boolean;
   /** The run checking now. */
   current?: MergeRun;
+  /** Entries in state `checking`: the one whose run is `current`, or one tested and held (a paused landing). */
+  checking: MergeEntry[];
   /** Queued entries in line order (`position` 1…). */
   waiting: MergeEntry[];
   /** Entries waiting for the user (behaviour differs, review flagged, drafts changed) and conflicts the thread
@@ -322,7 +326,7 @@ export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "
   project: string;
   run?: string;
   /** The project has a review kit (the Land menu shows "Land without review"). */
-  review?: boolean;
+  reviewKit?: boolean;
 };
 
 // ---- the verbs (POST /api/project-services/merge.<x>; shared/project-contract.ts MERGE_VERBS) ---

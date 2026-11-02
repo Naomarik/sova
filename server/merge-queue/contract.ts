@@ -43,6 +43,9 @@ export interface RunInput {
   review: boolean;
   /** Aborted when the run is voided (master moved, cancelled, server stopping). */
   signal: AbortSignal;
+  /** The review step's agent posts its verdict through `merge.review {run}`: this resolves with it (rejects on the
+   *  signal). The review step may also answer from its own subprocess and never call it. */
+  awaitReview(): Promise<ReviewVerdict>;
 }
 
 export interface RunHooks {
@@ -102,5 +105,22 @@ export type RunMerge = (input: RunInput, hooks: RunHooks) => Promise<RunOutcome>
 /** copy-checks: what a project declares for its checks (the view's `checks`), from the target's definition. */
 export type ChecksOf = (def: ProjectDef | null) => "declared" | "test-command" | "none" | "unset";
 
-/** copy-checks: estimates from this project's run history: how long one run takes (ms). */
-export type EstimateRun = (projectId: string) => number;
+/** copy-checks: estimates from this project's run history: how long one run takes (ms); null: no history yet. */
+export type EstimateRun = (projectId: string, root: string) => number | null;
+
+/** What the queue tells the merge thread (merge-thread: server/merge-queue/thread.ts wakes the project's thread).
+ *  `queued`: read the branch, maybe pick checks (merge.extend) and write a note (merge.note). `conflict`: judge it
+ *  (merge.resolve). `failed`: explain the failure (merge.note). `paused`: a machine pause to look at. `landed`: the note
+ *  may still be written. Answers whether a thread was asked: false (none, or off) never delays anything. */
+export interface ThreadEvent {
+  kind: "queued" | "conflict" | "failed" | "paused" | "landed";
+  project: string;
+  root: string;
+  target: string;
+  entry: import("../../shared/merge-queue").MergeEntry;
+  run?: string;
+  /** conflict: the files. failed/paused: the one-line why. */
+  files?: string[];
+  why?: string;
+}
+export type WakeThread = (ev: ThreadEvent) => boolean;

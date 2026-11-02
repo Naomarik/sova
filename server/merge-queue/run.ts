@@ -376,8 +376,12 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       st.end("failed", { counts, detail: r.failingFiles.length ? `${r.failingFiles.length} failing file${r.failingFiles.length === 1 ? "" : "s"}` : `exit ${r.proc.code}`, failures: (r.report?.failures ?? r.failingFiles.map((file) => ({ file }))).slice(0, 50) });
       // Again on the tip: what passes now is flaky. Failures named with no file (Kaocha) are told apart by name: the
       // whole check runs again and each name is followed, so a new failure isn't masked by another one red on master.
-      const files = check.rerun ? r.failingFiles : [];
-      const names = !r.failingFiles.length ? namesOf(r) : [];
+      // A reported file the merge doesn't have (a bare "handler_test.clj", nasabii) is no path to rerun or look for on
+      // the target: the check's failures are then followed by name too.
+      const paths = r.failingFiles.length ? await filesOn(copy, "HEAD", r.failingFiles) : [];
+      const byName = paths.length < r.failingFiles.length || !r.failingFiles.length;
+      const files = check.rerun && !byName ? r.failingFiles : [];
+      const names = byName ? idsOf(r) : [];
       const again = steps.start(`rerun-tip:${check.id}`, "rerun-tip", `${check.label} again${files.length ? ` (${files.length} file${files.length === 1 ? "" : "s"})` : ""}`);
       const r2 = await runCheck({ def, scope, check, stepId: `rerun-tip:${check.id}`, logFile: again.file, ...(files.length ? { files } : {}), signal });
       if (r2.proc.aborted || signal.aborted) return finish((again.end("failed", { detail: "aborted" }), voided("aborted")));
@@ -389,7 +393,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         continue;
       }
       if (names.length) {
-        const n2 = namesOf(r2);
+        const n2 = idsOf(r2);
         // A rerun that fails naming nothing tells nothing apart: every name is still failing.
         const stillN = n2.length ? names.filter((n) => n2.includes(n)) : names;
         const flakyN = names.filter((n) => !stillN.includes(n));
@@ -441,7 +445,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         if (r.proc.aborted || signal.aborted) return finish((st.end("failed", { detail: "aborted" }), voided("aborted")));
         if (r.proc.timedOut) return finish((st.end("failed", { detail: "timed out" }), voided(`${check.label} timed out on ${target} alone`)));
         if (names?.length) {
-          const onT = namesOf(r);
+          const onT = idsOf(r);
           if (r.proc.code !== 0 && !onT.length) {
             // Red on the target naming no test: nothing to tell the names apart by; whose it is can't be told.
             st.end("failed", { detail: `fails on ${target} too, naming no test: can't tell whose failure` });
@@ -643,6 +647,9 @@ async function identityEnv(copy: string): Promise<Record<string, string>> {
 
 /** The failing tests a check run names without a file (its SOVA_OUT failures' names), when it named no file. */
 const namesOf = (r: { failingFiles: string[]; report: { failingNames: string[] } | null }): string[] => (r.failingFiles.length ? [] : (r.report?.failingNames ?? []));
+
+/** The failures a run names when followed by name: its test names, else the files it reports (as reported). */
+const idsOf = (r: { failingFiles: string[]; report: { failingNames: string[] } | null }): string[] => (r.report?.failingNames.length ? r.report.failingNames : r.failingFiles);
 
 /** Every merge in the copy (beside NO_BACKGROUND_CLEANUP): never git rerere (a user's rerere.enabled + autoupdate would
  *  stage a recorded resolution silently and leave no unmerged path: a conflict must reach the thread and the user). */

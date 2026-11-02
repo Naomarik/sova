@@ -188,6 +188,20 @@ describe("a merge run", () => {
     expect(r2.out.notes.find((n) => n.kind === "master-red")!.text).toContain("app.unit-test/a");
   });
 
+  test("D15, failures reported by a bare file name (no repo path): followed by name, never 'the target hasn't these files'", async () => {
+    const files = { "unit.basename": "1\n", "tests/a.txt": "fail\n", "tests/b.txt": "ok\n" };
+    const fx = fixture({ files });
+    const r = await run(fx, fx.branch("clean", { "doc.txt": "a comment\n" }));
+    expect(r.out.verdict).toBe("passed");
+    expect(r.out.notes.find((n) => n.kind === "master-red")!.text).toContain("a.txt");
+    expect(r.steps.get("rerun-master:unit")!.detail).not.toContain("hasn't these test files");
+    const fx2 = fixture({ files });
+    const r2 = await run(fx2, fx2.branch("breaks-b", { "tests/b.txt": "fail\n" }));
+    expect(r2.out).toMatchObject({ verdict: "failed", blame: "branch" });
+    expect(r2.out.why).toContain("b.txt");
+    expect(r2.out.why).not.toContain("a.txt");
+  });
+
   test("setup broken on the target too: machine, nobody blamed; broken only by the branch: the branch's, with the setup log", async () => {
     const fx = fixture({ files: { "setup.conf": "broken\n" } });
     const br = fx.branch("innocent", { "src/app.txt": "x\n" });

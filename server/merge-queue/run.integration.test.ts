@@ -372,6 +372,16 @@ describe("a merge run", () => {
     expect((await run(none, { branch: none.target, commit: none.head() }, { tryOnly: true })).out).toMatchObject({ verdict: "passed", noChecks: true });
   });
 
+  test("a minimal definition (merge checks only: no setup, no services) runs and lands", async () => {
+    const fx = fixture();
+    fx.commitIn(fx.project, { ".sova/project.json": JSON.stringify({ version: 1, merge: { checks: [{ id: "tests", label: "Tests", run: ["sh", "-c", "node checks/unit.mjs"] }] } }) }, "minimal definition");
+    const r = await run(fx, fx.branch("min", { "src/app.txt": "m\n" }));
+    expect(r.out).toMatchObject({ verdict: "passed" });
+    expect(r.order).toEqual(["copy", "merge", "docs", "check:tests"]);
+    const r2 = await run(fx, fx.branch("min-red", { "tests/a.txt": "fail\n" }));
+    expect(r2.out).toMatchObject({ verdict: "failed", blame: "branch" });
+  });
+
   test("every step's log exists from its first line", async () => {
     const fx = fixture();
     const r = await run(fx, fx.branch("logs", { "tests/a.txt": "fail\n" }));

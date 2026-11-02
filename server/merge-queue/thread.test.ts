@@ -18,9 +18,11 @@ import {
   THREAD_MAX_AGE_MS,
   eventText,
   firstText,
+  hasMergeThread,
   mergeThread,
   playbookDir,
   replaceReason,
+  setMergeThread,
   type ThreadDeps,
   type ThreadEvent,
   type ThreadSession,
@@ -203,9 +205,18 @@ test("thread down: notify returns at once while the thread hangs or throws, and 
   assert.match(f.created[0]!.text, /mq_4/);
 });
 
-test("with no thread wired, the server's notify is a no-op and no chat is a thread", () => {
+test("with no thread wired, the server's notify is a no-op and no chat is a thread; wired, hasMergeThread says so", () => {
+  assert.equal(hasMergeThread(), false);
   assert.doesNotThrow(() => mergeThread().notify("/p", queued()));
   assert.equal(mergeThread().isThreadChat("/p", "s1"), false);
+  const t = new MergeThread(fakeSova(scratchRoot("mq-thread-")).deps);
+  setMergeThread(t);
+  try {
+    assert.equal(hasMergeThread(), true);
+    assert.equal(mergeThread(), t);
+  } finally {
+    setMergeThread(null);
+  }
 });
 
 // ---- texts and playbook choice -----------------------------------------------------------------

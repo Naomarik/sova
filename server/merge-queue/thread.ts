@@ -248,6 +248,11 @@ export function mergeThread(): Pick<MergeThread, "notify" | "isThreadChat"> {
   return current ?? { notify: () => {}, isThreadChat: () => false };
 }
 
+/** The server wired a thread keeper: the queue may wait for a conflict judgement (none: it hands back at once). */
+export function hasMergeThread(): boolean {
+  return current !== null;
+}
+
 export function setMergeThread(t: MergeThread | null): void {
   current = t;
 }

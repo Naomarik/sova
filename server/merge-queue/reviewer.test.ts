@@ -1,37 +1,36 @@
 // Run: pnpm test server/merge-queue/reviewer.test.ts
-// The review step's reviewer chat: started in the merge copy on the merge-reviewer profile with one
-// message naming the kit, the exact commit and the verb to answer with; archived once on stop; a
-// start Sova refuses throws (the step counts it as a reviewer failure, never the branch's).
+// The review step's reviewer chat on the server: started in the merge copy with the step's own
+// message and a title naming the branch, commit and attempt; archived once on stop; a start Sova
+// refuses throws (the step counts it as the reviewer's failure, never the branch's).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { reviewerText, startReviewer, type ReviewerDeps, type ReviewerInput } from "./reviewer";
+import type { ReviewerStart } from "./review-step";
+import { reviewerStarter, reviewerTitle, type ReviewerDeps } from "./reviewer";
 
-const input: ReviewerInput = {
+const o: ReviewerStart = {
+  runId: "mr_7",
+  projectId: "p1",
   root: "/w/sova",
   copy: "/w/.worktrees/sova-merge",
-  commit: "c".repeat(40),
   base: "b".repeat(40),
-  kitDir: "/w/.worktrees/sova-merge/.sova/playbooks/review",
-  runId: "mr_7",
-  changedFile: "/state/runs/mr_7/changed.txt",
+  commit: "c".repeat(40),
+  branch: "feat/x",
+  kit: ".sova/playbooks/review",
+  text: "Review one change before it lands…",
+  attempt: 1,
 };
 
-test("the reviewer's message names the kit, the exact commit on its base, read-only, and merge.review for this run", () => {
-  const t = reviewerText(input);
-  assert.ok(t.includes("/w/.worktrees/sova-merge/.sova/playbooks/review/PLAYBOOK.md"));
-  assert.ok(t.includes(`git diff ${input.base}...${input.commit}`));
-  assert.ok(t.includes("/state/runs/mr_7/changed.txt"));
-  assert.match(t, /Read only/);
-  assert.match(t, /merge\.review \{run: "mr_7", verdict, text\}/);
-  assert.doesNotMatch(reviewerText({ ...input, changedFile: undefined }), /changed paths are listed/);
+test("titles name the branch, the commit and a retry's attempt", () => {
+  assert.equal(reviewerTitle(o), "Review · feat/x · ccccccc");
+  assert.equal(reviewerTitle({ ...o, attempt: 2 }), "Review · feat/x · ccccccc · attempt 2");
 });
 
-test("startReviewer: a chat in the merge copy, titled for the commit; stop archives it once", async () => {
-  const created: { cwd: string; title: string }[] = [];
+test("a reviewer chat starts in the merge copy with the step's message; stop archives it once", async () => {
+  const created: { cwd: string; text: string; title: string }[] = [];
   const archived: string[] = [];
   const deps: ReviewerDeps = {
-    async create(cwd, _text, title) {
-      created.push({ cwd, title });
+    async create(cwd, text, title) {
+      created.push({ cwd, text, title });
       return { ok: true, id: "r1", path: "/sessions/r1.jsonl" };
     },
     async archive(path) {
@@ -39,16 +38,16 @@ test("startReviewer: a chat in the merge copy, titled for the commit; stop archi
       return { ok: true };
     },
   };
-  const r = await startReviewer(input, deps);
-  assert.deepEqual(created, [{ cwd: "/w/.worktrees/sova-merge", title: "Review · sova · ccccccc" }]);
-  assert.equal(r.sessionId, "r1");
-  await r.stop();
-  await r.stop();
+  const h = await reviewerStarter(deps)(o);
+  assert.deepEqual(created, [{ cwd: o.copy, text: o.text, title: "Review · feat/x · ccccccc" }]);
+  assert.equal(h.sessionId, "r1");
+  await h.stop();
+  await h.stop();
   assert.deepEqual(archived, ["/sessions/r1.jsonl"]);
 });
 
 test("a refused start throws; a failed archive is only logged", async () => {
-  await assert.rejects(startReviewer(input, { create: async () => ({ ok: false, error: "no such profile" }), archive: async () => ({ ok: true }) }), /couldn't start the reviewer: no such profile/);
-  const r = await startReviewer(input, { create: async () => ({ ok: true, id: "r2", path: "/p" }), archive: async () => Promise.reject(new Error("gone")) });
-  await assert.doesNotReject(r.stop());
+  await assert.rejects(reviewerStarter({ create: async () => ({ ok: false, error: "no such profile" }), archive: async () => ({ ok: true }) })(o), /couldn't start the reviewer: no such profile/);
+  const h = await reviewerStarter({ create: async () => ({ ok: true, id: "r2", path: "/p" }), archive: async () => Promise.reject(new Error("gone")) })(o);
+  await assert.doesNotReject(h.stop());
 });

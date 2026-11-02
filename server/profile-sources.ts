@@ -25,15 +25,21 @@ import { stateRoot } from "./state-root";
  * the repo root ("Built in"), yours (`<state root>/session-profiles.json`) and the session's
  * project (`<project root>/.sova/profiles/<id>.json`). Read on every call, no cache, like
  * server/playbooks.ts; never written. A file that can't be read is a problem, never a failure.
+ *
+ * Sova's system profiles (`profiles/system/`: the merge queue's thread and reviewer) are a fourth
+ * kind: Sova starts chats on them itself. They are never listed, so no picker shows them; only an
+ * explicit `{source: "sova", id}` pick finds them.
  */
 
 const SHIPPED_DIR = fileURLToPath(new URL("../profiles/", import.meta.url));
+const SYSTEM_DIR = fileURLToPath(new URL("../profiles/system/", import.meta.url));
 /** Where a project keeps its profiles, relative to its root. */
 export const PROJECT_PROFILES = join(".sova", "profiles");
 
 /** Injectable seams; every one has the real default. Tests swap them, callers never pass them. */
 export interface ProfileSourcesDeps extends ProjectDeps {
   shippedDir?: string;
+  systemDir?: string;
   yoursFile?: string;
 }
 
@@ -139,7 +145,9 @@ export async function findProfile(pick: ProfilePick, cwd?: string | null, deps: 
     }
     return null;
   }
-  return groups[pick.source]?.find((x) => x.id === pick.id) ?? null;
+  const found = groups[pick.source]?.find((x) => x.id === pick.id);
+  if (found || pick.source !== "sova") return found ?? null;
+  return (await readDir(deps.systemDir ?? SYSTEM_DIR, "sova")).profiles.find((x) => x.id === pick.id) ?? null;
 }
 
 // ---- hidden from the pickers ---------------------------------------------------------------------

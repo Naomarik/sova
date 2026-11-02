@@ -128,7 +128,7 @@ test("the review kit is never a registered skill: not under a skills folder, not
 });
 
 test("the merge-reviewer profile ships with Sova: no edit tools, web, workers, timers or worktrees", async () => {
-  const raw = JSON.parse(readFileSync(join(REPO, "profiles", "merge-reviewer.json"), "utf8"));
+  const raw = JSON.parse(readFileSync(join(REPO, "profiles", "system", "merge-reviewer.json"), "utf8"));
   assert.equal(profileFileError(raw), null);
   assert.equal((await findProfile({ source: "sova", id: "merge-reviewer" }, null))?.id, "merge-reviewer");
   assert.deepEqual([...raw.remove].sort(), ["edit", "timers", "web", "workers", "worktrees"]);
@@ -136,10 +136,10 @@ test("the merge-reviewer profile ships with Sova: no edit tools, web, workers, t
 });
 
 test("the merge-thread profile ships with Sova, is valid, and has no web, workers or timers", async () => {
-  const raw = JSON.parse(readFileSync(join(REPO, "profiles", "merge-thread.json"), "utf8"));
+  const raw = JSON.parse(readFileSync(join(REPO, "profiles", "system", "merge-thread.json"), "utf8"));
   assert.equal(profileFileError(raw), null);
   const listed = await findProfile({ source: "sova", id: "merge-thread" }, null);
-  assert.equal(listed?.id, "merge-thread", "listed among Sova's built-in profiles, for every project");
+  assert.equal(listed?.id, "merge-thread", "found by an explicit Sova pick, for every project");
   assert.equal(raw.id, "merge-thread");
   for (const r of ["web", "workers", "timers"]) assert.ok(raw.remove.includes(r));
   assert.deepEqual(raw.grant, []);

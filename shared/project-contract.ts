@@ -259,7 +259,7 @@ export interface ProjectDef {
   deploy?: DeployDecl;
   /** The checkout files the definition was written from; their change at HEAD is drift. Outside the hash. */
   sources?: string[];
-  /** How the merge queue lands branches (§app.merge-queue/checks): outside the definition's hash. */
+  /** How the merge queue lands branches (its checks): outside the definition's hash. */
   merge?: MergeDecl;
 }
 

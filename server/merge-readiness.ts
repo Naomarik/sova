@@ -592,7 +592,7 @@ const blockedBySession = new Map<string, { path: string; branch: string; commit:
 
 let deps: ReadinessDeps = defaultDeps();
 
-/** The chats the merge queue starts itself (§chat.merge-queue/thread, its review step) run as these profiles: they
+/** The chats the merge queue starts itself (its merge thread and its review step) run as these profiles: they
     never own a branch, and their replies after a merge are about the queue's branches. */
 export const MERGE_QUEUE_PROFILES: readonly string[] = ["merge-thread", "merge-reviewer"];
 const isMergeThread = (s: SessionSummary) => !!s.profile && MERGE_QUEUE_PROFILES.includes(s.profile.id);

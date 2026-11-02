@@ -110,6 +110,8 @@ export function setCardsDispatch(fn: (path: string, init?: RequestInit) => Respo
 }
 
 let deps: CardDeps = defaults;
+/** The last entry of a session's branch that draws a row (an outside card's place): the merge queue's cards use it too. */
+export const lastRowEntry = (path: string): Promise<string | null> => deps.lastEntry(path);
 /** Tests: swap parts of what the cards read. */
 export function setCardDeps(over: Partial<CardDeps> | null): void {
   deps = over ? { ...defaults, ...over } : defaults;

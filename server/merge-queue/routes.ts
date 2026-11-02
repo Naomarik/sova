@@ -347,3 +347,20 @@ export const unwiredRun: RunMerge = async () => ({ verdict: "machine", why: "the
 
 /** A thread wake that asks nobody. */
 export const noThread: WakeThread = () => false;
+
+/**
+ * GET /api/merge-queue/cards?path=<session file> (or ?session=<path or id>): a chat's merge queue cards (server/merge-queue/cards.ts), as the
+ * page draws them; {cards: []} while the queue isn't started or the chat has none.
+ */
+export function registerMergeCardRoutes(app: import("hono").Hono): void {
+  app.get("/api/merge-queue/cards", async (c) => {
+    const raw = (c.req.query("path") ?? c.req.query("session"))?.trim();
+    if (!raw) return c.json({ error: "name the session (its file path or id)" }, 400);
+    const { getSessionSummary, listSessions } = await import("../sessions-index");
+    const s = isAbsolute(raw) ? await getSessionSummary(raw).catch(() => null) : raw.length <= 200 ? ((await listSessions().catch(() => [])).find((x) => x.id === raw) ?? null) : null;
+    if (!s) return c.json({ error: "No such session (name it by its file path or id)" }, 404);
+    const id = s.id;
+    const { mergeCardsOf } = await import("./wire");
+    return c.json({ cards: mergeCardsOf(id) });
+  });
+}

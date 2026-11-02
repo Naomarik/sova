@@ -107,7 +107,8 @@ installVisOwnKindsHook();
 
 /** The offer note in this process (a chat the server hosts itself: tests). */
 const offerNoteHere = async (sessionId: string): Promise<string | null> => (await import("./session-offers")).offerNoteFor(sessionId);
-const cardNoteHere = async (sessionId: string, since: string | null): Promise<string | null> => (await import("./transcript-cards")).cardNoteFor(sessionId, since);
+const cardNoteHere = async (sessionId: string, since: string | null): Promise<string | null> =>
+  (await import("./merge-queue/card-note")).withMergeCardNote((await import("./transcript-cards")).cardNoteFor(sessionId, since), sessionId, since);
 import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";

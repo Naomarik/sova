@@ -493,6 +493,17 @@ export const SESSION_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "session.merge-cards",
+    label: "Merge Queue Cards",
+    summary: "A chat's merge queue cards: one per branch it approved, with each copy's place in the chat.",
+    effect: "looks",
+    params: { session: session("query", "path") },
+    route: { method: "GET", path: "/api/merge-queue/cards" },
+    sessionKey: "path",
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
     id: "session.card.answer",
     label: "Answer Card",
     summary: "Answer an open transcript card as a press on it would: {option}, {button} or {items}.",

@@ -66,6 +66,7 @@
     "GET /api/links/:id/thread": {"need":"sessions","is":"pending"},
     "GET /api/memory": {"need":"sessions","is":"pending"},
     "GET /api/memory/open": {"need":"sessions","is":"pending"},
+    "GET /api/merge-queue/cards": {"need":"sessions","is":"command","ids":["session.merge-cards"]},
     "GET /api/mesh": {"need":"full","is":"pending"},
     "GET /api/mesh/access": {"need":"full","is":"pending"},
     "GET /api/mesh/candidates": {"need":"full","is":"pending"},

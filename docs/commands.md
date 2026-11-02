@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 497 |
-| Routes a catalogue entry points at | 126 |
-| Catalogue entries | 170 |
+| Routes registered | 498 |
+| Routes a catalogue entry points at | 127 |
+| Catalogue entries | 171 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -73,6 +73,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.offers.unsnooze` | Offer Again | changes | `POST /api/session-offers/unsnooze` | admin |
 | `session.card.post` | Raise Card | changes | `POST /api/session-cards/post` | admin |
 | `session.card.get` | Session Cards | looks | `GET /api/session-cards` | sessions |
+| `session.merge-cards` | Merge Queue Cards | looks | `GET /api/merge-queue/cards` | sessions |
 | `session.card.answer` | Answer Card | changes | `POST /api/session-cards/answer` | admin |
 | `project.verb.create` | Project create | changes | `POST /api/project-services/create` | admin |
 | `project.verb.up` | Project up | changes | `POST /api/project-services/up` | admin |
@@ -681,6 +682,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `GET /api/insights/usage` | sessions | `insights.usage` |
 | `GET /api/insights/usage/history` | sessions | `insights.usage.history` |
 | `GET /api/insights/worktrees` | sessions | `insights.worktrees` |
+| `GET /api/merge-queue/cards` | sessions | `session.merge-cards` |
 | `GET /api/mode` | sessions | `session.mode.get` |
 | `POST /api/mode` | sessions | `session.mode.set` |
 | `POST /api/mode/command` | full | `chat.mode-command` |

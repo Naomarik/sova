@@ -164,7 +164,8 @@ export function makeKit(o: { repo?: Repo; deps?: Partial<QueueDeps>; threadAnswe
     runMerge: run.run,
     checksOf: () => o.checks ?? "declared",
     definitionAt: async () => ({ def: DEF, error: null }),
-    notify: (kind, e) => notices.push({ kind, branch: e.branch, ...(e.session ? { session: e.session } : {}) }),
+    // "approved" raises the chat's card (cards.test.ts); the notices here are what reaches the chat after it.
+    notify: (kind, e) => void (kind !== "approved" && notices.push({ kind, branch: e.branch, ...(e.session ? { session: e.session } : {}) })),
     thread: (ev) => {
       thread.push(ev);
       return o.threadAnswers ?? false;

@@ -40,6 +40,7 @@ export type CommandId =
   | "session.offers.unsnooze"
   | "session.card.post"
   | "session.card.get"
+  | "session.merge-cards"
   | "session.card.answer"
   | "project.verb.create"
   | "project.verb.up"
@@ -430,6 +431,11 @@ export interface CommandParams {
   };
   /** A session's transcript cards, their data and their answers, and the card types it may raise. (only looks; needs the card's owner trusted) */
   "session.card.get": {
+    /** The session, by id or by path */
+    "session"?: string;
+  };
+  /** A chat's merge queue cards: one per branch it approved, with each copy's place in the chat. (only looks; needs the card's owner trusted) */
+  "session.merge-cards": {
     /** The session, by id or by path */
     "session"?: string;
   };
@@ -2550,6 +2556,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.offers.unsnooze": "changes",
   "session.card.post": "changes",
   "session.card.get": "looks",
+  "session.merge-cards": "looks",
   "session.card.answer": "changes",
   "project.verb.create": "changes",
   "project.verb.up": "changes",

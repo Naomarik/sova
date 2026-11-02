@@ -5,7 +5,8 @@ import { stateRoot } from "../state-root";
 import type { MergeQueueView, WorktreeMergeProject, WorktreeMergeStats, WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { RunMerge, ThreadEvent, WakeThread } from "./contract";
 import { startIngest } from "./ingest";
-import { notifier } from "./notices";
+import { setMergeCardNoteSource } from "./card-note";
+import { MergeCards } from "./cards";
 import { MergeQueues } from "./queue";
 import { merger, recordedRoots } from "./routes";
 import { countBetween, realGit, revParse } from "./guard";
@@ -32,6 +33,22 @@ export async function worktreeQueueOf(path: string, branch: string): Promise<Row
   }
 }
 let ingest: { poke(): void; stop(): void } | null = null;
+let cards: MergeCards | null = null;
+
+/** A chat's merge queue cards (server/merge-queue/cards.ts); [] while the queue isn't started. */
+export function mergeCardsOf(session: string): import("../../shared/merge-queue").MergeCard[] {
+  return cards?.cardsOf(session) ?? [];
+}
+
+/** The merge queue's hidden lines for a chat's next turn since its last card note; null: none. */
+export function mergeCardNote(session: string, since: string | null): string | null {
+  return cards?.noteFor(session, since) ?? null;
+}
+
+/** Tests only: stand a cards store in for the server's (null: none). */
+export function setMergeCardsForTest(c: MergeCards | null): void {
+  cards = c;
+}
 
 export function mergeQueues(): MergeQueues | null {
   return queues;
@@ -131,14 +148,44 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
     keeper.notify(ev.root, mapped as Parameters<typeof keeper.notify>[1]);
     return true;
   };
+  const sessionPath = async (session: string): Promise<string | null> => {
+    const { listSessions } = await import("../sessions-index");
+    return (await listSessions()).find((x) => x.id === session)?.path ?? null;
+  };
+  const mc = new MergeCards({
+    dir: join(base, "cards"),
+    lastEntry: async (session) => {
+      const path = await sessionPath(session);
+      if (!path) return null;
+      return (await import("../transcript-cards")).lastRowEntry(path);
+    },
+    // A hand-back's wake: a normal message (queued after a turn in flight), its text marked as the queue's.
+    wake: sendTo,
+    publish: (session, list) => publishFeed({ type: "merge_cards", session, cards: list }),
+    log: (line) => console.warn(line),
+  });
+  cards = mc;
+  setMergeCardNoteSource((session, since) => mc.noteFor(session, since));
+  const cardsDo = (p: Promise<void>) => void p.catch((err) => console.warn(`[merge-queue] card: ${err instanceof Error ? err.stack : err}`));
   queues = new MergeQueues({
     base,
     runMerge,
     checksOf: checks.checksOf,
     definitionAt: (root, ref) => definitionAt(root, ref),
     projectIdOf,
-    publish: (view: MergeQueueView) => publishFeed({ type: "merge_queue", project: view.project, view }),
-    notify: notifier({ send: sendTo }),
+    publish: (view: MergeQueueView) => {
+      publishFeed({ type: "merge_queue", project: view.project, view });
+      cardsDo(mc.sync(view));
+    },
+    // The branch's card in its own chat: raised at the approval, a revision at each outcome (cards.ts).
+    notify: (kind, e, extra) => cardsDo(kind === "approved" ? mc.approved(e, extra.root) : mc.outcome(kind, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root })),
+    ownerOf: async (_root, _branch, worktree) => {
+      // Land from the Merge Queue tab names no chat: the newest chat working in the branch's worktree.
+      if (!worktree) return null;
+      const { listSessions } = await import("../sessions-index");
+      const inside = (await listSessions()).filter((x) => !x.archived && (x.cwd === worktree || x.cwd.startsWith(`${worktree}/`)));
+      return inside.sort((a, b) => (Date.parse(b.lastActiveAt) || 0) - (Date.parse(a.lastActiveAt) || 0))[0]?.id ?? null;
+    },
     thread,
     draftsHash: (dir) => draftsHash(dir),
     threadOf: (root) => (threadMod as { threadOf?: (r: string) => { session: string; startedAt: string } | null }).threadOf?.(root) ?? null,
@@ -177,12 +224,15 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
       return [...new Set([...roots, ...recordedRoots(base)])];
     },
     queue: (root) => q.get(root),
-    refused: (session, text) => void sendTo(session, text).catch(() => {}),
+    // A typed "land it" that couldn't be queued: the chat's model hears it at its next turn (no message is sent).
+    refused: (session, text) => mc.addLine(session, `refused:${Date.now()}`, text),
   });
 }
 
 export async function stopMergeQueue(): Promise<void> {
   rowsOf = null;
+  cards = null;
+  setMergeCardNoteSource(null);
   ingest?.stop();
   ingest = null;
   await queues?.stop();

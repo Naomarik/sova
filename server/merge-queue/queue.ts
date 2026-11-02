@@ -64,6 +64,8 @@ export interface QueueDeps {
   notify?: (kind: MergeNoticeKind, entry: MergeEntry, extra: { run?: MergeRun; root: string; logDir?: string }) => void;
   /** Wake the merge thread; false: none was asked. */
   thread?: WakeThread;
+  /** The chat that owns a branch, when the approval named none (Land on the Merge Queue tab); null: no known chat. */
+  ownerOf?: (root: string, branch: string, worktree: string | undefined) => Promise<string | null>;
   /** The worktree's spec drafts hash (server/spec-drafts-state.ts draftsHash). */
   draftsHash?: (dir: string) => { hash: string; names: string[]; each?: Record<string, string> } | undefined;
   now?: () => number;
@@ -347,6 +349,12 @@ export class ProjectQueue {
         if (st.code === 0 && n) throw new MergeFailure("invalid-request", `${branch} has ${n} uncommitted file${n === 1 ? "" : "s"} in ${wt}: Land is for a commit; commit or remove them first`);
       }
       const drafts = !req.withoutSpecs && wt ? await this.branchDrafts(wt, commit) : undefined;
+      // No chat named: the branch's earlier entry's, else the chat working in its worktree; none known, no card.
+      if (!req.session) {
+        const earlier = [...this.q.entries].reverse().find((x) => x.branch === branch && x.session)?.session;
+        const owner = earlier ?? (await this.deps.ownerOf?.(this.root, branch, wt).catch(() => null)) ?? undefined;
+        if (owner) req = { ...req, session: owner };
+      }
       const approval: MergeApproval = {
         by: req.by,
         at: req.at ?? this.iso(),
@@ -369,6 +377,7 @@ export class ProjectQueue {
           delete open.reason;
           this.save();
           this.wake("queued", open);
+          this.deps.notify?.("approved", this.withPosition(open), { root: this.root });
           return { entry: this.withPosition(open), changed: true };
         }
         if (open.state === "checking" && this.current?.entry === open.id) {
@@ -405,6 +414,7 @@ export class ProjectQueue {
       if (open && this.current?.entry === open.id) this.toFront(e);
       this.save();
       this.wake("queued", e);
+      this.deps.notify?.("approved", this.withPosition(e), { root: this.root });
       this.kickSoon();
       return { entry: this.withPosition(e), changed: true };
     });

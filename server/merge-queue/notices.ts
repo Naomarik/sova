@@ -2,20 +2,22 @@ import { join } from "node:path";
 import { type MergeEntry, type MergeRun, newerWords } from "../../shared/merge-queue";
 
 /**
- * What the queue tells a branch's own chat, as Sova's message (session.send): its landing, a hand-back (a failure
- * that is the branch's, a conflict sent back, the user's Send Back), or that its drafts changed since the approval.
+ * The words of what the queue tells a branch's own chat (server/merge-queue/cards.ts: its card, its hidden line, the
+ * wake of a hand-back): its landing, a hand-back (a failure that is the branch's, a conflict sent back, the user's
+ * Send Back), or that its drafts changed since the approval.
  * Machine / setup / reviewer failures and master's own reds are never sent to a branch. No word about restarting or
  * anything "live": the landing's note (the merge thread's) says what matters after it.
  */
 
-export type MergeNoticeKind = "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained";
+/** `approved`: Land or a typed "land it" put the branch in line (its chat's card appears). */
+export type MergeNoticeKind = "approved" | "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained";
 
 const short = (sha: string | undefined) => (sha ?? "").slice(0, 7);
 
 export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: MergeRun; logDir?: string } = {}): string {
   switch (kind) {
     case "landed": {
-      const lines = [`Sova: ${e.branch} landed on ${e.target} at ${short(e.landed?.sha)} (the commit you approved, ${short(e.commit)}).`];
+      const lines = [`${e.branch} landed on ${e.target} at ${short(e.landed?.sha)} (the commit you approved, ${short(e.commit)}).`];
       const newer = newerWords(e.newerCommits);
       if (newer) lines.push(`${newer[0]!.toUpperCase()}${newer.slice(1)}: Land again to bring ${e.newerCommits === 1 ? "it" : "them"} in.`);
       const thread = e.notes.find((n) => n.kind === "thread" || n.kind === "operator");
@@ -27,7 +29,7 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
     case "needs-fix": {
       const run = extra.run;
       const failed = run?.steps.filter((s) => s.result === "failed") ?? [];
-      const lines = [`Sova: ${e.branch} didn't land: ${e.reason ?? "a check failed with your branch"}.`];
+      const lines = [`${e.branch} didn't land: ${e.reason ?? "a check failed with your branch"}.`];
       if (failed.length) {
         for (const s of failed.slice(0, 4)) {
           const f = s.failures?.filter((x) => x.blame === "branch" || !x.blame).slice(0, 3) ?? [];
@@ -40,7 +42,7 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
       return lines.join("\n");
     }
     case "sent-back": {
-      const lines = [`Sova: the user sent ${e.branch} back: ${e.reason ?? "it needs another look"}.`];
+      const lines = [`The user sent ${e.branch} back: ${e.reason ?? "it needs another look"}.`];
       if (e.conflict) {
         lines.push(`${e.target}'s side: ${e.conflict.ours}`, `This branch's side: ${e.conflict.theirs}`, `Proposed: ${e.conflict.proposal}`);
         lines.push(`Merge ${e.target} into ${e.branch}, resolve it the way the user wants, commit, and ask them to land it again.`);
@@ -50,29 +52,11 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
     }
     case "explained": {
       const n = e.notes.find((x) => x.kind === "thread");
-      return `Sova (merge thread) on why ${e.branch} didn't land: ${n?.text ?? e.reason ?? ""}`;
+      return `The merge thread on why ${e.branch} didn't land: ${n?.text ?? e.reason ?? ""}`;
     }
+    case "approved":
+      return `${e.branch} at ${short(e.commit)} is in line to land on ${e.target}.`;
     case "drafts-changed":
-      return `Sova: ${e.branch}'s spec drafts changed since the user approved it at ${short(e.commit)}, so it waits: the user lands it again once the drafts are as they want them.`;
+      return `${e.branch}'s spec drafts changed since the user approved it at ${short(e.commit)}, so it waits: the user lands it again once the drafts are as they want them.`;
   }
-}
-
-export interface NoticeDeps {
-  /** Send Sova's message to the session (by id). Throws when not sent. */
-  send(session: string, text: string): Promise<void>;
-  log?: (line: string) => void;
-}
-
-/** The queue's `notify`: one message per kind per entry (and run), to the branch's own chat when it is known. */
-export function notifier(deps: NoticeDeps): (kind: MergeNoticeKind, e: MergeEntry, extra: { run?: MergeRun; root: string; logDir?: string }) => void {
-  const sent = new Set<string>();
-  return (kind, e, extra) => {
-    if (!e.session) return;
-    const key = `${e.id}:${kind}:${extra.run?.id ?? ""}${kind === "explained" ? `:${e.notes.find((n) => n.kind === "thread")?.text ?? ""}` : ""}`;
-    if (sent.has(key)) return;
-    sent.add(key);
-    if (sent.size > 2000) sent.clear();
-    const text = noticeText(kind, e, extra);
-    void deps.send(e.session, text).catch((err) => (deps.log ?? console.warn)(`[merge-queue] notice to ${e.session} not sent: ${err instanceof Error ? err.message : err}`));
-  };
 }

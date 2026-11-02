@@ -170,7 +170,8 @@
     "project.verb.merge.answer",
     "project.verb.merge.review",
     "project.verb.merge.retry",
-    "project.verb.merge.setup"
+    "project.verb.merge.setup",
+    "session.merge-cards"
   ],
   "retired": [
     "settings.agents.get"

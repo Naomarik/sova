@@ -80,7 +80,7 @@ export async function ingestOnce(deps: IngestDeps): Promise<string[]> {
     const root = await projectOfGoAhead(git, roots, g);
     if (!root) {
       did.push(`typed go-ahead for ${g.branch} at ${g.commit.slice(0, 7)}: no project holds it`);
-      if (g.session) deps.refused?.(g.session, `Sova: ${g.branch} at ${g.commit.slice(0, 7)} couldn't be queued to land: no project Sova serves holds that branch at that commit.`);
+      if (g.session) deps.refused?.(g.session, `${g.branch} at ${g.commit.slice(0, 7)} couldn't be queued to land: no project Sova serves holds that branch at that commit.`);
       continue;
     }
     try {
@@ -98,7 +98,7 @@ export async function ingestOnce(deps: IngestDeps): Promise<string[]> {
     } catch (err) {
       const why = err instanceof Error ? err.message : String(err);
       did.push(`typed go-ahead for ${g.branch} refused: ${why}`);
-      if (g.session && err instanceof MergeFailure) deps.refused?.(g.session, `Sova: ${g.branch} at ${g.commit.slice(0, 7)} couldn't be queued to land: ${why}.`);
+      if (g.session && err instanceof MergeFailure) deps.refused?.(g.session, `${g.branch} at ${g.commit.slice(0, 7)} couldn't be queued to land: ${why}.`);
     }
   }
   return did;

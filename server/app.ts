@@ -29,6 +29,7 @@ import { registerTranscriptCardRoutes } from "./transcript-cards-routes";
 import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
+import { registerMergeCardRoutes } from "./merge-queue/routes";
 import { registerServicesViewRoutes } from "./project-services/view-routes";
 import { serverStart } from "./project-services/self-host";
 import { registerDecisionRoutes } from "./decisions-routes";
@@ -412,6 +413,8 @@ export function buildApp(deps: AppDeps) {
   registerProjectRoutes(app);
   // Project services: the verbs over a project's .sova/project.json (server/project-services/; §app/project-services).
   registerProjectServiceRoutes(app);
+  // A chat's merge queue cards (server/merge-queue/cards.ts; §chat.merge-queue/card).
+  registerMergeCardRoutes(app);
   registerServicesViewRoutes(app);
   // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
   registerDecisionRoutes(app);

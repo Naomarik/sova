@@ -1,7 +1,8 @@
 /**
  * The review step: a fresh read-only reviewer per run reads exactly the commit being checked, with the project's
  * review kit (a skill-shaped folder the definition names; never loaded into ordinary chats), while the checks run.
- * It answers through the verb merge.review {run, verdict, text}, which the queue hands to `deliverReview`. Its error
+ * It answers through the verb merge.review {run, verdict, text}, which the queue hands to `deliverReview` (or, when
+ * nothing waits here, to the run's `awaitReview`; either answer counts). Its error
  * or a timeout is retried once with a fresh reviewer, then reported as the reviewer's failure (the queue pauses; the
  * branch is never blamed).
  */
@@ -80,7 +81,7 @@ export function reviewerText(o: Omit<ReviewerStart, "text" | "attempt">, target 
  * Never throws.
  */
 export async function reviewStep(
-  o: Omit<ReviewerStart, "text" | "attempt"> & { log: (s: string) => void; signal: AbortSignal; target?: string },
+  o: Omit<ReviewerStart, "text" | "attempt"> & { log: (s: string) => void; signal: AbortSignal; target?: string; awaitReview?: () => Promise<ReviewVerdict> },
   deps: ReviewDeps = {},
 ): Promise<{ ok: true; verdict: ReviewVerdict } | { ok: false; why: string }> {
   const start = deps.startReviewer ?? starter;
@@ -101,8 +102,13 @@ export async function reviewStep(
       onAbort = () => resolve({ failed: "aborted" });
       o.signal.addEventListener("abort", onAbort, { once: true });
     });
-    // Waiting before the reviewer exists: a fast answer is never lost.
+    // Waiting before the reviewer exists: a fast answer is never lost. The queue's own waiter (merge.review when this
+    // map has none) answers too.
     waiting.set(o.runId, w);
+    o.awaitReview?.().then(
+      (v) => w.resolve({ verdict: v.verdict, ...(v.text ? { text: v.text } : {}) }),
+      () => undefined,
+    );
     try {
       o.log(`starting reviewer ${attempt} of ${attempts}\n`);
       handle = await start({ ...o, text, attempt });

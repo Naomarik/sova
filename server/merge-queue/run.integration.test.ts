@@ -23,7 +23,7 @@ const fixture = (o: ConstructorParameters<typeof Fixture>[0] = {}) => {
 };
 
 let n = 0;
-async function run(fx: Fixture, br: { branch: string; commit: string; checkout?: string }, o: { deps?: RunDeps; resolution?: string; drafts?: boolean; review?: boolean; picks?: RunInput["picks"]; signal?: AbortSignal } = {}) {
+async function run(fx: Fixture, br: { branch: string; commit: string; checkout?: string }, o: { deps?: RunDeps; resolution?: string; drafts?: boolean; review?: boolean; picks?: RunInput["picks"]; signal?: AbortSignal; awaitReview?: RunInput["awaitReview"] } = {}) {
   const runId = `mr_t${++n}`;
   const runDir = join(fx.root, "runs", runId);
   mkdirSync(runDir, { recursive: true });
@@ -47,7 +47,7 @@ async function run(fx: Fixture, br: { branch: string; commit: string; checkout?:
     review: !!o.review,
     signal: o.signal ?? new AbortController().signal,
     // The review answers through deliverReview here (review-step.ts), never the queue's own waiter.
-    awaitReview: () => new Promise(() => {}),
+    awaitReview: o.awaitReview ?? (() => new Promise(() => {})),
   };
   const out: RunOutcome = await makeRunMerge({ specCore: join(REPO_ROOT, "pi-config/extensions/spec/core"), ...o.deps })(input, {
     step: (s) => {
@@ -163,7 +163,16 @@ describe("a merge run", () => {
     const br2 = fx2.branch("breaks-setup", { "setup.conf": "broken\n" });
     const r2 = await run(fx2, br2);
     expect(r2.out).toMatchObject({ verdict: "failed", blame: "branch" });
-    expect(r2.out.why).toMatch(/setup \(prep\) fails with your branch and passes on master alone \(log: logs\/\d+-setup_prep\.log\)/);
+    expect(r2.out.why).toMatch(/setup \(prep\) fails with your branch and passes on master alone \(log: logs\/\d+-rerun-tip_setup_prep\.log\)/);
+  });
+
+  test("setup that fails once (a blip) passes on a rerun on the merge: noted flaky, nobody blamed, the run goes on", async () => {
+    const fx = fixture();
+    const r = await run(fx, fx.branch("blip", { "setup.conf": "broken-once\n" }));
+    expect(r.out.verdict).toBe("passed");
+    expect(r.out.notes.find((x) => x.kind === "flaky")!.text).toContain("setup (prep)");
+    expect(r.steps.get("rerun-tip:setup:prep")).toMatchObject({ result: "passed" });
+    expect(r.order).not.toContain("rerun-master:setup:prep");
   });
 
   test("a dependency change runs the offline install; one that can't install is the branch's", async () => {
@@ -271,6 +280,10 @@ describe("a merge run", () => {
     const crash = await run(fx, fx.branch("r-crash", { "review.conf": "crash\n" }), { review: true, deps });
     expect(crash.out).toMatchObject({ verdict: "machine", blame: "reviewer" });
     expect(crash.log("review")).toContain("starting reviewer 2 of 2");
+    // The queue's own waiter answers too (merge.review when nothing waits in review-step).
+    const viaQueue: StartReviewer = async (o) => ({ sessionId: `q-${o.attempt}`, stop: async () => {} });
+    const q = await run(fx, fx.branch("r-queue", { "src/app.txt": "q\n" }), { review: true, deps: { startReviewer: viaQueue, reviewTimeoutMs: 10_000 }, awaitReview: async () => ({ verdict: "notes", text: "via the queue", commit: "x", at: "y" }) });
+    expect(q.out.notes.find((x) => x.kind === "review")!.text).toBe("via the queue");
     // A branch the checks blame: its own failure wins; the review is never waited on.
     const red = await run(fx, fx.branch("r-red", { "tests/a.txt": "fail\n", "review.conf": "ok\n" }), { review: true, deps });
     expect(red.out).toMatchObject({ verdict: "failed", blame: "branch" });

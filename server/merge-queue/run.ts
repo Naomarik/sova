@@ -281,12 +281,18 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     return out({ verdict: "failed", blame: input.resolution ? "resolution" : "branch", why: `${what} fails with your branch and passes on ${target} alone (log: ${failedStep.log})`, copy, mergeSha });
   };
 
-  // 3. setup
+  // 3. setup: a failure runs again on the merge first (a network blip is nobody's), then on the target alone.
   const failed = await runSetup({ def, scope, steps, idPrefix: "setup:", labelPrefix: "Setup: ", kind: "setup", signal });
   if (signal.aborted) return voided("aborted");
   if (failed) {
     if (failed.timedOut) return voided(`setup ${failed.failed.id} timed out`);
-    return setupBlame(`setup (${failed.failed.id})`, failed.step);
+    const again = await runSetup({ def, scope, steps, idPrefix: "rerun-tip:setup:", labelPrefix: "Setup again: ", kind: "rerun-tip", fresh: true, signal });
+    if (signal.aborted) return voided("aborted");
+    if (again) {
+      if (again.timedOut) return voided(`setup ${again.failed.id} timed out`);
+      return setupBlame(`setup (${again.failed.id})`, again.step);
+    }
+    notes.push({ kind: "flaky", text: `setup (${failed.failed.id}) failed, then passed on a rerun (not blocking)`, at: now() });
   }
 
   // 4. install, when the branch changes what it reads
@@ -460,7 +466,7 @@ function startReview(o: { input: RunInput; copy: string; tip: string; steps: Ste
       st.end("skipped", { detail: kit ? `no review kit at ${kit} on ${o.input.project.target}` : "no review kit declared" });
       return { ok: true as const, verdict: { verdict: "ok" as const, commit: o.tip, at: now(), text: "no review kit" } };
     }
-    const r = await reviewStep({ runId: o.input.runId, projectId: o.input.project.id, root: o.input.project.root, copy: o.copy, base: o.input.base, commit: o.tip, branch: o.input.entry.branch, kit, target: o.input.project.target, log: st.log, signal: ctl.signal }, o.deps);
+    const r = await reviewStep({ awaitReview: o.input.awaitReview, runId: o.input.runId, projectId: o.input.project.id, root: o.input.project.root, copy: o.copy, base: o.input.base, commit: o.tip, branch: o.input.entry.branch, kit, target: o.input.project.target, log: st.log, signal: ctl.signal }, o.deps);
     if (r.ok) st.end(r.verdict.verdict === "blocking" ? "failed" : "passed", { detail: `${r.verdict.verdict}${r.verdict.text ? `: ${r.verdict.text.slice(0, 200)}` : ""}` });
     else st.end("failed", { detail: r.why });
     return r;

@@ -316,9 +316,9 @@ function standInModel(root: string, map: string, calls: VerbCall[]) {
     if (c) {
       const [, id, branch, , target] = c;
       const side = join(root, "..", `resolve-${id}`);
-      git(root, "worktree", "add", "-q", "--detach", side, branch!);
+      git(root, "worktree", "add", "-q", "--detach", side, target!);
       try {
-        git(side, "merge", "--no-ff", "--no-commit", target!);
+        git(side, "merge", "--no-ff", "--no-commit", branch!);
       } catch {
         /* stops on the conflict, as the playbook expects */
       }
@@ -394,7 +394,7 @@ test("blast radius: a branch touching statecharts gets the statecharts check pic
   assert.deepEqual(calls.filter((c) => c.verb === "merge.note").map((c) => c.args.entry), ["mq_charts", "mq_docs"]);
 });
 
-test("conflicts: both sides adding items is resolved as no behaviour change with a side commit on the pinned commit and the target; one value changed two ways waits for the user", async () => {
+test("conflicts: both sides adding items is resolved as no behaviour change with a side commit on the target and the pinned commit; one value changed two ways waits for the user", async () => {
   const dir = scratchRoot("mq-thread-conflict-");
   const r = repo(dir);
   commitFile(r, "list.txt", "alpha\nomega\n", "base");
@@ -413,8 +413,8 @@ test("conflicts: both sides adding items is resolved as no behaviour change with
   assert.equal(ok.verb, "merge.resolve");
   assert.equal(ok.args.verdict, "no-behaviour-change");
   const commit = String(ok.args.commit);
-  assert.deepEqual(git(r, "rev-list", "--parents", "-n1", commit).split(" ").slice(1), [pinned, targetHead], "parents: the pinned commit and the target");
-  assert.equal(git(r, "show", `${commit}:list.txt`), "alpha\nbeta\ngamma\nomega");
+  assert.deepEqual(git(r, "rev-list", "--parents", "-n1", commit).split(" ").slice(1), [targetHead, pinned], "parents: the target first, the pinned commit second (what conflicts.ts checks)");
+  assert.equal(git(r, "show", `${commit}:list.txt`), "alpha\ngamma\nbeta\nomega");
   assert.match(String(ok.args.note), /Resolved a conflict in list\.txt/);
   assert.equal(git(r, "rev-parse", "master"), targetHead, "the target never moves");
 

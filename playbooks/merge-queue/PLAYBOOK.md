@@ -20,7 +20,7 @@ Only the merge verbs, through the project verbs tool, plus reading:
 | `merge.extend {entry, checks: [id], why, select?}` | add optional checks beyond the required floor, with their reason; add only. One call per reason |
 | `merge.resolve {entry, verdict, files, ours, theirs, proposal, commit?, note?}` | your judgement of a conflict: `no-behaviour-change` with your resolution commit, or `behaviour-differs` for the user to decide |
 
-Every one of them takes an optional `note`. In `merge.resolve`, `ours` is always **the target's side** and `theirs` **the branch's side**, whatever git calls them in your side worktree.
+Every one of them takes an optional `note`. In `merge.resolve`, `ours` is always **the target's side** and `theirs` **the branch's side**, as git calls them in your side worktree (it starts from the target and merges the branch in).
 
 You may read anything (`git log`, `git diff`, `git show`, files) and run this folder's scripts. You may create one side worktree to resolve a conflict in (`worktree create`), and commit there. `scripts/discover-names.mjs` writes the project's private-names file, only in the names interview. You never: move or commit on the target branch; run git that writes in the main checkout (merge, reset, checkout, update-ref, push); call `worktree merge` or `worktree land`; resume a paused queue; tell anyone to restart anything; message other chats.
 

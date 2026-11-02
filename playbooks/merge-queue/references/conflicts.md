@@ -3,9 +3,9 @@
 Sova tells you an entry conflicts with the target and names the files. Nothing has merged; the entry waits. Your job is one judgement per conflict: **does resolving it change what either side does?**
 
 ## 1. See both sides
-1. `worktree create` a side worktree named `resolve-<entry id>` at the entry's pinned commit (never the branch's newer head).
-2. In it: `git merge --no-ff --no-commit <target>`. Git stops on the conflicts.
-3. `node <this playbook>/scripts/conflict-hunks.mjs --repo <side worktree>` prints each conflicted hunk: file, lines, the base, ours (the branch) and theirs (the target), with diff3 context.
+1. `worktree create` a side worktree named `resolve-<entry id>` detached at the target's head (`git rev-parse <target>`); never on the target branch itself.
+2. In it: `git merge --no-ff --no-commit <pinned commit>` (the entry's approved commit, never the branch's newer head), as the merge copy does. Git stops on the conflicts.
+3. `node <this playbook>/scripts/conflict-hunks.mjs --repo <side worktree>` prints each conflicted hunk: file, lines, the base, ours (the target) and theirs (the branch), with diff3 context.
 
 ## 2. Judge each hunk
 **No behaviour change** (resolve it yourself) when every hunk is one of these:
@@ -25,7 +25,7 @@ A resolution must also pass Sova's mechanical rule: the result differs from the 
 
 ## 3a. No behaviour change: resolve
 1. Edit each conflicted file to keep both sides, inside the hunks only. Remove every marker.
-2. `git add` those files and `git commit --no-edit` in the side worktree. The commit's parents must be the pinned commit and the target's commit you merged.
+2. `git add` those files and `git commit --no-edit` in the side worktree. The commit's parents are then the target's commit (first) and the pinned commit (second): exactly what Sova checks (first parent on the target, second the approved commit).
 3. Run the cheapest relevant check there if the project has one (typecheck, say): a resolution that doesn't even compile is not "no behaviour change".
 4. `merge.resolve {entry, verdict: "no-behaviour-change", files, ours, theirs, proposal, commit: <the side commit>, note}`:
    - `ours`: what the target's side did, in plain words; `theirs`: what the branch's side did;

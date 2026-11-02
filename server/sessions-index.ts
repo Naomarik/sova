@@ -991,6 +991,10 @@ export function listSessions(): Promise<SessionSummary[]> {
 /** How often the tracked listing reads every folder and stats every file anyway: the net for a
     change no watch event told of. */
 export const SWEEP_MS = 5 * 60_000;
+/** How often the tracked listing stats every file it knows (no folder read) and re-reads those whose
+    mtime or size moved: the net for a write whose watch event was lost (Bun's watch drops a second
+    event that follows the first within a few ms), at the feed's safety-net pace. */
+export const STAT_SWEEP_MS = 60_000;
 
 /**
  * The session feed's file tracker: while a watch reports which session files changed
@@ -998,7 +1002,7 @@ export const SWEEP_MS = 5 * 60_000;
  * file set and cached summaries and reads only the files named since its last build. `all`: the
  * watch could not say (or nothing is known yet), so the next build reads every folder.
  */
-const tracker = { active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, chain: Promise.resolve() as Promise<unknown> };
+const tracker = { active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, statAt: 0, chain: Promise.resolve() as Promise<unknown> };
 
 /** Start tracking (the feed's watch starts it with itself); returns the note sink and its stop. */
 export function trackSessionFiles(): { note: (path: string | null) => void; stop: () => void } {
@@ -1024,13 +1028,14 @@ export function trackSessionFiles(): { note: (path: string | null) => void; stop
 }
 
 /** Builds the tracked listing has run, and how many were full (tests, measurement). */
-export const trackedStats = { builds: 0, full: 0, lastDirty: 0 };
+export const trackedStats = { builds: 0, full: 0, statSweeps: 0, lastDirty: 0 };
 
 /**
  * listSessions for the session feed: the same rows (a full build gives the same list), but while a
  * tracker runs only the files a watch named since the last build are stat'ed and read; every other
  * file's cached summary stands. A full build runs when nothing is known yet, when the watch could
- * not say what changed, and at least every SWEEP_MS. Without a tracker it is listSessions. Builds
+ * not say what changed, and at least every SWEEP_MS; every STAT_SWEEP_MS each known file is
+ * stat'ed and re-read only if it moved. Without a tracker it is listSessions. Builds
  * run one at a time; never shares listSessions' reuse window.
  */
 export function listSessionsTracked(): Promise<SessionSummary[]> {
@@ -1050,6 +1055,7 @@ async function buildTracked(): Promise<SessionSummary[]> {
   if (full) {
     tracker.all = false;
     tracker.sweptAt = now;
+    tracker.statAt = now;
     trackedStats.full++;
     try {
       const b = await buildSessions();
@@ -1060,8 +1066,13 @@ async function buildTracked(): Promise<SessionSummary[]> {
       throw err;
     }
   }
-  trackedStats.lastDirty = dirty.size;
   try {
+    if (now - tracker.statAt >= STAT_SWEEP_MS || now < tracker.statAt) {
+      tracker.statAt = now;
+      trackedStats.statSweeps++;
+      await addMoved(tracker.files!, dirty);
+    }
+    trackedStats.lastDirty = dirty.size;
     const files = await trackedFiles(tracker.files!, dirty);
     const b = await buildSessions({ files, dirty });
     if (tracker.active > 0 && !tracker.all) tracker.files = b.files;
@@ -1070,6 +1081,20 @@ async function buildTracked(): Promise<SessionSummary[]> {
     tracker.all = true;
     throw err;
   }
+}
+
+/** Adds to `dirty` each of `files` whose stat no longer matches its cached summary (or that has
+    none, or is gone). */
+async function addMoved(files: readonly string[], dirty: Set<string>): Promise<void> {
+  await Promise.all(
+    files.map(async (p) => {
+      if (dirty.has(p)) return;
+      listIo.stats++;
+      const st = await stat(p).catch(() => null);
+      const hit = cache.get(p);
+      if (!st || !hit || hit.mtimeMs !== st.mtimeMs || hit.size !== st.size) dirty.add(p);
+    }),
+  );
 }
 
 /** The last file set with each named path added (a listable session file now) or dropped (gone,

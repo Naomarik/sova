@@ -143,3 +143,25 @@ test("an incremental build with one named file stats two paths for it (watch pat
     t.stop();
   }
 });
+
+test("a write no watch reported is read within STAT_SWEEP_MS, without a folder read", async () => {
+  const { STAT_SWEEP_MS } = await import("./sessions-index");
+  const a = session("lost event");
+  const t = trackSessionFiles();
+  const realNow = Date.now;
+  try {
+    await listSessionsTracked();
+    appendFileSync(a, `${assistant("unreported")}\n`);
+    stamp(a);
+    const full = trackedStats.full;
+    const base = realNow();
+    Date.now = () => base + STAT_SWEEP_MS + 1;
+    const rows = await listSessionsTracked();
+    Date.now = realNow;
+    assert.equal(trackedStats.full, full, "a stat pass, not a full build");
+    assert.deepEqual(rows, await fresh());
+  } finally {
+    Date.now = realNow;
+    t.stop();
+  }
+});

@@ -1032,11 +1032,22 @@ describe("setting up the checks", () => {
   });
 });
 
+/** Whether `ref` has `commit` in its history. */
+const contains = (root: string, ref: string, commit: string): boolean => {
+  try {
+    sh(root, "merge-base", "--is-ancestor", commit, ref);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 describe("an invalid definition", () => {
   test("is said, never read as Not set up: merge.add refuses with the parser's path and message, the view carries it, a line with entries pauses; once fixed, resume runs", async () => {
     const ERR = '$.merge.checks[0].run[2]: a lone "$"';
     let broken = false;
-    const k = makeKit({ deps: { definitionAt: async () => (broken ? { def: null, error: ERR } : { def: DEF, error: null }), checksOf: (def) => (def ? "declared" : "unset") } });
+    const fixes = new Set<string>();
+    const k = makeKit({ deps: { definitionAt: async (root, ref) => (broken && ![...fixes].some((f) => f === ref || contains(root, ref, f)) ? { def: null, error: ERR } : { def: DEF, error: null }), checksOf: (def) => (def ? "declared" : "unset") } });
     try {
       const q = await k.q();
       await q.pause("hold");
@@ -1055,11 +1066,17 @@ describe("an invalid definition", () => {
       assert.match(v.paused!.why, /is invalid: \$\.merge\.checks\[0\]\.run\[2\]/);
       assert.equal((await k.entry(entry.id)).state, "queued", "nothing ran, nothing handed back");
       assert.equal(k.run.inputs.length, 0);
-      // Fixed on the target: resume runs it.
-      k.repo.commitOn(k.repo.root, { "c.txt": "c\n" }, "fixes it");
-      broken = false;
-      assert.equal((await q.view()).invalid, undefined);
+      // A branch that fixes the definition is taken and runs on its own declaration; the others wait for it.
+      const fix = k.repo.branch("feat/fix", { "fix.txt": "fix\n" });
+      fixes.add(fix.head);
+      const f = await q.add({ branch: "feat/fix", by: "land-button" });
       await q.resume();
+      await landed(k, f.entry.id);
+      assert.equal(k.run.inputs[0]!.entry.id, f.entry.id, "the fix ran first, the broken line waited");
+      assert.ok(k.run.inputs[0]!.project.def, "checked by its own definition");
+      // The fix is on the target now (its definition is the target's): the rest runs.
+      assert.equal((await q.view()).invalid, undefined);
+      if (q.isPaused()) await q.resume();
       await landed(k, entry.id);
     } finally {
       await k.done();

@@ -37,7 +37,7 @@ import { buildView } from "./view";
 
 /** The push hold while a project has no private names file (operator decision: exactly these words). */
 /** What the queue says when the target's .sova/project.json doesn't parse (`error`: the parser's path and message). */
-export const invalidWords = (error: string): string => `The project's .sova/project.json is invalid: ${error}. Fix it on the target; nothing lands until it parses`;
+export const invalidWords = (error: string): string => `The project's .sova/project.json is invalid: ${error}. Fix it on the target, or land a branch that fixes it; nothing else lands until it parses`;
 
 /** heads.pushWhy while the checks' setup commit waits for the next landing's push. */
 export const PUSH_WAITS_NEXT_LANDING = "not pushed yet: goes out with the next landing";
@@ -344,8 +344,10 @@ export class ProjectQueue {
       if (!commit) throw new MergeFailure("not-found", `no commit ${req.commit} in ${this.root}`);
       if (commit !== tip && !(await isAncestor(this.git, this.root, commit, tip))) throw new MergeFailure("invalid-request", `${commit.slice(0, 7)} isn't on ${branch}`);
       const d = await this.declared();
-      if (d.invalid) throw new MergeFailure("invalid-request", invalidWords(d.invalid));
-      if (d.checks === "unset") throw new MergeFailure("unsupported", `Not set up: ${this.root} declares no checks for the merge queue yet (its merge section, a test command, or "no automated tests")`);
+      // A branch whose own commit has a valid definition is the fix: it is taken, and checked by its own declaration.
+      const fix = d.invalid ? await this.fixesDefinition(commit) : null;
+      if (d.invalid && !fix) throw new MergeFailure("invalid-request", invalidWords(d.invalid));
+      if (!fix && d.checks === "unset") throw new MergeFailure("unsupported", `Not set up: ${this.root} declares no checks for the merge queue yet (its merge section, a test command, or "no automated tests")`);
       const head = d.head || (await this.targetHead());
       if (!head) throw new MergeFailure("not-found", `no branch ${target} in ${this.root}`);
       if ((await countBetween(this.git, this.root, head, commit)) === 0) throw new MergeFailure("invalid-request", `nothing to land: ${branch} at ${commit.slice(0, 7)} has no commit ${target} doesn't`);
@@ -876,15 +878,12 @@ export class ProjectQueue {
       this.q.knownTarget = head;
       this.save();
     }
-    // The definition doesn't parse: nothing is checked against a guess; the queue pauses and says why.
-    if (line.length) {
-      const d = await this.declared();
-      if (d.invalid) {
-        this.pauseNow("definition-invalid", invalidWords(d.invalid));
-        return;
-      }
-    }
+    // The definition doesn't parse: nothing is checked against a guess. Only a branch that fixes it runs (checked by its
+    // own declaration); with none in line the queue pauses and says why.
+    const invalid = line.length ? (await this.declared()).invalid : undefined;
     for (const e of line) {
+      const own = invalid ? await this.fixesDefinition(e.commit) : null;
+      if (invalid && !own) continue;
       // Drafts changed since the user's approval: wait for a new Land.
       if (e.approval.drafts && !e.approval.withoutSpecs && this.deps.draftsHash) {
         const now = e.worktree && existsSync(e.worktree) ? await this.branchDrafts(e.worktree, e.commit) : undefined;
@@ -897,9 +896,16 @@ export class ProjectQueue {
           continue;
         }
       }
-      await this.startRun(e, head);
+      await this.startRun(e, head, own ?? undefined);
       return;
     }
+    if (invalid) this.pauseNow("definition-invalid", invalidWords(invalid));
+  }
+
+  /** The definition at `commit` when it parses and declares checks (a branch that fixes an invalid one); else null. */
+  private async fixesDefinition(commit: string): Promise<ProjectDef | null> {
+    const at = await this.deps.definitionAt(this.root, commit).catch(() => ({ def: null, error: "unreadable" }));
+    return at.def && this.deps.checksOf(at.def) !== "unset" ? at.def : null;
   }
 
   /**
@@ -929,8 +935,10 @@ export class ProjectQueue {
     return { hash, names };
   }
 
-  private async startRun(e: Entry, base: string): Promise<void> {
-    const d = await this.declared();
+  /** `own`: the branch's own definition, when the target's doesn't parse and this branch fixes it. */
+  private async startRun(e: Entry, base: string, own?: ProjectDef): Promise<void> {
+    const declared = await this.declared();
+    const d = own ? { ...declared, def: own, review: (this.deps.hasReviewKit ?? ((x) => !!x?.merge?.review))(own, this.root) } : declared;
     const runId = newId("mr");
     const runDir = this.store.runDir(runId);
     mkdirSync(runDir, { recursive: true });

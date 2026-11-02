@@ -366,6 +366,8 @@ export interface WorktreeMergeProject {
   target: string;
   checks: ChecksDeclared;
   review: boolean;
+  /** The target's .sova/project.json doesn't parse (MergeQueueView.invalid): its path and message. */
+  invalid?: string;
   /** The queue is paused (why). */
   paused?: string;
 }

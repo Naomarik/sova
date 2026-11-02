@@ -211,7 +211,7 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
     const v = await (await q.get(p.root)).cachedView();
     const queue = worktreeQueueInfo(v, branch);
     const stats = await statsOf(p.root, v.heads.target, branch);
-    return { ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.paused ? { paused: v.paused.why } : {}) }, ...(stats ? { mergeStats: stats } : {}) };
+    return { ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.invalid ? { invalid: v.invalid } : {}), ...(v.paused ? { paused: v.paused.why } : {}) }, ...(stats ? { mergeStats: stats } : {}) };
   };
   for (const root of recordedRoots(base)) void q.get(root).catch((err) => console.warn(`[merge-queue] ${root}: ${err instanceof Error ? err.message : err}`));
   ingest = startIngest({

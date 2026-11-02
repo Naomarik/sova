@@ -69,24 +69,31 @@ if (has("prepare")) {
 if (has("compare")) {
   const files = args.filter((a) => a.endsWith(".json"));
   const runs = files.map((f) => JSON.parse(readFileSync(f, "utf8")));
+  // Instance runs (this script) and in-process runs (feed.ts) share the names they both have.
   const metrics = [
-    ["cpuSec", "server CPU s"],
+    ["serverCpuSec", "server CPU s (in-process, tab excluded)"],
+    ["cpuSec", "process CPU s"],
     ["cgroupCpuSec", "unit cgroup CPU s"],
-    ["cpuPct", "server CPU % (avg)"],
+    ["listCpuSec", "  feed listing CPU s"],
+    ["afterCpuSec", "  feed after (attention) CPU s"],
+    ["diffRestCpuSec", "  rest of diff CPU s"],
+    ["getCpuSec", "  GET /api/sessions CPU s"],
+    ["outsideDiffCpuSec", "  outside diffs CPU s"],
+    ["diffs", "feed re-diffs"],
     ["rcharMB", "read() MB (rchar)"],
     ["readBytesMB", "disk read MB"],
-    ["wsBytes", "feed bytes"],
     ["wsMsgs", "feed messages"],
+    ["wsBytes", "feed bytes"],
     ["gets", "GET /api/sessions"],
     ["getMB", "GET bytes MB"],
     ["getMsP50", "GET ms p50"],
-    ["getMsMax", "GET ms max"],
     ["linesWritten", "lines appended"],
   ];
+
   let out = "";
   for (const phase of ["idle", "load", "cool"]) {
-    out += `\n### ${phase}\n\n| metric | ${runs.map((r) => r.label).join(" | ")} |\n|---|${runs.map(() => "---:").join("|")}|\n`;
-    for (const [k, name] of metrics) out += `| ${name} | ${runs.map((r) => fmt(r.phases[phase]?.[k])).join(" | ")} |\n`;
+    out += `\n### ${phase}\n\n| metric | ${runs.map((r) => `${r.label}${r.commit ? ` (${r.commit})` : ""}`).join(" | ")} |\n|---|${runs.map(() => "---:").join("|")}|\n`;
+    for (const [k, name] of metrics) if (runs.some((r) => r.phases[phase]?.[k] != null)) out += `| ${name} | ${runs.map((r) => fmt(r.phases[phase]?.[k])).join(" | ")} |\n`;
   }
   console.log(out);
   process.exit(0);

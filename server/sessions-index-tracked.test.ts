@@ -165,3 +165,22 @@ test("a write no watch reported is read within STAT_SWEEP_MS, without a folder r
     t.stop();
   }
 });
+
+test("an unchanged row is the last listing's object; a changed one is new and equal to a full read", async () => {
+  const a = session("same object");
+  const b = session("changes");
+  const t = trackSessionFiles();
+  try {
+    const first = await listSessionsTracked();
+    appendFileSync(b, `${assistant("moved")}\n`);
+    stamp(b);
+    t.note(b);
+    const second = await listSessionsTracked();
+    const row = (l: typeof first, p: string) => l.find((r) => r.path === p)!;
+    assert.equal(row(second, a), row(first, a), "unchanged: the same object");
+    assert.notEqual(row(second, b), row(first, b), "changed: a new object");
+    assert.deepEqual(second, await fresh());
+  } finally {
+    t.stop();
+  }
+});

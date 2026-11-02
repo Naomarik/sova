@@ -131,6 +131,10 @@ export class WorkerSessions {
   private readonly idOf: (path: string) => string;
   private readonly live: () => RawLiveRecord[];
   private readonly inflight = new Map<string, Promise<ScanEntry | null>>();
+  /** Bumped whenever an entry is set or dropped: `flagged` reuses its last answer while this,
+      the listed paths and the live refs are what they were. */
+  private version = 0;
+  private memo: { key: string; out: Set<string> } | null = null;
 
   constructor(opts: WorkerSessionOptions) {
     this.idOf = opts.idOf;
@@ -151,7 +155,7 @@ export class WorkerSessions {
     try {
       size = (await stat(path)).size;
     } catch {
-      this.entries.delete(path);
+      if (this.entries.delete(path)) this.version++;
       return null;
     }
     let entry = this.entries.get(path);
@@ -166,6 +170,7 @@ export class WorkerSessions {
     }
     next.size = size;
     this.entries.set(path, next);
+    this.version++;
     return next;
   }
 
@@ -220,7 +225,11 @@ export class WorkerSessions {
    */
   async refresh(files: string[], changed?: ReadonlySet<string>): Promise<Set<string>> {
     const listed = new Set(files);
-    for (const k of this.entries.keys()) if (!listed.has(k)) this.entries.delete(k);
+    for (const k of this.entries.keys())
+      if (!listed.has(k)) {
+        this.entries.delete(k);
+        this.version++;
+      }
     // With `changed`, a file already scanned and not named in it is unchanged: no stat.
     await Promise.all(files.map((f) => (!changed || changed.has(f) || !this.entries.has(f) ? this.scan(f) : undefined)));
     return this.flagged(listed);
@@ -236,6 +245,22 @@ export class WorkerSessions {
   }
 
   private flagged(listed: Set<string>): Set<string> {
+    let live: RawLiveRecord[] = [];
+    try {
+      live = this.live();
+    } catch {
+      // unreadable live dir: durable inputs still stand
+    }
+    const liveRefs = liveWorkerRefs(live);
+    // Resolving every ref costs a roots lookup per ref: with the same inputs, the same answer.
+    const key = `${this.version}\0${[...listed].join("\n")}\0${liveRefs.join("\n")}`;
+    if (this.memo?.key === key) return new Set(this.memo.out);
+    const out = this.resolve(listed, liveRefs);
+    this.memo = { key, out };
+    return new Set(out);
+  }
+
+  private resolve(listed: Set<string>, liveRefs: readonly string[]): Set<string> {
     const byId = new Map<string, string>();
     for (const p of listed) byId.set(this.idOf(p), p);
     const out = new Set<string>();
@@ -248,13 +273,7 @@ export class WorkerSessions {
       if (e.self) out.add(path);
       for (const r of e.refs) add(r);
     }
-    let live: RawLiveRecord[] = [];
-    try {
-      live = this.live();
-    } catch {
-      // unreadable live dir: durable inputs still stand
-    }
-    for (const r of liveWorkerRefs(live)) add(r);
+    for (const r of liveRefs) add(r);
     return out;
   }
 }

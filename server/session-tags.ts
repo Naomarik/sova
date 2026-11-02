@@ -155,6 +155,12 @@ export function tagsFor(id: string): SessionTags | undefined {
   return wireTags(readStore().sessions[id]);
 }
 
+/** tagsFor over one read of the store: a listing pass asks it for every row. */
+export function tagsReader(): (id: string) => SessionTags | undefined {
+  const store = readStore();
+  return (id) => wireTags(store.sessions[id]);
+}
+
 /** Every session with tags on the wire — the `marks` snapshot a new feed socket gets. */
 export function allTags(): Map<string, SessionTags> {
   const out = new Map<string, SessionTags>();

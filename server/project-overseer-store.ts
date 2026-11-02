@@ -441,15 +441,18 @@ export const MARKER_MEMO_MAX = 50_000;
 /** The one buffer every marker read uses (reads are synchronous, so never shared mid-read). */
 const markerBuf = Buffer.alloc(16 * 1024);
 
-/** The marker's data from a file's first 16KB (the marker is line 2), cached per mtime: an unchanged file is never read again. */
-export function readPoMarker(path: string): ProjectOverseerMarkerData | null {
+/** The marker's data from a file's first 16KB (the marker is line 2), cached per mtime: an unchanged file is never read again.
+    `knownMtimeMs`: the file's mtime as the caller just read it (the session list's summary cache), so no stat is needed. */
+export function readPoMarker(path: string, knownMtimeMs?: number): ProjectOverseerMarkerData | null {
   let mtimeMs = -1;
-  try {
-    mtimeMs = statSync(path).mtimeMs;
-  } catch {
-    markerMemo.delete(path);
-    return null;
-  }
+  if (knownMtimeMs !== undefined) mtimeMs = knownMtimeMs;
+  else
+    try {
+      mtimeMs = statSync(path).mtimeMs;
+    } catch {
+      markerMemo.delete(path);
+      return null;
+    }
   const hit = markerMemo.get(path);
   if (hit && hit.mtimeMs === mtimeMs) {
     // Kept as the most recently asked for (a Map iterates in insertion order).
@@ -488,8 +491,8 @@ export function readPoMarker(path: string): ProjectOverseerMarkerData | null {
  * dir of the engine that holds that project, and the project's state knows its id (current or history).
  * A copy anywhere else, or a fork, is an ordinary session.
  */
-export function projectOverseerOfPath(path: string, id = sessionIdOfFile(path)): { projectId: string } | null {
-  const m = readPoMarker(path);
+export function projectOverseerOfPath(path: string, id = sessionIdOfFile(path), knownMtimeMs?: number): { projectId: string } | null {
+  const m = readPoMarker(path, knownMtimeMs);
   if (!m) return null;
   try {
     if (dirname(canonicalPath(path)) !== canonicalPath(join(projectDir(m.projectId), "sessions"))) return null;

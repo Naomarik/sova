@@ -4,7 +4,7 @@ import { profileField, profileOnBranch } from "./session-profile";
 import { type Dirent, statSync } from "node:fs";
 import { type FileHandle, lstat, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { OVERSEER_ENTRY, type SessionSummary } from "../shared/protocol";
+import { OVERSEER_ENTRY, type SessionSummary, type SessionTags } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
@@ -28,9 +28,9 @@ import { type AlignScan, readAlignScan } from "./align-state";
 import { WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
-import { readSignals, signalsOverlay, withoutRestartAsk } from "./signals-store";
+import { readSignals, type SignalsFile, signalsOverlay, withoutRestartAsk } from "./signals-store";
 import { withOpenOffer } from "./session-offers";
-import { dropSessionTags, tagsFor } from "./session-tags";
+import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
 import { pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
 import { projectOverseerOfPath, readPoState } from "./project-overseer-store";
@@ -58,16 +58,17 @@ export function contributeSessions(part: SessionsPart): void {
 }
 
 /** One listing pass's lookups: the project layer's (by marker, build, then the session's folder), then every contributed part's. */
-function fieldLookup(): (path: string, id: string, cwd?: string) => Pick<SessionSummary, "baton" | "org" | "folderOrg" | "project" | "projectOverseer"> {
+/** `mtimeMs`: the file's mtime as the listing holds it, so the project overseer marker check needs no stat. */
+function fieldLookup(): (path: string, id: string, cwd?: string, mtimeMs?: number) => Pick<SessionSummary, "baton" | "org" | "folderOrg" | "project" | "projectOverseer"> {
   const parts = sessionParts.map((p) => p.lookup());
   const projects = projectSessionLookup();
-  return (path, id, cwd) => {
+  return (path, id, cwd, mtimeMs) => {
     const out: Pick<SessionSummary, "baton" | "org" | "folderOrg" | "project" | "projectOverseer"> = {};
     const project = projects.of(path, id, cwd);
     for (const l of parts) Object.assign(out, l.of(path, id, project) ?? {});
     if (project) out.project = project;
     if (!out.baton) {
-      const po = projectOverseerOfPath(path);
+      const po = projectOverseerOfPath(path, undefined, mtimeMs);
       if (po) out.projectOverseer = po;
     }
     return out;
@@ -933,10 +934,12 @@ function decisionFields(
   own: RawLiveRecord | undefined,
   seen: Record<string, number>,
   attention: boolean,
+  /** One listing pass's reads of the tag and signal stores, shared by its rows. */
+  reads?: { tags: (id: string) => SessionTags | undefined; signals: SignalsFile },
 ): Pick<SessionSummary, "signals" | "workerSignals" | "tags"> {
-  const tags = tagsFor(s.id);
+  const tags = reads ? reads.tags(s.id) : tagsFor(s.id);
   if (!attention) return tags ? { tags } : {};
-  const data = readSignals();
+  const data = reads?.signals ?? readSignals();
   const ctx = { enabled: true, seenAt: seen[s.id], viewing: isViewing(s.id) };
   const running = isSessionBusy(s.path) || (l?.activity ?? activityOf(own?.rec))?.state === "working";
   // An open offer card asks the user too (§app.decisions/asks-user, §chat.offers/card).
@@ -986,6 +989,29 @@ export function listSessions(): Promise<SessionSummary[]> {
     });
   }
   return l.rows.then((rows) => [...rows]);
+}
+
+/** The last listing's rows by path (buildSessions hands an unchanged row out as the same object). */
+let lastRows = new Map<string, SessionSummary>();
+
+/** Deep equality that also holds key order and undefined-valued keys: JSON- and deepStrictEqual-identical. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!sameValue(a[i], b[i])) return false;
+    return true;
+  }
+  if (Object.getPrototypeOf(a) !== Object.prototype || Object.getPrototypeOf(b) !== Object.prototype) return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (let i = 0; i < ka.length; i++) {
+    const k = ka[i]!;
+    if (k !== kb[i] || !sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false;
+  }
+  return true;
 }
 
 /** How often the tracked listing reads every folder and stats every file anyway: the net for a
@@ -1149,6 +1175,7 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
   const seen = readSeen();
   const attention = readDecisionSettings().features.attention;
   const fields = fieldLookup();
+  const stores = { tags: tagsReader(), signals: readSignals() };
   // A kept preview link never reaches the list (§app.project-overseer/previews): a title or summary line
   // that holds one (the overseer saw it in its tool result) shows "[preview link]" in its place.
   const previewLabels = keptLabels();
@@ -1178,7 +1205,7 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
     let preview: string | undefined;
     // A baton or project overseer file is never a husk: a fresh baton held by the operator (or
     // waiting for its first link) needs them before anyone has written in it.
-    const special = fields(s.path, s.id, s.cwd);
+    const special = fields(s.path, s.id, s.cwd, cache.get(s.path)?.mtimeMs);
     if (s.title === "Untitled") {
       if (await zeroInputOf(s.path)) {
         // A husk waiting on a dialog (a command run in a new session) is waiting on the user: listed.
@@ -1204,17 +1231,25 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
       busy: isSessionBusy(s.path),
       ...heldChatField(s.path),
       ...attentionFields(s, l, ownRec, seen),
-      ...decisionFields(s, l, ownRec, seen, attention),
+      ...decisionFields(s, l, ownRec, seen, attention, stores),
       ...(preview !== undefined ? { draftPreview: preview } : {}),
       ...(hasDraft ? { hasDraft: true as const } : {}),
       ...special,
     };
     // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
     const readiness = readinessOverlay(row);
-    out.push(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row), previewLabels));
+    out.push(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row, stores.signals), previewLabels));
   }
   pruneReadiness(out);
   for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
+  // A row equal to the last listing's (same keys, in order, same values) is that object itself:
+  // rows are shared and never mutated, and a reader that keys work by row (the session feed's
+  // comparison) does it once per change instead of once per row per listing.
+  for (let i = 0; i < out.length; i++) {
+    const prev = lastRows.get(out[i]!.path);
+    if (prev && sameValue(prev, out[i])) out[i] = prev;
+  }
+  lastRows = new Map(out.map((r) => [r.path, r]));
   out.sort(byActivity);
   return { rows: out, files };
 }

@@ -18,8 +18,11 @@ export type Sender =
   | { kind: "merge-queue" }
   | { kind: "baton"; by: string };
 
-/** The sender id the merge queue's wakes carry in their "another session" marker. */
+/** The merge queue's sender, in one place: the id its wakes carry in their "another session" marker, and the prefix
+    their text starts with (defined beside the cards' shape in shared/merge-queue.ts, re-exported here). Server and page
+    import both from this module. pi-config's worktree tool spells the prefix again (it imports nothing of Sova). */
 export const MERGE_QUEUE_SESSION = "merge-queue";
+export { isMergeQueueText, MERGE_QUEUE_SENT_PREFIX };
 /** A merge queue wake's words: without a session header line, if any, and without its prefix. */
 export const mergeQueueBody = (text: string): string => {
   const t = stripSessionHeader(text).trimStart();

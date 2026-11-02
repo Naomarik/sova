@@ -1,7 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  MERGE_QUEUE_SENT_PREFIX,
   type MergeCard,
   type MergeCardFailure,
   type MergeCardOutcome,
@@ -11,6 +10,7 @@ import {
   type MergeRun,
   newerWords,
 } from "../../shared/merge-queue";
+import { MERGE_QUEUE_SENT_PREFIX } from "../../shared/senders";
 import { countBetween, type Git, realGit } from "./guard";
 import { type MergeNoticeKind, noticeText } from "./notices";
 

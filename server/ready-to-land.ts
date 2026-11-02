@@ -1,4 +1,4 @@
-import { MERGE_QUEUE_SENT_PREFIX } from "../shared/merge-queue";
+import { MERGE_QUEUE_SENT_PREFIX } from "../shared/senders";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ReadinessState, WorktreeLanding, WorktreeLandingDocs } from "../shared/protocol";

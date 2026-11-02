@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
-import { isMergeQueueText, type MergeCard, type MergeQueueView } from "../../shared/merge-queue";
+import { type MergeCard, type MergeQueueView } from "../../shared/merge-queue";
+import { isMergeQueueText, MERGE_QUEUE_SENT_PREFIX, MERGE_QUEUE_SESSION } from "../../shared/senders";
+import { MERGE_QUEUE_SENDER } from "./wake";
 import { blockedNoteText, docsNudgeText } from "../ready-to-land";
 import { withMergeCardNote, setMergeCardNoteSource } from "./card-note";
 import { MergeCards } from "./cards";
@@ -317,6 +319,12 @@ describe("no fake message is left", () => {
     for (const f of ["merge-readiness.ts", "ready-to-land.ts"]) assert.doesNotMatch(readFileSync(new URL(f, server), "utf8"), /[`"']Sova(?: \([^)]*\))?: /, `${f}: a "Sova: …" text`);
     assert.match(readFileSync(new URL("merge-readiness.ts", server), "utf8"), /nudge: async \(path, text\) => \(await import\("\.\/merge-queue\/wake"\)\)\.sendQueueWake\(path, text\)/);
     // The wake carries the "another session" marker the worktree tool's land refuses, in old chats too.
+    // One name each, shared with the page (shared/senders.ts), and the worktree tool's own spelling agrees.
+    assert.equal(MERGE_QUEUE_SENDER.sessionId, MERGE_QUEUE_SESSION);
+    // landing.ts's NOT_TYPED regex literal spells the prefix with its brackets escaped: \[merge-queue\]
+    const escaped = MERGE_QUEUE_SENT_PREFIX.replace(/[[\]]/g, (c) => `\\${c}`);
+    assert.equal(escaped, "\\[merge-queue\\]");
+    assert.ok(readFileSync(new URL("../../pi-config/extensions/worktrees/landing.ts", dir), "utf8").includes(escaped), "the worktree tool refuses the same prefix");
     const wake = read("wake.ts");
     assert.match(wake, /sentBySession: \{ \.\.\.MERGE_QUEUE_SENDER \}/);
   });

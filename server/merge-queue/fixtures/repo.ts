@@ -10,7 +10,7 @@
  *   `hang` (sleeps until killed): the `unit` check, which names its failing files in SOVA_OUT and reruns
  *   only the files passed as argv.
  *   `gate <name>` (held until the test opens the gate) | `forbid <w>...` (fails when src/list.txt holds every word).
- * - `deps.lock`: the `install` setup step's input; `broken` fails it.
+ * - `deps.lock`: the `merge.install` step's input (an offline install when a branch changes it); `broken` fails it.
  *
  * Every script appends one JSON line per run to `<root>/state/calls.jsonl` ({script, cwd, head, argv,
  * env subset}), so a test asserts WHERE a check ran (the merge copy, never the state root), on WHICH
@@ -126,7 +126,7 @@ for (const f of files) {
     console.log("unit: " + f + " waits at gate");
     while (!existsSync(g)) await new Promise((r) => setTimeout(r, 50));
   }
-  // `forbid w1 w2`: fails when src/list.txt holds every word (a combination of two branches breaks it).
+  // "forbid w1 w2": fails when src/list.txt holds every word (a combination of two branches breaks it).
   const forbid = c.startsWith("forbid ") && c.split(/\s+/).slice(1).every((w) => conf("src/list.txt", "").split("\n").includes(w));
   const bad = forbid || c === "fail" || (c === "flaky" && once("flaky:" + f + ":" + head));
   if (bad) { failures.push({ file: f, name: f.replace(/^tests\\//, ""), message: "expected pass, got " + c }); console.log("not ok " + f); }
@@ -210,10 +210,7 @@ export class Fixture {
     const def: Record<string, unknown> = {
       version: 1,
       slots: { cap: 4 },
-      setup: [
-        { id: "prep", run: ["node", "setup.mjs"] },
-        { id: "install", run: ["node", "install.mjs"], inputs: ["deps.lock"] },
-      ],
+      setup: [{ id: "prep", run: ["node", "setup.mjs"] }],
       services: {} as Record<string, unknown>,
     };
     if (this.opts.requireService) {
@@ -225,18 +222,23 @@ export class Fixture {
       };
     }
     if (checks === "test-command") {
-      def.test = { run: ["node", "runner.mjs"], ...(this.opts.requireService ? { requires: ["svc"] } : {}), timeout: 60 };
+      def.test = { run: ["node", "runner.mjs"], ...(this.opts.requireService ? { requires: ["svc"] } : {}), timeout: 60, smoke: ["tests/a.txt"] };
     }
-    const merge: Record<string, unknown> = { target: this.target, ...(this.opts.merge ?? {}) };
+    if (checks === "unset") return def;
+    const merge: Record<string, unknown> = {
+      target: this.target,
+      // The offline install a lockfile change needs (here: deps.lock).
+      install: { run: ["node", "install.mjs"], inputs: ["deps.lock"] },
+      ...(this.opts.review ? { review: ".sova/playbooks/review" } : {}),
+      ...(this.opts.merge ?? {}),
+    };
     if (checks === "declared") {
       merge.checks = [
         { id: "build", label: "Build", run: ["node", "checks/build.mjs"] },
         { id: "unit", label: "Unit tests", run: ["node", "checks/unit.mjs"], rerun: true, timeout: 60 },
       ];
     } else if (checks === "none") merge.checks = "none";
-    if (this.opts.review) merge.review = { kit: ".sova/playbooks/review" };
-    if (checks !== "unset" && checks !== "test-command") def.merge = merge;
-    else if (checks === "test-command") def.merge = { target: this.target, ...(this.opts.merge ?? {}), ...(this.opts.review ? { review: { kit: ".sova/playbooks/review" } } : {}) };
+    def.merge = merge;
     return def;
   }
 

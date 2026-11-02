@@ -75,3 +75,16 @@ test("a turn the merge queue started is never the user's input, and the Inputs l
   assert.deepEqual(row.sender, { kind: "merge-queue" });
   assert.equal(row.text, "fix/x needs a fix: Unit tests fail with this branch.");
 });
+
+test("a merge queue wake with the 'another session' marker is the queue's, never a session's, and never your input", async () => {
+  const { inputRows } = await import("./inputs");
+  const { rowSender, sendersOf } = await import("../../shared/senders");
+  const items: TranscriptItem[] = [
+    { id: "u", kind: "user", text: "typed" },
+    { id: "w", kind: "user", text: "[merge-queue] feat/x didn't land: Unit tests fail with this branch." },
+    { id: "mark-w", kind: "info", sessionMark: { kind: "sent", targetId: "w", from: { sessionId: "merge-queue", title: "Merge queue" }, hop: 0 } },
+  ];
+  assert.equal(inputCount(items), 1);
+  assert.deepEqual(rowSender(items[1]!, sendersOf(items)), { kind: "merge-queue" });
+  assert.equal(inputRows(items).find((r) => r.id === "w")!.text, "feat/x didn't land: Unit tests fail with this branch.");
+});

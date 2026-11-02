@@ -729,7 +729,12 @@ for (const width of [1280, 390]) {
     });
 
     test("a turn the merge queue started reads as the queue's, not yours", async () => {
-      const items = [...CHAT_ITEMS, { id: "u3", kind: "user", text: "[merge-queue] fix/draft-autosave-race needs a fix: Unit tests fail with this branch.", at: iso(1) }];
+      // Sent with the "another session" marker named merge-queue, as the queue sends it: still the queue's row.
+      const items = [
+        ...CHAT_ITEMS,
+        { id: "u3", kind: "user", text: "[merge-queue] fix/draft-autosave-race needs a fix: Unit tests fail with this branch.", at: iso(1) },
+        { id: "mark-u3", kind: "info", at: iso(1), sessionMark: { kind: "sent", targetId: "u3", from: { sessionId: "merge-queue", title: "Merge queue" }, hop: 0 } },
+      ];
       const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { items });
       const { page } = o;
       const row = page.locator(".message-from-queue");
@@ -737,6 +742,8 @@ for (const width of [1280, 390]) {
       const t = await words(row);
       assert.match(t, /Merge queue/);
       assert.doesNotMatch(t, /\[merge-queue\]/);
+      assert.equal(await page.locator('a[href*="merge-queue"]', { hasText: "Merge queue" }).count(), 0, "never a link to a session called merge-queue");
+      assert.equal(await page.getByText("From a session").count(), 0);
       assert.match(t, /fix\/draft-autosave-race needs a fix/);
       // The composer's Inputs counts only what you typed: 2, not the queue's turn.
       const inputs = page.locator(".run-status-inputs");

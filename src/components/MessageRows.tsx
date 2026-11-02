@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js";
-import { MERGE_QUEUE_SENT_PREFIX } from "../../shared/merge-queue";
+import { mergeQueueBody } from "../../shared/senders";
 import type { TmpAttachment } from "../../shared/protocol";
 import { stripSessionHeader } from "../../shared/profiles";
 import type { ReplyTiming } from "../../shared/usage/perf";
@@ -12,8 +12,6 @@ import { PathAttachment } from "./PathAttachment";
 import { ReplyTimingHead } from "./ReplyTiming";
 import { Banner, Icon } from "./ui";
 
-/** A merge queue wake's words, without its prefix. */
-const mergeQueueBody = (t: string): string => t.trimStart().slice(MERGE_QUEUE_SENT_PREFIX.length).trim();
 /**
  * The message rows of a transcript (a user's turn, a reply's text, its thinking, a turn's error), drawn
  * the same by the settled list (as Sova's own kinds on the card toolkit, components/BuiltinKinds.tsx)

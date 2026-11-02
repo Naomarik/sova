@@ -18,6 +18,14 @@ export type Sender =
   | { kind: "merge-queue" }
   | { kind: "baton"; by: string };
 
+/** The sender id the merge queue's wakes carry in their "another session" marker. */
+export const MERGE_QUEUE_SESSION = "merge-queue";
+/** A merge queue wake's words: without a session header line, if any, and without its prefix. */
+export const mergeQueueBody = (text: string): string => {
+  const t = stripSessionHeader(text).trimStart();
+  return (t.startsWith(MERGE_QUEUE_SENT_PREFIX) ? t.slice(MERGE_QUEUE_SENT_PREFIX.length) : t).trim();
+};
+
 /** A proactive "Brief me" prompt (the Overseer's), by its prefix: never the user's own words. */
 export const isBriefText = (text: string | undefined): boolean => !!text && text.trimStart().startsWith(OVERSEER_BRIEF_PREFIX);
 /** The brief's own words, without the prefix. */
@@ -33,14 +41,17 @@ const entryOf = (rowId: string): string => {
     markers name one row, another session wins over the Overseer, and the Overseer over a baton
     participant (the transcript's own precedence). */
 export function sendersOf(items: readonly TranscriptItem[]): Map<string, Sender> {
-  const rank: Record<Sender["kind"], number> = { session: 3, overseer: 2, "merge-queue": 2, baton: 1 };
+  // The merge queue's wakes carry the "another session" marker (so no tool reads them as the user's word),
+  // named merge-queue: they are the queue's, never a link to a session of that name.
+  const rank: Record<Sender["kind"], number> = { "merge-queue": 4, session: 3, overseer: 2, baton: 1 };
   const out = new Map<string, Sender>();
   const put = (id: string, s: Sender) => {
     const was = out.get(id);
     if (!was || rank[s.kind] > rank[was.kind]) out.set(id, s);
   };
   for (const it of items) {
-    if (it.sessionMark?.kind === "sent") put(it.sessionMark.targetId, { kind: "session", ...it.sessionMark.from, hop: it.sessionMark.hop });
+    if (it.sessionMark?.kind === "sent")
+      put(it.sessionMark.targetId, it.sessionMark.from.sessionId === MERGE_QUEUE_SESSION ? { kind: "merge-queue" } : { kind: "session", ...it.sessionMark.from, hop: it.sessionMark.hop });
     if (it.overseerMark?.kind === "sent") put(it.overseerMark.targetId, { kind: "overseer" });
     if (it.batonMark?.kind === "sent") put(it.batonMark.targetId, { kind: "baton", by: it.batonMark.by });
   }
@@ -77,6 +88,6 @@ export function ownInputIds(rows: readonly TranscriptItem[]): string[] {
 export function messageBody(text: string, sender: Sender | undefined, brief = false): string {
   if (sender?.kind === "session") return stripSessionHeader(text);
   if (brief) return briefBody(text);
-  if (sender?.kind === "merge-queue") return text.trimStart().slice(MERGE_QUEUE_SENT_PREFIX.length).trim();
+  if (sender?.kind === "merge-queue") return mergeQueueBody(text);
   return text;
 }

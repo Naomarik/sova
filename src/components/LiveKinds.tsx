@@ -1,4 +1,6 @@
 import { lazy, Show, type Component } from "solid-js";
+import { isMergeQueueText } from "../../shared/merge-queue";
+import { MERGE_QUEUE_SESSION } from "../../shared/senders";
 import type { LiveCallBlock, LiveInput, LiveKindViewProps, LiveUserEntry, LiveView } from "../lib/transcript-kinds";
 import type { LiveBlock } from "../lib/live";
 import { shownUserState } from "../lib/live";
@@ -100,7 +102,9 @@ function LiveUserRow(props: LiveKindViewProps<LiveUserEntry>) {
         state={shownUserState(e)}
         origin={e.origin}
         overseer={e.overseer}
-        fromSession={e.fromSession}
+        // The merge queue's wake carries the "another session" marker: it is the queue's, never a session link.
+        mergeQueue={isMergeQueueText(e.text) || e.fromSession?.sessionId === MERGE_QUEUE_SESSION}
+        fromSession={isMergeQueueText(e.text) || e.fromSession?.sessionId === MERGE_QUEUE_SESSION ? undefined : e.fromSession}
         sender={e.by ? (rows.names()?.[e.by] ?? (e.by === "operator" ? "You" : "Someone")) : undefined}
         images={e.images}
         attachments={e.attachments}

@@ -72,7 +72,7 @@ export function HeadsStrip(props: { view: MergeQueueView }) {
           </Show>
           <QueueChip row={pushed()} />
         </p>
-        <p class="text-caption text-muted">{pushed().why ?? "After every landing."}</p>
+        <p class="text-caption text-muted">{sentence(pushed().why) || "After every landing."}</p>
       </div>
     </div>
   );

@@ -436,7 +436,7 @@ for (const width of [1280, 390]) {
       const t = await words(strip);
       assert.match(t, /4444444/);
       assert.match(t, /Not pushed/);
-      assert.match(t, /push held: private names not set up yet/);
+      assert.match(t, /Push held: private names not set up yet\./);
       await shot(o.page, `${width}-push-held`);
       await o.ctx.close();
     });

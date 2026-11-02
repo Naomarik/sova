@@ -12,7 +12,7 @@
  *
  * Every step has a log under the run's folder from its first line. A timeout, an abort or a stopped server is void.
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import type { CheckPick, MergeNote, ReviewVerdict, RunStep, RunStepKind, StepResult } from "../../shared/merge-queue";
@@ -615,10 +615,15 @@ async function takeResolution(copy: string, base: string, resolution: string, lo
 /** The docs step: the approved drafts copied into the copy and made official as one commit, before any check. */
 async function makeDocs(o: { input: RunInput; copy: string; steps: Steps; ident: Record<string, string>; deps: RunDeps; signal: AbortSignal }): Promise<{ kind: "none" } | { kind: "made"; sha: string } | { kind: "refused"; why: string } | { kind: "machine"; why: string }> {
   const src = o.input.draftsDir;
-  const names = src && existsSync(src) ? readdirSync(src, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith(".")).map((d) => d.name).sort() : [];
+  const snapshot = src && existsSync(src) ? readdirSync(src, { withFileTypes: true }).filter((d) => d.isDirectory() && !d.name.startsWith(".")).map((d) => d.name).sort() : [];
   const st = o.steps.start("docs", "docs", "Spec docs");
+  // Only the branch's own drafts land: an untracked one it carries, or a tracked one it adds or changes. A tracked
+  // draft the target already has (a project that commits its drafts) is never landed, changed or deleted here.
+  const names = await ownDrafts(o.copy, o.input.base, o.input.commit, snapshot);
+  const others = snapshot.filter((n) => !names.includes(n));
+  if (others.length) st.log(`not the branch's (tracked, unchanged by it): ${others.length} draft${others.length === 1 ? "" : "s"}${others.length <= 10 ? ` (${others.join(", ")})` : ""}\n`);
   if (!names.length) {
-    st.end("skipped", { detail: o.input.entry.approval.withoutSpecs ? "landing without its specs" : "no spec drafts" });
+    st.end("skipped", { detail: o.input.entry.approval.withoutSpecs ? "landing without its specs" : others.length ? "no spec drafts of the branch's own" : "no spec drafts" });
     return { kind: "none" };
   }
   if (!existsSync(join(o.copy, ".sova", "spec", "claims"))) {
@@ -631,12 +636,45 @@ async function makeDocs(o: { input: RunInput; copy: string; steps: Steps; ident:
     st.end("failed", { detail: `no spec tools at ${core}` });
     return { kind: "machine", why: `the spec tools aren't at ${core}, so the drafts can't be made official` };
   }
+  // The drafts folder holds exactly the branch's drafts while land runs (land takes every draft it finds); the
+  // target's tracked drafts come back from git afterwards, untouched.
   const dest = join(o.copy, ".sova", "spec", "drafts");
+  rmSync(dest, { recursive: true, force: true });
   mkdirSync(dest, { recursive: true });
   for (const n of names) {
     st.log(`copying draft ${n}\n`);
     cpSync(join(src!, n), join(dest, n), { recursive: true });
   }
+  const restore = async () => {
+    rmSync(dest, { recursive: true, force: true });
+    if ((await gitProc(o.copy, ["cat-file", "-e", "HEAD:.sova/spec/drafts"])).code === 0) await gitProc(o.copy, ["checkout", "HEAD", "--", ".sova/spec/drafts"], { log: st.log });
+  };
+  try {
+    return await landDrafts(o, st, names, tool);
+  } finally {
+    await restore();
+  }
+}
+
+/** Of `snapshot`'s draft names, the branch's own: untracked in both the target and the pinned commit, or changed by
+ *  the branch since its merge base with the target. */
+export async function ownDrafts(copy: string, base: string, commit: string, snapshot: readonly string[]): Promise<string[]> {
+  if (!snapshot.length) return [];
+  const mb = (await gitProc(copy, ["merge-base", base, commit])).out.trim() || base;
+  const tracked = (rev: string, n: string) => gitProc(copy, ["cat-file", "-e", `${rev}:.sova/spec/drafts/${n}`]).then((r) => r.code === 0);
+  const out: string[] = [];
+  for (const n of snapshot) {
+    if (!(await tracked(base, n)) && !(await tracked(commit, n)) && !(await tracked(mb, n))) {
+      out.push(n);
+      continue;
+    }
+    const d = await gitProc(copy, ["diff", "--name-only", `${mb}..${commit}`, "--", `.sova/spec/drafts/${n}`]);
+    if (d.out.trim()) out.push(n);
+  }
+  return out;
+}
+
+async function landDrafts(o: { input: RunInput; copy: string; ident: Record<string, string>; signal: AbortSignal }, st: Step, names: string[], tool: string): Promise<{ kind: "none" } | { kind: "made"; sha: string } | { kind: "refused"; why: string } | { kind: "machine"; why: string }> {
   const a = o.input.entry.approval;
   const by = a.by === "typed" ? "the user (land it, typed in the branch's chat)" : "the user (Land)";
   const verification = `Made official by the merge queue: ${o.input.entry.branch} at ${short(o.input.commit)}, approved ${a.at.slice(0, 16).replace("T", " ")}; committed before the run's checks (run ${o.input.runId})`;

@@ -1,8 +1,9 @@
 // One merge run, alone (no queue), on real throwaway repositories: where the copy goes, what each step does, and
 // whose failure a red check is. The queue around it is tested in the scenario suite.
 import { after, describe, test } from "node:test";
+import { spawnSync } from "node:child_process";
 import { expect } from "./testing/expect";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MergeEntry, RunStep } from "../../shared/merge-queue";
 import { parseDefinition } from "../../shared/project-contract";
@@ -211,6 +212,85 @@ describe("a merge run", () => {
     const r2 = await run(fx, fx.branch("after", { "README.md": "y\n" }));
     expect(r2.out.verdict).toBe("passed");
     expect(existsSync(join(r2.out.copy!, ".sova/spec/drafts/docs"))).toBe(false);
+  });
+
+  describe("tracked spec drafts (a project that commits its drafts)", () => {
+    /** Draft i's name: letters only (a § id takes no digits). */
+    const nm = (i: number) => `stale${String.fromCharCode(97 + Math.floor(i / 26) % 26)}${String.fromCharCode(97 + (i % 26))}`;
+    /** A project whose drafts are tracked: `n` stale drafts on the target, each adding its own §b/<name>. */
+    async function tracked(n: number) {
+      const fx = fixture();
+      await fx.withSpec();
+      writeFileSync(join(fx.project, ".sova/spec/.gitignore"), "");
+      writeFileSync(join(fx.project, ".gitignore"), readFileSync(join(fx.project, ".gitignore"), "utf8").replace(".sova/spec/drafts/\n", ""));
+      fx.draft(fx.project, nm(0));
+      const src = join(fx.project, ".sova/spec/drafts", nm(0));
+      for (let i = 1; i < n; i++) {
+        const name = nm(i);
+        const dst = join(fx.project, ".sova/spec/drafts", name);
+        cpSync(src, dst, { recursive: true });
+        // Its own claim, so a stale draft that landed would show.
+        for (const ext of ["md", "json"]) {
+          const from = join(dst, "spec/claims/b", `${nm(0)}.${ext}`);
+          writeFileSync(join(dst, "spec/claims/b", `${name}.${ext}`), readFileSync(from, "utf8").replaceAll(nm(0), name));
+          rmSync(from);
+        }
+        writeFileSync(join(dst, "draft.json"), readFileSync(join(dst, "draft.json"), "utf8").replaceAll(nm(0), name));
+      }
+      git(fx.project, ["add", "-A", ".sova/spec", ".gitignore"]);
+      git(fx.project, ["commit", "-q", "-m", `${n} tracked drafts`]);
+      return fx;
+    }
+    const claimsAt = (fx: Fixture, rev: string) => git(fx.project, ["ls-tree", "-r", "--name-only", rev, ".sova/spec/claims/b"]).split("\n").filter(Boolean);
+    const draftsAt = (fx: Fixture, rev: string) => git(fx.project, ["ls-tree", "-r", "--name-only", rev, ".sova/spec/drafts"]);
+
+    test("a comment-only branch on a project with hundreds of stale tracked drafts lands cleanly: no docs commit, drafts untouched", async () => {
+      const fx = await tracked(200);
+      const before = fx.head();
+      const br = fx.branch("comment", { "README.md": "# demo\n<!-- a comment -->\n" });
+      const r = await run(fx, br, { drafts: true });
+      expect(r.out.verdict).toBe("passed");
+      expect(draftsAt(fx, before).split("\n").filter((f) => f.endsWith(".md")).length).toBeTruthy();
+      expect(r.steps.get("docs")).toMatchObject({ result: "skipped", detail: "no spec drafts of the branch's own" });
+      expect(r.out.tip).toBe(r.merged);
+      expect(claimsAt(fx, r.out.tip!)).toEqual([]);
+      expect(draftsAt(fx, r.out.tip!)).toBe(draftsAt(fx, before));
+      expect(git(r.out.copy!, ["status", "--porcelain"])).toBe("");
+    });
+
+    test("a branch that changes one tracked draft lands exactly that draft; the others stay as they were", async () => {
+      const fx = await tracked(30);
+      const before = fx.head();
+      const br = fx.branch("one", { "src/app.txt": "changed\n" });
+      fx.editDraft(br.checkout, nm(7), "Stale seven, now meant.");
+      // A changed draft needs its chat's note again (the record's text changed).
+      spawnSync(process.execPath, [join(REPO_ROOT, "pi-config/extensions/spec/core/sova-spec-draft.mjs"), "evidence", nm(7), "--id", `§b/${nm(7)}`, "--by", "chat", "--verification", "checked", "--note", "--write", "--root", br.checkout, "--json"], { cwd: br.checkout });
+      git(br.checkout, ["add", "-A", `.sova/spec/drafts/${nm(7)}`]);
+      git(br.checkout, ["commit", "-q", "-m", "stale-7 meant"]);
+      const commit = git(br.checkout, ["rev-parse", "HEAD"]);
+      const r = await run(fx, { ...br, commit }, { drafts: true });
+      expect(r.out.verdict, r.out.why).toBe("passed");
+      expect(r.steps.get("docs")!.result).toBe("passed");
+      expect(claimsAt(fx, r.out.tip!).sort()).toEqual([`.sova/spec/claims/b/${nm(7)}.json`, `.sova/spec/claims/b/${nm(7)}.md`]);
+      expect(git(fx.project, ["show", `${r.out.tip}:.sova/spec/claims/b/${nm(7)}.md`])).toContain("Stale seven, now meant.");
+      // The docs commit touches no draft: the tracked drafts are the merge's, untouched.
+      expect(git(fx.project, ["diff", "--name-only", `${r.merged}..${r.out.tip}`, "--", ".sova/spec/drafts"])).toBe("");
+      expect(draftsAt(fx, before).length).toBeTruthy();
+      expect(git(r.out.copy!, ["status", "--porcelain"])).toBe("");
+    });
+
+    test("a branch whose own draft doesn't fit still gets the plain answer", async () => {
+      const fx = await tracked(20);
+      const br = fx.branch("misfit", { "src/app.txt": "x\n" });
+      fx.draft(br.checkout, "mine");
+      // Changed after its chat's note: land refuses it.
+      fx.editDraft(br.checkout, "mine", "Changed after the note.");
+      const r = await run(fx, br, { drafts: true });
+      expect(r.out).toMatchObject({ verdict: "failed", blame: "branch" });
+      expect(r.out.why).toMatch(/^your spec drafts don't fit/);
+      expect(r.out.why).toContain("§b/mine");
+      expect(r.out.why).not.toContain("§b/stale");
+    });
   });
 
   test("a copy that would be under the state root is refused before any git command (the Oct 29 failure)", async () => {

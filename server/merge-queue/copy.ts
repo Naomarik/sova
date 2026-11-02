@@ -213,11 +213,11 @@ export async function prepareCopy(o: { root: string; path: string; base: string;
   if (reset.code !== 0) throw new Error(`git reset --hard failed in the merge copy: ${reset.out.trim().split("\n").pop()}`);
   const clean = await step(o.path, ["clean", "-ffd"]);
   if (clean.code !== 0) throw new Error(`git clean failed in the merge copy: ${clean.out.trim().split("\n").pop()}`);
-  // Spec drafts are ignored files: a previous run's are never this one's.
-  const drafts = join(o.path, ".sova", "spec", "drafts");
-  if (existsSync(drafts)) {
-    o.log(`removing ${drafts}\n`);
-    rmSync(drafts, { recursive: true, force: true });
+  // A previous run's spec drafts are never this one's: whatever isn't tracked there goes (ignored ones too); tracked
+  // drafts (a project that commits them) stay as the target has them.
+  if (existsSync(join(o.path, ".sova", "spec", "drafts"))) {
+    const d = await step(o.path, ["clean", "-ffdx", "--", ".sova/spec/drafts"]);
+    if (d.code !== 0) throw new Error(`git clean of the spec drafts failed in the merge copy: ${d.out.trim().split("\n").pop()}`);
   }
 }
 

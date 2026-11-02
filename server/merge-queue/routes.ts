@@ -189,13 +189,13 @@ async function queueFor(deps: MergerDeps, verb: MergeVerb, req: Req, caller: Cal
 function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, q: ProjectQueue, req: Req): void {
   if (caller.kind === "operator") return;
   const reads = MERGE_READ_VERBS.includes(verb);
+  const sid = sessionId(caller);
+  // The run's reviewer works in the merge copy, whatever project its folder reads as: its run decides.
+  if (sid && req.run && REVIEWER_VERBS.includes(verb) && deps.reviewerOf?.(req.run) === sid) return;
   if (caller.kind === "session" || caller.kind === "project-overseer" || caller.kind === "assistant") {
     if (caller.root !== q.root) throw new MergeFailure("forbidden", `this caller acts only on its own project${caller.root ? ` (${caller.root})` : ""}`);
   }
-  const sid = sessionId(caller);
   if (sid && deps.isThreadChat?.(q.root, sid) && THREAD_VERBS.includes(verb)) return;
-  if (sid && verb === "merge.review" && req.run && (deps.reviewerOf?.(req.run) === sid)) return;
-  if (sid && REVIEWER_VERBS.includes(verb) && verb !== "merge.review" && req.run && deps.reviewerOf?.(req.run) === sid) return;
   if (reads && caller.kind !== "conform") return;
   if (verb === "merge.add" || verb === "merge.answer" || verb === "merge.cancel" || verb === "merge.pause" || verb === "merge.resume")
     throw new MergeFailure("forbidden", "only the user lands, cancels, pauses or answers: their Land button or their own word in the branch's chat");

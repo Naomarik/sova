@@ -23,6 +23,7 @@ import { canLand, firstParents, landTip, pushTip } from "./land";
 import type { MergeNoticeKind } from "./notices";
 import { sanityCheck } from "./conflicts";
 import { estimateFromRuns } from "./estimate";
+import { deliverReview } from "./review-step";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
 import { buildView } from "./view";
 
@@ -74,6 +75,8 @@ export interface QueueDeps {
   keepRuns?: number;
   /** The project's review kit is declared (and readable). Default: `def.merge.review` set. */
   hasReviewKit?: (def: ProjectDef | null, root: string) => boolean;
+  /** Hand a reviewer's verdict to the review step (default review-step.ts deliverReview). */
+  deliverReview?: typeof deliverReview;
   /** The mechanical sanity check of a resolution (default conflicts.ts sanityCheck). */
   sanity?: typeof sanityCheck;
   /** Sova's own project keeps the merge round's names file (`<state>/merge-round.json`) until it has its own. */
@@ -238,9 +241,15 @@ export class ProjectQueue {
     const d = await this.declared();
     const head = d.head || (await this.targetHead()) || "";
     // How far each open entry's branch moved past its pinned commit.
+    const recentLanded = new Set(
+      this.q.entries
+        .filter((e) => e.state === "landed")
+        .sort((a, b) => (b.landed?.at ?? "").localeCompare(a.landed?.at ?? ""))
+        .slice(0, 20)
+        .map((e) => e.id),
+    );
     for (const e of this.q.entries) {
-      if (isFinal(e) && e.state !== "landed") continue;
-      if (e.state === "landed" && e.newerCommits === undefined) continue;
+      if (isFinal(e) && !recentLanded.has(e.id)) continue;
       const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
       const n = tip && tip !== e.commit && (await isAncestor(this.git, this.root, e.commit, tip)) ? await countBetween(this.git, this.root, e.commit, tip) : 0;
       if (n) e.newerCommits = n;
@@ -319,7 +328,7 @@ export class ProjectQueue {
       const open = this.q.entries.find((e) => e.branch === branch && ENTRY_OPEN.includes(e.state));
       if (open) {
         const same = open.commit === commit && !!open.approval.withoutReview === !!req.withoutReview && !!open.approval.withoutSpecs === !!req.withoutSpecs && open.approval.drafts?.hash === approval.drafts?.hash;
-        if (same && (open.state === "queued" || open.state === "checking")) return { entry: open, changed: false };
+        if (same && (open.state === "queued" || open.state === "checking")) return { entry: this.withPosition(open), changed: false };
         if (open.state === "queued") {
           open.commit = commit;
           open.approval = approval;
@@ -329,7 +338,7 @@ export class ProjectQueue {
           delete open.reason;
           this.save();
           this.wake("queued", open);
-          return { entry: open, changed: true };
+          return { entry: this.withPosition(open), changed: true };
         }
         if (open.state === "checking" && this.current?.entry === open.id) {
           // A new approval while its run is checking: that run is voided and the new commit goes first.
@@ -366,8 +375,15 @@ export class ProjectQueue {
       this.save();
       this.wake("queued", e);
       this.kickSoon();
-      return { entry: e, changed: true };
+      return { entry: this.withPosition(e), changed: true };
     });
+  }
+
+  /** A copy of the entry with its place in line (queued). */
+  withPosition(e: Entry): MergeEntry {
+    const i = this.queued().findIndex((x) => x.id === e.id);
+    const { seq: _seq, ...rest } = e;
+    return { ...structuredClone(rest), ...(i >= 0 ? { position: i + 1 } : {}) };
   }
 
   private minQueuedSeq(): number {
@@ -570,6 +586,8 @@ export class ProjectQueue {
       if (!cur) throw new MergeFailure("invalid-request", `run ${runId} isn't checking now`);
       if ((v.verdict === "notes" || v.verdict === "blocking") && !v.text?.trim()) throw new MergeFailure("invalid-request", "say what the review found (text)");
       const verdict: ReviewVerdict = { verdict: v.verdict as ReviewVerdict["verdict"], ...(v.text?.trim() ? { text: v.text.trim().slice(0, 2000) } : {}), commit: cur.mergeSha ?? cur.commit, at: this.iso() };
+      // The review step (review-step.ts) waits on its own; the run's awaitReview() is the other door.
+      if ((this.deps.deliverReview ?? deliverReview)(runId, { verdict: verdict.verdict, ...(verdict.text ? { text: verdict.text } : {}) })) return cur;
       const w = this.reviewWaiters.get(runId);
       if (!w) throw new MergeFailure("invalid-request", `run ${runId} isn't waiting for a review`);
       this.reviewWaiters.delete(runId);
@@ -983,6 +1001,10 @@ export class ProjectQueue {
     delete e.reason;
     e.landed = { sha: tip, from: run.base, at: this.iso(), pushed: "pending" };
     e.updatedAt = this.iso();
+    const branchTip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
+    const newer = branchTip && branchTip !== e.commit && (await isAncestor(this.git, this.root, e.commit, branchTip)) ? await countBetween(this.git, this.root, e.commit, branchTip) : 0;
+    if (newer) e.newerCommits = newer;
+    else delete e.newerCommits;
     delete this.q.intent;
     this.save();
     this.log(`landed ${e.branch} at ${tip.slice(0, 7)}`);
@@ -1001,7 +1023,8 @@ export class ProjectQueue {
   private async push(tip: string, def: ProjectDef | null, e?: Entry): Promise<void> {
     const names = this.names();
     let p: Awaited<ReturnType<typeof pushTip>>;
-    if (!names.exists && def?.merge?.push !== false) {
+    const hasOrigin = (await this.git(["remote"], this.root)).stdout.split("\n").includes("origin");
+    if (!names.exists && def?.merge?.push !== false && hasOrigin) {
       p = { state: "not-pushed", why: PUSH_HELD_NAMES };
       if (e) this.wake("names", e, undefined, { namesFile: names.file });
     } else p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold") });

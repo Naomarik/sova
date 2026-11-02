@@ -29,7 +29,7 @@ function recordingEngine(bodies: Record<string, unknown>[]): ProjectEngine {
 function tools(bodies: Record<string, unknown>[] = []) {
   const base = { label: "", description: "", promptSnippet: "", engine: () => recordingEngine(bodies), caller: async () => ({ kind: "operator" }) as const, defaultProject: async () => null };
   return {
-    session: projectVerbsTool({ ...base, name: "project_verbs", deploy: "session" }),
+    session: projectVerbsTool({ ...base, name: "project_verbs", deploy: "session", merge: true }),
     overseer: projectVerbsTool({ ...base, name: "sova_project_verbs", deploy: "overseer", onboard: async () => ({ text: "", details: {} }) }),
   };
 }
@@ -42,9 +42,11 @@ const verbEntries = COMMANDS.filter((c) => c.id.startsWith("project.verb."));
 describe("one table for a verb's params", () => {
   test("the tools' params are the table's rows that have a tool name, in its order, with its descriptions", () => {
     const rows = VERB_PARAMS.filter((p) => p.tool && !p.mergeOnly);
+    const mergeRows = VERB_PARAMS.filter((p) => p.tool && p.mergeOnly);
     for (const [which, t] of Object.entries(tools())) {
       const props = (t.parameters as unknown as Schema).properties;
-      assert.deepEqual(Object.keys(props), ["verb", ...rows.map((p) => p.tool!.name)], which);
+      // A chat's own tool takes the merge verbs too, their rows after the rest.
+      assert.deepEqual(Object.keys(props), ["verb", ...rows.map((p) => p.tool!.name), ...(which === "session" ? mergeRows.map((p) => p.tool!.name) : [])], which);
       for (const p of rows) {
         const want = which === "overseer" && p.tool!.overseerDescription ? p.tool!.overseerDescription : p.tool!.description;
         assert.equal(props[p.tool!.name]!.description, want, `${which}: ${p.tool!.name}`);

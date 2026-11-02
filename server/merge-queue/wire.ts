@@ -8,7 +8,7 @@ import { startIngest } from "./ingest";
 import { notifier } from "./notices";
 import { MergeQueues } from "./queue";
 import { merger, recordedRoots } from "./routes";
-import { makeRunMerge } from "./run";
+import { engineServices, makeRunMerge } from "./run";
 import { worktreeQueueInfo } from "./view";
 
 /**
@@ -55,7 +55,7 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
     import("./thread"),
     import("./review-step"),
   ]);
-  const runMerge: RunMerge = makeRunMerge({ state: stateRoot() });
+  const runMerge: RunMerge = makeRunMerge({ state: stateRoot(), services: engineServices(projectEngine()) });
   const projectIdOf = (root: string): string | null => {
     try {
       return listProjects().find((p) => p.root === root)?.id ?? null;

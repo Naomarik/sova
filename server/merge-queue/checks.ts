@@ -164,6 +164,8 @@ export interface CheckReport {
   failures: { name?: string; file?: string; message?: string }[];
   /** Every failing test file, when the runner names them (uncapped). */
   failingFiles: string[];
+  /** Every failing test's name (uncapped, unique), for a runner that names tests but no file (Kaocha). */
+  failingNames: string[];
   notes: string[];
 }
 
@@ -188,6 +190,7 @@ export function readCheckOut(file: string): CheckReport | null {
   }
   const listed = Array.isArray(o.failingFiles) ? o.failingFiles.filter((f): f is string => typeof f === "string" && !!f) : [];
   const failingFiles = [...new Set(listed.length ? listed : failures.flatMap((f) => (f.file ? [f.file] : [])))];
+  const failingNames = [...new Set((Array.isArray(o.failures) ? o.failures : []).flatMap((f) => (f && typeof f === "object" && typeof (f as Record<string, unknown>).name === "string" && (f as Record<string, unknown>).name ? [String((f as Record<string, unknown>).name).slice(0, 500)] : [])))];
   const skippedWhy = typeof o.skipped === "string" && o.skipped ? o.skipped.slice(0, 300) : undefined;
   return {
     passed: n(o.passed),
@@ -196,6 +199,7 @@ export function readCheckOut(file: string): CheckReport | null {
     ...(skippedWhy ? { skippedWhy } : {}),
     failures,
     failingFiles,
+    failingNames,
     notes: Array.isArray(o.notes) ? o.notes.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 300)).slice(0, 10) : [],
   };
 }

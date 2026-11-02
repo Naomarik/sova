@@ -97,11 +97,14 @@ describe("what a run checks", () => {
     mkdirSync(dir, { recursive: true });
     const f = join(dir, "out.json");
     writeFileSync(f, JSON.stringify({ passed: 3, failed: 1, skipped: 2, failures: [{ name: "x", file: "a.test.ts", message: "boom" }, { bogus: 1 }], failingFiles: ["a.test.ts", "b.test.ts"], notes: ["n"] }));
-    expect(readCheckOut(f)).toEqual({ passed: 3, failed: 1, skipped: 2, failures: [{ name: "x", file: "a.test.ts", message: "boom" }], failingFiles: ["a.test.ts", "b.test.ts"], notes: ["n"] });
+    expect(readCheckOut(f)).toEqual({ passed: 3, failed: 1, skipped: 2, failures: [{ name: "x", file: "a.test.ts", message: "boom" }], failingFiles: ["a.test.ts", "b.test.ts"], failingNames: ["x"], notes: ["n"] });
     writeFileSync(f, JSON.stringify({ passed: 0, failed: 0, skipped: "no change to its paths" }));
     expect(readCheckOut(f)).toMatchObject({ skippedWhy: "no change to its paths", skipped: null });
     writeFileSync(f, JSON.stringify({ failures: [{ file: "c.test.ts" }] }));
     expect(readCheckOut(f)!.failingFiles).toEqual(["c.test.ts"]);
+    // Names beyond the 50 failures kept for display are still every one (attribution follows them by name).
+    writeFileSync(f, JSON.stringify({ failed: 60, failures: Array.from({ length: 60 }, (_, i) => ({ name: `t${i % 55}` })) }));
+    expect(readCheckOut(f)!.failingNames.length).toBe(55);
     writeFileSync(f, "not json");
     expect(readCheckOut(f)).toBeNull();
     expect(readCheckOut(join(dir, "missing.json"))).toBeNull();

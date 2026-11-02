@@ -360,7 +360,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         return finish(signal.aborted ? voided("aborted") : out({ verdict: "machine", why: `couldn't start ${needs.join(", ")} in the merge copy: ${err instanceof Error ? err.message : err}`, copy, mergeSha, tip }));
       }
     }
-    const reds: { check: PlannedCheck; files: string[] }[] = [];
+    const reds: { check: PlannedCheck; files: string[]; names?: string[] }[] = [];
     const blames: CheckBlame[] = [];
     for (const check of list) {
       const st = steps.start(`check:${check.id}`, "check", check.label, { source: check.source, ...(check.why ? { why: check.why } : {}) });
@@ -373,15 +373,31 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         continue;
       }
       st.end("failed", { counts, detail: r.failingFiles.length ? `${r.failingFiles.length} failing file${r.failingFiles.length === 1 ? "" : "s"}` : `exit ${r.proc.code}`, failures: (r.report?.failures ?? r.failingFiles.map((file) => ({ file }))).slice(0, 50) });
-      // Again on the tip: what passes now is flaky.
+      // Again on the tip: what passes now is flaky. Failures named with no file (Kaocha) are told apart by name: the
+      // whole check runs again and each name is followed, so a new failure isn't masked by another one red on master.
       const files = check.rerun ? r.failingFiles : [];
+      const names = !r.failingFiles.length ? namesOf(r) : [];
       const again = steps.start(`rerun-tip:${check.id}`, "rerun-tip", `${check.label} again${files.length ? ` (${files.length} file${files.length === 1 ? "" : "s"})` : ""}`);
       const r2 = await runCheck({ def, scope, check, stepId: `rerun-tip:${check.id}`, logFile: again.file, ...(files.length ? { files } : {}), signal });
       if (r2.proc.aborted || signal.aborted) return finish((again.end("failed", { detail: "aborted" }), voided("aborted")));
       if (r2.proc.timedOut) return finish((again.end("failed", { detail: "timed out" }), voided(`${check.label} timed out on its rerun`)));
       if (r2.proc.code === 0) {
         again.end("passed", { detail: "passes on a rerun: flaky" });
-        blames.push(files.length ? { id: check.id, label: check.label, files: files.map((file) => ({ file, blame: blameFile({ passesOnTip: true }) })) } : { id: check.id, label: check.label, whole: blameCheck({ passesOnTip: true }) });
+        const each = files.length ? files : names;
+        blames.push(each.length ? { id: check.id, label: check.label, files: each.map((file) => ({ file, blame: blameFile({ passesOnTip: true }) })) } : { id: check.id, label: check.label, whole: blameCheck({ passesOnTip: true }) });
+        continue;
+      }
+      if (names.length) {
+        const n2 = namesOf(r2);
+        // A rerun that fails naming nothing tells nothing apart: every name is still failing.
+        const stillN = n2.length ? names.filter((n) => n2.includes(n)) : names;
+        const flakyN = names.filter((n) => !stillN.includes(n));
+        // Names the rerun alone fails are followed too (their flakiness can't be told from one run).
+        const extra = n2.filter((n) => !names.includes(n));
+        again.end("failed", { detail: `${stillN.length} still failing${flakyN.length ? `, ${flakyN.length} passed` : ""}${extra.length ? `, ${extra.length} new` : ""}` });
+        if (flakyN.length) blames.push({ id: check.id, label: check.label, files: flakyN.map((file) => ({ file, blame: "flaky" as const })) });
+        if (!stillN.length && !extra.length) continue;
+        reds.push({ check, files: [], names: [...stillN, ...extra] });
         continue;
       }
       // With files: the ones the rerun still names (all of them when it names none).
@@ -411,7 +427,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const sf = await runSetup({ def, scope: baseScope, steps, idPrefix: "rerun-master:setup:", labelPrefix: `Setup on ${target} alone: `, kind: "rerun-master", signal });
       if (signal.aborted) return finish(voided("aborted"));
       if (sf) return finish(out({ verdict: "machine", blame: "machine", why: `setup (${sf.failed.id}) fails on ${target} alone, so whose failure it is can't be told`, copy, mergeSha, tip }));
-      for (const { check, files } of reds) {
+      for (const { check, files, names } of reds) {
         const onBase = files.length ? await filesOn(copy, base, files) : [];
         const absent = files.filter((f) => !onBase.includes(f));
         const st = steps.start(`rerun-master:${check.id}`, "rerun-master", `${check.label} on ${target} alone${files.length ? ` (${onBase.length} file${onBase.length === 1 ? "" : "s"})` : ""}`);
@@ -423,7 +439,18 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         const r = await runCheck({ def, scope: baseScope, check, stepId: `rerun-master:${check.id}`, logFile: st.file, ...(files.length ? { files: onBase } : {}), signal });
         if (r.proc.aborted || signal.aborted) return finish((st.end("failed", { detail: "aborted" }), voided("aborted")));
         if (r.proc.timedOut) return finish((st.end("failed", { detail: "timed out" }), voided(`${check.label} timed out on ${target} alone`)));
-        if (files.length) {
+        if (names?.length) {
+          const onT = namesOf(r);
+          if (r.proc.code !== 0 && !onT.length) {
+            // Red on the target naming no test: nothing to tell the names apart by; the whole check is master's.
+            st.end("failed", { detail: `fails on ${target} too, naming no test` });
+            blames.push({ id: check.id, label: check.label, whole: blameCheck({ passesOnTip: false, onTarget: "fails" }) });
+            continue;
+          }
+          const failing = r.proc.code === 0 ? [] : names.filter((n) => onT.includes(n));
+          st.end(r.proc.code === 0 ? "passed" : "failed", { detail: r.proc.code === 0 ? `passes on ${target}: the branch's` : `${failing.length} of ${names.length} fail on ${target} too` });
+          blames.push({ id: check.id, label: check.label, files: names.map((file) => ({ file, blame: blameFile({ passesOnTip: false, onTarget: failing.includes(file) ? "fails" : "passes" }) })) });
+        } else if (files.length) {
           const failing = r.proc.code === 0 ? [] : r.failingFiles.length ? onBase.filter((f) => r.failingFiles.includes(f)) : onBase;
           st.end(r.proc.code === 0 ? "passed" : "failed", { detail: r.proc.code === 0 ? `passes on ${target}: the branch's` : `${failing.length} fail on ${target} too` });
           blames.push({ id: check.id, label: check.label, files: [...absent.map((file) => ({ file, blame: "branch" as const })), ...onBase.map((file) => ({ file, blame: blameFile({ passesOnTip: false, onTarget: failing.includes(file) ? "fails" : "passes" }) }))] });
@@ -596,6 +623,9 @@ async function identityEnv(copy: string): Promise<Record<string, string>> {
   if (name && email) return {};
   return { GIT_AUTHOR_NAME: name || "Sova merge queue", GIT_AUTHOR_EMAIL: email || "merge-queue@sova.invalid", GIT_COMMITTER_NAME: name || "Sova merge queue", GIT_COMMITTER_EMAIL: email || "merge-queue@sova.invalid" };
 }
+
+/** The failing tests a check run names without a file (its SOVA_OUT failures' names), when it named no file. */
+const namesOf = (r: { failingFiles: string[]; report: { failingNames: string[] } | null }): string[] => (r.failingFiles.length ? [] : (r.report?.failingNames ?? []));
 
 /** Every merge in the copy (beside NO_BACKGROUND_CLEANUP): never git rerere (a user's rerere.enabled + autoupdate would
  *  stage a recorded resolution silently and leave no unmerged path: a conflict must reach the thread and the user). */

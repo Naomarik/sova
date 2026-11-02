@@ -11,7 +11,12 @@
 // node_modules is copied from this worktree (scripts/copy-tree.mjs): no network. The server is a child of this
 // script on SOVA_PORT (default 4826), stopped at the end.
 //
-//   node scripts/merge-queue-e2e.mjs [--only E1,E2,…] [--keep] [--port N] [--model zai/glm-5.3] [--fresh]
+//   node scripts/merge-queue-e2e.mjs [--only E1,E2,…] [--keep] [--port N] [--model zai/glm-5.3] [--real-model] [--fresh]
+//
+// --real-model copies the user's login (~/.pi/agent/auth.json, read only) into the server clone's gitignored .agent
+// for the run and deletes it at the end on every path; every chat defaults to --model (zai/glm-5.3) before its
+// first prompt and is archived at the end. Without it, the thread and reviewer cases (E1's note, E4-E6) need a model
+// and fail with what they saw.
 //
 // Cases (each ends as the design says, or the case fails with what it saw):
 //   E1 ok        a doc change + a spec draft (with its note), approved by the Land route: lands, docs official,
@@ -42,6 +47,7 @@ const ONLY = opt("--only", "") ? new Set(opt("--only", "").split(",")) : null;
 const KEEP = args.includes("--keep");
 const FRESH = args.includes("--fresh");
 const MODEL = opt("--model", "zai/glm-5.3");
+const REAL_MODEL = args.includes("--real-model");
 const E2E = join(homedir(), ".cache", "mq-e2e");
 const SERVER = join(E2E, "server");
 const PROJECT = join(E2E, "sova");
@@ -168,9 +174,20 @@ function prepare() {
     sh("mise", ["trust", dir], { allowFail: true });
   }
   sh("node", ["scripts/hermetic-agent-dir.mjs"], { cwd: SERVER });
-  // A real model for the merge thread and the reviewer, when the operator allowed copying the login in.
+  // A real model for the merge thread and the reviewer (--real-model; the operator allowed copying the login into
+  // this hermetic .agent, gitignored, deleted at the end). Every chat defaults to MODEL before its first prompt.
+  check(sh("git", ["check-ignore", ".agent/auth.json"], { cwd: SERVER, allowFail: true }) === ".agent/auth.json", ".agent is gitignored in the server clone");
   const auth = join(homedir(), ".pi", "agent", "auth.json");
-  if (process.env.MQ_E2E_COPY_AUTH === "1" && existsSync(auth) && !existsSync(join(AGENT, "auth.json"))) cpSync(auth, join(AGENT, "auth.json"));
+  if (REAL_MODEL && existsSync(auth)) cpSync(auth, join(AGENT, "auth.json"));
+  const sf = join(AGENT, "settings.json");
+  const settings = existsSync(sf) ? JSON.parse(readFileSync(sf, "utf8")) : {};
+  const [provider, ...model] = MODEL.split("/");
+  writeFileSync(sf, JSON.stringify({ ...settings, defaultProvider: provider, defaultModel: model.join("/") }, null, 2) + "\n");
+}
+
+/** The copied login goes as soon as the runs end, on every path. */
+function dropAuth() {
+  rmSync(join(AGENT, "auth.json"), { force: true });
 }
 
 // ---------------------------------------------------------------- the server
@@ -459,7 +476,9 @@ async function main() {
     await cases();
   } finally {
     writeFileSync(join(LOGS, "final-view.json"), JSON.stringify(await status().catch(() => null), null, 2));
+    await archiveChats().catch((e) => log(`archiving chats: ${e.message}`));
     if (!KEEP) await stopServer();
+    if (!KEEP) dropAuth();
   }
   const after = spawnSync("git", ["-C", join(homedir(), "webapps", "sova"), "rev-parse", "master"], { encoding: "utf8" }).stdout?.trim();
   thisRun.realMasterUnchanged = after === REAL_MASTER;
@@ -471,13 +490,22 @@ async function main() {
   process.exit(failed.length || !thisRun.realMasterUnchanged ? 1 : 0);
 }
 
+/** Archive every chat this run's server made (the merge thread, reviewers): throwaway sessions never stay open. */
+async function archiveChats() {
+  const r = await http("GET", "/api/sessions");
+  const list = Array.isArray(r.json) ? r.json : (r.json.sessions ?? []);
+  for (const s of list) if (!s.archived && s.path) await http("POST", "/api/sessions/archive", { path: s.path, archived: true }).catch(() => {});
+}
+
 process.on("SIGINT", async () => {
   await stopServer();
+  dropAuth();
   process.exit(130);
 });
 
 main().catch(async (e) => {
   console.error(e);
   await stopServer();
+  dropAuth();
   process.exit(2);
 });

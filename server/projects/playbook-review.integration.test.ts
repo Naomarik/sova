@@ -102,7 +102,8 @@ test("a run that ends with commits is proposed: a playbook-review item on its se
   assert.deepEqual([r.share, r.open, r.proof], [null, null, null], "no share, no entry point, no conformance yet");
   assert.equal(v.playbook!.live?.working, false);
   const fact = playbookReviewOf(pid)!;
-  assert.deepEqual({ ...fact, since: 0 }, { projectId: pid, sessionId, path: sessionPath, label: "Project verbs", branch, target: "main", hash: v.playbook!.branchHash, proposes: "definition", since: 0 });
+  assert.deepEqual({ ...fact, since: 0 }, { projectId: pid, sessionId, path: sessionPath, label: "Project verbs", branch, target: "main", hash: v.playbook!.branchHash, commit: v.playbook!.commit, proposes: "definition", since: 0 });
+  assert.match(fact.commit ?? "", /^[0-9a-f]{40}$/, "the tip the proposal was read at");
   assert.ok(fact.since > 0, "dated by its last turn's end");
   assert.equal(playbookReviews().get(sessionPath)?.sessionId, sessionId, "keyed by its session file for the digest");
   const summary = { id: sessionId, path: sessionPath, cwd: wt, title: "Project verbs: site", createdAt: "", lastActiveAt: new Date().toISOString(), model: "a/b", live: null, busy: false, origin: "web", archived: false } as never;

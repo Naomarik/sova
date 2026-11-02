@@ -68,7 +68,7 @@ export async function statsOf(root: string, targetHead: string, branch: string):
   const short = await realGit(["diff", "--shortstat", `${targetHead}...${head}`], root);
   const added = Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0);
   const removed = Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0);
-  const out = short.code === 0 ? { ahead, added, removed } : null;
+  const out = short.code === 0 ? { head, ahead, added, removed } : null;
   if (statsCache.size > 500) statsCache.clear();
   statsCache.set(key, out);
   return out;

@@ -125,6 +125,8 @@ export async function uncommitted(git: Git, dir: string): Promise<string[]> {
 }
 
 export interface WorktreeReading {
+  /** The branch's head commit, when the branch exists. */
+  head?: string;
   /** open | merged | missing (removed is the record's, not git's). */
   state: "open" | "merged" | "missing";
   merged: boolean;
@@ -138,7 +140,7 @@ export interface WorktreeReading {
   error?: string;
 }
 
-type RefsPart = Pick<WorktreeReading, "branch" | "ahead" | "unmerged" | "merged">;
+type RefsPart = Pick<WorktreeReading, "branch" | "ahead" | "unmerged" | "merged" | "head">;
 /** The refs part of each worktree's last reading, kept while the ref files it was read from stand:
     the project page re-reads every coding session's worktree on each poll. Dirty is read every time. */
 const refReadings = new Map<string, { token: string; value: RefsPart }>();
@@ -177,7 +179,8 @@ async function readRefsPart(w: WorktreeRecord, cwd: string, git: Git): Promise<R
   const token = git === runGit ? refsToken(cwd, w) : null;
   const hit = token ? refReadings.get(w.path) : undefined;
   if (hit && hit.token === token) return hit.value;
-  const branch = (await branchSha(git, cwd, w.branch)) !== null;
+  const sha = await branchSha(git, cwd, w.branch);
+  const branch = sha !== null;
   const count = async (range: string) => {
     const n = await git(["rev-list", "--count", range], cwd);
     return n.code === 0 ? Number(n.stdout.trim()) || 0 : 0;
@@ -185,7 +188,7 @@ async function readRefsPart(w: WorktreeRecord, cwd: string, git: Git): Promise<R
   const ahead = await count(`${w.base}..refs/heads/${w.branch}`);
   const unmerged = branch ? await count(`refs/heads/${w.target}..refs/heads/${w.branch}`) : 0;
   const merged = await mergedInto(git, cwd, w);
-  const value = { branch, ahead, unmerged, merged };
+  const value = { branch, ahead, unmerged, merged, ...(sha ? { head: sha } : {}) };
   // A ref that moved during the read leaves nothing behind: the next read asks Git again.
   if (token && refsToken(cwd, w) === token) {
     refReadings.delete(w.path);
@@ -201,9 +204,9 @@ export async function readWorktree(w: WorktreeRecord, root: string, git: Git = r
   const cwd = here ? w.path : root;
   try {
     if (!existsSync(cwd)) return { state: "missing", merged: false, branch: false, ahead: 0, unmerged: 0, dirty: false, worktree: null };
-    const { branch, ahead, unmerged, merged } = await readRefsPart(w, cwd, git);
+    const { branch, ahead, unmerged, merged, head } = await readRefsPart(w, cwd, git);
     const dirty = here ? (await uncommitted(git, w.path)).length > 0 : false;
-    return { state: !here ? "missing" : merged ? "merged" : "open", merged, branch, ahead, unmerged, dirty, worktree: here ? w.path : null };
+    return { state: !here ? "missing" : merged ? "merged" : "open", merged, branch, ahead, unmerged, dirty, worktree: here ? w.path : null, ...(head ? { head } : {}) };
   } catch (err) {
     return { state: here ? "open" : "missing", merged: false, branch: true, ahead: 0, unmerged: 0, dirty: false, worktree: here ? w.path : null, error: err instanceof Error ? err.message : String(err) };
   }

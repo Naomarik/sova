@@ -83,6 +83,8 @@ export interface RuntimePlaybook {
   target?: string;
   /** The definition its branch proposes, while proposed. */
   branchHash?: string;
+  /** The branch tip `branchHash` was read at: Land pins it. */
+  commit?: string;
   branchProof?: RuntimeProof | null;
   /** While the run is live: its session as the session list reads it now (§app.project-runtime/run-progress). */
   live?: RuntimeRunLive;

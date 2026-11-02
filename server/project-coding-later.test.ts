@@ -210,11 +210,15 @@ describe("New Session's Project tab: a coding session in the root, adopting the 
     const setUp = queuesWith("declared");
     setMergeQueuesForTest(setUp);
     try {
-      await po.mergeCodingWorktree(project.id, made.sessionId);
+      // Land pins the head the page showed, even when the branch moved past it since.
+      const shown = (await po.projectWorktrees(project.id)).sessions.find((x) => x.sessionId === made.sessionId)!.head!;
+      assert.equal(shown, git(tree.path, "rev-parse", "HEAD"));
+      commit(tree.path, "later.txt", "later\n");
+      await po.mergeCodingWorktree(project.id, made.sessionId, shown);
       const q = await setUp.get(client);
       const e = q.entries().find((x) => x.branch === "feat/queued")!;
       assert.ok(e, "queued");
-      assert.equal(e.commit, git(tree.path, "rev-parse", "HEAD"));
+      assert.equal(e.commit, shown, "the shown head, not the newer one");
       assert.equal(e.approval.by, "land-button");
       assert.equal(e.session, made.sessionId);
       assert.equal(git(client, "rev-parse", "master"), before, "nothing merged in the root");

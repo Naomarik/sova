@@ -298,6 +298,7 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
     ...(str(pb.result) ? { result: str(pb.result) } : {}),
     ...(str(pb.branch) ? { branch: str(pb.branch) } : {}),
     ...(str(build.target) ? { target: str(build.target) } : {}),
+    ...(str(bf.commit) ? { commit: str(bf.commit) } : {}),
     ...(deploy
       ? deploy.hash
         ? { branchHash: str(deploy.hash) }
@@ -403,7 +404,7 @@ export interface MergeRunOutcome {
  * Merge Branch on a proposed run (§app.project-runtime/merge): refused when `hash` is no longer the one its branch
  * proposes, then Merge Branch on its session with every refusal of its own.
  */
-export async function mergeRun(projectId: string, hash: string): Promise<MergeRunOutcome> {
+export async function mergeRun(projectId: string, hash: string, commit?: string): Promise<MergeRunOutcome> {
   await readRuntime(projectId);
   const review = playbookReviewOf(projectId);
   if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
@@ -411,7 +412,8 @@ export async function mergeRun(projectId: string, hash: string): Promise<MergeRu
   if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : CHANGED_SINCE, 409);
   try {
     // Once the project's merge queue is set up, Merge Branch is Land: approved at the branch head in the queue.
-    if (await landThroughQueue(projectId, readProject(projectId).root, review.sessionId)) return { view: await readRuntime(projectId), merged: false, queued: true };
+    // It pins the tip the proposal was read at (the screen's, else the review's), never a later one.
+    if (await landThroughQueue(projectId, readProject(projectId).root, review.sessionId, commit ?? review.commit)) return { view: await readRuntime(projectId), merged: false, queued: true };
     await mergeCodingWorktree(projectId, review.sessionId);
   } catch (err) {
     if (!(err instanceof OrgError)) throw err;

@@ -200,7 +200,7 @@ describe("the worktree row's numbers", () => {
       const b = repo.branch("feat/s", { "n.txt": "1\n2\n3\n" });
       repo.commitOn(b.path, { "a.txt": "one\n" }, "second");
       repo.commitOn(repo.root, { "m.txt": "master only\n" }, "on master");
-      assert.deepEqual(await statsOf(repo.root, repo.head(), "feat/s"), { ahead: 2, added: 3, removed: 2 });
+      assert.deepEqual(await statsOf(repo.root, repo.head(), "feat/s"), { head: sh(repo.root, "rev-parse", "feat/s"), ahead: 2, added: 3, removed: 2 });
       assert.equal(await statsOf(repo.root, repo.head(), "feat/none"), null);
     } finally {
       repo.done();

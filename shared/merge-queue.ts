@@ -344,6 +344,8 @@ export interface MergeReady {
 
 /** SessionWorktreeInfo.mergeStats: the branch against the target, for the row's "N commits · +a −r". */
 export interface WorktreeMergeStats {
+  /** The branch head the numbers were read at (Land pins it). */
+  head: string;
   /** Commits the target hasn't. */
   ahead: number;
   /** Lines added and removed, the branch's side only (target...branch). */

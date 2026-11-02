@@ -1133,7 +1133,7 @@ export function readinessChecksOf(sessionPath: string): ReadinessChecks | undefi
 
 /** The last background answer for a session, without queueing a read: `known` false while it was
     never read (right after a start), so a reader tells "not read yet" from "tracks nothing"
-    (the merge board, §chat.worktrees/merge-board). `at` is when it was computed. */
+    (the Overseer's roundup and the schedules read it so). `at` is when it was computed. */
 export function readinessReading(sessionPath: string): { known: false } | { known: true; at: number; value?: SessionReadiness } {
   const hit = cache.get(sessionPath);
   if (!hit) return { known: false };

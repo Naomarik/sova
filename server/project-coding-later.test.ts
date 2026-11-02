@@ -222,6 +222,14 @@ describe("New Session's Project tab: a coding session in the root, adopting the 
       writeFileSync(join(tree.path, "loose.txt"), "x\n");
       await assert.rejects(po.mergeCodingWorktree(project.id, made.sessionId), /uncommitted file/);
       rmSync(join(tree.path, "loose.txt"));
+      // Any direct merge into the queue's target is refused, whoever sends it (the build's own merge act).
+      const { actOrThrow } = await import("./org-engine");
+      const { engineOrThrow, projectEnvelope } = await import("./projects/spaces");
+      const { buildSid } = await import("./build-loadout");
+      const out = await actOrThrow(engineOrThrow(project.id), buildSid(project.id, made.sessionId), "build/merge", { elsewhere: false }, projectEnvelope(project.id, { by: "operator", attended: true }), { settle: true }).catch((err: Error) => ({ effects: [{ error: err.message }] }));
+      const refused = (out.effects ?? []).find((x: { error?: string }) => x.error)?.error ?? "";
+      assert.match(refused, /master takes branches only through the merge queue: Land the branch instead \(nothing was merged\)/);
+      assert.equal(git(client, "rev-parse", "master"), before, "still nothing merged");
       await setUp.stop();
       // Not set up: Merge Branch merges in the root as before.
       setMergeQueuesForTest(queuesWith("unset"));

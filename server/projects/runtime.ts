@@ -9,7 +9,7 @@ import { branchFacts, observeRuntime, type BranchFacts, type ProofFact, type Run
 import { onMergeNotes, startOnMergeTick, withOnMerge } from "../project-services/on-merge";
 import { deployNotes } from "../project-services/deploy";
 import { projectEngine } from "../project-services/routes";
-import { mergeCodingWorktree, startOnboardSession, type StartedCoding } from "../project-overseer";
+import { landThroughQueue, mergeCodingWorktree, startOnboardSession, type StartedCoding } from "../project-overseer";
 import { projectRootOf } from "../project-root";
 import { readWorktree } from "../project-worktrees";
 import { onboardStart } from "./onboard";
@@ -394,6 +394,8 @@ const DEPLOY_CHANGED_SINCE = "The deploy recipe changed since it was shown: look
 export interface MergeRunOutcome {
   view: ProjectRuntimeView;
   merged: boolean;
+  /** The project's merge queue is set up: the branch was approved at its head there (Land), not merged. */
+  queued?: true;
   refused?: string;
 }
 
@@ -408,6 +410,8 @@ export async function mergeRun(projectId: string, hash: string): Promise<MergeRu
   // Never main's hash by mistake: only the one the branch proposes now.
   if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : CHANGED_SINCE, 409);
   try {
+    // Once the project's merge queue is set up, Merge Branch is Land: approved at the branch head in the queue.
+    if (await landThroughQueue(projectId, readProject(projectId).root, review.sessionId)) return { view: await readRuntime(projectId), merged: false, queued: true };
     await mergeCodingWorktree(projectId, review.sessionId);
   } catch (err) {
     if (!(err instanceof OrgError)) throw err;

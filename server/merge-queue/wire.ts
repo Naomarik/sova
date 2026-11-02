@@ -37,6 +37,14 @@ export function mergeQueues(): MergeQueues | null {
   return queues;
 }
 
+/** Whether `target` of the project at `root` lands only through its merge queue (the queue is set up and lands
+ *  into that branch). A direct merge into it is refused then. False while the queue isn't started. */
+export async function queueManages(root: string, target: string): Promise<boolean> {
+  if (!queues) return false;
+  const q = await queues.get(root);
+  return q.target === target && (await q.declared()).checks !== "unset";
+}
+
 /** Tests only: stand a set of queues in for the server's (null: none). */
 export function setMergeQueuesForTest(q: MergeQueues | null): void {
   queues = q;

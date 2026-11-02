@@ -1214,7 +1214,7 @@ export async function mergeCodingWorktree(projectId: string, sessionId: unknown)
 }
 
 /** Land through the project's merge queue when it is set up (checks declared); false: not set up, merge as before. */
-async function landThroughQueue(projectId: string, root: string, sessionId: unknown): Promise<boolean> {
+export async function landThroughQueue(projectId: string, root: string, sessionId: unknown): Promise<boolean> {
   if (typeof sessionId !== "string" || !sessionId) return false;
   const { mergeQueues } = await import("./merge-queue/wire");
   const queues = mergeQueues();

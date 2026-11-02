@@ -172,8 +172,8 @@ function mutate(rows: Map<string, SessionSummary>, rand: () => number): void {
   else rows.set(s.path, { ...s, groupId: s.groupId ? undefined : "g1" });
 }
 
-for (const withRowsSocket of [false, true]) {
-  test(`an old socket gets the baseline feed's own frames for the same changes${withRowsSocket ? ", with a rows socket beside it" : ""}`, async () => {
+for (const [withRowsSocket, sameObjects] of [[false, false], [true, false], [false, true], [true, true]] as const) {
+  test(`an old socket gets the baseline feed's own frames for the same changes${withRowsSocket ? ", with a rows socket beside it" : ""}${sameObjects ? ", unchanged rows handed out as the same objects (the tracked list's identity reuse)" : ""}`, async () => {
     for (let seed = 1; seed <= 15; seed++) {
       const rand = prng(seed);
       const rows = new Map<string, SessionSummary>();
@@ -181,10 +181,14 @@ for (const withRowsSocket of [false, true]) {
         const x = row();
         rows.set(x.path, x);
       }
-      const list = async () => JSON.parse(JSON.stringify([...rows.values()].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt) || (a.path < b.path ? -1 : 1))));
+      const sorted = () => [...rows.values()].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt) || (a.path < b.path ? -1 : 1));
+      // The baseline always gets fresh objects (its builds made new ones); the new feed gets the
+      // tracked list's shape when asked: a changed row is a new object, an unchanged one the same.
+      const list = async () => JSON.parse(JSON.stringify(sorted()));
+      const listNew = sameObjects ? async () => sorted() : list;
       const opts = { list, intervalMs: 1_000_000, debounceMs: 0, minGapMs: 0 };
       const oldFeed = new OLD_FEED.SessionFeed(opts);
-      const newFeed = new feedMod.SessionFeed(opts);
+      const newFeed = new feedMod.SessionFeed({ ...opts, list: listNew });
       const heard = { old: [] as string[], new: [] as string[] };
       const offs = [oldFeed.add((x: SessionFeedMessage) => heard.old.push(JSON.stringify(x))), newFeed.add((x: SessionFeedMessage) => heard.new.push(JSON.stringify(x)))];
       if (withRowsSocket) offs.push(newFeed.add(() => {}, { rows: true }));

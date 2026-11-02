@@ -158,6 +158,7 @@ async function heardChange(from: Mark, files: string[] = [], what = ""): Promise
 }
 
 let nullsAtLastCheck = 0;
+let handedOut: { rows: SessionSummary[]; json: string } | null = null;
 
 /** Old builds with readiness drained in between, until two in a row agree. */
 async function settledReadiness(): Promise<void> {
@@ -194,6 +195,10 @@ async function assertParity(label: string, opts: { full?: boolean } = {}): Promi
   await settledReadiness();
   const fullBefore = NEW.trackedStats.full;
   const fresh = await newList();
+  // Rows are kept by identity across builds (unchanged rows keep their object, and the feed's
+  // memos key on it): nothing may change a row it already handed out.
+  if (handedOut) assert.equal(JSON.stringify(handedOut.rows), handedOut.json, `${label}: the previous list's rows were not changed in place`);
+  handedOut = { rows: fresh, json: JSON.stringify(fresh) };
   // A tracked build that quietly read everything would pass for the wrong reason. Unless the watch
   // said it couldn't name what changed (a null note: Bun sends a nameless event now and then).
   const nulls = noted.filter((n) => n === null).length;

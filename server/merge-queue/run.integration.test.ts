@@ -2,7 +2,7 @@
 // whose failure a red check is. The queue around it is tested in the scenario suite.
 import { after, describe, test } from "node:test";
 import { expect } from "./testing/expect";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { MergeEntry, RunStep } from "../../shared/merge-queue";
 import { parseDefinition } from "../../shared/project-contract";
@@ -337,6 +337,21 @@ describe("a merge run", () => {
     const r2 = await run(fx, fx.branch("svc2", { "src/app.txt": "svc2\n" }), { deps: { services: undefined } });
     expect(r2.out).toMatchObject({ verdict: "machine" });
     expect(r2.out.why).toMatch(/need svc running/);
+  });
+
+  test("a cut a stop interrupted is recovered: a detached worktree with no mark, or a locked record with no folder", async () => {
+    const fx = fixture();
+    const copy = mergeCopyPath(fx.project);
+    git(fx.project, ["worktree", "add", "-q", "--detach", copy, fx.target]);
+    const r = await run(fx, fx.branch("after-stop", { "src/app.txt": "a\n" }));
+    expect(r.out.verdict).toBe("passed");
+    const fx2 = fixture();
+    const copy2 = mergeCopyPath(fx2.project);
+    git(fx2.project, ["worktree", "add", "-q", "--detach", copy2, fx2.target]);
+    git(fx2.project, ["worktree", "lock", copy2]);
+    rmSync(copy2, { recursive: true, force: true });
+    const r2 = await run(fx2, fx2.branch("after-stop2", { "src/app.txt": "b\n" }));
+    expect(r2.out.verdict).toBe("passed");
   });
 
   test("every step's log exists from its first line", async () => {

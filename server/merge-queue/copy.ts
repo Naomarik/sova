@@ -178,16 +178,31 @@ export async function prepareCopy(o: { root: string; path: string; base: string;
       o.log(`${o.path} isn't a worktree of ${o.root}: moved aside to ${aside}\n`);
       renameSync(o.path, aside);
     } else if (!(await isOurCopy(o.path))) {
-      // One of the project's own worktrees (a branch named "merge" is cut at this very path): never reset it.
+      // One of the project's own worktrees (a branch named "merge" is cut at this very path): never reset it. A
+      // DETACHED one is the queue's own cut that a stop left before its mark: marked now, and used.
       const branch = (await gitProc(o.path, ["symbolic-ref", "--quiet", "--short", "HEAD"])).out.trim();
-      throw new CopyRefused(`${o.path} is a worktree the queue didn't make${branch ? ` (branch ${branch})` : ""}; the queue never resets it. Move that worktree, then resume the queue`);
+      if (branch) throw new CopyRefused(`${o.path} is a worktree the queue didn't make (branch ${branch}); the queue never resets it. Move that worktree, then resume the queue`);
+      o.log(`${o.path} is a detached worktree with no mark (a cut a stop interrupted): marking it as the queue's\n`);
+      writeFileSync(await markerFile(o.path), `${o.root}\n`);
     }
   }
   if (!existsSync(o.path)) {
     mkdirSync(dirname(o.path), { recursive: true });
-    const r = await step(o.root, ["worktree", "add", "--detach", "--force", o.path, o.base]);
+    // The cut runs to its end whatever the run's signal says: a cut stopped halfway leaves a locked half-worktree.
+    const cut = () => gitProc(o.root, ["worktree", "add", "--detach", "--force", "--force", o.path, o.base], { log: o.log });
+    o.log(`$ git worktree add --detach --force --force ${o.path} ${o.base}\n`);
+    let r = await cut();
+    if (r.code !== 0) {
+      // A cut an earlier stop left registered (locked, folder missing or half made): drop exactly that record, then once more.
+      o.log(`the cut failed; removing what an interrupted cut left at ${o.path} and trying once more\n`);
+      await gitProc(o.root, ["worktree", "unlock", o.path], { log: o.log });
+      await gitProc(o.root, ["worktree", "remove", "--force", "--force", "--", o.path], { log: o.log });
+      rmSync(o.path, { recursive: true, force: true });
+      r = await cut();
+    }
     if (r.code !== 0) throw new Error(`cutting the merge copy at ${o.path} failed: ${r.out.trim().split("\n").pop() || `exit ${r.code}`}`);
     writeFileSync(await markerFile(o.path), `${o.root}\n`);
+    if (o.signal?.aborted) throw new Error("aborted");
     return;
   }
   // A merge (or cherry-pick, rebase) a stopped run left in progress goes first; failure means none was.

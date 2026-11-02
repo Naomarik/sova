@@ -18,15 +18,18 @@ import type { SessionSummary } from "../shared/protocol";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repo = resolve(here, "..");
-/** The copy to sample: this checkout's hermetic .agent, or the agent dir a local, untracked
-    .tmp/verifier/real-source names (one line: a path; read only, never written). */
+/** The copy to sample: this checkout's hermetic .agent, or what a local, untracked
+    .tmp/verifier/real-source names (one line: an agent dir, or a sessions folder itself, as the
+    bench's .tmp/bench-sessions; read only, never written). */
 const pointer = join(repo, ".tmp", "verifier", "real-source");
-const source = existsSync(pointer) ? readFileSync(pointer, "utf8").trim() : join(repo, ".agent");
+const named = existsSync(pointer) ? resolve(repo, readFileSync(pointer, "utf8").trim()) : join(repo, ".agent");
+const sessionsRoot = existsSync(join(named, "sessions")) ? join(named, "sessions") : named;
+const source = existsSync(join(named, "sessions")) ? named : dirname(named);
 const SAMPLE = 300;
 
 /** Every session file of the copy, by folder (the sessions dir's own layout). */
 function sourceFiles(): string[] {
-  const root = join(source, "sessions");
+  const root = sessionsRoot;
   if (!existsSync(root)) return [];
   const out: string[] = [];
   for (const d of readdirSync(root, { withFileTypes: true })) {
@@ -40,7 +43,7 @@ const all = sourceFiles();
 
 if (!all.length) {
   test("real-session parity: no copy of the real sessions in .agent/sessions yet (nothing checked)", (t) => {
-    t.skip(`${source}/sessions holds no session files: run the bench's copy first`);
+    t.skip(`${sessionsRoot} holds no session files: run the bench's copy first`);
   });
 } else {
   const agentDir = mkdtempSync(join(tmpdir(), "sova-list-real-"));
@@ -57,7 +60,7 @@ if (!all.length) {
   while (pick.size < Math.min(SAMPLE, all.length)) pick.add(all[Math.floor(rand() * all.length)]!);
   const copies: string[] = [];
   for (const p of pick) {
-    const rel = p.slice(join(source, "sessions").length + 1);
+    const rel = p.slice(sessionsRoot.length + 1);
     const to = join(agentDir, "sessions", rel);
     mkdirSync(dirname(to), { recursive: true });
     copyFileSync(p, to);
@@ -113,8 +116,8 @@ if (!all.length) {
     sessionsChanged();
     const full = order(await NEW.listSessions());
     const oldBy = new Map(old.map((s) => [s.path, s]));
-    const diff = (a: SessionSummary[]) =>
-      a.flatMap((s) => {
+    const diff = (a: SessionSummary[]): unknown[] =>
+      a.flatMap((s): unknown[] => {
         const o = oldBy.get(s.path);
         if (!o) return [{ path: s.path, only: "new" }];
         const keys = [...new Set([...Object.keys(s), ...Object.keys(o)])].filter((k) => JSON.stringify((s as any)[k]) !== JSON.stringify((o as any)[k]));

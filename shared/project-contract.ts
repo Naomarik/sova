@@ -894,9 +894,9 @@ export function parseDefinition(text: string): ProjectDef {
   const setup = ((o.setup as unknown[] | undefined) ?? []).map((s, i) => step(s, `$.setup[${i}]`, true));
   if (new Set(setup.map((s) => s.id)).size !== setup.length) throw new DefinitionError("$.setup", "step ids must be unique");
   const dataList = o.data === undefined ? [] : Object.entries(obj(o.data, "$.data")).map(([k, v]) => data(name(k, `$.data.${k}`), v, `$.data.${k}`));
-  const svcObj = obj(o.services, "$.services");
+  // No services (a library, a static site built elsewhere, a project with only checks): valid; up starts nothing.
+  const svcObj = o.services === undefined ? {} : obj(o.services, "$.services");
   const services = Object.entries(svcObj).map(([k, v]) => service(name(k, `$.services.${k}`), v, `$.services.${k}`));
-  if (!services.length) throw new DefinitionError("$.services", "declare at least one service");
   const hooks: ProjectDef["hooks"] = {};
   if (o.hooks !== undefined) {
     const h = obj(o.hooks, "$.hooks");

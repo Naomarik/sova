@@ -19,7 +19,7 @@ ports and env in declaration order.
 | `sources` | the checkout files the definition was derived from (at most 50, relative, each once). Drift is a change to one of them at HEAD. Not hashed |
 | `setup` | steps `{id, run, inputs?, timeout?}` run at create, in order; skipped while the rendered argv and the hash of `inputs` (checkout files) are unchanged |
 | `data` | `{name: resource}` in declaration order, below |
-| `services` | `{name: service}` in declaration order, at least one, below |
+| `services` | `{name: service}` in declaration order, below. Absent or empty is valid (a library, or a project the queue only checks): `up` then starts nothing |
 | `open` | `{endpoint, path?}`, below: the app's entry point, where a person opens it. Required for every project with a page; absent only for a library or an API-only project. Not hashed |
 | `hooks` | `probe` (`{run, timeout?}`, a step): conformance calls `<run> write <token>` and `<run> read <token>` (exit 0: the token is there) |
 | `test` | `{run, requires?, timeout?, smoke}`, below |

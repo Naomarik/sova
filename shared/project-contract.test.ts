@@ -81,7 +81,7 @@ test("refusals name the JSON path of the first problem", () => {
   const svc = { static: ".", ports: { http: { base: 8000 } } };
   assert.equal(refusedAt({ version: 1, services: { site: svc }, extra: 1 }), "$.extra");
   assert.equal(refusedAt({ version: 2, services: { site: svc } }), "$.version");
-  assert.equal(refusedAt({ version: 1, services: {} }), "$.services");
+  assert.equal(refusedAt({ version: 1, services: [] }), "$.services");
   assert.equal(refusedAt({ version: 1, services: { Site: svc } }), "$.services.Site");
   assert.equal(refusedAt({ version: 1, services: { web: { cmd: "npm start" } } }), "$.services.web.cmd");
   assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["npm", ""] } } }), "$.services.web.cmd[1]");
@@ -407,4 +407,17 @@ test("Sova's own definition declares its merge checks", async () => {
   assert.deepEqual(checks.filter((c) => c.optional).map((c) => c.id), ["e2e", "integration-group"]);
   assert.equal(def.merge?.target, "master");
   assert.equal(def.merge?.install?.inputs.includes("pnpm-lock.yaml"), true);
+});
+
+test("a definition with no services is valid (a library, a static site built elsewhere, checks only)", () => {
+  for (const d of [{ version: 1 }, { version: 1, services: {} }, { version: 1, merge: { checks: [{ id: "unit", run: ["npm", "test"] }] } }, { version: 1, merge: { checks: "none" } }]) {
+    const def = parse(d);
+    assert.deepEqual(def.services, [], JSON.stringify(d));
+  }
+  const withTest = parse({ version: 1, test: { run: ["npm", "test"], smoke: ["a.test.js"] }, setup: [{ id: "deps", run: ["npm", "ci"] }] });
+  assert.equal(withTest.test?.run[0], "npm");
+  // What would need a service still says so.
+  assert.equal(refusedAt({ version: 1, test: { run: ["npm", "test"], requires: ["db"], smoke: ["a"] } }), "$.test.requires");
+  assert.equal(refusedAt({ version: 1, open: { endpoint: "web.http" } }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, merge: { checks: [{ id: "e2e", run: ["x"], requires: ["web"] }] } }), "$.merge.checks[0].requires");
 });

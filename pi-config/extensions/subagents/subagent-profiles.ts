@@ -80,8 +80,8 @@ export interface SubagentProfile {
 	 */
 	reviewer?: ReviewerRoute | null;
 	/**
-	 * The align mode's writing style and Visuals for chats on this profile (§chat.alignment/settings-file):
-	 * each field present only when it overrides the host's mode-align.json. Absent: both follow the host;
+	 * The align mode's Eagerness, writing style and Visuals for chats on this profile (§chat.alignment/settings-file):
+	 * each field present only when it overrides the host's mode-align.json. Absent: all follow the host;
 	 * a parse never adds the key.
 	 */
 	alignment?: AlignOverride;
@@ -459,7 +459,7 @@ export interface ResolvedSubagents {
 	spec: SpecSettings;
 	/** The alignment reviewer; null: none (None, a profile without one, Off, or the legacy files). */
 	reviewer: ReviewerRoute | null;
-	/** The profile's align override (writing style, Visuals); null: the host's mode-align.json (no override, Off, legacy). */
+	/** The profile's align override (Eagerness, writing style, Visuals); null: the host's mode-align.json (no override, Off, legacy). */
 	alignment: AlignOverride | null;
 	/** Team defaults in the shape team_create reads; `absent` = no standing members. */
 	teams: TeamDefaultsState;

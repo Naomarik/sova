@@ -134,5 +134,15 @@ describe("answers: the route's own, on the same state", () => {
     assert.equal(s, 200, JSON.stringify(saved));
     assert.deepEqual((await send("GET", "/api/settings/align"))[1], saved);
     assert.equal((saved as { settings: { visuals: boolean } }).settings.visuals, true);
+    // The Eagerness (§chat.alignment/eagerness): Careful is stored, Eager is absent, anything else refused.
+    const [c, careful] = await viaId("settings.align.set", { style: "default", visuals: true, eagerness: "careful" });
+    assert.equal(c, 200, JSON.stringify(careful));
+    assert.equal((careful as { settings: { eagerness?: string } }).settings.eagerness, "careful");
+    assert.match(readFileSync(join(agentDir, "mode-align.json"), "utf8"), /"eagerness": ?"careful"/);
+    const [e, eager] = await viaId("settings.align.set", { style: "default", visuals: true, eagerness: "eager" });
+    assert.equal(e, 200);
+    assert.equal("eagerness" in (eager as { settings: object }).settings, false, "Eager is stored as nothing");
+    assert.doesNotMatch(readFileSync(join(agentDir, "mode-align.json"), "utf8"), /eagerness/, "an Eager file is the bytes an older device accepts");
+    assert.equal((await viaId("settings.align.set", { style: "default", visuals: true, eagerness: "bold" }))[0], 400);
   });
 });

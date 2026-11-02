@@ -3,8 +3,8 @@ import { releaseControl } from "../lib/release-control";
 import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
 import { avatarLogins, composerLogin } from "../lib/claude-login";
 import { runControls } from "../lib/compact";
-import { createTouchMode, enterSends, refocusAfterSend, type SendPress } from "../lib/input-mode";
-import { keyboardIsUp, watchKeyboard } from "../lib/voice/keyboard";
+import { createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, type SendPress } from "../lib/input-mode";
+import { watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import { registerComposer } from "../commands/composers";
@@ -215,9 +215,17 @@ export function Composer(props: {
   onAbort(): void;
   /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
   restored?: { text: string } | null;
+  /** Text a transcript card's view staged (§chat.transcript-cards/view-api): put at the end of the draft, never sent. */
+  staged?: { text: string } | null;
   /** Answers picked on an alignment card (§chat.alignment/card), staged for the next send:
       the row names them, and `compose` puts their line ahead of the typed text in one message. */
-  picks?: { label: string; compose(text: string): string; clear(): void } | null;
+  picks?: {
+    label: string;
+    compose(text: string): string;
+    clear(): void;
+    /** After a send that carried them (before clear): a gathering transcript card's picks are recorded as its answers. */
+    sent?(): void;
+  } | null;
   /** Whether the draft holds anything to send (text or an attachment), as it changes. */
   onDraft?(has: boolean): void;
 }) {
@@ -257,7 +265,7 @@ export function Composer(props: {
   /** How the current Send or Stop press began, taken by the click it ends in. */
   let press: SendPress | null = null;
   const notePress = (e: PointerEvent) => {
-    press = { touch: e.pointerType === "touch", focused: document.activeElement === input, keyboardUp: keyboardIsUp() };
+    press = pressAt(e, input);
   };
   const takePress = () => {
     const p = press;
@@ -756,6 +764,13 @@ export function Composer(props: {
       { defer: true },
     ),
   );
+  createEffect(
+    on(
+      () => props.staged,
+      (r) => r?.text && setDraft([text(), r.text].filter((t) => t.trim()).join("\n\n")),
+      { defer: true },
+    ),
+  );
   onMount(() => {
     watchKeyboard();
     // Pasted files attach; a paste with text keeps its text, the files are ours either way. By hand,
@@ -856,6 +871,7 @@ export function Composer(props: {
     const picks = props.picks;
     if (props.onSend(withImagePaths(picks ? picks.compose(text().trim()) : text().trim(), pending), props.running, attachments)) {
       touched = true;
+      picks?.sent?.();
       picks?.clear();
       setText("");
       clearDraft(props.path);

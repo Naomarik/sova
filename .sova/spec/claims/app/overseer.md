@@ -201,7 +201,10 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   after a follow-up waits for that follow-up. A
   leading `/` runs that session's command, as in the composer. The tool's result says which
   happened: sent, queued behind the turn, queued as a steer, or held for the compaction. Never a
-  terminal-owned, archived or worker session, and never the Overseer's own. The route is
+  terminal-owned, archived or worker session, and never the Overseer's own; nor a project's session
+  whose alignment questions are the user's alone while it waits on them (a verb playbook's run, or
+  one an Overseer started asking the user to confirm the brief, §app.project-overseer/confirm-brief),
+  refused before anything is sent or counted. The route is
   `POST /api/sessions/prompt` (`delivery` optional, `"followUp"` or `"steer"`; anything else is a
   400).
 - **Profiles (§chat/profiles).** `sova_create_session` takes `profile`: a profile's id, on this
@@ -1447,9 +1450,13 @@ feed's last list while nothing has changed since it was built, and builds a list
   ready to land" (§chat.offers/landing-rows), its open rows counted. It goes when the card is
   answered, set to Not Now, no longer offered or replaced by a newer commit. Never a phone
   notification and never a brief: it lists in Needs you and counts in "need you" only.
+- **Needs you, a transcript card** (§chat.transcript-cards/answering): `card-waiting` on a session,
+  not archived, that shows an open card waiting on an answer, idle or working, one item per card,
+  "Waiting on your answer: {the card's title}", dated by when it was raised. It goes when the card
+  is answered or its raiser marks it done. Never a phone notification and never a brief.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
   briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
-  turns, subagent errors, proposed playbook runs, open option cards (never briefed), failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A team
+  turns, subagent errors, proposed playbook runs, open option cards and transcript cards (never briefed), failed deploys and deploy requests, tour recordings waiting for a sign-in, WhatsApp sending down, and the baton and roster hand-offs and held acts below. A team
   that seems stalled and a branch ready to merge are decide items: a line in the digest and a
   quiet mark on the session's row, never a brief.
 - **The softer tier: guesses.** A turn card's guesses (§app.decisions/attention-signals) — a
@@ -1630,6 +1637,10 @@ host's session files. The reply is never changed, and the client still links eve
   It opens a flyout listing the quick actions, each with its label and a short description.
   Picking one sends its prompt (queued as a follow-up while a turn runs). The Overseer's memory
   switch sits just before it (§app.overseer/memory-switch).
+- After a pick, focus follows the composer's Send rule (§chat.composer/focus), judged from the
+  press on the Quick Actions button, since the flyout takes focus out of the textarea before the
+  pick: on a phone the keyboard stays down unless you were typing with it up; a mouse, pen or a
+  flyout opened by keyboard returns focus to the textarea.
 - While the composer is disabled the button still opens, and each quick action carries the
   disabled reason instead of running.
 - Defaults: two, in this order, **Get Things Moving** and **Tidy Up**
@@ -2436,7 +2447,8 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   (§app.overseer/caps).
 - **Coding sessions.** A project's coding sessions are ordinary sessions: `sova_list_sessions`,
   `sova_session`, `sova_read_session` and `sova_send` reach them as before. **`code {prompt?,
-  title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?}`** starts one as the
+  title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?, already_agreed?}`**
+  starts one as the
   project's, the same way the project page's Start Coding Session does: its own worktree
   (§app.project-overseer/coding-worktrees), an `operator-coding` session whose statechart is marked
   `via: "overseer"`, in any mode, minor modes and subagent profile it names, else this computer's
@@ -2445,6 +2457,8 @@ organization write (§app.overseer/caps); a refusal takes nothing.
   prompt when none is given; without an item, `prompt` and `title` are required. It counts against
   the Overseer's per-turn sessions created and running at once, like any session it starts, and
   never against the project overseer's limits. The result names the session, its branch and its
-  path, and the mode and subagent profile it started with. Its prompt says a coding session's
-  alignment questions are the user's: it never answers them, and tells the user which session
-  waits.
+  path, and the mode and subagent profile it started with. Without `already_agreed` the session
+  runs with align on, whatever `minor_modes` say, and first asks the operator to confirm the brief
+  (§app.project-overseer/confirm-brief). Its prompt says
+  a coding session's alignment questions are the user's: it never answers them, and tells the user
+  which session waits.

@@ -1,5 +1,6 @@
 import { createEffect, createResource, For, Show } from "solid-js";
 import {
+  ALIGN_EAGERNESS_OPTIONS,
   ALIGN_STYLE_OPTIONS,
   alignmentDraft,
   alignmentSaveError,
@@ -14,7 +15,7 @@ import { Banner } from "./ui";
 
 /**
  * Settings → Alignment (§app.settings-dialog/alignment): how the align mode plans with you — its
- * writing style, its Visuals and adversarial review — staged like every gated form and written by
+ * Eagerness, writing style, Visuals and adversarial review — staged like every gated form and written by
  * Save Changes (alignment-draft.ts writes each of its two stores). Read when the tab opens (the
  * panel is mounted only while its tab is), so the form starts from what's saved.
  */
@@ -34,6 +35,29 @@ export function AlignmentSettings() {
   return (
     <section class="settings-delegate">
       <p class="settings-intro">How the align mode plans with you.</p>
+
+      <fieldset class="settings-delegate-profile">
+        <legend class="settings-delegate-legend" id="align-eagerness-label">
+          Eagerness
+        </legend>
+        <div role="radiogroup" aria-labelledby="align-eagerness-label" aria-describedby="align-eagerness-hint">
+          <For each={ALIGN_EAGERNESS_OPTIONS}>
+            {(o) => (
+              <label class="toggle public-links-choice">
+                <input type="radio" name="align-eagerness" checked={alignmentDraft()?.eagerness === o.id} disabled={off()} onChange={() => edit({ eagerness: o.id })} />
+                <span class="toggle-box" aria-hidden="true" />
+                <span class="public-links-choice-main">
+                  <span class="public-links-choice-name">{o.label}</span>
+                  <span class="public-links-choice-meta">{o.description}</span>
+                </span>
+              </label>
+            )}
+          </For>
+        </div>
+        <p class="field-hint settings-delegate-desc" id="align-eagerness-hint">
+          Either way, nothing is built until you confirm a card. Reaches open chats at their next message.
+        </p>
+      </fieldset>
 
       <fieldset class="settings-delegate-profile">
         <legend class="settings-delegate-legend" id="align-style-label">
@@ -96,7 +120,7 @@ export function AlignmentSettings() {
         </p>
       </fieldset>
 
-      <p class="field-hint settings-delegate-desc">A subagent profile can set its own writing style and visuals (Settings → Subagents).</p>
+      <p class="field-hint settings-delegate-desc">A subagent profile can set its own eagerness, writing style and visuals (Settings → Subagents).</p>
 
       <Show when={stored.error}>
         <Banner tone="error" title="Couldn't read the alignment settings." body="Nothing was changed." />

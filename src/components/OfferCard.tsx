@@ -113,6 +113,27 @@ export function createOfferControls(path: () => string, inThread: (card: OfferCa
   };
 }
 
+/** What docs land with a branch (Sova's Landing card, §chat.offers/sova-landing): one line, the promises one click away. */
+function OfferDocs(props: { docs: NonNullable<OfferCard["docs"]> }) {
+  const [shown, setShown] = createSignal(false);
+  return (
+    <div class="card-body overseer-confirm-detail offer-card-docs">
+      <span>{props.docs.line}</span>
+      <Show when={props.docs.names.length}>
+        {" "}
+        <button type="button" class="button button-sm button-ghost offer-card-docs-toggle" aria-expanded={shown()} onClick={() => setShown(!shown())}>
+          {shown() ? "Hide the promises" : "Show the promises"}
+        </button>
+        <Show when={shown()}>
+          <ul class="offer-card-docs-list">
+            <For each={props.docs.names}>{(n) => <li class="text-mono">{n}</li>}</For>
+          </ul>
+        </Show>
+      </Show>
+    </div>
+  );
+}
+
 /** One offer card. `card`: as the transcript carried it; the controls' copy, when they have one, is newer. */
 export function OfferCardView(props: { card: OfferCard }) {
   const ctx = useContext(OfferContext);
@@ -128,6 +149,7 @@ export function OfferCardView(props: { card: OfferCard }) {
       </div>
       <Show when={card().from}>{(f) => <div class="card-body overseer-confirm-detail offer-card-from">From {f().title}</div>}</Show>
       <Show when={card().note}>{(n) => <div class="card-body overseer-confirm-detail">{n()}</div>}</Show>
+      <Show when={card().docs}>{(d) => <OfferDocs docs={d()} />}</Show>
       <Show when={card().rows}>
         <div class="card-body overseer-confirm-items">
           <OfferRows card={props.card} />
@@ -151,12 +173,19 @@ export function OfferCardView(props: { card: OfferCard }) {
   );
 }
 
+/** A button of a ButtonSet: an offer card's, or a buttons data card's (DataCards.tsx). */
+export interface ButtonSetItem {
+  label: string;
+  about?: string;
+  confirm?: string;
+}
+
 /**
  * A row of buttons with each button's confirm step (§chat.offers/buttons): its question, then Cancel or the label
  * again. Focus stays in the group through the confirm step: Cancel takes it when the question opens, and the button
  * that asked gets it back on Cancel. `extra` follows the buttons (Not Now).
  */
-function ButtonSet(props: { buttons: OfferCardButton[]; canAct: () => boolean; press: (i: number) => void; extra?: JSX.Element; label?: string }) {
+export function ButtonSet(props: { buttons: readonly ButtonSetItem[]; canAct: () => boolean; press: (i: number) => void; extra?: JSX.Element; label?: string }) {
   const [asking, setAsking] = createSignal<number | null>(null);
   const asked = () => {
     const i = asking();

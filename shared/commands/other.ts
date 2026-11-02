@@ -417,6 +417,17 @@ export const OTHER_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "server.restart",
+    label: "Restart Sova",
+    summary: "Restart this machine's Sova through the service that runs it, a few seconds after answering. Chats keep running; open tabs reconnect. Refused when no service runs this copy or an upgrade runs.",
+    effect: "changes",
+    params: {},
+    route: { method: "POST", path: "/api/updates/restart" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "full",
+  },
+  {
     id: "settings.sova.get",
     label: "Sova's Own Settings",
     summary: "Sova's own switches, from Alignment and Experimental.",
@@ -540,11 +551,12 @@ export const OTHER_ENTRIES: CommandEntry[] = [
   {
     id: "settings.align.set",
     label: "Save Alignment Settings",
-    summary: "Save the align mode's writing style and Visuals.",
+    summary: "Save the align mode's Eagerness, writing style and Visuals.",
     effect: "changes",
     params: {
       style: { type: "json", description: "The writing style", in: "body" },
       visuals: { type: "json", description: "The Visuals", in: "body" },
+      eagerness: { type: "json", description: "The Eagerness: \"careful\", or omitted for Eager", in: "body" },
     },
     route: { method: "PUT", path: "/api/settings/align", fixed: { version: 1 } },
     sessionKey: null,

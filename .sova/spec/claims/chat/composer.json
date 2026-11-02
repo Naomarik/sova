@@ -31,9 +31,9 @@
       "src/components/EffortRing.tsx"
     ],
     "agreed": {
-      "by": "omar (user)",
-      "at": "2026-10-27T08:43Z",
-      "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#db36b4af"
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:24Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
     }
   },
   "§chat.composer/behavior": {
@@ -62,14 +62,15 @@
     ],
     "requires": [
       "§chat.images/composer-attachments",
-      "§chat.voice/button"
+      "§chat.voice/button",
+      "§chat.composer/focus"
     ],
     "authority": "accepted",
     "evidence": "verified",
     "agreed": {
-      "by": "omar (user)",
-      "at": "2026-10-27T20:04Z",
-      "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#4df15dba"
+      "by": "user",
+      "at": "2026-10-31T13:22Z",
+      "source": "pi-session:9bf178cf-ac0e-4c07-b96e-64387c1097fc#cd59540b"
     }
   },
   "§chat.composer/composer-flyout": {
@@ -114,9 +115,9 @@
       "src/lib/chat-wait.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-26T22:35Z",
-      "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:24Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
     }
   },
   "§chat.composer/file-index-deadline": {
@@ -129,6 +130,27 @@
       "server/files.test.ts",
       "server/files.integration.test.ts"
     ]
+  },
+  "§chat.composer/focus": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "src/components/Composer.tsx",
+      "src/components/ChatView.tsx",
+      "src/lib/input-mode.ts",
+      "src/lib/input-mode.test.ts",
+      "src/components/VoiceInput.tsx"
+    ],
+    "requires": [
+      "§chat.voice/button",
+      "§chat.voice/insertion"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-31T13:22Z",
+      "source": "pi-session:9bf178cf-ac0e-4c07-b96e-64387c1097fc#cd59540b"
+    }
   },
   "§chat.composer/known-on-switch": {
     "kind": "behavior",

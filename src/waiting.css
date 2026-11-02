@@ -135,3 +135,6 @@
 .overseer-confirm-item-meta.offer-card-row-owner { color: var(--color-accent); white-space: normal; overflow-wrap: anywhere; }
 .offer-card-row .offer-card-actions > .offer-card-confirm { display: flex; flex-direction: column; gap: var(--space-2); }
 .offer-card-row .offer-card-confirm > p { margin: 0; }
+
+/* The Landing card's docs line: the promises that land, one click away (§chat.offers/sova-landing). */
+.offer-card-docs-list { margin: var(--space-1) 0 0; padding-left: var(--space-4); font-size: var(--fs-caption); line-height: var(--lh-caption); }

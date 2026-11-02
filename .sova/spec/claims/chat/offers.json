@@ -67,8 +67,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-27T12:36Z",
-      "source": "pi-session:01a17a2d-9525-7412-baca-957c5a5a99a8#7f582fd6"
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§chat.offers/conditions": {
@@ -79,15 +79,16 @@
       "server/session-offers.ts",
       "server/merge-readiness.ts",
       "server/session-offers.test.ts",
-      "server/spec-drafts-state.ts"
+      "server/spec-drafts-state.ts",
+      "shared/session-offers.ts"
     ],
     "requires": [
       "§chat.worktrees/readiness"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§chat.offers/file": {
@@ -183,15 +184,20 @@
       "server/landing-queue.ts",
       "server/landing-queue.test.ts",
       "server/session-offers.test.ts",
-      "server/index.ts"
+      "server/index.ts",
+      "server/session-offers.ts",
+      "shared/session-offers.ts",
+      "src/components/OfferCard.tsx",
+      "src/waiting.css",
+      "server/session-offers.landing.test.ts"
     ],
     "requires": [
       "§chat.offers/from-another-chat"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-27T12:36Z",
-      "source": "pi-session:01a17a2d-9525-7412-baca-957c5a5a99a8#7f582fd6"
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§chat.offers/tool": {

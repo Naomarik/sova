@@ -43,14 +43,18 @@ lets a call in.
   runs, `unattributed` for any other key, and `no-key` when the call carried none. A call let in
   by an installed extension's own key (§app.extensions/backend-key) is always `ext:<extension id>`,
   whatever `x-sova-caller` says.
+- A command a transcript card's view runs (§chat.transcript-cards/view-api) is recorded as
+  `card:<card type>` (`card:project.chart`, `card:pulse.check`); no key or header chooses that.
 
 ## §app.command-audit/record — One row per call a script makes
 
 - Sova records each call to the main listener's API, extension or socket paths that the gate let
   in and that shows the token itself, or an installed extension's own key, in `x-sova-token`: a
   script, the command line, a chat's tools, an extension's tools, an extension's backend. Only a
-  holder of the token or of such a key can add a row. Not recorded: a
-  browser's own calls (its cookie only), the app's page and files, calls Sova makes to itself, the
+  holder of the token or of such a key can add a row, with one exception: a command a transcript
+  card's view runs from the page is recorded by the server as run by that card
+  (§chat.transcript-cards/view-api). Not recorded: a
+  browser's own calls (its cookie only, apart from that), the app's page and files, calls Sova makes to itself, the
   peer listener's calls, a call the gate refused, and any call without the right token in that
   header, even where the gate doesn't ask for it (the health check, the unlock route, a test rig
   with the gate off), whatever key or command name it carries.

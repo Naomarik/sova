@@ -78,7 +78,12 @@
       "server/overseer-prompt.md",
       "server/overseer-org-view.ts",
       "server/app.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-27T23:54Z",
+      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+    }
   },
   "§app.project-overseer/coding-worktrees": {
     "kind": "behavior",
@@ -129,6 +134,39 @@
       "by": "user",
       "at": "2026-10-15T19:32Z"
     }
+  },
+  "§app.project-overseer/confirm-brief": {
+    "kind": "behavior",
+    "code": [
+      "server/project-coding-mode.ts",
+      "server/project-coding-mode.test.ts",
+      "server/project-overseer.ts",
+      "server/project-overseer-tools.ts",
+      "server/project-overseer-tools.test.ts",
+      "server/project-overseer-prompt.md",
+      "server/overseer-org-tools.ts",
+      "server/overseer-org-tools.test.ts",
+      "server/overseer-prompt.md",
+      "server/overseer-tools.ts",
+      "server/overseer.ts",
+      "server/build-loadout.ts",
+      "shared/project-overseer.ts"
+    ],
+    "requires": [
+      "§app.project-overseer/coding-mode",
+      "§app.overseer/org-project-overseers",
+      "§chat.alignment/session-mark",
+      "§chat.alignment/when",
+      "§app.overseer/sent-marker",
+      "§app.project-overseer/coding-worktrees"
+    ],
+    "authority": "accepted",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-27T23:54Z",
+      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+    },
+    "evidence": "verified"
   },
   "§app.project-overseer/corrections": {
     "kind": "behavior",

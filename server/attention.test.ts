@@ -424,6 +424,26 @@ describe("unverified: the turn card's done-but-unchecked guess", () => {
   });
 });
 
+describe("open transcript cards (§chat.transcript-cards/answering, §app.overseer/attention-digest)", () => {
+  test("one Needs you blocker per card, idle or working, quoting its title; never a push kind, never briefed", () => {
+    const cards = [
+      { title: "Pick a format", at: NOW - 20_000 },
+      { title: "Deploy now?", at: NOW - 10_000 },
+    ];
+    const idle = sessionItems(row(summary("c"), { cards }), NOW);
+    assert.deepEqual(
+      idle.filter((i) => i.kind === "card-waiting").map((i) => `${i.tier}:${i.detail}:${i.since}`),
+      [`act:Waiting on your answer: Pick a format:${NOW - 20_000}`, `act:Waiting on your answer: Deploy now?:${NOW - 10_000}`],
+    );
+    assert.ok(idle.some(listsInNeedsYou));
+    const working = sessionItems(row(summary("c", { busy: true, activity: { state: "working" } }), { cards }), NOW);
+    assert.equal(working.filter((i) => i.kind === "card-waiting").length, 2, "while a turn runs too");
+    assert.deepEqual(kinds(row(summary("c", { archived: true }), { cards })), [], "archived: out of the way");
+    assert.equal((PUSH_KINDS as readonly string[]).includes("card-waiting"), false, "no phone notification");
+    assert.ok(NEVER_BRIEFED.has("card-waiting"), "no Overseer brief");
+  });
+});
+
 describe("an open option card (§chat.offers/card, §app.overseer/attention-digest)", () => {
   const offer = { title: "Land feat/x at abc1234?", at: NOW - 30_000 };
   test("is a Needs you blocker, idle or working, quoting its title; never a push kind, never briefed", () => {

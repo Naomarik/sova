@@ -279,6 +279,8 @@ const READ_PREFIXES = [
   "usage",
   // Session offers (§chat/offers): reading a session's cards is a read; a click sends or runs, an admin act.
   "session-offers",
+  // Transcript cards (§chat/transcript-cards): reading a session's cards is a read; raising, answering and trust are admin acts.
+  "session-cards",
 ];
 // Never below `full`: the operator's credentials, the share pages' own routes, this machine's
 // updates (whose writes refuse the peer listener outright), and conversations' draft specs (the

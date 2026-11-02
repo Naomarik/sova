@@ -42,10 +42,11 @@ can change the dialog's size by being long or short.
 
 The first tab, in two parts. Above: how **this browser** draws Sova. Nothing there is written to
 the machine — no policy file, no server endpoint — which is the line between those settings and
-Models, where a switch is a rule every session obeys. Below, under the heading **Updates · this
-machine**: this machine's updates (§app/updates), the one part of General the server keeps. The
-panel's intro says so ("How this browser draws Sova. The settings above stay in this browser;
-another device keeps its own. Updates, below, are this machine's."), because "settings" in a tool with a shared config
+Models, where a switch is a rule every session obeys. Below, under the headings **Server · this
+machine** and **Updates · this machine**: this machine's server and its updates (§app/updates),
+the parts of General the server keeps. The panel's intro says so ("How this browser draws Sova.
+The settings above stay in this browser; another device keeps its own. The server and its updates,
+below, are this machine's."), because "settings" in a tool with a shared config
 file is otherwise an open question.
 
 - **Sessions in Recent** — how many rows the sidebar's Recent region shows
@@ -78,6 +79,12 @@ places is a count that disagrees in one of them.
   It applies as you flip it, and persists in `localStorage["sova:show-summaries"]` for the same
   reason as the count: it is this browser's, not the machine's. Only the stored value `false` turns
   it off; a missing or unreadable value is on.
+
+- **Server · this machine** — after the browser's settings and before Updates, under its own
+  heading: when this server started, the branch and commit it runs, and **Restart Sova**, an action
+  that runs at once after its inline confirm; a copy no service runs shows the block with no button
+  and says why (§app.updates/restart). It is not part of any form: Save Changes neither stages nor
+  writes it.
 
 - **Updates · this machine** — last, under its own heading: what runs, the last check and what it
   found, Check Now, the upgrade button and its progress (§app/updates), then **Update from**,
@@ -454,9 +461,15 @@ offers Retry and the built-in themes list anyway — the app's own themes don't 
 ## §app.settings-dialog/alignment — Alignment
 
 The tab after Subagents, and the align mode's settings (§chat/alignment). It opens with one line:
-"How the align mode plans with you." Three groups follow, staged and saved with the dialog's Save
+"How the align mode plans with you." Four groups follow, staged and saved with the dialog's Save
 Changes like every gated form (§app.settings-dialog/save-bar):
 
+- **Eagerness**, first, a radiogroup of two, each option a label row with a one-line description
+  (§chat.alignment/eagerness): **Eager** "Opens an alignment card for any request that implies
+  work, and leans toward asking first.", **Careful** "Opens one when you want something changed;
+  questions get their answer in chat." A file with no saved Eagerness shows as Eager. Under it the
+  hint "Either way, nothing is built until you confirm a card. Reaches open chats at their next
+  message."
 - **Writing style**, a radiogroup of three, each option a label row with a one-line description:
   **Project manager** "Screens, wording and behaviour only; no code. Technical detail folded into
   notes.", **Simplified** "Short sentences in everyday words, fewer items.", **Technical** "Files,
@@ -470,11 +483,11 @@ Changes like every gated form (§app.settings-dialog/save-bar):
   and the diff of risky work, at most once each per alignment. Applies to sessions you start after
   saving." (§chat.alignment-review/flag)
 
-Under the groups one line says "A subagent profile can set its own writing style and visuals
-(Settings → Subagents)." Style and Visuals are stored in `<agent dir>/mode-align.json`
-(§chat.alignment/settings-file), Review in Sova's settings; one Save writes both, and a failure of
-either keeps the form's draft and shows the save-failed banner at its end. The defaults are Project manager,
-Visuals off and Review off.
+Under the groups one line says "A subagent profile can set its own eagerness, writing style and
+visuals (Settings → Subagents)." Eagerness, Style and Visuals are stored in `<agent
+dir>/mode-align.json` (§chat.alignment/settings-file), Review in Sova's settings; one Save writes
+both, and a failure of either keeps the form's draft and shows the save-failed banner at its end.
+The defaults are Eager, Project manager, Visuals off and Review off.
 
 ## §app.settings-dialog/profiles — Profiles
 
@@ -703,9 +716,9 @@ Discard button of its own: saving is the dialog's.
   can't be saved blank. A save refreshes the mesh state, so the new name shows everywhere at once.
   Enter in a Mesh field does nothing: Save writes every tab's edits, and a key press in one field
   doesn't.
-- **Alignment** stages its Writing style, Visuals and Adversarial review together
+- **Alignment** stages its Eagerness, Writing style, Visuals and Adversarial review together
   (§app.settings-dialog/alignment); Save Changes writes the review switch to Sova's settings and the
-  style and visuals to `mode-align.json`, each a write of its own, and the status line names the form
+  eagerness, style and visuals to `mode-align.json`, each a write of its own, and the status line names the form
   "Alignment" whichever of the two failed.
 - **Experimental** holds no switch now: its panel says "No experimental features right now." and nothing in it is ever unsaved. Adversarial
   review moved to Alignment; the Claude Code provider is no switch there, it is always on (§app.claude-code-provider/always-on).

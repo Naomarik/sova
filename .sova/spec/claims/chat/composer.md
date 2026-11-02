@@ -38,7 +38,8 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
 
     <!-- answers picked on an alignment card (recommendations ticked, options picked), staged for
          the next send (§chat.alignment/card); each question reads "rec" or its option's letter;
-         omit when there are none -->
+         a gathering transcript card's picks join them by its id, "cd_4 b"
+         (§chat.transcript-cards/answering); omit when there are none -->
     <div class="align-picks" role="group" aria-label="Staged answers">
       <span class="icon icon-sm" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
       <span class="align-picks-text">Answering: <span class="text-mono">al_3 q1 rec, q2 b; al_4 q2 rec</span></span>
@@ -192,13 +193,8 @@ are kept, and what the foot and its model indicator show.
 - **After Stop.** The status reads "Stopping…" until the turn settles. Then the run status
   disappears, and an info row says "Stopped by you at `1:43 PM`." (the transcript's stamp: a
   12-hour clock, with the date in front on another day).
-- **Focus.** Returns to the textarea after Send, Steer, or Stop pressed with a mouse or pen, and
-  after an `Enter` or `Ctrl+Enter` / `⌘+Enter` send. After one pressed by touch it returns only if
-  the textarea had focus when the press began and the on-screen keyboard was up (up and down as in
-  §chat.voice/button); otherwise nothing is refocused, a textarea still focused with the keyboard
-  down loses focus, and a keyboard that was down stays down. The message is sent either way.
-  The mic never moves focus: its press keeps the textarea's focus and selection, and dictated
-  text lands at the caret (§chat.voice/insertion) as part of the draft.
+- **Focus.** Where focus and the on-screen keyboard go after a send, and why the mic never moves
+  them: §chat.composer/focus.
 - **Drafts** are never discarded. The draft survives disable/enable, reconnects, and errors, and
   it survives a reload too. Each session's draft lives in two places:
   - **In memory, per session path.** This is the authority within a tab, so switching sessions
@@ -255,6 +251,23 @@ are kept, and what the foot and its model indicator show.
   click, like the flyout's own rows. It stays at every width, because it's the only place the
   model is on screen.
 
+## §chat.composer/focus — Focus after a send
+
+- Focus returns to the textarea after Send, Steer, or Stop pressed with a mouse or pen, and after
+  an `Enter` or `Ctrl+Enter` / `⌘+Enter` send. After one pressed by touch it returns only if the
+  textarea had focus when the press began and the on-screen keyboard was up (up and down as in
+  §chat.voice/button); otherwise nothing is refocused, a textarea still focused with the keyboard
+  down loses focus, and a keyboard that was down stays down. The message is sent either way.
+- **The same rule holds for every other button that sends a message on your behalf:** a Quick
+  Actions pick (judged from the press on the Quick Actions button, a menu opened by keyboard
+  counting as `Enter`, §app.overseer/quick-actions), an alignment card's Go With Recommendations
+  and Review Plan / Review Implementation, a send from the Overseer's Ideas panel, Send Playbook
+  and Regenerate.
+- Rewind and a tour's Ask About This Step still put focus in the textarea: they leave text there
+  to edit and send nothing.
+- The mic never moves focus: its press keeps the textarea's focus and selection, and dictated text
+  lands at the caret (§chat.voice/insertion) as part of the draft.
+
 ## §chat.composer/disabled-states — Disabled states
 
 While the composer can't send (the session is open in a TUI, the chat is connecting or starting,
@@ -285,8 +298,9 @@ the session's list not here yet) fades in after a short delay, about 300 ms, so 
 flashes it; under reduced motion it appears after the same delay without the fade. "Reconnecting"
 and every other reason show at once, and the controls are disabled from the first frame either way.
 
-Send is enabled by typed text, an attachment, **or answers picked on an alignment card alone**
-(§chat.alignment/card): with picks and no text it sends just their line. With picks staged, a
+Send is enabled by typed text, an attachment, **or answers picked on an alignment card or a
+gathering transcript card alone** (§chat.alignment/card, §chat.transcript-cards/answering): with
+picks and no text it sends just their lines. With picks staged, a
 typed local command (`/new`, `/tree`, `/agents`…) is sent as text after them, not run.
 
 Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matters. That keeps them

@@ -8,7 +8,7 @@ import test from "node:test";
 import { ALIGN_INSTRUCTIONS, buildMinorPrompt, CODEMODE_TOOL, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_PROMPTLESS, MINOR_SURFACES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, promptedMinorModes, SCRIPT_ONLY_EXPOSURES, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, stripVisComments, VIS_FILES, VIS_INSTRUCTIONS, VIS_KIND_FILES, VIS_KINDS, visGuide, visOverview, WEB_MINOR_HOOK, WEB_ONLY_MINOR_MODES, webMinorRefusal, workerMinorModes } from "./minor.ts";
 import { parseModeWorkerEvent } from "./events.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
-import { ALIGN_FILE_SCHEMA, ALIGN_NUDGE_TEXT, ALIGN_OPS } from "./align.ts";
+import { ALIGN_FILE_SCHEMA, ALIGN_NUDGE_MESSAGE, ALIGN_NUDGE_TEXT, ALIGN_OPS } from "./align.ts";
 import { delegateDefaults, type DelegateSettings } from "./delegate.ts";
 import {
 	applyModeSection,
@@ -255,6 +255,22 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.match(align, /status done when the work is finished/);
 	assert.match(align, /align exempt and a reason/);
 	assert.match(align, /Several alignments can be open at once/);
+	// When an alignment opens (§chat.alignment/when): the default block is Eager's (master's trigger), a
+	// change request is marked first, and a go-ahead to a sketch opens a card (align-settings.test.ts: both choices).
+	assert.match(align, /Which prompts open an alignment \(Eager\): any prompt that implies work/);
+	assert.match(align, /Bias heavily toward asking/);
+	assert.match(align, /A "go", "yes", "do it" or "fix it" to anything you sketched in chat/);
+	assert.match(align, /\{"op": "change_request"\} before anything else in that run/);
+	assert.match(align, /unless the user told you to skip alignment or the request is exempt/);
+	assert.doesNotMatch(align, /only after the user has said|Want me to plan a fix/, "the branch's middle rule is gone");
+	// Every reply's two parts (§chat.alignment/reply): the fold's exact heading.
+	assert.match(align, /a line that reads exactly `### Working notes`/);
+	assert.match(align, /about 80 words, five short lines at most \(a target, not a limit\)/);
+	assert.match(align, /warnings, failures, risks and what went unchecked always go here/);
+	// The bridge follows the same trigger, in the shared words.
+	assert.match(DELEGATE_ALIGN_BRIDGE, /for change requests only\. A change request is a prompt the align instructions \(the align minor mode's block\) say opens an alignment/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /Any other prompt is answered \(or delegated\) as the delegate block says, with no planning worker for an alignment/);
+	assert.match(DELEGATE_ALIGN_BRIDGE, /align \{op: "change_request"\}/);
 	// No markdown template survives: the parser that read it is gone.
 	assert.doesNotMatch(align, /^#{2,3} (Alignment|Findings|Open questions|Status)/m);
 	assert.doesNotMatch(align, /\[ \]/);
@@ -485,10 +501,12 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 		assert.ok(real, `${flag} is a real flag`);
 	}
 	for (const flag of ["--dir", "--whole", "--no-frame", "--near", "--cursor"]) assert.ok(flags.has(flag), `${flag} is named`);
-	for (const flag of ["--spec", "--commit", "--snapshot", "--doc-only", "--plan", "--write", "--verification", "--changed", "--related"]) assert.ok(flags.has(flag), `${flag} is named`);
+	// The landing makes drafts official: the guide names the note and land, never the manual promote path (PROMOTE.md has it).
+	for (const flag of ["--spec", "--commit", "--note", "--write", "--verification", "--changed", "--related"]) assert.ok(flags.has(flag), `${flag} is named`);
+	for (const flag of ["--snapshot", "--doc-only", "--plan"]) assert.ok(!flags.has(flag), `${flag} is the manual path, not the guide's`);
 	// Every draft command the prompt names is one the draft tool advertises.
 	const draftUsage = usage("sova-spec-draft.mjs", "--no-such-flag");
-	for (const cmd of ["new", "status", "diff", "check", "evidence", "agree", "promote", "recover"]) {
+	for (const cmd of ["new", "status", "diff", "check", "evidence", "agree", "land", "refresh", "recover"]) {
 		assert.match(draftUsage, new RegExp(`[<|] ?${cmd}[ >]`), `${cmd} is a draft command`);
 		assert.match(spec, new RegExp(`\`${cmd}\\b`), `${cmd} is named`);
 	}
@@ -519,19 +537,20 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /agreement approves intent, not current truth/);
 	assert.match(spec, /After implementing, verify each changed promise\. Relabel each record as it will read once current: explicit `authority`: `accepted` for new or rewritten prose \(the task's go-ahead adopts it\), `migrated` only for text still as ported, never `candidate`;/);
 	assert.doesNotMatch(spec, /or `migrated`/, "migrated is provenance, not an alternative to accepted");
-	assert.match(spec, /`--commit <rev>` \(Git: the implementation's existing commit\)/);
-	assert.match(spec, /A go-ahead to build or merge covers committing them with the code, never asked separately; told not to commit, leave evidence pending; never commit unrelated changes\./, "the go-ahead covers committing the docs with the code");
+	assert.match(spec, /Then record what you verified, per changed promise: `evidence <name> --id '<§id>' --by <who> --verification <text> --note --write`\./, "the chat records a note per promise, never evidence and promotion");
+	assert.match(spec, /A go-ahead to build or merge covers committing them with the code, never asked separately; told not to commit, say what is ready; never commit unrelated changes\./, "the go-ahead covers committing the docs with the code");
 	for (const gone of [["not permission", "to commit"], ["expected end", "state"], ["always on the", "default branch"]]) assert.ok(!spec.includes(gone.join(" ")), `the docs never wait on a second permission: ${gone.join(" ")}`);
-	assert.match(spec, /A branch isn't done or ready to land until its drafts are promoted on it, by you, after its checks pass; nothing at landing promotes for you\./);
-	assert.match(spec, /A draft whose branch already landed is promoted on a fresh branch from the default branch, never on the default branch itself\./, "after landing, never on the default branch");
+	assert.match(spec, /Your drafts become official when your branch lands: the landing runs `land` after its checks pass and commits the docs with the code\./);
+	assert.match(spec, /A branch isn't done or ready to land until each promise it changed has your note; say in your reply what you didn't verify\./);
+	assert.match(spec, /A draft whose branch already landed without it lands with a fresh branch from the default branch, never on the default branch itself\./, "after landing, never on the default branch");
 	assert.match(spec, /`cause: manifest-not-found` means no spec: start a draft\./, "a generic refusal is not permission to bootstrap a malformed spec");
-	assert.match(spec, /Promote only what is implemented and verified\. A refusal is resolved, never forced\./);
+	assert.match(spec, /run `land --commit HEAD --by <who> --verification <text> --write` once before your last commit and commit the spec files it names\. A refusal is resolved, never forced\./, "where nothing lands branches, one land before the last commit");
 	assert.match(spec, /Write `"requires": \[\]` only after investigating; otherwise omit the key/);
 	// Mandatory: every behavior change is spec'd, and only a declared no-behavior change is exempt.
 	assert.match(short, /Every behavior change is spec'd\. Before your first edit that changes behavior, read `\$core\/\.\.\/WRITING\.md`, the writing procedure \(it also arrives once, with your first `\[spec census\]` note or an alignment's go-ahead\)\./, "the short part sends the agent to the procedure before it changes behavior");
 	assert.match(short, /Work changing no behavior \(refactor, tests, tooling\) needs no draft: say you claim the exemption\./);
 	assert.match(writing, /\nExempt from drafts, not census: work changing no behavior \(refactor, tests, tooling\), decided from passages you read, never memory; a test that fails or flakes because of product code is that code's behavior fix, never test-only; say you claim the exemption\./, "a flaky test's product cause is no test-only exemption");
-	assert.match(spec, /Behavior no claim covers gets a new claim in a feature draft before coding\. Write its sentence before the first code edit; `new` alone isn't enough\. When the task's go-ahead already agrees to it, run `agree` on it then, before that edit, not at the end\./, "the claim, and its agreement, come before the code");
+	assert.match(spec, /Behavior no claim covers gets a new claim in a feature draft before coding\. Write its sentence before the first code edit; `new` alone isn't enough\. When the user decided it in this chat, run `agree` on it then, before that edit, not at the end\./, "the claim, and its agreement, come before the code");
 	assert.ok(spec.indexOf("Before coding:") < spec.indexOf("before coding.") && spec.indexOf("before coding.") < spec.indexOf("Documentation changes only through drafts"), "the new claim is a before-coding step");
 	// Only what the task changed is claimed; neighbours are linked, never spec'd.
 	assert.match(spec, /Claim only files the task changed \(each record's `code`\); unchanged dependencies are not spec'd; `requires` names only existing claims\./);
@@ -539,13 +558,13 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /Before finishing:\n- Read each § the census note's `Unread § your change landed in` line \(once, after your last edit\) marks read first; its `census --changed --related` command lists the rest\. Every changed file in the boundary is claimed; any outside it whose change a user sees is spec'd\./, "the unread line replaces the census run by hand before finishing");
 	assert.ok(spec.includes(`\`${UNREAD_PREFIX.replace(/: $/, "")}\``), "the guide names the hook's line in its own words");
 	// Promotion is no longer conditional on a commit: promote, or say why not.
-	assert.match(spec, /- Before promoting, read `\$core\/\.\.\/PROMOTE\.md`; promote what you verified, or say in your reply why not\./);
+	assert.match(spec, /- `\$core\/\.\.\/PROMOTE\.md` has the rest, and the manual path\./);
 	assert.doesNotMatch(spec, /Before `git commit`, if/, "the old conditional is gone");
 	assert.match(spec, /A spec conflict in a Git merge: follow the census note\./);
 	// The `--doc-only` cases are checked against the draft tool itself: see "the guide's doc-only cases are the draft tool's".
 	assert.match(usage("sova-spec-draft.mjs", "--no-such-flag"), /merge-manifest/, "merge-manifest is a draft command");
 	assert.match(spec, /never put `§` IDs or spec annotations in source code/);
-	assert.match(spec, /authorizes its drafts, evidence and promotions as one bounded batch; no dialog per claim, and nothing at session start/);
+	assert.match(spec, /authorizes its drafts and notes as one bounded batch; no dialog per claim, and nothing at session start/);
 	assert.match(spec, /No check, record, evidence or promotion proves correctness; no tool checks meaning\./);
 	assert.match(spec, /only the passages and unknowns relevant to its part, quoted literally/, "workers get the relevant slice, not the graph");
 	assert.doesNotMatch(spec, /\{[A-Z_]+\}/);
@@ -562,7 +581,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never counts/);
 	assert.match(spec, /wherever you put the claim\. Read it with `read`;/, "a foreign § is read alone, not with its chain");
 	// Agreed decisions: one pointer to the shortcut, whose rules PROMOTE.md says once; the Agree step itself rides the align result.
-	assert.match(spec, /For decisions the user agreed to, `agree <name> --id '<§id>' --by <who> --verification <text> --write` stamps `agreed` with where the go-ahead is \(`\$SPEC_AGREE_SOURCE` if set, no `--source`; else `--source <ref>`, never a description; else report it ready, never stamp\) and promotes what maps no code \(`\$core\/\.\.\/PROMOTE\.md`\)\./);
+	assert.match(spec, /`agree <name> --id '<§id>' --by <who> --verification <text> --write` is only for a decision the user made in this chat: it stamps `agreed` with where the go-ahead is \(`\$SPEC_AGREE_SOURCE` if set, no `--source`; else `--source <ref>`, never a description; else report it ready, never stamp\); Land It is never agreement\./);
 	assert.ok(!spec.includes("Agree step"), "the Agree step is the align result's, never the guide's");
 	// The short part: finding your way, and nothing of the writing steps.
 	assert.match(short, /Finding your way:\n1\. Search with `where` and 3–5 of the task's words, never one \(`where password reset email expiry`\), or a path or name; if no hit fits, try other words once, then `map`\.\n2\. `read` what fits/);
@@ -572,13 +591,19 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	const words = short.split(/\s+/).length;
 	assert.ok(words <= 320, `short enough to ride every turn: growing it is a deliberate change (${words} words)`);
 	const procedureWords = writing.split(/\s+/).length;
-	assert.ok(procedureWords <= 990, `the writing procedure, handed over once: growing it is a deliberate change (${procedureWords} words)`);
+	assert.ok(procedureWords <= 1030, `the writing procedure, handed over once: growing it is a deliberate change (${procedureWords} words)`);
 });
 
 test("spec: the guide's doc-only cases are the draft tool's: each one it names is accepted, and every case the tool's rule lists is named", () => {
 	const guide = readFileSync(new URL("../spec/WRITING.md", import.meta.url), "utf8");
 	const named = guide.match(/`--doc-only` \(([^)]*)\)/)?.[1]?.split(", ");
-	assert.ok(named, "the guide names the doc-only cases in one parenthesis");
+	// The chat records a note, and the landing picks doc-only or commit evidence per record: the guide names no
+	// doc-only case at all. Were it to name them again, they must be the draft tool's, as below.
+	if (!named) {
+		assert.ok(!guide.includes("--doc-only"), "the guide names --doc-only only with its cases in one parenthesis");
+		assert.ok(guide.includes("--note --write"), "the guide names the chat's note instead");
+		return;
+	}
 	const draftTool = fileURLToPath(new URL("../spec/core/sova-spec-draft.mjs", import.meta.url));
 	const dir = tmp();
 	try {
@@ -848,7 +873,7 @@ test("spec writer: the paragraph names the exact worker, the drafts-only rule, a
 	const onPrimary = buildSpecWriterPrompt(routeWriter(WRITER, { "claude-code": offering("claude-opus-5-5"), pi: piOffering("zai/glm-5.3") }, () => null)!);
 	assert.match(onPrimary, /^Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → backend "claude-code", model "claude-opus-5-5", effort "medium"; fallback backend "pi", model "zai\/glm-5\.3", effort "high"\. /);
 	assert.match(onPrimary, /Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did\./);
-	assert.match(onPrimary, /It writes only under `\.sova\/spec\/drafts\/`, never current `claims\/` or `manifest\.json`; you check its draft, run the checks and the census, and promote yourself\./);
+	assert.match(onPrimary, /It writes only under `\.sova\/spec\/drafts\/`, never current `claims\/` or `manifest\.json`; you check its draft, run the checks and the census, and record a note per promise; the landing makes it official\./);
 	assert.match(onPrimary, /retry once with the fallback only if one is listed above, and say so; otherwise ask the user which model to use — never substitute one of your own\.$/);
 	assert.equal(onPrimary.match(/\n/g), null, "one paragraph");
 	// No fallback configured: a failed primary means asking.
@@ -1151,13 +1176,14 @@ test("codemode: a minor mode with no prompt block, no mode note and no worker re
 	assert.ok(SCRIPT_ONLY_EXPOSURES.has("codemode") && SCRIPT_ONLY_EXPOSURES.has("deferred") && !SCRIPT_ONLY_EXPOSURES.has("direct") && !SCRIPT_ONLY_EXPOSURES.has("model-only"));
 });
 
-test("SPEC_WORKER_NOTE: the parent promotes, the brief is the go-ahead, and updated foreign § go in the final report", () => {
-	assert.match(SPEC_WORKER_NOTE, /parent session started you, and it promotes/);
-	assert.match(SPEC_WORKER_NOTE, /Promote, commit or record `--commit` evidence only when your brief says to, and then only on its branch, never by landing on the default branch/);
+test("SPEC_WORKER_NOTE: the landing makes drafts official, the brief is the go-ahead, and updated foreign § go in the final report", () => {
+	assert.match(SPEC_WORKER_NOTE, /parent session started you, and its branch's landing makes the drafts official/);
+	assert.match(SPEC_WORKER_NOTE, /Commit only when your brief says to, and then only on its branch, never by landing on the default branch/);
+	assert.doesNotMatch(SPEC_WORKER_NOTE, /[Pp]romote/, "a worker is never told to promote");
 	assert.match(SPEC_WORKER_NOTE, /Your brief is your go-ahead/);
 	// The note leans on the writing procedure's own wording; a rewrite there must revisit the note.
 	const writing = readFileSync(new URL("../spec/WRITING.md", import.meta.url), "utf8");
-	for (const phrase of ["`--commit`", "Also updates", "draft", "promote"]) assert.ok(writing.includes(phrase), phrase);
+	for (const phrase of ["--note", "Also updates", "draft", "land"]) assert.ok(writing.includes(phrase), phrase);
 	// The procedure's Workers section carries the same duties, word for word, for a worker it reaches through the census.
 	assert.ok(writing.includes(`\nIf you are a worker: ${SPEC_WORKER_NOTE.replace(/^You are a worker: /, "")}`), "WRITING.md's worker paragraph is the note");
 	assert.ok(SPEC_WORKER_NOTE.endsWith("List each foreign § you updated in your final report."), "a worker lists, never asks");
@@ -1208,16 +1234,16 @@ test("restoreHead: the newest recorded head, the newest note, and nothing across
 	const note = (minorModes: MinorMode[], guides: MinorMode[]) => ({ type: "custom_message", customType: MODE_NOTE_TYPE, details: { v: 1, minorModes, guides } });
 	assert.deepEqual(restoreHead([]), { head: undefined, told: undefined, guides: [] }, "never sent: the head follows the active set");
 	assert.deepEqual(restoreHead([pin(["vis"])]), { head: undefined, told: undefined, guides: [] }, "a Sova pin carries no head");
-	assert.deepEqual(restoreHead([pin(["vis"], [])]), { head: [], told: [], guides: [], headStyle: "default" }, "recorded, not told yet");
+	assert.deepEqual(restoreHead([pin(["vis"], [])]), { head: [], told: [], guides: [], headStyle: "default", headEagerness: "eager" }, "recorded, not told yet");
 	assert.deepEqual(
 		restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([]), note([], [])]),
-		{ head: [], told: [], guides: ["vis"], headStyle: "default" },
+		{ head: [], told: [], guides: ["vis"], headStyle: "default", headEagerness: "eager" },
 		"an entry equal to its head carries none; the older one still names it, and every guide since counts",
 	);
-	assert.deepEqual(restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([])]), { head: [], told: ["vis"], guides: ["vis"], headStyle: "default" }, "a switch not told yet: told is the last note's");
+	assert.deepEqual(restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), pin([])]), { head: [], told: ["vis"], guides: ["vis"], headStyle: "default", headEagerness: "eager" }, "a switch not told yet: told is the last note's");
 	assert.deepEqual(
 		restoreHead([pin(["vis"], []), note(["vis"], ["vis"]), { type: "compaction" }, pin(["spec", "vis"], ["vis"])]),
-		{ head: ["vis"], told: ["vis"], guides: [], headStyle: "default" },
+		{ head: ["vis"], told: ["vis"], guides: [], headStyle: "default", headEagerness: "eager" },
 		"notes before a compaction don't count",
 	);
 	assert.deepEqual(restoreHead([pin(["vis"], []), { type: "compaction" }]).head, undefined, "a compaction rebuilds the head from the active set");
@@ -1245,4 +1271,137 @@ test("buildModeNote in the worker form: spec turned on carries the worker note, 
 	const note = buildModeNote([], ["spec"], { head: [], guides: [] }, writer, true)!;
 	assert.ok(note.text.endsWith(`\n\n${composeWorkerPrompt({ minorModes: ["spec"] })}`), "the worker form of the block");
 	assert.doesNotMatch(note.text, /Spec writer:/);
+});
+
+/**
+ * The real extension on a minimal host with align on (the `minor` flag): the settle nudge's hooks
+ * driven directly, one run at a time (§chat.alignment/when, §chat.alignment/model).
+ */
+async function nudgeHost(eagerness?: "careful" | "eager") {
+	const prevDir = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = tmp();
+	// The host's mode-align.json (§chat.alignment/eagerness): absent, Eager.
+	if (eagerness) writeFileSync(join(process.env.PI_CODING_AGENT_DIR, "mode-align.json"), JSON.stringify({ version: 1, style: "pm", visuals: false, eagerness }));
+	/** Change the file mid-session: the nudge reads the Eagerness in effect when the run settles. */
+	const setEagerness = (to: "careful" | "eager") => writeFileSync(join(process.env.PI_CODING_AGENT_DIR!, "mode-align.json"), JSON.stringify({ version: 1, style: "pm", visuals: false, ...(to === "careful" ? { eagerness: to } : {}) }));
+	const agentDir = process.env.PI_CODING_AGENT_DIR;
+	const { default: modeExtension } = await import("./index.ts");
+	const hooks = new Map<string, ((event: unknown, ctx: unknown) => unknown)[]>();
+	const noop = () => {};
+	const base: Record<string, unknown> = {
+		on: (name: string, handler: (event: unknown, ctx: unknown) => unknown) => hooks.set(name, [...(hooks.get(name) ?? []), handler]),
+		getFlag: (name: string) => (name === "minor" ? "align" : undefined),
+		getActiveTools: () => [],
+		getAllTools: () => [],
+		events: { on: () => noop, emit: noop },
+	};
+	const pi = new Proxy(base, { get: (t, k) => (typeof k === "string" && k in t ? t[k] : noop) });
+	const ui = new Proxy({ theme: { fg: (_t: string, x: string) => x, bold: (x: string) => x, bg: (_t: string, x: string) => x } } as Record<string, unknown>, { get: (t, k) => (typeof k === "string" && k in t ? t[k] : noop) });
+	const ctx = { ui, cwd: process.env.PI_CODING_AGENT_DIR, hasUI: false, sessionManager: { getBranch: () => [], getEntries: () => [], getSessionFile: () => undefined } };
+	modeExtension(pi as never);
+	const fire = async (name: string, event: unknown) => {
+		let out: unknown;
+		for (const handler of hooks.get(name) ?? []) out = (await handler(event, ctx)) ?? out;
+		return out as { entries: { customType?: string }[]; continue: boolean } | undefined;
+	};
+	await fire("session_start", { type: "session_start", reason: "startup" });
+	/** One run: the user's prompt, the align calls' arguments, the final reply; what the settle hook returned. */
+	const run = async (prompt: string, alignArgs: unknown[], reply: string) => {
+		await fire("before_agent_start", { type: "before_agent_start", prompt, systemPrompt: "base" });
+		for (const [i, args] of alignArgs.entries()) {
+			await fire("tool_execution_start", { type: "tool_execution_start", toolCallId: `c${i}`, toolName: "align", args });
+			// A mark (or a refused call) records nothing: no document, no exemption.
+			await fire("tool_execution_end", { type: "tool_execution_end", toolCallId: `c${i}`, toolName: "align", isError: false, result: { details: { v: 1, changes: [], line: "" } } });
+		}
+		await fire("turn_end", { type: "turn_end", message: { role: "assistant", content: [{ type: "text", text: reply }] } });
+		const settled = await fire("agent_before_settle", { type: "agent_before_settle", entries: [], continue: false, outcome: "completed" });
+		await fire("agent_settled", { type: "agent_settled" });
+		return settled;
+	};
+	const restore = () => {
+		if (prevDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = prevDir;
+	};
+	return { run, restore, setEagerness: (to: "careful" | "eager") => {
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		setEagerness(to);
+	} };
+}
+
+const nudgedBy = (settled: { entries: { customType?: string }[] } | undefined) => settled?.entries.some((e) => e.customType === ALIGN_NUDGE_MESSAGE) === true;
+
+test("settle nudge, Eager (the default): any run whose reply reads like a plan is nudged, marked or not", async () => {
+	const host = await nudgeHost();
+	try {
+		const reply = "Plan:\n- add the route\n- add the button\n\nShould I go ahead?";
+		const settled = await host.run("add an export", [], reply);
+		assert.equal(nudgedBy(settled), true, "no mark, no file: Eager judges the run's reply");
+		assert.equal(settled?.continue, true);
+		assert.equal(nudgedBy(await host.run("explain playbooks", [], "Playbooks are recipes a project runs, step by step.")), false, "a reply that reads like no plan is left alone");
+		// The Eagerness in effect when the run settles: Careful now, so the same unmarked run is left alone.
+		host.setEagerness("careful");
+		assert.equal(nudgedBy(await host.run("add an export", [], reply)), false, "Careful: unmarked, never nudged");
+		host.setEagerness("eager");
+		assert.equal(nudgedBy(await host.run("add an export", [], reply)), true, "back to Eager: nudged again");
+	} finally {
+		host.restore();
+	}
+});
+
+test("settle nudge, Careful: a run nobody marked as a change request is never nudged, whatever its reply asks", async () => {
+	const host = await nudgeHost("careful");
+	try {
+		const settled = await host.run("explain playbooks", [], "Playbooks are recipes a project runs, step by step.\n\nShould I go ahead with that?");
+		assert.equal(nudgedBy(settled), false, "no ALIGN_NUDGE_MESSAGE without the mark");
+		assert.equal(settled, undefined, "the run settles as it was");
+		// A bare get is no mark either.
+		assert.equal(nudgedBy(await host.run("explain playbooks", [{ ops: [{ op: "get" }] }], "Plan:\n- a\n- b\n\nShould I go ahead?")), false);
+	} finally {
+		host.restore();
+	}
+});
+
+test("settle nudge, Careful: with the change-request mark (or any align op but get) the same reply is nudged once", async () => {
+	const host = await nudgeHost("careful");
+	try {
+		const reply = "Playbooks are recipes a project runs, step by step.\n\nShould I go ahead with that?";
+		const settled = await host.run("explain playbooks", [{ ops: [{ op: "change_request" }] }], reply);
+		assert.equal(nudgedBy(settled), true, "the marked run gets ALIGN_NUDGE_MESSAGE");
+		assert.equal(settled?.continue, true);
+		// The mark holds for its run only: the next run, unmarked, is left alone.
+		assert.equal(nudgedBy(await host.run("explain playbooks", [], reply)), false, "the mark ends with its run");
+		// A refused create still marks the run (refused or not); it recorded nothing, so the plan is nudged.
+		assert.equal(nudgedBy(await host.run("add an export", [{ ops: [{ op: "create" }] }], reply)), true);
+		// The plan just above its working notes is the reply's end.
+		assert.equal(nudgedBy(await host.run("add an export", [{ ops: [{ op: "change_request" }] }], "Plan:\n- a\n- b\n\nShould I go ahead?\n\n### Working notes\nRead the code. Nothing else.")), true);
+	} finally {
+		host.restore();
+	}
+});
+
+test("vis_guide: a Sova chat's own kinds (the sova:vis-own-kinds hook) join it at session start, never one of the built-in words", async () => {
+	const { registerVisGuideTool, VIS_OWN_KINDS_HOOK: HOOK, ownVisKinds } = await import("./vis-guide-tool.ts");
+	const g = globalThis as Record<symbol, unknown>;
+	const tools: { name: string; description: string; parameters: unknown; execute(id: string, p: { kind: unknown }): Promise<{ content: { text: string }[] }> }[] = [];
+	const handlers: Record<string, (e: unknown, ctx: unknown) => void> = {};
+	const pi = { registerTool: (t: (typeof tools)[number]) => tools.push(t), on: (ev: string, fn: (e: unknown, ctx: unknown) => void) => (handlers[ev] = fn) };
+	g[HOOK] = (id: string) => (id === "s1" ? [{ kind: "project.gantt", guide: "Write tasks.", line: "vis project.gantt (JSON data, this project's)" }, { kind: "flow", guide: "evil", line: "x" }, { kind: "a.flow2", guide: 3, line: "x" }] : []);
+	try {
+		registerVisGuideTool(pi as never);
+		assert.equal(tools.length, 1);
+		assert.doesNotMatch(tools[0]!.description, /own kinds/);
+		// Another session's chat: no own kinds, the tool as it was.
+		handlers.session_start!({}, { sessionManager: { getSessionId: () => "s2" } });
+		assert.equal(tools.length, 1);
+		handlers.session_start!({}, { sessionManager: { getSessionId: () => "s1" } });
+		assert.equal(tools.length, 2);
+		const own = tools[1]!;
+		assert.match(own.description, /vis project\.gantt \(JSON data, this project's\)/);
+		assert.match((await own.execute("c", { kind: "project.gantt" })).content[0]!.text, /`vis project\.gantt`[\s\S]*Write tasks\./);
+		// A built-in word still returns Sova's own guide, never the hook's text.
+		assert.equal((await own.execute("c", { kind: "flow" })).content[0]!.text, visGuide("flow"));
+		assert.deepEqual(ownVisKinds("s1").map((k) => k.kind), ["project.gantt"]);
+	} finally {
+		delete g[HOOK];
+	}
 });

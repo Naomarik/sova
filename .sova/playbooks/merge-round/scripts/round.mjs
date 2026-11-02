@@ -29,7 +29,8 @@
 // A restart is needed when the live server's head (GET /api/health) lacks master's runtime code.
 // Every child runs by argv with no shell, in its own process group, under a timeout.
 import { spawn } from "node:child_process";
-import { accessSync, chmodSync, closeSync, constants, cpSync, createWriteStream, existsSync, linkSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { accessSync, chmodSync, closeSync, constants, cpSync, createWriteStream, existsSync, linkSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,9 +75,15 @@ export function conflictedFiles(stdout) {
   return files.size;
 }
 
-/** The hand-back for a branch whose docs aren't official: its owner promotes and commits on its branch. */
+/** The hand-back for a branch whose docs aren't official while the docs step is off (`specLanding: "off"`): its owner
+ *  promotes and commits on its branch. */
 export const handBackText = (branch, drafts) =>
-  `${branch} isn't landing yet: its docs aren't official. Your spec drafts aren't promoted: ${draftsShown(drafts)}. Promote them on ${branch} and commit that (the user's go-ahead to merge covers it: don't ask for it again; delete a draft that holds nothing to land, and say so), so the branch shows Ready to land again. The merge round never promotes them.`;
+  `${branch} isn't landing yet: its docs aren't official, and the merge round's docs step is off. Your spec drafts aren't promoted: ${draftsShown(drafts)}. Promote them on ${branch} and commit that (the user's go-ahead to merge covers it: don't ask for it again; delete a draft that holds nothing to land, and say so), so the branch shows Ready to land again.`;
+
+/** The hand-back for a branch whose drafts the landing refused (`land`'s findings): the owner fixes them in its
+ *  drafts, which needs no commit. Never says to promote. */
+export const docsHandBackText = (branch, findings) =>
+  `${branch} isn't landing yet: its spec drafts don't fit, so nothing about them was written. ${findings.slice(0, 8).map((f) => `${f.id ?? f.draft ?? "a draft"}${f.draft && f.id ? ` (draft ${f.draft})` : ""}: ${f.message}; fix: ${f.fix ?? f.message}`).join(". ")}${findings.length > 8 ? `. And ${findings.length - 8} more (run the draft tool's land without --write to see them)` : ""}. Fix them in your drafts: that needs no commit. The branch shows Ready to land again once they fit, and the landing makes them official.`;
 
 /** The hand-back for a branch whose merge with master conflicts in the spec: the owner merges and promotes again on top. */
 // layout 2 (each area's records beside its claim file): only the clashing areas are taken from master and redone.
@@ -378,16 +385,22 @@ const OWNER_STATUSES = ["idle", "busy", "archived"];
 // and the user's answers on the Landing card, typed in the branch's own chat, or given with Go on an Overseer card's
 // Ready to land row, which Sova keeps in `<state root>/landing.json`.
 
-/** A row the captain may queue: Ready to land, or Landing specs whose owner said why they can't land (the card then
- *  offers Merge Without Specs…). */
-export const landingEligible = (row, head) => !!row?.landing && row.landing.commit === head && (row.landing.state === "ready" || !!row.landing.specsWhy);
+/** A row the captain may queue: Ready to land, Landing specs whose owner said why they can't land, or Landing specs only
+ *  because its drafts changed since the user's Land It (a new card shows what changed). */
+export const landingEligible = (row, head) => !!row?.landing && row.landing.commit === head && (row.landing.state === "ready" || !!row.landing.specsWhy ||
+  (!!row.landing.docs?.changedSinceGoAhead?.length && !row.landing.docs?.problems?.length));
 
-/** `landing.json`'s text → {goAheads, notYet} (a bad file reads as none). */
+/** `landing.json`'s text → {goAheads, notYet, docsEntries} (a bad file reads as none). docsEntries are the docs
+ *  commits the round made itself, each with its one parent: the only spec-only commits a go-ahead carries across. */
 export function parseLanding(text) {
   let d;
-  try { d = JSON.parse(text); } catch { return { goAheads: [], notYet: [] }; }
-  const ok = (r) => typeof r?.branch === "string" && typeof r.commit === "string" && /^[0-9a-f]{40,64}$/.test(r.commit);
-  return d?.v === 1 ? { goAheads: (Array.isArray(d.goAheads) ? d.goAheads : []).filter(ok), notYet: (Array.isArray(d.notYet) ? d.notYet : []).filter(ok) } : { goAheads: [], notYet: [] };
+  const none = { goAheads: [], notYet: [], docsEntries: [] };
+  try { d = JSON.parse(text); } catch { return none; }
+  const SHA = /^[0-9a-f]{40,64}$/;
+  const ok = (r) => typeof r?.branch === "string" && typeof r.commit === "string" && SHA.test(r.commit);
+  const entry = (r) => typeof r?.branch === "string" && typeof r.sha === "string" && SHA.test(r.sha) && typeof r.parent === "string" && SHA.test(r.parent);
+  return d?.v === 1 ? { goAheads: (Array.isArray(d.goAheads) ? d.goAheads : []).filter(ok), notYet: (Array.isArray(d.notYet) ? d.notYet : []).filter(ok),
+    docsEntries: (Array.isArray(d.docsEntries) ? d.docsEntries : []).filter(entry) } : none;
 }
 
 /** The user's newest answer on the Landing card for this branch at exactly this head: the go-ahead, or Not Yet. */
@@ -396,7 +409,7 @@ export function parseLanding(text) {
 export const landingAnswer = (landing, branch, head) => {
   const go = landing.goAheads.filter((g) => g.branch === branch && g.commit === head).at(-1);
   const no = landing.notYet.filter((n) => n.branch === branch && n.commit === head).at(-1);
-  if (go && (!no || Date.parse(go.at) > Date.parse(no.at))) return { kind: "go-ahead", withoutSpecs: go.withoutSpecs === true, by: go.by };
+  if (go && (!no || Date.parse(go.at) > Date.parse(no.at))) return { kind: "go-ahead", withoutSpecs: go.withoutSpecs === true, by: go.by, ...(go.drafts && typeof go.drafts.hash === "string" ? { drafts: go.drafts } : {}) };
   return no ? { kind: "not-yet" } : null;
 };
 
@@ -412,20 +425,24 @@ export const goAheadWord = (by) => (by === "page" ? "Merge Branch" : by === "cha
  * So the owner's Landing card and the captain's row settle and say where it was given (§chat.offers/landing-rows).
  */
 export function recordCaptainGoAhead(file, { branch, commit, at, captain, withoutSpecs }) {
-  let d;
-  try { d = JSON.parse(readFileSync(file, "utf8")); } catch { d = null; }
-  const goAheads = Array.isArray(d?.goAheads) && d?.v === 1 ? d.goAheads : [];
-  const notYet = Array.isArray(d?.notYet) && d?.v === 1 ? d.notYet : [];
-  const rec = { branch, commit, at, by: "captain-chat", ...(withoutSpecs ? { withoutSpecs: true } : {}), ...(captain ? { in: captain } : {}) };
-  const out = {
-    v: 1,
-    goAheads: [...goAheads.filter((g) => !(g?.branch === branch && g?.commit === commit)), rec].slice(-200),
-    notYet: notYet.filter((n) => !(n?.branch === branch && n?.commit === commit)).slice(-200),
-  };
-  mkdirSync(dirname(file), { recursive: true });
-  const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-  writeFileSync(tmp, `${JSON.stringify(out, null, 2)}\n`, { mode: 0o600 });
-  renameSync(tmp, file);
+  // Under landing.json's lock (withLandingLock), keeping every other list the file holds (the round's docsEntries).
+  withLandingLock(file, () => {
+    let d;
+    try { d = JSON.parse(readFileSync(file, "utf8")); } catch { d = null; }
+    if (d?.v !== 1 || typeof d !== "object") d = { v: 1 };
+    const goAheads = Array.isArray(d.goAheads) ? d.goAheads : [];
+    const notYet = Array.isArray(d.notYet) ? d.notYet : [];
+    const rec = { branch, commit, at, by: "captain-chat", ...(withoutSpecs ? { withoutSpecs: true } : {}), ...(captain ? { in: captain } : {}) };
+    const out = {
+      ...d,
+      v: 1,
+      goAheads: [...goAheads.filter((g) => !(g?.branch === branch && g?.commit === commit)), rec].slice(-200),
+      notYet: notYet.filter((n) => !(n?.branch === branch && n?.commit === commit)).slice(-200),
+    };
+    const tmp = `${file}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(out, null, 2)}\n`, { mode: 0o600 });
+    renameSync(tmp, file);
+  });
 }
 
 /** Whether Sova gave a queued branch a row on the captain's landing card (§chat.offers/landing-rows). */
@@ -481,6 +498,86 @@ export async function landingAnswerAt(landing, branch, head, parentOf) {
     if (a) return { ...a, at: sha };
   }
   return null;
+}
+
+/** The parent a go-ahead is carried to from `sha` when `sha` is the round's own docs entry for `branch`, recorded in
+ *  landing.json with its parent, and has exactly that one parent (§chat.merge-round/driver); else undefined. A spec-only
+ *  commit anyone else made, trailer or not, is never one. `run(args)` runs git → {code, stdout}. */
+export async function docsEntryParent(run, landing, branch, sha) {
+  const e = (landing.docsEntries ?? []).filter((x) => x.branch === branch && x.sha === sha).at(-1);
+  if (!e) return undefined;
+  const line = await run(["rev-list", "--parents", "-n", "1", sha]);
+  const ids = line.code === 0 ? line.stdout.trim().split(/\s+/) : [];
+  return ids.length === 2 && ids[0] === sha && ids[1] === e.parent ? e.parent : undefined;
+}
+
+/** The spec drafts in a work tree as Land It saw them (§chat.worktrees/landing-answers): one hash over every file under
+ *  each draft's spec/ (lines `<draft>/<path under spec/> <sha256>`, sorted, joined by "\n"; draft.json apart), each
+ *  draft's own hash over its lines, and the names. The draft tool's land and server/spec-drafts-state.ts compute the
+ *  same. → {hash, names, each} | null (no drafts) */
+export function draftsHashOf(root) {
+  const dir = join(root, ".sova", "spec", "drafts");
+  let names;
+  try { names = readdirSync(dir, { withFileTypes: true }).filter((e) => e.isDirectory() && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(e.name)).map((e) => e.name).sort(); } catch { return null; }
+  if (!names.length) return null;
+  const h = (lines) => createHash("sha256").update(lines.sort().join("\n")).digest("hex");
+  const all = [], each = {};
+  for (const n of names) {
+    const mine = [];
+    const walk = (abs, rel) => {
+      let list;
+      try { list = readdirSync(abs, { withFileTypes: true }); } catch { return; }
+      for (const e of list) {
+        const r = `${rel}/${e.name}`;
+        if (e.isDirectory()) walk(join(abs, e.name), r);
+        else if (e.isFile()) { try { mine.push(`${r} ${createHash("sha256").update(readFileSync(join(abs, e.name))).digest("hex")}`); } catch {} }
+      }
+    };
+    walk(join(dir, n, "spec"), n);
+    each[n] = h([...mine]);
+    all.push(...mine);
+  }
+  return { hash: h(all), names, each };
+}
+
+/** The drafts that changed since Land It recorded `pressed` ({hash, names, each?}), sorted; [] when none did. Without
+ *  per-draft hashes a changed whole names every draft. */
+export function draftsChanged(pressed, now) {
+  if (!pressed) return [];
+  if ((now?.hash ?? null) === pressed.hash) return [];
+  const names = [...new Set([...(pressed.names ?? []), ...(now?.names ?? [])])].sort();
+  if (!pressed.each) return names;
+  return names.filter((n) => (pressed.each[n] ?? null) !== (now?.each?.[n] ?? null));
+}
+
+/** The lock every writer of landing.json holds while it re-reads, merges and replaces the file (landing.ts
+ *  withLandingLock, the same protocol: `<file>.lock` made with O_EXCL, a lock older than 10 s taken over, 5 s wait). */
+export function withLandingLock(file, fn) {
+  mkdirSync(dirname(file), { recursive: true });
+  const lock = `${file}.lock`, end = Date.now() + 5_000;
+  for (;;) {
+    try { closeSync(openSync(lock, "wx", 0o600)); break; } catch (e) {
+      if (e?.code !== "EEXIST") throw e;
+      try { if (Date.now() - statSync(lock).mtimeMs > 10_000) { unlinkSync(lock); continue; } } catch { continue; }
+      if (Date.now() > end) throw new Error(`landing.json stayed locked for 5 s (${lock})`);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+  }
+  try { return fn(); } finally { try { unlinkSync(lock); } catch {} }
+}
+
+/** Append the round's docs entry to landing.json, keeping everything else the file holds: under the lock, re-read,
+ *  appended (newest 200), replaced atomically. */
+export function appendDocsEntry(file, entry) {
+  withLandingLock(file, () => {
+    let d = {};
+    try { d = JSON.parse(readFileSync(file, "utf8")); } catch {}
+    if (d?.v !== 1 || typeof d !== "object") d = { v: 1, goAheads: [], notYet: [] };
+    d.docsEntries = [...(Array.isArray(d.docsEntries) ? d.docsEntries : []).filter((e) => e?.sha !== entry.sha), entry].slice(-200);
+    const tmp = `${file}.${process.pid}.round.tmp`;
+    writeFileSync(tmp, `${JSON.stringify(d, null, 2)}\n`, { mode: 0o600 });
+    renameSync(tmp, file);
+  });
 }
 
 /** The board file's text → {ok: true, board: {at, pending, rows}} | {ok: false, why}. */
@@ -673,7 +770,8 @@ class Round {
     try {
       const s = JSON.parse(raw);
       const names = Array.isArray(s?.privateNames) ? s.privateNames.filter((x) => typeof x === "string" && x.trim()) : [];
-      return { exists: true, valid: true, names, restartUnit: typeof s?.restartUnit === "string" ? s.restartUnit : undefined };
+      // specLanding "off": the kill switch for the docs step; drafts left then hold the branch, as before it.
+      return { exists: true, valid: true, names, restartUnit: typeof s?.restartUnit === "string" ? s.restartUnit : undefined, specLanding: s?.specLanding === "off" ? "off" : "on" };
     } catch {
       return { exists: true, valid: false, names: [] };
     }
@@ -796,10 +894,16 @@ class Round {
    *  `landing.json`), and their word in this chat (`go`), a go-ahead alike. */
   readLanding() {
     let l;
-    try { l = parseLanding(readFileSync(this.landingFile, "utf8")); } catch { l = { goAheads: [], notYet: [] }; }
+    try { l = parseLanding(readFileSync(this.landingFile, "utf8")); } catch { l = { goAheads: [], notYet: [], docsEntries: [] }; }
     for (const [branch, r] of Object.entries(this.state?.branches ?? {}))
       if (r.go) l.goAheads.push({ branch, commit: r.go.head, at: new Date(r.go.at).toISOString(), by: "chat", withoutSpecs: !!r.go.withoutSpecs });
     return l;
+  }
+
+  /** Record a docs entry the round committed in `landing.json` (§chat.worktrees/landing-answers), keeping everything else
+   *  the file holds: under the file's lock, re-read, appended (newest 200), replaced atomically. */
+  recordDocsEntry(entry) {
+    appendDocsEntry(this.landingFile, entry);
   }
 
   /** Sova's answer to one queue entry: {card} shown, {refused} not, or null while it hasn't read it. */
@@ -881,11 +985,13 @@ class Round {
     return dirtyPaths(r.stdout);
   }
 
-  /** The user's answer on the Landing card for `branch` at `head`, a go-ahead carried over clean master merges
-   *  (landingAnswerAt); merge-tree's objects go to a throwaway object directory. */
+  /** The user's answer on the Landing card for `branch` at `head`, a go-ahead carried over clean master merges and the
+   *  round's own recorded docs entries (landingAnswerAt); merge-tree's objects go to a throwaway object directory. */
   async answerAt(landing, branch, head) {
     const { main, commonDir } = await this.repo();
     const parentOf = async (sha) => {
+      const docs = await docsEntryParent((args) => git(main, args), landing, branch, sha);
+      if (docs) return docs;
       const scratch = mkdtempSync(join(tmpdir(), "sova-round-carry-"));
       try {
         const runIn = (args) => git(main, args, args[0] === "merge-tree" ? { env: { GIT_OBJECT_DIRECTORY: scratch, GIT_ALTERNATE_OBJECT_DIRECTORIES: join(commonDir, "objects") } } : {});
@@ -1216,7 +1322,7 @@ class Round {
       if (c.code !== 0) stop(2, `committing the merge failed in ${tree}: ${firstLine(c)}`);
       lines.push(`Merged master ${master.slice(0, 7)} into ${branch}.`);
     }
-    const head = await gitOut(main, ["rev-parse", `refs/heads/${branch}`], "rev-parse");
+    let head = await gitOut(main, ["rev-parse", `refs/heads/${branch}`], "rev-parse");
     master = await this.masterSha();
     const changed = (await gitOut(main, ["diff", "--name-only", `${master}...${head}`], "diff")).split("\n").filter(Boolean);
 
@@ -1230,10 +1336,13 @@ class Round {
     const needs = [];
     const flaky = [];
     const preexisting = [];
+    // The checks that passed, by label: what the docs' evidence names (never one that failed).
+    const passed = [];
     const step = async (key, floorKey, label, cmd, args, cwd, extraEnv = {}) => {
       const timeoutMs = timeoutFor(this.floor(floorKey), st.timings[key]);
       const r = await run(cmd, args, { cwd, env: { ...env, ...extraEnv }, timeoutMs, logFile: join(logDir, `${key.replace(/[^A-Za-z0-9._-]/g, "_")}.log`) });
       if (r.code === 0) st.timings[key] = [...(st.timings[key] ?? []), r.ms].slice(-9);
+      if (r.code === 0) passed.push(label);
       const said = r.timedOut ? `TIMED OUT at ${Math.round(timeoutMs / 1000)}s (process group killed)` : r.code === 0 ? "ok" : `FAILED (exit ${r.code})`;
       lines.push(`${label}: ${said}, ${Math.round(r.ms / 1000)}s.`);
       return r;
@@ -1345,14 +1454,6 @@ class Round {
     } else lines.push("build: skipped (the typecheck failed).");
     const spec = await this.specChecks(tree);
     lines.push(...spec.lines);
-    // Docs land with the code: a draft not confirmed promoted holds the branch, and goes back to its owner.
-    let left = spec.statuses.filter((d) => d.pending === null || d.pending.length).map((d) => ({ name: d.name, ids: d.pending }));
-    // The user's Merge Without Specs… at the head checked: the drafts stay behind, named, and hold nothing.
-    if (left.length && (await this.answerAt(this.readLanding(), branch, before))?.withoutSpecs) {
-      lines.push(`Specs left behind on the user's Merge Without Specs…: ${draftsShown(left)}. The landed notice names them for a fresh branch.`);
-      left = [];
-    }
-    if (left.length) needs.push(`docs not promoted: ${left.map((d) => d.name).join(", ")}`);
     // The area guides' "also update" files: questions for the owner, never a need.
     const nudges = alsoUpdateNudges(changed, areaGuides(tree));
     for (const n of nudges) lines.push(`also update: touched ${n.area} (${n.touched.length} file${n.touched.length === 1 ? "" : "s"}, ${n.guide}), not ${n.missing.join(" or ")}: ask the owner ("updated" or "not needed because …").`);
@@ -1365,14 +1466,23 @@ class Round {
     if (scan.code === 1) needs.push("leak-scan hits in commits origin/master doesn't have");
     else if (scan.code === 2) lines.push("The leak scan couldn't run here: landing doesn't wait on it, and push scans again.");
 
-    const ok = needs.length === 0;
+    // The docs step, last and only when every check passed: the drafts made official on the branch, one commit.
     const rec = (st.branches[branch] ??= {});
+    let docsHandBack = null;
+    if (!needs.length) {
+      const docs = await this.landDocs({ branch, tree, head, passed, logDir, statuses: spec.statuses });
+      lines.push(...docs.lines);
+      needs.push(...docs.needs);
+      if (docs.head) head = docs.head;
+      docsHandBack = docs.handBack ?? null;
+    }
+    const ok = needs.length === 0;
     const skipped = intPlan?.full ? [] : (intPlan?.skipped ?? []).map(({ name, title, why }) => ({ name, title, why }));
     const full = !!intPlan?.full;
     rec.check = { head, masterSha: master, ok, needs, flaky, preexisting, skipped, full, at: this.now, logs: logDir };
-    if (left.length) {
+    if (docsHandBack) {
       const who = rec.ask?.owner ?? ownerOf(rec)?.owner;
-      lines.push(who ? `Hand-back, session_send to ${who}:` : "Hand-back, for its owner (none known: the user's call):", handBackText(branch, left));
+      lines.push(who ? `Hand-back, session_send to ${who}:` : "Hand-back, for its owner (none known: the user's call):", docsHandBack);
     }
     this.event("check", { branch, head, ok, skipped, full });
     this.saveState();
@@ -1568,7 +1678,7 @@ class Round {
    *  (`check` holds a branch on a draft not confirmed promoted; nothing else here holds one). */
   async specChecks(tree) {
     const statuses = await this.draftStatuses(tree);
-    const drafted = statuses.map(({ name, pending }) => (pending === null ? `draft ${name}: status unreadable.` : pending.length ? `draft ${name}: not promoted: ${pending.slice(0, 4).join(", ")}.` : `draft ${name}: promoted.`));
+    const drafted = statuses.map(({ name, pending }) => (pending === null ? `draft ${name}: status unreadable.` : pending.length ? `draft ${name}: to land: ${pending.slice(0, 4).join(", ")}${pending.length > 4 ? `, +${pending.length - 4} more` : ""}.` : `draft ${name}: promoted.`));
     if (!existsSync(join(tree, MANIFEST))) return { lines: ["spec: none in this project.", ...drafted], statuses };
     const tool = (file, args) => run(process.execPath, [join(this.specCore, file), ...args, "--root", tree, "--json"], { cwd: tree, timeoutMs: 120_000 });
     if (!existsSync(join(this.specCore, "sova-spec.mjs"))) return { lines: ["spec: the spec tools aren't installed, so the spec can't be checked.", ...drafted], statuses };
@@ -1583,6 +1693,71 @@ class Round {
     else lines.push("spec census: clean.");
     lines.push(...drafted);
     return { lines, statuses };
+  }
+
+  /**
+   * The docs step of `check` (§chat.merge-round/driver), run only once every check passed: the drafts with records
+   * not yet official are made official on the branch by the draft tool's `land --write`, and committed as one docs
+   * entry with the trailer, recorded in the state and in landing.json. A Land It whose drafts changed since, or a land
+   * that refuses, writes nothing and is a need. → {lines, needs, head?, handBack?}
+   */
+  async landDocs({ branch, tree, head, passed, logDir, statuses }) {
+    const lines = [], needs = [];
+    const pending = statuses.filter((d) => d.pending === null || d.pending.length).map((d) => ({ name: d.name, ids: d.pending }));
+    if (!pending.length) return { lines, needs };
+    const answer = await this.answerAt(this.readLanding(), branch, head);
+    // The user's Merge Without Specs…: the drafts stay behind, named, and hold nothing.
+    if (answer?.kind === "go-ahead" && answer.withoutSpecs) {
+      lines.push(`Specs left behind on the user's Merge Without Specs…: ${draftsShown(pending)}. The landed notice names them for a fresh branch.`);
+      return { lines, needs };
+    }
+    // The kill switch: drafts not made official hold the branch, and go back to their owner to promote by hand.
+    if (this.settings.specLanding === "off") {
+      lines.push(`The docs step is off (specLanding: "off" in the round's settings): the drafts hold the branch.`);
+      return { lines, needs: [`docs not promoted: ${pending.map((d) => d.name).join(", ")}`], handBack: handBackText(branch, pending) };
+    }
+    const tool = join(this.specCore, "sova-spec-draft.mjs");
+    if (!existsSync(tool)) return { lines, needs: [`docs can't land: the spec tools aren't installed (${draftsShown(pending)})`] };
+    // Land It covers the drafts as they were when it was pressed.
+    if (answer?.kind === "go-ahead" && answer.drafts) {
+      const changed = draftsChanged(answer.drafts, draftsHashOf(tree));
+      if (changed.length) {
+        lines.push(`The spec drafts changed since the user's Land It at ${(answer.at ?? head).slice(0, 7)}: ${changed.join(", ")}. Nothing was written: queue it again (round.mjs ask ${branch}) for a Landing card that shows the change.`);
+        return { lines, needs: [`docs changed since Land It: ${changed.join(", ")}`] };
+      }
+    }
+    const go = answer?.kind === "go-ahead" ? `${goAheadWord(answer.by)} at ${(answer.at ?? head).slice(0, 7)}` : `no recorded go-ahead (checked at ${head.slice(0, 7)})`;
+    const by = answer?.kind === "go-ahead" ? `the user (${goAheadWord(answer.by)})` : "the merge round";
+    const verification = `Made official at landing: ${branch} at ${head.slice(0, 7)}, go-ahead ${go}; checks passed: ${passed.join(", ") || "none recorded"} (round log ${basename(logDir)})`;
+    const r = await run(process.execPath, [tool, "land", "--commit", head, "--by", by, "--verification", verification, "--write", "--root", tree, "--json"], { cwd: tree, timeoutMs: 300_000 });
+    let j = null;
+    try { j = JSON.parse(r.stdout); } catch {}
+    if (!j || typeof j.exit !== "number") return { lines: [`docs: the draft tool's land gave no answer (${firstLine(r)}).`], needs: ["docs can't land: the draft tool's land gave no answer"] };
+    const dirty = await this.dirtyIn(tree);
+    if (j.exit !== 0 || !j.written) {
+      if (j.exit === 0 && j.nothingToLand) return { lines: ["docs: nothing to land (every draft is already official)."], needs };
+      const findings = (j.findings ?? []).filter((f) => f && typeof f.code === "string");
+      const ids = [...new Set(findings.map((f) => f.id ?? (f.draft ? `draft ${f.draft}` : f.code)))];
+      lines.push(`docs don't fit, nothing was written: ${findings.slice(0, 6).map((f) => `${f.id ?? f.draft ?? ""} ${f.code}: ${f.message}`.trim()).join("; ")}${findings.length > 6 ? `; +${findings.length - 6} more` : ""}.`);
+      if (dirty.length) lines.push(`The worktree isn't as it was after the refused land (${dirty.slice(0, 3).join(", ")}): look before anything else.`);
+      return { lines, needs: [`docs don't fit: ${ids.join(", ") || "see the land output"}`], handBack: docsHandBackText(branch, findings) };
+    }
+    const paths = (j.paths ?? []).filter((p) => typeof p === "string" && p.startsWith(".sova/spec/") && !p.startsWith(".sova/spec/drafts/"));
+    if (!paths.length) return { lines: ["docs: land wrote no spec file."], needs };
+    const unexpected = dirty.filter((p) => !paths.includes(p));
+    if (unexpected.length) return { lines: [`docs: the worktree holds changes land didn't write (${unexpected.slice(0, 3).join(", ")}); nothing committed.`], needs: ["docs can't land: the worktree changed during the landing"] };
+    const add = await git(tree, ["add", "--", ...paths], { timeoutMs: 60_000 });
+    if (add.code !== 0) stop(2, `staging the docs failed in ${tree}: ${firstLine(add)}`);
+    const id = process.env.PI_SESSION_ID?.trim() || "round";
+    const msg = j.commitMessage ?? {};
+    const c = await git(tree, ["commit", "--no-verify", "-m", String(msg.subject || `Spec: land drafts at ${head.slice(0, 7)}`), "-m", String(msg.body || verification), "-m", `Sova-Spec-Landing: ${id}`], { timeoutMs: 60_000 });
+    if (c.code !== 0) stop(2, `committing the docs failed in ${tree}: ${firstLine(c)}`);
+    const sha = (await gitOut(tree, ["rev-parse", "HEAD"], "rev-parse")).trim();
+    const drafts = (j.drafts ?? []).map((d) => d.name);
+    (this.state.branches[branch] ??= {}).specLanding = { sha, parent: head, drafts, at: this.now };
+    this.recordDocsEntry({ branch, sha, parent: head, at: new Date(this.now).toISOString(), drafts });
+    lines.push(`Docs made official on ${branch} as one docs entry, ${sha.slice(0, 7)}: ${msg.subject ?? ""}`.trim());
+    return { lines, needs, head: sha };
   }
 
   /** Each draft in `tree`, by name, with what isn't official by the draft tool's one verdict (`official`, from

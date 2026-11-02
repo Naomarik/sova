@@ -292,7 +292,7 @@ computer's default mode (§app.project-overseer/coding-mode), so a decision it c
 repository (which of two held ports to use, whether a resource is production data) is an alignment
 question, not a guess: its open questions are the session's `open-questions` Needs-you item and push
 (§chat.alignment/session-mark), and the run's region waits (§app.project-runtime/onboard). Those
-answers are the operator's: the project overseer's `sova_send` to a run waiting on them is refused,
+answers are the operator's: either Overseer's `sova_send` to a run waiting on them is refused,
 and neither Overseer may turn align off on it while it waits (§app.project-overseer/coding-mode).
 
 ## §app.project-runtime/deploy-standing — Each deploy target's standing

@@ -94,11 +94,13 @@
     "code": [
       "server/extensions.ts",
       "server/extensions.test.ts",
-      "server/extensions.integration.test.ts"
+      "server/extensions.integration.test.ts",
+      "server/extension-views.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-17T17:59Z"
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:24Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
     }
   },
   "§app.extensions/maximize": {
@@ -130,10 +132,16 @@
       "shared/commands-ext.ts",
       "server/extension-offers.test.ts",
       "server/extension-offers.integration.test.ts",
-      "docs/customization.md"
+      "docs/customization.md",
+      "server/extension-views.ts"
     ],
     "authority": "accepted",
-    "evidence": "verified"
+    "evidence": "verified",
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:24Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    }
   },
   "§app.extensions/page": {
     "kind": "behavior",
@@ -242,6 +250,41 @@
     "code": [
       "src/components/ExtensionView.tsx",
       "server/extension-keys.ts"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:24Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    }
+  },
+  "§app.extensions/views": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "requires": [
+      "§app.extensions/manifest",
+      "§app.extensions/serving",
+      "§app.extensions/offers"
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:24Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    },
+    "evidence": "verified",
+    "code": [
+      "server/extension-views.ts",
+      "server/extensions.ts",
+      "shared/transcript-cards.ts",
+      "shared/drawing-kinds.ts",
+      "shared/protocol.ts",
+      "server/card-views.ts",
+      "server/transcript-cards.ts",
+      "server/transcript-cards-routes.ts",
+      "src/components/ExtensionView.tsx",
+      "docs/customization.md",
+      "server/card-views.integration.test.ts",
+      "server/transcript-drawings.test.ts",
+      "server/transcript-cards.test.ts"
     ]
   },
   "§app/extensions": {
@@ -258,6 +301,11 @@
       "§app.settings-dialog/themes",
       "§chat.transcript/landing-page",
       "§app/shell"
-    ]
+    ],
+    "agreed": {
+      "by": "Omar (user)",
+      "at": "2026-10-28T13:24Z",
+      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+    }
   }
 }

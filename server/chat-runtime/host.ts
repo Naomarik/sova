@@ -138,7 +138,7 @@ export const REPLY_TEXT_EVERY_MS = 100;
 const SPECIAL_PROTO = 2;
 
 /** The asks that read as nothing without a server (ASK_POLICY "nothing"). */
-type NothingAsk = "project.note" | "playbook.bundleFor" | "playbook.reprime" | "links" | "singleton" | "reply.timings" | "offers.note";
+type NothingAsk = "project.note" | "playbook.bundleFor" | "playbook.reprime" | "links" | "singleton" | "reply.timings" | "offers.note" | "cards.note";
 const NOTHING: { [M in NothingAsk]: ChatAsks[M]["result"] } = {
   "project.note": null,
   "playbook.bundleFor": null,
@@ -147,6 +147,7 @@ const NOTHING: { [M in NothingAsk]: ChatAsks[M]["result"] } = {
   singleton: null,
   "reply.timings": null,
   "offers.note": null,
+  "cards.note": null,
 };
 
 /** A call-back whose call is no longer pending (the link dropped, the call settled). */
@@ -485,6 +486,7 @@ export class ChatRuntimeHost {
       },
       instanceNote: (ctx) => this.ask("project.note", { cwd: ctx.cwd, sessionId: ctx.sessionId, leafId: this.chat?.leafId() ?? null }),
       offerNote: (sessionId) => this.ask("offers.note", { sessionId }),
+      cardNote: (sessionId, since) => this.ask("cards.note", { sessionId, since }),
     });
     setSingletonCheck((key, path) => this.ask("singleton", { key, path }));
     setLinksSource((sessionId, path) => this.ask("links", { sessionId, path }) as never);

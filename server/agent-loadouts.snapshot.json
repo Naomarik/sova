@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 91142,
+      "bytes": 91755,
       "tools": [
         {
           "name": "sova_attention",
@@ -2363,7 +2363,7 @@
         {
           "name": "sova_project_overseer",
           "label": "Project overseer",
-          "description": "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {powers?: {overseer?: {<power>: true|false}, assistant?: {…}}, resume?: true, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). idea {action: add|edit, id?, title?, text?, status?} and todo {action: add|edit|tick|untick|remove, id?, text?, idea?}: the project's ideas and to-dos. message {text}: send words into the overseer's conversation as the user (idle it starts a turn; mid-turn it waits as a follow-up); it counts as a prompt to another session. Never a /command, never the About text or a cost figure. code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?}: start a coding session as the project's (its own worktree; any mode, minor modes and subagent profile you name, else this computer's default), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
+          "description": "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {powers?: {overseer?: {<power>: true|false}, assistant?: {…}}, resume?: true, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). idea {action: add|edit, id?, title?, text?, status?} and todo {action: add|edit|tick|untick|remove, id?, text?, idea?}: the project's ideas and to-dos. message {text}: send words into the overseer's conversation as the user (idle it starts a turn; mid-turn it waits as a follow-up); it counts as a prompt to another session. Never a /command, never the About text or a cost figure. code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?, already_agreed?}: start a coding session as the project's (its own worktree; any mode, minor modes and subagent profile you name, else this computer's default), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Unless you pass already_agreed: true (only when the user said, in their own words, they want exactly this built), align is turned on in its mode (whatever minor_modes says) and its first turn asks the user whether this is what they want built and waits for their answer. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
           "promptSnippet": "start, set up, run, clear, message or give ideas/to-dos to a project's overseer; start a coding session as the project's",
           "parameters": {
             "type": "object",
@@ -2497,6 +2497,10 @@
               "subagent_profile": {
                 "type": "string",
                 "description": "code: a subagent profile id or off (sova_list_subagent_profiles), for that session only. Omitted: this computer's default."
+              },
+              "already_agreed": {
+                "type": "boolean",
+                "description": "code: true only when the operator has already said, in their own words, that they want exactly this built. Omitted: align is turned on in its mode (whatever minor_modes says) and the session first asks the operator to confirm the brief. Never set it on your own judgement."
               }
             },
             "required": [
@@ -2855,7 +2859,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 96927,
+      "bytes": 97540,
       "tools": [
         {
           "name": "sova_attention",
@@ -5309,7 +5313,7 @@
         {
           "name": "sova_project_overseer",
           "label": "Project overseer",
-          "description": "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {powers?: {overseer?: {<power>: true|false}, assistant?: {…}}, resume?: true, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). idea {action: add|edit, id?, title?, text?, status?} and todo {action: add|edit|tick|untick|remove, id?, text?, idea?}: the project's ideas and to-dos. message {text}: send words into the overseer's conversation as the user (idle it starts a turn; mid-turn it waits as a follow-up); it counts as a prompt to another session. Never a /command, never the About text or a cost figure. code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?}: start a coding session as the project's (its own worktree; any mode, minor modes and subagent profile you name, else this computer's default), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
+          "description": "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {powers?: {overseer?: {<power>: true|false}, assistant?: {…}}, resume?: true, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). idea {action: add|edit, id?, title?, text?, status?} and todo {action: add|edit|tick|untick|remove, id?, text?, idea?}: the project's ideas and to-dos. message {text}: send words into the overseer's conversation as the user (idle it starts a turn; mid-turn it waits as a follow-up); it counts as a prompt to another session. Never a /command, never the About text or a cost figure. code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?, already_agreed?}: start a coding session as the project's (its own worktree; any mode, minor modes and subagent profile you name, else this computer's default), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Unless you pass already_agreed: true (only when the user said, in their own words, they want exactly this built), align is turned on in its mode (whatever minor_modes says) and its first turn asks the user whether this is what they want built and waits for their answer. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
           "promptSnippet": "start, set up, run, clear, message or give ideas/to-dos to a project's overseer; start a coding session as the project's",
           "parameters": {
             "type": "object",
@@ -5443,6 +5447,10 @@
               "subagent_profile": {
                 "type": "string",
                 "description": "code: a subagent profile id or off (sova_list_subagent_profiles), for that session only. Omitted: this computer's default."
+              },
+              "already_agreed": {
+                "type": "boolean",
+                "description": "code: true only when the operator has already said, in their own words, that they want exactly this built. Omitted: align is turned on in its mode (whatever minor_modes says) and the session first asks the operator to confirm the brief. Never set it on your own judgement."
               }
             },
             "required": [
@@ -5994,7 +6002,7 @@
       ]
     },
     "project-overseer": {
-      "bytes": 37725,
+      "bytes": 38274,
       "tools": [
         {
           "name": "sova_project",
@@ -6643,7 +6651,7 @@
         {
           "name": "sova_create_session",
           "label": "Start coding session",
-          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Counts against your coding caps.",
+          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
           "promptSnippet": "start a coding session in the project with a first prompt",
           "parameters": {
             "type": "object",
@@ -6682,6 +6690,10 @@
               "subagent_profile": {
                 "type": "string",
                 "description": "A subagent profile id or off (sova_list_subagent_profiles), for this session only. Omitted: this computer's default profile."
+              },
+              "already_agreed": {
+                "type": "boolean",
+                "description": "true only when the operator has already said, in their own words, that they want exactly this built. Omitted: align is turned on in its mode (whatever minor_modes says) and the session first asks the operator to confirm the brief. Never set it on your own judgement."
               }
             },
             "required": [
@@ -7152,7 +7164,7 @@
       ]
     },
     "project-overseer+onboard": {
-      "bytes": 38037,
+      "bytes": 38586,
       "tools": [
         {
           "name": "sova_project",
@@ -7801,7 +7813,7 @@
         {
           "name": "sova_create_session",
           "label": "Start coding session",
-          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Counts against your coding caps.",
+          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
           "promptSnippet": "start a coding session in the project with a first prompt",
           "parameters": {
             "type": "object",
@@ -7840,6 +7852,10 @@
               "subagent_profile": {
                 "type": "string",
                 "description": "A subagent profile id or off (sova_list_subagent_profiles), for this session only. Omitted: this computer's default profile."
+              },
+              "already_agreed": {
+                "type": "boolean",
+                "description": "true only when the operator has already said, in their own words, that they want exactly this built. Omitted: align is turned on in its mode (whatever minor_modes says) and the session first asks the operator to confirm the brief. Never set it on your own judgement."
               }
             },
             "required": [
@@ -8311,7 +8327,7 @@
       ]
     },
     "project-overseer+gaps": {
-      "bytes": 38166,
+      "bytes": 38715,
       "tools": [
         {
           "name": "sova_project",
@@ -8960,7 +8976,7 @@
         {
           "name": "sova_create_session",
           "label": "Start coding session",
-          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Counts against your coding caps.",
+          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
           "promptSnippet": "start a coding session in the project with a first prompt",
           "parameters": {
             "type": "object",
@@ -8999,6 +9015,10 @@
               "subagent_profile": {
                 "type": "string",
                 "description": "A subagent profile id or off (sova_list_subagent_profiles), for this session only. Omitted: this computer's default profile."
+              },
+              "already_agreed": {
+                "type": "boolean",
+                "description": "true only when the operator has already said, in their own words, that they want exactly this built. Omitted: align is turned on in its mode (whatever minor_modes says) and the session first asks the operator to confirm the brief. Never set it on your own judgement."
               },
               "gap": {
                 "type": "string",
@@ -9481,7 +9501,7 @@
       ]
     },
     "project-overseer+copies": {
-      "bytes": 43659,
+      "bytes": 44208,
       "tools": [
         {
           "name": "sova_project",
@@ -10214,7 +10234,7 @@
         {
           "name": "sova_create_session",
           "label": "Start coding session",
-          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Counts against your coding caps.",
+          "description": "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
           "promptSnippet": "start a coding session in the project with a first prompt",
           "parameters": {
             "type": "object",
@@ -10253,6 +10273,10 @@
               "subagent_profile": {
                 "type": "string",
                 "description": "A subagent profile id or off (sova_list_subagent_profiles), for this session only. Omitted: this computer's default profile."
+              },
+              "already_agreed": {
+                "type": "boolean",
+                "description": "true only when the operator has already said, in their own words, that they want exactly this built. Omitted: align is turned on in its mode (whatever minor_modes says) and the session first asks the operator to confirm the brief. Never set it on your own judgement."
               }
             },
             "required": [

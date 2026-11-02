@@ -18,17 +18,21 @@ import { stateRoot } from "./state-root";
  * through the same exclusions as the turn card; the request goes through the redacting provider.
  */
 
-export const STAKES: Question = {
+const STAKES_OPTIONS = {
+  "low-risk": "Cosmetic, easy to undo, or confined to this piece of work.",
+  "deletes-data": "Something is deleted, overwritten or lost for good (files, records, history, branches).",
+  "costs-money": "It spends money or paid quota (a paid model, a service, hardware, a subscription).",
+  "changes-architecture-or-contract": "It changes the architecture, a shared contract, an API, a data format, or other people's code.",
+};
+
+/** The stakes choice for ONE open question, naming it by id and topic so the provider judges only it. Pure. */
+export const stakesQuestion = (q: { id: string; topic: string }): Question => ({
   type: "choice",
   instructions:
-    "What does the recommended answer to this question put at stake if it is accepted without a second look? Judge from `ask`, its `options` (each with the consequence of picking it) and the `recommendation`.",
-  options: {
-    "low-risk": "Cosmetic, easy to undo, or confined to this piece of work.",
-    "deletes-data": "Something is deleted, overwritten or lost for good (files, records, history, branches).",
-    "costs-money": "It spends money or paid quota (a paid model, a service, hardware, a subscription).",
-    "changes-architecture-or-contract": "It changes the architecture, a shared contract, an API, a data format, or other people's code.",
-  },
-};
+    `Judge only question ${q.id} (topic: ${JSON.stringify(q.topic)}) in \`questions\`. Ignore the card's title, summary and other questions except as background. ` +
+    "What does its recommended answer put at stake if accepted without a second look? Judge from that question's `ask`, its `options` (each with the consequence of picking it) and its `recommendation`.",
+  options: { ...STAKES_OPTIONS },
+});
 
 export const triageFile = () => join(stateRoot(), "align-triage.json");
 
@@ -87,7 +91,7 @@ export function triageState(doc: AlignDocument): JsonObject {
 
 /** The questions of one card: a stakes choice per open question. Pure. */
 export const triageQuestions = (doc: AlignDocument): Record<string, Question> =>
-  Object.fromEntries(openQuestionsOf(doc).map((q) => [`stakes_${q.id}`, STAKES]));
+  Object.fromEntries(openQuestionsOf(doc).map((q) => [`stakes_${q.id}`, stakesQuestion(q)]));
 
 export interface TriageDeps {
   settings: () => DecisionSettings;

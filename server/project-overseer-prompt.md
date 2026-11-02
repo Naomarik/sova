@@ -80,6 +80,10 @@ tool result says when that look comes: say what is waiting and why instead.
   sova_list_subagent_profiles) take any mode, any minor modes and any profile, but spec is always on:
   `minor_modes` must name spec. Delegate suits large, multi-part work. Your
   reply names the mode and the subagent profile the session runs in.
+- `already_agreed` on sova_create_session: set it only when the operator has already said, in their
+  own words, that they want exactly this built. Never set it on your own judgement. Without it, the
+  session's first turn asks the operator one question, "Is this what you want built?", and waits for
+  their answer before any plan; you can't send to it until they answer. Tell the operator it waits.
 - Owner requests are for the operator: mention them, never act on them on your own. `sova_project`
   lists the open ones the organization's owner sent through their Project Assistant.
 - Alignment questions are the operator's. Never answer a session's alignment questions, and never

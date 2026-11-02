@@ -1,4 +1,5 @@
 import { createSignal, type Accessor } from "solid-js";
+import { keyboardIsUp } from "./voice/keyboard";
 
 /** The fields of a keydown that decide whether Enter sends. */
 export type EnterKey = { key: string; shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; isComposing: boolean };
@@ -34,4 +35,47 @@ export type SendPress = { touch: boolean; focused: boolean; keyboardUp: boolean 
 export function refocusAfterSend(press: SendPress | null): boolean {
   if (!press || !press.touch) return true;
   return press.focused && press.keyboardUp;
+}
+
+/** What a press reads at pointerdown, before focus moves: the focused element and the keyboard. */
+export type PressNow = { active: Element | null; keyboardUp: boolean };
+
+/**
+ * How a press began, read at its pointerdown (before the press moves focus): a touch, and whether
+ * `input` had focus with the on-screen keyboard up.
+ */
+export function notePress(
+  e: { pointerType: string },
+  input: Element | null | undefined,
+  now: PressNow = { active: document.activeElement, keyboardUp: keyboardIsUp() },
+): SendPress {
+  return { touch: e.pointerType === "touch", focused: !!input && now.active === input, keyboardUp: now.keyboardUp };
+}
+
+/**
+ * The press behind the next send made on the user's behalf (a quick action, a card's button, a
+ * panel's Send): every pointerdown on the page is noted in the capture phase, before it moves
+ * focus, and any keydown forgets it, so an earlier tap never speaks for a key-made send. `take`
+ * hands the press over once; null means a key or nothing, which counts as Enter.
+ */
+export function createPressTracker(
+  note: (e: PointerEvent) => SendPress,
+  target: EventTarget = document,
+): { take(): SendPress | null; dispose(): void } {
+  let last: SendPress | null = null;
+  const down = (e: Event) => (last = note(e as PointerEvent));
+  const key = () => (last = null);
+  target.addEventListener("pointerdown", down, true);
+  target.addEventListener("keydown", key, true);
+  return {
+    take: () => {
+      const p = last;
+      last = null;
+      return p;
+    },
+    dispose: () => {
+      target.removeEventListener("pointerdown", down, true);
+      target.removeEventListener("keydown", key, true);
+    },
+  };
 }

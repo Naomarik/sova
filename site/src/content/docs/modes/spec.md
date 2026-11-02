@@ -1,6 +1,6 @@
 ---
 title: Spec
-description: With spec on, the agent works from the project's spec. It reads the claims a task touches before coding, and proposes changes to them in drafts it promotes once the work is done.
+description: With spec on, the agent works from the project's spec. It reads the claims a task touches before coding, and proposes changes to them in drafts that become official when its branch lands.
 group: Modes
 subgroup: Minor
 order: 6
@@ -59,8 +59,8 @@ covers it. Its reply lists each one as "Also updates {claim}: {what}".
 
 When you confirm an alignment, that go-ahead is also your agreement to the promises it decides.
 Before it builds anything, the agent writes each decision that changes behavior as a promise in a
-draft, stamps it with who agreed and when, and promotes the new ones into the spec right away, marked
-*agreed, not built*. If the agent hasn't been given the writing procedure yet, it comes with that
+draft and stamps it with who agreed and when, marked *agreed, not built*; the promises become official
+when the branch lands. If the agent hasn't been given the writing procedure yet, it comes with that
 go-ahead. The build then updates those same promises. If a later change edits the
 numbers or names in a promise you agreed to without a new agreement, promotion points it out.
 
@@ -76,14 +76,16 @@ states a value the change removed (say, "12 MB" after a limit went to 16 MB) say
 marked read first. The agent reads the ones
 marked first. The line comes once, and again only when a later edit lands in other claims.
 
-When the work is done, the agent checks each promise it changed against what it built, records
-what it checked, and promotes the drafts it verified. The session promotes its own drafts, on its own
-branch, after its checks pass and before it calls that branch done or ready to land: nothing that
-lands the branch promotes them, so the docs land in the same merge as the code they describe. Your
-go-ahead to build or merge covers promoting and committing them; you're never asked for it
-separately, and there is no second, docs-only merge. A draft whose branch already landed
-is promoted on a fresh branch from the default branch, never on the default branch itself. Only if you say not to commit does the
-session leave its evidence pending.
+When the work is done, the agent checks each promise it changed against what it built and records a
+short note on what it checked. Its drafts become official when its branch lands: after the landing's
+checks pass, the landing makes every draft on the branch official in one step and commits that with
+the code, so the docs land in the same merge as the code they describe, and there is no second,
+docs-only merge. Drafts that wouldn't fit (a promise with no note, or one that changed on the default
+branch since) hold the branch and go back to its chat, which fixes them without a new commit. The
+Landing card says what docs land with the branch, with the promises one click away; pressing Land It
+never records you as agreeing to them. Where nothing lands branches, the agent runs that one step
+itself before its last commit. A draft whose branch already landed without it lands with a fresh
+branch from the default branch, never on the default branch itself.
 
 A turn with spec on ends when the model stops, as one with spec off does. Nothing re-prompts it,
 and the "Also updates" line is the only spec line a reply carries; nothing checks it.
@@ -108,8 +110,9 @@ guide gets a brief quoting the rules from both parts. The note says:
 
 - its brief is its go-ahead;
 - it works in the draft its brief names, or says which one it started;
-- it doesn't promote or commit unless its brief says so, and then only on its brief's branch,
-  never by landing on the default branch, because the parent promotes on its own branch;
+- it doesn't commit unless its brief says so, and then only on its brief's branch, never by
+  landing on the default branch; its notes on what it verified go in its draft, which lands with
+  the branch;
 - its final report lists each claim it updated that existed before the task.
 
 When a worker that wrote code finishes, its summary carries one line naming the claims its changes

@@ -106,6 +106,7 @@
       "server/project-coding-runtime.test.ts",
       "pi-config/extensions/worktrees/README.md",
       "agents/extensions/worktrees/overview.md",
+      "server/session-offers.ts",
       ".sova/playbooks/merge-round/scripts/round.mjs"
     ],
     "requires": [
@@ -114,8 +115,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-27T12:36Z",
-      "source": "pi-session:01a17a2d-9525-7412-baca-957c5a5a99a8#7f582fd6"
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§chat.worktrees/merge-board": {
@@ -163,8 +164,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-22T03:00Z",
-      "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§chat.worktrees/merged-state": {
@@ -200,8 +201,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§chat.worktrees/readiness": {
@@ -239,12 +240,13 @@
     "code": [
       "server/merge-readiness.ts",
       "server/ready-to-land.ts",
-      "server/ready-to-land.test.ts",
       "server/merge-readiness.test.ts",
       "server/spec-drafts-state.ts",
       "shared/protocol.ts",
       "src/lib/worktrees.ts",
-      "src/lib/worktrees.test.ts"
+      "src/lib/worktrees.test.ts",
+      "server/ready-to-land.landing.test.ts",
+      "server/ready-to-land.test.ts"
     ],
     "requires": [
       "§chat.worktrees/readiness",
@@ -252,8 +254,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-26T22:25Z",
-      "source": "pi-session:01a17a2d-9525-7412-baca-957c5a5a99a8#4f2bfb37"
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§chat.worktrees/sandbox": {
@@ -284,14 +286,16 @@
       "pi-config/extensions/worktrees/git.test.ts",
       "pi-config/extensions/worktrees/index.test.ts",
       "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/worktrees/spec.ts",
+      "pi-config/extensions/worktrees/spec-landing.test.ts",
       "pi-config/extensions/worktrees/landing.ts",
       "pi-config/extensions/worktrees/landing.test.ts",
       "pi-config/extensions/worktrees/README.md"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-27T09:33Z",
-      "source": "pi-session:01a16fb6-1014-7539-b91a-750b94daff7d#6f6f4e53"
+      "by": "naomarik",
+      "at": "2026-10-28T15:18Z",
+      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
     }
   },
   "§chat.worktrees/workers": {

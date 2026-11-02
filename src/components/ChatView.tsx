@@ -1,5 +1,6 @@
 import { archivedDropToast, archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
+import { createPressTracker, notePress, refocusAfterSend, type SendPress } from "../lib/input-mode";
 import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
@@ -25,6 +26,9 @@ import { courier, Outbox, sendsOf, sendsOnTheWay, takeBackHere, type Frame } fro
 import { chatCourier } from "../lib/chat-courier";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
 import { createOfferControls, OfferContext, OfferTray } from "./OfferCard";
+import { CardContext, createCardControls } from "../lib/card-controls";
+import { cardPicksLabel, cardPicksMessage } from "../lib/card-picks";
+import { outsideCardRowId, placeOutsideCards } from "../lib/transcript-placement";
 import type { OfferCard } from "../../shared/session-offers";
 import { SettingsCardContext } from "./SettingsChangeCard";
 import type { OverseerApprovals } from "./OverseerApprovalsPanel";
@@ -1538,9 +1542,10 @@ export function ChatView(props: {
       just before it and re-prompts its stored text and images with the session's CURRENT model.
       The composer is never touched — what you are half-way through typing is not part of this. */
   const regenerate = async (entryId: string) => {
+    const press = presses.take();
     setActionNote(null);
     const result = await ask("regenerate", { type: "regenerate", entryId });
-    if (result.ok) focusComposer();
+    if (result.ok) focusComposerAfter(press);
     else noteOn(entryId, result.message);
   };
 
@@ -1550,7 +1555,25 @@ export function ChatView(props: {
    * — and the composer is where the next thing happens (a rewind has just put the message there).
    * Without this, a keyboard user is dropped on <body> and has to Tab from the top of the pane.
    */
-  const focusComposer = () => queueMicrotask(() => document.getElementById(paneId("composer-input"))?.focus());
+  const focusComposer = () => queueMicrotask(() => composerInput()?.focus());
+  const composerInput = () => document.getElementById(paneId("composer-input"));
+  /** The press behind a send made on the user's behalf, read before it moved focus. */
+  const presses = createPressTracker((e) => notePress(e, composerInput()));
+  onCleanup(presses.dispose);
+  /** The Quick Actions trigger's press, held from the menu opening to its pick. */
+  let quickActionPress: SendPress | null = null;
+  /**
+   * After a send made for the user (a quick action, a card's button, a panel's Send, Regenerate):
+   * the composer's own Send rule (§chat.composer/focus). A key, a mouse or a pen puts focus back
+   * in the box; a tap only when the box had it with the keyboard up, else a still-focused box is
+   * blurred so a keyboard that was down stays down. Rewind keeps focusComposer: it leaves text to edit.
+   */
+  const focusComposerAfter = (press: SendPress | null) =>
+    queueMicrotask(() => {
+      const el = composerInput();
+      if (refocusAfterSend(press)) el?.focus();
+      else if (el && document.activeElement === el) el.blur();
+    });
 
   /** Rewind from a message's own strip: the same request the Timeline makes, with the refusal
       kept on this row as well as announced. */
@@ -1648,6 +1671,23 @@ export function ChatView(props: {
   // Offer cards (§chat.offers/card): an ordinary chat's, read from the server, again after each turn.
   const offers = props.overseer || props.projectOverseer ? undefined : createOfferControls(() => props.path, (c) => !!c.toolCallId, () => !archivedPane() && !batonGate());
   if (offers) createEffect(on(() => live.running, (now, before) => void (before && !now && offers.refresh()), { defer: true }));
+  // Transcript cards (§chat/transcript-cards): an ordinary chat's, read from the server, again after each turn.
+  // A card's view stages text at the end of the draft (§chat.transcript-cards/view-api), as `staged` below.
+  const [stagedText, setStagedText] = createSignal<{ text: string } | null>(null);
+  const raisedCards =
+    props.overseer || props.projectOverseer
+      ? undefined
+      : createCardControls(() => props.path, () => !archivedPane() && !batonGate(), {
+          stage: (text) => setStagedText({ text }),
+          session: () => ({ id: props.summary?.()?.id ?? "", title: props.summary?.()?.title ?? "" }),
+        });
+  if (raisedCards) createEffect(on(() => live.running, (now, before) => void (before && !now && raisedCards.refresh()), { defer: true }));
+  /** The thread's rows with the cards raised from outside the chat placed where they were raised (lib/transcript-placement). */
+  const threadItems = createMemo(() => {
+    const list = items();
+    const outside = raisedCards?.outside() ?? [];
+    return list && outside.length ? placeOutsideCards(list, outside, (card): TranscriptItem => ({ id: outsideCardRowId(card.id), kind: "card", at: card.at, card })) : list;
+  });
   /** Show in Chat for an offer card (§chat.composer/waiting-dialog): its `offer` call's row (the
       jump's highlight included), else the card where it stands (the tray at the thread's end). */
   const jumpToOffer = (card: OfferCard) => {
@@ -1741,31 +1781,45 @@ export function ChatView(props: {
     },
     goWithRecommendations: (doc) => {
       if (alignAnswer.goBlocked()) return;
+      const press = presses.take();
       if (send(acceptAllMessage(doc), false, [])) {
         clearPicks(props.path, doc);
-        focusComposer();
+        focusComposerAfter(press);
       }
     },
     review: () => chatReview(),
     reviewBlocked: () => alignAnswer.goBlocked() ?? (!reviewerSet.error && reviewerSet() === false ? NO_REVIEWER : null),
     requestReview: (doc, phase) => {
       if (alignAnswer.reviewBlocked?.()) return;
-      if (send(reviewRequestMessage(doc, phase), false, [])) focusComposer();
+      const press = presses.take();
+      if (send(reviewRequestMessage(doc, phase), false, [])) focusComposerAfter(press);
     },
   };
   const composerPicks = createMemo(() => {
     const p = picks();
-    return pickCount(p) === 0
-      ? null
-      : { label: picksLabel(p), compose: (text: string) => composeWithPicks(p, text), clear: () => clearPicks(props.path) };
+    // A gathering transcript card's picks join the alignment's (§chat.transcript-cards/answering): one line per card.
+    const cp = raisedCards?.picks() ?? {};
+    const nCards = Object.keys(cp).length;
+    if (pickCount(p) === 0 && nCards === 0) return null;
+    const label = [pickCount(p) ? picksLabel(p) : "", nCards ? cardPicksLabel(cp) : ""].filter(Boolean).join("; ");
+    return {
+      label,
+      compose: (text: string) => composeWithPicks(p, [nCards ? cardPicksMessage(cp) : "", text].filter((t) => t !== "").join("\n\n")),
+      clear: () => {
+        clearPicks(props.path);
+        raisedCards?.clearPicks();
+      },
+      ...(nCards ? { sent: () => raisedCards?.sent(cp) } : {}),
+    };
   });
 
   if (props.overseer?.bindSender) {
     const unbind = props.overseer.bindSender({
       send: (text) => {
+        const press = presses.take();
         if (blocked()) return false;
         const sent = send(text, false, []);
-        if (sent) focusComposer();
+        if (sent) focusComposerAfter(press);
         return sent;
       },
       blocked: () => blocked()?.text ?? null,
@@ -2339,8 +2393,9 @@ export function ChatView(props: {
               }}>
               <SettingsCardContext.Provider value={!!props.projectOverseer && !archivedPane()}>
               <OfferContext.Provider value={offers}>
+              <CardContext.Provider value={raisedCards}>
               <HistoryItems
-                items={list()}
+                items={threadItems() ?? list()}
                 author={props.author}
                 names={batonNames()}
                 streaming={live.running}
@@ -2363,6 +2418,7 @@ export function ChatView(props: {
                 queueActions={queueActions}
               />
               <OfferTray />
+              </CardContext.Provider>
               </OfferContext.Provider>
               </SettingsCardContext.Provider>
               </TourSessionContext.Provider>
@@ -2482,8 +2538,14 @@ export function ChatView(props: {
                 <QuickActions
                   actions={props.overseer!.quickActions()}
                   disabled={blocked()?.text ?? null}
+                  // The press that counts is the trigger's: the menu took focus out of the box
+                  // before the pick. A menu opened by a key holds none, which counts as Enter.
+                  onOpen={() => (quickActionPress = presses.take())}
                   onPick={(prompt) => {
-                    if (send(prompt, false, [])) focusComposer();
+                    const press = quickActionPress;
+                    quickActionPress = null;
+                    presses.take();
+                    if (send(prompt, false, [])) focusComposerAfter(press);
                   }}
                 />
                 </>
@@ -2522,6 +2584,7 @@ export function ChatView(props: {
         onDraft={setHasDraft}
         onAbort={abort}
         restored={restored()}
+        staged={stagedText()}
       />
       <Show when={showPlaybooks()}>
         <PlaybooksDialog
@@ -2537,7 +2600,7 @@ export function ChatView(props: {
             setShowPlaybooks(false);
             // After a send the next thing is the conversation; otherwise back to the "+" button
             // (the palette's Playbooks row is opened from it, §chat.playbooks/the-modal).
-            if (sent) focusComposer();
+            if (sent) focusComposerAfter(presses.take());
             else queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
           }}
           // The view is going away under the open dialog (the session turned read-only): what was

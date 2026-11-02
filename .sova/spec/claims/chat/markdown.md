@@ -181,6 +181,35 @@ Don't import a highlight.js stylesheet. These rules are the whole theme, and the
   scroll anchoring (`overflow-anchor`, on by default) holds your place.
 - **Author.** The `.live-dot` stays in the author row as in §chat/transcript, and there's no cursor glyph.
 
+## §chat.markdown/working-notes — Working notes fold closed
+
+Raw HTML is never rendered (above), so a model's `<details>` shows as text and can't fold. The one
+fold a reply can ask for is a fixed heading: a line that reads exactly `### Working notes` (level
+3, those words, any case, nothing else on the line), outside a code block. On an **assistant-text**
+row, the first such heading and everything after it to the end of the reply render as one
+disclosure, **closed**: a twist and "Working notes" as its summary, the rest of the reply as its
+body, rendered as markdown like the rest. What comes before the heading renders as today.
+
+```html
+<details class="disclosure md-working-notes">
+  <summary class="disclosure-summary">
+    <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+    Working notes
+  </summary>
+  <div class="disclosure-body">{rendered markdown after the heading}</div>
+</details>
+```
+
+- It is closed whenever the reply renders, mid-stream too; once the user opens it, it stays open
+  while the same reply streams on, and opening is never remembered past that.
+- A later `### Working notes` heading inside the fold is an ordinary heading there. With nothing
+  after it, the heading renders as nothing.
+- Only assistant-text rows fold. Every other place this renderer draws (the markdown viewer, report
+  rows, team messages, briefs, idea text) shows the heading as an ordinary `h3`; so do the TUI and a
+  copy of the reply, which take the reply's own text.
+- The chat's agents are asked to write it while align is on (§chat.alignment/reply); any assistant
+  reply that has the heading folds the same way.
+
 ## §chat.markdown/visuals — Inline visuals (`vis` fences)
 
 A fenced block whose info string is `vis <kind>` is a **drawing**, not code. Sova draws it with its
@@ -210,7 +239,9 @@ broken block's source (§app.baton/outsider-view).
   | `vis html`, `vis svg` | free-form, in a sandboxed frame (below) | — |
 
   A kind word that is neither in the registry nor one of its aliases
-  (§chat.markdown/vis-lenience-content) is an error (below). The grammar of each kind is taught to the model by the
+  (§chat.markdown/vis-lenience-content), nor a project's or extension's own `<owner>.<name>` kind
+  in the chat's snapshot (§chat.transcript-cards/drawing-kinds), is an error (below); an own kind
+  never replaces one of these. The grammar of each kind is taught to the model by the
   `vis` minor mode's guide (`pi-config/extensions/mode/vis/`: the shared rules and one file per
   kind); its examples are parsed by the renderer's own parser in tests, so the guide and the
   renderer can't drift.
@@ -280,8 +311,12 @@ broken block's source (§app.baton/outsider-view).
 - **`vis_guide`.** While vis is on, the model has a `vis_guide {kind}` tool. It returns the guide's
   shared rules (one statement per line, ids and quoting, tones, the strict parser, the "Not vis"
   pairs, the `mark` syntax) followed by that kind's file (its syntax, examples and `mark` targets);
-  `html` and `svg` return the same free-form file. `kind` is one of the kinds the prompt lists, or a tour part; a
-  stub or unknown kind is refused. It runs in Sova's process, never on a remote target, so it
+  `html` and `svg` return the same free-form file. `kind` is one of the kinds the prompt lists, a tour part, or
+  one of the chat's own kinds (§chat.transcript-cards/drawing-kinds); a stub or unknown kind is
+  refused. A Sova chat whose snapshot holds own kinds gets them from its start, fixed for the chat:
+  in the tool's `kind` list and one line each in its description, and for one the tool returns how
+  its `vis <owner>.<name>` fence is written, then its owner's guide. A chat with none, and a
+  terminal session, sees the tool exactly as before. It runs in Sova's process, never on a remote target, so it
   answers in every session the mode reaches (`mcp__sova__vis_guide` on the claude-code provider).
   It enters and leaves the loadout where `vis_check` does (at a session's start, when a prompt starts
   a run, when a run settles), so turning vis on or off changes the tool set once, and it adds no line

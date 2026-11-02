@@ -1,8 +1,8 @@
 /** The delegate system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateDefaults, type DelegateProfileId, type WorkerChoice } from "./delegate.ts";
 import { alignFileSchema } from "./align.ts";
-import { ALIGN_STYLE_LABELS, type AlignStyle } from "./align-settings.ts";
-import { ALIGN_STYLE_PARAGRAPHS, buildMinorPrompt, MINOR_MODES, promptedMinorModes, VIS_GUIDE_DIR, workerMinorModes, type AlignPromptOptions, type MinorMode } from "./minor.ts";
+import { ALIGN_EAGERNESS_LABELS, ALIGN_STYLE_LABELS, type AlignEagerness, type AlignStyle } from "./align-settings.ts";
+import { ALIGN_STYLE_PARAGRAPHS, ALIGN_TRIGGER_LEAD, ALIGN_TRIGGER_PARAGRAPHS, ALIGN_TRIGGER_SHARED, buildMinorPrompt, MINOR_MODES, promptedMinorModes, VIS_GUIDE_DIR, workerMinorModes, type AlignPromptOptions, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
 import { WORKER_MODES_CAP, type ProjectModeRef, type ProjectModeSnapshot } from "./project-format.ts";
@@ -88,7 +88,7 @@ export const PLANNER_VISUALS_PARAGRAPH = `Drawings: where a picture explains fas
  */
 export function buildDelegateAlignBridge(visuals = false): string {
 	const draw = visuals ? ` Visuals are on: also copy this paragraph word for word into its prompt:\n\n${PLANNER_VISUALS_PARAGRAPH}` : "";
-	return `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most one non-editing Planning & specs worker to investigate (never the Investigation profile: it is design work). Workers have no align tool: tell the planning worker that its one permitted write is the alignment JSON (${alignFileSchema(visuals)}), at an absolute path outside the repository that you name in its prompt (e.g. /tmp/align-<topic>-<n>.json); then import it with align {op: "import", path: that same absolute path} — never relay or retype its plan. In a remote session (tools on a target) import is refused: have the worker put the JSON in its report and pass its fields to align create. Spawn no implementation worker until the user has confirmed and the alignment's status is implementing, and give implementation workers the decided questions (align get). When the align instructions, or a later note, carry a "Writing style" paragraph, copy the one in effect word for word into the planning worker's prompt, so the JSON it writes follows it.${draw}`;
+	return `The align minor mode is on and takes precedence over delegation, for change requests only. ${ALIGN_TRIGGER_SHARED} Any other prompt is answered (or delegated) as the delegate block says, with no planning worker for an alignment. On a change request, mark the run (align {op: "change_request"}) and spawn at most one non-editing Planning & specs worker to investigate (never the Investigation profile: it is design work). When a lighter worker (an Investigation worker you sent on a bug report or a question) already investigated the same matter and the user then asks for the change, put the root cause it found in the planning worker's prompt, so it starts from it rather than investigating again from nothing. Workers have no align tool: tell the planning worker that its one permitted write is the alignment JSON (${alignFileSchema(visuals)}), at an absolute path outside the repository that you name in its prompt (e.g. /tmp/align-<topic>-<n>.json); then import it with align {op: "import", path: that same absolute path} — never relay or retype its plan. In a remote session (tools on a target) import is refused: have the worker put the JSON in its report and pass its fields to align create. Spawn no implementation worker until the user has confirmed and the alignment's status is implementing, and give implementation workers the decided questions (align get). When the align instructions, or a later note, carry a "Writing style" paragraph, copy the one in effect word for word into the planning worker's prompt, so the JSON it writes follows it.${draw}`;
 }
 
 /** The bridge in a chat without Visuals. */
@@ -104,7 +104,7 @@ export function buildSpecWriterPrompt(route: SlotRoute): string {
 		route.via === "primary"
 			? " If its spawn fails because its model is unavailable, retry once with the fallback only if one is listed above, and say so; otherwise ask the user which model to use — never substitute one of your own."
 			: "";
-	return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, "handing off spec writing")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \`.sova/spec/drafts/\`, never current \`claims/\` or \`manifest.json\`; you check its draft, run the checks and the census, and promote yourself.${retry}`;
+	return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, "handing off spec writing")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \`.sova/spec/drafts/\`, never current \`claims/\` or \`manifest.json\`; you check its draft, run the checks and the census, and record a note per promise; the landing makes it official.${retry}`;
 }
 
 /**
@@ -242,13 +242,22 @@ export function buildAlignStyleNote(from: AlignStyle, to: AlignStyle): string {
 }
 
 /**
+ * The hidden note for an Eagerness changed after the model was told one (§chat.alignment/eagerness): the
+ * new choice's trigger paragraph, replacing the one the align block (or an earlier note) carries. Nothing
+ * else in the block depends on the choice, so nothing else is said.
+ */
+export function buildAlignEagernessNote(to: AlignEagerness): string {
+	return `Eagerness change: the user set the align eagerness to ${ALIGN_EAGERNESS_LABELS[to]}. This paragraph replaces the "${ALIGN_TRIGGER_LEAD}" paragraph your align instructions carry (or an earlier note gave), from now on:\n\n${ALIGN_TRIGGER_PARAGRAPHS[to]}`;
+}
+
+/**
  * Appended to the spec block in a worker's prompt (never the parent's): spec-mode.md is written to the
  * session that plans, promotes and briefs, and stays byte-identical, so what differs for a worker is said
- * here. The parent promotes; the worker's brief can say otherwise. The writing procedure's Workers paragraph
+ * here. The branch's landing makes drafts official; the worker's brief says what it commits. The writing procedure's Workers paragraph
  * (`spec/WRITING.md`, which the census hands a worker, that section first) says the same words; index.test.ts
  * holds them equal.
  */
-export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes on its own branch before calling it ready. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Promote, commit or record \`--commit\` evidence only when your brief says to, and then only on its branch, never by landing on the default branch; otherwise say what is ready to promote. List each foreign § you updated in your final report.`;
+export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and its branch's landing makes the drafts official. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started, and record your notes there. Commit only when your brief says to, and then only on its branch, never by landing on the default branch. List each foreign § you updated in your final report.`;
 
 /** One minor mode's block as a worker receives it: spec gets the worker note, never the writer paragraph. */
 function buildWorkerMinorPrompt(mode: MinorMode): string {

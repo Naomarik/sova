@@ -4,7 +4,8 @@ import { join } from "node:path";
 import type { UpdateCheck, UpdateJob, UpdatesRunning, UpdatesSettings, UpdatesState } from "../../shared/protocol";
 import { branchMismatch, checkForUpdate, describeRunning, lsRemoteArgs, offersUpgrade, parseLsRemote, sourceRef } from "./check";
 import { firstLine, type Git } from "./git";
-import type { InstallInfo } from "./install-kind";
+import type { DiskAhead } from "./disk-ahead";
+import type { InstallInfo, ServiceUnit } from "./install-kind";
 import { binDirOf } from "./install-kind";
 import type { UpgradePlan } from "./runner";
 import { nextCheckDue, parseSource, readUpdatesFile, sameSource, sourceLabel, validBranchName, writeUpdatesFile, type UpdatesFile } from "./state";
@@ -18,7 +19,7 @@ import { nextCheckDue, parseSource, readUpdatesFile, sameSource, sourceLabel, va
 export class UpdatesRefusal extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 403 | 409 = 409,
+    readonly status: 400 | 403 | 409 | 500 = 409,
   ) {
     super(message);
   }
@@ -57,7 +58,27 @@ export interface UpdatesDeps {
   /** Where the launcher's server writes when the job starts it (no service). */
   serverLog: string;
   log(line: string): void;
+  /** When this server started (`GET /api/health`'s startedAt). */
+  startedAt?: string;
+  /** Schedule the service's restart a few seconds from now: null once scheduled, else why not (nothing was scheduled). */
+  restart?(unit: ServiceUnit): Promise<string | null>;
+  /** Seconds the scheduled restart waits (RESTART_DELAY_SEC). */
+  restartDelaySec?: number;
+  /** Code on disk newer than what runs, or null. */
+  diskAhead?(): Promise<DiskAhead | null>;
 }
+
+/** Restart Sova's refusals, word for word what the Settings block and the route say. */
+export const RESTART_NO_SERVICE = "This copy isn't run by a service, so it can't restart itself. Restart it where you started it.";
+export const RESTART_DURING_UPGRADE = "An upgrade is running; it restarts Sova itself.";
+export const RESTART_PENDING = "Sova is already restarting.";
+export const UPGRADE_DURING_RESTART = "Sova is restarting. Upgrade once it's back.";
+
+/** A scheduled restart that hasn't stopped this process after this long didn't happen: the buttons come back. */
+export const RESTART_PENDING_MS = 2 * 60 * 1000;
+
+/** Who asked for a restart, for the server log. */
+export type RestartOrigin = "browser" | `command ${string}` | `script ${string}`;
 
 /** A running job older than this with no word is taken as dead. */
 const STALE_JOB_MS = 2 * 60 * 60 * 1000;
@@ -67,6 +88,8 @@ export class UpdatesManager {
   private timer: unknown = null;
   private autoRefusal: string | null = null;
   private launching = false;
+  /** When a restart was scheduled (or is being scheduled), until the process stops or RESTART_PENDING_MS passes. */
+  private restartAt: number | null = null;
 
   constructor(private readonly deps: UpdatesDeps) {}
 
@@ -85,7 +108,23 @@ export class UpdatesManager {
 
   async running(info?: InstallInfo): Promise<UpdatesRunning> {
     const i = info ?? (await this.deps.install());
-    const base: UpdatesRunning = { head: null, startedHead: this.deps.startedHead, version: null, baseVersion: null, pastBase: null, branch: null, kind: i.kind, canUpgrade: i.kind !== "check-only", whyNot: i.whyNot };
+    const restartWhyNot = this.restartRefusal(i);
+    const base: UpdatesRunning = {
+      head: null,
+      startedHead: this.deps.startedHead,
+      version: null,
+      baseVersion: null,
+      pastBase: null,
+      branch: null,
+      kind: i.kind,
+      canUpgrade: i.kind !== "check-only",
+      whyNot: i.whyNot,
+      ...(this.deps.startedAt ? { startedAt: this.deps.startedAt } : {}),
+      canRestart: restartWhyNot === null,
+      restartWhyNot,
+      restartUnit: i.unit ? { manager: i.unit.manager, name: i.unit.name } : null,
+      diskAhead: this.deps.diskAhead ? await this.deps.diskAhead().catch(() => null) : null,
+    };
     if (!i.checkout) return base;
     const r = await describeRunning(this.deps.git(i.checkout));
     return { ...base, ...r };
@@ -245,6 +284,7 @@ export class UpdatesManager {
    */
   async apply(req: { target: string; auto?: boolean }): Promise<UpdateJob> {
     if (this.launching || this.job()?.state === "running") throw new UpdatesRefusal("An upgrade is already running.");
+    if (this.restartPending()) throw new UpdatesRefusal(UPGRADE_DURING_RESTART);
     this.launching = true;
     try {
       return await this.startJob(req);
@@ -323,6 +363,48 @@ export class UpdatesManager {
     }
     this.deps.log(`[updates] ${plan.auto ? "automatic " : ""}upgrade ${id} started: ${from.label} → ${target.label}`);
     return job;
+  }
+
+  private restartPending(): boolean {
+    if (this.restartAt !== null && this.deps.now() - this.restartAt > RESTART_PENDING_MS) this.restartAt = null;
+    return this.restartAt !== null;
+  }
+
+  /**
+   * Why Restart Sova can't restart this server now, or null. Only a service whose main process this
+   * server is may restart it (InstallInfo.unit: never a worktree, never a unit some other program
+   * started); never while an upgrade runs (it restarts Sova itself) or a restart is already on its way.
+   */
+  restartRefusal(info: InstallInfo): string | null {
+    if (!info.unit || !this.deps.restart) return RESTART_NO_SERVICE;
+    if (this.launching || this.job()?.state === "running") return RESTART_DURING_UPGRADE;
+    if (this.restartPending()) return RESTART_PENDING;
+    return null;
+  }
+
+  /**
+   * Restart Sova: schedule the service's restart a few seconds from now, so the answer gets out
+   * first. Refused, scheduling nothing, when no service runs this copy, an upgrade runs, or a restart
+   * is already on its way; an upgrade asked for meanwhile is refused until this process stops.
+   */
+  async restart(origin: RestartOrigin): Promise<{ startedAt: string | null; inSeconds: number; unit: ServiceUnit }> {
+    // Claimed before the first await, as apply claims `launching`: an upgrade can't start in between.
+    if (this.launching || this.job()?.state === "running") throw new UpdatesRefusal(RESTART_DURING_UPGRADE);
+    if (this.restartPending()) throw new UpdatesRefusal(RESTART_PENDING);
+    this.restartAt = this.deps.now();
+    try {
+      const info = await this.deps.install();
+      if (!info.unit || !this.deps.restart) throw new UpdatesRefusal(RESTART_NO_SERVICE);
+      const why = await this.deps.restart(info.unit);
+      if (why) throw new UpdatesRefusal(why, 500);
+      const inSeconds = this.deps.restartDelaySec ?? 3;
+      this.deps.log(`[updates] restart asked for by ${origin}: ${info.unit.name} restarts in ${inSeconds} s`);
+      return { startedAt: this.deps.startedAt ?? null, inSeconds, unit: info.unit };
+    } catch (err) {
+      this.restartAt = null;
+      this.deps.log(`[updates] restart asked for by ${origin} was refused: ${err instanceof Error ? err.message : String(err)}`);
+      throw err;
+    }
   }
 
   /** Schedule the next daily check; re-reads the file each time. */

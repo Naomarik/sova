@@ -28,6 +28,8 @@ import type { PiExtensionAPI } from "./harness/pi/extension-types";
 import type { HookCtx, StateView, ToolSpec } from "../shared/harness";
 import { FRAME_HARD_CHARS, FRAME_SOFT_CHARS } from "../src/vis/kinds/frame/parse";
 import { parseVis, visKindWord, type ParseResult } from "../src/vis/parse";
+import type { VisBase } from "../src/vis/core/grammar";
+import { ownKindOf, parseOwnDrawing, type DrawingDecl } from "../shared/drawing-kinds";
 import { wireframeCramped, type Cramp } from "../src/vis/kinds/wireframe/layout";
 import type { WireframeSpec } from "../src/vis/kinds/wireframe/parse";
 import { toolCtx, toPiTool } from "./harness/pi/tools";
@@ -203,6 +205,23 @@ export interface VisCheckHost {
   queued(): boolean;
   /** This runtime may still write the file (no TUI took it, no foreign writer seen). */
   writable(): boolean;
+  /** The chat's own drawing kinds, from its snapshot (§chat.transcript-cards/drawing-kinds): their fences draw, so they never fail. */
+  ownKinds?(): readonly DrawingDecl[];
+}
+
+/**
+ * parseVis, with the chat's own kinds read as the page reads them: a `vis <owner>.<name>` fence of
+ * one of them parses against its kind; any other word (one of Sova's, or a kind outside the chat's
+ * snapshot) is parseVis's, so an unknown one is still its ordinary error.
+ */
+export function ownAwareParse(kinds: readonly DrawingDecl[]): (kind: string, body: string) => ParseResult {
+  if (!kinds.length) return parseVis;
+  return (kind, body) => {
+    const own = kind.includes(".") ? ownKindOf(kinds, kind) : undefined;
+    if (!own) return parseVis(kind, body);
+    const r = parseOwnDrawing(own, body);
+    return r.ok ? { ok: true, spec: { kind } as unknown as VisBase, warnings: [] } : { ok: false, line: r.line, message: r.message };
+  };
 }
 
 /** The vis minor mode is on for the mode a branch resolves to, by the server's own rule (the extension's too). */
@@ -245,10 +264,11 @@ export class VisRetry {
    * run at most — the run's blocks are cleared once a retry is sent, so its own reply is judged by
    * nobody. `outcome` other than "completed" (aborted, error) never retries.
    */
-  beforeSettle(outcome: string, host: { drawingsOn(): boolean; queued(): boolean; writable(): boolean }): ReturnType<typeof retryEntry> | null {
+  beforeSettle(outcome: string, host: { drawingsOn(): boolean; queued(): boolean; writable(): boolean; ownKinds?(): readonly DrawingDecl[] }): ReturnType<typeof retryEntry> | null {
     if (this.retried || outcome !== "completed" || (!this.blocks.length && !this.visuals.size)) return null;
     if (!host.drawingsOn() || host.queued() || !host.writable()) return null;
-    const failures = [...visFailures(visFences(this.blocks)), ...cardFailures([...this.visuals.values()])];
+    const parse = ownAwareParse(host.ownKinds?.() ?? []);
+    const failures = [...visFailures(visFences(this.blocks), parse), ...cardFailures([...this.visuals.values()], parse)];
     if (!failures.length) return null;
     this.retried = true;
     this.blocks = [];
@@ -456,6 +476,7 @@ export function visCheckExtension(host: () => VisCheckHost | null) {
           drawingsOn: () => (h ? h.drawingsOn(c.state()) : visToolsOnBranch(c.state())),
           queued: () => h?.queued() ?? false,
           writable: () => h?.writable() ?? true,
+          ownKinds: () => h?.ownKinds?.() ?? [],
         });
         if (!entry) return;
         return { entries: [...event.entries, entry], continue: true };

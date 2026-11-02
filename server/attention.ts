@@ -57,10 +57,13 @@ export interface AttentionRow {
   /** The session shows an open offer card (server/session-offers.ts openOfferOf, §chat.offers/card): its title
       and when it was shown (ms epoch). */
   offer?: { title: string; at: number };
+  /** The session's open transcript cards waiting on an answer (server/transcript-cards.ts openCardsOf,
+      §chat.transcript-cards/answering): each one's title and when it was raised (ms epoch). */
+  cards?: { title: string; at: number }[];
 }
 
 /** Act kinds that list in Needs you and count in "need you" but never brief the Overseer (and are no push kind). */
-export const NEVER_BRIEFED: ReadonlySet<AttentionKind> = new Set(["offer-waiting"]);
+export const NEVER_BRIEFED: ReadonlySet<AttentionKind> = new Set(["offer-waiting", "card-waiting"]);
 
 export const DIGEST_MAX = 30;
 export const STALE_MS = 3 * 86_400_000;
@@ -170,6 +173,9 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   // runs, so it is a blocker; never a push (no push kind) and never a brief (NEVER_BRIEFED).
   const offer = row.offer;
   if (offer && !s.archived) add("act", "offer-waiting", offer.at || lastActive, `Waiting on your answer: ${offer.title}`);
+  // An open transcript card (§chat.transcript-cards/answering): one item per card, idle or working; never a push
+  // (no push kind) and never a brief (NEVER_BRIEFED).
+  if (!s.archived) for (const card of row.cards ?? []) add("act", "card-waiting", card.at || lastActive, `Waiting on your answer: ${card.title}`);
   // Decision signals (server/signals-store.ts): the list carries them only while they should show
   // (idle, not expired after 7 idle days), with the kinds already derived from the fixed thresholds.
   // They are guesses, so never blockers (§app.overseer/attention-digest): soft decide items, which

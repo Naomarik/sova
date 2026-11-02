@@ -22,6 +22,7 @@ import { countBetween, type Git, isAncestor, realGit, revParse, worktreesOf } fr
 import { canLand, firstParents, landTip, pushTip } from "./land";
 import type { MergeNoticeKind } from "./notices";
 import { sanityCheck } from "./conflicts";
+import { estimateFromRuns } from "./estimate";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
 import { buildView } from "./view";
 
@@ -229,7 +230,7 @@ export class ProjectQueue {
       if (n) e.newerCommits = n;
       else delete e.newerCommits;
     }
-    const takes = this.deps.estimate?.(this.id, this.root) ?? null;
+    const takes = this.deps.estimate ? this.deps.estimate(this.id, this.root) : this.estimateFromHistory();
     return buildView({
       q: this.q,
       root: this.root,
@@ -241,6 +242,20 @@ export class ProjectQueue {
       now: this.now(),
       readRun: (id) => this.store.readRun(id),
     });
+  }
+
+  private estimateCache: { at: number; ms: number | null } | null = null;
+  /** The median of recent passed runs (estimate.ts), re-read at most once a minute. */
+  private estimateFromHistory(): number | null {
+    if (this.estimateCache && this.now() - this.estimateCache.at < 60_000) return this.estimateCache.ms;
+    const runs = this.store
+      .runIds()
+      .slice(-40)
+      .map((id) => this.store.readRun(id))
+      .filter((r): r is MergeRun => !!r);
+    const ms = estimateFromRuns(runs);
+    this.estimateCache = { at: this.now(), ms };
+    return ms;
   }
 
   // ---- the verbs --------------------------------------------------------------------------------

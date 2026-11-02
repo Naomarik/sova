@@ -10,6 +10,7 @@ import {
   DefinitionError,
   envPart,
   isDeployVerb,
+  isMergeVerb,
   isVerb,
   ordered,
   parseDefinition,
@@ -428,6 +429,8 @@ export class ProjectEngine {
   conformer: ((body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
   /** The deploy verbs (server/project-services/deploy.ts), wired at startup. */
   deployer: ((verb: string, body: unknown, caller: Caller, opts: { signal?: AbortSignal }) => Promise<VerbResult>) | null = null;
+  /** The merge queue's verbs (server/merge-queue/routes.ts), wired at startup. */
+  merger: ((verb: string, body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
 
   constructor(deps: EngineDeps) {
     this.driver = deps.driver;
@@ -482,10 +485,12 @@ export class ProjectEngine {
     let release: (() => void) | null = null;
     if (verb === "conform" && this.conformer) return this.conformer(body, caller);
     if (isDeployVerb(verb) && this.deployer) return this.deployer(verb, body, caller, opts);
+    if (isMergeVerb(verb) && this.merger) return this.merger(verb, body, caller);
     try {
       if (!isVerb(verb)) throw new VerbFailure("invalid-request", `unknown verb "${verb}"`);
       run.req = parseRequest(body);
       if (isDeployVerb(verb)) throw new VerbFailure("unsupported", `${verb} runs through the deployer, which this engine has not got`);
+      if (isMergeVerb(verb)) throw new VerbFailure("unsupported", `${verb} runs through the merge queue, which this engine has not got`);
       await this.resolveTarget(run);
       if (run.verb === "teardown" && !run.rec) return await this.result(run);
       this.authorize(run, await this.starterWorking(run));

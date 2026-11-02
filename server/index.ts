@@ -12,6 +12,7 @@ import { startBudgetRecount } from "./baton-recount";
 import { listProjects, openRegisteredProjects } from "./projects/spaces";
 import { startGitMaintenance } from "./git-maintenance";
 import { reconcileProjectServices } from "./project-services/routes";
+import { startMergeQueue, stopMergeQueue } from "./merge-queue/wire";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
 import { finishImports, rollForwardCopies } from "./project-import";
@@ -176,6 +177,8 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   void startShareRuntime();
   // Project instances back to their desired state (server/project-services/routes.ts).
   void reconcileProjectServices();
+  // The merge queue: its verbs, its queues recovered, the typed "land it" door (server/merge-queue/wire.ts).
+  void startMergeQueue().catch((err) => console.error("[merge-queue] start failed:", err instanceof Error ? err.message : err));
   // Updates: the daily check, on the schedule updates.json keeps across restarts.
   startUpdates(info.port, HOST);
 }) as Server;
@@ -321,6 +324,8 @@ async function shutdown() {
   claudeAccounts.dispose();
   meshResync.dispose();
   markShutdown();
+  // A merge run in flight is voided (rerun from its start at the next start; a landing intent is reconciled then).
+  await Promise.race([stopMergeQueue().catch(() => {}), new Promise((r) => setTimeout(r, 5_000))]);
   // Every chat runs in a process of its own and runs on, its reply included
   // (§app.chat-processes/survives-restart). Each chat process is told goodbye and let go of, never stopped.
   detachChatHost();

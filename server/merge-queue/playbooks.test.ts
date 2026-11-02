@@ -13,7 +13,7 @@ import { blastRadius, globRe } from "../../playbooks/merge-queue/scripts/blast-r
 // @ts-expect-error: as above
 import { hunksOf } from "../../playbooks/merge-queue/scripts/conflict-hunks.mjs";
 // @ts-expect-error: as above
-import { KINDS, validate } from "../../.sova/playbooks/review/scripts/verdict.mjs";
+import { KINDS, TEXT_MAX, reviewText, validate } from "../../.sova/playbooks/review/scripts/verdict.mjs";
 
 const REPO = join(import.meta.dirname, "..", "..");
 const SOVA_MAP = JSON.parse(readFileSync(join(REPO, ".sova", "playbooks", "merge-queue", "references", "blast-radius.json"), "utf8"));
@@ -66,6 +66,12 @@ test("Sova's map names only paths that exist and tours that exist", () => {
   }
 });
 
+test("a check that takes one selector per run is one pick per selection", () => {
+  const p = picks(["server/tours/browser.ts", "server/chat-runtime/host.ts", "server/tours/checks.ts"]);
+  assert.deepEqual(p.map((x) => [x.id, x.select]), [["integration-group", ["tours"]], ["integration-group", ["trial"]]]);
+  assert.match(p[0]!.why, /\(server\/tours\/browser\.ts, server\/tours\/checks\.ts\)$/);
+});
+
 test("a map with no rules, or none, picks nothing", () => {
   assert.deepEqual(blastRadius(["statecharts/a"], { rules: [] }).picks, []);
   assert.deepEqual(blastRadius(["statecharts/a"], null).picks, []);
@@ -94,6 +100,17 @@ test("review verdict: ok carries no findings, notes and blocking need one, kinds
   assert.deepEqual(KINDS, ["dead-code", "duplication", "hack", "missing-test", "naming", "other"]);
 });
 
+test("review text for merge.review: the summary, one line per finding, capped", () => {
+  assert.equal(reviewText({ verdict: "ok", summary: "Fine.", findings: [] }), "Fine.");
+  assert.equal(
+    reviewText({ verdict: "notes", summary: "Two notes.", findings: [{ file: "a.ts", line: 3, kind: "naming", text: "x says nothing" }, { kind: "missing-test", text: "no test for the empty case" }] }),
+    "Two notes.\n- [naming] a.ts:3: x says nothing\n- [missing-test] no test for the empty case",
+  );
+  const long = reviewText({ verdict: "notes", summary: "s", findings: Array(10).fill({ file: "f.ts", kind: "other", text: "y".repeat(400) }) });
+  assert.equal(long.length, TEXT_MAX);
+  assert.ok(long.endsWith("…"));
+});
+
 test("the review kit is never a registered skill: not under a skills folder, not in pi's skill settings", () => {
   const kit = join(REPO, ".sova", "playbooks", "review");
   assert.ok(existsSync(join(kit, "PLAYBOOK.md")) && existsSync(join(kit, "references", "checklist.md")));
@@ -108,6 +125,14 @@ test("the review kit is never a registered skill: not under a skills folder, not
   // Every point of the simple review is in its checklist.
   const checklist = readFileSync(join(kit, "references", "checklist.md"), "utf8");
   for (const kind of KINDS) assert.match(checklist, new RegExp(`\\[${kind}\\]`));
+});
+
+test("the merge-reviewer profile ships with Sova: no edit tools, web, workers, timers or worktrees", async () => {
+  const raw = JSON.parse(readFileSync(join(REPO, "profiles", "merge-reviewer.json"), "utf8"));
+  assert.equal(profileFileError(raw), null);
+  assert.equal((await findProfile({ source: "sova", id: "merge-reviewer" }, null))?.id, "merge-reviewer");
+  assert.deepEqual([...raw.remove].sort(), ["edit", "timers", "web", "workers", "worktrees"]);
+  assert.deepEqual(raw.grant, []);
 });
 
 test("the merge-thread profile ships with Sova, is valid, and has no web, workers or timers", async () => {

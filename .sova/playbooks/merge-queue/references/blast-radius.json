@@ -1,6 +1,7 @@
 {
   "version": 1,
-  "about": "Sova's blast-radius map: changed paths → checks the merge thread adds beyond the required floor. Each rule's `why` is the reason shown on the run. Check ids are checks of .sova/project.json's merge section: optional ones (run only when picked), or required ones that skip themselves (a pick makes them run). A path may hit several rules; a pick is listed once, with every reason joined.",
+  "about": "Sova's blast-radius map: changed paths → checks the merge thread adds beyond the required floor. Each rule's `why` is the reason shown on the run. Check ids are checks of .sova/project.json's merge section: optional ones (run only when picked), or required ones that skip themselves (a pick makes them run). A path may hit several rules; a pick is listed once, with every reason joined (integration-group, which runs one group per pick, once per group).",
+  "perSelector": ["integration-group"],
   "rules": [
     {
       "paths": ["statecharts/**", "scripts/statecharts*.mjs", "scripts/statecharts.ts", "scripts/build-statecharts.mjs"],

@@ -65,7 +65,7 @@ export interface ThreadRecord {
   previous?: { sessionId: string; until: number };
 }
 
-type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
+export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 export interface ThreadDeps {
   now(): number;
@@ -244,16 +244,26 @@ export function setMergeThread(t: MergeThread | null): void {
   current = t;
 }
 
-type AppRequest = (path: string, init?: RequestInit) => Response | Promise<Response>;
+export type AppRequest = (path: string, init?: RequestInit) => Response | Promise<Response>;
+
+/** A new chat in `cwd` on one of Sova's shipped profiles, with its first message and its title (the
+    start a profile gets from the list: POST /api/sessions). Shared by the thread and the reviewer. */
+export async function createChat(request: AppRequest, cwd: string, profile: string, text: string, title: string): Promise<Result<{ id: string; path: string }>> {
+  const res = await request("/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cwd, profile: { source: "sova", id: profile }, prompt: text }),
+  });
+  const json = (await res.json().catch(() => null)) as { id?: string; path?: string; error?: string } | null;
+  if (res.status !== 201 || !json?.id || !json.path) return { ok: false, error: json?.error ?? `HTTP ${res.status}` };
+  const { writeAutoTitle } = await import("../session-titles");
+  writeAutoTitle(json.id, title);
+  return { ok: true, id: json.id, path: json.path };
+}
 
 /** Wire the keeper on the server: sessions through Sova's own routes and helpers. */
 export async function startMergeThread(request: AppRequest, file?: string): Promise<MergeThread> {
-  const [{ stateRoot }, { getSessionSummary }, { promptSession }, { writeAutoTitle }] = await Promise.all([
-    import("../state-root"),
-    import("../sessions-index"),
-    import("../session-prompt"),
-    import("../session-titles"),
-  ]);
+  const [{ stateRoot }, { getSessionSummary }, { promptSession }] = await Promise.all([import("../state-root"), import("../sessions-index"), import("../session-prompt")]);
   const t = new MergeThread({
     now: () => Date.now(),
     file: file ?? join(stateRoot(), "merge-queue", "threads.json"),
@@ -262,17 +272,7 @@ export async function startMergeThread(request: AppRequest, file?: string): Prom
       if (!s || s.id !== id) return null;
       return { id: s.id, path, createdAt: s.createdAt, archived: !!s.archived, live: !!s.live, ...(s.context ? { context: s.context } : {}) };
     },
-    async create(root, text, title) {
-      const res = await request("/api/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ cwd: root, profile: { source: "sova", id: THREAD_PROFILE }, prompt: text }),
-      });
-      const json = (await res.json().catch(() => null)) as { id?: string; path?: string; error?: string } | null;
-      if (res.status !== 201 || !json?.id || !json.path) return { ok: false, error: json?.error ?? `HTTP ${res.status}` };
-      writeAutoTitle(json.id, title);
-      return { ok: true, id: json.id, path: json.path };
-    },
+    create: (root, text, title) => createChat(request, root, THREAD_PROFILE, text, title),
     async wake(path, text) {
       const r = await promptSession(path, text);
       return r.ok ? { ok: true } : { ok: false, error: r.error };

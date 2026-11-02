@@ -9,7 +9,8 @@
 // The map: --map, else the project's own .sova/playbooks/merge-queue/references/blast-radius.json
 // (under --repo, default the current folder), else none (no picks: the project declared no map). It lists rules
 // {paths:[glob], pick:{id, select?}, why}. A pick is listed once per id: the reasons of every rule
-// that hit it are joined and their selections unioned. The output is a proposal for the merge thread,
+// that hit it are joined and their selections unioned; except a check named in the map's
+// `perSelector` list (it takes one selector per run), listed once per id and selection. The output is a proposal for the merge thread,
 // which reads the diff and may add or leave out picks before calling merge.extend; the queue's own
 // required checks are never in it. Self-contained: no imports beyond node's own.
 import { execFileSync } from "node:child_process";
@@ -43,6 +44,7 @@ export function matches(globs, path) {
 /** The picks for `paths` under `map` ({rules}). */
 export function blastRadius(paths, map) {
   const rules = Array.isArray(map?.rules) ? map.rules : [];
+  const single = new Set(Array.isArray(map?.perSelector) ? map.perSelector : []);
   const byId = new Map();
   const matched = {};
   rules.forEach((rule, i) => {
@@ -50,9 +52,10 @@ export function blastRadius(paths, map) {
     if (!hits.length || !rule.pick?.id) return;
     for (const h of hits) (matched[h] ??= []).push(i);
     const why = `${rule.why} (${hits.slice(0, 3).join(", ")}${hits.length > 3 ? `, +${hits.length - 3} more` : ""})`;
-    const prev = byId.get(rule.pick.id);
+    const key = single.has(rule.pick.id) ? `${rule.pick.id}\0${(rule.pick.select ?? []).join("\0")}` : rule.pick.id;
+    const prev = byId.get(key);
     if (!prev) {
-      byId.set(rule.pick.id, { id: rule.pick.id, why, ...(rule.pick.select ? { select: [...rule.pick.select] } : {}) });
+      byId.set(key, { id: rule.pick.id, why, ...(rule.pick.select ? { select: [...rule.pick.select] } : {}) });
       return;
     }
     prev.why = `${prev.why}; ${why}`;

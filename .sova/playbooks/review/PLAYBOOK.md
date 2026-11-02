@@ -8,8 +8,8 @@ description: The merge queue's review step: a basic code review of exactly the c
 You review one branch for the merge queue, once, read-only, while its tests run. Sova opened this kit for you; it is never loaded into other chats. You answer one question: **does this change add tech debt, and would it pass an ordinary code review?** Nothing fancier: no redesign, no style preferences, no re-running tests (the queue does that).
 
 ## What you have
-- The merge copy, checked out at exactly the commit being checked (`$SOVA_REVIEW_COMMIT`), on top of the target (`$SOVA_REVIEW_BASE`). Read only: change nothing, commit nothing.
-- The changed paths: the file `$SOVA_REVIEW_CHANGED`, one per line. The diff: `git diff $SOVA_REVIEW_BASE...$SOVA_REVIEW_COMMIT`.
+- Your message names the run, the commit being checked and the target commit under it. Your folder is the merge copy, checked out at exactly that commit. Read only: change nothing, commit nothing, start nothing.
+- The diff: `git diff <target commit>...<commit>`; the changed paths: `git diff --name-only` of the same (or the file your message names).
 - `references/checklist.md`: what to look for, with what counts and what doesn't.
 
 ## Steps
@@ -19,7 +19,8 @@ You review one branch for the merge queue, once, read-only, while its tests run.
    - **ok**: nothing worth a reviewer's comment;
    - **notes**: findings worth knowing that a reviewer would let through (a vague name, a small duplication, a missing test for an edge case); they are attached to the landing;
    - **blocking**: a reviewer would not approve it: a hack or workaround left in, dead or debug code left behind, new behaviour with no test at all, a clear duplication of existing code, a secret or machine-specific path in the repo. Blocking stops the landing until the user chooses Land Anyway or Send Back.
-4. Write the verdict, then stop: `node scripts/verdict.mjs --out "$SOVA_REVIEW_OUT" --verdict <ok|notes|blocking> --summary "<one sentence>" [--finding '<json>' …]`, one `--finding` per finding: `{"file":"server/x.ts","line":12,"kind":"dead-code","text":"…"}`. It checks the shape and writes the file; fix and rerun it if it refuses. Kinds: `dead-code`, `duplication`, `hack`, `missing-test`, `naming`, `other`.
+4. Check it: `node scripts/verdict.mjs --verdict <ok|notes|blocking> --summary "<one sentence>" [--finding '<json>' …]`, one `--finding` per finding: `{"file":"server/x.ts","line":12,"kind":"dead-code","text":"…"}`. Kinds: `dead-code`, `duplication`, `hack`, `missing-test`, `naming`, `other`. It refuses a malformed verdict (fix and rerun) and prints `{"verdict", "text"}`.
+5. Answer once with `merge.review {run, verdict, text}` (the project verbs tool), the two values it printed, then stop.
 
 ## Rules
 - Only the diff counts. Old debt the branch didn't touch is never a finding.

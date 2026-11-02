@@ -403,6 +403,92 @@ export interface MergeQueueFeed {
   view: MergeQueueView;
 }
 
+/** On the session feed: one chat's merge queue cards changed (all of them, newest data). */
+export interface MergeCardsFeed {
+  type: "merge_cards";
+  session: string;
+  cards: MergeCard[];
+}
+
+// ---- a branch's card in the chat that built it ---------------------------------------------------
+
+/** An outcome that moves the card to the bottom of the chat as a new revision. */
+export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "drafts-changed" | "sent-back";
+export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "drafts-changed", "sent-back"];
+
+/**
+ * One copy of the card at its own point in the chat. The newest revision draws the whole card (the card's live data);
+ * earlier ones fold to one line from their own frozen `state`/`position` ("feat/x · Queued 2nd").
+ */
+export interface MergeCardRevision {
+  /** `<card id>:<n>`, stable. */
+  id: string;
+  /** What raised it: the approval (Land, or a typed "land it"), or an outcome. */
+  kind: "approved" | MergeCardOutcome;
+  /** The run the outcome came from, when one did. */
+  run?: string;
+  at: string;
+  /** The chat's last transcript entry when it was raised (placeOutsideCards `after`); null: before every row; absent: by time. */
+  after?: string | null;
+  /** The entry's state and place in line when it was raised, for its folded line. */
+  state: MergeEntryState;
+  position?: number;
+}
+
+/** A step that failed with the branch, for Needs a fix: its log is merge.logs {run, step}. */
+export interface MergeCardFailure {
+  run: string;
+  step: string;
+  label: string;
+  detail?: string;
+  /** Failing tests, "file › name", at most a few. */
+  tests?: string[];
+}
+
+/** A Sova built-in card (kind `sova.merge-queue`): one per branch, from its approval on, in the chat that owns it. */
+export interface MergeCard {
+  /** The card's key (its revisions share it): the first queue entry it was raised for. */
+  id: string;
+  /** The queue entry it follows now: a new approval of the branch after a hand-back moves the same card on. */
+  entry: string;
+  session: string;
+  project: string;
+  root: string;
+  branch: string;
+  target: string;
+  /** The approved commit. */
+  commit: string;
+  /** The branch's head as last read (Land Again pins it); absent: unknown or the branch is gone. */
+  head?: string;
+  /** The branch's worktree, when it had one. */
+  worktree?: string;
+  approvedBy: ApprovalBy;
+  /** Live, revised in place: the entry as the queue reads it now. */
+  state: MergeEntryState;
+  position?: number;
+  eta?: MergeEntry["eta"];
+  reason?: string;
+  newerCommits?: number;
+  run?: string;
+  /** Checking: steps finished of all the run's steps. */
+  progress?: { done: number; total: number };
+  notes: MergeNote[];
+  conflict?: ConflictJudgement;
+  review?: ReviewVerdict;
+  landed?: MergeEntry["landed"];
+  /** Commits and lines the branch brought, frozen at landing (absent before). */
+  stats?: { commits: number; added: number; removed: number };
+  failures?: MergeCardFailure[];
+  /** Needs a fix: the merge thread's later diagnosis (its note), added to the same card in place. */
+  explanation?: { text: string; at: string };
+  revisions: MergeCardRevision[];
+  updatedAt: string;
+}
+
+/** A wake the merge queue sends a chat (Needs a fix, Send Back) starts with this: the page draws it as the queue's, never the user's. */
+export const MERGE_QUEUE_SENT_PREFIX = "[merge-queue]";
+export const isMergeQueueText = (text: string | undefined): boolean => !!text && text.trimStart().startsWith(MERGE_QUEUE_SENT_PREFIX);
+
 // ---- small pure helpers -------------------------------------------------------------------------
 
 /** The words a row shows for an entry's state ("Queued · 2nd"). */

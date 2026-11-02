@@ -4744,6 +4744,8 @@ export type SessionFeedMessage =
   /** A project's merge queue changed (an entry added, moved, a step of the run, a landing): its whole view, as
       merge.status answers it. Never on connect (the client reads merge.status when it opens a view). Additive. */
   | import("./merge-queue").MergeQueueFeed
+  /** One chat's merge queue cards changed (shared/merge-queue.ts MergeCard): all of that chat's cards. Additive. */
+  | import("./merge-queue").MergeCardsFeed
   | { type: "error"; message: string };
 
 /** Why an LlmInflight count is only a floor. `host` is the peer's id; absent = this host. */

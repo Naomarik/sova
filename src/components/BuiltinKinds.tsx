@@ -4,7 +4,7 @@ import { Chip, Icon } from "./ui";
 import type { KindViewProps } from "../lib/transcript-kinds";
 import type { HandoffRunInfo, TranscriptItem } from "../../shared/protocol";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
-import { isMergeQueueText } from "../../shared/merge-queue";
+import { isMergeQueueText } from "../../shared/senders";
 import { SettingsToolCard } from "./SettingsChangeCard";
 import type { SettingsToolDetails } from "../../shared/project-settings";
 import { OfferCardView } from "./OfferCard";

@@ -1,6 +1,5 @@
 import { lazy, Show, type Component } from "solid-js";
-import { isMergeQueueText } from "../../shared/merge-queue";
-import { MERGE_QUEUE_SESSION } from "../../shared/senders";
+import { isMergeQueueText, MERGE_QUEUE_SESSION } from "../../shared/senders";
 import type { LiveCallBlock, LiveInput, LiveKindViewProps, LiveUserEntry, LiveView } from "../lib/transcript-kinds";
 import type { LiveBlock } from "../lib/live";
 import { shownUserState } from "../lib/live";

@@ -97,10 +97,10 @@ test("notes: the operator's replaces the thread's; the others follow", () => {
 
 test("the control: what needs you first, then a fix, then ready; hidden with none", () => {
   assert.equal(controlWords([]), null);
-  assert.deepEqual(controlWords([{ key: "ready" }, { key: "ready" }, { key: "queued" }]), { text: "2 ready", dot: "ok" });
-  assert.deepEqual(controlWords([{ key: "ready" }, { key: "needs-fix" }]), { text: "1 needs a fix", dot: "err" });
-  assert.deepEqual(controlWords([{ key: "needs-fix" }, { key: "review-flagged" }]), { text: "1 needs you", dot: "warn" });
-  assert.deepEqual(controlWords([{ key: "landed" }, { key: "merged" }]), { text: "2 worktrees", dot: null });
+  assert.deepEqual(controlWords([{ key: "ready" }, { key: "ready" }, { key: "queued" }]), { text: "2 ready", n: 2, dot: "ok" });
+  assert.deepEqual(controlWords([{ key: "ready" }, { key: "needs-fix" }]), { text: "1 needs a fix", n: 1, dot: "err" });
+  assert.deepEqual(controlWords([{ key: "needs-fix" }, { key: "review-flagged" }]), { text: "1 needs you", n: 1, dot: "warn" });
+  assert.deepEqual(controlWords([{ key: "landed" }, { key: "merged" }]), { text: "2 worktrees", n: 2, dot: null });
 });
 
 test("the summary counts in order", () => {
@@ -133,6 +133,17 @@ test("whose failure: a branch's (passes on master, fails again on the tip)", () 
   assert.deepEqual(a.map((x) => x.result), ["ok", "ok", "failed"]);
   assert.equal(a[1]!.answer, "No: it passes on the target");
   assert.equal(attribution({ verdict: "passed", steps: [] } as unknown as MergeRun), null);
+});
+
+test("the onboarding's check list: Name: command per line, the rest named back", async () => {
+  const { parseCheckList } = await import("./merge-queue");
+  assert.deepEqual(parseCheckList("Typecheck: npm run typecheck\n\nUnit tests: npm test -- --ci\nbroken line\n: no name"), {
+    checks: [
+      { label: "Typecheck", command: "npm run typecheck" },
+      { label: "Unit tests", command: "npm test -- --ci" },
+    ],
+    bad: [4, 5],
+  });
 });
 
 test("times and the waiting head", () => {

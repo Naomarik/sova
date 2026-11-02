@@ -196,7 +196,11 @@ export function rowsSummary(rows: Pick<QueueRow, "key">[]): string {
 }
 
 /** The composer control's words and dot: the one most useful fact. Null with no worktrees (it hides). */
-export function controlWords(rows: Pick<QueueRow, "key">[]): { text: string; dot: "ok" | "warn" | "err" | null } | null {
+export function controlWords(rows: Pick<QueueRow, "key">[]): { text: string; n: number; dot: "ok" | "warn" | "err" | null } | null {
+  const w = controlWordsOf(rows);
+  return w && { ...w, n: Number(/^\d+/.exec(w.text)?.[0] ?? rows.length) };
+}
+function controlWordsOf(rows: Pick<QueueRow, "key">[]): { text: string; dot: "ok" | "warn" | "err" | null } | null {
   if (rows.length === 0) return null;
   const n = (...k: RowKey[]) => rows.filter((r) => k.includes(r.key)).length;
   const you = n("behaviour-differs", "review-flagged", "drafts-changed");
@@ -303,6 +307,21 @@ export function pausedTitle(v: Pick<MergeQueueView, "paused">): string {
     case "recovery":
       return "Paused: a landing in flight at a stop needs a look.";
   }
+}
+
+/** The onboarding's "List its checks": one per line, "Name: command". Lines that aren't are named back. */
+export function parseCheckList(text: string): { checks: { label: string; command: string }[]; bad: number[] } {
+  const checks: { label: string; command: string }[] = [];
+  const bad: number[] = [];
+  text.split("\n").forEach((line, i) => {
+    if (!line.trim()) return;
+    const at = line.indexOf(":");
+    const label = at > 0 ? line.slice(0, at).trim() : "";
+    const command = at > 0 ? line.slice(at + 1).trim() : "";
+    if (label && command) checks.push({ label, command });
+    else bad.push(i + 1);
+  });
+  return { checks, bad };
 }
 
 /** "Whose failure is it?": the evidence a red run gathered, in the order it was checked. */

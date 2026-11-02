@@ -159,6 +159,9 @@ function Verdict(props: { run: MergeRun; target: string }) {
       <Show when={r().verdict === "void"}>
         <Banner tone="info" title="This run stopped before it finished. Nothing was blamed." body={r().why ?? "It runs again from the start."} />
       </Show>
+      <Show when={r().verdict === "running" || r().verdict === "waiting" || r().verdict === "conflict"}>
+        <p class="text-caption mq-nothing">Nothing has merged from this run. {props.target} moves only once every check passes.</p>
+      </Show>
       <Show when={r().verdict === "passed"}>
         <Banner tone="success" title={`Passed. ${props.target} moved to exactly the tested commit.`} />
       </Show>

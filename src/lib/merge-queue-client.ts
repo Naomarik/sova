@@ -83,7 +83,10 @@ export async function readLog(run: string, step?: string): Promise<string> {
 }
 
 /** The onboarding's checks, as the project's `merge` section takes them. */
-export type OnboardChecks = { kind: "command"; command: string; takesMin?: number; requires?: string } | { kind: "none" };
+export type OnboardChecks =
+  | { kind: "list"; checks: { label: string; command: string }[] }
+  | { kind: "command"; command: string; takesMin?: number; requires?: string }
+  | { kind: "none" };
 /** Try It on Main: the copy, setup and the command on the target alone, logged; nothing saved. */
 export const tryOnMain = (project: string, c: OnboardChecks) => runMergeVerb(project, "merge.setup", { checks: c, dryRun: true });
 /** Save Checks: writes the project's merge section. */

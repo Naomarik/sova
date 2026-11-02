@@ -467,6 +467,7 @@ for (const width of [1280, 390]) {
       assert.match(text, /Added by merge thread/);
       assert.match(text, /The branch changes statecharts\/merge\.ts\./);
       assert.match(text, /skipped: no change to its paths/);
+      assert.match(text, /Nothing has merged from this run\./);
       await page.getByRole("button", { name: "Show the log of Setup" }).click();
       await until("the setup log", async () => /log of setup/.test(await words(page.locator(".mq-steps"))));
       assert.equal(lastCall(o, "merge.logs").body.step, "setup");
@@ -501,6 +502,17 @@ for (const width of [1280, 390]) {
       await until("a save", () => o.calls.some((c) => c.verb === "merge.setup" && !c.body.dryRun));
       await shot(page, `${width}-onboard`);
       await noRestartOrLive(page, ".mq-onboard");
+      // List its checks: one per line; a line without a name is named back, and nothing is tried.
+      await page.getByText("List its checks").click();
+      await page.getByRole("textbox", { name: "Checks" }).fill("Typecheck: npm run typecheck\nnpm test");
+      const tries = o.calls.filter((c) => c.verb === "merge.setup").length;
+      await page.getByRole("button", { name: "Try It on Master" }).click();
+      await page.getByText("Line 2 needs a name, a colon, then its command.").waitFor();
+      assert.equal(o.calls.filter((c) => c.verb === "merge.setup").length, tries, "nothing tried");
+      await page.getByRole("textbox", { name: "Checks" }).fill("Typecheck: npm run typecheck\nUnit tests: npm test");
+      await page.getByRole("button", { name: "Try It on Master" }).click();
+      await until("a list try", () => o.calls.some((c) => c.verb === "merge.setup" && (c.body.checks as { kind: string }).kind === "list"));
+      assert.deepEqual(lastCall(o, "merge.setup").body.checks, { kind: "list", checks: [{ label: "Typecheck", command: "npm run typecheck" }, { label: "Unit tests", command: "npm test" }] });
       await page.getByText("This project has no automated tests").click();
       assert.match(await words(page.locator(".mq-onboard")), /master moves to that merged commit/);
       await noSideScroll(page);

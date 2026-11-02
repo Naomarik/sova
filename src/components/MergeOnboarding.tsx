@@ -3,7 +3,7 @@ import type { VerbResult } from "../../shared/project-contract";
 import { refusal, saveChecks, tryOnMain, type OnboardChecks } from "../lib/merge-queue-client";
 import { mergeRunHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
-import type { MergeQueueView } from "../lib/merge-queue";
+import { parseCheckList, type MergeQueueView } from "../lib/merge-queue";
 import { HeadsStrip } from "./MergeQueueTab";
 import { Banner } from "./ui";
 import { QueueChip } from "./WorktreesModal";
@@ -16,7 +16,8 @@ type Tried = { state: "idle" } | { state: "running" } | { state: "passed"; run?:
  * target alone in the merge copy, logged; only then does Save Checks show.
  */
 export function MergeOnboarding(props: { projectId: string; name: string; view: MergeQueueView; onSaved(): void }) {
-  const [choice, setChoice] = createSignal<"command" | "none">("command");
+  const [choice, setChoice] = createSignal<"list" | "command" | "none">("command");
+  const [list, setList] = createSignal("");
   const [command, setCommand] = createSignal("");
   const [takes, setTakes] = createSignal("");
   const [requires, setRequires] = createSignal("");
@@ -28,7 +29,9 @@ export function MergeOnboarding(props: { projectId: string; name: string; view: 
   const checks = (): OnboardChecks =>
     choice() === "none"
       ? { kind: "none" }
-      : { kind: "command", command: command().trim(), ...(Number(takes()) > 0 ? { takesMin: Number(takes()) } : {}), ...(requires().trim() ? { requires: requires().trim() } : {}) };
+      : choice() === "list"
+        ? { kind: "list", checks: parseCheckList(list()).checks }
+        : { kind: "command", command: command().trim(), ...(Number(takes()) > 0 ? { takesMin: Number(takes()) } : {}), ...(requires().trim() ? { requires: requires().trim() } : {}) };
   /** Any change after a try asks for a new try. */
   const changed = () => setTried({ state: "idle" });
   const runOf = (r: VerbResult) => r.merge?.run?.id;
@@ -37,6 +40,13 @@ export function MergeOnboarding(props: { projectId: string; name: string; view: 
     if (choice() === "command" && !command().trim()) {
       setError("Type the command that runs the project's tests.");
       return;
+    }
+    if (choice() === "list") {
+      const { checks: got, bad } = parseCheckList(list());
+      if (bad.length || got.length === 0) {
+        setError(got.length === 0 ? "List at least 1 check: a name, a colon, then its command." : `Line ${bad.join(", ")} needs a name, a colon, then its command.`);
+        return;
+      }
     }
     setError(null);
     setTried({ state: "running" });
@@ -84,6 +94,42 @@ export function MergeOnboarding(props: { projectId: string; name: string; view: 
           <p class="text-caption text-muted">{props.name} doesn't declare any checks yet.</p>
         </div>
         <div role="radiogroup" aria-label="Checks" class="stack-2">
+          <label class="mq-choice">
+            <input
+              type="radio"
+              name={`mq-checks-${props.projectId}`}
+              checked={choice() === "list"}
+              onChange={() => {
+                setChoice("list");
+                changed();
+              }}
+            />
+            <span>
+              <strong>List its checks</strong>
+              <span class="text-caption mq-choice-desc">Each one runs on every branch, merged onto {target()}, in this order.</span>
+            </span>
+          </label>
+          <Show when={choice() === "list"}>
+            <div class="mq-fields">
+              <div class="field mq-field-wide">
+                <label class="field-label" for={`mq-list-${props.projectId}`}>
+                  Checks
+                </label>
+                <textarea
+                  id={`mq-list-${props.projectId}`}
+                  class="textarea input-mono"
+                  rows="4"
+                  placeholder={"Typecheck: npm run typecheck\nUnit tests: npm test"}
+                  value={list()}
+                  onInput={(e) => {
+                    setList(e.currentTarget.value);
+                    changed();
+                  }}
+                />
+                <p class="field-hint">One per line: a name, a colon, then its command.</p>
+              </div>
+            </div>
+          </Show>
           <label class="mq-choice">
             <input
               type="radio"
@@ -160,11 +206,16 @@ export function MergeOnboarding(props: { projectId: string; name: string; view: 
           <h4 class="text-caption mq-steps-head">What happens to each approved branch, one at a time</h4>
           <ol class="text-caption mq-what">
             <li>It's merged onto {target()} in a separate copy. Your worktree isn't touched.</li>
-            <Show when={choice() === "command"} fallback={<li>{target()} moves to that merged commit.</li>}>
-              <li>
-                We run <span class="text-mono">{command().trim() || "your command"}</span> there{requires().trim() ? `, after starting ${requires().trim()}` : ""}.
-              </li>
-              <li>If it passes, {target()} moves to exactly that commit.</li>
+            <Show when={choice() !== "none"} fallback={<li>{target()} moves to that merged commit.</li>}>
+              <Show
+                when={choice() === "command"}
+                fallback={<li>We run {parseCheckList(list()).checks.length || "your"} {parseCheckList(list()).checks.length === 1 ? "check" : "checks"} there, in order.</li>}
+              >
+                <li>
+                  We run <span class="text-mono">{command().trim() || "your command"}</span> there{requires().trim() ? `, after starting ${requires().trim()}` : ""}.
+                </li>
+              </Show>
+              <li>If {choice() === "list" ? "they pass" : "it passes"}, {target()} moves to exactly that commit.</li>
             </Show>
             <li>{target()} is pushed to origin, when it has one.</li>
           </ol>
@@ -196,7 +247,7 @@ export function MergeOnboarding(props: { projectId: string; name: string; view: 
             when={tried().state === "passed"}
             fallback={
               <button type="button" class="button button-primary" disabled={tried().state === "running"} aria-busy={tried().state === "running" ? "true" : undefined} onClick={() => void doTry()}>
-                {tried().state === "running" ? `Trying on ${target()}…` : choice() === "command" ? `Try It on ${cap(target())}` : "Try the Merge Copy"}
+                {tried().state === "running" ? `Trying on ${target()}…` : choice() === "none" ? "Try the Merge Copy" : `Try It on ${cap(target())}`}
               </button>
             }
           >

@@ -10,7 +10,9 @@ import { WorktreesModal, type QueueWorktree } from "./WorktreesModal";
  */
 export function WorktreesControl(props: { rows: QueueWorktree[]; title: string; class?: string; onChanged?(): void }) {
   const [open, setOpen] = createSignal(false);
-  const rows = createMemo(() => props.rows.map((w) => queueRow(w)));
+  // Dropped worktrees are left out of the control and its modal (the pane still lists them).
+  const shown = createMemo(() => props.rows.filter((w) => w.status !== "dropped"));
+  const rows = createMemo(() => shown().map((w) => queueRow(w)));
   const words = createMemo(() => controlWords(rows()));
   const summary = () => rowsSummary(rows());
   return (
@@ -28,10 +30,14 @@ export function WorktreesControl(props: { rows: QueueWorktree[]; title: string; 
           >
             <Icon name="branch" small />
             <Show when={c().dot}>{(d) => <span class={`wt-dot wt-dot-${d()}`} aria-hidden="true" />}</Show>
-            <span class="text-num">{c().text}</span>
+            {/* Narrow, the count alone; the words stay in its name. */}
+            <span class="text-num run-status-wide">{c().text}</span>
+            <span class="text-num run-status-narrow" aria-hidden="true">
+              {c().n}
+            </span>
           </button>
           <Show when={open()}>
-            <WorktreesModal title={props.title} rows={props.rows} onClose={() => setOpen(false)} onChanged={props.onChanged} />
+            <WorktreesModal title={props.title} rows={shown()} onClose={() => setOpen(false)} onChanged={props.onChanged} />
           </Show>
         </>
       )}

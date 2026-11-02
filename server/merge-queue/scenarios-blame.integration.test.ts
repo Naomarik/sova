@@ -50,14 +50,53 @@ describe("blame", () => {
     assert.equal(h.notices.filter((n) => n.kind === "needs-fix").length, 0);
   });
 
-  test("S5b: a whole check red on master too (build, no file): noted, does not block (decision 5)", async () => {
+  test("S5e: a whole check red on master too and naming nothing (build): Can't tell whose failure · waiting for you; never landed, never blamed, no pause, no chat told; Send Back hands it back", async () => {
+    const { fx, h } = await setup({ files: { "build.conf": "broken\n" } });
+    const before = fx.head();
+    const b = fx.branch("ok", { "b.txt": "b\n" });
+    const e = await h.add({ branch: b.branch });
+    const s = await h.waitEntry(e.id, settled);
+    const v = await h.view();
+    assert.equal(s.state, "unattributed", `${s.state}: ${s.reason}; queue ${v.state} ${JSON.stringify(v.paused)}`);
+    assert.notEqual(v.state, "paused", "the queue doesn't pause");
+    assert.ok(v.needsYou.some((x) => x.id === e.id), "waits in Needs you");
+    assert.match(s.reason ?? "", /can't tell whose failure/i);
+    assert.equal(fx.head(), before, "master unmoved");
+    assert.equal(h.notices.filter((n) => n.kind !== "approved").length, 0, "no chat told while it waits");
+    const c = fx.branch("other", { "c.txt": "c\n" });
+    const ec = await h.add({ branch: c.branch });
+    const sc = await h.waitEntry(ec.id, settled);
+    assert.equal(sc.state, "unattributed", "the line moves on past it (the next branch is judged on its own)");
+    const back = await h.answer(e.id, "send-back");
+    assert.equal(back.state, "needs-fix", `${back.state}: ${back.reason}`);
+    assert.ok(h.notices.some((n) => n.kind === "sent-back" && n.branch === b.branch), "its chat is told on Send Back");
+    assert.equal(fx.head(), before);
+  });
+
+  test("S5e2: Can't tell whose failure, then Land Anyway: lands the tested tip, pushed", async () => {
     const { fx, h } = await setup({ files: { "build.conf": "broken\n" } });
     const b = fx.branch("ok", { "b.txt": "b\n" });
     const e = await h.add({ branch: b.branch });
-    const s = await h.waitEntry(e.id, (x) => settled(x) || (x.state === "queued" && !!x.run));
-    const v = await h.view();
-    assert.equal(s.state, "landed", `failing on master too does not block (got ${s.state}: ${s.reason}; queue ${v.state} ${JSON.stringify(v.paused)})`);
-    assert.ok(s.notes.some((n) => n.kind === "master-red"), "noted");
+    const s = await h.waitEntry(e.id, settled);
+    assert.equal(s.state, "unattributed", `${s.state}: ${s.reason}`);
+    await h.answer(e.id, "land-anyway");
+    const l = await h.waitEntry(e.id, settled);
+    assert.equal(l.state, "landed", `${l.state}: ${l.reason}`);
+    assert.equal(l.landed?.sha, fx.head());
+    assert.ok(fx.isAncestor(b.commit, fx.head()), "the branch is on master");
+    assert.equal(fx.originHead(), fx.head(), "pushed");
+  });
+
+  test("S5f: names only, the same count on both sides with other names (master fails a; the branch fixes a and breaks b): the branch's, needs a fix naming b", async () => {
+    const { fx, h } = await setup({ files: { "unit.names-only": "1\n", "tests/a.txt": "fail\n" } });
+    const before = fx.head();
+    const b = fx.branch("swap", { "tests/a.txt": "pass\n", "tests/b.txt": "fail\n" });
+    const e = await h.add({ branch: b.branch });
+    const s = await h.waitEntry(e.id, settled);
+    assert.equal(s.state, "needs-fix", `${s.state}: ${s.reason}`);
+    assert.match(s.reason ?? "", /b\.txt/);
+    assert.doesNotMatch(s.reason ?? "", /\ba\.txt/);
+    assert.equal(fx.head(), before, "master unmoved");
   });
 
   test("S5c: failures named without a file (Kaocha): a branch's NEW failing test is the branch's even while another test is red on master", async () => {

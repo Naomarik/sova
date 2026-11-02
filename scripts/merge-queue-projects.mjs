@@ -124,7 +124,7 @@ function makePlain(root, origin, target) {
   git(root, "push", "-q", "origin", target);
 }
 
-const terminal = ["landed", "needs-fix", "behaviour-differs", "review-flagged", "drafts-changed", "cancelled"];
+const terminal = ["landed", "needs-fix", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "cancelled"];
 
 function firstTestFile(root) {
   const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : e.name.endsWith("_test.clj") ? [join(d, e.name)] : []));

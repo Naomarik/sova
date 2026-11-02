@@ -113,6 +113,8 @@ const UNIT = (s: string) => `${prelude(s, "unit")}
 const sel = process.argv.slice(2);
 const all = existsSync("tests") ? readdirSync("tests").filter((f) => f.endsWith(".txt")).sort().map((f) => "tests/" + f) : [];
 const files = sel.length ? all.filter((f) => sel.includes(f)) : all;
+// unit.basename: a selector that names no repo path can't be loaded, as nasabii's test.bb errors on "handler_test.clj".
+if (existsSync("unit.basename") && sel.length && !files.length) { console.log("unit: could not locate " + sel.join(" ")); out({ passed: 0, failed: 0, errors: 1, skipped: 0, failures: [{ name: "test run", message: "could not locate " + sel.join(" ") }] }); log("fail"); process.exit(1); }
 const failures = [];
 let passed = 0;
 for (const f of files) {
@@ -130,7 +132,9 @@ for (const f of files) {
   const forbid = c.startsWith("forbid ") && c.split(/\\s+/).slice(1).every((w) => conf("src/list.txt", "").split("\\n").includes(w));
   const bad = forbid || c === "fail" || (c === "flaky" && once("flaky:" + f + ":" + head));
   // unit.names-only at the root: failures carry a name and no file (as Kaocha's runner reports them: motorsaif).
-  const named = existsSync("unit.names-only") || existsSync("unit.kaocha") ? {} : { file: f };
+  // unit.basename: the file is its bare name, not a repo path (nasabii's test.bb: "handler_test.clj"), and a selector
+  // of that name finds nothing to run.
+  const named = existsSync("unit.names-only") || existsSync("unit.kaocha") ? {} : { file: existsSync("unit.basename") ? f.replace(/^.*\\//, "") : f };
   // unit.kaocha: Kaocha's own line, "FAIL in (<ns>/<test>) (<file>:<line>)", the line being the file's line count.
   const base = f.replace(/^tests\\//, "");
   const name = existsSync("unit.kaocha") ? "FAIL in (app.unit-test/" + base.replace(/\\.txt$/, "") + ") (unit_test.clj:" + readFileSync(f, "utf8").split("\\n").length + ")" : base;
@@ -149,6 +153,8 @@ const go = () => {
   const sel = process.argv.slice(2);
   const all = existsSync("tests") ? readdirSync("tests").filter((f) => f.endsWith(".txt")).sort().map((f) => "tests/" + f) : [];
   const files = sel.length ? all.filter((f) => sel.includes(f)) : all;
+// unit.basename: a selector that names no repo path can't be loaded, as nasabii's test.bb errors on "handler_test.clj".
+if (existsSync("unit.basename") && sel.length && !files.length) { console.log("unit: could not locate " + sel.join(" ")); out({ passed: 0, failed: 0, errors: 1, skipped: 0, failures: [{ name: "test run", message: "could not locate " + sel.join(" ") }] }); log("fail"); process.exit(1); }
   const failures = files.filter((f) => { const c = readFileSync(f, "utf8").trim(); return c === "fail" || (c === "flaky" && once("flaky:" + f + ":" + head)); })
     .map((f) => ({ file: f, name: f, message: "failed" }));
   out({ passed: files.length - failures.length, failed: failures.length, errors: 0, skipped: 0, failures });

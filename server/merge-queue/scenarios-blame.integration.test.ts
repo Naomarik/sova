@@ -119,6 +119,17 @@ describe("blame", () => {
     assert.ok(s.notes.some((n) => n.kind === "master-red"), "noted");
   });
 
+  test("S5g: failures whose file is a bare name, not a repo path (nasabii), red on master alone: a clean branch is never blamed for them", async () => {
+    const { fx, h } = await setup({ files: { "unit.basename": "1\n", "tests/a.txt": "fail\n" } });
+    const before = fx.head();
+    const b = fx.branch("clean", { "doc.txt": "a comment-only change\n" });
+    const e = await h.add({ branch: b.branch });
+    const s = await h.waitEntry(e.id, settled);
+    assert.notEqual(s.state, "needs-fix", `a clean branch blamed for master's red test: ${s.reason}`);
+    if (s.state === "landed") assert.ok(s.notes.some((n) => n.kind === "master-red"), `noted as master's: ${JSON.stringify(s.notes)} ${JSON.stringify(h.run(s.run!).steps.map((x) => [x.id, x.result, x.detail]))}`);
+    else assert.equal(fx.head(), before);
+  });
+
   test("S26: a flaky test (passes on rerun): noted, lands", async () => {
     const { fx, h } = await setup();
     const b = fx.branch("flaky", { "tests/c.txt": "flaky\n" });

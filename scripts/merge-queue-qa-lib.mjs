@@ -266,7 +266,7 @@ export function copyNodeModules(dir, from = HERE) {
 
 export class QueueClient {
   /** States an entry rests in until someone acts: a wait for anything else ends at once. */
-  static FINAL = ["landed", "needs-fix", "cancelled", "behaviour-differs", "review-flagged", "drafts-changed"];
+  static FINAL = ["landed", "needs-fix", "cancelled", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed"];
   constructor(sova, root) {
     this.sova = sova;
     this.root = root;

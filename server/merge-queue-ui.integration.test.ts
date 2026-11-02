@@ -178,6 +178,47 @@ function viewOf(x: Partial<MergeQueueView> = {}): MergeQueueView {
   };
 }
 
+/** A coding session of the project, in its own worktree, and its branch facts. */
+const CODING = { ...SESSION, id: "c1", path: "/w/sessions/c1.jsonl", title: "Fix the cart", project: { kind: "coding", projectId: PID, operator: true } } as unknown as SessionSummary;
+const CODING_B = { ...SESSION, id: "c2", path: "/w/sessions/c2.jsonl", title: "Fix the badge", project: { kind: "coding", projectId: PID, operator: true } } as unknown as SessionSummary;
+const tree = (s: SessionSummary, branch: string) => ({
+  sessionId: s.id,
+  path: s.path,
+  title: s.title,
+  startedBy: "operator",
+  branch,
+  base: sha("1"),
+  target: "master",
+  running: false,
+  workers: 0,
+  createdAt: iso(50),
+  worktree: `/w/.worktrees/sova-${branch.split("/")[1]}`,
+  state: "open",
+  merged: false,
+  ahead: 2,
+  dirty: false,
+});
+const WORKTREES = { available: true, sessions: [tree(CODING, "sova/fix-cart"), tree(CODING_B, "sova/fix-badge")] };
+/** A proposed playbook run, its branch's hash valid: Merge Branch, or Land once the queue is set up. */
+const RUNTIME = {
+  projectId: PID,
+  standing: "registered",
+  playbookState: "proposed",
+  def: null,
+  commit: null,
+  suite: null,
+  services: [],
+  orphans: [],
+  data: [],
+  sources: [],
+  drift: null,
+  proof: null,
+  registered: null,
+  playbook: { label: "Project verbs playbook", branch: "sova/project-verbs", target: "master", branchHash: `sha256:${"f".repeat(64)}`, proposes: "definition" },
+  can: { onboard: false },
+  feed: [],
+};
+
 const CONTENT: Record<string, string> = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".json": "application/json", ".webmanifest": "application/manifest+json" };
 
 interface Opened {
@@ -215,7 +256,13 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
       }
       return route.fulfill(json(ok(verb, { entry: entry({}) })));
     }
-    if (p === "/api/sessions") return route.fulfill(json([SESSION]));
+    if (p === "/api/sessions") return route.fulfill(json([SESSION, CODING, CODING_B]));
+    if (p === `/api/projects/${PID}/runtime`) return route.fulfill(json(RUNTIME));
+    if (p === `/api/projects/${PID}/overseer/worktrees`) return route.fulfill(json(WORKTREES));
+    if (p === `/api/projects/${PID}/runtime/merge` || p === `/api/projects/${PID}/overseer/worktrees/merge`) {
+      calls.push({ verb: p.endsWith("runtime/merge") ? "runtime.merge" : "worktrees.merge", body: JSON.parse(route.request().postData() ?? "{}") });
+      return route.fulfill(json(p.endsWith("runtime/merge") ? RUNTIME : WORKTREES));
+    }
     if (p === "/api/transcript") return route.fulfill(json({ items: [], context: null }));
     if (p === "/api/insights/session") return route.fulfill(json({ outline: null, compactions: [], teams: [], workers: [], worktrees: o.rows ?? ALL_ROWS }));
     if (p === "/api/projects") return route.fulfill(json({ projects: [PROJECT] }));
@@ -426,6 +473,56 @@ for (const width of [1280, 390]) {
       assert.equal(await tab.getByRole("link", { name: "Open Merge Thread" }).count(), 1);
       await noRestartOrLive(page, ".mq-tab");
       await noSideScroll(page);
+      await o.ctx.close();
+    });
+
+    test("set up: the coding rows offer Land and show their queue state; the playbook run's button is Land", async () => {
+      const view = viewOf({ waiting: [entry({ id: "me_badge", branch: "sova/fix-badge", state: "queued", position: 1, eta: { startsInMs: 3 * 60_000, takesMs: 9 * 60_000 } })] });
+      const o = await open(width, `#/projects/${PID}`, { view });
+      const { page } = o;
+      const badge = page.locator(".project-worktree", { hasText: "Fix the badge" });
+      await badge.getByText("Queued · 1st").waitFor({ timeout: 20_000 });
+      assert.match(await words(badge), /starts in ~3 min · takes ~9 min/);
+      // The playbook run: Land, through the queue at its branch.
+      const landRun = page.getByRole("button", { name: "Land sova/project-verbs" }).first();
+      await landRun.waitFor();
+      assert.equal(await page.getByRole("button", { name: "Merge Branch" }).count(), 0, "no Merge Branch while the queue is set up");
+      assert.match(await words(page.locator(".banner", { hasText: "Project verbs playbook" }).first()), /Read it, then land it: it's checked on master first\./);
+      await landRun.click();
+      await until("a land of the run's branch", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "sova/project-verbs"));
+      assert.equal(lastCall(o, "merge.add").body.project, ROOT_DIR);
+      // A coding row: its ⋯ holds Land (not Merge Branch); Land queues its worktree.
+      const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
+      await cart.getByRole("button", { name: /^Actions · / }).click();
+      assert.equal(await page.getByRole("menuitem", { name: /^Merge Branch/ }).count(), 0);
+      await page.getByRole("menuitem", { name: "Land sova/fix-cart on master" }).click();
+      await until("a land of the coding worktree", () => o.calls.some((c) => c.verb === "merge.add" && c.body.checkout === "/w/.worktrees/sova-fix-cart"));
+      // A queued row's Land says why it can't.
+      await badge.getByRole("button", { name: /^Actions · / }).click();
+      assert.equal(await page.getByRole("menuitem", { name: "Land sova/fix-badge on master" }).getAttribute("aria-disabled"), "true");
+      await page.keyboard.press("Escape");
+      assert.equal(o.calls.filter((c) => c.verb === "worktrees.merge" || c.verb === "runtime.merge").length, 0, "nothing merged directly");
+      await noSideScroll(page);
+      await shot(page, `${width}-project-rows-setup`);
+      await o.ctx.close();
+    });
+
+    test("not set up: the coding rows and the playbook run keep Merge Branch", async () => {
+      const o = await open(width, `#/projects/${PID}`, { view: viewOf({ checks: "unset", state: "idle", current: undefined, checking: [], waiting: [], needsYou: [], needsFix: [], recent: [] }) });
+      const { page } = o;
+      const run = page.getByRole("button", { name: "Merge Branch" }).first();
+      await run.waitFor({ timeout: 20_000 });
+      // The queue read has answered "unset" (not merely not read yet) before Merge Branch counts.
+      await until("the queue read", () => o.calls.some((c) => c.verb === "merge.status"));
+      assert.equal(await page.getByRole("button", { name: "Land sova/project-verbs" }).count(), 0);
+      await run.click();
+      await until("the run's Merge Branch", () => o.calls.some((c) => c.verb === "runtime.merge"));
+      const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
+      await cart.getByRole("button", { name: /^Actions · / }).click();
+      await page.getByRole("menuitem", { name: "Merge Branch: sova/fix-cart into master" }).click();
+      await until("the row's Merge Branch", () => o.calls.some((c) => c.verb === "worktrees.merge"));
+      assert.equal(o.calls.filter((c) => c.verb === "merge.add").length, 0);
+      await shot(page, `${width}-project-rows-unset`);
       await o.ctx.close();
     });
 

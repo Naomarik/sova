@@ -875,6 +875,7 @@ for (const width of [1280, 390]) {
       await ban.waitFor({ timeout: 20_000 });
       const bt = await words(ban);
       assert.match(bt, /Can't tell whose failure\. Nothing landed; master didn't move\./);
+      assert.match(await words(page.locator(".mq-run .cluster").first()), /Can't tell whose failure · waiting for you/);
       await expectWhy(bt);
       await ban.getByRole("button", { name: "Send feat/slow-build back to its chat" }).click();
       await until("send back from the run page", () => o.calls.filter((x) => x.verb === "merge.answer" && x.body.answer === "send-back").length >= 2);

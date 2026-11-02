@@ -58,7 +58,7 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
               <h2 class="orgs-h2 text-mono" id="mq-run-title">
                 {r().branch}
               </h2>
-              <QueueChip row={verdictChip(r())} />
+              <QueueChip row={r().verdict === "waiting" && entry()?.state === "unattributed" ? { label: "Can't tell whose failure · waiting for you", tone: "warn" } : verdictChip(r())} />
             </div>
             <p class="text-caption">
               <span class="text-mono">

@@ -1,4 +1,4 @@
-import { createSignal, For, Show, type JSX } from "solid-js";
+import { createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { SessionWorktreeInfo } from "../../shared/protocol";
 import { queueRow, rowsSummary, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
@@ -53,7 +53,7 @@ export function WorktreeQueueRow(props: {
   const projectId = () => projectIdOf(w());
   const entry = () => w().queue;
   /** The menu's Land Without Review: only where the project has a review kit. */
-  const review = () => w().mergeProject?.review ?? w().queue?.review ?? false;
+  const review = () => w().mergeProject?.review ?? w().queue?.reviewKit ?? false;
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [askSpecs, setAskSpecs] = createSignal(false);
@@ -141,7 +141,7 @@ export function WorktreeQueueRow(props: {
       </div>
       <div class="wt-queue-act">
         <Show when={row().action === "land"}>
-          <div class="button-split">
+          <div class="button-split wt-queue-split">
             <button type="button" class="button button-sm" aria-label={`Land ${w().branch}`} disabled={busy()} aria-busy={busy() ? "true" : undefined} onClick={() => doLand()}>
               Land
             </button>
@@ -200,8 +200,16 @@ export function WorktreeQueueList(props: { rows: QueueWorktree[]; showPath?: boo
 /** The composer control's modal: this chat's worktrees, each with its one action, and View Merge Queue. */
 export function WorktreesModal(props: { title: string; rows: QueueWorktree[]; onClose(): void; onChanged?(): void }) {
   const summary = () => rowsSummary(props.rows.map((w) => queueRow(w)));
-  const target = () => props.rows.find((w) => w.mergeProject)?.mergeProject?.target ?? "the target branch";
+  const project = () => props.rows.find((w) => w.mergeProject)?.mergeProject;
+  const target = () => project()?.target ?? "the target branch";
   const href = () => queueHrefOf(props.rows);
+  // Escape closes it wherever focus is (an action's button goes busy and can drop focus to the page),
+  // unless a menu inside is open: the key is that menu's (it closes itself).
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector(":popover-open")) props.onClose();
+  };
+  document.addEventListener("keydown", onKey);
+  onCleanup(() => document.removeEventListener("keydown", onKey));
   return (
     <Portal>
       <div class="scrim" onClick={() => props.onClose()} />
@@ -211,9 +219,6 @@ export function WorktreesModal(props: { title: string; rows: QueueWorktree[]; on
         aria-modal="true"
         aria-labelledby="wt-queue-title"
         ref={(el) => trapFocus(el)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape" && !e.defaultPrevented) props.onClose();
-        }}
       >
         <div class="modal-head wt-queue-head">
           <div>
@@ -232,6 +237,9 @@ export function WorktreesModal(props: { title: string; rows: QueueWorktree[]; on
           <p class="text-caption wt-queue-intro">
             Land queues a branch. It's merged onto {target()}, checked there on its own, and lands as exactly the commit that was tested.
           </p>
+          <Show when={project()?.paused}>
+            {(why) => <p class="text-caption wt-queue-paused">The queue is paused: {why()}. Land still takes your approval; it's checked once the queue resumes.</p>}
+          </Show>
           <WorktreeQueueList rows={props.rows} onChanged={props.onChanged} />
         </div>
         <div class="modal-foot">

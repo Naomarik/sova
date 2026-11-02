@@ -1580,6 +1580,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-queue-reason,
 .wt-queue-note,
 .wt-queue-error { margin-top: var(--space-1); white-space: normal; overflow-wrap: anywhere; }
+/* Behaviour differs: target, branch and proposal on lines of their own. */
+.wt-queue-reason { white-space: pre-line; }
 .wt-queue-error,
 .mq-error { color: var(--status-error); }
 .wt-queue-act { display: flex; flex-wrap: wrap; gap: var(--space-2); flex: none; align-items: center; }
@@ -1594,6 +1596,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-queue-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
 .wt-queue-head p { margin: var(--space-1) 0 0; }
 .wt-queue-intro { margin: 0; color: var(--color-ink-2); }
+.wt-queue-paused { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--status-warn-bg); color: var(--color-ink); }
 
 /* The tab. */
 .mq-body { gap: var(--space-4); }
@@ -1628,7 +1631,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-note { color: var(--color-ink-2); }
 .mq-pass { color: var(--status-success); }
 .mq-fail { color: var(--status-error); }
-.mq-run { color: var(--color-accent); }
+.mq-running { color: var(--color-accent); }
 .mq-wait,
 .mq-skip { color: var(--color-ink-muted); }
 
@@ -1673,3 +1676,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-field-wide { grid-column: 1 / -1; }
 .mq-steps-head { margin: 0 0 var(--space-1); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .mq-what { margin: 0; padding-left: var(--space-5); color: var(--color-ink-2); display: grid; gap: var(--space-1); }
+/* Land ▾: the menu's panel sits after its trigger inside the split, so the trigger isn't :last-child;
+   give it back the split's closing edge. */
+.wt-queue-split > .button[aria-haspopup="menu"] {
+  border-right: var(--stroke-icon) solid var(--color-border-strong);
+  border-top-right-radius: var(--r-md);
+  border-bottom-right-radius: var(--r-md);
+}

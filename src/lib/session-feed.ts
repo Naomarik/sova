@@ -4,6 +4,7 @@
 // It also carries the sidebar's one live figure, the LLM calls in flight across this host and every
 // connected host, which the server adds up itself.
 
+import { noteMergeFeed } from "./merge-queue-client";
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { AttentionDigest, LlmInflight, OverseerInfo, SessionFeedMessage } from "../../shared/protocol";
 import { sameInflight } from "./llm-inflight";
@@ -85,6 +86,8 @@ export function openSessionFeed(refreshList: () => void): void {
       else if (msg.type === "llm_inflight") setInflight(msg.inflight);
       else if (msg.type === "attention") for (const l of listeners) l.attention(msg.digest);
       else if (msg.type === "overseer") for (const l of listeners) l.overseer(msg.info);
+      // A project's merge queue moved: its tab takes the view, and worktree rows reload when an entry moved.
+      else if (msg.type === "merge_queue") noteMergeFeed(msg);
     },
   });
   createEffect(() => setOpen(socket.status() === "open"));

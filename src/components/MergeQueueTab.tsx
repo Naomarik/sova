@@ -2,7 +2,7 @@ import { createEffect, createSignal, For, on, Show } from "solid-js";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
 import { mins, notesOf, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView } from "../lib/merge-queue";
-import { answerEntry, cancelEntry, landBranch, mergeChanged, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
+import { answerEntry, cancelEntry, landBranch, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
@@ -23,6 +23,12 @@ const POLL_MS = 4000;
 export function MergeQueueTab(props: { projectId: string; root: string; name: string; run?: string; chatTitle?(path: string): string | undefined }) {
   const poll = createPoll(() => readQueue(props.root), POLL_MS, { cacheKey: `project:${props.projectId}:merge-queue` });
   createEffect(on(mergeChanged, () => poll.refetch(), { defer: true }));
+  // What the feed pushes for this project is the newest view: adopt it as is.
+  createEffect(
+    on(mergeFeed, (f) => {
+      if (f && f.project === props.projectId) poll.set(f.view);
+    }, { defer: true }),
+  );
   const view = () => poll.data();
   return (
     <section class="card orgs-section mq-tab" aria-labelledby="mq-title">
@@ -274,7 +280,7 @@ function CheckingNow(props: { projectId: string; view: MergeQueueView; chatTitle
     const r = cur();
     if (!r) return undefined;
     const v = props.view;
-    return [...v.waiting, ...v.needsYou, ...v.needsFix].find((e) => e.id === r.entry);
+    return [...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix].find((e) => e.id === r.entry);
   };
   return (
     <Show

@@ -12,7 +12,7 @@ const RUN_POLL_MS = 3000;
 const MARK: Record<RunStep["result"], { icon: "check" | "close" | "clock" | "chevron-right"; cls: string; word: string }> = {
   passed: { icon: "check", cls: "mq-pass", word: "Passed" },
   failed: { icon: "close", cls: "mq-fail", word: "Failed" },
-  running: { icon: "clock", cls: "mq-run", word: "Running" },
+  running: { icon: "clock", cls: "mq-running", word: "Running" },
   pending: { icon: "chevron-right", cls: "mq-wait", word: "Waiting" },
   skipped: { icon: "chevron-right", cls: "mq-skip", word: "Skipped" },
 };
@@ -39,7 +39,7 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
   const entry = () => {
     const r = run();
     const v = props.view;
-    return r ? ([...v.waiting, ...v.needsYou, ...v.needsFix].find((e) => e.id === r.entry) ?? v.recent.find((l) => l.entry.id === r.entry)?.entry) : undefined;
+    return r ? ([...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix].find((e) => e.id === r.entry) ?? v.recent.find((l) => l.entry.id === r.entry)?.entry) : undefined;
   };
   return (
     <div class="stack mq-run" aria-labelledby="mq-run-title">

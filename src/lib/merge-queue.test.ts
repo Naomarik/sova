@@ -50,7 +50,7 @@ test("behaviour differs: both sides in words, Accept and Send Back", () => {
   assert.equal(r.label, "Behaviour differs");
   assert.equal(r.action, "accept");
   assert.equal(r.sendBack, true);
-  assert.match(r.reason!, /Master retries twice\..*never retries\..*Keep master's retry\./);
+  assert.equal(r.reason, "Target: Master retries twice.\nBranch: The branch never retries.\nProposed: Keep master's retry.");
 });
 
 test("review flagged: the review's words, Land Anyway and Send Back", () => {

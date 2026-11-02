@@ -119,7 +119,7 @@ export function queueRow(w: QueueRowInput): QueueRow {
           key: "behaviour-differs",
           label: "Behaviour differs",
           tone: "warn",
-          reason: c ? `Target: ${c.ours} Branch: ${c.theirs} Proposed: ${c.proposal}` : (e.reason ?? "This branch and the target want different behaviour."),
+          reason: c ? `Target: ${c.ours}\nBranch: ${c.theirs}\nProposed: ${c.proposal}` : (e.reason ?? "This branch and the target want different behaviour."),
           action: "accept",
           sendBack: true,
         };

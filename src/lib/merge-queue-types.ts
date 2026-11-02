@@ -1,5 +1,4 @@
-// The merge queue's shapes as the screens read them: the queue's own (shared/merge-queue.ts), plus
-// the project facts a worktree row needs before it has an entry.
+// The merge queue's shapes as the screens read them: the queue's own (shared/merge-queue.ts).
 export type {
   Blame,
   CheckPick,
@@ -14,14 +13,6 @@ export type {
   PauseInfo,
   RunStep,
   WorktreeQueueInfo,
+  /** A worktree's project as the queue sees it (SessionWorktreeInfo.mergeProject), entry or not. */
+  WorktreeMergeProject as MergeProjectInfo,
 } from "../../shared/merge-queue";
-import type { ChecksDeclared } from "../../shared/merge-queue";
-
-/** A worktree's project as the queue sees it (SessionWorktreeInfo.mergeProject), entry or not. */
-export interface MergeProjectInfo {
-  id: string;
-  root: string;
-  target: string;
-  checks: ChecksDeclared;
-  review: boolean;
-}

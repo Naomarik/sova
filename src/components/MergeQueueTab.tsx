@@ -44,7 +44,8 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
             when={!props.run}
             fallback={<MergeRunView projectId={props.projectId} view={v()} runId={props.run!} chatTitle={props.chatTitle} />}
           >
-            <Show when={v().checks !== "unset"} fallback={<MergeOnboarding projectId={props.projectId} name={props.name} view={v()} onSaved={() => poll.refetch()} />}>
+            {/* An invalid definition reads "unset" too: its error is said, never the onboarding. */}
+            <Show when={v().checks !== "unset" || v().invalid} fallback={<MergeOnboarding projectId={props.projectId} name={props.name} view={v()} onSaved={() => poll.refetch()} />}>
               <QueueBody projectId={props.projectId} view={v()} chatTitle={props.chatTitle} onChanged={() => poll.refetch()} />
             </Show>
           </Show>
@@ -164,7 +165,11 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatTitle?(
         <Show when={v().checks === "none"}> This project declares no automated tests: landings say "No checks declared".</Show>
       </p>
       <Show when={head.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
-      <Show when={paused()}>
+      <Show when={v().invalid}>
+        {(bad) => <Banner tone="error" title="This project's .sova/project.json doesn't parse." body={`${bad().trim().replace(/[.]$/, "")}. Fix it on ${v().target}; nothing lands until it parses.`} />}
+      </Show>
+      {/* The definition's own pause is said by the banner above, once. */}
+      <Show when={paused() && !(v().paused?.kind === "definition-invalid" && v().invalid)}>
         <Banner
           tone="warn"
           title={pausedTitle(v())}

@@ -752,6 +752,35 @@ for (const width of [1280, 390]) {
       await o.ctx.close();
     });
 
+    test("an invalid .sova/project.json: its error, never the onboarding; one banner for its pause; Merge Branch stays on the rows", async () => {
+      const bad = '$.merge.checks[0].run[2]: a lone "$"';
+      const why = `The project's .sova/project.json is invalid: ${bad}. Fix it on the target; nothing lands until it parses`;
+      const view = viewOf({ checks: "unset", invalid: bad, state: "paused", paused: { kind: "definition-invalid", why, at: iso(1) }, current: undefined, checking: [] });
+      const o = await open(width, `#/projects/${PID}/merge-queue`, { view });
+      const { page } = o;
+      const tab = page.locator(".mq-tab");
+      await tab.getByText("This project's .sova/project.json doesn't parse.").waitFor({ timeout: 20_000 });
+      const t = await words(tab);
+      assert.match(t, /Definition invalid/);
+      assert.ok(t.includes(bad), "the parser's path and message");
+      assert.equal(t.split("doesn't parse").length - 1, 1, "said once, not in the title and again in the body");
+      assert.match(t, /Fix it on master; nothing lands until it parses\./);
+      assert.doesNotMatch(t, /Not set up|Before the queue can land anything here/);
+      assert.equal(await page.getByRole("button", { name: /^Try It on/ }).count(), 0);
+      assert.equal(await tab.locator(".banner").count(), 1, "the pause isn't said twice");
+      assert.match(t, /Waiting · 2/, "what's in line still shows");
+      await noSideScroll(page);
+      await noRestartOrLive(page, ".mq-tab");
+      await shot(page, `${width}-definition-invalid`);
+      // The project page's coding rows: no Land while it can't parse (the fix may be one of these branches).
+      await page.goto(`${ORIGIN}/#/projects/${PID}`);
+      const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
+      await cart.getByRole("button", { name: /^Actions · / }).click({ timeout: 20_000 });
+      await page.getByRole("menuitem", { name: "Merge Branch: sova/fix-cart into master" }).waitFor();
+      assert.equal(await page.getByRole("menuitem", { name: /^Land / }).count(), 0);
+      await o.ctx.close();
+    });
+
     test("the strip says master is ahead of origin: Save Checks' reason, or none given", async () => {
       for (const heads of [
         { target: sha("4"), pushed: sha("1"), pushWhy: "not pushed yet: goes out with the next landing" },

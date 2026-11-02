@@ -241,7 +241,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       return out({ verdict: "failed", blame: "branch", why: `nothing to land: ${target} already has ${short(commit)}`, copy });
     }
     ms.log(`$ git merge --no-ff ${commit}\n`);
-    const m = await gitProc(copy, [...MERGE_FLAGS, "merge", "--no-ff", "--no-edit", "-m", `Merge branch '${input.entry.branch}' into ${target}`, commit], { env: ident, log: ms.log, signal });
+    const m = await gitProc(copy, [...NO_BACKGROUND_CLEANUP, ...NO_RERERE, "merge", "--no-ff", "--no-edit", "-m", `Merge branch '${input.entry.branch}' into ${target}`, commit], { env: ident, log: ms.log, signal });
     if (m.aborted) return (ms.end("failed", { detail: "aborted" }), voided("aborted"));
     if (m.code !== 0) {
       const files = await conflictFiles(copy, base, commit);
@@ -597,9 +597,9 @@ async function identityEnv(copy: string): Promise<Record<string, string>> {
   return { GIT_AUTHOR_NAME: name || "Sova merge queue", GIT_AUTHOR_EMAIL: email || "merge-queue@sova.invalid", GIT_COMMITTER_NAME: name || "Sova merge queue", GIT_COMMITTER_EMAIL: email || "merge-queue@sova.invalid" };
 }
 
-/** Every merge in the copy: no background cleanup, and never git rerere (a user's rerere.enabled + autoupdate would
+/** Every merge in the copy (beside NO_BACKGROUND_CLEANUP): never git rerere (a user's rerere.enabled + autoupdate would
  *  stage a recorded resolution silently and leave no unmerged path: a conflict must reach the thread and the user). */
-const MERGE_FLAGS: readonly string[] = [...NO_BACKGROUND_CLEANUP, "-c", "rerere.enabled=false", "-c", "rerere.autoupdate=false"];
+const NO_RERERE: readonly string[] = ["-c", "rerere.enabled=false", "-c", "rerere.autoupdate=false"];
 
 /** The files a failed merge conflicts in: the index's unmerged paths, else git's own merge of the two commits (a merge
  *  that failed with nothing unmerged, as a recorded resolution staged by some config leaves it, is still a conflict). */
@@ -617,7 +617,7 @@ async function takeResolution(copy: string, base: string, resolution: string, lo
   if (co.code !== 0) return { error: `the resolution ${short(resolution)} can't be checked out: ${tail(co.out)}` };
   if (first === base) return { sha: (await gitOut(copy, ["rev-parse", "HEAD"])) };
   log(`its first parent ${short(first)} isn't the target's head: merging ${short(base)} into it\n`);
-  const m = await gitProc(copy, [...MERGE_FLAGS, "merge", "--no-ff", "--no-edit", base], { env, log, signal });
+  const m = await gitProc(copy, [...NO_BACKGROUND_CLEANUP, ...NO_RERERE, "merge", "--no-ff", "--no-edit", base], { env, log, signal });
   if (m.code !== 0) {
     const files = await conflictFiles(copy, resolution, base);
     await gitProc(copy, ["merge", "--abort"], { log });

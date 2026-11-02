@@ -3350,6 +3350,8 @@ export interface SessionWorktreeInfo {
   /** Tracked active with its folder gone: what its work came to, the same answer readiness gives
       (§chat.worktrees/pane). "unknown": its branch is gone too and nothing records a merge. */
   gone?: "merged" | "unmerged" | "empty" | "unknown";
+  /** Its newest merge queue entry (shared/merge-queue.ts), when it has one. Additive. */
+  queue?: import("./merge-queue").WorktreeQueueInfo;
 }
 
 // ---------------------------------------------------------------------------
@@ -4737,6 +4739,9 @@ export type SessionFeedMessage =
   | { type: "attention"; digest: AttentionDigest }
   /** The Overseer's state (as GET /api/overseer returns it), sent the same way as `attention`. */
   | { type: "overseer"; info: OverseerInfo }
+  /** A project's merge queue changed (an entry added, moved, a step of the run, a landing): its whole view, as
+      merge.status answers it. Never on connect (the client reads merge.status when it opens a view). Additive. */
+  | import("./merge-queue").MergeQueueFeed
   | { type: "error"; message: string };
 
 /** Why an LlmInflight count is only a floor. `host` is the peer's id; absent = this host. */

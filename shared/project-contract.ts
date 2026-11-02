@@ -11,9 +11,15 @@ export type Verb = (typeof VERBS)[number];
 /** The deploy verbs (§app.project-services/deploy): a target of the definition's `deploy`, never an instance. */
 export const DEPLOY_VERBS = ["deploy.check", "deploy.plan", "deploy.run", "deploy.status", "deploy.logs", "deploy.rollback", "deploy.request"] as const;
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
-export type AnyVerb = Verb | DeployVerb;
+/** The merge queue's verbs (shared/merge-queue.ts): a project's queue, its entries and runs, never an instance. */
+export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry"] as const;
+export type MergeVerb = (typeof MERGE_VERBS)[number];
+/** The merge verbs that change nothing. */
+export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs"];
+export type AnyVerb = Verb | DeployVerb | MergeVerb;
 export const isDeployVerb = (v: unknown): v is DeployVerb => (DEPLOY_VERBS as readonly unknown[]).includes(v);
-export const isVerb = (v: unknown): v is AnyVerb => (VERBS as readonly unknown[]).includes(v) || isDeployVerb(v);
+export const isMergeVerb = (v: unknown): v is MergeVerb => (MERGE_VERBS as readonly unknown[]).includes(v);
+export const isVerb = (v: unknown): v is AnyVerb => (VERBS as readonly unknown[]).includes(v) || isDeployVerb(v) || isMergeVerb(v);
 /** Verbs that change nothing and take no lock. */
 export const READ_VERBS: readonly Verb[] = ["status", "logs", "doctor"];
 /** The deploy verbs anyone with the project in scope may call: they read (§app.project-services/deploy-callers). */
@@ -78,6 +84,22 @@ export const VERB_PARAMS: readonly VerbParam[] = [
     },
     cli: { flag: "why", description: "Why" },
   },
+  // The merge verbs' own keys (shared/merge-queue.ts). On no generic tool: the merge thread's tool lists them.
+  { wire: "entry", type: "string", tool: { name: "entry", description: "merge.*: a queue entry, by its id (mq_…; merge.status lists them)." }, cli: { flag: "entry", description: "A merge queue entry id" } },
+  { wire: "run", type: "string", tool: { name: "run", description: "merge.logs/merge.review: a run, by its id (mr_…)." }, cli: { flag: "run", description: "A merge run id" } },
+  { wire: "step", type: "string", tool: { name: "step", description: "merge.logs: one step of the run, by its id (default every step's tail)." }, cli: { flag: "step", description: "A run step id" } },
+  { wire: "note", type: "string", tool: { name: "note", description: "merge.note (and every merge verb the merge thread calls): the entry's note, short free text shown on its row (at most 300 characters; empty clears it)." }, cli: { flag: "note", description: "A note on the entry" } },
+  { wire: "withoutSpecs", type: "boolean", cli: { flag: "without-specs", description: "Land without its spec drafts" } },
+  { wire: "withoutReview", type: "boolean", cli: { flag: "without-review", description: "Land without the review step" } },
+  { wire: "chat", type: "string", cli: { flag: "chat", description: "The chat the approval was given in" } },
+  { wire: "checks", type: "list", tool: { name: "checks", description: "merge.extend: check ids from the project's merge section to add to this entry's run (never removes one)." }, cli: { flag: "checks", description: "Check ids, comma-separated" } },
+  { wire: "verdict", type: "string", tool: { name: "verdict", description: "merge.resolve: no-behaviour-change | behaviour-differs; merge.review: ok | notes | blocking." }, cli: { flag: "verdict", description: "A verdict" } },
+  { wire: "files", type: "list", tool: { name: "files", description: "merge.resolve: the conflicted files the judgement covers." }, cli: { flag: "files", description: "Files, comma-separated" } },
+  { wire: "ours", type: "string", tool: { name: "ours", description: "merge.resolve: what the target's side does, in plain words." }, cli: { flag: "ours", description: "The target's side, in plain words" } },
+  { wire: "theirs", type: "string", tool: { name: "theirs", description: "merge.resolve: what the branch's side does, in plain words." }, cli: { flag: "theirs", description: "The branch's side, in plain words" } },
+  { wire: "proposal", type: "string", tool: { name: "proposal", description: "merge.resolve: what the resolution does, in plain words." }, cli: { flag: "proposal", description: "The proposed resolution, in plain words" } },
+  { wire: "answer", type: "string", cli: { flag: "answer", description: "accept | send-back | land-anyway" } },
+  { wire: "text", type: "string", tool: { name: "text", description: "merge.review: the reviewer's notes, short." }, cli: { flag: "text", description: "Text" } },
   { wire: "overrideTests", type: "string", cli: { flag: "override-tests", description: "Why the tests are overridden" } },
   { wire: "overrideDirty", type: "string", cli: { flag: "override-dirty", description: "Why a dirty tree is overridden" } },
   { wire: "confirm", type: "boolean", cli: { flag: "confirm", description: "The operator's confirm" } },
@@ -85,9 +107,10 @@ export const VERB_PARAMS: readonly VerbParam[] = [
 ];
 
 /** The flags each kind of verb takes on the command line, in the order they are listed there. */
-export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy: readonly string[] } = {
+export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy: readonly string[]; readonly merge: readonly string[] } = {
   instance: ["project", "instance", "checkout", "branch", "from", "slot", "services", "restart", "lines", "keep-data", "resources", "ref", "select", "endpoint", "days", "link", "confirm"],
   deploy: ["project", "target", "commit", "ref", "plan", "deploy", "why", "lines", "override-tests", "override-dirty", "confirm", "dismiss"],
+  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text"],
 };
 
 export const ERROR_CODES = [
@@ -1215,6 +1238,8 @@ export interface VerbResult {
   conform?: ConformReport;
   tests?: TestsReport;
   deploy?: DeployReport;
+  /** The merge verbs' answer (shared/merge-queue.ts). */
+  merge?: import("./merge-queue").MergeReport;
   error?: VerbError;
   defHash: string | null;
   at: string;
@@ -1244,6 +1269,7 @@ export function ordered(r: VerbResult): VerbResult {
     ...(r.conform !== undefined ? { conform: r.conform } : {}),
     ...(r.tests !== undefined ? { tests: r.tests } : {}),
     ...(r.deploy !== undefined ? { deploy: r.deploy } : {}),
+    ...(r.merge !== undefined ? { merge: r.merge } : {}),
     ...(r.error !== undefined ? { error: r.error } : {}),
     defHash: r.defHash,
     at: r.at,
@@ -1258,7 +1284,7 @@ export function isVerbResult(v: unknown): v is VerbResult {
   const want = ["v", "verb", "project", "instance", "slot", "generation", "checkout", "branch", "ok", "changed", "state", "steps", "services", "data", "links"];
   if (keys.slice(0, want.length).join() !== want.join()) return false;
   const tail = keys.slice(want.length);
-  const optional = ["instances", "lines", "checks", "conform", "tests", "deploy", "error"];
+  const optional = ["instances", "lines", "checks", "conform", "tests", "deploy", "merge", "error"];
   const fixedTail = ["defHash", "at"];
   if (tail.slice(-2).join() !== fixedTail.join()) return false;
   const mid = tail.slice(0, -2);

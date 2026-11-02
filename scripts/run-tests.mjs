@@ -82,6 +82,7 @@ const isIntegration = (f) => f.endsWith(INTEGRATION_SUFFIX);
 const GLOBS = [
   "shared/*.test.ts",
   "scripts/*.test.ts",
+  "scripts/merge-checks/*.test.ts",
   "server/*.test.ts",
   "server/project-services/*.test.ts",
   "server/tours/*.test.ts",

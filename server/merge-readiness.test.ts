@@ -417,6 +417,35 @@ test("the follow-up check: once per card, only with attention on and a fresh rep
   assert.equal(followUpFor("01a0e82a", "card1"), undefined, "a session no longer listed loses its answers");
 });
 
+test("a branch the merge queue landed: the follow-up check reads the chat's last reply before Land, once, keyed mq:<card>", async () => {
+  const settings = { jev: { enabled: true }, fallback: null, features: { attention: true, tags: false }, exclusions: [], neverSendTui: false } as never;
+  const fake = createFakeProvider({ reply: { follow_up: { p: 0.9 }, follow_up_weight: { probabilities: [0.05, 0.15, 0.8] } } });
+  const now = Date.now();
+  const file = join(agentDir, "mq-followups.json");
+  const f = new MergeFollowUps({ provider: () => fake, settings: () => settings, now: () => now, file: () => file });
+  // The facts keep the newest replies that ended a turn, at most REPLIES_KEPT.
+  const entries = Array.from({ length: r.REPLIES_KEPT + 5 }, (_, i) => ({ type: "message", id: `a${i}`, at: now - 3_600_000 + i * 60_000, reply: { stop: true, text: `reply ${i}${i === 30 ? "\nNot verified: the phone layout." : ""}` } }));
+  const facts = r.factsOf(entries as never);
+  assert.equal(facts.replies?.length, r.REPLIES_KEPT);
+  assert.equal(facts.replies?.[0]?.id, "a5");
+  const approvedAt = now - 3_600_000 + 30 * 60_000 + 1000;
+  assert.equal(r.replyBefore(facts.replies, approvedAt)?.id, "a30", "the reply the chat ended on before Land");
+  assert.equal(r.replyBefore(facts.replies, now - 7_200_000), undefined);
+  r.configureReadiness({ followUps: f, queueLandings: (id) => (id === "s-mq" ? [{ id: "mq_1", at: now - 60_000, approvedAt, branch: "feat/x", target: "master", commits: 3, added: 10, removed: 2 }] : []) });
+  try {
+    const s = { id: "s-mq", path: join(agentDir, "s-mq.jsonl"), cwd: "/w/feat-x", live: null } as unknown as SessionSummary;
+    assert.equal(await r.checkFollowUps(s, facts, undefined), true);
+    assert.equal(fake.calls.length, 1);
+    const state = fake.calls[0]!.state as { reply: string; merge: { branch: string; commits: number } };
+    assert.match(state.reply, /reply 30\nNot verified: the phone layout\./);
+    assert.deepEqual([state.merge.branch, state.merge.commits], ["feat/x", 3]);
+    assert.equal(f.record("s-mq", "mq:mq_1")?.replyId, "a30");
+    assert.equal(await r.checkFollowUps(s, facts, undefined), false, "once");
+  } finally {
+    r.resetReadiness();
+  }
+});
+
 test("a file that shrank since its size was read ends the search, never spins", async () => {
   const path = sessionFile(chain([user("hi", "2026-09-29T15:35:00.000Z")]));
   const size = (await import("node:fs")).statSync(path).size;

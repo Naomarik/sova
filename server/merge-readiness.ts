@@ -302,6 +302,33 @@ export interface FileFacts {
   lastCheck?: { at: number; ok: boolean };
   /** The branch's last word is this reply (no user prompt after it). */
   lastReply?: { id: string; at: number; text: string };
+  /** The newest replies that ended a turn, oldest first (at most REPLIES_KEPT): a queue landing's follow-up check
+      reads the one before its Land. */
+  replies?: { id: string; at: number; text: string }[];
+}
+
+/** Replies kept per branch for the queue landings' follow-up check. */
+export const REPLIES_KEPT = 30;
+
+/** A branch the merge queue landed for a chat (its Landed card), as the follow-up check reads it. */
+export interface QueueLandingFacts {
+  /** The card's id: the follow-up record's key is `mq:<id>`. */
+  id: string;
+  /** When it landed and when the user approved it (Land, or a typed "land it"), ms. */
+  at: number;
+  approvedAt: number;
+  branch: string;
+  target: string;
+  commits: number;
+  added: number;
+  removed: number;
+}
+
+/** The chat's last reply that ended a turn at or before `t` (a queue landing reads the one before its Land). */
+export function replyBefore(replies: readonly { id: string; at: number; text: string }[] | undefined, t: number): { id: string; at: number; text: string } | undefined {
+  let out: { id: string; at: number; text: string } | undefined;
+  for (const r of replies ?? []) if (r.at <= t) out = r;
+  return out;
 }
 
 /** One session entry, only as far as readiness needs it. */
@@ -391,17 +418,20 @@ export function factsOf(branch: readonly ScanEntry[]): FileFacts {
   const merges: MergeCard[] = [];
   let lastCheck: FileFacts["lastCheck"];
   let lastReply: FileFacts["lastReply"];
+  const replies: NonNullable<FileFacts["replies"]> = [];
   for (const e of branch) {
     if (e.merge && e.id) merges.push({ ...e.merge, id: e.id, at: e.at ?? 0 });
     if (e.reply?.stop && e.id) {
       const reply = { id: e.id, at: e.at ?? 0, text: e.reply.text };
       lastReply = reply;
+      replies.push(reply);
+      if (replies.length > REPLIES_KEPT) replies.shift();
       for (const c of merges) c.reply ??= reply;
     }
     if (e.userPrompt) lastReply = undefined;
     if (e.check) lastCheck = { at: e.at ?? 0, ok: e.check.ok };
   }
-  return { trees: set?.trees ?? [], merges, ...(lastCheck ? { lastCheck } : {}), ...(lastReply ? { lastReply } : {}) };
+  return { trees: set?.trees ?? [], merges, ...(lastCheck ? { lastCheck } : {}), ...(lastReply ? { lastReply } : {}), ...(replies.length ? { replies } : {}) };
 }
 
 /** How far a file's read got (the marker search, then its compact entries). */
@@ -503,9 +533,27 @@ export interface ReadinessDeps {
   landing: LandingStore;
   /** Sova's message to a session (the specs nudge); absent: never sent. */
   nudge?: (sessionPath: string, text: string) => Promise<void>;
+  /** The branches the merge queue landed for a chat (its Landed cards), by session id. */
+  queueLandings?: (sessionId: string) => QueueLandingFacts[];
   /** Whether a tree's project lands through the merge queue: its `.sova/project.json` declares a `merge` section
       (§chat.worktrees/ready-to-land, what still blocks the landing). */
   landingOffered?: (dir: string) => Promise<boolean>;
+}
+
+let wireMod: typeof import("./merge-queue/wire") | null = null;
+let wireAsked = false;
+/** The queue's Landed cards of a chat, as the follow-up check reads them; [] until the queue's module is loaded. */
+function queueLandingsHere(sessionId: string): QueueLandingFacts[] {
+  if (!wireMod && !wireAsked) {
+    wireAsked = true;
+    void import("./merge-queue/wire").then((m) => (wireMod = m)).catch(() => {});
+  }
+  return (wireMod?.mergeCardsOf(sessionId) ?? []).flatMap((c) => {
+    if (!c.landed) return [];
+    const approved = [...c.revisions].reverse().find((r) => r.kind === "approved");
+    const at = Date.parse(c.landed.at) || 0;
+    return [{ id: c.id, at, approvedAt: approved ? Date.parse(approved.at) || at : at, branch: c.branch, target: c.target, commits: c.stats?.commits ?? 0, added: c.stats?.added ?? 0, removed: c.stats?.removed ?? 0 }];
+  });
 }
 
 const defaultDeps = (): ReadinessDeps => ({
@@ -524,6 +572,7 @@ const defaultDeps = (): ReadinessDeps => ({
   docsPreview: previewDocs,
   landing: fileLandingStore(),
   nudge: async (path, text) => (await import("./session-offers")).sendToSession(path, text),
+  queueLandings: (sessionId) => queueLandingsHere(sessionId),
   landingOffered: async (dir) => {
     const { projectRootOf } = await import("./project-root");
     const root = await projectRootOf(dir).catch(() => null);
@@ -709,7 +758,9 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
     pushed = await mergePushed(newest, cwd).catch(() => undefined);
     pushPending = pushed === false;
   }
-  const followUp = newest ? followUpFor(s.id, newest.id) : undefined;
+  // The newest merge, a card of the chat's own or a branch the queue landed for it: its follow-up check's answer.
+  const queued = (deps.queueLandings?.(s.id) ?? []).at(-1);
+  const followUp = queued && (!newest || queued.at > newest.at) ? followUpFor(s.id, `mq:${queued.id}`) : newest ? followUpFor(s.id, newest.id) : undefined;
   const lastReplyAt = reply?.at ?? (Date.parse(s.lastActiveAt) || 0);
   if (publishChecks()) {
     checksBySession.set(s.path, { ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}), heads });
@@ -730,7 +781,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
 }
 
 /** Ask the follow-up check for every merge card with a reply it hasn't answered. */
-async function checkFollowUps(s: SessionSummary, facts: FileFacts, r: SessionReadiness | undefined): Promise<boolean> {
+export async function checkFollowUps(s: SessionSummary, facts: FileFacts, r: SessionReadiness | undefined): Promise<boolean> {
   const f = deps.followUps;
   if (!f) return false;
   let stored = false;
@@ -745,6 +796,23 @@ async function checkFollowUps(s: SessionSummary, facts: FileFacts, r: SessionRea
       reply: c.reply,
       routine: { restart_pending: !!r?.restartPending, push_pending: !!r?.pushPending, cleanup: r?.cleanup ?? 0 },
       // The merge thread's reply after a merge is about the queue's branches; an Overseer's isn't the work's.
+      ...(isMergeThread(s) ? { skip: "merge-thread" as const } : s.overseer || s.projectOverseer ? { skip: "overseer" as const } : {}),
+    };
+    if (f.skipReason(input) !== null) continue;
+    if (await f.check(input)) stored = true;
+  }
+  // A branch the merge queue landed: the reply the chat ended on before the user pressed Land (or typed "land it").
+  for (const q of deps.queueLandings?.(s.id) ?? []) {
+    const reply = replyBefore(facts.replies, q.approvedAt);
+    if (!reply) continue;
+    const input: FollowUpInput = {
+      sessionId: s.id,
+      cardId: `mq:${q.id}`,
+      cwd: s.cwd,
+      terminal: deps.terminal?.(s) ?? !!s.live,
+      card: { branch: q.branch, target: q.target, commits: q.commits, added: q.added, removed: q.removed },
+      reply,
+      routine: { restart_pending: !!r?.restartPending, push_pending: !!r?.pushPending, cleanup: r?.cleanup ?? 0 },
       ...(isMergeThread(s) ? { skip: "merge-thread" as const } : s.overseer || s.projectOverseer ? { skip: "overseer" as const } : {}),
     };
     if (f.skipReason(input) !== null) continue;

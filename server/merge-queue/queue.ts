@@ -36,6 +36,8 @@ import { buildView } from "./view";
  */
 
 /** The push hold while a project has no private names file (operator decision: exactly these words). */
+/** heads.pushWhy while the checks' setup commit waits for the next landing's push. */
+export const PUSH_WAITS_NEXT_LANDING = "not pushed yet: goes out with the next landing";
 export const PUSH_HELD_NAMES = "push held: private names not set up yet";
 
 export class MergeFailure extends Error {
@@ -804,6 +806,15 @@ export class ProjectQueue {
         this.q.landed.push(commit);
         this.q.knownTarget = commit;
         this.checksCache = null;
+        // The setup commit isn't pushed on its own: it goes out with the next landing. The view says so meanwhile,
+        // from the sha origin had (its remote-tracking ref), unless a push is already held for its own reason.
+        if ((await this.git(["remote"], this.root)).stdout.split("\n").includes("origin")) {
+          if (!this.q.heads.pushed) {
+            const remote = await revParse(this.git, this.root, `refs/remotes/origin/${this.q.target}`);
+            if (remote) this.q.heads.pushed = remote;
+          }
+          if (!this.q.heads.pushWhy) this.q.heads.pushWhy = PUSH_WAITS_NEXT_LANDING;
+        }
         this.save();
         this.kickSoon();
         return { commit };

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { draftsHash } from "../spec-drafts-state";
-import { MergeFailure, PUSH_HELD_NAMES } from "./queue";
+import { MergeFailure, PUSH_HELD_NAMES, PUSH_WAITS_NEXT_LANDING } from "./queue";
 import { DEF, makeKit, makeRepo, sh, until, untilAborted } from "./testing/queue-kit";
 
 /** Landed, and its push answered (pushed or not). */
@@ -1026,6 +1026,34 @@ describe("setting up the checks", () => {
       k.repo.branch("feat/a", { "b.txt": "b\n" });
       assert.ok(q.file.landed.includes(r.commit!));
       assert.equal(q.isPaused(), false);
+    } finally {
+      await k.done();
+    }
+  });
+});
+
+describe("the setup commit's push", () => {
+  test("Save Checks isn't pushed on its own: the view shows the pushed sha and why, until the next landing pushes both", async () => {
+    let saved = false;
+    const k = makeKit({ deps: { checksOf: () => (saved ? "none" : "unset") } });
+    try {
+      const pushedBefore = k.repo.head();
+      const q = await k.q();
+      const r = await q.setup({ none: true });
+      saved = true;
+      let v = await q.view();
+      assert.equal(v.heads.target, r.commit);
+      assert.equal(v.heads.pushed, pushedBefore, "origin's sha, from its tracking ref");
+      assert.equal(v.heads.pushWhy, PUSH_WAITS_NEXT_LANDING);
+      assert.equal(sh(k.repo.origin, "rev-parse", "master"), pushedBefore, "nothing pushed yet");
+      k.repo.branch("feat/after", { "after.txt": "x\n" });
+      const { entry } = await q.add({ branch: "feat/after", by: "land-button" });
+      await landed(k, entry.id);
+      v = await q.view();
+      assert.equal(v.heads.pushWhy, undefined);
+      assert.equal(v.heads.pushed, v.heads.target);
+      assert.equal(sh(k.repo.origin, "rev-parse", "master"), v.heads.target, "the setup commit went out with the landing");
+      sh(k.repo.origin, "merge-base", "--is-ancestor", r.commit!, "master");
     } finally {
       await k.done();
     }

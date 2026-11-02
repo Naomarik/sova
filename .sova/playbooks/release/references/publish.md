@@ -27,9 +27,13 @@ Step 5, and only after the user's explicit word to publish (PLAYBOOK.md step 4).
 ## The GitHub release page
 The notes are the release's `CHANGELOG.md` entry, without its heading:
 ```sh
-awk '/^## vX\.Y\.Z /{f=1; next} /^## /{f=0} f' CHANGELOG.md > ~/.cache/sova-release-notes-vX.Y.Z.md
-gh release create vX.Y.Z --verify-tag --title "Sova vX.Y.Z" --notes-file ~/.cache/sova-release-notes-vX.Y.Z.md --latest
+notes="${TMPDIR:-/tmp}/sova-release-notes-vX.Y.Z.md"
+awk '/^## vX\.Y\.Z /{f=1; next} /^## /{f=0} f' CHANGELOG.md > "$notes"
+gh release create vX.Y.Z --verify-tag --title "Sova vX.Y.Z" --notes-file "$notes" --latest
+rm "$notes"
 ```
+The notes file is throwaway, so it goes in the temp dir, never `~/.cache` (inside the sandbox that is a
+private copy nobody else sees).
 `--verify-tag` refuses if the tag isn't on GitHub. Check it: `gh release view vX.Y.Z` shows it as Latest.
 
 ## The site

@@ -23,7 +23,7 @@ export const CONTRACT_FILE = ".sova/project.json";
 // ---- canonical key order (references/contract.md; pinned against the parser by tests/) ----------
 
 export const ORDER = {
-  top: ["version", "slots", "host", "sources", "setup", "data", "services", "open", "hooks", "test", "share", "deploy"],
+  top: ["version", "slots", "host", "sources", "setup", "data", "services", "open", "hooks", "test", "share", "deploy", "merge"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
   data: ["kind", "path", "from", "provision", "deprovision", "timeout", "sensitive"],
@@ -45,6 +45,9 @@ export const ORDER = {
   rollback: ["steps", "none"],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
+  merge: ["target", "push", "checks", "install", "review"],
+  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires"],
+  mergeInstall: ["run", "inputs", "timeout"],
 };
 /** Maps whose keys are names in declaration order, kept as written. */
 const NAMED_MAPS = new Set(["data", "services", "ports", "env", "targets"]);
@@ -85,6 +88,11 @@ export function canonical(def) {
   if (isObj(d.test)) d.test = sortKeys(d.test, ORDER.test);
   if (isObj(d.share)) d.share = sortKeys(d.share, ORDER.share);
   if (isObj(d.open)) d.open = sortKeys(d.open, ORDER.open);
+  if (isObj(d.merge)) {
+    d.merge = sortKeys(d.merge, ORDER.merge);
+    if (Array.isArray(d.merge.checks)) d.merge.checks = d.merge.checks.map((c) => (isObj(c) ? sortKeys(c, ORDER.mergeCheck) : c));
+    if (isObj(d.merge.install)) d.merge.install = sortKeys(d.merge.install, ORDER.mergeInstall);
+  }
   if (isObj(d.deploy)) {
     d.deploy = sortKeys(d.deploy, ORDER.deploy);
     const steps = (v) => (Array.isArray(v) ? v.map((x) => (isObj(x) ? sortKeys(x, ORDER.deployStep) : x)) : v);

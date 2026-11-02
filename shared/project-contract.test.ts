@@ -335,3 +335,69 @@ test("open: a checkout service's declared port and a path from / (default /), ke
   assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web.http", url: "/" } }), "$.open.url");
   assert.ok(DEFINITION_KEYS.top.includes("open"));
 });
+
+test("merge: target, push, checks (a list or \"none\"), install and review, parsed strictly, outside the hash", async () => {
+  const { defHashOf } = await import("../server/project-services/def-hash");
+  const services = { web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } } };
+  const plain = parse({ version: 1, services });
+  assert.equal(plain.merge, undefined);
+  const full = parse({
+    version: 1,
+    services,
+    merge: {
+      target: "main",
+      push: false,
+      checks: [
+        { id: "unit", label: "Unit tests", run: ["node", "t.mjs", "--base", "${merge.base}"], rerun: true, timeout: 900 },
+        { id: "e2e", run: ["node", "e2e.mjs", "${ports.web.http}"], requires: ["web"] },
+      ],
+      install: { run: ["pnpm", "install", "--offline"], inputs: ["pnpm-lock.yaml"] },
+      review: ".sova/playbooks/review",
+    },
+  });
+  assert.deepEqual(full.merge, {
+    target: "main",
+    push: false,
+    checks: [
+      { id: "unit", label: "Unit tests", run: ["node", "t.mjs", "--base", "${merge.base}"], timeout: 900, rerun: true, requires: [] },
+      { id: "e2e", label: "e2e", run: ["node", "e2e.mjs", "${ports.web.http}"], timeout: 600, rerun: false, requires: ["web"] },
+    ],
+    install: { run: ["pnpm", "install", "--offline"], inputs: ["pnpm-lock.yaml"], timeout: 120 },
+    review: ".sova/playbooks/review",
+  });
+  // What the queue runs never changes what an instance runs: the conformance hash ignores it.
+  assert.equal(defHashOf(full), defHashOf(plain));
+  assert.deepEqual(parse({ version: 1, services, merge: { checks: "none" } }).merge, { checks: "none" });
+  assert.deepEqual(parse({ version: 1, services, merge: {} }).merge, {});
+  const m = (merge: unknown) => refusedAt({ version: 1, services, merge });
+  assert.equal(m("x"), "$.merge");
+  assert.equal(m({ queue: 1 }), "$.merge.queue");
+  assert.equal(m({ target: "a..b" }), "$.merge.target");
+  assert.equal(m({ target: "-x" }), "$.merge.target");
+  assert.equal(m({ push: "yes" }), "$.merge.push");
+  assert.equal(m({ checks: [] }), "$.merge.checks");
+  assert.equal(m({ checks: "all" }), "$.merge.checks");
+  assert.equal(m({ checks: [{ id: "a", run: "pnpm test" }] }), "$.merge.checks[0].run");
+  assert.equal(m({ checks: [{ id: "A", run: ["x"] }] }), "$.merge.checks[0].id");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"] }, { id: "a", run: ["y"] }] }), "$.merge.checks");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], when: ["x/**"] }] }), "$.merge.checks[0].when");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], requires: ["db"] }] }), "$.merge.checks[0].requires");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], rerun: 1 }] }), "$.merge.checks[0].rerun");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], label: "" }] }), "$.merge.checks[0].label");
+  assert.equal(m({ checks: [{ id: "a", run: ["x", "${merge.nope}"] }] }), "$.merge.checks[0].run[1]");
+  assert.equal(m({ install: { run: ["x"] } }), "$.merge.install.inputs");
+  assert.equal(m({ install: { run: ["x", "${merge.base}"], inputs: ["l"] } }), "$.merge.install.run[1]");
+  assert.equal(m({ review: "/abs" }), "$.merge.review");
+  assert.equal(m({ review: "../out" }), "$.merge.review");
+  for (const k of ["target", "push", "checks", "install", "review"]) assert.ok(DEFINITION_KEYS.merge.includes(k as never));
+});
+
+test("Sova's own definition declares its merge checks", async () => {
+  const { readFileSync } = await import("node:fs");
+  const def = parseDefinition(readFileSync(new URL("../.sova/project.json", import.meta.url), "utf8"));
+  const checks = def.merge?.checks;
+  assert.ok(Array.isArray(checks));
+  assert.deepEqual(checks.map((c) => c.id), ["typecheck", "unit", "integration", "extensions", "spec-replay", "statecharts", "build", "spec", "leak-scan"]);
+  assert.equal(def.merge?.target, "master");
+  assert.equal(def.merge?.install?.inputs.includes("pnpm-lock.yaml"), true);
+});

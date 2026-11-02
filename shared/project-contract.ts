@@ -251,6 +251,31 @@ export interface ProjectDef {
   deploy?: DeployDecl;
   /** The checkout files the definition was written from; their change at HEAD is drift. Outside the hash. */
   sources?: string[];
+  /** How the merge queue lands branches (§app.merge-queue/checks): outside the definition's hash. */
+  merge?: MergeDecl;
+}
+
+/** One check the merge queue runs on a merged commit, in declaration order. `run` may use the definition's template
+ *  variables and `${merge.base}`, `${merge.tip}`, `${merge.target}`. `rerun`: its failures name test files, and
+ *  `run` + those files reruns only them (attribution). `requires`: services brought up in the merge copy first. */
+export interface MergeCheckDecl {
+  id: string;
+  label: string;
+  run: Argv;
+  timeout: number;
+  rerun: boolean;
+  requires: string[];
+}
+/** The definition's `merge` section. `checks`: the required set, `"none"` (declared: no automated tests), or absent
+ *  (the queue falls back to `test.run`, else the project isn't set up). `target`: the branch it lands on (absent: the
+ *  main checkout's). `push`: absent means push when an `origin` remote exists. `install`: run in the merge copy when
+ *  a merged branch changes one of its `inputs` (an offline install). `review`: the review kit's folder. */
+export interface MergeDecl {
+  target?: string;
+  push?: boolean;
+  checks?: MergeCheckDecl[] | "none";
+  install?: { run: Argv; inputs: string[]; timeout: number };
+  review?: string;
 }
 
 /** The endpoints a copy may share (`"<service>.<port>"`, checkout services only; none when absent), at most `maxDays` per link, and whether at all. */
@@ -367,7 +392,7 @@ const isObj = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.i
 
 /** Every key the declaration accepts, by where it sits (the parse refuses any other; the playbook's reference is pinned to these). */
 export const DEFINITION_KEYS = {
-  top: ["version", "slots", "host", "setup", "data", "services", "open", "hooks", "test", "share", "deploy", "sources"],
+  top: ["version", "slots", "host", "setup", "data", "services", "open", "hooks", "test", "share", "deploy", "sources", "merge"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
   service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation", "adopt", "onMerge"],
@@ -391,6 +416,9 @@ export const DEFINITION_KEYS = {
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
+  merge: ["target", "push", "checks", "install", "review"],
+  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires"],
+  mergeInstall: ["run", "inputs", "timeout"],
 } as const;
 const K = DEFINITION_KEYS;
 
@@ -789,6 +817,49 @@ function* deployTemplates(d: DeployDecl): Generator<[string, string]> {
 }
 
 /** Parse `.sova/project.json`'s text. Throws DefinitionError naming the first problem's path. */
+/** The variables a merge check's `run` may use beside the definition's own. */
+export const MERGE_VARS = ["merge.base", "merge.tip", "merge.target"] as const;
+
+function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
+  const o = obj(v, "$.merge");
+  keysOnly(o, K.merge, "$.merge");
+  const out: MergeDecl = {};
+  if (o.target !== undefined) {
+    if (typeof o.target !== "string" || !BRANCH.test(o.target) || o.target.includes("..") || o.target.endsWith(".lock") || o.target.endsWith("/")) throw new DefinitionError("$.merge.target", "must be a branch name");
+    out.target = o.target;
+  }
+  if (o.push !== undefined) {
+    if (typeof o.push !== "boolean") throw new DefinitionError("$.merge.push", "must be true or false");
+    out.push = o.push;
+  }
+  if (o.checks === "none") out.checks = "none";
+  else if (o.checks !== undefined) {
+    if (!Array.isArray(o.checks) || !o.checks.length) throw new DefinitionError("$.merge.checks", 'must be a non-empty list of checks, or "none" (no automated tests)');
+    if (o.checks.length > 30) throw new DefinitionError("$.merge.checks", "at most 30 checks");
+    out.checks = o.checks.map((c, i) => {
+      const path = `$.merge.checks[${i}]`;
+      const x = obj(c, path);
+      keysOnly(x, K.mergeCheck, path);
+      const id = name(typeof x.id === "string" ? x.id : "", `${path}.id`);
+      if (x.label !== undefined && (typeof x.label !== "string" || !x.label.trim() || x.label.length > 60)) throw new DefinitionError(`${path}.label`, "must be a short label (1 to 60 characters)");
+      if (x.rerun !== undefined && typeof x.rerun !== "boolean") throw new DefinitionError(`${path}.rerun`, "must be true or false");
+      const requires = strList(x.requires, `${path}.requires`);
+      for (const r of requires) if (!services.some((s) => s.name === r)) throw new DefinitionError(`${path}.requires`, `names no service "${r}"`);
+      return { id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires };
+    });
+    if (new Set(out.checks.map((c) => c.id)).size !== out.checks.length) throw new DefinitionError("$.merge.checks", "check ids must be unique");
+  }
+  if (o.install !== undefined) {
+    const x = obj(o.install, "$.merge.install");
+    keysOnly(x, K.mergeInstall, "$.merge.install");
+    const inputs = strList(x.inputs, "$.merge.install.inputs").map((p, i) => relPath(p, `$.merge.install.inputs[${i}]`, true));
+    if (!inputs.length) throw new DefinitionError("$.merge.install.inputs", "name the files whose change needs the install (a lockfile)");
+    out.install = { run: argv(x.run, "$.merge.install.run"), inputs, timeout: timeout(x.timeout, "$.merge.install.timeout", HOOK_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX) };
+  }
+  if (o.review !== undefined) out.review = relPath(o.review, "$.merge.review", true);
+  return out;
+}
+
 export function parseDefinition(text: string): ProjectDef {
   let raw: unknown;
   try {
@@ -854,6 +925,7 @@ export function parseDefinition(text: string): ProjectDef {
     ...(o.open !== undefined ? { open: openDecl(o.open, services) } : {}),
     ...(o.deploy !== undefined ? { deploy: deployDecl(o.deploy, test) } : {}),
     ...(sources ? { sources } : {}),
+    ...(o.merge !== undefined ? { merge: mergeDecl(o.merge, services) } : {}),
   };
   // requires: known, scope-consistent, acyclic.
   const byName = new Map(services.map((s) => [s.name, s]));
@@ -896,6 +968,18 @@ export function parseDefinition(text: string): ProjectDef {
   for (const [t, where] of templates(def)) {
     const bad = unknownVars(t, vars);
     if (bad) throw new DefinitionError(`$.${where}`, bad);
+  }
+  if (def.merge) {
+    const mv = new Set([...vars, ...MERGE_VARS]);
+    for (const [i, c] of (Array.isArray(def.merge.checks) ? def.merge.checks : []).entries())
+      for (const [j, a] of c.run.entries()) {
+        const bad = unknownVars(a, mv);
+        if (bad) throw new DefinitionError(`$.merge.checks[${i}].run[${j}]`, bad);
+      }
+    for (const [j, a] of (def.merge.install?.run ?? []).entries()) {
+      const bad = unknownVars(a, vars);
+      if (bad) throw new DefinitionError(`$.merge.install.run[${j}]`, bad);
+    }
   }
   if (def.deploy) {
     const dv = deployVars(def);

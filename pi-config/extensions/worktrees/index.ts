@@ -24,7 +24,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { createWorktree, defaultTarget, forkPoint, GitError, type Git, inspectWorktree, landedStats, mergeWorktree, type MergeProbe, probeMerge, runGit } from "./git.ts";
 import { landingFile, newestUserMessage, recordGoAhead, typedGoAhead } from "./landing.ts";
-import { type MergeSpecReport, mergeSpecReport, specLines } from "./spec.ts";
+import { carryAgreedDrafts, landDocs, type MergeSpecReport, mergeSpecReport, specLines } from "./spec.ts";
 import {
 	activeTrees,
 	canonical,
@@ -60,6 +60,10 @@ export interface WorktreesOptions {
 	now?: () => number;
 	/** The spec report of a merge (default spec.ts `mergeSpecReport`). */
 	specReport?: typeof mergeSpecReport;
+	/** The docs step before a merge (default spec.ts `landDocs`). */
+	docs?: typeof landDocs;
+	/** The agreed drafts a new worktree takes from the main checkout (default spec.ts `carryAgreedDrafts`). */
+	carry?: typeof carryAgreedDrafts;
 	/** Where `land` records the go-ahead (default landing.ts `landingFile()`). */
 	landingFile?: () => string;
 }
@@ -68,6 +72,8 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 	const git = options.git ?? runGit;
 	const now = options.now ?? Date.now;
 	const specReport = options.specReport ?? mergeSpecReport;
+	const docsOf = options.docs ?? landDocs;
+	const carryOf = options.carry ?? carryAgreedDrafts;
 	const goAheadFile = options.landingFile ?? (() => landingFile());
 	let set: WorktreesActive | undefined;
 	let sessionId = "";
@@ -220,6 +226,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 				base: Type.Optional(Type.String({ description: "create: commit or branch to base on (default the session cwd's HEAD)." })),
 				path: Type.Optional(Type.String({ description: "create: where to put it; attach, detach, merge, land: the worktree (its path, or its branch name; land defaults to the worktree this session's folder is in)." })),
 				target: Type.Optional(Type.String({ description: "merge: the branch to merge into (default master)." })),
+				withoutDocs: Type.Optional(Type.Boolean({ description: "merge: leave the branch's spec drafts behind instead of making them official before the merge. Pass it only when the user says to." })),
 			},
 			{ additionalProperties: false },
 		),
@@ -236,10 +243,12 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						if (!params.name) throw new Error("create needs a name.");
 						await approve(ctx, "Create a worktree?", `Create worktree feat/${params.name}${params.path ? ` at ${params.path}` : ""}${params.base ? ` from ${params.base}` : ""} for this session.`);
 						const f = await createWorktree(git, { repoCwd: ctx.cwd, name: params.name, ...(params.base ? { base: params.base } : {}), ...(params.path ? { path: expand(params.path, ctx.cwd) } : {}) });
+						// Decisions agreed in the main checkout ride with the new branch, to become official when it lands.
+						const carried = await carryOf(git, { from: ctx.cwd, to: f.path }).catch(() => [] as string[]);
 						const tree: TrackedWorktree = { path: f.path, branch: f.branch, base: f.base, ...(f.baseBranch ? { baseBranch: f.baseBranch } : {}), status: "active", session: sessionId, how: "created", at: now() };
 						record(withTree(set, tree));
 						await watchFromNow(tree);
-						return done(`Created ${f.path} on ${f.branch} from ${shortSha(f.base)}${f.baseBranch ? ` (${f.baseBranch})` : ""}.\n${listing()}`);
+						return done(`Created ${f.path} on ${f.branch} from ${shortSha(f.base)}${f.baseBranch ? ` (${f.baseBranch})` : ""}.${carried.length ? `\nCopied the main checkout's agreed spec draft${carried.length === 1 ? "" : "s"} into it, to land with this branch: ${carried.join(", ")}.` : ""}\n${listing()}`);
 					}
 					case "attach": {
 						if (!params.path) throw new Error("attach needs a path.");
@@ -295,12 +304,16 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						if (t.status !== "active") throw new Error(`${t.path} is ${statusText(t)}; only an active worktree is merged.`);
 						const target = params.target ?? (await defaultTarget(git, t.path)) ?? "master";
 						await approve(ctx, "Merge a worktree?", `Merge ${t.branch} (${t.path}) into ${target}.`);
+						// Its spec drafts become official on the branch first, one docs commit; drafts that don't fit stop the merge.
+						const docs = params.withoutDocs ? undefined : await docsOf(git, { path: t.path, branch: t.branch, target });
+						if (docs?.state === "refused") throw new Error(docs.text);
 						const { before, branchSha, ...m } = await mergeWorktree(git, { tree: t, target });
 						markMerged(t, { target: m.target, sha: m.sha, how: "tool" });
 						const spec = await reportOf(t.path, t.branch, before, m.sha, branchSha, target);
 						card({ ...m, how: "tool" });
 						const specText = spec ? specLines(spec, said).map((l) => `\n${l}`).join("") : "";
-						return done(`${mergeNote(m)} (${m.fastForward ? "fast-forward" : "merge commit"}).${specText}\n${listing()}`, { merge: m, trees: set?.trees ?? [], ...(spec ? { spec } : {}) });
+						const docsText = docs?.state === "landed" ? `\nIts spec drafts were made official first, as one docs commit ${shortSha(docs.sha)} (${docs.counts.added} new, ${docs.counts.changed} changed${docs.counts.removed ? `, ${docs.counts.removed} removed` : ""}: ${docs.drafts.join(", ")}).` : "";
+						return done(`${mergeNote(m)} (${m.fastForward ? "fast-forward" : "merge commit"}).${docsText}${specText}\n${listing()}`, { merge: m, trees: set?.trees ?? [], ...(spec ? { spec } : {}), ...(docs && docs.state !== "none" ? { docs } : {}) });
 					}
 				}
 			} catch (e) {

@@ -93,7 +93,7 @@ after each landing, since every other branch is then checked against the new mas
   the check and lands once the check passes, without waiting for Ready to land or a card,
   whatever the board reads and whoever owns it, with no confirmation from its owner needed. The
   check still holds it for
-  anything it finds, spec drafts that aren't official included, unless the user said to land it
+  anything it finds, spec drafts that don't fit included, unless the user said to land it
   without its specs (`go <branch> without-specs`, as Merge Without Specs… does). The user's word
   typed in the branch's own chat ("land it", "merge it") is the same go-ahead: that chat's agent
   records it (`worktree land`, §chat.worktrees/tool, kept with the Land Its,
@@ -118,22 +118,22 @@ after each landing, since every other branch is then checked against the new mas
   back to the owner, and the captain parks them outside the repo only with the owner's OK and
   restores them byte for byte; a symlinked `node_modules` is environment, which it may rebuild and
   report.
-- **Specs land with the code.** A branch's spec drafts are its owner's to promote, on that branch,
-  before it lands: Sova itself tells the owner once per commit (§chat.worktrees/ready-to-land), and
-  the branch reads Landing specs until they are committed, so nobody asks the user for it and there
-  is never a second, specs-only landing. The captain promotes none. Whether a draft is official is
+- **Specs land with the code.** A branch's spec drafts become official at its landing, on the
+  branch, before it merges: once every check has passed, the check makes all of them official in one
+  step and commits that as one docs entry of its own (§chat.merge-round/driver), so code and docs
+  land in the same merge and there is never a second, specs-only landing. Nobody makes them
+  official any other way: not the owner, and not the captain by hand. Whether a draft is official is
   one rule, the draft tool's (§tools.spec/draft-official), the same Sova's own readiness calls. A
-  check that finds a draft that isn't official hands the branch back to its owner with the drafts
-  named; so does a merge of master into the branch that conflicts in the spec, for the owner to
-  merge master in itself and promote again on top of it. Only the user's **Merge Without Specs…**
-  on the Landing card, or their word to land it without its specs, lands a branch with drafts
-  left, which the landed notice then names for a fresh branch. At landing, once its check passed,
+  check that fails writes nothing about the docs. Drafts that don't fit (a promise that changed on
+  master since, one with no verification note from its chat) or that changed after the user's Land
+  It hold the branch and go back to its owner, as does a merge of master into the branch that
+  conflicts in the spec, for the owner to merge master in itself. Only the user's **Merge Without
+  Specs…** on the Landing card, or their word to land it without its specs, lands a branch with
+  drafts left, which the landed notice then names for a fresh branch. At landing, once its check passed,
   the drafts that are official are tidied out of the worktree, a copy of its drafts kept aside until
   a later landing finds them official in master, so a draft that
   already landed never holds a later landing there. A branch whose
-  owner is gone stays the user's call. Unclaimed files and a failing census still hold nothing:
-  the merge round's spec checks are a safety net under the owner's own promotion, never a gate of
-  their own.
+  owner is gone stays the user's call. Unclaimed files and a failing census still hold nothing.
 - **Clean up.** Once a branch is landed and its owner is done with the worktree, the captain removes its worktree from the main checkout
   with exactly the two commands `landed` prints: `git worktree remove -- <path>`, never `--force`,
   then `git branch -d -- <branch>`. Git's own refusals (uncommitted or untracked files, a lock, a
@@ -236,14 +236,16 @@ shell and under a timeout.
   **A recorded go-ahead** (Land It, the user's word typed in the branch's own chat, or Go on an
   Overseer card's Ready to land row, in `<state root>/landing.json`, §chat.worktrees/landing-answers)
   for the branch at its current head, or at an earlier head when every commit since is a clean merge
-  of master, counts. A clean merge has exactly two parents, the earlier head first and a commit already on
+  of master or the round's own docs entry, counts. A clean merge has exactly two parents, the earlier head first and a commit already on
   master second, and its tree is exactly the one `git merge-tree --write-tree` makes of those two
   (no conflict, nothing edited by hand); the go-ahead carries through up to 20 of them, so the
   check's own merge of master, or master merged in again after it moved, never cancels the user's
   press, while a commit of the branch's own, an edited or resolved merge, or a merge of anything
-  but master needs a new answer. Walking back from the head, the first commit with an answer
+  but master needs a new answer. The round's docs entry (`check`, below) is walked past only by its
+  exact commit, recorded in `landing.json` with its parent: a spec-only commit anyone else made
+  needs a new answer. Walking back from the head, the first commit with an answer
   decides by its newest answer, so a Not Yet there is never walked past. One recorded without specs
-  also lets its check pass with drafts left, naming them.
+  leaves the drafts behind, named, and its check makes none of them official.
   **`go <branch> [without-specs]`** records the user's word in the captain's own chat as their
   go-ahead for the branch at its current head, in the driver's state and in Sova's `landing.json`
   (marked as given in the captain's chat, so the owner's card and the captain's row settle and
@@ -283,12 +285,8 @@ shell and under a timeout.
   line from `pi-config/README.md`'s Tests block, and the build, each in its own process group,
   killed whole at its timeout (the larger of a floor and twice the median of its earlier passing
   runs); then the spec tool's `check`, `census --changed --base master`, and each draft's status,
-  which it prints. A draft not confirmed promoted is a need, `docs not promoted: <draft>, …`: one the
-  draft tool's `drafts` reading calls not official (its `official` verdict, §tools.spec/draft-official),
-  or a reading that fails, the spec tools missing included. The check then prints the hand-back for
-  the owner, naming each such draft with up to four of its § ids, or "status unreadable", to promote
-  and commit on its branch, so it shows Ready to land again; no spec check result, census or
-  unclaimed file is a need. A
+  which it prints (a draft is official by the draft tool's `official` verdict,
+  §tools.spec/draft-official); no spec check result, census or unclaimed file is a need. A
   test file that fails, in either tier (in the integration tier, of the groups it chose), is run
   again on its own in the branch's worktree, through
   the same runner on the same runtime (`scripts/run-tests.mjs --runtime <bun|node> <file>`): one
@@ -310,6 +308,22 @@ shell and under a timeout.
   a need; a tree without the script prints nothing. The verdict, `landable at <sha>` or
   `needs: …`, is recorded against the branch's head and master's sha, with the groups it skipped
   and whether it was a full run.
+  **The docs step** runs last, and only when every check passed (no need at all), a draft in the
+  worktree isn't official and the go-ahead wasn't recorded without specs. In the branch's worktree
+  it runs the draft tool's `land --commit <head> --write` (§tools.spec/land), by the user whose
+  go-ahead counts, with a verification text that names the branch, the head, the go-ahead, only the
+  checks that passed and the round's log folder. It stages exactly the spec files `land` says it
+  wrote and commits them as one commit with the message `land` returns and the trailer
+  `Sova-Spec-Landing: <round id>`, records that commit and its parent in its state and in
+  `landing.json` (§chat.worktrees/landing-answers), and records the verdict at that new head. A Land
+  It recorded with the drafts' hash counts for them only while the drafts read the same: drafts
+  changed since then are a need, `docs changed since Land It: <draft>, …`, and nothing is written.
+  When `land` refuses, nothing is written and the worktree is as it was: the need is `docs don't fit:
+  <§>, …`, and the check prints a hand-back for the owner (fix those promises in its drafts, which
+  needs no commit; the branch shows Ready to land again once they fit). When a check fails the docs
+  step doesn't run: there is no docs commit and the drafts read as they did. With `"specLanding":
+  "off"` in the round's settings the docs step is off: a draft that isn't official is a need, `docs
+  not promoted: <draft>, …`, with a hand-back to promote and commit it on its branch.
 - **`land <branch>`** never merges. With a landable check at the current head and the current
   master, it runs the same leak scan again and, only when it finds no hit, prints the `worktree`
   tool's merge call, naming the user's Land It, their word in the captain's chat or typed in the
@@ -326,7 +340,8 @@ shell and under a timeout.
   already official there, and removes a folder left empty; a copy the tool can't confirm is kept,
   and a prune that fails deletes nothing and is said. Then it copies the worktree's whole drafts
   folder, once, into `drafts/<head sha>/`, since removing the folder deletes the worktree's own copy.
-  When the worktree still holds drafts not confirmed promoted (a branch its owner merged itself,
+  When the worktree still holds drafts not confirmed promoted (left behind by Merge Without Specs…,
+  proposals labelled `candidate`, or a branch its owner merged itself,
   say), the notice goes on to say they didn't land with the code, naming each
   draft with up to four of those § ids, or "status unreadable", and that folder, for the owner to
   promote on a fresh branch from master by copying them into its worktree's `.sova/spec/drafts/`,

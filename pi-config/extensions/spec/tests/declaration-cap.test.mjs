@@ -6,7 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
 import { join } from "node:path";
-import { SPEC, core, draft, put, read, tmp, writeSpec, same, normalizer } from "./layout/lib.mjs";
+import { SPEC, core, draft, put, read, tmp, writeSpec, same, normalizer, gitInit, recordsOnDisk, hashTree, notDrafts } from "./layout/lib.mjs";
 
 const CAP = 6144;
 const META = { _: "Size cap fixture.", grammar: { claimsRoot: "claims/", directoryKinds: ["section"] } };
@@ -116,7 +116,7 @@ for (const layout of [1, 2]) {
     assert.equal(a[0].was, undefined, "a new claim has no size on the base");
   });
 
-  test(`layout ${layout}: promotion warns for the selected over-cap claims and never refuses; agree's plan stays clean`, () => {
+  test(`layout ${layout}: promotion warns for the selected over-cap claims and never refuses; agree only stamps, and land lists the same warning`, () => {
     const root = spec(layout);
     freshDraft(root, "p");
     // The note §bb/two grows past the cap (a note takes doc-only evidence); the over-cap §aa.one/big, unselected and
@@ -135,12 +135,32 @@ for (const layout of [1, 2]) {
     assert.equal(w.sizeWarnings.length, 1);
     assert.ok(sizeOf(ok(core(root, ["check"]), "check after"), "§bb/two") > CAP, "the over-cap claim landed");
 
-    // agree on a no-code record over the cap still promotes: the warning never makes its plan unclean.
+    // agree only stamps (§tools.spec/agree-command): the landing makes the over-cap no-code record official, and its
+    // answer lists the same size warning, report-only (§tools.spec/land): it neither refuses nor moves the exit.
+    gitInit(root);
     freshDraft(root, "ag");
     edit(root, "ag", claimFile({ edge: CAP + 50 }));
+    const official = hashTree(root, SPEC, { skip: notDrafts });
     const ag = draft(root, ["agree", "ag", "--id", "§aa.one/edge", "--by", "omar (t)", "--verification", "fixture go-ahead", "--write"], { extraEnv: { SPEC_AGREE_SOURCE: "chat:c1#m3" } }).j;
     assert.equal(ag.exit, 0, JSON.stringify(ag).slice(0, 2000));
-    assert.equal(ag.promotion?.written, true, JSON.stringify(ag.promotion));
+    assert.equal(ag.promotion, undefined, `agree never promotes: ${JSON.stringify(ag.promotion)}`);
+    assert.equal(recordsOnDisk(root, `${SPEC}/drafts/ag/spec`).records["§aa.one/edge"]?.agreed?.source, "chat:c1#m3", "agree stamped the draft's record");
+    same(hashTree(root, SPEC, { skip: notDrafts }), official, "agree left the official spec byte for byte");
+    // The preview (what Sova's readiness try and the round read) carries the warning and no problem.
+    const pv = draft(root, ["land", "--commit", "HEAD", "--by", "t", "--verification", "fixture landing"]).j;
+    assert.equal(pv.exit, 0, JSON.stringify(pv).slice(0, 2000));
+    assert.equal(pv.written, false);
+    assert.deepEqual(pv.findings, [], "the size warning is no finding of the preview");
+    assert.equal(pv.sizeWarnings.length, 1, JSON.stringify(pv.sizeWarnings));
+    assert.match(pv.sizeWarnings[0], /^§aa\.one\/edge is \d+ B of prose \(was 6144 B\), over the 6144 B cap/);
+    const ln = draft(root, ["land", "--commit", "HEAD", "--by", "t", "--verification", "fixture landing", "--write"]).j;
+    assert.equal(ln.exit, 0, JSON.stringify(ln).slice(0, 2000));
+    assert.equal(ln.written, true, JSON.stringify(ln).slice(0, 2000));
+    assert.deepEqual(ln.findings, [], "the size warning is no finding of the landing");
+    assert.ok(sizeOf(ok(core(root, ["check"]), "check after land"), "§aa.one/edge") > CAP, "the landing made the over-cap record official");
+    // The whole list: only the claim this landing takes over the cap, never the unchanged over-cap §aa.one/big.
+    assert.equal(ln.sizeWarnings.length, 1, `land lists the record's size warning: ${JSON.stringify(ln.sizeWarnings)}`);
+    assert.match(ln.sizeWarnings[0], /^§aa\.one\/edge is \d+ B of prose \(was 6144 B\), over the 6144 B cap/);
   });
 }
 

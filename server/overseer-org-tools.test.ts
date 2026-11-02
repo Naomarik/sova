@@ -49,7 +49,10 @@ const { registerOrgRoutes } = await import("./org-routes");
 const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
 const { registerProjectRoutes } = await import("./projects/routes");
 const { registerDecisionRoutes } = await import("./decisions-routes");
-const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");
+const { applyAlignCall } = await import("../pi-config/extensions/mode/align.ts");
+const { CONFIRM_BRIEF_PARAGRAPH } = await import("./project-coding-mode");
+const { sessionItems } = await import("./attention");
 const { specialHostOf } = await import("./chat-handle");
 const { settled } = await import("./workspace-git");
 const { canonicalPath } = await import("./paths");
@@ -174,6 +177,7 @@ const host = {
   explorer: () => ({ backend: "claude-code", model: "opus[1m]", effort: "medium" }),
   explorerCwd: () => root,
   subagent: () => null,
+  operatorAnswersWaiting: (sessionId: string) => po.operatorAnswersWaitingFor(sessionId),
 } as unknown as OverseerToolHost;
 const all = tools.overseerTools(host, limits);
 const tool = (name: string) => all.find((t) => t.name === name)!;
@@ -509,6 +513,101 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     assert.deepEqual(pin?.data.active.minorModes, ["align", "spec", "vis"]);
     assert.equal(pin?.data.active.mode, "delegate");
     await piSession(await acquireChat(path)).waitForIdle();
+  });
+
+  test("§app.project-overseer/confirm-brief: an Overseer's start without already_agreed asks first, waits on the operator, and takes no Overseer message", async () => {
+    limits.reset();
+    // The live runtime's branch (pi writes the file once a reply lands).
+    const userTexts = async (path: string): Promise<string[]> =>
+      (piSession(await acquireChat(path)).sessionManager.getBranch() as { type: string; message?: { role: string; content: unknown } }[])
+        .filter((e) => e.type === "message" && e.message?.role === "user")
+        .map((e) => e.message as { content: string | { text?: string }[] })
+        .map((m) => (typeof m.content === "string" ? m.content : m.content.map((c) => c.text ?? "").join("")));
+    /** Its first prompt, once the runtime has taken it (the start hands it over; the turn runs on), and that turn's end. */
+    const firstPrompt = async (path: string): Promise<string | undefined> => {
+      const end = Date.now() + 30_000;
+      while (!(await userTexts(path)).length && Date.now() < end) await new Promise((r) => setTimeout(r, 10));
+      await piSession(await acquireChat(path)).waitForIdle();
+      return (await userTexts(path))[0];
+    };
+    // Without the flag, align on: the brief, then the confirm paragraph, in its first prompt; the result says so.
+    const asked = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Add a PDF export", title: "PDF export", minor_modes: ["align", "spec"] });
+    assert.ok(asked.ok, asked.text);
+    assert.match(asked.text, / It first asks the operator to confirm the brief\.$/);
+    const id = (asked.details as { session: string }).session;
+    const row = readBuilds(project.id).find((r) => r.sessionId === id)!;
+    assert.equal(row.confirmBrief, true);
+    assert.equal(row.title, "PDF export");
+    assert.equal(await firstPrompt(row.path!), `Add a PDF export\n\n${CONFIRM_BRIEF_PARAGRAPH}`);
+    // With it: the brief as given, and the result says it started as agreed.
+    const agreed = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Add a JSON export", title: "JSON export", minor_modes: ["align", "spec"], already_agreed: true });
+    assert.ok(agreed.ok, agreed.text);
+    assert.match(agreed.text, / Started as already agreed\.$/);
+    const agreedRow = readBuilds(project.id).find((r) => r.sessionId === (agreed.details as { session: string }).session)!;
+    assert.equal(agreedRow.confirmBrief, undefined);
+    assert.equal(await firstPrompt(agreedRow.path!), "Add a JSON export");
+    /** The minor modes its runtime runs with: the newest mode entry on its branch. */
+    const minorModesOf = async (path: string): Promise<string[] | undefined> =>
+      (piSession(await acquireChat(path)).sessionManager.getBranch() as { type: string; customType?: string; data?: { active?: { minorModes: string[] } } }[])
+        .filter((e) => e.type === "custom" && e.customType === "mode" && e.data?.active)
+        .at(-1)
+        ?.data?.active?.minorModes;
+    assert.deepEqual([...((await minorModesOf(agreedRow.path!)) ?? [])].sort(), ["align", "spec"]);
+    // Align left out, not already agreed: align is turned on anyway, and it asks the operator first (never the Overseer's call).
+    const off = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Add an XML export", title: "XML export", minor_modes: ["spec"] });
+    assert.ok(off.ok, off.text);
+    assert.match(off.text, /, mode normal · align · spec\b.* It first asks the operator to confirm the brief\.$/);
+    const offRow = readBuilds(project.id).find((r) => r.sessionId === (off.details as { session: string }).session)!;
+    assert.equal(offRow.confirmBrief, true);
+    assert.equal(await firstPrompt(offRow.path!), `Add an XML export\n\n${CONFIRM_BRIEF_PARAGRAPH}`);
+    assert.deepEqual([...((await minorModesOf(offRow.path!)) ?? [])].sort(), ["align", "spec"], "it runs with align on");
+    // Already agreed with align left out: the mode as given, the brief as given.
+    const agreedOff = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Add a CSV export", title: "CSV export", minor_modes: ["spec"], already_agreed: true });
+    assert.ok(agreedOff.ok, agreedOff.text);
+    assert.match(agreedOff.text, /, mode normal · spec\b.* Started as already agreed\.$/);
+    const agreedOffRow = readBuilds(project.id).find((r) => r.sessionId === (agreedOff.details as { session: string }).session)!;
+    assert.equal(await firstPrompt(agreedOffRow.path!), "Add a CSV export");
+    assert.deepEqual(await minorModesOf(agreedOffRow.path!), ["spec"]);
+
+    // Its first turn opens the one question (as the align tool records it), then waits.
+    await disposeHeldChat(row.path!, "test: the confirm question");
+    const entries = readFileSync(row.path!, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+    const { details } = applyAlignCall(
+      [],
+      { ops: [{ op: "create", title: "PDF export", summary: "Confirm the brief.", questions: [{ topic: "What to build", ask: "Is this what you want built?", context: "A PDF export of the report; nothing else changes.", recommendation: { choice: "Yes, as restated", why: "It is the brief." } }] }] },
+      { now: new Date().toISOString(), readFile: () => "" },
+    );
+    appendFileSync(row.path!, `${JSON.stringify({ type: "message", id: "confirm01", parentId: entries.at(-1).id, timestamp: new Date().toISOString(), message: { role: "toolResult", toolCallId: "call-confirm", toolName: "align", content: [{ type: "text", text: "Created al_1." }], details: JSON.parse(JSON.stringify(details)), isError: false } })}\n`);
+    markOwned(row.path!);
+    // (a) Waiting on the operator: its summary's open question puts it in Needs you, and the project overseer's list says so.
+    const summary = (await getSessionSummary(row.path!))!;
+    assert.equal(summary.align?.openQuestions, 1);
+    const needs = sessionItems({ summary, dialogs: [], queued: 0, failedWorkers: 0, activitySince: 0 }, Date.now());
+    assert.ok(needs.some((i) => i.tier === "act" && i.kind === "open-questions"), JSON.stringify(needs));
+    const poTools = po.toolsForTest(project.id, { attended: true });
+    const runPo = (name: string, params: Record<string, unknown>) => poTools.find((t) => t.name === name)!.execute("po-1", params as never, undefined, undefined, undefined as never);
+    const listed = ((await runPo("sova_list_sessions", {})).content[0] as { text: string }).text;
+    assert.match(listed, new RegExp(`${id}[^\n]* · waiting on the operator's answers to 1 alignment question\n?`), listed);
+    // (b) Neither Overseer can message it while it waits: refused before anything is sent or counted.
+    const sentBefore = (await userTexts(row.path!)).length;
+    limits.reset();
+    const refused = await call("sova_send", { session: id, text: "Yes, build it as restated." });
+    assert.equal(refused.ok, false);
+    assert.match(refused.text, /^PDF export is waiting on the user's answers to its alignment questions\. Tell the user; never answer them\. Nothing was sent\.$/);
+    assert.equal(limits.count("prompt"), 0, "no prompt counted");
+    await assert.rejects(
+      () => runPo("sova_send", { session: id, text: "Yes." }),
+      /PDF export is waiting on the operator's answers to its alignment questions\. Tell the operator; never answer them\. Nothing was sent\./,
+    );
+    // Nor can either switch align off while it waits: the questions would leave Needs you unanswered.
+    await assert.rejects(() => runPo("sova_send", { session: id, text: "Carry on.", minor_modes: ["spec"] }), /align stays on until they answer\. Nothing was sent\./);
+    const setOff = await call("sova_set_session", { session: id, minor_modes: ["spec"] });
+    assert.equal(setOff.ok, false);
+    assert.match(setOff.text, /align stays on until they answer\. Nothing was changed\./);
+    assert.equal((await userTexts(row.path!)).length, sentBefore, "nothing reached it");
+    // A session started as already agreed is no such session: the guard lets the Overseer's message through, as before.
+    assert.equal(await po.operatorAnswersWaitingFor(agreedRow.sessionId), null);
+    assert.equal(await po.operatorAnswersWaitingFor(offRow.sessionId), null);
   });
 
   test("sova_public_links: the one read that gives the live kept link; its log line counts, never a link (§app.overseer/org-projection)", async () => {

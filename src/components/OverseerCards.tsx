@@ -813,9 +813,23 @@ export function OverseerChoiceRow(props: { title: string; answer: string }) {
  * mode switch: a menu of quick actions, each with the line that says what it asks. Picking one sends its prompt — while a turn runs it waits in the
  * queue like any follow-up. Edited in Settings → Overseer.
  */
-export function QuickActions(props: { actions: OverseerQuickAction[]; onPick(prompt: string): void; disabled?: string | null }) {
+export function QuickActions(props: {
+  actions: OverseerQuickAction[];
+  onPick(prompt: string): void;
+  /** The menu opened: called before any row can be picked. */
+  onOpen?(): void;
+  disabled?: string | null;
+}) {
   return (
-    <ActionMenu label="Quick Actions" title="Quick actions · ask the Overseer" icon="command" text="Quick Actions" align="end" class="button-ghost quick-actions-trigger">
+    <ActionMenu
+      label="Quick Actions"
+      title="Quick actions · ask the Overseer"
+      icon="command"
+      text="Quick Actions"
+      align="end"
+      class="button-ghost quick-actions-trigger"
+      onToggle={(open) => open && props.onOpen?.()}
+    >
       {(menu) => (
         <Show
           when={props.actions.length > 0}

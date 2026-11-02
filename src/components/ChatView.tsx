@@ -1,5 +1,6 @@
 import { archivedDropToast, archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
+import { createPressTracker, notePress, refocusAfterSend, type SendPress } from "../lib/input-mode";
 import { batch, createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, untrack, type JSX } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
@@ -1541,9 +1542,10 @@ export function ChatView(props: {
       just before it and re-prompts its stored text and images with the session's CURRENT model.
       The composer is never touched — what you are half-way through typing is not part of this. */
   const regenerate = async (entryId: string) => {
+    const press = presses.take();
     setActionNote(null);
     const result = await ask("regenerate", { type: "regenerate", entryId });
-    if (result.ok) focusComposer();
+    if (result.ok) focusComposerAfter(press);
     else noteOn(entryId, result.message);
   };
 
@@ -1553,7 +1555,25 @@ export function ChatView(props: {
    * — and the composer is where the next thing happens (a rewind has just put the message there).
    * Without this, a keyboard user is dropped on <body> and has to Tab from the top of the pane.
    */
-  const focusComposer = () => queueMicrotask(() => document.getElementById(paneId("composer-input"))?.focus());
+  const focusComposer = () => queueMicrotask(() => composerInput()?.focus());
+  const composerInput = () => document.getElementById(paneId("composer-input"));
+  /** The press behind a send made on the user's behalf, read before it moved focus. */
+  const presses = createPressTracker((e) => notePress(e, composerInput()));
+  onCleanup(presses.dispose);
+  /** The Quick Actions trigger's press, held from the menu opening to its pick. */
+  let quickActionPress: SendPress | null = null;
+  /**
+   * After a send made for the user (a quick action, a card's button, a panel's Send, Regenerate):
+   * the composer's own Send rule (§chat.composer/focus). A key, a mouse or a pen puts focus back
+   * in the box; a tap only when the box had it with the keyboard up, else a still-focused box is
+   * blurred so a keyboard that was down stays down. Rewind keeps focusComposer: it leaves text to edit.
+   */
+  const focusComposerAfter = (press: SendPress | null) =>
+    queueMicrotask(() => {
+      const el = composerInput();
+      if (refocusAfterSend(press)) el?.focus();
+      else if (el && document.activeElement === el) el.blur();
+    });
 
   /** Rewind from a message's own strip: the same request the Timeline makes, with the refusal
       kept on this row as well as announced. */
@@ -1761,16 +1781,18 @@ export function ChatView(props: {
     },
     goWithRecommendations: (doc) => {
       if (alignAnswer.goBlocked()) return;
+      const press = presses.take();
       if (send(acceptAllMessage(doc), false, [])) {
         clearPicks(props.path, doc);
-        focusComposer();
+        focusComposerAfter(press);
       }
     },
     review: () => chatReview(),
     reviewBlocked: () => alignAnswer.goBlocked() ?? (!reviewerSet.error && reviewerSet() === false ? NO_REVIEWER : null),
     requestReview: (doc, phase) => {
       if (alignAnswer.reviewBlocked?.()) return;
-      if (send(reviewRequestMessage(doc, phase), false, [])) focusComposer();
+      const press = presses.take();
+      if (send(reviewRequestMessage(doc, phase), false, [])) focusComposerAfter(press);
     },
   };
   const composerPicks = createMemo(() => {
@@ -1794,9 +1816,10 @@ export function ChatView(props: {
   if (props.overseer?.bindSender) {
     const unbind = props.overseer.bindSender({
       send: (text) => {
+        const press = presses.take();
         if (blocked()) return false;
         const sent = send(text, false, []);
-        if (sent) focusComposer();
+        if (sent) focusComposerAfter(press);
         return sent;
       },
       blocked: () => blocked()?.text ?? null,
@@ -2515,8 +2538,14 @@ export function ChatView(props: {
                 <QuickActions
                   actions={props.overseer!.quickActions()}
                   disabled={blocked()?.text ?? null}
+                  // The press that counts is the trigger's: the menu took focus out of the box
+                  // before the pick. A menu opened by a key holds none, which counts as Enter.
+                  onOpen={() => (quickActionPress = presses.take())}
                   onPick={(prompt) => {
-                    if (send(prompt, false, [])) focusComposer();
+                    const press = quickActionPress;
+                    quickActionPress = null;
+                    presses.take();
+                    if (send(prompt, false, [])) focusComposerAfter(press);
                   }}
                 />
                 </>
@@ -2571,7 +2600,7 @@ export function ChatView(props: {
             setShowPlaybooks(false);
             // After a send the next thing is the conversation; otherwise back to the "+" button
             // (the palette's Playbooks row is opened from it, §chat.playbooks/the-modal).
-            if (sent) focusComposer();
+            if (sent) focusComposerAfter(presses.take());
             else queueMicrotask(() => document.getElementById(paneId("composer-menu-trigger"))?.focus());
           }}
           // The view is going away under the open dialog (the session turned read-only): what was

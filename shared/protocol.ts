@@ -1030,7 +1030,7 @@ export interface PlaybookCatalog {
 //                                   are ignored)
 // GET /api/settings/claude-status -> ClaudeCliStatus
 // GET /api/settings/align        -> AlignSettingsInfo
-// PUT /api/settings/align        -> AlignSettingsInfo (400 bad body: `{version: 1, style, visuals}`,
+// PUT /api/settings/align        -> AlignSettingsInfo (400 bad body: `{version: 1, style, visuals, eagerness?}`,
 //                                   the mode extension's strict parse, align-settings.ts)
 // ---------------------------------------------------------------------------
 /** Sova's own settings, stored in <agentDir>/sova/settings.json (server/web-settings.ts).
@@ -1038,7 +1038,7 @@ export interface PlaybookCatalog {
     subagent policy is. */
 export interface WebSettings {
   experimental: ExperimentalSettings;
-  /** Settings → Alignment's part of this file (style and visuals are mode-align.json's, AlignSettingsInfo). */
+  /** Settings → Alignment's part of this file (eagerness, style and visuals are mode-align.json's, AlignSettingsInfo). */
   alignment: AlignmentWebSettings;
 }
 
@@ -1056,10 +1056,11 @@ export interface AlignmentWebSettings {
   review: boolean;
 }
 
-/** GET/PUT /api/settings/align: the align mode's writing style and Visuals
-    (`<agent dir>/mode-align.json`, §chat.alignment/settings-file), and where they are stored. */
+/** GET/PUT /api/settings/align: the align mode's Eagerness, writing style and Visuals
+    (`<agent dir>/mode-align.json`, §chat.alignment/settings-file), and where they are stored.
+    `eagerness` is present only for Careful (absent: Eager, §chat.alignment/eagerness). */
 export interface AlignSettingsInfo {
-  settings: { version: 1; style: "default" | "simplified" | "pm"; visuals: boolean };
+  settings: { version: 1; style: "default" | "simplified" | "pm"; visuals: boolean; eagerness?: "eager" | "careful" };
   file: string;
 }
 
@@ -4618,14 +4619,30 @@ export interface WorktreeReadiness {
 
 /** A worktree whose work is finished at its head commit (§chat.worktrees/ready-to-land). */
 export interface WorktreeLanding {
-  /** "ready": Ready to land; "specs": finished, with spec drafts left to promote (Landing specs). */
+  /** "ready": Ready to land (its drafts, if any, land with it); "specs": finished, but its drafts don't fit or
+      changed since the user's Land It (Landing specs). */
   state: "ready" | "specs";
   /** The full head sha it holds for. */
   commit: string;
-  /** The spec drafts not promoted, by name (state "specs"). */
+  /** The spec drafts not yet official, by name. */
   drafts?: string[];
   /** The session's own reason it can't land them (its reply's `Can't land specs:` line). */
   specsWhy?: string;
+  /** What lands with it (§chat.worktrees/ready-to-land): the drafts' promises, from Sova's try of the landing. */
+  docs?: WorktreeLandingDocs;
+}
+
+export interface WorktreeLandingDocs {
+  /** How many drafts land, and how many of their promises are new and changed (removed count as changed). */
+  drafts: number;
+  added: number;
+  changed: number;
+  /** The promises' § ids. */
+  names: string[];
+  /** Why they don't fit (state "specs"), one line each. */
+  problems?: string[];
+  /** The drafts whose files changed since the user's Land It at this head (state "specs"). */
+  changedSinceGoAhead?: string[];
 }
 
 /** The row's badge, the first that holds (§chat.worktrees/readiness). */

@@ -3,6 +3,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import { parseUsageLine, RESEND_HOWS, type UsageRecord } from "../pi-config/extensions/llm-inflight/usage-record.ts";
 import { priceUsage, type Aliases, type PriceTable } from "../shared/model-prices/prices";
+import { isDoubledResidual } from "./usage-helper/records";
 
 /**
  * The developer check of Claude re-sends (§app.insights/usage-resend): from the usage ledger's files
@@ -61,7 +62,8 @@ export interface CheckReport {
   kinds: KindRow[];
 }
 
-/** Every record under `<usage>/v1` (plain and sealed `.gz` files), deduplicated by key. Reads only. */
+/** Every record under `<usage>/v1` (plain and sealed `.gz` files), deduplicated by key, the
+    ledger's doubled `[1m]` residuals left out as the ledger leaves them out. Reads only. */
 export function readLedger(usageRoot: string, from?: string, to?: string): UsageRecord[] {
   const out = new Map<string, UsageRecord>();
   let days: string[] = [];
@@ -84,7 +86,7 @@ export function readLedger(usageRoot: string, from?: string, to?: string): Usage
       }
       for (const line of text.split("\n")) {
         const r = line ? parseUsageLine(line) : null;
-        if (r && !out.has(r.key)) out.set(r.key, r);
+        if (r && !isDoubledResidual(r) && !out.has(r.key)) out.set(r.key, r);
       }
     }
   }

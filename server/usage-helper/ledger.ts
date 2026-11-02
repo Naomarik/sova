@@ -3,7 +3,7 @@ import path from "node:path";
 import zlib from "node:zlib";
 import type { PriceBook } from "./price-book";
 import type { PriceTable } from "../../shared/model-prices/prices";
-import { parseLine, type UsageRec } from "./records";
+import { isDoubledResidual, parseLine, type UsageRec } from "./records";
 
 /**
  * The usage helper's rollup (§app.insights/usage-ledger): follows every producer file under
@@ -154,7 +154,7 @@ export class Ledger {
   /** org project id -> the days with rows naming it. */
   readonly projects = new Map<string, Set<string>>();
   /** Counters for the benchmark and diagnostics. */
-  readonly stats = { records: 0, duplicates: 0, skipped: 0, bytes: 0, rebuilds: 0, closes: 0 };
+  readonly stats = { records: 0, duplicates: 0, skipped: 0, doubled: 0, bytes: 0, rebuilds: 0, closes: 0 };
 
   constructor(opts: LedgerOptions) {
     this.usageRoot = opts.usageRoot;
@@ -357,6 +357,11 @@ export class Ledger {
   }
 
   private fold(day: DayState, rec: UsageRec): void {
+    // A `[1m]` residual counts its turn a second time (records.ts isDoubledResidual): never folded.
+    if (isDoubledResidual(rec.record)) {
+      this.stats.doubled++;
+      return;
+    }
     const h = hashKey(rec.key);
     const keys = (day.keys ??= new Set());
     if (keys.has(h)) {

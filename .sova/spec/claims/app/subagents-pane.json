@@ -191,7 +191,8 @@
     "requires": [
       "§chat.worktrees/pane",
       "§app.worker-restore/restore",
-      "§app.subagents-pane/head"
+      "§app.subagents-pane/head",
+      "§app.insights/cost-history"
     ],
     "code": [
       "src/components/SessionPane.tsx",
@@ -214,12 +215,15 @@
       "shared/protocol.ts",
       "server/skills.ts",
       "server/skills.test.ts",
-      "server/worker-skills.ts"
+      "server/worker-skills.ts",
+      "src/components/CostBreakdown.tsx",
+      "src/cost-breakdown.css",
+      "src/lib/cost-history.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-22T02:39Z",
-      "source": "pi-session:e1d4092c-fde7-4e3b-98b6-2e3413689e78#56f6249c"
+      "by": "user",
+      "at": "2026-10-29T10:30Z",
+      "source": "pi-session:d5243096-4638-4e5a-b0a2-a6393cd8c7cb#2879ee9c"
     }
   },
   "§app.subagents-pane/tokens": {

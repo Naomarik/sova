@@ -219,8 +219,12 @@ node core/sova-spec-draft.mjs migrate [--reverse] [--drafts | --draft NAME] --ro
    a `--source` other than a set variable is refused; a `pi-session:` reference must
    resolve to a user message in pi's session files, other schemes are checked for form only;
    with neither it stamps nothing),
-   and, for those that map no code, records `--doc-only` evidence and promotes
-   them when promote's plan is clean ([PROMOTE.md](PROMOTE.md)).
+   and, for those that map no code, records `--doc-only` evidence; it promotes
+   nothing: they become official when their branch lands.
+   **`land`** makes every draft official at a branch's landing in one step:
+   each pending record needs its chat's note (`evidence --note`), its evidence is
+   recorded at the landing commit, and any refusal or failure writes nothing
+   ([DRAFTS.md](DRAFTS.md), steps 5 and 6, with **`refresh`**; [PROMOTE.md](PROMOTE.md)).
 5. **`recover`** rolls back an interrupted promotion. Until it runs, every
    other write refuses.
 6. **`merge-manifest`** resolves a Git merge conflict in `manifest.json` record

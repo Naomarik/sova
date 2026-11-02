@@ -57,21 +57,34 @@ export function specSummary(p: SubagentProfile): string {
 
 /** The align mode's writing style labels (pi-config/extensions/mode/align-settings.ts ALIGN_STYLE_LABELS). */
 export const ALIGN_STYLE_NAMES = { pm: "Project manager", simplified: "Simplified", default: "Technical" } as const;
+/** The align mode's Eagerness labels, in their order (align-settings.ts ALIGN_EAGERNESS_LABELS). */
+export const ALIGN_EAGERNESS_NAMES = { eager: "Eager", careful: "Careful" } as const;
 type AlignOverride = NonNullable<SubagentProfile["alignment"]>;
 
 /** Alignment, closed (§chat.subagent-profiles/settings): "Host default", or what the profile overrides. */
 export function alignmentSummary(p: SubagentProfile): string {
   const a = p.alignment;
-  const parts = [a?.style ? ALIGN_STYLE_NAMES[a.style] : undefined, a?.visuals === undefined ? undefined : a.visuals ? "visuals on" : "visuals off"].filter(Boolean);
+  const parts = [
+    a?.eagerness ? ALIGN_EAGERNESS_NAMES[a.eagerness] : undefined,
+    a?.style ? ALIGN_STYLE_NAMES[a.style] : undefined,
+    a?.visuals === undefined ? undefined : a.visuals ? "visuals on" : "visuals off",
+  ].filter(Boolean);
   return parts.length > 0 ? parts.join(" · ") : "Host default";
 }
 
 /**
- * The profile's override after one choice: "host" stores no field, and both on "host" store no
+ * The profile's override after one choice: "host" stores no field, and all three on "host" store no
  * `alignment` at all, so a profile with no override is written exactly as before the field existed.
  */
-export function withAlignment(p: SubagentProfile, patch: { style?: AlignOverride["style"] | "host"; visuals?: boolean | "host" }): SubagentProfile {
+export function withAlignment(
+  p: SubagentProfile,
+  patch: { eagerness?: AlignOverride["eagerness"] | "host"; style?: AlignOverride["style"] | "host"; visuals?: boolean | "host" },
+): SubagentProfile {
   const next: AlignOverride = { ...(p.alignment ?? {}) };
+  if (patch.eagerness !== undefined) {
+    if (patch.eagerness === "host") delete next.eagerness;
+    else next.eagerness = patch.eagerness;
+  }
   if (patch.style !== undefined) {
     if (patch.style === "host") delete next.style;
     else next.style = patch.style;
@@ -81,7 +94,7 @@ export function withAlignment(p: SubagentProfile, patch: { style?: AlignOverride
     else next.visuals = patch.visuals;
   }
   const out: SubagentProfile = { ...p };
-  if (next.style === undefined && next.visuals === undefined) delete out.alignment;
+  if (next.eagerness === undefined && next.style === undefined && next.visuals === undefined) delete out.alignment;
   else out.alignment = next;
   return out;
 }

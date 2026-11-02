@@ -193,13 +193,8 @@ are kept, and what the foot and its model indicator show.
 - **After Stop.** The status reads "Stopping…" until the turn settles. Then the run status
   disappears, and an info row says "Stopped by you at `1:43 PM`." (the transcript's stamp: a
   12-hour clock, with the date in front on another day).
-- **Focus.** Returns to the textarea after Send, Steer, or Stop pressed with a mouse or pen, and
-  after an `Enter` or `Ctrl+Enter` / `⌘+Enter` send. After one pressed by touch it returns only if
-  the textarea had focus when the press began and the on-screen keyboard was up (up and down as in
-  §chat.voice/button); otherwise nothing is refocused, a textarea still focused with the keyboard
-  down loses focus, and a keyboard that was down stays down. The message is sent either way.
-  The mic never moves focus: its press keeps the textarea's focus and selection, and dictated
-  text lands at the caret (§chat.voice/insertion) as part of the draft.
+- **Focus.** Where focus and the on-screen keyboard go after a send, and why the mic never moves
+  them: §chat.composer/focus.
 - **Drafts** are never discarded. The draft survives disable/enable, reconnects, and errors, and
   it survives a reload too. Each session's draft lives in two places:
   - **In memory, per session path.** This is the authority within a tab, so switching sessions
@@ -255,6 +250,23 @@ are kept, and what the foot and its model indicator show.
   While the composer is disabled it still shows the model and is `aria-disabled` with a dead
   click, like the flyout's own rows. It stays at every width, because it's the only place the
   model is on screen.
+
+## §chat.composer/focus — Focus after a send
+
+- Focus returns to the textarea after Send, Steer, or Stop pressed with a mouse or pen, and after
+  an `Enter` or `Ctrl+Enter` / `⌘+Enter` send. After one pressed by touch it returns only if the
+  textarea had focus when the press began and the on-screen keyboard was up (up and down as in
+  §chat.voice/button); otherwise nothing is refocused, a textarea still focused with the keyboard
+  down loses focus, and a keyboard that was down stays down. The message is sent either way.
+- **The same rule holds for every other button that sends a message on your behalf:** a Quick
+  Actions pick (judged from the press on the Quick Actions button, a menu opened by keyboard
+  counting as `Enter`, §app.overseer/quick-actions), an alignment card's Go With Recommendations
+  and Review Plan / Review Implementation, a send from the Overseer's Ideas panel, Send Playbook
+  and Regenerate.
+- Rewind and a tour's Ask About This Step still put focus in the textarea: they leave text there
+  to edit and send nothing.
+- The mic never moves focus: its press keeps the textarea's focus and selection, and dictated text
+  lands at the caret (§chat.voice/insertion) as part of the draft.
 
 ## §chat.composer/disabled-states — Disabled states
 

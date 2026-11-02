@@ -5,7 +5,7 @@
 import type { TranscriptItem } from "../../shared/protocol";
 import type { UsageOrigin, UsageSessionModelRow, UsageSessionSpend, UsageSpend, UsageWorkerRow } from "../../shared/usage/wire";
 import { formatTokens } from "./context";
-import { cacheHitRate, cacheRateWords, inputSum, noCacheNote } from "./cost-history";
+import { cacheHitRate, cacheRateWords, hitRateTitle, noCacheNote } from "./cost-history";
 import { clockTime, shortDate } from "./format";
 
 /** The "Where" column: the session's own conversation, side calls made for it, or its workers. */
@@ -53,7 +53,7 @@ export function cacheHeadline(s: Pick<UsageSpend, "tokens">): string | null {
 export function hitRateCell(s: Pick<UsageSpend, "tokens">): { text: string; title: string } {
   const rate = cacheHitRate(s.tokens);
   if (rate === null) return { text: cacheRateWords(null), title: noCacheNote() };
-  return { text: cacheRateWords(rate), title: `${formatTokens(s.tokens.cacheRead)} of ${formatTokens(inputSum(s.tokens))} input tokens read from cache` };
+  return { text: cacheRateWords(rate), title: hitRateTitle(s.tokens, formatTokens) };
 }
 
 /** A listed worker's ledger row: its row under this session (`worker` id, parent this session),

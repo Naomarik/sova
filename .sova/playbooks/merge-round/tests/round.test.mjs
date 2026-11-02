@@ -162,6 +162,11 @@ if (a[0] === "merge-manifest") {
     console.log(JSON.stringify({ exit: 0, files: [".sova/spec/manifest.json", ".sova/spec/claims/v1-marker"] }));
   }
 }
+// land: FAKE_LAND=refuse refuses with one finding, writing nothing; otherwise there is nothing to land.
+if (a[0] === "land") {
+  if (process.env.FAKE_LAND === "refuse") { console.log(JSON.stringify({ exit: 1, written: false, nothingToLand: false, drafts: [], findings: [{ severity: "warn", draft: "left", id: "§a/b", code: "verification-missing", message: "§a/b has no verification note from its chat", fix: "record your note" }], paths: [] })); process.exit(1); }
+  console.log(JSON.stringify({ exit: 0, written: false, nothingToLand: true, drafts: [], findings: [], paths: [] }));
+}
 // FAKE_DRAFT_IDS: {draft: [ids not promoted]}; a draft it lists with none has one record already current;
 // one it lists as "garbage" reads as unreadable; FAKE_DRAFTS_GARBAGE=1 makes the whole reading non-JSON.
 const named = (n) => (process.env.FAKE_DRAFT_IDS ? JSON.parse(process.env.FAKE_DRAFT_IDS)[n] : undefined);
@@ -382,24 +387,24 @@ test("check: a manifest-only conflict goes through merge-manifest, then the chec
   assert.equal(git(main, "rev-parse", "master"), masterBefore, "check wrote to master");
 });
 
-test("check: a failing spec check and unclaimed files hold nothing; a draft not promoted holds the branch and hands it back", async () => {
+test("check: a failing spec check and unclaimed files hold nothing; a draft the docs step can't land holds the branch and hands it back", async () => {
   const exclude = join(main, ".git", "info", "exclude");
   const was = existsSync(exclude) ? readFileSync(exclude, "utf8") : "";
   writeFileSync(exclude, `${was}.sova/spec/drafts/\n`);
   mkdirSync(join(wt("feat/manifest"), ".sova", "spec", "drafts", "left"), { recursive: true });
   try {
-    const r = await run(["check", "feat/manifest"], { env: { FAKE_SPEC_BAD: "1" } });
+    const r = await run(["check", "feat/manifest"], { env: { FAKE_SPEC_BAD: "1", FAKE_LAND: "refuse" } });
     assert.equal(r.code, 1, r.out);
     assert.match(r.out, /^spec check: ERRORS\.$/m);
     assert.match(r.out, /^spec census: 1 unclaimed \(src\/x\.ts\)\.$/m);
-    assert.match(r.out, /^draft left: not promoted: §a\/b\.$/m);
-    assert.match(r.out, /^needs: docs not promoted: left$/m, "the draft is the only need: the spec check and census hold nothing");
-    // Owner gone (none recorded): the hand-back is the user's call, and the branch can't land with its docs missing.
+    assert.match(r.out, /^draft left: to land: §a\/b\.$/m);
+    assert.match(r.out, /^needs: docs don't fit: §a\/b$/m, "the refused landing is the only need: the spec check and census hold nothing");
+    // Owner gone (none recorded): the hand-back is the user's call.
     assert.match(r.out, /^Hand-back, for its owner \(none known: the user's call\):$/m);
-    assert.match(r.out, /^feat\/manifest isn't landing yet: its docs aren't official\. Your spec drafts aren't promoted: left \(§a\/b\)\. Promote them on feat\/manifest and commit that/m);
+    assert.match(r.out, /^feat\/manifest isn't landing yet: its spec drafts don't fit, so nothing about them was written\. §a\/b \(draft left\): §a\/b has no verification note from its chat; fix: record your note/m);
     const land = await run(["land", "feat/manifest"]);
     assert.equal(land.code, 1, land.out);
-    assert.match(land.out, /needs: docs not promoted: left/);
+    assert.match(land.out, /needs: docs don't fit: §a\/b/);
     assert.doesNotMatch(land.out, /call: worktree/);
     // Promoted (the draft confirmed promoted): the same spec errors and unclaimed files land.
     const promoted = await run(["check", "feat/manifest"], { env: { FAKE_SPEC_BAD: "1", FAKE_DRAFT_IDS: JSON.stringify({ left: [] }) } });
@@ -1319,7 +1324,7 @@ test("landed tidies the drafts already official out of the worktree once its che
   }
 });
 
-test("B1: a § the draft promoted before, now in conflict after taking master's spec without re-promoting, is not promoted: check hands it back", async () => {
+test("B1: a § the draft promoted before, now in conflict after taking master's spec without re-promoting, doesn't fit: the check's docs step holds it and hands it back", async () => {
   // Its own repository with a real spec and the real draft tool: the hold-back reads what the tool says.
   const REAL_CORE = join(REPO_ROOT, "pi-config", "extensions", "spec", "core");
   const DRAFT = join(REAL_CORE, "sova-spec-draft.mjs");
@@ -1371,11 +1376,13 @@ test("B1: a § the draft promoted before, now in conflict after taking master's 
   git(wB, "checkout", "--no-overlay", "master", "--", ".sova/spec/manifest.json", ".sova/spec/claims");
   git(wB, "add", "-A"); git(wB, "commit", "-q", "--no-edit");
   assert.equal(readFileSync(join(wB, ".sova/spec/claims/x/top.md"), "utf8"), TOP("One does X twice."), "fixture: B's branch now holds A's prose, not its own");
-  // At the new head B's own docs are gone from its branch, so the check hands it back, naming the §.
+  const headB = git(main2, "rev-parse", B);
+  // The check's docs step: B's draft says §x.top/one differently from the spec it now holds, so it doesn't fit.
   const check = await run(["check", B], { cwd: main2, env: SPEC_ENV });
   assert.equal(check.code, 1, check.out);
-  assert.match(check.out, /^needs: (.*; )?docs not promoted: d(;|$)/m);
-  assert.match(check.out, /spec drafts aren't promoted: d \(§x\.top\/one\)/);
+  assert.match(check.out, /^needs: (.*; )?docs don't fit: §x\.top\/one(;|$)/m);
+  assert.match(check.out, /draft d\)/, "the hand-back names the draft to fix");
+  assert.equal(git(main2, "rev-parse", B), headB, "nothing committed");
 });
 
 test("Ready to land: ask queues the branch for Sova's Landing card; status reads Sova's answer, then the user's Land It or Not Yet at that head", async () => {

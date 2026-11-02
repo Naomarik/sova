@@ -1214,8 +1214,9 @@ test("b2: one uncommitted file, a commit ahead, idle, check ok: ready to merge w
   }
 });
 
-test("Ready to land: decisions off falls back to the code-only conditions; a running turn, a failing check or an open question stops it; drafts left read Landing specs and Sova tells the session once per commit", async () => {
-  const { fileLandingStore, landingOf, specsWhyOf } = await import("./ready-to-land");
+test("Ready to land: decisions off falls back to the code-only conditions; a running turn, a failing check or an open question stops it; drafts land with it once Sova's try says they would, and drafts that wouldn't read Landing specs with Sova telling the session once per commit", async () => {
+  const { fileLandingStore, landingOf, landingReason, specsWhyOf } = await import("./ready-to-land");
+  type DocsPreview = import("./ready-to-land").DocsPreview;
   const t = { readable: true, merged: false, dirty: false, ahead: 2, head: "d".repeat(40) };
   assert.equal(landingOf(t, "ready", "off", false, undefined)?.state, "ready", "decisions off: code-only");
   assert.equal(landingOf(t, "waiting-approval", "no", false, undefined), undefined, "decisions on, not finished");
@@ -1223,7 +1224,18 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
   // A running turn, a failing check, an open question, a conflict or a temporary commit: readiness isn't ready.
   for (const state of ["in-progress", "blocked", "stale", "merged"] as const) assert.equal(landingOf(t, state, "yes", true, undefined), undefined, state);
   assert.equal(landingOf({ ...t, dirty: true, dirtyCount: 1 }, "ready", "yes", true, undefined), undefined, "ready with an uncommitted file isn't Ready to land");
-  assert.deepEqual(landingOf(t, "ready", "yes", false, ["a", "b"], "the tools are missing"), { state: "specs", commit: t.head, drafts: ["a", "b"], specsWhy: "the tools are missing" });
+  const s = "ready" as const;
+  const docs = (preview: DocsPreview | "pending", more: { changedSinceGoAhead?: string[] } = {}) => ({ drafts: ["a", "b"], preview, ...more });
+  const fits: DocsPreview = { drafts: ["a", "b"], added: ["§x/new"], changed: ["§x/old"], problems: [] };
+  assert.equal(landingOf(t, s, "yes", false, docs("pending")), undefined, "not Ready to land until Sova has tried the drafts");
+  assert.deepEqual(landingOf(t, s, "yes", false, docs(fits)), { state: "ready", commit: t.head, drafts: ["a", "b"], docs: { drafts: 2, added: 1, changed: 1, names: ["§x/new", "§x/old"] } }, "drafts don't block: they land with it");
+  const noNote = "§x/new (draft a): §x/new has no verification note from its chat";
+  assert.deepEqual(landingOf(t, s, "yes", false, docs({ ...fits, problems: [noNote] }), "the tools are missing"), { state: "specs", commit: t.head, drafts: ["a", "b"], specsWhy: "the tools are missing", docs: { drafts: 2, added: 1, changed: 1, names: ["§x/new", "§x/old"], problems: [noNote] } });
+  const changed = landingOf(t, s, "yes", true, docs(fits, { changedSinceGoAhead: ["b"] }));
+  assert.equal(changed?.state, "specs", "drafts changed since Land It hold it");
+  assert.deepEqual(changed?.docs?.changedSinceGoAhead, ["b"]);
+  assert.equal(landingReason(changed!), "Landing specs · docs changed since Land It");
+  assert.equal(landingReason(landingOf(t, s, "yes", false, docs(fits))!, 3), "Ready to land · 3 commits ahead · docs: 1 new, 1 changed");
   assert.equal(specsWhyOf("Done.\nCan't land specs: the spec tools aren't installed here."), "the spec tools aren't installed here");
   assert.equal(specsWhyOf("Nothing to say."), undefined);
 
@@ -1233,7 +1245,7 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
   const sent: string[] = [];
   const status: WorktreeStatus & { head?: string } = { path: "/wt/agents-row-dropdown", source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 1, behind: 0, dirty: false, head: "e".repeat(40) };
   let now = 1_000_000;
-  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: () => undefined, now: () => now, processStart: 0, landing: fileLandingStore(() => join(agentDir, "rtl-nudge.json")), drafts: () => ["landing-offer"], finished: () => "off", nudge: async (_p, text) => void sent.push(text) });
+  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: () => undefined, now: () => now, processStart: 0, landing: fileLandingStore(() => join(agentDir, "rtl-nudge.json")), drafts: () => ["landing-offer"], draftsHash: () => undefined, goAheadAt: () => undefined, docsPreview: () => ({ drafts: ["landing-offer"], added: [], changed: [], problems: ["§x/a (draft landing-offer): §x/a has no verification note from its chat"] }), finished: () => "off", nudge: async (_p, text) => void sent.push(text) });
   try {
     const row = summary(path);
     r.readinessOverlay(row);
@@ -1241,7 +1253,8 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
     const tr = r.readinessReading(path);
     assert.ok(tr.known && tr.value?.trees[0]?.landing?.state === "specs");
     assert.equal(sent.length, 1);
-    assert.match(sent[0]!, /^Sova: feat\/agents-row-dropdown is finished at eeeeeee, but its spec drafts aren't promoted yet: landing-offer\. .*Can't land specs: <why>\.$/);
+    assert.match(sent[0]!, /^Sova: feat\/agents-row-dropdown is finished at eeeeeee, but its spec drafts wouldn't land with it: §x\/a \(draft landing-offer\): §x\/a has no verification note from its chat\. .*--note --write.*Can't land specs: <why>\.$/);
+    assert.doesNotMatch(sent[0]!, /Land It|promote/);
     now += r.READINESS_TTL_MS + 1;
     r.readinessOverlay(row);
     await r.readinessIdle();
@@ -1255,21 +1268,22 @@ test("a finished branch that can't be queued to land: Sova names what blocks its
   const { fileLandingStore, landingBlockers, blockedNoteText } = await import("./ready-to-land");
   const live = { running: false, openQuestions: 0 };
   const t = { readable: true, merged: false, ahead: 1, head: "f".repeat(40), base: "master" };
-  assert.equal(landingBlockers({ ...t, ahead: 0 }, live, undefined), undefined, "nothing to land");
-  assert.equal(landingBlockers(t, { ...live, running: true }, ["x"]), undefined, "a turn runs");
-  assert.equal(landingBlockers(t, { ...live, openQuestions: 1 }, ["x"]), undefined, "it asks the user");
-  assert.deepEqual(landingBlockers(t, live, undefined), []);
+  assert.equal(landingBlockers({ ...t, ahead: 0 }, live), undefined, "nothing to land");
+  assert.equal(landingBlockers(t, { ...live, running: true }), undefined, "a turn runs");
+  assert.equal(landingBlockers(t, { ...live, openQuestions: 1 }), undefined, "it asks the user");
+  assert.deepEqual(landingBlockers(t, live), []);
+  // Spec drafts never block: they land with the branch.
   const drafts = Array.from({ length: 11 }, (_, i) => `d${i}`);
-  const words = landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live, drafts)!.map((b) => b.text);
-  assert.deepEqual(words, ["1 uncommitted folder", "11 spec drafts to make official"]);
-  assert.deepEqual(landingBlockers({ ...t, dirty: true, dirtyCount: 2, dirtyFiles: ["a.ts", "b.ts"], conflicts: 3, tempCommit: "WIP x" }, { ...live, lastCheck: { at: 1, ok: false } }, undefined)!.map((b) => b.text), [
+  const words = landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live)!.map((b) => b.text);
+  assert.deepEqual(words, ["1 uncommitted folder"]);
+  assert.deepEqual(landingBlockers({ ...t, dirty: true, dirtyCount: 2, dirtyFiles: ["a.ts", "b.ts"], conflicts: 3, tempCommit: "WIP x" }, { ...live, lastCheck: { at: 1, ok: false } })!.map((b) => b.text), [
     "2 uncommitted files",
     "conflicts with master in 3 files",
     'a temporary commit ("WIP x")',
     "a failing check run",
   ]);
-  const note = blockedNoteText("feat/x", t.head, landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live, drafts)!);
-  assert.match(note, /^Sova: feat\/x is finished at fffffff, but it can't be queued to land yet: 1 uncommitted folder, 11 spec drafts to make official\. /);
+  const note = blockedNoteText("feat/x", t.head, landingBlockers({ ...t, dirty: true, dirtyCount: 1, dirtyFiles: ["notes/"] }, live)!);
+  assert.match(note, /^Sova: feat\/x is finished at fffffff, but it can't be queued to land yet: 1 uncommitted folder\. /);
   assert.doesNotMatch(note, /Land It|card|press/);
   assert.match(note, /Once nothing blocks it, the user's go-ahead lands it: when they type "land it" in this chat, record it with the worktree tool's land action\.$/);
 
@@ -1298,7 +1312,7 @@ test("a finished branch that can't be queued to land: Sova names what blocks its
     r.readinessOverlay(row);
     await settle();
     assert.equal(sent.length, 1);
-    assert.match(sent[0]!, /^Sova: feat\/agents-row-dropdown is finished at 1111111, but it can't be queued to land yet: 1 uncommitted folder, 11 spec drafts to make official\./);
+    assert.match(sent[0]!, /^Sova: feat\/agents-row-dropdown is finished at 1111111, but it can't be queued to land yet: 1 uncommitted folder\./);
     assert.doesNotMatch(sent[0]!, /Land It|card|press/);
     now += r.READINESS_TTL_MS + 1;
     r.readinessOverlay(row);

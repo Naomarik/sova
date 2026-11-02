@@ -18,6 +18,16 @@ export function usageOf(r: UsageRecord): TokenUsage {
   return { input: r.input, output: r.output, cacheRead: r.cacheRead, cacheWrite5m: r.cacheWrite - cw1h, cacheWrite1h: cw1h };
 }
 
+/**
+ * A Claude Code residual keyed by a `[1m]` model (`ccr:<session>:<total>:claude-opus-5-5[1m]`): a
+ * double count. Until 7 Oct 2026 the residual compared `modelUsage`, which keys a 1M request
+ * `claude-opus-5-5[1m]`, against messages that say `claude-opus-5-5`, so each such residual re-added
+ * its whole turn. The residual now compares them without the suffix (claude-usage.ts `modelKey`), so
+ * no new record has this shape; the ledger drops any that does, and
+ * scripts/usage-repair-1m-residuals.ts removes the old ones from the files.
+ */
+export const isDoubledResidual = (r: { src: string; key: string }): boolean => r.src === "claude-residual" && /\[1m\]$/i.test(r.key);
+
 /** A line of a producer file (without its `\n`), or null. */
 export function parseLine(line: string): UsageRec | null {
   const record = parseUsageLine(line);

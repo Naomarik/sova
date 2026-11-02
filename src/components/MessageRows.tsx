@@ -6,7 +6,7 @@ import type { LiveUserState } from "../lib/live";
 import { agoTime, stampTime } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
 import { ImageStrip } from "./ImageStrip";
-import { Markdown } from "./Markdown";
+import { ReplyMarkdown } from "./ReplyMarkdown";
 import { PathAttachment } from "./PathAttachment";
 import { ReplyTimingHead } from "./ReplyTiming";
 import { Banner, Icon } from "./ui";
@@ -149,7 +149,7 @@ export function AssistantText(props: {
           {(t) => <ReplyTimingHead timing={t()} author={author()} stamp={<Stamp iso={props.time} />} />}
         </Show>
       </Show>
-      <Markdown text={props.text} streaming={props.streaming} attachments={props.attachments} />
+      <ReplyMarkdown text={props.text} streaming={props.streaming} attachments={props.attachments} />
     </article>
   );
 }

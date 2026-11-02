@@ -37,9 +37,9 @@ import { sessionsChanged } from "./list-generation";
 import { projectRootOf } from "./project-root";
 import { runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
-import { unofficialDrafts } from "./spec-drafts-state";
+import { type DraftsHash, draftsChanged, draftsHash, unofficialDrafts } from "./spec-drafts-state";
 import { canonical } from "../pi-config/extensions/worktrees/state.ts";
-import { answerAt, LANDING_FILE_NAME, readLanding, recordGoAhead, recordNotYet } from "../pi-config/extensions/worktrees/landing.ts";
+import { answerAt, goAheadFor, LANDING_FILE_NAME, readLanding, recordGoAhead, recordNotYet } from "../pi-config/extensions/worktrees/landing.ts";
 import { driverCheckAt, landingAnswerOf, rowProgress, whereOf, type LandingAnswer } from "./session-offers-rows";
 
 /**
@@ -74,6 +74,8 @@ interface StoredRow extends OfferCardRow {
   defIdx: number[];
   /** The full head commit a landing row is for. */
   head?: string;
+  /** The branch's spec drafts as the row showed them, which its Land It records (§chat.worktrees/landing-answers). */
+  draftsSeen?: DraftsHash;
 }
 
 /** A card as stored: the wire card plus what a click needs. */
@@ -91,6 +93,8 @@ interface StoredCard extends OfferCard {
   /** The branch and full head commit the card was shown for. */
   branch?: string;
   head?: string;
+  /** A Landing card: the branch's spec drafts as the card showed them, which its Land It records (§chat.worktrees/landing-answers). */
+  drafts?: DraftsHash;
   /** A rows card's rows, and the file's all button. */
   rows?: StoredRow[];
   allDef?: { label: string; about: string; confirm: string };
@@ -243,6 +247,7 @@ function readRecord(sessionId: string): SessionRecord | null {
           ...(Array.isArray(s.landing) ? { landing: s.landing as (LandingRecord | null)[] } : {}),
           ...(typeof s.branch === "string" ? { branch: s.branch } : {}),
           ...(typeof s.head === "string" ? { head: s.head } : {}),
+          ...(s.drafts && typeof (s.drafts as DraftsHash).hash === "string" && Array.isArray((s.drafts as DraftsHash).names) ? { drafts: s.drafts as DraftsHash } : {}),
           ...(wireRows ? { rows: wireRows.map((r, i) => storedRowOf(r, (s.rows as unknown[])[i])) } : {}),
           ...(isAllDef(s.allDef) ? { allDef: s.allDef } : {}),
           ...(s.landingRows === true ? { landingRows: true as const } : {}),
@@ -289,6 +294,7 @@ function storedRowOf(wire: OfferCardRow, raw: unknown): StoredRow {
     landing: list(r.landing, (x): x is LandingRecord | null => x === null || x === "go-ahead" || x === "go-ahead-without-specs" || x === "not-yet"),
     defIdx: Array.isArray(r.defIdx) && r.defIdx.length === n && r.defIdx.every((x) => Number.isInteger(x)) ? (r.defIdx as number[]) : wire.buttons.map((_, i) => i),
     ...(typeof r.head === "string" ? { head: r.head } : {}),
+    ...(r.draftsSeen && typeof (r.draftsSeen as DraftsHash).hash === "string" && Array.isArray((r.draftsSeen as DraftsHash).names) ? { draftsSeen: r.draftsSeen as DraftsHash } : {}),
   };
 }
 
@@ -449,6 +455,10 @@ async function factsOf(cwd: string, root: string): Promise<Facts & { head?: stri
   return { ...(branch && branch !== "HEAD" ? { branch } : {}), ...(base ? { base } : {}), ...(head ? { head, commit: head.slice(0, 12) } : {}), project: basename(root) || root };
 }
 
+/** Held only because its drafts changed since the user's Land It, and they'd land as they are now: the user answers again. */
+const reLand = (l: { state: string; docs?: { problems?: string[]; changedSinceGoAhead?: string[] } } | undefined): boolean =>
+  l?.state === "specs" && !!l.docs?.changedSinceGoAhead?.length && !l.docs.problems?.length;
+
 const CONDITION_WORDS: Record<OfferCondition, string> = {
   "branch-ready": "the branch is ready to merge",
   "waiting-for-ok": "the branch waits for the user's OK",
@@ -458,6 +468,8 @@ const CONDITION_WORDS: Record<OfferCondition, string> = {
   "ready-to-land": "the branch is ready to land",
   "specs-promoted": "the branch holds no spec draft left unpromoted",
   "specs-left": "the branch holds spec drafts left unpromoted",
+  "docs-fit": "the branch is ready to land with its docs",
+  "specs-why": "the session said why its spec drafts can't land",
 };
 
 /** The trees a condition reads: the one the offer is shown for, else every tree of the session. */
@@ -470,11 +482,15 @@ async function conditionHolds(c: OfferCondition, s: SessionSummary, root: string
     case "waiting-for-ok":
       return (await trees()).some((t) => t.state === "waiting-approval");
     case "ready-to-land":
-      return (await trees()).some((t) => t.landing?.state === "ready" || !!t.landing?.specsWhy);
+      return (await trees()).some((t) => t.landing?.state === "ready" || !!t.landing?.specsWhy || reLand(t.landing));
     case "specs-promoted":
       return !unofficialDrafts(folder)?.length;
     case "specs-left":
       return !!unofficialDrafts(folder)?.length;
+    case "specs-why":
+      return (await trees()).some((t) => !!t.landing?.specsWhy);
+    case "docs-fit":
+      return (await trees()).some((t) => t.landing?.state === "ready" || reLand(t.landing));
     case "tree-clean": {
       const r = await deps.git(["status", "--porcelain"], s.cwd).catch(() => ({ code: 1, stdout: "x" }));
       return r.code === 0 && r.stdout.trim() === "";
@@ -563,7 +579,22 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
   if (!shown.length) throw new OfferRefusal(`None of "${input.offer}"'s buttons fits now. ${projectWords}`);
   const facts = await factsOf(folder, root);
   facts.drafts = unofficialDrafts(folder)?.join(", ");
-  const moment = momentOf(def.repeat, facts.head, input.replyId ?? `at:${s.lastActiveAt ?? ""}`);
+  // A Landing card says what docs land with the branch; after a Land It whose drafts changed since, it shows again at
+  // the same commit, once per set of drafts, saying which changed (§chat.offers/sova-landing).
+  const landingCard = def.buttons.some((b) => b.landing);
+  const drafts = landingCard && facts.head ? draftsHash(folder) : undefined;
+  let docs: OfferCard["docs"];
+  let momentDocs = "";
+  if (landingCard && facts.head && facts.branch) {
+    const pressed = (() => { try { return goAheadFor(facts.branch!, facts.head!, landingFileOf())?.drafts; } catch { return undefined; } })();
+    const changed = pressed ? draftsChanged(pressed, drafts) : [];
+    if (changed.length && drafts) momentDocs = `#docs:${drafts.hash}`;
+    const d = (await trees()).find((t) => t.landing?.docs)?.landing?.docs;
+    const counts = d && (d.added || d.changed) ? `Lands with its docs: ${d.added ? `${d.added} new promise${d.added === 1 ? "" : "s"}` : ""}${d.added && d.changed ? ", " : ""}${d.changed ? `${d.changed} changed` : ""}` : "";
+    const line = [changed.length ? `Its docs changed since your Land It: ${changed.join(", ")}.` : "", counts].filter(Boolean).join(" ");
+    if (line) docs = { line, names: d?.names ?? [] };
+  }
+  const moment = momentOf(def.repeat, facts.head, input.replyId ?? `at:${s.lastActiveAt ?? ""}`) + (def.repeat === "once-per-commit" && facts.head ? momentDocs : "");
   if (rec.cards.some((c) => c.name === input.offer && c.moment === moment)) throw new OfferRefusal(`"${input.offer}" was already shown ${MOMENT_WORDS[def.repeat]}. ${projectWords}`, 409, true);
   // One open offer at a time: a new one never replaces it (an open card whose offer left the file is withdrawn, and a
   // once-per-commit card whose branch moved on is superseded: neither is open, so the current one shows at once).
@@ -584,6 +615,8 @@ export async function showOffer(input: ShowInput): Promise<OfferCard> {
     from = { id: f.id, title: f.title || "Untitled" };
   }
   const card = makeCard({ ...def, buttons: shown }, input, ++rec.n, facts, moment, root, note, from, fromPath, deps.now().toISOString());
+  if (docs) card.docs = docs;
+  if (drafts) card.drafts = drafts;
   if (checked.rows.length) {
     const defIdx = shown.map((b) => def.buttons.indexOf(b));
     card.rows = checked.rows.map((r, i) => rowOfInput(r, i + 1, shown, defIdx, facts));
@@ -655,9 +688,9 @@ const rowName = (r: StoredRow): string => (r.branch && r.commit ? `${r.branch}@$
 
 /** The card as the wire carries it (what a click needs stays here). */
 function wireCard(c: StoredCard, rec?: SessionRecord): OfferCard {
-  const { moment: _m, root: _r, sends: _s, runs: _u, to: _t, fromPath: _f, landing: _l, branch: _b, head: _h, rows, allDef, landingRows: _lr, base: _base, ...card } = c;
+  const { moment: _m, root: _r, sends: _s, runs: _u, to: _t, fromPath: _f, landing: _l, branch: _b, head: _h, rows, allDef, landingRows: _lr, base: _base, drafts: _d, ...card } = c;
   const out: OfferCard = card;
-  if (rows) out.rows = rows.map(({ sends: _rs, landing: _rl, defIdx: _rd, head: _rh, ...row }) => row);
+  if (rows) out.rows = rows.map(({ sends: _rs, landing: _rl, defIdx: _rd, head: _rh, draftsSeen: _rds, ...row }) => row);
   const all = allRows(c);
   if (allDef && all.length) out.all = { label: allDef.label, about: allDef.about, confirm: fillText(allDef.confirm, { project: basename(c.root) || c.root, rows: all.map(rowName).join(", ") }), rows: all.map((r) => r.id) };
   if (c.landingRows && c.state === "open" && rec?.rowsWaiting?.length) out.more = rec.rowsWaiting.length;
@@ -667,7 +700,7 @@ function wireCard(c: StoredCard, rec?: SessionRecord): OfferCard {
 // ---- clicks (§chat.offers/card) -----------------------------------------------------------------
 
 /** The commit a once-per-commit card is for (§chat.offers/card), from its moment; undefined for any other card. */
-const commitOf = (card: StoredCard): string | undefined => (card.moment.startsWith("commit:") ? card.moment.slice("commit:".length) : undefined);
+const commitOf = (card: StoredCard): string | undefined => (card.moment.startsWith("commit:") ? card.moment.slice("commit:".length).split("#")[0] : undefined);
 
 /**
  * Whether a once-per-commit card's branch has moved on from the commit it was shown for (§chat.offers/card):
@@ -756,7 +789,7 @@ async function chooseCard(path: string, sessionId: string, rec: SessionRecord, c
       throw new OfferRefusal(sent.error);
     }
     bump(card.root, card.name, "used");
-    recordLanding({ branch: card.branch, head: card.head, owner: sessionId, kind: card.landing?.[index] ?? null, given: sessionId, at });
+    recordLanding({ branch: card.branch, head: card.head, owner: sessionId, kind: card.landing?.[index] ?? null, given: sessionId, at, ...(card.drafts ? { drafts: card.drafts } : {}) });
     // One decision, two places (§chat.offers/landing-rows): the captain's row for this branch settles too.
     if (card.landing?.[index] && card.from) settleIn(card.from.id);
     return wireCard(card, rec);
@@ -849,7 +882,7 @@ async function pressRows(path: string, rec: SessionRecord, card: StoredCard, row
   for (const { row, i } of picks) {
     const kind = row.landing[i] ?? null;
     if (!kind || !row.branch || !row.head) continue;
-    recordLanding({ branch: row.branch, head: row.head, owner: row.owner?.id, kind, given: rec.sessionId, at });
+    recordLanding({ branch: row.branch, head: row.head, owner: row.owner?.id, kind, given: rec.sessionId, at, ...(row.draftsSeen ? { drafts: row.draftsSeen } : {}) });
     if (row.owner) owners.add(row.owner.id);
   }
   closeIfDone(rec, card);
@@ -874,7 +907,12 @@ function landingLabel(root: string, name: string, kind: LandingRecord): string {
  */
 function applyLandingAnswers(rec: SessionRecord): boolean {
   let data: ReturnType<typeof readLanding> | undefined;
-  const answer = (branch: string, head: string): LandingAnswer | undefined => landingAnswerOf(answerAt((data ??= readLanding(landingFileOf())), branch, head));
+  // A Land It recorded for other drafts than a card or row shows (they changed since it) doesn't answer it (§chat.offers/sova-landing).
+  const answer = (branch: string, head: string, shown?: DraftsHash): LandingAnswer | undefined => {
+    const hit = answerAt((data ??= readLanding(landingFileOf())), branch, head);
+    if (hit?.kind === "go-ahead" && hit.goAhead.drafts && shown && hit.goAhead.drafts.hash !== shown.hash) return undefined;
+    return landingAnswerOf(hit);
+  };
   let changed = false;
   const settle = (target: { buttons: { label: string }[]; state: string; choice?: OfferChoice }, kinds: (LandingRecord | null)[], a: LandingAnswer, root: string, name: string, where: string | undefined) => {
     const i = kinds.indexOf(a.kind);
@@ -887,12 +925,12 @@ function applyLandingAnswers(rec: SessionRecord): boolean {
     if (card.rows) {
       for (const row of card.rows) {
         if (row.state !== "open" || !row.branch || !row.head || !row.landing.some((x) => x)) continue;
-        const a = answer(row.branch, row.head);
+        const a = answer(row.branch, row.head, row.draftsSeen);
         if (a) settle(row, row.landing, a, card.root, card.name, whereOf(a, rec.sessionId, row.owner ? { [row.owner.id]: row.owner.title } : {}, { id: rec.sessionId, title: "this chat" }));
       }
       if (closeIfDone(rec, card)) changed = true;
     } else if (card.landing?.some((x) => x) && card.branch && card.head) {
-      const a = answer(card.branch, card.head);
+      const a = answer(card.branch, card.head, card.drafts);
       if (a) settle(card, card.landing, a, card.root, card.name, whereOf(a, rec.sessionId, card.from ? { [card.from.id]: card.from.title } : {}, card.from));
     }
   }
@@ -1028,6 +1066,7 @@ export async function addLandingRow(input: LandingRowInput): Promise<{ card: str
     landing: shown.map((b) => b.landing ?? null),
     defIdx: shown.map((b) => def.buttons.indexOf(b)),
     head: input.head,
+    ...((): { draftsSeen?: DraftsHash } => { const d = draftsHash(input.tree); return d ? { draftsSeen: d } : {}; })(),
   };
   // At most `max` open rows: answered rows leave room; the rows already waiting go first.
   const max = landingMax(def);
@@ -1065,12 +1104,13 @@ export const landingFileOf = () => join(stateRoot(), LANDING_FILE_NAME);
 
 /** A landing button's record, once its send went through (§chat.offers/buttons): the go-ahead for that exact commit,
     or Not Yet; `owner` the branch's session, `given` the session it was given in. */
-function recordLanding(r: { branch?: string; head?: string; owner?: string; kind: LandingRecord | null; given: string; at: string }): void {
+function recordLanding(r: { branch?: string; head?: string; owner?: string; kind: LandingRecord | null; given: string; at: string; drafts?: DraftsHash }): void {
   if (!r.kind || !r.branch || !r.head) return;
   const base = { branch: r.branch, commit: r.head, ...(r.owner ? { session: r.owner } : {}), at: r.at, in: r.given };
   try {
     if (r.kind === "not-yet") recordNotYet(base, landingFileOf());
-    else recordGoAhead({ ...base, by: "land-it", ...(r.kind === "go-ahead-without-specs" ? { withoutSpecs: true as const } : {}) }, landingFileOf());
+    // Land It covers the drafts as the card or row showed them (a later change holds the branch: §chat.worktrees/landing-answers).
+    else recordGoAhead({ ...base, by: "land-it", ...(r.kind === "go-ahead-without-specs" ? { withoutSpecs: true as const } : {}), ...(r.drafts ? { drafts: r.drafts } : {}) }, landingFileOf());
   } catch (err) {
     console.warn(`[offers] landing record not written: ${err instanceof Error ? err.message : String(err)}`);
   }

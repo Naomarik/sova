@@ -17,7 +17,8 @@
       "server/align-state.test.ts",
       "src/components/Composer.tsx",
       "src/lib/align-picks.ts",
-      "src/lib/align-picks.test.ts"
+      "src/lib/align-picks.test.ts",
+      "src/lib/hidden-rows.test.ts"
     ],
     "requires": [
       "§chat.alignment/state",
@@ -27,8 +28,8 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "at": "2026-10-27T23:54Z",
+      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
     }
   },
   "§chat.alignment/chip": {
@@ -79,6 +80,37 @@
       "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
     }
   },
+  "§chat.alignment/eagerness": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "pi-config/extensions/mode/align-settings.ts",
+      "pi-config/extensions/mode/minor.ts",
+      "pi-config/extensions/mode/prompt.ts",
+      "pi-config/extensions/mode/align-tool.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/state.ts",
+      "pi-config/extensions/subagents/subagent-profiles.ts",
+      "server/align-settings.ts",
+      "pi-config/extensions/mode/align-settings.test.ts",
+      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/tests/style-turn.mjs",
+      "pi-config/extensions/mode/tests/smoke.mjs",
+      "pi-config/extensions/mode/tests/align-turn.mjs"
+    ],
+    "requires": [
+      "§chat.alignment/settings-file",
+      "§chat.alignment/when",
+      "§chat.alignment/style",
+      "§chat.mode-menu/minor-toggle-keeps-prompt"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-30T01:15Z",
+      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#00a2d68b"
+    }
+  },
   "§chat.alignment/model": {
     "kind": "behavior",
     "authority": "accepted",
@@ -95,7 +127,9 @@
       "pi-config/extensions/mode/tests/smoke.mjs",
       "pi-config/extensions/mode/README.md",
       "pi-config/extensions/mode/align-settings.test.ts",
-      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
+      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
+      "pi-config/extensions/mode/tests/review-smoke.mjs",
+      "pi-config/extensions/mode/align-settings.ts"
     ],
     "requires": [
       "§chat.alignment/state",
@@ -103,9 +137,33 @@
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-26T21:58Z",
-      "source": "pi-session:870ce3a5-70c4-4ee4-86d6-e43d0a143cb2#58d50ef4"
+      "at": "2026-10-30T01:15Z",
+      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#00a2d68b"
     }
+  },
+  "§chat.alignment/reply": {
+    "kind": "behavior",
+    "code": [
+      "pi-config/extensions/mode/minor.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/align.ts",
+      "pi-config/extensions/mode/align.test.ts",
+      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/README.md",
+      "pi-config/extensions/mode/tests/align-turn.mjs",
+      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
+    ],
+    "requires": [
+      "§chat.alignment/model",
+      "§chat.markdown/working-notes"
+    ],
+    "authority": "accepted",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-27T23:54Z",
+      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+    },
+    "evidence": "verified"
   },
   "§chat.alignment/session-mark": {
     "kind": "behavior",
@@ -154,15 +212,18 @@
       "pi-config/extensions/subagents/subagent-profiles.ts",
       "pi-config/extensions/mode/README.md",
       "pi-config/README.md",
-      "agents/modes/align/overview.md"
+      "agents/modes/align/overview.md",
+      "pi-config/extensions/mode/index.ts",
+      "src/components/AlignmentSettings.tsx",
+      "src/lib/alignment-draft.ts"
     ],
     "requires": [
       "§chat.subagent-profiles/file"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-23T00:54Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#a99507f3"
+      "at": "2026-10-30T01:15Z",
+      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#00a2d68b"
     }
   },
   "§chat.alignment/state": {
@@ -222,11 +283,20 @@
       "pi-config/extensions/mode/align-file.ts",
       "pi-config/extensions/mode/tests/align-old-ops.jsonl",
       "pi-config/extensions/mode/README.md",
-      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
+      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
+      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/tests/review-smoke.mjs",
+      "pi-config/extensions/mode/minor.ts",
+      "pi-config/extensions/mode/prompt.ts"
     ],
     "requires": [
       "§chat.alignment/document"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-30T01:15Z",
+      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#00a2d68b"
+    }
   },
   "§chat.alignment/tui": {
     "kind": "behavior",
@@ -280,6 +350,34 @@
       "at": "2026-10-26T21:58Z",
       "source": "pi-session:870ce3a5-70c4-4ee4-86d6-e43d0a143cb2#58d50ef4"
     }
+  },
+  "§chat.alignment/when": {
+    "kind": "behavior",
+    "code": [
+      "pi-config/extensions/mode/minor.ts",
+      "pi-config/extensions/mode/prompt.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/align.ts",
+      "pi-config/extensions/mode/align-tool.ts",
+      "pi-config/extensions/mode/index.test.ts",
+      "pi-config/extensions/mode/align.test.ts",
+      "pi-config/extensions/mode/README.md",
+      "pi-config/extensions/mode/tests/smoke.mjs",
+      "pi-config/extensions/mode/tests/align-turn.mjs",
+      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
+      "pi-config/extensions/mode/align-settings.ts"
+    ],
+    "requires": [
+      "§chat.alignment/model",
+      "§chat.alignment/tool"
+    ],
+    "authority": "accepted",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-30T01:15Z",
+      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#00a2d68b"
+    },
+    "evidence": "verified"
   },
   "§chat/alignment": {
     "kind": "surface",

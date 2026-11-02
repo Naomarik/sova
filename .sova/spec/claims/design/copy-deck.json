@@ -42,6 +42,15 @@
     "authority": "accepted",
     "evidence": "reviewed"
   },
+  "§design.copy-deck/cost-breakdown": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/CostBreakdown.tsx",
+      "src/lib/cost-history.ts"
+    ]
+  },
   "§design.copy-deck/gathering-abilities": {
     "kind": "note",
     "authority": "accepted",
@@ -74,7 +83,10 @@
       "src/lib/insights.ts",
       "pi-config/extensions/usage-status/index.ts",
       "src/components/UsageHistory.tsx",
-      "src/components/UsageOllama.tsx"
+      "src/components/UsageOllama.tsx",
+      "src/components/CostsTab.tsx",
+      "src/components/CostBreakdown.tsx",
+      "src/lib/cost-history.ts"
     ]
   },
   "§design.copy-deck/live-watch": {
@@ -389,7 +401,9 @@
       "src/components/SessionUsage.tsx",
       "src/components/SessionPane.tsx",
       "src/components/SubagentPane.tsx",
-      "src/lib/spend.ts"
+      "src/lib/spend.ts",
+      "src/components/CostBreakdown.tsx",
+      "src/lib/cost-history.ts"
     ]
   },
   "§design.copy-deck/timeline-tab": {

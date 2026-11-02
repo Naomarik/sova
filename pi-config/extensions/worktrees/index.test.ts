@@ -314,7 +314,7 @@ test("in a spec project the warnings are said once: a tool merge's answer (its c
 	}
 });
 
-test("no merge guard: a session that isn't the captain merges into master with no recorded go-ahead, even where the offers file still names mainMerges", async () => {
+test("outside Sova's merge queue, merge brings a branch into master at once, with no go-ahead recorded; a retired mainMerges switch left in the repo changes nothing", async () => {
 	const r = repo();
 	try {
 		// The retired switch, as master may still hold it: it does nothing.

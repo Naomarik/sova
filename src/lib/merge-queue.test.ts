@@ -173,10 +173,10 @@ test("a queue line as a sentence: capitalised and stopped once", async () => {
   assert.equal(sentence(undefined), "");
 });
 
-test("an invalid definition is said as such: never Not set up, never Land or Set Up on a row", () => {
+test("an invalid definition is said as such: never Not set up; a row keeps Land (a fix can land), never Set Up", () => {
   const bad = '$.merge.checks[0].run[2]: a lone "$"';
   assert.deepEqual(queueStateChip({ state: "idle", checks: "unset", invalid: bad }), { label: "Definition invalid", tone: "error" });
-  const r = queueRow(wt({ readiness: ready, mergeProject: { id: "prj_1", root: "/r", target: "main", checks: "unset", review: false, invalid: bad } as never }));
-  assert.equal(r.action, "none");
-  assert.equal(r.reason, `This project's .sova/project.json doesn't parse: ${bad}. Fix it on the target; nothing lands until it parses.`);
+  const r = queueRow(wt({ readiness: ready, mergeProject: { id: "prj_1", root: "/r", target: "main", checks: "unset", review: false, invalid: bad } }));
+  assert.equal(r.action, "land");
+  assert.equal(r.reason, `This project's .sova/project.json doesn't parse: ${bad}. Fix it on the target, or land a branch that fixes it; nothing else lands until it parses.`);
 });

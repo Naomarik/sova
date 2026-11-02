@@ -518,6 +518,20 @@ for (const width of [1280, 390]) {
       await o.ctx.close();
     });
 
+    test("a worktree of a project whose definition doesn't parse keeps Land, with the reason; Land calls the queue", async () => {
+      const bad = '$.merge.checks[0].run[2]: a lone "$"';
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows: [wt("feat/fix-definition", { mergeProject: { ...mergeProject, checks: "unset", invalid: bad } })] });
+      await o.page.getByRole("button", { name: /^Worktrees: / }).click({ timeout: 20_000 });
+      const modal = o.page.getByRole("dialog", { name: "Worktrees" });
+      await modal.waitFor();
+      const t = await words(modal);
+      assert.ok(t.includes(`doesn't parse: ${bad}. Fix it on the target, or land a branch that fixes it`));
+      assert.equal(await modal.getByRole("link", { name: "Set Up Queue" }).count(), 0);
+      await modal.getByRole("button", { name: "Land feat/fix-definition", exact: true }).click();
+      await until("a land", () => o.calls.some((c) => c.verb === "merge.add" && c.body.checkout === "/w/.worktrees/sova-fix-definition"));
+      await o.ctx.close();
+    });
+
     test("the session pane's Worktrees rows: the same states and actions", async () => {
       const o = await open(width, `#/s/${encodeURIComponent(PATH)}`);
       const { page } = o;
@@ -752,7 +766,7 @@ for (const width of [1280, 390]) {
       await o.ctx.close();
     });
 
-    test("an invalid .sova/project.json: its error, never the onboarding; one banner for its pause; Merge Branch stays on the rows", async () => {
+    test("an invalid .sova/project.json: its error, never the onboarding; one banner for its pause; rows and the run keep Land", async () => {
       const bad = '$.merge.checks[0].run[2]: a lone "$"';
       const why = `The project's .sova/project.json is invalid: ${bad}. Fix it on the target; nothing lands until it parses`;
       const view = viewOf({ checks: "unset", invalid: bad, state: "paused", paused: { kind: "definition-invalid", why, at: iso(1) }, current: undefined, checking: [] });
@@ -764,7 +778,7 @@ for (const width of [1280, 390]) {
       assert.match(t, /Definition invalid/);
       assert.ok(t.includes(bad), "the parser's path and message");
       assert.equal(t.split("doesn't parse").length - 1, 1, "said once, not in the title and again in the body");
-      assert.match(t, /Fix it on master; nothing lands until it parses\./);
+      assert.match(t, /Fix it on master, or land a branch that fixes it; nothing else lands until it parses\./);
       assert.doesNotMatch(t, /Not set up|Before the queue can land anything here/);
       assert.equal(await page.getByRole("button", { name: /^Try It on/ }).count(), 0);
       assert.equal(await tab.locator(".banner").count(), 1, "the pause isn't said twice");
@@ -772,12 +786,14 @@ for (const width of [1280, 390]) {
       await noSideScroll(page);
       await noRestartOrLive(page, ".mq-tab");
       await shot(page, `${width}-definition-invalid`);
-      // The project page's coding rows: no Land while it can't parse (the fix may be one of these branches).
+      // The project page: every merge goes through the queue (it takes a branch that fixes the file), so it says Land.
       await page.goto(`${ORIGIN}/#/projects/${PID}`);
+      await page.getByRole("button", { name: "Land sova/project-verbs" }).first().waitFor({ timeout: 20_000 });
       const cart = page.locator(".project-worktree", { hasText: "Fix the cart" });
-      await cart.getByRole("button", { name: /^Actions · / }).click({ timeout: 20_000 });
-      await page.getByRole("menuitem", { name: "Merge Branch: sova/fix-cart into master" }).waitFor();
-      assert.equal(await page.getByRole("menuitem", { name: /^Land / }).count(), 0);
+      await cart.getByRole("button", { name: /^Actions · / }).click();
+      await page.getByRole("menuitem", { name: "Land sova/fix-cart on master" }).waitFor();
+      assert.equal(await page.getByRole("menuitem", { name: /^Merge Branch/ }).count(), 0);
+      await page.keyboard.press("Escape");
       await o.ctx.close();
     });
 

@@ -180,10 +180,11 @@ function queueRowOf(w: QueueRowInput): QueueRow {
   if (r?.dirtyCount)
     return { ...quiet, key: "uncommitted", label: "Uncommitted", tone: "neutral", detail: `${r.dirtyCount} ${r.dirtyCount === 1 ? "file" : "files"} not committed`, reason: "Commit it in its chat, then Land.", action: "none" };
   if (r?.noCommits) return { ...quiet, key: "no-commits", label: "No commits yet", tone: "neutral", action: "none" };
-  // The project's .sova/project.json doesn't parse (WorktreeMergeProject.invalid): no Land, no Set Up; the reason says why.
-  const invalid = (w.mergeProject as { invalid?: string } | undefined)?.invalid;
+  // The project's .sova/project.json doesn't parse: Land stays (a branch that fixes it is taken, the queue refuses
+  // the others with its reason), never Set Up; the line says why the rest wait.
+  const invalid = w.mergeProject?.invalid;
   if (invalid)
-    return { ...quiet, key: "ready", label: "Ready", tone: "success", detail: r?.landing?.commit ? short(r.landing.commit) : undefined, reason: invalidWords(invalid), action: "none" };
+    return { ...quiet, key: "ready", label: "Ready", tone: "success", detail: r?.landing?.commit ? short(r.landing.commit) : undefined, reason: invalidWords(invalid), action: "land" };
   const unset = w.mergeProject?.checks === "unset";
   return {
     ...quiet,
@@ -259,7 +260,7 @@ export function sourceTag(s: RunStep["source"]): { label: string; tone: Tone } |
 }
 
 /** A definition that doesn't parse, as one sentence: the parser's path and message, then what to do. */
-export const invalidWords = (invalid: string): string => `This project's .sova/project.json doesn't parse: ${invalid.trim().replace(/[.]$/, "")}. Fix it on the target; nothing lands until it parses.`;
+export const invalidWords = (invalid: string): string => `This project's .sova/project.json doesn't parse: ${invalid.trim().replace(/[.]$/, "")}. Fix it on the target, or land a branch that fixes it; nothing else lands until it parses.`;
 
 /** The queue's state chip. */
 export function queueStateChip(v: Pick<MergeQueueView, "state" | "checks"> & Partial<Pick<MergeQueueView, "invalid">>): { label: string; tone: Tone; live?: boolean } {

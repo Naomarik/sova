@@ -166,7 +166,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatTitle?(
       </p>
       <Show when={head.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
       <Show when={v().invalid}>
-        {(bad) => <Banner tone="error" title="This project's .sova/project.json doesn't parse." body={`${bad().trim().replace(/[.]$/, "")}. Fix it on ${v().target}; nothing lands until it parses.`} />}
+        {(bad) => <Banner tone="error" title="This project's .sova/project.json doesn't parse." body={`${bad().trim().replace(/[.]$/, "")}. Fix it on ${v().target}, or land a branch that fixes it; nothing else lands until it parses.`} />}
       </Show>
       {/* The definition's own pause is said by the banner above, once. */}
       <Show when={paused() && !(v().paused?.kind === "definition-invalid" && v().invalid)}>

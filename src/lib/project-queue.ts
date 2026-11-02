@@ -61,9 +61,9 @@ export function createProjectQueue(projectId: Accessor<string | null | undefined
   return {
     view: latest,
     root: () => root.latest,
-    // Not while the definition doesn't parse: the queue refuses every Land then, so Merge Branch stays
-    // (it is how a branch that fixes .sova/project.json gets in).
-    setUp: () => !!latest() && !latest()!.invalid && latest()!.checks !== "unset",
+    // A definition that doesn't parse still counts: every merge goes through the queue then (it takes a branch
+    // that fixes the file and refuses the rest), so the button says Land, never Merge Branch.
+    setUp: () => !!latest() && (!!latest()!.invalid || latest()!.checks !== "unset"),
     info: (branch) => {
       const v = latest();
       const e = v && entryForBranch(v, branch);

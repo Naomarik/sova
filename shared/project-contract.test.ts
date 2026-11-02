@@ -385,6 +385,12 @@ test("merge: target, push, checks (a list or \"none\"), install and review, pars
   assert.equal(m({ checks: [{ id: "a", run: ["x"], rerun: 1 }] }), "$.merge.checks[0].rerun");
   assert.equal(m({ checks: [{ id: "a", run: ["x"], label: "" }] }), "$.merge.checks[0].label");
   assert.equal(m({ checks: [{ id: "a", run: ["x", "${merge.nope}"] }] }), "$.merge.checks[0].run[1]");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], optional: "yes" }] }), "$.merge.checks[0].optional");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], optional: true }] }), "$.merge.checks");
+  assert.deepEqual(parse({ version: 1, services, merge: { checks: [{ id: "a", run: ["x"] }, { id: "b", run: ["y"], optional: true }] } }).merge?.checks, [
+    { id: "a", label: "a", run: ["x"], timeout: 600, rerun: false, requires: [] },
+    { id: "b", label: "b", run: ["y"], timeout: 600, rerun: false, requires: [], optional: true },
+  ]);
   assert.equal(m({ install: { run: ["x"] } }), "$.merge.install.inputs");
   assert.equal(m({ install: { run: ["x", "${merge.base}"], inputs: ["l"] } }), "$.merge.install.run[1]");
   assert.equal(m({ review: "/abs" }), "$.merge.review");
@@ -397,7 +403,8 @@ test("Sova's own definition declares its merge checks", async () => {
   const def = parseDefinition(readFileSync(new URL("../.sova/project.json", import.meta.url), "utf8"));
   const checks = def.merge?.checks;
   assert.ok(Array.isArray(checks));
-  assert.deepEqual(checks.map((c) => c.id), ["typecheck", "unit", "integration", "extensions", "spec-replay", "statecharts", "build", "spec", "leak-scan"]);
+  assert.deepEqual(checks.filter((c) => !c.optional).map((c) => c.id), ["typecheck", "unit", "integration", "extensions", "spec-replay", "statecharts", "build", "spec", "leak-scan"]);
+  assert.deepEqual(checks.filter((c) => c.optional).map((c) => c.id), ["tour", "integration-group"]);
   assert.equal(def.merge?.target, "master");
   assert.equal(def.merge?.install?.inputs.includes("pnpm-lock.yaml"), true);
 });

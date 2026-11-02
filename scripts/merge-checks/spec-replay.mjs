@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { acquireLock, agentDir, context, expandArgs, niced, report, run, skip, touchesSpecReplay } from "./lib.mjs";
 
 const ctx = context();
-if (!ctx.changed.some(touchesSpecReplay)) skip(ctx.out, "no change to the spec core, its replay tests or the spec guard");
+if (!ctx.picked && !ctx.changed.some(touchesSpecReplay)) skip(ctx.out, "no change to the spec core, its replay tests or the spec guard");
 const specDir = join(ctx.root, "pi-config", "extensions", "spec");
 if (!existsSync(join(specDir, "tests", "replay", "replay.test.mjs"))) skip(ctx.out, "no tests/replay/replay.test.mjs in this tree");
 const lock = await acquireLock(join(agentDir(), "locks", "spec-replay.lock"), { pollMs: Number(process.env.SOVA_LOCK_POLL_MS) || 5000 });

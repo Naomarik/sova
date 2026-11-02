@@ -257,7 +257,8 @@ export interface ProjectDef {
 
 /** One check the merge queue runs on a merged commit, in declaration order. `run` may use the definition's template
  *  variables and `${merge.base}`, `${merge.tip}`, `${merge.target}`. `rerun`: its failures name test files, and
- *  `run` + those files reruns only them (attribution). `requires`: services brought up in the merge copy first. */
+ *  `run` + those files reruns only them (attribution). `requires`: services brought up in the merge copy first.
+ *  `optional`: not part of the required set; runs only when the merge thread picks it. */
 export interface MergeCheckDecl {
   id: string;
   label: string;
@@ -265,6 +266,7 @@ export interface MergeCheckDecl {
   timeout: number;
   rerun: boolean;
   requires: string[];
+  optional?: true;
 }
 /** The definition's `merge` section. `checks`: the required set, `"none"` (declared: no automated tests), or absent
  *  (the queue falls back to `test.run`, else the project isn't set up). `target`: the branch it lands on (absent: the
@@ -417,7 +419,7 @@ export const DEFINITION_KEYS = {
   credential: ["name", "kind", "check"],
   requires: ["tests"],
   merge: ["target", "push", "checks", "install", "review"],
-  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires"],
+  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
   mergeInstall: ["run", "inputs", "timeout"],
 } as const;
 const K = DEFINITION_KEYS;
@@ -843,10 +845,12 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
       const id = name(typeof x.id === "string" ? x.id : "", `${path}.id`);
       if (x.label !== undefined && (typeof x.label !== "string" || !x.label.trim() || x.label.length > 60)) throw new DefinitionError(`${path}.label`, "must be a short label (1 to 60 characters)");
       if (x.rerun !== undefined && typeof x.rerun !== "boolean") throw new DefinitionError(`${path}.rerun`, "must be true or false");
+      if (x.optional !== undefined && typeof x.optional !== "boolean") throw new DefinitionError(`${path}.optional`, "must be true or false");
       const requires = strList(x.requires, `${path}.requires`);
       for (const r of requires) if (!services.some((s) => s.name === r)) throw new DefinitionError(`${path}.requires`, `names no service "${r}"`);
-      return { id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires };
+      return { id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires, ...(x.optional === true ? { optional: true as const } : {}) };
     });
+    if (!out.checks.some((c) => !c.optional)) throw new DefinitionError("$.merge.checks", "at least one check is required (not optional)");
     if (new Set(out.checks.map((c) => c.id)).size !== out.checks.length) throw new DefinitionError("$.merge.checks", "check ids must be unique");
   }
   if (o.install !== undefined) {

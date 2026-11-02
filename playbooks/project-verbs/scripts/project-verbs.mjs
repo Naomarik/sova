@@ -46,7 +46,7 @@ export const ORDER = {
   credential: ["name", "kind", "check"],
   requires: ["tests"],
   merge: ["target", "push", "checks", "install", "review"],
-  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires"],
+  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
   mergeInstall: ["run", "inputs", "timeout"],
 };
 /** Maps whose keys are names in declaration order, kept as written. */

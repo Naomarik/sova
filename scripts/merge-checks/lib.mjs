@@ -4,7 +4,8 @@
 // Its inputs: SOVA_MERGE_BASE (the target's commit the change sits on; else --base <rev>, else the
 // merge base with master), SOVA_MERGE_CHANGED (a file of the changed paths, one per line; else
 // `git diff --name-only <base>...HEAD`), and SOVA_OUT (a file it writes its report to, as JSON). A
-// check with nothing to do exits 0 and writes `{passed: 0, failed: 0, skipped: "<why>"}`.
+// check with nothing to do exits 0 and writes `{passed: 0, failed: 0, skipped: "<why>"}`. SOVA_MERGE_PICKED=1 (or
+// --picked): the merge thread picked this check for the change, so a check that runs only when triggered runs anyway.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -26,7 +27,7 @@ export function context(argv = process.argv.slice(2), env = process.env, cwd = p
   const list = env.SOVA_MERGE_CHANGED || opt(argv, "--changed");
   if (list) changed = readFileSync(list, "utf8").split("\n").map((s) => s.trim()).filter(Boolean);
   else changed = git(root, ["diff", "--name-only", `${base}...HEAD`]).split("\n").filter(Boolean);
-  return { root, base, changed, out: env.SOVA_OUT || null, target: env.SOVA_MERGE_TARGET || "master" };
+  return { root, base, changed, out: env.SOVA_OUT || null, target: env.SOVA_MERGE_TARGET || "master", picked: env.SOVA_MERGE_PICKED === "1" || argv.includes("--picked") };
 }
 
 /** Writes the report to SOVA_OUT (when set). */

@@ -30,132 +30,35 @@
 //   E6 review    planted tech debt (commented-out block, a HACK with a fixed sleep, untested behaviour): "Review
 //                flagged · waiting for you"; Send Back
 // Exit 0 when every case selected passed.
-import { spawn, spawnSync } from "node:child_process";
-import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { HERE, LIVE_TREE, QueueClient, REAL_PI, Results, SovaUnderTest, check, copyNodeModules, git, guardPath, log as plog, makeBranch, parseArgs, realHead, sh, until } from "./merge-queue-qa-lib.mjs";
 
-const HERE = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const args = process.argv.slice(2);
-const opt = (n, d) => {
-  const i = args.indexOf(n);
-  return i >= 0 && args[i + 1] && !args[i + 1].startsWith("--") ? args[i + 1] : d;
-};
+const { opt, has } = parseArgs();
 const PORT = Number(opt("--port", process.env.SOVA_PORT || "4826"));
 const ONLY = opt("--only", "") ? new Set(opt("--only", "").split(",")) : null;
-const KEEP = args.includes("--keep");
-const FRESH = args.includes("--fresh");
-const MODEL = opt("--model", "zai/glm-5.3");
-const REAL_MODEL = args.includes("--real-model");
-const E2E = join(homedir(), ".cache", "mq-e2e");
-const SERVER = join(E2E, "server");
+const KEEP = has("--keep");
+const FRESH = has("--fresh");
+const E2E = guardPath(join(homedir(), ".cache", "mq-e2e"));
 const PROJECT = join(E2E, "sova");
 const ORIGIN = join(E2E, "sova-origin.git");
 const WT = join(E2E, ".worktrees");
 const LOGS = join(E2E, "logs");
-const RESULTS = join(E2E, "results.json");
-const AGENT = join(SERVER, ".agent");
-const BASE_URL = `http://127.0.0.1:${PORT}`;
-const REAL_PI = join(homedir(), ".pi");
-
-for (const p of [E2E, SERVER, PROJECT, WT]) if (resolve(p).startsWith(REAL_PI + "/")) throw new Error(`refusing ${p}: under ~/.pi`);
-
-// ---------------------------------------------------------------- small helpers
-
-function sh(cmd, argv, o = {}) {
-  const r = spawnSync(cmd, argv, { cwd: o.cwd ?? E2E, encoding: "utf8", env: { ...process.env, ...(o.env ?? {}) }, maxBuffer: 256 * 1024 * 1024, timeout: o.timeout ?? 600_000 });
-  if (r.status !== 0 && !o.allowFail) throw new Error(`${cmd} ${argv.join(" ")} (in ${o.cwd ?? E2E}) exited ${r.status}: ${r.stderr || r.stdout}`);
-  return (r.stdout ?? "").trim();
-}
-const git = (cwd, ...a) => sh("git", ["-c", "user.name=e2e", "-c", "user.email=e2e@example.invalid", "-c", "commit.gpgsign=false", ...a], { cwd });
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const log = (...a) => console.log(`[e2e ${new Date().toISOString().slice(11, 19)}]`, ...a);
-
-async function until(what, fn, ms = 30 * 60_000, every = 2000) {
-  const end = Date.now() + ms;
-  let last;
-  for (;;) {
-    try {
-      const v = await fn();
-      if (v) return v;
-    } catch (e) {
-      last = e;
-    }
-    if (Date.now() > end) throw new Error(`timed out after ${Math.round(ms / 1000)} s waiting for ${what}${last ? `: ${last.message}` : ""}`);
-    await sleep(every);
-  }
-}
-
-let token = null;
-async function http(method, path, body) {
-  token ??= readFileSync(join(AGENT, "sova", "auth-token"), "utf8").trim();
-  const r = await fetch(BASE_URL + path, { method, headers: { "content-type": "application/json", "x-sova-token": token }, body: body === undefined ? undefined : JSON.stringify(body) });
-  const text = await r.text();
-  let json;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = { raw: text };
-  }
-  return { status: r.status, json };
-}
-/** One merge verb as the operator (the Land button's route). */
-async function verb(name, body) {
-  const r = await http("POST", `/api/project-services/${name}`, body);
-  return r.json;
-}
-
-// ---------------------------------------------------------------- results
-
-const results = existsSync(RESULTS) && !FRESH ? JSON.parse(readFileSync(RESULTS, "utf8")) : { runs: [] };
-const thisRun = { startedAt: new Date().toISOString(), head: "", cases: [] };
-results.runs.push(thisRun);
-const save = () => writeFileSync(RESULTS, JSON.stringify(results, null, 2) + "\n");
-
-async function kase(id, title, fn) {
-  if (ONLY && !ONLY.has(id)) return;
-  log(`${id} ${title}`);
-  const t0 = Date.now();
-  const rec = { id, title, ok: false, ms: 0, evidence: {}, error: null };
-  thisRun.cases.push(rec);
-  try {
-    await fn(rec.evidence);
-    rec.ok = true;
-    log(`${id} PASS (${Math.round((Date.now() - t0) / 1000)} s)`);
-  } catch (e) {
-    rec.error = String(e?.stack ?? e);
-    log(`${id} FAIL: ${e?.message ?? e}`);
-  }
-  rec.ms = Date.now() - t0;
-  save();
-}
-const check = (cond, what) => {
-  if (!cond) throw new Error(`expected: ${what}`);
-};
-
-// ---------------------------------------------------------------- prepare
-
-const REAL_MASTER = (() => {
-  // The live tree's master, read-only: it must be the same at the end.
-  const r = spawnSync("git", ["-C", join(homedir(), "webapps", "sova"), "rev-parse", "master"], { encoding: "utf8" });
-  return r.status === 0 ? r.stdout.trim() : null;
-})();
+const log = (...a) => plog("e2e", ...a);
+const sova = new SovaUnderTest({ ws: E2E, port: PORT, model: opt("--model", "zai/glm-5.3"), realModel: has("--real-model"), tag: "e2e" });
+const R = new Results(join(E2E, "results.json"), "e2e", { fresh: FRESH });
+const q = new QueueClient(sova, PROJECT);
+const kase = (id, title, fn) => R.kase(id, title, fn, ONLY);
+const REAL_MASTER = realHead(LIVE_TREE, "master");
 
 function prepare() {
-  mkdirSync(E2E, { recursive: true });
   mkdirSync(LOGS, { recursive: true });
-  const head = git(HERE, "rev-parse", "HEAD");
-  thisRun.head = head;
+  if (FRESH) for (const p of [sova.dir, PROJECT, ORIGIN, WT]) rmSync(p, { recursive: true, force: true });
+  const head = sova.prepare();
+  R.set("head", head);
   log(`feature HEAD ${head.slice(0, 10)}; real master ${REAL_MASTER?.slice(0, 10)}`);
-  if (FRESH) for (const p of [SERVER, PROJECT, ORIGIN, WT]) rmSync(p, { recursive: true, force: true });
-
-  // The Sova under test.
-  if (!existsSync(SERVER)) git(E2E, "clone", "-q", "--no-hardlinks", HERE, SERVER);
-  git(SERVER, "remote", "set-url", "origin", HERE);
-  git(SERVER, "fetch", "-q", "origin", head);
-  git(SERVER, "checkout", "-q", "--detach", head);
-  // The project: master = the feature HEAD, a local bare origin, never GitHub.
+  // The project: master = the feature HEAD (its checks are the branch's), a local bare origin, never GitHub.
   if (!existsSync(PROJECT)) {
     git(E2E, "clone", "-q", "--no-hardlinks", HERE, PROJECT);
     git(PROJECT, "remote", "remove", "origin");
@@ -166,114 +69,24 @@ function prepare() {
     git(PROJECT, "fetch", "-q", "origin");
   }
   check(!git(PROJECT, "remote", "-v").includes("github.com"), "the project's remotes never name GitHub");
-  for (const dir of [SERVER, PROJECT]) {
-    if (!existsSync(join(dir, "node_modules"))) {
-      log(`copying node_modules into ${dir}`);
-      sh("node", [join(HERE, "scripts/copy-tree.mjs"), join(HERE, "node_modules"), join(dir, "node_modules")], { cwd: dir, timeout: 900_000 });
-    }
-    sh("mise", ["trust", dir], { allowFail: true });
-  }
-  sh("node", ["scripts/hermetic-agent-dir.mjs"], { cwd: SERVER });
-  // A real model for the merge thread and the reviewer (--real-model; the operator allowed copying the login into
-  // this hermetic .agent, gitignored, deleted at the end). Every chat defaults to MODEL before its first prompt.
-  check(sh("git", ["check-ignore", ".agent/auth.json"], { cwd: SERVER, allowFail: true }) === ".agent/auth.json", ".agent is gitignored in the server clone");
-  const auth = join(homedir(), ".pi", "agent", "auth.json");
-  if (REAL_MODEL && existsSync(auth)) cpSync(auth, join(AGENT, "auth.json"));
-  const sf = join(AGENT, "settings.json");
-  const settings = existsSync(sf) ? JSON.parse(readFileSync(sf, "utf8")) : {};
-  const [provider, ...model] = MODEL.split("/");
-  writeFileSync(sf, JSON.stringify({ ...settings, defaultProvider: provider, defaultModel: model.join("/") }, null, 2) + "\n");
+  copyNodeModules(PROJECT);
+  sh("mise", ["trust", PROJECT], { allowFail: true });
 }
 
-/** The copied login goes as soon as the runs end, on every path. */
-function dropAuth() {
-  rmSync(join(AGENT, "auth.json"), { force: true });
-}
-
-// ---------------------------------------------------------------- the server
-
-let server = null;
-async function startServer() {
-  const out = join(LOGS, `server-${Date.now()}.log`);
-  log(`starting Sova on ${PORT} (log ${out})`);
-  server = spawn("scripts/start-server.sh", [], {
-    cwd: SERVER,
-    env: {
-      ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^(SOVA_|PI_|CLAUDE)/.test(k))),
-      PORT: String(PORT),
-      PI_CODING_AGENT_DIR: AGENT,
-      SOVA_UPDATES_CHECK: "off",
-      SOVA_GIT_MAINTENANCE: "off",
-      SOVA_PRICES_FETCH: "off",
-    },
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  server.stdout.on("data", (d) => appendFileSync(out, d));
-  server.stderr.on("data", (d) => appendFileSync(out, d));
-  await until("the server's health", async () => (await fetch(`${BASE_URL}/api/health`).catch(() => null))?.ok, 180_000, 500);
-}
-async function stopServer() {
-  if (!server) return;
-  server.kill("SIGTERM");
-  await until("the server to stop", () => server.exitCode !== null || server.signalCode !== null, 30_000, 200).catch(() => server.kill("SIGKILL"));
-  server = null;
-}
-
-// ---------------------------------------------------------------- the project and its branches
-
-let projectId = null;
-async function register() {
-  const list = await http("GET", "/api/projects");
-  const found = (list.json.projects ?? []).find((p) => p.root === PROJECT);
-  if (found) return (projectId = found.id);
-  const r = await http("POST", "/api/projects", { root: PROJECT, name: "sova-e2e" });
-  check(r.status === 201, `project registered (${r.status} ${JSON.stringify(r.json)})`);
-  projectId = r.json.project?.id ?? r.json.id;
-  return projectId;
-}
-
-function branch(name, edit, opts = {}) {
-  const b = `e2e/${name}`;
-  const dir = join(WT, `sova-e2e-${name}`);
-  if (existsSync(dir)) {
-    git(PROJECT, "worktree", "remove", "--force", dir);
-  }
-  spawnSync("git", ["-C", PROJECT, "branch", "-D", b]);
-  git(PROJECT, "worktree", "add", "-q", "-b", b, dir, opts.from ?? "master");
-  edit(dir);
-  git(dir, "add", "-A");
-  git(dir, "commit", "-q", "-m", `e2e: ${name}`);
-  return { branch: b, dir, commit: git(dir, "rev-parse", "HEAD") };
-}
-
-const status = async () => (await verb("merge.status", { project: PROJECT })).merge?.view;
-const allEntries = (v) => [...(v?.waiting ?? []), ...(v?.needsYou ?? []), ...(v?.needsFix ?? []), ...(v?.recent ?? []).map((r) => r.entry)];
-async function entryOf(id) {
-  const v = await status();
-  const e = allEntries(v).find((x) => x.id === id);
-  if (e) return e;
-  if (v?.current?.entry === id) return { id, state: "checking" };
-  return null;
-}
-async function waitState(id, states, ms) {
-  return until(`entry ${id} in ${states.join("|")}`, async () => {
-    const e = await entryOf(id);
-    return e && states.includes(e.state) ? e : null;
-  }, ms);
-}
-async function add(b, extra = {}) {
-  const r = await verb("merge.add", { project: PROJECT, branch: b.branch, ...extra });
-  check(r.ok !== false && r.merge?.entry, `merge.add accepted (${JSON.stringify(r.error ?? r).slice(0, 400)})`);
-  return r.merge.entry;
-}
+const branch = (name, edit, opts = {}) => makeBranch(PROJECT, WT, "sova-e2e", `e2e/${name}`, edit, opts);
+const status = () => q.view();
+const entryOf = (id) => q.entry(id);
+const waitState = (id, states, ms) => q.waitState(id, states, ms);
+const add = (b, extra = {}) => q.add(b.branch, extra);
+const verb = (name, body) => sova.verb(name, body);
 async function keepLogs(caseId, entry) {
   const v = await status();
   writeFileSync(join(LOGS, `${caseId}-view.json`), JSON.stringify(v, null, 2));
   const runId = entry?.run;
   if (!runId) return;
-  const r = await verb("merge.logs", { run: runId, lines: 500 });
-  writeFileSync(join(LOGS, `${caseId}-run.json`), JSON.stringify(r.merge ?? r, null, 2));
-  return r.merge?.run;
+  const r = await q.run(runId, 500);
+  writeFileSync(join(LOGS, `${caseId}-run.json`), JSON.stringify(r, null, 2));
+  return r?.run;
 }
 const head = () => git(PROJECT, "rev-parse", "master");
 const originHead = () => git(ORIGIN, "rev-parse", "refs/heads/master");
@@ -288,14 +101,12 @@ async function assertLanded(ev, caseId, e) {
   check(run?.tip === head(), `master == the run's tested tip (${run?.tip?.slice(0, 10)})`);
   check(originHead() === head(), `origin pushed (${originHead().slice(0, 10)})`);
   check(run?.copy === join(WT, "sova-merge"), `the merge copy beside the project (${run?.copy})`);
-  check(!String(run?.copy).startsWith(REAL_PI) && !String(run?.copy).startsWith(AGENT), "never under a state root");
+  check(!String(run?.copy).startsWith(REAL_PI) && !String(run?.copy).startsWith(sova.agent), "never under a state root");
   check(run?.steps?.[0]?.kind === "copy", `the first step is the copy (${run?.steps?.[0]?.kind})`);
   check(git(PROJECT, "rev-parse", "HEAD") === head(), "the main checkout followed master");
   ev.steps = run.steps.map((s) => `${s.kind}:${s.id}:${s.result}:${s.ms}ms${s.why ? ` (${s.why})` : ""}`);
   return run;
 }
-
-// ---------------------------------------------------------------- the cases
 
 async function cases() {
   await kase("E1", "a good branch with a spec draft lands; docs official; note", async (ev) => {
@@ -469,43 +280,30 @@ async function cases() {
 
 async function main() {
   prepare();
-  await startServer();
+  await sova.start(LOGS);
   try {
-    await register();
-    log(`project ${projectId} at ${PROJECT}`);
+    await sova.register(PROJECT, "sova-e2e");
     await cases();
   } finally {
     writeFileSync(join(LOGS, "final-view.json"), JSON.stringify(await status().catch(() => null), null, 2));
-    await archiveChats().catch((e) => log(`archiving chats: ${e.message}`));
-    if (!KEEP) await stopServer();
-    if (!KEEP) dropAuth();
+    if (KEEP) sova.dropAuth();
+    else await sova.stop();
   }
-  const after = spawnSync("git", ["-C", join(homedir(), "webapps", "sova"), "rev-parse", "master"], { encoding: "utf8" }).stdout?.trim();
-  thisRun.realMasterUnchanged = after === REAL_MASTER;
-  thisRun.endedAt = new Date().toISOString();
-  save();
-  const failed = thisRun.cases.filter((c) => !c.ok);
-  log(`done: ${thisRun.cases.length - failed.length}/${thisRun.cases.length} passed; real master unchanged: ${thisRun.realMasterUnchanged}`);
-  for (const f of failed) log(`  FAIL ${f.id}: ${String(f.error).split("\n")[0]}`);
-  process.exit(failed.length || !thisRun.realMasterUnchanged ? 1 : 0);
+  const ok = realHead(LIVE_TREE, "master") === REAL_MASTER;
+  R.set("realMasterUnchanged", ok);
+  R.set("endedAt", new Date().toISOString());
+  const failed = R.summary();
+  log(`real master unchanged: ${ok}`);
+  process.exit(failed || !ok ? 1 : 0);
 }
 
-/** Archive every chat this run's server made (the merge thread, reviewers): throwaway sessions never stay open. */
-async function archiveChats() {
-  const r = await http("GET", "/api/sessions");
-  const list = Array.isArray(r.json) ? r.json : (r.json.sessions ?? []);
-  for (const s of list) if (!s.archived && s.path) await http("POST", "/api/sessions/archive", { path: s.path, archived: true }).catch(() => {});
-}
-
-process.on("SIGINT", async () => {
-  await stopServer();
-  dropAuth();
+for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, async () => {
+  await sova.stop().catch(() => {});
   process.exit(130);
 });
 
 main().catch(async (e) => {
   console.error(e);
-  await stopServer();
-  dropAuth();
+  await sova.stop().catch(() => {});
   process.exit(2);
 });

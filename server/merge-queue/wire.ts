@@ -37,6 +37,11 @@ export function mergeQueues(): MergeQueues | null {
   return queues;
 }
 
+/** Tests only: stand a set of queues in for the server's (null: none). */
+export function setMergeQueuesForTest(q: MergeQueues | null): void {
+  queues = q;
+}
+
 /** Tell the typed go-ahead door to look now (the worktree tool just wrote one). */
 export function pokeMergeIngest(): void {
   ingest?.poke();

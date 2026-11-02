@@ -1,12 +1,13 @@
 import { createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { SessionWorktreeInfo } from "../../shared/protocol";
-import { queueRow, rowsSummary, shownCommit, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
+import { queueRow, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, land, refusal, type LandOptions } from "../lib/merge-queue-client";
 import { mergeRunHref, projectTabHref } from "../lib/projects-route";
 import { tildePath } from "../lib/format";
 import { announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
+import type { MergeUnclear } from "../../shared/merge-queue";
 import { Icon, trapFocus } from "./ui";
 
 /** A tracked worktree with the queue's facts (SessionWorktreeInfo.queue, filled by the server). */
@@ -62,6 +63,33 @@ export function LandSpecsConfirm(props: { branch: string; busy: boolean; onConfi
         </button>
       </div>
     </div>
+  );
+}
+
+/** Can't tell whose failure: each check that failed on both sides, with a link to its run's logs. */
+export function UnclearChecks(props: { projectId?: string; unclear?: MergeUnclear[]; target?: string; class?: string }) {
+  return (
+    <Show when={props.unclear?.length}>
+      <ul class={`mq-unclear text-caption${props.class ? ` ${props.class}` : ""}`} aria-label="Checks that failed on both sides">
+        <For each={props.unclear}>
+          {(u) => (
+            <li>
+              {unclearLine(u, props.target)}
+              <Show when={props.projectId}>
+                {(pid) => (
+                  <>
+                    {" "}
+                    <a href={mergeRunHref(pid(), u.run)} aria-label={`Log of ${u.label}`}>
+                      Log
+                    </a>
+                  </>
+                )}
+              </Show>
+            </li>
+          )}
+        </For>
+      </ul>
+    </Show>
   );
 }
 
@@ -147,6 +175,9 @@ export function WorktreeQueueRow(props: {
               </Show>
             </p>
           )}
+        </Show>
+        <Show when={row().key === "unattributed"}>
+          <UnclearChecks projectId={projectId()} unclear={w().queue?.unclear} target={w().mergeProject?.target} />
         </Show>
         <For each={row().notes}>
           {(n) => (

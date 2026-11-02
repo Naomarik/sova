@@ -9,6 +9,8 @@ import { announce, home, toast } from "../lib/ui-state";
 import { ChangesDialog, useChangesSession } from "./ChangesViewer";
 import { CardErrorBox } from "./TranscriptKind";
 import { Icon } from "./ui";
+import { UnclearChecks } from "./WorktreesModal";
+import { unattributedWhy } from "../lib/merge-queue";
 
 /**
  * The merge queue's card for one branch, in the chat that built it: its state pill, "feat/x into
@@ -153,7 +155,11 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
           </Show>
         </p>
       </Show>
-      <Show when={d().reason && d().state !== "landed"}>
+      <Show when={d().state === "unattributed"}>
+        <p class="text-caption mq-card-line">{unattributedWhy(d().reason, d().target)} Nobody is blamed: Land Anyway lands the commit it tested, Send Back hands it to this chat.</p>
+        <UnclearChecks projectId={d().project} unclear={d().unclear} target={d().target} />
+      </Show>
+      <Show when={d().reason && d().state !== "landed" && d().state !== "unattributed"}>
         <p class="text-caption mq-card-line">
           {d().reason}
           <Show when={runHref()}>

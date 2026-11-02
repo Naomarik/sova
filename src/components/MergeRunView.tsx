@@ -1,11 +1,13 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
 import { relativeTime } from "../lib/format";
-import { attribution, clock, sentence, short, sourceTag, verdictChip, type MergeQueueView, type MergeRun, type RunStep } from "../lib/merge-queue";
-import { mergeChanged, readLog, readRun } from "../lib/merge-queue-client";
+import { attribution, clock, sentence, short, sourceTag, unattributedWhy, verdictChip, type MergeEntry, type MergeQueueView, type MergeRun, type RunStep } from "../lib/merge-queue";
+import { answerEntry, mergeChanged, readLog, readRun, refusal } from "../lib/merge-queue-client";
+import type { MergeAnswer } from "../../shared/merge-queue";
+import { announce, toast } from "../lib/ui-state";
 import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { Banner, Icon } from "./ui";
 import { FromChat } from "./MergeQueueTab";
-import { QueueChip } from "./WorktreesModal";
+import { QueueChip, UnclearChecks } from "./WorktreesModal";
 
 const RUN_POLL_MS = 3000;
 
@@ -93,6 +95,9 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
               </a>
             </div>
             <Verdict run={r()} target={props.view.target} />
+            <Show when={entry()?.state === "unattributed" && (entry()!.run ?? r().id) === r().id && entry()}>
+              {(e) => <Unattributed projectId={props.projectId} entry={e()} target={props.view.target} />}
+            </Show>
             <Show when={entry()?.conflict}>
               {(c) => (
                 <div class="mq-card" role="group" aria-label="The conflict">
@@ -135,6 +140,48 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
           </>
         )}
       </Show>
+    </div>
+  );
+}
+
+/** Can't tell whose failure: what failed on both sides, and your two answers (merge verbs; nothing goes to the chat). */
+function Unattributed(props: { projectId: string; entry: MergeEntry; target: string }) {
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal<string | null>(null);
+  const answer = async (a: MergeAnswer, done: string) => {
+    if (busy()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const no = refusal(await answerEntry(props.entry, a));
+      if (no) setError(no);
+      else {
+        toast(done);
+        announce(done);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div class="banner banner-warn mq-unattributed" role="status">
+      <Icon name="alert-circle" class="banner-icon" />
+      <div class="banner-main">
+        <p class="banner-title">Can't tell whose failure. Nothing landed; {props.target} didn't move.</p>
+        <p class="banner-body">{unattributedWhy(props.entry.reason, props.target)} Nobody is blamed. Land Anyway lands the commit it tested; Send Back hands it to its chat.</p>
+        <UnclearChecks projectId={props.projectId} unclear={props.entry.unclear} target={props.target} />
+        <Show when={error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
+        <div class="button-row mq-card-actions">
+          <button type="button" class="button button-sm button-primary" aria-label={`Land ${props.entry.branch} anyway`} disabled={busy()} onClick={() => void answer("land-anyway", `Landing ${props.entry.branch} anyway.`)}>
+            Land Anyway
+          </button>
+          <button type="button" class="button button-sm button-destructive" aria-label={`Send ${props.entry.branch} back to its chat`} disabled={busy()} onClick={() => void answer("send-back", `Sent ${props.entry.branch} back to its chat.`)}>
+            Send Back
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

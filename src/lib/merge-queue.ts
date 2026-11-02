@@ -46,6 +46,7 @@ export type RowKey =
   | "conflict"
   | "behaviour-differs"
   | "review-flagged"
+  | "unattributed"
   | "needs-fix"
   | "drafts-changed"
   | "landed"
@@ -112,7 +113,7 @@ export const shownCommit = (w: Partial<Pick<SessionWorktreeInfo, "readiness" | "
   w.mergeStats?.head ?? w.readiness?.landing?.commit;
 
 /** Rows past the queue (landed, merged, gone) carry no size: there's nothing left to land. */
-const SIZED: RowKey[] = ["ready", "uncommitted", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "needs-fix", "drafts-changed"];
+const SIZED: RowKey[] = ["ready", "uncommitted", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "drafts-changed"];
 
 /** The words for one worktree, from its tracked state, its readiness and its queue entry. */
 export function queueRow(w: QueueRowInput): QueueRow {
@@ -150,6 +151,9 @@ function queueRowOf(w: QueueRowInput): QueueRow {
           sendBack: true,
         };
       }
+      case "unattributed":
+        // A check failed on the merge and on the target alone, naming no tests: nobody is blamed; you decide.
+        return { ...base, key: "unattributed", label: "Can't tell whose failure", tone: "warn", reason: unattributedWhy(e.reason), action: "land-anyway", sendBack: true };
       case "review-flagged":
         return { ...base, key: "review-flagged", label: "Review flagged", tone: "warn", reason: e.review?.text ?? e.reason ?? "The review found something that blocks it.", action: "land-anyway", sendBack: true };
       case "drafts-changed":
@@ -197,8 +201,16 @@ function queueRowOf(w: QueueRowInput): QueueRow {
   };
 }
 
+/** Can't tell whose failure: the queue's line (which check, that it fails on the target too), else that in general. */
+export const unattributedWhy = (reason: string | undefined, target?: string): string =>
+  sentence(reason) || `A check failed on the merge and on ${target ?? "the target"} alone, so nobody is blamed.`;
+
+/** One unclear check's line: "Unit tests: fails with this branch and on master alone", or the queue's own why. */
+export const unclearLine = (u: { label: string; why?: string }, target?: string): string =>
+  u.why?.trim() ? `${u.label}: ${u.why.trim().replace(/[.]$/, "")}` : `${u.label}: fails with this branch and on ${target ?? "the target"} alone, naming no tests`;
+
 /** The order the summary counts in. */
-const ORDER: RowKey[] = ["ready", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "needs-fix", "drafts-changed", "uncommitted", "no-commits", "landed", "merged", "removed", "dropped"];
+const ORDER: RowKey[] = ["ready", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "drafts-changed", "uncommitted", "no-commits", "landed", "merged", "removed", "dropped"];
 const COUNT_WORD: Record<RowKey, [string, string]> = {
   ready: ["ready", "ready"],
   queued: ["queued", "queued"],
@@ -206,6 +218,7 @@ const COUNT_WORD: Record<RowKey, [string, string]> = {
   conflict: ["conflict", "conflicts"],
   "behaviour-differs": ["behaviour differs", "behaviour differs"],
   "review-flagged": ["review flagged", "reviews flagged"],
+  unattributed: ["can't tell whose failure", "can't tell whose failure"],
   "needs-fix": ["needs a fix", "need a fix"],
   "drafts-changed": ["drafts changed", "drafts changed"],
   uncommitted: ["uncommitted", "uncommitted"],
@@ -234,7 +247,7 @@ export function controlWords(rows: Pick<QueueRow, "key">[]): { text: string; n: 
 function controlWordsOf(rows: Pick<QueueRow, "key">[]): { text: string; dot: "ok" | "warn" | "err" | null } | null {
   if (rows.length === 0) return null;
   const n = (...k: RowKey[]) => rows.filter((r) => k.includes(r.key)).length;
-  const you = n("behaviour-differs", "review-flagged", "drafts-changed");
+  const you = n("behaviour-differs", "review-flagged", "unattributed", "drafts-changed");
   if (you) return { text: `${you} ${you === 1 ? "needs" : "need"} you`, dot: "warn" };
   if (n("needs-fix")) return { text: `${n("needs-fix")} ${n("needs-fix") === 1 ? "needs" : "need"} a fix`, dot: "err" };
   if (n("ready")) return { text: `${n("ready")} ready`, dot: "ok" };
@@ -335,8 +348,6 @@ export function pausedTitle(v: Pick<MergeQueueView, "paused">): string {
       return "Paused: the target moved outside the queue.";
     case "machine":
       return "Paused: setup failed on the target itself, twice.";
-    case "master-red":
-      return "Paused: a check is red on the target alone.";
     case "main-checkout-dirty":
       return "Paused: the project folder has uncommitted edits.";
     case "reviewer":

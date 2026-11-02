@@ -276,7 +276,7 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
         return route.fulfill(json(ok(verb, { run })));
       }
       if (verb === "merge.logs") {
-        const run = body.run === "mr_fail" ? FAILED : RUN;
+        const run = body.run === "mr_fail" ? FAILED : body.run === "mr_unclear" ? UNCLEAR_RUN : RUN;
         return route.fulfill(json(ok(verb, { run, lines: [`log of ${String(body.step ?? "every step")}`, "14:06 ok"] })));
       }
       return route.fulfill(json(ok(verb, { entry: entry({}) })));
@@ -407,6 +407,22 @@ const CARDS: MergeCard[] = [
     revisions: [{ id: "me_f:1", kind: "needs-fix", at: iso(2), after: "a2", state: "needs-fix", run: "mr_fail" }],
   }),
 ];
+/** Can't tell whose failure: the build fails on the merge and on master alone, naming no tests. */
+const UNCLEAR_WHY = "Build failed with this branch and on master alone, and names no tests";
+const UNCLEAR = [{ check: "build", label: "Build", run: "mr_unclear", step: "rerun-master:build", why: "fails with this branch and on master alone, naming no tests" }];
+const UNCLEAR_RUN: MergeRun = {
+  ...RUN,
+  id: "mr_unclear",
+  entry: "me_u",
+  branch: "feat/slow-build",
+  verdict: "waiting",
+  why: UNCLEAR_WHY,
+  endedAt: iso(1),
+  steps: [
+    { id: "check:build", kind: "check", label: "Build", result: "failed", ms: 50_000, source: "required", log: "b.log" },
+    { id: "rerun-master:build", kind: "rerun-master", label: "Build on master alone", result: "failed", ms: 40_000, log: "bm.log" },
+  ],
+};
 const POSTS = /"type":"(prompt|steer|follow_up)"/;
 
 for (const width of [1280, 390]) {
@@ -794,6 +810,77 @@ for (const width of [1280, 390]) {
       await page.getByRole("menuitem", { name: "Land sova/fix-cart on master" }).waitFor();
       assert.equal(await page.getByRole("menuitem", { name: /^Merge Branch/ }).count(), 0);
       await page.keyboard.press("Escape");
+      await o.ctx.close();
+    });
+
+    test("can't tell whose failure: in the modal, the tab's needs-you, the run page and the chat card, with Land Anyway / Send Back posting nothing", async () => {
+      const qe = entry({ id: "me_u", branch: "feat/slow-build", state: "unattributed", run: "mr_unclear", reason: UNCLEAR_WHY, unclear: UNCLEAR });
+      const view = viewOf({ needsYou: [qe] });
+      const row = wt("feat/slow-build", { queue: qi({ id: "me_u", state: "unattributed", run: "mr_unclear", reason: UNCLEAR_WHY, unclear: UNCLEAR }) });
+      const card = mc("me_u", "feat/slow-build", {
+        state: "unattributed",
+        run: "mr_unclear",
+        reason: UNCLEAR_WHY,
+        unclear: UNCLEAR,
+        revisions: [{ id: "me_u:1", kind: "unattributed", at: iso(2), after: "a2", state: "unattributed", run: "mr_unclear" }],
+      });
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows: [row], view, cards: [card], items: CHAT_ITEMS });
+      const { page } = o;
+      const expectWhy = async (t: string) => {
+        assert.match(t, /Build failed with this branch and on master alone, and names no tests\./);
+        assert.match(t, /Build: fails with this branch and on master alone, naming no tests/);
+      };
+      // The chat card: its pill, the why, the check, and the two answers.
+      const c = page.locator('.mq-chat-card[data-branch="feat/slow-build"]');
+      await c.waitFor({ timeout: 20_000 });
+      const ct = await words(c);
+      assert.match(ct, /Can't tell whose failure/);
+      await expectWhy(ct);
+      assert.equal(await c.getByRole("link", { name: "Log of Build" }).getAttribute("href"), `#/projects/${PID}/merge-queue/mr_unclear`);
+      await c.getByRole("button", { name: /Land Anyway/ }).click();
+      await until("land anyway from the card", () => o.calls.some((x) => x.verb === "merge.answer" && x.body.answer === "land-anyway" && x.body.entry === "me_u"));
+      await noRestartOrLive(page, '.mq-chat-card[data-branch="feat/slow-build"]');
+      await shot(page, `${width}-unclear-card`);
+      // The composer control counts it as needing you; the modal draws it with its two answers.
+      const control = page.getByRole("button", { name: /^Worktrees: / });
+      assert.match(await words(control), /1 needs you/);
+      await control.click();
+      const modal = page.getByRole("dialog", { name: "Worktrees" });
+      await modal.waitFor();
+      const mt = await words(modal);
+      assert.match(mt, /Can't tell whose failure/);
+      assert.match(mt, /1 can't tell whose failure/);
+      await expectWhy(mt);
+      await modal.getByRole("button", { name: "Send feat/slow-build back to its chat" }).click();
+      await until("send back from the modal", () => o.calls.some((x) => x.verb === "merge.answer" && x.body.answer === "send-back" && x.body.entry === "me_u"));
+      await noRestartOrLive(page, ".wt-queue-modal");
+      await shot(page, `${width}-unclear-modal`);
+      await page.keyboard.press("Escape");
+      assert.equal(o.frames.filter((f) => POSTS.test(f)).length, 0, "nothing posted to the chat");
+      // The tab's needs-you row.
+      await page.goto(`${ORIGIN}/#/projects/${PID}/merge-queue`);
+      const needs = page.locator('.mq-needs[data-branch="feat/slow-build"]');
+      await needs.waitFor({ timeout: 20_000 });
+      const nt = await words(needs);
+      assert.match(nt, /Can't tell whose failure · waiting for you/);
+      await expectWhy(nt);
+      await needs.getByRole("button", { name: "Land feat/slow-build anyway" }).click();
+      await until("land anyway from the tab", () => o.calls.filter((x) => x.verb === "merge.answer" && x.body.answer === "land-anyway").length >= 2);
+      assert.equal(await needs.getByRole("button", { name: /^Accept/ }).count(), 0);
+      await noRestartOrLive(page, ".mq-tab");
+      await noSideScroll(page);
+      // The run page: the banner, the check and the two answers.
+      await page.goto(`${ORIGIN}/#/projects/${PID}/merge-queue/mr_unclear`);
+      const ban = page.locator(".mq-unattributed");
+      await ban.waitFor({ timeout: 20_000 });
+      const bt = await words(ban);
+      assert.match(bt, /Can't tell whose failure\. Nothing landed; master didn't move\./);
+      await expectWhy(bt);
+      await ban.getByRole("button", { name: "Send feat/slow-build back to its chat" }).click();
+      await until("send back from the run page", () => o.calls.filter((x) => x.verb === "merge.answer" && x.body.answer === "send-back").length >= 2);
+      await noRestartOrLive(page, ".mq-run");
+      await noSideScroll(page);
+      await shot(page, `${width}-unclear-run`);
       await o.ctx.close();
     });
 

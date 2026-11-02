@@ -180,3 +180,13 @@ test("an invalid definition is said as such: never Not set up; a row keeps Land 
   assert.equal(r.action, "land");
   assert.equal(r.reason, `This project's .sova/project.json doesn't parse: ${bad}. Fix it on the target, or land a branch that fixes it; nothing else lands until it parses.`);
 });
+
+test("can't tell whose failure: its words, the queue's why, Land Anyway and Send Back; it needs you", () => {
+  const r = queueRow(wt({ queue: q({ state: "unattributed", reason: "build failed with this branch and on master alone" }) }));
+  assert.equal(r.label, "Can't tell whose failure");
+  assert.equal(r.action, "land-anyway");
+  assert.equal(r.sendBack, true);
+  assert.equal(r.reason, "Build failed with this branch and on master alone.");
+  assert.deepEqual(controlWords([{ key: "unattributed" }, { key: "ready" }]), { text: "1 needs you", n: 1, dot: "warn" });
+  assert.equal(rowsSummary([{ key: "unattributed" }]), "1 can't tell whose failure");
+});

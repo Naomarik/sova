@@ -1,7 +1,7 @@
 import { createEffect, createSignal, For, on, Show } from "solid-js";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { mins, notesOf, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView } from "../lib/merge-queue";
+import { mins, notesOf, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
@@ -9,7 +9,7 @@ import { announce, toast } from "../lib/ui-state";
 import { MergeOnboarding } from "./MergeOnboarding";
 import { MergeRunView } from "./MergeRunView";
 import { Banner, Icon } from "./ui";
-import { LandSpecsConfirm, LandSplit, QueueChip } from "./WorktreesModal";
+import { LandSpecsConfirm, LandSplit, QueueChip, UnclearChecks } from "./WorktreesModal";
 import type { MergeReady } from "../../shared/merge-queue";
 import { home } from "../lib/ui-state";
 import { tildePath } from "../lib/format";
@@ -419,6 +419,8 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
                 ? { label: "Behaviour differs · waiting for you", tone: "warn" }
                 : e().state === "review-flagged"
                   ? { label: "Review flagged · waiting for you", tone: "warn" }
+                  : e().state === "unattributed"
+                    ? { label: "Can't tell whose failure · waiting for you", tone: "warn" }
                   : e().state === "drafts-changed"
                     ? { label: "Drafts changed since you approved", tone: "warn" }
                     : { label: "Conflict", tone: "warn" }
@@ -446,6 +448,10 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
         <Show when={e().state === "review-flagged"}>
           <p class="list-meta">{e().review?.text ?? e().reason ?? "The review found something that blocks it."}</p>
         </Show>
+        <Show when={e().state === "unattributed"}>
+          <p class="list-meta">{unattributedWhy(e().reason, props.target)} Land Anyway lands the commit it tested; Send Back hands it to its chat.</p>
+          <UnclearChecks projectId={props.projectId} unclear={e().unclear} target={props.target} class="list-meta" />
+        </Show>
         <Show when={e().state === "drafts-changed"}>
           <p class="list-meta">{e().reason ?? "Its spec drafts changed after you approved. Land again to approve them as they are now."}</p>
         </Show>
@@ -471,7 +477,7 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
             Accept
           </button>
         </Show>
-        <Show when={e().state === "review-flagged"}>
+        <Show when={e().state === "review-flagged" || e().state === "unattributed"}>
           <button type="button" class="button button-sm button-primary" aria-label={`Land ${e().branch} anyway`} disabled={!!act.busy()} onClick={() => answer("land-anyway", `Landing ${e().branch} anyway.`)}>
             Land Anyway
           </button>
@@ -481,7 +487,7 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
             Land
           </button>
         </Show>
-        <Show when={e().state === "behaviour-differs" || e().state === "review-flagged"}>
+        <Show when={e().state === "behaviour-differs" || e().state === "review-flagged" || e().state === "unattributed"}>
           <button type="button" class="button button-sm button-destructive" aria-label={`Send ${e().branch} back to its chat`} disabled={!!act.busy()} onClick={() => answer("send-back", `Sent ${e().branch} back to its chat.`)}>
             Send Back
           </button>

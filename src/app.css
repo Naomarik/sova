@@ -1695,3 +1695,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-card-actions .button-destructive { margin-left: var(--space-2); }
 @media (pointer: coarse) { .mq-card-actions .button { min-height: var(--tap-min); } }
 .mq-card-folded .disclosure-label { overflow-wrap: anywhere; }
+/* Can't tell whose failure: the checks that failed on both sides, each with its log. */
+.mq-unclear { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
+.mq-unclear li { overflow-wrap: anywhere; }
+.mq-unattributed .mq-unclear { margin-bottom: var(--space-2); }

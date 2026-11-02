@@ -172,6 +172,7 @@ function viewOf(x: Partial<MergeQueueView> = {}): MergeQueueView {
       },
     ],
     heads: { target: sha("1"), pushed: sha("1") },
+    ready: [{ branch: "feat/ready-one", worktree: "/w/.worktrees/sova-ready-one", commit: sha("9"), ahead: 3 }],
     thread: { session: "/w/sessions/thread.jsonl", startedAt: iso(60) },
     at: iso(0),
     ...x,
@@ -235,6 +236,9 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   const calls: Opened["calls"] = [];
+  /** Try It on Main: each dryRun starts a run; the view's tryRun ends it, failing the first time, passing after. */
+  let tries = 0;
+  let tryRun: MergeRun | undefined;
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
   const ok = (verb: string, merge: unknown) => ({ v: 1, verb, project: ROOT_DIR, instance: null, slot: null, generation: null, checkout: null, branch: null, ok: true, changed: true, state: "stopped", steps: [], services: [], data: [], links: [], defHash: null, merge });
   await page.routeWebSocket(/.*/, (ws) => {
@@ -249,7 +253,16 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
     if (verb) {
       const body = JSON.parse(route.request().postData() ?? "{}") as Record<string, unknown>;
       calls.push({ verb, body });
-      if (verb === "merge.status") return route.fulfill(json(ok(verb, { view: o.view ?? viewOf() })));
+      if (verb === "merge.status") return route.fulfill(json(ok(verb, { view: { ...(o.view ?? viewOf()), ...(tryRun ? { tryRun } : {}) } })));
+      if (verb === "merge.setup" && body.dryRun) {
+        tries++;
+        const run = { ...RUN, id: `mr_try${tries}`, verdict: "running" as const };
+        tryRun =
+          tries === 1
+            ? { ...run, verdict: "failed", why: "install stopped: no lockfile found: it fails on master itself, so it is the project's setup to fix, not any branch's" }
+            : { ...run, verdict: "passed", why: "the checks pass on master" };
+        return route.fulfill(json(ok(verb, { run })));
+      }
       if (verb === "merge.logs") {
         const run = body.run === "mr_fail" ? FAILED : RUN;
         return route.fulfill(json(ok(verb, { run, lines: [`log of ${String(body.step ?? "every step")}`, "14:06 ok"] })));
@@ -471,6 +484,19 @@ for (const width of [1280, 390]) {
       await tab.getByRole("button", { name: "Land feat/hack anyway" }).click();
       await until("a land-anyway", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "land-anyway"));
       assert.equal(await tab.getByRole("link", { name: "Open Merge Thread" }).count(), 1);
+      // Ready to land, not approved: Land and its ▾, on the queue's own page.
+      const ready = tab.locator('[data-branch="feat/ready-one"]');
+      assert.match(await words(ready), /3 commits ahead/);
+      await ready.getByRole("button", { name: "Land feat/ready-one", exact: true }).click();
+      await until("a land from the ready list", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "feat/ready-one"));
+      assert.equal(lastCall(o, "merge.add").body.project, ROOT_DIR);
+      await ready.getByRole("button", { name: "More ways to land feat/ready-one" }).click();
+      await page.getByRole("menuitem", { name: "Land feat/ready-one without review" }).click();
+      await until("a land without review", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "feat/ready-one" && c.body.withoutReview === true));
+      await ready.getByRole("button", { name: "More ways to land feat/ready-one" }).click();
+      await page.getByRole("menuitem", { name: "Land feat/ready-one without its specs" }).click();
+      await ready.getByRole("button", { name: "Land Without Specs" }).click();
+      await until("a land without specs", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "feat/ready-one" && c.body.withoutSpecs === true));
       await noRestartOrLive(page, ".mq-tab");
       await noSideScroll(page);
       await o.ctx.close();
@@ -592,10 +618,22 @@ for (const width of [1280, 390]) {
       await page.getByText("Before the queue can land anything here, tell us what should pass.").waitFor({ timeout: 20_000 });
       await page.getByRole("textbox", { name: "Command" }).fill("npm test");
       assert.match(await words(page.locator(".mq-onboard")), /We run npm test there\./);
+      await page.getByRole("textbox", { name: "Start first" }).fill("db");
       await page.getByRole("button", { name: "Try It on Master" }).click();
       await until("a try", () => o.calls.some((c) => c.verb === "merge.setup" && c.body.dryRun === true));
       assert.equal(lastCall(o, "merge.setup").body.command, "npm test");
+      assert.deepEqual(lastCall(o, "merge.setup").body.requires, ["db"]);
       assert.equal(lastCall(o, "merge.setup").body.project, ROOT_DIR);
+      // The first try runs, then fails on master itself: the setup's to fix, no branch blamed; no Save yet.
+      const failed = page.locator(".mq-onboard .banner-error");
+      await failed.waitFor({ timeout: 15_000 });
+      assert.match(await words(failed), /Install stopped: no lockfile found: it fails on master itself/);
+      assert.match(await words(failed), /No branch was blamed\./);
+      assert.equal(await failed.getByRole("link", { name: "View Log" }).getAttribute("href"), `#/projects/${PID}/merge-queue/mr_try1`);
+      assert.equal(await page.getByRole("button", { name: "Save Checks" }).count(), 0);
+      // The second passes: Save Checks writes it.
+      await page.getByRole("button", { name: "Try It on Master" }).click();
+      await page.getByRole("button", { name: "Save Checks" }).waitFor({ timeout: 15_000 });
       await page.getByRole("button", { name: "Save Checks" }).click();
       await until("a save", () => o.calls.some((c) => c.verb === "merge.setup" && !c.body.dryRun));
       await shot(page, `${width}-onboard`);
@@ -609,8 +647,8 @@ for (const width of [1280, 390]) {
       assert.equal(o.calls.filter((c) => c.verb === "merge.setup").length, tries, "nothing tried");
       await page.getByRole("textbox", { name: "Checks" }).fill("Typecheck: npm run typecheck\nUnit tests: npm test");
       await page.getByRole("button", { name: "Try It on Master" }).click();
-      await until("a list try", () => o.calls.some((c) => c.verb === "merge.setup" && Array.isArray(c.body.checks)));
-      assert.deepEqual(lastCall(o, "merge.setup").body.checks, [{ label: "Typecheck", run: "npm run typecheck" }, { label: "Unit tests", run: "npm test" }]);
+      await until("a list try", () => o.calls.some((c) => c.verb === "merge.setup" && Array.isArray(c.body.commands)));
+      assert.deepEqual(lastCall(o, "merge.setup").body.commands, ["Typecheck: npm run typecheck", "Unit tests: npm test"]);
       assert.equal(lastCall(o, "merge.setup").body.dryRun, true);
       await page.getByText("This project has no automated tests").click();
       assert.match(await words(page.locator(".mq-onboard")), /master moves to that merged commit/);

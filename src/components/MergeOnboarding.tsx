@@ -1,14 +1,14 @@
-import { createSignal, Show } from "solid-js";
+import { createEffect, createSignal, on, Show } from "solid-js";
 import type { VerbResult } from "../../shared/project-contract";
 import { refusal, saveChecks, tryOnMain, type OnboardChecks } from "../lib/merge-queue-client";
 import { mergeRunHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
-import { parseCheckList, type MergeQueueView } from "../lib/merge-queue";
+import { parseCheckList, sentence, type MergeQueueView } from "../lib/merge-queue";
 import { HeadsStrip } from "./MergeQueueTab";
 import { Banner } from "./ui";
 import { QueueChip } from "./WorktreesModal";
 
-type Tried = { state: "idle" } | { state: "running" } | { state: "passed"; run?: string; took?: string } | { state: "failed"; why: string; run?: string };
+type Tried = { state: "idle" } | { state: "running"; run?: string } | { state: "passed"; run?: string; took?: string } | { state: "failed"; why: string; run?: string };
 
 /**
  * A project whose queue isn't set up: say what should pass before anything lands. Run a command (and
@@ -35,6 +35,19 @@ export function MergeOnboarding(props: { projectId: string; name: string; view: 
   /** Any change after a try asks for a new try. */
   const changed = () => setTried({ state: "idle" });
   const runOf = (r: VerbResult) => r.merge?.run?.id;
+  // Try It runs in the background: its run is the view's tryRun, which says how it ended and why.
+  createEffect(
+    on(
+      () => props.view.tryRun,
+      (t) => {
+        const now = tried();
+        if (now.state !== "running" || !now.run || !t || t.id !== now.run || t.verdict === "running") return;
+        const passed = t.verdict === "passed";
+        setTried(passed ? { state: "passed", run: t.id } : { state: "failed", why: sentence(t.why) || "It failed.", run: t.id });
+        announce(passed ? `Passed on ${target()}. You can save it.` : `It didn't pass on ${target()}.`);
+      },
+    ),
+  );
 
   const doTry = async () => {
     if (choice() === "command" && !command().trim()) {
@@ -54,9 +67,19 @@ export function MergeOnboarding(props: { projectId: string; name: string; view: 
     try {
       const r = await tryOnMain(props.view.root, checks());
       const no = refusal(r);
-      const t: Tried = no ? { state: "failed", why: no, run: runOf(r) } : { state: "passed", run: runOf(r) };
-      setTried(t);
-      announce(no ? `It didn't pass on ${target()}: ${no}` : `Passed on ${target()}. You can save it.`);
+      const run = r.merge?.run;
+      if (no) {
+        setTried({ state: "failed", why: no, run: runOf(r) });
+        announce(`It didn't pass on ${target()}: ${no}`);
+      } else if (run && run.verdict === "running") {
+        // Still running: the view's tryRun says how it ends (the tab reads it on its poll and the feed).
+        setTried({ state: "running", run: run.id });
+      } else if (run && run.verdict !== "passed") {
+        setTried({ state: "failed", why: sentence(run.why) || "It failed.", run: run.id });
+      } else {
+        setTried({ state: "passed", run: run?.id });
+        announce(`Passed on ${target()}. You can save it.`);
+      }
     } catch (err) {
       setTried({ state: "failed", why: err instanceof Error ? err.message : String(err) });
     }

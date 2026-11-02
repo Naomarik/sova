@@ -2,14 +2,17 @@ import { createEffect, createSignal, For, on, Show } from "solid-js";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
 import { mins, notesOf, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView } from "../lib/merge-queue";
-import { answerEntry, cancelEntry, landBranch, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
+import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { MergeOnboarding } from "./MergeOnboarding";
 import { MergeRunView } from "./MergeRunView";
 import { Banner, Icon } from "./ui";
-import { QueueChip } from "./WorktreesModal";
+import { LandSpecsConfirm, LandSplit, QueueChip } from "./WorktreesModal";
+import type { MergeReady } from "../../shared/merge-queue";
+import { home } from "../lib/ui-state";
+import { tildePath } from "../lib/format";
 
 /** How often the tab reads the queue while it shows (a run's steps move by the second). */
 const POLL_MS = 4000;
@@ -192,6 +195,14 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatTitle?(
           <h3 class="text-heading-s">Needs you</h3>
           <ul class="list mq-list">
             <For each={v().needsYou}>{(e) => <NeedsYouRow projectId={props.projectId} root={v().root} entry={e} target={v().target} chatTitle={props.chatTitle} onChanged={props.onChanged} />}</For>
+          </ul>
+        </div>
+      </Show>
+      <Show when={(v().ready ?? []).length > 0}>
+        <div class="stack-2">
+          <h3 class="text-heading-s">Ready to land, not approved</h3>
+          <ul class="list mq-list">
+            <For each={v().ready}>{(r) => <ReadyRow root={v().root} ready={r} review={v().review} onChanged={props.onChanged} />}</For>
           </ul>
         </div>
       </Show>
@@ -471,6 +482,42 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
           </button>
         </Show>
       </div>
+    </li>
+  );
+}
+
+/** A branch ready to land that nobody approved yet: Land, with its ▾. */
+function ReadyRow(props: { root: string; ready: MergeReady; review: boolean; onChanged(): void }) {
+  const r = () => props.ready;
+  const act = useAct(props.onChanged);
+  const [askSpecs, setAskSpecs] = createSignal(false);
+  const doLand = (o: LandOptions = {}) =>
+    void act.run("land", () => landBranch(props.root, r().branch, o), `Queued ${r().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
+  return (
+    <li class="list-row mq-row" data-branch={r().branch} data-state="ready">
+      <div class="list-main">
+        <p class="list-title cluster">
+          <span class="text-mono">{r().branch}</span>
+          <span class="text-mono text-muted">{short(r().commit)}</span>
+          <QueueChip row={{ label: "Ready", tone: "success" }} />
+        </p>
+        <p class="list-meta">
+          <span class="text-mono">{tildePath(r().worktree, home())}</span> · {r().ahead} {r().ahead === 1 ? "commit" : "commits"} ahead
+        </p>
+        <Show when={askSpecs()}>
+          <LandSpecsConfirm
+            branch={r().branch}
+            busy={!!act.busy()}
+            onConfirm={() => {
+              setAskSpecs(false);
+              doLand({ withoutSpecs: true });
+            }}
+            onCancel={() => setAskSpecs(false)}
+          />
+        </Show>
+        <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
+      </div>
+      <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onLand={doLand} onWithoutSpecs={() => setAskSpecs(true)} />
     </li>
   );
 }

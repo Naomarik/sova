@@ -90,8 +90,9 @@ export type OnboardChecks =
 /** merge.setup's params for an answer: one command (with how long and what starts first), a list, or none. */
 export function setupBody(c: OnboardChecks): Record<string, unknown> {
   if (c.kind === "none") return { none: true };
-  if (c.kind === "list") return { checks: c.checks.map((x) => ({ label: x.label, run: x.command })) };
-  return { command: c.command, ...(c.takesMin ? { takesMin: c.takesMin } : {}), ...(c.requires ? { requires: c.requires } : {}) };
+  // The verb's params are flat (the CLI and the catalogue take them): each check as "Label: command".
+  if (c.kind === "list") return { commands: c.checks.map((x) => `${x.label}: ${x.command}`) };
+  return { command: c.command, ...(c.takesMin ? { takesMin: c.takesMin } : {}), ...(c.requires ? { requires: [c.requires] } : {}) };
 }
 /** Try It on Main: the copy, setup and the checks on the target alone, logged; nothing saved. */
 export const tryOnMain = (project: string, c: OnboardChecks) => runMergeVerb(project, "merge.setup", { ...setupBody(c), dryRun: true });

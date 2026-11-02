@@ -27,6 +27,44 @@ export function QueueChip(props: { row: Pick<QueueRow, "label" | "tone" | "live"
   );
 }
 
+/** Land and its ▾: Land Without Review (only with a review kit) and Land Without Its Specs…, which asks first. */
+export function LandSplit(props: { branch: string; review: boolean; busy: boolean; onLand(o?: LandOptions): void; onWithoutSpecs(): void }) {
+  return (
+    <div class="button-split wt-queue-split">
+      <button type="button" class="button button-sm" aria-label={`Land ${props.branch}`} disabled={props.busy} aria-busy={props.busy ? "true" : undefined} onClick={() => props.onLand()}>
+        Land
+      </button>
+      <ActionMenu label={`More ways to land ${props.branch}`} title="More ways to land" icon="chevron-down" ghost={false} menuName={`Land ${props.branch}`} returnFocus>
+        {(menu) => (
+          <>
+            <Show when={props.review}>
+              <menu.Item label="Land Without Review" aria={`Land ${props.branch} without review`} description="Skips the review step for this merge only." onRun={() => props.onLand({ withoutReview: true })} />
+            </Show>
+            <menu.Item label="Land Without Its Specs…" aria={`Land ${props.branch} without its specs`} description="Its spec drafts stay drafts." onRun={() => props.onWithoutSpecs()} />
+          </>
+        )}
+      </ActionMenu>
+    </div>
+  );
+}
+
+/** Land Without Its Specs…: what stays behind, then the choice. */
+export function LandSpecsConfirm(props: { branch: string; busy: boolean; onConfirm(): void; onCancel(): void }) {
+  return (
+    <div class="wt-queue-confirm" role="group" aria-label={`Land ${props.branch} without its specs`}>
+      <p class="text-caption">Its spec drafts stay drafts in this worktree. Only the code lands.</p>
+      <div class="button-row">
+        <button type="button" class="button button-sm" disabled={props.busy} onClick={() => props.onConfirm()}>
+          Land Without Specs
+        </button>
+        <button type="button" class="button button-sm button-ghost" onClick={() => props.onCancel()}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** "View Merge Queue": the worktree's project's Merge Queue tab. */
 export const queueHrefOf = (rows: QueueWorktree[]): string | null => {
   const id = rows.map(projectIdOf).find(Boolean);
@@ -117,45 +155,21 @@ export function WorktreeQueueRow(props: {
           )}
         </For>
         <Show when={askSpecs()}>
-          <div class="wt-queue-confirm" role="group" aria-label={`Land ${w().branch} without its specs`}>
-            <p class="text-caption">Its spec drafts stay drafts in this worktree. Only the code lands.</p>
-            <div class="button-row">
-              <button
-                type="button"
-                class="button button-sm"
-                disabled={busy()}
-                onClick={() => {
-                  setAskSpecs(false);
-                  doLand({ withoutSpecs: true });
-                }}
-              >
-                Land Without Specs
-              </button>
-              <button type="button" class="button button-sm button-ghost" onClick={() => setAskSpecs(false)}>
-                Cancel
-              </button>
-            </div>
-          </div>
+          <LandSpecsConfirm
+            branch={w().branch}
+            busy={busy()}
+            onConfirm={() => {
+              setAskSpecs(false);
+              doLand({ withoutSpecs: true });
+            }}
+            onCancel={() => setAskSpecs(false)}
+          />
         </Show>
         <Show when={error()}>{(m) => <p class="list-meta wt-queue-error" role="alert">{m()}</p>}</Show>
       </div>
       <div class="wt-queue-act">
         <Show when={row().action === "land"}>
-          <div class="button-split wt-queue-split">
-            <button type="button" class="button button-sm" aria-label={`Land ${w().branch}`} disabled={busy()} aria-busy={busy() ? "true" : undefined} onClick={() => doLand()}>
-              Land
-            </button>
-            <ActionMenu label={`More ways to land ${w().branch}`} title="More ways to land" icon="chevron-down" ghost={false} menuName={`Land ${w().branch}`} returnFocus>
-              {(menu) => (
-                <>
-                  <Show when={review()}>
-                    <menu.Item label="Land Without Review" aria={`Land ${w().branch} without review`} description="Skips the review step for this merge only." onRun={() => doLand({ withoutReview: true })} />
-                  </Show>
-                  <menu.Item label="Land Without Its Specs…" aria={`Land ${w().branch} without its specs`} description="Its spec drafts stay drafts." onRun={() => setAskSpecs(true)} />
-                </>
-              )}
-            </ActionMenu>
-          </div>
+          <LandSplit branch={w().branch} review={review()} busy={busy()} onLand={doLand} onWithoutSpecs={() => setAskSpecs(true)} />
         </Show>
         <Show when={row().action === "setup" && projectId()}>
           <a class="button button-sm" href={projectTabHref(projectId()!, "merge-queue")} title="This project's merge queue isn't set up yet.">

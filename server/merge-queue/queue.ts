@@ -1,4 +1,5 @@
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import {
   type CheckPick,
@@ -64,7 +65,7 @@ export interface QueueDeps {
   /** Wake the merge thread; false: none was asked. */
   thread?: WakeThread;
   /** The worktree's spec drafts hash (server/spec-drafts-state.ts draftsHash). */
-  draftsHash?: (dir: string) => { hash: string; names: string[] } | undefined;
+  draftsHash?: (dir: string) => { hash: string; names: string[]; each?: Record<string, string> } | undefined;
   now?: () => number;
   /** A machine failure's retry waits this long (default 60 s). */
   retryDelayMs?: number;
@@ -345,7 +346,7 @@ export class ProjectQueue {
         const n = st.stdout.split("\n").filter(Boolean).length;
         if (st.code === 0 && n) throw new MergeFailure("invalid-request", `${branch} has ${n} uncommitted file${n === 1 ? "" : "s"} in ${wt}: Land is for a commit; commit or remove them first`);
       }
-      const drafts = !req.withoutSpecs && wt ? this.deps.draftsHash?.(wt) : undefined;
+      const drafts = !req.withoutSpecs && wt ? await this.branchDrafts(wt, commit) : undefined;
       const approval: MergeApproval = {
         by: req.by,
         at: req.at ?? this.iso(),
@@ -850,7 +851,7 @@ export class ProjectQueue {
     for (const e of line) {
       // Drafts changed since the user's approval: wait for a new Land.
       if (e.approval.drafts && !e.approval.withoutSpecs && this.deps.draftsHash) {
-        const now = e.worktree && existsSync(e.worktree) ? this.deps.draftsHash(e.worktree) : undefined;
+        const now = e.worktree && existsSync(e.worktree) ? await this.branchDrafts(e.worktree, e.commit) : undefined;
         if (now?.hash !== e.approval.drafts.hash) {
           e.state = "drafts-changed";
           e.reason = now ? "drafts changed since you approved" : "its worktree is gone, so its approved drafts can't be copied";
@@ -863,6 +864,33 @@ export class ProjectQueue {
       await this.startRun(e, head);
       return;
     }
+  }
+
+  /**
+   * The branch's own spec drafts in its worktree, hashed: an untracked draft is the branch's (as ever); a draft tracked
+   * in Git is the branch's only when the branch adds or changes it (`target...commit` touches it). Drafts already on
+   * the target and left alone are never hashed, named, landed or deleted. undefined: the branch has none.
+   */
+  private async branchDrafts(wt: string, commit: string): Promise<{ hash: string; names: string[] } | undefined> {
+    const all = this.deps.draftsHash?.(wt);
+    if (!all) return undefined;
+    const dir = ".sova/spec/drafts/";
+    const nameOf = (path: string) => (path.startsWith(dir) ? path.slice(dir.length).split("/")[0] : undefined);
+    const tracked = new Set<string>();
+    for (const ref of [commit, `refs/heads/${this.q.target}`]) {
+      const r = await this.git(["ls-tree", "-r", "--name-only", ref, "--", dir], this.root);
+      if (r.code === 0) for (const l of r.stdout.split("\n")) { const n = nameOf(l.trim()); if (n) tracked.add(n); }
+    }
+    if (!all.names.some((n) => tracked.has(n))) return { hash: all.hash, names: all.names };
+    const changed = new Set<string>();
+    const d = await this.git(["diff", "--name-only", `refs/heads/${this.q.target}...${commit}`, "--", dir], this.root);
+    if (d.code !== 0) throw new MergeFailure("busy", `git diff of ${commit.slice(0, 7)}'s drafts failed: ${d.stderr.trim()}`);
+    for (const l of d.stdout.split("\n")) { const n = nameOf(l.trim()); if (n) changed.add(n); }
+    const names = all.names.filter((n) => !tracked.has(n) || changed.has(n));
+    if (!names.length) return undefined;
+    if (names.length === all.names.length) return { hash: all.hash, names };
+    const hash = createHash("sha256").update(names.map((n) => `${n} ${all.each?.[n] ?? ""}`).join("\n")).digest("hex");
+    return { hash, names };
   }
 
   private async startRun(e: Entry, base: string): Promise<void> {

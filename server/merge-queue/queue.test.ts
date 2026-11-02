@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
+import { draftsHash } from "../spec-drafts-state";
 import { MergeFailure, PUSH_HELD_NAMES } from "./queue";
 import { DEF, makeKit, makeRepo, sh, until, untilAborted } from "./testing/queue-kit";
 
@@ -110,6 +111,72 @@ describe("approval", () => {
     } finally {
       await k.done();
     }
+  });
+
+  describe("tracked drafts: only the branch's own", () => {
+    // Many stale drafts committed on the target (a project that tracks .sova/spec/drafts).
+    const stale = (n: number) => Object.fromEntries(Array.from({ length: n }, (_, i) => [`.sova/spec/drafts/old-${i}/spec/claims/a.md`, `stale ${i}\n`]));
+
+    test("a comment-only branch over hundreds of stale tracked drafts names none and lands", async () => {
+      const k = makeKit({ deps: { draftsHash: (dir: string) => draftsHash(dir) } });
+      try {
+        k.repo.commitOn(k.repo.root, stale(300), "stale drafts");
+        const q = await k.q();
+        await q.pause("hold");
+        k.repo.branch("feat/comment", { "a.txt": "// a comment\n" });
+        const { entry } = await q.add({ branch: "feat/comment", by: "land-button" });
+        assert.equal(entry.approval.drafts, undefined, "no draft of the branch's own");
+        await q.resume();
+        await landed(k, entry.id);
+        assert.equal(k.run.inputs[0]!.draftsDir, undefined, "no drafts handed to the docs step");
+        assert.equal(sh(k.repo.root, "ls-tree", "-r", "--name-only", "master", "--", ".sova/spec/drafts").split("\n").length, 300, "stale drafts untouched");
+      } finally {
+        await k.done();
+      }
+    });
+
+    test("a branch that changes one tracked draft (and adds an untracked one) names exactly those; a later edit to a stale draft in its worktree changes nothing", async () => {
+      const k = makeKit({ deps: { draftsHash: (dir: string) => draftsHash(dir) } });
+      try {
+        k.repo.commitOn(k.repo.root, stale(20), "stale drafts");
+        const q = await k.q();
+        await q.pause("hold");
+        const b = k.repo.branch("feat/one", { ".sova/spec/drafts/old-3/spec/claims/a.md": "changed\n", "x.txt": "x\n" });
+        // An untracked draft (ignored locally, as Sova's own drafts are) is the branch's, as before.
+        writeFileSync(join(k.repo.root, ".git/info/exclude"), ".sova/spec/drafts/fresh/\n");
+        mkdirSync(join(b.path, ".sova/spec/drafts/fresh/spec"), { recursive: true });
+        writeFileSync(join(b.path, ".sova/spec/drafts/fresh/spec/b.md"), "new\n");
+        const { entry } = await q.add({ branch: "feat/one", by: "land-button" });
+        assert.deepEqual(entry.approval.drafts?.names, ["fresh", "old-3"]);
+        // Editing a draft the branch doesn't own (uncommitted, outside the approval) is not "drafts changed".
+        writeFileSync(join(b.path, ".sova/spec/drafts/old-7/spec/claims/a.md"), "local edit\n");
+        await q.resume();
+        await landed(k, entry.id);
+        const input = k.run.inputs[0]!;
+        assert.ok(input.draftsDir);
+        assert.ok(existsSync(join(input.draftsDir!, "old-3")) && existsSync(join(input.draftsDir!, "fresh")));
+        assert.equal(existsSync(join(input.draftsDir!, "old-7")), false);
+      } finally {
+        await k.done();
+      }
+    });
+
+    test("a change to the branch's own tracked draft after approval still waits for a new Land", async () => {
+      const k = makeKit({ deps: { draftsHash: (dir: string) => draftsHash(dir) } });
+      try {
+        k.repo.commitOn(k.repo.root, stale(5), "stale drafts");
+        const q = await k.q();
+        await q.pause("hold");
+        const b = k.repo.branch("feat/own", { ".sova/spec/drafts/old-1/spec/claims/a.md": "mine\n" });
+        const { entry } = await q.add({ branch: "feat/own", by: "land-button" });
+        assert.deepEqual(entry.approval.drafts?.names, ["old-1"]);
+        writeFileSync(join(b.path, ".sova/spec/drafts/old-1/spec/claims/a.md"), "mine, edited\n");
+        await q.resume();
+        await until(async () => (await k.entry(entry.id)).state === "drafts-changed", "drafts-changed");
+      } finally {
+        await k.done();
+      }
+    });
   });
 
   test("drafts changed since the approval: the entry waits for a new Land", async () => {

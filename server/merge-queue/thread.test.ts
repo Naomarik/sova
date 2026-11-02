@@ -357,7 +357,7 @@ function standInModel(root: string, map: string, calls: VerbCall[]) {
         git(side, "add", f.file);
       }
       git(side, "commit", "-q", "--no-edit");
-      calls.push({ verb: "merge.resolve", args: { entry: id, verdict: "no-behaviour-change", files, ours: "the target added an item", theirs: "the branch added another", proposal: "keep both items", commit: git(side, "rev-parse", "HEAD"), note: `Resolved a conflict in ${files.join(", ")}: both sides added items; kept both.` } });
+      calls.push({ verb: "merge.resolve", args: { entry: id, verdict: "no-behaviour-change", files, ours: "the target added an item", theirs: "the branch added another", proposal: "both sides added items; kept both", commit: git(side, "rev-parse", "HEAD") } });
     }
   };
 }
@@ -424,7 +424,7 @@ test("conflicts: both sides adding items is resolved as no behaviour change with
   const commit = String(ok.args.commit);
   assert.deepEqual(git(r, "rev-list", "--parents", "-n1", commit).split(" ").slice(1), [targetHead, pinned], "parents: the target first, the pinned commit second (what conflicts.ts checks)");
   assert.equal(git(r, "show", `${commit}:list.txt`), "alpha\ngamma\nbeta\nomega");
-  assert.match(String(ok.args.note), /Resolved a conflict in list\.txt/);
+  assert.equal(ok.args.note, undefined, "no separate note: Sova notes the resolution from its proposal");
   assert.equal(git(r, "rev-parse", "master"), targetHead, "the target never moves");
 
   git(r, "checkout", "-q", "-b", "tmp", "master");

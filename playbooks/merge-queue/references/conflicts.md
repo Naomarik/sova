@@ -27,10 +27,9 @@ A resolution must also pass Sova's mechanical rule: the result differs from the 
 1. Edit each conflicted file to keep both sides, inside the hunks only. Remove every marker.
 2. `git add` those files and `git commit --no-edit` in the side worktree. The commit's parents are then the target's commit (first) and the pinned commit (second): exactly what Sova checks (first parent on the target, second the approved commit).
 3. Run the cheapest relevant check there if the project has one (typecheck, say): a resolution that doesn't even compile is not "no behaviour change".
-4. `merge.resolve {entry, verdict: "no-behaviour-change", files, ours, theirs, proposal, commit: <the side commit>, note}`:
+4. `merge.resolve {entry, verdict: "no-behaviour-change", files, ours, theirs, proposal, commit: <the side commit>}`:
    - `ours`: what the target's side did, in plain words; `theirs`: what the branch's side did;
-   - `proposal`: what your resolution does ("keeps both rules in the block; neither changes");
-   - `note`: the landing's note, "Resolved a conflict in <files>: <what each side did>; kept both, <why it is safe>."
+   - `proposal`: what your resolution does and why it is safe ("keeps both rules in the block; neither changes"). Sova shows it on the landing as "Resolved a conflict in <files>: <proposal>", so pass no `note` here: a second note would repeat it. Add a note later only for something else worth noting.
 Sova re-checks the mechanical rule. If it holds, the user's approval carries over and the full checks run on your resolution; if a check then fails, it goes back to the user, not to the branch. If the rule doesn't hold, Sova turns it into behaviour differs and shows your words to the user.
 
 ## 3b. Behaviour differs: propose and wait

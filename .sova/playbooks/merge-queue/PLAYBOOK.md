@@ -15,7 +15,6 @@ Write the note from this list only (`references/noting.md` has the paths behind 
 - **Contracts:** `shared/protocol.ts`, `shared/harness*.ts`, a pi-config contract Sova parses, or a catalogue id (`shared/commands-ids.json`) changed: "Changes the wire contract (X)."
 - **Spec drafts:** the landing turned drafts into docs: "Lands spec draft <name>." (the docs step's log names it).
 - **Left for later:** a TODO, an off-by-default setting, a follow-up named in its commits.
-- **A conflict you resolved:** what, and why it changes no behaviour.
 
 Never: "restart required" for `src/**` alone (the web app reloads itself), the build, tests, docs or `.sova/spec/**`.
 

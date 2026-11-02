@@ -13,5 +13,4 @@ Nothing worth noting: `merge.note {entry, note: ""}`. An empty note shows nothin
 ## Examples
 - "Changes server code; restart Sova to pick it up. Adds a dependency (pnpm install ran offline)."
 - "Renames the state file schedules.json to automations.json; the old one is read once and moved."
-- "Resolved a conflict in src/app.css: both sides added rules to the same block; kept both, no rule changed."
 - "Leaves the new panel behind a setting that is off by default."

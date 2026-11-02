@@ -43,7 +43,7 @@ A note tells the user what this landing means beyond "it landed". One or two sho
 - a dependency or lockfile change, a new tool or a toolchain bump;
 - a data or state change: a migration, a new or renamed state file, a format change;
 - something the branch left for later: a TODO it added, a feature flag left off, a follow-up named in its commits;
-- a conflict you resolved: what, and why it changes no behaviour.
+- (a conflict you resolved is noted by Sova from your `merge.resolve` proposal; don't repeat it.)
 
 Nothing else. A note never grades the code (that is the review step's job) and never repeats the commit messages.
 

@@ -100,6 +100,8 @@ export interface RunOutcome {
   /** Notes for the landing: flaky, master-red, review notes, no-checks. */
   notes: MergeNote[];
   review?: ReviewVerdict;
+  /** unattributed: each check that couldn't name its failures and failed on both sides (`step`: its log, merge.logs). */
+  unclear?: { check: string; label: string; step: string; why?: string }[];
   /** Checks red on the target alone (shown on the strip). */
   targetRed?: string[];
   /** The project declares no automated tests. */

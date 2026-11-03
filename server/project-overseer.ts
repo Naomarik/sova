@@ -1214,16 +1214,16 @@ export async function mergeCodingWorktree(projectId: string, sessionId: unknown,
   return projectWorktrees(projectId);
 }
 
-/** Land through the project's merge queue when it is set up (checks declared); false: not set up, merge as before. */
+/** Land through the project's merge queue when the queue serves it (server/merge-queue/served.ts: listed and set up);
+ *  false: not served, merge as before (no queue is made for it). */
 /** `commit`: the head the screen showed (Land pins it; a branch that moved past it lands that one). */
 export async function landThroughQueue(projectId: string, root: string, sessionId: unknown, commit?: unknown): Promise<boolean> {
   if (typeof sessionId !== "string" || !sessionId) return false;
   const { mergeQueues } = await import("./merge-queue/wire");
   const queues = mergeQueues();
   if (!queues) return false;
+  if (!(await (await import("./merge-queue/served")).servedByQueue(root))) return false;
   const q = await queues.get(root);
-  const d = await q.declared();
-  if (d.checks === "unset" && !d.invalid) return false;
   const branch = readBuild(projectId, sessionId)?.worktree?.branch;
   if (!branch) throw new OrgError("Its branch isn't known yet: nothing to land", 409);
   const { MergeFailure } = await import("./merge-queue/queue");

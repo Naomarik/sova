@@ -4,8 +4,8 @@ import { LANDING_FILE_NAME } from "../../pi-config/extensions/worktrees/landing.
 import { stateRoot } from "../state-root";
 import type { MergeQueueView, WorktreeMergeProject, WorktreeMergeStats, WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { RunMerge, ThreadEvent, WakeThread } from "./contract";
-import { startIngest } from "./ingest";
-import { setMergeCardNoteSource } from "./card-note";
+import { type IngestDeps, startIngest } from "./ingest";
+import { setLandingNoteSource, setMergeCardNoteSource } from "./card-note";
 import { MergeCards } from "./cards";
 import { MergeQueues } from "./queue";
 import { merger, recordedRoots } from "./routes";
@@ -15,6 +15,7 @@ import type { QueueSubject } from "../git-diff";
 import { type Owner, WorktreeOwners } from "./owners";
 import { engineServices, makeRunMerge } from "./run";
 import { worktreeQueueInfo } from "./view";
+import { LandingNotes, SERVED_FILE_NAME, ServedRule, servedKey, servedRule, setServedRule, startServedWriter } from "./served";
 
 /**
  * The server's merge queue: its queues (every project with records loaded and recovered at start), the `merge.*`
@@ -23,10 +24,14 @@ import { worktreeQueueInfo } from "./view";
  */
 
 let queues: MergeQueues | null = null;
-type RowFields = { queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject; mergeStats?: WorktreeMergeStats };
+type RowFields = { queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProject; mergeStats?: WorktreeMergeStats; mergeServed?: true };
+let servedWriter: { refresh(): Promise<void>; stop(): void } | null = null;
+/** The served roots as last computed (the writer's pass): the thread wake's synchronous check. */
+let servedNow = new Set<string>();
 let rowsOf: ((path: string, branch: string) => Promise<RowFields>) | null = null;
 
-/** A worktree row's queue fields (SessionWorktreeInfo.queue / mergeProject): only for a registered project's repo. */
+/** A worktree row's queue fields (SessionWorktreeInfo.queue / mergeProject / mergeServed): mergeProject for a
+ *  registered project's repo, the rest only where the queue serves it (served.ts). */
 export async function worktreeQueueOf(path: string, branch: string): Promise<RowFields> {
   if (!rowsOf) return {};
   try {
@@ -57,13 +62,40 @@ export function mergeQueues(): MergeQueues | null {
   return queues;
 }
 
-/** Whether `target` of the project at `root` lands only through its merge queue (the queue is set up and lands
- *  into that branch). A direct merge into it is refused then. False while the queue isn't started. */
+/** Whether `target` of the project at `root` lands only through its merge queue: the queue serves the project
+ *  (served.ts) and lands into that branch. A direct merge into it is refused then. False while the queue isn't
+ *  started. Never creates a queue. */
 export async function queueManages(root: string, target: string): Promise<boolean> {
   if (!queues) return false;
-  const q = await queues.get(root);
-  const d = await q.declared();
-  return q.target === target && (d.checks !== "unset" || !!d.invalid);
+  return (await (await servedRule()).servedTarget(root)) === target;
+}
+
+/** The served rule's answer changed (a setup ran, a project was added): re-read it and rewrite the chats' file. */
+export function refreshServed(): Promise<void> {
+  return servedWriter?.refresh() ?? Promise.resolve();
+}
+
+/** The ingest's deps over the served rule: the go-ahead's branch is looked for in listed and recorded roots alike,
+ *  and taken only where `rule` serves it (a recorded root off the list is refused, never queued). */
+export function ingestDepsFor(a: {
+  base: string;
+  file: string;
+  rule: Pick<ServedRule, "listedRoots" | "served">;
+  queue: IngestDeps["queue"];
+  repoOf: IngestDeps["repoOf"];
+  refused?: IngestDeps["refused"];
+  log?: IngestDeps["log"];
+}): IngestDeps {
+  return {
+    file: a.file,
+    seenFile: join(a.base, "ingest.json"),
+    roots: () => [...new Set([...a.rule.listedRoots(), ...recordedRoots(a.base)])],
+    served: (root) => a.rule.served(root),
+    repoOf: a.repoOf,
+    queue: a.queue,
+    ...(a.refused ? { refused: a.refused } : {}),
+    ...(a.log ? { log: a.log } : {}),
+  };
 }
 
 /** Tests only: stand a set of queues in for the server's (null: none). */
@@ -100,6 +132,15 @@ export async function queueSubjectOf(id: string, sel: { entry?: string; branch?:
   if (!q) {
     const root = await projectRootOf(id);
     if (!root) return null;
+    const rule = await servedRule();
+    if (!(await rule.served(root))) {
+      // Not served (no setup): no queue is made for it (a4); it has no entries, and a branch is diffed against the
+      // target the queue would have.
+      if (!sel.branch) return null;
+      const target = (await rule.setupOf(root)).target;
+      const w = (await worktreesOf(realGit, root)).find((x) => x.branch === sel.branch && canonical(x.path) !== canonical(root));
+      return w ? { kind: "ready", root, target, branch: sel.branch, worktree: w.path } : null;
+    }
     q = await queues.get(root);
   }
   const root = q.root;
@@ -127,7 +168,8 @@ export async function landingTargetOf(dir: string): Promise<string | null> {
     known = listProjects().some((x) => x.root === p.root);
   } catch {}
   if (!known) return null;
-  return (await queues.get(p.root)).target;
+  // The queue's target rule, read from Git: asking never makes a queue for a project it doesn't serve (a4).
+  return (await (await servedRule()).setupOf(p.root)).target;
 }
 
 /** Tell the typed go-ahead door to look now (the worktree tool just wrote one). */
@@ -154,7 +196,13 @@ export async function statsOf(root: string, targetHead: string, branch: string):
   return out;
 }
 
-export async function startMergeQueue(opts: { request?: (path: string, init?: RequestInit) => Response | Promise<Response> } = {}): Promise<void> {
+export async function startMergeQueue(
+  opts: {
+    request?: (path: string, init?: RequestInit) => Response | Promise<Response>;
+    /** Tests only: the Projects list the served rule reads (default listProjects). */
+    listed?: () => { root: string }[];
+  } = {},
+): Promise<void> {
   if (queues) return;
   const base = join(stateRoot(), "merge-queue");
   const [{ projectEngine }, { publishFeed }, { projectOf }, { definitionAt }, { draftsHash }, { listProjects }, checks, threadMod, review] = await Promise.all([
@@ -168,6 +216,12 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
     import("./thread"),
     import("./review-step"),
   ]);
+  const served = new ServedRule({ listed: opts.listed ?? (() => listProjects()), definitionAt: (root, ref) => definitionAt(root, ref), checksOf: checks.checksOf });
+  setServedRule(served);
+  const writer = startServedWriter(served, join(stateRoot(), SERVED_FILE_NAME), {
+    onRoots: (roots) => (servedNow = new Set(roots.map((r) => servedKey(r.root)))),
+  });
+  servedWriter = writer;
   const runMerge: RunMerge = makeRunMerge({ state: stateRoot(), services: engineServices(projectEngine()) });
   const projectIdOf = (root: string): string | null => {
     try {
@@ -207,6 +261,7 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
                 ? { kind: "names" as const, file: ev.namesFile ?? "", target: ev.target }
                 : null;
     if (!mapped) return false;
+    if (!servedNow.has(servedKey(ev.root))) return false;
     if (!threadMod.hasMergeThread()) return false;
     keeper.notify(ev.root, mapped as Parameters<typeof keeper.notify>[1]);
     return true;
@@ -229,6 +284,23 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
   });
   cards = mc;
   setMergeCardNoteSource((session, since) => mc.noteFor(session, since));
+  // Each chat's landing lines: whether each repo it works in lands through the queue (a6).
+  const { MERGE_QUEUE_PROFILES } = await import("../merge-readiness");
+  const notes = new LandingNotes({
+    repos: async (session) => {
+      const { listSessions } = await import("../sessions-index");
+      const s = (await listSessions()).find((x) => x.id === session);
+      if (!s || (s.profile && MERGE_QUEUE_PROFILES.includes(s.profile.id))) return null;
+      const roots: string[] = [];
+      for (const dir of [s.cwd, ...(s.readiness?.trees ?? []).map((t) => t.path)]) {
+        const p = await projectOf(dir).catch(() => null);
+        if (p?.state === "ok" && p.git) roots.push(servedKey(p.root));
+      }
+      return roots;
+    },
+    targetOf: (root) => served.servedTarget(root),
+  });
+  setLandingNoteSource((session) => notes.noteFor(session));
   const cardsDo = (p: Promise<void>) => void p.catch((err) => console.warn(`[merge-queue] card: ${err instanceof Error ? err.stack : err}`));
   queues = new MergeQueues({
     base,
@@ -236,6 +308,7 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
     checksOf: checks.checksOf,
     definitionAt: (root, ref) => definitionAt(root, ref),
     projectIdOf,
+    listed: (root) => served.isListed(root),
     publish: (view: MergeQueueView) => {
       publishFeed({ type: "merge_queue", project: view.project, view });
       cardsDo(mc.sync(view));
@@ -250,8 +323,9 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
     ...(legacyNames ? { legacyNames } : {}),
   });
   const q = queues;
-  projectEngine().merger = merger({
+  const verbs = merger({
     queues: q,
+    served,
     rootOf: async (path) => {
       const p = await projectOf(path);
       return p.state === "ok" && p.git ? p.root : null;
@@ -260,38 +334,65 @@ export async function startMergeQueue(opts: { request?: (path: string, init?: Re
     reviewerOf: review.reviewerOf,
     deliverReview: review.deliverReview,
   });
+  // A setup run changes the answer: the chats' file follows at once.
+  projectEngine().merger = async (verb, body, caller) => {
+    const r = await verbs(verb, body, caller);
+    if (verb === "merge.setup" && r.ok && r.changed) void writer.refresh();
+    return r;
+  };
   rowsOf = async (path, branch) => {
     const p = await projectOf(path);
     if (p.state !== "ok" || !p.git) return {};
-    const id = projectIdOf(p.root);
+    // Off the Projects list (or archived): a plain repo, no queue fields at all.
+    const id = served.projectIdOf(p.root);
     if (!id) return {};
+    if (!(await served.served(p.root))) {
+      // Listed, setup not done: Set Up, never Land; no queue is made for it.
+      const s = await served.setupOf(p.root);
+      return { mergeProject: { id, root: p.root, target: s.target, checks: s.checks, review: false, ...(s.invalid ? { invalid: s.invalid } : {}) } };
+    }
     const v = await (await q.get(p.root)).cachedView();
     const queue = worktreeQueueInfo(v, branch);
     const stats = await statsOf(p.root, v.heads.target, branch);
-    return { ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.invalid ? { invalid: v.invalid } : {}), ...(v.paused ? { paused: v.paused.why } : {}) }, ...(stats ? { mergeStats: stats } : {}) };
+    return { ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.invalid ? { invalid: v.invalid } : {}), ...(v.paused ? { paused: v.paused.why } : {}) }, ...(stats ? { mergeStats: stats } : {}), mergeServed: true };
   };
-  for (const root of recordedRoots(base)) void q.get(root).catch((err) => console.warn(`[merge-queue] ${root}: ${err instanceof Error ? err.message : err}`));
-  ingest = startIngest({
-    file: join(stateRoot(), LANDING_FILE_NAME),
-    seenFile: join(base, "ingest.json"),
-    roots: () => {
-      let roots: string[] = [];
-      try {
-        roots = listProjects().map((p) => p.root);
-      } catch {}
-      return [...new Set([...roots, ...recordedRoots(base)])];
-    },
-    queue: (root) => q.get(root),
-    // A typed "land it" that couldn't be queued: the chat's model hears it at its next turn (no message is sent).
-    refused: (session, text) => mc.addLine(session, `refused:${Date.now()}`, text),
-  });
+  // The chats' file is current before the typed go-ahead door opens.
+  await writer.first;
+  // Leftover records of a repo the queue doesn't serve stay on disk, never loaded.
+  for (const root of recordedRoots(base))
+    void served
+      .served(root)
+      .then((yes) => (yes ? q.get(root) : null))
+      .catch((err) => console.warn(`[merge-queue] ${root}: ${err instanceof Error ? err.message : err}`));
+  ingest = startIngest(
+    ingestDepsFor({
+      base,
+      file: join(stateRoot(), LANDING_FILE_NAME),
+      rule: served,
+      queue: (root) => q.get(root),
+      // The chat's repo: its cwd's main checkout.
+      repoOf: async (session) => {
+        const { listSessions } = await import("../sessions-index");
+        const s = (await listSessions().catch(() => [])).find((x) => x.id === session);
+        const p = s?.cwd ? await projectOf(s.cwd).catch(() => null) : null;
+        return p?.state === "ok" && p.git ? p.root : null;
+      },
+      // A typed "land it" that couldn't be queued: the chat's model hears it at its next turn (no message is sent).
+      refused: (session, text) => mc.addLine(session, `refused:${Date.now()}`, text),
+    }),
+  );
 }
 
 export async function stopMergeQueue(): Promise<void> {
   rowsOf = null;
   owners = null;
+  servedWriter?.stop();
+  servedWriter = null;
+  setServedRule(null);
+  servedNow = new Set();
   cards = null;
   setMergeCardNoteSource(null);
+  setLandingNoteSource(null);
   ingest?.stop();
   ingest = null;
   await queues?.stop();

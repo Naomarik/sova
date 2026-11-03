@@ -11,7 +11,7 @@ Overseer's Quick Actions in this slot (§app.overseer/quick-actions).
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
 `delegate`, and any set of **minor modes** (today `align`, `spec`, `vis`, which teaches the inline
-visuals of §chat.markdown/visuals, `codemode`, §chat.mode-menu/codemode, and `memory`, §chat/memory).
+visuals of §chat.markdown/visuals, and `memory`, §chat/memory).
 Every chat with the extension offers all of them, in that order, except that only Sova's own mode menu
 turns `memory` on (§chat.memory/where). A chat in a project's checkout also offers that project's
 own minor modes, from its `.sova/minor-modes/` folder (§chat.mode-menu/project-modes); none is ever on
@@ -39,6 +39,12 @@ default moves only when someone asks for exactly that: the menu's **`Save as def
 longer a side effect of being new: setting one up is not a statement about every chat you start
 next, and the state that made it look like one (an empty session) was invisible in the act of
 switching.
+
+There is no `codemode` minor mode: no chat or menu offers it, and a profile, an automation or an
+Overseer naming it is refused like any unknown mode. A chat, a saved default or a hidden note that
+named it drops the name like any unknown one, so a chat that had it on reopens without it. A
+codemode call already in a transcript shows as an ordinary tool step (its name, arguments and
+output), with no script card, no Copy Script and no rows for the calls it made.
 
 ## §chat.mode-menu/trigger — Trigger
 
@@ -69,7 +75,7 @@ this slot (§app.overseer/quick-actions).
 ```
 
 - **Icons.** One icon for the major mode (normal adds none of its own: the sliders icon stands for
-  it), then one icon for each built-in minor mode on (align, spec, vis, codemode, memory), then, for
+  it), then one icon for each built-in minor mode on (align, spec, vis, memory), then, for
   each project mode on (§chat.mode-menu/project-modes), its id's first letter or digit, upper
   case, in a rounded square drawn like an icon. The chevron-down stays last, at every width: the
   button opens a menu. Until this chat's mode is known it shows the sliders icon alone. The menu's
@@ -341,7 +347,7 @@ on the first turn, on later turns, or after the chat is reopened.
 
 ## §chat.mode-menu/minor-toggle-keeps-prompt — A minor toggle keeps the cached prompt
 
-Turning a minor mode (`align`, `spec`, `vis`, `codemode`, `memory`, or a project's own,
+Turning a minor mode (`align`, `spec`, `vis`, `memory`, or a project's own,
 §chat.mode-menu/project-modes) on or off mid-session never rewrites the
 prompt the model already has, on any provider; the one exception is align while in Delegate, whose
 bridge paragraph in the Delegate block follows the active align. The `<mode>` section's minor blocks stay those of the **head**:
@@ -352,13 +358,12 @@ folds it into a new head, and the claude-code bridge restarts its CLI
 (§app.worker-restore/claude-bridge-restart), so one toggle re-sent the whole conversation uncached
 (measured: 53K–180K tokens per toggle).
 
-The tool list is another matter: turning `vis`, `align` or `codemode` on or off does change the
+The tool list is another matter: turning `vis` or `align` on or off does change the
 active tools (`vis` adds or removes `vis_guide`, and in Sova's hosted sessions `vis_check` with it,
 unless align with the chat's Visuals still wants them, §chat.alignment/visuals; `align` its `align`
-tool, and with Visuals on the vis tools too; `codemode` its `codemode` tool, §chat.mode-menu/codemode), while the
-system prompt stays as it was (none of them adds a line to it). That is one tool-set change per
+tool, and with Visuals on the vis tools too), while the
+system prompt stays as it was (neither adds a line to it). That is one tool-set change per
 toggle; in the plain TUI, where `vis` used to change no tool, it costs a prompt-cache rebuild. In an ordinary Sova chat, vis also adds or removes `record_tour` and `show_tour` (§app.tours/authoring): these two require vis itself, so align's Visuals alone never keeps them active. A hand-off's baseline scoped presentation is separate from this ordinary-chat loadout.
-`codemode` has no block, so no note tells the model about it either: its tool is the whole switch.
 A project mode with tools adds or removes them the same way, one tool-set change per toggle, and
 its block still reaches the model as a note, never by rewriting the prompt.
 
@@ -394,7 +399,7 @@ once, as their net change.
 changes is the history every request sends from the next turn on (§chat.memory/turn), plus its `zoom`
 and `date` tools.
 
-Not covered: `align`, `vis`, `codemode` and project modes with tools also add or remove their tools, and a tool-set change
+Not covered: `align`, `vis` and project modes with tools also add or remove their tools, and a tool-set change
 breaks the cached prefix on every provider and restarts the claude-code CLI, note or not. A
 major-mode switch still changes the section, as before.
 
@@ -415,8 +420,7 @@ A worker is not a chat: it has no mode menu, and its parent's major mode never r
 whether it reaches workers** (`MINOR_WORKER` in `pi-config/extensions/mode/minor.ts`, a record
 over every minor mode, so a new one cannot be added without deciding): `spec` does; `align`
 does not (aligning is a conversation with the user, which a worker doesn't have), nor does `vis`
-(its visuals are for the user, and a worker's replies are read by its parent session), nor does
-`codemode` (it changes the chat's own tool set, and a worker's tools are its brief's), nor does `memory`
+(its visuals are for the user, and a worker's replies are read by its parent session), nor does `memory`
 (it is the chat's own memory of its conversation; a worker starts fresh from its brief, and its report
 enters the parent's memory like any other message). A project mode declares it in its own file
 (§chat.mode-menu/project-modes), `no` unless it says `yes`; one that reaches workers comes after
@@ -456,46 +460,6 @@ worker prompt on the extension bus (`mode:worker`), the way the sandbox publishe
 interpreting it. A parent without the mode extension publishes nothing, and its workers get
 nothing.
 
-## §chat.mode-menu/codemode — codemode: scripts that call the chat's tools
-
-The `codemode` minor mode gives the model pi's `codemode` tool: a JavaScript script that calls the
-chat's other tools, several at once, and filters their output before the model reads it.
-
-- **The tool is the whole mode.** On, `codemode` is in the chat's tool set; off, it is nowhere in
-  it, even when something else had turned it on (the default tools, a restored transcript's tool
-  set). The one exception: while a tool only scripts can reach is registered (an MCP tool with
-  `codemode` or `deferred` exposure), turning the mode off leaves `codemode` in, since that tool has
-  no other way in. The mode has no prompt block and no hidden mode note, on or off: the tool's own
-  description is its guide (`MINOR_PROMPTLESS` in `pi-config/extensions/mode/minor.ts`).
-- **When it applies.** A switch made between runs puts the tool in or takes it out at once; a switch
-  during a run applies when that run settles, and the run under way keeps its tools
-  (§chat.mode-menu/how-a-switch-reaches-the-chat). A reopened chat comes back with the tool as its
-  `mode` entry says. A toggle is a tool-set change, so, like align's tool, it costs the cached prompt
-  prefix and restarts a Claude Code chat's CLI (§chat.mode-menu/minor-toggle-keeps-prompt).
-- **Where.** pi's built-in extensions load only in its CLI, so a terminal session has pi's own
-  tool, while Sova adds it to every ordinary chat it runs, registered inactive
-  (`server/harness/pi/codemode.ts`, in the chat manager's default extension factories). A Claude
-  Code chat is like any other: off, no tool and no prompt line mentions it; on, it is declared from
-  the next run. The special loadouts (the Overseer, organizations, baton) don't load it, and where
-  the tool isn't registered the mode changes nothing.
-- **Workers never get it** (`MINOR_WORKER`): a worker's tools are its brief's
-  (§chat.mode-menu/workers).
-- **What a script can call.** The chat's tools, except the ones declared **model-only**: a tool
-  whose state Sova reads back from its own recorded result (the `align` tool, spawning a worker,
-  creating a team, sending to another session, the Overseer's cards) is offered to the model but is
-  never callable from a script. A script's model calls (`models.classify`,
-  `models.generateImages`) go through this device's model policy, which refuses a turned-off model
-  ("<provider/id> is turned off in this device's model policy (Settings → Models).") without
-  calling it; each call that runs holds one of the provider's request slots and is recorded as the
-  chat's own usage.
-- **What the chat shows.** The calls a script makes write no transcript entries of their own: the
-  script's result keeps them, and its tool card shows the script (with **Copy Script**) and each
-  call it made with its status (Running, Done, Failed, Cancelled), live while it runs, then its
-  output.
-- **With spec on**, a `[spec census]` or spec-guard note about a call the script made is repeated on
-  the script's own result, the one the model reads (§tools.spec/census-note), and so is the writing
-  procedure a script's call hands over, whole (§tools.spec/writing-on-demand).
-
 ## §chat.mode-menu/project-modes — A project's own minor modes
 
 A project can ship minor modes of its own in `.sova/minor-modes/<id>/`. A chat working in that
@@ -526,7 +490,7 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   id is invalid, its `MODE.md` is missing or doesn't parse (its tool declarations included, and a
   `./` file a tool names that is missing, and a mode with tools, commands or hooks whose folder holds more than 1000
   files or 50 MB: such a mode is approved as its whole folder, so it is kept small), or its
-  id is a built-in minor mode's (`align`, `spec`, `vis`, `codemode`, `memory`, or any added
+  id is a built-in minor mode's (`align`, `spec`, `vis`, `memory`, or any added
   later). A broken mode can't be turned on. A name clash never replaces the built-in: the two live
   in separate namespaces, so a built-in added later never takes over a project's mode either. One
   broken folder never hides the others.
@@ -700,7 +664,7 @@ answer anything, and they never send a message into a chat.
 The `memory` row is in a chat's minor modes only while that chat's `mode` message carries `memory`
 (its type, and the size Settings gives that type, which a chat whose runtime can run memory sends, §chat.memory/where);
 a chat whose message has none lists the other minor modes and no memory row. It is the last minor
-row, after `codemode`, a checkbox like the others: clicking it turns memory on or off and keeps the
+row, after `vis`, a checkbox like the others: clicking it turns memory on or off and keeps the
 menu open. Its description is the chosen type's row description and, while memory is on, its detail
 line names the type ("UniiChat — by Victor Taelin", "Zoomable compaction — Sova").
 
@@ -808,6 +772,10 @@ Sova's menu turns on, has no row), then one row per project mode of this checkou
   saved mode wins over them, and an unknown minor name is warned about, as is `memory` (dropped: web only).
   `--minor` names only built-in modes: a project mode's id there is an unknown name.
   `minorShortcuts` binds no key to `memory` or to a project mode.
+- **pi's own tools.** pi's built-in tools, its `codemode` tool among them, follow pi's own settings
+  in a terminal session: the mode extension neither offers, toggles nor syncs them. `codemode` is no
+  built-in minor mode: `pi --minor codemode` is warned about as an unknown name, and `/mode codemode`
+  is a bare id like any other (a project mode of that name, else the usage line).
 - **The status line** in the TUI's footer reads the mode, then in Delegate `fallback:<profiles>`,
   `ask:<profiles>` and `strict`, then each minor mode on (project modes after the built-in ones), then `writer:fallback` or `writer:ask`
   while spec's writer is off its primary route: dim in normal with no minor mode, accent otherwise,

@@ -114,7 +114,7 @@
   "§chat.profiles/model": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "shared/profiles.ts",
       "server/profiles-store.ts",
@@ -128,8 +128,9 @@
     ],
     "requires": [],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-11T08:41Z"
+      "by": "user",
+      "at": "2026-11-03T15:12Z",
+      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
     }
   },
   "§chat.profiles/picker": {

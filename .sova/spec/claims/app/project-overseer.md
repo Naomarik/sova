@@ -750,13 +750,13 @@ user row.
 - **Any mode, for both Overseers.** The project overseer's `sova_create_session` and `sova_send`,
   and the Overseer's `sova_project_overseer` `code` (§app.overseer/org-project-overseers), take
   `mode` (`normal` or `delegate`), `minor_modes` (the whole set on: any of `align`, `spec`, `vis`,
-  `codemode`, never `memory` (§chat.memory/where); `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
+  never `memory` (§chat.memory/where); `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
   profiles, or `off`; the project overseer's `sova_list_subagent_profiles` lists them). There is no
   ceiling but spec (above): any mode, any minor modes with `spec` among them and any profile are taken. On a start, what the call names
   replaces that part of this computer's default and the rest is the default's, except that a start
   without `already_agreed` also gets align on (§app.project-overseer/confirm-brief); a named profile is
   picked for that session only. Only an unknown name is refused: "Unknown mode {x}: use normal or
-  delegate.", "Unknown minor mode {x}: use align, spec, vis or codemode.", "Unknown subagent
+  delegate.", "Unknown minor mode {x}: use align, spec or vis.", "Unknown subagent
   profile: {x}. sova_list_subagent_profiles lists them." Each refusal happens before anything
   else: no session is created, nothing is sent, and no cap or counter is taken, attended or not.
   The reply names the mode and the subagent profile the session started with ("…, mode delegate ·

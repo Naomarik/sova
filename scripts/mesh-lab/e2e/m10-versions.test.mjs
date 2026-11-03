@@ -691,7 +691,10 @@ describe("6. a tab left open across an update", () => {
 
 describe("7. workspace panes obey the state", () => {
   after(closeTabs);
-  test("a pane of a Read only host has the notice, of an Update needed host the update page", async () => {
+  // Skipped: nothing puts a peer's session in a workspace (peer rows carry no groupId, and assigning one
+  // to a local group answers 404), and copying session-groups.json can't make one, so this proves nothing
+  // until a real route exists. The one real case is a front-door move with a workspace open.
+  test("a pane of a Read only host has the notice, of an Update needed host the update page", { skip: "no real route to a peer pane; promise under review" }, async () => {
     await builds({ a: "base", b: "base" });
     const s = await session(B);
     okJson(await call(B, "/api/sessions/prompt", { method: "POST", body: { path: s.path, text: "Reply with the single word: ok" } }), "a first message");

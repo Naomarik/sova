@@ -17,7 +17,7 @@ import {
 } from "../../shared/profiles";
 import type { ChatProfileInfo } from "../../shared/protocol";
 import { approveProfile, fetchProfiles, pickProfile, saveCurrentProfile, type ProfilePickRef } from "../lib/api";
-import { allProfiles, cardUnusable, changeRows, defaultTools, guardrailNote, isMySettings, mySettingsCaption, pickerProfiles, pickRef, type MySettingsState } from "../lib/profiles";
+import { allProfiles, cardUnusable, changeRows, defaultTools, guardrailNote, isMySettings, mySettingsCaptionParts, pickerProfiles, pickRef, profileSettingsLine, type MySettingsState } from "../lib/profiles";
 import { openSettings } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
 import { PROFILE_GRID_CUSTOM, ProfileGrid } from "./ProfileGrid";
@@ -70,7 +70,7 @@ export function ProfilePicker(props: {
     return r && r.path !== props.path ? r : null;
   };
   // My settings' caption: the session as it is with no profile, else what picking it puts back.
-  const mineCaption = () => mySettingsCaption(current() ? (props.info.mine ?? null) : props.live);
+  const mineCaption = () => mySettingsCaptionParts(current() ? (props.info.mine ?? null) : props.live);
   // A One at a time profile stopped elsewhere turns back into a card that picks: read the listing
   // again whenever the window regains focus.
   const onFocus = () => void refetch();
@@ -305,6 +305,10 @@ export function ProfilePicker(props: {
       >
         {(p) => (
           <>
+            {/* What the card's glyphs draw, in full words (§chat.profiles/picker). */}
+            <Show when={profileSettingsLine(p(), listing()?.subagents ?? [])}>
+              {(line) => <p class="profile-settings-line">{line()}</p>}
+            </Show>
             <Show when={p().description}>
               <p class="profile-description">{p().description}</p>
             </Show>

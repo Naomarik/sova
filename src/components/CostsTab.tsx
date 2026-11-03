@@ -6,7 +6,8 @@ import {
   barShare,
   browserZone,
   byCost,
-  cacheSum,
+  cacheHitRate,
+  cacheRateWords,
   COST_RANGES,
   costBars,
   costsApiSearch,
@@ -15,16 +16,22 @@ import {
   costWord,
   dayKey,
   facetChoices,
+  hitRateTitle,
   kindName,
   kindOne,
   kindRows,
   modelChoices,
+  newInput,
+  newInputTitle,
+  noCacheNote,
   pickedLabel,
   priceChangeWords,
   priceDate,
   providerChoices,
   providerName,
   projectName,
+  projectRows,
+  projectRowTitle,
   toggleModel,
   toggleProvider,
   tokenSum,
@@ -37,6 +44,7 @@ import { announce } from "../lib/ui-state";
 import "../projects.css";
 import "../costs-tab.css";
 import { ActionMenu } from "./ActionMenu";
+import { CostBreakdown, detailId, keepListed, OpenName, rowClick, toggleKey } from "./CostBreakdown";
 import { ResendLine } from "./ResendLine";
 import { sessionHref } from "./Sidebar";
 import { Banner, Icon } from "./ui";
@@ -69,6 +77,19 @@ export function CostsTab(props: { query: CostsQuery; sessions: SessionSummary[] 
   // Project names for the project table: the org project's own name, read once.
   const [projects] = createResource(() => listProjects().catch(() => null));
   const projectTitle = (id: string) => projects()?.projects.find((p) => p.id === id)?.name;
+  /** The By model rows opened, by row key: here, above the answer, so a refresh or a new range keeps them. */
+  const [openModels, setOpenModels] = createSignal<ReadonlySet<string>>(new Set());
+  // A model no longer listed (a new range, a filter, an answer with nothing spent, which shows no
+  // table at all) doesn't come back open: pruned on every answer, here where every answer lands.
+  // The poll reconciles each answer into one store, so the rows' keys are what is tracked, never
+  // the answer object (the same proxy from one answer to the next).
+  createEffect(
+    on(
+      () => poll.data()?.byModel.map(modelRowKey),
+      (keys) => keys && setOpenModels((s) => keepListed(s, keys)),
+      { defer: true },
+    ),
+  );
 
   const [pulled, setPulled] = createSignal<PricesInfo | null>(null);
   const [pulling, setPulling] = createSignal(false);
@@ -139,7 +160,7 @@ export function CostsTab(props: { query: CostsQuery; sessions: SessionSummary[] 
               <div class="costs-tables">
                 <ProviderTable answer={a()} />
                 <KindTable answer={a()} />
-                <ModelTable answer={a()} />
+                <ModelTable answer={a()} open={openModels()} setOpen={setOpenModels} />
                 <ProjectTable answer={a()} name={projectTitle} />
               </div>
               <Show when={a().topSessions.length}>
@@ -334,6 +355,26 @@ function CheckMark(props: { on: boolean }) {
 
 const spendTitle = (s: UsageSpend) => `${tokens(tokenSum(s.tokens))} tokens over ${s.calls} ${s.calls === 1 ? "call" : "calls"}`;
 
+/** A stat card's cache line: "96% from cache", or that none of it reported cache use. */
+const statCacheWords = (s: UsageSpend) => {
+  const rate = cacheHitRate(s.tokens);
+  return rate === null ? "No cache use reported" : `${cacheRateWords(rate)} from cache`;
+};
+
+/** A Hit rate cell: the rate, or "—" with the note that the row reported no cache use. */
+function HitRate(props: { spend: Pick<UsageSpend, "tokens">; of?: "model" | "provider" }) {
+  const rate = () => cacheHitRate(props.spend.tokens);
+  const title = () =>
+    rate() === null
+      ? noCacheNote(props.of)
+      : hitRateTitle(props.spend.tokens, tokens);
+  return (
+    <Num label="Hit rate" title={title()}>
+      <span class="cost-figure">{cacheRateWords(rate())}</span>
+    </Num>
+  );
+}
+
 /** Total, and the three ways it was spent. */
 function CostStats(props: { answer: UsageCosts }) {
   const stats = (): { label: string; spend: UsageSpend; tip?: string }[] => [
@@ -349,6 +390,7 @@ function CostStats(props: { answer: UsageCosts }) {
           <div class="card costs-stat" title={s.tip ? `${s.tip} ${spendTitle(s.spend)}.` : `${spendTitle(s.spend)}.`}>
             <dt class="text-eyebrow">{s.label}</dt>
             <dd class="cost-figure">{usd(s.spend.usd)}</dd>
+            <dd class="costs-stat-cache">{statCacheWords(s.spend)}</dd>
           </div>
         )}
       </For>
@@ -398,7 +440,7 @@ function CostChart(props: { answer: UsageCosts; query: CostsQuery; now: number }
 }
 
 /** A section card holding one table. */
-function TableCard(props: { id: string; title: string; caption: string; class?: string; stack?: boolean; head: JSX.Element; children: JSX.Element }) {
+function TableCard(props: { id: string; title: string; caption: string; class?: string; stack?: boolean; bodies?: boolean; head: JSX.Element; children: JSX.Element }) {
   return (
     <section class={props.class ? `card costs-card ${props.class}` : "card costs-card"} aria-labelledby={props.id}>
       <h2 class="costs-h2" id={props.id}>
@@ -410,7 +452,10 @@ function TableCard(props: { id: string; title: string; caption: string; class?: 
           <thead>
             <tr>{props.head}</tr>
           </thead>
-          <tbody>{props.children}</tbody>
+          {/* `bodies`: the children are tbodies of their own (a row and its detail). */}
+          <Show when={props.bodies} fallback={<tbody>{props.children}</tbody>}>
+            {props.children}
+          </Show>
         </table>
       </div>
     </section>
@@ -458,7 +503,25 @@ const SpendHead = (props: { first: string }) => (
 
 function ProviderTable(props: { answer: UsageCosts }) {
   return (
-    <TableCard id="costs-providers" title="By provider" caption="Cost by provider" head={<SpendHead first="Provider" />}>
+    <TableCard
+      id="costs-providers"
+      title="By provider"
+      caption="Tokens, cache hit rate and cost by provider"
+      head={
+        <>
+          <th scope="col">Provider</th>
+          <th scope="col" align="right">
+            Tokens
+          </th>
+          <th scope="col" align="right">
+            Hit rate
+          </th>
+          <th scope="col" align="right">
+            Cost
+          </th>
+        </>
+      }
+    >
       <For each={byCost(props.answer.byProvider, (r) => r.provider)}>
         {(r) => (
           <tr>
@@ -468,6 +531,7 @@ function ProviderTable(props: { answer: UsageCosts }) {
             <Num label="Tokens" title={spendTitle(r)}>
               <Tok n={tokenSum(r.tokens)} />
             </Num>
+            <HitRate spend={r} of="provider" />
             <Num label="Cost">
               <SpendUsd spend={r} />
             </Num>
@@ -498,22 +562,34 @@ function KindTable(props: { answer: UsageCosts }) {
   );
 }
 
-function ModelTable(props: { answer: UsageCosts }) {
+/** A By model row's key: its model, and what was asked for when another model answered. */
+const modelRowKey = (r: UsageModelRow) => `${r.provider}/${r.model}${r.asked ? `?asked=${r.asked}` : ""}`;
+
+function ModelTable(props: { answer: UsageCosts; open: ReadonlySet<string>; setOpen(next: (s: ReadonlySet<string>) => ReadonlySet<string>): void }) {
+  // Keyed by row key, not by the row objects a poll builds afresh: an opened row stays open, its button keeps focus.
+  const keys = createMemo(() => byCost(props.answer.byModel, modelRowKey).map(modelRowKey), undefined, {
+    equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]),
+  });
+  const rowOf = (key: string) => props.answer.byModel.find((r) => modelRowKey(r) === key);
   return (
     <TableCard
       id="costs-models"
       title="By model"
-      caption="Tokens and cost by model"
+      caption="New input, cache reads, cache hit rate, output and cost by model; open a model for where its cost went"
       class="costs-wide"
       stack
+      bodies
       head={
         <>
           <th scope="col">Model</th>
           <th scope="col" align="right">
-            Input
+            New input
           </th>
           <th scope="col" align="right">
-            Cache
+            Cache reads
+          </th>
+          <th scope="col" align="right">
+            Hit rate
           </th>
           <th scope="col" align="right">
             Output
@@ -524,43 +600,70 @@ function ModelTable(props: { answer: UsageCosts }) {
         </>
       }
     >
-      <For each={byCost(props.answer.byModel, (r) => `${r.provider}/${r.model}${r.asked ? `?asked=${r.asked}` : ""}`)}>
-        {(r) => (
-          <tr>
-            <th
-              scope="row"
-              title={[r.priceKey && r.priceKey !== `${r.provider}/${r.model}` ? `${r.provider}/${r.model}, priced as ${r.priceKey}` : `${r.provider}/${r.model}`, usageModelNote(r)].filter(Boolean).join(". ")}
-            >
-              <span class="text-mono">{compactModel(r.model) ?? r.model}{r.asked ? " ⚠" : ""}</span>
-              <span class="cost-session-meta">{providerName(r.provider)}</span>
-            </th>
-            <Num label="Input">
-              <Tok n={r.tokens.input} />
-            </Num>
-            <Num label="Cache" title={`${tokens(r.tokens.cacheRead)} read · ${tokens(r.tokens.cacheWrite)} written`}>
-              <Tok n={cacheSum(r.tokens)} />
-            </Num>
-            <Num label="Output">
-              <Tok n={r.tokens.output} />
-            </Num>
-            <Num label="Cost">
-              <ModelUsd row={r} />
-            </Num>
-          </tr>
+      <For each={keys()}>
+        {(key) => (
+          <Show when={rowOf(key)}>
+            {(r) => <ModelRows row={r()} open={props.open.has(key)} onToggle={() => props.setOpen((s) => toggleKey(s, key))} />}
+          </Show>
         )}
       </For>
     </TableCard>
   );
 }
 
+/** A model's row and, once opened, where its cost went. A tbody per model keeps the pair together. */
+function ModelRows(props: { row: UsageModelRow; open: boolean; onToggle(): void }) {
+  const detail = detailId();
+  const name = () => compactModel(props.row.model) ?? props.row.model;
+  const r = () => props.row;
+  return (
+    <tbody class="cost-model">
+      <tr class="cost-model-row" onClick={rowClick(() => props.onToggle())}>
+        <th
+          scope="row"
+          title={[r().priceKey && r().priceKey !== `${r().provider}/${r().model}` ? `${r().provider}/${r().model}, priced as ${r().priceKey}` : `${r().provider}/${r().model}`, usageModelNote(r())].filter(Boolean).join(". ")}
+        >
+          <OpenName open={props.open} controls={detail} name={name()}>
+            <span class="text-mono">{name()}{r().asked ? " ⚠" : ""}</span>
+            <span class="cost-session-meta">{providerName(r().provider)}</span>
+          </OpenName>
+        </th>
+        <Num label="New input" title={newInputTitle(r().tokens, tokens)}>
+          <Tok n={newInput(r().tokens)} />
+        </Num>
+        <Num label="Cache reads">
+          <Tok n={r().tokens.cacheRead} />
+        </Num>
+        <HitRate spend={r()} />
+        <Num label="Output">
+          <Tok n={r().tokens.output} />
+        </Num>
+        <Num label="Cost">
+          <ModelUsd row={r()} />
+        </Num>
+      </tr>
+      <tr class="cost-detail-row" id={detail} hidden={!props.open}>
+        <td colSpan={6}>
+          <Show when={props.open}>
+            <CostBreakdown row={r()} name={name()} />
+          </Show>
+        </td>
+      </tr>
+    </tbody>
+  );
+}
+
 function ProjectTable(props: { answer: UsageCosts; name(id: string): string | undefined }) {
   return (
     <TableCard id="costs-projects" title="By project" caption="Cost by project or folder" class="costs-wide" head={<SpendHead first="Project" />}>
-      <For each={byCost(props.answer.byProject, (r) => r.project ?? r.cwd ?? "")}>
+      <For each={projectRows(props.answer.byProject)}>
         {(r) => (
           <tr>
-            <th scope="row" title={r.cwd ?? r.project ?? undefined}>
+            <th scope="row" title={projectRowTitle(r)}>
               {projectName(r, props.name)}
+              <Show when={r.archived}>
+                <span class="cost-session-meta">archived</span>
+              </Show>
             </th>
             <Num label="Tokens" title={spendTitle(r)}>
               <Tok n={tokenSum(r.tokens)} />

@@ -12,8 +12,15 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { gateRefusal, gatedIds, WAKE_HEADER } from "./delivery.ts";
+import { writeInboxCaps } from "./inbox.ts";
+
 import {
+	INBOX_ACTIONS,
+	MAX_INBOX_IDS,
 	MAX_MESSAGE_CHARS,
+	MAX_NOTE_CHARS,
+	MAX_SUBJECT_CHARS,
 	MEMBER_ENV,
 	REPORT_KINDS,
 	awaitResponse,
@@ -32,20 +39,25 @@ export { MEMBER_TOOLS, ORCHESTRATOR_TOOLS, COORDINATOR_TOOLS, MONITOR_TOOLS, SUC
 export interface MemberToolOptions {
 	/** How long a tool waits for the parent's response; the parent's own deadlines are shorter. */
 	timeoutMs?: number;
+	/** team_inbox's wait: a parent on older code never answers it, and the legacy copy is shown instead. */
+	inboxTimeoutMs?: number;
 	pollMs?: number;
 }
 const DEFAULT_TIMEOUT_MS = 45_000;
+const INBOX_TIMEOUT_MS = 10_000;
+const Subject = Type.Optional(Type.String({ minLength: 1, maxLength: MAX_SUBJECT_CHARS, description: "One-line subject (at most 120 characters); default: the message's first line." }));
 const Message = Type.String({ minLength: 1, maxLength: MAX_MESSAGE_CHARS });
 
 const toolResult = (text: string, details: Record<string, unknown> = {}) => ({ content: [{ type: "text" as const, text }], details });
 
 export function registerMemberTools(pi: ExtensionAPI, me: MemberContext, options: MemberToolOptions = {}): void {
 	const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-	const send = async (request: Omit<MailboxRequest, "version" | "id" | "at">, signal?: AbortSignal) => {
+	const send = async (request: Omit<MailboxRequest, "version" | "id" | "at">, signal?: AbortSignal, waitMs = timeoutMs, onTimeout?: () => ReturnType<typeof toolResult>) => {
 		signal?.throwIfAborted();
 		const full: MailboxRequest = { version: 1, id: requestId(), at: Date.now(), ...request };
 		writeRequest(me.dir, full);
-		const response = await awaitResponse(me.dir, full.id, timeoutMs, signal, options.pollMs);
+		const response = await awaitResponse(me.dir, full.id, waitMs, signal, options.pollMs);
+		if (!response && onTimeout && !signal?.aborted) return onTimeout();
 		if (!response) {
 			throw new Error(signal?.aborted
 				? "Cancelled while waiting for the parent session; the request may still be handled."
@@ -60,33 +72,58 @@ export function registerMemberTools(pi: ExtensionAPI, me: MemberContext, options
 		name: "team_msg",
 		label: "Message Team Member",
 		description: text.team_msg,
-		promptSnippet: "Message a teammate by role (delivered by the parent session)",
+		promptSnippet: "Message a teammate by role (queued in its inbox)",
 		parameters: Type.Object(
 			{
 				to: Type.String({ minLength: 1, description: "Recipient role, worker ID (ag_NN), or \"all\"." }),
 				message: Message,
+				subject: Subject,
+				urgent: Type.Optional(Type.Boolean({ description: "Wake an idle recipient at once and reach a busy one at its next step. Default false." })),
+				replyTo: Type.Optional(Type.String({ pattern: "^i_[0-9a-z]{1,12}$", description: "The id of an item in your inbox this answers (i_N); the reply closes that item." })),
+				needsReply: Type.Optional(Type.Boolean({ description: "The recipient must answer: the message waits as a question until a reply with replyTo. Default false." })),
 				...(me.duty === "monitor" ? { notice: Type.Optional(StringEnum(["wrap-up", "pause", "resume"] as const)) } : {}),
 			},
 			{ additionalProperties: false },
 		),
-		async execute(_id, params: { to: string; message: string; notice?: "wrap-up" | "pause" | "resume" }, signal) {
+		async execute(_id, params: { to: string; message: string; subject?: string; urgent?: boolean; replyTo?: string; needsReply?: boolean; notice?: "wrap-up" | "pause" | "resume" }, signal) {
 			if (!params.message.trim()) throw new Error("Message must not be blank.");
-			return send({ type: "message", to: params.to.trim(), message: params.message, ...(params.notice ? { notice: params.notice } : {}) }, signal);
+			return send({
+				type: "message", to: params.to.trim(), message: params.message,
+				...(params.subject?.trim() ? { subject: params.subject.trim() } : {}), ...(params.urgent ? { urgent: true } : {}),
+				...(params.replyTo ? { replyTo: params.replyTo } : {}), ...(params.needsReply ? { needsReply: true } : {}), ...(params.notice ? { notice: params.notice } : {}),
+			}, signal);
 		},
 	});
 	if (tools.has("team_inbox")) pi.registerTool({
 		name: "team_inbox",
 		label: "Team Inbox",
 		description: text.team_inbox,
-		parameters: Type.Object({ limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, default: 50 })) }, { additionalProperties: false }),
-		async execute(_id, params) {
-			const records = readInbox(me.dir, params.limit ?? 50);
-			return toolResult(
-				records.length
-					? records.map((r) => `[${new Date(r.at).toISOString()}] ${r.kind} from ${r.from} (${r.fromId}):\n${r.text}`).join("\n\n")
-					: "No messages delivered to you yet.",
-				{ count: records.length, records },
-			);
+		parameters: Type.Object(
+			{
+				action: Type.Optional(StringEnum(INBOX_ACTIONS, { description: "list (default), open, done or sent" })),
+				ids: Type.Optional(Type.Array(Type.String({ pattern: "^i_[0-9a-z]{1,12}$" }), { maxItems: MAX_INBOX_IDS, description: "Item ids (i_N) for open and done; at most 20." })),
+				note: Type.Optional(Type.String({ maxLength: MAX_NOTE_CHARS, description: "done only: a one-line note for the sender (at most 200 characters)." })),
+				limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 200, description: "list: the newest N items of any status instead of the open ones; sent: how many." })),
+			},
+			{ additionalProperties: false },
+		),
+		async execute(_id, params: { action?: (typeof INBOX_ACTIONS)[number]; ids?: string[]; note?: string; limit?: number }, signal) {
+			const action = params.action ?? "list";
+			if ((action === "open" || action === "done") && !params.ids?.length) throw new Error(`team_inbox ${action} needs ids (e.g. ["i_41"]).`);
+			// A parent on older code does not serve inbox requests: show the delivered copies as before.
+			const legacy = () => {
+				const records = readInbox(me.dir, params.limit ?? 50);
+				return toolResult(
+					records.length
+						? records.map((r) => `[${new Date(r.at).toISOString()}] ${r.kind} from ${r.from} (${r.fromId}):\n${r.text}`).join("\n\n")
+						: "No messages delivered to you yet.",
+					{ count: records.length, records, legacy: true },
+				);
+			};
+			return send({
+				type: "inbox", action, ...(params.ids?.length ? { ids: params.ids } : {}),
+				...(params.note?.trim() ? { note: params.note.trim() } : {}), ...(params.limit ? { limit: params.limit } : {}),
+			}, signal, options.inboxTimeoutMs ?? INBOX_TIMEOUT_MS, action === "list" ? legacy : undefined);
 		},
 	});
 	if (tools.has("team_ask")) pi.registerTool({
@@ -96,10 +133,10 @@ export function registerMemberTools(pi: ExtensionAPI, me: MemberContext, options
 		promptSnippet: me.coordinated
 			? "Ask your team's coordinator a question; the answer arrives as a later message"
 			: "Ask the operator (parent session/user) a question; the answer arrives as a later message",
-		parameters: Type.Object({ question: Message }, { additionalProperties: false }),
-		async execute(_id, params, signal) {
+		parameters: Type.Object({ question: Message, subject: Subject }, { additionalProperties: false }),
+		async execute(_id, params: { question: string; subject?: string }, signal) {
 			if (!params.question.trim()) throw new Error("Question must not be blank.");
-			return send({ type: "question", message: params.question }, signal);
+			return send({ type: "question", message: params.question, ...(params.subject?.trim() ? { subject: params.subject.trim() } : {}) }, signal);
 		},
 	});
 	if (tools.has("team_roster")) pi.registerTool({
@@ -181,8 +218,68 @@ export function registerMemberTools(pi: ExtensionAPI, me: MemberContext, options
 	});
 }
 
+/** Tools a gated member may still call (§app.teams/inbox-gate). */
+export const GATE_EXEMPT = new Set(["team_inbox", "team_msg", "team_ask"]);
+
+const userText = (message: unknown): string => {
+	const content = (message as { content?: unknown } | undefined)?.content;
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content)) return "";
+	return content.map((c) => (c && typeof c === "object" && (c as { type?: unknown }).type === "text" ? String((c as { text?: unknown }).text ?? "") : "")).join("");
+};
+
+/**
+ * The inbox gate (§app.teams/inbox-gate): a run whose first user message is a gated wake list (the
+ * main chat adds the gate line only to a wake that starts the member's turn and lists unopened
+ * items) refuses every tool but team_inbox, team_msg and team_ask until the member opens an item.
+ * Any later user message that is not a wake list (a direct instruction) lifts it for the turn.
+ */
+export function registerInboxGate(pi: ExtensionAPI): { state(): string[] | undefined } {
+	let gated: string[] | undefined;
+	let userMessages = 0;
+	pi.on("agent_start", () => {
+		gated = undefined;
+		userMessages = 0;
+	});
+	pi.on("agent_end", () => {
+		gated = undefined;
+	});
+	pi.on("message_end", (event) => {
+		const message = (event as { message?: { role?: string } }).message;
+		if (message?.role !== "user") return;
+		const text = userText(message);
+		userMessages++;
+		if (userMessages === 1) gated = gatedIds(text);
+		else if (!text.startsWith(WAKE_HEADER)) gated = undefined;
+	});
+	pi.on("tool_call", (event) => {
+		if (!gated) return undefined;
+		const e = event as { toolName: string; input?: { action?: string; ids?: unknown } };
+		// Opening an item the wake listed lifts it at once (a batch of calls may follow in the same step).
+		if (e.toolName === "team_inbox" && e.input?.action === "open" && Array.isArray(e.input.ids) && e.input.ids.some((id) => gated!.includes(String(id)))) {
+			gated = undefined;
+			return undefined;
+		}
+		if (GATE_EXEMPT.has(e.toolName)) return undefined;
+		return { block: true, reason: gateRefusal(gated) };
+	});
+	// Any other open lifts it only once it succeeded (a bogus id or a failed open lifts nothing).
+	pi.on("tool_result", (event) => {
+		const e = event as { toolName: string; input?: { action?: string }; isError?: boolean };
+		if (gated && e.toolName === "team_inbox" && e.input?.action === "open" && !e.isError) gated = undefined;
+	});
+	return { state: () => gated };
+}
+
 export default function teamMemberExtension(pi: ExtensionAPI): void {
 	const me = decodeMemberContext(process.env[MEMBER_ENV]);
 	if (!me) return; // Not a team member child: inert by design.
+	try {
+		// The parent lists inbox items to a member that announces it can open them (§app.teams/inbox).
+		writeInboxCaps(me.dir);
+	} catch {
+		/* Without the marker the parent keeps sending full-text deliveries. */
+	}
 	registerMemberTools(pi, me);
+	registerInboxGate(pi);
 }

@@ -9,7 +9,7 @@ import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../shared/prot
 import { reuseUnchanged } from "./lib/summary-diff";
 import { stampListRows } from "./lib/composer-known";
 import { OptimisticArchive, type ArchiveMutation } from "./lib/optimistic-archive";
-import { setAgentsFeedSource } from "./lib/agents-feed";
+import { agentsTokensWanted, setAgentsFeedSource } from "./lib/agents-feed";
 import { setExplanationsFeedSource } from "./lib/explanations-feed";
 import {
   ApiError,
@@ -25,7 +25,7 @@ import {
   getOverseer,
   getSessionSummaryById,
   getThemes,
-  listSessions,
+  listSessionsVersioned,
   setSessionArchived,
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
@@ -36,7 +36,10 @@ import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
 import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
-import { isOverseerHash, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
+import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
+import { isOverseerHash, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
+import { followListRows, onFeedPush, requestListRead, sessionFeedOpen } from "./lib/session-feed";
+import { ListRows, ROW_STAMP_SLACK_MS } from "./lib/list-rows";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import type { CostsQuery } from "./lib/cost-history";
 import type { PerfQuery } from "./lib/perf";
@@ -51,6 +54,7 @@ import type { ProjectSummary } from "../shared/projects";
 import { onListRefresh } from "./lib/list-refresh";
 import { OrgsView } from "./components/OrgsView";
 import { ProjectsView } from "./components/ProjectsView";
+import { groupMembersOf } from "./lib/regions";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
 import { createThenArchive, dropArchived, newSessionCwd, offersCwd } from "./lib/new-session";
 import { showHiddenFolders } from "./lib/hidden-folders";
@@ -63,9 +67,9 @@ import { rememberedWidth, setSpine, spine, spineWidth } from "./lib/spine";
 import { isOverviewHash, leaveOverview } from "./lib/overview-route";
 import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
-import { closeSettings, openSettings, settingsOpenAt, settingsTabFromHash } from "./lib/settings-nav";
+import { closeSettings, openSettings, settingsOpenAt, settingsProjectFromHash, settingsTabFromHash } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
-import { activeTab, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
+import { activeTab, focusMoving, focusView, groupSendAll, hideThinking, hideTools, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
 import { sessionWorking } from "./lib/workers";
 import { answeredPeers, workPeers } from "./lib/work-now";
@@ -129,13 +133,14 @@ function openSettingsFromHash() {
     lastHash = location.hash || "#/";
     return;
   }
+  const project = settingsProjectFromHash(location.hash);
   history.replaceState(history.state, "", lastHash);
-  openSettings(tab);
+  openSettings(tab, null, project ? { project } : {});
 }
 
-/** While a run is in flight, re-read the list often enough that the Busy chip clears itself when
-    the run settles in a session nobody is looking at. Idle costs nothing: the interval only
-    exists while something is busy. */
+/** While a run is in flight and the session feed is down, re-read the list often enough that the
+    Busy chip clears itself when the run settles in a session nobody is looking at. Idle costs
+    nothing: the interval only exists while something is busy with no feed. */
 const BUSY_POLL_MS = 5_000;
 
 /** Insights polling (paused while the tab is hidden). The usage file itself changes ≤ every 3 min. */
@@ -198,33 +203,55 @@ export function App() {
   // so reading the resource never throws.
   const [archiveVersion, setArchiveVersion] = createSignal(0);
   const archiveChanges = new OptimisticArchive(() => setArchiveVersion((v) => v + 1));
-  const [sessions, { refetch }] = createResource<SessionSummary[] | undefined>(async (_, { value }): Promise<SessionSummary[] | undefined> => {
+  /** A list as the server gave it, landed: what a full read and a feed delta both go through. `at`:
+      what a row says is at least this fresh (lib/composer-known). */
+  const landList = (answer: SessionSummary[], value: SessionSummary[] | undefined, at: number): SessionSummary[] => {
+    const next = reuseUnchanged(answer, value);
+    stampListRows(next, at);
+    archiveChanges.observe(next, (path) => !hostOf(path));
+    setSessionIndex(next);
+    // An open never-sent session stays readable when a later list drops it: clearing its draft to
+    // empty makes it a hidden husk again, and the view must not vanish with the row. Only then —
+    // a titled session that leaves the list really is gone, and says so. Later loads don't undo
+    // this: the summary is kept until the route moves to another session.
+    const open = pathFromHash();
+    const openNow = open ? next.find((s) => s.path === open) : undefined;
+    if (openNow) setOpenKept(openNow.title === "Untitled" ? openNow : null);
+    setListError(null);
+    setListVersion((v) => v + 1);
+    const h = next[0] && homeFromSessionPath(next[0].path);
+    if (h) setHome(h);
+    return next;
+  };
+  /** The list kept current from the session feed's changed rows (lib/list-rows.ts): a full read
+      only when it can't follow them. */
+  const listRows = new ListRows({
+    refetch: () => requestListRead(() => void refetch()),
+    publish: (rows) => {
+      const value = sessions.latest;
+      const next = landList(rows, value, Date.now() - ROW_STAMP_SLACK_MS);
+      if (next !== value) mutate(next);
+    },
+  });
+  onCleanup(followListRows(listRows));
+  const [sessions, { refetch, mutate }] = createResource<SessionSummary[] | undefined>(async (_, { value }): Promise<SessionSummary[] | undefined> => {
     const revision = archiveChanges.revision;
+    const at = Date.now();
+    listRows.fetchStarted();
     try {
-      // When it was asked for: what a row says is at least this fresh (lib/composer-known).
-      const at = Date.now();
-      const answer = await listSessions();
-      if (revision !== archiveChanges.revision) return sessions.latest;
-      const next = reuseUnchanged(answer, value);
-      stampListRows(next, at);
-      archiveChanges.observe(next, (path) => !hostOf(path));
-      setSessionIndex(next);
-      // An open never-sent session stays readable when a later list drops it: clearing its draft to
-      // empty makes it a hidden husk again, and the view must not vanish with the row. Only then —
-      // a titled session that leaves the list really is gone, and says so. Later loads don't undo
-      // this: the summary is kept until the route moves to another session.
-      const open = pathFromHash();
-      const openNow = open ? next.find((s) => s.path === open) : undefined;
-      if (openNow) setOpenKept(openNow.title === "Untitled" ? openNow : null);
-      setListError(null);
-      setListVersion((v) => v + 1);
-      const h = next[0] && homeFromSessionPath(next[0].path);
-      if (h) setHome(h);
-      return next;
+      const answer = await listSessionsVersioned();
+      if (revision !== archiveChanges.revision) {
+        // Dropped, as always; what the feed sent meanwhile still lands.
+        const moved = listRows.fetchFailed();
+        return moved ? landList(moved, sessions.latest, Date.now() - ROW_STAMP_SLACK_MS) : sessions.latest;
+      }
+      return landList(listRows.snapshot(answer.rows, answer.at), value, at);
     } catch (err) {
-      if (revision !== archiveChanges.revision) return sessions.latest;
+      const moved = listRows.fetchFailed();
+      if (revision !== archiveChanges.revision) return moved ? landList(moved, sessions.latest, Date.now() - ROW_STAMP_SLACK_MS) : sessions.latest;
+      const kept = moved ? landList(moved, value, Date.now() - ROW_STAMP_SLACK_MS) : value;
       setListError((err as Error).message);
-      return value;
+      return kept;
     }
   });
   const list = createMemo<SessionSummary[] | undefined>((previous) => {
@@ -420,14 +447,27 @@ export function App() {
     .then(reconcileTheme)
     .catch(() => {});
   const usage = createPoll(fetchUsage, USAGE_POLL_MS);
-  const agents = createPoll(fetchAgents, AGENTS_POLL_MS);
+  // One poll for the whole app (the sidebar feed reads it); it asks for tokens only while a board is shown.
+  const agents = createPoll(() => fetchAgents({ tokens: agentsTokensWanted() }), AGENTS_POLL_MS);
   setAgentsFeedSource(agents.data);
   const explanations = createPoll(fetchExplanations, EXPLAIN_POLL_MS);
   setExplanationsFeedSource(explanations.data);
-  const overseer = createPoll(getOverseer, OVERSEER_POLL_MS);
-  /** The attention digest, read once for the page on the entry button's cadence: the sidebar's
-      Needs you region, the home card and the app badge all read it. */
-  const attention = createPoll(getAttention, OVERSEER_POLL_MS);
+  /** The Overseer's state and the attention digest (the sidebar's Needs you region, the home card
+      and the app badge all read it), one copy each for the page. Never on a timer: read at load,
+      when the tab is shown again (createPoll) and whenever the session feed (re)opens, then
+      replaced by each value the feed pushes on change (lib/session-feed). */
+  const overseer = createPoll(getOverseer, null);
+  const attention = createPoll(getAttention, null);
+  onCleanup(
+    onFeedPush({
+      resync: () => {
+        overseer.refetch();
+        attention.refetch();
+      },
+      attention: (d) => attention.set(d),
+      overseer: (o) => overseer.set(o),
+    }),
+  );
   // The app badge (an installed app, with notifications allowed): the sessions that need you, kept
   // current from the digest this page already reads; zero clears it (lib/push.ts).
   const badgeCount = createMemo(() => {
@@ -445,7 +485,8 @@ export function App() {
     return items && items.length > 0 ? items : null;
   });
   const [creating, setCreating] = createSignal(false);
-  const [paletteOpen, setPaletteOpen] = createSignal(false);
+  /** The palette is open: by the key, or by a composer's "+" (commands/palette-open.ts). */
+  const paletteOpen = () => paletteRequest() !== null;
   const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
   // The Settings modal is opened from the sidebar foot's gear, and at Modes by the mode menu's
   // "Configure Delegate" (lib/settings-nav.ts holds which tab, so either can open it).
@@ -553,7 +594,7 @@ export function App() {
   const offPaletteKey = bindKey("palette.open", (e) => {
     const act = paletteKeyAction(e, IS_MAC);
     if (act === "field") return false; // the browser's: a Mac text field's delete-to-end
-    if (act === "toggle") setPaletteOpen((open) => !open);
+    if (act === "toggle") togglePaletteFromKey();
     return true; // a held key's repeats are swallowed: it toggles once
   });
   const offShortcutsKey = bindKey("shortcuts.open", () => {
@@ -713,15 +754,17 @@ export function App() {
     const p = focusedPath();
     return (p ? summaryOf(p) : undefined) ?? null;
   });
+  /** The chat the palette's rows act on: the one whose "+" opened it, else the focused one. */
+  const palettePath = () => paletteRequest()?.path ?? focusedPath();
   /** The group the route names, once its name is known; the workspace needs the group itself. */
   const openGroup = createMemo(() => {
     const id = groupRoute()?.id;
     return id ? (sessionGroups().find((g) => g.id === id) ?? null) : null;
   });
-  /** The group's sessions, in the list's order (newest first); membership is the list's alone. */
+  /** The group's sessions, in the list's order (newest first): exactly the sidebar group's members (regions' `groupMembersOf`). */
   const groupMembers = createMemo(() => {
     const id = groupRoute()?.id;
-    return id ? (list() ?? []).filter((s) => s.groupId === id) : [];
+    return id ? groupMembersOf(list() ?? [], id) : [];
   });
   /** Every session mounted right now: the open one, or every pane of the workspace. */
   const openPaths = createMemo<string[]>(() => {
@@ -917,8 +960,9 @@ export function App() {
 
   /** Any row claiming a run in flight (the sidebar's Busy chip's fallback source). */
   const anyBusy = createMemo(() => (list() ?? []).some((s) => s.busy));
+  // Only while the session feed is down: open, its `list_changed` says when a run settles.
   createEffect(() => {
-    if (!anyBusy()) return;
+    if (!anyBusy() || sessionFeedOpen()) return;
     const t = setInterval(refresh, BUSY_POLL_MS);
     onCleanup(() => clearInterval(t));
   });
@@ -1115,6 +1159,10 @@ export function App() {
         data-spine={collapsed() ? "on" : undefined}
         data-view={groupRoute() ? "workspace" : route() || accessRoute() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || sharesRoute() || shareRoute() || orgsRoute() || projectsRoute() || overviewRoute() ? "session" : "list"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
+        /* Focus (§chat.transcript/focus-view): app.css hides the chat's chrome under it, on a
+           single-chat screen only; data-focus-moving is the moment its collapse animates. */
+        data-focus={focusView() ? "on" : undefined}
+        data-focus-moving={focusMoving() ? "" : undefined}
       >
         <Sidebar
           unfolded={unfolded()}
@@ -1421,16 +1469,33 @@ export function App() {
             openShortcuts: () => setShortcutsOpen(true),
             settingsTabs: () => SETTINGS_TAB_LABELS,
           }}
+          origin={paletteRequest()?.origin ?? "key"}
+          returnTo={paletteRequest()?.trigger ?? null}
           context={() => {
-            const s = summary();
-            const c = composerOf(focusedPath());
+            // Opened from a pane's "+", every row about the chat acts on that pane's chat, which
+            // need not be the workspace's focused one (§app.command-palette/opening).
+            const path = palettePath();
+            const s = path ? (summaryOf(path) ?? null) : null;
+            const c = composerOf(path);
             return {
               session: s ? { path: s.path, id: s.id, title: s.title, terminal: !!s.live } : null,
-              composer: c ? { commands: c.commands(), off: c.off(), hasDraft: c.hasDraft() } : null,
+              composer:
+                c && path
+                  ? {
+                      commands: c.commands(),
+                      off: c.off(),
+                      hasDraft: c.hasDraft(),
+                      hideTools: hideTools(path),
+                      hideThinking: hideThinking(path),
+                      playbooks: c.canPlaybooks(),
+                      undo: c.undoBlocked(),
+                    }
+                  : null,
             };
           }}
-          composer={() => composerOf(focusedPath())}
-          onClose={() => setPaletteOpen(false)}
+          chatPath={palettePath}
+          composer={() => composerOf(palettePath())}
+          onClose={closePalette}
         />
       </Show>
       <Show when={shortcutsOpen()}>

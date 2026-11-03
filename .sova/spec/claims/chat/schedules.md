@@ -27,8 +27,7 @@ new session, and needs no model to re-arm it.
   - `every 30m`, or `every Nh` with N one of 1, 2, 3, 4, 6, 8, 12. Both are aligned to local
     midnight, so a restart never drifts them: `every 2h` fires at 00:00, 02:00, 04:00 and so on;
   - `claude-limit-reset` (§chat.schedules/limit-reset);
-  - `merge-ready` (§chat.schedules/merge-ready).
-  The two event triggers fire at no set time, so they never count toward the 48 below.
+  The event trigger fires at no set time, so it never counts toward the 48 below.
   Keywords are case-insensitive. 30 minutes is the shortest interval: there is no `every 10m`.
 - **All or nothing.** A line that doesn't parse, a `when:` without `profile:`, an unknown `tz:`, or a
   line whose triggers could fire more than 48 times on some day of the week makes the whole schedule
@@ -42,7 +41,9 @@ new session, and needs no model to re-arm it.
 
 - **Nothing fires unapproved.** A schedule found in a project's playbook reads **Needs approval**
   until you approve it. Only your click in Sova approves: `POST /api/schedules/approve {cwd,
-  playbook, pin}` from the Playbooks dialog or the Overseer's Approvals & Schedules. A request that carries
+  playbook, pin}` from the Playbooks dialog or the Overseer's Approvals & Schedules, or **Apply and
+  Approve** on a project overseer's Settings change card that grants it (§app.project-overseer/settings:
+  the schedule's lines as the card showed them, refused when the file differs). A request that carries
   the Overseer's sender mark is refused, so no model approves one.
 - **Pinned to what you saw.** An approval records the schedule's pin: its `when:` and `tz:` lines,
   the linked profile's identity (§chat.profiles/projects), and that profile's powers (what it removes
@@ -76,9 +77,9 @@ new session, and needs no model to re-arm it.
   targets a session other than those.
 - **The message** is a real user message, tagged so it reads as a wake-up, never as you:
   ```
-  [schedule s1] Scheduled run fired (every 30m, playbook merge-round).
+  [schedule s1] Scheduled run fired (every 30m, playbook release).
   Late by 12m (Sova was not running).          <- only when the fire was late
-  Reason: <task, or "Run this playbook"; a merge-ready fire names its branches>
+  Reason: <task, or "Run this playbook"; >
   <instruction>
   ```
   The instruction of a new session is the playbook's turn (§chat.playbooks/what-gets-sent) after a
@@ -106,44 +107,16 @@ new session, and needs no model to re-arm it.
   may target (the sessions its own fires started, and its One at a time profile's live session)
   whose branch ends in a failed turn on that login that failed after the limit began. Each such
   session once per reset. It never starts a session and never messages one that didn't stop there.
-- The message: `[schedule s1] Scheduled run fired (claude-limit-reset, playbook merge-round).`,
+- The message: `[schedule s1] Scheduled run fired (claude-limit-reset, playbook release).`,
   `Reason: Claude login <name> is ready again.`, then `Your last turn stopped at that Claude login's
   usage limit, which has now reset. Continue where you left off.`
-
-## §chat.schedules/merge-ready — Waking when a branch is ready to merge
-
-- **The trigger.** `merge-ready` fires when a branch in the playbook's project turns ready to merge
-  on Sova's merge board (§chat.worktrees/merge-board): its row reads Ready to merge or Waiting for
-  your OK, and its owner session is idle. The project's branches are the board's rows of worktrees
-  of the same git repository as the project root. A row whose owner is busy or archived, or in any
-  other state, doesn't fire. The keeper reads the board only while some approved, active schedule
-  has a `merge-ready` trigger.
-- **Once per turn to ready.** A branch fires once when it turns ready, and again only after it has
-  been seen not ready since and at least 30 minutes have passed since it last fired, or when its
-  worktree now holds another branch. While the board hasn't read every session yet, a branch
-  missing from it is unknown: it neither fires nor counts as having left. A branch not seen for
-  7 days is forgotten.
-- **Collected, then named together.** A transition waits, unlogged, while the run this schedule
-  last fired into is still running or holds a queued message, and while less than 30 minutes have
-  passed since this schedule last fired for any trigger. The branches that turned ready meanwhile
-  go out together in the next fire, sorted by name, as its Reason line: `Reason: Ready to merge:
-  feat/a, feat/b (waiting for an OK).`, naming at most 5 and then `, and N more`. A branch that is
-  Waiting for your OK carries ` (waiting for an OK)`. Any attempt to fire (fired, or skipped by a
-  cap) spends the transitions it named.
-- **The timed triggers keep their share of the day.** A merge-ready fire is skipped, and logged
-  ("merge-ready leaves today's last N of 48 fires to the timed triggers"), once today's fires reach
-  48 minus the most fires the schedule's timed triggers can make in a day, so a backstop such as
-  `every 6h` still runs.
-- The message is the fire's (§chat.schedules/fire): `[schedule s1] Scheduled run fired
-  (merge-ready, playbook merge-round).`, then that Reason line, then the instruction.
 
 ## §chat.schedules/limits — Limits and the automatic pause
 
 - At most **20 approved schedules** per host: the 21st approve is refused (409).
 - At most **one run in flight** per schedule (§chat.schedules/fire).
 - At most **48 fires a day** per schedule, counted per local day in its zone: past that it skips and
-  logs. A `merge-ready` fire stops short of it, leaving room for the timed triggers
-  (§chat.schedules/merge-ready).
+  logs.
 - **Unwatched runs pause it.** After 10 fires in a row that started a session nobody opened since,
   the schedule pauses: "Paused after 10 runs nobody opened." (the row shows that sentence as its
   state). Waking a One at a time session that

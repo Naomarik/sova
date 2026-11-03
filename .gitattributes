@@ -1,2 +1,4 @@
-.sova/spec/manifest.json merge=sova-spec-manifest
+# .sova/spec/manifest.json (format 2) holds only the project settings and merges with Git's line merge.
+# Its "claims" is a string, so an older branch's merge-manifest driver refuses it and Git reports a
+# conflict instead of a quiet merge. Record files (claims/**/*.json) also use Git's line merge.
 .sova/spec/claims/**/*.md merge=sova-spec-claims

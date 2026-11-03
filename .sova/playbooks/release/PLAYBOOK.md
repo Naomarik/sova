@@ -17,7 +17,7 @@ Read each detail file when the release reaches it, every release, never from mem
 
 | When | Read |
 |---|---|
-| Start: the version, the branch, the merge round paused | `references/prepare.md` |
+| Start: the version, the branch, the merge queue paused | `references/prepare.md` |
 | The per-release edits and the release commit | `references/prepare.md` |
 | Optional, if the user opts in: the Docs pages whose spec sources changed | `references/docs.md` |
 | The pre-release checks, then the live server on the release commit | `references/checks.md` |
@@ -25,7 +25,7 @@ Read each detail file when the release reaches it, every release, never from mem
 | A bad release: move `stable` back | `references/rollback.md` |
 
 ## The order
-1. Start (`references/prepare.md`): pick the version yourself (never ask the user), ask them to pause the Merge round, make the release branch.
+1. Start (`references/prepare.md`): pick the version yourself (never ask the user), pause Sova's merge queue for this project, make the release branch.
 2. Per-release edits and the release commit (`references/prepare.md`).
    - Optional docs step (`references/docs.md`): list the Docs pages whose spec sources changed since `vPREV` and offer to update them; only on the user's yes, re-check them and give the fixes for review, one page per step. A stale page never holds the release.
 3. Pre-release checks on the release commit, then the live server restarted onto it (`references/checks.md`).
@@ -33,7 +33,7 @@ Read each detail file when the release reaches it, every release, never from mem
 5. Publish (`references/publish.md`): the atomic push, the `ls-remote` check, the GitHub release page, the site deploy, then the optional outside checks the user may choose to run.
 
 ## Ask the user first
-- Pausing the Merge round for the release, and resuming it afterwards.
+- Pausing the merge queue for the release, and resuming it afterwards.
 - The restart of the live server onto the release commit while any session is busy.
 - **Publishing.** Every step in `references/publish.md` waits for the user's explicit word, given after the stop at step 4. That word covers the push, the release page and the site deploy of this release, nothing more.
 - Where the site is hosted and how to deploy it, the first time (record the answer in `site/README.md`, "Deploy").
@@ -42,7 +42,7 @@ Read each detail file when the release reaches it, every release, never from mem
 - Rolling back, each time.
 
 ## Never
-- Land the release branch in master through the Merge round, or push master on its own, before `vX.Y.Z` and `stable` exist on GitHub. The release branch is published only by the atomic push in `references/publish.md`.
+- Land the release branch in master through the merge queue, or push master on its own, before `vX.Y.Z` and `stable` exist on GitHub. The release branch is published only by the atomic push in `references/publish.md`.
 - Move or delete a numbered tag. Force-push anything but `refs/tags/stable`, and that only with `--force-with-lease` naming the value you read from GitHub (or the empty value, the first time).
 - Push with `--tags`, `--all`, `--mirror`, or a bare `--force`.
 - Publish, deploy the site or move `stable` before the user's word at step 4.

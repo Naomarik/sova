@@ -134,8 +134,6 @@ test("every menu row in src/ is a .popover-item", () => {
     "components/ComposerMenu.tsx",
     "components/ModeMenu.tsx",
     "components/MeshHostMenu.tsx",
-    "components/AlignChip.tsx",
-    "components/OverseerCardChip.tsx",
     "components/CostsTab.tsx",
   ]) {
     assert.ok(files.has(f), `no menu row found in ${f}`);

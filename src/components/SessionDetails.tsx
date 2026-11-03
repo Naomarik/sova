@@ -1,8 +1,11 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
-import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, SessionWorktreeInfo, TranscriptItem } from "../../shared/protocol";
+import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, TranscriptItem } from "../../shared/protocol";
 import { contextSentence, contextStateFor } from "../lib/context";
 import { relativeTime, thousands, tildePath } from "../lib/format";
-import { canReviewChanges, readinessChip, readinessReason, type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
+import { NO_WORKTREES, type WorktreeChip, worktreeChips } from "../lib/worktrees";
+import { queueRow, rowsSummary } from "../lib/merge-queue";
+import { noteMergeChanged } from "../lib/merge-queue-client";
+import { queueHrefOf, WorktreeQueueRow, type QueueWorktree } from "./WorktreesModal";
 import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
 import { archivedProjectOf, unarchivedProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
@@ -587,18 +590,29 @@ function Bone(props: { width: string }) {
 }
 
 /** The session's tracked worktrees, dropped and merged ones included, or the line saying it tracks
-    none. Read-only. */
-function WorktreesSection(props: { rows: SessionWorktreeInfo[]; path: string; cwd?: string; labelId: string }) {
+    none: the same rows, states and actions as the composer's Worktrees modal (one state, so the two
+    always agree), plus Review Changes and the pane's own chips. */
+function WorktreesSection(props: { rows: QueueWorktree[]; path: string; cwd?: string; labelId: string }) {
+  const summary = () => (props.rows.length ? rowsSummary(props.rows.map((w) => queueRow(w))) : NO_WORKTREES);
   return (
     <section class="stack-2" aria-labelledby={props.labelId}>
       <h3 class="text-eyebrow" id={props.labelId}>
         Worktrees
       </h3>
-      <p class="usage-note">{worktreesSummary(props.rows)}</p>
+      <p class="usage-note">{summary()}</p>
       <Show when={props.rows.length > 0}>
-        <ul class="list worktree-list">
+        <ul class="list worktree-list wt-queue-list">
           <For each={props.rows}>{(w) => <WorktreeRow worktree={w} path={props.path} cwd={props.cwd} />}</For>
         </ul>
+        <Show when={queueHrefOf(props.rows)}>
+          {(h) => (
+            <div class="button-row">
+              <a class="button button-sm button-ghost" href={h()}>
+                View Merge Queue
+              </a>
+            </div>
+          )}
+        </Show>
       </Show>
     </section>
   );
@@ -606,41 +620,16 @@ function WorktreesSection(props: { rows: SessionWorktreeInfo[]; path: string; cw
 
 const chipTone = (c: Pick<WorktreeChip, "tone">) => (c.tone === "neutral" ? "chip" : `chip chip-${c.tone}`);
 
-/** One worktree: its branch, where it is, its status and what runs there. */
-function WorktreeRow(props: { worktree: SessionWorktreeInfo; path: string; cwd?: string }) {
+/** One worktree: the queue's row, with what runs there and Review Changes (the row's own, as in the composer's modal). */
+function WorktreeRow(props: { worktree: QueueWorktree; path: string; cwd?: string }) {
   const w = () => props.worktree;
-  const status = () => worktreeStatus(w());
-  /** The viewer on the branch against its merge-base (§chat.changes/entry): active, existing rows. */
-  const [reviewing, setReviewing] = createSignal(false);
   return (
-    <li class="list-row worktree-row">
-      <div class="list-main">
-        <p class="list-title text-mono" style={wrapMono} title={w().path}>
-          {w().branch}
-        </p>
-        <p class="list-meta text-mono" style={wrapMono}>
-          {tildePath(w().path, home())}
-        </p>
-        <div class="worktree-facts">
-          <span class={chipTone(status())} title={status().title}>
-            <span class="chip-dot" aria-hidden="true" />
-            {status().label}
-          </span>
-          <Show when={status().detail}>
-            {(detail) => (
-              <span class="text-caption text-mono" title={status().title}>
-                {detail()}
-              </span>
-            )}
-          </Show>
-          <Show when={readinessChip(w())}>
-            {(c) => (
-              <span class={chipTone(c())} title={c().title}>
-                <span class="chip-dot" aria-hidden="true" />
-                {c().label}
-              </span>
-            )}
-          </Show>
+    <WorktreeQueueRow
+      worktree={w()}
+      onChanged={noteMergeChanged}
+      review={{ sessionPath: props.path, cwd: props.cwd }}
+      chips={
+        <>
           <For each={worktreeChips(w())}>
             {(c) => (
               <span class={`${chipTone(c)} chip-count`} title={c.title}>
@@ -655,24 +644,9 @@ function WorktreeRow(props: { worktree: SessionWorktreeInfo; path: string; cwd?:
               </span>
             )}
           </Show>
-        </div>
-        <Show when={readinessReason(w())}>{(line) => <p class="list-meta worktree-reason">{line()}</p>}</Show>
-      </div>
-      <Show when={canReviewChanges(w())}>
-        <button
-          type="button"
-          class="button button-sm worktree-row-action"
-          aria-label={`Review Changes on ${w().branch}`}
-          title="The branch's commits against where it left its base branch, or, once merged, what its merge brought in. Nothing is changed."
-          onClick={() => setReviewing(true)}
-        >
-          Review Changes
-        </button>
-        <Show when={reviewing()}>
-          <ChangesDialog scope={{ kind: "worktree", sessionPath: props.path, worktreePath: w().path }} cwd={props.cwd} onClose={() => setReviewing(false)} />
-        </Show>
-      </Show>
-    </li>
+        </>
+      }
+    />
   );
 }
 

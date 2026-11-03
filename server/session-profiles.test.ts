@@ -33,6 +33,7 @@ type SessionSummary = import("../shared/protocol").SessionSummary;
 const { linkedPlaybook, playbookTurnText } = await import("../shared/playbooks");
 const { readProfiles } = await import("./profiles-store");
 const { findProfile, profileSources } = await import("./profile-sources");
+const { profilesListing } = await import("./session-profile-routes");
 const { approve, trustFile } = await import("./profile-trust");
 const { clearProjectCache, projectOf } = await import("./project-root");
 const { listPlaybooks } = await import("./playbooks");
@@ -87,11 +88,23 @@ describe("the model", () => {
     assert.equal(lockedReason("web", ["web", "workers"]), null);
   });
 
-  test("Sova ships no profile file: only Default (My settings) is built in, in code", async () => {
+  test("Sova ships no listed profile file: only Default (My settings) is built in; its system profiles are never listed", async () => {
     const src = await profileSources(null);
     assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default"]);
     assert.equal(src.builtins[0]!.label, "My settings");
-    assert.deepEqual(src.problems, [], "a missing profiles/ folder lists none, and is no problem");
+    assert.deepEqual(src.problems, [], "a profiles/ folder with no profile files lists none, and is no problem");
+    // The merge queue's thread and reviewer: found only by an explicit Sova pick, never by a bare id, never in a list.
+    const system = ["merge-reviewer", "merge-thread"];
+    for (const id of system) {
+      assert.equal((await findProfile({ source: "sova", id }, null))?.key, `sova:${id}`, id);
+      assert.equal(await findProfile(id, null), null, `${id} by a bare id`);
+    }
+    const listing = await profilesListing(null);
+    const listed = [...listing.builtins, ...listing.yours, ...listing.project.profiles].map((p) => p.id);
+    for (const id of system) assert.ok(!listed.includes(id), `${id} listed for a picker`);
+    const { readdirSync } = await import("node:fs");
+    const dir = join(import.meta.dirname, "..", "profiles", "system");
+    assert.deepEqual(readdirSync(dir).sort(), system.map((id) => `${id}.json`), "exactly these two system profiles");
   });
 
   test("a shipped profile file is listed after Default, in its normal form", async () => {
@@ -170,13 +183,14 @@ describe("the model", () => {
   test("minorModes is the whole set: any order reads in the mode extension's, [] stays none, absent stays absent", async () => {
     const minors = (v: unknown) => (parseProfile({ id: "x", label: "X", minorModes: v }) as Profile).minorModes;
     assert.deepEqual(minors(["vis", "align", "spec", "vis"]), ["align", "spec", "vis"]);
-    assert.deepEqual(minors(["codemode"]), ["codemode"]);
     assert.deepEqual(minors([]), [], "[] is kept: the session starts with none");
     assert.equal("minorModes" in (parseProfile({ id: "x", label: "X" }) as Profile), false, "absent: mode.json's default");
     // The file parse is strict about it.
     assert.equal(profileFileError({ ...CAPTAIN, minorModes: ["spec", "align"] }), null);
     assert.equal(profileFileError({ ...CAPTAIN, minorModes: [] }), null);
-    assert.equal(profileFileError({ ...CAPTAIN, minorModes: ["spec", "aling"] }), `"minorModes" has unknown name "aling". Known: align, spec, vis, codemode.`);
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: ["spec", "aling"] }), `"minorModes" has unknown name "aling". Known: align, spec, vis.`);
+    // codemode is no minor mode: a profile naming it is refused like any unknown name.
+    assert.equal(profileFileError({ ...CAPTAIN, minorModes: ["spec", "codemode"] }), `"minorModes" has unknown name "codemode". Known: align, spec, vis.`);
     assert.equal(profileFileError({ ...CAPTAIN, minorModes: "spec" }), `"minorModes" must be a list of names.`);
     assert.equal(profileFileError({ ...CAPTAIN, minorModes: [1] }), `"minorModes" must be a list of names.`);
     // shared/ imports nothing, so it keeps its own copy of the mode extension's list.
@@ -470,6 +484,20 @@ describe("the run's hop", () => {
     assert.equal(run.hop, 2, "a wake-up joining the run keeps its hop");
     run.observe(user("the user again"));
     assert.equal(run.hop, 0);
+  });
+
+  test("two session messages with the same text in one step (steers land together) each take their own hop, in order", () => {
+    const run = new RunState(new SessionLimits("s", DEFAULT_LIMITS, null));
+    const user = (text: string) => harnessEventOf({ type: "message_start", message: { role: "user", content: [{ type: "text", text }] } });
+    run.observe(harnessEventOf({ type: "agent_start" }));
+    run.expectHop("same", 1);
+    run.expectHop("same", 3);
+    run.observe(user("same"));
+    assert.equal(run.hop, 1, "the first handed in");
+    run.observe(user("same"));
+    assert.equal(run.hop, 3, "then the second: the newest message's hop, never lost");
+    run.observe(user("same"));
+    assert.equal(run.hop, 0, "nothing more was expected: a message of yours");
   });
 });
 

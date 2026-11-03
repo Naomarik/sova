@@ -26,7 +26,9 @@ node $d promote NAME (--id '§x'… | --all) [--meta KEY]… [--file PATH]… [-
 node $d recover [--write]                               --root DIR [--json]
 node $d drafts [--days N] [--worktrees]                 --root DIR [--json]
 node $d prune --approved FILE [--write]                 --root DIR [--json]
+node $d prune --official [--from DIR] [--write]         --root DIR [--json]
 node $d merge-manifest [--base F --ours F --theirs F] [--write]   --root DIR [--json]
+node $d migrate [--reverse] [--drafts | --draft NAME] [--write]     --root DIR [--json]
 node $d merge-claims --base F --ours F --theirs F [--path P] [--write]   --root DIR [--json]
 ```
 
@@ -47,7 +49,10 @@ Nothing is written without `--write`. Quote IDs, because `§` is not a shell wor
 
 `new` copies everything: the manifest and **every** file under its `claimsRoot`. It never copies
 a subset, so the draft graph is always complete. With no current spec, the baseline is empty, and
-`spec/` starts with `{"formatVersion": 1, "claims": {}}` for you to author into. This is how a
+`spec/` starts in format 2 ("Record layouts and `migrate`" below) for you to author into: a
+`manifest.json` of `{"formatVersion": 2, "claims": "records live beside each claim file, in
+claims/**/*.json"}`, and each claim file's records go in the `.json` beside it
+(`claims/a/top.md`'s in `claims/a/top.json`). This is how a
 project with no docs documents existing behavior piecemeal as features are worked on. Nothing
 else is required beforehand: no prior docs and no Git. Only the records you promote need an
 `authority` label (see below). A `claims/` tree with no
@@ -93,6 +98,12 @@ The machine can't tell which label is correct.
      or not an ancestor of `HEAD`, usually a rebase after evidence. The newest evidence entry
      for each ID is active. Superseded entries remain in history but no longer raise this warning;
      an older multi-ID entry remains active for IDs a newer entry has not replaced.
+   - `declaration-over-cap` (warn, in `introduced`, with `bytes`, `cap` and `was`): a declaration
+     the draft takes from at or below the size cap to over it, or makes larger while it is over. The
+     size is its prose bytes in its claim file, never its record's; the cap is 6,144 B or the spec's
+     top-level `declarationCap`. One over the cap that the draft leaves alone or shrinks counts under
+     `preexisting`. Split such a claim by topic into sibling claims, the old § keeping a short summary
+     that `requires` its parts. It never refuses and never changes the exit status.
 2. **Implement the change and verify it.** The tool never does this part.
 3. **`evidence`** records, for each changed ID, what was verified and against which
    implementation bytes:
@@ -124,10 +135,57 @@ The machine can't tell which label is correct.
    has, plus each current H1 that gains a new H2 (`alsoChangesDetail: [{id, change, children?}]`,
    `change` one of `text`, `record`, `text+record`, `deleted`, `file`, `child-added`). That list,
    not memory, is what "Also updates" names. They also print `driftWarnings`,
-   the `check` warnings above (never a refusal), so drift shows even when nobody ran `check`.
+   the `check` warnings above (never a refusal), so drift shows even when nobody ran `check`, and
+   `sizeWarnings`: each selected declaration the promotion would take over the size cap or grow
+   there (never a refusal, and never one of the findings that keep a landing from writing).
    Evidence on a commit that is gone or not an ancestor of `HEAD` (a rebase after evidence) is
    refused as `evidence-not-ancestor`: never rebase after evidence; re-record evidence on the
    current commit, or merge master in instead.
+5. **Or let the landing do 3 and 4** (the usual path in a Git project). The chat records only its
+   note on what it verified: `evidence NAME --id '§x'… --by WHO --verification TEXT --note --write`
+   binds the text to the record and prose as the draft has them, with no implementation, and is never
+   evidence a manual `promote` accepts. At the landing, `land --commit REV --by WHO --verification TEXT
+   [--write]` takes every draft of the project and every record each changes that current doesn't say
+   yet (pending, in conflict, or promoted before and said differently now), and:
+   - leaves a draft whose every such record is `authority: "candidate"` (`left`, `why: "proposals"`);
+     a proposal mixed into a landing draft holds it (`candidate-label`) and needs no note;
+   - needs each other record's note from its chat, the newest entry naming it with a verification
+     text (a note, or evidence recorded the old way) bound to its record and prose as they are now
+     (`verification-missing`, `verification-stale`);
+   - records evidence at REV for each, one entry per record (`landing: true`, the landing's
+     verification then the chat's note): `doc-only` where doc-only evidence applies, else `commit`
+     with the record's `code` as it is at REV (`evidence-code-missing`, `input-uncommitted`);
+   - gives a record with new or rewritten prose and no `authority` the label `accepted` in current,
+     never in the draft (the receipt names them: `promotions[].landing.authority`);
+   - refuses everything `promote` refuses, a declaration still holding `refresh`'s marker lines
+     (`conflict-markers`) and two landing drafts changing the same file or record (`drafts-overlap`).
+   Without `--write` it only answers. With `--write` it promotes every draft under the drafts lock,
+   draft by draft through the same plan and transaction as `promote`, after writing a journal of every
+   byte it may change (`drafts/.land/`): any refusal or failure puts the spec and each draft's
+   `draft.json` back byte for byte, and an interrupted land is put back by `recover --write` (every other
+   write refuses until then, `pending-transaction`). It never commits. Its answer: `drafts` (each with
+   the § it adds, changes and removes), `left`, `findings` (`{draft, id, code, message, fix}`), `counts`,
+   `paths` (the spec files it wrote, to stage), `commitMessage` `{subject, body}`, `draftsHash` (one
+   hash over every file under each draft's `spec/`, `draft.json` apart) and `sizeWarnings`, each
+   landing draft's plan's size warnings as `promote` gives them (report-only: never a refusal, never
+   the exit). With nothing pending it answers
+   `nothingToLand` and writes nothing. Exit 0 when everything lands or there is nothing to land, 1 with
+   findings, 2 when it can't read the drafts. It needs Git (`not-git`): without Git, promote by hand.
+6. **`refresh NAME [--write]`** moves a draft onto the current spec: `base/` becomes current byte for
+   byte (and `draft.json`'s `base.files` and `base.commit`), and `spec/` is the per-declaration
+   three-way merge promotion computes. A declaration both sides changed is written as one block for the
+   chat to rewrite as one text, then delete the marker lines:
+   ```
+   <<<<<<< current: <§id> changed here since the draft was made
+   <current's text>
+   =======
+   <the draft's text>
+   >>>>>>> draft
+   ```
+   A file that can't be merged per declaration gets the block around the whole file; a record or a
+   manifest setting both changed keeps the draft's. Its answer: `rebased`, `merged` (current's changes
+   brought in), `conflicts` (`{id, file, kind: "prose" | "file" | "record"}`). Exit 0 clean or nothing to
+   do, 1 with conflicts. Notes and evidence stay bound to what the chat wrote.
 
 ## What promotion checks, all before any write
 
@@ -150,7 +208,9 @@ again **per declaration** (see "Per-declaration merge" below); only what that fi
 | `agree-source-not-reference` | The source (`--source`, or the variable) is a description, not a reference: a scheme, a colon and a locator with no spaces, such as `pi-session:<session id>#<entry id>` (both ids), a URL or `chat:c1#m3` (exit 1, nothing stamped). Pass the reference, or omit `--source` when the variable is set. |
 | `agree-source-unresolved` / `agreed-source-unresolved` | A `pi-session:<session id>#<entry id>` source doesn't resolve: no session file under `$PI_CODING_AGENT_DIR/sessions` (else `~/.pi/agent/sessions`) is named `…_<session id>.jsonl` or carries that id in its header, or the entry isn't there, or it isn't a `message` by the `user` (exit 1, nothing stamped; at promotion, a hand-written stamp). Pass the reference of the user message that holds the go-ahead, or report the records ready to agree. Only `pi-session:` is resolved: any other scheme (a URL, `chat:…`) is checked for its form alone, for projects whose go-ahead lives outside pi. |
 | `agree-source-not-given` | The process is a worker (its runtime set `SPEC_AGREE_GIVEN`) that was given no reference, and `--source` names one (exit 1, nothing stamped). A worker can't name the go-ahead itself: report the records ready to agree. |
-| `agree-not-promoted` | `agree` stamped (and recorded evidence), but the promotion it previewed was not clean, so it wrote nothing to current. The message lists the plan's refusals, drift warnings, notes and foreign §; the output carries them under `promotion`. |
+| `conflict-markers` | A declaration in the draft still holds the block `refresh` wrote around a change both sides made. Rewrite it as one text and delete the marker lines. |
+| `verification-missing` / `verification-stale` | (`land`) A record the landing would make official has no note from its chat, or changed in the draft after it. Record one: `evidence NAME --id '§x' --by WHO --verification TEXT --note --write`. |
+| `drafts-overlap` | (`land`) Two drafts change the same claim file or record. Move one draft's change into the other, or delete it. |
 | `base-untrusted` | The draft's baseline graph doesn't load in the core (exit 2), so changes can't be attributed to IDs. Start a new draft from a fixed current. |
 | `draft-invalid` | The draft's own graph doesn't load (exit 2). Run `check NAME` and fix it. |
 | `not-changed`, `plan-changed`, `nothing-to-write`, `pending-transaction`, `lock-occupied`, `race` | These mean what they say. |
@@ -217,9 +277,9 @@ files, else `agree-source-unresolved`, while other schemes are checked for their
 reference refuses any `--source`, `agree-source-not-given`) and `authority: "accepted"`;
 a declaration with prose but no record gets one (an H1 is a surface, an H2 a behavior). For each
 one that maps no code and isn't labelled `reviewed` or `verified`, it records `--doc-only` evidence,
-with `--by` and `--verification` as given, and promotes it: when that promotion lands and when it
-doesn't is in PROMOTE.md ("Agreed, promoted by `agree`"). A record that maps code is only stamped:
-its build records commit or snapshot evidence. An `agreed` this draft already gave, by the same
+with `--by` and `--verification` as given. It promotes nothing: the record becomes official when its
+branch lands (`land`, step 5), the evidence's verification standing as the chat's note; its answer says so
+(`lands`). A record that maps code is only stamped: its build records its note. An `agreed` this draft already gave, by the same
 person from the same source, is kept, so running it again changes nothing. Without `--write` it previews. With the align
 minor mode on too, the align tool's result for the go-ahead (status implementing) tells the agent
 to do exactly this before building.
@@ -321,7 +381,29 @@ repository too) and writes nothing. Each row has the draft's age in days since i
 | `active` | anything else | keep |
 | `unreadable` | `status` refuses it (corrupt, base tampered) | keep: look by hand |
 
-The default branch is the one `promote` uses: origin's HEAD, else `master`, else `main`. A
+### Official
+
+One rule says whether a draft is official, in `core/official.mjs`, a function of its own that a
+host may import (it reads files only: no Git, no process): `drafts`, `prune --official` and Sova's
+readiness all call it. A draft is official in a work tree when every claim it changed reads, in
+that tree's current spec, what the draft says or what a promotion recorded in that tree wrote for
+it, other than the text the draft started from; prose also counts when its blocks carry the
+draft's change (each block it added is there, each it removed is gone; blocks as `merge-claims`
+merges them), as a Git merge of another change to the same claim leaves it. A claim is one § id's
+record in `manifest.json`, or its prose (its declaration's span in its claim file); a claim file's
+non-blank lines outside every declaration, and each other manifest key, are one claim more. Every promotion receipt records, beside
+`after`, `claims`: `{unit: [hash as the draft said it, hash as written]}` for each claim it
+wrote. So a draft whose claim a later draft of the same tree reworded and promoted is official; one
+a catch-up merge overwrote with the base branch's text, or a hand edit changed, isn't; a merge that
+changed only other claims of the same file, or other blocks of the same claim, changes nothing. A receipt from before `claims` counts,
+for the ids it names, what its draft says now.
+
+In `drafts`, each draft carries the rule's verdict, `official` (true or false; false for one it
+can't read), and the ids sort by it: an id the rule calls official counts as current; the others are
+`pending`, `conflict`, or `promotedConflict` (in conflict, promoted by this draft before; counted
+in `current` too, so its state may still be `promoted`). A draft made unofficial only by a manifest
+key or lines outside any § names no id, and reads `active`. A merge process that holds a branch
+until its drafts are official reads `official`. The default branch is the one `promote` uses: origin's HEAD, else `master`, else `main`. A
 project without Git gets no `landed`. The exit is 1 when any draft is other than `active`.
 A promotion preview or write adds one line (`staleDrafts`) when other drafts in its project had
 no activity for longer than the age limit, with the `drafts` command to run.
@@ -330,8 +412,16 @@ no activity for longer than the age limit, with the `drafts` command to run.
 `NAME` or `NAME draftSha256` (copy the hash from the report so a draft that changed after the
 approval is not deleted), `#` starts a comment. Without `--write` it lists what it would delete.
 A name with no draft, a hash that no longer matches, or an interrupted promotion (`.txn/`)
-refuses the whole prune and deletes nothing. It deletes nothing it was not given, and no other
-command deletes a draft.
+refuses the whole prune and deletes nothing. It deletes nothing it was not given.
+
+`prune --official` needs no list: it deletes only drafts the tool confirms are already official
+and keeps every other one, listed with why (`kept`). It reads each draft folder of the project's
+own drafts folder, or with `--from DIR` of `DIR` (copies kept outside the project, such as the ones
+a merge queue keeps when it removes a landed worktree), against the project's current spec by the
+rule, without Git; in the project, under the same lock and the same refusal of an interrupted
+promotion. A draft that changes at least one claim, every one official, is deleted; one not official yet, one that
+changes nothing, and one it can't read are kept. Without `--write` it lists what it would delete.
+No other command deletes a draft.
 
 ## A manifest conflict in a Git merge
 
@@ -347,7 +437,7 @@ depend on which side landed first; the output is 2-space JSON, as promotion writ
   `merge-manifest --write` writes the merged manifest to the working tree. It never stages; run
   `sova-spec.mjs check`, resolve `claims/`, then `git add .sova/spec/manifest.json`. Outside a
   conflict it refuses (`not-conflicted`).
-- **As a Git merge driver**, so the conflict never happens:
+- **As a Git merge driver** (format 1 only), so the conflict never happens:
 
   ```sh
   echo '.sova/spec/manifest.json merge=sova-spec-manifest' >> .gitattributes
@@ -356,7 +446,53 @@ depend on which side landed first; the output is 2-space JSON, as promotion writ
   ```
 
   Git runs it at the repository top; it writes `%A` on success and exits 1 on a same-key conflict,
-  which Git reports as a conflict with ours' bytes in place.
+  which Git reports as a conflict with ours' bytes in place. Sides in different record layouts
+  (format 1 on one side, 2 on the other) exit 1 (`layout-mismatch`) and write nothing, so Git keeps
+  the conflict for the index mode below. A format 2 project routes neither `manifest.json` nor its
+  record files through a driver, and drops that `.gitattributes` line when it converts: Git's own line
+  merge merges them. A branch from before the conversion still names the driver in its own
+  `.gitattributes`, and the driver refuses a format 2 `manifest.json` (its `claims` is a string), so that
+  branch's merge of the converted default branch stops with a conflict for the index mode below,
+  never a quiet merge.
+- **Records beside each claim file (format version 2), or a merge across layouts.** When a side of the
+  merge is in format 2, a `claims/**/*.json` record file is conflicted, or the merged tree holds records
+  both ways, `merge-manifest` reads base, ours and theirs from the merge's own commits (merge-base, HEAD,
+  MERGE_HEAD), merges per record and per setting as above, and `--write` writes `manifest.json` plus every
+  record file in the default branch tip's layout (`layouts` and `files` in its output). Stage what it
+  wrote, never the claims folder whole while a claim file still has markers. Without a merge in progress
+  it refuses (`not-merging`). Two branches changing different fields of one record in a format 2 record
+  file combine in Git's own line merge, and `foreign --landing` lists the record as `handResolved`.
+
+## Record layouts and `migrate`
+
+Records are kept one of two ways (`core/README.md`, "Record layouts"): format 1, every record in
+`manifest.json`; format 2, each area's records in `claims/<path>.json` beside `claims/<path>.md`. Every
+command reads both; a promotion writes in current's layout and `agree` in the draft's, so a format 1
+draft promotes into a format 2 current with its evidence still valid. A tree holding records both ways
+is refused (`layout-mixed`, exit 2) with the command that finishes it.
+
+```sh
+node $d migrate [--reverse] [--drafts | --draft NAME] [--write] --root DIR [--json]
+```
+
+`migrate` converts the current spec to format 2 (`--reverse`: back to 1), and with `--drafts` every
+draft's `base/` and `spec/` (only the named one with `--draft NAME`, leaving current as it is). Without
+`--write` it previews: `from`, `to`, `records`, `recordFiles`, `files[]` and `identity`. It refuses to
+finish unless the converted form reads back with the same ids, records and settings and the core's
+`check` of it (declarations, counts, frontier, code, findings) equals today's; with `--write` it reads
+the written spec back through the core, and undoes the conversion if that differs. A converted draft's
+`status` and `diff` must answer exactly as before; its old files are kept in
+`drafts/<name>/.layout-backup/v<from>/`, and `--reverse` restores them byte for byte while the draft's
+records still match. With `--write` it refuses (exit 1) while `.sova/spec` has uncommitted or untracked
+changes (`migrate-dirty`), a promotion is pending, or the drafts lock is held; a spec already in the
+target format is `already-v1` / `already-v2`. On a mixed tree it finishes the move (into the default
+branch tip's layout), refusing a record that differs between its two places (`record-duplicate`).
+Commit the result as one commit of its own; a `.sova/spec/.gitignore` that doesn't admit
+`claims/**/*.json` is named in `next`. Converting to format 2, drop any
+`.sova/spec/manifest.json merge=sova-spec-manifest` line from `.gitattributes` in that commit (keep
+`merge=sova-spec-claims`); converting back, restore it. With the spec mode on, the census note calls
+the converted files a direct write to the current spec: they are `migrate`'s own, so commit them; never
+undo them.
 
 ## A claims conflict in a Git merge
 

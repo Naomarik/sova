@@ -217,7 +217,7 @@ export type AllowanceUse = Record<PoLimitKind, { used: number; max: Allowance }>
     nothing is picked and the session runs on this computer's default profile. */
 export interface ProjectCodingMode {
   mode: "normal" | "delegate";
-  /** Canonical order (the mode extension's MINOR_MODES): any of align, spec, vis, codemode. */
+  /** Canonical order (the mode extension's MINOR_MODES): any of align, spec, vis. */
   minorModes: string[];
   subagentProfile?: string;
 }
@@ -271,8 +271,9 @@ export interface ProjectOverseerSettings {
   confirmKinds?: ConfirmKind[];
   extraSystemPrompt: string;
   /** Its memory switch, written only by PUT …/overseer/memory.
-      Absent = no choice made: on, UniiChat at 128 KB. */
-  memory?: { on: boolean; type: "uniichat" | "zoomable"; size: number };
+      Absent = no choice made: on, UniiChat. `size`: an older file's, kept but ignored (the size is
+      Settings → Memory's for the type). */
+  memory?: { on: boolean; type: "uniichat" | "zoomable"; size?: number };
 }
 
 export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "model" | "thinking" | "codingModel" | "codingThinking" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "holdMin" | "extraSystemPrompt">> &
@@ -283,6 +284,15 @@ export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "model"
     /** One release only: accepted and ignored (the confirmation checklist is gone). */
     confirmKinds?: unknown;
   };
+
+/** Every field PATCH …/overseer reads (the settings reference covers each; a field missing here fails typecheck). */
+export const PO_PATCH_FIELDS = [
+  "model", "thinking", "codingModel", "codingThinking", "gatheringModel", "gatheringThinking", "gatheringAbilities",
+  "watchGapMin", "soonLookSec", "watch", "holdMin", "extraSystemPrompt", "powers", "resume", "powersNoteSeen", "assistantModels",
+  "caps", "autonomy", "confirmKinds",
+] as const satisfies readonly (keyof ProjectOverseerPatch)[];
+type _PatchFieldsCovered = Exclude<keyof ProjectOverseerPatch, (typeof PO_PATCH_FIELDS)[number]>;
+export const PO_PATCH_FIELDS_COVERED: [_PatchFieldsCovered] extends [never] ? true : _PatchFieldsCovered = true;
 
 /** The settings as GET answers them: `powers` is the view, not the stored shape. */
 export type ProjectOverseerSettingsView = Omit<ProjectOverseerSettings, "powers"> & { powers: PowersView };
@@ -411,6 +421,8 @@ export interface CodingWorktree extends CodingSession {
   newSinceMerge?: number;
   /** Commits on the branch beyond base. */
   ahead: number;
+  /** The branch's head commit as this read saw it (Land pins it). Absent when the branch is gone. */
+  head?: string;
   /** Uncommitted changes in the worktree. */
   dirty: boolean;
   /** Git could not be read. */
@@ -461,6 +473,9 @@ export interface ItemCodeInput {
   mode?: string;
   minor_modes?: string[];
   subagent_profile?: string;
+  /** The global Overseer's call only (§app.project-overseer/confirm-brief): `true` when the operator already said they
+      want this built; absent, the session first asks them to confirm the brief. The page's start never sends it. */
+  already_agreed?: boolean;
 }
 /** POST …/overseer/message: where the text went (idle: a turn started; mid-turn: queued as a follow-up). */
 export interface ProjectMessageResult {
@@ -477,6 +492,8 @@ export interface ItemCodeResult {
   note?: string;
   /** Its mode could not be set, so its first prompt was not sent (the session exists and is listed). */
   notPrompted?: string;
+  /** Its first prompt asks the operator to confirm the brief first (an Overseer's start, §app.project-overseer/confirm-brief). */
+  confirmBrief?: boolean;
 }
 
 /** New Coding Session: a coding session tied to no to-do or idea, with no first prompt (the operator writes it in the composer). */

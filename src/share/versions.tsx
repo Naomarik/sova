@@ -4,7 +4,8 @@ import type { OwnerVersionRow } from "../../shared/project-assistant";
 /**
  * The versions the owner can try (§app.project-assistant/versions), as rows: on Home under
  * "Versions you can try", and inside the assistant's bubble after it started one. `Open` while it
- * runs, `Starting…` (disabled) while it starts, the quiet failed line, or "Not running right now".
+ * runs, `Starting…` (disabled) while it starts, the quiet failed line, or "Not running right now"; a fix's summary of
+ * what it changes under its name, when one is shown.
  * Without `href` (the operator's preview) Open shows but leads nowhere.
  */
 
@@ -27,6 +28,7 @@ export function VersionRows(props: { versions: readonly OwnerVersionRow[]; href?
             <span class="owner-row-main">
               <span class="owner-row-title">{v.label}</span>
               <span class="owner-meta">{versionMeta(v)}</span>
+              <Show when={v.summary}>{(t) => <span class="owner-version-summary">{t()}</span>}</Show>
             </span>
             <Switch>
               <Match when={v.state === "starting"}>

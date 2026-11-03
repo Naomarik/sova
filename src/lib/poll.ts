@@ -29,10 +29,13 @@ export interface Poll<T> {
  * and <For> updates them in place: focus and scroll survive a poll. Must be created inside a
  * reactive owner; the timer stops on cleanup.
  *
+ * `intervalMs` null: a pushed value (lib/session-feed). No timer then, except the backoff retry after
+ * a failure: it is read at creation, when the tab is shown again, on `refetch`, and replaced by `set`.
+ *
  * `cacheKey`: the last answer under that key, kept for this browser tab only (lib/page-cache), is
  * shown at once and replaced in place by the first fresh one; `pending` stays true until then.
  */
-export function createPoll<T extends object>(fetcher: () => Promise<T>, intervalMs: number, opts: { cacheKey?: string } = {}): Poll<T> {
+export function createPoll<T extends object>(fetcher: () => Promise<T>, intervalMs: number | null, opts: { cacheKey?: string } = {}): Poll<T> {
   const key = opts.cacheKey;
   const cached = key ? recall<T>(key) : undefined;
   const [store, setStore] = createStore<{ value?: T }>(cached ? { value: structuredClone(cached) } : {});
@@ -46,9 +49,9 @@ export function createPoll<T extends object>(fetcher: () => Promise<T>, interval
   let run = 0;
   let stopped = false;
 
-  const schedule = (ms: number) => {
+  const schedule = (ms: number | null) => {
     clearTimeout(timer);
-    if (!stopped && !document.hidden) timer = setTimeout(tick, ms);
+    if (ms !== null && !stopped && !document.hidden) timer = setTimeout(tick, ms);
   };
 
   const tick = async () => {
@@ -68,7 +71,7 @@ export function createPoll<T extends object>(fetcher: () => Promise<T>, interval
       setError((err as Error).message);
     }
     setPending(false);
-    schedule(failures ? Math.max(intervalMs, BACKOFF_MS[Math.min(failures, BACKOFF_MS.length) - 1]!) : intervalMs);
+    schedule(failures ? Math.max(intervalMs ?? 0, BACKOFF_MS[Math.min(failures, BACKOFF_MS.length) - 1]!) : intervalMs);
   };
 
   const onVisibility = () => {

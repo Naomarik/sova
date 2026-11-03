@@ -284,14 +284,16 @@ export const sharedIdOf = (project: string) => `${slugOf(project)}-shared-${crea
 /**
  * The slot for a new instance of `project` (§app.project-services/instances). `want` is taken when
  * free; otherwise the lowest free slot in `range`. A slot is free when no instance of the project
- * holds it, and none of its ports is held by another instance on this host or `listening(port)`.
+ * holds it, and none of its ports is held by another instance on this host or `listening(port)`
+ * (true, or the listener in words: "pid 4242 (/home/me/app)"). A slot past the parser's checked
+ * range may give a port past 65535 or the same port twice: it is not free either.
  */
 export function pickSlot(
   r: Registry,
   project: string,
   portsOf: (slot: number) => number[],
   range: number[],
-  listening: (port: number) => boolean,
+  listening: (port: number) => boolean | string,
   want?: number,
 ): { slot: number } | { refused: string } {
   const taken = new Set(r.instances.filter((i) => i.project === project).map((i) => i.slot));
@@ -300,10 +302,14 @@ export function pickSlot(
   for (const s of r.shared) if (s.project !== project) for (const [svc, ps] of Object.entries(s.ports)) for (const [k, n] of Object.entries(ps)) claimed.set(n, `${s.id} (${svc}.${k})`);
   const why = (slot: number): string | null => {
     if (taken.has(slot)) return `slot ${slot} is held by another instance of this project`;
-    for (const p of portsOf(slot)) {
+    const ports = portsOf(slot);
+    for (const [i, p] of ports.entries()) {
+      if (p > 65535) return `slot ${slot} would need port ${p}, past 65535`;
+      if (ports.indexOf(p) !== i) return `slot ${slot} gives port ${p} to two of its services`;
       const c = claimed.get(p);
       if (c) return `slot ${slot} needs port ${p}, which ${c} holds`;
-      if (listening(p)) return `slot ${slot} needs port ${p}, which something is listening on`;
+      const l = listening(p);
+      if (l) return `slot ${slot} needs port ${p}, which ${typeof l === "string" ? l : "something"} is listening on`;
     }
     return null;
   };

@@ -17,6 +17,8 @@ import { assertNotLive, BusyError, chatHandleTakenBack } from "./chat-handle";
 import { sessionsChanged } from "./list-generation";
 import { resolveSessionPath } from "./paths";
 import { recordFrame } from "./ws";
+import { ARCHIVED_REFUSAL, isArchived } from "./archived-sessions";
+import { idOf } from "./sessions-index";
 
 export const CHAT_ACTION_PATH = "/api/chat/action";
 /** `wait` when the query leaves it out, and its ceiling (ms). */
@@ -139,6 +141,8 @@ export function createMatcher(action: ChatAction, requestId: string) {
           if (code === "busy" || code === "recent" || code === "config") return answer(409, { error, outcome: "refused", code });
           return answer(500, { error, outcome: "refused", code: code ?? "internal" });
         }
+        // An archived chat opens for nothing (§chat.transcript/instant-open, "An archived chat").
+        if (type === "closed" && msg.reason === "archived") return answer(409, { error: ARCHIVED_REFUSAL, outcome: "refused", code: "archived" });
         if (type === "closed") return gone;
         if (type !== "hello") return { kind: "wait" };
         hello = true;
@@ -294,7 +298,11 @@ export async function beforeChat(path: string, action: ChatAction): Promise<Acti
     if (err instanceof BusyError) return { status: 409, body: { error: err.message, outcome: "refused", code: err.code } };
     throw err;
   }
-  if (action.type !== "abort" && action.type !== "reload_code") return null;
+  const cold = action.type === "abort" || action.type === "reload_code";
+  // An archived chat starts for nothing a script asks (§chat.transcript/instant-open, "An archived chat");
+  // Stop and Reload Now answer as for any chat that isn't open.
+  if (!cold && isArchived(idOf(path))) return { status: 409, body: { error: ARCHIVED_REFUSAL, outcome: "refused", code: "archived" } };
+  if (!cold) return null;
   if (await chatHandleTakenBack(path)) return null;
   return { status: 200, body: action.type === "abort" ? { outcome: "stopped", wasRunning: false } : { outcome: "not-running" } };
 }

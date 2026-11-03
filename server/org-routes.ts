@@ -8,9 +8,11 @@ import type { CommitNowOutcome, OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } 
 import { attentionChanged } from "./attention-memo";
 import { unroutedConflicts } from "./decisions";
 import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, handoffTo, keepLink, keptLinks, linkTimes, liveLinkCount, nameOf, namesOf, offerTo, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner, takeBack, withdrawOffer } from "./baton";
-import { readBatonSettings, writeBatonSettings } from "./baton-settings";
+import { readBatonSettings } from "./baton-settings";
 import { sessionSeesImages } from "./baton-images";
 import { BusyError } from "./chat-handle";
+import { knownLogin, loginOptions, UNKNOWN_LOGIN } from "./claude-login-known";
+import { orgLoginView, setOrgLogin } from "./org-claude-login";
 import {
   addPerson,
   addProject,
@@ -42,7 +44,7 @@ import {
   setOperatorName,
   type OperatorBy,
 } from "./orgs";
-import { ADD_LEAD, confirmRefusal, OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerCardScope, overseerSender } from "./overseer-sender";
+import { confirmRefusal, OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerCardScope, overseerSender } from "./overseer-sender";
 import { overseerFolder } from "./overseer-folders";
 import { batonData, startedOf, toldOf } from "./baton-told";
 import type { EnvelopeCard } from "./org-envelope";
@@ -60,10 +62,11 @@ import { findLink, linksOfOrg, revokePersonLinks } from "./baton-links";
 import { lastVisits } from "./visits";
 import type { OwnerLinkResult } from "../shared/owner";
 import { ownerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
-import { ownerView } from "./owner-page";
+import { featureChatOwnerFirst } from "./feature-chats";
+import { ownerConversationOlder, ownerView } from "./owner-page";
 import { orgRequests } from "./project-assistant-store";
-import { registerAssistantRoutes } from "./project-assistant-routes";
-import { assistantPhoto, assistantView } from "./project-assistant";
+import { batonSettingsView, registerAssistantRoutes, saveBatonSettings } from "./project-assistant-routes";
+import { assistantOlder, assistantPhoto, assistantView } from "./project-assistant";
 import { readUpdates, withdrawUpdate } from "./project-updates";
 import { setRemote } from "./workspace-git";
 import { actOrThrow, hostOf } from "./org-engine";
@@ -109,7 +112,9 @@ export function batonInfo(row: BatonSession): BatonInfo {
         createdAt: last.createdAt,
       }
     : null;
+  const featureFirst = featureChatOwnerFirst(row.sessionId);
   return {
+    ...(featureFirst ? { featureChat: { first: featureFirst } } : {}),
     session: row,
     orgName: readOrgOrPlaceholder(row.orgId).name,
     projectName: readProjects(row.orgId).find((p) => p.id === row.projectId)?.name ?? "",
@@ -314,16 +319,11 @@ export function operatorBy(c: Context): OperatorBy {
 /** The card rows a sender-marked call carried (§app.overseer/org-project-add): only meaningful when `by.via` is set. */
 const cardScope = (c: Context) => overseerCardScope(c.req.header(OVERSEER_CARD_HEADER));
 
-/** The folder the global Overseer's Add Project in `orgId` registers: one it may add, on the card its call carried
-    as a folder row into this org (with the name, when the row names one); else the refusal. */
-async function overseerOrgAddRoot(c: Context, orgId: string, rawRoot: unknown, name: unknown): Promise<string> {
-  const folders = cardScope(c).folders.filter((f) => f.org === orgId);
-  const refusal = (what: string) => new OrgError(confirmRefusal(what, ADD_LEAD), 403);
-  if (!folders.length) throw refusal(`the folder ${typeof rawRoot === "string" ? rawRoot.trim() : "to add"} (into this organization)`);
+/** The folder the global Overseer's Add Project in `orgId` registers (§app.overseer/org-project-add): one it may add
+    (the file guard's refusal otherwise). It runs on the user's word, which the Overseer's act wrapper checks: no card row. */
+async function overseerOrgAddRoot(rawRoot: unknown): Promise<string> {
   const f = await overseerFolder(rawRoot);
   if ("problem" in f) throw new OrgError(f.problem);
-  const named = typeof name === "string" && name.trim() ? name.trim() : undefined;
-  if (!folders.some((x) => x.root === f.root && (x.name === undefined || x.name === named))) throw refusal(`the folder ${f.root} (into this organization)`);
   return f.asked;
 }
 
@@ -388,6 +388,16 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const b = await body(c);
       await patchOrg(p(c, "id"), { name: b.name, about: b.about }, operatorBy(c));
       return c.json(await orgPage(p(c, "id")));
+    }),
+  );
+  // The org's Claude login for its projects (§app.claude-logins/project-login): kept on this host.
+  app.get("/api/orgs/:id/claude-login", handle(async (c) => c.json({ ...orgLoginView(p(c, "id")), options: loginOptions() })));
+  app.put(
+    "/api/orgs/:id/claude-login",
+    handle(async (c) => {
+      const login = (await body(c)).login;
+      if (login !== "none" && !knownLogin(login)) throw new OrgError(typeof login === "string" ? UNKNOWN_LOGIN : 'Expected { login: <login id> | "none" }');
+      return c.json({ ...setOrgLogin(p(c, "id"), login as string), options: loginOptions() });
     }),
   );
   // r13: the company's working hours (the default for anyone without their own), operator only.
@@ -555,7 +565,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const b = await body(c);
       const by = operatorBy(c);
-      const root = by.via ? await overseerOrgAddRoot(c, id, b.root, b.name) : b.root;
+      const root = by.via ? await overseerOrgAddRoot(b.root) : b.root;
       const made = await addProject(id, { name: b.name, root }, by);
       return c.json({ ...(await orgPage(id)), ...(made.normalizedFrom ? { normalizedFrom: made.normalizedFrom } : {}) }, 201);
     }),
@@ -675,7 +685,19 @@ export function registerOrgRoutes(app: Hono<any>): void {
           if (!got || !/^image\/(?:jpeg|png|webp|gif)$/.test(got.mimeType)) throw new OrgError("No such photo.", 404);
           return c.body(new Uint8Array(Buffer.from(got.data, "base64")), 200, { "Content-Type": got.mimeType, "Content-Security-Policy": "default-src 'none'; sandbox", "Cache-Control": "no-store" });
         }
+        // An earlier page of it (§app.project-assistant/chat, Paged), as the owner's link reads it.
+        const before = c.req.query("before");
+        if (before !== undefined) {
+          if (!/^(?:0|[1-9][0-9]{0,6})$/.test(before)) throw new OrgError("before is a message number.", 400);
+          return c.json(await assistantOlder(p(c, "id"), Number(before)));
+        }
         return c.json(await assistantView(p(c, "id")));
+      }
+      // A conversation's earlier items (§app.owner-page/content).
+      const before = c.req.query("before");
+      if (conversation !== undefined && before !== undefined) {
+        if (!/^(?:0|[1-9][0-9]{0,6})$/.test(before)) throw new OrgError("before is a position.", 400);
+        return c.json(await ownerConversationOlder(p(c, "id"), conversation, Number(before)));
       }
       return c.json(await ownerView(p(c, "id"), { ...(project !== undefined ? { project } : {}), ...(conversation !== undefined ? { conversation } : {}) }));
     }),
@@ -721,14 +743,11 @@ export function registerOrgRoutes(app: Hono<any>): void {
       );
     }),
   );
-  app.get("/api/baton/settings", (c) => c.json(readBatonSettings()));
+  // The host's defaults, the Project Assistant's default model among them (§app.settings-dialog/organizations).
+  app.get("/api/baton/settings", (c) => c.json(batonSettingsView()));
   app.put(
     "/api/baton/settings",
-    handle(async (c) => {
-      const result = writeBatonSettings(await body(c));
-      if ("error" in result) throw new OrgError(result.error, 400);
-      return c.json(result);
-    }),
+    handle(async (c) => c.json(saveBatonSettings(await body(c)))),
   );
   // What it can do, the operator's change from the strip (§app.baton/abilities): from its next run.
   app.post(

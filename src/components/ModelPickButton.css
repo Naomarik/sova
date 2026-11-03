@@ -1,0 +1,9 @@
+/* The Project Assistant's model control (ModelPickButton.tsx): the composer flyout's shell, anchored
+   above its button like the composer's, or below it when there is no room above (a Settings row near
+   the top of the dialog). Under 768px the .model-menu sheet rules own the position. */
+@media (min-width: 768px) {
+  .model-pick-flyout[data-below] {
+    top: var(--menu-top, 64px);
+    bottom: auto;
+  }
+}

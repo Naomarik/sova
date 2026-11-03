@@ -16,6 +16,7 @@ import {
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
 	claudeConfigDirEnv, credentialsMtime,
 	PICKS_DIR_NAME, clearLoginPick, markLeaving, movedText, readLoginPicks, writeLoginPick,
+	LOGIN_CONTEXT_ENV, loginContextFromEnv, orderWithContext, parseLoginContext, preferenceText, type ClaudeLoginContext,
 } from "./accounts.ts";
 import { keychainService, resetKeychainMtimes } from "./keychain.ts";
 import { claudeEnv, classifyClaudeFailure, ClaudeFailureDetector } from "./transport.ts";
@@ -542,4 +543,81 @@ test("take: a login free at the keeper is borrowed by name (the want's `only`), 
 	fs.mkdirSync(path.join(wantsDir(s.agentDir)), { recursive: true });
 	fs.writeFileSync(path.join(wantsDir(s.agentDir), "1-x.json"), JSON.stringify({ v: 1, at: 1, pid: 1, only: "not-a-login" }));
 	assert.equal(readWants(s.agentDir)[0]?.want.only, undefined, "a malformed `only` is dropped");
+});
+
+// ---------------------------------------------------------------------------
+// A project's own login (§app.claude-logins/project-login)
+// ---------------------------------------------------------------------------
+
+test("project login: the context parses strictly, from its variable only, and orders preferred, rest, saved, default", () => {
+	assert.equal(parseLoginContext(null), undefined);
+	assert.equal(parseLoginContext({ prefer: { login: "nope", source: "project", name: "X" } }), undefined, "a bad id says nothing");
+	assert.equal(parseLoginContext({ prefer: { login: A, source: "team", name: "X" } }), undefined, "an unknown source says nothing");
+	assert.deepEqual(parseLoginContext({ prefer: { login: A, source: "org", name: "Fold" }, saved: [A, B, B, "bad", "default"] }), { prefer: { login: A, source: "org", name: "Fold" }, saved: [B] }, "saved drops the preferred, duplicates, default and bad ids");
+	assert.equal(loginContextFromEnv({}), undefined, "a terminal session: nothing");
+	assert.equal(loginContextFromEnv({ [LOGIN_CONTEXT_ENV]: "{not json" }), undefined);
+	assert.deepEqual(loginContextFromEnv({ [LOGIN_CONTEXT_ENV]: JSON.stringify({ saved: [C] }) }), { saved: [C] });
+	const order = [A, B, C, "default"];
+	assert.deepEqual(orderWithContext(order), order, "no context: the order as it is");
+	assert.deepEqual(orderWithContext(order, { prefer: { login: C, source: "project", name: "P" } }), [C, A, B, "default"]);
+	assert.deepEqual(orderWithContext(order, { saved: [A] }), [B, C, A, "default"], "a saved login comes after the others, before default");
+	assert.deepEqual(orderWithContext(order, { prefer: { login: "default", source: "project", name: "P" }, saved: [B] }), ["default", A, C, B], "default preferred comes first");
+	assert.deepEqual(orderWithContext(order, { prefer: { login: "l-0000dead", source: "project", name: "P" } }), order, "a preferred login not here changes nothing");
+	assert.equal(preferenceText({ id: B, label: "b@x", env: {} }, { login: A, source: "project", name: "Acme" }, "a@x", "is limited until 15:00"), "Claude: using b@x (project Acme's login a@x is limited until 15:00)");
+	assert.equal(preferenceText({ id: B, label: "b@x", env: {} }, { login: A, source: "org", name: "Fold" }, "a@x", "needs sign-in"), "Claude: using b@x (organization Fold's login a@x needs sign-in)");
+});
+
+test("project login: a new chat starts on it, the chat's own login still wins, and a limited one moves on in order", (t) => {
+	const s = sandbox(t);
+	writeAccounts(s.agentDir, { version: 1, logins: [login(A, "1"), login(B, "2"), login(C, "3")], devices: { local: { order: [A, B, C, "default"] } } });
+	const ctx: ClaudeLoginContext = { prefer: { login: C, source: "project", name: "Acme" } };
+	assert.equal(s.logins.select(undefined, ctx).id, C, "a new chat starts on the project's login");
+	assert.equal(s.logins.selectId(undefined, undefined, ctx), C, "what the composer shows before the first record");
+	assert.equal(s.logins.select(A, ctx).id, A, "the chat's own (recorded or picked) login wins while usable");
+	assert.equal(s.logins.select().id, A, "without the context: the device's order (background jobs, a terminal)");
+	s.logins.recordFailure({ id: C, label: "c", env: {}, accountUuid: "3" }, { kind: "limit", resetsAt: s.now + 3_600_000 });
+	assert.equal(s.logins.select(undefined, ctx).id, A, "the project's login is limited: the next with room");
+	assert.match(s.logins.absence(C)!.cause, /^is limited until /, "what the note names");
+});
+
+test("project login: a login saved for other work is a last resort, before default", (t) => {
+	const s = sandbox(t);
+	writeAccounts(s.agentDir, { version: 1, logins: [login(A, "1"), login(B, "2")], devices: { local: { order: [A, B, "default"] } } });
+	const outside: ClaudeLoginContext = { saved: [A] };
+	assert.equal(s.logins.select(undefined, outside).id, B, "work outside its project leaves A");
+	s.logins.recordFailure({ id: B, label: "b", env: {}, accountUuid: "2" }, { kind: "limit", resetsAt: s.now + 3_600_000 });
+	assert.equal(s.logins.select(undefined, outside).id, A, "no other added login has room: A, not default");
+	s.setNow(s.now + 3_600_001);
+	const from = s.logins.select(undefined, outside);
+	assert.equal(from.id, B);
+	assert.equal(s.logins.failover(from, { kind: "auth" }, outside)?.id, A, "failover reaches the saved login before default");
+});
+
+test("project login: a failure on the project's login moves to the next unsaved login, the project's other logins last", (t) => {
+	const s = sandbox(t);
+	writeAccounts(s.agentDir, { version: 1, logins: [login(A, "1"), login(B, "2"), login(C, "3")], devices: { local: { order: [A, B, C, "default"] } } });
+	const ctx: ClaudeLoginContext = { prefer: { login: C, source: "org", name: "Fold" }, saved: [A] };
+	const from = s.logins.select(undefined, ctx);
+	assert.equal(from.id, C);
+	assert.equal(s.logins.failover(from, { kind: "limit", resetsAt: s.now + 60_000 }, ctx)?.id, B, "A is saved for another project");
+	const back = s.logins.select("l-0000dead", ctx);
+	assert.equal(back.id, B, "a gone login falls back past the limited preference");
+});
+
+test("project login: acquire borrows the project's login by name when the keeper has it free", async (t) => {
+	const s = sandbox(t);
+	fs.mkdirSync(path.join(s.agentDir, "sova"));
+	fs.writeFileSync(path.join(s.agentDir, "sova", "peers.json"), JSON.stringify({ version: 1, self: { id: "desk", label: "Desk" }, peers: [{ id: "vps", label: "Vps" }] }));
+	writeAccounts(s.agentDir, { version: 1, logins: [login(A, "acct-1", { device: "desk" }), login(C, "acct-2", { device: null })], devices: {} });
+	fs.mkdirSync(path.dirname(poolAgentPath(s.agentDir)), { recursive: true });
+	fs.writeFileSync(poolAgentPath(s.agentDir), JSON.stringify({ v: 1, pid: process.pid, at: Date.now(), device: "desk" }));
+	const logins = new ClaudeLogins({ agentDir: s.agentDir, env: s.env, wantWaitMs: 3000, wantPollMs: 10 });
+	const ctx: ClaudeLoginContext = { prefer: { login: C, source: "project", name: "Acme" } };
+	const acquiring = logins.acquire(undefined, ctx);
+	let seen: ReturnType<typeof readWants> = [];
+	for (let i = 0; i < 100 && !seen.length; i++) { await new Promise((r) => setTimeout(r, 10)); seen = readWants(s.agentDir); }
+	assert.equal(seen[0]?.want.only, C, "borrowed by name, as a composer pick is");
+	updateAccounts(s.agentDir, (a) => { a.logins.find((l) => l.id === C)!.device = "desk"; });
+	assert.equal((await acquiring).id, C, "the chat starts on it once it is here");
+	assert.equal((await logins.acquire(A, ctx)).id, A, "a chat's own usable login asks nothing");
 });

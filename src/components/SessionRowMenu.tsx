@@ -45,8 +45,8 @@ const runEntry = async (entry: MenuEntry, session: string) => {
   announce(said);
 };
 
-/** The ⋯ menu: every action the row has, the only door to them at folded width. */
-export function RowMenu(props: { row: BoardRow; ctx: RowMenuCtx; href: string; archive: { label: string; blocked: string | null } | null }) {
+/** The ⋯ menu: every action the row has but opening it (its title link does), the only door to them at folded width. */
+export function RowMenu(props: { row: BoardRow; ctx: RowMenuCtx; archive: { label: string; blocked: string | null } | null }) {
   const s = () => props.row.session;
   const gist = () => gistTitle(s());
   /** What extensions add, for a session on this host only: an extension is this host's. */
@@ -73,7 +73,6 @@ export function RowMenu(props: { row: BoardRow; ctx: RowMenuCtx; href: string; a
           fallback={
             <div class="model-menu-list" role="menu" aria-label={`Actions for ${quoted(s().title)}`}>
               <div class="model-menu-group" role="group" aria-label="Open">
-                <menu.Item label="Open Session" aria={`Open ${quoted(s().title)}`} icon={<Icon name="arrow-right" small />} href={props.href} />
                 <menu.Item
                   label={props.ctx.detailsPath === s().path ? "Close Session Details" : "Session Details"}
                   aria={`${props.ctx.detailsPath === s().path ? "Close the session details" : "Session details"} of ${quoted(s().title)}`}

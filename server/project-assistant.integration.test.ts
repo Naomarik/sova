@@ -1,10 +1,11 @@
 // The Project Assistant (§app/project-assistant): its loadout as the model is sent it, the owner's
 // message through the share route, a report filed as a request in Needs you, start_fix as the
-// `assistant` caller (never the operator's) unless the operator started the turn, and what never
+// `assistant` caller (never the operator's), in the operator's own turns too, offered only while it would
+// act (§app.project-assistant/offers), and what never
 // reaches the owner or the model. Real pi up to the model call (a ScriptedModel answers); a
 // throwaway PI_CODING_AGENT_DIR; ~/.pi is never read; no model is called.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -32,6 +33,7 @@ const plinks = await import("./person-links");
 const pa = await import("./project-assistant");
 const store = await import("./project-assistant-store");
 const tools = await import("./project-assistant-tools");
+const { OFFERS_NOTE } = await import("./project-assistant-loadout");
 const poStore = await import("./project-overseer-store");
 const { ownerAttention } = await import("./owner-attention");
 const { createShareApp } = await import("./share/routes");
@@ -66,6 +68,8 @@ async function until(cond: () => boolean, what: string, ms = 30_000): Promise<vo
 }
 
 type Ctx = { systemPrompt?: string; messages: { role: string; content: unknown }[]; tools?: { name: string }[] };
+/** The system prompt a request ran on (pi records it by its sections, as a system message). */
+const promptOf = (ctx: Ctx): string => `${ctx.systemPrompt ?? ""}${JSON.stringify(ctx.messages.find((m) => m.role === "system") ?? "")}`;
 
 describe("the Project Assistant", () => {
   test("not ready without a reply model: the page says so and the message is not taken", async () => {
@@ -92,7 +96,9 @@ describe("the Project Assistant", () => {
     const ctx = model.calls[0]!.context as Ctx;
     const names = piSession(await acquireChat(path)).getActiveToolNames().sort();
     for (const t of ["bash", "read", "write", "edit", "grep", "find", "ls"]) assert.ok(!names.includes(t), `no ${t}`);
-    for (const t of ["report_issue", "owner_requests", "start_fix", "deploy", "spec_lookup", "code_read", "requirement_agree"]) assert.ok(names.includes(t), `has ${t}: ${names.join(",")}`);
+    for (const t of ["report_issue", "owner_requests", "deploy", "spec_lookup", "code_read", "requirement_agree"]) assert.ok(names.includes(t), `has ${t}: ${names.join(",")}`);
+    // A new project's Project Assistant column is all Off: no fix and no planning chat is offered (§app.project-assistant/offers).
+    for (const t of ["start_fix", "start_feature_chat"]) assert.ok(!names.includes(t), `no ${t}: ${names.join(",")}`);
     const sys = ctx.messages.find((m) => m.role === "system");
     // pi records the system prompt by its sections.
     const prompt = JSON.stringify(sys ?? "");
@@ -118,50 +124,63 @@ describe("the Project Assistant", () => {
     assert.equal(home.assistant.ready, true);
   });
 
-  test("start_fix from the owner is the assistant's act; Off keeps it with the team; the operator's turn is attended", async () => {
+  test("start_fix: offered only while On; the owner's turn and the operator's alike are the assistant's act, never attended", async () => {
     store.setAssistantModels(org.id, { models: { coding: { model: "scripted/scripted" } } });
     const calls: { attended: boolean }[] = [];
     tools.setAssistantActsForTest({
       buildStart: async (_pid, _a, o) => {
         calls.push({ attended: o.attended });
-        return o.attended ? { taken: true, held: false, sessionId: "s_coding_1" } : { taken: false, code: "power-off", sentence: "off" };
+        return { taken: true, held: false, sessionId: `s_coding_${calls.length}` };
       },
       deployRun: async () => ({ taken: false, code: "power-off", sentence: "off" }),
       copyStart: async () => ({ taken: false, code: "power-off", sentence: "off" }),
     });
+    const lastCtx = () => JSON.stringify(model.calls.at(-1)!.context);
+    const chat = await acquireChat(path);
+    // Off: the model has no start_fix, so a call of it sets nothing off and files nothing.
     model.reply({ toolCall: { name: "start_fix", arguments: { title: "Fix the blank page", text: "It should show the home page." } } }, { text: "It's with the team." });
     assert.equal((await post(`/api/i/${token}/assistant`, { text: "Please fix it" })).status, 202);
     await until(() => model.calls.length >= 4 && !isSessionBusy(path), "the owner's fix reply");
+    assert.ok(!piSession(chat).getActiveToolNames().includes("start_fix"), "Off: not in the tool list");
+    assert.doesNotMatch(promptOf(model.calls.at(-2)!.context as Ctx), /start_fix/, "Off: the prompt has no fix offer");
     assert.deepEqual(calls, [], "Start coding sessions is Off for the assistant: nothing is set off");
-    const fix = store.orgRequests(org.id).find((r) => r.kind === "fix")!;
-    assert.equal(fix.status, "with-team");
-    assert.ok(ownerAttention().some((i) => i.id === `owner-request:${fix.id}`), "it reaches the operator as a request");
+    assert.ok(!store.orgRequests(org.id).some((r) => r.kind === "fix"), "a tool it doesn't have files nothing");
 
-    // On for the assistant: the act is set off as the assistant's, never attended.
+    // On for the assistant: offered from the next reply, with the hidden note, and set off as the assistant's.
     const ps = poStore.projectOverseerPaths(project.id);
     const cur = poStore.readPoSettings(ps);
     poStore.writePoSettings(ps, { ...cur, powers: { ...cur.powers, assistant: { ...cur.powers.assistant, codingStart: true } } });
-    model.reply({ toolCall: { name: "start_fix", arguments: { title: "Fix the menu", text: "It overlaps." } } }, { text: "With the team." });
+    model.reply({ toolCall: { name: "start_fix", arguments: { title: "Fix the menu", text: "It overlaps." } } }, { text: "It's being worked on." });
     assert.equal((await post(`/api/i/${token}/assistant`, { text: "And the menu" })).status, 202);
     await until(() => model.calls.length >= 6 && !isSessionBusy(path), "the second fix reply");
+    assert.match(promptOf(model.calls.at(-2)!.context as Ctx), /offer to start a fix with `start_fix`/);
+    assert.match(lastCtx(), /Now offered: starting a fix\./, "the change reaches the model as a hidden note");
     assert.deepEqual(calls, [{ attended: false }], "the owner's turn is never attended");
 
-    // The operator writes in the chat themselves: their turn is attended.
-    const chat = await acquireChat(path);
+    // The operator writes in the chat themselves: the same column decides, never attended.
     model.reply({ toolCall: { name: "start_fix", arguments: { title: "Fix it now", text: "Operator asks." } } }, { text: "Started." });
     // The operator's composer, as clientSend takes it: the kind's sent mark, by the operator.
     await chat.acceptPrompt("Start the fix now.", undefined, "client", undefined, { sentByBaton: { by: OPERATOR } }).turn;
     await until(() => model.calls.length >= 8 && !isSessionBusy(path), "the operator's reply");
-    assert.deepEqual(calls.at(-1), { attended: true });
-    // Unmarked input (a queued item, another sender with no composer mark) is never the operator's turn.
-    model.reply({ toolCall: { name: "start_fix", arguments: { title: "Fix it unmarked", text: "No mark." } } }, { text: "With the team." });
-    await chat.acceptPrompt("Start this one too.", undefined, "client").turn;
-    await until(() => model.calls.length >= 10 && !isSessionBusy(path), "the unmarked reply");
-    assert.deepEqual(calls.at(-1), { attended: false }, "no mark: outside input, the column decides");
+    assert.deepEqual(calls.at(-1), { attended: false }, "the operator's turn gets no exception");
+    // Written once into the conversation, as a hidden message (no change since the owner's reply: no second note).
+    const notes = () => readFileSync(path, "utf8").split("\n").filter((l) => l.includes(`"${OFFERS_NOTE}"`));
+    assert.equal(notes().length, 1, "the note comes once");
+    assert.match(notes()[0]!, /Now offered: starting a fix\./);
     const started = store.orgRequests(org.id).find((r) => r.title === "Fix it now")!;
-    assert.deepEqual([started.status, started.sessionId], ["started", "s_coding_1"]);
+    assert.deepEqual([started.status, started.sessionId], ["started", "s_coding_2"]);
     const view = await pa.assistantView(org.id);
     assert.equal(view.messages.find((m) => m.text === "Start the fix now.")?.role, "operator");
+
+    // Off again, in an operator's turn: no fix offered, and the note says it's no longer offered.
+    poStore.writePoSettings(ps, { ...cur, powers: { ...cur.powers, assistant: { ...cur.powers.assistant, codingStart: false } } });
+    model.reply({ text: "Noted." });
+    await chat.acceptPrompt("Can you fix the footer?", undefined, "client", undefined, { sentByBaton: { by: OPERATOR } }).turn;
+    await until(() => model.calls.length >= 9 && !isSessionBusy(path), "the operator's Off reply");
+    assert.ok(!piSession(chat).getActiveToolNames().includes("start_fix"), "Off in the operator's turn too");
+    assert.doesNotMatch(promptOf(model.calls.at(-1)!.context as Ctx), /start_fix/);
+    assert.match(lastCtx(), /No longer offered: starting a fix\./);
+    assert.equal(notes().length, 2, "one note per change");
     tools.setAssistantActsForTest(null);
   });
 
@@ -175,20 +194,19 @@ describe("the Project Assistant", () => {
     await po.patchProjectOverseer(project.id, { holdMin: 10, powers: { overseer: { codingStart: true }, assistant: { codingStart: false } } });
     const buildsBefore = readBuilds(project.id).length;
 
-    model.reply({ toolCall: { name: "start_fix", arguments: { title: "Fix the contact form", text: "It fails on submit." } } }, { text: "It's with the team." });
-    let n = model.calls.length;
-    assert.equal((await post(`/api/i/${token}/assistant`, { text: "The contact form is broken" })).status, 202);
-    await until(() => model.calls.length >= n + 2 && !isSessionBusy(path), "the Off reply");
+    // Off: the reply has no start_fix; a call that still comes (a tool list from before the change) goes to the team
+    // at the call's own check (§app.project-assistant/offers, "The act still asks").
+    const fix = tools.assistantTools({ orgId: org.id, sessionId: "s_pa", owner: () => ({ id: alp.id, name: alp.name }), branch: () => [] }).find((t) => t.name === "start_fix")!;
+    const offOut = (await fix.execute("c1", { title: "Fix the contact form", text: "It fails on submit." } as never, undefined, undefined, undefined as never)) as { content: { text: string }[] };
     const off = store.orgRequests(org.id).find((r) => r.title === "Fix the contact form")!;
     assert.deepEqual([off.kind, off.status, off.sessionId ?? null], ["fix", "with-team", null]);
     assert.ok(ownerAttention().some((i) => i.id === `owner-request:${off.id}` && i.kind === "owner-request"), "Off: it reaches the operator in Needs you");
     assert.deepEqual([holds().length, readBuilds(project.id).length], [0, buildsBefore], "Off: nothing held, no session");
-    const offResult = JSON.stringify(model.calls.at(-1)!.context);
-    assert.match(offResult, /Filed with the team \(starting fixes on its own is off here\)/);
+    assert.match(offOut.content[0]!.text, /^Filed with the team \(starting fixes on its own is off here\)/);
 
     await po.patchProjectOverseer(project.id, { powers: { assistant: { codingStart: true } } });
     model.reply({ toolCall: { name: "start_fix", arguments: { title: "Fix the gallery", text: "Photos don't load." } } }, { text: "It starts soon." });
-    n = model.calls.length;
+    const n = model.calls.length;
     assert.equal((await post(`/api/i/${token}/assistant`, { text: "The gallery is broken too" })).status, 202);
     await until(() => model.calls.length >= n + 2 && !isSessionBusy(path), "the On reply");
     assert.match(JSON.stringify(model.calls.at(-1)!.context), /The fix will start in a few minutes unless the team stops it/);
@@ -197,9 +215,9 @@ describe("the Project Assistant", () => {
     const hd = held[0]! as unknown as { by: string; event: string; data: { column: string; basis: { kind: string; id: string }; sessionId: string } };
     assert.deepEqual([hd.by, hd.event, hd.data.column], ["assistant", "build/start", "assistant"]);
     const on = store.orgRequests(org.id).find((r) => r.title === "Fix the gallery")!;
-    assert.notEqual(on.status, "with-team", "filed as started-to-be, not left with the team");
+    assert.equal(on.status, "with-team", "held: not being worked on until its session starts (§app.project-assistant/closing)");
     assert.deepEqual(hd.data.basis, { kind: "owner-request", id: on.id }, "the build rests on the owner's request");
-    assert.ok(!ownerAttention().some((i) => i.id === `owner-request:${on.id}`), "an act taken is not a request for the operator");
+    assert.ok(!ownerAttention().some((i) => i.id === `owner-request:${on.id}`), "an act taken (held) is not a request for the operator: the held act is its Needs you item");
     assert.equal(readBuilds(project.id).length, buildsBefore, "held: no session yet");
 
     // The hold ends: the build starts its coding session, and the request reads started with it.

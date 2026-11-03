@@ -32,7 +32,8 @@
 //                                  frame is first answered by asking the host's SDK MCP server (the
 //                                  initialize's sdkMcpServers) for tools/list over the control channel,
 //                                  as the real CLI does, and the line carries `tools`: the tool names
-//                                  the model was offered for that turn.
+//                                  the model was offered for that turn, and `schemas`: each one's
+//                                  input schema, by name.
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
@@ -121,14 +122,18 @@ if (args[0] === "auth" && args[1] === "login") {
     asked.set(id, resolve);
     out({ type: "control_request", request_id: id, request });
   });
-  /** The tool names the host's MCP servers offer now (bare, as tools/list publishes them). */
+  /** The tool names the host's MCP servers offer now (bare, as tools/list publishes them), and each one's input schema. */
   const offeredTools = async () => {
     const names = [];
+    const schemas = {};
     for (const server of sdkServers) {
       const r = await ask({ subtype: "mcp_message", server_name: server, message: { jsonrpc: "2.0", id: askedSeq + 1, method: "tools/list" } });
-      for (const t of r?.response?.mcp_response?.result?.tools ?? []) names.push(t.name);
+      for (const t of r?.response?.mcp_response?.result?.tools ?? []) {
+        names.push(t.name);
+        schemas[t.name] = t.inputSchema ?? null;
+      }
     }
-    return names;
+    return { names, schemas };
   };
   const rl = createInterface({ input: process.stdin });
   rl.on("line", (line) => {
@@ -151,7 +156,7 @@ if (args[0] === "auth" && args[1] === "login") {
       return;
     }
     if (frame.type !== "user") return;
-    if (process.env.FAKE_CLAUDE_RECORD && sdkServers.length) offeredTools().then((tools) => { record({ argv: args, frame, tools }); turn(frame); });
+    if (process.env.FAKE_CLAUDE_RECORD && sdkServers.length) offeredTools().then(({ names, schemas }) => { record({ argv: args, frame, tools: names, schemas }); turn(frame); });
     else { record({ argv: args, frame }); turn(frame); }
   });
   function turn(frame) {

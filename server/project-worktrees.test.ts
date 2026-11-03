@@ -67,7 +67,7 @@ describe("a coding session's worktree", () => {
     assert.deepEqual(cut.worktree, { path: join(tmp, `r${n - 1}`, ".worktrees", "client-fix-it-abc123"), branch: "sova/fix-it-abc123", base: git(root, "rev-parse", "HEAD"), target: "master" });
     assert.equal(cut.cwd, join(cut.worktree.path, "app"));
     assert.equal(git(root, "symbolic-ref", "--short", "HEAD"), "master", "the root checkout never switches");
-    assert.deepEqual(await readWorktree(cut.worktree, root), { state: "open", merged: false, branch: true, ahead: 0, unmerged: 0, dirty: false, worktree: cut.worktree.path });
+    assert.deepEqual(await readWorktree(cut.worktree, root), { state: "open", merged: false, branch: true, ahead: 0, unmerged: 0, dirty: false, worktree: cut.worktree.path, head: git(root, "rev-parse", cut.worktree.branch) });
     // git refuses (the branch exists): the reason is git's.
     await assert.rejects(cutWorktree(await rootOf(root), root, "Fix it", undefined, "abc123"), /already exists/);
   });
@@ -95,7 +95,7 @@ describe("a coding session's worktree", () => {
     git(root, "worktree", "move", wt, moved);
     assert.equal((await read()).state, "missing");
     git(root, "worktree", "move", moved, wt);
-    assert.deepEqual(await read(), { state: "open", merged: false, branch: true, ahead: 3, unmerged: 1, dirty: false, worktree: wt }, "back again, it is read from its folder");
+    assert.deepEqual(await read(), { state: "open", merged: false, branch: true, ahead: 3, unmerged: 1, dirty: false, worktree: wt, head: git(wt, "rev-parse", "HEAD") }, "back again, it is read from its folder");
   });
 
   test("Merge Branch: only into the root's checked-out target, clean and idle; fast-forward, else a merge commit", async () => {
@@ -158,7 +158,7 @@ describe("a coding session's worktree", () => {
     assert.equal(existsSync(cut.worktree.path), false);
     assert.notEqual(git(root, "branch", "--list", cut.worktree.branch), "", "the unmerged branch stays");
     // Its folder gone, the branch still merges from the root; its reading comes from the root.
-    assert.deepEqual(await readWorktree(cut.worktree, root), { state: "missing", merged: false, branch: true, ahead: 1, unmerged: 1, dirty: false, worktree: null });
+    assert.deepEqual(await readWorktree(cut.worktree, root), { state: "missing", merged: false, branch: true, ahead: 1, unmerged: 1, dirty: false, worktree: null, head: git(root, "rev-parse", cut.worktree.branch) });
     await mergeBack(cut.worktree, root, "Keep");
     assert.equal(readFileSync(join(root, "k.txt"), "utf8"), "k\n");
 

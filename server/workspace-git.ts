@@ -4,6 +4,7 @@ import { join } from "node:path";
 import type { OrgGitStatus } from "../shared/orgs";
 import type { TourBackupFile, TourBackupInventory, TourBackupReader } from "./tours/bindings";
 import { containedPath } from "./tours/assets";
+import { NO_BACKGROUND_CLEANUP, noBackgroundCleanupEnv } from "./git-no-background";
 
 /**
  * Git for an organization's workspace repo (§app.organizations/workspace-repo): init, commit (the
@@ -17,8 +18,9 @@ const TIMEOUT_MS = 30_000;
 /** Read by the workspace repo's own .gitignore: temp files of the atomic writers, nothing else. */
 const GITIGNORE = "# Written by Sova. Link tokens, credentials and Sova's settings never live in this repo.\n*.tmp\n*.lock\n";
 
-/** Automated commits must never block on a signing prompt or a hook asking for input. */
-const NON_INTERACTIVE = ["-c", "commit.gpgsign=false", "-c", "core.editor=true"];
+/** Automated commits must never block on a signing prompt or a hook asking for input, and none of
+    this repo's commands (its commits, fetch and push) starts git's background cleanup. */
+const NON_INTERACTIVE = ["-c", "commit.gpgsign=false", "-c", "core.editor=true", ...NO_BACKGROUND_CLEANUP];
 
 function git(dir: string, args: string[], extraEnv: Record<string, string> = {}, timeout = TIMEOUT_MS, maxBuffer = 4 * 1024 * 1024): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
@@ -164,7 +166,7 @@ export function commitAll(dir: string, message: string, dependencies: { readTour
         // Nothing new, but the remote may lack commits (one just set, or commits made without it):
         // push them. Only Commit Now gets here; the committer calls this only with changes.
         if ((await remoteOf(dir)) && (await unpushed(dir))) {
-          const push = await git(dir, ["push", "-q", "origin", "HEAD"]);
+          const push = await git(dir, ["push", "-q", "origin", "HEAD"], noBackgroundCleanupEnv());
           if (push.code !== 0) throw new Error(`git push failed: ${push.stderr.trim()}`);
           out.pushed = true;
         }
@@ -178,7 +180,7 @@ export function commitAll(dir: string, message: string, dependencies: { readTour
       out.sha = (await git(dir, ["rev-parse", "--short", "HEAD"])).stdout.trim();
       if (!(await verifyTourBackup(dir, tours, format, false))) throw new Error(TOUR_BACKUP_WARNING);
       if (await remoteOf(dir)) {
-        const push = await git(dir, ["push", "-q", "origin", "HEAD"]);
+        const push = await git(dir, ["push", "-q", "origin", "HEAD"], noBackgroundCleanupEnv());
         if (push.code !== 0) throw new Error(`git push failed: ${push.stderr.trim()}`);
         out.pushed = true;
       }
@@ -308,7 +310,7 @@ export function retryPush(dir: string): Promise<CommitOutcome> {
   return serial(dir, async () => {
     const out: CommitOutcome = { committed: false };
     if (!lastErrors.get(dir)?.startsWith("git push failed") || !(await remoteOf(dir))) return out;
-    const push = await git(dir, ["push", "-q", "origin", "HEAD"]);
+    const push = await git(dir, ["push", "-q", "origin", "HEAD"], noBackgroundCleanupEnv());
     if (push.code !== 0) {
       out.error = `git push failed: ${push.stderr.trim()}`;
       lastErrors.set(dir, out.error);

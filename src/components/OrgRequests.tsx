@@ -1,12 +1,12 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
 import type { OrgDetail } from "../../shared/orgs";
 import type { AssistantInfo, OwnerRequest } from "../../shared/project-assistant";
-import { ApiError, assistantInfo, getSessionSummaryById, setOwnerRequest, startOwnerRequestChat } from "../lib/api";
+import { ApiError, assistantInfo, getSessionSummaryById, noteOwnerRequest, setOwnerRequest, startOwnerRequestChat } from "../lib/api";
 import { orgHostOf } from "../lib/mesh";
 import { relativeTime, stampTime } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
 import { orgSessionHref } from "../lib/orgs-route";
-import { emptyLine, filterCounts, filterShowing, firstName, groupRequests, isOpenRequest, KIND_WORD, REQUEST_FILTERS, STATUS_TONE, STATUS_WORD, type RequestFilter } from "../lib/owner-requests";
+import { closedLine, emptyLine, filterCounts, filterShowing, firstName, groupRequests, isOpenRequest, KIND_WORD, needsGotIt, REQUEST_FILTERS, STATUS_TONE, statusWord, type RequestFilter } from "../lib/owner-requests";
 import { adoptSession, announce } from "../lib/ui-state";
 import { Chip, Icon } from "./ui";
 import "./OrgRequests.css";
@@ -14,7 +14,8 @@ import "./OrgRequests.css";
 /**
  * The organization page's Requests tab (§app.project-assistant/requests-tab): what the org's owner
  * asked for through their Project Assistant, under a status filter, grouped by project, with Start
- * Chat / Open Chat, Mark Done and Decline. `focus`: the request `#/orgs/<id>/requests/<rid>` names.
+ * Chat / Open Chat, Mark Done and Decline; a request the owner closed says who and when, and one they closed while
+ * it was being worked on has Got It (§app.project-assistant/closing). `focus`: the request `#/orgs/<id>/requests/<rid>` names.
  */
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
@@ -62,6 +63,12 @@ export function OrgRequests(props: { org: OrgDetail; focus?: string; ownerName: 
       mutate(next);
       props.onChanged();
       announce(`${r.title}: ${status === "done" ? "done" : "declined"}.`);
+    });
+  const gotIt = (r: OwnerRequest) =>
+    void run(r.id, async () => {
+      mutate(await noteOwnerRequest(orgId(), r.id));
+      props.onChanged();
+      announce(`${r.title}: noted.`);
     });
   const openChat = (path: string) => {
     location.hash = orgSessionHref(orgId(), path);
@@ -123,30 +130,44 @@ export function OrgRequests(props: { org: OrgDetail; focus?: string; ownerName: 
                       <li class="org-request" classList={{ "org-request-focus": r.id === focus() }} id={`org-request-${r.id}`} ref={(el) => rowEls.set(r.id, el)} aria-current={r.id === focus() ? "true" : undefined}>
                         <div class="org-request-head">
                           <span class="org-request-title">{r.title}</span>
-                          <Chip tone={STATUS_TONE[r.status]}>{STATUS_WORD[r.status]}</Chip>
+                          <Chip tone={STATUS_TONE[r.status]}>{statusWord(r, props.ownerName)}</Chip>
                         </div>
                         <span class="field-hint">
                           {KIND_WORD[r.kind]} · <span title={stampTime(r.createdAt)}>{relativeTime(r.createdAt, now())}</span>
                           <Show when={r.chat?.startedAt}>{(at) => <> · <span title={stampTime(at())}>Chat started {relativeTime(at(), now())}</span></>}</Show>
                         </span>
+                        <Show when={r.closed}>
+                          {(c) => (
+                            <span class="field-hint org-request-closed" title={stampTime(c().at)}>
+                              {closedLine(r, props.ownerName, relativeTime(c().at, now()))}
+                            </span>
+                          )}
+                        </Show>
                         <Show when={r.text}>
                           <p class="org-request-text">{r.text}</p>
                         </Show>
-                        <Show when={isOpenRequest(r) || r.chat}>
+                        <Show when={isOpenRequest(r) || r.chat || needsGotIt(r)}>
                           <div class="button-row org-request-actions">
                             <Show
-                              when={r.chat}
+                              when={r.chat || !isOpenRequest(r)}
                               fallback={
                                 <button type="button" class="button button-sm" disabled={!!busy()} aria-busy={busy() === r.id ? "true" : undefined} aria-label={`Start Chat: ${r.title}`} onClick={() => startChat(r)}>
                                   Start Chat
                                 </button>
                               }
                             >
-                              {(c) => (
-                                <a class="button button-sm" href={orgSessionHref(orgId(), c().path)} aria-label={`Open Chat: ${r.title}`}>
-                                  Open Chat
-                                </a>
-                              )}
+                              <Show when={r.chat}>
+                                {(c) => (
+                                  <a class="button button-sm" href={orgSessionHref(orgId(), c().path)} aria-label={`Open Chat: ${r.title}`}>
+                                    Open Chat
+                                  </a>
+                                )}
+                              </Show>
+                            </Show>
+                            <Show when={needsGotIt(r)}>
+                              <button type="button" class="button button-sm" disabled={!!busy()} aria-label={`Got It: ${r.title}`} onClick={() => gotIt(r)}>
+                                Got It
+                              </button>
                             </Show>
                             <Show when={isOpenRequest(r)}>
                               <span class="org-request-answers">

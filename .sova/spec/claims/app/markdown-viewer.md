@@ -9,11 +9,14 @@ document in place. `view` is `'rendered'` (the default) or `'source'`.
 **Frame.** A native `<dialog class="md-viewer">` opened with `showModal()`, like the lightbox
 (§design/deviations): top layer, the page inert behind it, over any dialog already open.
 
-- **Desktop (768px and wider):** inset `--space-5` (24px) from every edge of the window, `--r-xl`
-  corners, on the scrim. The document is a centred reading column 72ch wide that scrolls inside
-  the frame; the head stays put.
-- **Phone (under 768px):** a tall sheet, full width, with a `--space-5` (24px) gap above it,
-  `--r-xl` top corners only, and the `.sheet-grip` at its top.
+- **A modal, never the whole window.** It is centred on the scrim, with `--r-xl` corners all
+  round, and it is only as tall as its document, up to its cap; a longer document scrolls inside
+  it while the head stays put.
+- **Desktop (768px and wider):** at most 760px wide (the wide modal's width) and at most 80% of
+  the window's height, always at least `--space-5` (24px) from every edge. The document is a
+  centred reading column up to 72ch wide.
+- **Phone (under 768px):** the same centred card, not a sheet: `--space-4` (16px) from each
+  side, at most 85% of the window's height, and no `.sheet-grip`.
 
 **Head.** The title (and the subtitle under it, muted, when given), then three controls:
 

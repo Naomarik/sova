@@ -49,9 +49,9 @@ before(() => {
     slots: { cap: 2 },
     services: {
       web: svc(base, 20, false),
-      stuck: svc(base + 10, 3, true),
+      stuck: svc(base + 40, 3, true),
       // The ready timeout is long: waiting it out would end not-ready, so port-held proves it never waited.
-      racy: svc(base + 20, 60, true),
+      racy: svc(base + 80, 60, true),
     },
   };
   writeFileSync(join(project, ".sova", "project.json"), JSON.stringify(d, null, 2));
@@ -106,17 +106,17 @@ test("a port that never opens fails not-ready by name at the ready timeout", asy
 test("a port a foreign process takes while the service is coming up fails port-held at once, never waits out the timeout", async () => {
   // Past the start's own port check: racy's HTTP answers; then something else takes its late port.
   host.httpOk = (port) => {
-    if (port === base + 20) host.listen(base + 21, FOREIGN.pid, FOREIGN.cwd);
+    if (port === base + 80) host.listen(base + 81, FOREIGN.pid, FOREIGN.cwd);
     return true;
   };
   try {
     const r = await engine.run("up", { project, services: ["racy"] }, op);
     assert.equal(r.error?.code, "port-held", r.error?.message);
     assert.match(r.error!.message, /racy\.nrepl needs port \d+, which pid 4242 \(\/elsewhere\) holds/);
-    assert.deepEqual(host.listeners.get(base + 21), FOREIGN, "the holder is never touched");
+    assert.deepEqual(host.listeners.get(base + 81), FOREIGN, "the holder is never touched");
   } finally {
     host.httpOk = () => true;
-    host.close(base + 21);
+    host.close(base + 81);
     await engine.run("down", { instance: mainId(), services: ["racy"] }, op);
   }
   assert.equal(readRegistry().instances.filter((i) => i.slot !== 0).length, 0, "conform left nothing");

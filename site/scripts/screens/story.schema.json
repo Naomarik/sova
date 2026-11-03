@@ -29,7 +29,7 @@
     },
     "provider": {
       "$ref": "#/$defs/Id",
-      "description": "The provider name the director is registered under in the capture's models.json. Shows wherever Sova prints a full model ref."
+      "description": "The default provider name for a model without its own `provider`. Every provider is registered in the capture's models.json at the director, which answers for all of them."
     },
     "models": {
       "type": "object",
@@ -85,8 +85,15 @@
         "$ref": "#/$defs/Shot"
       }
     },
-    "video": {
-      "$ref": "#/$defs/Video"
+    "videos": {
+      "type": "object",
+      "description": "The recorded clips, by name: `desk` is the landing page's hero loop, `phone` the phone section's clip. Each is filmed from a live session (or a static session's `then`), its pointer drawn when the video is assembled; its captions are page text, from the cue list the recorder writes.",
+      "propertyNames": {
+        "$ref": "#/$defs/Id"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/Video"
+      }
     },
     "pageShots": {
       "type": "object",
@@ -97,6 +104,10 @@
       "additionalProperties": {
         "$ref": "#/$defs/Id"
       }
+    },
+    "summarizer": {
+      "$ref": "#/$defs/Id",
+      "description": "A key of `models`: the model Sova's topic-outline summarizer runs on in the capture. The director answers it with the story's `summary` steps."
     }
   },
   "$defs": {
@@ -179,6 +190,10 @@
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9.-]*$",
           "description": "What the model is called. Sova labels Claude ids by name: claude-opus-5-5 reads \"Opus 5.5\"."
+        },
+        "provider": {
+          "$ref": "#/$defs/Id",
+          "description": "The provider Sova shows with the model (\"zai\", \"openai\"). Default: the story's `provider`. Use real names only with the footer's note that the replies are scripted."
         },
         "name": {
           "type": "string",
@@ -294,7 +309,7 @@
               "align"
             ]
           },
-          "description": "Live sessions only: Delegate and/or the align minor mode."
+          "description": "Delegate and/or the align minor mode: a live session's, or a static one's (written into its file as if on from the start)."
         },
         "messages": {
           "type": "array",
@@ -311,6 +326,14 @@
             "$ref": "#/$defs/Step"
           },
           "description": "A live session the director plays."
+        },
+        "then": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/Step"
+          },
+          "description": "A static session only: steps the director plays live after its messages, when a video sends the first of them (a user step)."
         },
         "note": {
           "$ref": "#/$defs/Note"
@@ -425,6 +448,9 @@
         },
         {
           "$ref": "#/$defs/StepHold"
+        },
+        {
+          "$ref": "#/$defs/StepSummary"
         }
       ]
     },
@@ -991,6 +1017,13 @@
           ],
           "description": "What to open: the chat (default), the workers pane with `worker` selected, the changes viewer from the latest show_changes card, or the sidebar (phone)."
         },
+        "sidebar": {
+          "enum": [
+            "shown",
+            "collapsed"
+          ],
+          "description": "The sessions pane: shown (default), or collapsed to its spine with its own Collapse control, so a narrow shot fits the chat and the session detail pane side by side."
+        },
         "worker": {
           "$ref": "#/$defs/Id",
           "description": "With view workers: the worker to select."
@@ -1052,32 +1085,147 @@
       "required": [
         "session",
         "viewport",
+        "slot",
+        "width",
         "typing",
         "chunk",
+        "length",
+        "budget",
+        "pointer",
+        "captions",
+        "alt",
         "beats",
-        "alt"
+        "line"
       ],
       "additionalProperties": false,
       "properties": {
         "session": {
           "$ref": "#/$defs/Id",
-          "description": "The live session the video follows."
+          "description": "The session the video follows: a live one, or a static one with `then`."
         },
         "viewport": {
           "$ref": "#/$defs/Id",
-          "description": "A key of `viewports`."
+          "description": "A key of `viewports`. It is filmed at the viewport's pixel scale."
+        },
+        "start": {
+          "enum": [
+            "session",
+            "overseer",
+            "sessions"
+          ],
+          "description": "The first screen: the session (default), the Overseer page (with `overseer`), or the sessions list (a phone)."
+        },
+        "slot": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*(\\.[a-z0-9-]+)*$",
+          "description": "The pageShots slot the video plays over: its still shows with reduced motion, and must have the video's shape."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 200,
+          "description": "The encoded width in pixels (even); the height follows the viewport's shape."
         },
         "typing": {
           "$ref": "#/$defs/Duration",
-          "description": "Delay per typed character."
+          "description": "Delay per typed character (about 33ms: 30 a second)."
         },
         "chunk": {
           "$ref": "#/$defs/Duration",
           "description": "Delay between streamed reply chunks."
         },
-        "poster": {
-          "$ref": "#/$defs/Id",
-          "description": "A shot whose image is the video's poster. Default: the shot in the hero.desk slot."
+        "length": {
+          "type": "object",
+          "required": [
+            "min",
+            "max"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "min": {
+              "$ref": "#/$defs/Duration"
+            },
+            "max": {
+              "$ref": "#/$defs/Duration"
+            }
+          },
+          "description": "The finished video's length must fall in this range."
+        },
+        "budget": {
+          "type": "object",
+          "required": [
+            "modern",
+            "fallback"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "modern": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Bytes, the AV1 file."
+            },
+            "fallback": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Bytes, the H.264 file."
+            }
+          }
+        },
+        "pointer": {
+          "enum": [
+            "arrow",
+            "tap"
+          ],
+          "description": "An arrow pointer that travels between targets, or a ring at each tap (touch)."
+        },
+        "captions": {
+          "enum": [
+            "page"
+          ],
+          "description": "Captions are page text under the video, from the cue list the recorder writes (nothing is drawn into the picture)."
+        },
+        "loop": {
+          "$ref": "#/$defs/Duration",
+          "description": "The closing fade into the first frame. Default 1s."
+        },
+        "prefill": {
+          "type": "object",
+          "required": [
+            "step"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "scene": {
+              "enum": [
+                "overseer",
+                "session"
+              ]
+            },
+            "step": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "description": "A user step already typed into the first screen's composer, so the video opens on the question and its first press is Send."
+        },
+        "overseer": {
+          "type": "object",
+          "required": [
+            "script"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "script": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/Step"
+              }
+            },
+            "note": {
+              "$ref": "#/$defs/Note"
+            }
+          },
+          "description": "The Overseer's opener: its own script, on the story's Overseer model. Its first message must differ from `overseer`'s."
         },
         "alt": {
           "type": "string",
@@ -1097,45 +1245,130 @@
               "do": {
                 "enum": [
                   "type",
-                  "send",
-                  "release",
                   "click",
-                  "pause"
-                ]
+                  "tap",
+                  "release",
+                  "hold",
+                  "scroll",
+                  "home"
+                ],
+                "description": "type: the pointer goes to the composer, clicks it and types a user step. click/tap: the pointer goes to a target and clicks it (tap: a touch, drawn as a ring). release: let the director play on to a hold or the end, the pointer still. hold: keep still while the viewer reads. scroll: bring part of the transcript into view. home: the pointer goes back to where the video starts, then the closing fade into the first frame."
+              },
+              "scene": {
+                "enum": [
+                  "overseer",
+                  "session"
+                ],
+                "description": "type, release: the Overseer's opener (the video's `overseer`) or the video's session (default)."
               },
               "step": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "type: index of a user step in the session's script."
+                "description": "type: index of a user step in the scene's script (the session's `then` for a static session)."
               },
               "until": {
                 "$ref": "#/$defs/Id",
-                "description": "release: the hold to run to, or \"end\"."
+                "description": "release: the hold to run to, or \"end\" for the scene's turn to finish."
+              },
+              "speed": {
+                "type": "integer",
+                "minimum": 2,
+                "description": "release: play this stretch this many times faster; the page shows a \"Sped up\" tag beside its caption over it."
               },
               "target": {
                 "enum": [
-                  "show_changes",
+                  "composer",
+                  "send",
+                  "link",
+                  "session-row",
+                  "align-option",
+                  "go-with-recommendations",
                   "workers",
-                  "worker"
+                  "worker",
+                  "close-panel",
+                  "review-changes",
+                  "changes-step",
+                  "close-changes",
+                  "pane-tab"
                 ],
-                "description": "click: what to click."
+                "description": "click, tap: what to press. pane-tab: a tab of the session detail pane, by its text. close-changes: the changes viewer's Close button (what it uncovers is the page from before, so no settle time follows)."
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "description": "link, session-row, pane-tab: its text."
               },
               "worker": {
                 "$ref": "#/$defs/Id",
-                "description": "click worker: which one."
+                "description": "worker: which one."
+              },
+              "q": {
+                "type": "string",
+                "pattern": "^q[1-9][0-9]*$",
+                "description": "align-option: the question (q1)."
+              },
+              "option": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "align-option: the option's index (0 is a)."
+              },
+              "n": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "changes-step: the step's number."
+              },
+              "to": {
+                "enum": [
+                  "align",
+                  "align-end",
+                  "vis",
+                  "latest"
+                ],
+                "description": "scroll: the alignment card from its title (align), the card's answer row at the bottom of the view (align-end), the latest drawing in the chat (vis), or the end of the transcript."
               },
               "for": {
                 "$ref": "#/$defs/Duration",
-                "description": "pause: how long."
+                "description": "hold: how long. Default: the reading time of `read`. Never shorter than it."
+              },
+              "read": {
+                "type": "string",
+                "minLength": 1,
+                "description": "hold: the words on screen the viewer is meant to read; their count sets the reading time (1 s + 0.3 s a word, 1.5 s to 5 s)."
+              },
+              "caption": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "A caption that starts with this beat and stays until the next caption (null: none from here). Page text under the video: at most 8 words and 48 characters, on the page at least max(2 s, its reading time). The first beat has one."
+              },
+              "chapter": {
+                "type": "string",
+                "minLength": 1,
+                "description": "The chapter this beat's caption belongs to: the page draws one bar segment per chapter (a button that jumps the video to its start) and shows the name above the caption. Only on a beat with a string caption; when any caption names one, every caption does, and a chapter's captions are consecutive. Page text, left out of the input hash like the caption."
               },
               "note": {
                 "$ref": "#/$defs/Note"
+              },
+              "summary": {
+                "const": true,
+                "description": "release: also wait until Sova's summarizer has written the session's summary (a `summary` step the director answers with)."
               }
             }
           }
         },
         "note": {
           "$ref": "#/$defs/Note"
+        },
+        "line": {
+          "type": "string",
+          "minLength": 10,
+          "description": "The fixed line under the still where the video doesn't play (reduced motion, no JavaScript, a failed load): what the still shows."
         }
       }
     },
@@ -1168,6 +1401,77 @@
         "mobile": {
           "const": true,
           "description": "A touch device: mobile layout rules and touch events."
+        },
+        "note": {
+          "$ref": "#/$defs/Note"
+        }
+      }
+    },
+    "StepSummary": {
+      "type": "object",
+      "required": [
+        "summary"
+      ],
+      "additionalProperties": false,
+      "description": "The session's summary (the Current goal strip and the Timeline's chapters) at this point. In a static session's messages it is written into the file as the summarizer would have; in a live script or `then` it is what the director answers when Sova's summarizer next asks.",
+      "properties": {
+        "summary": {
+          "type": "object",
+          "required": [
+            "now",
+            "overall",
+            "topics"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "now": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Where things stand, at most 60 characters."
+            },
+            "overall": {
+              "type": "string",
+              "minLength": 1,
+              "description": "What the session is for, at most 8 words."
+            },
+            "topics": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "heading",
+                  "summary"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "heading": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "1-4 plain words naming the subject."
+                  },
+                  "summary": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "description": "1-3 bullets of at most 70 characters."
+                  },
+                  "update": {
+                    "type": "string",
+                    "pattern": "^t[1-9][0-9]*$",
+                    "description": "The topic (t1, t2... in the order they were first written) this replaces; omitted for a new one."
+                  },
+                  "from": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Written-in summaries only: the index of the user step in `messages` the topic starts at."
+                  }
+                }
+              }
+            }
+          }
         },
         "note": {
           "$ref": "#/$defs/Note"

@@ -236,6 +236,8 @@ export function BatonStrip(props: {
                   </For>
                 </span>
               </div>
+              {/* A feature request chat the Project Assistant opened with the owner (§app.project-assistant/feature-chats). */}
+              <Show when={i().featureChat}>{(f) => <span class="baton-strip-meta baton-strip-feature">Feature request · {f().first}</span>}</Show>
               {/* Who started it, and when (§app.baton/told): always there; the overseer part links to it. */}
               <span class="baton-strip-meta baton-strip-started">
                 Started by{" "}
@@ -332,7 +334,7 @@ export function BatonStrip(props: {
                                 <menu.Item label="Hand On…" aria={`Hand on ${title()}`} icon={<Icon name="arrow-right" small />} onRun={() => setHanding(handing() ?? [])} />
                               </Show>
                               <menu.Item label="What It's Told" aria={`What ${title()} is told`} icon={<Icon name="file" small />} keepFocus onRun={openTold} />
-                              <Show when={acts().menu.includes("owner") && i().owner}>
+                              <Show when={acts().menu.includes("owner") && !i().featureChat && i().owner}>
                                 {(o) => (
                                   <menu.Item
                                     label={i().session.hiddenFromOwner ? `Show To ${firstName(o().name)}` : `Hide From ${firstName(o().name)}`}

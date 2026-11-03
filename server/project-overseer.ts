@@ -3,7 +3,8 @@ import type { ThinkingLevel } from "../shared/profiles";
 import { existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
-import { agentRoot } from "./state-root";
+import { agentRoot, stateRoot } from "./state-root";
+import { projectCodeDirs } from "./other-project-dirs";
 import { fromPiToolDefinition } from "./harness/pi/tools";
 import { createSessionFile } from "./harness/pi/state";
 import { PROJECT_OVERSEER } from "./harness/state-kinds";
@@ -32,14 +33,14 @@ import {
 } from "../shared/project-overseer";
 import type { OverseerState } from "../shared/protocol";
 import { noteBuildMerged } from "./build-merged";
-import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath, type BuildRow } from "./build-loadout";
+import { adoptWorktree, buildSessionPath, buildSetupEnded, buildSid, buildOfSession, buildStartedBy, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath, type BuildRow } from "./build-loadout";
 import { acquireChatHandle, BusyError, chatHandle, closeChat, isSessionBusy, onAgentSettled, onAgentStarted, declOfTool, registerSpecialHost, serverToolCall, serveTools, type SessionMarks, specialComposersChanged } from "./chat-handle";
 import type { ChatStreamTrip } from "../shared/chat-runtime";
 import type { HEntry, ToolSpec } from "../shared/harness";
 import { shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
-import { checkedCodingModeChoice, codingModeSwitch, describeCodingMode, hostDefaultMode, PLAYBOOK_RUN_KINDS, playbookRunMode, profileRefusal, type ModeRequest } from "./project-coding-mode";
+import { alreadyAgreedOf, checkedCodingModeChoice, codingModeSwitch, confirmBriefPrompt, describeCodingMode, hostDefaultMode, PLAYBOOK_RUN_KINDS, playbookRunMode, profileRefusal, type ModeRequest } from "./project-coding-mode";
 import { subagentProfilesInfo } from "./subagent-profiles";
 import { baseAbilities } from "./gathering-abilities";
 import { gitRootOf, readWorktree } from "./project-worktrees";
@@ -49,7 +50,7 @@ import { pathOfId, sessionActivity, toolCatalogue } from "./session-prompt";
 import { CARDS_NOTE_MESSAGE, cardsNote } from "../shared/overseer-card";
 import { cardsOnBranch, nowLine } from "./overseer-run-note";
 import { changedText, openingOn, toldOn, type LivePart } from "./overseer-opening";
-import { RootConfinement } from "./overseer-deny";
+import { type Exclusion, OTHER_PROJECT_REFUSAL, RootConfinement } from "./overseer-deny";
 import { sessionAttachmentsDir } from "./attachments";
 import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
@@ -60,8 +61,7 @@ import { canonicalPath } from "./paths";
 import { startableIn } from "./project-folder";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
-import { displayTitleOf, getSessionSummary, idOf, indexedSessionPaths, listSessions } from "./sessions-index";
-import { setArchived } from "./archived-sessions";
+import { displayTitleOf, getSessionSummary, idOf, indexedSessionPaths, listSessions, markArchived } from "./sessions-index";
 import { actOrThrow, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { listPreviews, PreviewRefused } from "./preview-links";
@@ -76,6 +76,8 @@ import type { Envelope, LedgerCounts } from "./org-envelope";
 import { ledgerOf } from "./org-stamp";
 import { rowsOf } from "./transcript";
 import { joinedText, readBranch } from "./harness/pi/reader";
+import { confirmedClicks } from "./overseer-copies";
+import type { ClickChoice } from "../shared/overseer-card";
 import { projectOverseerUnread } from "./project-overseer-unread";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
@@ -102,6 +104,7 @@ import {
   type ArchiveBlockers,
   engineOf,
   engineOrThrow,
+  listProjects,
   operatorEnvelopeOf,
   overseerPausedSince,
   projectArchived,
@@ -109,6 +112,7 @@ import {
   projectEnvelope,
   projectHost,
   projectSid,
+  editProject,
   resumeOverseer,
   watchSid,
 } from "./projects/spaces";
@@ -128,7 +132,12 @@ import {
   writePoSettings,
   type ProjectOverseerPaths,
 } from "./project-overseer-store";
-import { PO_BUILTINS, PO_UNATTENDED_WRITE_REFUSAL, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
+import { PO_BUILTINS, PO_UNATTENDED_WRITE_REFUSAL, powersLine, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
+import { settingsIndex } from "../shared/settings-reference";
+import { appendHistory, recordKept, setSettingsDeps } from "./project-settings";
+import type { SettingsBy, SettingsHistoryRow } from "../shared/project-settings";
+import { putOverseerMemorySwitch } from "./memory/routes";
+import { carriedBranch, expectCarry } from "./draft-carry";
 
 /**
  * The project overseer (§app/project-overseer): one special session per project. Like the
@@ -152,6 +161,8 @@ interface Rt {
   chatId?: string;
   /** Whether the run in progress answers a message the operator sent (UserTurns, in the chat). */
   attended(): boolean;
+  /** …and that message is the operator's own (typed or their click), never one the global Overseer sent. */
+  ownMessage(): boolean;
   /** The run id of the look whose turn runs now: an act the overseer makes in it names it (`lookRun`),
       so the history links it to that look. */
   lookRun?: string;
@@ -173,10 +184,23 @@ function attendedOf(rt: Rt): boolean {
   if (run && run.call.chatId === rt.chatId) return run.call.attended;
   return (rt.chatId ? chatHandle(rt.chatId)?.mirror.attended : false) ?? false;
 }
+/** The operator's own message opened this run: only a server-hosted tool's run of this overseer's chat says so
+    (the call's `own`); anything else is not (fail closed). */
+function ownMessageOf(rt: Rt): boolean {
+  const run = serverToolCall();
+  return !!run && run.call.chatId === rt.chatId && run.call.attended && run.call.own === true;
+}
+/** The operator's click that opened this run, per card row with its chosen label (§app.overseer/copies): only a
+    server-hosted tool's run of this overseer's chat carries the click's mark; anything else has none. */
+function clicksOf(rt: Rt): ClickChoice[] | null {
+  const run = serverToolCall();
+  if (!run || run.call.chatId !== rt.chatId) return null;
+  return confirmedClicks(run.call.card, run.chat.branch(), (h) => joinedText(h, { images: false }));
+}
 function rtOf(projectId: string): Rt {
   let rt = rts.get(projectId);
   if (!rt) {
-    const made: Rt = { projectId, attended: () => attendedOf(made) };
+    const made: Rt = { projectId, attended: () => attendedOf(made), ownMessage: () => ownMessageOf(made) };
     rts.set(projectId, (rt = made));
   }
   return rt;
@@ -230,7 +254,10 @@ const droppedSince = (before: OverseerState | null, after: OverseerState | null)
 /** Archive conversations past the history's 20; they stay in the workspace repo, like every
     workspace file (Clean Up never deletes one, §app.session-list/cleanup-org-guard). */
 async function dropHistory(ids: string[]): Promise<void> {
-  for (const id of ids) if (await pathOfId(id)) setArchived(id, true);
+  for (const id of ids) {
+    const path = await pathOfId(id);
+    if (path) await markArchived(id, path);
+  }
 }
 
 /** The project statechart's overseer region (its watch reads has-overseer from it): `overseer/start` when it has
@@ -385,6 +412,7 @@ async function codingWorktrees(projectId: string, root: string, repo?: Awaited<R
         ...(!w.branch ? { branchGone: true } : {}),
         ...(r.merged && w.branch && !w.error && !w.merged && w.unmerged > 0 ? { newSinceMerge: w.unmerged } : {}),
         ahead: w.ahead,
+        ...(w.head ? { head: w.head } : {}),
         dirty: w.dirty,
         ...(w.error ? { error: w.error } : {}),
       };
@@ -500,13 +528,20 @@ export async function projectOverseerChat(projectId: string): Promise<ReturnType
 }
 
 /** PATCH …/overseer: settings, then the held idle runtime brought to the model/thinking. */
-export async function patchProjectOverseer(projectId: string, body: unknown): Promise<ProjectOverseerInfo> {
+export async function patchProjectOverseer(projectId: string, body: unknown, by: SettingsBy = { kind: "operator", via: "page" }): Promise<ProjectOverseerInfo> {
+  await patchProjectOverseerRows(projectId, body, by);
+  return projectOverseerInfo(projectId);
+}
+
+/** PATCH …/overseer, with each changed field one line of the settings history as `by` (§app.project-overseer/settings): the rows written. */
+export async function patchProjectOverseerRows(projectId: string, body: unknown, by: SettingsBy, meta: { card?: string; revertOf?: string } = {}): Promise<SettingsHistoryRow[]> {
   projectOf(projectId);
   const p = projectOverseerPaths(projectId);
   // A thinking level the model doesn't offer: refused when the patch names it, else brought to pi's level and saved.
   const models = await listModels().catch(() => []);
   const before = readPoSettings(p);
   const s = patchPoSettings(p, body, (next, patch) => fitThinking(next, patch, models, loadDefaults().model ?? null));
+  const rows = recordKept(projectId, before, s, by, { ...meta, resumed: (body as { resume?: unknown }).resume === true });
   // The watch runs on the settings as saved: a raised limit releases what it held (the statechart's).
   await syncWatchSettings(projectId);
   // Resume (or, one release, an old client's level) lifts the brake: it ends the pause an attach put on it; on an
@@ -531,8 +566,26 @@ export async function patchProjectOverseer(projectId: string, body: unknown): Pr
       throw new OrgError(err instanceof Error ? err.message : String(err));
     }
   }
-  return projectOverseerInfo(projectId);
+  return rows;
 }
+
+// The settings cards apply through the same writes as the page (server/project-settings.ts; set here: no import cycle).
+setSettingsDeps({
+  patch: (projectId, body, by, meta) => patchProjectOverseerRows(projectId, body, by, meta),
+  async memory(projectId, body, by, meta = {}) {
+    const p = projectOverseerPaths(projectId);
+    const before = readPoSettings(p);
+    const out = await putOverseerMemorySwitch(before.memory, body, (memory) => writePoSettings(p, { ...readPoSettings(p), memory }), await projectOverseerChat(projectId));
+    if ("error" in out) throw new OrgError(out.error);
+    return recordKept(projectId, before, readPoSettings(p), by, meta);
+  },
+  async rename(projectId, name, by, meta = {}) {
+    const from = projectOf(projectId).name;
+    await editProject(projectId, { name });
+    const to = projectOf(projectId).name;
+    return from === to ? [] : appendHistory(projectId, [{ field: "project.name", from, to, by, ...(meta.card ? { card: meta.card } : {}), ...(meta.revertOf ? { revertOf: meta.revertOf } : {}) }]);
+  },
+});
 
 // ---- the prompt ------------------------------------------------------------------------------------
 
@@ -554,8 +607,10 @@ export function projectOverseerValues(projectId: string, now = new Date()): Reco
   const values: Record<string, string> = {
     NOW: now.toString(),
     PROJECT: project.name,
-    AUTONOMY: `${eff.autonomy} — ${autonomyMeaning(eff.autonomy, placed)}`,
-    AUTONOMY_REASON: eff.reason ? ` (${eff.reason})` : "",
+    // What it may do on its own: the powers in force (the brake's reason when one holds them all Off).
+    AUTONOMY: powersLine(powersOf(projectId, settings), placed),
+    AUTONOMY_REASON: "",
+    SETTINGS: settingsIndex(placed),
     CAPS: limitsText(settings, placed),
     ROOT: project.root,
     CODING_MODE: codingModeNowWords(),
@@ -586,7 +641,7 @@ export function projectLiveParts(values: Readonly<Record<string, string>>): Live
   const v = (k: string) => values[k] ?? "";
   return [
     { key: "PROJECT", title: "The project's name", text: v("PROJECT") },
-    { key: "AUTONOMY", title: "Level in force now", text: `${v("AUTONOMY")}${v("AUTONOMY_REASON")}` },
+    { key: "AUTONOMY", title: "What you may do on your own now", text: `${v("AUTONOMY")}${v("AUTONOMY_REASON")}` },
     { key: "CAPS", title: "Limits", text: v("CAPS") },
     { key: "CODING_MODE", title: "The mode a coding session you start with no mode named starts in", text: v("CODING_MODE") },
     { key: "ROOT", title: "Root", text: v("ROOT") },
@@ -631,6 +686,7 @@ function partCtx(rt: Rt, paths: ProjectOverseerPaths): OverseerPartCtx {
     settings: () => readPoSettings(paths),
     effective: () => effectiveOf(projectId),
     attended: () => rt.attended(),
+    ownMessage: () => rt.ownMessage(),
     overseerId: () => readPoState(paths)?.current ?? "",
     envelope: () => overseerEnvelope(projectId, paths, rt.attended()),
     gatheringChoice: (input) => gatheringChoice(projectId, input),
@@ -657,6 +713,7 @@ function toolHost(rt: Rt): PoToolHost {
     settings,
     effective: () => powersOf(projectId, settings()),
     attended: () => rt.attended(),
+    confirmedClicks: () => clicksOf(rt),
     overseerId: () => readPoState(paths)?.current ?? "",
     engine,
     gaps: () => gapsOf(engine(), projectId),
@@ -672,21 +729,14 @@ function toolHost(rt: Rt): PoToolHost {
       return bad ? { error: bad } : c;
     },
     subagentProfiles: () => subagentProfilesInfo(),
-    async playbookWaiting(sessionId) {
-      // A verb playbook's run waiting on the operator's alignment answers (§app.project-overseer/coding-mode): theirs to answer.
-      const build = readBuild(projectId, sessionId);
-      // Every verb playbook's run is an onboard build (its statechart kind), whichever playbook it runs.
-      if (!build?.onboard) return null;
-      const path = await pathOfId(sessionId);
-      const align = path ? (await getSessionSummary(path).catch(() => null))?.align : undefined;
-      return align?.openQuestions ? { title: readSessionTitles()[sessionId] || build.title || sessionId, questions: align.openQuestions } : null;
-    },
+    playbookWaiting: (sessionId) => operatorAnswersWaiting(projectId, sessionId),
     async createCoding(input) {
       const { gap, ...rest } = input;
       // A gap's build starts on what the contributing layer names (it rests on the gap's promoted decisions).
       const target = gap && gap !== "none" ? gapsOf(engine(), projectId)?.buildTarget(gap) : undefined;
-      const made = await startCodingSession(projectId, { ...rest, kind: "coding", envelope: envelope(), ...(target ? { item: target } : {}) });
-      if (made.held) return { id: "", path: "", cwd: "", held: made.held };
+      const { alreadyAgreed, ...start } = rest;
+      const made = await startCodingSession(projectId, { ...start, kind: "coding", envelope: envelope(), overseerBrief: { alreadyAgreed: !!alreadyAgreed }, ...(target ? { item: target } : {}) });
+      if (made.held) return { id: "", path: "", cwd: "", held: made.held, ...(made.confirmBrief ? { confirmBrief: true } : {}) };
       return {
         id: made.sessionId,
         path: made.path,
@@ -694,6 +744,7 @@ function toolHost(rt: Rt): PoToolHost {
         ...(made.worktree ? { worktree: made.worktree } : {}),
         ...(made.note ? { note: made.note } : {}),
         ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
+        ...(made.confirmBrief ? { confirmBrief: true } : {}),
       };
     },
     async send(sessionId, text, mode) {
@@ -938,6 +989,26 @@ async function overseerRunning(projectId: string): Promise<{ model: string | nul
   return { model: chat?.mirror.model?.ref ?? null, thinking: chat?.mirror.thinking ?? null };
 }
 
+/**
+ * A coding session whose alignment questions are the operator's alone, waiting on them (§app.project-overseer/coding-mode,
+ * /confirm-brief): a verb playbook's run (every one is an onboard build, whichever playbook it runs) or a session an
+ * Overseer started asking the operator to confirm the brief. Its title and open questions; null otherwise. Neither
+ * Overseer messages one: the message would read to its model as the operator's answer.
+ */
+export async function operatorAnswersWaiting(projectId: string, sessionId: string): Promise<{ title: string; questions: number } | null> {
+  const build = readBuild(projectId, sessionId);
+  if (!build?.onboard && !build?.confirmBrief) return null;
+  const path = await pathOfId(sessionId);
+  const align = path ? (await getSessionSummary(path).catch(() => null))?.align : undefined;
+  return align?.openQuestions ? { title: readSessionTitles()[sessionId] || build.title || sessionId, questions: align.openQuestions } : null;
+}
+
+/** The same, for a session the Overseer names by id: the build it is in any open engine, if any. */
+export async function operatorAnswersWaitingFor(sessionId: string): Promise<{ title: string; questions: number } | null> {
+  const b = buildOfSession(sessionId);
+  return b ? operatorAnswersWaiting(b.projectId, sessionId) : null;
+}
+
 export interface StartedCoding {
   sessionId: string;
   path: string;
@@ -951,6 +1022,10 @@ export interface StartedCoding {
   notPrompted?: string;
   /** The start waits in a hold (q10: the overseer's unattended act): nothing was made yet. */
   held?: ActResult["held"];
+  /** Its first prompt asks the operator to confirm the brief first (§app.project-overseer/confirm-brief). */
+  confirmBrief?: true;
+  /** A Build from a conversation's draft: the branch its worktree got that draft on (server/draft-carry.ts). */
+  carriedTo?: string;
 }
 
 export const NOT_PROMPTED = "Started, but not prompted: its mode could not be set.";
@@ -984,9 +1059,12 @@ async function startCodingSession(
     /** The project act that starts it (default build/start) and what that act's payload adds. */
     act?: "verbs/onboard";
     extra?: Record<string, unknown>;
+    /** An Overseer's start (§app.project-overseer/confirm-brief): unless the operator already agreed what to build, its
+        first prompt asks them to confirm the brief first (with align on in its mode). Absent: the brief as given. */
+    overseerBrief?: { alreadyAgreed: boolean };
   },
 ): Promise<StartedCoding> {
-  const prompt = input.prompt?.trim() ?? "";
+  const brief = input.prompt?.trim() ?? "";
   const project = projectOf(projectId);
   const engine = engineOrThrow(projectId);
   const p = projectOverseerPaths(projectId);
@@ -994,12 +1072,20 @@ async function startCodingSession(
   // Unnamed: this computer's default, read now and pinned at start (§app.project-overseer/coding-mode).
   const base = input.mode ?? hostDefaultMode();
   // A verb playbook's run asks the operator through align (§app.project-runtime/verb-playbooks).
-  const mode = PLAYBOOK_RUN_KINDS.includes(input.kind) ? playbookRunMode(base) : base;
+  const runMode = PLAYBOOK_RUN_KINDS.includes(input.kind) ? playbookRunMode(base) : base;
+  // An Overseer's start, unless the operator already agreed: align on in its mode, whatever minor modes it named, and
+  // the confirm paragraph after the brief, as the commit paragraph (§app.project-overseer/confirm-brief).
+  const asked = input.overseerBrief && !PLAYBOOK_RUN_KINDS.includes(input.kind) ? confirmBriefPrompt(brief, runMode, input.overseerBrief.alreadyAgreed) : { prompt: brief, mode: runMode, confirm: false };
+  const mode = asked.mode;
+  const prompt = asked.prompt;
   const sessionId = newBuildSessionId();
   const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;
   const choice = codingChoice(input, settings, await overseerRunning(projectId));
   // The title store first: the worktree's branch is named after a title given.
   if (title) setSessionTitle(sessionId, title);
+  // A Build from a conversation's draft: its worktree gets the draft when it is cut (server/draft-carry.ts).
+  const carry = typeof input.extra?.conversationDraft === "string" ? input.extra.conversationDraft : null;
+  if (carry) expectCarry(sessionId, project.root, carry);
   const envelope = input.envelope ?? projectEnvelope(projectId, { by: "operator", attended: true, ...(input.via ? { via: input.via } : {}) });
   // F21: the project's builds as their runtimes stand now (a turn running, workers), so the at-once cap counts them.
   await syncProjectBuilds(projectId);
@@ -1029,15 +1115,18 @@ async function startCodingSession(
     );
   } catch (err) {
     if (title) setSessionTitle(sessionId, null);
+    if (carry) carriedBranch(sessionId);
     throw err;
   }
   if (out.held) {
     if (title) setSessionTitle(sessionId, null);
-    return { sessionId, path: "", cwd: "", mode, held: { ...out.held, ...heldAt(input.item ?? projectSid(projectId), out.held) } };
+    if (carry) carriedBranch(sessionId);
+    return { sessionId, path: "", cwd: "", mode, held: { ...out.held, ...heldAt(input.item ?? projectSid(projectId), out.held) }, ...(asked.confirm ? { confirmBrief: true as const } : {}) };
   }
   const sid = buildSid(projectId, sessionId);
   await buildSetupEnded(projectId, sid);
   const row = readBuild(projectId, sessionId);
+  const carriedTo = carry ? carriedBranch(sessionId) : undefined;
   if (!row || row.notStarted) {
     if (title) setSessionTitle(sessionId, null);
     throw new OrgError(row?.notStarted ?? "No session was started.", 409);
@@ -1051,6 +1140,8 @@ async function startCodingSession(
     mode,
     ...(wt ? { worktree: { path: wt.worktree.path, branch: wt.worktree.branch } } : {}),
     ...(row.inRoot ? { note: row.inRoot } : {}),
+    ...(asked.confirm ? { confirmBrief: true as const } : {}),
+    ...(carriedTo ? { carriedTo } : {}),
   };
   if (row.modeNotSet) return { ...made, notPrompted: NOT_PROMPTED };
   if (row.promptError) throw new OrgError(row.promptError, 409);
@@ -1111,12 +1202,38 @@ async function worktreeAct(projectId: string, sessionId: unknown, event: "build/
 }
 
 /** POST …/worktrees/merge: Merge Branch, into its target in the project root's checkout. */
-export async function mergeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectWorktrees> {
-  projectOf(projectId);
+export async function mergeCodingWorktree(projectId: string, sessionId: unknown, commit?: unknown): Promise<ProjectWorktrees> {
+  const project = projectOf(projectId);
+  // Once the project's merge queue is set up, Merge Branch is Land: the branch is approved at its head in the queue
+  // (server/merge-queue), never merged in the project root.
+  const landed = await landThroughQueue(projectId, project.root, sessionId, commit);
+  if (landed) return projectWorktrees(projectId);
   // The branch reached its target: the build statechart tells the overseer (build/merged), which can't see the
   // operator merge otherwise; git's refusal too (build/merge-refused), unless the root's own checkout is the operator's.
   await worktreeAct(projectId, sessionId, "build/merge");
   return projectWorktrees(projectId);
+}
+
+/** Land through the project's merge queue when the queue serves it (server/merge-queue/served.ts: listed and set up);
+ *  false: not served, merge as before (no queue is made for it). */
+/** `commit`: the head the screen showed (Land pins it; a branch that moved past it lands that one). */
+export async function landThroughQueue(projectId: string, root: string, sessionId: unknown, commit?: unknown): Promise<boolean> {
+  if (typeof sessionId !== "string" || !sessionId) return false;
+  const { mergeQueues } = await import("./merge-queue/wire");
+  const queues = mergeQueues();
+  if (!queues) return false;
+  if (!(await (await import("./merge-queue/served")).servedByQueue(root))) return false;
+  const q = await queues.get(root);
+  const branch = readBuild(projectId, sessionId)?.worktree?.branch;
+  if (!branch) throw new OrgError("Its branch isn't known yet: nothing to land", 409);
+  const { MergeFailure } = await import("./merge-queue/queue");
+  try {
+    await q.add({ branch, by: "land-button", session: sessionId, chat: sessionId, ...(typeof commit === "string" && commit ? { commit } : {}) });
+  } catch (err) {
+    if (err instanceof MergeFailure) throw new OrgError(err.message, err.code === "not-found" ? 404 : 409);
+    throw err;
+  }
+  return true;
 }
 
 /** POST …/worktrees/remove: Remove Worktree; the branch goes too only when merged. The session stays. */
@@ -1152,7 +1269,21 @@ export function projectContextFiles<T extends { path: string }>(files: T[], root
 /** What the project overseer's file tools never read, even inside its root: the folders other layers
     reserve (an attached org's workspace: the roster's contacts, every project's transcripts) and pi's
     and Sova's state (the host's link store, every session). */
-const confinedOut = () => [...reservedRoots(), agentRoot(), join(homedir(), ".pi")];
+const confinedOut = () => [...reservedRoots(), agentRoot(), stateRoot(), join(homedir(), ".pi")];
+
+/** What its read/grep/find/ls never read, reading anywhere else on the host:
+    `confinedOut`, and the root, git worktrees and running-copy checkouts of every project placed in
+    an organization other than its own (for a standalone project: every placed project), other
+    clients' work. */
+function readOut(projectId: string): Exclusion[] {
+  const own = spaceOf(engineOrThrow(projectId), projectId);
+  const others = listProjects().filter(
+    (p) => p.id !== projectId && p.root && p.space.kind === "org" && (own.kind !== "org" || p.space.orgId !== own.orgId),
+  );
+  const ownRoot = projectOf(projectId).root;
+  const dirs = others.flatMap((p) => [p.root, ...projectCodeDirs(p.root, ownRoot)]);
+  return [...confinedOut(), ...dirs.map((dir) => ({ dir, why: OTHER_PROJECT_REFUSAL }))];
+}
 
 /** Each conversation's opening values (overseer-opening.ts), once a run has read or set them. */
 const openedValues = new Map<string, Record<string, string>>();
@@ -1172,7 +1303,7 @@ function poFileSpecs(path: string, rt: Rt): ToolSpec[] {
     undefined,
     () => {
       const own = sessionAttachmentsDir(idOf(path));
-      return new RootConfinement(projectOf(rt.projectId).root, confinedOut(), own ? [own] : []);
+      return new RootConfinement(projectOf(rt.projectId).root, readOut(rt.projectId), own ? [own] : [], { readAnywhere: true });
     },
     {
       protectedRoots: confinedOut,
@@ -1316,11 +1447,14 @@ registerSpecialHost({
 });
 
 /** The project's tools as its runtime builds them, for the tests. */
-export const toolsForTest = (projectId: string, opts: { attended?: boolean } = {}) => {
+export const toolsForTest = (projectId: string, opts: { attended?: boolean; own?: boolean } = {}) => {
   const rt = rtOf(projectId);
-  if (opts.attended === undefined) return projectOverseerTools(toolHost(rt));
-  // As in a turn the operator started (or not), whatever the runtime's own turn says.
-  return projectOverseerTools(toolHost({ ...rt, attended: () => opts.attended! }));
+  if (opts.attended === undefined && opts.own === undefined) return projectOverseerTools(toolHost(rt));
+  // As in a turn the operator started (or not), whatever the runtime's own turn says; `own`: by their own
+  // message (default: when attended), or by one the global Overseer sent (false).
+  const attended = opts.attended ?? opts.own ?? false;
+  const own = attended && (opts.own ?? true);
+  return projectOverseerTools(toolHost({ ...rt, attended: () => attended, ownMessage: () => own }));
 };
 
 /** Whether the project's overseer is answering the operator right now (tests). */
@@ -1443,7 +1577,7 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
     ...(body.thinking ? { thinking: body.thinking } : {}),
     ...(mode ? { mode } : {}),
     kind: "operator-coding",
-    ...(via ? { via } : {}),
+    ...(via ? { via, overseerBrief: { alreadyAgreed: alreadyAgreedOf(body.already_agreed) } } : {}),
     // a plain session on a gap's idea names the gap's item in its act, so its record names the gap it was started from
     ...(onGap ? { item: onGap } : gapTarget ? { extra: { gapItem: gapTarget } } : {}),
   });
@@ -1454,6 +1588,7 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
     ...(made.worktree ? { worktree: made.worktree } : {}),
     ...(made.note ? { note: made.note } : {}),
     ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
+    ...(made.confirmBrief ? { confirmBrief: true } : {}),
   };
 }
 
@@ -1464,7 +1599,7 @@ export async function codeItem(projectId: string, body: ItemCodeInput, via?: "ov
 export async function startDraftBuild(
   projectId: string,
   input: { title: string; prompt: string; model?: string; thinking?: string; extra?: { conversationDraft: string } },
-): Promise<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string }> {
+): Promise<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string; carriedTo?: string }> {
   const prompt = input.prompt.trim();
   const title = input.title.trim().slice(0, 80);
   if (!prompt || !title) throw new OrgError("A build from a draft needs a title and a prompt.");
@@ -1482,6 +1617,7 @@ export async function startDraftBuild(
     ...(made.worktree ? { worktree: made.worktree } : {}),
     ...(made.note ? { note: made.note } : {}),
     ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
+    ...(made.carriedTo ? { carriedTo: made.carriedTo } : {}),
   };
 }
 
@@ -1491,7 +1627,9 @@ export type AssistantActInput =
   | { act: "build/start"; basis: { kind: "owner-request"; id: string }; prompt: string; title?: string; model?: { model: string; thinking?: string | null } | null }
   | { act: "deploy/run"; basis?: { kind: "owner-request"; id: string }; target?: string; commit?: string; why?: string }
   /** start_version: `up` of one copy the owner's versions list holds (its instance id; start_version checked it). */
-  | { act: "services/run"; instance: string; root: string; waitMs?: number };
+  | { act: "services/run"; instance: string; root: string; waitMs?: number }
+  /** start_version's Current version when the main checkout has no copy yet: a bare `up` of the main checkout makes it. */
+  | { act: "services/run"; main: true; root: string; waitMs?: number };
 /** `services/run` taken: `up` goes on; `done` settles once it ends (ok, or the engine's failure code). */
 export type CopyStart = Promise<{ ok: true } | { ok: false; code: string; message: string }>;
 export type AssistantActResult = { taken: true; held: boolean; holdRef?: string; until?: string; sessionId?: string; done?: CopyStart } | { taken: false; code: string; sentence: string };
@@ -1543,7 +1681,7 @@ export async function assistantAct(projectId: string, a: AssistantActInput, o: {
  * only after the engine's own checks. Answers within `waitMs`: a refusal (the act's, or the engine's before or during
  * a quick up) as `{taken: false}`; the act taken, with `done` following the up that goes on.
  */
-async function assistantCopyStart(projectId: string, a: { instance: string; root: string; waitMs?: number }, envelope: Envelope): Promise<AssistantActResult> {
+async function assistantCopyStart(projectId: string, a: { instance: string; root: string; waitMs?: number } | { main: true; root: string; waitMs?: number }, envelope: Envelope): Promise<AssistantActResult> {
   let wasTaken = false;
   let taken!: () => void;
   const actTaken = new Promise<"taken">((r) => (taken = () => r("taken")));
@@ -1553,7 +1691,10 @@ async function assistantCopyStart(projectId: string, a: { instance: string; root
     taken();
   };
   const { projectEngine } = await import("./project-services/routes");
-  const ran = projectEngine().run("up", { instance: a.instance }, { kind: "assistant", id: "project-assistant", root: a.root, up: a.instance, act });
+  const ran =
+    "main" in a
+      ? projectEngine().run("up", { project: a.root }, { kind: "assistant", id: "project-assistant", root: a.root, upMain: true, act })
+      : projectEngine().run("up", { instance: a.instance }, { kind: "assistant", id: "project-assistant", root: a.root, up: a.instance, act });
   const done: CopyStart = ran.then(
     (r) => (r.error ? { ok: false as const, code: r.error.code, message: r.error.message } : { ok: true as const }),
     (err) => ({ ok: false as const, code: err instanceof OrgError ? (err.code ?? "refused") : "start-failed", message: err instanceof Error ? err.message : String(err) }),
@@ -1584,9 +1725,15 @@ onOrgChange((engine, change) => {
   for (const sid of change.sessions) {
     if (!sid.startsWith("build/") || fixesNoted.has(sid)) continue;
     const d = hostOf(engine).data(sid) as { basis?: { kind?: unknown; id?: unknown }; path?: unknown; projectId?: unknown; sessionId?: unknown } | null;
-    if (!d || d.basis?.kind !== "owner-request" || typeof d.basis.id !== "string" || typeof d.path !== "string" || !d.path) continue;
+    if (!d || d.basis?.kind !== "owner-request" || typeof d.basis.id !== "string") continue;
+    // Set up once its session file exists: the build's own record holds the path (its statechart data never did).
+    const [, pid = "", bid = ""] = sid.split("/");
+    const sessionId = String(d.sessionId ?? bid);
+    const projectId = String(d.projectId ?? pid);
+    const path = typeof d.path === "string" && d.path ? d.path : (readBuild(projectId, sessionId)?.path ?? "");
+    if (!path) continue;
     fixesNoted.add(sid);
-    const e = { projectId: String(d.projectId ?? ""), orgId: engine, basisId: d.basis.id, sessionId: String(d.sessionId ?? sid.split("/").at(-1)) };
+    const e = { projectId, orgId: engine, basisId: d.basis.id, sessionId };
     for (const fn of fixStartedHooks)
       try {
         fn(e);

@@ -21,7 +21,7 @@ auto-memory, which Sova always keeps off.
 
 ## Turn it on
 
-Memory is the last row of the mode menu's minor modes, after codemode (see
+Memory is the last row of the mode menu's minor modes, after vis (see
 [How modes work](/docs/modes/)). Toggle it like the others, in either major mode and whatever the
 chat's model. The row is there only in a chat whose runtime can run memory. While memory is on, the
 row's detail line names the type, such as "UniiChat — by Victor Taelin".
@@ -36,13 +36,14 @@ Each chat uses one of two types, and keeps its own:
 - **UniiChat**, by Victor Taelin ([his design](https://gist.github.com/VictorTaelin/91837951a5ce5b38f341ec1ba1df6449)):
   one chat that never ends. Every message is kept and summarized. Each turn sends the model a short
   guide, the lines for the whole chat before the turn, then the turn itself whole. The lines grow to
-  the chat's size, 128 KB by default, then merge down to half of it. A UniiChat chat never compacts:
+  UniiChat's summary size, 128 KB by default, then merge down to half of it. A UniiChat chat never compacts:
   `/compact` answers "Memory (UniiChat) is on: this chat doesn't compact; the model works from its
   memory."
 - **Zoomable compaction**, Sova's: the chat runs as it would without memory, while every message is
   summarized in the background. When the chat compacts, whether by itself, by `/compact` or by a
   hand-off, the compacted part becomes summary lines the model can open, instead of a one-off
-  summary. The recent part stays as it was. Its size is the size of those lines, 32 KB by default.
+  summary. The recent part stays as it was. Its size is the size of those lines, zoomable
+  compaction's summary size, 32 KB by default.
 
 Sova's UniiChat adapts Taelin's design and keeps its name and credit. Its guide tells the model the
 lines are an index, not the record, and to open a line before it reaches for any other tool. It also
@@ -54,18 +55,17 @@ shorten ids.
 The chevron at the right end of the memory row, **Memory type**, swaps the menu for a panel with a
 Back button:
 
-- **Type**: one row per type, with its name, its author and a one-line description. UniiChat's
-  **Read the design ↗** under it opens Taelin's write-up in a new tab.
-- **Summary size**: a list of suggested sizes, with this chat's size checked and the type's own
-  default marked **default**. A UniiChat size reads as the range the lines keep, such as "64–128 KB"
-  for 128. A zoomable size reads as the size the compacted lines get, such as "32 KB".
+- **Type**: one row per type, with its name, its author and a one-line description. That's all:
+  the summary size is set in Settings → Memory (below), one for each type, and the
+  design write-up is linked from its help.
 
 A pick applies to this chat only and keeps the panel open. The foot says so: "This chat only. Kept
-while memory is off." The type and size survive a reload, a rewind and a server restart.
+while memory is off." The type survives a reload, a rewind and a server restart. On a short window
+the rows scroll, so none is cut off.
 
-**Save as default** in the menu saves the chat's type and size with its modes, and reads
-**Already the default** only when they match too. Each new chat starts from that default, and before
-you've saved one, from UniiChat at 128 KB.
+**Save as default** in the menu saves the chat's type with its modes, and reads
+**Already the default** only when it matches too. Each new chat starts from that default type, and
+before you've saved one, from UniiChat.
 
 ## Recalling a line
 
@@ -86,8 +86,14 @@ Each call is a tool row in the transcript, folded to what it opened: "Recalled m
 - **Preparing memory**: turning memory on in a chat that already has messages summarizes them in the
   background ("Preparing memory: 120 of 480 messages"). Until that's done, turns go out as they would
   without memory.
-- **A problem**: when the summarizer can't run, the composer's status row shows why, as a button that
-  opens Settings → Memory. A failed summary is tried again at the next message.
+- **A problem**: when the summarizer can't run at all (its login failed, it hit a usage limit, the
+  model policy refuses its model, or Claude Code isn't installed), summaries pause and the composer's
+  status row says why and when they're tried again, as a button that opens Settings → Memory. They
+  retry by themselves, and at once at your next message; the row clears at the next summary that
+  works.
+- **A message that keeps failing** never holds up the rest: it's tried again on its own, 5 minutes
+  and then 2 hours later, while everything else carries on. After 3 failed tries its line is a
+  clipped excerpt of the message instead of a summary, and `zoom` still opens the message whole.
 
 Rewinding or forking keeps memory right: summaries of messages that are no longer on the branch are
 dropped, and a fork takes a copy of the summaries that still match it. Turning memory off keeps the
@@ -114,14 +120,25 @@ The default is Claude Code's Haiku 5.5 at low effort, with no fallback. With the
 summaries wait while the primary can't run. A change applies from each chat's next summary, and
 waits for Save Changes like the rest of Settings.
 
+Its **Summary size** section sets one size per type, used by every chat of that type and by the
+overseers:
+
+- **UniiChat**: how much summary the model reads each message, from 8–16 KB to 128–256 KB, 64–128 KB
+  by default. Bigger keeps more of the chat in fine detail but costs more each message; smaller
+  merges older lines sooner.
+- **Zoomable compaction**: how much a compaction keeps, from 16 to 256 KB, 32 KB by default. Bigger
+  keeps more detail, but the next compaction comes sooner.
+
+A size applies from each chat's next message (UniiChat) or next compaction. Nothing is deleted:
+making it bigger keeps finer detail from then on, and older lines stay merged.
+
 The **?** beside the heading opens **How memory works**: a tab per type, in a few plain sentences
 with two small drawings each, and what the summary size and the summarizer's model trade off.
 
 The summarizer makes one-off model calls, never a session. They go through this device's model
 policy, run on this machine's Claude login, and count as the chat's own spend.
 
-The type and size new chats start from aren't set here. They come from the mode menu's Save as
-default.
+The type new chats start from isn't set here. It comes from the mode menu's Save as default.
 
 ## Where memory can't be on
 
@@ -140,9 +157,9 @@ The Overseer and each project overseer have no mode menu. Each has a memory swit
 instead: a button in its composer foot that reads **memory**, with a check while it's on and a clock
 while it's off. The Overseer's sits just before Quick Actions, and a project overseer's at the right
 end. It opens the same rows as the Memory type panel, with a **memory** row to turn it on or off. A
-pick applies from that overseer's next turn.
+pick applies from that overseer's next turn. Its size is Settings → Memory's, like any chat's.
 
-An overseer's memory is **on by default**, UniiChat at 128 KB, whatever default you saved for
+An overseer's memory is **on by default**, with UniiChat, whatever default you saved for
 ordinary chats. Switched off, it stays off until someone switches it on again, and Clear keeps the
 choice. An overseer that already has history is prepared in the background, like any chat. The
 coding sessions an overseer starts never get memory.

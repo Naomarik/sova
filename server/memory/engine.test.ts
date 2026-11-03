@@ -11,6 +11,7 @@ import { MemoryEngine, WAIT_MS, type EngineDeps } from "./engine";
 import { inputStart, messagesBefore, messagesOf, PAGE, TOOL_CLIP } from "./log";
 import { copyMemory, MemoryStore, memoryDir, removeMemory } from "./store";
 import type { SummaryCall } from "./summarizer";
+import { DecisionError } from "../decide";
 
 const root = mkdtempSync(join(tmpdir(), "sova-memory-engine-"));
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -246,13 +247,25 @@ describe("the engine", () => {
     assert.equal(statuses.at(-1), "ready");
   });
 
-  test("a summarizer that can't run pauses the queue and says why", async () => {
-    const { e } = engine({ summarize: async () => { throw new Error("no login"); } });
-    e.sync([user(long("a")), user(long("b")), user(long("c")), user(long("d")), user(long("e"))]);
+  test("a summarizer that can't run pauses the queue and says why, and when it retries", async () => {
+    let calls = 0;
+    const { e } = engine({ summarize: async () => (calls++, Promise.reject(new DecisionError("unavailable", "claude is not installed"))) });
+    e.sync([user(long("a")), user(long("b")), user(long("c")), user(long("d")), user(long("e")), user(long("f"))]);
     await e.idle();
     const s = e.status();
     assert.equal(s.state, "ready");
-    assert.match(s.problem ?? "", /no login/);
+    assert.match(s.problem ?? "", /^The memory summarizer can't run: claude is not installed\. Retrying at \d{1,2}:\d{2} (AM|PM)\.$/);
+    assert.ok(calls <= 4, "the rest wait: only the calls already started ran");
+    e.dispose();
+  });
+
+  test("a node that fails on its own sets no problem and holds nothing else up", async () => {
+    const { e } = engine({ summarize: async (c) => { if (c.prompt.includes("compress message 0")) throw new Error("no line"); return { text: "s.", model: "f" }; } });
+    e.sync([user(long("a")), user(long("b")), user(long("c"))]);
+    await e.idle();
+    assert.equal(e.status().problem, undefined);
+    assert.ok(e.get(0, 1) && e.get(0, 2) && !e.get(0, 0));
+    e.dispose();
   });
 
   test("zoomable: a compaction's summary is the view of the compacted messages, merged to the size", async () => {

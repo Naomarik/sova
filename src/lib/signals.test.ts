@@ -12,11 +12,12 @@ import {
   SIGNAL_ICON,
   SIGNAL_PRECEDENCE,
   signalTitle,
+  signalTooltip,
+  providerName,
+  askKindWord,
   signalWords,
   stalledPaths,
   tagSearchText,
-  tagsTitle,
-  tagTopicWord,
   turnErrorTitle,
 } from "./signals";
 import { reuseUnchanged } from "./summary-diff";
@@ -31,9 +32,9 @@ const align = (openQuestions: number, questionDocs = 1) => ({ openDocs: 2, openQ
 test("the mark is the most urgent kind the server sent, never one it didn't", () => {
   assert.equal(rowNeedsYou(row(), open), null);
   assert.equal(rowNeedsYou(row({ signals: sig([]) }), open), null, "a classified turn with no kinds shows nothing");
-  assert.deepEqual(rowNeedsYou(row({ signals: sig(["looping"]) }), open), { kind: "looping", worker: false });
-  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you", "looping"]) }), open), { kind: "asks-you", worker: false }, "an ask outranks looping");
-  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you"]), workerSignals: { stuck: 1 } }), open), { kind: "asks-you", worker: false });
+  assert.deepEqual(rowNeedsYou(row({ signals: sig(["looping"]) }), open), { kind: "looping", worker: false, source: { provider: "jev" } });
+  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you", "looping"]) }), open), { kind: "asks-you", worker: false, source: { provider: "jev" } }, "an ask outranks looping");
+  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you"]), workerSignals: { stuck: 1 } }), open), { kind: "asks-you", worker: false, source: { provider: "jev" } });
   assert.equal(rowNeedsYou(row({ align: align(1), signals: sig(["asks-you"]) }), open)?.kind, "questions", "open questions outrank an ask");
   assert.equal(rowNeedsYou(row({ signals: sig(["asks-you", "looping"], 100), seenAt: 200 }), open)?.kind, "asks-you", "a look does not answer it; looping is gone once seen");
   assert.equal(rowNeedsYou(row({ signals: sig(["looping"], 100), seenAt: 200 }), open), null);
@@ -46,7 +47,7 @@ test("the mark is the most urgent kind the server sent, never one it didn't", ()
 
 test("open alignment questions come first, carry the counts, and a visit never clears them", () => {
   const s = row({ align: align(3), signals: sig(["looping"], 100), workerSignals: { stuck: 1 } });
-  assert.deepEqual(rowNeedsYou(s, open), { kind: "questions", worker: false, align: align(3) });
+  assert.deepEqual(rowNeedsYou(s, open), { kind: "questions", worker: false, align: align(3), source: "code" });
   assert.deepEqual(rowNeedsYou({ ...s, seenAt: 500 }, open)?.kind, "questions", "a fact of the file, not news");
   assert.equal(rowNeedsYou(s, { selected: s.path, busy: false }), null, "never on the open session");
   assert.equal(rowNeedsYou(s, { selected: null, busy: true }), null, "never while this tab runs a turn there");
@@ -72,7 +73,7 @@ test("subagent counts mark the parent row, below the session's own kind of the s
   assert.deepEqual(rowNeedsYou(row({ workerSignals: { stuck: 1 } }), open), { kind: "looping", worker: true });
   assert.equal(rowNeedsYou(row({ workerSignals: { stuck: 0 } }), open), null);
   // At the same kind, the session's own wins over a worker's.
-  assert.deepEqual(rowNeedsYou(row({ signals: sig(["looping"]), workerSignals: { stuck: 1 } }), open), { kind: "looping", worker: false });
+  assert.deepEqual(rowNeedsYou(row({ signals: sig(["looping"]), workerSignals: { stuck: 1 } }), open), { kind: "looping", worker: false, source: { provider: "jev" } });
   // Seen hides the session's own signal, not its workers' (the server sends those only while they apply).
   assert.deepEqual(rowNeedsYou(row({ signals: sig(["looping"], 5), seenAt: 9, workerSignals: { stuck: 1 } }), open), { kind: "looping", worker: true });
 });
@@ -93,7 +94,7 @@ test("the turn-error tooltip says the fact, then pi's message when there is one"
 });
 
 test("every kind has its own glyph, class and words", () => {
-  assert.deepEqual([...SIGNAL_PRECEDENCE], ["questions", "asks-you", "team-stalled", "looping"]);
+  assert.deepEqual([...SIGNAL_PRECEDENCE], ["questions", "asks-you", "team-stalled", "unverified", "looping"]);
   // Open questions show their count, no glyph: only the glyph kinds need distinct icons.
   const icons = SIGNAL_PRECEDENCE.filter((k) => k !== "questions").map((k) => SIGNAL_ICON[k]);
   const classes = SIGNAL_PRECEDENCE.map((k) => SIGNAL_CLASS[k]);
@@ -101,28 +102,17 @@ test("every kind has its own glyph, class and words", () => {
   assert.equal(new Set(icons).size, icons.length);
   assert.equal(new Set(classes).size, SIGNAL_PRECEDENCE.length);
   // A worker only ever speaks for "looping"; open questions and asks are the session's own, whatever the flag.
-  assert.equal(new Set(words).size, 5, "worker and session words differ except where one never applies");
+  assert.equal(new Set(words).size, 6, "worker and session words differ except where one never applies");
   for (const w of words) assert.match(w, /\. $/, "hidden words end a sentence before the title");
 });
 
-test("topic words: every topic has one, and absent means none", () => {
-  assert.equal(tagTopicWord({ user: ["x"] }), null);
-  assert.equal(tagTopicWord(undefined), null);
-  for (const t of TAG_TOPICS) assert.ok(tagTopicWord({ topic: t }));
-  assert.equal(tagTopicWord({ topic: "bugfix" }), "bug fix");
-});
-
-test("search matches a tag by id and by its display word, and the user's own tags", () => {
+test("search matches the user's own tags, never a topic (automatic tags are retired)", () => {
   const text = tagSearchText({ topic: "bugfix", user: ["release"] });
-  for (const q of ["bugfix", "bug fix", "release"]) assert.ok(text.includes(q), q);
+  assert.ok(text.includes("release"));
+  assert.equal(text.includes("bug"), false);
   assert.equal(tagSearchText(undefined), "");
 });
 
-test("line 3's title names what is tagged, and nothing when nothing is", () => {
-  assert.equal(tagsTitle({ topic: "bugfix" }), "Topic: bug fix (tagged automatically)");
-  assert.equal(tagsTitle({ user: ["x"] }), null);
-  assert.equal(tagsTitle(undefined), null);
-});
 
 test("the feed: nothing applies before a full snapshot; then it is the whole truth for this host", () => {
   const listed = row({ signals: sig(["looping"]), tags: { topic: "docs" } });
@@ -228,7 +218,7 @@ test("a team gone quiet: a quiet mark from the digest's decide item, after an as
   } as unknown as Parameters<typeof stalledPaths>[0];
   assert.deepEqual([...stalledPaths(d)], ["/s/a.jsonl"]);
   assert.deepEqual([...stalledPaths(undefined)], []);
-  assert.deepEqual(rowNeedsYou(row(), { ...open, stalled: true }), { kind: "team-stalled", worker: false });
+  assert.deepEqual(rowNeedsYou(row(), { ...open, stalled: true }), { kind: "team-stalled", worker: false, source: "code" });
   assert.equal(rowNeedsYou(row({ signals: sig(["asks-you", "looping"]) }), { ...open, stalled: true })?.kind, "asks-you");
   assert.equal(rowNeedsYou(row({ signals: sig(["looping"]) }), { ...open, stalled: true })?.kind, "team-stalled");
   assert.equal(rowNeedsYou(row(), { selected: "/s/a.jsonl", busy: false, stalled: true }), null, "never on the open session");
@@ -236,4 +226,30 @@ test("a team gone quiet: a quiet mark from the digest's decide item, after an as
   assert.equal(signalTitle({ kind: "team-stalled", worker: false }), "Waiting on subagents that have gone quiet.");
   assert.equal(SIGNAL_ICON["team-stalled"], "clock");
   assert.match(SIGNAL_CLASS["team-stalled"], /session-signal-stalled/);
+});
+
+test("the mark's tooltip names its source: the provider that answered, or code", () => {
+  const sig = (provider: SessionSignals["provider"], model?: string): SessionSignals => ({ at: 2, turnId: "t", provider, ...(model ? { model } : {}), kinds: ["asks-you"] });
+  const row = (signals?: SessionSignals, align?: SessionSummary["align"]) => ({ path: "/p", signals, seenAt: undefined, workerSignals: undefined, align }) as never;
+  const jev = rowNeedsYou(row(sig("jev", "jev-1.14.0")), { selected: null, busy: false })!;
+  assert.equal(signalTooltip(jev), "The last reply asks you something. Guessed by Jev.");
+  const model = rowNeedsYou(row(sig("pi", "zai/glm-5.3")), { selected: null, busy: false })!;
+  assert.equal(signalTooltip(model), "The last reply asks you something. Guessed by glm-5.3.");
+  const stalled = rowNeedsYou(row(), { selected: null, busy: false, stalled: true })!;
+  assert.equal(signalTooltip(stalled), "Waiting on subagents that have gone quiet. From code.");
+  assert.equal(providerName("claude-code"), "the configured model");
+});
+
+test("an unverified mark and an ask's kind: the words, the glyph, the sentence", () => {
+  const row = (signals: SessionSignals) => ({ path: "/p", signals, seenAt: undefined, workerSignals: undefined, align: undefined }) as never;
+  const unverified = rowNeedsYou(row({ at: 2, turnId: "t", provider: "jev", kinds: ["unverified"] }), { selected: null, busy: false })!;
+  assert.equal(unverified.kind, "unverified");
+  assert.equal(signalWords(unverified), "Done, not checked. ");
+  assert.equal(SIGNAL_ICON.unverified, "check");
+  assert.equal(signalTooltip(unverified), "The last reply says it's done, but names something it didn't run or check. Guessed by Jev.");
+  const approval = rowNeedsYou(row({ at: 2, turnId: "t", provider: "jev", kinds: ["asks-you", "unverified"], card: { askKind: "approve-risky-action" } }), { selected: null, busy: false })!;
+  assert.deepEqual([approval.kind, approval.askKind], ["asks-you", "approve-risky-action"], "an ask outranks unverified");
+  assert.equal(signalTitle(approval), "The last reply waits on your approval.");
+  assert.equal(askKindWord("needs-info"), "info");
+  assert.equal(askKindWord("optional-offer"), null);
 });

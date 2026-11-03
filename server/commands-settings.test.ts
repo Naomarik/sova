@@ -62,9 +62,18 @@ describe("the area", () => {
   test("every entry here is in COMMANDS, and nothing that grants power or reveals a secret is", () => {
     for (const c of OTHER_ENTRIES) assert.ok(COMMANDS.includes(c), c.id);
     const writes = OTHER_ENTRIES.filter((c) => c.id.startsWith("settings.") && c.effect === "changes").map((c) => c.id).sort();
-    assert.deepEqual(writes, ["settings.align.set"]);
+    assert.deepEqual(writes, ["settings.align.set", "settings.assistant-default.set"]);
     const forbidden = /\/api\/(profiles|schedules\/(?:approve|revoke)|claude|auth|settings\/decisions|settings\/claude-status)(\/|$)|approve|login/;
-    for (const c of COMMANDS) assert.doesNotMatch(c.route.path, forbidden, c.id);
+    // Which login a project or an org's projects start on (§app.claude-logins/project-login): they name a login
+    // id and never touch a credential or an account; each is named here, so no other path slips through.
+    const ASSIGNS_A_LOGIN = new Set(["project.claude-login.get", "project.claude-login.set", "org.claude-login.get", "org.claude-login.set"]);
+    for (const c of COMMANDS) {
+      if (ASSIGNS_A_LOGIN.has(c.id)) {
+        assert.match(c.route.path, /^\/api\/(projects\/:pid|orgs\/:id)\/claude-login$/, c.id);
+        continue;
+      }
+      assert.doesNotMatch(c.route.path, forbidden, c.id);
+    }
   });
 });
 
@@ -125,5 +134,15 @@ describe("answers: the route's own, on the same state", () => {
     assert.equal(s, 200, JSON.stringify(saved));
     assert.deepEqual((await send("GET", "/api/settings/align"))[1], saved);
     assert.equal((saved as { settings: { visuals: boolean } }).settings.visuals, true);
+    // The Eagerness (§chat.alignment/eagerness): Careful is stored, Eager is absent, anything else refused.
+    const [c, careful] = await viaId("settings.align.set", { style: "default", visuals: true, eagerness: "careful" });
+    assert.equal(c, 200, JSON.stringify(careful));
+    assert.equal((careful as { settings: { eagerness?: string } }).settings.eagerness, "careful");
+    assert.match(readFileSync(join(agentDir, "mode-align.json"), "utf8"), /"eagerness": ?"careful"/);
+    const [e, eager] = await viaId("settings.align.set", { style: "default", visuals: true, eagerness: "eager" });
+    assert.equal(e, 200);
+    assert.equal("eagerness" in (eager as { settings: object }).settings, false, "Eager is stored as nothing");
+    assert.doesNotMatch(readFileSync(join(agentDir, "mode-align.json"), "utf8"), /eagerness/, "an Eager file is the bytes an older device accepts");
+    assert.equal((await viaId("settings.align.set", { style: "default", visuals: true, eagerness: "bold" }))[0], 400);
   });
 });

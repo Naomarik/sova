@@ -33,7 +33,10 @@ file (or one that doesn't parse) the defaults apply: `zai` 5, `ollama-cloud` 10.
 - A 429 rate limit before any output is re-queued after a cooldown (`Retry-After`, else 10 s), at
   most 5 times, and lowers the provider's limit for 5 minutes to one below the limit the request
   was sent under (`…/lowered.json`, shared by every process; never below 1). The file's number is
-  never rewritten. A 429 about quota or balance is passed on. pi's own retry is unchanged.
+  never rewritten. A 429 that says the usage ran out (quota, balance, credits, billing, a monthly or
+  weekly usage limit such as Ollama's "you have reached your monthly usage limit") is passed on:
+  `usage-out.ts` (no imports) decides it, the same classifier the subagents extension uses to move a
+  team's coordinator or monitor to its fallback. pi's own retry is unchanged.
 - `index.ts`: at `session_start` and before each turn, every provider with a limit that this runtime
   knows is re-registered with `pi.registerProvider(id, {api, streamSimple: gated})` — around pi's
   own API stream, or around the stream another extension registered. While a request waits, the

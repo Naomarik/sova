@@ -4,13 +4,13 @@ import type { OrgDetail, Person } from "../shared/orgs";
 import type { SessionSummary, SovaConfirmItem } from "../shared/protocol";
 import { expandHome, guardedFolderProblem, overseerFolder } from "./overseer-folders";
 import { listProjects } from "./projects/spaces";
-import { ADD_LEAD, addNoClickRefusal, confirmRefusal } from "./overseer-sender";
+import { confirmRefusal } from "./overseer-sender";
 import { attentionChanged } from "./attention-memo";
 import { cardHeader } from "./overseer-tools";
 import { createBaton, handoffTo, offerTo, projectAbilities } from "./baton";
 import type { OperatorBy } from "./orgs";
 import { ABILITIES_PARAM, overseerAbilities } from "./gathering-abilities";
-import { checkedCodingModeChoice, describeCodingMode, profileWords } from "./project-coding-mode";
+import { ALREADY_AGREED_PARAM, alreadyAgreedOf, checkedCodingModeChoice, confirmBriefWords, describeCodingMode, overseerStartMode, profileWords } from "./project-coding-mode";
 import type { ToolCall } from "./overseer-idea-tools";
 import { operatorEnvelope, orgOfProject, readHistory, readOrg } from "./orgs";
 import {
@@ -94,9 +94,8 @@ interface Targets {
   sessions?: string[];
   people?: { orgId: string; id: string; name: string }[];
   projects?: { orgId: string | null; id: string; name: string }[];
-  /** Orgs it detaches, and folders it adds as projects (§app.overseer/org-project-add). */
+  /** Orgs it detaches (§app.overseer/org-project-add). */
   orgs?: { id: string; name: string }[];
-  folders?: { root: string; orgId: string | null; name?: string }[];
 }
 
 export function orgTools(d: OrgToolDeps): Tool[] {
@@ -134,29 +133,20 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     const items = d.confirmed();
     const has = (kind: "session" | "person" | "project" | "org", orgId: string | null, id: string) =>
       !!items?.some((i) => i.kind === kind && i.id === id && (orgId === null || (i as { orgId?: string }).orgId === orgId));
-    // A folder row: the same checkout root, into the same org (or none), and the same name when the row names one.
-    const hasFolder = (f: { root: string; orgId: string | null; name?: string }) =>
-      !!items?.some((i) => i.kind === "folder" && i.id === f.root && (i.orgId ?? null) === f.orgId && (i.name === undefined || i.name === f.name));
     const missing: string[] = [];
     for (const p of t.projects ?? []) if (!has("project", null, p.id)) missing.push(`the project ${p.name} (${p.id})`);
     for (const p of t.people ?? []) if (!has("person", p.orgId, p.id)) missing.push(`${p.name} (${p.id})`);
     for (const s of t.sessions ?? []) if (!has("session", null, s)) missing.push(`the session ${s}`);
     for (const o of t.orgs ?? []) if (!has("org", null, o.id)) missing.push(`the organization ${o.name} (${o.id})`);
-    for (const f of t.folders ?? []) if (!hasFolder(f)) missing.push(folderText(f));
     if (!items || missing.length) {
       const all = [
         ...(t.projects ?? []).map((p) => `the project ${p.name} (${p.id})`),
         ...(t.people ?? []).map((p) => `${p.name} (${p.id})`),
         ...(t.sessions ?? []).map((s) => `the session ${s}`),
         ...(t.orgs ?? []).map((o) => `the organization ${o.name} (${o.id})`),
-        ...(t.folders ?? []).map(folderText),
       ];
       throw refuse(confirmRefusal(all.join(", "), lead));
     }
-  }
-  /** A folder as a card's row would list it: its root and the org it goes into (or standalone). */
-  function folderText(f: { root: string; orgId: string | null }): string {
-    return `the folder ${f.root}${f.orgId ? ` (into the organization ${f.orgId})` : " (standalone)"}`;
   }
   /** The operator's act made through the Overseer, in the turn its confirm card started (the statecharts check the card). */
   const goBy = (): OperatorBy => {
@@ -236,7 +226,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
       return { content: text(await projectView(project.id, p.items === true)), details: { ...(project.orgId ? { org: project.orgId } : {}), project: project.id } };
     }),
   );
-  /** add (§app.overseer/org-project-add): a folder or a session's folder, only on a card's folder row; a clone, narrowed by the route. */
+  /** add (§app.overseer/org-project-add): a folder or a session's folder on the user's word; a clone, narrowed by the route. */
   async function addOp(p: any): Promise<Out> {
     const given = (v: unknown) => v !== undefined && v !== null && v !== "";
     if ([p.root, p.session, p.clone].filter(given).length !== 1) throw refuse("add takes exactly one of root (a folder), session (a session's folder) or clone {repo, parent, folder?}.");
@@ -258,26 +248,14 @@ export function orgTools(d: OrgToolDeps): Tool[] {
       raw = s.cwd;
       origin = "session";
     }
-    const asked = typeof raw === "string" ? expandHome(raw) : String(raw);
-    // No click opened this turn: the card's sentence, before any other refusal, naming the org asked
-    // for (resolved when it can be, else as written; never a refusal of its own here).
-    if (!d.confirmed()) {
-      let orgId: string | null = null;
-      if (given(p.org)) {
-        try {
-          orgId = orgOf(p.org).id;
-        } catch {
-          orgId = String(p.org).trim();
-        }
-      }
-      throw refuse(addNoClickRefusal(folderText({ root: asked, orgId })));
-    }
+    // The user's word is enough (§app.overseer/org-project-add): the act wrapper already refused a run the
+    // user did not start; a typed message or a click on any card opened this one. No card row is needed.
     const org = given(p.org) ? orgOf(p.org) : null;
     const f = await overseerFolder(raw);
     if ("problem" in f) throw refuse(f.problem);
+    // A click on a card's folder row for this folder: the name the row gave, when the call names none.
     const row = d.confirmed()?.find((i) => i.kind === "folder" && i.id === f.root && (i.orgId ?? null) === (org?.id ?? null));
     const useName = name ?? (row?.kind === "folder" ? row.name : undefined);
-    requireConfirm({ folders: [{ root: f.root, orgId: org?.id ?? null, ...(useName ? { name: useName } : {}) }] }, ADD_LEAD);
     const body = { root: f.asked, ...(useName ? { name: useName } : {}) };
     const r = await counted("org", async () =>
       org ? ok(await d.call("POST", `${base(org.id)}/projects`, body), "Adding the project", 201) : ok(await d.call("POST", "/api/projects", { ...body, origin }), "Adding the project", 201),
@@ -332,7 +310,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
           return { content: text(`${project.name}: ${done.join(", ")}.`), details };
         }
         case "archive": {
-          requireConfirm({ projects: [cardProject(project)] });
+          // On the user's word, no card (§app.overseer/org-people-facing): the act wrapper refused a run they did not start.
           await counted("org", async () => ok(await d.call("POST", `${projectsBase(project.id)}/archive`), "Archiving the project"));
           return { content: text(`${project.name} archived: it left the Projects lists and its overseer is paused. Nothing was deleted; unarchive brings it back.`), details };
         }
@@ -349,8 +327,8 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     name: "sova_org_project",
     label: "Project",
     description:
-      "Without op: read one registered project (in an organization or not) and its project overseer (level chosen and in force, watching, models, coding mode, extra instructions, allowances, held items, last actions), its coding sessions, ideas and to-dos (items: true lists the open to-dos and ideas with ids) and its cost; for a project an organization places, also its gathering sessions, decisions and open conflicts, spec status and the last owner update. With op (only in a turn the user started): edit {project, name?, root?, stakeholder? (a person, or none), owner_hidden?} (stakeholder and owner_hidden only for a project an organization places); archive {project} (only in the turn a confirm card's click opened, listing the project; refused while anything in it is open, naming what); unarchive {project}; " +
-      "add {root | session | clone, org?, name?}: register a folder of this host (root: absolute or ~/…) or a session's folder (session), standalone or with org placed in that organization, only in the turn a confirm card's click opened, listing it as a folder row {root, org?, name?}; or clone {repo, parent, folder?} (https:// with no user or password in the URL, ssh://, user@host:path or GitHub's owner/name; parent absolute or ~/…; standalone; no card); " +
+      "Without op: read one registered project (in an organization or not) and its project overseer (level chosen and in force, watching, models, coding mode, extra instructions, allowances, held items, last actions), its coding sessions, ideas and to-dos (items: true lists the open to-dos and ideas with ids) and its cost; for a project an organization places, also its gathering sessions, decisions and open conflicts, spec status and the last owner update. With op (only in a turn the user started): edit {project, name?, root?, stakeholder? (a person, or none), owner_hidden?} (stakeholder and owner_hidden only for a project an organization places); archive {project} (on the user's word: their typed message is enough, no card; refused while anything in it is open, naming what); unarchive {project}; " +
+      "add {root | session | clone, org?, name?}: register a folder of this host (root: absolute or ~/…) or a session's folder (session), standalone or with org placed in that organization, on the user's word (their typed message is enough, no card); or clone {repo, parent, folder?} (https:// with no user or password in the URL, ssh://, user@host:path or GitHub's owner/name; parent absolute or ~/…; standalone; no card); " +
       "import {project, org}: move a standalone project into an organization (its history is committed to the org's workspace repo; it can't be undone), only in the turn a confirm card's click opened, listing the project.",
     promptSnippet: "read a project and its overseer; or edit, archive, unarchive, add (folder, session's folder, clone) or import a project",
     parameters: obj(
@@ -828,7 +806,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
       "A project's overseer, for the user (only in a turn the user started). start (create it, as Start Overseer). settings {powers?: {overseer?: {<power>: true|false}, assistant?: {…}}, resume?: true, model?, thinking?, coding_model?, coding_thinking?, gathering_model?, gathering_thinking?, watch?, watch_gap_min?, soon_look_sec?, caps?, extra_instructions?}: one change, refused whole as the page's is. run_now (Run Now). clear (a new conversation; only in the turn a confirm card's click opened, listing the project). " +
       "idea {action: add|edit, id?, title?, text?, status?} and todo {action: add|edit|tick|untick|remove, id?, text?, idea?}: the project's ideas and to-dos. " +
       "message {text}: send words into the overseer's conversation as the user (idle it starts a turn; mid-turn it waits as a follow-up); it counts as a prompt to another session. Never a /command, never the About text or a cost figure. " +
-      "code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?}: start a coding session as the project's (its own worktree; any mode, minor modes and subagent profile you name, else this computer's default), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
+      "code {prompt?, title?, item?, model?, thinking?, mode?, minor_modes?, subagent_profile?, already_agreed?}: start a coding session as the project's (its own worktree; any mode, minor modes and subagent profile you name, else this computer's default), from an item (a td_ to-do or an § idea) or from prompt and title; it counts as a session created. Unless you pass already_agreed: true (only when the user said, in their own words, they want exactly this built), align is turned on in its mode (whatever minor_modes says) and its first turn asks the user whether this is what they want built and waits for their answer. Talk to a coding session with sova_send; never answer its alignment questions: they are the user's. Its reply names the mode and profile it started with.",
     promptSnippet: "start, set up, run, clear, message or give ideas/to-dos to a project's overseer; start a coding session as the project's",
     parameters: obj(
       {
@@ -858,8 +836,9 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         prompt: str("code: the first prompt (default: the item's text)."),
         item: str("code: a to-do (td_…) or idea (§…) of the project to start from, and link it."),
         mode: str("code: normal | delegate. Omitted: this computer's default."),
-        minor_modes: { type: "array", items: { type: "string" }, description: 'code: the minor modes on, the whole set: any of align, spec, vis, codemode; [] turns them all off. Omitted: this computer\'s default.' },
+        minor_modes: { type: "array", items: { type: "string" }, description: 'code: the minor modes on, the whole set: any of align, spec, vis; [] turns them all off. Omitted: this computer\'s default.' },
         subagent_profile: str("code: a subagent profile id or off (sova_list_subagent_profiles), for that session only. Omitted: this computer's default."),
+        already_agreed: { type: "boolean", description: `code: ${ALREADY_AGREED_PARAM}` },
       },
       ["op", "project"],
     ),
@@ -971,13 +950,14 @@ export function orgTools(d: OrgToolDeps): Tool[] {
                 ...(p.mode !== undefined && p.mode !== null && p.mode !== "" ? { mode: p.mode } : {}),
                 ...(p.minor_modes !== undefined && p.minor_modes !== null ? { minor_modes: p.minor_modes } : {}),
                 ...(typeof p.subagent_profile === "string" && p.subagent_profile ? { subagent_profile: p.subagent_profile } : {}),
+                ...(alreadyAgreedOf(p.already_agreed) ? { already_agreed: true } : {}),
               };
               const r = await counted("create", async () => ok(await d.call("POST", `${at}/items/code`, body), "Starting the coding session", 201));
               d.started(r.path, !r.notPrompted);
               const title = cut(typeof p.title === "string" && p.title.trim() ? p.title : item || String(p.prompt ?? ""), 60);
               return {
                 content: text(
-                  `Started [${title.replace(/[[\]]/g, "")}](sova://s/${r.sessionId}) as ${project.name}'s coding session, ${r.worktree ? `on the branch ${r.worktree.branch} in ${r.worktree.path}` : `in the project root${r.note ? `: ${r.note}` : ""}`}, mode ${describeCodingMode(chose.mode)}${profileWords(chose.mode.subagentProfile)}.${r.notPrompted ? ` ${r.notPrompted}` : ""}`,
+                  `Started [${title.replace(/[[\]]/g, "")}](sova://s/${r.sessionId}) as ${project.name}'s coding session, ${r.worktree ? `on the branch ${r.worktree.branch} in ${r.worktree.path}` : `in the project root${r.note ? `: ${r.note}` : ""}`}, mode ${describeCodingMode(overseerStartMode(chose.mode, alreadyAgreedOf(p.already_agreed)))}${profileWords(chose.mode.subagentProfile)}.${r.notPrompted ? ` ${r.notPrompted}` : confirmBriefWords(!!r.confirmBrief, alreadyAgreedOf(p.already_agreed))}`,
                 ),
                 details: { ...details, session: r.sessionId, path: r.path },
               };

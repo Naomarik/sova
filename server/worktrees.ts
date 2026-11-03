@@ -128,7 +128,7 @@ interface Comparison {
   error?: string;
 }
 
-interface Layout { top: string; linked: boolean; commonDir: string; gitDir: string }
+export interface Layout { top: string; linked: boolean; commonDir: string; gitDir: string }
 
 /** A trial merge's inputs besides its OIDs: the configured merge drivers' commands, and the
  * folders (repo-relative, "" the top) whose `.gitattributes` Git may read for it. */
@@ -215,7 +215,7 @@ function configsOf(layout: Layout): string[] | null {
 /** What commit history means: replacements, grafts, shallow boundaries and the configuration.
  * Reuse of HEAD, refs, logs and ancestry. Merge drivers and attributes don't change history, so
  * they are the merge token's business (§app/idle-git-cache). */
-function historyToken(layout: Layout): string | null {
+export function historyToken(layout: Layout): string | null {
   // Custom namespaces/files and injected configuration may name dependencies outside this
   // inventory. Unsupported inputs are delegated to Git, never assigned an indefinite token.
   if (process.env.GIT_REPLACE_REF_BASE || process.env.GIT_SHALLOW_FILE || process.env.GIT_CONFIG_COUNT || process.env.GIT_CONFIG_PARAMETERS) return null;
@@ -423,6 +423,36 @@ export function worktreeStamp(dir: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** What a worktree's readiness reads from Git that a commit, checkout, add, branch switch or base
+ * move changes, as stat stamps read without Git (no spawn): worktreeStamp (its index, HEAD, branch
+ * ref and packed-refs, under the main repo's .git/worktrees/<name>/ for a linked one) plus the
+ * base branch's ref (`baseBranch`, and master, main and origin's HEAD target). "gone" for a missing
+ * folder; null when its layout can't be named. The session feed's readiness watch compares it
+ * every few seconds (§app.decisions/push). */
+export function gitInputsStamp(dir: string, baseBranch?: string): string | null {
+  const tree = worktreeStamp(dir);
+  if (tree === null || tree === "gone") return tree;
+  const layout = plainLayout(dir);
+  if (!layout || layout === "gone") return tree;
+  const stat = (path: string): string => {
+    try {
+      const st = statSync(path, { bigint: true });
+      return `${st.ino}:${st.size}:${st.mtimeNs}`;
+    } catch {
+      return "absent";
+    }
+  };
+  const refs = new Set(["refs/heads/master", "refs/heads/main", "refs/remotes/origin/HEAD", "packed-refs"]);
+  if (baseBranch && /^[\w./-]+$/.test(baseBranch) && !baseBranch.includes("..")) refs.add(`refs/heads/${baseBranch}`);
+  try {
+    const origin = /^ref: (refs\/[^\r\n]+)/.exec(readFileSync(join(layout.commonDir, "refs/remotes/origin/HEAD"), "utf8"))?.[1];
+    if (origin) refs.add(origin);
+  } catch {
+    // no origin HEAD
+  }
+  return [tree, ...[...refs].map((r) => `${r}=${stat(join(layout.commonDir, r))}`)].join("\0");
 }
 
 const CONTEXT_MOVED = Symbol("Git configuration context moved");

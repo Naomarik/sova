@@ -99,7 +99,7 @@ export function openFailureView(summary: OpenFailureSession | undefined, error: 
     };
   }
 
-  // Anything else (an older server's wording, a failure this version
+  // Anything else (a folder that can't be reached, an older server's wording, a failure this version
   // doesn't classify): the server's text verbatim, with the same reassurance and the same way back.
   const raw = error.trim();
   return {
@@ -107,5 +107,24 @@ export function openFailureView(summary: OpenFailureSession | undefined, error: 
     title: "This session can't be opened.",
     detail: raw ? `${raw} Nothing in the session file changed.` : "Nothing in the session file changed.",
     actions,
+  };
+}
+
+/** A chat running in the home folder because its stored local folder is gone (hello `cwdFallback`). */
+export interface CwdFallbackInfo {
+  original: string;
+  cwd: string;
+}
+
+/**
+ * The warning while a chat runs in the home folder instead of its own (§app.shell/missing-folder-home):
+ * the stored folder by name, where the chat runs now, and that nothing in the session file changed.
+ */
+export function cwdFallbackView(f: CwdFallbackInfo): { title: string; body: string } {
+  return {
+    title: "This session's folder is gone",
+    body:
+      `${f.original} doesn't exist on this machine any more, so this chat runs in your home folder, ${f.cwd}, and its tools work there. ` +
+      "The session file is unchanged: earlier messages may describe files that are no longer there.",
   };
 }

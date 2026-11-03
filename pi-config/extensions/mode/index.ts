@@ -60,6 +60,7 @@ import {
 	foldAlignments,
 	legacyLine,
 	looksLikeUncapturedPlan,
+	marksChangeRequest,
 	openDocsOf,
 	reviewRequestMessage,
 	toMarkdown,
@@ -84,13 +85,11 @@ import { WorkerProbe, type ClaudeModelSource } from "./discovery.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "./events.ts";
 import {
 	adoptableMinorModes,
-	CODEMODE_TOOL,
 	isMinorMode,
 	MINOR_MODES,
 	MINOR_SURFACES,
 	normalizeMinorModes,
 	parseMinorFlag,
-	SCRIPT_ONLY_EXPOSURES,
 	visToolsWanted,
 	webMinorRefusal,
 	workerMinorModes,
@@ -105,9 +104,9 @@ function sessionIdOf(ctx: ExtensionContext): string | undefined {
 		return undefined;
 	}
 }
-import { ALIGN_SETTINGS_FILE, alignSettingsReader, resolveAlign, type AlignStyle } from "./align-settings.ts";
+import { ALIGN_SETTINGS_FILE, alignSettingsReader, resolveAlign, type AlignEagerness, type AlignStyle } from "./align-settings.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
-import { applyModeSection, buildAlignStyleNote, buildModeNote, buildProjectModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel, workerProjectModes } from "./prompt.ts";
+import { applyModeSection, buildAlignEagernessNote, buildAlignStyleNote, buildModeNote, buildProjectModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel, workerProjectModes } from "./prompt.ts";
 import { discoverProjectModes, readProjectMode } from "./project-discovery.ts";
 import { PROJECT_MODE_PREFIX, PROJECT_MODES_DIR, PROJECT_SNAPSHOT_TYPE, projectModeArg, projectToolName, type ProjectModeListing, type ProjectModeProblem, type ProjectModeRef, type ProjectModeSnapshot } from "./project-format.ts";
 import { isApproved } from "./project-tools-approval.ts";
@@ -116,7 +115,7 @@ import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT } from "../sandbox/state.ts
 import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, usable, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import { SPEC_WRITER_LABEL, specBackends, specKey } from "./spec.ts";
 import { OFF_PROFILE_ID, pickEntryFor, profilesReader, resolveSubagents, restorePick, type ResolvedSubagents } from "../subagents/subagent-profiles.ts";
-import { bashCommands, CensusHook, driftNote, LANDED_FILE_ENV, SpecWriteGuard, writeLanded } from "./spec-guard.ts";
+import { bashCommands, CensusHook, driftNote, LANDED_FILE_ENV, procedureToldIn, SpecWriteGuard, writeLanded } from "./spec-guard.ts";
 import { setAgreeSource } from "./spec-agree.ts";
 import {
 	activeOf,
@@ -292,7 +291,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	const reviewOn = (): boolean => reviewFlag;
 	/** mode-align.json, re-read (one stat) whenever consulted. */
 	const readAlignSettings = alignSettingsReader(join(getAgentDir(), ALIGN_SETTINGS_FILE));
-	/** The writing style and Visuals this chat would use now: its profile's override, else the host's file. */
+	/** The Eagerness, writing style and Visuals this chat would use now: its profile's override, else the host's file. */
 	const alignNow = () => resolveAlign(readAlignSettings(), subagents().alignment);
 	/**
 	 * This session's Visuals (§chat.alignment/visuals), fixed at session_start: the caller's flag, else
@@ -306,7 +305,10 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	let headStyle: AlignStyle | undefined;
 	/** The writing style the model was last told: the head's, then each style note's (§chat.alignment/style). */
 	let toldStyle: AlignStyle | undefined;
-	const alignOptions = (style: AlignStyle) => ({ style, visuals: alignVisuals });
+	/** The Eagerness the head's align block was built with, and the one the model was last told (§chat.alignment/eagerness): as the style's. */
+	let headEagerness: AlignEagerness | undefined;
+	let toldEagerness: AlignEagerness | undefined;
+	const alignOptions = (style: AlignStyle, eagerness: AlignEagerness) => ({ eagerness, style, visuals: alignVisuals });
 	/** The reviewer route a probe should cover: flag on, align on, not a worker, and the profile names one. */
 	const probedReviewer = () => (reviewOn() && hasMinor(active, "align") && !workerRole ? subagents().reviewer : null);
 	/** Re-read this chat's pick from its branch. */
@@ -350,6 +352,11 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	let nudged = false;
 	/** This run was started by a user prompt that asked a question (options offered back answer it). */
 	let runUserAsked = false;
+	/**
+	 * The agent marked this run as a change request (§chat.alignment/when): an align call naming any op
+	 * but get, refused or not. Only the agent's own call sets it; the nudge (under Careful) never guesses it from words.
+	 */
+	let runMarked = false;
 	/** The open overlay viewer, refreshed live on each align call; undefined when closed. */
 	let liveViewer: AlignViewer | undefined;
 	/** The latest context seen, for refreshing the widget from the tool (which has no UI of its own). */
@@ -464,7 +471,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	const modeBlock = (): string | undefined =>
 		workerRole
 			? composeWorkerPrompt({ minorModes: headMinors() })
-			: composePrompt(active, routes, writerRoute, headMinors(), alignOptions(headStyle ?? alignNow().style), copiesOf(headProjects()).map((copy) => copy.text));
+			: composePrompt(active, routes, writerRoute, headMinors(), alignOptions(headStyle ?? alignNow().style, headEagerness ?? alignNow().eagerness), copiesOf(headProjects()).map((copy) => copy.text));
 
 	/** A run is about to send the prompt: a head not sent since the start or the last compaction is the active set from now on. */
 	function fixHead(): void {
@@ -476,28 +483,32 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		toldProjects = [...projectHead];
 		projectGuides = [];
 		toldWriter = head.includes("spec") ? writerInstruction() : undefined;
-		// A head rebuilt on reopen keeps the style the branch recorded for it (restoreActiveState). A new
-		// one built in a style other than Default records it (MODE_HEAD_TYPE); a Default head records nothing.
-		if (headStyle === undefined) {
-			headStyle = alignNow().style;
-			if (!workerRole && head.includes("align") && headStyle !== "default") {
+		// A head rebuilt on reopen keeps the style and Eagerness the branch recorded for it (restoreActiveState).
+		// A new one built in a style other than Default, or Careful, records them (MODE_HEAD_TYPE); a Default,
+		// Eager head records nothing.
+		if (headStyle === undefined || headEagerness === undefined) {
+			const now = alignNow();
+			headStyle ??= now.style;
+			headEagerness ??= now.eagerness;
+			if (!workerRole && head.includes("align") && (headStyle !== "default" || headEagerness !== "eager")) {
 				try {
-					pi.appendEntry<ModeHeadRecord>(MODE_HEAD_TYPE, { v: 1, style: headStyle });
+					pi.appendEntry<ModeHeadRecord>(MODE_HEAD_TYPE, { v: 1, style: headStyle, ...(headEagerness === "careful" ? { eagerness: headEagerness } : {}) });
 				} catch {
-					// Best-effort: without it, a reopen reads this head as Default.
+					// Best-effort: without it, a reopen reads this head as Default, Eager.
 				}
 			}
 		}
 		toldStyle ??= headStyle;
+		toldEagerness ??= headEagerness;
 	}
 
 	/** The hidden note for what the model hasn't been told yet, now counted as told; undefined when there is nothing. */
 	function takeNote(): { customType: string; content: string; display: false; details: ModeNoteDetails } | undefined {
 		if (head === undefined) return undefined;
-		const style = alignNow().style;
+		const { style, eagerness } = alignNow();
 		const note = workerRole
 			? buildModeNote(workerMinorModes(told), workerMinorModes(active.minorModes), { head: workerMinorModes(head), guides }, null, true)
-			: buildModeNote(told, active.minorModes, { head, guides }, writerRoute, false, alignOptions(style));
+			: buildModeNote(told, active.minorModes, { head, guides }, writerRoute, false, alignOptions(style, eagerness));
 		const instruction = writerInstruction();
 		const routeNote = !workerRole && active.minorModes.includes("spec") && !head.includes("spec") && !note?.guides.includes("spec") && toldWriter !== instruction
 			? `Spec writer routing now applies instead of any earlier writer routing.\n\n${instruction}` : undefined;
@@ -506,11 +517,16 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		const alignGuide = note?.guides.includes("align") ?? false;
 		const was = toldStyle ?? headStyle ?? "default";
 		const styleNote = !workerRole && hasMinor(active, "align") && !alignGuide && was !== style ? buildAlignStyleNote(was, style) : undefined;
+		// The Eagerness (§chat.alignment/eagerness) the same way: a choice changed since it was told gets its trigger paragraph.
+		const wasEagerness = toldEagerness ?? headEagerness ?? "eager";
+		const eagernessNote = !workerRole && hasMinor(active, "align") && !alignGuide && wasEagerness !== eagerness ? buildAlignEagernessNote(eagerness) : undefined;
 		const projectNote = workerRole ? undefined : buildProjectModeNote(toldProjects, projectModesOf(active), { head: projectHead ?? [], guides: projectGuides }, snapshots);
-		if (!note && !routeNote && !styleNote && !projectNote) return undefined;
+		if (!note && !routeNote && !styleNote && !eagernessNote && !projectNote) return undefined;
 		if (active.minorModes.includes("spec")) toldWriter = instruction;
 		const toldAlignStyle = alignGuide || styleNote !== undefined;
 		if (toldAlignStyle) toldStyle = style;
+		const toldAlignEagerness = alignGuide || eagernessNote !== undefined;
+		if (toldAlignEagerness) toldEagerness = eagerness;
 		told = [...active.minorModes];
 		guides = normalizeMinorModes([...guides, ...(note?.guides ?? [])]);
 		toldProjects = projectModesOf(active);
@@ -524,7 +540,8 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 			...(projectNote && projectNote.guides.length > 0 ? { projectGuides: projectNote.guides } : {}),
 		};
 		if (toldAlignStyle) Object.assign(details, { style, headStyle: headStyle ?? style });
-		return { customType: MODE_NOTE_TYPE, content: [note?.text, projectNote?.text, routeNote, styleNote].filter(Boolean).join("\n\n"), display: false, details };
+		if (toldAlignEagerness) Object.assign(details, { eagerness, headEagerness: headEagerness ?? eagerness });
+		return { customType: MODE_NOTE_TYPE, content: [note?.text, projectNote?.text, routeNote, styleNote, eagernessNote].filter(Boolean).join("\n\n"), display: false, details };
 	}
 
 	/**
@@ -706,8 +723,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 			syncAlignTool();
 			syncAlignWidget(ctx);
 		}
-		// Between runs the tool follows at once; a run under way keeps its tools, and agent_settled syncs.
-		if (minor === "codemode" && !running) syncCodemodeTool();
+		// Between runs the tools follow at once; a run under way keeps its tools, and agent_settled syncs.
 		if ((minor === "vis" || minor === "align") && !running) syncVisGuideTool();
 		ctx.ui.notify(`Minor mode: ${minor} ${on ? "on" : "off"}`, "info");
 		// Spec on probes its writer's backends (and announces a writer that can't run); off, and
@@ -759,7 +775,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		publishWorkerModes();
 		syncHostSection();
 		renderStatus(ctx);
-		// Like codemode: between runs the tools follow at once; a run under way keeps its tools until it settles.
+		// Between runs the tools follow at once; a run under way keeps its tools until it settles.
 		if (!running) syncProjectTools();
 		ctx.ui.notify(`Minor mode: ${id} ${on ? "on" : "off"}`, "info");
 	}
@@ -929,12 +945,14 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		// a head still to be fixed follows the style now until then.
 		headStyle = restoredHead.headStyle;
 		toldStyle = restoredHead.style?.told ?? headStyle;
+		// The Eagerness by the same rule (none recorded: Eager), §chat.alignment/eagerness.
+		headEagerness = restoredHead.headEagerness;
+		toldEagerness = restoredHead.eagerness?.told ?? headEagerness;
 		// A restore can land on a different strict flag than the tools currently reflect.
 		if (active.mode === "delegate" && active.strict) applyStrictTools();
 		else restoreTools();
 		syncAlignTool();
 		syncVisGuideTool();
-		syncCodemodeTool();
 		syncProjectTools();
 		recomputeRoutes();
 		syncHostSection();
@@ -961,26 +979,6 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	 */
 	function syncVisGuideTool(): void {
 		syncTool(VIS_GUIDE_TOOL, visToolsWanted(active.minorModes, alignVisuals));
-	}
-
-	/**
-	 * pi's codemode tool is in the loadout exactly while codemode is on (§chat.mode-menu/codemode), synced
-	 * where vis_guide is and right after a switch made between runs. Off removes it even when something
-	 * else activated it (defaultTools, the transcript's restored tool set), except while a registered tool
-	 * is reachable only from scripts (MCP's codemode/deferred exposure). Nothing to do where the tool isn't
-	 * registered (an SDK runtime without the factory). Every chat alike, a Claude Code one included.
-	 */
-	function syncCodemodeTool(): void {
-		let tools: { name: string; exposure?: string }[];
-		try {
-			tools = pi.getAllTools() as { name: string; exposure?: string }[];
-		} catch {
-			return; // Before the session exists; session_start syncs it.
-		}
-		if (!tools.some((tool) => tool.name === CODEMODE_TOOL)) return;
-		const want = hasMinor(active, "codemode") && !workerRole;
-		if (!want && tools.some((tool) => tool.exposure !== undefined && SCRIPT_ONLY_EXPOSURES.has(tool.exposure))) return;
-		syncTool(CODEMODE_TOOL, want);
 	}
 
 	function syncTool(tool: string, want: boolean): void {
@@ -1138,6 +1136,8 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		review: () => (reviewOn() ? { reviewer: reviewerSlot, startText: reviewStartText } : undefined),
 		style: () => alignNow().style,
 		specOn: () => hasMinor(active, "spec"),
+		// The go-ahead hands the writing procedure over when the session hasn't been told it yet (spec-guard.ts).
+		specProcedure: () => (specOn() && process.env.PI_SPEC_CENSUS_HOOK !== "0" ? specCensus.takeProcedure() : Promise.resolve(undefined)),
 	};
 	registerAlignTool(pi, alignHost);
 	/** The align tool's form now registered: review ops, visual fields (re-registered when either changes). */
@@ -1449,6 +1449,12 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		});
 	}
 
+	// Whether the agent marked this run as a change request, from the call's own arguments: a refused
+	// call counts, a bare get does not.
+	pi.on("tool_execution_start", async (event) => {
+		if (event.toolName === ALIGN_TOOL && marksChangeRequest(event.args)) runMarked = true;
+	});
+
 	// What this run recorded, for the settle nudge: an align call counts only when it succeeded and
 	// changed a document or recorded an exemption. A refused call or a bare get records nothing.
 	pi.on("tool_execution_end", async (event) => {
@@ -1471,11 +1477,14 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	});
 
 	/**
-	 * One nudge per run: a run about to settle with align on, no align call, and a final reply that
-	 * reads like a plan asking the user to decide gets a hidden message and one more request.
+	 * One nudge per run: a run about to settle with align on, no align call, and a final reply (without
+	 * its working notes) that reads like a plan asking the user to decide gets a hidden message and one
+	 * more request. Under Careful (§chat.alignment/eagerness, read as the run settles) only a run marked as
+	 * a change request: a run nobody marked is never nudged. Under Eager any run is judged.
 	 */
 	pi.on("agent_before_settle", async (event) => {
 		if (!hasMinor(active, "align") || nudged || runAlignCalls > 0 || event.outcome !== "completed") return;
+		if (!runMarked && alignNow().eagerness === "careful") return;
 		if (!looksLikeUncapturedPlan(lastReplyText, { userAsked: runUserAsked })) return;
 		nudged = true;
 		return {
@@ -1492,9 +1501,9 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		runAlignCalls = 0;
 		lastReplyText = "";
 		runUserAsked = false;
+		runMarked = false;
 		nudged = false;
 		syncVisGuideTool();
-		syncCodemodeTool();
 		syncProjectTools();
 	});
 
@@ -1515,6 +1524,10 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		projectGuides = [];
 		headStyle = undefined;
 		toldStyle = undefined;
+		headEagerness = undefined;
+		toldEagerness = undefined;
+		// The writing procedure went with the history: it is handed over again at the next moment.
+		specCensus.rearmProcedure();
 		syncHostSection();
 	});
 
@@ -1545,15 +1558,17 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	// spec boundary and each new file get a `[spec census]` digest appended to that tool result, with the
 	// write guard's and promote's drift notes. Silent without a spec, Git or the tools, and in a remote
 	// session; a census that can't run says so once per cause. PI_SPEC_CENSUS_HOOK=0 turns it off.
-	const specCensus = new CensusHook({ core: () => SPEC_CORE });
+	const specCensus = new CensusHook({ core: () => SPEC_CORE, worker: () => workerRole });
 	const specWrites = new SpecWriteGuard();
 	const specOn = () => hasMinor(active, "spec") && remoteTarget === undefined;
 	/**
-	 * Notes for calls a codemode script made, by the script's own call id: a nested result reaches only the
-	 * script, so what the census or the guard told it is told again on the script's result, the one the
-	 * model reads (§chat.mode-menu/codemode).
+	 * Notes for calls another tool made (pi's parentToolCallId: a terminal's script tool), by the caller's
+	 * call id: a nested result reaches only the caller, so what the census or the guard told it is told
+	 * again on the caller's result, the one the model reads.
 	 */
 	const hoistedNotes = new Map<string, string[]>();
+	/** The writing procedure handed over on a script's nested call, kept whole (never split into lines) for the script's result. */
+	const hoistedProcedure = new Map<string, string>();
 	pi.on("tool_call", async (event, ctx) => {
 		// Where an `agree` this call runs says the go-ahead was given (spec-agree.ts); a worker keeps what it was given.
 		if (!workerRole) setAgreeSource(ctx.sessionManager, specOn());
@@ -1570,7 +1585,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	pi.on("tool_result", async (event, ctx) => {
 		if (!specOn() || process.env.PI_SPEC_CENSUS_HOOK === "0") return;
 		const { text: forbidden, lost } = await specWrites.after(event.toolCallId, { cwd: ctx.cwd, toolName: event.toolName, input: event.input, signal: ctx.signal });
-		const { text: census, failure } = await specCensus.after({
+		const { text: census, failure, procedure } = await specCensus.after({
 			id: event.toolCallId,
 			cwd: ctx.cwd,
 			orphansSaid: lost,
@@ -1586,10 +1601,13 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		const text = [forbidden, driftNote(event.toolName, event.input, event.content), census, failure].filter(Boolean).join("\n");
 		const parent = (event as { parentToolCallId?: unknown }).parentToolCallId;
 		if (typeof parent === "string" && text) hoistedNotes.set(parent, [...(hoistedNotes.get(parent) ?? []), text]);
+		if (typeof parent === "string" && procedure) hoistedProcedure.set(parent, procedure);
 		const hoisted = hoistedNotes.get(event.toolCallId);
 		hoistedNotes.delete(event.toolCallId);
-		// The script's calls' notes, each line once, then the result's own.
-		const all = [[...new Set((hoisted ?? []).flatMap((t) => t.split("\n")))].join("\n"), text].filter(Boolean).join("\n");
+		const handedOver = hoistedProcedure.get(event.toolCallId) ?? procedure;
+		hoistedProcedure.delete(event.toolCallId);
+		// The script's calls' notes, each line once, then the result's own, then the procedure once, whole.
+		const all = [[...new Set((hoisted ?? []).flatMap((t) => t.split("\n")))].join("\n"), text, handedOver ? `\n${handedOver}` : ""].filter(Boolean).join("\n");
 		if (!all) return;
 		// Replacing the content alone would drop a structured result (bash's, which a script reads): keep it.
 		const structured = (event as { structuredContent?: unknown }).structuredContent;
@@ -1638,7 +1656,6 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		// in a hidden note beside this prompt, about minor modes switched since.
 		fixHead();
 		syncVisGuideTool();
-		syncCodemodeTool();
 		syncProjectTools();
 		const modeNote = takeNote();
 		if (modeNote) pi.sendMessage(modeNote, { deliverAs: "nextTurn" });
@@ -1669,6 +1686,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 			recomputeRoutes();
 			running = true;
 			hoistedNotes.clear();
+			hoistedProcedure.clear();
 			if (specOn() && process.env.PI_SPEC_CENSUS_HOOK !== "0") await specCensus.prime(ctx.cwd);
 			fixHead();
 			const modeNote = takeNote();
@@ -1680,7 +1698,8 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	pi.on("session_start", async (event, ctx) => {
 		lastCtx = ctx;
 		running = false;
-		specCensus.reset();
+		// A reopened session was told the writing procedure if its history since the last compaction shows it.
+		specCensus.reset(procedureToldIn(ctx.sessionManager.getBranch()));
 		toldWriter = undefined;
 		reviewFlag = pi.getFlag(REVIEW_FLAG) === true;
 		registerReview();

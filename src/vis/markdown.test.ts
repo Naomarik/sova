@@ -47,3 +47,24 @@ test("model text in a vis fence is escaped everywhere it reaches HTML", () => {
   const bad = renderMarkdown("```vis <script>\nx\n```");
   assert.doesNotMatch(bad.html, /<script>/);
 });
+
+test("own kinds: a vis <owner>.<name> fence draws as the chat's kind, and only one in the chat's snapshot (§chat.transcript-cards/drawing-kinds)", async () => {
+  const { renderMarkdown } = await import("../lib/markdown");
+  const own = [{ kind: "project.gantt", accepts: "data" as const, data: { type: "object", required: ["tasks"], properties: { tasks: { type: "array" } } }, toolkit: 1 }];
+  const fence = "```vis project.gantt\ntitle: Plan\n{\"tasks\": [\"a\"]}\n```\n";
+  const drawn = renderMarkdown(fence, false, undefined, own);
+  assert.equal(drawn.visuals.length, 1);
+  assert.deepEqual(drawn.visuals[0]!.own?.drawing, { kind: "project.gantt", title: "Plan", data: { tasks: ["a"] } });
+  // Outside the chat's kinds (no snapshot, or another chat's): the ordinary vis error.
+  const elsewhere = renderMarkdown(fence);
+  assert.equal(elsewhere.visuals.length, 0);
+  assert.match(elsewhere.html, /Couldn&#39;t draw this vis project\.gantt block|Couldn't draw this vis project\.gantt block/);
+  // Data that doesn't fit is the kind's error, with its source.
+  const bad = renderMarkdown("```vis project.gantt\n{\"todo\": 1}\n```\n", false, undefined, own);
+  assert.equal(bad.visuals.length, 0);
+  assert.match(bad.html, /doesn.t fit project\.gantt/);
+  // Sova's kinds are never an own kind's, even with own kinds present.
+  const flow = renderMarkdown("```vis flow\na -> b\n```\n", false, undefined, own);
+  assert.equal(flow.visuals[0]!.kind, "flow");
+  assert.equal(flow.visuals[0]!.own, undefined);
+});

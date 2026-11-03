@@ -547,6 +547,24 @@ describe("processes without a lease (started before this version, or by hand)", 
     await d.agent.tick();
     assert.equal(existsSync(credsPath(d, L1)), false, "then the login goes back");
   });
+  test("with no chats running, a claude found by the /proc scan holds its login; ticks reuse the scan for a minute", async () => {
+    let scans = 0;
+    let keeperDir = "";
+    const scan = () => { scans++; return new Map(keeperDir ? [[join(keeperDir, "claude-accounts", L1), [process.pid]]] : []); };
+    const { w, k, clock } = await pool(["k", "d"], [[L1, "acct-one"]], scan, { procScanMs: 60_000 });
+    keeperDir = k.agentDir;
+    const d = w.dev("d");
+    clock.now += 61_000;
+    want(d);
+    await d.agent.tick();
+    await k.agent.tick();
+    assert.deepEqual(usableOn(w, L1), [], "held by the hand-started claude: not lent");
+    const before = scans;
+    clock.now += 5_000;
+    await k.agent.tick();
+    await k.agent.tick();
+    assert.equal(scans, before, "ticks within the minute reuse the scan");
+  });
 });
 
 describe("the keeper, removal, and a device that holds no subscription login", () => {

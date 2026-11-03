@@ -167,7 +167,8 @@ test("technical notes, the style mark and a visual's fence (§chat.alignment/car
   assert.deepEqual(cardSections(base).map((s) => s.kind), ["approach", "findings"], "no technical notes: no section");
   const sections = cardSections({ ...base, technical: [{ id: "t1", text: "In `x.ts`." }] });
   assert.deepEqual(sections.map((s) => [s.kind, s.label, s.open]), [["approach", "Approach", true], ["technical", "Technical notes", false], ["findings", "Findings", false]], "right after the approach, closed");
-  assert.equal(alignStyleMark({}), undefined, "Default: no mark");
+  assert.equal(alignStyleMark({}), undefined, "an older document that recorded no style: no mark");
+  assert.equal(alignStyleMark({ style: "default" }), "Technical style");
   assert.equal(alignStyleMark({ style: "simplified" }), "Simplified style");
   assert.equal(alignStyleMark({ style: "pm" }), "Project manager style");
   assert.equal(visualFence({ kind: "flow", source: "a -> b" }), "```vis flow\na -> b\n```");

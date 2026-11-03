@@ -43,8 +43,9 @@ only verb, and it lives on exactly one kind of row: a message on the active bran
 - **The composer's inputs row**, below. It is the discoverable door: the tab strip only helps
   someone who already opened the pane, and `/tree` only helps someone who knows pi. It opens the
   Timeline with the filter **on**.
-- **The composer flyout's `Undo last turn`** (§design.copy-deck/composer-flyout), the last item after a
-  separator, rewinds to just before the newest message **without opening the pane**. It is a
+- **The Commands palette's `Undo last turn`**, the last row of its This chat group (the
+  composer's `plus` opens it, §app.command-palette/rows), rewinds to just before the newest
+  message **without opening the pane**. It is a
   different gesture — one step back, from where you are typing — and it stays.
 
 Each door **sets** the filter, even on a pane already showing the tab: `/tree` on an unfiltered
@@ -75,6 +76,9 @@ parts sit together, and the first of them takes the one `margin-left:auto` (§ap
   the chat doesn't hold, the hello's summary lists the ones typed by the user apart from its list
   of every input (`OlderSummary.ownInputs`; Undo last turn still reads the list of every input),
   and a sender marker the chat holds for one of those rows takes it out of the count. The count stays visible: it is a fact about the session, whether or not the pane is open.
+  While a turn runs it also counts each message you typed that the agent has already taken in it,
+  a steer included, the moment it lands rather than when the turn ends; a message still waiting to
+  be taken isn't on the branch yet and isn't counted.
 - **Hidden at 0**, and hidden means *absent*: a session nobody has written to yet shows no control,
   not a greyed one. Before the chat's `hello` it shows the count known with rows kept for the
   session (§chat.transcript/rendering), when there is one. Otherwise, when the session is known to
@@ -336,7 +340,8 @@ Rewind; the `gap` rows are measured again between the rows that remain, so "idle
 silence between two of your messages. Every other row goes: chapters, compactions, rewind markers,
 subagents started and finished, model/thinking/mode changes and past summaries, and the input rows
 you didn't type, with their density lines — a message another session sent, one the Overseer sent
-(its briefs included), one a teammate sent in a shared session, and a fired wake nudge. The rows a
+(its briefs included), one a teammate sent in a shared session, a turn the merge queue started
+("From the merge queue", §chat.merge-queue/chat-turns), and a fired wake nudge. The rows a
 fresh rewind left behind (below) stay when you typed them, and go when someone else sent them: a
 left-behind row keeps its sender, so the filter never brings it back.
 
@@ -386,8 +391,8 @@ and the boundary and abandoned rows after a rewind (`viewRows`, `rewoundAt`, `se
 Rewind is two steps, in the row, with no modal. The first press turns the row's button into
 **Rewind Here** (destructive, focused) beside **Cancel** (ghost), and an `.input-row-note` says
 "This message and every reply after it leave the branch. The session file keeps them." Esc
-cancels without closing the pane. The flyout's Undo last turn works the same way: the first
-press relabels it "Confirm: undo last turn" and the flyout stays open; closing it disarms.
+cancels without closing the pane. The palette's Undo last turn works the same way: the first
+pick relabels it "Confirm: undo last turn" and the palette stays open; closing it disarms.
 
 While one rewind is in flight its button reads "Rewinding…" with `aria-busy`, and every other
 row is disabled ("A rewind is already in progress.").
@@ -409,8 +414,8 @@ Streaming refuses; it never auto-aborts. Stopping is the user's call, and a rewi
 killed a running turn and its workers would be the surprise. The server enforces all of this
 again (below), so a stale pane can't get past it: a refusal's message shows inline under its row
 (a `.text-error` span inside an `.input-row-note`, hung off the button's `aria-describedby`), and
-the flyout toasts it. Until the chat's `hello` has said where its last input is, the flyout's Undo
-last turn is off with its usual title and no reason.
+the palette's Undo last turn toasts it. Until the chat's `hello` has said where its last input is,
+the palette's Undo last turn is disabled with "This chat is still loading." as its description.
 
 ### After a rewind
 
@@ -435,7 +440,7 @@ A shadow row still jumps (it toasts "That message isn't in the transcript on scr
 transcript has reloaded without it), and it has no density line: the replies it drew left the
 branch with it. The rewind marker for this rewind lands at its own time, after them.
 
-**Any successful rewind refreshes the axis once, whoever started it** — a row, the flyout's Undo
+**Any successful rewind refreshes the axis once, whoever started it** — a row, the palette's Undo
 last turn. The chat tells the app each time the server says `rewound`; the app mints a counter
 and hands it to the pane for that session path only, and the pane re-reads the transcript and
 draws the boundary and the shadow. A rewind in one session never refreshes another's. **A refusal
@@ -490,9 +495,9 @@ body lands on that message exactly as it would unfiltered, and the filter stays 
   fetch shows the transcript's top-edge bar. Below 1280 the pane still closes at once, so the
   landing and the bar are in view. The line above is said when the branch has no such row, and
   when the rows down to it can't be fetched, so a jump lands or says so and never waits silently.
-  The fetch starts at the click. In a chat closed for being quiet, such a jump starts it
-  (§chat.transcript/instant-open); asked before the chat's `hello`, it waits for it about 1.5 s at
-  most, then fetches from the file. The pane never waits on the whole transcript either: it reads every row of
+  The fetch starts at the click, and starts no chat of its own: asked before the chat's `hello`
+  (or in a chat closed for being quiet), it reads the file's newest rows itself and fetches from
+  them (§chat.transcript/instant-open); a fetch that can't land says the line above. The pane never waits on the whole transcript either: it reads every row of
   the branch without what only the thread draws (a reply's text, a tool's output, image bytes, a
   report's body), a small fraction of the transcript's size, so on a slow link its list is there
   and a jump's fetch has the link to itself.

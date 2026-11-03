@@ -35,6 +35,7 @@ import type { KeychainOptions } from "../pi-config/extensions/claude-code/keycha
 import { readPeers } from "./mesh/peers";
 import { poolAgent } from "./claude-pool";
 import type { PoolAgent } from "./claude-pool/agent";
+import { clearLoginAssignments, loginUsedBy } from "./claude-login-store";
 
 // Settings → Accounts (§app.claude-logins): this host's Claude logins, their order, and adding
 // one by driving Claude Code's own `claude auth login` for a new directory, with no terminal.
@@ -61,6 +62,10 @@ export interface ClaudeAccountsOptions {
   pool?: () => PoolAgent | null;
   /** How a login's macOS keychain item is asked (platform, exec); test seam (§app.claude-logins/macos-keychain). */
   keychain?: KeychainOptions;
+  /** Who uses each login (§app.claude-logins/project-login; claude-login-store); test seam. */
+  usedBy?: () => Record<string, string[]>;
+  /** A removed login's assignments go back to No preference (claude-login-store); test seam. */
+  clearAssignments?: (id: string) => void;
 }
 
 interface Flow {
@@ -102,7 +107,9 @@ export class ClaudeAccountsService {
   private flow: Flow | null = null;
 
   private readonly keychain: KeychainOptions;
+  private readonly options: ClaudeAccountsOptions;
   constructor(options: ClaudeAccountsOptions = {}) {
+    this.options = options;
     this.agentDir = options.agentDir ?? agentRoot();
     this.env = options.env ?? process.env;
     this.executableOption = options.executable;
@@ -143,7 +150,10 @@ export class ClaudeAccountsService {
     const read = readAccounts(this.agentDir);
     const accounts = read.value;
     const device = this.logins.device;
+    let usedBy: Record<string, string[]> = {};
+    try { usedBy = (this.options.usedBy ?? loginUsedBy)(); } catch { usedBy = {}; }
     return {
+      ...(Object.keys(usedBy).length ? { usedBy } : {}),
       device: { id: device, label: this.deviceLabel(device) },
       logins: this.logins.order(accounts).map((id) => this.row(id, accounts)),
       elsewhere: accounts.logins
@@ -260,7 +270,10 @@ export class ClaudeAccountsService {
     // every process on it), as plain files; a copy here is signed out and deleted right now.
     if (pool && isLoginId(id) && pool.doc().logins[id]) {
       pool.remove(id);
-      if (!here) return { status: 200, body: this.info() };
+      if (!here) {
+        try { (this.options.clearAssignments ?? clearLoginAssignments)(id); } catch { /* removed from the pool either way */ }
+        return { status: 200, body: this.info() };
+      }
     }
     if (!here) return { status: 404, body: { error: "No such login" } };
     const dir = loginDir(this.agentDir, id);
@@ -273,6 +286,8 @@ export class ClaudeAccountsService {
     if (result.status !== 200) return result;
     rmSync(dir, { recursive: true, force: true });
     try { clearStanding(this.agentDir, id); } catch { /* nothing recorded */ }
+    // Projects and organizations that used it go back to No preference (§app.claude-logins/project-login).
+    try { (this.options.clearAssignments ?? clearLoginAssignments)(id); } catch { /* the login is gone either way */ }
     return { status: 200, body: this.info() };
   }
 

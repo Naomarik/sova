@@ -47,7 +47,7 @@ test("no commit, then no definition: absent; an invalid one names its problem", 
   assert.deepEqual(f.software, []);
   assert.equal(f.sources.fingerprint, null);
   mkdirSync(join(root, ".sova"));
-  write(".sova/project.json", JSON.stringify({ version: 1, services: {}, sources: ["bb.edn"] }));
+  write(".sova/project.json", JSON.stringify({ version: 1, services: [], sources: ["bb.edn"] }));
   commit("invalid");
   const bad = await observeRuntime(root);
   assert.equal(bad.def.state, "invalid");

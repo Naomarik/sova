@@ -330,7 +330,7 @@ untouched.
 
 ## §chat.images/composer-attachments — Composer attachments
 
-Images attach to the next message by paste, drop or the flyout's Attach images row, upload at once,
+Images attach to the next message by paste, drop or the Commands palette's Attach images row, upload at once,
 and wait in a pending list above the textarea.
 
 There are three ways in, and all three feed the same pending list.
@@ -350,9 +350,12 @@ There are three ways in, and all three feed the same pending list.
    - On the **window**, `preventDefault()` for `dragover`/`drop` anywhere else. Otherwise a stray
      drop makes the browser navigate away to the image.
    - While the composer is disabled, never set `data-drop`, and ignore the drop.
-3. **File picker.** The flyout's **Attach images** row (§chat.composer/composer-flyout) closes the flyout and
-   opens the hidden `<input type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp">`,
-   which stays the composer's — the flyout only asks for it. Reset the input's value after reading
+3. **File picker.** The **Attach images** row of the Commands palette's This chat group (the
+   composer's `plus` opens it, §app.command-palette/rows) opens the hidden
+   `<input type="file" multiple accept="image/png,image/jpeg,image/gif,image/webp">` within the
+   same click or key press, then closes the palette. The input stays the composer's: the palette
+   only asks for it, and asks before anything else runs, since a phone's browser opens a picker
+   only from the tap that asked for it. Reset the input's value after reading
    it, so the same file can be picked twice.
 
 **Accepted.** `image/png`, `image/jpeg`, `image/gif`, and `image/webp`, up to **5 MB each** and
@@ -360,12 +363,12 @@ There are three ways in, and all three feed the same pending list.
 are rejected on the client before they're sent. If the server enforces a different limit, change
 the numbers here and in the copy deck together.
 
-**Placement at 320px** (and anywhere the composer is under 480px wide). The row is the flyout
-trigger (44) + textarea + actions. Under 480px of composer width, `Send`, `Steer`, and `Stop` drop
+**Placement at 320px** (and anywhere the composer is under 480px wide). The row is the `plus`
+button (44) + textarea + actions. Under 480px of composer width, `Send`, `Steer`, and `Stop` drop
 to icon-only 44px squares: their word sits in `.button-label`, which becomes visually hidden and
 stays the accessible name. That's why every composer button wraps its word in
 `<span class="button-label">`. At 320 while streaming, the textarea keeps 288 − 3 × 44 − 3 × 8 =
-132px, and no control has to hide to get there — the flyout is one button where Attach and
+132px, and no control has to hide to get there — the `plus` is one button where Attach and
 Commands were two. It stays leftmost, away from the primary. The pending list sits above the row
 and wraps, so it never squeezes the textarea.
 
@@ -437,9 +440,9 @@ and wraps, so it never squeezes the textarea.
   - Drafts keep their attachments per session, durably: the draft store holds the text **and**
     up to 8 attachments (`{ path, name, mimeType, size }`), so both survive a reload and follow
     you to another browser (§chat/composer). A draft of images alone still lists its session (§app/session-list).
-- **Disabled composer** (TUI-live, connecting, reconnecting). The Attach images row takes the same
-  `aria-disabled` and shares `aria-describedby="composer-reason"`. Paste and drop don't attach
-  anything.
+- **Disabled composer** (TUI-live, connecting, reconnecting). The palette's Attach images row is
+  `aria-disabled`, with the composer's own reason as its description
+  (§app.command-palette/disabled). Paste and drop don't attach anything.
 
 **Tokens.**
 - **Attachment.** `--color-sunken` with a `--color-border` edge, `--r-md`, `--control-md`

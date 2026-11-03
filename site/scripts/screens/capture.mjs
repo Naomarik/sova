@@ -17,7 +17,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from "node:path";
 import { HERE, loadStory, REPO, whereIn } from "./load-story.mjs";
 import { actionOf, text } from "./story-check.mjs";
-import { FREEZE_CSS, saveDebug, leakGate, leakPatterns, makeRoot, OUT_DIR, removeRoot, sleep, startBrowser, startDirector, startServer, TOKEN, contextOptions, ui, waitFor, writeJson } from "./harness.mjs";
+import { FREEZE_CSS, saveDebug, leakGate, leakPatterns, modelsSeen, makeRoot, OUT_DIR, removeRoot, sleep, startBrowser, startDirector, startServer, TOKEN, contextOptions, ui, waitFor, writeJson } from "./harness.mjs";
 import { loadAlignModule, seed, titleStatic } from "./seed.mjs";
 import { fileSha, inputHashes } from "./hashes.mjs";
 
@@ -62,10 +62,10 @@ try {
   await titleStatic(server, plan, seeded);
   console.log(`root ${root}\nserver ${server.base}, director ${director.url}`);
 
-  const patterns = leakPatterns(root);
+  const patterns = leakPatterns(root, plan.models);
   let browser = null;
   if (!flag("--no-browser")) {
-    browser = await startBrowser();
+    browser = await startBrowser({ root });
     stops.push(browser.stop);
   }
   const results = {};
@@ -78,27 +78,39 @@ try {
     console.log(`  shot ${shot.id}: ${results[shot.id].width}x${results[shot.id].height}`);
   };
 
-  // Static sessions and pages first, while nothing is live.
-  for (const shot of todo.filter((s) => s.at === "start")) await take(shot);
-
-  // Each live session in story order, its holds in the order the story reaches them.
-  for (const s of plan.sessions.filter((x) => x.live)) {
-    const mine = todo.filter((x) => x.session === s.id);
-    if (!mine.length) continue;
-    console.log(`playing ${s.id}`);
-    const created = await server.call("POST", "/api/sessions", { cwd: seeded.repo });
-    sessionPath.set(s.id, created.path);
-    await director.api.pace(4);
-    await fetch(`${director.url}/bind`, { method: "POST", body: JSON.stringify({ id: s.id, uuid: created.id }) });
+  // A session's modes, model and sandbox, as the user would have set them.
+  const configure = async (s, path) => {
     await server.call("POST", "/api/sessions/configure", {
-      path: created.path,
-      model: s.model,
-      ...(s.effort ? { thinking: s.effort } : {}),
+      path,
+      // A static session's file already names its model and modes (seed.mjs): only a live one
+      // is told them, so the Timeline shows no switch that never happened.
+      ...(s.live ? { model: s.model, ...(s.effort ? { thinking: s.effort } : {}) } : {}),
       mode: s.modes.includes("delegate") ? "delegate" : "normal",
       minorModes: s.modes.filter((m) => m !== "delegate"),
     });
-    await server.call("POST", "/api/sessions/title", { path: created.path, title: s.title });
-    await server.call("POST", `/api/sandbox?path=${encodeURIComponent(created.path)}`, { state: "off" }).catch((e) => console.warn(`  sandbox off: ${e.message}`));
+    await server.call("POST", `/api/sandbox?path=${encodeURIComponent(path)}`, { state: "off" }).catch((e) => console.warn(`  sandbox off: ${e.message}`));
+  };
+  // A static session with modes has them on from the start, so its stills show what the user
+  // sees: an open alignment card with its answer row, say.
+  for (const s of plan.sessions.filter((x) => !x.live && x.modes.length)) await configure(s, seeded.sessions[s.id]);
+
+  // Static sessions and pages first, while nothing is live.
+  for (const shot of todo.filter((s) => s.at === "start")) await take(shot);
+
+  // Each live session (and static one with `then`) in story order, its holds in the order the
+  // story reaches them.
+  for (const s of plan.sessions.filter((x) => x.live || x.then)) {
+    const mine = todo.filter((x) => x.session === s.id && x.at !== "start");
+    if (!mine.length) continue;
+    console.log(`playing ${s.id}`);
+    await director.api.pace(4);
+    const created = s.live ? await server.call("POST", "/api/sessions", { cwd: seeded.repo }) : { path: seeded.sessions[s.id], id: s.uuid };
+    if (s.live) {
+      sessionPath.set(s.id, created.path);
+      await fetch(`${director.url}/bind`, { method: "POST", body: JSON.stringify({ id: s.id, uuid: created.id }) });
+      await configure(s, created.path);
+      await server.call("POST", "/api/sessions/title", { path: created.path, title: s.title });
+    }
 
     for (const ev of events(s.id)) {
       if (ev.user !== undefined) {
@@ -123,6 +135,8 @@ try {
   // The Overseer: its model set, its first message typed on its page, then its end shot.
   const oshots = todo.filter((s) => s.session === "overseer");
   if (oshots.length && plan.overseer && browser) {
+    // Its memory summarizer needs a real login; off, so no notice says it failed.
+    await server.call("PUT", "/api/overseer/memory", { on: false });
     await server.call("PUT", "/api/settings/overseer", { ...(await server.call("GET", "/api/settings/overseer")).settings, model: plan.overseer.model, thinking: plan.overseer.effort });
     const ctx = await newContext(browser.browser, "compact");
     const page = await open(ctx, server, "#/overseer");
@@ -141,7 +155,7 @@ try {
 
   if (browser) {
     // The manifest: every shot of the story, the ones not retaken kept as they were.
-    const next = { _generated: "by site/scripts/screens (pnpm run screens); edit story.json instead", shots: {}, slots: plan.pageShots, ...(manifest.video ? { video: manifest.video } : {}) };
+    const next = { _generated: "by site/scripts/screens (pnpm run screens); edit story.json instead", shots: {}, slots: plan.pageShots, ...(manifest.videos ? { videos: manifest.videos } : {}) };
     for (const shot of plan.shots) {
       const r = results[shot.id];
       if (r) next.shots[shot.id] = { file: r.file, width: r.width, height: r.height, viewport: shot.viewport, alt: shot.alt, hash: inputHash(shot), sha: r.sha, bytes: r.bytes };
@@ -149,6 +163,7 @@ try {
     }
     writeJson(MANIFEST, next);
     console.log(`wrote ${Object.keys(results).length} image(s) and ${MANIFEST.slice(REPO.length + 1)}`);
+    console.log(`model names on screen (each one of the story's models): ${[...modelsSeen].sort().join(", ") || "(none)"}`);
   }
 } catch (e) {
   failed = true;
@@ -196,7 +211,7 @@ function events(sessionId) {
   const out = [];
   const seen = new Set();
   const hold = (h) => !seen.has(h) && (seen.add(h), out.push({ hold: h }));
-  for (const step of s.script) {
+  for (const step of s.script ?? s.then) {
     const a = actionOf(step);
     if (a === "user") out.push({ user: text(step.user) });
     if (a === "hold") hold(step.hold);
@@ -261,6 +276,10 @@ async function shoot(browser, server, shot, { sessionPath, patterns }) {
       await page.waitForTimeout(800);
     }
 
+    if (shot.sidebar === "collapsed") {
+      await page.getByRole("button", { name: "Collapse sessions pane" }).click({ timeout: 10_000 });
+      await page.waitForTimeout(600);
+    }
     if (shot.view === "workers") {
       await ui.openWorker(page, plan.workers[shot.worker].name);
       await page.waitForTimeout(1200);

@@ -215,17 +215,24 @@ export class ChatWorker extends WorkerFold {
 		switch (f.cause) {
 			case "idle":
 			case "reload":
-				return; // its chat waits (or runs on new code): nothing the parent sees changes
+				// Its chat waits (or runs on new code): nothing the parent sees changes. Either comes only at
+				// a quiet moment (nothing queued), and a "reload" is also how a new process is first noted,
+				// after it may have taken an instruction: never a sign that one won't run.
+				return;
 			case "killed":
 				return this.finalize({ status: "killed" });
 			case "died":
 				if (f.resuming) {
 					this.push("system", `Process stopped unexpectedly (${firstLine(f.detail)}); continuing once`);
+					// What the dead process held is gone: told with the resumed run's settle.
+					this.dropOutstanding();
 					this.touch();
 					return;
 				}
 				this.taskOutcome ??= "error";
-				return this.finalize({ status: "error", error: f.detail ?? "This worker's process stopped unexpectedly" });
+				this.runActive = true; // its end announces: no report of its own
+				this.dropOutstanding();
+				return this.finalize({ status: "error", error: [f.detail ?? "This worker's process stopped unexpectedly", ...this.neverRanLines()].join("\n") });
 			case "done":
 				return this.finalize({});
 		}
@@ -240,12 +247,15 @@ export class ChatWorker extends WorkerFold {
 		this.processAlive = s.pid !== null;
 		if (s.model) this.model = s.model;
 		if (s.thinking) this.effort = s.thinking;
+		// A process says whether its feed names send keys (none: a worker on code from before them).
+		if (s.pid !== null) this.setKeyed(s.keys === true);
 		this.sessionId = s.sessionId;
 		this.sessionFile = s.sessionFile;
 		if ((first && this.adopted) || resync) {
 			if (isActive(s.status)) {
 				// Mid-run when picked back up: its settle is owed.
 				this.status = "running";
+				this.runActive = true;
 				this.settleAnnounced = false;
 			} else if (s.lastSettled && s.lastSettled.key !== this.settleKey) {
 				// It settled while no parent watched: announced now, once.
@@ -283,10 +293,14 @@ export class ChatWorker extends WorkerFold {
 		return this.chatId ? null : "agent is still starting";
 	}
 
-	protected async deliver(message: string, mode: SteerMode | undefined, wasRunning: boolean): Promise<Delivery> {
+	protected nextSendKey(): string {
+		return `${this.id}:${this.nonce}:s${++this.steers}`;
+	}
+
+	protected async deliver(message: string, mode: SteerMode | undefined, wasRunning: boolean, key: string): Promise<Delivery> {
 		const delivery = mode === "followUp" ? "followUp" : wasRunning ? "steer" : "prompt";
 		try {
-			await this.host.send(this.chatId!, { text: message, delivery, key: `${this.id}:${this.nonce}:s${++this.steers}` });
+			await this.host.send(this.chatId!, { text: message, delivery, key });
 			return { ok: true };
 		} catch (err) {
 			const reason = err instanceof Error ? err.message : String(err);

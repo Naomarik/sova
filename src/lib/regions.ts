@@ -13,9 +13,12 @@ export const isTopSession = (s: Pick<SessionSummary, "live" | "origin" | "archiv
  * team member's own session, never a thread the user started, so the sidebar lists only main
  * threads; worker transcripts stay reachable from the owner's row and the Agents/Subagents pane.
  * An Overseer file (current or old) is not one either: the Overseer lives at its own route and is
- * never a row. A server that predates `workerSession` or `overseer` sends none: a main thread.
+ * never a row. Nor is one of the merge queue's own chats (`queueChat`: its thread, a reviewer): the
+ * project's Merge Queue tab lists those, and a link still opens them. A server that predates
+ * `workerSession`, `overseer` or `queueChat` sends none: a main thread.
  */
-export const isMainThread = (s: Pick<SessionSummary, "workerSession" | "overseer">): boolean => s.workerSession !== true && s.overseer !== true;
+export const isMainThread = (s: Pick<SessionSummary, "workerSession" | "overseer"> & Partial<Pick<SessionSummary, "queueChat">>): boolean =>
+  s.workerSession !== true && s.overseer !== true && !s.queueChat;
 
 /**
  * Whether a session belongs to an organization (`SessionSummary.org`, §app.session-list/organizations):
@@ -41,8 +44,8 @@ export const isArchivedStandaloneBuild = (s: Pick<SessionSummary, "org" | "proje
 export const isOperatorBuild = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org" | "project">): boolean =>
   isMainThread(s) && !s.org && s.project?.kind === "coding" && s.project.operator === true;
 
-/** An organization's or a project's own session: it lives in that region and never joins a group (the drag lock, bulk
-    Move to Group, the archive toasts). A session only in a project's folder is not owned. */
+/** An organization's or a project's own session: it lives in that region (the archive toasts). A session only in a
+    project's folder is not owned. Whether it joins a group is `canJoinGroup`'s: a project's own sessions do. */
 export const isOwnedSession = (s: Pick<SessionSummary, "org" | "project">): boolean => isOrgSession(s) || isProjectOwned(s);
 
 /**
@@ -56,13 +59,34 @@ export const isOrdinarySession = (s: Pick<SessionSummary, "workerSession" | "ove
   isMainThread(s) && !isOrgSession(s) && (!isProjectOwned(s) || isArchivedStandaloneBuild(s));
 
 /**
+ * Whether a session can be in a group (§app.session-list/groups): every main thread no organization owns, a registered
+ * project's own sessions included (its overseer's conversations, the builds it or the operator started). It decides only
+ * the groups — their sections, counts, the drag lock, Move into group, the group workspace — never `isOrdinarySession`,
+ * so a project's sessions stay out of Folders, Needs you, Recent and the Archive and show in their project's block too.
+ */
+export const canJoinGroup = (s: Pick<SessionSummary, "workerSession" | "overseer" | "org">): boolean =>
+  isMainThread(s) && !isOrgSession(s);
+
+/** A group's members, in the list's order: the rows assigned to it that can be in a group. The sidebar's group and the
+    group workspace both read this, so they list the same sessions (an org session assigned before that rule is kept but
+    not drawn). */
+export const groupMembersOf = <T extends Pick<SessionSummary, "workerSession" | "overseer" | "org" | "groupId">>(sessions: readonly T[], id: string): T[] =>
+  sessions.filter((s) => s.groupId === id && canJoinGroup(s));
+
+export const ORG_GROUP_REASON = "Organization sessions stay with their project.";
+
+/** Why a row can't join a group, in the words the controls say (the server's 400 says the same); null when it can.
+    Taking one out of a group always works. */
+export const groupRefusal = (s: Pick<SessionSummary, "org">): string | null => (isOrgSession(s) ? ORG_GROUP_REASON : null);
+
+/**
  * A session a project of this computer lists (§app.projects/folder-sessions): in a registered, not archived project's
  * folder (`project.kind` "folder", standalone or placed), and not archived itself. Its project's block is its place in
  * the pane, so Folders leaves it out. `here`: the row is this computer's; a mesh peer's row carries the peer's own
  * `project` and always stays in Folders. A remote target's session never carries a folder project (the server's rule).
  */
-export const listedWithLocalProject = (s: Pick<SessionSummary, "org" | "project" | "folderOrg"> & { archived?: boolean }, here: boolean): boolean =>
-  here && !s.org && s.project?.kind === "folder" && s.project.archived !== true && s.folderOrg?.projectArchived !== true && s.archived !== true;
+export const listedWithLocalProject = (s: Pick<SessionSummary, "org" | "project" | "folderOrg"> & Partial<Pick<SessionSummary, "queueChat">> & { archived?: boolean }, here: boolean): boolean =>
+  here && !s.queueChat && !s.org && s.project?.kind === "folder" && s.project.archived !== true && s.folderOrg?.projectArchived !== true && s.archived !== true;
 
 /** Folders, the top region (§app.session-list/regions-top-and-archive): an ordinary session that is live or a web session
     not archived, unless a project of this computer lists it. */

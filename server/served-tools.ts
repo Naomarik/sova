@@ -26,14 +26,15 @@ export function servedVisToolsExtension(name: string, specs: readonly ToolSpec[]
   } };
 }
 
-export function servedToolsExtension(name: string, specs: readonly ToolSpec[], note?: (ctx: HookCtx) => Promise<string | null>) {
+export function servedToolsExtension(name: string, specs: readonly ToolSpec[], note?: (ctx: HookCtx) => Promise<string | null>, noteType?: string) {
   return {
     name,
     hidden: true,
     factory: (pi: PiExtensionAPI) => {
       for (const spec of specs) pi.registerTool(toPiTool(spec));
-      // project_verbs' instance note (§app.project-services/instance-note), rendered by the server.
-      if (note) registerNoteHooks(pi, note);
+      // project_verbs' instance note (§app.project-services/instance-note), or the offer tool's
+      // run outcome (§chat.offers/card), rendered by the server.
+      if (note) registerNoteHooks(pi, note, noteType);
     },
   };
 }

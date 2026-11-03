@@ -1,4 +1,4 @@
-// Two-step inline confirmation for a menu row that changes the session (the composer flyout's
+// Two-step inline confirmation for a row that changes the session (the command palette's
 // "Undo last turn"): the first activation arms the row, the second runs it. Kept pure so the
 // armed state's lifetime — it must never outlive one opening of the menu, and one arming must
 // never run twice — is testable without a DOM.

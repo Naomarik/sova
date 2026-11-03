@@ -7,7 +7,6 @@ import type {
   DecisionProviderStatus,
   DecisionSettings,
   DelegateOptions,
-  TagsBackfillProgress,
   WorkerChoice,
 } from "../../shared/protocol";
 import { RECONCILE_DEFAULT } from "../../shared/decisions";
@@ -291,35 +290,6 @@ export function chainLine(saved: DecisionSettings, key: DecisionKeyInfo, chain: 
     p.state === "skipped" && (p.until === undefined || p.until > now) ? `${p.label} (paused${p.until !== undefined ? `, retrying ${inTime(p.until, now)}` : ""})` : p.label,
   );
   return `Asks ${parts.join(", then ")}.`;
-}
-
-/** The backfill's one line, or null before any run. */
-export function backfillLine(p: TagsBackfillProgress | null | undefined): string | null {
-  if (!p || (!p.running && p.finishedAt === undefined && p.startedAt === undefined)) return null;
-  const failed = p.failed > 0 ? ` · ${p.failed} failed` : "";
-  if (p.running) return p.total === 0 ? "Finding sessions to tag…" : `Tagged ${p.done} of ${p.total}${failed}.`;
-  if (p.stoppedReason) {
-    const why = p.stoppedReason.trim().replace(/\.$/, "");
-    return `Stopped at ${p.done} of ${p.total}${failed}.${why && why.toLowerCase() !== "stopped" ? ` ${why}.` : ""}`;
-  }
-  if (p.total === 0) return p.scope === "all" ? "Every session is tagged." : "Every session from the last 30 days is tagged.";
-  return `Tagged ${p.total} ${p.total === 1 ? "session" : "sessions"}${failed}. New sessions are tagged as they finish.`;
-}
-
-/** The later of two progress reports (the poll's and the feed's): the running one, else the one that finished last. */
-export function newerProgress(a: TagsBackfillProgress | null | undefined, b: TagsBackfillProgress | null | undefined): TagsBackfillProgress | null {
-  if (!a) return b ?? null;
-  if (!b) return a;
-  const at = (p: TagsBackfillProgress) => Math.max(p.startedAt ?? 0, p.finishedAt ?? 0);
-  if (at(a) !== at(b)) return at(a) > at(b) ? a : b;
-  if (a.running !== b.running) return a.running ? b : a; // same run: the finished report is the later one
-  return a.done >= b.done ? a : b;
-}
-
-/** Why the Tag buttons are disabled, or null. Judged on what is saved. */
-export function backfillBlocked(chain: DecisionChainStatus): string | null {
-  if (!chain.ready) return "Nothing can answer yet, so nothing can be tagged.";
-  return null;
 }
 
 /** A suggestion button's label: "Use sonnet (Claude Code)". A suggestion is only ever applied by its button. */

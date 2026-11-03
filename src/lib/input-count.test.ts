@@ -54,6 +54,7 @@ test("inputCount leaves out what another session, the Overseer or a teammate sen
     { id: "me", kind: "user", text: "mine, in a shared session" },
     { id: "mark-me", kind: "info", batonMark: { kind: "sent", targetId: "me", by: "operator" } },
     { id: "b", kind: "user", text: "[overseer-brief] two blockers" },
+    { id: "mq", kind: "user", text: "[merge-queue] fix/x needs a fix: Unit tests fail with this branch." },
     { id: "u", kind: "user", text: "typed" },
   ];
   assert.equal(inputCount(items), 2, "only the operator's baton message and the typed one");
@@ -61,4 +62,29 @@ test("inputCount leaves out what another session, the Overseer or a teammate sen
 
 test("a header line alone never makes a message another session's: the marker decides", () => {
   assert.equal(inputCount([{ id: "u", kind: "user", text: '[from session "X" (x), hop 1]\npasted' }]), 1);
+});
+
+test("a turn the merge queue started is never the user's input, and the Inputs list names it as the queue's", async () => {
+  const { inputRows } = await import("./inputs");
+  const items: TranscriptItem[] = [
+    { id: "u", kind: "user", text: "typed" },
+    { id: "mq", kind: "user", text: "[merge-queue] fix/x needs a fix: Unit tests fail with this branch." },
+  ];
+  assert.equal(inputCount(items), 1);
+  const row = inputRows(items).find((r) => r.id === "mq")!;
+  assert.deepEqual(row.sender, { kind: "merge-queue" });
+  assert.equal(row.text, "fix/x needs a fix: Unit tests fail with this branch.");
+});
+
+test("a merge queue wake with the 'another session' marker is the queue's, never a session's, and never your input", async () => {
+  const { inputRows } = await import("./inputs");
+  const { rowSender, sendersOf } = await import("../../shared/senders");
+  const items: TranscriptItem[] = [
+    { id: "u", kind: "user", text: "typed" },
+    { id: "w", kind: "user", text: "[merge-queue] feat/x didn't land: Unit tests fail with this branch." },
+    { id: "mark-w", kind: "info", sessionMark: { kind: "sent", targetId: "w", from: { sessionId: "merge-queue", title: "Merge queue" }, hop: 0 } },
+  ];
+  assert.equal(inputCount(items), 1);
+  assert.deepEqual(rowSender(items[1]!, sendersOf(items)), { kind: "merge-queue" });
+  assert.equal(inputRows(items).find((r) => r.id === "w")!.text, "feat/x didn't land: Unit tests fail with this branch.");
 });

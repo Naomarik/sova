@@ -1,7 +1,7 @@
 // Run: npx tsx --test src/lib/open-failure.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { openFailureView, type OpenFailureActionId } from "./open-failure";
+import { cwdFallbackView, openFailureView, type OpenFailureActionId } from "./open-failure";
 import type { TargetInfo } from "./remote-session";
 
 const FILE = "/home/user/.pi/agent/sessions/--home-user-.pi-agent-sova-targets-acme-prod-home-deploy-acme-site--/2026-09-21T14-28-46-697Z_0199f4bb.jsonl";
@@ -64,4 +64,18 @@ test("an unrecognized failure keeps the server's words verbatim and the way back
   assert.ok(v.detail.includes("Something else went wrong."));
   assert.ok(v.detail.includes("Nothing in the session file changed"));
   assert.deepEqual(ids(v.actions), ["reconnect", "archive"]);
+});
+
+test("a chat running in the home folder names the stored folder, where it runs now, and that the file is unchanged", () => {
+  const v = cwdFallbackView({ original: "/home/user/webapps/motorsaif.incoming", cwd: "/home/user" });
+  assert.equal(v.title, "This session's folder is gone");
+  assert.ok(v.body.startsWith("/home/user/webapps/motorsaif.incoming doesn't exist on this machine any more"));
+  assert.ok(v.body.includes("runs in your home folder, /home/user,"));
+  assert.ok(v.body.includes("The session file is unchanged"));
+});
+
+test("an unreachable stored folder is shown verbatim, never as a folder that is gone", () => {
+  const v = openFailureView({ cwd: "/srv/locked/repo", origin: "web" }, `Stored session working directory can't be reached (EACCES): /srv/locked/repo\nSession file: ${FILE}`);
+  assert.equal(v.kind, "unknown");
+  assert.ok(v.detail.startsWith("Stored session working directory can't be reached (EACCES): /srv/locked/repo"));
 });

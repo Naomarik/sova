@@ -1,4 +1,5 @@
-// Offline SDK test: the align writing style and Visuals (§chat.alignment/style, §chat.alignment/visuals).
+// Offline SDK test: the align writing style, Eagerness and Visuals (§chat.alignment/style,
+// §chat.alignment/eagerness, §chat.alignment/visuals).
 //
 // The style's paragraph joins the align block when the head is built, and a later change reaches the
 // model once, as a hidden mode-note, never by rewriting the prompt; a reopen neither tells it twice nor
@@ -21,7 +22,7 @@ const sessionDir = path.join(agentDir, "sessions");
 const { createAgentSession, DefaultResourceLoader, initTheme, SessionManager, SettingsManager } = await jiti.import("@earendil-works/pi-coding-agent");
 initTheme();
 const { createAssistantMessageEventStream, getCurrentSystemPrompt } = await jiti.import("@earendil-works/pi-ai");
-const { ALIGN_STYLE_PARAGRAPHS, ALIGN_VISUALS_PARAGRAPH, ALIGN_INSTRUCTIONS } = await jiti.import(path.resolve(new URL("../minor.ts", import.meta.url).pathname));
+const { ALIGN_STYLE_PARAGRAPHS, ALIGN_TRIGGER_PARAGRAPHS, ALIGN_VISUALS_PARAGRAPH, ALIGN_INSTRUCTIONS, alignInstructions } = await jiti.import(path.resolve(new URL("../minor.ts", import.meta.url).pathname));
 
 let requests = [];
 const textOf = (content) => (typeof content === "string" ? content : (content ?? []).filter((b) => b.type === "text").map((b) => b.text).join(""));
@@ -72,17 +73,31 @@ async function open(sessionManager, flags = {}) {
 
 const mode = (session, args) => session.extensionRunner.getCommand("mode").handler(args, session.extensionRunner.createCommandContext());
 const notes = (session) => session.sessionManager.getEntries().filter((e) => e.type === "custom_message" && e.customType === "mode-note");
-const setAlign = (style, visuals) => {
+const setAlign = (style, visuals, eagerness) => {
 	const file = path.join(agentDir, "mode-align.json");
-	writeFileSync(`${file}.tmp`, JSON.stringify({ version: 1, style, visuals }));
+	// null: no saved style (a new user, a new device): the file is missing.
+	if (style === null) return rmSync(file, { force: true });
+	writeFileSync(`${file}.tmp`, JSON.stringify({ version: 1, style, visuals, ...(eagerness ? { eagerness } : {}) }));
 	renameSync(`${file}.tmp`, file);
 };
 const styleNotes = (users) => users.filter((u) => u.startsWith("Writing style change:"));
+const eagernessNotes = (users) => users.filter((u) => u.includes("Eagerness change:"));
 
 try {
 	// ── The style ─────────────────────────────────────────────────────────────────────────────────
+	// No saved style (a missing file): Project manager, its paragraph in the head.
+	setAlign(null);
+	let session = await open(SessionManager.inMemory(cwd));
+	try {
+		await mode(session, "align on");
+		await session.prompt("fresh");
+		assert.ok(requests.at(-1).prompt.includes(`${ALIGN_INSTRUCTIONS}\n\n${ALIGN_STYLE_PARAGRAPHS.pm}`), "a missing file means Project manager: its paragraph opens the head");
+	} finally {
+		session.dispose();
+	}
+
 	setAlign("pm", false);
-	let session = await open(SessionManager.create(cwd, sessionDir));
+	session = await open(SessionManager.create(cwd, sessionDir));
 	let file;
 	let head;
 	try {
@@ -122,20 +137,23 @@ try {
 		assert.equal(styleNotes(request.users).length, 1, "the earlier note, nothing new");
 		assert.equal(notes(session).length, 1);
 
-		// Back to Default: one note saying the paragraph no longer applies.
+		// To Technical (stored "default"): one note saying the paragraph no longer applies.
 		setAlign("default", false);
 		await session.prompt("five");
 		assert.equal(requests.at(-1).prompt, head);
-		assert.match(requests.at(-1).users.at(-1), /^Writing style change: the user set the align writing style back to Default\. The earlier "Writing style: Simplified" paragraph no longer applies/);
+		assert.match(requests.at(-1).users.at(-1), /^Writing style change: the user set the align writing style to Technical\. The earlier "Writing style: Simplified" paragraph no longer applies; write alignments with the files, code and technical trade-offs they need from now on\.$/);
 		assert.equal(notes(session).length, 2);
 	} finally {
 		session.dispose();
 	}
 
-	// A head no note speaks for: started in Default, the style changed with no message since, then a reopen.
-	// The head keeps Default (nothing records a Default head) and the change goes out as one note.
-	// And the other way: a Project manager head, recorded when it was fixed, survives a change back to Default.
-	for (const [from, to] of [["default", "pm"], ["pm", "default"]]) {
+	// A head no note speaks for: started in Technical, the style changed with no message since, then a reopen.
+	// The head keeps Technical (nothing records a Technical head) and the change goes out as one note.
+	// The same when the file goes missing (a user who saved nothing): the old head stays byte-identical and
+	// the new default, Project manager, arrives as the one note. And the other way: a Project manager head,
+	// recorded when it was fixed, survives a change to Technical.
+	for (const [from, to] of [["default", "pm"], ["default", null], ["pm", "default"]]) {
+		const toldStyle = to ?? "pm";
 		setAlign(from, false);
 		session = await open(SessionManager.create(cwd, sessionDir));
 		let first;
@@ -156,11 +174,11 @@ try {
 			assert.equal(request.prompt, first, `${from} → ${to}: the reopened head is byte-identical to the first run's`);
 			assert.equal(styleNotes(request.users).length, 1, `${from} → ${to}: one hidden note`);
 			const told = request.users.find((u) => u.startsWith("Writing style change:"));
-			if (to === "pm") assert.ok(told.endsWith(ALIGN_STYLE_PARAGRAPHS.pm), "carrying the Project manager paragraph");
-			else assert.match(told, /back to Default/);
+			if (toldStyle === "pm") assert.ok(told.endsWith(ALIGN_STYLE_PARAGRAPHS.pm), "carrying the Project manager paragraph");
+			else assert.match(told, /to Technical\. /);
 			assert.equal(notes(session).length, 1);
 			assert.equal(notes(session)[0].display, false);
-			assert.deepEqual(notes(session)[0].details, { v: 1, minorModes: ["align"], guides: [], style: to, headStyle: from });
+			assert.deepEqual(notes(session)[0].details, { v: 1, minorModes: ["align"], guides: [], style: toldStyle, headStyle: from });
 			await session.prompt("again");
 			assert.equal(requests.at(-1).prompt, first);
 			assert.equal(notes(session).length, 1, "told once");
@@ -188,6 +206,82 @@ try {
 		session.dispose();
 	}
 
+	// ── The Eagerness ─────────────────────────────────────────────────────────────────────────────
+	// No saved Eagerness: Eager's trigger in the head. A change to Careful mid-chat reaches the model as
+	// one hidden note carrying Careful's trigger paragraph, never by rewriting the prompt or the tools;
+	// a reopen rebuilds the Eager head and tells nothing twice. Back to Eager: one note more.
+	setAlign("default", false);
+	session = await open(SessionManager.create(cwd, sessionDir));
+	let eagerHead;
+	let alignTool;
+	let tools;
+	try {
+		await mode(session, "align on");
+		await session.prompt("one");
+		eagerHead = requests.at(-1).prompt;
+		assert.ok(eagerHead.includes(alignInstructions("eager")), "no eagerness in the file: Eager's block");
+		assert.ok(!eagerHead.includes(ALIGN_TRIGGER_PARAGRAPHS.careful));
+		alignTool = JSON.stringify(session.getAllTools().find((t) => t.name === "align"));
+		tools = session.getActiveToolNames();
+		assert.equal(eagernessNotes(requests.at(-1).users).length, 0, "the head carries it: no note");
+
+		setAlign("default", false, "careful");
+		await session.prompt("two");
+		const request = requests.at(-1);
+		assert.equal(request.prompt, eagerHead, "an Eagerness change never rewrites the prompt");
+		assert.equal(request.midSystem, 0);
+		assert.equal(eagernessNotes(request.users).length, 1, "one hidden note");
+		assert.ok(request.users.at(-1).endsWith(ALIGN_TRIGGER_PARAGRAPHS.careful), "carrying Careful's trigger paragraph");
+		assert.match(request.users.at(-1), /replaces the "Which prompts open an alignment" paragraph/);
+		assert.equal(styleNotes(request.users).length, 0, "the style did not change: no style note");
+		assert.equal(JSON.stringify(session.getAllTools().find((t) => t.name === "align")), alignTool, "the align tool is the same, description included");
+		assert.deepEqual(session.getActiveToolNames(), tools, "and so is the tool set");
+		assert.deepEqual(notes(session).at(-1).details, { v: 1, minorModes: ["align"], guides: [], eagerness: "careful", headEagerness: "eager" });
+		assert.equal(notes(session).at(-1).display, false);
+		await session.prompt("three");
+		assert.equal(eagernessNotes(requests.at(-1).users).length, 1, "told once");
+		file = session.sessionManager.getSessionFile();
+	} finally {
+		session.dispose();
+	}
+	session = await open(SessionManager.open(file, sessionDir));
+	try {
+		await session.prompt("four");
+		assert.equal(requests.at(-1).prompt, eagerHead, "a reopen rebuilds the Eager head it started with");
+		assert.equal(eagernessNotes(requests.at(-1).users).length, 1, "nothing told again");
+		// Both changed at once: one note may carry both.
+		setAlign("pm", false, undefined);
+		await session.prompt("five");
+		const last = requests.at(-1).users.at(-1);
+		assert.ok(last.includes(ALIGN_STYLE_PARAGRAPHS.pm) && last.endsWith(ALIGN_TRIGGER_PARAGRAPHS.eager), "style and Eagerness ride one note");
+		assert.equal(requests.at(-1).prompt, eagerHead);
+	} finally {
+		session.dispose();
+	}
+	// A head built Careful is recorded, so a reopen after a change back to Eager keeps it and tells Eager once.
+	setAlign("default", false, "careful");
+	session = await open(SessionManager.create(cwd, sessionDir));
+	let carefulHead;
+	try {
+		await mode(session, "align on");
+		await session.prompt("careful one");
+		carefulHead = requests.at(-1).prompt;
+		assert.ok(carefulHead.includes(alignInstructions("careful")), "Careful's block in the head");
+		file = session.sessionManager.getSessionFile();
+	} finally {
+		session.dispose();
+	}
+	setAlign("default", false);
+	session = await open(SessionManager.open(file, sessionDir));
+	try {
+		await session.prompt("careful reopened");
+		assert.equal(requests.at(-1).prompt, carefulHead, "the reopened head is byte-identical: Careful, from its record");
+		assert.equal(eagernessNotes(requests.at(-1).users).length, 1);
+		assert.ok(requests.at(-1).users.at(-1).endsWith(ALIGN_TRIGGER_PARAGRAPHS.eager));
+	} finally {
+		session.dispose();
+	}
+
 	// ── Visuals ───────────────────────────────────────────────────────────────────────────────────
 	// The caller's flag wins over the file (Sova's launch record); align on, vis off: the vis tools come with it.
 	setAlign("default", false);
@@ -196,7 +290,7 @@ try {
 		await mode(session, "align on");
 		await session.prompt("draw");
 		const first = requests.at(-1);
-		assert.ok(first.prompt.includes(`${ALIGN_INSTRUCTIONS}\n\n${ALIGN_VISUALS_PARAGRAPH}`), "Default style, Visuals on: the visuals paragraph right after the align block");
+		assert.ok(first.prompt.includes(`${ALIGN_INSTRUCTIONS}\n\n${ALIGN_VISUALS_PARAGRAPH}`), "Technical style, Visuals on: the visuals paragraph right after the align block");
 		const tools = session.getActiveToolNames();
 		assert.ok(tools.includes("vis_guide"), "align on with Visuals: vis_guide is in the loadout, vis off");
 		const align = session.getAllTools().find((t) => t.name === "align");

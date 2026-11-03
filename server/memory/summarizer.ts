@@ -35,8 +35,9 @@ export interface SummaryResult {
   model: string;
 }
 
-/** The argv of one Claude Code summary: no tools, no settings, no session, the fixed settings. */
-export function summaryClaudeArgs(choice: WorkerChoice, system: string): string[] {
+/** The argv of one Claude Code summary: no tools, no settings, no session, the fixed settings. The system
+    prompt is never on it: claudeRun hands it over as a private file (`--system-prompt-file`). */
+export function summaryClaudeArgs(choice: WorkerChoice): string[] {
   return [
     "-p",
     "--model", claudeCliId(choice.model),
@@ -48,7 +49,6 @@ export function summaryClaudeArgs(choice: WorkerChoice, system: string): string[
     "--no-session-persistence",
     "--output-format", "json",
     "--max-budget-usd", SUMMARY_BUDGET_USD.toFixed(2),
-    "--system-prompt", system,
     ...(choice.effort ? ["--effort", choice.effort] : []),
   ];
 }
@@ -63,7 +63,7 @@ async function callOne(choice: WorkerChoice, call: SummaryCall, deps: Summarizer
     const out = await piText(choice, { systemPrompt: call.system, prompt: call.prompt, maxTokens: (reasoning) => (reasoning ? 4096 : 1024) }, deps, timeoutMs, fail);
     return out.text;
   }
-  const stdout = await claudeRun(summaryClaudeArgs(choice, call.system), call.prompt, deps, timeoutMs, fail);
+  const stdout = await claudeRun(summaryClaudeArgs(choice), call.prompt, deps, timeoutMs, fail, undefined, { systemPrompt: call.system });
   const env = JSON.parse(stdout) as { result?: unknown; is_error?: boolean };
   if (env.is_error) parseClaudeEnvelope(stdout, fail); // throws with the CLI's own reason
   if (typeof env.result !== "string" || !env.result.trim()) throw fail("malformed-answer", "claude returned no line");
@@ -72,7 +72,7 @@ async function callOne(choice: WorkerChoice, call: SummaryCall, deps: Summarizer
 
 /**
  * One summary: the primary, then the fallback when the primary can't run or fails. Throws the last
- * failure when neither gave a line; the caller tries the node again at the next message.
+ * failure when neither gave a line; the engine decides when the node is tried again (§chat.memory/recovery).
  */
 export async function summarize(call: SummaryCall, deps: SummarizerDeps): Promise<SummaryResult> {
   const { primary, fallback } = deps.settings().summarizer;
@@ -87,6 +87,17 @@ export async function summarize(call: SummaryCall, deps: SummarizerDeps): Promis
     }
     throw last instanceof Error ? last : new Error(failureMessage(last));
   });
+}
+
+/** Failures that say nothing about the message (§chat.memory/recovery): the summarizer can't run, or the
+    try was cut short (a slot wait or a run past its deadline, the network, an overloaded provider). The
+    queue pauses and the try isn't counted. Only the rest (too large, a malformed or empty answer, a
+    refused request, an unexplained error) count toward the node's tries. */
+const GLOBAL_FAILURES: ReadonlySet<DecisionFailure> = new Set(["auth", "quota", "rate-limit", "unavailable", "timeout", "network", "overloaded"]);
+
+/** Whether a failed summary stops every summary (the queue pauses) or only its own node (it waits alone). */
+export function failureScope(err: unknown): "global" | "node" {
+  return err instanceof DecisionError && GLOBAL_FAILURES.has(err.failure) ? "global" : "node";
 }
 
 /** One sentence for the status when summaries can't be written (§chat.memory/status). */

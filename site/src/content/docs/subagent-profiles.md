@@ -1,9 +1,8 @@
 ---
 title: Subagent profiles
 description: A subagent profile is one named set of every model your subagents use. When a provider hits its usage limit, you switch the whole set at once instead of editing four screens.
-group: Modes
-subgroup: Major
-order: 3
+group: Features
+order: 16
 ---
 
 ## What a profile holds
@@ -104,7 +103,7 @@ Each section says once what happens without a fallback:
 | Section | Without a fallback, when the primary can't run |
 |---|---|
 | Delegate routing | The agent asks you which model to use. |
-| Teams | The team isn't created. |
+| Teams | The team isn't created. With one, a coordinator or monitor whose primary runs out of usage while the team runs moves to it. |
 | Spec writer | The session writes the spec itself. |
 | Reviewer | The review is recorded incomplete. |
 

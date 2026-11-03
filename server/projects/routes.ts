@@ -1,13 +1,16 @@
 import type { Context, Hono } from "hono";
+import { appendHistory } from "../project-settings";
 import type { ProjectList, ProjectRegistered } from "../../shared/projects";
 import { BusyError } from "../chat-handle";
 import { localRequest } from "../mesh/proxy";
 import { OrgError } from "../org-error";
 import { guardedFolderProblem, overseerFolder } from "../overseer-folders";
-import { ADD_LEAD, confirmRefusal, OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerCardScope, overseerSender } from "../overseer-sender";
+import { OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerSender } from "../overseer-sender";
 import { cancelHeld } from "../project-holds";
 import { archiveBlockers } from "../project-overseer";
 import { nudgeMarks } from "../session-feed";
+import { knownLogin, loginOptions, UNKNOWN_LOGIN } from "../claude-login-known";
+import { projectLoginView, setProjectLogin } from "./claude-login";
 import { cloneRepo, overseerRepoProblem } from "./clone";
 import { reservedRoots } from "./contributions";
 import { RegistryError, reservedRootProblem } from "./registry";
@@ -57,16 +60,11 @@ const pidOf = (c: Context): string => c.req.param("pid") ?? "";
 /** One of the global Overseer's clones at a time (§app.overseer/org-project-add). */
 let overseerCloning = false;
 
-/** The root the global Overseer's add registers (§app.overseer/org-project-add): a folder it may add, on the card
-    its call carried as a standalone folder row (with the name, when the row names one); else the refusal. */
-async function overseerAddRoot(c: Context, rawRoot: unknown, name: unknown): Promise<string> {
-  const folders = overseerCardScope(c.req.header(OVERSEER_CARD_HEADER)).folders.filter((f) => f.org === null);
-  const refusal = (what: string) => new OrgError(confirmRefusal(what, ADD_LEAD), 403);
-  if (!folders.length) throw refusal(`the folder ${typeof rawRoot === "string" ? rawRoot.trim() : "to add"}`);
+/** The root the global Overseer's add registers (§app.overseer/org-project-add): a folder it may add (the file guard's
+    refusal otherwise). It runs on the user's word, which the Overseer's act wrapper checks: no card row. */
+async function overseerAddRoot(rawRoot: unknown): Promise<string> {
   const f = await overseerFolder(rawRoot);
   if ("problem" in f) throw new OrgError(f.problem);
-  const named = typeof name === "string" && name.trim() ? name.trim() : undefined;
-  if (!folders.some((x) => x.root === f.root && (x.name === undefined || x.name === named))) throw refusal(`the folder ${f.root}`);
   return f.asked;
 }
 
@@ -99,7 +97,7 @@ export function registerProjectRoutes(app: Hono<any>): void {
         } else ({ dir } = await cloneRepo(req));
         out = await registerProjectIn("standalone", dir, { name: b.name, origin: "clone", remote: repo }, by);
       } else {
-        const root = by.via === "overseer" ? await overseerAddRoot(c, b.root, b.name) : b.root;
+        const root = by.via === "overseer" ? await overseerAddRoot(b.root) : b.root;
         out = await registerProjectIn("standalone", root, { name: b.name, origin: b.origin === "session" ? "session" : "folder" }, by);
       }
       nudgeMarks();
@@ -109,11 +107,33 @@ export function registerProjectRoutes(app: Hono<any>): void {
 
   app.get("/api/projects/:pid", handle((c) => c.json(readProject(pidOf(c)), 200, NO_STORE)));
 
+  // The project's Claude login (§app.claude-logins/project-login): kept on this host, new chats only.
+  app.get("/api/projects/:pid/claude-login", handle((c) => c.json({ ...projectLoginView(pidOf(c)), options: loginOptions() }, 200, NO_STORE)));
+  app.put(
+    "/api/projects/:pid/claude-login",
+    handle(async (c) => {
+      const pid = pidOf(c);
+      const p = readProject(pid);
+      const login = (await body(c)).login;
+      if (login === "org" && p.space.kind === "standalone") throw new OrgError("Only a project an organization places can follow it.");
+      if (login !== "org" && login !== "none" && !knownLogin(login)) throw new OrgError(typeof login === "string" ? UNKNOWN_LOGIN : "Expected { login: <login id> | \"org\" | \"none\" }");
+      return c.json({ ...setProjectLogin(pid, login as string), options: loginOptions() }, 200, NO_STORE);
+    }),
+  );
+
   app.patch(
     "/api/projects/:pid",
     handle(async (c) => {
       const b = await body(c);
-      return c.json(await editProject(pidOf(c), { name: b.name, root: b.root }, operatorBy(c)), 200, NO_STORE);
+      const pid = pidOf(c);
+      const before = readProject(pid).name;
+      const out = await editProject(pid, { name: b.name, root: b.root }, operatorBy(c));
+      // The settings history (§app.project-overseer/settings): a rename is a change of a Sova-kept setting.
+      if (out.name !== before) {
+        const by = operatorBy(c).via === "overseer" ? ({ kind: "overseer" } as const) : ({ kind: "operator", via: c.req.header("x-sova-token") !== undefined ? "script" : "page" } as const);
+        appendHistory(pid, [{ field: "project.name", from: before, to: out.name, by }]);
+      }
+      return c.json(out, 200, NO_STORE);
     }),
   );
 

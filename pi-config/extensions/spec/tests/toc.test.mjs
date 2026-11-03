@@ -494,7 +494,8 @@ test("why: a clipped sentence is cut at word boundaries, and carries no trailing
 const SPEC_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../../..");
 test("what: over the real spec, no what line ends mid-sentence", { skip: !existsSync(join(SPEC_ROOT, ".sova/spec/manifest.json")) }, async () => {
   const { whatOf, mask } = await import("../core/toc.mjs");
-  const ids = Object.keys(JSON.parse(readFileSync(join(SPEC_ROOT, ".sova/spec/manifest.json"), "utf8")).claims)
+  const { readRecords } = await import("../core/layout.mjs");
+  const ids = Object.keys(readRecords(SPEC_ROOT).records)
     .filter((id) => !/^§[a-z][a-z-]*\.[a-z]/.test(id) || id.startsWith("§section."));
   const cut = [];
   let checked = 0;

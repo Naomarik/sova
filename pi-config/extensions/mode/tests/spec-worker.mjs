@@ -122,6 +122,11 @@ try {
 	assert.match(toolText(requests[2]), /\[spec census\] 1 changed file\(s\) in the boundary/, "the first edit carries the digest");
 	assert.match(toolText(requests[2]), /No draft yet/);
 	assert.match(toolText(requests[2]), /§app\/shell/);
+	// The first note hands a worker the writing procedure, once, its Workers section first.
+	assert.match(toolText(requests[2]), /Writing procedure \(once; also at [^)]*WRITING\.md; you are a worker, so its Workers section comes first\):\\n\\n## Workers\\n/, "JSON-escaped newlines");
+	assert.match(toolText(requests[2]), /If you are a worker: a parent session started you/);
+	assert.match(toolText(requests[2]), /Behavior no claim covers gets a new claim/, "the whole procedure follows");
+	for (const i of [3, 4]) assert.doesNotMatch(toolText(requests[i]), /Writing procedure \(once/, "said once");
 	assert.doesNotMatch(toolText(requests[3]), /\[spec census\]/, "the same file again: no digest");
 	assert.match(toolText(requests[4]), /Outside the boundary, no claim maps: tools\/footer\.ts: spec any whose change a user sees/, "a new unmapped file outside the boundary: its line");
 	assert.ok(seen(requests[4]).includes("spec census"));

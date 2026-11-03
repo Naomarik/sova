@@ -5,7 +5,7 @@
 // faux provider, registered through the public ModelRuntime API: no network, no private fields.
 // C1 the session manager's append* methods (the entry union), C2 the custom entry's line, C3 the event
 // names and fields chat-manager's bind() reads, C5 image content as prompt/steer take and store it.
-// P1-P27 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
+// P1-P29 and T1 are the quirk canaries (QUIRKS.md, quirks.ts): each asserts that a pi behaviour a Sova
 // workaround or assumption rests on still holds. Their turns run on testing/scripted-model.ts (a held
 // reply makes the mid-turn windows deterministic). When one fails, triage it by its QUIRKS.md row.
 import assert from "node:assert/strict";
@@ -18,6 +18,11 @@ import { STANDIN_FILTER } from "./headless.ts";
 import { packageFrom, patchResolve } from "./own-code.ts";
 import { hearRequests } from "./session.ts";
 import { ScriptedModel } from "./testing/scripted-model.ts";
+import { PiHarnessSession } from "./session.ts";
+import { SendKeys } from "../../send-keys.ts";
+import { WebQueue } from "../../queue.ts";
+import { steerAllAtOnce } from "./queue-modes.ts";
+import { steerTicket } from "./steer-ticket.ts";
 
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-pi-contract-")));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -93,6 +98,8 @@ interface QuirkSessionOptions {
   /** The faux model id to build with; null leaves the choice to the SDK. Default faux-1. */
   model?: string | null;
   settings?: Record<string, unknown>;
+  /** A settings manager of the test's own (instead of an in-memory one from `settings`). */
+  settingsManager?: unknown;
   /** Inline extensions, and extension files loaded by path. */
   extensions?: ((api: any) => void)[];
   extensionPaths?: string[];
@@ -109,7 +116,7 @@ async function quirkSession(o: QuirkSessionOptions = {}) {
   const runtime = await fauxRuntime();
   const cwd = join(dir, `cwd-${Math.random().toString(36).slice(2)}`);
   mkdirSync(cwd, { recursive: true });
-  const settingsManager = SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false }, compaction: { keepRecentTokens: 1 }, ...o.settings } as never);
+  const settingsManager = (o.settingsManager as never) ?? SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false }, compaction: { keepRecentTokens: 1 }, ...o.settings } as never);
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir: dir,
@@ -376,6 +383,54 @@ describe("pi contract", () => {
     assert.deepEqual(order, ["agent_end", "resolved", "agent_end"], "fixed: the prompt is no longer deferred (or no longer resolves at once)");
     assert.equal(lastUser(model.calls[1]!), "deferred");
     session.dispose();
+
+    // What Sova builds on it (§app.chat-processes/worker-instructions): a deferred prompt runs outside the
+    // async context of the call that made it, so a keyed send labels nothing there (send-keys.ts); a keyed
+    // item handed off from the queue during agent_settled waits the window out (queue.ts `settling`) and
+    // its delivered user message carries exactly that key, once.
+    const two = await quirkSession();
+    const harness = new PiHarnessSession({ session: two.session } as never);
+    const keys = new SendKeys();
+    keys.watch(harness);
+    let fired = false;
+    const queue = new WebQueue({
+      sdk: { hasQueued: () => harness.queue.hasQueued(), mirrorTotal: () => harness.queue.mirrorTotal(), mirrorFor: (k) => harness.queue.mirrorFor(k), mirrorHas: (k, t) => harness.queue.mirrorHas(k, t) },
+      streaming: () => harness.isRunning(),
+      settling: () => harness.inSettleWindow(),
+      clearSdkQueue: () => harness.queue.clear(),
+      guard() {},
+      wake() {},
+      // As ChatSession.handOffQueued: the SDK call inside the key's send; an idle one starts a turn, not awaited.
+      handOff: async (item, streaming) => {
+        const turn = keys.run(item.key, () => harness.send(item.text, streaming ? { delivery: item.kind } : undefined));
+        if (streaming) await turn;
+        else void turn.catch(() => {});
+      },
+      onGone() {},
+      onChange() {},
+      onHandOffError() {},
+    });
+    let unkeyedTwin: Promise<void> | undefined;
+    two.session.subscribe((e: any) => {
+      if (e.type !== "agent_settled" || fired) return;
+      fired = true;
+      // The control: a keyed send made straight into the window (no queue) is deferred and labels nothing.
+      unkeyedTwin = keys.run("w:direct", () => harness.send("direct in the window"));
+      queue.enqueue({ kind: "followUp", text: "keyed in the window", origin: "server", id: "q1", key: "w:s1" });
+    });
+    await two.session.prompt("first");
+    await until(() => two.model.calls.length >= 3, "the deferred and the held turns");
+    await unkeyedTwin;
+    await two.session.waitForIdle?.();
+    const userStarts = two.events.filter((e) => e.type === "message_start" && e.message?.role === "user");
+    const keyedOnes = userStarts.filter((e) => keys.keyOf(e.message) === "w:s1");
+    assert.equal(keyedOnes.length, 1, "the keyed hand-off's message carries its key, once");
+    assert.equal(userText(keyedOnes[0].message), "keyed in the window");
+    const direct = userStarts.find((e) => userText(e.message) === "direct in the window");
+    assert.ok(direct, "the deferred prompt ran");
+    assert.equal(keys.keyOf(direct.message), undefined, "fixed: a prompt deferred past the settle window now runs inside its sender's context");
+    queue.close();
+    two.session.dispose();
   });
 
   test("P6 refresh-context: a user entry appended outside a run reaches the agent's context after refreshContext()", async () => {
@@ -648,53 +703,6 @@ describe("pi contract", () => {
     b.session.dispose();
   });
 
-  test("P21 codemode-definition: the factory registers one inactive codemode tool, its models.* reach ctx.modelRegistry, nested calls carry parentToolCallId", async () => {
-    const registered: any[] = [];
-    let registryAsked = 0;
-    const capture = (api: any) => {
-      const caught = new Proxy(api, { get: (t, k) => (k === "registerTool" ? (def: any) => void registered.push(def) : Reflect.get(t, k)) });
-      pi.agent.createCodemodeExtension()(caught);
-      const def = registered[0];
-      // As Sova's scriptRegistry does: the context's registry, seen through a wrapper.
-      api.registerTool({
-        ...def,
-        execute: (id: string, params: unknown, signal: unknown, onUpdate: unknown, ctx: any) =>
-          def.execute(id, params, signal, onUpdate, new Proxy(ctx, {
-            get: (t, k) => {
-              // Members as they are (a Proxy must return pi's read-only executeTool unchanged).
-              if (k !== "modelRegistry") return Reflect.get(t, k);
-              return new Proxy(t.modelRegistry, { get: (r, m) => { if (m === "classify") registryAsked++; const v = Reflect.get(r, m); return typeof v === "function" ? v.bind(r) : v; } });
-            },
-          })),
-      });
-      api.registerTool({ name: "echo", label: "echo", description: "echo", parameters: Type.Object({ word: Type.String() }), execute: async (_id: string, p: { word: string }) => ({ content: [{ type: "text", text: p.word }], details: {} }) });
-    };
-    const { session, model, events, runtime, sm } = await quirkSession({ extensions: [capture] });
-    assert.deepEqual(registered.map((d) => [d.name, d.defaultActive]), [["codemode", false]], "one tool, codemode, registered inactive");
-    assert.ok(!session.getActiveToolNames().includes("codemode"), "inactive after the build");
-    session.setActiveToolsByName([...session.getActiveToolNames(), "codemode"]);
-    assert.ok(session.getActiveToolNames().includes("codemode"), "setActiveTools activates it");
-    (runtime as any).registerProvider("cls", {
-      apiKey: "test",
-      models: [{ type: "classifier", id: "cls-1", name: "cls-1", api: "test-classifier", baseUrl: "http://127.0.0.1:9", input: ["text"], cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, contextWindow: 1000 }],
-      classifiers: { "test-classifier": { classify: async () => ({ provider: "cls", model: "cls-1", answers: { q: { type: "bool", probability: 1 } }, stopReason: "stop" }) } },
-    });
-    const code = `const w = await tools.echo({ word: "hi" });
-const r = await models.classify({ provider: "cls", id: "cls-1" }, { state: {}, questions: { q: { type: "bool", instructions: "?", criteria: { true: "y", false: "n" } } } });
-return w + ":" + r.stopReason;`;
-    model.reply({ toolCall: { name: "codemode", arguments: { code } } }, { text: "done" });
-    await session.prompt("go");
-    const nested = events.filter((e) => e.type?.startsWith("tool_execution_") && e.parentToolCallId);
-    assert.ok(nested.length >= 2, "the nested call's events carry parentToolCallId");
-    assert.ok(nested.every((e) => e.parentToolCallId === "call-1" && e.toolCallId === "call-1/1"), "and the id <parent>/<n>");
-    assert.equal(registryAsked, 1, "the script's models.classify went through ctx.modelRegistry");
-    const results = sm.getEntries().filter((e: any) => e.type === "message" && e.message.role === "toolResult");
-    assert.deepEqual(results.map((e: any) => e.message.toolName), ["codemode"], "nested calls write no entries");
-    assert.match(results[0].message.content.map((b: any) => b.text ?? "").join(""), /hi:stop/);
-    assert.deepEqual(results[0].message.details.calls.map((c: any) => c.name), ["echo", "models.classify"]);
-    session.dispose();
-  });
-
   test("P22 declared-tools: agent.state.tools is the declared set with the loadout's descriptions, _hiddenDeclarations what requests leave out, sourceInfo.path names the source", async () => {
     /** The tools a request declared: its system messages' toolsAdded, less toolsRemoved, in order. */
     const declaredIn = (call: { context: unknown }) => {
@@ -708,22 +716,28 @@ return w + ":" + r.stopReason;`;
     };
     for (const mode of ["on", "only"] as const) {
       const tools = (api: any) => {
-        pi.agent.createCodemodeExtension({ mode })(api);
+        // A tool that orchestrates others (pi's ToolDefinition.prepareLoadout): it rewords echo's
+        // declaration, and in "only" hides it from requests.
+        api.registerTool({
+          name: "orch", label: "orch", description: "Orchestrate.", parameters: Type.Object({}),
+          prepareLoadout: () => ({ descriptions: { echo: "Echo a word.\n\nOrch: `orch` calls it too." }, hiddenDeclarations: mode === "only" ? ["echo"] : [] }),
+          execute: async () => ({ content: [], details: {} }),
+        });
         api.registerTool({ name: "echo", label: "echo", description: "Echo a word.", parameters: Type.Object({ word: Type.String() }), execute: async () => ({ content: [], details: {} }) });
       };
       const { session, model } = await quirkSession({ extensions: [{ name: "contract-tools", factory: tools } as never], builtinTools: true });
       const s = session as any;
-      session.setActiveToolsByName(["read", "echo", "codemode"]);
+      session.setActiveToolsByName(["read", "echo", "orch"]);
       const state = s.agent.state.tools as { name: string; description: string }[];
-      assert.deepEqual(state.map((t) => t.name), ["read", "echo", "codemode"], "the active tools, in order");
+      assert.deepEqual(state.map((t) => t.name), ["read", "echo", "orch"], "the active tools, in order");
       const registry = new Map(session.getAllTools().map((t: any) => [t.name, t]));
       const echo = state.find((t) => t.name === "echo")!;
       if (mode === "on") {
         assert.equal((registry.get("echo") as any).description, "Echo a word.", "the registry keeps the tool's own description");
-        assert.match(echo.description, /^Echo a word\.\n\nCodemode: `tools\.echo\(args\)`/, "the loadout's description is on agent.state.tools");
+        assert.match(echo.description, /^Echo a word\.\n\nOrch: `orch` calls it too\./, "the loadout's description is on agent.state.tools");
       }
       assert.ok(s._hiddenDeclarations instanceof Set, "_hiddenDeclarations is a Set");
-      assert.equal(s._hiddenDeclarations.has("echo"), mode === "only", "codemode's only mode hides direct tools' declarations");
+      assert.equal(s._hiddenDeclarations.has("echo"), mode === "only", "a prepareLoadout hook's hiddenDeclarations hide a declaration");
       assert.equal((registry.get("read") as any).sourceInfo.path, "builtin:read");
       assert.equal((registry.get("echo") as any).sourceInfo.path, "<inline:contract-tools>");
       model.reply({ text: "ok" });
@@ -926,6 +940,128 @@ return w + ":" + r.stopReason;`;
     const themeTakes = "modes/interactive/theme/theme.js <- utils/syntax-highlight.js";
     assert.ok(takers.includes(themeTakes), `the theme takes the highlighter:\n${takers.join("\n")}`);
     assert.deepEqual(takers.filter((t) => t !== themeTakes && !allowed.test(t)), [], "outside pi's terminal mode, a drawing module taken by code a Sova chat may run: triage by QUIRKS.md P27");
+  });
+
+  test("P28 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode", async () => {
+    // A settings file pi really reads (and would write), in an agent dir of its own.
+    const agentDir = join(dir, "p26-agent");
+    mkdirSync(agentDir, { recursive: true });
+    const settingsFile = join(agentDir, "settings.json");
+    writeFileSync(settingsFile, `${JSON.stringify({ cacheWarming: "off", retry: { enabled: false } }, null, 2)}\n`);
+    const before = readFileSync(settingsFile, "utf8");
+    const settingsManager = SettingsManager.create(dir, agentDir);
+    assert.equal(settingsManager.getSteeringMode(), "one-at-a-time", "pi's own default, which the getter replaces");
+    steerAllAtOnce(settingsManager);
+    const { session, model } = await quirkSession({ settingsManager });
+    assert.equal(session.agent.steeringMode, "all", "createAgentSession builds the agent's mode from the getter");
+    assert.equal(session.agent.followUpMode, "one-at-a-time", "follow-ups keep pi's one at a time");
+    /** Two steers queued behind a held reply: the calls the run made, and the user messages of its second. */
+    const twoSteers = async (a: string, b: string) => {
+      const from = model.calls.length;
+      const release = model.hold();
+      const run = session.prompt(`go ${a}`);
+      await until(() => model.calls.length === from + 1, "the held reply");
+      await session.steer(a);
+      await session.steer(b);
+      release();
+      await run;
+      const users = ((model.calls[from + 1]!.context as any).messages as any[]).filter((m) => m.role === "user").map(userText);
+      return { calls: model.calls.length - from, last: users.slice(-2) };
+    };
+    assert.deepEqual(await twoSteers("s1", "s2"), { calls: 2, last: ["s1", "s2"] }, "both steers in the step after the held reply: one call for the pair");
+    await session.reload();
+    assert.equal(session.agent.steeringMode, "all", "reload() re-read settings.json and kept the getter's mode");
+    assert.deepEqual(await twoSteers("s3", "s4"), { calls: 2, last: ["s3", "s4"] }, "and still lands them together");
+    assert.equal(readFileSync(settingsFile, "utf8"), before, "settings.json is untouched");
+    assert.equal("steeringMode" in JSON.parse(readFileSync(settingsFile, "utf8")), false, "no steeringMode in settings.json");
+    session.dispose();
+  });
+
+  test("P29 steer-remove: the object agent.steer is handed sits in steeringQueue.messages, and splicing it and its text out of both copies takes exactly that steer back", async () => {
+    // An input handler held open on "slow …" texts: the window a described image keeps a hand-off in.
+    let openGate: () => void = () => {};
+    const gate = () => new Promise<void>((r) => (openGate = r));
+    let gated: Promise<void> | null = null;
+    const settingsManager = SettingsManager.inMemory({ cacheWarming: "off", retry: { enabled: false } } as never);
+    steerAllAtOnce(settingsManager as never);
+    const { session, model } = await quirkSession({
+      settingsManager,
+      extensions: [(api: any) => api.on("input", async (event: any) => {
+        if (String(event.text).startsWith("slow")) await (gated = gate());
+        return undefined;
+      })],
+    });
+    const harness = new PiHarnessSession({ session } as never);
+    const lane = () => (session.agent as any).steeringQueue.messages as unknown[];
+    assert.ok(Array.isArray(lane()), "Agent.steeringQueue.messages is the real lane (an array)");
+    assert.ok(Array.isArray((session as any)._steeringMessages), "AgentSession._steeringMessages is the text mirror (an array)");
+    const usersOf = (call: { context: unknown }) => ((call.context as any).messages as any[]).filter((m) => m.role === "user").map(userText);
+
+    // 1. Three identical steers behind a held reply; the middle one comes out, by identity.
+    let release = model.hold();
+    let run = session.prompt("go");
+    await until(() => model.calls.length === 1, "the held reply");
+    const tickets = [steerTicket(session), steerTicket(session), steerTicket(session)];
+    for (const t of tickets) await t.run(() => harness.steer("same"));
+    const queued = session.agent.peekQueuedMessages();
+    assert.equal(queued.length, 3, "all three in the lane (steering mode all)");
+    assert.deepEqual(lane(), queued, "peekQueuedMessages() previews the lane, object for object");
+    assert.equal(tickets[1]!.remove(), "removed");
+    assert.deepEqual(lane(), [queued[0], queued[2]], "exactly the middle object left the lane; its twins stay, in order");
+    assert.equal(session.agent.peekQueuedMessages().length, 2);
+    assert.deepEqual([...session.getSteeringMessages()], ["same", "same"], "and one entry of its text left the mirror");
+    assert.equal(tickets[1]!.remove(), "removed", "asking again says the same");
+    release();
+    await run;
+    assert.deepEqual(usersOf(model.calls[1]!), ["go", "same", "same"], "the next step got the two twins together, never the removed one");
+    assert.equal(tickets[0]!.remove(), "taken", "a steer the loop drained can't come back");
+    assert.equal(session.getSteeringMessages().length, 0, "the mirror emptied as they started");
+
+    // 2. Stop after a removal: clearQueue() hands back only the survivors.
+    release = model.hold();
+    run = session.prompt("again");
+    await until(() => model.calls.length === 3, "the second held reply");
+    const [x, y, z] = [steerTicket(session), steerTicket(session), steerTicket(session)];
+    await x.run(() => harness.steer("x"));
+    await y.run(() => harness.steer("y"));
+    await z.run(() => harness.steer("z"));
+    assert.equal(y.remove(), "removed");
+    assert.deepEqual(session.clearQueue().steering, ["x", "z"], "the removed text is not handed back");
+    assert.equal(session.agent.hasQueuedMessages(), false);
+
+    // 3. Another sender's steer of the same words is never the ticket's, and two inside one hand-off are refused.
+    const mine = steerTicket(session);
+    await mine.run(() => harness.steer("twin"));
+    await session.steer("twin"); // queued outside any ticket's hand-off
+    const foreign = lane()[1];
+    assert.equal(mine.remove(), "removed");
+    assert.deepEqual(lane(), [foreign], "the other sender's twin stays");
+    const both = steerTicket(session);
+    await both.run(async () => {
+      await harness.steer("one");
+      await harness.steer("two");
+    });
+    assert.equal(both.remove(), "unknown", "two steers in one hand-off: no one message to name");
+    assert.equal(lane().length, 3, "and nothing was taken out");
+    session.clearQueue();
+
+    // 4. Asked for while the hand-off is still in its input handler: out the instant pi queues it.
+    const slow = steerTicket(session);
+    const handing = slow.run(() => harness.steer("slow one"));
+    await until(() => gated !== null, "the input handler holding the hand-off");
+    assert.equal(slow.remove(), "later", "not queued yet");
+    openGate();
+    await handing;
+    assert.equal(session.agent.hasQueuedMessages(), false, "pi queued it and it came straight out");
+    assert.deepEqual([...session.getSteeringMessages()], [], "its text too");
+    assert.equal(slow.remove(), "removed");
+    const none = steerTicket(session);
+    await none.run(async () => {});
+    assert.equal(none.remove(), "unknown", "a hand-off that queued nothing names nothing");
+    release();
+    await run;
+    assert.deepEqual(usersOf(model.calls.at(-1)!).slice(-1), ["again"], "nothing removed or cleared reached the model");
+    session.dispose();
   });
 
   test("T1 scripted-model: the members the test double replaces exist, and it runs a turn", async () => {

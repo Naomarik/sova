@@ -3,6 +3,8 @@
 //
 //   node scripts/run-tests.mjs [<files>] [-- <runner flags>]                  # pnpm test: the unit tier, bun
 //   node scripts/run-tests.mjs --integration [--changed [--base <rev>]]       # pnpm test:int
+//   node scripts/run-tests.mjs --integration --landing [--base <rev>] [--plan] # what a landing runs
+//   node scripts/run-tests.mjs --integration --groups <name,…|all>            # only those slow groups
 //   node scripts/run-tests.mjs --all                                          # pnpm test:all: both tiers
 //   node scripts/run-tests.mjs --runtime node [<files>] [-- <runner flags>]   # pnpm run test:node
 //
@@ -16,7 +18,14 @@
 // or the ones named, whatever their tier (a project's `test.run` appends its selectors, so each
 // named file is routed like any other). --changed keeps only the files a change may break: those
 // whose import closure holds a file changed since the merge base with --base (master), committed or
-// not, and those in the same folder as one. The integration tier runs at a lower width (a quarter
+// not, and those in the same folder as one, plus every file of each slow group whose triggers the
+// change touches (scripts/test-groups.mjs: Chat processes, Tours; a group's file never by its
+// imports alone). --landing keeps every integration file in no group (the everyday set) plus each
+// group a landing runs when triggered (Chat processes), never Tours, and prints a line per group it
+// skipped and why; --groups <name,…|all> keeps only those groups' files; --plan prints the selection
+// as JSON (files, groups run and skipped, lanes, an estimate from the recorded times) and runs
+// nothing. Plain --integration runs the whole tier, every group included (a release runs that).
+// The integration tier runs at a lower width (a quarter
 // of the cores; TEST_INT_JOBS=<n>) and keeps its own durations. Per tier, two invocations, and a
 // non-zero exit if either fails: the main set, then `*.browser.test.ts` under --conditions=browser
 // (Solid's browser build; the main set must not get it). Arguments starting with `-` go to the runner.
@@ -35,7 +44,9 @@
 // keeps it, and refuses to run if os.homedir() disagrees. Bun's default per-test timeout is 5 s and
 // node:test has none: --timeout=60000 unless you pass one. PATH gets the real node's directory and
 // mise's tool paths first (shims refuse an untrusted config in a throwaway HOME), and
-// SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT). bun test itself sets TZ=UTC and
+// SOVA_PRICES_FETCH=off (bun test sets no NODE_TEST_CONTEXT), and SOVA_GIT_MAINTENANCE=off (a server a
+// test starts registers no repository with git's scheduled maintenance and starts no systemd
+// timer; server/git-maintenance.ts's own tests drive it with their own deps). bun test itself sets TZ=UTC and
 // NODE_ENV=test. Both runtimes: a stand-in `claude` (scripts/fake-claude.mjs) leads every test
 // process's PATH, so no test runs the installed Claude CLI, or a paid model through it; a test that
 // needs another `claude` sets its own PATH.
@@ -44,7 +55,15 @@
 // checkout, which a sandboxed session can't write) and the next run sorts by it; a file never timed
 // falls back to KNOWN_SLOW, then to its alphabetical place. The run ends with the 10 slowest files.
 // Both: a temp dir inside a git repository is refused (exit 2) before anything runs, and no test
-// process gets a GIT_DIR-like variable; git's search stops at its temp dir (GIT_CEILING_DIRECTORIES).
+// process gets a GIT_DIR-like variable; git's search stops at its temp dir (GIT_CEILING_DIRECTORIES). Nor any
+// variable of a chat process the runner was started from (scripts/test-env.mjs: SOVA_CHAT_*, the session's ids).
+// SOVA_OUT=<file> (a project verb's or a merge check's report file): the run's counts are written there
+// as JSON when it ends, `{passed, failed, errors, skipped, failures: [{name, file, message?}]}` (at most
+// 50 failures; `failingFiles` lists every failing file, uncapped; `ranFiles` every file it ran, after any
+// --landing/--changed/--groups selection, so a merge run tells a file that passed from one never run): one per failing test (bun's `(fail)` lines, the error printed above each as its
+// message), and a file that failed with no failing test (a crash, a load error, a kill) counts as an
+// error with the file as its name. On Node (whose output isn't read) only failing files are named.
+// --plan and an empty selection write none.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
@@ -52,6 +71,13 @@ import os from "node:os";
 import path from "node:path";
 import { chosenRuntime, resolveBun } from "../server/runtime-choice.ts";
 import { affected, changedSince } from "./test-changed.mjs";
+import { GROUPS, groupOf, selectFiles } from "./test-groups.mjs";
+import { bunReport } from "./test-report.mjs";
+import { dropChatEnv } from "./test-env.mjs";
+
+// Started from inside a chat, the shell carries that chat process's own variables (SOVA_CHAT_UNIT, the session's ids):
+// a test would then act as that chat (an org engine refuses to open "in a chat process"). None reaches a test.
+dropChatEnv(process.env);
 
 const ROOT = path.join(import.meta.dirname, "..");
 const PRELOAD = "./pi-config/extensions/claude-code/tests/hermetic-env.mjs";
@@ -63,8 +89,10 @@ const isIntegration = (f) => f.endsWith(INTEGRATION_SUFFIX);
 const GLOBS = [
   "shared/*.test.ts",
   "scripts/*.test.ts",
+  "scripts/merge-checks/*.test.ts",
   "server/*.test.ts",
   "server/project-services/*.test.ts",
+  "server/merge-queue/*.test.ts",
   "server/tours/*.test.ts",
   "server/share/*.test.ts",
   "server/chat-runtime/*.test.ts",
@@ -89,6 +117,8 @@ const GLOBS = [
   "pi-config/extensions/claude-code/provider/memory-layout.test.ts",
   // Which Claude program every spawn runs (builtins only; the server imports it).
   "pi-config/extensions/claude-code/claude-executable.test.ts",
+  // The offline search A/B harness (bench/search-ab/plan.md), on synthetic sessions.
+  "bench/search-ab/*.test.ts",
 ];
 const isBrowserTest = (f) => f.endsWith(".browser.test.ts");
 /** Each tier's recorded wall times, and how many files it runs at once. */
@@ -104,7 +134,6 @@ const slow = (stem) => new RegExp(`^${stem.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"
  *  first: the order when no duration was recorded yet, in either tier. */
 const KNOWN_SLOW = [
   slow("server/statecharts-replay"),
-  slow("server/usage-helper/memory"),
   slow("server/reconcile"),
   slow("server/project-services/test-verb"),
   slow("server/mesh/mesh"),
@@ -216,10 +245,10 @@ function repoAround(dir) {
   return ask("--show-toplevel") ?? ask("--absolute-git-dir");
 }
 
-const USAGE = "usage: node scripts/run-tests.mjs [--runtime node|bun] [--integration | --all] [--changed [--base <rev>]] [files] [-- flags]";
+const USAGE = "usage: node scripts/run-tests.mjs [--runtime node|bun] [--integration | --all] [--changed [--base <rev>] | --landing [--base <rev>] | --groups <name,…|all>] [--plan] [files] [-- flags]";
 const argv = process.argv.slice(2);
 /** The runner's own options (each with its value, if it takes one); everything else is files and the runner's flags. */
-const own = { "--runtime": 1, "--base": 1, "--integration": 0, "--all": 0, "--changed": 0 };
+const own = { "--runtime": 1, "--base": 1, "--integration": 0, "--all": 0, "--changed": 0, "--landing": 0, "--groups": 1, "--plan": 0 };
 const opts = {};
 const rest = [];
 for (let i = 0; i < argv.length; i++) {
@@ -230,10 +259,16 @@ for (let i = 0; i < argv.length; i++) {
   opts[a] = own[a] ? argv[++i] : true;
 }
 const runtime = opts["--runtime"] ?? chosenRuntime();
-if ((runtime !== "node" && runtime !== "bun") || (opts["--integration"] && opts["--all"]) || (opts["--base"] && !opts["--changed"])) {
+const picks = ["--changed", "--landing", "--groups"].filter((o) => opts[o]);
+const groupNames = opts["--groups"] ? opts["--groups"].split(",").map((s) => s.trim()).filter(Boolean) : [];
+const badGroup = groupNames.find((n) => n !== "all" && !GROUPS.some((g) => g.name === n));
+if (badGroup) console.error(`run-tests: no test group ${badGroup} (groups: ${GROUPS.map((g) => g.name).join(", ")}, all)`);
+if ((runtime !== "node" && runtime !== "bun") || (opts["--integration"] && opts["--all"]) || picks.length > 1 || (opts["--base"] && !opts["--changed"] && !opts["--landing"]) || badGroup || (opts["--groups"] && !groupNames.length)) {
   console.error(USAGE);
   process.exit(2);
 }
+// The slow groups are integration files: --landing and --groups mean that tier unless one is named.
+if ((opts["--landing"] || opts["--groups"]) && !opts["--all"]) opts["--integration"] = true;
 // Tests make plain folders in the temp dir and register them as projects; inside a checkout each one
 // would be that checkout, and promotions and coding worktrees would land in it (they once did, in
 // Sova's own). The preload stops git's search at the temp dir; refusing first says so. Each runtime
@@ -250,7 +285,26 @@ const tiersAsked = opts["--all"] ? ["unit", "integration"] : opts["--integration
 let files = named.length
   ? named
   : [...new Set(GLOBS.flatMap((g) => fs.globSync(g, { cwd: ROOT })))].sort().filter((f) => tiersAsked.includes(isIntegration(f) ? "integration" : "unit"));
+/** What --changed, --landing or --groups chose, for --plan: the groups run and those skipped. */
+let picked = null;
 if (opts["--changed"]) files = changedOnly(files, opts["--base"] ?? "master");
+else if (opts["--landing"]) files = landingOnly(files, opts["--base"] ?? "master");
+else if (opts["--groups"]) files = groupsOnly(files, groupNames);
+if (opts["--plan"]) {
+  // The selection, and what it should take: the recorded times of the files chosen over the tier's
+  // lanes, never less than the longest one. Nothing runs.
+  const recorded = readDurations(TIERS.integration.durations);
+  const ms = (f) => (Number.isFinite(recorded[f]?.ms) ? recorded[f].ms : 0);
+  const jobs = Math.max(1, TIERS.integration.jobs());
+  const integ = files.filter(isIntegration);
+  const sum = integ.reduce((n, f) => n + ms(f), 0);
+  const longest = integ.reduce((n, f) => Math.max(n, ms(f)), 0);
+  console.log(JSON.stringify({
+    v: 1, files, groups: GROUPS.map(({ name, title, landing }) => ({ name, title, landing })), ran: picked?.ran ?? null, skipped: picked?.skipped ?? [], jobs,
+    timed: integ.filter((f) => ms(f) > 0).length, estimateMs: Math.max(longest, Math.round(sum / jobs)), longestMs: longest,
+  }));
+  process.exit(0);
+}
 /** Per tier (unit first), its two passes: the main set, then the browser set. */
 const sets = ["unit", "integration"].flatMap((tier) => {
   const mine = files.filter((f) => (isIntegration(f) ? "integration" : "unit") === tier);
@@ -261,7 +315,19 @@ const sets = ["unit", "integration"].flatMap((tier) => {
 }).filter((s) => s.files.length);
 if (!sets.length) {
   console.log("run-tests: no test file to run.");
+  writeSovaOut({ passed: 0, failed: 0, errors: 0, skipped: 0, failures: [], ranFiles: [] });
   process.exit(0);
+}
+
+/** The run's report in $SOVA_OUT, when the caller asked for one (the header). Best effort. */
+function writeSovaOut(report) {
+  const out = process.env.SOVA_OUT;
+  if (!out) return;
+  try {
+    fs.writeFileSync(out, `${JSON.stringify({ ...report, failures: report.failures.slice(0, 50) })}\n`);
+  } catch (err) {
+    console.error(`run-tests: could not write SOVA_OUT ${out}: ${err.message}`);
+  }
 }
 
 /** `files` narrowed to those a change since `base` may break (scripts/test-changed.mjs). */
@@ -273,9 +339,49 @@ function changedOnly(files, base) {
     console.error(`run-tests: --changed: no merge base with ${base} (${String(err.stderr ?? err.message).trim().split("\n")[0]})`);
     process.exit(2);
   }
-  const chosen = affected(ROOT, files, changed);
-  console.log(`run-tests: --changed (${changed.length} file${changed.length === 1 ? "" : "s"} changed since the merge base with ${base}): ${chosen.length} of ${files.length} test files.`);
-  return chosen;
+  const pick = selectFiles(files, changed, { mode: "changed", closure: (fs) => affected(ROOT, fs, changed) });
+  say(`run-tests: --changed (${changed.length} file${changed.length === 1 ? "" : "s"} changed since the merge base with ${base}): ${pick.files.length} of ${files.length} test files.`);
+  for (const name of pick.ran) say(`run-tests: added group ${name} (${titleOf(name)}): its triggers changed (${shortList(pick.hits[name])}).`);
+  picked = pick;
+  return pick.files;
+}
+
+/** `files` narrowed to what a landing runs: the everyday set, plus each group a landing runs that the change since `base` triggers. */
+function landingOnly(files, base) {
+  let changed;
+  try {
+    changed = changedSince(ROOT, base);
+  } catch (err) {
+    console.error(`run-tests: --landing: no merge base with ${base} (${String(err.stderr ?? err.message).trim().split("\n")[0]})`);
+    process.exit(2);
+  }
+  const pick = selectFiles(files, changed, { mode: "landing" });
+  const recorded = readDurations(TIERS.integration.durations);
+  const secs = (name) => Math.round(files.filter((f) => groupOf(f)?.name === name).reduce((n, f) => n + (recorded[f]?.ms ?? 0), 0) / 1000);
+  say(`run-tests: --landing (${changed.length} file${changed.length === 1 ? "" : "s"} changed since the merge base with ${base}): ${pick.files.length} of ${files.length} test files, the everyday set${pick.ran.map((n) => ` + ${titleOf(n)}`).join("")}.`);
+  for (const name of pick.ran) say(`run-tests: running group ${name} (${titleOf(name)}): its triggers changed (${shortList(pick.hits[name])}).`);
+  for (const s of pick.skipped) say(`run-tests: skipped group ${s.name} (${s.title}; ${s.files} files, ~${secs(s.name)} s recorded): ${s.why === "never" ? "never at landing" : "no change to its triggers"}.`);
+  picked = pick;
+  return pick.files;
+}
+
+/** `files` narrowed to the named groups' ("all": every group's). */
+function groupsOnly(files, names) {
+  const pick = selectFiles(files, [], { mode: "groups", only: names });
+  say(`run-tests: --groups ${names.join(",")}: ${pick.files.length} of ${files.length} test files (${pick.ran.map(titleOf).join(", ")}).`);
+  picked = pick;
+  return pick.files;
+}
+
+function titleOf(name) {
+  return GROUPS.find((g) => g.name === name)?.title ?? name;
+}
+function shortList(list) {
+  return `${list.slice(0, 3).join(", ")}${list.length > 3 ? `, +${list.length - 3} more` : ""}`;
+}
+/** A selection line: on stdout, or stderr under --plan (whose stdout is the JSON alone). */
+function say(line) {
+  (opts["--plan"] ? console.error : console.log)(line);
 }
 
 // The temp dir every test file shares (server/test-ports.ts keeps its cross-process port locks there):
@@ -346,6 +452,13 @@ if (runtime === "node") {
     if (code !== 0 || stuck) failed = true;
   }
   const refused = guardReport(process.env.SOVA_TEST_GUARD_DIR);
+  // node --test's output went to the terminal unread: the failing files the guard refused, or the run as one.
+  writeSovaOut({
+    passed: 0, failed: failed || refused.length ? 1 : 0, errors: 0, skipped: 0,
+    failures: refused.length ? refused.map((f) => ({ name: f, file: f, message: "refused by the tier guard" })) : failed ? [{ name: "node --test run (see its output)" }] : [],
+    failingFiles: refused,
+    ranFiles: sets.flatMap((x) => x.files),
+  });
   process.exit(failed || refused.length ? 1 : 0);
 }
 
@@ -425,6 +538,7 @@ function hermeticEnv() {
     SOVA_TEST_HOME: root,
     PATH: [fakeClaudeDir(root), path.dirname(process.execPath), misePaths, process.env.PATH ?? ""].filter(Boolean).join(path.delimiter),
     SOVA_PRICES_FETCH: "off",
+    SOVA_GIT_MAINTENANCE: "off",
     // No per-server copy of the code (§app.chat-processes/code-generations): a server a test starts has
     // its state root here, on another filesystem than the checkout, where each copy is ~350 MB.
     SOVA_CHAT_CODE: "live",
@@ -577,6 +691,7 @@ if (results.length > 1) {
   console.log("\nslowest files:");
   for (const r of [...results].sort((a, b) => b.ms - a.ms).slice(0, 10)) console.log(`  ${(r.ms / 1000).toFixed(1).padStart(6)} s  ${r.file}`);
 }
+writeSovaOut(bunReport(results));
 const tierNames = [...new Set(sets.map((s) => s.tier))].join(" + ");
 console.log(`\nrun-tests (bun): ${results.length} files (${tierNames}), ${sum("pass")} pass, ${sum("fail")} fail, ${sum("skip")} skip, ${failed.length} failing files, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 for (const r of failed) console.log(`  FAIL ${r.file}`);

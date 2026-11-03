@@ -258,6 +258,7 @@ const ACCEPTS: Record<string, string> = {
  */
 const TYPE_ACCEPTS: Record<string, string> = {
   "session.title.set | real:title=null": "title null is the reset, by design (session.title.reset sends it)",
+  "org.project.version.rewrite | real:text=null": "text null is Use Automatic, by design (org.project.version.automatic sends it)",
   // Finding: POST /api/sessions ignores a profile or prompt that is not a string (startOf), and makes a plain session.
   ...Object.fromEntries(["profile", "prompt"].flatMap((p) => ["number", "float-huge", "boolean", "object", "array", "proto-object", "null"].map((b) => [`session.create | real:${p}=${b}`, "finding: a non-string profile or prompt is ignored, not refused"]))),
 };
@@ -276,8 +277,21 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.preview.off": "needs a minted preview, and minting connects to the port it shows",
   "project.worktree.merge": "a valid call needs a coding session of the project (its build row and git worktree), which only starting a coding session makes, and that starts its chat process",
   "project.worktree.remove": "a valid call needs a coding session of the project (its build row and git worktree), which only starting a coding session makes, and that starts its chat process",
+  "project.settings.propose.withdraw": "a valid call needs a settings card, which only the project overseer's sova_settings propose makes, in its chat",
   "usage.prices.refresh": "fetches the price list over the network; the in-process ledger here has prices off, so a valid call changes nothing",
   "push.test": "sends a real notification to every registered device",
+  // The merge queue's settings act on a started queue of a git project (queue-settings.test.ts, settings-routes.test.ts).
+  "project.merge-queue.settings.get": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.merge-queue.models.set": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.merge-queue.settings.save": "a valid call commits onto a git project's target through its started merge queue",
+  "project.merge-queue.settings.cancel": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.merge-queue.update-local-main": "a valid call needs the server's merge queue started on a git project with an origin, which the unit tier's app doesn't start",
+  "project.merge-queue.request.publish": "a valid call needs a queue entry checked and waiting for its request's text, which the unit tier's app doesn't start",
+  "project.merge-queue.land-how.set": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.merge-queue.land-how.clear": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.folder.list": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
+  "project.folder.read": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
+  "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the operator's browser or the token may)",
   "chat.stop": "a valid call on an open chat drives its process; on a closed one it writes nothing, so no effect oracle can read it back",
   "chat.compact": "acquires a chat handle, which starts the chat's process",
   "chat.rewind": "acquires a chat handle, which starts the chat's process",
@@ -286,10 +300,9 @@ const VALIDATE_ONLY: Record<string, string> = {
   "chat.reload-code": "a valid call on an open chat drives its process; on a closed one it writes nothing, so no effect oracle can read it back",
   "chat.mode-command": "acquires a chat handle, which starts the chat's process, and runs a project's program",
   "org.owner.request.chat": "a valid call starts a coding session in the request's project, which starts its chat process",
+  "session.offers.choose": "a valid click on a send button sends its text as the user's message, which starts the session's chat process for the turn",
   "session.title.auto": "a valid call names sessions with the title model, a model call",
   "session.title.shorten": "a valid call renames long titles with the title model, a model call",
-  "session.tags.backfill": "a valid call classifies sessions through the decision model; session tags don't run in-process here, so the route answers 409",
-  "session.tags.backfill.cancel": "with no tagging running it writes nothing, so no oracle can read it back; a running one needs the decision model",
   "session.worktree.cleanup": "a valid removal needs a git repository with a merged worktree; the dry run changes nothing, so no oracle can read it back",
   "insights.usage.refresh": "asks every provider for its usage over the network, which the unit tier may not",
 };
@@ -319,11 +332,12 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id === "project.overseer.todo.update") return [{ anchor: { pid: "no-such-project", id: "x" }, refuse: true, kind: "refused" }, { anchor: (() => { const a: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `po-${c.id}`); mkdirSync(d, { recursive: true }); a.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: c.id }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(a.pid)); await (await import("./org-engine")).hostOf(String(a.pid)).idle(); a.id = ((await sendTo(app, "POST", `/api/projects/${a.pid}/overseer/todos`, JSON.stringify({ text: "Anchor" }))).body as { todos: { id: string }[] }).todos[0]!.id; }); return a; })(), refuse: false, kind: "real" }];
   if (c.id === "project.overseer.todo.reorder") return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }, { anchor: (() => { const a: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `po-${c.id}`); mkdirSync(d, { recursive: true }); a.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: c.id }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(a.pid)); await (await import("./org-engine")).hostOf(String(a.pid)).idle(); a.id = ((await sendTo(app, "POST", `/api/projects/${a.pid}/overseer/todos`, JSON.stringify({ text: "Anchor" }))).body as { todos: { id: string }[] }).todos[0]!.id; }); return a; })(), refuse: false, kind: "real" }];
   // A registered project (made in the set-up, its id written into the anchor) takes each body past the project's lookup to the route's own checks.
-  if (c.id === "project.update" || c.id === "project.worktree.merge" || c.id === "project.worktree.remove") {
+  if (c.id === "project.update" || c.id === "project.worktree.merge" || c.id === "project.worktree.remove" || c.id === "project.claude-login.set") {
     const v: Record<string, unknown> = {};
     pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
     return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }, { anchor: v, refuse: false, kind: "real" }];
   }
+  if (c.id === "project.settings.undo" || c.id === "project.settings.propose.withdraw" || c.id === "project.overseer.settings.set") return [{ anchor: { pid: "no-such-project", card: "sc_1" }, refuse: true, kind: "refused" }, { anchor: withProject({ card: "sc_1" }), refuse: false, kind: "real", onlyWrongTypes: true }];
   // A folder that is no folder is refused whatever else the body says; one already registered (in the set-up) is the
   // route's own 409 after its checks of the body, so each case meets them and none registers a project.
   if (c.id === "project.create") {
@@ -378,6 +392,28 @@ function ownerRequestFixture(status: "done" | "declined"): Fixture {
   };
 }
 
+/** An org with a project, for the versions on its owner's page (§app.project-assistant/versions); `oracle` reads the
+    summary kept for the copy `i_fuzz` afterwards. */
+function versionFixture(oracle?: (e: import("./version-summaries").SummaryEntry | undefined) => void, extra: Record<string, unknown> = {}): Fixture {
+  return {
+    values: () => {
+      const v: Record<string, unknown> = { instance: "i_fuzz", ...extra };
+      pendingSetup.push(async () => {
+        const orgs = await import("./orgs");
+        const d = join(root, `org-project-${++n}`);
+        mkdirSync(d, { recursive: true });
+        const org = await orgs.createOrg({ name: `Fuzz Org ${n}`, dir: join(root, `org-${n}`) });
+        const proj = await orgs.addProject(org.id, { name: "Fuzz project", root: d });
+        v["org-id"] = org.id;
+        v["project-id"] = proj.id;
+      });
+      return v;
+    },
+    status: 200,
+    ...(oracle ? { oracle: async (_b: unknown, v: Record<string, unknown>) => oracle((await import("./version-summaries")).readSummaries(String(v["org-id"]), String(v["project-id"]))["i_fuzz"]) } : {}),
+  };
+}
+
 const FIXTURES: Record<string, Fixture> = {
   "session.list": { values: () => ({}), status: 200 },
   "session.get": { values: () => ({ session: session()[1] }), status: 200 },
@@ -385,6 +421,32 @@ const FIXTURES: Record<string, Fixture> = {
   "project.services.view": { values: () => ({ pid: "no-such-project" }), status: 404 },
   "org.owner.request.done": ownerRequestFixture("done"),
   "org.owner.request.decline": ownerRequestFixture("declined"),
+  "org.project.versions": versionFixture(),
+  "org.project.version.rewrite": versionFixture((e) => assert.equal(e?.team?.text, "Fuzz summary"), { text: "Fuzz summary" }),
+  "org.project.version.automatic": versionFixture((e) => assert.equal(e?.team, undefined)),
+  "org.project.version.hide": versionFixture((e) => assert.equal(e?.hidden, true)),
+  "org.project.version.show": versionFixture((e) => assert.equal(e?.hidden, undefined)),
+  "org.owner.request.noted": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => {
+        const orgs = await import("./orgs");
+        const store = await import("./project-assistant-store");
+        const d = join(root, `org-project-${++n}`);
+        mkdirSync(d, { recursive: true });
+        const org = await orgs.createOrg({ name: `Fuzz Org ${n}`, dir: join(root, `org-${n}`) });
+        const proj = await orgs.addProject(org.id, { name: "Fuzz project", root: d });
+        const r = store.fileRequest(org.id, { projectId: proj.id, kind: "bug", title: "A fuzz request", text: "Filed by the fuzz." });
+        store.setRequestStatus(org.id, r.id, "started");
+        store.closeRequestLine(org.id, r.id, { kind: "owner", personId: "p_fuzz" });
+        v["org-id"] = org.id;
+        v["request-id"] = r.id;
+      });
+      return v;
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal((await import("./project-assistant-store")).findRequest(String(v["org-id"]), String(v["request-id"]))?.closed?.noted, true),
+  },
   "overseer.attention": { values: () => ({}), status: 200 },
   "overseer.todo.list": { values: () => ({}), status: 200 },
   "models.list": { values: () => ({}), status: 200 },
@@ -440,6 +502,10 @@ const FIXTURES: Record<string, Fixture> = {
   "session.draft.get": { values: () => ({ session: session()[0] }), status: 200 },
   "session.tools.get": { values: () => ({ session: session()[0] }), status: 200 },
   "session.context": { values: () => ({ session: session()[0] }), status: 200 },
+  // A path the setup doesn't list: refused before any read.
+  "session.context.file": { values: () => ({ session: session()[0], file: "/etc/hostname" }), status: 404 },
+  "session.align.triage": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.workers.checks": { values: () => ({ session: session()[0] }), status: 200 },
   "session.insights": { values: () => ({ session: session()[0] }), status: 200 },
   "session.group.list": { values: () => ({}), status: 200 },
   "session.fork": {
@@ -580,6 +646,40 @@ const FIXTURES: Record<string, Fixture> = {
     status: 200,
     oracle: async (_b, v) => assert.equal((await read("GET", `/api/projects/${v.pid}`)).name, "Renamed by the fuzz"),
   },
+  "project.claude-login.get": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
+      return v;
+    },
+    status: 200,
+  },
+  "project.claude-login.set": {
+    values: () => {
+      const v: Record<string, unknown> = { login: "default" };
+      pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
+      return v;
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal((await read("GET", `/api/projects/${v.pid}/claude-login`)).setting, "default"),
+  },
+  "org.claude-login.get": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => { const org = await (await import("./orgs")).createOrg({ name: `Fuzz Org ${++n}`, dir: join(root, `org-${n}`) }); v["org-id"] = org.id; });
+      return v;
+    },
+    status: 200,
+  },
+  "org.claude-login.set": {
+    values: () => {
+      const v: Record<string, unknown> = { login: "default" };
+      pendingSetup.push(async () => { const org = await (await import("./orgs")).createOrg({ name: `Fuzz Org ${++n}`, dir: join(root, `org-${n}`) }); v["org-id"] = org.id; });
+      return v;
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal((await read("GET", `/api/orgs/${v["org-id"]}/claude-login`)).setting, "default"),
+  },
   "project.archive": {
     values: () => {
       const v: Record<string, unknown> = {};
@@ -615,10 +715,79 @@ const FIXTURES: Record<string, Fixture> = {
   "insights.agents": { values: () => ({}), status: 200 },
   "insights.worktrees": { values: () => ({ paths: ["fuzz"] }), status: 200 },
   "insights.session.workers": { values: () => ({ session: session()[0] }), status: 200 },
+  "insights.session.inbox": { values: () => ({ session: session()[0], team: "team_01", worker: "ag_01" }), status: 404 },
   "sova.health": { values: () => ({}), status: 200 },
   ...Object.fromEntries(["sova", "models", "provider-limits", "align", "delegate", "spec", "team", "summarizer", "overseer", "memory", "subagents"].map((d) => [`settings.${d}.get`, { values: () => ({}), status: 200 }])),
   "settings.align.set": { values: () => ({ style: "default", visuals: true }), status: 200, oracle: async () => assert.equal(((await read("GET", "/api/settings/align")).settings as { visuals: boolean }).visuals, true) },
-  "session.tags.backfill.status": { values: () => ({}), status: 200 },
+  "settings.assistant-default.set": { values: () => ({ assistant: { model: "zai/glm-5.3", thinking: "high" } }), status: 200, oracle: async () => assert.equal(((await read("GET", "/api/baton/settings")).assistant as { model: string }).model, "zai/glm-5.3") },
+  "session.offers.get": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.offers.show": {
+    values: () => ({ session: offersSession(), offer: "hello" }),
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/session-offers?path=${encodeURIComponent(String(v.session))}`)).cards as unknown[]).length, 1),
+  },
+  "session.offers.snooze": {
+    values: () => ({ session: session()[0], offer: "hello" }),
+    status: 200,
+    oracle: async (_b, v) => assert.deepEqual((await read("GET", `/api/session-offers?path=${encodeURIComponent(String(v.session))}`)).notNow, ["hello"]),
+  },
+  "session.offers.unsnooze": {
+    values: () => ({ session: session()[0], offer: "hello" }),
+    status: 200,
+    oracle: async (_b, v) => assert.deepEqual((await read("GET", `/api/session-offers?path=${encodeURIComponent(String(v.session))}`)).notNow, []),
+  },
+  "session.card.get": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.merge-cards": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.card.post": {
+    values: () => ({ session: cardsSession(), type: "project.note", data: { title: "Build", tone: "ok", line: "Green." } }),
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/session-cards?path=${encodeURIComponent(String(v.session))}`)).cards as unknown[]).length, 1),
+  },
+  "session.card.answer": {
+    values: () => {
+      const path = cardsSession();
+      pendingSetup.push(async () => void (await sendTo(app, "POST", "/api/session-cards/post", JSON.stringify({ path, type: "project.ask", data: { title: "Format", ask: "Which?", options: [{ label: "CSV" }, { label: "Parquet" }] } }))));
+      return { session: path, card: "cd_1", answer: { option: 1 } };
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/session-cards?path=${encodeURIComponent(String(v.session))}`)).cards as { state: string }[])[0]?.state, "answered"),
+  },
+  "project.settings.get": { values: () => withProject(), status: 200 },
+  "project.settings.history": { values: () => withProject(), status: 200 },
+  "project.overseer.settings.set": {
+    values: () => withProject({ watch: false }),
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/projects/${v.pid}/overseer`)).settings as { watch: boolean }).watch, false),
+  },
+  "project.settings.undo": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => {
+        v.pid = await newProject();
+        await sendTo(app, "PATCH", `/api/projects/${v.pid}/overseer`, JSON.stringify({ holdMin: 3 }));
+        v.id = ((await read("GET", `/api/projects/${v.pid}/settings/history`)) as unknown as { id: string }[])[0]!.id;
+      });
+      return v;
+    },
+    status: 200,
+    oracle: async (_b, v) => assert.equal(((await read("GET", `/api/projects/${v.pid}/overseer`)).settings as { holdMin: number }).holdMin, 10),
+  },
+  "project.offers.list": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
+      return v;
+    },
+    status: 200,
+  },
+  "project.cards.list": {
+    values: () => {
+      const v: Record<string, unknown> = {};
+      pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
+      return v;
+    },
+    status: 200,
+  },
   "session.worktree.summary": { values: () => ({ session: session()[0] }), status: 200 },
   "session.cleanup": {
     // An archived session last written an hour ago, past the guard on files a process may still be writing.
@@ -643,13 +812,53 @@ const FIXTURES: Record<string, Fixture> = {
   // Its first read makes the Overseer's file; done in the set-up, so the valid call only reads.
   "overseer.get": { values: () => { pendingSetup.push(async () => void (await sendTo(app, "GET", "/api/overseer"))); return {}; }, status: 200 },
   "overseer.memory.get": { values: () => ({}), status: 200 },
-  "project.overseer.get": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `pf-${Math.random().toString(36).slice(2)}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: "Fuzz fixture" }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(v.pid)); await (await import("./org-engine")).hostOf(String(v.pid)).idle(); }); return v; }, status: 200 },
-  "project.overseer.actions": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `pf-${Math.random().toString(36).slice(2)}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: "Fuzz fixture" }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(v.pid)); await (await import("./org-engine")).hostOf(String(v.pid)).idle(); }); return v; }, status: 200 },
-  "project.overseer.memory.get": { values: () => { const v: Record<string, unknown> = {}; pendingSetup.push(async () => { const d = join(root, `pf-${Math.random().toString(36).slice(2)}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d, name: "Fuzz fixture" }))).body as { project: { id: string } }).project.id; /* its runtime registry's first read, done now: no write lands after the hash */ await (await import("./projects/runtime")).observe(String(v.pid)); await (await import("./org-engine")).hostOf(String(v.pid)).idle(); }); return v; }, status: 200 },
+  "project.overseer.get": { values: () => withProject(), status: 200 },
+  "project.overseer.actions": { values: () => withProject(), status: 200 },
+  "project.overseer.memory.get": { values: () => withProject(), status: 200 },
   "schedule.list": { values: () => ({}), status: 200 },
   "playbook.list": { values: () => ({}), status: 200 },
   "draft-spec.list": { values: () => ({}), status: 200 },
 };
+/** A registered project (its overseer's settings read their defaults), made in the set-up. */
+async function newProject(): Promise<string> {
+  const d = join(root, `project-${++n}`);
+  mkdirSync(d, { recursive: true });
+  const pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id;
+  // No looks of its own while the fuzz runs: its watch loop writes nothing behind a later fixture's hash.
+  await sendTo(app, "PATCH", `/api/projects/${pid}/overseer`, JSON.stringify({ watch: false }));
+  // Its runtime registry's first read, done now: no write lands after the hash.
+  await (await import("./projects/runtime")).observe(pid);
+  await (await import("./org-engine")).hostOf(pid).idle();
+  return pid;
+}
+/** Values naming a project made in the set-up (its pid filled in before the hash is taken), plus `extra`. */
+function withProject(extra: Record<string, unknown> = {}): Record<string, unknown> {
+  const v: Record<string, unknown> = { ...extra };
+  pendingSetup.push(async () => void (v.pid = await newProject()));
+  return v;
+}
+/** A session whose folder's project declares one offer, `hello`, with a send button (§chat/offers). */
+function offersSession(): string {
+  const d = join(root, `offers-project-${++n}`);
+  mkdirSync(join(d, ".sova"), { recursive: true });
+  writeFileSync(join(d, ".sova", "offers.json"), JSON.stringify({ version: 1, offers: { hello: { when: "Always.", title: "Say hello?", repeat: "once-per-session", buttons: [{ label: "Hello", about: "Sends hello.", send: "hello" }] } } }));
+  const id = `fuzz-${++n}`;
+  const path = join(sessionsDir, `2026-10-17T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-17T00:00:00.000Z", cwd: d })}\n`);
+  return canonicalPath(path);
+}
+/** A fresh session whose folder declares two card types: a status note, and a question answered at once (§chat.transcript-cards/files). */
+function cardsSession(): string {
+  const d = join(root, `cards-project-${++n}`);
+  for (const [name, card] of [["note", { draws: "status" }], ["ask", { draws: "question", answer: "at-once" }]] as const) {
+    mkdirSync(join(d, ".sova", "cards", name), { recursive: true });
+    writeFileSync(join(d, ".sova", "cards", name, "card.json"), JSON.stringify({ version: 1, toolkit: 1, title: name, ...card }));
+  }
+  const id = `fuzz-${++n}`;
+  const path = join(sessionsDir, `2026-10-17T00-00-00-000Z_${id}.jsonl`);
+  writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-17T00:00:00.000Z", cwd: d })}\n`);
+  return canonicalPath(path);
+}
 // Set-up a fixture needs before its hash is taken, done by the fixture's own `values`.
 const pendingSetup: (() => Promise<void>)[] = [];
 const archived: string[] = [];
@@ -667,6 +876,9 @@ function todoId(text: string): string {
 async function settle(values: Record<string, unknown>): Promise<Record<string, unknown>> {
   for (const s of pendingSetup.splice(0)) await s();
   for (const p of archived.splice(0)) await sendTo(app, "POST", "/api/sessions/archive", JSON.stringify({ path: p, archived: true }));
+  // Every project made so far, by this set-up or an earlier one, has its software registry started and
+  // read now: that read otherwise lands SETTLE_MS later, behind whichever case's hash is current then.
+  await (await import("./projects/runtime")).settleRuntimeForTest();
   return Object.fromEntries(Object.entries(values).map(([k, v]) => [k, typeof v === "string" && v.startsWith("@todo:") ? todoIds[v.slice(6)] : v]));
 }
 

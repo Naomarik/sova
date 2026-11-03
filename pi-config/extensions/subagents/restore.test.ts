@@ -399,7 +399,10 @@ test("restart: a paused team stays paused (its resumed monitor is sent the resum
 		await until(() => (second.snapshot()?.workers ?? []).length === 3, "restored members");
 		const resumedMonitor = await second.call("agent_resume", { id: "ag_03" });
 		assert.match(resumedMonitor.content[0].text, /^Resumed ag_03 \(monitor\) .*It is the monitor of team_01, which is paused: it was sent its resume check, since its wake_nudges ended with the earlier parent\.$/);
-		assert.match(second.workers.at(-1).lastSteer, /^\[Team team_01 restored while paused\]\n.*your pending wake_nudges ended with it\. Run your standing instruction now: call team_roster;/);
+		// An urgent notice item, listed at once.
+		const rejoined = second.workers.at(-1);
+		await until(() => typeof rejoined.lastSteer === "string" && rejoined.lastSteer.includes("restored while paused"), "the resume check listed");
+		assert.match(rejoined.lastSteer, /\[Team team_01 restored while paused\]\n.*your pending wake_nudges ended with it\. Run your standing instruction now: call team_roster;/);
 		await second.call("agent_resume", { id: "ag_01" });
 		const roster = await ask(second.workers.at(-1), { type: "roster" });
 		assert.match(roster.text, /Assignments from the main thread \(the work you route; never replace or cancel it\):\n {4}ag_02 dev:\n {6}\| Write f01-f10\.\n {6}Later instructions from the main thread \(binding: part of dev's assignment; never tell dev they are not its work\), newest last:\n {6}> After f10, also write summary\.txt\./);

@@ -144,8 +144,105 @@ export function facetChoices(facets: UsageCosts["facets"] | undefined): CostChoi
 
 /** Every token of a count (`cacheWrite` already holds both TTLs). */
 export const tokenSum = (t: CostTokens) => t.input + t.output + t.cacheRead + t.cacheWrite;
-/** Cache read and write together, the model table's one Cache column. */
-export const cacheSum = (t: CostTokens) => t.cacheRead + t.cacheWrite;
+/** New input: the input tokens not read from cache, uncached input and cache writes together. A
+    provider that caches everything up to the end of each request (Claude Code) bills its new
+    content as cache writes, one that doesn't keeps it in `input`: this sum reads the same for both. */
+export const newInput = (t: CostTokens) => t.input + t.cacheWrite;
+
+/** New input's hover: "3.9M uncached · 1.3B written to cache". */
+export const newInputTitle = (t: CostTokens, fmt: (n: number) => string) => `${fmt(t.input)} uncached · ${fmt(t.cacheWrite)} written to cache`;
+
+/** Every input token: new input and cache reads (output left out). */
+export const inputSum = (t: CostTokens) => newInput(t) + t.cacheRead;
+
+/** A Hit rate cell's hover: "{reads} of {new input + reads} input tokens read from cache". */
+export const hitRateTitle = (t: CostTokens, fmt: (n: number) => string) => `${fmt(t.cacheRead)} of ${fmt(inputSum(t))} input tokens read from cache`;
+
+/**
+ * The cache hit rate, 0..1: the share of input tokens read from cache, cacheRead / (input +
+ * cacheRead + cacheWrite). Null when the count reported no cache read or write at all (a provider
+ * that doesn't cache, or doesn't say), or has no input: there is no rate to show, only its absence.
+ */
+export function cacheHitRate(t: CostTokens): number | null {
+  const all = inputSum(t);
+  if (t.cacheRead + t.cacheWrite <= 0 || all <= 0) return null;
+  return t.cacheRead / all;
+}
+
+/** A rate in whole percent: "96%"; "<1%" and ">99%" where rounding would claim a 0% or 100% that
+    isn't exact; "—" for none. */
+export function cacheRateWords(rate: number | null): string {
+  if (rate === null || !Number.isFinite(rate)) return "—";
+  if (rate <= 0) return "0%";
+  if (rate >= 1) return "100%";
+  if (rate < 0.005) return "<1%";
+  if (rate >= 0.995) return ">99%";
+  return `${Math.round(rate * 100)}%`;
+}
+
+/** One part of a model's cost, as its breakdown shows it. */
+export type CostPartId = "cacheWrite" | "cacheRead" | "output" | "input";
+export interface CostPart {
+  part: CostPartId;
+  /** The legend's word. */
+  label: string;
+  /** Dollars of the priced calls. */
+  usd: number;
+  /** Share of the priced dollars, 0..1; null when nothing was priced (no share to show). */
+  share: number | null;
+  /** Tokens of every call, priced or not. */
+  tokens: number;
+}
+
+const PARTS: readonly { part: CostPartId; label: string }[] = [
+  { part: "cacheWrite", label: "Cache writes" },
+  { part: "cacheRead", label: "Cache reads" },
+  { part: "output", label: "Output" },
+  { part: "input", label: "Input" },
+];
+
+/**
+ * Where a row's cost went: its four parts in one fixed order (Cache writes, Cache reads, Output,
+ * Input), never sorted by size, so the same part sits in the same place on every row. Dollars and
+ * shares come from `usdBy`, which counts priced calls only; tokens count every call. Shares are of
+ * the parts' own sum, so they add to 1 even if `usd` was rounded elsewhere.
+ */
+export function costParts(row: Pick<UsageSpend, "usdBy" | "tokens">): CostPart[] {
+  const total = PARTS.reduce((s, p) => s + Math.max(0, row.usdBy[p.part]), 0);
+  return PARTS.map((p) => {
+    const usd = Math.max(0, row.usdBy[p.part]);
+    return { ...p, usd, share: total > 0 ? usd / total : null, tokens: row.tokens[p.part] };
+  });
+}
+
+/** A part's share in whole percent, with Hit rate's edges: "<1%", ">99%"; "—" when there is none. */
+export const shareWords = (share: number | null) => cacheRateWords(share);
+
+/** Cache writes split by how long they stay: 1-hour and 5-minute writes, each its dollars and tokens. */
+export function cacheWriteSplit(row: Pick<UsageSpend, "usdBy" | "tokens">): { hour: { usd: number; tokens: number }; fiveMin: { usd: number; tokens: number } } {
+  const hour = { usd: Math.max(0, row.usdBy.cacheWrite1h), tokens: Math.max(0, row.tokens.cacheWrite1h) };
+  return {
+    hour,
+    fiveMin: { usd: Math.max(0, row.usdBy.cacheWrite - hour.usd), tokens: Math.max(0, row.tokens.cacheWrite - hour.tokens) },
+  };
+}
+
+/** What an opened model row's breakdown can say about its dollars. */
+export type BreakdownKind = "priced" | "partly" | "free" | "unpriced";
+
+/**
+ * `unpriced`: no call has a price, so only the token split shows. `free`: every call costs
+ * nothing (a local model). `partly`: some calls had no price, so the dollars split the priced
+ * calls and a note counts the rest. `priced`: every call was priced.
+ */
+export function breakdownKind(row: Pick<UsageSpend, "usd" | "tokens" | "unpricedTokens"> & { status: "priced" | "free" | "unpriced" | "mixed" }): BreakdownKind {
+  if (row.status === "unpriced" || costWord(row) === "unpriced") return "unpriced";
+  if (row.status === "free" && row.usd === 0) return "free";
+  return row.unpricedTokens > 0 ? "partly" : "priced";
+}
+
+/** The hover note on a row with no rate. */
+export const noCacheNote = (of: "model" | "provider" = "model") => `No cache use reported for this ${of}.`;
 
 /** Most expensive first; ties by tokens, then by `name`, so two equal rows never swap between polls. */
 export function byCost<T extends Pick<UsageSpend, "usd" | "tokens">>(rows: readonly T[], name: (r: T) => string): T[] {
@@ -187,13 +284,38 @@ export const costWord = (s: Pick<UsageSpend, "usd" | "tokens" | "unpricedTokens"
 export const kindRows = <T extends { kind: UsageKind }>(rows: readonly T[]): T[] =>
   [...rows].sort((a, b) => USAGE_KIND_ORDER.indexOf(a.kind) - USAGE_KIND_ORDER.indexOf(b.kind));
 
-/** A project row's name: its project's (`name` looks it up), else the last part of its folder, else
-    "No project" for calls with neither (Sova's own decisions). */
-export function projectName(row: Pick<UsageProjectRow, "project" | "cwd">, name: (id: string) => string | undefined = () => undefined): string {
+/** A project row's name: the name the server gave it; else (an older server) its project's (`name` looks it up),
+    else the last part of its folder, else "No project" for calls with neither (Sova's own decisions). */
+export function projectName(row: Pick<UsageProjectRow, "project" | "cwd" | "name">, name: (id: string) => string | undefined = () => undefined): string {
+  if (row.name) return row.name;
   if (row.project) return name(row.project) ?? row.project;
   if (!row.cwd) return "No project";
   const parts = row.cwd.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? row.cwd;
+}
+
+/** The By project rows in their order: most expensive first, Other folders always last. */
+export function projectRows<T extends Pick<UsageProjectRow, "usd" | "tokens" | "project" | "cwd" | "name" | "kind">>(rows: readonly T[]): T[] {
+  const sorted = byCost(rows, (r) => r.name ?? r.project ?? r.cwd ?? "");
+  return [...sorted.filter((r) => r.kind !== "other"), ...sorted.filter((r) => r.kind === "other")];
+}
+
+/** A By project row's hover: where its spend comes from. An older server's row: its folder or project id. */
+export function projectRowTitle(row: Pick<UsageProjectRow, "project" | "cwd" | "kind" | "path" | "folders" | "archived">): string | undefined {
+  switch (row.kind) {
+    case "project":
+      return `${row.path ? `${row.path}\n` : ""}Every session in this project's folders, worktrees included.${row.archived ? " Archived." : ""}`;
+    case "folder":
+      return `${row.path ?? row.cwd ?? ""}\nEvery session in this checkout, worktrees included.`;
+    case "overseer":
+      return "The Overseer's and your organizations' conversations.";
+    case "other": {
+      const n = row.folders ?? 0;
+      return `${n} ${n === 1 ? "folder" : "folders"} that are no project or checkout, and calls with no folder.`;
+    }
+    default:
+      return row.cwd ?? row.project ?? undefined;
+  }
 }
 
 /** A date as the footer says it: `Oct 4`, or `Oct 4, 2025` in another year; null for none. */

@@ -212,6 +212,20 @@ test("the shared rules carry the mark syntax, and the free-form limits are in ht
   assert.equal(MAX_TEXT, 200);
 });
 
+// §chat.markdown/visuals, Free-form; §chat.markdown/vis-wireframe-room: html is the default for a screen beyond a simple
+// one, asked for or not, and a wireframe says what it can't show. No file teaches html as a last resort any more.
+test("the guide makes a vis html prototype the default for a screen beyond a simple one, and the wireframe says what it can't show", () => {
+  const html = /^- html \/ svg: (.*)$/m.exec(FILES.overview!)?.[1] ?? "";
+  assert.match(html, /^html for a clickable prototype, the default for any screen beyond a simple one \(.*panes side by side, an editor in a dialog, a dense desktop layout\), without being asked/);
+  assert.match(FILES.overview!, /^- wireframe: a simple screen's layout/m);
+  assert.match(FILES["html-svg"]!, /the default for any screen beyond a simple one/);
+  assert.match(FILES["html-svg"]!, /Draw it without being asked for HTML/);
+  for (const [name, text] of Object.entries(FILES)) assert.doesNotMatch(stripVisComments(text), /only when (none of the kinds|no kind)|last resort/i, name);
+  assert.match(FILES.wireframe!, /Can't show: colour, type, real proportions, interaction, or a dense multi-pane desktop editor/);
+  assert.match(FILES.wireframe!, /^- Beyond a wireframe: .*`vis html` prototype.*`vis_check`/m);
+  assert.match(FILES.wireframe!, /360px confirm; one holding any other row, a grid, col, table, sidebar or two fields widens to most of the frame/);
+});
+
 test("the guide quotes a mark target with spaces, and its timeline example marks one that way", () => {
   assert.match(GUIDE, /A target is its item's exact label, quoted if it has spaces \(even if its row isn't\): `mark "Vue 2" "…"`/);
   assert.match(GUIDE, /No ids; mark a row, not a step\./, "steps: a mark names a row");
@@ -296,6 +310,6 @@ for (const html of [false, true]) {
 // round's rule fixes then changed it). A deliberate edit to shared.md or a share kind's file changes
 // it: check the new text reads right for a gathering session, then put its hash here.
 test("the gathering guide is the text last reviewed", () => {
-  assert.equal(createHash("sha256").update(gatheringVisGuide()).digest("hex"), "150b02a33827be06cac38ab1727a2059825f7e346499b0e457fbcfaae0fae6fd");
-  assert.equal(createHash("sha256").update(gatheringVisGuide(undefined, { html: true })).digest("hex"), "7df8845c8af7ff0d544d86f15c61986bf0e2ba09ae7891dc93d15ab499a8bc9c");
+  assert.equal(createHash("sha256").update(gatheringVisGuide()).digest("hex"), "3ff8f7a92da1828540098628dc2cdc710c13455a424bbfafa8339aedbcd517f7");
+  assert.equal(createHash("sha256").update(gatheringVisGuide(undefined, { html: true })).digest("hex"), "b91b88df2c6cdd3b1684bc3ee84096016e8113fb537d2c6ba8b8e9951f29ff6e");
 });

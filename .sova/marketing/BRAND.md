@@ -124,5 +124,5 @@ Platforms: not decided. The **Write announcement posts** playbook asks which bef
 | | |
 |---|---|
 | License | `Apache-2.0` |
-| Hosting | Not decided |
-| Site URL | none yet |
+| Hosting | Cloudflare Pages |
+| Site URL | https://sova.naomarik.com/ |

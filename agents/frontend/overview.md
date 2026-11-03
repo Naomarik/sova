@@ -48,8 +48,9 @@ must stay DOM- and Solid-free), browser testing, and the project skills.
 One runtime import direction runs from the server into `src/`, so these files must load without a DOM
 or Solid, and an edit to them reaches the running server only at its restart:
 
-- `server/vis-check.ts` (the vis retry and the `vis_check` tool) imports `src/vis/parse.ts` and
-  `src/vis/kinds/frame/parse.ts`: the parse side of `src/vis/` (`parse.ts`, `registry.ts`, `src/vis/core/`,
+- `server/vis-check.ts` (the vis retry and the `vis_check` tool) imports `src/vis/parse.ts`,
+  `src/vis/kinds/frame/parse.ts` and `src/vis/kinds/wireframe/layout.ts` (with `kinds/tree/measure.ts`, whose canvas
+  is guarded): the parse side of `src/vis/` (`parse.ts`, `registry.ts`, `src/vis/core/`,
   `kinds/*/parse` and height/layout) stays DOM- and Solid-free at load.
 - `server/baton-view.ts` (the share pages' markup backstop) imports `src/share/markdown.ts`
   (`shareFences`: the share page's own markdown-it parse, so it finds fences exactly as the page draws
@@ -57,6 +58,10 @@ or Solid, and an edit to them reaches the running server only at its restart:
 - `server/transcript.ts` imports `src/lib/message.ts` (`argsSummary`, `contentText`, `spawnName`) and
   `src/lib/tool-diff-stats.ts` (with `src/lib/diff/parse.ts`), so a slim tool row's folded line and
   "+n −m" are the card's own (§chat.transcript/slim-rows).
+- `server/session-feed.ts`, `server/app.ts` and `server/sessions-index.ts` import
+  `src/lib/summary-diff.ts` (`rowKey`, `rowsDigest`, `byActivity`, the list version header), so the
+  feed's `rows` frames, their digest and the list order are the very ones a tab merges and checks
+  (`src/lib/list-rows.ts`). Change a compared field or the sort there and both sides move together.
 
 The other way, `src/` imports a few pi-config files at runtime (`src/lib/format.ts` re-exports
 `pi-config/extensions/stamp/format.ts` and imports `pi-config/extensions/claude-code/catalog.ts`;

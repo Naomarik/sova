@@ -33,7 +33,7 @@ import {
 import { setShowSummaries, showSummaries } from "../lib/summary-line";
 import { compressWork, setCompressWork } from "../lib/work-compression";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
-import type { SettingsTab } from "../lib/settings-nav";
+import { settingsProject, type SettingsTab } from "../lib/settings-nav";
 import { setExperimentalSaved } from "../lib/experimental-draft";
 import { AlignmentSettings } from "./AlignmentSettings";
 import { policyDraft, policySaveError, policySaving, setPolicyDraft, setPolicySaved } from "../lib/model-policy-draft";
@@ -44,6 +44,7 @@ import {
   failedForms,
   footerStatus,
   formNames,
+  heldEdits,
   invalidForms,
   resetAllDrafts,
   saveAllDrafts,
@@ -62,16 +63,18 @@ import { OutreachSettingsSection } from "./OutreachSettings";
 import { PushSettingsSection } from "./PushSettings";
 import { SessionTitleSettingsSection } from "./SessionTitleSettings";
 import { MemorySettingsSection } from "./MemorySettings";
+import { MergeQueueSettingsSection } from "./settings/MergeQueueSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
 import { ProfilesSettingsSection } from "./ProfilesSettings";
 import { TypographySection } from "./TypographySection";
+import { ServerSettingsSection } from "./ServerSettings";
 import { UpdatesSettingsSection } from "./UpdatesSettings";
 import { VoiceSettingsSection } from "./VoiceSetup";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
-/** The tab rail. Sixteen screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Nineteen screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 export const TABS = [
@@ -87,6 +90,7 @@ export const TABS = [
   { id: "summaries", label: "Summaries", icon: "chat" as const },
   { id: "memory", label: "Memory", icon: "clock" as const },
   { id: "organizations", label: "Organizations", icon: "network" as const },
+  { id: "merge-queue", label: "Merge Queue", icon: "code" as const },
   { id: "themes", label: "Themes", icon: "image" as const },
   { id: "mesh", label: "Mesh", icon: "branch" as const },
   { id: "public-links", label: "Public links", icon: "external" as const },
@@ -112,8 +116,10 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
   /** Every gated form holding unsaved edits, in rail order — the registry the drafts join (settings-draft.ts). */
   const dirty = createMemo(() => dirtyForms());
   /** Every way out (Close, Esc, the scrim) comes through here, so none of them drops a draft silently. */
+  /** What a close asks about: the gated forms' drafts and the edits a tab saves on its own. */
+  const unsaved = createMemo(() => [...dirty(), ...heldEdits()]);
   const requestClose = () => {
-    const held = dirty();
+    const held = unsaved();
     if (held.length > 0) {
       // To the first screen that holds an edit, unless the one showing already does.
       if (!held.some((f) => f.tab === tab())) setTab(held[0]!.tab as TabId);
@@ -277,6 +283,12 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
               <BatonSettingsSection />
             </div>
           </Show>
+          {/* Mounted only while its tab is: the project's queue is read when it opens. */}
+          <Show when={tab() === "merge-queue"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-merge-queue" aria-labelledby="settings-tab-merge-queue">
+              <MergeQueueSettingsSection project={settingsProject()} />
+            </div>
+          </Show>
           {/* The panel is mounted only while its tab is: the themes poll starts when this tab
               opens and stops with it, which is the lifecycle the settings dialog spec asks for. */}
           <Show when={tab() === "themes"}>
@@ -317,12 +329,12 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
             </div>
           </Show>
         </div>
-        <Show when={closeHeld() && dirty().length > 0}>
+        <Show when={closeHeld() && unsaved().length > 0}>
           <div class="settings-close-held">
             <Banner
               tone="warn"
-              title={`Your ${formNames(dirty())} changes aren't saved.`}
-              body="Save them, or discard them and close."
+              title={`Your ${formNames(unsaved())} changes aren't saved.`}
+              body={dirty().length === 0 ? "Save them on their tab, or discard them and close." : "Save them, or discard them and close."}
               action={
                 <span class="settings-close-held-actions">
                   <button type="button" class="button button-sm button-ghost" onClick={() => setCloseHeld(false)}>
@@ -414,7 +426,8 @@ function ExperimentalPanel() {
  * The browser's part is written to no machine — no policy file, no server endpoint — which is the
  * line between it and Models, and the reason the sidebar's Recent region has no control of its own:
  * a count that could be set in two places would disagree in one of them. The Updates section at the
- * bottom is the machine's, Save-gated like every server-backed form (UpdatesSettings.tsx).
+ * bottom is the machine's, Save-gated like every server-backed form (UpdatesSettings.tsx); above it,
+ * the machine's server and Restart Sova (ServerSettings.tsx).
  */
 function GeneralPanel() {
   /**
@@ -460,7 +473,7 @@ function GeneralPanel() {
     <>
       <p class="settings-intro">
         How this browser draws Sova. The settings above stay in this browser; another device keeps
-        its own. Updates, below, are this machine's.
+        its own. The server and its updates, below, are this machine's.
       </p>
       <div class="field settings-field">
         <label class="field-label" for="recent-count">
@@ -527,6 +540,7 @@ function GeneralPanel() {
           active. A draft's first line still shows.
         </span>
       </div>
+      <ServerSettingsSection />
       <UpdatesSettingsSection />
     </>
   );

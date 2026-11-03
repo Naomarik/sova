@@ -2,7 +2,8 @@
 // Static: the drawings are `vis` sources drawn by the chat's own renderer, never a model's. The
 // figures are the engine's — memory-help.test.ts pins each one to the server's constant.
 import type { MemoryType } from "../../shared/protocol";
-import { MEMORY_SIZES, memoryTypeInfo } from "../../shared/memory";
+import { memoryTypeInfo } from "../../shared/memory";
+import { sizeLabel } from "./memory-ui";
 
 /** A summary line's asked size (server/memory/tree.ts `LIMIT`, bytes), as the card rounds it. */
 export const HELP_LINE_CHARS = 500;
@@ -10,6 +11,22 @@ export const HELP_LINE_CHARS = 500;
 export const HELP_WAIT_SECONDS = 20;
 /** The summarizer new installs start with (server/memory/settings.ts `DEFAULT_SUMMARIZER`). */
 export const HELP_DEFAULT_SUMMARIZER = "Haiku 5.5 at low effort";
+
+/** About how many tokens a KB of summary is (about 4 bytes a token), rounded as the size lines say it. */
+export const TOKENS_PER_KB = 250;
+
+/** A UniiChat size's range in tokens: "16,000–32,000" for 128 (its view merges from the size down to half). */
+export const uniichatTokens = (size: number): string =>
+  `${Math.round((size / 2) * TOKENS_PER_KB).toLocaleString("en-US")}–${Math.round(size * TOKENS_PER_KB).toLocaleString("en-US")}`;
+
+/** Settings → Memory's lines under each type's Summary size (§app.settings-dialog/memory), which the help
+    card's "What the settings change" repeats word for word. UniiChat's names the size picked. */
+export const SIZE_LINES = {
+  uniichat: (size: number) =>
+    `How much summary the model reads each message. Bigger keeps more of the chat in fine detail but costs more each message (${sizeLabel("uniichat", size)} is about ${uniichatTokens(size)} tokens); smaller merges older lines sooner and leans on the model opening them.`,
+  zoomable: "How much a compaction keeps. Bigger keeps more detail, but the next compaction comes sooner.",
+  both: "Applies from each chat's next message (UniiChat) or next compaction. Nothing is deleted: making it bigger keeps finer detail from now on, and older lines stay merged.",
+} as const;
 
 export interface HelpDrawing {
   /** The fence's kind word (`vis flow`). */
@@ -105,7 +122,7 @@ export const MEMORY_HELP_TABS: readonly MemoryHelpTab[] = [
 export const MEMORY_HELP_SETTINGS: readonly { term: string; text: string }[] = [
   {
     term: "Summary size",
-    text: `Set per chat, in the mode menu's Memory type panel (${MEMORY_SIZES[0]} to ${MEMORY_SIZES[MEMORY_SIZES.length - 1]} KB). Bigger keeps more of the chat in fine detail but costs more each turn; smaller merges sooner and leans on the model opening lines.`,
+    text: `Set on this page, one for each type. UniiChat: ${SIZE_LINES.uniichat(uniichat.defaultSize)} Zoomable compaction: ${SIZE_LINES.zoomable} ${SIZE_LINES.both}`,
   },
   {
     term: "Summarizer model and effort",

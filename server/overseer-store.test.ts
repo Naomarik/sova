@@ -48,11 +48,98 @@ describe("overseer state rotation (/clear)", () => {
   });
 });
 
+describe("the one-time move off the old five quick actions (version 2)", () => {
+  const old = () => store.OLD_QUICK_ACTIONS.map((a) => ({ ...a }));
+  const fileWith = (name: string, body: Record<string, unknown>) => {
+    const file = join(agentDir, name);
+    writeFileSync(file, `${JSON.stringify(body, null, 2)}\n`);
+    return file;
+  };
+  const stored = (file: string) => JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+
+  test("a version 1 file holding exactly the old five reads back as the new two and is written once as version 2, the rest kept", () => {
+    const file = fileWith("v1-old.json", { version: 1, model: "p/m", proactivity: "brief", quickActions: old(), caps: { promptsPerTurn: 4 }, odd: "kept" });
+    const s = store.readOverseerSettings(file);
+    assert.deepEqual(s.quickActions, store.DEFAULT_QUICK_ACTIONS);
+    assert.equal(s.model, "p/m");
+    assert.equal(s.proactivity, "brief");
+    assert.equal(s.caps.promptsPerTurn, 4);
+    const disk = stored(file);
+    assert.equal(disk.version, 2);
+    assert.deepEqual(disk.quickActions, store.DEFAULT_QUICK_ACTIONS);
+    assert.deepEqual(disk.caps, { promptsPerTurn: 4 }, "every other field as it was stored, not normalized");
+    assert.equal(disk.odd, "kept");
+  });
+
+  test("an unversioned file with the old five moves the same way", () => {
+    const file = fileWith("v0-old.json", { quickActions: old() });
+    assert.deepEqual(store.readOverseerSettings(file).quickActions.map((a) => a.id), ["get-moving", "tidy"]);
+    assert.equal(stored(file).version, 2);
+  });
+
+  test("a version 2 file holding the old What Needs Me exactly, or the whole old five, reads back unchanged and is never rewritten", () => {
+    const one = fileWith("v2-needs-me.json", { version: 2, quickActions: [old()[0]] });
+    const before = readFileSync(one, "utf8");
+    assert.deepEqual(store.readOverseerSettings(one).quickActions, [store.OLD_QUICK_ACTIONS[0]]);
+    assert.equal(readFileSync(one, "utf8"), before);
+    const five = fileWith("v2-five.json", { version: 2, quickActions: old() });
+    assert.deepEqual(store.readOverseerSettings(five).quickActions, store.OLD_QUICK_ACTIONS);
+    assert.deepEqual(stored(five).quickActions, store.OLD_QUICK_ACTIONS);
+  });
+
+  test("a version 1 list with any change at all is kept as it is, and the file still becomes version 2", () => {
+    const edits: [string, (l: ReturnType<typeof old>) => unknown[]][] = [
+      ["a prompt edited", (l) => (l[0]!.prompt += " Now.", l)],
+      ["a label edited", (l) => (l[2]!.label = "Running", l)],
+      ["a description edited", (l) => (l[4]!.description = "Where.", l)],
+      ["an id changed", (l) => (l[1]!.id = "done", l)],
+      ["reordered", (l) => [l[1], l[0], ...l.slice(2)]],
+      ["one removed", (l) => l.slice(0, 4)],
+      ["one added", (l) => [...l, { id: "mine", label: "Mine", description: "", prompt: "Do mine." }]],
+    ];
+    for (const [why, edit] of edits) {
+      const list = edit(old());
+      const file = fileWith(`v1-${why.replace(/\W+/g, "-")}.json`, { version: 1, quickActions: list });
+      assert.deepEqual(store.readOverseerSettings(file).quickActions, list, why);
+      const disk = stored(file);
+      assert.equal(disk.version, 2, why);
+      assert.deepEqual(disk.quickActions, list, why);
+    }
+  });
+
+  test("after the move nothing compares again: the old five saved back stay", () => {
+    const file = fileWith("v1-then-back.json", { version: 1, quickActions: old() });
+    const s = store.readOverseerSettings(file);
+    store.writeOverseerSettings({ ...s, quickActions: old() }, file);
+    assert.deepEqual(store.readOverseerSettings(file).quickActions, store.OLD_QUICK_ACTIONS);
+    assert.equal(stored(file).version, 2);
+  });
+
+  test("a missing file is not created, and a corrupt one is left alone", () => {
+    const missing = join(agentDir, "v-missing.json");
+    store.readOverseerSettings(missing);
+    assert.throws(() => readFileSync(missing));
+    const bad = join(agentDir, "v-corrupt.json");
+    writeFileSync(bad, "{not json");
+    assert.deepEqual(store.readOverseerSettings(bad).quickActions, store.DEFAULT_QUICK_ACTIONS);
+    assert.equal(readFileSync(bad, "utf8"), "{not json");
+  });
+});
+
 describe("overseer settings", () => {
-  test("a missing file reads as the defaults: badge only, five quick actions, the documented caps", () => {
+  test("a missing file reads as the defaults: badge only, two quick actions, the documented caps", () => {
     const s = store.readOverseerSettings(join(agentDir, "none.json"));
     assert.equal(s.proactivity, "badge");
-    assert.deepEqual(s.quickActions.map((a) => a.label), ["What Needs Me", "What Finished", "What's Running", "Tidy Up", "Where Was I"]);
+    assert.equal(s.version, 2);
+    assert.deepEqual(s.quickActions.map((a) => [a.id, a.label]), [["get-moving", "Get Things Moving"], ["tidy", "Tidy Up"]]);
+    assert.equal(s.quickActions[0]!.description, "Every session stuck on a next step, checked now, on one card. Nothing is sent until you apply.");
+    assert.equal(s.quickActions[1]!.description, "Finished and stale sessions sorted onto one card to archive or keep. Nothing is archived until you apply.");
+    assert.match(s.quickActions[0]!.prompt, /^Get things moving\. .* Send nothing until I apply\.$/);
+    assert.match(s.quickActions[1]!.prompt, /^Tidy up\. .*Archive & Remove Worktree and default to it\. .* Archive nothing until I apply\.$/);
+    // Each passes the PUT's own limits, so Reset to Defaults then Save never refuses them.
+    assert.ok(!("error" in store.parseSettings({ quickActions: s.quickActions }, true)));
+    // Reading it never created the file.
+    assert.throws(() => readFileSync(join(agentDir, "none.json")));
     assert.deepEqual(s.caps, { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 10, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3 });
     assert.equal(s.model, null);
   });

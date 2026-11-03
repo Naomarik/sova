@@ -594,6 +594,14 @@ input.input { text-overflow: ellipsis; }
 .setup-oid         { flex: none; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
 .setup-subject     { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink); }
 .setup-ago         { flex: none; color: var(--color-ink-muted); white-space: nowrap; }
+.setup-gitdir .setup-num { margin-left: 0; }
+/* Stuck or overdue cleanup: warn ink with the alert icon; the words carry it on their own, and
+   wrap beside the icon rather than under it. */
+.setup-gitdir-warn       { flex-wrap: nowrap; align-items: flex-start; }
+.setup-gitdir-warn > span { min-width: 0; }
+.setup-gitdir-warn,
+.setup-gitdir-warn .icon { color: var(--status-warn); }
+.setup-gitdir-warn .icon { flex: none; margin-top: 2px; }
 /* The Tools group (§chat.transcript/setup-card-tools): a disclosure of disclosures, closed by
    default. Each summary is the whole 44px target; the twist turns when it opens. The heading keeps
    the section's eyebrow, the total its mono figures, so a closed group reads like the others. */
@@ -2069,14 +2077,10 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 /* The name takes the room and ellipsizes; the count closes the head
    (.list-group-label > .text-num). */
 .group-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* Every folder, in every list, sits one step in behind a guide rule flush with the pane edge, so a
-   folder's head and rows read as one block, and inside a group as the group's contents rather than
-   as siblings of its name. The rule sits outside the rows' state rail, so their hover and selected
-   fills start after it; sticky folder heads keep their own surface. */
-.session-group {
-  padding-left: calc(var(--space-1) / 2);
-  border-left: calc(var(--stroke-thin) * 2) solid var(--color-border);
-}
+/* Every folder, in every list, sets its head and rows 4px in (where the old edge rule and its padding
+   put them, so no title moved). Its guide line runs down its rows' rail axis, under its chevron
+   (app.css, Guide lines); sticky folder heads keep their own surface. */
+.session-group { padding-left: var(--space-1); }
 
 /* The group's actions, on the group's own name row. ALWAYS drawn — hover-only made the group's
    whole menu invisible until the pointer happened to be in the right row, and on touch there is
@@ -3160,43 +3164,6 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
 .toolcard-code-del { border-left: calc(var(--stroke-icon) * 2) solid var(--diff-del-ink); }
 .toolcard-code-add { border-left: calc(var(--stroke-icon) * 2) solid var(--diff-add-ink); }
 
-/* codemode (§chat.transcript/codemode-card): the folded line's "4 calls · 1 failed", and the
-   script's calls, one row each. The plain body inside its body gives way to it. */
-.toolcard-calls { flex: none; white-space: nowrap; color: var(--color-ink-muted); }
-.toolcard-body .toolcard-body { display: contents; }
-.codemode-calls {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border: var(--stroke-thin) solid var(--color-border);
-  border-radius: var(--r-sm);
-  background: var(--color-surface);
-}
-.codemode-call { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); }
-.codemode-call + .codemode-call { border-top: var(--stroke-thin) solid var(--color-border); }
-.codemode-call-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1) var(--space-2);
-  min-width: 0;
-  font-family: var(--font-mono);
-  font-size: var(--fs-mono);
-  color: var(--color-ink-2);
-}
-.codemode-call-name { flex: none; font-weight: var(--fw-semibold); color: var(--color-ink); }
-.codemode-call-kind { flex: none; font-size: var(--fs-caption); color: var(--color-ink-muted); }
-.codemode-call-args { flex: 1 1 12ch; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-ink-muted); }
-.codemode-call-meta { flex: none; color: var(--color-ink-muted); font-variant-numeric: tabular-nums; }
-.codemode-call-error {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: var(--fs-caption);
-  color: var(--status-error);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 
 /* ---- INFO ROW. Model change, compaction, labels, branch summaries: a quiet
    centred line between rules. Facts in mono. ---------------------------- */
@@ -3307,13 +3274,8 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   /* Between blocks the Working state draws nothing here (no step, its words hidden): it gives
      back its gap, so the ring sits one gap after the dot. */
   .run-status-state:not(:has(> .icon)):not(:has(> .run-status-words)) { margin-left: calc(var(--run-status-pad) * -1); }
-  /* The one trigger that may give way here: "1 align · 0/8 decided" is the widest, so at a 344px
-     screen its count ends in an ellipsis rather than pushing the row past the edge (its full text
-     stays its accessible name). */
-  .run-status > .run-status-link.run-status-align { flex: 0 1 auto; min-width: 0; }
   /* Stopping and the rare states give way first, down to about 4em of their words. */
   .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: 4em; }
-  .run-status > .run-status-align .text-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .run-status-say {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
@@ -3329,13 +3291,8 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   /* Between blocks the Working state draws nothing here (no step, its words hidden): it gives
      back its gap, so the ring sits one gap after the dot. */
   .run-status-state:not(:has(> .icon)):not(:has(> .run-status-words)) { margin-left: calc(var(--run-status-pad) * -1); }
-  /* The one trigger that may give way here: "1 align · 0/8 decided" is the widest, so at a 344px
-     screen its count ends in an ellipsis rather than pushing the row past the edge (its full text
-     stays its accessible name). */
-  .run-status > .run-status-link.run-status-align { flex: 0 1 auto; min-width: 0; }
   /* Stopping and the rare states give way first, down to about 4em of their words. */
   .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: 4em; }
-  .run-status > .run-status-align .text-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .run-status-say {
     position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
     overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
@@ -3419,21 +3376,31 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   color: var(--color-ink-muted);
 }
 .composer-reason { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; color: var(--color-ink-2); }
+/* With no reason it takes no place, so its two gaps go to the model's name in a narrow foot. */
+.composer-reason:empty { display: none; }
+/* A narrow foot is a row of icons: half the gap between them, so the model's short name ("Opus
+   5.5") still reads whole at 320px. It contracts, so a @media floor under the container query. */
+@container composer (max-width: 479px) {
+  .composer-foot { gap: var(--space-2); }
+}
+@media (max-width: 479px) {
+  .composer-foot { gap: var(--space-2); }
+}
 /* First connect's "Connecting…": held back 300ms so a quick switch never flashes it. Reduced motion
    collapses the duration globally but keeps the delay. */
 .composer-reason[data-soft] { animation: composer-reason-in var(--dur-base) var(--ease-standard) 300ms both; }
 @keyframes composer-reason-in { from { opacity: 0; } to { opacity: 1; } }
 
-/* The model indicator: this session's model and thinking level, and the
-   flyout's second trigger. First in the foot, and it stays at every width.
-   The id is the one part that shrinks, so a long ref ellipsizes instead of
-   pushing the mode switch out. */
+/* The model indicator: this session's model and thinking level as one item, the effort ring then
+   the model's short name, and the flyout's second trigger. First in the foot, and it stays at every
+   width. The name is the one part that shrinks, so a long one ellipsizes instead of pushing the mode
+   switch out; the ring never shrinks. */
 
 .composer-model {
   position: relative;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
   flex: 0 1 auto;
   min-width: 0;
   min-height: var(--control-sm);
@@ -3463,17 +3430,39 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.composer-model-meta { max-width: 12ch; overflow: hidden; text-overflow: ellipsis; }
-.composer-model-sep,
-.composer-model-level { flex: none; }
-.composer-model-caret { flex: none; color: var(--color-ink-muted); transform: rotate(180deg); }
 .composer-model .live-dot { flex: none; }
+
+/* The effort ring (§chat.composer/behavior): the waiting badge's 270° open ring, about 17px, its
+   arc filled to the level on one seven-step scale, a mark in the middle (a dot, L M H X, a bolt).
+   Quiet ink, never the accent: the track the control-border token, the arc and mark ink-2. The
+   same ring sits beside each level of the flyout's Thinking ladder and on the profile cards. */
+.effort-ring { display: block; flex: none; width: 17px; height: 17px; overflow: visible; }
+.effort-ring-track,
+.effort-ring-arc { fill: none; stroke-width: 3.4; stroke-linecap: round; }
+.effort-ring-track { stroke: var(--color-border-strong); }
+.effort-ring-arc { stroke: var(--color-ink-2); }
+.effort-ring-mark { fill: var(--color-ink-2); stroke: none; }
+.effort-ring-letter {
+  font-family: var(--font-body);
+  font-size: 16px; /* in the ring's 34 units: about 8px drawn */
+  font-weight: 700;
+  text-anchor: middle;
+}
+.composer-flyout-item .effort-ring { margin-right: calc(var(--space-1) * -1); }
+/* The model panel's first line: the choice in full words (§chat.composer/composer-flyout). */
+.composer-flyout-summary {
+  margin: 0;
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .composer-model:hover,
 .composer-model[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
 .composer-model:hover .composer-model-id,
 .composer-model[aria-expanded="true"] .composer-model-id { color: var(--color-ink); }
-.composer-model:hover .composer-model-caret,
-.composer-model[aria-expanded="true"] .composer-model-caret { color: inherit; }
 .composer-model:active { transform: translateY(1px); }
 .composer-model:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
 .composer-model[aria-disabled="true"] { cursor: not-allowed; }
@@ -3509,21 +3498,40 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   position: absolute;
   inset: calc((var(--tap-min) - var(--control-sm)) / -2) 0;
 }
-.composer-login-full,
-.composer-login-short { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The login's soft chip: the shortest start of its name that tells this device's logins apart (or a
+   number), on a pale fill with no outline. A circle for one letter, a pill for more; it says who.
+   The email comes back beside it only where the foot has room. While the button is hovered or open
+   its fill is --color-sunken, so the chip takes --color-border there to stay visible. */
+.composer-login-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  background: var(--color-sunken);
+  border-radius: var(--r-full);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  color: var(--color-ink-2);
+}
+.composer-login-full { display: none; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .composer-login .live-dot { flex: none; }
 .composer-login:hover,
 .composer-login[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
+.composer-login:hover .composer-login-avatar,
+.composer-login[aria-expanded="true"] .composer-login-avatar { background: var(--color-border); }
 .composer-login:active { transform: translateY(1px); }
 .composer-login:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
 .composer-login[aria-disabled="true"] { cursor: not-allowed; }
 .composer-login[aria-disabled="true"]:hover { background: transparent; color: var(--color-ink-muted); }
 .composer-login[aria-disabled="true"]:active { transform: none; }
-.composer-login-short { display: none; }
-@media (max-width: 640px) {
-  .composer-login { max-width: 12ch; }
-  .composer-login-full { display: none; }
-  .composer-login-short { display: inline; }
+/* Icons at every width; words come back beside them where the foot has room (an expanding rule:
+   no @media floor needed). */
+@container composer (min-width: 620px) {
+  .composer-login-full { display: inline; }
 }
 
 /* The sandbox shield (§chat.composer/sandbox-shield): shown in every state while the runtime
@@ -4065,6 +4073,30 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   color: var(--color-ink-2);
 }
 .mode-trigger .icon { flex: none; color: var(--color-ink-muted); }
+/* In the foot it is icon-first: the words show only where the foot has room (the login's email
+   comes back at the same width). */
+.composer-foot .mode-trigger-label { display: none; }
+@container composer (min-width: 620px) {
+  .composer-foot .mode-trigger-label { display: inline; }
+}
+/* A project mode's glyph: its id's first letter in a rounded square, drawn like an icon (16px,
+   the icon stroke, muted ink), so it reads as one of the mode icons, not as text. */
+.mode-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  border: var(--stroke-icon) solid currentColor;
+  border-radius: var(--r-xs);
+  font-family: var(--font-body);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  color: var(--color-ink-muted);
+}
 .mode-trigger-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The minor modes give up their width long before the major mode does. */
 .mode-trigger-minor { flex-shrink: 1000; }
@@ -4080,6 +4112,17 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   content: "";
   position: absolute;
   inset: calc((var(--tap-min) - var(--control-sm)) / -2) 0;
+}
+/* The model's short name is the foot's last part to shrink: where the row is still too tight once
+   its gaps narrow, the composer's foldFit sets data-folded and the icons fold to the first, a quiet
+   "+N" (the rest's count) and the chevron. The trigger never clips its own icons: it gives way by
+   folding, so the name is cut only after that. */
+.mode-more { display: none; flex: none; font-family: var(--font-body); font-size: var(--fs-caption); font-variant-numeric: tabular-nums; color: var(--color-ink-muted); }
+.mode-trigger[data-folded] .mode-more { display: inline; }
+.mode-trigger[data-folded] :is(.mode-glyph, .mode-letter) ~ :is(.mode-glyph, .mode-letter) { display: none; }
+/* Icons only (under 620px, no words to ellipsize): its smallest is its icons. */
+@container composer (max-width: 619.98px) {
+  .composer-foot .mode-trigger { min-width: auto; }
 }
 .mode-trigger[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
 .mode-menu > .banner { flex: none; margin: var(--space-2) var(--space-2) 0; }
@@ -4456,7 +4499,17 @@ a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.md-code-copy { flex: none; }
+.md-code-copy,
+.md-code-render { flex: none; }
+/* A markdown block's Rendered side (§chat.markdown/view-rendered): the document drawn in the
+   block's frame, under its head, on the page's ground; the inner body sheds its bubble. */
+.md-code-rendered { background: var(--color-surface); }
+.md-code-rendered > .message-body {
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
 .md .md-code pre {
   margin: 0;
   border: 0;
@@ -5334,6 +5387,12 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
 .outline-jump { margin: 0 0 var(--space-2); }
 
 
+/* ---- WORKING NOTES. An assistant reply's `### Working notes` tail as a closed .disclosure
+   (§chat.markdown/working-notes): its body is markdown, so it wraps as prose. ---------------- */
+
+.md-working-notes { margin-top: var(--space-3); }
+.md-working-notes > .disclosure-body { white-space: normal; }
+
 /* ---- COMPACTION. The transcript's compaction row as a .disclosure. ------- */
 
 .compaction .disclosure-body { white-space: normal; }
@@ -5931,6 +5990,100 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
 
 /* Empty, no-file and no-selection states: one idea in the view, centred. */
 .subagents-empty { flex: 1; justify-content: center; padding: var(--space-6) var(--space-4); }
+
+/* ---- MEMBER INBOX (§app.subagents-pane/member-inbox). A team member's view has two tabs under
+   its head, Transcript and Inbox, in the session tabs' strip grammar. The inbox is its own scroll
+   region: one row per item, the whole row the press that opens it, its message under it once
+   open. Read-only: no control here marks, sends or deletes. ---------------------------------- */
+.subagents-view-tabs {
+  flex: none;
+  flex-wrap: nowrap;
+  padding: 0 var(--space-2);
+  background: var(--color-surface);
+  scrollbar-width: thin;
+}
+.subagents-view-tabs > .tab { flex: none; }
+.subagents-inbox {               /* compose with .pane */
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--space-4) var(--space-6);
+}
+.inbox-skeleton { display: grid; gap: var(--space-2); margin-top: var(--space-4); }
+.inbox-list {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+.inbox-item {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  min-width: 0;
+}
+.inbox-item-line {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--r-lg);
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.inbox-item-line:hover { background: var(--color-sunken); }
+.inbox-item-line:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.inbox-item-line[aria-expanded="true"] { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.inbox-item-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.inbox-item-head > .chip { flex: none; }
+.inbox-item-subject {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: var(--fw-medium);
+}
+.inbox-item[data-status="new"] .inbox-item-subject { font-weight: var(--fw-semibold); }
+/* The meta wraps rather than clip: the status chip and the time are facts, never the part cut. */
+.inbox-item-meta {
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+  min-width: 0;
+  flex-wrap: wrap;
+  white-space: normal;
+  align-items: center;
+  row-gap: 2px;
+}
+.inbox-item-meta > * { white-space: nowrap; }
+.inbox-item-meta > .meta-line-shrink { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.inbox-item-meta .meta-line-sep { margin-right: var(--space-1); }
+.inbox-item-note {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-2);
+  color: var(--color-ink-2);
+  overflow-wrap: anywhere;
+}
+.inbox-item-body {
+  padding: var(--space-2) var(--space-3) var(--space-3);
+  border-top: var(--stroke-thin) solid var(--color-border);
+}
+.inbox-item-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: var(--measure);
+}
+.inbox-item-error { margin: 0; color: var(--status-error); }
+.inbox-more { margin: var(--space-3) 0 0; color: var(--color-ink-muted); }
 
 /* ---- LINKED AGENT (§mesh.links/agents-pane). A linked member's view: the message thread
    between the sessions above its transcript, in the head's strip grammar (surface, bottom rule),
@@ -6564,6 +6717,10 @@ a.subagent-row { text-decoration: none; }
 .overseer-confirm-item-name { min-width: 0; overflow-wrap: anywhere; }
 .overseer-confirm-item-meta { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); white-space: nowrap; }
 .overseer-confirm-idea-id { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }
+/* A copy or leftover process row's second line (§app.overseer/copies): who started it, its command and folder. */
+.overseer-confirm-item-detail { display: flex; align-items: baseline; flex-wrap: wrap; column-gap: var(--space-2); row-gap: var(--space-1); min-width: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.overseer-confirm-item-command, .overseer-confirm-item-path { font-size: var(--fs-mono); color: var(--color-ink-2); min-width: 0; overflow-wrap: anywhere; }
+.overseer-confirm-item-starter { min-width: 0; overflow-wrap: anywhere; color: var(--color-ink-muted); }
 /* The Overseer's note: what the item is and why the card acts on it. Body ink,
    not muted — it is the reason to read the row; two lines, then clamped. */
 .overseer-confirm-item-note {
@@ -6594,6 +6751,10 @@ a.subagent-row { text-decoration: none; }
 /* What an option's click approves, and what it wrote (§app.overseer/approvals). */
 .overseer-card-grant { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
 .overseer-card-permit { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
+/* Offer cards (§chat.offers/card): the decision card's look, with the project's buttons; one another
+   chat showed stands at the thread's end, with who showed it under its title. */
+.offer-tray { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-3); }
+.offer-card-from { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
 
 /* The composer's "3 of 10 running" (§app.overseer/caps; a button to Settings → Overseer → Limits),
    first in the row's right-hand cluster, and the Approvals & Schedules body (§app.overseer/approvals):
@@ -6620,6 +6781,14 @@ a.subagent-row { text-decoration: none; }
 .permit-uses { margin: 0; padding-left: var(--space-4); font-size: var(--fs-caption); line-height: var(--lh-caption); }
 .permit-actions { display: flex; justify-content: flex-end; padding-top: var(--space-1); }
 .permits-error { margin: 0; padding: var(--space-2) var(--space-3); font-size: var(--fs-caption); color: var(--status-error); }
+/* A sectioned card (§app.overseer/card-sections): each heading an eyebrow over its rows, the
+   first row's rule dropped under it; a row's "Go sends" line in full, under its note. */
+.overseer-card-sections { gap: var(--space-3); }
+.overseer-card-section { align-self: stretch; min-width: 0; }
+.overseer-card-section-head { margin: 0; padding-bottom: var(--space-1); }
+.overseer-card-section-head + .overseer-confirm-list .overseer-confirm-item:first-child { border-top: none; }
+.overseer-card-sends { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.overseer-card-sends-label { font-weight: var(--fw-semibold); color: var(--color-ink-2); }
 .overseer-card-decided { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-ink-2); font-size: var(--fs-caption); }
 .overseer-card-decided .icon { color: var(--status-success); }
 .overseer-card-jump {
@@ -6769,7 +6938,8 @@ a.subagent-row { text-decoration: none; }
 /* A reply that seems to ask and a team gone quiet are quiet marks, never the accent: neither is a
    Needs you item (§app.session-list/needs-you). */
 .session-signal-asks,
-.session-signal-stalled { color: var(--color-ink-muted); }
+.session-signal-stalled,
+.session-signal-unverified { color: var(--color-ink-muted); }
 .session-signal-looping { color: var(--status-warn); }
 
 /* The merge-readiness badge joins line 3's facts, "2h ago · 2 of 3 · ready ✓ · model", in the meta's

@@ -15,7 +15,7 @@ This pays for all the upkeep. Because settled behaviour is already written in pl
 ## The workflow
 
 1. **Talk.** Someone says what the system must do. The agent looks up what is already true nearby, works out the behaviour with them, and writes it as promises in a draft.
-2. **Agree.** The person agrees to the wording. The promises go into the main spec, marked *agreed, not built*, with who agreed and when.
+2. **Agree.** When the person decided something in the chat, they agree to the wording (only then; landing a branch is never agreement). The promises go into the main spec when their branch lands, marked *agreed, not built*, with who agreed and when.
 3. **Build.** A builder starts from the agreed promises, perhaps in another worktree on another day.
 4. **Reconcile.** The code is read against the promises. Each gap is fixed on the side that is wrong: a defect in the code, or a hole in the spec. The promise is then marked *built and checked*, with what it was checked against.
 
@@ -31,7 +31,7 @@ Once a decision is made, later readers build on it. They don't argue it again.
 ### What the tools give at each step
 
 - **Talk:** a map of every area, and a way to find the promises around a topic or a file, so clashes show while deciding.
-- **Agree:** promotion into the main spec, and the *agreed, not built* mark.
+- **Agree:** the *agreed, not built* mark, made official in the main spec when its branch lands.
 - **Build:** first a contents view of the promises around the work: what each one is, why it is linked and how big it is, in the direction the task needs. Then a slice: the passages the builder chose, word for word, plus a small set that always arrives: the promises to build, the rules that always apply, and anything drawn inside them. The contents also point to the shapes of data involved, and to what is not owned here or still undecided. The slice names what it did not load, so the builder knows where to stop.
 - **Reconcile:** the promises this change touched and the code each maps to; later, a note when text or code moved since the check.
 
@@ -49,7 +49,7 @@ Sova has two separate minor modes. Each works alone, and both can be on.
 
 We know it's working when:
 - every behaviour change has its promises agreed before its first code edit;
-- a requirements chat with no code ends with agreed promises in the main spec, each saying who decided;
+- a requirements chat with no code ends with agreed promises in the main spec once its branch lands, each saying who decided;
 - the later build updates those same promises instead of writing new ones;
 - a settled decision is rarely asked about again.
 
@@ -73,7 +73,8 @@ We know it's working when:
 We know it's working when:
 - each built promise has been read against its code;
 - the map shows how many promises are agreed but unbuilt, and how old they are;
-- reviews against the spec keep finding real defects and real holes, and both get fixed.
+- reviews against the spec keep finding real defects and real holes, and both get fixed;
+- a branch's docs land in the same merge as its code, and nobody is asked for a separate, docs-only landing.
 
 ### 5. Complete enough to rebuild an area from
 
@@ -117,6 +118,7 @@ Drafts, marks and checks exist only to serve the goals and constraints above. A 
 - **Each fact is said once.** The second copy is the one that goes stale.
 - **Tools say what they checked.** "Didn't look" is never reported as "found nothing".
 - **Code locations sit beside the text,** in each promise's list of code files, never in the source.
+- **Docs land with their code.** Landing makes a branch's drafts official, on the branch, in one step after its checks pass, so code and docs arrive in one merge; nobody runs a separate step for it. A chat only writes drafts and a short note on what it verified for each promise; drafts that don't fit hold the branch and go back to its chat. Where nothing lands branches, the chat runs that one step itself before its last commit.
 
 How much of "how" the spec holds is (open). The shapes of stored and sent data are in.
 
@@ -124,7 +126,7 @@ How much of "how" the spec holds is (open). The shapes of stored and sent data a
 
 - Proving the code is correct.
 - Replacing tests.
-- Stopping work or releases. The tools report and people decide. The one gate is that only promotion writes the main spec.
+- Stopping work or releases. The tools report and people decide. The one gate is that only promotion writes the main spec, and the landing's step is promotion; a branch whose drafts wouldn't land isn't ready yet, by the rule above.
 - Keeping records for their own sake.
 - Describing every file. Tests, fixtures and plumbing need no promises, and work that changes no behaviour needs no new ones.
 

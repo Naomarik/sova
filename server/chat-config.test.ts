@@ -27,6 +27,7 @@ mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 const { acquireChat, activeConfigFailure, BusyError, ConfigError } = await import("./chat-manager");
 const { canonicalPath } = await import("./paths");
 const { markOwned } = await import("./write-guard");
+const { targetDir } = await import("./targets");
 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
@@ -40,7 +41,9 @@ function session(cwd: string, entries: unknown[] = []): string {
   return canonicalPath(path);
 }
 
-const missingCwd = () => join(agentDir, "reaped", `gone-${++n}`);
+/** A remote session's local placeholder that was reaped: still refused (a local folder that is gone
+    opens in the home folder instead, §app.shell/missing-folder-home: server/session-cwd-fallback.test.ts). */
+const missingCwd = () => targetDir("reaped", `/srv/gone-${++n}`);
 
 async function failure(path: string, force = false): Promise<unknown> {
   try {
@@ -51,7 +54,7 @@ async function failure(path: string, force = false): Promise<unknown> {
   }
 }
 
-describe("a session whose stored cwd is gone", () => {
+describe("a remote session whose stored placeholder cwd is gone", () => {
   test("fails as a permanent ConfigError naming the directory and the session file", async () => {
     const cwd = missingCwd();
     const path = session(cwd);
@@ -99,6 +102,15 @@ describe("a session whose stored cwd is gone", () => {
 
     mkdirSync(cwd, { recursive: true }); // the condition clears outside the server
     assert.equal(activeConfigFailure(path), undefined, "memo should be dropped once the cwd exists");
+  });
+
+  test("a plain local folder that is gone is no config failure: it opens in the home folder", async () => {
+    const path = session(join(agentDir, "reaped", `local-${++n}`));
+    markOwned(path);
+    const chat = await acquireChat(path);
+    assert.ok(chat.cwdFallback);
+    assert.equal(activeConfigFailure(path), undefined);
+    await chat.dispose();
   });
 });
 

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { estimateWidth, widest } from "../../core/text";
-import { FLOW_FONT, estimateHeight, fitFlow, layoutFlow, scrolledHeight, type FlowLayout } from "./layout";
+import { parseVis } from "../../parse";
+import { FLOW_FONT, FLOW_LEVELS, HEX_INSET, estimateHeight, fitFlow, layoutFlow, placedEdgeEnds, scrolledHeight, type FlowLayout } from "./layout";
 import { parseFlow, parseState, type FlowSpec } from "./parse";
 
 const flow = (body: string): FlowSpec => parseFlow(body);
@@ -55,15 +56,122 @@ test("deterministic", () => {
   assert.deepEqual(layoutFlow(flow(body)), layoutFlow(flow(body)));
 });
 
-test("a decision diamond holds its text box: tw/w + th/h <= 1", () => {
-  for (const label of ["Ok?", "Reply streamed?", "Is the cache warm and the lock free?"]) {
-    const l = layoutFlow(flow(`node d "${label}" decision\na -> d`));
-    const d = byId(l, "d");
-    const tw = widest(d.lines, FLOW_FONT.label);
-    const th = d.lines.length * 17;
-    assert.ok(tw / d.w + th / d.h <= 1, `${label}: ${tw}x${th} in ${d.w}x${d.h}`);
-    assert.ok(d.w < 2 * tw + 16 || tw < 40, "narrower than the old 2x rule");
+test("a decision hexagon holds its text box in its flat part, at every spacing level", () => {
+  const labels = ["Ok?", "Reply streamed?", "Project has a login? (its own, else its org's)", "Is the cache warm and the lock free, and has the lease not expired yet while the worker still holds it?"];
+  for (const label of labels)
+    for (let level = 0; level < FLOW_LEVELS; level++) {
+      const l = layoutFlow(flow(`node d "${label}" decision\na -> d`), undefined, level);
+      const d = byId(l, "d");
+      const tw = widest(d.lines, FLOW_FONT.label);
+      const th = d.lines.length * 17;
+      assert.ok(tw <= d.w - 2 * HEX_INSET, `${label} @${level}: ${tw} wide in ${d.w} - 2×${HEX_INSET}`);
+      assert.ok(th <= d.h - 2 * 7, `${label} @${level}: ${th} tall in ${d.h}`);
+      assert.equal(d.lines.join(" "), label, "its whole text, wrapped, nothing cut");
+    }
+  // About as wide as a box with the same text, and far shorter than a diamond would be.
+  const both = layoutFlow(flow('node d "Project has a login? (its own, else its org\'s)" decision\nnode b "Project has a login? (its own, else its org\'s)"\nd -> b'));
+  assert.ok(byId(both, "d").w - byId(both, "b").w <= 2 * HEX_INSET + 0.01);
+  assert.equal(byId(both, "d").h, byId(both, "b").h);
+});
+
+/** The last point of an SVG path (where its arrowhead is) and its first. */
+const ends = (d: string) => {
+  const n = d.match(/-?\d+(\.\d+)?/g)!.map(Number);
+  return { start: { x: n[0]!, y: n[1]! }, end: { x: n[n.length - 2]!, y: n[n.length - 1]! } };
+};
+
+test("arrows meet a hexagon's outline: its flat top and bottom downwards, its pointed sides in dir: right", () => {
+  const body = 'a "Start here" -> d "Ready here, or free to borrow in the pool?" decision -> b "The project\'s login"';
+  for (let level = 0; level < FLOW_LEVELS; level++) {
+    const down = layoutFlow(flow(body), undefined, level);
+    const d = byId(down, "d");
+    const [into, out] = down.edges.map((e) => ends(e.path));
+    assert.ok(Math.abs(into!.end.y - (d.y - d.h / 2)) < 0.11, `down @${level}: into the flat top (${into!.end.y} vs ${d.y - d.h / 2})`);
+    assert.ok(Math.abs(out!.start.y - (d.y + d.h / 2)) < 0.11, `down @${level}: out of the flat bottom`);
+    const right = layoutFlow(flow(`dir: right\n${body}`), undefined, level);
+    const r = byId(right, "d");
+    const [rin, rout] = right.edges.map((e) => ends(e.path));
+    // A single edge each way meets the point itself, at the hexagon's mid-height.
+    assert.ok(Math.abs(rin!.end.y - r.y) < 0.11 && Math.abs(rin!.end.x - (r.x - r.w / 2)) < 0.11, `right @${level}: into the left point (${rin!.end.x},${rin!.end.y})`);
+    assert.ok(Math.abs(rout!.start.x - (r.x + r.w / 2)) < 0.11, `right @${level}: out of the right point`);
   }
+  // Fanned edges off the middle meet the sloping sides, inside the shape's box.
+  const fan = layoutFlow(flow('dir: right\nnode d "Which one of these three should run first?" decision\nd -> x\nd -> y\nd -> z'));
+  const d = byId(fan, "d");
+  assert.ok(fan.edges.some((e) => Math.abs(ends(e.path).start.y - d.y) > 1), "some leave off the point");
+  for (const e of fan.edges) {
+    const s = ends(e.path).start;
+    const dy = Math.abs(s.y - d.y);
+    assert.ok(Math.abs(s.x - (d.x + d.w / 2 - HEX_INSET * (dy / (d.h / 2)))) < 0.11, `on the slope at dy=${dy}`);
+  }
+});
+
+const LOGIN = `title: Which login new work in a project starts on
+node start "New chat, worker\\nor overseer turn" round
+node pick "Login picked by hand\\nin the composer?" decision
+node handpick "That login" box ok
+node proj "Project has a login?\\n(its own, else its org's)" decision
+node ready "Ready here, or free\\nto borrow in the pool?" decision
+node assigned "The project's login" box accent
+node limit "Limit choice\\n(question 2)" decision
+node order "This computer's order:\\nfirst login with room" box
+node stop "Stops or waits,\\nchat says why" box warn
+start -> pick
+pick -> handpick "yes"
+pick -> proj "no"
+proj -> order "no"
+proj -> ready "yes"
+ready -> assigned "yes"
+ready -> limit "no"
+limit -> order "move on, with a note"
+limit -> stop "stop or wait"
+mark assigned "new: chosen on the project or organization Settings tab"
+mark limit "your call in question 2"`;
+
+/** Every text a placed flow draws, as lines. */
+const drawn = (l: FlowLayout) => [...l.nodes.flatMap((n) => [...n.lines, ...n.noteLines]), ...l.edges.flatMap((e) => e.label?.lines ?? []), ...(l.groups ?? []).flatMap((g) => g.titleLines)];
+
+test("nothing on a flow is cut: no line ends in '…' at any spacing level or phone width, and every word is drawn", () => {
+  const long = (n: number, word: string) => Array.from({ length: n }, (_, i) => `${word}${i}`).join(" ").slice(0, 200);
+  const bodies = [
+    LOGIN,
+    `node d "${long(40, "why")}" decision\nnode b "${long(40, "step")}" "${long(40, "note")}"\nd -> b "${long(40, "edge")}"\nb -> b "${long(30, "loop")}"\nd -> c "${"x".repeat(200)}"`,
+    `dir: right\nnode d "${long(40, "why")}" decision\na -> d -> b "${long(40, "edge")}"\nb -> c\ngroup "${long(30, "frame")}" b`,
+  ];
+  for (const body of bodies) {
+    const r = parseVis("flow", body);
+    assert.ok(r.ok, body);
+    const spec = r.spec as FlowSpec;
+    const layouts = [...Array.from({ length: FLOW_LEVELS }, (_, level) => layoutFlow(spec, estimateWidth, level)), ...[300, 340, 390, 700].map((w) => fitFlow(spec, estimateWidth, w))];
+    for (const l of layouts) {
+      for (const line of drawn(l)) assert.ok(!line.endsWith("…"), `cut: "${line}"`);
+      const all = drawn(l).join(" ").replace(/\s+/g, "");
+      for (const n of spec.nodes) {
+        if (n.shape === "start" || n.shape === "end") continue;
+        assert.ok(all.includes(n.label.replace(/\s+/g, "")), `${n.id}'s whole label is drawn`);
+        if (n.note) assert.ok(all.includes(n.note.replace(/\s+/g, "")), `${n.id}'s whole note is drawn`);
+      }
+      for (const e of spec.edges) if (e.label) assert.ok(all.includes(e.label.replace(/\s+/g, "")), `edge label "${e.label}" drawn whole`);
+      for (const g of spec.groups ?? []) assert.ok(all.includes(g.label.replace(/\s+/g, "")), `frame title drawn whole`);
+      // Tall hexagons and boxes still never overlap one another or a label.
+      const boxes = [...l.nodes, ...l.edges.flatMap((e) => (e.label ? [e.label] : []))];
+      for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) assert.ok(!overlap(boxes[i]!, boxes[j]!), `overlap ${JSON.stringify(boxes[i])} ${JSON.stringify(boxes[j])}`);
+    }
+  }
+  // The case that was cut on a desktop: the question is whole at natural size.
+  const login = parseVis("flow", LOGIN);
+  assert.ok(login.ok);
+  const proj = byId(layoutFlow(login.spec as FlowSpec), "proj");
+  assert.deepEqual(proj.lines, ["Project has a login?", "(its own, else its org's)"]);
+});
+
+test("placedEdgeEnds names each placed edge's ends, in the layout's order (self-loops last)", () => {
+  const spec = flow('a -> b "x"\nb -> b "again"\nb -> c\nc -> a');
+  const l = layoutFlow(spec);
+  const e = placedEdgeEnds(spec);
+  assert.equal(e.length, l.edges.length);
+  assert.deepEqual(e.map((x) => `${x.from}>${x.to}`), ["a>b", "b>c", "c>a", "b>b"]);
+  assert.deepEqual(l.edges.map((x) => x.label?.lines.join(" ")), ["x", undefined, undefined, "again"]);
 });
 
 test("an end state sinks to the last rank; a start stays on top", () => {

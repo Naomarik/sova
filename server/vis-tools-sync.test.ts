@@ -163,3 +163,30 @@ test("align on, Visuals on, vis off: two settled runs keep vis_check active, and
     rmSync(file, { force: true });
   }
 });
+
+// Sova's vis retry asks the same rule (§chat.markdown/visuals, "Feedback to the model"; §chat.markdown/vis-wireframe-room):
+// in a chat whose drawings come from align's Visuals, with vis off, a reply whose wireframe is cramped costs exactly one
+// more request, carrying the hidden note; with Visuals off the same reply costs none.
+const CRAMPED = '```vis wireframe\nscreen "Palette" phone\nrow\n  card "Background colour"\n  card "Text colour"\n  card "Main colour"\n  card "Surface colour"\n```';
+for (const visuals of [true, false]) {
+  test(`align on, Visuals ${visuals ? "on" : "off"}, vis off: a cramped wireframe ${visuals ? "gets one hidden retry" : "gets none"}`, async () => {
+    const file = join(agentDir, "mode-align.json");
+    writeFileSync(file, JSON.stringify({ version: 1, style: "default", visuals }));
+    try {
+      const path = sessionFile();
+      const chat = await acquireChat(path);
+      await set(chat, { minorModes: ["align"] });
+      assert.deepEqual(chat.modeState.minorModes, ["align"], "vis is off");
+      const model = new ScriptedModel().attach(piSession(chat));
+      model.reply(async () => ({ text: `Here it is:\n\n${CRAMPED}` }), async () => ({ text: `Fixed:\n\n${CRAMPED}` }));
+      chat.handle(client, { type: "prompt", text: "draw the palette" });
+      await until(() => model.calls.length > 0 && !chat.harness.isRunning());
+      await piSession(chat).waitForIdle();
+      assert.equal(model.calls.length, visuals ? 2 : 1, visuals ? "one continuation, and its own still-cramped reply is not judged again" : "no retry");
+      if (visuals) assert.match(JSON.stringify(model.calls[1]!.context), /One wireframe draws cramped/, "the continuation carried the note");
+      await disposeHeldChat(path, "test done");
+    } finally {
+      rmSync(file, { force: true });
+    }
+  });
+}

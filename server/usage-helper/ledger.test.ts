@@ -257,7 +257,10 @@ test("queries: kinds, workers at any depth, side calls, projects, local days, fi
   assert.equal(c.daily.length, 7);
   assert.equal(c.daily.at(-1)!.day, "2026-10-05");
   assert.ok(c.byModel.find((m) => m.provider === "jev")?.status === "unpriced");
-  assert.deepEqual(c.byProject.map((p) => p.project ?? p.cwd).sort(), [null, "/w/a", "prj_x"].sort());
+  // A recorded project id is its row; a folder that doesn't exist and a call with none are Other folders.
+  assert.deepEqual(c.byProject.map((p) => p.kind), ["project", "other"]);
+  assert.equal(c.byProject[0]!.project, "prj_x");
+  assert.equal(c.byProject.reduce((a, p) => a + p.calls, 0), c.total.calls);
   assert.deepEqual(c.topSessions[0]!.sid.length > 0, true);
   // 23:30Z on the 4th is the 5th in Kolkata (+5:30).
   const k = s.queries.costs({ range: "7d", providers: [], models: [], tz: "Asia/Kolkata" });
@@ -283,7 +286,8 @@ test("one row per real Claude model (§app.insights/usage-model-rows): grouped b
   cc("cc:1", "opus[1m]", "claude-opus-5-5", 100);
   cc("cc:2", "claude-opus-5-5[1m]", "claude-opus-5-5", 200);
   cc("cc:3", "opus", "claude-opus-5-5", 300);
-  cc("ccr:x:1:claude-opus-5-5[1m]", "claude-opus-5-5[1m]", undefined, 400, { src: "claude-residual" });
+  // A plain residual (today's key shape) whose record still names the [1m] id: grouped with the rest.
+  cc("ccr:x:1:claude-opus-5-5", "claude-opus-5-5[1m]", undefined, 400, { src: "claude-residual" });
   cc("cc:5", "claude-opus-5-5", undefined, 500);
   cc("cc:6", "claude-haiku-4-5", "claude-haiku-4-5-20251001", 10);
   cc("cc:7", "opus[1m]", "claude-opus-4-8", 7);
@@ -342,4 +346,22 @@ test("re-sends (§app.insights/usage-resend): a conversation's folded and joined
   assert.equal(top.find((t) => t.sid === "w1")!.resend!.launches, 1, "a worker's own row has its own");
   assert.equal(top.find((t) => t.sid === "s2")!.resend, undefined, "no launch recorded: no figure, never a guess");
   assert.equal(s.queries.session({ sid: "s2" }).resend, undefined);
+});
+
+test("a residual keyed by a [1m] model is a double count and adds nothing; a plain residual still counts", () => {
+  const w = world();
+  const rec = (key: string, src: "claude" | "claude-residual", input: number, output: number) =>
+    w.write({ key, ts: at("10:00"), src, provider: "claude-code-cli", model: "claude-opus-5-5", input, output });
+  rec("cc:m1", "claude", 10, 100);
+  rec("cc:m2", "claude", 20, 200);
+  // The 4–7 Oct shape: the whole turn again, keyed by modelUsage's `[1m]` id.
+  rec("ccr:s:330:claude-opus-5-5[1m]", "claude-residual", 30, 300);
+  // Today's shape: what modelUsage shows beyond the streamed messages.
+  rec("ccr:s:340:claude-opus-5-5", "claude-residual", 1, 9);
+  const s = w.start();
+  const c = s.queries.costs({ range: "7d", providers: [], models: [], tz: "UTC" });
+  assert.equal(c.total.calls, 3);
+  assert.equal(c.total.tokens.input, 10 + 20 + 1);
+  assert.equal(c.total.tokens.output, 100 + 200 + 9);
+  assert.equal(s.ledger.stats.doubled, 1);
 });

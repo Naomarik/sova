@@ -7,7 +7,7 @@
 //   input: { names: string[], copies: [{ label, toolRoot }] }   (toolRoot holds .sova/spec)
 //   output: [{ label, id, candidate, result | refused }]
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readRecords } from "../../../pi-config/extensions/spec/core/layout.mjs";
 
 const input = JSON.parse(readFileSync(process.argv[2]!, "utf8")) as { names: string[]; copies: { label: string; toolRoot: string }[] };
 const lookup = await import("../../../server/spec-lookup.ts");
@@ -16,8 +16,9 @@ for (const copy of input.copies) {
   const projectId = `probe-${copy.label}`;
   lookup.setLookupPlaceForTest(() => ({ root: copy.toolRoot, name: "probe", names: input.names }));
   lookup.setMainLineForTest(async () => ({ root: copy.toolRoot, specRoot: copy.toolRoot, specKey: `probe-${copy.label}`, code: null as never }));
-  const manifest = JSON.parse(readFileSync(join(copy.toolRoot, ".sova/spec/manifest.json"), "utf8"));
-  for (const [id, rec] of Object.entries<any>(manifest.claims ?? {})) {
+  // The records in either layout, through the spec tools' shared reader.
+  const records = readRecords(copy.toolRoot)?.records ?? {};
+  for (const [id, rec] of Object.entries<any>(records)) {
     const sessionId = `probe-${copy.label}`;
     const ref = lookup.handleFor(sessionId, projectId, id);
     try {

@@ -22,7 +22,7 @@ Step 5, and only after the user's explicit word to publish (PLAYBOOK.md step 4).
      git push --atomic "--force-with-lease=refs/tags/stable:${old}" origin "${sha}:refs/heads/master" refs/tags/vX.Y.Z refs/tags/stable
      ```
    A refusal ("stale info", "atomic push failed", "non-fast-forward") changed nothing on GitHub: read `stable` and master again and tell the user; never retry with a broader force.
-5. **Check `stable` on GitHub before anything else reads it**: `git ls-remote origin 'refs/tags/stable^{}' 'refs/tags/vX.Y.Z^{}' refs/heads/master` prints `"${sha}"` three times. Not three times: stop, deploy nothing, tell the user. Then tell the merge captain the release is published, and ask the user to resume the Merge round.
+5. **Check `stable` on GitHub before anything else reads it**: `git ls-remote origin 'refs/tags/stable^{}' 'refs/tags/vX.Y.Z^{}' refs/heads/master` prints `"${sha}"` three times. Not three times: stop, deploy nothing, tell the user. Then ask the user to resume the merge queue (`references/prepare.md`).
 
 ## The GitHub release page
 The notes are the release's `CHANGELOG.md` entry, without its heading:
@@ -34,7 +34,7 @@ gh release create vX.Y.Z --verify-tag --title "Sova vX.Y.Z" --notes-file ~/.cach
 
 ## The site
 Deploy the site only after the `ls-remote` check, so the landing never shows a release or an install command whose tag GitHub doesn't have.
-- **Where it is hosted.** The repository records the Cloudflare Pages settings (`site/README.md`, "Deploy: Cloudflare Pages") but not, until the first release asks, where the site is live or how it deploys. The first time, ask the user: the address, the Pages project, and whether Pages builds on a push to master (then step 4 already started the build, and the tags were in the same push) or deploys by hand (then build `site/` at `"${sha}"` and upload `site/dist` the way the user says). Record the answer under "Deploy" in `site/README.md` (no account IDs or tokens: the repository is public) in a commit of its own on master after the release, and set `SOVA_SITE_URL` to the address in the Pages build environment so `og:image` is absolute.
+- **Where it is hosted.** `site/README.md`, "Deploy: Cloudflare Pages", records the address (https://sova.naomarik.com/), the Cloudflare Pages settings and how it deploys: by hand with wrangler from a build of `"${sha}"`, since the Pages project is not connected to Git. Follow it, with `SOVA_SITE_URL` set to that address so `og:image` is absolute. Its steps add the hero video to the export before the build (`node site/scripts/screens/add-video.mjs <export>`, source `$SOVA_SITE_VIDEO_DIR`, default the main checkout's `site/public/video`): videos are gitignored, so the archive has none. If it refuses (a video is missing), don't publish; run `pnpm run screens:video` in the main checkout or point the variable at the files. Anything it doesn't record yet (the Pages project's name, while it still shows a placeholder), ask the user, then record it there (no account IDs or tokens: the repository is public) in a commit of its own on master after the release.
 - **Check the live page.** `curl -fsSL <address>/ | grep -c '/stable/scripts/install.sh'` and `grep -c '/releases/tag/vX.Y.Z'` are each at least 1, and `/docs/install/` shows the `stable` command.
 
 ## Optional outside checks (the user decides)
@@ -44,4 +44,4 @@ Nothing automated gates `stable`; the user decides whether a release is good. Of
 - **The live landing page** shows `vX.Y.Z` in its pill, linking to the release page, and the `stable` install command.
 - **An existing install updates**: on a machine that installed `vPREV` by the public command, re-running it says "installed stable (<short sha>)".
 
-Then report: the tags and their commit, the release page, the site deploy and its check, which outside checks ran and their results, and that the Merge round may resume.
+Then report: the tags and their commit, the release page, the site deploy and its check, which outside checks ran and their results, and that the merge queue may resume.

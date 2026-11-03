@@ -3,7 +3,7 @@
 // map.mjs and where.mjs build on the index here.
 import { posix } from "node:path";
 import { aboutNotes } from "./fields.mjs";
-import { mask, namedIn, whatOf, whyOf, titleOf, sizeOf, kb, fingerprintOf, tokenFor, decodeToken, boundedRefusal, emit, sizeIn, isBuilt }
+import { mask, namedIn, whatOf, whyOf, titleOf, sizeOf, kb, fingerprintOf, tokenFor, decodeToken, boundedRefusal, emit, sizeIn, isBuilt, mixedCause }
   from "./toc.mjs";
 
 const ID_RE = /^§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?\/[a-z][a-z-]*$/;
@@ -64,7 +64,7 @@ export function openSpec(o, core) {
   const ctx = core.load(root, o.spec);
   const findings = core.findings();
   if (!ctx || core.exitOf(findings) === 2)
-    return { refused: "graph-untrusted", ...(findings.some((f) => f.code === "manifest-not-found") ? { cause: "manifest-not-found" } : {}) };
+    return { refused: "graph-untrusted", ...(findings.some((f) => f.code === "manifest-not-found") ? { cause: "manifest-not-found" } : {}), ...mixedCause(findings) };
   return { root, ctx };
 }
 export const refuse = (command, budget, g) =>

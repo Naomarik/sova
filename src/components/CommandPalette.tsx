@@ -3,6 +3,7 @@ import { Portal } from "solid-js/web";
 import { buildRequest, type CommandEntry } from "../../shared/commands-catalog";
 import { fetchServedCommands, runCommandRequest } from "../lib/api";
 import {
+  ACTION_COPY,
   answerText,
   buildRows,
   commandHost,
@@ -14,15 +15,18 @@ import {
   NO_ROW,
   valuesOf,
   type AnswerState,
+  type ChatActionId,
   type FormInput,
   type PaletteContext,
   type PaletteRow,
 } from "../lib/palette";
 import { createPanelArm } from "../lib/palette-arm";
-import { announce } from "../lib/ui-state";
+import { announce, hideThinking, hideTools, setHideThinking, setHideTools } from "../lib/ui-state";
+import { confirmActivate } from "../lib/confirm-step";
 import { hostOf } from "../lib/mesh";
 import { commandDialogs, viewRows, type ViewHost } from "../commands/view";
 import type { ComposerHandle } from "../commands/composers";
+import { isPhone, type PaletteOrigin } from "../commands/palette-open";
 import { trapFocus } from "./ui";
 import "../command-palette.css";
 
@@ -33,15 +37,22 @@ const sameRow = (a: PaletteRow, b: PaletteRow) =>
   a.label === b.label && a.detail === b.detail && a.keys === b.keys && a.disabled === b.disabled && (a.act.kind !== "command" || (b.act.kind === "command" && a.act.entry === b.act.entry));
 
 /**
- * The command palette (§app/command-palette): a modal of rows (where to go, the open chat's slash
- * commands, the server's command list) and, for a picked command, its panel. Loaded on the first
- * Ctrl/⌘+K (App's `lazy`), so nothing here runs before.
+ * The command palette (§app/command-palette): a modal of rows (the chat's own actions, where to go,
+ * the chat's slash commands, the server's command list) and, for a picked command, its panel.
+ * Loaded on its first opening (Ctrl/⌘+K or a composer's "+", App's `lazy`), so nothing here runs
+ * before.
  */
 export default function CommandPalette(props: {
   host: ViewHost;
-  /** The open session and composer, as of now. */
+  /** How it was opened: from a composer's "+" on a phone, nothing takes the keyboard up. */
+  origin: PaletteOrigin;
+  /** What `Esc` and the scrim give focus back to (the "+" it was opened from), else null. */
+  returnTo: HTMLElement | null;
+  /** The chat's session and composer, as of now. */
   context(): PaletteContext;
-  /** The composer the "This chat" rows act on. */
+  /** The chat the This chat rows act on. */
+  chatPath(): string | null;
+  /** The composer the This chat and Slash commands rows act on. */
   composer(): ComposerHandle | null;
   onClose(): void;
 }) {
@@ -54,7 +65,10 @@ export default function CommandPalette(props: {
   const [served, setServed] = createSignal<CommandEntry[] | null>(lastServed?.list ?? null);
   const [servedError, setServedError] = createSignal(false);
   const [panel, setPanel] = createSignal<CommandEntry | null>(null);
+  /** Undo last turn's first pick happened; the next one rewinds. Each opening starts disarmed. */
+  const [undoArmed, setUndoArmed] = createSignal(false);
   let input!: HTMLInputElement;
+  let dialog!: HTMLDivElement;
 
   // Asked at each opening, never before (§app.command-palette/opening). The list this tab got last
   // shows meanwhile, and an unchanged answer changes nothing on screen.
@@ -78,7 +92,7 @@ export default function CommandPalette(props: {
   let previous = new Map<string, PaletteRow>();
   const rows = createMemo(() => {
     const next = new Map<string, PaletteRow>();
-    const out = buildRows(views(), served(), props.context(), dialogIds).map((row) => {
+    const out = buildRows(views(), served(), props.context(), dialogIds, undoArmed()).map((row) => {
       const old = previous.get(row.key);
       const keep = old && sameRow(old, row) ? old : row;
       next.set(row.key, keep);
@@ -153,10 +167,51 @@ export default function CommandPalette(props: {
     if (row) document.getElementById(optionId(row.key))?.scrollIntoView({ block: "nearest" });
   };
 
+  /** `Esc` or the scrim: closed with nothing picked, focus back to the "+" it was opened from. */
+  const dismiss = () => {
+    const to = props.returnTo;
+    props.onClose();
+    if (to) queueMicrotask(() => to.isConnected && to.focus());
+  };
+
+  /** A This chat row (§app.command-palette/picking). Synchronous to the end: Attach images must
+      open the picker inside the click or key press that picked it. */
+  const runAction = (id: ChatActionId) => {
+    const composer = props.composer();
+    const path = props.chatPath();
+    if (!composer || !path) return;
+    if (id !== "undo") setUndoArmed(false);
+    if (id === "attach") {
+      composer.attach(); // first, before anything else runs: the picker needs this gesture
+      props.onClose();
+    } else if (id === "hide-tools") {
+      setHideTools(path, !hideTools(path)); // says so itself, through the status region
+      props.onClose();
+    } else if (id === "hide-thinking") {
+      setHideThinking(path, !hideThinking(path));
+      props.onClose();
+    } else if (id === "playbooks") {
+      props.onClose();
+      composer.playbooks();
+    } else {
+      // Two picks, in place: the first arms the row and keeps the palette open. Disarming before
+      // running means a double pick arms again rather than rewinding twice.
+      const step = confirmActivate(undoArmed(), composer.undoBlocked() !== null);
+      setUndoArmed(step.armed);
+      if (!step.run) {
+        if (step.armed) announce(ACTION_COPY.undoArmedDetail);
+        return;
+      }
+      props.onClose();
+      composer.undo();
+    }
+  };
+
   const act = (row: PaletteRow) => {
     if (row.disabled) return;
     const a = row.act;
-    if (a.kind === "view") {
+    if (a.kind === "action") runAction(a.id);
+    else if (a.kind === "view") {
       const view = views().find((v) => v.id === a.id);
       props.onClose();
       view?.run();
@@ -192,17 +247,29 @@ export default function CommandPalette(props: {
     if (panel()) {
       setPanel(null);
       queueMicrotask(() => input?.focus());
-    } else props.onClose();
+    } else dismiss();
   };
 
-  onMount(() => input.focus());
+  // Opened from "+" on a phone, the dialog takes focus instead of the field, so no keyboard comes
+  // up; tapping the field still types. trapFocus leaves focus where it is once it's inside.
+  onMount(() => (props.origin === "plus" && isPhone() ? dialog.focus() : input.focus()));
 
   const activeRow = () => shown()[active()];
 
   return (
     <Portal>
-      <div class="scrim" onClick={() => props.onClose()} />
-      <div class="modal palette" role="dialog" aria-modal="true" aria-labelledby={`palette-title-${uid}`} ref={(el) => trapFocus(el)} onKeyDown={onKeyDown}>
+      <div class="scrim" onClick={dismiss} />
+      <div
+        class="modal palette"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`palette-title-${uid}`}
+        ref={(el) => {
+          dialog = el;
+          trapFocus(el);
+        }}
+        onKeyDown={onKeyDown}
+      >
         <div class="sheet-grip" aria-hidden="true" />
         <div class="modal-head">
           <h2 class="modal-title" id={`palette-title-${uid}`}>

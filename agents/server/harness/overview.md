@@ -228,7 +228,11 @@ found so far (pi 1.0.3).
   the queue wakes on `agent_settled` is handed off synchronously inside that window, so its turn takes
   this path (quirk P5): it still starts, and its failure surfaces through the previous call's failure
   handling, which every `harness.send()` call site in `server/chat-manager.ts` attaches (`.catch`, or
-  the returned `turn`). Topic batches (`server/topic-delivery.ts`, `ChatSession.deliverTopicBatch`)
+  the returned `turn`). A keyed item (a worker's steer or follow-up) is the exception: its message
+  must carry its send key (`server/send-keys.ts`, §app.chat-processes/worker-instructions), and a
+  deferred turn runs outside the send's async context, so `acceptPrompt` queues a keyed send made in
+  the window and the queue holds a keyed item until the window has passed. Topic batches
+  (`server/topic-delivery.ts`, `ChatSession.deliverTopicBatch`)
   stay out of that window on purpose: a settle only schedules a drain on a timer, after the web queue's
   own hand-off, and a batch counts as delivered at its user entry's `message_end` (the
   `sova-topic-delivered` marker), never when its `prompt()` resolves.
@@ -243,12 +247,9 @@ found so far (pi 1.0.3).
 - pi 1.0's built-in extensions (`builtin:codemode`, `builtin:tool-search`, `builtin:mcp`,
   `builtin:llama.cpp`, `<pi>/dist/extensions/index.js`) load only in the CLI (`<pi>/dist/main.js` adds them); SDK
   runtimes such as Sova's do not get them (`<pi>/docs/sdk.md` "codemode-mcp"), so no MCP, tool_search or
-  llama.cpp provider in webapp-owned sessions unless Sova adds the factories. Sova adds one: codemode
-  (`server/harness/pi/codemode.ts`, in `DEFAULT_EXTENSION_FACTORIES`, quirk P21), registered inactive
-  and switched by the mode extension's `codemode` minor mode (§chat.mode-menu/codemode), the same in
-  Claude Code chats (off: nowhere in the loadout; a toggle restarts the CLI). Its scripts run in a
-  `node:worker_threads` Worker with QuickJS; nested calls carry `parentToolCallId` (`HarnessEvent`
-  `nested`, `SovaEvent` `parentCallId`) and are no rows or live tools.
+  llama.cpp provider in webapp-owned sessions unless Sova adds the factories; Sova adds none. A call
+  another tool makes carries `parentToolCallId` (`HarnessEvent` `nested`, `SovaEvent` `parentCallId`)
+  and is no row or live tool.
 - **pi reads the host's context files into a recording.** A session reads every `AGENTS.md`/`CLAUDE.md`
   from its cwd up to `/` and skills from `~/.agents/skills`, so a golden recorded under a scratch dir
   inside `$HOME` (or with the real `HOME`) captures the operator's private files. Record goldens from a

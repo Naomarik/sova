@@ -16,6 +16,7 @@ import { fieldShape, checkFields, frameOf, frameFinding, aboutDelivered } from "
 import { lookCommand, graphMain, nearMain, occurs } from "./graph.mjs";
 import { mapMain } from "./map.mjs";
 import { whereMain } from "./where.mjs";
+import { assemble, readSpecGit, fixFor, isMerging, mixedFix } from "./layout.mjs";
 
 const ID_SRC = String.raw`§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?/[a-z][a-z-]*`;
 const ID_RE = new RegExp(`^${ID_SRC}$`);
@@ -38,15 +39,16 @@ const exitOf = (fs) => (fs.some((f) => f.severity === "error") ? 2 : fs.some((f)
 
 // ---------------------------------------------------------------- args
 function parseArgs(argv) {
-  const o = { json: false, pos: [], ownBase: [], drafts: [] };
+  const o = { json: false, pos: [], ownBase: [], drafts: [], ids: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--json") o.json = true;
     else if (a === "--changed") o.changed = true;
     else if (a === "--related") o.related = true;
     else if (a === "--landing") o.landing = true;
+    else if (a === "--id") { if (i + 1 >= argv.length) { o.usage = `${a} needs a value`; break; } o.ids.push(argv[++i]); }
     else if (a === "--own-base" || a === "--drafts") { if (i + 1 >= argv.length) { o.usage = `${a} needs a value`; break; } o[a === "--drafts" ? "drafts" : "ownBase"].push(argv[++i]); }
-    else if (a === "--root" || a === "--spec" || a === "--budget" || a === "--base" || a === "--head" || a === "--read-policy" || a === "--part" || a === "--cursor") {
+    else if (a === "--root" || a === "--spec" || a === "--budget" || a === "--base" || a === "--head" || a === "--read-policy" || a === "--part" || a === "--cursor" || a === "--at") {
       if (i + 1 >= argv.length) { o.usage = `${a} needs a value`; break; }
       o[a.slice(2)] = argv[++i];
     } else if (a === "--help" || a === "-h") o.help = true;
@@ -56,7 +58,7 @@ function parseArgs(argv) {
   if (o.usage || o.help) return o;
   const [cmd, ...rest] = o.pos;
   o.cmd = cmd;
-  const arity = { check: 0, census: 0, scope: 1, packet: 1, impact: 1, foreign: 0 }[cmd];
+  const arity = { check: 0, census: 0, scope: 1, packet: 1, impact: 1, foreign: 0, records: 0 }[cmd];
   if (arity === undefined) o.usage = cmd ? `unknown command ${cmd}` : "missing command";
   else if (rest.length !== arity) o.usage = `${cmd} takes ${arity ? "one §id" : "no arguments"}`;
   else if (arity && /^§[a-z][a-z-]*\.[a-z][a-z-]*$/.test(rest[0])) { o.alias = rest[0]; o.id = rest[0].replace(".", "/"); } // §app.shell names §app/shell
@@ -89,10 +91,13 @@ function parseArgs(argv) {
   if (!o.usage && o.landing && cmd !== "foreign") o.usage = "--landing applies to foreign only";
   if (!o.usage && o.drafts.length && !o.landing) o.usage = "--drafts applies to foreign --landing only";
   if (!o.usage && o.ownBase.length && !(cmd === "foreign" || o.changed)) o.usage = "--own-base applies to foreign and census --changed only";
+  if (!o.usage && (o.at !== undefined || o.ids.length) && cmd !== "records") o.usage = "--at and --id apply to records only";
+  if (!o.usage && cmd === "records" && o.at !== undefined && o.spec !== undefined) o.usage = "records --at reads the committed .sova/spec; it does not combine with --spec";
+  if (!o.usage && o.ids.some((x) => !ID_RE.test(x))) o.usage = `not a § identifier: ${o.ids.find((x) => !ID_RE.test(x))}`;
   return o;
 }
 const USAGE = "usage: sova-spec <map [namespace | §id] | where <path|token|topic words…> [--token] [--all] | toc §id --dir out|in|down|up|mentions | read §id [--whole] [--no-frame] | read --frame | impact §id --near | graph | " +
-  `packet §id [--part ${PACKET_PARTS.join("|")}] | scope §id | impact §id | check | census [--changed [--base REV] [--related] [--own-base REV]...] | foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...]> [--root DIR] [--spec DIR] [--json] [--budget BYTES] [--cursor TOKEN]`;
+  `packet §id [--part ${PACKET_PARTS.join("|")}] | scope §id | impact §id | check | records [--at REV] [--id §id]... | census [--changed [--base REV] [--related] [--own-base REV]...] | foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...]> [--root DIR] [--spec DIR] [--json] [--budget BYTES] [--cursor TOKEN]`;
 
 // --spec: a project-relative directory holding manifest.json (default .sova/spec). → {rel} | {why}
 function specDir(raw) {
@@ -137,17 +142,17 @@ function safePath(root, rel) {
 // The review companion's refusal policy must hold in this subprocess too, before contents are read.
 const SECRET_DIRS = new Set([".git", ".hg", ".svn", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"]);
 const SECRET_FILE = /^(?:\.env(?:\..*)?|\.envrc|auth\.json|credentials(?:\.json)?|\.netrc|\.npmrc|\.pypirc|\.pgpass|\.git-credentials|\.htpasswd|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|secrets?(?:(?:[.-][a-z0-9_-]+)*\.(?:json|ya?ml|toml|ini|conf|cfg|env|txt|properties|xml|enc|age|asc))?|.*\.(?:pem|key|p12|pfx|jks|keystore|kdbx|gpg))$/i;
-let reviewPolicy = false, assessmentPolicy = false;
-function reviewRefusal(rel) {
+let reviewPolicy = false;
+// recordPair: a layout-2 record file with its claim file beside it, read for its records whatever its name.
+function reviewRefusal(rel, recordPair = false) {
   if (!reviewPolicy) return null;
   const segs = toPosix(rel).split("/"), low = toPosix(rel).toLowerCase();
-  if (assessmentPolicy && (low === `${DEFAULT_SPEC}/assessments` || low.startsWith(`${DEFAULT_SPEC}/assessments/`))) return "receipt/cache storage is not an input";
   if ([`${DEFAULT_SPEC}/reviews`, `${DEFAULT_SPEC}/.cache`].some((d) => low === d || low.startsWith(d + "/"))) return "review/cache storage is never its own input";
   if (segs.some((s) => SECRET_DIRS.has(s.toLowerCase()))) return "secret, config or runtime-state directory";
-  return SECRET_FILE.test(segs.at(-1)) ? "secret or credential file" : null;
+  return !recordPair && SECRET_FILE.test(segs.at(-1)) ? "secret or credential file" : null;
 }
-function openInput(root, rel) {
-  const p = safePath(root, rel), why = reviewRefusal(rel);
+function openInput(root, rel, recordPair = false) {
+  const p = safePath(root, rel), why = reviewRefusal(rel, recordPair);
   if (why || p.state !== "present") throw Object.assign(new Error(why ?? p.why ?? p.state), { code: why ? "refused" : p.state });
   if (reviewPolicy) {
     const st = lstatSync(p.abs);
@@ -163,8 +168,8 @@ function openInput(root, rel) {
     return fd;
   } catch (e) { closeSync(fd); throw e; }
 }
-function readInput(root, rel) {
-  const fd = openInput(root, rel);
+function readInput(root, rel, recordPair = false) {
+  const fd = openInput(root, rel, recordPair);
   try {
     const b = readFileSync(fd);
     if (reviewPolicy && b.length > 2 * 1024 * 1024) throw Object.assign(new Error("oversize"), { code: "refused" });
@@ -202,7 +207,12 @@ function loadManifest(root, specRel) {
   const mPath = join(root, specRel, "manifest.json");
   if (!existsSync(mPath)) { add("error", "manifest-not-found", `no ${specRel}/manifest.json under ${root}`); return null; }
   const text = tryRead(() => readInput(root, `${specRel}/manifest.json`), (e) => add("error", "manifest-unreadable", `manifest.json: ${e}`));
-  return text === null ? null : parseManifest(text, specRel);
+  const n = findings.length, ctx = text === null ? null : parseManifest(text, specRel);
+  // A Git merge left the file unparsed (conflict markers): the one command that merges it per record.
+  const bad = !ctx && text !== null ? findings.slice(n).find((f) => f.code === "manifest-unreadable") : null;
+  if (bad && specRel === DEFAULT_SPEC && isMerging(root))
+    bad.message += `; a Git merge is in progress: run ${mixedFix({ root, merging: true })} (it merges the records per record, across layouts too), then stage what it wrote`;
+  return ctx;
 }
 
 // A manifest's text, from a file or a Git object. → ctx without root/claims/decls | null (error added)
@@ -213,7 +223,8 @@ function parseManifest(text, specRel) {
   }
   if (!m || typeof m !== "object" || Array.isArray(m)) { add("error", "manifest-unreadable", "manifest.json is not an object"); return null; }
   const v1 = m.formatVersion === 1 || (m.formatVersion === undefined && m.schema === "sova-spec/pilot-manifest" && m.version === 1);
-  if (!v1) { add("error", "manifest-version", `unsupported format (formatVersion ${JSON.stringify(m.formatVersion ?? m.version)}); this core reads version 1`); return null; }
+  const v2 = m.formatVersion === 2;
+  if (!v1 && !v2) { add("error", "manifest-version", `unsupported format (formatVersion ${JSON.stringify(m.formatVersion ?? m.version)}); this core reads versions 1 and 2`); return null; }
   const g = m.grammar ?? {};
   if (!g || typeof g !== "object" || Array.isArray(g)) { add("error", "grammar-invalid", "grammar must be an object"); return null; }
   if (g.id !== undefined && g.id !== ID_SRC) add("error", "grammar-unsupported", "grammar.id differs from the fixed § grammar; custom grammars are not read");
@@ -228,8 +239,26 @@ function parseManifest(text, specRel) {
     add("error", "grammar-invalid", "grammar.directoryKinds must be an array of namespace names"); return null;
   }
   if (m.resolution !== undefined) add("note", "resolution-ignored", "manifest `resolution` is derived data; it is ignored and recomputed from headings");
-  if (!m.claims || typeof m.claims !== "object" || Array.isArray(m.claims)) { add("error", "manifest-unreadable", "manifest.claims must be an object"); return null; }
-  return { m, specRel, claimsRel: `${specRel}/${croot}`, dirKinds: Array.isArray(dirKinds) ? dirKinds : [] };
+  if (!v2 && (!m.claims || typeof m.claims !== "object" || Array.isArray(m.claims))) { add("error", "manifest-unreadable", "manifest.claims must be an object"); return null; }
+  return { m, layout: v2 ? 2 : 1, specRel, claimsRel: `${specRel}/${croot}`, dirKinds: Array.isArray(dirKinds) ? dirKinds : [] };
+}
+
+// Every record into ctx.m.claims through the shared layout module, whichever layout the spec is in. json: the
+// *.json files under the claims root (absolute), mds: the *.md (absolute). → true, or false when no graph may be
+// built (a mixed layout; its error is added).
+function recordsOf(root, ctx, { json, mds }) {
+  const croot = join(root, ctx.claimsRel), inClaims = (abs) => toPosix(relative(croot, abs));
+  const mdSet = new Set(mds.map(inClaims)), texts = new Map();
+  for (const abs of json) {
+    const rel = toPosix(relative(root, abs)), pair = mdSet.has(inClaims(abs).replace(/\.json$/, ".md"));
+    const body = tryRead(() => readInput(root, rel, pair), (e) => add("error", "records-unreadable", `${rel}: ${e}`, { file: rel }));
+    if (body !== null) texts.set(inClaims(abs), body);
+  }
+  const a = assemble(ctx.m, texts, mdSet, { fix: fixFor(root, ctx.specRel), specRel: ctx.specRel });
+  for (const p of a.problems) add("error", p.code, p.message, { ...(p.id ? { id: p.id } : {}), ...(p.file ? { file: p.file } : {}) });
+  if (!a.manifest || a.problems.some((p) => p.code === "layout-mixed")) return false;
+  ctx.m = a.manifest;
+  return true;
 }
 
 function validateRecords(ctx) {
@@ -270,13 +299,13 @@ function validateRecords(ctx) {
 }
 
 // Walk claims/ and parse H1/H2 declarations. Fenced blocks never declare.
-function scanDeclarations(root, ctx) {
-  const decls = new Map();
+// The walk: every *.md and *.json under the claims root (absolute paths), errors added as met.
+function walkClaims(root, ctx) {
+  const files = [], json = [];
   const croot = join(root, ctx.claimsRel);
   const link = linkOnPath(root, ctx.claimsRel);
-  if (link) { add("error", "symlink-refused", `${link} is a symlink; claims are never read through links`, { file: link }); return decls; }
-  if (!existsSync(croot)) { add("error", "claims-missing", `${ctx.claimsRel} does not exist`); return decls; }
-  const files = [];
+  if (link) { add("error", "symlink-refused", `${link} is a symlink; claims are never read through links`, { file: link }); return { mds: files, json, skip: true }; }
+  if (!existsSync(croot)) { add("error", "claims-missing", `${ctx.claimsRel} does not exist`); return { mds: files, json, skip: true }; }
   const walk = (dir) => {
     const rel = toPosix(relative(root, dir)), why = reviewRefusal(rel);
     if (why) { add("error", "claims-unreadable", `${rel}: refused (${why})`, { file: rel }); return; }
@@ -288,9 +317,16 @@ function scanDeclarations(root, ctx) {
       if (st.isSymbolicLink()) add("error", "symlink-refused", `${rel} is a symlink; claims are never read through links`, { file: rel });
       else if (st.isDirectory()) walk(p);
       else if (st.isFile() && n.endsWith(".md")) files.push(p);
+      else if (st.isFile() && n.endsWith(".json")) json.push(p);
     }
   };
   walk(croot);
+  return { mds: files, json };
+}
+function scanDeclarations(root, ctx, walked) {
+  const decls = new Map();
+  if (walked.skip) return decls;
+  const croot = join(root, ctx.claimsRel), files = walked.mds;
   const bodies = [];
   for (const abs of files) {
     const rel = toPosix(relative(root, abs));
@@ -363,8 +399,15 @@ function load(root, specRel) {
   const ctx = loadManifest(root, specRel);
   if (!ctx) return null;
   ctx.root = root;
+  // The walk's own findings keep their place after the records' (as when only manifest.json held records).
+  const saved = findings;
+  findings = [];
+  const walked = walkClaims(root, ctx), walkFindings = findings;
+  findings = saved;
+  if (!recordsOf(root, ctx, walked)) { findings.push(...walkFindings); return null; }
   ctx.claims = validateRecords(ctx);
-  ctx.decls = scanDeclarations(root, ctx);
+  findings.push(...walkFindings);
+  ctx.decls = scanDeclarations(root, ctx, walked);
   return linkGraph(ctx);
 }
 
@@ -560,12 +603,27 @@ function check(ctx) {
     if (Object.keys(LABELS).every((k) => r[k] === undefined)) labels.unlabeled++;
   }
   const edges = [...ctx.claims.values()].reduce((n, r) => n + (r.requires?.length ?? 0), 0);
-  // Every parsed declaration, so a caller can attribute prose changes to ids. textSha256 hashes exactly scope's text.
+  // Every parsed declaration, so a caller can attribute prose changes to ids. textSha256 hashes exactly scope's text;
+  // bytes is its prose size in the claim file (as read and toc count it), never its record's.
+  const cap = declarationCap(ctx);
+  let overCap = 0;
   const declarations = [...ctx.decls.keys()].sort().map((id) => {
-    const d = ctx.decls.get(id);
-    return { id, file: d.file, lines: d.lines, level: d.level, textSha256: sha(d.text) };
+    const d = ctx.decls.get(id), bytes = Buffer.byteLength(d.text);
+    if (bytes > cap) overCap++;
+    return { id, file: d.file, lines: d.lines, level: d.level, textSha256: sha(d.text), bytes };
   });
-  return { counts: { records: ctx.claims.size, declarations: ctx.decls.size, kinds, labels, requiresEdges: edges, codePaths: code.length }, declarations, frontier, code };
+  return { counts: { records: ctx.claims.size, declarations: ctx.decls.size, kinds, labels, requiresEdges: edges, codePaths: code.length, cap, overCap }, declarations, frontier, code };
+}
+
+// The most prose bytes one declaration should hold: the spec's top-level `declarationCap`, else 6,144. Counted only,
+// never a finding per declaration, so check's exit stays what the other findings make it.
+export const DECLARATION_CAP = 6144;
+function declarationCap(ctx) {
+  const v = ctx.m.declarationCap;
+  if (v === undefined) return DECLARATION_CAP;
+  if (Number.isSafeInteger(v) && v >= 1) return v;
+  add("warn", "declaration-cap-invalid", `declarationCap ${JSON.stringify(v)} is not a whole number of bytes of at least 1; the default ${DECLARATION_CAP} B holds`);
+  return DECLARATION_CAP;
 }
 
 // The manifest boundary. → {include, exclude, skipped, inBoundary} | null (missing: warned) | false (invalid: error).
@@ -726,11 +784,43 @@ function changedFiles(root, base) {
   return { commit, paths: [...new Set([...nulList(diff.out), ...nulList(others.out)])].sort() };
 }
 
+// The records as stored, in either layout, never validated beyond the layout (check does that): {layout, meta, records}.
+// --at REV reads the committed spec; --id narrows the records (an id with no record is an error).
+function records(root, opt) {
+  let layout = null, meta = null, recs = null;
+  if (opt.at !== undefined) {
+    const prefix = gitPrefix(root, "records --at"), commit = prefix === null ? null : resolveRev(root, opt.at, "--at");
+    if (!commit) return { at: opt.at, layout, meta, records: recs };
+    const s = readSpecGit(root, commit, { prefix, specRel: DEFAULT_SPEC });
+    if (s.state === "error") add("error", "git-failed", s.message);
+    else if (s.state === "absent") add("error", "manifest-not-found", `no ${DEFAULT_SPEC}/manifest.json at ${commit.slice(0, 12)}`);
+    else {
+      const ctx = parseManifest(s.rootText, DEFAULT_SPEC);
+      for (const p of s.problems) add("error", p.code, p.message, { ...(p.id ? { id: p.id } : {}), ...(p.file ? { file: p.file } : {}) });
+      if (ctx && s.manifest && !s.problems.some((p) => p.code === "layout-mixed")) ({ layout, meta, records: recs } = s);
+    }
+  } else {
+    const ctx = loadManifest(root, opt.spec);
+    if (ctx && recordsOf(root, ctx, walkClaims(root, ctx))) {
+      layout = ctx.layout;
+      meta = Object.fromEntries(Object.entries(ctx.m).filter(([k]) => k !== "claims"));
+      recs = ctx.m.claims;
+    }
+  }
+  if (recs && opt.ids.length) {
+    for (const id of opt.ids) if (!Object.hasOwn(recs, id)) add("error", "unknown-id", `${id} has no record`, { id });
+    recs = Object.fromEntries(opt.ids.filter((id) => Object.hasOwn(recs, id)).map((id) => [id, recs[id]]));
+  }
+  if (recs) recs = Object.fromEntries(Object.keys(recs).sort().map((id) => [id, recs[id]]));
+  return { ...(opt.at !== undefined ? { at: opt.at } : {}), layout, meta, records: recs };
+}
+
 // Ids the current spec already records, read only to tell a draft's new ids from foreign ones; its own findings are dropped.
 function currentIds(root) {
   const n = findings.length, cur = loadManifest(root, DEFAULT_SPEC);
+  const ok = cur && (cur.layout === 1 || recordsOf(root, cur, walkClaims(root, cur)));
   findings.length = n;
-  return new Set(cur ? Object.keys(cur.m.claims) : []);
+  return new Set(ok ? Object.keys(cur.m.claims) : []);
 }
 
 // Every § a changed file lands in is foreign unless the task created it (a draft read with --spec, or the range from the base).
@@ -1011,28 +1101,20 @@ function blobs(root, specs) {
 }
 // The spec graph as committed at `commit`, read from Git objects. No spec there → an empty graph.
 function loadAt(root, prefix, commit) {
-  const spec = prefix ? `${prefix}/${DEFAULT_SPEC}` : DEFAULT_SPEC;
-  const man = blobs(root, [`${commit}:${spec}/manifest.json`]);
-  if (!man) return null;
-  const text = man.get(`${commit}:${spec}/manifest.json`);
   const empty = { m: { claims: {} }, specRel: DEFAULT_SPEC, claimsRel: `${DEFAULT_SPEC}/claims`, dirKinds: ["section"], root, claims: new Map(), decls: new Map(), children: new Map() };
-  if (text == null) return empty;
-  const ctx = parseManifest(text, DEFAULT_SPEC);
+  const s = readSpecGit(root, commit, { prefix, specRel: DEFAULT_SPEC, withProse: true });
+  if (s.state === "error") { add("error", "git-failed", s.message); return null; }
+  if (s.state === "absent") return empty;
+  const ctx = parseManifest(s.rootText, DEFAULT_SPEC);
   if (!ctx) return null;
   ctx.root = root;
+  const links = s.problems.filter((p) => p.code === "symlink-refused"), others = s.problems.filter((p) => p.code !== "symlink-refused");
+  for (const p of others) add("error", p.code, p.message, { ...(p.id ? { id: p.id } : {}), ...(p.file ? { file: p.file } : {}) });
+  if (!s.manifest || others.some((p) => p.code === "layout-mixed")) return null;
+  ctx.m = s.manifest;
   ctx.claims = validateRecords(ctx);
-  const ls = git(root, ["ls-tree", "-r", "-z", "--full-tree", commit, "--", `${prefix ? `${prefix}/` : ""}${ctx.claimsRel}/`]);
-  if (ls.status !== 0) { add("error", "git-failed", `git ls-tree: ${ls.error ?? ls.err.trim()}`); return null; }
-  const files = [];
-  for (const e of ls.out.split("\0").filter(Boolean)) {
-    const [meta, full] = e.split("\t"), rel = prefix ? full.slice(prefix.length + 1) : full;
-    if (meta.startsWith("120000")) add("error", "symlink-refused", `${rel} is a symlink at ${commit.slice(0, 12)}; claims are never read through links`, { file: rel });
-    else if (meta.split(" ")[1] === "blob" && rel.endsWith(".md")) files.push(rel);
-  }
-  files.sort();
-  const got = blobs(root, files.map((f) => `${commit}:${prefix ? `${prefix}/` : ""}${f}`));
-  if (!got) return null;
-  ctx.decls = parseDeclarations(ctx, files.map((rel) => ({ rel, inClaims: rel.slice(ctx.claimsRel.length + 1), body: got.get(`${commit}:${prefix ? `${prefix}/` : ""}${rel}`) ?? "" })));
+  for (const p of links) add("error", p.code, p.message, { file: p.file });
+  ctx.decls = parseDeclarations(ctx, [...s.claimBodies].map(([rel, body]) => ({ rel, inClaims: rel.slice(ctx.claimsRel.length + 1), body })));
   return linkGraph(ctx);
 }
 // The task's own claims: ids absent from the spec at EVERY --own-base revision (its fork point, the default branch's
@@ -1060,15 +1142,10 @@ function ownOf(root, revs = []) {
 function idsAt(root, commit) {
   const prefix = gitPrefix(root, "census --changed");
   if (prefix === null) return null;
-  const key = `${commit}:${prefix ? `${prefix}/` : ""}${DEFAULT_SPEC}/manifest.json`;
-  const got = blobs(root, [key]);
-  if (!got) return null;
-  const text = got.get(key);
-  if (text == null) return new Set();
-  try {
-    const m = JSON.parse(text);
-    if (m && typeof m.claims === "object" && !Array.isArray(m.claims)) return new Set(Object.keys(m.claims));
-  } catch { /* reported below */ }
+  const s = readSpecGit(root, commit, { prefix, specRel: DEFAULT_SPEC });
+  if (s.state === "error") { add("error", "git-failed", s.message); return null; }
+  if (s.state === "absent") return new Set();
+  if (s.manifest && !s.problems.some((p) => p.code !== "symlink-refused")) return new Set(Object.keys(s.records));
   add("warn", "base-manifest-unreadable", `the manifest at ${commit.slice(0, 12)} can't be read; no § counts as created since the base`);
   return { has: () => true };
 }
@@ -1229,6 +1306,10 @@ function handResolved(root, prefix, head, h) {
 function human(out) {
   const L = [];
   const where = (f) => [f.id, f.file && `${f.file}${f.line ? `:${f.line}` : ""}`].filter(Boolean).join(" ");
+  if (out.command === "records" && out.records) {
+    L.push(`records: format version ${out.layout}, ${Object.keys(out.records).length} record(s)${out.at ? ` at ${out.at}` : ""} (--json prints them)`);
+    for (const [id, r] of Object.entries(out.records)) L.push(`  ${id} ${r?.kind ?? "?"}`);
+  }
   if (out.passages) for (const p of out.passages) {
     const rs = p.reasons.map((r) => (r.of ? `${r.reason} of ${r.of}` : r.reason)).join("; ");
     const lb = p.labels ? `; ${Object.entries(p.labels).map(([k, v]) => `${k} ${v}`).join(", ")}` : "";
@@ -1242,6 +1323,7 @@ function human(out) {
     const lb = out.counts.labels, fmt = (o) => Object.entries(o).map(([k, n]) => `${k} ${n}`).join(", ") || "none";
     L.push(`records ${out.counts.records}, declarations ${out.counts.declarations}, requires edges ${out.counts.requiresEdges}, code paths ${out.counts.codePaths}`,
       `labels: authority ${fmt(lb.authority)}; evidence ${fmt(lb.evidence)}; unlabeled ${lb.unlabeled} (declared, not verified)`);
+    if (out.counts.cap !== undefined) L.push(`declarations over the ${out.counts.cap} B cap: ${out.counts.overCap} (draft check warns when a draft makes one cross it or grow)`);
   }
   if (out.census?.mode === "changed") {
     const c = out.census;
@@ -1303,7 +1385,8 @@ function packetMain(opt) {
   if (!root) return write({ ...packetError("graph-untrusted", budget), cause: "manifest-not-found" });
   const ctx = load(root, opt.spec);
   if (!ctx || exitOf(findings) === 2 || !ctx.claims.has(opt.id)) return write({ ...packetError("graph-untrusted", budget),
-    ...(findings.some((f) => f.code === "manifest-not-found") ? { cause: "manifest-not-found" } : {}) });
+    ...(findings.some((f) => f.code === "manifest-not-found") ? { cause: "manifest-not-found" } : {}),
+    ...(findings.some((f) => f.code === "layout-mixed") ? { cause: "layout-mixed", message: findings.find((f) => f.code === "layout-mixed").message } : {}) });
   if (opt.alias) add("note", "id-alias", `${opt.alias} is not a § identifier; read as ${opt.id} (did you mean ${opt.id}?)`, { id: opt.id });
   const result = scope(ctx, opt.id);
   const passages = packetOrder(ctx, opt.id, result.passages, parentOf);
@@ -1337,7 +1420,7 @@ function main(argv) {
   if (look?.command === "impact-near") return nearMain(look.rest, lookCore());
   const opt = parseArgs(argv);
   packetInvocation = argv[0] === "packet" || opt.pos[0] === "packet";
-  reviewPolicy = opt["read-policy"] === "review"; assessmentPolicy = false;
+  reviewPolicy = opt["read-policy"] === "review";
   if (packetInvocation) return packetMain(opt);
   let out = { tool: "sova-spec", command: opt.cmd ?? null };
   if (opt.help) { process.stdout.write(USAGE + "\n"); return 0; }
@@ -1348,6 +1431,7 @@ function main(argv) {
     out.spec = opt.spec;
     const root = findSpec(opt) ?? (opt.cmd === "foreign" ? process.cwd() : null);
     if (root && opt.cmd === "foreign") out = { ...out, root, ...foreign(root, { ...opt, spec: draftSpec }), notice: FOREIGN_NOTICE };
+    else if (root && opt.cmd === "records") out = { ...out, root, ...records(root, opt) };
     else if (!root) add("error", "manifest-not-found", `no ${opt.spec}/manifest.json in this directory or any parent`);
     else {
       out.root = root;
@@ -1373,33 +1457,25 @@ function main(argv) {
   return out.exit;
 }
 
-// Internal stdlib reader for companions: one graph per capture, existing command semantics.
+// Internal stdlib reader for companions: one graph per reader, existing command semantics.
 // Every synchronous query scopes all module state and JSON-detaches its result, like a CLI child.
-// No reader or source cache is shared across captures or status invocations.
+// No reader is shared across calls: make a new one to see changed inputs.
 export function createInspection(root, { spec = DEFAULT_SPEC, readPolicy = "default" } = {}) {
   root = resolve(root);
-  let ctx = null, loaded = [], selected = spec, sourceFiles = [], sourceConflict = false;
+  let ctx = null, loaded = [], selected = spec;
   const within = (base, fn) => {
-    const saved = { findings, reviewPolicy, assessmentPolicy, packetInputs, packetInvocation };
-    findings = [...base]; reviewPolicy = readPolicy !== "default"; assessmentPolicy = readPolicy === "assessment"; packetInputs = null; packetInvocation = false;
+    const saved = { findings, reviewPolicy, packetInputs, packetInvocation };
+    findings = [...base]; reviewPolicy = readPolicy === "review"; packetInputs = null; packetInvocation = false;
     try { return fn(); } finally {
-      ({ findings, reviewPolicy, assessmentPolicy, packetInputs, packetInvocation } = saved);
+      ({ findings, reviewPolicy, packetInputs, packetInvocation } = saved);
     }
   };
   within([], () => {
     const choice = specDir(spec);
-    if (choice.why || !["default", "review", "assessment"].includes(readPolicy)) add("error", "usage", "invalid inspection spec or read policy");
+    if (choice.why || !["default", "review"].includes(readPolicy)) add("error", "usage", "invalid inspection spec or read policy");
     else {
       selected = choice.rel;
-      // Reuse raw-byte hashing at the actual read, not re-encoded parsed text or a second open.
-      packetInputs = { files: [], tree: [] };
       ctx = load(root, selected);
-      const seen = new Map();
-      sourceFiles = packetInputs.files.map(([path, sha256]) => {
-        if (seen.has(path) && seen.get(path) !== sha256) sourceConflict = true;
-        if (!seen.has(path)) seen.set(path, sha256); // never overwrite the first parsed version
-        return { path, sha256 };
-      });
     }
     loaded = [...findings];
   });
@@ -1418,7 +1494,6 @@ export function createInspection(root, { spec = DEFAULT_SPEC, readPolicy = "defa
     return JSON.parse(JSON.stringify(out));
   });
   return Object.freeze({
-    sourceHashes: () => JSON.parse(JSON.stringify({ files: sourceFiles, conflict: sourceConflict })),
     check: () => query("check"),
     scope: (id) => query("scope", id),
     impact: (id) => query("impact", id),

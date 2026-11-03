@@ -42,11 +42,16 @@ const DENY_FILE = [
 /** A path part naming a secret. */
 const SECRET_PART = /secret|token|password|passwd|credential|private[-_]?key/i;
 
-/** Whether a root-relative path (forward slashes) is on the deny list. Pure. */
-export function deniedPath(rel: string): boolean {
+/** Whether a root-relative path (forward slashes) is on the deny list. Pure. `sovaOk`: the project's own `.sova`
+ *  folder may be entered (the operator's folder viewer reads committed settings there); every other rule holds. */
+export function deniedPath(rel: string, opts: { sovaOk?: boolean } = {}): boolean {
   const parts = rel.split("/").filter(Boolean);
   if (!parts.length) return false;
-  for (const p of parts) if (DENY_DIRS.has(p.toLowerCase()) || SECRET_PART.test(p)) return true;
+  for (const [i, p] of parts.entries()) {
+    const low = p.toLowerCase();
+    if (opts.sovaOk && i === 0 && low === ".sova") continue;
+    if (DENY_DIRS.has(low) || SECRET_PART.test(p)) return true;
+  }
   const name = parts[parts.length - 1]!;
   return DENY_FILE.some((r) => r.test(name));
 }
@@ -83,7 +88,7 @@ export function maskSecrets(text: string): string {
   return out.join("\n");
 }
 
-const isBinary = (buf: Buffer): boolean => buf.subarray(0, 8192).includes(0);
+export const isBinary = (buf: Buffer): boolean => buf.subarray(0, 8192).includes(0);
 const isProse = (rel: string): boolean => /\.(?:md|markdown|txt|rst|adoc)$/i.test(rel);
 
 /** A model's path, as a clean root-relative path, or null when it leaves the root. Pure. */

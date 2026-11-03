@@ -1,0 +1,16 @@
+{
+  "id": "merge-thread",
+  "label": "Merge thread",
+  "icon": "branch",
+  "description": "The merge queue's thread, started by Sova: notes on landings, extra checks by blast radius, conflict judgements, failure explanations. Acts only through the merge verbs. No web, no workers.",
+  "remove": [
+    "web",
+    "workers",
+    "timers"
+  ],
+  "grant": [],
+  "singleton": false,
+  "overseerMayStart": false,
+  "mode": "normal",
+  "minorModes": []
+}

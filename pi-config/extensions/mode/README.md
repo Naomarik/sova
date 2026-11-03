@@ -111,21 +111,43 @@ Minor modes are extra instructions toggled independently of the major mode:
 zero or more can be active at once, in normal or delegate. Their blocks
 are appended after the delegate block (when in delegate) in registry order
 (`align`, then `spec`). Only `align` adds a bridge paragraph to the delegate
-block (the planning worker hand-off, said only there; with Visuals it also
+block (the planning worker hand-off, said only there and only for change
+requests, in the one wording true under both Eagerness choices
+(`ALIGN_TRIGGER_SHARED`): any other prompt is answered or delegated as the
+delegate block says; when a lighter Investigation worker already found the root
+cause and the user then asks for the change, the planning worker's brief carries
+it; with Visuals it also
 quotes the file schema with `visual` and a drawing paragraph to copy into the
 worker's prompt, naming the vis guide's directory, since a worker has no
 `vis_guide`); `spec` composes with either major mode and with `align` unchanged, and
 carries one paragraph of its own when a spec writer is set (see **Spec
 writer**).
 
-- **align** — before building anything non-trivial, the agent investigates
-  (in delegate, through a non-editing **Planning & specs** worker — never the
+- **align** — which prompts open an alignment (a change request) is the chat's
+  **Eagerness** (Settings → Alignment, see **Writing style and Visuals**): the
+  block carries that choice's trigger paragraph and only it
+  (`ALIGN_TRIGGER_PARAGRAPHS`). **Eager**, the default, is master's: any prompt
+  that implies work, a short alignment even for a fully specified ask, leaning
+  heavily toward asking. **Careful** is one test: what does the user want to be
+  different when this is done? The product, however phrased, is a change request;
+  wanting to know or understand, with the product left as it is, is a question
+  answered in chat; an investigation into something broken or lacking is the
+  first step of a change request, its findings on a card; unsure, open the card;
+  a clarifying question only when the message can't be planned without one. On
+  both, a "go", "yes", "do it" or "fix it" to anything sketched in chat opens a
+  card first. On a change request the agent marks the run (`change_request`), investigates (in
+  delegate, through a non-editing **Planning & specs** worker — never the
   cheaper Investigation profile, since this is design work; itself otherwise),
   records an alignment with the `align` tool (findings, approach, rejected
   alternatives, and questions with recommendations on architecture, UX, scope
-  and trade-offs), then stops and waits for the user's answers. Questions,
-  explicit commands, pointed-at one-liners and confirmations are exempt. Text
-  in `minor.ts`; see **Alignments**.
+  and trade-offs), then stops and waits for the user's answers; nothing is
+  built before it is confirmed. Explicit commands, pointed-at one-liners, a
+  user's "skip alignment" and a follow-up that plainly confirms (only an answer
+  to an existing card, or the go-ahead for a command to run) are exempt. Every reply opens
+  with a short part the user reads (the answer, what changed, what they must
+  decide, warnings and what went unchecked; about 80 words), and any working
+  detail goes after a line reading exactly `### Working notes`, which Sova
+  shows as a closed fold. Text in `minor.ts`; see **Alignments**.
 - **spec** — every behavior change is spec'd: the agent finds its roots in the
   project's `.sova/spec/` documentation with `map` and `where`, looks at their
   contents with `toc`, runs `impact --near` on what it will change, and `read`s
@@ -136,17 +158,35 @@ writer**).
   covers in a feature draft before coding, claims only the files the task
   changed, leaves none of them unclaimed, reads before finishing each § the
   census note's one `Unread § your change landed in` line marks read first
-  (its command lists the rest), and promotes what it verified (or says why it could not).
+  (its command lists the rest), and records a verification note per promise it
+  changed (`evidence --note`), saying what it didn't verify. The branch's landing
+  makes its drafts official (`land`, after the checks pass, committing the docs with
+  the code); drafts that don't fit come back to the chat to fix, with no commit
+  (a clash: `refresh`). Where nothing lands branches, the agent runs `land` once
+  before its last commit. A branch isn't done or ready to land until each promise
+  it changed has its note, and the go-ahead to build or merge covers committing the
+  docs with the code; a draft whose branch already landed without it lands with a
+  fresh branch from the default branch, never on the default branch itself.
+  `agree` is only for a decision the user made in the chat: it stamps the record
+  and makes nothing official; a Land is never agreement.
   Work that changes no behavior — refactors, tests, tooling — is exempt, and
   the agent says it is claiming the exemption. The documentation changes only
   through drafts; a promotion `conflict` is per declaration, and it is
-  re-applied in a new draft from current. The discipline itself
-  is [`spec-mode.md`](spec-mode.md), and nowhere else. `minor.ts` reads it at
-  load: the injected block is that file byte for byte, minus trailing
-  whitespace, and its one `sh` block is the shell prefix `minor.ts` exports as
-  `SPEC_CORE_SHELL`. A missing, repeated or multi-line block fails the load. A
-  project may point its agents at the same file without the mode; Sova's
-  `AGENTS.md` does. The tools it runs without asking are the three linked into
+  re-applied in a new draft from current. The discipline itself is two
+  files, each one copy: [`spec-mode.md`](spec-mode.md), the short
+  finding-your-way part that rides every turn, and
+  [`../spec/WRITING.md`](../spec/WRITING.md), the writing procedure (drafts,
+  agreeing, verification notes, landing, a worker's duties). `minor.ts` reads
+  `spec-mode.md` at load: the injected block is that file byte for byte, minus
+  trailing whitespace, and its one `sh` block is the shell prefix `minor.ts`
+  exports as `SPEC_CORE_SHELL`. A missing, repeated or multi-line block fails
+  the load. The writing procedure never enters the prompt: the short part
+  tells the agent to read `$core/../WRITING.md` before its first edit that
+  changes behavior, and the session's first `[spec census]` note of any kind,
+  or an `align` go-ahead, hands it over once (`CensusHook.takeProcedure`)
+  unless the agent read it itself; a compaction re-arms it, and a reopened
+  session restores it from its history (`procedureToldIn`). A project may
+  point its agents at both files without the mode; Sova's `AGENTS.md` does. The tools it runs without asking are the three linked into
   the agent directory (`<agent dir>/extensions/spec/core/`, resolved like pi's
   own agent dir: an exact `~` or a leading `~/` is home), always through that
   `sh` recipe, never a guessed path. A copy inside the
@@ -225,30 +265,12 @@ writer**).
     warnings included). Nothing runs at the turn's end, and no worker writes a
     spec ledger.
 
-  - **No automatic assessments.** Neither the session, its pi workers (`spec-worker.ts`)
-    nor Claude Code workers' hooks run the assessment companion, capture a task
-    baseline or write a receipt, and none of them has an assessment tool. An
-    assessment is an explicit `sova-spec-assess.mjs prepare <name> --base <known rev>`,
-    `record` and `status` (`.sova/spec/USAGE.md`, `../spec/README.md`); attribution is
-    only what its caller passes as `--attribution-json`. Receipts and task entries
-    left by the earlier automatic observer stay as they are; an old native hook state
-    keeps its assessment fields unchanged and ignored, while its census fields
-    update as usual.
+  - **No assessments.** The assessment companion is retired: no session, pi worker
+    or Claude Code worker hook runs one or has an assessment tool. An old native
+    hook state keeps its assessment fields unchanged and ignored, while its census
+    fields update as usual.
 
   See `../spec/README.md`.
-- **codemode** — gives the model pi's `codemode` tool (pi's `docs/codemode.md`):
-  a JavaScript script that calls the session's other tools in parallel and
-  filters their output. It has no prompt block and no mode note
-  (`MINOR_PROMPTLESS` in `minor.ts`): the tool's own description is the guide.
-  The extension keeps the tool in the loadout exactly while the mode is on
-  (`syncCodemodeTool`, where `vis_guide` syncs, and right after a switch made
-  between runs; a switch during a run applies when it settles), removing it
-  even when `defaultTools` or a restored transcript activated it, except while
-  a registered tool has `codemode` or `deferred` exposure (MCP). Where the tool
-  isn't registered (an SDK runtime without the factory) it does nothing. Every
-  chat alike, a Claude Code one included. Never reaches workers. With
-  spec on, a census or guard note for a call a script made is repeated on the
-  script's own result, the one the model reads.
 - **memory** — Sova's endless chat (its engine is Sova's, `server/memory/`):
   the model works from summaries of the whole chat and opens any part with
   `zoom`/`date`. Web-only (`MINOR_SURFACES` in `minor.ts`): the extension takes
@@ -256,7 +278,7 @@ writer**).
   session, through the `sova:web-minor` hook (`WEB_MINOR_HOOK`,
   `webMinorRefusal`); typed by hand, from `--minor`, a profile, the palette or
   a shortcut it is refused or not offered, and workers never get it. Turning
-  it off always works. Like codemode it has no prompt block and no mode note
+  it off always works. It has no prompt block and no mode note
   (`MINOR_PROMPTLESS`): its guide rides the view message Sova sends.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the
@@ -275,11 +297,12 @@ open at once. It holds a title, a one-line summary, findings (`fN`), approach
 steps (`aN`), rejected alternatives with why (`xN`), technical notes (`tN`,
 optional: the detail a plan for a non-coding reader keeps out of its other
 fields) and questions (`qN`). It records the writing style in effect at its
-latest change (`style`, absent for Default), and in a session started with
+latest change (`style`: `default` for Technical, `simplified` or `pm`; absent
+on documents written before Technical was recorded), and in a session started with
 Visuals on a question, and the document once, can carry a `visual`
 (`{kind, source}`, a `vis` drawing; at most 3 per alignment). A
-question has a topic, the ask, optional context and options (label and
-trade-off), a recommendation (choice and why) and, once answered, a decision
+question has a topic, the ask, optional context and options (a label and its
+`tradeoff`: one plain line on what happens if the user picks it), a recommendation (choice and why) and, once answered, a decision
 (its text, `user` or `accepted-recommendation`, and when). Ids are never
 reused, so "q3" means one question for the document's life.
 
@@ -299,7 +322,10 @@ step's or technical note's `text`), `edit_question` (with Visuals, `visual`,
 decided, which must be reopened first), `accept_all`, `reopen`,
 `drop_question` and `drop_alignment` (each with a `reason`), `status`
 (`implementing`, `done`, back to `open`), `exempt` (alone, with a `reason`: a
-work request needs no alignment) and `get`. A field or op borrowed from
+work request needs no alignment), `change_request` (the change-request mark:
+touches no document, takes an optional `note`, alone or before the call's other
+ops; answered "Marked as a change request."; only the settle nudge reads it, under Careful) and
+`get`. A field or op borrowed from
 elsewhere gets a did-you-mean (`newText` → `text`, `why` → `reason`, op
 `delete` → `remove`, `create` with `fromFile` → `import`, a bare op without
 `{ops: [...]}`). The result is a compact echo of what is still open. Sessions
@@ -322,7 +348,9 @@ they are listed, and a recommendation that names an option by its label reads
   `/resume`, `/reload`, `/fork`, `/tree`, a rewind and a compaction all land on
   the right state with nothing else written.
 - **What the model sees** — the tool's description and guidelines (in pi's
-  tools section, so they survive a dropped mode section), the align prompt
+  tools section, so they survive a dropped mode section; they carry the shared
+  change-request sentence and never name an Eagerness, so switching it never
+  changes the tool set or restarts a Claude Code chat's CLI), the align prompt
   block, and a hidden `align-state` message on each user prompt listing the
   open alignments and their open questions, each with its lettered options. A
   compaction writes one more, right after its summary, that also lists their decided and dropped questions: a run
@@ -330,7 +358,11 @@ they are listed, and a recommendation that names an option by its label reads
   summary may state the alignments loosely. Nothing about alignments goes into
   the system prompt: a prompt change restarts a Claude Code session's CLI.
 - **No gate; one nudge** — nothing blocks edits or spawns while a question is
-  open. A run that is about to settle with no align call, whose final reply
+  open. A run that is about to settle with no align call, and, under Careful
+  only, that the agent marked as a change request (a `change_request` op, or
+  any align call naming an op other than `get`, refused or not; never guessed
+  from the prompt's or the reply's words; under Eager any run is judged, by the
+  Eagerness in effect when it settles), whose final reply without its `### Working notes` part
   reads like a plan asking the user to decide (`planSignal`: an old
   `## Alignment: <title>` block; a closing question that asks for a decision or a
   go-ahead, never a merge, push or restart confirmation, and not options offered
@@ -338,7 +370,7 @@ they are listed, and a recommendation that names an option by its label reads
   "Questions for you:"), gets one hidden
   `align-nudge` and one more request; never twice in a run. Only a successful
   align call that changed a document or recorded an exemption counts as recorded:
-  a refused call or a bare `get` does not.
+  a refused call, a bare `get` or the mark alone does not.
 - **Widget** — one line above the editor while align is on and an alignment is
   open: `◇ align · al_3 2/7 open · al_2 implementing · alt+a view`.
 - **Tool row** — the call as one dim line (`◇ align al_3 · decide q3 · → implementing`),
@@ -584,6 +616,13 @@ alone (`VIS_TOOL_PARTS` in `minor.ts`; never listed as kinds): `tour-signin` (si
 `tour-sites` (sources, site approval, sandbox, network rules), `tour-sova` (recording Sova itself) and
 `tour-sharing` (links, hand-offs, published editions). Each rule lives in one file. It is not a fence grammar;
 there is no executable `vis tour` fence and merely reading a message never records a browser.
+
+A host may add a session's own drawing kinds through the `sova:vis-own-kinds` hook (`VIS_OWN_KINDS_HOOK`
+in `minor.ts`, a `globalThis` function `(sessionId) => [{kind, guide, line}]`; Sova's server installs it
+from the session's card snapshot). At `session_start`, when it gives any, `vis_guide` is registered again
+with those kinds in its `kind` list and one line each in its description, and returns each one's guide
+for it. Only namespaced words (`<owner>.<name>`, with a dot) count, so it never replaces a kind of the
+catalogue; with the hook unset (a terminal, a worker) the tool is exactly the catalogue's.
 Drawing entries still return `vis/shared.md` followed by their own file, unchanged.
 
 Sova supplies `record_tour` and `show_tour` through its hosted tools (also on its Claude Code
@@ -596,19 +635,31 @@ scoped `show_tour` for reviewed tours already attached to their conversation.
 ## Writing style and Visuals
 
 `~/.pi/agent/mode-align.json` (`align-settings.ts`, node builtins only) holds
-the align mode's writing style and Visuals; Sova's Settings → Alignment writes it:
+the align mode's Eagerness, writing style and Visuals; Sova's Settings → Alignment writes it:
 
 ```json
-{ "version": 1, "style": "pm", "visuals": true }
+{ "version": 1, "style": "pm", "visuals": true, "eagerness": "careful" }
 ```
 
-- `style` is `default` (no added text: the align block is today's),
-  `simplified` (short sentences in everyday words, about 5 findings and 6
-  steps, files only when the user must recognise them, each question's context
-  saying what changes for the user) or `pm` (Project manager: the fields the
-  user reads describe only screens, controls, wording, states and flows, no
-  code; technical choices with a user-visible effect are asked as product
-  questions; the technical detail goes in technical notes). Its paragraph
+- `eagerness` is `careful` or absent (**Eager**, the default; `eager` written by
+  hand reads the same, anything else is malformed). The writer stores it only for
+  Careful, so an Eager file is byte for byte what an older device accepts (an
+  older device's strict parser refuses a Careful one). Only the block's trigger
+  paragraph and the settle nudge depend on it; it is re-read at every turn
+  boundary, and a later change reaches an open chat as one hidden `mode-note`
+  at its next run (`buildAlignEagernessNote`: the new trigger paragraph,
+  replacing the block's), possibly beside a style note; its details record the
+  Eagerness told and the head's, and a head built Careful is in its `mode-head`
+  record (`restoreHead`; none recorded: Eager).
+
+- `style` is `pm` (Project manager, the default: the fields the user reads
+  describe only screens, controls, wording, states and flows, no code; technical
+  choices with a user-visible effect are asked as product questions; the
+  technical detail goes in technical notes), `simplified` (short sentences in
+  everyday words, about 5 findings and 6 steps, files only when the user must
+  recognise them, each question's context saying what changes for the user) or
+  `default`, shown as **Technical** (no added text: files, code and technical
+  trade-offs in the plan). A saved `default` stays `default`, never migrated. Its paragraph
   (`ALIGN_STYLE_PARAGRAPHS` in `minor.ts`) follows the align block when the head
   is built; a later change reaches an open chat as one hidden `mode-note` at its
   next run (`buildAlignStyleNote`), once per change, its details recording the
@@ -623,9 +674,11 @@ the align mode's writing style and Visuals; Sova's Settings → Alignment writes
   (`buildDelegateAlignBridge(true)`, `PLANNER_VISUALS_PARAGRAPH`), and the vis
   tools to the loadout even with vis off (`visToolsWanted`, the one rule Sova's
   `vis_check` follows too).
-- A subagent profile's optional `alignment` (`{style?, visuals?}`) overrides the
+- A subagent profile's optional `alignment` (`{eagerness?, style?, visuals?}`) overrides the
   file field by field for chats on it (`resolveAlign`).
-- Missing or malformed reads as Default with Visuals off; the strict parse
+- Missing or malformed reads as Project manager with Visuals off and Eager; a head that
+  nothing records was still built in Technical (`restoreHead`), so an older
+  chat rebuilds its head byte for byte and gets Project manager as one note; the strict parse
   (`parseAlignSettings`) refuses an unknown key or value, and the mesh checks
   with it before writing.
 
@@ -664,7 +717,8 @@ independent of Delegate:
   backend, model and effort to write draft claims and record evidence; give it
   the relevant spec passages quoted literally, the files the task changed and
   the verification done; it writes only under `.sova/spec/drafts/`, never
-  `claims/` or `manifest.json`; the session checks its draft and promotes. An
+  `claims/` or `manifest.json`; the session checks its draft, runs the checks
+  and the census, and records a note per promise; the landing makes it official. An
   unavailable model means one retry on the listed fallback, disclosed, else
   asking the user — never a substitute. A writer that can't run at all is
   rendered as Delegate renders a profile with no worker. The paragraph is the
@@ -749,8 +803,14 @@ cannot compile without deciding):
 - **`spec` does; `align` and `vis` do not** (a worker's replies are read by its
   parent session, not rendered for the user). `composeWorkerPrompt` (`prompt.ts`) is the
   worker-scope minors only: for spec, the `spec-mode.md` block byte for byte,
-  then `SPEC_WORKER_NOTE` (the brief is the go-ahead; the parent promotes unless
-  the brief says otherwise; the final report lists each foreign § it updated).
+  then `SPEC_WORKER_NOTE` (its parent's branch's landing makes the drafts
+  official; the brief is the go-ahead; it works in the draft the brief names, or
+  says which it started, and records its notes there; it commits only when the
+  brief says so, and then only on its branch, never by landing on the default
+  branch; the final report lists each foreign § it updated; it never says
+  promote; the same words as
+  the writing procedure's Workers section, which its census hands it, that
+  section first, with its first note).
   Never the Delegate block, the align block or bridge, the vis guide, or the
   writer paragraph.
 - **Delivered over the bus** (`events.ts`), like the sandbox's state: the
@@ -790,7 +850,7 @@ node --test index.test.ts     # pure state/prompt/minor/palette logic
 node --test delegate.test.ts  # the routing file: defaults, parsing, persistence, per-turn re-read
 node --test routing.test.ts   # primary → fallback → ask, discovery failure, policy
 node --test spec.test.ts      # the spec writer file: parsing, persistence, per-turn re-read
-node --test align-settings.test.ts # mode-align.json: strict parse, tolerant read, profile override, the paragraphs, the style note, visToolsWanted
+node --test align-settings.test.ts # mode-align.json: strict parse, tolerant read, profile override, the paragraphs, the trigger per Eagerness, the style and eagerness notes, visToolsWanted
 node --test align.test.ts     # alignments: ops, strict input and import, hints, fold, echo, note, nudge heuristic, legacy entries
 node --test review.test.ts    # adversarial review: the review and close_blocker ops, slots, guards, the record's normalization, the reviewer prompt
 node tests/smoke.mjs          # real index.ts against a fake pi host, no model requests
@@ -798,17 +858,11 @@ node tests/review-smoke.mjs   # the adversarial-review flag through index.ts: of
 node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
 node tests/note-turn.mjs      # real pi session + scripted provider: a minor toggle keeps the head; notes, reopen, compaction
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
-node tests/style-turn.mjs     # real pi session + scripted provider: the writing style in the head, its one note, reopen; Visuals by flag and file
+node tests/style-turn.mjs     # real pi session + scripted provider: the writing style and Eagerness in the head, their one note each, reopen; Visuals by flag and file
 node --test spec-guard.test.ts # the census: digest, per tree (real Git + spec tools), failure once per cause, write guard, drift note, command detection
-node --test spec-assessment.test.ts # the assessment transport, and that nothing else is left to capture with
-node tests/assessment-absence.mjs # session, worktree-config worker, pi worker and Claude Code hooks never call a trapped companion by themselves
 node tests/spec-turn.mjs      # real pi session + scripted provider: census digest, forbidden writes, drift note, no turn-end check, mode:state
 node tests/spec-worker.mjs    # real pi session loading only spec-worker.ts (a pi worker's -e): the census digest; no turn-end check, no ledger
 ```
 
-Sova repository integration only, from its root: `node server/tests/spec-assessment.mjs`
-exercises actual common worker spawning through a scripted RPC child running the pinned SDK,
-owner reopen, readiness and a spec-on mode session with no assessment call, then the explicit
-companion CLI against the known start revision.
-This cross-boundary fixture is not required by, and does not run on, a standalone copy of
-`pi-config/`; the extension and its portable tests import no Sova runtime.
+The extension and its portable tests import no Sova runtime, so they run on a standalone copy of
+`pi-config/`.

@@ -90,9 +90,18 @@ for a project held on a peer (§mesh.remote-sessions/org-pages). API: `/api/proj
   waiting, then the finished ones (a build merged per git, a folder session that is neither live nor
   an unarchived web session) folded into one quiet "{n} done" line at the end of the list, which
   opens them in place (closed by default, memory only). The project heading starts with a small
-  arrow that folds and unfolds its sessions: open by default, the choice kept in memory for the
-  page's life (as each Done is), and forced open while a search is on or the open session is one of
-  its rows. An **archived**
+  arrow that folds and unfolds its sessions, set on its rows' rail axis, and the guide line
+  running from it down that rail folds an unfolded project too (§app.session-list/guide-lines): open by default, the choice kept in memory for the
+  page's life (as each Done is), and forced open while a search is on. When you move to a session
+  among its rows (a click, a link, a notification, the palette, or loading the page on it) a
+  folded project, and its Done if the session is there, opens for that visit without changing the
+  choice, then it is yours to close: a fold you make while on that session stays folded through
+  every refresh, running agent and new message until you unfold it or move to a session again.
+  The region itself is a `<details>`, **open by default**; a collapse is remembered for the tab in
+  `sessionStorage["sova:projects-open"]` through `writeKey`, `"0"` collapsed and anything else
+  open. It is forced open, without changing the stored choice, while a search is on, and opened
+  on the same terms as a project when you move to a session inside it, then yours to close.
+  An **archived**
   session of any kind is never in the block nor its counts: it is in the Archive only
   (§app.session-list/ordinary-surfaces); archiving a build says "Archived. Find it under Archive."
   and unarchiving it "Moved back to {project}.". The region head counts **projects**
@@ -133,7 +142,9 @@ started: from the project, from New Session's folder tab, from a TUI or from Cla
   project page's "Started by" rule) is listed as `SessionSummary.project`
   `{kind: "coding", operator: true}`; one the project's overseer started has no `operator`. The
   marker is additive: an older server sends none, which reads as the overseer's. It is how the
-  operator's own coding sessions also reach Recent (§app.session-list/recent).
+  operator's own coding sessions also reach Recent (§app.session-list/recent); one the project's
+  overseer started doesn't. Either can join a group (§app.session-list/groups), as can the
+  project overseer's conversations.
 - **Every other session in the folder is listed as the project's.** Reading the list, a session no
   marker or build claims belongs to the project whose folder its `cwd` is in, as
   `SessionSummary.project` `{kind: "folder"}`, never `finished`: an overseer marker, then a build,
@@ -174,7 +185,8 @@ started: from the project, from New Session's folder tab, from a TUI or from Cla
 - The org layer may address the project layer: it spawns builds for its gaps, notes reasons for
   the watch loop, and contributes, through registration points the project layer offers, the
   ceiling on its overseer's level and its people, a look hint, overseer tools and prompt sections,
-  archive blockers, session kinds and the roots a project may not use.
+  archive blockers, session kinds, the roots a project may not use and the Claude login a placed
+  project follows by default (§app.claude-logins/project-login).
 - Two tests enforce it: a statecharts test that no project-layer statechart names an org-layer
   statechart id or key, and a server test that no project-layer module reaches an org-layer module
   through its runtime imports, followed through every module in between.

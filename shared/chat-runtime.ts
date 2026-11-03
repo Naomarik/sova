@@ -109,6 +109,9 @@ export interface ChatStateMirror {
   /** The session's id (its file header's). */
   sessionId: string;
   cwd: string;
+  /** The chat runs in the home folder because its stored local folder is gone (§app.shell/missing-folder-home);
+      null (or absent, from an older chat process) when it runs in its own folder. */
+  cwdFallback?: { original: string; cwd: string } | null;
   /** Closed for good: archived, reloaded, the server stopping. A closed chat takes no command. */
   closed: boolean;
   special: ChatSpecialKind | null;
@@ -203,6 +206,9 @@ export interface ServerToolCall {
   name: string;
   params: unknown;
   attended: boolean;
+  /** Attended, and opened by the person's own message, never by one the global Overseer sent (its
+      message route). Absent (an older chat process): not their own. */
+  own?: boolean;
   card: string | null;
 }
 

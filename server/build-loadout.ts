@@ -10,6 +10,7 @@ import { workingSubagents } from "./live";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, openEngineIds, type Effect, type OrgHostApi } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { canonicalPath } from "./paths";
+import { carryOnCut } from "./draft-carry";
 import { projectOf, projectOverseerPaths, readPoState } from "./project-overseer-store";
 import { buildSid, engineOf, projectHost } from "./projects/spaces";
 import type { CodingModeSwitch, ProjectCodingMode } from "../shared/project-overseer";
@@ -26,6 +27,7 @@ import { validateNewSessionCwd } from "./targets";
 import { addWebSession } from "./web-sessions";
 import { worktreesOf } from "./worktrees-state";
 import { markOwned } from "./write-guard";
+import { asksToConfirmBrief } from "./project-coding-mode";
 
 /**
  * A project's coding sessions (builds) on the build statechart (`build/<p>/<sid>`, design §3.8;
@@ -70,6 +72,9 @@ export interface BuildRow {
   gap?: string;
   item?: string;
   decisions?: string[];
+  /** An Overseer started it with no \`already_agreed\`: its first prompt asks the operator to confirm the brief
+      (§app.project-overseer/confirm-brief), so its alignment questions are the operator's alone. */
+  confirmBrief?: true;
   /** The runtime's facts as the statechart last heard them. */
   turn: "idle" | "working" | "failed";
   workers: number;
@@ -136,6 +141,7 @@ function rowOf(configuration: string[], d: Record<string, unknown>): BuildRow {
     ...(typeof d.gap === "string" && d.gap ? { gap: d.gap } : {}),
     ...(typeof d.item === "string" && d.item ? { item: d.item } : {}),
     ...(Array.isArray(d.decisions) && d.decisions.length ? { decisions: d.decisions as string[] } : {}),
+    ...(asksToConfirmBrief(d.prompt) ? { confirmBrief: true as const } : {}),
     turn: d.turn === "working" || d.turn === "failed" ? d.turn : "idle",
     workers: typeof d.workers === "number" ? d.workers : 0,
     ...(typeof d.notStarted === "string" && d.notStarted ? { notStarted: d.notStarted } : {}),
@@ -377,6 +383,8 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
       return { later: true };
     }
     const cut = await cutWorktree(repo as GitRoot, folder, slugTitle(sessionId, d));
+    // A Build from a conversation's draft: the draft goes into the worktree before the session starts.
+    await carryOnCut(sessionId, (repo as GitRoot).top, cut.worktree.path, cut.worktree.branch);
     try {
       await createBuildSession(cut.cwd, sessionId, d);
     } catch (err) {
@@ -443,6 +451,9 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     const path = buildSessionPath(sessionId);
     const listed = path ? (await getSessionSummary(path).catch(() => null))?.title : undefined;
     const title = readSessionTitles()[sessionId] || titleOf(d) || (listed && listed !== "Untitled" ? listed : "") || row.worktree.branch;
+    // A target the project's merge queue manages takes branches only through the queue (Land), never a direct merge.
+    const target = row.worktree.target ?? "master";
+    if (await (await import("./merge-queue/wire")).queueManages(root, target)) throw new Error(`${target} takes branches only through the merge queue: Land the branch instead (nothing was merged).`);
     const m = await mergeBack(row.worktree, root, title);
     noteBuildMerged(sessionId, true);
     // Main moved: its copy's onMerge services reload now, never holding up the merge (§app.project-services/on-merge).

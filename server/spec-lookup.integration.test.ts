@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readSpecFs, serialize } from "../pi-config/extensions/spec/core/layout.mjs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { DecisionRow } from "../shared/decisions";
@@ -18,6 +19,14 @@ const QUOTE = "Never charge anyone for the first archery lesson, I mean it";
 const NAME = "Alperen Kaya";
 let root: string;
 const g = (...args: string[]) => execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
+/** Add records to the spec at `root`, in its own layout (a spec started here is in format 2: beside each claim file). */
+function addRecords(added: Record<string, Record<string, unknown>>) {
+  const s = readSpecFs(root);
+  if (s.state !== "present" || !s.manifest) throw new Error("no readable spec");
+  const spec = join(root, ".sova", "spec");
+  for (const [rel, text] of serialize(s.layout, { ...s.manifest, claims: { ...s.records, ...added } }, { prevRecordFiles: s.recordFiles }))
+    if (text !== null) { mkdirSync(join(spec, rel, ".."), { recursive: true }); writeFileSync(join(spec, rel), text); }
+}
 const commit = (m: string) => {
   g("add", "-A");
   g("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", m);
@@ -53,10 +62,7 @@ before(async () => {
   const spec = join(root, ".sova", "spec");
   mkdirSync(join(spec, "claims", "site"), { recursive: true });
   writeFileSync(join(spec, "claims", "site", "shop.md"), "# §site/shop — The shop\n\nWhat the shop sells.\n\n## §site.shop/gift-cards — Gift cards\n\nPeople can buy gift cards.\n");
-  const m = JSON.parse(readFileSync(join(spec, "manifest.json"), "utf8"));
-  m.claims["§site/shop"] = { kind: "surface", authority: "accepted" };
-  m.claims["§site.shop/gift-cards"] = { kind: "behavior", authority: "candidate" };
-  writeFileSync(join(spec, "manifest.json"), `${JSON.stringify(m, null, 2)}\n`);
+  addRecords({ "§site/shop": { kind: "surface", authority: "accepted" }, "§site.shop/gift-cards": { kind: "behavior", authority: "candidate" } });
   commit("spec");
   setLookupPlaceForTest(() => ({ root, name: "Mamluk Arabia", names: [NAME, "Omar"] }));
 });
@@ -124,9 +130,7 @@ test("the main line is master, never the branch checked out: a claim committed o
   const spec = join(root, ".sova", "spec");
   mkdirSync(join(spec, "claims", "site"), { recursive: true });
   writeFileSync(join(spec, "claims", "site", "unmerged.md"), "# §site/unmerged — Unmerged zebra feature\n\nThe zebra quiver page lists striped arrows.\n");
-  const m = JSON.parse(readFileSync(join(spec, "manifest.json"), "utf8"));
-  m.claims["§site/unmerged"] = { kind: "surface", authority: "accepted" };
-  writeFileSync(join(spec, "manifest.json"), `${JSON.stringify(m, null, 2)}\n`);
+  addRecords({ "§site/unmerged": { kind: "surface", authority: "accepted" } });
   writeFileSync(join(root, "zebra.html"), "<p>zebra quiver</p>\n");
   commit("feature work");
   try {

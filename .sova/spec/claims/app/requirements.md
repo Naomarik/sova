@@ -50,7 +50,7 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
   read and after every promotion, never stored: whether a promoted decision is still current
   there, edited there, or built (below).
 - **Who owns which field.** Of a record in the project's spec, the decisions layer owns its prose
-  (the statement, each quote with who said it and when, the supersede line) and the manifest
+  (the statement, each quote with who said it and when, the supersede line) and the record
   fields `decision`, `provenance` and `supersededBy`. It writes `kind: note` and `authority:
   accepted` only when it creates the record. Every other field (`evidence`, `code`, `requires`, a
   relabelled `authority` or `kind`, any other key) is the spec layer's, set by a builder or a
@@ -84,7 +84,7 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
 - The writer is deterministic: no model writes documentation. Each drafted decision becomes a
   `note` record `§requirements.<area>/<slug>` (letters and hyphens only, taken from the statement,
   `-b`, `-c`… on a clash) under an area lede `§requirements/<area>`, both `authority: accepted`. The
-  record's prose is the statement, the quote as a block quote, and `— <name>, <date>`; its manifest
+  record's prose is the statement, the quote as a block quote, and `— <name>, <date>`; its
   record carries `provenance: [{by, name, sessionId, entryId, at, quote}]` and `decision` (the
   index id). The spec core ignores unknown record fields, so neither changes how the tools read it.
 - Text from a conversation can never declare: a line that would start a heading or a fence is
@@ -95,8 +95,9 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
   drafted decision not yet promoted and is rebuilt from current each time. `claims/` and
   `manifest.json` change only by promotion.
 - **A client project needs no setup**: a folder with no spec (and no Git) starts from the tools'
-  empty baseline, and the first promotion creates `.sova/spec/manifest.json` and
-  `claims/requirements/<area>.md`. Sova adds `.sova/spec/.gitignore` (`drafts/`, `reviews/`,
+  empty baseline (format version 2, §tools.spec/record-layout), and the first promotion creates
+  `.sova/spec/manifest.json`, `claims/requirements/<area>.md` and its records beside it in
+  `claims/requirements/<area>.json`. Sova adds `.sova/spec/.gitignore` (`drafts/`, `reviews/`,
   `pilot/`) when it is missing, so a client repo never commits a draft.
 
 ## §app.requirements/reconciler — Comparing, filing and settling
@@ -266,7 +267,10 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
   main stakeholder of an area no one owns or of a decision whose owner area is `none`) is promoted
   only when the operator names it: `promote {ids}` by id. **Select All Ready** (`bulk: true`) and
   a project overseer's promotion refuse it with "outside <name>'s decision area: promote it
-  explicitly by id", and promote the rest. A promotion builds a fresh draft holding exactly the
+  explicitly by id", and promote the rest. A decision whose conversation item a Build carried onto
+  its own branch (§app.requirements/draft-approval) is refused, whoever asks, with "it is being built
+  on {branch}: it becomes official when that branch lands", until its record is in the current spec.
+  A promotion builds a fresh draft holding exactly the
   selection (claim files move whole), plus, for a promoted decision the selection supersedes, its
   record rewritten with `Superseded by <record>.` and `supersededBy`. It writes only what it
   changes: a record already in the spec keeps every field the decisions layer doesn't own
@@ -337,7 +341,7 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
   The decision also goes on to the reconciler as before (§app.requirements/reconciler).
 - **The writer is deterministic** (§app.requirements/drafts-with-provenance): each item becomes a
   `note` record `§requirements.<area>/<slug>` of the draft, written as a decision is. A change is
-  such a note too, naming the record it changes (`changes` in its manifest record, and a "Changes
+  such a note too, naming the record it changes (`changes` in its record, and a "Changes
   §…" line); Sova never rewrites that record: the coding session that builds the change does. An
   item keeps its record id from one rebuild to the next; when the current spec meanwhile took that
   id for another record, it moves to a free one; when the current spec already holds the item's
@@ -414,7 +418,9 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
   evidence naming the conversation, the person, the dates and their words, and committed like any
   promotion (§app.requirements/promotion-commit); they become `promoted`. An item whose decision
   is already in the current spec is not promoted again (`alreadyPromoted`). Its **changes** become
-  `approved` and wait, so the spec never describes behaviour the app doesn't have.
+  `approved` and wait, so the spec never describes behaviour the app doesn't have. A new item a
+  Build already carried onto its own branch (it has a `buildBranch`) is not promoted either: it
+  becomes `approved` and waits (`waitingForBuild`), and becomes official when that branch lands.
 - Approve writes into the project root's own spec, so it runs only while the root has its main line
   checked out, the branch the draft was built on (§app.requirements/conversation-drafts). On any other
   branch, or a detached HEAD, it is refused with 409 and writes nothing: "The project folder is on
@@ -430,12 +436,20 @@ has built (§app.requirements/conversation-drafts, /lock-in, /draft-specs, /draf
   new requirement already in the spec gets its code and evidence recorded; one not yet in the spec
   is copied from the conversation's draft and promoted with its code; a change updates the record
   it changes and is promoted with its note. Each item keeps the session's id and becomes
-  `approved` if it was only agreed. A new requirement reads `built` once its record maps code with
+  `approved` if it was only agreed. When the build gets a worktree of its own, the conversation's
+  draft, caught up on the main line just before, is copied whole into that worktree's drafts
+  (`.sova/spec/drafts/<draft>/`) after the worktree is cut and before the session starts, so
+  `sova-spec-draft status <draft>` run there shows its records; each built item records the branch
+  (`buildBranch`, also in the result as `branch`). The session promotes those records on its branch,
+  and they become official when the branch lands. A build that runs in the project root (no Git
+  repository, or a worktree named later) gets no copy and no `buildBranch`. A new requirement reads `built` once its record maps code with
   reviewed or verified evidence; a change once its note is in the current spec. With nothing left
   to build it is refused (409).
 - **The two paths stay linked.** A decision is still reconciled and promotable the old way
   (§app.requirements/promotion, under the promote power); once either path promotes it, the other
-  reads it promoted, and no second record is written.
+  reads it promoted, and no second record is written. A decision whose item a Build carried onto a
+  branch is refused there too, until that branch lands. A decision that never goes to a Build
+  with a branch is published directly, by Approve or by the old way, as before.
 - Approve and build are the operator's acts only: the routes, or an overseer in a turn the operator
   is in, through `sova_draft_approve {project?, session, items?}` and `sova_draft_build {project?,
   session, items?}` (both overseers; the project overseer's confined to its project). In any other

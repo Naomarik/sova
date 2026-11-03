@@ -14,7 +14,9 @@ Every `/docs/` page is one Markdown file in the docs collection (`src/content/do
 its URL under `/docs/`, and an `index.md` is its folder's own page. Each file's front matter gives
 a title, a description, a group (Start, Modes, Features or Setup), an optional subgroup (Major or
 Minor, under Modes) and an order. Pages are listed by group in that order, then a group's own pages
-before each subgroup, then by `order`; the sidebar and Previous/Next follow that sequence. A page
+before each subgroup, then by `order`; the sidebar and Previous/Next follow that sequence. The
+Modes group holds only pages about modes, and only a page about a mode sits in a subgroup (Major or
+Minor); a page about something else goes in another group. A page
 shows the shared header, the page list grouped with subgroups as labelled indented lists (a sticky
 sidebar from 1024px wide, a `<details>` menu above the page below that, no script), an eyebrow with
 the group or subgroup label, the title, the description as a lead, the body, Previous/Next links,
@@ -42,9 +44,16 @@ project's own modes as one row), and links to the feature and setup pages.
 ## §site.docs/modes — Modes (`/docs/modes/`)
 
 The major and minor modes side by side, switching them per chat from the composer's mode menu,
-the default for new sessions (memory's type and size with it), strict, a short memory section that
+the default for new sessions (memory's type with it), strict, a short memory section that
 links to its own page (§site.docs/memory), the terminal's commands, what workers get (spec, and each
 project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
+
+## §site.docs/normal — Normal (`/docs/modes/normal/`)
+
+The default major mode: the agent you chat with does the work itself and can still start workers
+and teams; when to choose it over Delegate (one agent that talks with you and does the work,
+keeping the whole conversation, with no hand-off); switching to and from Delegate; the Overseer
+always runs in it.
 
 ## §site.docs/delegate — Delegate (`/docs/modes/delegate/`)
 
@@ -54,12 +63,17 @@ teams, watching workers, and workers after a restart.
 ## §site.docs/subagent-profiles — Subagent profiles (`/docs/subagent-profiles/`)
 
 What a subagent profile holds (its alignment override included), how a chat picks one, editing them in Settings, switching a chat's
-profile after a usage limit, and Off. A profile never turns on a project mode.
+profile after a usage limit, and Off. A profile never turns on a project mode. The page sits in
+the Features group, not under Modes: a profile is not a mode.
 
 ## §site.docs/align — Align and alignments (`/docs/modes/align/`)
 
-The align minor mode: what an alignment holds, answering it, Settings → Alignment (writing style,
-Visuals, review), the card, chip and session mark, Needs you and notifications, and the terminal
+The align minor mode: when an alignment opens (Eager, the default, for any request that implies
+work; Careful, only when the user wants the product changed or the agent can't tell, questions
+answered in chat; on both, nothing built before a confirmed card and a go-ahead to a plan sketched
+in chat opens a card first), how each reply opens with a short part for the user and folds its
+working notes, what an alignment holds, answering it, Settings → Alignment (eagerness, writing
+style, Visuals, review), the card, the composer's badge and session mark, Needs you and notifications, and the terminal
 viewer.
 
 ## §site.docs/align-review — Adversarial review (`/docs/modes/align/review/`)
@@ -69,7 +83,9 @@ route, when it runs, blockers, and what the card shows.
 
 ## §site.docs/spec-mode — Spec (`/docs/modes/spec/`)
 
-The spec minor mode: working from the project's spec, the census note and its one unread line before
+The spec minor mode: its guide's two parts (finding your way on every turn, the writing procedure
+once, before the first behavior-changing edit or with the first census note or an alignment's
+go-ahead), working from the project's spec, the census note and its one unread line before
 finishing, updating a claim the task didn't create without asking and listing it in the reply's one
 spec line ("Also updates …"), the Agree step when align is on too, drafts and promotion, the spec
 writer, what workers get (and the claims a finished worker's changes landed in), and project coding
@@ -94,15 +110,11 @@ follows the site's light/dark toggle through the same tokens. Every example pars
 warnings, or the generator fails, and it writes the same bytes on every run. A kind that lays
 out for its pane's width (flow, state, sequence, chart, matrix, steps) is drawn for the docs column and
 for a 320px phone, and the page shows the one that fits its figure's width. Interactive parts
-show their first state and do nothing: a sequence's **Step Through** button is disabled. A `vis
+show their first state and do nothing: a sequence's **Step Through** button is disabled, and a
+flow's or state machine's shapes are not buttons and pick nothing. A `vis
 svg` example is drawn in place, as its frame would show it; a `vis html` example shows only its
 source, with a line saying that in the chat it runs in a sandboxed frame. A changed kind, View or
 style reaches the page only when the generator runs again.
-
-## §site.docs/codemode — Codemode (`/docs/modes/codemode/`)
-
-The codemode minor mode: the script tool it adds, what a script can call, the script's card, when a
-switch applies, and where it is available.
 
 ## §site.docs/project-modes — Project modes (`/docs/modes/project-modes/`)
 
@@ -123,27 +135,22 @@ numbered steps.
 ## §site.docs/needs-you — Needs you (`/docs/needs-you/`)
 
 The sidebar list of sessions waiting on you, the Overseer's attention digest, and the same news as
-phone notifications, with their settings. A worktree ready to merge is a quiet mark, not a row, and
-a scheduled playbook (the Merge round) can act on it: it wakes when one turns ready, asks its owner,
-and lands it.
+phone notifications, with their settings. A worktree ready to land is a quiet mark, not a row: it lands
+once you press Land or type "land it" in its chat, through the project's merge queue.
 
 ## §site.docs/overseer — The Overseer (`/docs/overseer/`)
 
 The session that reads every other session and acts on them through Sova: what it is, what it may
 do (organizations and cross-host links included) and when it asks first, the files it writes only in
 turns you start, its memory switch, its notes, ideas and to-dos, and its settings. Its news of branches
-ready to merge links to the Merge round, which in Sova's own repository picks those up by itself,
-asking each branch's owner first. Turning a project's own mode on for you counts as your approval
+ready to land points to Land; it never lands a branch itself. Turning a project's own mode on for you counts as your approval
 of its tools.
 
 ## §site.docs/playbooks-and-schedules — Playbooks and schedules (`/docs/playbooks-and-schedules/`)
 
 Running a playbook from the composer's Playbooks dialog; a project playbook's schedule: who fires
-it, its triggers (times, intervals, `claude-limit-reset`, `merge-ready`) and their limits, how a
-`merge-ready` fire waits and collects branches, and approving or revoking it (in the Playbooks
-dialog, or in the Overseer's Approvals & Schedules). Then the Merge round
-as the worked example: its schedule, the merge board, asking the owner, what comes to the user
-(branches with no live owner, once each) and the one-line quiet round. A schedule never turns on a
+it, its triggers (times, intervals, `claude-limit-reset`) and their limits, and approving or revoking
+it (in the Playbooks dialog, or in the Overseer's Approvals & Schedules). A schedule never turns on a
 project mode.
 
 ## §site.docs/phone — Check in from your phone (`/docs/phone/`)
@@ -171,7 +178,7 @@ The memory minor mode: what it does and that the transcript never changes, turni
 mode menu, the two types (UniiChat, credited to Victor Taelin with a link to his design, and
 zoomable compaction), the Memory type panel and Save as default, the `zoom` and `date` tools,
 updating, preparing and problems, rewind and fork, the Session pane's Memory outline, Settings →
-Memory and its help, where memory can't be on (the terminal, workers, coding sessions, session
+Memory with each type's summary size and its help, where memory can't be on (the terminal, workers, coding sessions, session
 profiles), and the overseers' own switches, on by default.
 
 ## §site.docs/updates — Updates (`/docs/updates/`)

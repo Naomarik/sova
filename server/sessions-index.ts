@@ -2,9 +2,9 @@ import { PROFILE_ENTRY, type ProfileEntryData } from "../shared/profiles";
 import { keptLabels, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { profileField, profileOnBranch } from "./session-profile";
 import { type Dirent, statSync } from "node:fs";
-import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
+import { type FileHandle, lstat, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { OVERSEER_ENTRY, type SessionSummary } from "../shared/protocol";
+import { OVERSEER_ENTRY, type SessionSummary, type SessionTags } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
@@ -25,11 +25,12 @@ import { parseTargetCwd } from "./targets";
 import { firstText, headerOf, joinedText, lineEntry, lineMay, toHEntry } from "./harness/pi/reader";
 import { contextStep } from "./harness/pi/usage";
 import { type AlignScan, readAlignScan } from "./align-state";
-import { WorkerSessions } from "./worker-sessions";
+import { type WorkerParents, WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
-import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-store";
-import { dropSessionTags, tagsFor } from "./session-tags";
+import { readSignals, type SignalsFile, signalsOverlay, withoutRestartAsk } from "./signals-store";
+import { withOpenOffer } from "./session-offers";
+import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
 import { pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
 import { projectOverseerOfPath, readPoState } from "./project-overseer-store";
@@ -38,6 +39,8 @@ import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-
 import { reservedRoots } from "./projects/contributions";
 import { removeMemory } from "./memory/store";
 import { removeSessionTours } from "./tours/lifecycle";
+import { byActivity } from "../src/lib/summary-diff";
+import { queueChatRole } from "../shared/merge-queue";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -56,16 +59,17 @@ export function contributeSessions(part: SessionsPart): void {
 }
 
 /** One listing pass's lookups: the project layer's (by marker, build, then the session's folder), then every contributed part's. */
-function fieldLookup(): (path: string, id: string, cwd?: string) => Pick<SessionSummary, "baton" | "org" | "folderOrg" | "project" | "projectOverseer"> {
+/** `mtimeMs`: the file's mtime as the listing holds it, so the project overseer marker check needs no stat. */
+function fieldLookup(): (path: string, id: string, cwd?: string, mtimeMs?: number) => Pick<SessionSummary, "baton" | "org" | "folderOrg" | "project" | "projectOverseer"> {
   const parts = sessionParts.map((p) => p.lookup());
   const projects = projectSessionLookup();
-  return (path, id, cwd) => {
+  return (path, id, cwd, mtimeMs) => {
     const out: Pick<SessionSummary, "baton" | "org" | "folderOrg" | "project" | "projectOverseer"> = {};
     const project = projects.of(path, id, cwd);
     for (const l of parts) Object.assign(out, l.of(path, id, project) ?? {});
     if (project) out.project = project;
     if (!out.baton) {
-      const po = projectOverseerOfPath(path);
+      const po = projectOverseerOfPath(path, undefined, mtimeMs);
       if (po) out.projectOverseer = po;
     }
     return out;
@@ -79,6 +83,12 @@ function keptBy(path: string): string | null {
     if (why) return why;
   }
   return projectKeeps(path);
+}
+
+/** SessionSummary.queueChat, from the file's own profile pick: the merge queue's thread or a reviewer. */
+function queueChatField(profile: SessionSummary["profile"]): Pick<SessionSummary, "queueChat"> {
+  const role = queueChatRole(profile);
+  return role ? { queueChat: { role } } : {};
 }
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
@@ -119,6 +129,9 @@ interface CacheEntry {
   /** How far the align read got (server/align-state.ts): the marker search resumes from it while
       the file only grows, and a file with no `align` result is never parsed. */
   align: AlignScan | null;
+  /** isZeroInput's answer for this (mtime, size): the head read already says it, so the list's
+      husk check never reads the file again while it is unchanged. */
+  zeroInput: boolean;
 }
 
 const cache = new Map<string, CacheEntry>();
@@ -127,11 +140,26 @@ const cache = new Map<string, CacheEntry>();
  *  purpose: the flag depends on OTHER files (owners append refs) and on the live registry, so it
  *  is recomputed on every listing, never baked into a file's cached head facts. */
 const workerSessions = new WorkerSessions({ idOf: (p) => idOf(p) });
-
-/** The worker-session paths among `files`; best-effort — a failure hides nothing. */
-async function workerSessionPaths(files: string[]): Promise<Set<string>> {
+/** The session that runs worker `path` (worker-sessions.ts parentOf), from the last listing's scans; null: none known. */
+/** SessionSummary.workerOf for a worker's row: its parent and name, from what the worker scan already read. */
+function workerOfField(path: string, parents: Pick<WorkerParents, "workerOf"> = workerSessions): Pick<SessionSummary, "workerOf"> {
   try {
-    return await workerSessions.refresh(files);
+    const w = parents.workerOf(path);
+    return w ? { workerOf: { id: idOf(w.parent), path: w.parent, ...(w.name ? { name: w.name } : {}) } } : {};
+  } catch {
+    return {};
+  }
+}
+
+export async function workerParentOf(path: string): Promise<string | null> {
+  return workerSessions.parentOf(path);
+}
+
+/** The worker-session paths among `files`; best-effort — a failure hides nothing. `changed`: only
+ *  these (and files never scanned) can have changed since the last refresh. */
+async function workerSessionPaths(files: string[], changed?: ReadonlySet<string>): Promise<Set<string>> {
+  try {
+    return await workerSessions.refresh(files, changed);
   } catch {
     return new Set();
   }
@@ -190,38 +218,65 @@ const NL = 0x0a;
  * end wins), unlike the transcript's per-message resolution. null when the window has none.
  */
 export async function readTailModel(path: string, size: number): Promise<string | null> {
+  const win = await readTailWindowOf(path, size);
+  return win ? tailModelIn(win) : null;
+}
+
+/**
+ * The last MAX_TAIL bytes of a file, read once and shared by the tail readers (model, context,
+ * ending) of one summary. `bof`: the window starts at the file's first byte, so its first line is
+ * whole; otherwise that line started before the window and is never read. null when the file was
+ * truncated under the read.
+ */
+interface TailWindow {
+  buf: Buffer;
+  bof: boolean;
+}
+
+async function readTailWindow(fh: FileHandle, size: number): Promise<TailWindow | null> {
+  const floor = Math.max(0, size - MAX_TAIL);
+  const buf = Buffer.alloc(size - floor);
+  let got = 0;
+  while (got < buf.length) {
+    const { bytesRead } = await fh.read(buf, got, buf.length - got, floor + got);
+    if (bytesRead === 0) return null; // truncated under us: the next request retries
+    got += bytesRead;
+  }
+  return { buf, bof: floor === 0 };
+}
+
+async function readTailWindowOf(path: string, size: number): Promise<TailWindow | null> {
   const fh = await open(path, "r");
   try {
-    const floor = Math.max(0, size - MAX_TAIL);
-    let end = size;
-    let carry = Buffer.alloc(0); // bytes after the first newline seen so far: a line's start is still unread
-    while (end > floor) {
-      const start = Math.max(floor, end - CHUNK);
-      const chunk = Buffer.alloc(end - start);
-      const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
-      if (bytesRead < chunk.length) return null; // truncated under us: the next request retries
-      end = start;
-      const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
-      // Complete lines are those after a newline in this buffer (or all of it at BOF).
-      let stop = buf.length;
-      for (;;) {
-        const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
-        if (i < 0 && start > 0) break; // line start not read yet: carry it into the next chunk
-        const line = buf.subarray(i + 1, stop);
-        if (line.includes('"model_change"') || line.includes('"assistant"')) {
-          // A torn trailing line or one that isn't JSON reads as null: skipped.
-          const m = modelOf(lineEntry(line));
-          if (m) return m;
-        }
-        if (i < 0) return null;
-        stop = i;
-      }
-      carry = buf.subarray(0, stop);
-    }
-    return null;
+    return await readTailWindow(fh, size);
   } finally {
     await fh.close();
   }
+}
+
+/** The window's complete lines, last first (a torn trailing line included: its parse fails). */
+function* linesBack(win: TailWindow): Generator<Buffer> {
+  const buf = win.buf;
+  let stop = buf.length;
+  for (;;) {
+    const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
+    if (i < 0 && !win.bof) return; // the line's start is before the window
+    yield buf.subarray(i + 1, stop);
+    if (i < 0) return;
+    stop = i;
+  }
+}
+
+/** readTailModel's answer from a window. */
+function tailModelIn(win: TailWindow): string | null {
+  for (const line of linesBack(win)) {
+    if (line.includes('"model_change"') || line.includes('"assistant"')) {
+      // A torn trailing line or one that isn't JSON reads as null: skipped.
+      const m = modelOf(lineEntry(line));
+      if (m) return m;
+    }
+  }
+  return null;
 }
 
 /** One `topic-outline` snapshot, as the summary row shows it. */
@@ -335,16 +390,11 @@ async function bytesBefore(fh: FileHandle, offset: number): Promise<Buffer> {
  * itself.
  * null when the file was truncated under the read.
  */
-async function readOutline(path: string, size: number, prev: OutlineScan | null): Promise<OutlineScan | null> {
-  const fh = await open(path, "r");
-  try {
-    const grown = prev !== null && size >= prev.size && (await bytesBefore(fh, prev.resume)).equals(prev.mark);
-    const scan = await scanOutline(fh, size, grown ? Math.max(0, prev.resume - 1) : 0);
-    if (!scan) return null;
-    return { found: scan.found ?? (grown ? prev.found : null), size, resume: scan.resume, mark: await bytesBefore(fh, scan.resume) };
-  } finally {
-    await fh.close();
-  }
+async function readOutline(fh: FileHandle, size: number, prev: OutlineScan | null): Promise<OutlineScan | null> {
+  const grown = prev !== null && size >= prev.size && (await bytesBefore(fh, prev.resume)).equals(prev.mark);
+  const scan = await scanOutline(fh, size, grown ? Math.max(0, prev.resume - 1) : 0);
+  if (!scan) return null;
+  return { found: scan.found ?? (grown ? prev.found : null), size, resume: scan.resume, mark: await bytesBefore(fh, scan.resume) };
 }
 
 /** Context fill read off the tail: tokens, plus the model of the assistant message that spent
@@ -378,39 +428,21 @@ function contextOf(h: HEntry | null): TailContext | "stale" | null {
  * neither. Not branch-aware — on a rewound session the tail can be a reply the head never sees.
  */
 export async function readTailContext(path: string, size: number): Promise<TailContext | null> {
-  const fh = await open(path, "r");
-  try {
-    const floor = Math.max(0, size - MAX_TAIL);
-    let end = size;
-    let carry = Buffer.alloc(0); // bytes after the first newline seen so far: a line's start is still unread
-    while (end > floor) {
-      const start = Math.max(floor, end - CHUNK);
-      const chunk = Buffer.alloc(end - start);
-      const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
-      if (bytesRead < chunk.length) return null; // truncated under us: the next request retries
-      end = start;
-      const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
-      // Complete lines are those after a newline in this buffer (or all of it at BOF).
-      let stop = buf.length;
-      for (;;) {
-        const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
-        if (i < 0 && start > 0) break; // line start not read yet: carry it into the next chunk
-        const line = buf.subarray(i + 1, stop);
-        if (line.includes('"assistant"') || line.includes("compaction")) {
-          // A torn trailing line or one that isn't JSON reads as null: skipped.
-          const hit = contextOf(lineEntry(line));
-          if (hit === "stale") return null;
-          if (hit) return hit;
-        }
-        if (i < 0) return null;
-        stop = i;
-      }
-      carry = buf.subarray(0, stop);
+  const win = await readTailWindowOf(path, size);
+  return win ? tailContextIn(win) : null;
+}
+
+/** readTailContext's answer from a window. */
+function tailContextIn(win: TailWindow): TailContext | null {
+  for (const line of linesBack(win)) {
+    if (line.includes('"assistant"') || line.includes("compaction")) {
+      // A torn trailing line or one that isn't JSON reads as null: skipped.
+      const hit = contextOf(lineEntry(line));
+      if (hit === "stale") return null;
+      if (hit) return hit;
     }
-    return null;
-  } finally {
-    await fh.close();
   }
+  return null;
 }
 
 /** When a reply happened, ms epoch: the message's own time (ms), else the entry's ISO one. */
@@ -495,55 +527,37 @@ function closeOf(text: string): string {
  * bounded window, so a listing never reads a whole transcript for them.
  */
 export async function readTailEnding(path: string, size: number): Promise<{ reply: LastReply | null; ending: TailEnding }> {
-  const fh = await open(path, "r");
+  const win = await readTailWindowOf(path, size);
+  return win ? tailEndingIn(win) : { reply: null, ending: {} };
+}
+
+/** readTailEnding's answer from a window. */
+function tailEndingIn(win: TailWindow): { reply: LastReply | null; ending: TailEnding } {
   let reply: LastReply | null = null;
   const ending: TailEnding = {};
-  const done = () => ({ reply, ending });
-  try {
-    const floor = Math.max(0, size - MAX_TAIL);
-    let end = size;
-    let carry = Buffer.alloc(0);
-    while (end > floor) {
-      const start = Math.max(floor, end - CHUNK);
-      const chunk = Buffer.alloc(end - start);
-      const { bytesRead } = await fh.read(chunk, 0, chunk.length, start);
-      if (bytesRead < chunk.length) return done();
-      end = start;
-      const buf = carry.length ? Buffer.concat([chunk, carry]) : chunk;
-      let stop = buf.length;
-      for (;;) {
-        const i = stop > 0 ? buf.lastIndexOf(NL, stop - 1) : -1;
-        if (i < 0 && start > 0) break;
-        const line = buf.subarray(i + 1, stop);
-        const wantReply = !reply && line.includes('"assistant"');
-        const wantUser = !ending.user && line.includes('"user"');
-        // A torn trailing line or one that isn't JSON reads as null: skipped.
-        const h = wantReply || wantUser ? lineEntry(line) : null;
-        if (wantReply && h?.kind === "assistant") {
-          const hit = finishedReply(h);
-          if (hit) {
-            reply = hit;
-            const said = joinedText(h, { images: false });
-            const close = closeOf(said);
-            ending.reply = { at: hit.at, text: excerpt(said), stop: hit.stopReason, ...(hit.error ? { error: hit.error } : {}), ...(close ? { close } : {}) };
-          }
-        } else if (wantUser && h) {
-          if (h.kind === "user") {
-            const said = joinedText(h, { images: false });
-            const at = entryTime(h);
-            if (said.trim() && !notTitle(said) && at !== null) ending.user = { at, text: excerpt(said) };
-          }
-        }
-        if (reply && ending.user) return done();
-        if (i < 0) return done();
-        stop = i;
+  for (const line of linesBack(win)) {
+    const wantReply = !reply && line.includes('"assistant"');
+    const wantUser = !ending.user && line.includes('"user"');
+    // A torn trailing line or one that isn't JSON reads as null: skipped.
+    const h = wantReply || wantUser ? lineEntry(line) : null;
+    if (wantReply && h?.kind === "assistant") {
+      const hit = finishedReply(h);
+      if (hit) {
+        reply = hit;
+        const said = joinedText(h, { images: false });
+        const close = closeOf(said);
+        ending.reply = { at: hit.at, text: excerpt(said), stop: hit.stopReason, ...(hit.error ? { error: hit.error } : {}), ...(close ? { close } : {}) };
       }
-      carry = buf.subarray(0, stop);
+    } else if (wantUser && h) {
+      if (h.kind === "user") {
+        const said = joinedText(h, { images: false });
+        const at = entryTime(h);
+        if (said.trim() && !notTitle(said) && at !== null) ending.user = { at, text: excerpt(said) };
+      }
     }
-    return done();
-  } finally {
-    await fh.close();
+    if (reply && ending.user) break;
   }
+  return { reply, ending };
 }
 
 /**
@@ -554,83 +568,90 @@ export async function readTailEnding(path: string, size: number): Promise<{ repl
 /** `input`: the head holds a user message of any kind. A wake nudge or a partner's link message
     never titles a session, but it is still something written in it: a session whose only user
     messages are link messages has real turns and is never an empty husk. */
-export async function readHead(path: string): Promise<{ header: any; title: string | null; model: string | null; overseer: boolean; input: boolean; profile?: ProfileEntryData | null } | null> {
+type HeadFacts = { header: any; title: string | null; model: string | null; overseer: boolean; input: boolean; profile?: ProfileEntryData | null };
+
+export async function readHead(path: string): Promise<HeadFacts | null> {
   const fh = await open(path, "r");
   try {
-    // The Overseer marker is written right after the header, before any user message, so the
-    // head read (which stops at the first user message) always sees it.
-    let overseer = false;
-    let profile: ProfileEntryData | null = null;
-    let input = false;
-    let header: any = null;
-    let title: string | null = null;
-    let model: string | null = null;
-    let pending = "";
-    let pos = 0;
-    const buf = Buffer.alloc(CHUNK);
-    const decoder = new TextDecoder("utf-8");
-    while (pos < MAX_HEAD) {
-      const { bytesRead } = await fh.read(buf, 0, CHUNK, pos);
-      if (bytesRead === 0) break;
-      pos += bytesRead;
-      pending += decoder.decode(buf.subarray(0, bytesRead), { stream: true });
-      const lines = pending.split("\n");
-      pending = lines.pop() ?? "";
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        let e: any;
-        try {
-          e = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        if (!header) {
-          if (!headerOf(e)) return null; // not a pi session
-          header = e;
-          continue;
-        }
-        // A `null` line has always failed the head read (the file is left out of the list).
-        if (e === null) throw new TypeError("a null entry in the session's head");
-        const h = toHEntry(e);
-        if (h?.kind === "setting" && h.what === "model" && !model && h.provider && h.modelId) model = `${h.provider}/${h.modelId}`;
-        if (h?.kind === "state" && h.key === OVERSEER_ENTRY) overseer = true;
-        // The profile is fixed at the first message, so the newest entry before it is the session's.
-        // Its fold still reads the raw entry (SessionState replaces it).
-        if (h?.kind === "state" && h.key === PROFILE_ENTRY) profile = profileOnBranch([e]);
-        if (h?.kind === "assistant" && !model && h.provider && h.model) model = `${h.provider}/${h.model}`;
-        if (h?.kind === "user") {
-          input = true;
-          if (title === null && !notTitle(userText(h))) title = oneLine(userText(h));
-        }
-        if (title !== null && model) return { header, title, model, overseer, input, profile };
-      }
-      // Stop at the first user message even without a model: model_change precedes it.
-      if (title !== null) return { header, title, model, overseer, input, profile };
-    }
-    if (pending.trim() && title === null) {
-      if (pos < MAX_HEAD) {
-        // EOF: final line without trailing newline (or a writer mid-append)
-        try {
-          const e = JSON.parse(pending);
-          const h = header ? toHEntry(e) : null;
-          if (!header && headerOf(e)) header = e;
-          else if (h?.kind === "user") {
-            input = true;
-            if (!notTitle(userText(h))) title = oneLine(userText(h));
-          }
-        } catch {
-          // partial line: ignore
-        }
-      } else if (header) {
-        const t = titleFromPartial(pending);
-        if (t !== null) input = true;
-        if (t !== null && !notTitle(t)) title = oneLine(t);
-      }
-    }
-    return header ? { header, title, model, overseer, input, profile } : null;
+    return await readHeadFrom(fh);
   } finally {
     await fh.close();
   }
+}
+
+/** readHead on a handle the caller opened (and closes). */
+async function readHeadFrom(fh: FileHandle): Promise<HeadFacts | null> {
+  // The Overseer marker is written right after the header, before any user message, so the
+  // head read (which stops at the first user message) always sees it.
+  let overseer = false;
+  let profile: ProfileEntryData | null = null;
+  let input = false;
+  let header: any = null;
+  let title: string | null = null;
+  let model: string | null = null;
+  let pending = "";
+  let pos = 0;
+  const buf = Buffer.alloc(CHUNK);
+  const decoder = new TextDecoder("utf-8");
+  while (pos < MAX_HEAD) {
+    const { bytesRead } = await fh.read(buf, 0, CHUNK, pos);
+    if (bytesRead === 0) break;
+    pos += bytesRead;
+    pending += decoder.decode(buf.subarray(0, bytesRead), { stream: true });
+    const lines = pending.split("\n");
+    pending = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      let e: any;
+      try {
+        e = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!header) {
+        if (!headerOf(e)) return null; // not a pi session
+        header = e;
+        continue;
+      }
+      // A `null` line has always failed the head read (the file is left out of the list).
+      if (e === null) throw new TypeError("a null entry in the session's head");
+      const h = toHEntry(e);
+      if (h?.kind === "setting" && h.what === "model" && !model && h.provider && h.modelId) model = `${h.provider}/${h.modelId}`;
+      if (h?.kind === "state" && h.key === OVERSEER_ENTRY) overseer = true;
+      // The profile is fixed at the first message, so the newest entry before it is the session's.
+      // Its fold still reads the raw entry (SessionState replaces it).
+      if (h?.kind === "state" && h.key === PROFILE_ENTRY) profile = profileOnBranch([e]);
+      if (h?.kind === "assistant" && !model && h.provider && h.model) model = `${h.provider}/${h.model}`;
+      if (h?.kind === "user") {
+        input = true;
+        if (title === null && !notTitle(userText(h))) title = oneLine(userText(h));
+      }
+      if (title !== null && model) return { header, title, model, overseer, input, profile };
+    }
+    // Stop at the first user message even without a model: model_change precedes it.
+    if (title !== null) return { header, title, model, overseer, input, profile };
+  }
+  if (pending.trim() && title === null) {
+    if (pos < MAX_HEAD) {
+      // EOF: final line without trailing newline (or a writer mid-append)
+      try {
+        const e = JSON.parse(pending);
+        const h = header ? toHEntry(e) : null;
+        if (!header && headerOf(e)) header = e;
+        else if (h?.kind === "user") {
+          input = true;
+          if (!notTitle(userText(h))) title = oneLine(userText(h));
+        }
+      } catch {
+        // partial line: ignore
+      }
+    } else if (header) {
+      const t = titleFromPartial(pending);
+      if (t !== null) input = true;
+      if (t !== null && !notTitle(t)) title = oneLine(t);
+    }
+  }
+  return header ? { header, title, model, overseer, input, profile } : null;
 }
 
 /**
@@ -732,9 +753,16 @@ function gistChanged(path: string): void {
   }
 }
 
+/** Session-file syscalls of the listing's own reads (tests, measurement): stats of a file it may
+    summarize, and opens of one it reads. The align and worker scans keep their own. */
+export const listIo = { stats: 0, opens: 0 };
+/** Readings of worker parents so far: one per listing, however many worker rows it has. */
+export const workerParentReadings = () => workerSessions.parentReadings;
+
 async function summarize(path: string, resolveWindow?: WindowResolver): Promise<BaseSummary | null> {
   let st;
   try {
+    listIo.stats++;
     st = await stat(path);
   } catch {
     return null;
@@ -742,14 +770,25 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
   const hit = cache.get(path);
   if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return withWindow(hit, resolveWindow);
   try {
-    const head = await readHead(path);
-    if (!head || typeof head.header.id !== "string") return null;
+    // One handle for the head, the outline and one tail window the three tail readers share.
+    listIo.opens++;
+    const fh = await open(path, "r");
+    let head: HeadFacts | null;
+    let win: TailWindow | null = null;
+    let scan: OutlineScan | null = null;
+    try {
+      head = await readHeadFrom(fh);
+      if (!head || typeof head.header.id !== "string") return null;
+      win = await readTailWindow(fh, st.size);
+      scan = await readOutline(fh, st.size, hit?.outline ?? null);
+    } finally {
+      await fh.close();
+    }
     const h = head.header;
-    const model = (await readTailModel(path, st.size)) ?? head.model;
-    const scan = await readOutline(path, st.size, hit?.outline ?? null);
+    const model = (win ? tailModelIn(win) : null) ?? head.model;
     const outline = scan?.found ?? null;
-    const ctx = await readTailContext(path, st.size);
-    const { reply: lastReply, ending } = await readTailEnding(path, st.size);
+    const ctx = win ? tailContextIn(win) : null;
+    const { reply: lastReply, ending } = win ? tailEndingIn(win) : { reply: null, ending: {} as TailEnding };
     const align = await readAlignScan(path, st.size, hit?.align ?? null);
     // A workspace session (an org's baton or overseer file) is listed under the dir it opens in on
     // THIS host; its header keeps the dir of the host that created it (§app.organizations/portability).
@@ -773,8 +812,20 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(align.summary ? { align: align.summary } : {}),
       ...(profileField(head.profile) ? { profile: profileField(head.profile) } : {}),
+      ...queueChatField(profileField(head.profile)),
     };
-    const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, ending, marked: head.overseer, align };
+    const entry: CacheEntry = {
+      mtimeMs: st.mtimeMs,
+      size: st.size,
+      summary,
+      contextModel: ctx?.model ?? null,
+      outline: scan,
+      lastReply,
+      ending,
+      marked: head.overseer,
+      align,
+      zeroInput: st.size <= MAX_HEAD && !head.input,
+    };
     cache.set(path, entry);
     if (summary.outlineGist && summary.outlineGist !== hit?.summary.outlineGist) gistChanged(path);
     return withWindow(entry, resolveWindow);
@@ -907,17 +958,18 @@ function decisionFields(
   own: RawLiveRecord | undefined,
   seen: Record<string, number>,
   attention: boolean,
+  /** One listing pass's reads of the tag and signal stores, shared by its rows. */
+  reads?: { tags: (id: string) => SessionTags | undefined; signals: SignalsFile },
 ): Pick<SessionSummary, "signals" | "workerSignals" | "tags"> {
-  const tags = tagsFor(s.id);
+  const tags = reads ? reads.tags(s.id) : tagsFor(s.id);
   if (!attention) return tags ? { tags } : {};
-  const data = readSignals();
+  const data = reads?.signals ?? readSignals();
   const ctx = { enabled: true, seenAt: seen[s.id], viewing: isViewing(s.id) };
   const running = isSessionBusy(s.path) || (l?.activity ?? activityOf(own?.rec))?.state === "working";
-  const signals = signalsOverlay(s.id, { ...ctx, running }, data);
-  const workerSignals = workerSignalsOverlay(s.id, ctx, Date.now(), data);
+  // An open offer card asks the user too (§app.decisions/asks-user, §chat.offers/card).
+  const signals = withOpenOffer(s.id, signalsOverlay(s.id, { ...ctx, running }, data), running);
   return {
     ...(signals ? { signals } : {}),
-    ...(workerSignals ? { workerSignals } : {}),
     ...(tags ? { tags } : {}),
   };
 }
@@ -954,7 +1006,7 @@ export function listSessions(): Promise<SessionSummary[]> {
   const generation = listGeneration();
   let l = listing;
   if (!l || l.generation !== generation || now - l.startedAt >= LIST_REUSE_MS || now < l.startedAt) {
-    const mine: { generation: number; startedAt: number; rows: Promise<SessionSummary[]> } = { generation, startedAt: now, rows: buildSessions() };
+    const mine: { generation: number; startedAt: number; rows: Promise<SessionSummary[]> } = { generation, startedAt: now, rows: buildSessions().then((b) => b.rows) };
     listing = l = mine;
     mine.rows.catch(() => {
       if (listing === mine) listing = null;
@@ -963,8 +1015,181 @@ export function listSessions(): Promise<SessionSummary[]> {
   return l.rows.then((rows) => [...rows]);
 }
 
-async function buildSessions(): Promise<SessionSummary[]> {
-  const files = await listSessionFiles();
+/** The last listing's rows by path (buildSessions hands an unchanged row out as the same object). */
+let lastRows = new Map<string, SessionSummary>();
+
+/** Deep equality that also holds key order and undefined-valued keys: JSON- and deepStrictEqual-identical. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (!sameValue(a[i], b[i])) return false;
+    return true;
+  }
+  if (Object.getPrototypeOf(a) !== Object.prototype || Object.getPrototypeOf(b) !== Object.prototype) return false;
+  const ka = Object.keys(a);
+  const kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  for (let i = 0; i < ka.length; i++) {
+    const k = ka[i]!;
+    if (k !== kb[i] || !sameValue((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k])) return false;
+  }
+  return true;
+}
+
+/** How often the tracked listing reads every folder and stats every file anyway: the net for a
+    change no watch event told of. */
+export const SWEEP_MS = 5 * 60_000;
+/** How often the tracked listing stats every file it knows (no folder read) and re-reads those whose
+    mtime or size moved: the net for a write whose watch event was lost (Bun's watch drops a second
+    event that follows the first within a few ms), at the feed's safety-net pace. */
+export const STAT_SWEEP_MS = 60_000;
+
+/**
+ * The session feed's file tracker: while a watch reports which session files changed
+ * (server/session-feed-watch.ts `files`), the feed's listing (listSessionsTracked) reuses the last
+ * file set and cached summaries and reads only the files named since its last build. `all`: the
+ * watch could not say (or nothing is known yet), so the next build reads every folder.
+ */
+const tracker = { active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, statAt: 0, chain: Promise.resolve() as Promise<unknown> };
+
+/** Start tracking (the feed's watch starts it with itself); returns the note sink and its stop. */
+export function trackSessionFiles(): { note: (path: string | null) => void; stop: () => void } {
+  tracker.active++;
+  let stopped = false;
+  return {
+    note: (path) => {
+      if (stopped) return;
+      if (path === null) tracker.all = true;
+      else tracker.dirty.add(path);
+    },
+    stop: () => {
+      if (stopped) return;
+      stopped = true;
+      if (--tracker.active === 0) {
+        // Untracked time is unseen time: the next tracked build starts from a full read.
+        tracker.all = true;
+        tracker.files = null;
+        tracker.dirty.clear();
+      }
+    },
+  };
+}
+
+/** Builds the tracked listing has run, and how many were full (tests, measurement). */
+export const trackedStats = { builds: 0, full: 0, statSweeps: 0, lastDirty: 0 };
+
+/**
+ * listSessions for the session feed: the same rows (a full build gives the same list), but while a
+ * tracker runs only the files a watch named since the last build are stat'ed and read; every other
+ * file's cached summary stands. A full build runs when nothing is known yet, when the watch could
+ * not say what changed, and at least every SWEEP_MS; every STAT_SWEEP_MS each known file is
+ * stat'ed and re-read only if it moved. Without a tracker it is listSessions. Builds
+ * run one at a time; never shares listSessions' reuse window.
+ */
+export function listSessionsTracked(): Promise<SessionSummary[]> {
+  if (tracker.active === 0) return listSessions();
+  const run = tracker.chain.then(buildTracked, buildTracked);
+  tracker.chain = run.catch(() => undefined);
+  return run.then((rows) => [...rows]);
+}
+
+async function buildTracked(): Promise<SessionSummary[]> {
+  const now = Date.now();
+  trackedStats.builds++;
+  const full = tracker.all || tracker.files === null || now - tracker.sweptAt >= SWEEP_MS || now < tracker.sweptAt;
+  // Taken before any await: what is noted during this build is the next build's.
+  const dirty = tracker.dirty;
+  tracker.dirty = new Set();
+  if (full) {
+    tracker.all = false;
+    tracker.sweptAt = now;
+    tracker.statAt = now;
+    trackedStats.full++;
+    try {
+      const b = await buildSessions();
+      if (tracker.active > 0) tracker.files = b.files;
+      return b.rows;
+    } catch (err) {
+      tracker.all = true;
+      throw err;
+    }
+  }
+  try {
+    if (now - tracker.statAt >= STAT_SWEEP_MS || now < tracker.statAt) {
+      tracker.statAt = now;
+      trackedStats.statSweeps++;
+      await addMoved(tracker.files!, dirty);
+    }
+    trackedStats.lastDirty = dirty.size;
+    const files = await trackedFiles(tracker.files!, dirty);
+    const b = await buildSessions({ files, dirty });
+    if (tracker.active > 0 && !tracker.all) tracker.files = b.files;
+    return b.rows;
+  } catch (err) {
+    tracker.all = true;
+    throw err;
+  }
+}
+
+/** Adds to `dirty` each of `files` whose stat no longer matches its cached summary (or that has
+    none, or is gone). */
+async function addMoved(files: readonly string[], dirty: Set<string>): Promise<void> {
+  await Promise.all(
+    files.map(async (p) => {
+      if (dirty.has(p)) return;
+      listIo.stats++;
+      const st = await stat(p).catch(() => null);
+      const hit = cache.get(p);
+      if (!st || !hit || hit.mtimeMs !== st.mtimeMs || hit.size !== st.size) dirty.add(p);
+    }),
+  );
+}
+
+/** The last file set with each named path added (a listable session file now) or dropped (gone,
+    or no longer a plain file). Listed in listSessionFiles' places only: the watch reports only
+    from the folders that lists. */
+async function trackedFiles(prev: readonly string[], dirty: ReadonlySet<string>): Promise<string[]> {
+  if (dirty.size === 0) return [...prev];
+  const present = new Map<string, boolean>();
+  await Promise.all(
+    [...dirty].map(async (p) => {
+      listIo.stats++;
+      const st = await lstat(p).catch(() => null);
+      present.set(p, !!st && st.isFile() && p.endsWith(".jsonl"));
+    }),
+  );
+  const out = prev.filter((p) => present.get(p) !== false);
+  const had = new Set(prev);
+  for (const [p, there] of present) if (there && !had.has(p)) out.push(p);
+  return out;
+}
+
+/** A clean file's summary (`dirty` names every file that may have changed): the cached one, with
+    no stat; a file with none is read like any other. */
+function summaryOf(path: string, resolveWindow: WindowResolver | undefined, dirty: ReadonlySet<string> | undefined): Promise<BaseSummary | null> {
+  if (dirty && !dirty.has(path)) {
+    const hit = cache.get(path);
+    if (hit) return Promise.resolve(withWindow(hit, resolveWindow));
+  }
+  return summarize(path, resolveWindow);
+}
+
+/** The husk check (isZeroInput) from the summary cache when it holds this file, else from the file. */
+async function zeroInputOf(path: string): Promise<boolean> {
+  const hit = cache.get(path);
+  if (hit) return hit.zeroInput;
+  listIo.stats++;
+  const st = await stat(path).catch(() => null);
+  return !!st && (await isZeroInput(path, st.size));
+}
+
+/** Every row. `track`: the file set to list and the files that may have changed since the cached
+    summaries were read (only those are stat'ed and read); without it every folder is read and
+    every file stat'ed. Returns the rows and the file set they came from. */
+async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
+  const files = track ? track.files : await listSessionFiles();
   const live = readLive();
   const own = readOwnLiveRecords();
   const resolveWindow = await windowResolver();
@@ -974,6 +1199,7 @@ async function buildSessions(): Promise<SessionSummary[]> {
   const seen = readSeen();
   const attention = readDecisionSettings().features.attention;
   const fields = fieldLookup();
+  const stores = { tags: tagsReader(), signals: readSignals() };
   // A kept preview link never reaches the list (§app.project-overseer/previews): a title or summary line
   // that holds one (the overseer saw it in its tool result) shows "[preview link]" in its place.
   const previewLabels = keptLabels();
@@ -984,12 +1210,13 @@ async function buildSessions(): Promise<SessionSummary[]> {
   // Archive cleanup prunes, and only the ids it deleted itself (cleanupSessions, below). The
   // batch prompt already answers a gone member with its own "missing" refusal code.
   const [results, workers] = await Promise.all([
-    Promise.all(files.map((f) => summarize(f, resolveWindow))),
-    workerSessionPaths(files),
+    Promise.all(files.map((f) => summaryOf(f, resolveWindow, track?.dirty))),
+    workerSessionPaths(files, track?.dirty),
   ]);
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) cache.delete(k);
   const out: SessionSummary[] = [];
+  const parents = workerSessions.parents();
   for (const s of results) {
     if (!s) continue;
     // Empty husks — no user message anywhere in the file — are never listed, so abandoned
@@ -1003,10 +1230,9 @@ async function buildSessions(): Promise<SessionSummary[]> {
     let preview: string | undefined;
     // A baton or project overseer file is never a husk: a fresh baton held by the operator (or
     // waiting for its first link) needs them before anyone has written in it.
-    const special = fields(s.path, s.id, s.cwd);
+    const special = fields(s.path, s.id, s.cwd, cache.get(s.path)?.mtimeMs);
     if (s.title === "Untitled") {
-      const st2 = await stat(s.path).catch(() => null);
-      if (st2 && (await isZeroInput(s.path, st2.size))) {
+      if (await zeroInputOf(s.path)) {
         // A husk waiting on a dialog (a command run in a new session) is waiting on the user: listed.
         // So is one that carries a profile: a One at a time profile counts from its pick, so the
         // session holding it must be somewhere the user can find it (§chat.profiles/singleton).
@@ -1025,24 +1251,32 @@ async function buildSessions(): Promise<SessionSummary[]> {
       workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
       origin: isWebSession(s.id) ? "web" : "external",
       archived: isArchived(s.id),
-      ...(workers.has(s.path) ? { workerSession: true as const } : {}),
+      ...(workers.has(s.path) ? { workerSession: true as const, ...workerOfField(s.path, parents) } : {}),
       ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
       ...heldChatField(s.path),
       ...attentionFields(s, l, ownRec, seen),
-      ...decisionFields(s, l, ownRec, seen, attention),
+      ...decisionFields(s, l, ownRec, seen, attention, stores),
       ...(preview !== undefined ? { draftPreview: preview } : {}),
       ...(hasDraft ? { hasDraft: true as const } : {}),
       ...special,
     };
     // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
     const readiness = readinessOverlay(row);
-    out.push(redactPreviewLinksDeep(readiness ? { ...row, readiness } : row, previewLabels));
+    out.push(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row, stores.signals), previewLabels));
   }
   pruneReadiness(out);
   for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
-  out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
-  return out;
+  // A row equal to the last listing's (same keys, in order, same values) is that object itself:
+  // rows are shared and never mutated, and a reader that keys work by row (the session feed's
+  // comparison) does it once per change instead of once per row per listing.
+  for (let i = 0; i < out.length; i++) {
+    const prev = lastRows.get(out[i]!.path);
+    if (prev && sameValue(prev, out[i])) out[i] = prev;
+  }
+  lastRows = new Map(out.map((r) => [r.path, r]));
+  out.sort(byActivity);
+  return { rows: out, files };
 }
 
 /**
@@ -1061,30 +1295,55 @@ async function windowResolver(): Promise<WindowResolver | undefined> {
 
 /** One summary. `resolveWindow` is optional on purpose: without it the context gauge has no
  *  window (tests and any caller that must not spin up a ModelRuntime). */
-export async function getSessionSummary(path: string, resolveWindow?: WindowResolver): Promise<SessionSummary | null> {
+/** The stores a single-row summary reads besides its file, read once and shared by every row of
+    one request (the Overseer's history, a batch of refreshes). */
+export interface SummaryReads {
+  live: Map<string, LiveRecord>;
+  own: Map<string, RawLiveRecord>;
+  groups: Record<string, string>;
+  titles: ReturnType<typeof readSessionTitleRecords>;
+  seen: Record<string, number>;
+  attention: boolean;
+  fields: ReturnType<typeof fieldLookup>;
+}
+
+export function summaryReads(): SummaryReads {
+  return {
+    live: readLive(),
+    own: readOwnLiveRecords(),
+    groups: readAssignments(),
+    titles: readSessionTitleRecords(),
+    seen: readSeen(),
+    attention: readDecisionSettings().features.attention,
+    fields: fieldLookup(),
+  };
+}
+
+export async function getSessionSummary(path: string, resolveWindow?: WindowResolver, reads?: SummaryReads): Promise<SessionSummary | null> {
   const s = await summarize(path, resolveWindow);
   if (!s) return null;
-  const l = readLive().get(path);
-  const ownRec = readOwnLiveRecords().get(path);
-  const groupId = readAssignments()[s.id];
+  const r = reads ?? summaryReads();
+  const l = r.live.get(path);
+  const ownRec = r.own.get(path);
+  const groupId = r.groups[s.id];
   const worker = await workerSessions.isWorker(s.path).catch(() => false);
   const row: SessionSummary = {
-    ...withTitle(s, readSessionTitleRecords()),
+    ...withTitle(s, r.titles),
     ...outlineOverlay(s, liveOutline(l, ownRec)),
     live: liveField(l),
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
     origin: isWebSession(s.id) ? "web" : "external",
     archived: isArchived(s.id),
-    ...(worker ? { workerSession: true as const } : {}),
+    ...(worker ? { workerSession: true as const, ...workerOfField(s.path) } : {}),
     ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
     ...heldChatField(s.path),
-    ...attentionFields(s, l, ownRec, readSeen()),
-    ...decisionFields(s, l, ownRec, readSeen(), readDecisionSettings().features.attention),
-    ...fieldLookup()(s.path, s.id, s.cwd),
+    ...attentionFields(s, l, ownRec, r.seen),
+    ...decisionFields(s, l, ownRec, r.seen, r.attention),
+    ...r.fields(s.path, s.id, s.cwd),
   };
   const readiness = readinessOverlay(row);
-  return withUnreadReplies(redactPreviewLinksDeep(readiness ? { ...row, readiness } : row));
+  return withUnreadReplies(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row)));
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();
@@ -1171,15 +1430,22 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
       }
     }
   }
-  if (s.archived !== archived) setArchived(s.id, archived);
-  // Archiving is the close gesture: shut the held runtime down (running subagents die with it).
-  // There is no idle timer anymore — a runtime lives until this, a reload, or server shutdown.
-  if (archived) {
-    // Its open tabs keep what they show and don't reconnect: a reconnect would start it again.
-    await closeChat(s.path, "Session archived; its runtime was closed.", { quiet: "archived" });
-    sessionArchived(s.id);
-  }
+  if (archived) await markArchived(s.id, s.path);
+  else if (s.archived) setArchived(s.id, false);
   return { ok: true, summary: { ...s, archived } };
+}
+
+/**
+ * The one way a session becomes archived (§chat.transcript/instant-open, "An archived chat"): the
+ * mark first, so nothing opens it from then on (a tab reconnecting meanwhile is told `closed`), then
+ * its chat closed quietly (its open tabs keep what they show and don't reconnect), then what hangs
+ * on it ended (its workers stopped with any report still waiting to open it, its links, its memory).
+ * A chat still starting now is closed by its own start once that finishes (server/chat-host.ts).
+ */
+export async function markArchived(id: string, path: string): Promise<void> {
+  setArchived(id, true);
+  await closeChat(path, "Session archived; its runtime was closed.", { quiet: "archived" });
+  sessionArchived(id);
 }
 
 /**
@@ -1240,7 +1506,7 @@ export interface CleanupResult {
  * file that's gone, and a file whose header doesn't parse — never delete what can't be read as
  * a pi session. Every mode leaves an attached org's workspace sessions alone (refused, in paths mode).
  */
-export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResult> {
+export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: boolean } = {}): Promise<CleanupResult> {
   const targets = req.mode === "paths" ? req.paths : await listSessionFiles();
   const live = readLive();
   const now = Date.now();
@@ -1281,6 +1547,12 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     // Overseer files (current and history) are never swept by age or as husks: a fresh Overseer
     // is a husk by definition, and its history is pruned by /clear itself (paths mode).
     if (req.mode !== "paths" && (await summarize(path))?.overseer) continue;
+    // The merge queue's own chats are kept until the user clears them from the Merge Queue tab's History
+    // (`opts.queueChats`, that route's alone): never swept, and refused by an ordinary paths delete.
+    if (!opts.queueChats && (await summarize(path))?.queueChat) {
+      if (req.mode === "paths") refusals.push({ path, reason: "That is one of the merge queue's own chats: clear it from the Merge Queue tab's History." });
+      continue;
+    }
     if (live.has(path)) {
       skipped.live++;
       continue;

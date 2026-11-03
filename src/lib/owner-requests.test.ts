@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { OwnerRequest } from "../../shared/project-assistant";
-import { emptyLine, filterCounts, filterShowing, groupRequests, openRequestsLine, REQUEST_FILTERS, STATUS_TONE, STATUS_WORD, underFilter } from "./owner-requests";
+import { closedLine, emptyLine, filterCounts, filterShowing, groupRequests, needsGotIt, openRequestsLine, REQUEST_FILTERS, STATUS_TONE, STATUS_WORD, statusWord, underFilter } from "./owner-requests";
 
 const req = (id: string, status: OwnerRequest["status"], projectId: string, createdAt: string): OwnerRequest => ({ id, projectId, kind: "bug", title: id, text: "", status, createdAt, updatedAt: createdAt });
 const projects = [
@@ -9,18 +9,33 @@ const projects = [
   { projectId: "p2", name: "Site" },
 ];
 
-test("the filters: Open is with-team and started, Done and Declined their own, All everything", () => {
+test("the filters: Open is with-team and started, Done, Declined and Closed by Owner their own, All everything", () => {
   assert.deepEqual(
     REQUEST_FILTERS.map((f) => f.label),
-    ["Open", "Done", "Declined", "All"],
+    ["Open", "Done", "Declined", "Closed by Owner", "All"],
   );
-  const statuses = ["with-team", "started", "done", "declined"] as const;
+  const statuses = ["with-team", "started", "done", "declined", "closed"] as const;
   const under = (f: (typeof REQUEST_FILTERS)[number]["id"]) => statuses.filter((s) => underFilter({ status: s }, f));
   assert.deepEqual(under("open"), ["with-team", "started"]);
   assert.deepEqual(under("done"), ["done"]);
   assert.deepEqual(under("declined"), ["declined"]);
+  assert.deepEqual(under("closed"), ["closed"]);
   assert.deepEqual(under("all"), [...statuses]);
-  assert.deepEqual(filterCounts(statuses.map((s) => ({ status: s }))), { open: 2, done: 1, declined: 1, all: 4 });
+  assert.deepEqual(filterCounts(statuses.map((s) => ({ status: s }))), { open: 2, done: 1, declined: 1, closed: 1, all: 5 });
+});
+
+test("a request the owner closed: its chip names them, its line says how, Got It only for one closed during work", () => {
+  const by = (kind: "owner" | "assistant") => ({ by: { kind, personId: "p1" }, at: "2026-10-24T00:00:00Z", prior: "started" as const });
+  assert.equal(statusWord({ status: "closed" }, "Omar Haddad"), "Closed by Omar");
+  assert.equal(statusWord({ status: "done" }, "Omar Haddad"), "Done");
+  assert.equal(closedLine({ closed: by("owner") }, "Omar Haddad", "2h ago"), "Closed 2h ago · by Omar");
+  assert.equal(closedLine({ closed: by("assistant") }, "Omar Haddad", "2h ago"), "Closed 2h ago · through the Project Assistant");
+  assert.equal(closedLine({}, "Omar", "now"), null);
+  assert.equal(needsGotIt({ status: "closed", closed: by("owner") }), true);
+  assert.equal(needsGotIt({ status: "closed", closed: { ...by("owner"), noted: true } }), false);
+  assert.equal(needsGotIt({ status: "closed", closed: { ...by("owner"), prior: "with-team" } }), false);
+  assert.equal(filterShowing({ status: "closed" }, "open"), "closed");
+  assert.equal(emptyLine([{ status: "with-team" }], "closed", "Omar Haddad"), "1 open request. Omar hasn't closed any.");
 });
 
 test("a focused request outside the filter switches to the filter that shows it", () => {

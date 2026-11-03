@@ -29,6 +29,9 @@ export interface OverseerPartCtx {
   effective(): { autonomy: Autonomy; reason?: string };
   /** The run is the operator's. */
   attended(): boolean;
+  /** The run is the operator's and their own message (typed, or their click) opened it, never one the global
+      Overseer sent. */
+  ownMessage(): boolean;
   /** The current conversation's id. */
   overseerId(): string;
   /** This turn's envelope for an act of the overseer's. */
@@ -93,6 +96,9 @@ export interface ProjectPart {
   pausedSince?(engine: string, projectId: string): string | null;
   /** Where the project lives, when this part holds it (the read's `space`; none: standalone). */
   space?(engine: string, projectId: string): ProjectSpace | null;
+  /** The Claude login a placed project follows unless it picks its own (an org's for its projects,
+      §app.claude-logins/project-login), with the name its note gives the one that set it; null: none. */
+  claudeLogin?(engine: string, projectId: string): { login: string; name: string } | null;
   /** Gaps: a project whose work is tracked as gaps (§gap/… ideas filed as items elsewhere). Null: none, so the
       overseer's coding sessions carry no `gap` and start on the project itself. */
   gaps?(engine: string, projectId: string): GapPart | null;
@@ -202,6 +208,13 @@ export function spaceOf(engine: string, projectId: string): ProjectSpace {
     if (s) return s;
   }
   return { kind: "standalone" };
+}
+export function claudeLoginOf(engine: string, projectId: string): { login: string; name: string } | null {
+  for (const p of parts) {
+    const l = p.claudeLogin?.(engine, projectId);
+    if (l) return l;
+  }
+  return null;
 }
 export function gapsOf(engine: string, projectId: string): GapPart | null {
   for (const p of parts) {

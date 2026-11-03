@@ -1,4 +1,4 @@
-import { OWNER_REQUEST_KIND_WORD, OWNER_REQUEST_NOTE, OWNER_REQUEST_STATUS_WORD, type OwnerRequest, type OwnerRequestCard } from "../shared/project-assistant";
+import { isRequestClosed, OWNER_REQUEST_KIND_WORD, OWNER_REQUEST_NOTE, OWNER_REQUEST_STATUS_WORD, type OwnerRequest, type OwnerRequestCard } from "../shared/project-assistant";
 import { isArchived } from "./archived-sessions";
 import { acquireChatHandle, onAgentSettled, onAgentStarted } from "./chat-handle";
 import { readBranch } from "./harness/pi/reader";
@@ -6,7 +6,7 @@ import { OVERSEER_SENT } from "./harness/state-kinds";
 import { stateView } from "./harness/state-view";
 import { ownerPageInfo } from "./owner";
 import { OrgError, readIndex, readProjects } from "./orgs";
-import { findRequest, linkRequestChat, orgRequests, requestChatSession, setRequestStatus } from "./project-assistant-store";
+import { advanceRequest, findRequest, linkRequestChat, orgRequests, requestChatSession } from "./project-assistant-store";
 import { archiveSession, idOf, indexedSessionPaths, listSessionFiles, onSessionArchived } from "./sessions-index";
 
 /**
@@ -81,7 +81,7 @@ const starting = new Set<string>();
 export async function startRequestChat(orgId: string, rid: string, deps: { start?: StartChatSession; note?: WriteNote; archive?: ArchiveChat } = {}): Promise<{ sessionId: string; path: string }> {
   const r = findRequest(orgId, rid);
   if (!r) throw new OrgError("Unknown request", 404);
-  if (r.status === "done" || r.status === "declined") throw new OrgError(`This request is ${r.status === "done" ? "done" : "declined"}: it takes no new chat.`, 409, "closed");
+  if (isRequestClosed(r.status)) throw new OrgError(`This request is ${r.status === "done" ? "done" : r.status === "declined" ? "declined" : "closed by the owner"}: it takes no new chat.`, 409, "closed");
   const [withChat] = await withChats([r]);
   if (withChat?.chat) throw new HasChatError({ sessionId: withChat.chat.sessionId, path: withChat.chat.path });
   const key = `${orgId}/${rid}`;
@@ -134,7 +134,7 @@ function buildIndex(): Map<string, Ref> {
       continue;
     }
     for (const r of rows) {
-      if (r.status === "done" || r.status === "declined") continue;
+      if (isRequestClosed(r.status)) continue;
       // Only the chat Start Chat linked: a fix's own session keeps today's behaviour.
       const id = r.linked?.sessionId;
       if (id) out.set(id, { orgId: o.id, rid: r.id });
@@ -158,11 +158,10 @@ export async function noteRequestChatTurn(path: string, ref?: Ref): Promise<bool
   const r = findRequest(hit.orgId, hit.rid);
   if (!r || r.status !== "with-team" || r.linked?.sessionId !== sessionId || isArchived(sessionId)) return false;
   if (!(await operatorSpoke(path))) return false;
-  setRequestStatus(hit.orgId, hit.rid, "started", { sessionId });
-  return true;
+  return advanceRequest(hit.orgId, hit.rid, "started", { sessionId }) !== null;
 }
 
-/** The chat Start Chat linked was archived: back to `with-team` unless done or declined (or already with the team).
+/** The chat Start Chat linked was archived: back to `with-team` while it is still `started` (never a closed one).
     A fix's own session is not that chat: archiving it changes nothing here. */
 export function noteRequestChatArchived(sessionId: string, ref?: Ref): boolean {
   const hit = ref ?? index?.get(sessionId);
@@ -170,8 +169,7 @@ export function noteRequestChatArchived(sessionId: string, ref?: Ref): boolean {
   const r = findRequest(hit.orgId, hit.rid);
   if (!r || r.linked?.sessionId !== sessionId) return false;
   if (r.status !== "started") return false;
-  setRequestStatus(hit.orgId, hit.rid, "with-team");
-  return true;
+  return advanceRequest(hit.orgId, hit.rid, "with-team") !== null;
 }
 
 const warn = (what: string) => (err: unknown) => console.warn(`[owner-request] ${what}: ${err instanceof Error ? err.message : String(err)}`);
@@ -218,6 +216,11 @@ export function wireRequestChats(): Promise<void> {
       }
     }
   })().catch(warn("catching up"));
+}
+
+/** A reopened request's chat Start Chat linked is tracked again (§app.project-assistant/closing). */
+export function trackRequestChat(sessionId: string, ref: Ref): void {
+  index?.set(sessionId, ref);
 }
 
 /** Tests: forget the wiring's index. */

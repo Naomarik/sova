@@ -163,7 +163,7 @@ describe("nothing runs while no one listens", () => {
     const f = sources();
     let reads = 0;
     let hub: EventHub;
-    const feed = new SessionFeed({ list: async () => (reads++, hub.seeList([] as SessionSummary[])), intervalMs: 5, debounceMs: 1 });
+    const feed = new SessionFeed({ list: async () => (reads++, hub.seeList([] as SessionSummary[])), intervalMs: 5, debounceMs: 1, minGapMs: 0 });
     hub = new EventHub({ ...f.s, holdFeed: () => feed.add(() => {}) }, { lingerMs: 10 });
     f.chat("/s/a.jsonl", "started");
     f.attention();
@@ -277,7 +277,7 @@ describe("isolation", () => {
     const hub = new EventHub(f.s, { log: (l) => logs.push(l) });
     let list: SessionSummary[] = [];
     const base = (id: string, over: Partial<SessionSummary> = {}): SessionSummary => ({ id, path: `/s/${id}.jsonl`, cwd: "/w", title: id, createdAt: "", lastActiveAt: "", model: null, live: null, busy: false, origin: "web", archived: false, ...over });
-    const feed = new SessionFeed({ list: async () => hub.seeList(list), intervalMs: 60_000, debounceMs: 1 });
+    const feed = new SessionFeed({ list: async () => hub.seeList(list), intervalMs: 60_000, debounceMs: 1, minGapMs: 0 });
     const got: SessionFeedMessage[] = [];
     subscribed(hub);
     const off = feed.add((m) => got.push(m));

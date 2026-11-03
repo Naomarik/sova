@@ -3,9 +3,8 @@
 
 A topic is a return address one session opens for itself. Other sessions push short notes to it
 with `queue_push`, and the notes reach that one session as a batch when it is idle or ends a turn,
-never in the middle of one. It is how a session answers an orchestrator, such as the merge captain
-(§chat/merge-round), without the orchestrator polling its transcript. These topics are unrelated to
-topic-outline's topics and to a session's taxonomy topic tag (§app.decisions/session-tags).
+never in the middle of one. It is how a session answers an orchestrator, without the orchestrator polling its transcript. These topics are unrelated to
+topic-outline's topics.
 
 ## §chat.topics/open — `queue_open`, and the topic's name
 
@@ -17,7 +16,7 @@ topic-outline's topics and to a session's taxonomy topic tag (§app.decisions/se
   random lowercase letters and digits, for example `merge-k7m4qz`. A name is never reused, so it
   can't clash, and it can't be guessed. The calling session is the topic's one receiver.
 - **Reuse.** Opening the same base name again from the same session returns the topic it already
-  has open under that base, so a captain that opens `merge` every round keeps one topic. A session
+  has open under that base, so an orchestrator that opens `merge` every round keeps one topic. A session
   holds at most 10 open topics. The eleventh is refused.
 - **Invitations.** Only a session the receiver asked may push to its topic. When the receiver's
   `session_send` is accepted (handed to its target or queued there, not refused) and its text names
@@ -119,7 +118,7 @@ topic-outline's topics and to a session's taxonomy topic tag (§app.decisions/se
   sender (a link to that session), its time and its text. It is never a "You" bubble.
 - **Not the user's input.** A batch starts a turn, but it never counts as one of the user's inputs:
   it is left out of the inputs count, the Timeline and the rewind targets, and Regenerating its reply
-  is refused, as for a wake. It never titles the session, session tags skip it, whether its reply
+  is refused, as for a wake. It never titles the session, whether its reply
   asks something is never checked (§app.decisions/asks-user), and the share view leaves it out.
 - **The pusher's side.** In the pushing session, `queue_push` shows as an ordinary tool card with the
   one-sentence result.

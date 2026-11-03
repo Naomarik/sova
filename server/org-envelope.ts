@@ -152,7 +152,9 @@ export function atOnceCounts(sessions: readonly SessionRead[], projectId: string
     if (s.data.projectId !== projectId) continue;
     if (s.statechart === "baton") {
       const owner = s.data.owner as { overseerOf?: unknown } | undefined;
-      if (typeof owner === "object" && owner !== null && owner.overseerOf === projectId && s.configuration.includes("open")) gatheringsOpen++;
+      // The overseer's own gatherings, and the feature request chats the Project Assistant opened (§app.project-assistant/feature-chats).
+      const byAssistant = (s.data.started as { by?: unknown } | undefined)?.by === "assistant";
+      if (((typeof owner === "object" && owner !== null && owner.overseerOf === projectId) || byAssistant) && s.configuration.includes("open")) gatheringsOpen++;
     } else if (s.statechart === "build") {
       // `running` (exported by the build) is "working or workers > 0"; read the parts when it is absent.
       const workers = typeof s.data.workers === "number" ? s.data.workers : 0;

@@ -29,7 +29,7 @@ const { renderResult } = await import("./tools");
 
 const op: Caller = { kind: "operator" };
 // Below the kernel's ephemeral range (32768+), where any outgoing connection on the box can hold a port.
-const BASE = await reservePorts(50);
+const BASE = await reservePorts(80);
 const PORTS = { web: BASE, site: BASE + 20, db: BASE + 40 };
 const PID = "prj_sharetst";
 
@@ -37,7 +37,7 @@ const DEF = {
   version: 1,
   services: {
     db: { cmd: ["node", "db.mjs"], scope: "shared", ports: { tcp: { fixed: PORTS.db } } },
-    web: { cmd: ["node", "web.mjs"], ports: { http: { base: PORTS.web }, admin: { base: PORTS.web + 10 } }, ready: { http: "http", timeout: 20 } },
+    web: { cmd: ["node", "web.mjs"], ports: { http: { base: PORTS.web }, admin: { base: PORTS.web + 60 } }, ready: { http: "http", timeout: 20 } },
     site: { static: "public", ports: { http: { base: PORTS.site } } },
   },
   share: { endpoints: ["web.http", "site.http"], maxDays: 5 },

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
+import { homedir } from "node:os";
 import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
@@ -53,12 +54,11 @@ import { cutTail, helloAfterHave, type HistoryPart, pullFields } from "./tail-he
 import { isOverseerId } from "./overseer-store";
 import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
+import { cwdFallbackNote, probeFolder, type CwdFallback } from "./session-cwd";
 import { sovaToken } from "./auth";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
 import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
-import { codemodeFactory } from "./harness/pi/codemode";
-import { claimSessionSlot, holdingSlot } from "./provider-limits";
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
 import { playbookExtension, type PlaybookHost } from "./harness/pi/playbook";
@@ -67,8 +67,8 @@ import { ChatMemory } from "./memory/chat";
 import { readOverseerSettings } from "./overseer-store";
 
 /** An overseer's own memory switch in force: the Overseer's from the state root's
-    overseer.json, a project overseer's from the file its loadout names; no saved choice = on, UniiChat 128 KB. */
-function overseerMemoryNow(file: string | undefined): OverseerMemorySetting {
+    overseer.json, a project overseer's from the file its loadout names; no saved choice = on, UniiChat; the size is Settings → Memory's for the type. */
+function overseerMemoryNow(file: string | undefined): OverseerMemoryInForce {
   if (!file) return overseerMemoryOf(readOverseerSettings().memory);
   let raw: unknown;
   try {
@@ -84,7 +84,7 @@ import { isApproved, isApprovedByUser, recordApproval } from "./project-mode-app
 import { ModeActions, notHereFor, type ModeCommandOutcome } from "./mode-commands";
 import { projectModesOf, restoreProjectSnapshots } from "../pi-config/extensions/mode/state.ts";
 import { PROJECT_MODE_PREFIX, type ProjectModeRef } from "../shared/project-modes";
-import { applyMemoryPatch, overseerMemoryOf, type OverseerMemorySetting, parseOverseerMemory, saveDefaultMemoryChoice } from "./memory/settings";
+import { overseerMemoryOf, type OverseerMemoryInForce, parseOverseerMemory, saveDefaultMemoryType } from "./memory/settings";
 import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension, sessionInstanceNote } from "./project-services/tools";
@@ -95,11 +95,25 @@ import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, si
 import { loadoutOverrides, type LoadoutEntryData, type LoadoutState } from "./session-loadout";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 import { QUEUE_OPEN_TOOL, queuePushExtension, topicStore } from "./topics";
+import { OFFER_NOTE_MESSAGE, OFFER_TOOL } from "../shared/session-offers";
+import { CARD_NOTE_MESSAGE, CARD_TOOL } from "../shared/transcript-cards";
+import { cardNoteRender } from "./transcript-cards-note";
+import { installVisOwnKindsHook, recordedCardSnapshot } from "./transcript-cards";
+
+// A chat's own drawing kinds reach its vis_guide tool (§chat.transcript-cards/drawing-kinds).
+installVisOwnKindsHook();
+
+/** The offer note in this process (a chat the server hosts itself: tests). */
+const offerNoteHere = async (sessionId: string): Promise<string | null> => (await import("./session-offers")).offerNoteFor(sessionId);
+const cardNoteHere = async (sessionId: string, since: string | null): Promise<string | null> =>
+  (await import("./merge-queue/card-note")).withMergeCardNote((await import("./transcript-cards")).cardNoteFor(sessionId, since), sessionId, since);
 import { noteUsageSession, registerUsageSession, resolveUsageAttribution } from "../pi-config/extensions/llm-inflight/attribution.ts";
 import { reviewSaved } from "./web-settings";
 import { visToolsWanted } from "../pi-config/extensions/mode/minor.ts";
 import { alignForPick } from "./align-settings";
 import { agentRoot } from "./state-root";
+import { ARCHIVED_REFUSAL } from "./archived-sessions";
+import { SendKeys } from "./send-keys";
 import { UserTurns } from "./user-turns";
 import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
 
@@ -159,6 +173,10 @@ export function setServedTools(decls: readonly ServerToolDecl[] | null): void {
 export interface ChatHosts {
   playbook?: PlaybookHost;
   instanceNote?: (ctx: HookCtx) => Promise<string | null>;
+  /** The offer tool's note of a run button's outcome (§chat.offers/card). */
+  offerNote?: (sessionId: string) => Promise<string | null>;
+  /** The transcript cards' note of answers given at once since `since` (§chat.transcript-cards/answering). */
+  cardNote?: (sessionId: string, since: string | null) => Promise<string | null>;
 }
 let chatHosts: ChatHosts = {};
 export function setChatHosts(h: ChatHosts): void {
@@ -239,19 +257,12 @@ export function alignLaunchOf(state: Pick<SessionState, "branch" | "file">): Ali
   return { data: { v: 1, review: reviewSaved(), visuals: alignForPick(pick).visuals }, recorded: false };
 }
 
-/** The extensions every ordinary session loads beyond pi-config's: resource monitoring, inherited
-    fork-cache affinity, and pi's codemode tool (registered inactive: the codemode minor mode turns it
-    on, §chat.mode-menu/codemode; in a Claude Code chat it is a fixed stub). None changes prompt
-    sections or tool declarations by loading. A caller that passes its own list for an ordinary session
+/** The extensions every ordinary session loads beyond pi-config's: resource monitoring and inherited
+    fork-cache affinity. None changes prompt sections or tool declarations by loading. A caller that passes its own list for an ordinary session
     starts from this one; the special loadouts keep exactly their own. */
 const DEFAULT_EXTENSION_FACTORIES = [
   { name: "sova-resource-monitor", factory: monitorExtension },
   { name: "sova-fork-cache", factory: forkCacheExtension },
-  codemodeFactory({
-    allowed: (ref) => modelAllowed(readModelPolicy(), ref),
-    acquire: (provider, opts) => claimSessionSlot(provider, opts),
-    holding: holdingSlot,
-  }),
 ];
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway
@@ -308,6 +319,15 @@ export class RefusedError extends Error {}
 /** The /ws/chat error code of a failure. */
 const errorCode = (err: unknown) => (err instanceof BusyError ? err.code : err instanceof RefusedError ? ("refused" as const) : ("internal" as const));
 
+/** An ordinary chat that is archived: it reads only until it is unarchived, so nothing opens it
+ *  (§chat.transcript/instant-open, "An archived chat"). /ws/chat answers it `closed` (`archived`),
+ *  never a retry; a request answers it 409 with its message. */
+export class ArchivedError extends RefusedError {
+  constructor() {
+    super(ARCHIVED_REFUSAL);
+  }
+}
+
 export class ModeRefusedError extends RefusedError {
   constructor(message = "The Overseer is always in normal mode.") {
     super(message);
@@ -337,13 +357,33 @@ export class ConfigError extends Error {
  */
 const configFailures = new Map<string, ConfigError>();
 
+/** The first line of a refusal for a stored folder that is gone (src/lib/open-failure.ts parses it). */
+const GONE_PREFIX = "Stored session working directory does not exist: ";
+const goneError = (path: string, cwd: string) => new ConfigError(`${GONE_PREFIX}${cwd}\nSession file: ${path}`, cwd);
+
+/** Where an open happens, and whether that is the home folder standing in for a stored folder that is gone. */
+export interface OpenCwd {
+  cwd: string;
+  fallback: CwdFallback | null;
+}
+
 /**
- * Where an open must happen: the stored cwd, which must exist. Throws the ConfigError with the
- * stored cwd, the name the user knows; the banner's restore advice is about it.
+ * Where an open must happen (§app.shell/missing-folder-home): the stored cwd when it is there. A
+ * local stored cwd that is genuinely missing opens in the home folder of THIS host (the one the
+ * chat runs on: `home` defaults to its os.homedir(), read at the call). Refused with a ConfigError,
+ * naming the stored cwd: a folder Sova chose for the chat (`overridden`: a baton's or a project
+ * overseer's), a remote session's placeholder (the home folder here is not the target's), a home
+ * folder that is itself gone, and a stored cwd that exists but can't be reached (permission).
  */
-export function resolveOpenCwd(path: string, sessionCwd: string): string {
-  if (!existsSync(sessionCwd)) throw new ConfigError(`Stored session working directory does not exist: ${sessionCwd}\nSession file: ${path}`, sessionCwd);
-  return sessionCwd;
+export function resolveOpenCwd(path: string, sessionCwd: string, opts: { overridden?: boolean; home?: string } = {}): OpenCwd {
+  const probe = probeFolder(sessionCwd);
+  if (probe.state === "present") return { cwd: sessionCwd, fallback: null };
+  if (probe.state === "unreachable")
+    throw new ConfigError(`Stored session working directory can't be reached (${probe.code}): ${sessionCwd}\nSession file: ${path}`, sessionCwd);
+  if (opts.overridden || targetOfCwd(sessionCwd)) throw goneError(path, sessionCwd);
+  const home = opts.home ?? homedir();
+  if (!home || home === sessionCwd || probeFolder(home).state !== "present") throw goneError(path, sessionCwd);
+  return { cwd: home, fallback: { original: sessionCwd, cwd: home } };
 }
 
 /** The cached permanent failure for `path`, if it still applies. Exported because it is the whole
@@ -353,8 +393,11 @@ export function resolveOpenCwd(path: string, sessionCwd: string): string {
 export function activeConfigFailure(path: string): ConfigError | undefined {
   const failure = configFailures.get(path);
   if (!failure) return undefined;
-  if (existsSync(failure.cwd)) {
-    configFailures.delete(path); // the directory came back: let the next open try for real
+  // The directory came back, or what is wrong with it changed (an unreachable folder that is now
+  // gone opens in the home folder): let the next open try for real.
+  const now = probeFolder(failure.cwd).state;
+  if (now === "present" || (now === "missing" && !failure.message.startsWith(GONE_PREFIX))) {
+    configFailures.delete(path);
     return undefined;
   }
   return failure;
@@ -372,11 +415,14 @@ export function assertOpenConfig(path: string): void {
   if (known) throw known;
   // Detect it cheaply on the first connect too: the header's cwd is all it takes, and the open
   // would otherwise build a model runtime before the SDK reached the same conclusion.
-  const cwd = cwdOverride(path) ?? storedCwd(path);
-  if (cwd && !existsSync(cwd)) {
-    const failure = new ConfigError(`Stored session working directory does not exist: ${cwd}\nSession file: ${path}`, cwd);
-    configFailures.set(path, failure);
-    throw failure;
+  const override = cwdOverride(path);
+  const cwd = override ?? storedCwd(path);
+  if (!cwd) return;
+  try {
+    resolveOpenCwd(path, cwd, { overridden: override !== undefined });
+  } catch (err) {
+    if (err instanceof ConfigError) configFailures.set(path, err);
+    throw err;
   }
 }
 
@@ -407,9 +453,10 @@ function storedCwd(path: string): string | null {
 }
 
 /** The SDK throws MissingSessionCwdError; match by name so we don't depend on its class identity. */
+const isMissingCwdError = (err: unknown) => err instanceof Error && err.name === "MissingSessionCwdError";
 function asConfigError(err: unknown, cwd: string): ConfigError | null {
   if (err instanceof ConfigError) return err;
-  if (err instanceof Error && err.name === "MissingSessionCwdError") return new ConfigError(err.message, cwd);
+  if (isMissingCwdError(err)) return new ConfigError((err as Error).message, cwd);
   return null;
 }
 
@@ -711,16 +758,30 @@ function workerHostExtension(pi: PiExtensionAPI): void {
 }
 
 /**
+ * A worker chat's own inline extensions: a worker or team member (never a hidden chat) gets project_verbs and its
+ * instance note, as an ordinary chat does (§app.project-services/callers), served when the server declared it, else
+ * in this process.
+ */
+export function workerExtensionFactories(w: Pick<WorkerSpec, "kind">, path: string) {
+  if (w.kind !== "worker") return [];
+  return [
+    servedDecls
+      ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
+      : projectVerbsExtension(projectEngine),
+  ];
+}
+
+/**
  * One build of a worker chat (design §2.3): its own extensions only, in its order, discovery off; its
  * flags; the built-ins outside its list excluded (extension tools never filtered); its appended
- * prompt; its model and thinking as a fresh session takes them. Nothing of an ordinary chat.
+ * prompt; its model and thinking as a fresh session takes them. Nothing of an ordinary chat but, for a worker or team member, project_verbs.
  */
-function workerBuild(w: WorkerSpec): PiBuild {
+function workerBuild(w: WorkerSpec, path: string): PiBuild {
   return {
     loader: {
       noExtensions: true,
       additionalExtensionPaths: [...w.extensions],
-      extensionFactories: [],
+      extensionFactories: workerExtensionFactories(w, path),
       ...(w.appendSystemPrompt ? { appendSystemPrompt: [w.appendSystemPrompt] } : {}),
     },
     flags: () => ({ extra: w.flags }),
@@ -908,8 +969,10 @@ type Sender = { kind: "overseer"; overseerId?: string } | { kind: "baton"; by: s
 
 /** A message whose user entry still needs its sender marker. `itemId`: it rode in on a queue
     item; `held` while that item has not departed, so the settle sweep leaves the mark alone (its
-    message may still be in the SDK's queue). */
-type SenderMark = { text: string; sender: Sender; itemId?: string; held?: boolean };
+    message may still be in the SDK's queue). `sender` null: a queue item with no sender, marked only
+    to keep its place, so a later item with the same text (several are in pi at once when steers land
+    together) never takes this one's message: marks match in hand-off order, first in, first out. */
+type SenderMark = { text: string; sender: Sender | null; itemId?: string; held?: boolean };
 
 /** `customType` of the invisible marker beside a delivered topic batch (§chat.topics/delivery). */
 export const TOPIC_DELIVERED_ENTRY = "sova-topic-delivered";
@@ -1014,6 +1077,8 @@ class ChatSession {
   specialSpec: SpecialSpec | null = null;
   /** A worker chat's loadout (§app.chat-processes/workers), else null. */
   workerSpec: WorkerSpec | null = null;
+  /** Set when this chat runs in the home folder because its stored local folder is gone (§app.shell/missing-folder-home). */
+  cwdFallback: CwdFallback | null = null;
   specialPort: SpecialPort | null = null;
   /** Composer messages a kind attributes (`@clientSend`), one at a time, in order. */
   private clientSends: Promise<void> = Promise.resolve();
@@ -1026,11 +1091,18 @@ class ChatSession {
   private behind: Promise<void> | null = null;
   /** The person's turns, where the loadout tells them apart (SpecialLoadoutResult.attribution). */
   userTurns: UserTurns | null = null;
+  /** Which keyed send each user message came from (§app.chat-processes/worker-instructions); watched on
+      every session the runtime builds. */
+  sendKeys = new SendKeys();
   /** The tag the next run's `run.start` names (ChatSendInput.runTag), until a run starts. */
   runTag: { next?: string } = {};
   /** This runtime is the Overseer's. */
   get overseer(): boolean {
     return this.special === "overseer";
+  }
+  /** A card's click here carries its mark to the turn it opens: the Overseer's and a project overseer's. */
+  private get takesClicks(): boolean {
+    return this.special === "overseer" || this.special === "project-overseer";
   }
   /** A client gesture this special kind refuses (a message for the client), or null. */
   specialRefuses(gesture: "rewind" | "regenerate" | "mode"): string | null {
@@ -1166,9 +1238,10 @@ class ChatSession {
 
   /**
    * Sova's own outgoing queue (server/queue.ts). Every message that would have gone straight
-   * into the SDK's queue goes here first, and exactly one of ours is inside the SDK at a time —
-   * which is what makes a single queued message removable at all (the SDK can only clear the lot).
-   * A message sent to an IDLE session never enters it: there is nothing to queue behind.
+   * into the SDK's queue goes here first: one follow-up of ours inside the SDK at a time, or every
+   * waiting steer at once (they land together, at the agent's next step). What it still holds is
+   * removable one by one (the SDK can only clear the lot). A message sent to an IDLE session never
+   * enters it: there is nothing to queue behind.
    */
   readonly queue: WebQueue = new WebQueue({
     sdk: {
@@ -1181,10 +1254,14 @@ class ChatSession {
       mirrorTotal: () => this.harness.queue.mirrorTotal(),
       mirrorFor: (kind) => this.harness.queue.mirrorFor(kind),
       mirrorHas: (kind, text) => this.harness.queue.mirrorHas(kind, text),
+      // A handed steer stays removable on its own until the agent takes it (quirk P29 steer-remove).
+      steerTicket: () => this.harness.queue.steerTicket?.(),
     },
     streaming: () => this.harness.isRunning(),
     // A Claude login switch landing holds it too, so the next turn starts on the new login.
     paused: () => this.isCompacting() || this.starting !== null || this.loginApplying,
+    // A keyed item waits out pi's settle window, so its message is labelled (quirk P5).
+    settling: () => this.harness.inSettleWindow(),
     // Every clear of the SDK's queue (Stop, the Overseer's stop, a removal) keeps the link messages
     // in it: they are never the user's to take back (§mesh.links/delivery).
     clearSdkQueue: () => this.clearSdkQueue(),
@@ -1199,6 +1276,8 @@ class ChatSession {
     // reason but "delivered", so whichever client wants to offer it back to a composer can.
     onGone: (item, reason) => {
       this.settleSenderMark(item.id, reason === "delivered");
+      // Gone undelivered: nothing will hand its message over any more (a delivered one: its turn's end, or pi's queue, decides).
+      if (reason !== "delivered") this.sendKeys.done(item.key);
       this.broadcast({ type: "queue_item_gone", itemId: item.id, reason, ...(reason === "delivered" ? {} : { text: item.text }) });
     },
     onChange: (items) => this.broadcast({ type: "queue", items }),
@@ -1290,7 +1369,8 @@ class ChatSession {
   }
 
   /**
-   * Give ONE queued message to the SDK. The queue calls this and nothing else does.
+   * Give ONE queued message to the SDK (several steers go in one after another, each its own call).
+   * The queue calls this and nothing else does.
    *
    * It resolves when the message has been ACCEPTED, never when its turn ends. That distinction is
    * the whole reason the idle branch is not awaited: `AgentSession.prompt()` on an idle session
@@ -1306,15 +1386,17 @@ class ChatSession {
     this.assertModelAllowed();
     this.flushDeferredAppends();
     const images = item.images as ImageInput[] | undefined;
-    const toSdk = <T>(send: () => T) => this.toSdk(item.origin, send, item.confirm);
+    // The message goes in labelled with its send's key (§app.chat-processes/worker-instructions).
+    const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.origin, send, item.confirm, !!item.overseer));
     // What the extensions' input handlers are told: a person's input, or Sova's own (§app.overseer/input-source).
     const source = inputSourceOf(item);
     // The sender's mark goes in with the message, never earlier: a held item is not in the SDK,
     // so a message the user types meanwhile with the same text must not take its mark. It stays
-    // until the message ends (markSend) or the item departs undelivered (onGone).
+    // until the message ends (markSend) or the item departs undelivered (onGone). An item with no
+    // sender gets a place-keeping mark: marks match first in, first out (SenderMark).
     const sender = senderOfItem(item);
-    const mark: SenderMark | null = sender ? { text: item.text, sender, itemId: item.id, held: true } : null;
-    if (mark) this.senderMarks.push(mark);
+    const mark: SenderMark = { text: item.text, sender, itemId: item.id, held: true };
+    this.senderMarks.push(mark);
     if (sender?.kind === "session") this.profileState?.run?.expectHop(item.text, sender.hop);
     if (!streaming) {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
@@ -1322,8 +1404,10 @@ class ChatSession {
       // the text back to the composer for a message that HAS been sent).
       const turn = toSdk(() => this.tracked(item.text, () => this.harness.send(item.text, { images, source })));
       this.noteStarting(turn);
+      // Its turn over: its message ran or never will (one held back for a compaction goes in again).
+      if (item.key !== undefined) turn.then(() => this.sendKeys.done(item.key), (err) => this.keyedTurnFailed(item.key!, err));
       turn.catch((err) => {
-        if (mark) this.dropSenderMark(mark);
+        this.dropSenderMark(mark);
         if (this.heldForCompaction(err, { ...item, id: undefined })) return;
         this.reportTurnFailure(err);
         // A turn that never started emits no event, so nothing would wake the queue and every
@@ -1343,12 +1427,18 @@ class ChatSession {
     });
   }
 
+  /** A keyed turn failed: its message never ran, unless it is held for a compaction to go in again (heldForCompaction). */
+  private keyedTurnFailed(key: string, err: unknown): void {
+    if (!isCompactionInProgress(err) || this.disposed) this.sendKeys.done(key);
+  }
+
   /** Hand a message to the SDK. Where the loadout tells the person's turns apart (the Overseer, a
       project overseer), one the user sent from the UI (`origin` "client") is marked as it goes, so
-      the turn it opens is known as theirs by identity, not text; a confirm card's click only in the
-      Overseer. */
-  private toSdk<T>(origin: QueueItem["origin"], send: () => T, confirm?: string): T {
-    if (origin === "client" && this.userTurns) return this.userTurns.send(send, this.overseer ? confirm : undefined);
+      the turn it opens is known as theirs by identity, not text; a confirm card's click in the Overseer
+      and in a project overseer (whose copy cards it approves, §app.overseer/copies). */
+  private toSdk<T>(origin: QueueItem["origin"], send: () => T, confirm?: string, byOverseer = false): T {
+    // `byOverseer`: the global Overseer sent it (its message route): the operator's, but never their own message.
+    if (origin === "client" && this.userTurns) return this.userTurns.send(send, this.takesClicks ? confirm : undefined, { overseer: byOverseer });
     // A profile session with powers tells the user's own messages by identity too (its limits).
     if (origin === "client" && this.profileState?.run) return this.profileState.run.turns.send(send);
     return send();
@@ -1376,11 +1466,12 @@ class ChatSession {
       session?: WebQueueItem["session"];
       confirm?: WebQueueItem["confirm"];
       byPerson?: WebQueueItem["byPerson"];
+      key?: string;
     },
   ): boolean {
     if (!isCompactionInProgress(err) || this.disposed) return false;
     // A confirm card's click keeps its mark, and a person's message stays theirs, through the hold
-    // (§app.overseer/org-people-facing).
+    // (§app.overseer/org-people-facing); a keyed send keeps its key (§app.chat-processes/worker-instructions).
     this.queue.enqueue({
       kind: item.kind,
       text: item.text,
@@ -1392,6 +1483,7 @@ class ChatSession {
       ...(item.session ? { session: item.session } : {}),
       ...(item.confirm ? { confirm: item.confirm } : {}),
       ...(item.byPerson ? { byPerson: true as const } : {}),
+      ...(item.key !== undefined ? { key: item.key } : {}),
     });
     return true;
   }
@@ -1733,12 +1825,12 @@ class ChatSession {
     return visToolsWanted(this.modeState.minorModes, this.alignLaunch?.data?.visuals ?? false);
   }
 
-  /** What the vis feedback extension asks this chat (server/vis-check.ts): its vis mode is this
-      chat's own mode, a message queued behind the run goes before any retry, and a runtime that may
-      no longer write the file adds nothing to it. */
+  /** What the vis feedback extension asks this chat (server/vis-check.ts): drawings are on when the vis
+      tools are wanted (this chat's own mode and launch Visuals), a message queued behind the run goes
+      before any retry, and a runtime that may no longer write the file adds nothing to it. */
   visCheckHost(): VisCheckHost {
     return {
-      visOn: () => this.modeState.minorModes.includes("vis"),
+      drawingsOn: () => this.visToolsOn(),
       visToolsOn: () => this.visToolsOn(),
       queued: () => this.queue.size > 0 || this.harness.queue.hasQueued(),
       writable: () => {
@@ -1750,6 +1842,7 @@ class ChatSession {
         }
         return !this.hasForeignWrites();
       },
+      ownKinds: () => recordedCardSnapshot(this.harness.id)?.drawings ?? [],
     };
   }
 
@@ -1826,8 +1919,8 @@ class ChatSession {
         console.error("[chat] reply timing failed", err);
       }
       // A turn starting or settling, and a tool call ending (the Overseer's tools write stores in
-      // process), start the next session listing afresh (§app.session-list/listing-reuse). A codemode
-      // script's own calls don't: its result's end does, once.
+      // process), start the next session listing afresh (§app.session-list/listing-reuse). A call
+      // another tool made (nested) doesn't: its caller's end does, once.
       if ((event.type === "tool.end" && !event.nested) || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
       // A Claude login picked during the reply goes in now, before the queue wake below can start
       // the next turn: applyLoginPick holds the web queue until it has landed
@@ -2247,11 +2340,11 @@ class ChatSession {
       sessionId: () => this.harness.id,
       cwd: () => this.harness.cwd || undefined,
       branch: () => this.harness.branch(),
-      // An overseer (the Overseer, a project overseer) has no mode entry: its switch, type and size are its own
-      // overseer.json's, on by default.
+      // An overseer (the Overseer, a project overseer) has no mode entry: its switch and type are its own
+      // overseer.json's, on by default; the size is Settings' for the type (§chat.memory/overseer).
       record: () => {
         const o = this.overseerMemory();
-        return o ? { v: 1, type: o.type, size: o.size } : (this.harness.state.branch().latest(MEMORY)?.data ?? null);
+        return o ? { v: 1, type: o.type } : (this.harness.state.branch().latest(MEMORY)?.data ?? null);
       },
       on: () => this.overseerMemory()?.on ?? this.modeState.minorModes.includes("memory"),
       send: (msg) => this.broadcast(msg),
@@ -2260,7 +2353,7 @@ class ChatSession {
   }
 
   /** An overseer's own memory switch in force, or undefined for every other chat (its memory is its mode's). */
-  private overseerMemory(): OverseerMemorySetting | undefined {
+  private overseerMemory(): OverseerMemoryInForce | undefined {
     if (this.overseer) return overseerMemoryNow(undefined);
     if ((this.special === "project-overseer" || this.special === "project-assistant") && this.specialSpec?.memory && this.specialSpec.memorySettings) return overseerMemoryNow(this.specialSpec.memorySettings);
     return undefined;
@@ -2287,18 +2380,17 @@ class ChatSession {
   }
 
   /**
-   * Write this chat's memory choice (§chat.memory/choice): a `sova-memory` record on its branch, the
-   * patch over the current choice. Kept while memory is off. Refused where a mode switch would be.
+   * Write this chat's memory type (§chat.memory/choice): a `sova-memory` record on its branch. Kept while
+   * memory is off. Refused where a mode switch would be. No size: every chat uses Settings' for its type.
    */
-  writeMemoryChoice(patch: Partial<{ type: "uniichat" | "zoomable"; size: number }>): void {
+  writeMemoryChoice(patch: { type?: "uniichat" | "zoomable" }): void {
     if (this.disposed || this.foreignWrite || this.hasForeignWrites()) throw new ModeRefusedError("This chat can't be written now.");
     assertNotLive(this.path);
-    const cur = this.memory.choiceNow();
-    const next = applyMemoryPatch(cur, patch);
-    if (next.type === cur.type && next.size === cur.size && this.harness.state.branch().latest(MEMORY)) return;
+    if (!patch.type) return;
     const prev = this.harness.state.branch().latest(MEMORY)?.data;
+    if (prev && prev.type === patch.type) return;
     this.flushDeferredAppends();
-    this.harness.state.append(MEMORY, { v: 1, type: next.type, size: next.size, ...(prev?.on !== undefined ? { on: prev.on } : {}) });
+    this.harness.state.append(MEMORY, { v: 1, type: patch.type, ...(prev?.on !== undefined ? { on: prev.on } : {}) });
     markOwned(this.path);
   }
 
@@ -2386,7 +2478,7 @@ class ChatSession {
     }
     try {
       const memory = this.memoryOffered() ? this.memory.choiceNow() : undefined;
-      if (memory) saveDefaultMemoryChoice(memory);
+      if (memory) saveDefaultMemoryType(memory.type);
       return modeInfo(writeMode(defaultPatchOf(this.modeState)), memory);
     } catch (err) {
       throw new ModeRefusedError(`The subagent profile default "${profile}" WAS saved, but the mode default was not: ${err instanceof Error ? err.message : String(err)}`);
@@ -2518,14 +2610,14 @@ class ChatSession {
 
   /** This chat's Claude login with its waiting pick, as every tab is told it. */
   loginMessage(): ChatServerMessage {
-    const msg = claudeLoginMessage(this.harness.branch(), undefined, { pending: this.loginPending });
+    const msg = claudeLoginMessage(this.harness.branch(), undefined, { pending: this.loginPending, cwd: this.harness.cwd || undefined });
     this.noteLogin(msg.login);
     return msg;
   }
 
   /** The `claude_login` message every hello is followed by (claudeLoginAfterHello). */
   private loginAfterHello(): ChatServerMessage {
-    const msg = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending }); // the branch's newest entry
+    const msg = claudeLoginAfterHello(this.harness.branch(), undefined, { pending: this.loginPending, cwd: this.harness.cwd || undefined }); // the branch's newest entry
     this.noteLogin(msg.login);
     return msg;
   }
@@ -2538,7 +2630,7 @@ class ChatSession {
   setClaudeLogin(login: string | null): void {
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    const current = chatClaudeLogin(this.harness.branch())?.id;
+    const current = chatClaudeLogin(this.harness.branch(), undefined, { cwd: this.harness.cwd || undefined })?.id;
     if (login !== null && login !== current) {
       if (!/^(default|l-[0-9a-f]{8})$/.test(login)) throw new Error("There's no such Claude login.");
       if (!(this.harness.model()?.ref ?? "").startsWith("claude-code-cli/")) throw new Error("This chat isn't on a Claude Code model.");
@@ -2705,6 +2797,7 @@ class ChatSession {
       thinking: harness.thinking(),
       context: toContextInfo(contextOfBranch(branch), this.host.models),
       ...(this.alignLaunch?.data ? { alignReview: this.alignLaunch.data.review } : {}),
+      ...(this.cwdFallback ? { cwdFallback: this.cwdFallback } : {}),
       ...(tail ? { live: tail } : {}),
     };
   }
@@ -2834,6 +2927,8 @@ class ChatSession {
       confirm?: string;
       /** A person typed it elsewhere (a group batch): its input source is `interactive` (inputSourceOf). */
       byPerson?: true;
+      /** The key it was sent under: its message is labelled with it (§app.chat-processes/worker-instructions). */
+      key?: string;
     },
   ): { queued: boolean; turn: Promise<void> } {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
@@ -2850,13 +2945,16 @@ class ChatSession {
     // a queue that some messages could skip would not be a queue.
     // A compaction running is the same: pi refuses every prompt until it ends, so the message is
     // held, and the queue hands it over (as a fresh turn) at compaction_end.
-    if (this.harness.isRunning() || this.isCompacting() || this.starting) {
+    // A keyed message in pi's settle window is queued too: a prompt now would be deferred past the send
+    // that labels it (quirk P5), and the queue hands it over once the window has passed.
+    const key = opts?.key;
+    if (this.harness.isRunning() || this.isCompacting() || this.starting || (key !== undefined && this.harness.inSettleWindow())) {
       const overseer = opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {};
       const baton = opts?.sentByBaton ? { baton: opts.sentByBaton } : {};
       const fromSession = opts?.sentBySession ? { session: opts.sentBySession } : {};
       const confirm = opts?.confirm ? { confirm: opts.confirm } : {};
       const byPerson = opts?.byPerson ? { byPerson: true as const } : {};
-      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm, ...byPerson });
+      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm, ...byPerson, ...(key !== undefined ? { key } : {}) });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
@@ -2874,8 +2972,9 @@ class ChatSession {
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
     const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
-    const turn = this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm);
+    const turn = this.sendKeys.run(key, () => this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm, !!opts?.sentByOverseer));
     this.noteStarting(turn);
+    if (key !== undefined) turn.then(() => this.sendKeys.done(key), (err) => this.keyedTurnFailed(key, err));
     if (send)
       turn.catch(() => {
         const i = this.senderMarks.indexOf(send);
@@ -2896,6 +2995,7 @@ class ChatSession {
         ...(opts?.sentBySession ? { session: opts.sentBySession } : {}),
         ...(opts?.confirm ? { confirm: opts.confirm } : {}),
         ...(opts?.byPerson ? { byPerson: true as const } : {}),
+        ...(key !== undefined ? { key } : {}),
       };
       if (!this.heldForCompaction(err, item)) throw err;
     };
@@ -2921,15 +3021,18 @@ class ChatSession {
    * (walking back past custom entries to the user entry) behave exactly as on any user turn.
    */
   private markSend(text: string): void {
+    // The oldest mark with this text is this message's: messages enter in the order they were handed over.
     const i = this.senderMarks.findIndex((s) => s.text === text);
     if (i < 0) return;
     const [send] = this.senderMarks.splice(i, 1);
+    const sender = send!.sender;
+    if (!sender) return; // a place-keeping mark: this message has no sender
     queueMicrotask(() => {
       if (this.disposed || this.foreignWrite) return;
       const leaf = this.harness.leafId();
       const entry = leaf ? this.harness.entry(leaf) : undefined;
       if (entry?.kind !== "user") return;
-      const markerId = appendSenderMarker(this.harness.state, entry.id!, send?.sender ?? { kind: "overseer" });
+      const markerId = appendSenderMarker(this.harness.state, entry.id!, sender);
       markOwned(this.path);
       const marker = this.harness.entry(markerId);
       if (marker) {
@@ -3325,8 +3428,9 @@ class ChatSession {
           this.assertModelAllowed();
           const images = parseImages(msg.images);
           const text = String(msg.text ?? "");
-          // A confirm card's click in the Overseer (never a typed answer): the turn it opens may act on the card's items.
-          const confirm = this.overseer && msg.type === "prompt" && typeof msg.confirm === "string" && msg.confirm ? msg.confirm : undefined;
+          // A confirm card's click in the Overseer or a project overseer (never a typed answer): the turn it opens may act on
+          // the card's items.
+          const confirm = this.takesClicks && msg.type === "prompt" && typeof msg.confirm === "string" && msg.confirm ? msg.confirm : undefined;
           const { queued, turn } = this.acceptPrompt(text, images, "client", clientId, confirm ? { confirm } : undefined);
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
@@ -3475,31 +3579,19 @@ class ChatSession {
     return history;
   }
 
-  /** The `steer` case of handle(), whose failures `fail` reports to the sender. */
+  /**
+   * The `steer` case of handle(), whose failures `fail` reports to the sender: the composer's typed
+   * message, whatever the tab believed about the run (src/lib/send-frame.ts). It takes the same
+   * accept path as the composer's prompt (acceptPrompt: the write guards, a blank no-op, the topics
+   * pause lifted, held while a turn starts, a compaction runs or a keyed send would be deferred, the
+   * person's turn marked), as a steer: busy, it waits in Sova's queue and lands at the agent's next
+   * step with every other waiting steer; idle, it starts its turn as a prompt does.
+   */
   private steer(client: ChatClient, msg: Extract<ChatClientMessage, { type: "steer" }>, clientId: string | undefined, fail: (err: unknown) => void): void {
-    assertNotLive(this.path);
-    this.assertNoForeignWrites();
     this.assertModelAllowed();
-    const text = String(msg.text ?? "");
-    const images = parseImages(msg.images);
-    if (!text.trim() && !images) return;
-    this.setTopicsPaused(false);
-    // Mid-turn, this is a steer and goes through Sova's queue so it stays removable; idle,
-    // there is nothing to queue behind, so it starts its turn straight away (and the
-    // extension-command split lives in handOffQueued, which both paths reach). While a
-    // compaction runs it is held the same way, and goes in when the compaction ends.
-    if (this.harness.isRunning() || this.isCompacting()) {
-      this.queue.enqueue({ kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId });
-      this.ackSend(client, clientId, true);
-      return;
-    }
-    this.flushDeferredAppends();
-    this.ackSend(client, clientId, false);
-    this.toSdk("client", () => this.tracked(text, () => this.harness.send(text, { images })))
-      .catch((err) => {
-        if (!this.heldForCompaction(err, { kind: "steer", text, images: images as QueueImage[] | undefined, origin: "client", id: clientId })) throw err;
-      })
-      .catch(fail);
+    const { queued, turn } = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId, { delivery: "steer" });
+    this.ackSend(client, clientId, queued);
+    turn.catch(fail);
   }
 
   /**
@@ -4122,6 +4214,7 @@ export function serverToolSpec(chatId: string, decl: ServerToolDecl): ToolSpec {
         name: decl.name,
         params,
         attended: turns?.attended() ?? false,
+        own: turns?.ownMessage() ?? false,
         card: turns?.confirmedCard() ?? null,
       };
       const local: ServerToolLocal = {
@@ -4242,11 +4335,23 @@ async function openSession(path: string, onDisposed: () => void, onStep: (step: 
   }
 }
 
-async function openLocked(path: string, onDisposed: () => void, onStep: (step: string) => void): Promise<ChatSession> {
+async function openLocked(path: string, onDisposed: () => void, onStep: (step: string) => void, retried = false): Promise<ChatSession> {
   // Merely opening (browsing) a session never modifies its file: the model/thinking entries pi records
   // while building it wait in `file.deferred` for the first prompt (server/harness/pi/open.ts, P1).
   onStep("open file");
-  const file = await openPiSession(path, cwdOverride(path), onStep);
+  const override = cwdOverride(path);
+  let file = await openPiSession(path, override, onStep);
+  const sessionCwd = file.read.cwd;
+  // The runtime cannot be built against a directory that is gone. Decided here, in the process the
+  // chat runs in, whatever the server saw before it started (§app.shell/missing-folder-home): a
+  // local folder that is gone opens in this host's home folder; what can't open is classified
+  // (ConfigError, not "internal") and cheap to repeat.
+  const where: OpenCwd = sessionCwd ? resolveOpenCwd(path, sessionCwd, { overridden: override !== undefined }) : { cwd: sessionCwd, fallback: null };
+  if (where.fallback) {
+    // pi takes the cwd when it opens the file; the header keeps the stored one (nothing is written).
+    file.restoreAppends();
+    file = await openPiSession(path, where.cwd, onStep);
+  }
   // The chat that hosts this runtime, once bound: the vis extension is built before it exists, and
   // until bind() has resolved the chat's mode it reads the mode from the branch itself.
   const visHost: { chat?: ChatSession } = {};
@@ -4260,12 +4365,15 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
   // A special loadout's run events and the person's turns (SpecialLoadoutResult.attribution): one
   // for the chat, kept across the runtimes it builds.
   const runs: RunHearing = { turns: null, tag: {} };
+  // Which keyed send each user message came from, on every session this runtime builds (§app.chat-processes/worker-instructions).
+  const sendKeys = new SendKeys();
   /** The last build's special loadout, if this chat is a special kind's. */
   const last: { special: { spec: SpecialSpec; port: SpecialPort } | null } = { special: null };
   const worker = presetWorkers.get(path) ?? null;
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
-    // A worker chat (§app.chat-processes/workers) is its loadout and nothing else.
-    if (worker) return workerBuild(worker);
+    // A worker chat (§app.chat-processes/workers) is its loadout and nothing else, its messages labelled
+    // with the keys of the sends they came from (§app.chat-processes/worker-instructions).
+    if (worker) return { ...workerBuild(worker, path), built: (session) => sendKeys.watch(session) };
     if (!launch.recorded) {
       const now = alignLaunchOf(read.state);
       if (now.recorded || launch.data === null) Object.assign(launch, now);
@@ -4296,7 +4404,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
           visRetry: () =>
             visCheckExtension(() => {
               const h = visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null;
-              return h ? { ...h, visOn: () => true, visToolsOn: () => false } : null;
+              return h ? { ...h, drawingsOn: () => true, visToolsOn: () => false } : null;
             }),
           log: (line) => console.warn(`[chat] ${kind}: ${line}`),
         })
@@ -4323,6 +4431,10 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
         ? [sessionPowersExtension({ sessionId: read.id, cwd, title: () => titleOf(read.branch()), profile: snap, run: profile.run, limits: profile.limits, path: () => path })]
         : [];
     const outline = special ? false : !isFanoutMember(read);
+    // The offer tool, served (its declaration came with the open) or, in this process, from the snapshot.
+    const offerSpecs: ToolSpec[] = special ? [] : servedDecls ? servedSpecs(path, (n) => n === OFFER_TOOL) : await (await import("./session-offers-tool")).sessionOfferTools(read.id, path, cwd);
+    // The card tool, the same way, when the snapshot has a type the agent may raise (§chat.transcript-cards/card-tool).
+    const cardSpecs: ToolSpec[] = special ? [] : servedDecls ? servedSpecs(path, (n) => n === CARD_TOOL) : await (await import("./transcript-cards-tool")).sessionCardTools(read.id, path, cwd);
     // A link member's tools are fixed by its creation marker, read at every build (§mesh.links/tools).
     const linkTools = isLinkMember(read) ? "member" : "legacy";
     return {
@@ -4349,9 +4461,14 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
                 : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && !TOUR_TOOLS.has(n)))
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && !TOUR_TOOLS.has(n)))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
               servedVisToolsExtension("sova-tours", servedDecls ? servedSpecs(path, n => TOUR_TOOLS.has(n)) : tourTools(read.id, path), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined),
+              // offer: this project's offers, from the session's snapshot (§chat.offers/tool). Most chats have none: no extension.
+              ...(offerSpecs.length ? [servedToolsExtension("sova-session-offers", offerSpecs, (ctx) => (chatHosts.offerNote ?? offerNoteHere)(ctx.sessionId), OFFER_NOTE_MESSAGE)] : []),
+              // card: this project's transcript cards (§chat/transcript-cards). Every ordinary chat hears an
+              // answer given at once at its next turn, even with no tool: a script may raise a card in it.
+              servedToolsExtension("sova-transcript-cards", cardSpecs, cardNoteRender((id, since) => (chatHosts.cardNote ?? cardNoteHere)(id, since)), CARD_NOTE_MESSAGE),
               ...powers,
             ],
             ...overrides,
@@ -4380,6 +4497,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       },
       forkCacheRouting: !special,
       built: (session) => {
+        sendKeys.watch(session);
         if (profile.run) {
           const run = profile.run;
           run.turns.watch(session);
@@ -4399,18 +4517,30 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
       },
     };
   };
-  const sessionCwd = file.read.cwd;
-  // The runtime cannot be built against a directory that is gone. Check before doing the work, so
-  // the failure is classified (ConfigError, not "internal") and cheap to repeat.
-  const openCwd = sessionCwd ? resolveOpenCwd(path, sessionCwd) : sessionCwd;
+  const openCwd = where.cwd;
+  // In the home folder for a stored folder that is gone: the agent is told (a note after its prompt's
+  // own appends), and the sandbox does not make the home folder a writable root (§app.shell/missing-folder-home).
+  const fallback = where.fallback;
+  const placed = fallback
+    ? async (o: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
+        const b = await build(o);
+        return {
+          ...b,
+          promptNotes: [...(b.promptNotes ?? []), cwdFallbackNote(fallback)],
+          ...(worker ? {} : { flags: () => ({ ...b.flags(), cwdNotWritable: true }) }),
+        };
+      }
+    : build;
   try {
-    const host = new PiChatHost(await file.start(openCwd, build));
+    const host = new PiChatHost(await file.start(openCwd, placed));
     let unregisterUsage: (() => void) | undefined;
     const chat = new ChatSession(path, host, () => {
       unregisterUsage?.();
       forgetSpecial(path);
       onDisposed();
     });
+    chat.sendKeys = sendKeys;
+    chat.cwdFallback = fallback;
     // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).
     chat.topicsPaused = topicStore().receiverPaused(path);
     onStep("extensions start");
@@ -4484,6 +4614,12 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     sessionsChanged(); // its row now carries `chat` (heldChatState)
     return chat;
   } catch (err) {
+    // The folder went between the check above and pi's own (deleted while the open ran): opened again,
+    // once, so it gets the home folder like any open that finds it gone.
+    if (!retried && !fallback && isMissingCwdError(err) && sessionCwd && probeFolder(sessionCwd).state === "missing") {
+      file.restoreAppends();
+      return openLocked(path, onDisposed, onStep, true);
+    }
     const config = asConfigError(err, sessionCwd);
     throw config ?? err;
   } finally {

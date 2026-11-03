@@ -9,7 +9,7 @@ import { DEFAULT_LIMITS } from "./profiles";
 const MERGE = {
   id: "merge-round",
   label: "Merge round",
-  when: "merge-ready; every 6h; claude-limit-reset",
+  when: "daily 09:00; every 6h; claude-limit-reset",
   playbook: "merge-round",
   session: "long-running",
   settings: { model: "zai/glm-5.3", thinking: "high", minorModes: ["memory"], memory: { type: "uniichat" } },
@@ -29,7 +29,7 @@ const err = (raw: unknown, id = "merge-round"): string => {
 describe("the parse is all or nothing", () => {
   test("the Merge round's file reads whole, limits filled from the defaults", () => {
     const a = ok(MERGE);
-    assert.deepEqual(a.triggers.map((t) => t.src), ["merge-ready", "every 6h", "claude-limit-reset"]);
+    assert.deepEqual(a.triggers.map((t) => t.src), ["daily 09:00", "every 6h", "claude-limit-reset"]);
     // As a profile reads it (normalizeCaps): removing web takes the workers too.
     assert.deepEqual(a.permissions, { remove: ["workers", "web"], grant: ["sessions.read", "sessions.message"], oneAtATime: true, limits: { ...DEFAULT_LIMITS, targetsPerRun: 10, perDay: 80 }, overseerMayStart: false });
     assert.deepEqual(a.settings, { model: "zai/glm-5.3", thinking: "high", minorModes: ["memory"], memory: { type: "uniichat", size: 128 } });
@@ -46,6 +46,8 @@ describe("the parse is all or nothing", () => {
     assert.match(err({ ...MERGE, settings: { thinking: "hot" } }), /"settings.thinking"/);
     assert.match(err({ ...MERGE, settings: { model: "glm" } }), /"settings.model" must be a model ref/);
     assert.match(err({ ...MERGE, settings: { memory: { type: "huge" } } }), /"settings.memory"/);
+    // codemode is no minor mode: an automation naming it is refused like any unknown name.
+    assert.equal(err({ ...MERGE, settings: { minorModes: ["spec", "codemode"] } }), `"settings.minorModes" must be a list of align, spec, vis, memory.`);
     assert.match(err({ ...MERGE, permissions: { ...MERGE.permissions, grant: ["sessions.write"] } }), /"permissions.grant"/);
     assert.match(err({ ...MERGE, permissions: { ...MERGE.permissions, limits: { perDay: 0 } } }), /"permissions.limits.perDay"/);
     assert.match(err({ ...MERGE, permissions: { singleton: true } }), /"permissions" has an unknown key "singleton"/);
@@ -58,7 +60,7 @@ describe("what an approval covers (§chat.schedules/approval)", () => {
   const base = pin(MERGE);
   test("triggers, zone, playbook and every permission change it", () => {
     for (const changed of [
-      { ...MERGE, when: "merge-ready; every 4h; claude-limit-reset" },
+      { ...MERGE, when: "daily 09:00; every 4h; claude-limit-reset" },
       { ...MERGE, tz: "Europe/Berlin" },
       { ...MERGE, playbook: "other-round" },
       { ...MERGE, permissions: { ...MERGE.permissions, remove: [] } },
@@ -75,7 +77,7 @@ describe("what an approval covers (§chat.schedules/approval)", () => {
       { ...MERGE, settings: {} },
       { ...MERGE, label: "Landing" },
       { ...MERGE, task: "Land what is ready" },
-      { ...MERGE, when: "MERGE-READY;  every 6h ; claude-limit-reset" },
+      { ...MERGE, when: "DAILY 09:00;  every 6h ; claude-limit-reset" },
       { ...MERGE, permissions: { ...MERGE.permissions, grant: ["sessions.message", "sessions.read"] } },
     ])
       assert.equal(pin(same), base, JSON.stringify(same));

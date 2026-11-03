@@ -24,6 +24,8 @@ const poStore = await import("./project-overseer-store");
 const { ownerHome } = await import("./owner-page");
 const { handleOf } = await import("./person-links");
 const { settled } = await import("./workspace-git");
+// Readiness asks whether this host runs the reply model: here the scripted one does (no real model runtime in this test).
+(await import("./project-assistant-ready")).setAssistantModelListForTests(async () => [{ ref: "scripted/scripted" }]);
 
 after(async () => {
   await settled(join(root, "ws"));
@@ -61,9 +63,9 @@ function facts(per: Record<string, Fixture>, seen: string[] = []): import("./ass
 }
 
 describe("assistantWouldAct: the order (stand-in facts)", () => {
-  const ask = (f: Fixture, ability: "fix" | "version" | "release", o: { attended?: boolean } = {}) => {
+  const ask = (f: Fixture, ability: "fix" | "version" | "release") => {
     would.setWouldActFactsForTest(facts({ p: f }));
-    return would.assistantWouldAct("org", "p", ability, o);
+    return would.assistantWouldAct("org", "p", ability);
   };
 
   test("each switch On: a fix and a release wait the waiting period, a version starts at once", async () => {
@@ -125,15 +127,6 @@ describe("assistantWouldAct: the order (stand-in facts)", () => {
     for (const a of ["fix", "version", "release"] as const) await would.assistantWouldAct("org", "p", a);
     assert.deepEqual(seen, ["p build/start", "p services/run", "p deploy/run"]);
   });
-
-  test("attended (the operator's own turn): switch, brake and engine are not asked; the model and the release steps are", async () => {
-    const seen: string[] = [];
-    would.setWouldActFactsForTest(facts({ p: { column: assistantDefaults(), braked: true } }, seen));
-    assert.equal((await would.assistantWouldAct("org", "p", "fix", { attended: true })).outcome, "now");
-    assert.deepEqual(seen, []);
-    would.setWouldActFactsForTest(facts({ p: { release: false } }));
-    assert.equal((await would.assistantWouldAct("org", "p", "release", { attended: true })).reason, "no-recipe");
-  });
 });
 
 // ---- a real org: the page and the tools on the same fixtures -------------------------------------------------
@@ -177,16 +170,18 @@ describe("the owner page's card asks the same question (§app.project-assistant/
     assert.ok(home.abilities, "the assistant is ready");
     const by = new Map(home.abilities!.projects.map((a) => [a.project, a]));
     assert.deepEqual(home.abilities!.projects.map((a) => a.project), home.projects.map((p) => p.id), "the cards' order");
-    assert.deepEqual(by.get(handleOf("q", designs.id)), { project: handleOf("q", designs.id), fix: "held", version: "now", release: "held" });
+    // No gathering model stands in here: a feature request chat goes to the team.
+    assert.deepEqual(by.get(handleOf("q", designs.id)), { project: handleOf("q", designs.id), fix: "held", version: "now", release: "held", feature: "team" });
     // Deploy On, but the engine (a brake) refuses deploy/run: the card says the team, and the tool starts nothing.
-    assert.deepEqual(by.get(handleOf("q", shop.id)), { project: handleOf("q", shop.id), fix: "team", version: "none", release: "team" });
+    assert.deepEqual(by.get(handleOf("q", shop.id)), { project: handleOf("q", shop.id), fix: "team", version: "none", release: "team", feature: "team" });
 
     const set: string[] = [];
     standInActs(set);
     const fixShop = await run("start_fix", { project: "Rakiba Shop", title: "The cart is empty", text: "It shows nothing." });
     const releaseShop = await run("deploy", { project: "Rakiba Shop", why: "New prices." });
     assert.deepEqual([fixShop.started, releaseShop.started], [false, false], "the card's `team` is the tool's started: false");
-    assert.match(releaseShop.text, /^Asked the team to release it/);
+    // Rakiba Shop declares no release steps on disk, so no ask is filed: never "the team will release it".
+    assert.match(releaseShop.text, /^Filed with the team\. .*Don't say it is released or that the team will release it\.$/);
     assert.deepEqual(set, [], "nothing set off for a `team` answer");
     const versionShop = await run("start_version", { project: "Rakiba Shop" });
     assert.match(versionShop.text, /has no versions to try/, "version none: the tool has none either");
@@ -236,5 +231,43 @@ describe("the server's own facts, on a real org", () => {
     assert.deepEqual(fix, { outcome: "held", reason: "ok" });
     const release = await would.assistantWouldAct(org.id, designs.id, "release");
     assert.deepEqual([release.outcome, release.reason], ["team", "no-recipe"], "Deploy On, but the project declares no release steps");
+  });
+});
+
+describe("assistantWouldAct: a feature request chat (§app.project-assistant/feature-chats)", () => {
+  const featureFacts = (f: { column?: PowerMap; gathering?: boolean; refusal?: { code: string; sentence: string } | null; reachable?: boolean; braked?: boolean }, seen: string[] = []) => ({
+    ...facts({ p: { column: f.column ?? on("gather"), braked: f.braked ?? false } }),
+    gatheringModel: () => (f.gathering === false ? null : { model: "scripted/scripted" }),
+    placement: async (_org: string, _p: string, event: string) => {
+      seen.push(event);
+      return f.reachable === false ? null : { refusal: f.refusal ?? null };
+    },
+  });
+  const ask = (f: Parameters<typeof featureFacts>[0], seen: string[] = []) => {
+    would.setWouldActFactsForTest(featureFacts(f, seen));
+    return would.assistantWouldAct("org", "p", "feature");
+  };
+
+  test("gather On, a gathering model, the placement takes the start: it opens right away, never held", async () => {
+    const seen: string[] = [];
+    assert.deepEqual(await ask({}, seen), { outcome: "now", reason: "ok" });
+    assert.deepEqual(seen, ["baton/start"], "the placement's gathering start is the act asked");
+  });
+
+  test("gather Off: the team, in the Project Assistant column's own words, and the placement is not asked", async () => {
+    const seen: string[] = [];
+    const a = await ask({ column: assistantDefaults() }, seen);
+    assert.equal(a.outcome, "team");
+    assert.equal(a.reason, "power-off");
+    assert.match(a.sentence ?? "", /^Open feature request chats with the owner is off for the Project Assistant\./);
+    assert.deepEqual(seen, []);
+  });
+
+  test("a brake, no gathering model, an unreachable or refusing placement: the team", async () => {
+    assert.equal((await ask({ braked: true })).reason, "brake");
+    assert.equal((await ask({ gathering: false })).reason, "no-model");
+    assert.equal((await ask({ reachable: false })).reason, "unreadable");
+    const atOnce = await ask({ refusal: { code: "at-once", sentence: "5 of its gathering sessions are open, and the limit is 5 at once." } });
+    assert.deepEqual([atOnce.outcome, atOnce.reason], ["team", "refused"]);
   });
 });

@@ -1,6 +1,6 @@
 import { createEffect, createMemo, createSignal, For, on, Show, type Accessor } from "solid-js";
 import type { ChatMemoryChoice, ChatProjectModes, ChatServerMessage, MemoryType, ModeApplies, ModeInfo, ProjectMinorInfo, ProjectModeApprovalNeeded } from "../../shared/protocol";
-import { memoryRowText, sameMemoryChoice } from "../lib/memory-ui";
+import { memoryRowText, sameMemoryChoice, sameMemoryType } from "../lib/memory-ui";
 import { focusPanel, MemoryTypePanel, panelKeys } from "./MemoryTypePanel";
 import { ApiError, getChatMode, getMode, getSubagentProfiles, pickSubagentProfile, postMode, putSubagentProfiles, saveModeDefault } from "../lib/api";
 import type { SubagentProfilesInfo } from "../../shared/subagent-profiles";
@@ -33,6 +33,9 @@ import { usePaneId } from "../lib/pane-scope";
 import { openSettings, setSubagentSettingsPath } from "../lib/settings-nav";
 import { announce } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
+import { foldLabel, foldedRest } from "../lib/name-fit";
+import { ModeGlyph, ModeGlyphs } from "./ModeGlyph";
+import { majorGlyph, minorGlyph, modeGlyphs, modeLetter, type ModeGlyph as ModeGlyphData } from "../lib/mode-glyphs";
 
 /** This chat's last WS "mode" message: the mode of THIS chat and how a switch applies here. Before
     that message, the mode known from the list or this tab's last visit (lib/composer-known), whose
@@ -77,7 +80,7 @@ const MEMORY_TYPE: Item = {
   kind: "action",
   id: "memory-type",
   label: "Memory type",
-  description: "Choose this chat's memory type and summary size",
+  description: "Choose this chat's memory type",
 };
 /** The Subagents group row: opens the profile picker panel. */
 const SUBAGENTS: Item = {
@@ -225,6 +228,14 @@ export function ModeMenu(props: { control: ModeControl }) {
     const c = current();
     return c ? [c.mode, ...minorLabel()].join(" · ") : "Mode";
   };
+  /** The trigger's glyphs; before this chat's state arrives, the sliders alone (with "Mode"). */
+  const triggerGlyphs = () => {
+    const c = current();
+    return c ? modeGlyphs(c.mode, c.minorModes, c.projectModes ?? []) : [majorGlyph("normal")];
+  };
+  /** A mode row's glyph, the trigger's for the same mode: the menu is its legend. */
+  const rowGlyph = (it: Item): ModeGlyphData | null =>
+    it.kind === "radio" ? majorGlyph(it.id) : it.kind === "check" ? minorGlyph(it.id) : it.kind === "project" ? { kind: "letter", id: it.id, letter: modeLetter(it.id) } : null;
   const name = () => `Mode: ${label()}${current()?.applies === "after-turn" ? ", applies after this turn" : ""}`;
 
   /** This chat's mode as the footer reads it, or null before its "mode" message arrives. */
@@ -238,7 +249,7 @@ export function ModeMenu(props: { control: ModeControl }) {
    * and the library's own `default`, so the answer is the file's, not a guess from the last press
    * or from a switch's reply.
    */
-  const alreadyDefault = () => isDefaultAll(defaultMode(), shown(), profiles()) && (!memChoice() || sameMemoryChoice(defaultMemory(), memChoice()));
+  const alreadyDefault = () => isDefaultAll(defaultMode(), shown(), profiles()) && (!memChoice() || sameMemoryType(defaultMemory(), memChoice()));
   const saveState = (): "idle" | "saving" | "done" => (saving() ? "saving" : alreadyDefault() ? "done" : "idle");
 
   const focusItem = (i: number) => {
@@ -271,16 +282,15 @@ export function ModeMenu(props: { control: ModeControl }) {
     setMemPanel(false);
     focusItem(items().findIndex((it) => it.id === MEMORY_TYPE.id));
   };
-  /** A type or size for this chat (§chat.memory/choice): the menu stays open; the check moves with the "mode" message. */
-  const pickMemory = async (patch: { type?: MemoryType; size?: number }) => {
+  /** A type for this chat (§chat.memory/choice): the menu stays open; the check moves with the "mode" message. */
+  const pickMemory = async (type: MemoryType) => {
     if (busy()) return;
-    const c = memChoice();
-    if (c && (patch.type ?? c.type) === c.type && (patch.size ?? c.size) === c.size) return;
+    if (memChoice()?.type === type) return;
     setBusy(true);
     setMemError(null);
     try {
       wakeChat();
-      setInfo(await postMode({ memory: patch }, props.control.path));
+      setInfo(await postMode({ memory: { type } }, props.control.path));
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
       setMemError(`${why}. Your memory choice is unchanged.`);
@@ -654,6 +664,13 @@ export function ModeMenu(props: { control: ModeControl }) {
       onFocus={() => setActive(p.index)}
     >
       <Icon name="check" small class="popover-item-check" />
+      <Show when={rowGlyph(p.it)}>
+        {(g) => (
+          <span class="popover-item-icon">
+            <ModeGlyph glyph={g()} />
+          </span>
+        )}
+      </Show>
       <span class="popover-item-text">
         <span class="popover-item-label">{p.it.label ?? p.it.id}</span>
         <Show
@@ -724,11 +741,24 @@ export function ModeMenu(props: { control: ModeControl }) {
           else if (!props.control.blocked?.()) void openMenu();
         }}
       >
-        <Icon name="sliders" small />
+        {/* Icon-first (§chat.mode-menu/trigger): the major mode's, one per minor mode on, a letter
+            per project mode on. The words come back beside them only where the foot has room. */}
+        <ModeGlyphs glyphs={triggerGlyphs()} />
+        {/* Where the composer foot is too tight, the icons fold to the first and this count of the
+            rest (the foot's foldFit sets data-folded); the name and the menu keep every mode. */}
+        <Show when={foldedRest(triggerGlyphs().length) > 0}>
+          <span class="mode-more" aria-hidden="true">
+            {foldLabel(triggerGlyphs().length)}
+          </span>
+        </Show>
         {/* Two parts, so a narrow foot ellipsizes the minor modes before the major one. */}
-        <span class="mode-trigger-label">{current()?.mode ?? "Mode"}</span>
+        <span class="mode-trigger-label" aria-hidden="true">
+          {current()?.mode ?? "Mode"}
+        </span>
         <Show when={minorLabel().length}>
-          <span class="mode-trigger-label mode-trigger-minor">· {minorLabel().join(" · ")}</span>
+          <span class="mode-trigger-label mode-trigger-minor" aria-hidden="true">
+            · {minorLabel().join(" · ")}
+          </span>
         </Show>
         <Icon name="chevron-down" small />
       </button>
@@ -851,7 +881,7 @@ export function ModeMenu(props: { control: ModeControl }) {
           when={!memPanel()}
           fallback={
             <>
-              {/* The Memory type panel (§chat.mode-menu/memory-panel): Back, the types and sizes, a foot line. */}
+              {/* The Memory type panel (§chat.mode-menu/memory-panel): Back, the types (scrolling between), a foot line. */}
               <div class="composer-flyout-head">
                 <button type="button" class="button button-sm button-ghost composer-flyout-back" onClick={closeMemPanel}>
                   <Icon name="chevron-left" small />
@@ -860,14 +890,13 @@ export function ModeMenu(props: { control: ModeControl }) {
                 <span class="model-menu-head-title">Memory type</span>
               </div>
               <Show when={memError()}>{(why) => <Banner tone="error" title="Couldn't change memory." body={why()} />}</Show>
-              <div ref={memPanelEl}>
+              <div class="memory-panel-scroll" ref={memPanelEl}>
                 <MemoryTypePanel
                   idPrefix={paneId("memory-panel")}
                   types={info()?.memory?.types}
-                  sizes={info()?.memory?.sizes}
                   choice={memChoice()}
                   busy={busy()}
-                  onPick={(patch) => void pickMemory(patch)}
+                  onPick={(type) => void pickMemory(type)}
                 />
               </div>
               <div class="mode-menu-foot">
@@ -1044,7 +1073,7 @@ export function ModeMenu(props: { control: ModeControl }) {
                 }}
                 onFocus={() => setActive(items().findIndex((it) => it.id === SUBAGENTS.id))}
               >
-                <Icon name="worker" small />
+                <Icon name="subagents" small />
                 <span class="popover-item-text">
                   <span class="popover-item-label">Subagents · {profileName()}</span>
                 </span>

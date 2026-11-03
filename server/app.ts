@@ -24,10 +24,15 @@ import { registerWrapupRoutes } from "./wrapup-routes";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
 import { registerProjectFileRoutes } from "./project-files-routes";
+import { registerSessionOfferRoutes } from "./session-offers-routes";
+import { registerTranscriptCardRoutes } from "./transcript-cards-routes";
 import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
+import { registerMergeCardRoutes } from "./merge-queue/routes";
+import { registerFolderReadRoutes } from "./folder-read";
 import { registerServicesViewRoutes } from "./project-services/view-routes";
+import { serverStart } from "./project-services/self-host";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { registerConversationDraftRoutes } from "./conversation-draft-routes";
 import { registerVoiceRoutes } from "./voice/service";
@@ -43,7 +48,7 @@ import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
 import { deliverFrames, postedFrames, POSTED_FRAMES_MAX } from "./ws";
 import { mountChatActions } from "./chat-actions";
-import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
+import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, getModelRuntime, ModeRefusedError, setOpeningChoice } from "./chat-handle";
 import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { agentRoot, stateRoot } from "./state-root";
@@ -55,9 +60,12 @@ import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
-import { getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
+import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
 import { registerUsageRoutes } from "./usage-routes";
+import { sessionFeed } from "./session-feed";
+import { LIST_VERSION_HEADER } from "../src/lib/summary-diff";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
+import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { rowsOf } from "./transcript";
 import { readBranch, unknownEntries } from "./harness/pi/reader";
@@ -69,7 +77,7 @@ import { listFolders } from "./folders";
 import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
 import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
-import { applyLoadout, getSessionSetup } from "./session-setup";
+import { applyLoadout, getSessionSetup, readSetupFile } from "./session-setup";
 import { getSessionTools } from "./session-tools";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
@@ -84,7 +92,7 @@ import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
-import { singletonRunningText } from "../shared/profiles";
+import { singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { subagentProfilesInfo, requireSubagentProfile, restoreReplacedProfiles, saveSubagentProfileDefault, saveSubagentProfiles } from "./subagent-profiles";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
@@ -98,6 +106,7 @@ import { alignSettingsInfo, saveAlignSettingsBody } from "./align-settings";
 import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
 import { claudeCliStatus } from "./claude-status";
 import { AutoTitleSweep, autoTitlePaths, nameSession, shortenPicks, traceToFile, type NameDeps } from "./session-autotitle";
+import { setSummaryWriter, summaryFromChain } from "./version-summaries";
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsInfo, writeSessionTitleSettings } from "./session-titles-settings";
 import type { LlmRuntime } from "./decide-llm";
 import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
@@ -137,7 +146,9 @@ import { checkRename, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parse
 import { renameIdeaEverywhere } from "./overseer-idea-tools";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
 import { findExtension, listExtensions, proxyExtension, serveExtensionFile } from "./extensions";
-import { decisions } from "./decide-runtime";
+import { decisions, decisionSettings, decisionsReady } from "./decide-runtime";
+import { alignTriage } from "./align-triage";
+import { workerChecks } from "./worker-checks";
 import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
 import { tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
@@ -146,6 +157,8 @@ import { sessionsChanged } from "./list-generation";
 import { resourceMonitor } from "./resource-monitor";
 import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
 import { localRequest } from "./mesh/proxy";
+import { pageOnlyRefusal } from "./page-only";
+import { registerProjectSettingsRoutes } from "./project-settings-routes";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
 import { registerUpdatesRoutes } from "./updates/routes";
@@ -156,8 +169,10 @@ const DESIGN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "src",
 /** AGENTS.md for the connection agent (owned by pi-config's remote extension team; read per request). */
 const CONNECT_TEMPLATE = fileURLToPath(new URL("./connect-agent-template.md", import.meta.url));
 
-/** When this process started, and the commit its checkout had then (§chat.profiles/live-commit). */
-const SERVER_STARTED_AT = new Date().toISOString();
+/** When this process started, and the commit its checkout had then (§chat.profiles/live-commit).
+    One source with serverStart(): POST /api/updates/restart answers the same startedAt, which the
+    Settings block waits to see change. */
+const SERVER_STARTED_AT = serverStart().startedAt;
 const SERVER_HEAD: string | null = (() => {
   try {
     return execFileSync("git", ["rev-parse", "HEAD"], { cwd: dirname(fileURLToPath(import.meta.url)), timeout: 5_000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
@@ -184,7 +199,7 @@ export function buildApp(deps: AppDeps) {
   built = true;
   /** The chat a person's action on it needs: open, or opened now, as a send opens a chat closed while
       quiet (§chat.transcript/instant-open), never "open the chat first". A missing file is a 404; a
-      session that can't open (a TUI holds it, its folder is gone) is refused with why. */
+      session that can't open (a TUI holds it, its remote placeholder folder is gone) is refused with why. */
   async function chatFor(path: string): Promise<{ chat: ChatHandle } | { status: 404 | 409; error: string }> {
     if (!existsSync(path)) return { status: 404, error: "Session file not found" };
     try {
@@ -261,13 +276,21 @@ export function buildApp(deps: AppDeps) {
   // Updates: what runs, the daily check, and the operator's upgrade.
   registerUpdatesRoutes(app);
 
-  app.get("/api/sessions", async (c) => c.json(await listSessions()));
+  // The body is the list as it always was; with the session feed running, read in turn with its
+  // re-diffs and named by the version it is at, so a tab can apply the feed's `rows` frames from it.
+  app.get("/api/sessions", async (c) => {
+    const feed = sessionFeed();
+    if (!feed) return c.json(await listSessions());
+    const { body, epoch, version } = await feed.snapshot(listSessions);
+    c.header(LIST_VERSION_HEADER, `${epoch}:${version}`);
+    return c.json(body);
+  });
   registerProfileRoutes(app);
 
   /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
       With `start`, it is made with that profile (§chat.profiles/after-first-message) and, given one, its
       first message is sent; a One at a time profile live elsewhere refuses before anything is made. */
-  async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start" }, subagentProfile?: string, linkMember = false) {
+  async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start"; opening?: { model?: string; thinking?: string } }, subagentProfile?: string, linkMember = false) {
     let pick: ProfilePick | undefined = start?.profile;
     if (start) {
       // Resolved against the new session's own project (§chat.profiles/projects); unapproved refuses.
@@ -292,13 +315,31 @@ export function buildApp(deps: AppDeps) {
       appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
     }
     if (!start || !pick) return c.json(made, 201);
+    // The model and effort it starts on, instead of the new-chat default (the merge queue's reviewer and thread),
+    // as the first open; set again after the profile when the open didn't take them.
+    if (start.opening) setOpeningChoice(made.path, start.opening);
     const applied = await applyProfile(made.path, pick, start.by ?? "start");
     if (!applied.ok) return c.json({ error: `Created the session, but its profile was not set: ${applied.error}`, session: made }, applied.status);
+    // One that can't be used (turned off, not signed in) leaves it on the new-chat default, and the answer says why.
+    const opened = start.opening ? await openingTaken(made.path, start.opening) : null;
     if (start.prompt?.trim()) {
       const sent = await promptSession(made.path, start.prompt);
       if (!sent.ok) return c.json({ error: `Created the session with its profile, but its first message was refused: ${sent.error}`, session: made }, sent.status);
     }
-    return c.json((await getSessionSummary(made.path)) ?? made, 201);
+    const summary = (await getSessionSummary(made.path)) ?? made;
+    return c.json(opened && !opened.ok ? { ...summary, modelNotSet: opened.error } : summary, 201);
+  }
+
+  /** The chat runs on `want` (a model the open skipped is set now); an unusable one is said, never guessed around. */
+  async function openingTaken(path: string, want: { model?: string; thinking?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      const chat = await acquireChatHandle(path);
+      if (want.model && want.model !== chat.mirror.model?.ref) await chat.setModel(want.model);
+      if (want.thinking && want.thinking !== chat.mirror.thinking) await chat.setThinking(want.thinking);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: `its model wasn't set (${err instanceof Error ? err.message : String(err)})` };
+    }
   }
 
   async function createWebSessionFile(c: Context, cwd: string, seed?: NewSessionFile["seed"]) {
@@ -327,7 +368,7 @@ export function buildApp(deps: AppDeps) {
   // `target` flag, so the remote extension runs every tool on the far side. `link: true` makes it a
   // link member session (§app.overseer/links-tools): only the Overseer's create sends it.
   app.post("/api/sessions", async (c) => {
-    let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown; subagent_profile?: unknown; link?: unknown };
+    let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown; subagent_profile?: unknown; link?: unknown; model?: unknown; thinking?: unknown };
     try {
       body = await c.req.json();
     } catch {
@@ -339,6 +380,9 @@ export function buildApp(deps: AppDeps) {
       catch (err) { return c.json({ error: String(err instanceof Error ? err.message : err) }, 400); }
     }
     if (body.link !== undefined && typeof body.link !== "boolean") return c.json({ error: "link must be true or false" }, 400);
+    if (body.model !== undefined && (typeof body.model !== "string" || !/^[^/\s]+\/\S+$/.test(body.model) || body.model.length > 200)) return c.json({ error: 'model is "provider/model"' }, 400);
+    if (body.thinking !== undefined && !(THINKING_LEVELS as readonly unknown[]).includes(body.thinking)) return c.json({ error: `thinking is one of ${THINKING_LEVELS.join(", ")}` }, 400);
+    if ((body.model !== undefined || body.thinking !== undefined) && body.profile === undefined) return c.json({ error: "model and thinking come with a profile" }, 400);
     const linkMember = body.link === true;
     if (body.target !== undefined) {
       if (!isTargetName(body.target)) return c.json({ error: "target must be a target name" }, 400);
@@ -357,7 +401,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   /** POST /api/sessions's optional `profile` (an id or `{source, id}`) and `prompt`: the chip's Run Again, the Overseer. */
-  function startOf(body: { profile?: unknown; prompt?: unknown }, byOverseer = false): { profile: ProfilePick; prompt?: string; by: "overseer" | "start" } | undefined {
+  function startOf(body: { profile?: unknown; prompt?: unknown; model?: unknown; thinking?: unknown }, byOverseer = false): { profile: ProfilePick; prompt?: string; by: "overseer" | "start"; opening?: { model?: string; thinking?: string } } | undefined {
     const p = body.profile as { source?: unknown; id?: unknown } | string | undefined;
     const pick: ProfilePick | undefined =
       typeof p === "string" && p
@@ -366,7 +410,8 @@ export function buildApp(deps: AppDeps) {
           ? { source: p.source, id: p.id }
           : undefined;
     if (!pick) return undefined;
-    return { profile: pick, by: byOverseer ? "overseer" : "start", ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}) };
+    const opening = { ...(typeof body.model === "string" ? { model: body.model } : {}), ...(typeof body.thinking === "string" ? { thinking: body.thinking } : {}) };
+    return { profile: pick, by: byOverseer ? "overseer" : "start", ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}), ...(Object.keys(opening).length ? { opening } : {}) };
   }
 
   // The connection agent: a new session in a fixed seed dir whose AGENTS.md (the remote-runtime
@@ -391,13 +436,21 @@ export function buildApp(deps: AppDeps) {
   registerOrgRoutes(app);
   registerWrapupRoutes(app);
   registerProjectOverseerRoutes(app);
+  registerProjectSettingsRoutes(app);
   registerProjectCostRoutes(app);
   registerProjectFileRoutes(app);
+  // Session offers: a session's offer cards and clicks, another chat's show, the project page's list (§chat/offers).
+  registerSessionOfferRoutes(app);
+  registerTranscriptCardRoutes(app);
   // The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
   registerUsageRoutes(app);
   registerProjectRoutes(app);
   // Project services: the verbs over a project's .sova/project.json (server/project-services/; §app/project-services).
   registerProjectServiceRoutes(app);
+  // A chat's merge queue cards (server/merge-queue/cards.ts).
+  registerMergeCardRoutes(app);
+  // A folder of a project's files at a ref, or one of Sova's own, read only (server/folder-read.ts).
+  registerFolderReadRoutes(app);
   registerServicesViewRoutes(app);
   // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
   registerDecisionRoutes(app);
@@ -498,8 +551,9 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-    // Organization sessions live under their project, never in a group (a removal still works, for
-    // an assignment made before that rule).
+    // Organization sessions live under their project, never in a group; a registered project's own sessions (its
+    // overseer's conversations, the builds it or the operator started) may join one. A removal always works, for an
+    // assignment made before that rule.
     if (body.groupId !== null && isOrgSession(path, idOf(path))) return c.json({ error: ORG_NOT_GROUPED }, 400);
     const r = assignSession(idOf(path), body.groupId, label.label, body.index as number | undefined);
     return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
@@ -604,6 +658,8 @@ export function buildApp(deps: AppDeps) {
     settings: () => readSessionTitleSettings(),
     summary: (path) => getSessionSummary(path),
   });
+  // Versions' summaries for the owner (§app.project-assistant/versions) are written by the same title models.
+  setSummaryWriter((prompt) => summaryFromChain(readSessionTitleSettings(), prompt, titleDeps()));
   const autoTitleSweep = new AutoTitleSweep({
     settings: () => readSessionTitleSettings(),
     list: listSessions,
@@ -816,6 +872,50 @@ export function buildApp(deps: AppDeps) {
     return c.json(await getSessionSetup(path, { fresh: c.req.query("fresh") === "1" }));
   });
 
+  // One file the session's setup lists, for the markdown viewer (§chat.transcript/setup-card-open-file):
+  // a path the list doesn't name is a 404 before any read. Never cached.
+  app.get("/api/sessions/context/file", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    const file = c.req.query("file");
+    if (!file) return c.json({ error: "Missing ?file=" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const r = await readSetupFile(path, file);
+    return r.ok ? c.json(r.file, 200, { "Cache-Control": "no-store" }) : c.json({ error: r.error }, r.status);
+  });
+
+  // Triage on a session's open alignment cards (§app.decisions/align-triage): a stakes chip per open
+  // question, asked once per card version and only with attention signals on. Same 400/404 as above.
+  app.get("/api/sessions/align-triage", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const s = await getSessionSummary(path);
+    if (!s) return c.json({ error: "Session file not found" }, 404);
+    const branch = await readBranch(path).catch(() => []);
+    return c.json(
+      await alignTriage(s, branch, { settings: decisionSettings, provider: () => (decisionsReady() ? decisions() : null), held: (p) => !!chatHandle(p) }),
+      200,
+      { "Cache-Control": "no-store" },
+    );
+  });
+
+  // The check of each worker's newest done report (§app.decisions/worker-report): an Untested chip
+  // on the worker row, asked once per report and only with attention signals on. Same 400/404.
+  app.get("/api/sessions/worker-checks", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const s = await getSessionSummary(path);
+    if (!s) return c.json({ error: "Session file not found" }, 404);
+    const branch = await readBranch(path).catch(() => []);
+    return c.json(
+      await workerChecks(s, branch, { settings: decisionSettings, provider: () => (decisionsReady() ? decisions() : null), held: (p) => !!chatHandle(p) }),
+      200,
+      { "Cache-Control": "no-store" },
+    );
+  });
+
   // The tools a held chat declares to its model now (server/session-tools.ts, §chat.transcript/setup-card-tools).
   // Same 400/404 as the context route above; a session this server doesn't hold (or a terminal's, or a
   // special one) is a 200 whose `state` says so. Never cached.
@@ -922,7 +1022,7 @@ export function buildApp(deps: AppDeps) {
     try {
       body = await c.req.json();
     } catch {
-      return c.json({ error: "Expected JSON body { version: 1, style, visuals }" }, 400);
+      return c.json({ error: "Expected JSON body { version: 1, style, visuals, eagerness? }" }, 400);
     }
     const result = saveAlignSettingsBody(body);
     return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
@@ -1127,15 +1227,13 @@ export function buildApp(deps: AppDeps) {
 
   /** Why this request can't approve hooks: only the operator's own page on this machine may. */
   function hooksApprovalRefusal(c: Context): string | null {
-    if (overseerSender(c.req.header(OVERSEER_SENDER_HEADER))) return "The Overseer can't approve a project mode's hooks: approve them yourself in the mode menu.";
-    if (!localRequest(c)) return "A project mode's hooks are approved only on this machine.";
-    if (c.req.header(CALLER_HEADER) !== undefined) return "A chat can't approve a project mode's hooks: approve them yourself in the mode menu.";
-    // The page carries the token as the install's cookie; a script, a chat's terminal or a tool sends the header.
-    if (c.req.header(TOKEN_HEADER) !== undefined) return "A script can't approve a project mode's hooks: approve them yourself in the mode menu.";
-    const bearer = /^Bearer\s+(.+)$/i.exec(c.req.header("authorization") ?? "")?.[1];
-    if (extensionCaller(c.req.header(TOKEN_HEADER)) !== null || (bearer !== undefined && isExtensionKey(bearer.trim())))
-      return "An extension can't approve a project mode's hooks: approve them yourself in the mode menu.";
-    return null;
+    return pageOnlyRefusal(c, {
+      overseer: "The Overseer can't approve a project mode's hooks: approve them yourself in the mode menu.",
+      local: "A project mode's hooks are approved only on this machine.",
+      chat: "A chat can't approve a project mode's hooks: approve them yourself in the mode menu.",
+      script: "A script can't approve a project mode's hooks: approve them yourself in the mode menu.",
+      extension: "An extension can't approve a project mode's hooks: approve them yourself in the mode menu.",
+    });
   }
 
   // POST /api/mode/command?path= { mode, name, args? } (§chat.mode-menu/project-mode-commands): one command of a
@@ -1204,6 +1302,8 @@ export function buildApp(deps: AppDeps) {
       if (request.patch.projectModes !== undefined) return c.json({ error: "Project modes belong to one chat: send projectModes with ?path=" }, 400);
       return c.json(await switchMode(request.patch));
     }
+    // The merge queue's own chats keep the modes Sova started them with (profiles/system, thread.ts threadMemoryOn).
+    if (queueChatRole((await getSessionSummary(path).catch(() => null))?.profile)) return c.json({ error: QUEUE_CHAT_MODE_REFUSAL }, 409);
     const got = await chatFor(path);
     if ("error" in got) return c.json({ error: got.error }, got.status);
     // A project's coding session keeps spec on (§app.project-overseer/coding-mode).
@@ -1403,7 +1503,7 @@ export function buildApp(deps: AppDeps) {
     }
   });
 
-  app.get("/api/insights/agents", async (c) => c.json(await getAgentsInsight()));
+  app.get("/api/insights/agents", async (c) => c.json(await getAgentsInsight({ tokens: c.req.query("tokens") === "1" })));
 
   app.get("/api/insights/session", async (c) => {
     const path = resolveSessionPath(c.req.query("path"));
@@ -1419,6 +1519,16 @@ export function buildApp(deps: AppDeps) {
     if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     return c.json(await getHiddenWorkers(path), 200, { "Cache-Control": "no-store" });
+  });
+
+  // One team member's inbox, read-only (§app.subagents-pane/member-inbox): its items without
+  // bodies, or with &item= one item's whole message. The server never writes an inbox.
+  app.get("/api/insights/session/inbox", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    const res = await getMemberInbox(path, c.req.query("team") ?? "", c.req.query("worker") ?? "", c.req.query("item"));
+    return res.ok ? c.json(res.body, 200, { "Cache-Control": "no-store" }) : c.json({ error: res.error }, res.status);
   });
 
   // Resource monitor (§app/resource-monitor): the latest background sample, and its history (5s from

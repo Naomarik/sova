@@ -20,6 +20,7 @@ import {
   alignmentSummary,
   withAlignment,
   ALIGN_STYLE_NAMES,
+  ALIGN_EAGERNESS_NAMES,
   specSummary,
   teamsSummary,
   withCoordinator,
@@ -561,7 +562,7 @@ export function SubagentProfilesSettings() {
                 () => (
                   <>
                     <Show when={coordinatorOn(p())}>
-                      <p class="field-hint settings-delegate-desc">Without a fallback, a team isn't created when a role's primary can't run.</p>
+                      <p class="field-hint settings-delegate-desc">Without a fallback, a team isn't created when a role's primary can't run. With one, a role whose primary runs out of usage during the team moves to it.</p>
                     </Show>
                     <For each={["coordinator", "monitor"] as const}>
                       {(role) => {
@@ -764,7 +765,7 @@ export function SubagentProfilesSettings() {
                 )}
               </Show>
 
-              {/* The align mode's writing style and Visuals for chats on this profile (§chat.subagent-profiles/settings):
+              {/* The align mode's Eagerness, writing style and Visuals for chats on this profile (§chat.subagent-profiles/settings):
                   "Use host default" stores nothing, so a profile without an override reads as before. */}
               {section(
                 "alignment",
@@ -782,13 +783,33 @@ export function SubagentProfilesSettings() {
                       <p class="field-hint settings-delegate-desc">How the align mode writes for chats on this profile; "Use host default" follows Settings → Alignment.</p>
                       <div class="public-links-row">
                         <label class="field settings-field">
+                          <span class="field-label">Eagerness</span>
+                          <span class="select-wrap">
+                            <select class="select" disabled={store.saving()} onChange={(e) => setAlign({ eagerness: e.currentTarget.value as "host" | "eager" | "careful" })}>
+                              <option value="host" selected={p().alignment?.eagerness === undefined}>
+                                Use host default
+                              </option>
+                              <For each={["eager", "careful"] as const}>
+                                {(v) => (
+                                  <option value={v} selected={p().alignment?.eagerness === v}>
+                                    {ALIGN_EAGERNESS_NAMES[v]}
+                                  </option>
+                                )}
+                              </For>
+                            </select>
+                            <span class="select-caret" aria-hidden="true">
+                              ▾
+                            </span>
+                          </span>
+                        </label>
+                        <label class="field settings-field">
                           <span class="field-label">Writing style</span>
                           <span class="select-wrap">
                             <select class="select" disabled={store.saving()} onChange={(e) => setAlign({ style: e.currentTarget.value as "host" | "default" | "simplified" | "pm" })}>
                               <option value="host" selected={p().alignment?.style === undefined}>
                                 Use host default
                               </option>
-                              <For each={["default", "simplified", "pm"] as const}>
+                              <For each={["pm", "simplified", "default"] as const}>
                                 {(s) => (
                                   <option value={s} selected={p().alignment?.style === s}>
                                     {ALIGN_STYLE_NAMES[s]}
@@ -825,7 +846,7 @@ export function SubagentProfilesSettings() {
                           </span>
                         </label>
                       </div>
-                      <p class="field-hint">A style change reaches this profile's open chats at their next message; Visuals, sessions started after saving.</p>
+                      <p class="field-hint">An eagerness or style change reaches this profile's open chats at their next message; Visuals, sessions started after saving.</p>
                     </>
                   );
                 },

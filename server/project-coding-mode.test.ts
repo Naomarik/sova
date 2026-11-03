@@ -12,7 +12,7 @@ const agentDir = join(tmp, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
 mkdirSync(agentDir, { recursive: true });
 after(() => rmSync(tmp, { recursive: true, force: true }));
-const { checkedCodingModeChoice, codingModeChoice, codingModeSwitch, codingSpecRefusal, describeCodingMode, hostDefaultMode, profileName, SPEC_ALWAYS_ON, SPEC_ALWAYS_ON_MENU } = await import("./project-coding-mode");
+const { asksToConfirmBrief, checkedCodingModeChoice, codingModeChoice, codingModeSwitch, codingSpecRefusal, CONFIRM_BRIEF_PARAGRAPH, confirmBriefPrompt, confirmBriefWords, describeCodingMode, hostDefaultMode, profileName, SPEC_ALWAYS_ON, SPEC_ALWAYS_ON_MENU } = await import("./project-coding-mode");
 const store = await import("./project-overseer-store");
 const { promotionMessage } = await import("./reconcile");
 const sp = await import("../pi-config/extensions/subagents/subagent-profiles.ts");
@@ -46,7 +46,7 @@ test("a stored codingMode is ignored and dropped at the next write; a patch nami
 
 test("spec is always on: a minor-mode set that leaves it out is refused, from an Overseer or the mode menu", () => {
   const base = { mode: "normal" as const, minorModes: ["spec"] };
-  for (const on of [[], ["align"], ["vis", "codemode"]]) {
+  for (const on of [[], ["align"], ["align", "vis"]]) {
     assert.deepEqual(codingModeChoice({ minor_modes: on }, base), { error: SPEC_ALWAYS_ON });
     assert.deepEqual(codingModeSwitch({ minor_modes: on }), { error: SPEC_ALWAYS_ON });
     assert.equal(codingSpecRefusal(on), SPEC_ALWAYS_ON_MENU);
@@ -57,9 +57,9 @@ test("spec is always on: a minor-mode set that leaves it out is refused, from an
 
 test("every mode and minor-mode combination with spec is accepted; no other ceiling", () => {
   const base = { mode: "normal" as const, minorModes: ["spec"] };
-  const minors = ["align", "spec", "vis", "codemode"];
+  const minors = ["align", "spec", "vis"];
   for (const mode of ["normal", "delegate"] as const)
-    for (let bits = 0; bits < 16; bits++) {
+    for (let bits = 0; bits < 8; bits++) {
       const on = minors.filter((_, i) => bits & (1 << i));
       if (!on.includes("spec")) continue;
       const r = codingModeChoice({ mode, minor_modes: on }, base);
@@ -75,7 +75,7 @@ test("every mode and minor-mode combination with spec is accepted; no other ceil
 test("only unknown names are refused, each with its sentence", () => {
   const base = { mode: "normal" as const, minorModes: [] };
   assert.equal((codingModeChoice({ mode: "turbo" }, base) as { error: string }).error, "Unknown mode turbo: use normal or delegate.");
-  assert.equal((codingModeChoice({ minor_modes: ["bogus", "align", "spec"] }, base) as { error: string }).error, "Unknown minor mode bogus: use align, spec, vis or codemode.");
+  assert.equal((codingModeChoice({ minor_modes: ["bogus", "align", "spec"] }, base) as { error: string }).error, "Unknown minor mode bogus: use align, spec or vis.");
   assert.match((codingModeChoice({ minor_modes: "spec" }, base) as { error: string }).error, /minor_modes must be a list/);
   assert.equal((codingModeSwitch({ mode: "turbo" }) as { error: string }).error, "Unknown mode turbo: use normal or delegate.");
   assert.deepEqual(codingModeSwitch({}), { mode: null }, "naming nothing switches nothing");
@@ -102,7 +102,7 @@ test("subagent_profile: any profile here or off; an unknown one refused with whe
 });
 
 test("mode words say vis as visuals", () => {
-  assert.equal(describeCodingMode({ mode: "delegate", minorModes: ["align", "spec", "vis", "codemode"] }), "delegate · align · spec · visuals · codemode");
+  assert.equal(describeCodingMode({ mode: "delegate", minorModes: ["align", "spec", "vis"] }), "delegate · align · spec · visuals");
 });
 
 test("the promotion commit's message names every promoted decision: area — statement, each ≤ 72, at most 10", () => {
@@ -132,4 +132,27 @@ test("a verb playbook's run gets align beside its base (this computer's default)
   assert.deepEqual(playbookRunMode({ mode: "normal", minorModes: ["align"] }).minorModes, ["align"], "never twice");
   assert.deepEqual([...PLAYBOOK_RUN_KINDS], ["onboard", "deploy-setup"]);
   assert.ok(!PLAYBOOK_RUN_KINDS.includes("coding") && !PLAYBOOK_RUN_KINDS.includes("operator-coding"));
+});
+
+test("§app.project-overseer/confirm-brief: an Overseer's brief gets the confirm paragraph and align on unless agreed", () => {
+  const on = { mode: "normal" as const, minorModes: ["align", "spec"] };
+  const asked = confirmBriefPrompt("Build the login page", on, false);
+  assert.deepEqual(asked, { prompt: `Build the login page\n\n${CONFIRM_BRIEF_PARAGRAPH}`, mode: on, confirm: true });
+  // The paragraph asks for exactly the one question the claim names, before any plan.
+  for (const words of ['topic "What to build"', '"Is this what you want built?"', '"Yes, as restated"', "what it won't touch", "Before any plan, investigation or edit", "end your turn"])
+    assert.ok(CONFIRM_BRIEF_PARAGRAPH.includes(words), words);
+  assert.equal(asksToConfirmBrief(asked.prompt), true, "found in the recorded prompt");
+  assert.deepEqual(confirmBriefPrompt("Build the login page", on, true), { prompt: "Build the login page", mode: on, confirm: false }, "already agreed: the brief as given");
+  // Align left out by the Overseer: turned on anyway (spec stays, never twice), and the session still asks first.
+  const off = confirmBriefPrompt("Build the login page", { mode: "delegate", minorModes: ["spec"], subagentProfile: "house" }, false);
+  assert.equal(off.confirm, true, "align off asked: still asks the operator");
+  assert.equal(off.prompt, `Build the login page\n\n${CONFIRM_BRIEF_PARAGRAPH}`);
+  assert.deepEqual({ ...off.mode, minorModes: [...off.mode.minorModes].sort() }, { mode: "delegate", minorModes: ["align", "spec"], subagentProfile: "house" });
+  // Already agreed: the mode as given, align off included.
+  assert.deepEqual(confirmBriefPrompt("Build the login page", { mode: "normal", minorModes: ["spec"] }, true), { prompt: "Build the login page", mode: { mode: "normal", minorModes: ["spec"] }, confirm: false });
+  assert.equal(asksToConfirmBrief("Build the login page"), false);
+  assert.equal(asksToConfirmBrief(undefined), false);
+  assert.equal(confirmBriefWords(true, false), " It first asks the operator to confirm the brief.");
+  assert.equal(confirmBriefWords(false, true), " Started as already agreed.");
+  assert.equal(confirmBriefWords(false, false), "");
 });

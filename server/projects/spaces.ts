@@ -8,6 +8,7 @@ import { canonicalPath, setProjectSessionRoots } from "../paths";
 import { stateRoot } from "../state-root";
 import { pausedSinceOf, reservedRoots, spaceOf } from "./contributions";
 import { addRegistryEntry, mintProjectId, prepareRegistration, readRegistry, removeRegistryEntry, RegistryError } from "./registry";
+import { requestGitMaintenanceSync } from "../git-maintenance";
 import { buildSid, projectSid, runtimeSid, watchSid } from "./sids";
 
 /**
@@ -162,6 +163,8 @@ export async function editProject(projectId: string, patch: { name?: unknown; ro
     if (prepared.root !== before.root) edit.root = prepared.root;
   }
   if (Object.keys(edit).length) await actOrThrow(engineOrThrow(projectId), projectSid(projectId), "project/edit", edit, operatorEnvelopeOf(projectId, by));
+  // A new root's repository gets git's scheduled maintenance; one no project holds any longer, none.
+  if (edit.root) requestGitMaintenanceSync();
   return readProject(projectId);
 }
 
@@ -275,6 +278,7 @@ export async function registerProjectIn(engine: string, rawRoot: unknown, input:
     await start(hostOf(engine), id, data(id), envelope);
   }
   where.set(id, engine === "standalone" ? id : engine);
+  requestGitMaintenanceSync(); // its repository on git's scheduled maintenance
   return { project: readProject(id), ...(prepared.normalizedFrom ? { normalizedFrom: prepared.normalizedFrom } : {}) };
 }
 

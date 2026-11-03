@@ -26,7 +26,7 @@ export function isProjectModeId(value: unknown): value is string {
  * The built-in minor mode names, as pi-config/extensions/mode/minor.ts's MINOR_MODES (a test keeps them equal).
  * A project folder with one of these names is a problem row ("clash"), never an override of the built-in.
  */
-export const BUILTIN_MINOR_NAMES: readonly string[] = ["align", "spec", "vis", "codemode", "memory"];
+export const BUILTIN_MINOR_NAMES: readonly string[] = ["align", "spec", "vis", "memory"];
 
 /**
  * Most modes a worker carries: built-in worker modes plus project modes with `workers: yes`
@@ -215,7 +215,9 @@ export function snapshotShaInput(snapshot: Pick<ProjectModeSnapshot, "text" | "d
 /** Thrown by parseModeFile: the message is the user-facing problem line. */
 export class ModeFileError extends Error {}
 
-const KEYS = new Set(["description", "workers", "tools", "commands", "hooks"]);
+/** The keys MODE.md may hold (parseModeFile refuses any other). */
+export const MODE_KEYS = ["description", "workers", "tools", "commands", "hooks"] as const;
+const KEYS = new Set<string>(MODE_KEYS);
 
 /**
  * MODE.md, strictly. A `---` fence on line 1 and a closing `---` line; between them `key: value` lines, where

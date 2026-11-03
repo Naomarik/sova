@@ -17,7 +17,6 @@
     "server/sync/grants-sync.test.ts": "runtime",
     "server/sync/logins-stores.test.ts": "runtime",
     "server/sync/logins.test.ts": "runtime",
-    "server/tests/spec-assessment.mjs": "runtime",
     "server/transcript.test.ts": "runtime",
     "server/vis-check.test.ts": "runtime"
   },

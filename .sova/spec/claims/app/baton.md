@@ -44,7 +44,8 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   and `startedVia` are ignored.
 - **Who started it, and why.** Every start records it in the statechart's start data as `started {by,
   overseerId?, why?}`: `by` is `operator` (the Start form, Send to person…), `overseer` (the global
-  Overseer's `sova_gather start`) or `project-overseer` (`sova_start_gathering`, `sova_offer`, a
+  Overseer's `sova_gather start`), `assistant` (the Project Assistant's `start_feature_chat`,
+  §app.project-assistant/feature-chats) or `project-overseer` (`sova_start_gathering`, `sova_offer`, a
   planned gathering the statechart starts later); `overseerId` is that overseer's conversation; `why` is
   the overseer's required reason, one or two sentences for the operator (§app.overseer/org-people-facing,
   §app.project-overseer/tools). The operator's Start form asks for no reason. A request body's
@@ -112,6 +113,10 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   (§app.organizations/privacy). While the session can draw, the prompt ends with the gathering
   drawing guide, and while it can read links it says how (§app.baton/abilities); otherwise it says
   it cannot change files, run commands or browse.
+- **A feature request chat** (§app.project-assistant/feature-chats) is a gathering session with its
+  own loadout: the tools above but `propose_roster_edit`, `read_link`, `inspect_files` and
+  `confirm_file`, plus a Sova-served `align`; its prompt adds the planning section that claim
+  describes.
 - It has no mode (no mode extension loads); its composer has no mode switch. What it can do is its
   abilities (§app.baton/abilities), shown and changed on its strip.
 - **Budget**: a message limit — messages in, outsiders' and operator's together (the wrap-up's
@@ -181,7 +186,8 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   holder's live link is kept, else Get Link (§app.baton/links); New Link while the holder has a live
   link (its row says "Makes a new link and deletes the one you sent before" under its label),
   Hand On… when it isn't the primary, What It's Told (§app.baton/told) and, while the org has an
-  owner, Hide From / Show To {first name} (§app.owner-page/controls). Below a separator, last: Delete
+  owner, Hide From / Show To {first name} (§app.owner-page/controls), never on a feature request chat
+  (§app.project-assistant/feature-chats). Below a separator, last: Delete
   Link (while the holder has a live link) and Close Session (until the session is closed). Neither
   acts on one press: each opens the menu's confirm screen with its words: Delete Link's "The link
   stops working for good." with **Delete?** and **Cancel** (§app.baton/links); Close Session's
@@ -191,7 +197,9 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   no-photos note and **Started by** fold under a **Details** disclosure (folded each time the session
   opens, no preview, a 44 px summary), above Why and goal, each on a line of its own. From 768 px
   they are shown, under the bar: one line "{org} · {project}", then It can: with its checkboxes and
-  Started by on one line (wrapping only when it must).
+  Started by on one line (wrapping only when it must). A feature request chat
+  (§app.project-assistant/feature-chats) shows "Feature request · {owner's first name}" before
+  Started by.
 - **It can:** has three checkboxes in one order: `Draw`, then `Interactive drawings (HTML)` right
   after it, then `Read links` (§app.baton/abilities). Interactive drawings counts only with Draw: while
   Draw is off its box is disabled and its label muted with it. Each box is a 44 px target, and the
@@ -211,7 +219,9 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
 - **Started by.** The strip always has one line after **It can:** (beside it from 768 px wide,
   under it inside the strip's **Details** fold below that, §app.baton/strip-layout): "Started by you · {relative
   time}", "Started by the {project} overseer · {relative time}" or "Started by you, via the
-  Overseer · {relative time}" (the time is the session's start). The overseer part links to that
+  Overseer · {relative time}" or "Started by the Project Assistant · {relative time}" (a feature
+  request chat, §app.project-assistant/feature-chats; its Why says what the owner asked for) (the
+  time is the session's start). The overseer part links to that
   overseer: the project's overseer page, or the Overseer (its current conversation, else that
   conversation read-only from its History).
 - **Where it comes from.** Read from the statechart's `started` (§app.baton/goal-and-loadout). A session
@@ -358,6 +368,12 @@ Scoped `show_tour` presents only checked, operator-reviewed editions already bou
   forwarded link never reveals that its person left. An unknown token answers 404. An
   open page on a link that stops reading is told `gone` and closed (4410) within 30 seconds, even
   when nothing in the session changes (a sweep; expiry changes nothing in the session).
+- **The organization's owner answers without a link** (§app.owner-page/content): while a
+  conversation shown on their owner page waits on them (they hold its current hand-off, or an open
+  offer reached them, or they hold that offer's lease), their owner page writes their message into
+  it under the same rules as a link of that round: the same baton lock (holder, lease, message
+  limit), the same refusals and the same 10 a minute, text only. It mints, reads and turns off no
+  link, and the hand-off's own link still works as above.
 - Whenever a minted link may not open from outside, Sova says so: the response carrying it also
   carries `linkWarning` and its `linkWarningCode`, one of six (`off`, `unverified`, `unreachable`,
   `not-accepted`, `unconfirmed`, `sleeps`; texts in §design.copy-deck/public-links). The address's
@@ -449,6 +465,14 @@ Tour pictures and public explanation follow the same active-branch, offer cut an
   messages carry "You" for screen readers only, their side and fill marking them. While the view
   loads, the status line says "Loading the conversation." under a placeholder title; that text is
   never the page's heading.
+- **Theme.** The page follows the device's light or dark setting, or the theme a visitor picked
+  on an owner page in that browser (§app.owner-page/page); the photo viewer, code and drawings
+  follow it too.
+- **The same view on the owner page.** The owner page's conversation (§app.owner-page/content)
+  is this view with the organization's owner as the viewer, paged (its newest 60 items, then
+  earlier ones on request, never other items); while the conversation waits on the owner it
+  carries this composer's text field, and their message is taken as a link's would be
+  (§app.baton/links).
 - **The composer** appears only while the link writes: one rounded field holding the textarea,
   the attach control (§app.baton/images) on its left and an icon-only Send ("Send", "Sending")
   on its right. The textarea starts at one line and grows with its text up to a cap, then
@@ -460,8 +484,15 @@ Tour pictures and public explanation follow the same active-branch, offer cut an
 - **Where it sits.** On open and after each change (a view, a sending echo, streamed text) the
   page scrolls so the newest item ends above the composer, never under it. Below 768 px the
   composer stays at the bottom of the screen; from 768 px it follows the conversation directly
-  and pins to the bottom only once the conversation is taller than the window.
-- Never: thinking, tool calls or results, the system prompt, the model, session id, path or cwd,
+  and pins to the bottom only once the conversation is taller than the window. An on-screen
+  keyboard shrinks the page (`interactive-widget=resizes-content`), so the composer stays above it.
+- **A plan card**, in a feature request chat only (§app.project-assistant/feature-chats): the one
+  tool result that crosses, built field by field from a successful `align` result's document
+  (title, summary, findings, steps, what was ruled out, questions with their options, recommendation
+  and decision, and drawings), each text through the same filter as a reply and each drawing
+  through the markup backstop; never its technical notes, ids of anything but its own questions,
+  or anything else of the call. Each plan shows once, at its latest result.
+- Never: thinking, tool calls or results (but a feature request chat's plan card), the system prompt, the model, session id, path or cwd,
   the project or org beyond the public title, the goal, any profile field, any roster person's id,
   other sessions, or any other Sova UI. A message row's sender is its name plus a label, `you` (the
   viewer's own), `operator`, or `person-<n>` numbered within that view; the page marks its own rows
@@ -484,8 +515,8 @@ Tour pictures and public explanation follow the same active-branch, offer cut an
   of its own), centred, shrunk only when the column is narrower, never stretched to fill it. Before
   it is drawn the page's current colour tokens (the frame's, §chat.markdown/visuals) and a
   sans-serif font are set as its defaults, which its own styles override, so `var(--color-…)`
-  text matches the chat; a page that changes theme (the Share sheet's Preview) draws it again in
-  the new colours. A `vis html` runs in a sandboxed frame (§chat.markdown/visuals)
+  text matches the chat; a page that changes theme (the Share sheet's Preview, or the share
+  build's own theme toggle, §app.owner-page/page) draws it again in the new colours. A `vis html` runs in a sandboxed frame (§chat.markdown/visuals)
   only while the session can draw interactive drawings (§app.baton/abilities; the view carries
   `drawings: {html}` from the session's abilities as they are now). Otherwise `html`, and always
   `code`, and a block that doesn't parse, shows one muted line, "A drawing couldn't be shown
@@ -597,10 +628,15 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   `GET /api/h/<token>/img/<n>` (§app.baton/images), `POST /api/h/<token>/file` (§app.baton/files) and the WebSocket `/ws/h?token=`, the page's
   visit id riding along as `?v=` on the view and the socket (§app.baton/visits); and, for the owner
   page, only `GET /i/<token>`, `GET /api/i/<token>` and its `/p/<q_handle>` and `/c/<k_handle>`,
-  `GET` and `POST /api/i/<token>/assistant`, `GET /i/<token>/v/<v_handle>`, `POST /i/<token>/ask-link`
+  `GET` and `POST /api/i/<token>/assistant`, `POST /api/i/<token>/assistant/image` and `GET
+  /api/i/<token>/assistant/img/<n>` (§app.project-assistant/photos), `GET
+  /api/i/<token>/assistant/older` and `GET /api/i/<token>/c/<k_handle>/older` (earlier pages), `POST
+  /api/i/<token>/c/<k_handle>/message` and `/end`, `POST /api/i/<token>/requests/<r_handle>`, `GET /i/<token>/v/<v_handle>`, `POST /i/<token>/ask-link`
   and the WebSocket `/ws/i?token=` (§app.owner-page/page, §app/project-assistant); and, for session shares, only `GET /s/<token>`, `GET /api/s/<token>`,
-  `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). Every other path
-  answers 404 before any routing (the path is judged raw, before any decoding: a dot segment, an
+  `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). A new socket
+  of a link's own is named `/ws/<kind>/<name>` (§mesh.public/share-protocol). Every other path
+  answers 404 before any routing, except on a gateway, whose edge also passes the forward-only
+  shapes of §mesh.public/share-protocol for the links routed hosts registered (the path is judged raw, before any decoding: a dot segment, an
   escape or a non-origin-form target never reaches a route); the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
   `/ext/*` are unreachable on it. A request carrying a `Service-Worker` header (a browser fetching a
   service-worker script) answers 404 on every share path and socket, so no script served on the share
@@ -608,13 +644,16 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   listener never serves the share page. A request whose `Host` is a
   preview host is the preview's (§mesh.public/preview-address), with its own limits and answers
   (§mesh.public/preview-limits, §mesh.public/preview-proxy); nothing below applies to it.
-- Limits: request bodies over 16 KB (or without a length) are refused (413), except a photo
-  upload's, whose cap at the edge is the setting's ceiling (10 MB) plus 64 KB, and past this host's
+- Limits (at a gateway, a link a routed host registered has the one ceiling of
+  §mesh.public/share-protocol instead of the body and time limits here, and its host's ingress
+  applies these): request bodies over 16 KB (or without a length) are refused (413), except a photo
+  upload's (a hand-off's `/api/h/<token>/image` and the owner's `/api/i/<token>/assistant/image`
+  alike), whose cap at the edge is the setting's ceiling (10 MB) plus 64 KB, and past this host's
   own largest photo setting the upload route answers 413, and a file upload's (§app.baton/files),
   whose cap at the edge is the file setting's ceiling (25 MB) plus 64 KB, past this host's own
   largest file 413 the same way; a request's headers
   must arrive within 10 seconds and the whole request within 15 (408), except a photo upload,
-  which has 120, and a file upload, which has 300; photo reads (`/img/`) count in a bucket of their own, 240 a minute per client
+  which has 120, and a file upload, which has 300; photo reads (`/api/h/<token>/img/` and `/api/i/<token>/assistant/img/`) count in a bucket of their own, 240 a minute per client
   address and 240 a minute per token, never the 60 below; per token 10 messages
   a minute (429; tokens with no message in the last minute are forgotten) and one WebSocket (a new one replaces the old, which is told it opened
   elsewhere; a frame over 1 KB closes it with 1009, and a share socket's error is logged, never
@@ -693,12 +732,14 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   {name}"), fetched from `GET /api/h/<token>/img/<n>`, `n` numbering the photos of that viewer's
   view in order; and the operator's transcript, as thumbnails (§chat.images/thread-thumbnails).
   The owner page, the operator's Preview as and the project overseer's reads show a count instead
-  ("2 photos"). Pixels never ride the view or its socket.
+  ("2 photos"); only the owner's own photos in their Project Assistant chat show as pictures
+  (§app.project-assistant/photos). Pixels never ride the view or its socket.
 - **The model** sees each photo as an image in the person's message. While photos can be sent, its
   prompt says people may attach photos and screenshots, that it may ask for one when that helps
   the goal, to talk only about what in it matters to the goal, and never to describe a face or read
   a document's personal numbers back to anyone; otherwise it says photos can't be sent here.
-- **The operator's images** in a baton session reach the model the same way: an image the operator
+- **The operator's images** in a baton session (and in the Project Assistant's chat,
+  §app.project-assistant/photos) reach the model the same way: an image the operator
   attached (a path in that session's attachments folder, one of the four types) is sent inline as
   image content and its path line is removed from the text, so no local path reaches the share
   page.
@@ -846,6 +887,8 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   Organizations region's Needs you (§app.session-list/organizations), never the global one. The operator's reply clears it.
 - When a person holds the baton through a hand-off with no live link, the same item says "Send
   <name> their link: <question>"; getting the link, or sending it (§app.outreach/send), clears it.
+  Never for the owner holding their own feature request chat: they answer on their owner page
+  (§app.project-assistant/feature-chats).
 - An open offer whose invitees don't all have a live link (started in-process with `mintLink:
   false`) says "Send <names of those without one> their link: <question>" the same way, until
   every invitee has one.
@@ -857,9 +900,9 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   (§app.organizations/org-cards), until it is answered.
 - Any change to a baton session's statechart or its links (Get Link, a reply, Extend, Take back, a
   hand-off, approve, decline, close) re-diffs the session list at once (a baton session's state is
-  part of what the list compares), and the page re-reads the attention digest whenever it re-reads the list for
-  the session feed's `list_changed` (the Organizations region's Needs you lists the digest's
-  items), so its Needs-you item clears within a second, whichever tab or host page made the change.
+  part of what the list compares), and that comparison pushes the changed attention digest to
+  every window (`attention`, §app.decisions/push; the Organizations region's Needs you lists the
+  digest's items), so its Needs-you item clears within a second, whichever tab or host page made the change.
 - Baton sessions are not classified by attention signals (§app.decisions/attention-signals).
 - A composer send the session refuses (someone else holds the baton, it is done, the budget is
   spent) comes back on `/ws/chat` as an error with code `refused` and the reason, never `internal`.

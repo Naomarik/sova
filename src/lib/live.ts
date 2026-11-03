@@ -8,6 +8,8 @@ import type { SovaEvent, SovaPart } from "../../shared/harness-wire";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import { isLinkMessage } from "../../shared/link-message";
 import { parseTopicBatch } from "../../shared/topic-message";
+import { isBriefText, isMergeQueueText } from "../../shared/senders";
+import { parseWakeNudge } from "../../shared/wake";
 import type { HelloLive, TmpAttachment, UploadResult, V1EventFrame, V2EventFrame } from "../../shared/protocol";
 import { fromV1 } from "../../shared/wire-v1";
 import {
@@ -47,6 +49,50 @@ export type LiveBlock =
  */
 export type LiveUserState = "sending" | "queued" | "delivered";
 
+/**
+ * The state a pending row of ours shows (§chat.transcript/a-queued-message). A row the server still
+ * reports `queued` is `Queued`, with its Remove, until the agent takes it: a steer the server has
+ * handed to the agent included (several land together at its next step; one can still come out on its
+ * own until then). A row the server reports `sending` (a follow-up handed to the agent) or no longer
+ * lists (`handed`) shows `Sending…` again, with no Remove: only Stop takes it back.
+ */
+export function shownUserState(row: { state: LiveUserState; handed?: boolean }): LiveUserState {
+  return row.state === "queued" && row.handed ? "sending" : row.state;
+}
+
+/**
+ * Whether a pending row of ours offers its Remove (§chat.transcript/a-queued-message): only while the
+ * server says it can still take it back (`Queued`), a steer already handed to the agent included. A row
+ * still `Sending…` offers none at all, not even a disabled one: before the server's answer nothing holds
+ * it, and a handed follow-up can't be taken back on its own, only by Stop. A row with no id can't be
+ * named to the server.
+ */
+export function offersRemove(row: { id?: string; state: LiveUserState; handed?: boolean }): boolean {
+  return !!row.id && shownUserState(row) === "queued";
+}
+
+/**
+ * The inputs you typed that the live turn has added to the branch (§chat.timeline/opening-it): each
+ * user message the agent has taken since the last settle, a steer the moment it lands, counted by the
+ * settled list's own rule (shared/senders.ts `isOwnInput`). A row still waiting isn't on the branch;
+ * a message another session, the Overseer, a teammate or this session itself sent isn't yours, nor is
+ * a brief, a wake nudge or a topic batch; a link message has no row. The settled list's count plus
+ * this is the branch's; a settle swaps the two in one update (resync).
+ */
+export function liveInputCount(s: LiveState): number {
+  return s.entries.reduce((n, e) => (e.kind === "user" && e.started && isOwnLive(e) ? n + 1 : n), 0);
+}
+
+const isOwnLive = (e: Extract<LiveEntry, { kind: "user" }>): boolean =>
+  e.origin !== "server" &&
+  !e.overseer &&
+  !e.fromSession &&
+  (e.by === undefined || e.by === "operator") &&
+  !isBriefText(e.text) &&
+  !isMergeQueueText(e.text) &&
+  parseWakeNudge(e.text) === null &&
+  parseTopicBatch(e.text) === null;
+
 export type LiveEntry =
   | {
       kind: "user";
@@ -55,8 +101,8 @@ export type LiveEntry =
       id?: string;
       /** Which queue holds it while it is queued. */
       queueKind?: "steer" | "followUp";
-      /** The message is out of the queue's reach: the server has handed it to the pi SDK, or a
-          snapshot no longer lists it. Not a claim about WHY it left — only `message_start` says
+      /** The message is out of the queue's reach: the server reports it `sending` (handed to the
+          agent with no way back on its own: a follow-up), or a snapshot no longer lists it. Not a claim about WHY it left — only `message_start` says
           delivered, a removal says removed and `queue_cleared` says a Stop took it back. */
       handed?: boolean;
       /** The agent's own `message.start` for this message has been applied to this row, so no
@@ -172,9 +218,26 @@ function lastAssistant(s: LiveState): Extract<LiveEntry, { kind: "assistant" }> 
   const current = streamingAssistant(s);
   if (current) return current;
   // Joined mid-message (e.g. after reconnect): start a fresh one.
-  const entry: LiveEntry = { kind: "assistant", blocks: [], done: false };
-  s.entries.push(entry);
-  return s.entries[s.entries.length - 1] as Extract<LiveEntry, { kind: "assistant" }>;
+  return land(s, { kind: "assistant", blocks: [], done: false }) as Extract<LiveEntry, { kind: "assistant" }>;
+}
+
+/** Where the next thing the session writes goes on screen: after everything it has written this turn,
+    above the messages still waiting to be taken. Waiting rows always trail, in the order sent. */
+function landingIndex(s: LiveState): number {
+  const i = s.entries.findIndex((e) => e.kind === "user" && !e.started);
+  return i === -1 ? s.entries.length : i;
+}
+
+/**
+ * Puts an entry the session has just written where it landed (§chat.transcript/a-queued-message, "the
+ * live transcript keeps the session file's order"), and returns the store's copy. A row sent before
+ * the agent's step, so pushed above it, would otherwise stay above it: steers typed before the reply's
+ * first message_start were drawn above the step that ran before they landed.
+ */
+function land(s: LiveState, entry: LiveEntry): LiveEntry {
+  const at = landingIndex(s);
+  s.entries.splice(at, 0, entry);
+  return s.entries[at]!;
 }
 
 /**
@@ -215,8 +278,10 @@ export function addPendingPrompt(
 
 /**
  * One item of the server's queue snapshot (`queue`). `state` is the SERVER's word for how far the
- * item has got — "queued" = it holds it and a removal always succeeds; "sending" = handed to the
- * pi SDK, so a removal may come back refused. Neither is delivery: that is `message_start`.
+ * item has got — "queued" = it can still take it back (it holds it, or it is a steer handed to the
+ * agent that the agent hasn't taken: a removal then succeeds unless the agent takes it that instant);
+ * "sending" = handed to the agent with no way back on its own (a follow-up). Neither is delivery:
+ * that is `message_start`.
  */
 export interface QueuedItem {
   id: string;
@@ -457,7 +522,7 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
           if (event.role === "assistant") {
             s.running = true;
             const model = event.model;
-            s.entries.push({ kind: "assistant", blocks: blocksOf(event.parts), done: false, ...(model ? { model } : {}) });
+            land(s, { kind: "assistant", blocks: blocksOf(event.parts), done: false, ...(model ? { model } : {}) });
           } else {
             // Which row this is, among the rows no start has claimed yet — NOT the undelivered
             // ones. A message sent mid-turn is reported delivered by id before its start arrives
@@ -486,8 +551,13 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
             const row = batch ? undefined : open.find((e) => e.text === text) ?? open.find((e) => e.state === "delivered") ?? open[0];
             if (row) {
               row.state = "delivered";
+              // Taken now: it leaves the waiting rows for the point it landed at (`land`), below the
+              // steps that ran before it. Moved, not rebuilt, so its attachments and id stay.
+              const at = s.entries.indexOf(row);
+              const [taken] = s.entries.splice(at, 1);
+              s.entries.splice(landingIndex(s), 0, taken!);
               row.started = true;
-            } else s.entries.push({ kind: "user", text, state: "delivered", started: true, images: event.images });
+            } else land(s, { kind: "user", text, state: "delivered", started: true, images: event.images });
           }
           break;
         }
@@ -525,8 +595,8 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
           else if (event.stop === "aborted") entry.stoppedAt = new Date().toISOString();
           break;
         }
-        // A call another tool made (a codemode script's) is no live tool and has no effects: its caller's
-        // updates and result record it (§chat.transcript/codemode-card).
+        // A call another tool made (pi's parentToolCallId) is no live tool and has no effects: its
+        // caller's updates and result record it.
         case "tool.start":
           if (event.parentCallId) break;
           if (event.callId) s.tools[event.callId] = { name: event.name, args: event.args, status: "running", output: "", images: [] };

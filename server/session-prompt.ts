@@ -3,6 +3,7 @@ import { acquireChatHandle } from "./chat-handle";
 import { readOverseerState } from "./overseer-store";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { getSessionSummary, idOf, indexedSessionPaths, listSessionFiles } from "./sessions-index";
+import { ARCHIVED_REFUSAL } from "./archived-sessions";
 
 /**
  * Prompting one session and finding sessions by id, as every caller does it (the Overseer, a project
@@ -79,6 +80,8 @@ export async function promptSession(
   // Only a baton session's participants write in it, each through their own channel (§app.baton/attribution).
   if (s.baton) return { ok: false, status: 409, error: "That is a baton session: only its participants write in it." };
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
+  // An archived chat starts for no message (§chat.transcript/instant-open, "An archived chat").
+  if (s.archived) return { ok: false, status: 409, error: ARCHIVED_REFUSAL };
   let chat;
   try {
     chat = await acquireChatHandle(path);

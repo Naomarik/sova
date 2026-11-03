@@ -25,7 +25,7 @@ import type {
 	ProbeResult,
 } from "../backend.ts";
 import { canonicalizePath, isWithin, mapShadowed, policyKey, writeSet } from "../backend.ts";
-import { proxyEnv } from "../env.ts";
+import { addGitCleanupEnv, proxyEnv } from "../env.ts";
 
 export { gitProtectedPaths, trustStores } from "../backend.ts";
 
@@ -312,7 +312,7 @@ export class LinuxBwrapBackend implements Backend {
 		return {
 			hidden: [
 				h(".ssh"), h(".gnupg"), h(".aws"), h(".docker"), h(".kube"), h(".azure"), h(".password-store"),
-				h(".config/gh"), h(".config/gcloud"), h(".config/hub"), h(".local/share/keyrings"),
+				h(".config/gh"), h(".config/glab-cli"), h(".config/gcloud"), h(".config/hub"), h(".local/share/keyrings"),
 				h(".mozilla"), h(".config/google-chrome"), h(".config/chromium"), h(".config/BraveSoftware"),
 				h(".netrc"), h(".git-credentials"), h(".npmrc"), h(".pypirc"), h(".cargo/credentials.toml"),
 				h(".claude/.credentials.json"), h(".claude.json"),
@@ -379,6 +379,9 @@ export class LinuxBwrapBackend implements Backend {
 		if (policy.hostTmp && !sockets) notes.push("tmp: the host's Unix sockets could not be listed unambiguously (/proc/net/unix), so /tmp is the private tmp");
 		const env: Record<string, string> = { ...policy.env, ...(req.env ?? {}), TMPDIR: sockets ? tmp : "/tmp" };
 		if (network === "proxy") Object.assign(env, proxyEnv(RELAY_PORT));
+		// Every process the command starts dies with its PID namespace: git must not start a
+		// background cleanup it would cut off (env.ts).
+		addGitCleanupEnv(env, tmp, env.TMPDIR!, { ...process.env, ...env });
 
 		const argv: string[] = [bwrap, "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--tmpfs", "/dev/shm", "--tmpfs", "/run"];
 		// A socket removed between the scan and bwrap's start fails this one command ("bwrap: …"); the

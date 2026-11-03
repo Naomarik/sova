@@ -26,6 +26,7 @@ const FIELDS: { [K in keyof Required<SessionSummary>]: "compare" | { exempt: str
   live: "compare",
   workers: "compare",
   workerSession: "compare",
+  workerOf: "compare",
   busy: "compare",
   chat: "compare",
   origin: "compare",
@@ -45,6 +46,7 @@ const FIELDS: { [K in keyof Required<SessionSummary>]: "compare" | { exempt: str
   folderOrg: "compare",
   project: "compare",
   profile: "compare",
+  queueChat: "compare",
   activity: "compare",
   pendingDialogs: "compare",
   seenAt: { exempt: "Nothing renders it (`unread`, which does, is compared); it moves at every open and close of any tab, and a new row object would re-mount the row for nothing." },
@@ -84,4 +86,60 @@ export function reuseUnchanged(next: SessionSummary[], prev: SessionSummary[] | 
     return o && sameSummary(o, s) ? o : s;
   });
   return out.length === prev.length && out.every((s, i) => s === prev[i]) ? prev : out;
+}
+
+// ---- Row deltas (the session feed's `rows` frames, §app.decisions/push) -----------------------
+// Imported by the server too (server/session-feed.ts): stays DOM- and Solid-free.
+
+/** What of a row a delta compares: every compared field, in COMPARED_FIELDS order, as JSON.
+    A row and its JSON round trip give the same key, so the server and a tab agree on it. */
+export function rowKey(s: SessionSummary): string {
+  const o: Record<string, unknown> = {};
+  for (const k of COMPARED_FIELDS) if (s[k] !== undefined) o[k] = s[k];
+  return JSON.stringify(o);
+}
+
+/** 32-bit FNV-1a over UTF-16 code units. */
+export function fnv1a(text: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+const keys = new WeakMap<SessionSummary, { key: string; hash: number }>();
+
+/** A row's key and its hash (path and key), cached per row object: an unchanged row object is never
+    stringified twice. */
+export function rowEntry(s: SessionSummary): { key: string; hash: number } {
+  let e = keys.get(s);
+  if (!e) {
+    const key = rowKey(s);
+    e = { key, hash: fnv1a(`${s.path}\n${key}`) };
+    keys.set(s, e);
+  }
+  return e;
+}
+
+/** The order-free digest of a list (`rows_check`): the 32-bit sum of its rows' hashes, as hex. */
+export function rowsDigest(rows: Iterable<SessionSummary>): string {
+  let sum = 0;
+  for (const s of rows) sum = (sum + rowEntry(s).hash) >>> 0;
+  return sum.toString(16);
+}
+
+/** The list order of GET /api/sessions (server/sessions-index.ts sorts with it): newest activity
+    first, the path breaking a tie, so a tab merging deltas orders rows exactly as a full read does. */
+export function byActivity(a: SessionSummary, b: SessionSummary): number {
+  return b.lastActiveAt.localeCompare(a.lastActiveAt) || (a.path < b.path ? -1 : a.path > b.path ? 1 : 0);
+}
+
+/** The list version header of GET /api/sessions: `<epoch>:<version>`. */
+export const LIST_VERSION_HEADER = "X-Sova-List-Version";
+
+export function parseListVersion(v: string | null | undefined): { epoch: string; version: number } | null {
+  const m = v ? /^([A-Za-z0-9_-]+):(\d+)$/.exec(v) : null;
+  return m ? { epoch: m[1]!, version: Number(m[2]) } : null;
 }

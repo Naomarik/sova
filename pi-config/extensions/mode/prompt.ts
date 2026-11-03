@@ -1,8 +1,8 @@
 /** The delegate system-prompt text, prompt composition, and status labels. Pure functions: unit-testable. */
 import { DELEGATE_PROFILE_INFO, DELEGATE_PROFILES, delegateDefaults, type DelegateProfileId, type WorkerChoice } from "./delegate.ts";
 import { alignFileSchema } from "./align.ts";
-import { ALIGN_STYLE_LABELS, type AlignStyle } from "./align-settings.ts";
-import { ALIGN_STYLE_PARAGRAPHS, buildMinorPrompt, MINOR_MODES, promptedMinorModes, VIS_GUIDE_DIR, workerMinorModes, type AlignPromptOptions, type MinorMode } from "./minor.ts";
+import { ALIGN_EAGERNESS_LABELS, ALIGN_STYLE_LABELS, type AlignEagerness, type AlignStyle } from "./align-settings.ts";
+import { ALIGN_STYLE_PARAGRAPHS, ALIGN_TRIGGER_LEAD, ALIGN_TRIGGER_PARAGRAPHS, ALIGN_TRIGGER_SHARED, buildMinorPrompt, MINOR_MODES, promptedMinorModes, VIS_GUIDE_DIR, workerMinorModes, type AlignPromptOptions, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import type { Mode, ModeState } from "./state.ts";
 import { WORKER_MODES_CAP, type ProjectModeRef, type ProjectModeSnapshot } from "./project-format.ts";
@@ -52,7 +52,7 @@ Profiles — pass the backend, model and effort exactly as written:
 Pick by the work, not the cost: investigation that feeds a design or plan is Planning & specs, not Investigation; unsure between Routine and Complex, choose Complex. Planning & specs and Investigation workers must not edit files: say so in their prompt. Workers keep their usual permissions, so that rule is prompt-level — check the worktree is unchanged after them.
 If a spawn fails because its model is unavailable, retry once with that profile's fallback only if one is listed above as its fallback, and say so; otherwise, or if the fallback fails too, ask the user which model to use, with the reason — never substitute one of your own. When the user names a backend, model or effort for a task, that choice wins over the profile; the user's model settings still apply at spawn, and a spawn they refuse is reported to the user, not rerouted.
 
-Worker prompts are self-contained: goal, files, conventions, verification, report-back. Batch independent spawns with non-overlapping files. Before reporting: read the diffs, run the project's tests or type checks — effort shapes how workers think, never how hard you check. Steer wrong work with agent_steer or respawn; never silently redo it; never present a worker report as your own (state what changed, what you verified, what remains).`;
+Worker prompts are self-contained: goal, files, conventions, verification, report-back. Batch independent spawns with non-overlapping files. When the user asks for a team, always start a real one with team_create, never separate workers you call a team; without being asked, start a team when parts must run at the same time on shared files or interfaces, or an implementer and a checker must go back and forth; otherwise use separate workers. Before reporting: read the diffs, run the project's tests or type checks — effort shapes how workers think, never how hard you check. Steer wrong work with agent_steer or respawn; never silently redo it; never present a worker report as your own (state what changed, what you verified, what remains).`;
 
 /**
  * Off (no subagent profile routes anything): the same orchestration, the four work kinds named
@@ -77,7 +77,7 @@ export function buildDelegatePrompt(routes: readonly ProfileRoute[]): string {
  * The paragraph a planning worker's prompt carries in a Visuals chat (§chat.alignment/visuals), copied word
  * for word: the worker has no vis_guide, so it reads the guide's files.
  */
-export const PLANNER_VISUALS_PARAGRAPH = `Drawings: where a picture explains faster than words (a wireframe for a question about a screen; a flow, state or steps for a change in behaviour), give that question, or the alignment, a "visual", at most 3 in all. In the Project manager writing style never use the code, tree or layers kinds. Before drawing a kind, read shared.md and <kind>.md in ${VIS_GUIDE_DIR} and use only that syntax.`;
+export const PLANNER_VISUALS_PARAGRAPH = `Drawings: where a picture explains faster than words (a wireframe for a simple screen or a flow across screens; an html prototype for a screen beyond a simple one; a flow, state or steps for a change in behaviour), give that question, or the alignment, a "visual", at most 3 in all. In the Project manager writing style never use the code, tree or layers kinds. Before drawing a kind, read shared.md and <kind>.md in ${VIS_GUIDE_DIR} and use only that syntax.`;
 
 /**
  * Appended to the delegate block while align is also on. Without it the delegate block's "delegate all
@@ -88,7 +88,7 @@ export const PLANNER_VISUALS_PARAGRAPH = `Drawings: where a picture explains fas
  */
 export function buildDelegateAlignBridge(visuals = false): string {
 	const draw = visuals ? ` Visuals are on: also copy this paragraph word for word into its prompt:\n\n${PLANNER_VISUALS_PARAGRAPH}` : "";
-	return `The align minor mode is on and takes precedence over delegation: for any ask that needs alignment, spawn at most one non-editing Planning & specs worker to investigate (never the Investigation profile: it is design work). Workers have no align tool: tell the planning worker that its one permitted write is the alignment JSON (${alignFileSchema(visuals)}), at an absolute path outside the repository that you name in its prompt (e.g. /tmp/align-<topic>-<n>.json); then import it with align {op: "import", path: that same absolute path} — never relay or retype its plan. In a remote session (tools on a target) import is refused: have the worker put the JSON in its report and pass its fields to align create. Spawn no implementation worker until the user has confirmed and the alignment's status is implementing, and give implementation workers the decided questions (align get). When the align instructions, or a later note, carry a "Writing style" paragraph, copy the one in effect word for word into the planning worker's prompt, so the JSON it writes follows it.${draw}`;
+	return `The align minor mode is on and takes precedence over delegation, for change requests only. ${ALIGN_TRIGGER_SHARED} Any other prompt is answered (or delegated) as the delegate block says, with no planning worker for an alignment. On a change request, mark the run (align {op: "change_request"}) and spawn at most one non-editing Planning & specs worker to investigate (never the Investigation profile: it is design work). When a lighter worker (an Investigation worker you sent on a bug report or a question) already investigated the same matter and the user then asks for the change, put the root cause it found in the planning worker's prompt, so it starts from it rather than investigating again from nothing. Workers have no align tool: tell the planning worker that its one permitted write is the alignment JSON (${alignFileSchema(visuals)}), at an absolute path outside the repository that you name in its prompt (e.g. /tmp/align-<topic>-<n>.json); then import it with align {op: "import", path: that same absolute path} — never relay or retype its plan. In a remote session (tools on a target) import is refused: have the worker put the JSON in its report and pass its fields to align create. Spawn no implementation worker until the user has confirmed and the alignment's status is implementing, and give implementation workers the decided questions (align get). When the align instructions, or a later note, carry a "Writing style" paragraph, copy the one in effect word for word into the planning worker's prompt, so the JSON it writes follows it.${draw}`;
 }
 
 /** The bridge in a chat without Visuals. */
@@ -104,7 +104,7 @@ export function buildSpecWriterPrompt(route: SlotRoute): string {
 		route.via === "primary"
 			? " If its spawn fails because its model is unavailable, retry once with the fallback only if one is listed above, and say so; otherwise ask the user which model to use — never substitute one of your own."
 			: "";
-	return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, "handing off spec writing")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \`.sova/spec/drafts/\`, never current \`claims/\` or \`manifest.json\`; you check its draft, run the checks and the census, and promote yourself.${retry}`;
+	return `Spec writer: draft claims and evidence records are written by one worker, spawned with agent_spawn on exactly this backend, model and effort → ${routeTarget(route, "handing off spec writing")} Give it the relevant spec passages quoted literally, the files the task changed, and the verification you did. It writes only under \`.sova/spec/drafts/\`, never current \`claims/\` or \`manifest.json\`; you check its draft, run the checks and the census, and record a note per promise; the landing makes it official.${retry}`;
 }
 
 /**
@@ -195,7 +195,7 @@ function minorBlock(minor: MinorMode, writer: SlotRoute | null, worker = false, 
  * turned off gets a line saying its instructions no longer apply. Undefined when nothing changed.
  * `guides` in the result: the modes whose whole block this note carries. `worker`: a block goes in
  * its worker form (composeWorkerPrompt), and the caller passes only worker-scope modes. A promptless mode
- * (MINOR_PROMPTLESS: codemode) is never told: its tool is the whole switch. `align`: the style and Visuals
+ * (MINOR_PROMPTLESS) is never told. `align`: the style and Visuals
  * an align block this note carries is built with (the ones in effect now).
  */
 export function buildModeNote(
@@ -230,22 +230,34 @@ export function buildModeNote(
 
 /**
  * The hidden note for a writing style changed after the model was told one (§chat.alignment/style):
- * the new style's paragraph, superseding the earlier one, or, back to Default, that it no longer applies.
+ * the new style's paragraph, superseding the earlier one, or, switching to Technical (no paragraph), that
+ * the earlier one no longer applies.
  */
 export function buildAlignStyleNote(from: AlignStyle, to: AlignStyle): string {
 	const paragraph = ALIGN_STYLE_PARAGRAPHS[to];
 	if (paragraph === undefined) {
-		return `Writing style change: the user set the align writing style back to Default. The earlier "Writing style: ${ALIGN_STYLE_LABELS[from]}" paragraph no longer applies; write alignments at your usual level of detail from now on.`;
+		return `Writing style change: the user set the align writing style to ${ALIGN_STYLE_LABELS[to]}. The earlier "Writing style: ${ALIGN_STYLE_LABELS[from]}" paragraph no longer applies; write alignments with the files, code and technical trade-offs they need from now on.`;
 	}
 	return `Writing style change: the user set the align writing style to ${ALIGN_STYLE_LABELS[to]}. It applies to every alignment you write or change from now on, instead of any earlier writing style:\n\n${paragraph}`;
 }
 
 /**
+ * The hidden note for an Eagerness changed after the model was told one (§chat.alignment/eagerness): the
+ * new choice's trigger paragraph, replacing the one the align block (or an earlier note) carries. Nothing
+ * else in the block depends on the choice, so nothing else is said.
+ */
+export function buildAlignEagernessNote(to: AlignEagerness): string {
+	return `Eagerness change: the user set the align eagerness to ${ALIGN_EAGERNESS_LABELS[to]}. This paragraph replaces the "${ALIGN_TRIGGER_LEAD}" paragraph your align instructions carry (or an earlier note gave), from now on:\n\n${ALIGN_TRIGGER_PARAGRAPHS[to]}`;
+}
+
+/**
  * Appended to the spec block in a worker's prompt (never the parent's): spec-mode.md is written to the
  * session that plans, promotes and briefs, and stays byte-identical, so what differs for a worker is said
- * here. The parent promotes; the worker's brief can say otherwise.
+ * here. The branch's landing makes drafts official; the worker's brief says what it commits. The writing procedure's Workers paragraph
+ * (`spec/WRITING.md`, which the census hands a worker, that section first) says the same words; index.test.ts
+ * holds them equal.
  */
-export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and it promotes. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started. Do not promote, commit, or record \`--commit\` evidence unless your brief says to; say instead what is ready to promote. List each foreign § you updated in your final report.`;
+export const SPEC_WORKER_NOTE = `You are a worker: a parent session started you, and its branch's landing makes the drafts official. Your brief is your go-ahead. Work in the draft your brief names, or say which one you started, and record your notes there. Commit only when your brief says to, and then only on its branch, never by landing on the default branch. List each foreign § you updated in your final report.`;
 
 /** One minor mode's block as a worker receives it: spec gets the worker note, never the writer paragraph. */
 function buildWorkerMinorPrompt(mode: MinorMode): string {

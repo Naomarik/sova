@@ -4,6 +4,115 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## Unreleased
+
+### Removed
+
+- **The codemode minor mode.** It is gone from the mode menu, profiles, automations and the
+  Overseer's coding sessions, and a settings file that still names it is refused as an unknown
+  mode. Experiments showed no gain in quality, cost more, and the agent never chose it on its own.
+  An old chat's script calls now show as ordinary tool steps. A terminal's pi follows its own
+  settings for its codemode tool.
+
+## v0.9.0 — 2026-10-26
+
+A new owner page, dependable landings, a waiting badge in the composer, and git that cleans up
+after itself. 149 commits since v0.8.0. The highlights:
+
+- **The owner page, redone.** Sova's mark with a light/dark toggle, the org as its title, instant
+  send, paged chats, and Conversations on Home. Owners can close and reopen their own requests, and
+  the Project Assistant does it on their yes, says what's new, and labels each version plainly.
+- **Landing you can rely on.** Land It lands the exact commit it showed; a newer commit replaces
+  the card ("Replaced by a newer commit"), and offer cards appear in Needs you. Typing "land it" in
+  a branch's own chat is your go-ahead too. Merge-ready schedules wake as soon as a branch turns
+  Ready to land.
+- **One waiting badge.** Messages waiting for a busy chat show as one badge in the message box,
+  with a Waiting on you dialog; every typed message is a steer, and messages sent while a chat is
+  busy land together.
+- **Git looks after itself.** Projects get git's scheduled maintenance, a killed cleanup's locks
+  are recovered, and the new session card shows the git folder's size and when cleanup is stuck.
+- **Memory size moves to Settings.** Summary size is set in Settings → Memory, no longer in the
+  mode menus.
+- **Drawings and tours.** Flow drawings draw questions as hexagons, never cut words, and a shape
+  can be tapped to follow it; a tour shows one card per chat, and Next and Back never freeze it.
+- **Sidebar.** A group's guide line collapses it, and the list keeps its scroll position.
+- **Smaller fixes.** Review Changes reads a removed worktree's commit from another folder; the
+  site deploy refuses to run without its hero video.
+
+Going back to `v0.8.0` (`SOVA_REF=v0.8.0`) hasn't been tested on this release: a summary size set
+in Settings → Memory is new stored data that v0.8.0 doesn't read.
+
+## v0.8.0 — 2026-10-24
+
+Feature request chats, a team inbox, Landing cards for the merge captain, and a quieter Sova when
+idle. 212 commits since v0.7.0. The highlights:
+
+- **Feature request chats.** The Project Assistant can open a planning chat with an owner about
+  what they asked for; Needs you lists the agreed plan as its own item and names who opened the
+  chat. The Project Assistant has one host-wide default model, which an org can override.
+- **The Project Overseer sets up the whole project.** It proposes changes on a Settings change
+  card; you apply them, and All settings keeps a history with Undo.
+- **Landing cards.** When a branch is Ready to land, Sova shows its session a Landing card: Land It
+  is your go-ahead for that exact commit, Not Yet holds it. An owner's READY alone never lands a
+  branch.
+- **Team inbox.** Each team member has an inbox on the Session detail pane; Sova's notices and
+  handovers arrive as items, and fewer team starts fail. Members keep their inbox at zero: a reply
+  closes an item, the team screen shows what closed automatically, and reports list what was left
+  open.
+- **Teams keep running when a model runs out.** A coordinator or monitor that fails at runtime moves
+  to its fallback model; only real out-of-usage marks a model out, short-window quotas count as rate
+  limits.
+- **Clearer decisions.** One turn card per finished turn, alignment questions carry a stakes chip,
+  Needs you names the kind of wait, and worker rows show Untested when a report ran no checks.
+  Alignments default to the Project manager writing style.
+- **Markdown in place.** Markdown blocks render in the chat, with a View Rendered viewer, and a
+  context file's or skill's name on the Setup card opens it.
+- **Costs.** The Costs tab and a session's Usage tab show the cache hit rate, and By project groups
+  folders into projects.
+- **Composer +** opens the Commands palette, led by this chat's own actions.
+- **Quieter when idle.** The session list, attention and Overseer state are pushed on change
+  instead of polled every few seconds, so an idle Sova uses far less CPU.
+- **Project copies.** The copy limit counts running copies and is set per machine on the Branches
+  tab; port numbering comes from the main checkout's saved definition, and workers can run their
+  own copies.
+- **Smaller fixes.** The Project Assistant offers only what would happen now; switching back to a
+  short chat keeps following instead of showing Jump to Latest. A session whose folder is gone opens in the home folder instead of failing;
+  stuck memory recovers on its own; the Focus button lines up with the composer; the README is a
+  new front door.
+
+Going back to `v0.7.0` (`SOVA_REF=v0.7.0`) hasn't been tested on this release: team inbox items,
+per-turn outcomes and the Project Overseer's settings history are new stored data that v0.7.0
+doesn't read.
+
+## v0.7.0 — 2026-10-22
+
+The Project Assistant grows up, owner requests get a home, and a focus view for reading a chat.
+38 commits since v0.6.0. The highlights:
+
+- **A real Project Assistant on the owner page.** It fills the phone with the composer pinned at
+  the bottom, takes photos (when photos are on and the reply model sees images), draws, and can
+  start a version for the owner to try when you allow it; with that off, it files a request
+  instead. A started version shows Starting… until it answers.
+- **"What it can do for you".** The owner page has Home, Assistant and Requests tabs, and a card
+  that says what the assistant can do from the switches you set, with tappable suggestions.
+- **Owner requests on the org page.** A Requests tab lists what owners asked for (Open, Done,
+  Declined), and Start Chat opens a chat in the request's project with the request as a note.
+- **Public links, share protocol 2.** Your computer decides which pages of its links open, so new
+  pages need no gateway update. **If you run a gateway, update it once:** Settings → Public links
+  warns when it is behind and offers Resync.
+- **Focus view.** A corner button in a chat hides everything but its title and the conversation;
+  your draft is kept, and the choice stays across chats and reloads.
+- **The Overseer can round up the work**: what is still open in each session over a window, and a
+  search of what sessions said.
+- **Smaller fixes.** The Timeline names who sent a message, and Inputs Only counts what you typed;
+  the sidebar keeps its scroll position through refreshes and a collapse sticks; a chat that
+  finished starting early says it is ready at once; the mode menu says when someone other than you
+  turned a mode's hooks on.
+
+Going back to `v0.6.0` (`SOVA_REF=v0.6.0`) hasn't been tested on this release: the owner page's
+tabs, requests and assistant versions are gone there, and a gateway already updated to share
+protocol 2 hasn't been tried with it.
+
 ## v0.6.0 — 2026-10-19
 
 Guided tours, everything as a command, and the Overseer's approvals in its head. 63 commits since

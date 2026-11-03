@@ -216,7 +216,7 @@ describe("the operator's composer in a baton session", () => {
 describe("the message limit is settable", () => {
   test("the default comes from Settings; a start may set its own; both are bounded", async () => {
     assert.equal(rowOf((await start(OPERATOR)).sessionId).budget.messagesMax, MESSAGES_DEFAULT);
-    assert.deepEqual(settings.writeBatonSettings({ messagesMax: 7 }), { messagesMax: 7, photos: PHOTO_DEFAULTS, files: { maxBytes: 25 * MB } });
+    assert.deepEqual(settings.writeBatonSettings({ messagesMax: 7 }), { messagesMax: 7, photos: PHOTO_DEFAULTS, files: { maxBytes: 25 * MB }, assistant: null });
     assert.equal(rowOf((await start(OPERATOR)).sessionId).budget.messagesMax, 7);
     assert.equal(rowOf((await start(OPERATOR, { messagesMax: 3 })).sessionId).budget.messagesMax, 3);
     for (const bad of [0, -1, 2.5, MESSAGES_CAP + 1, "10"]) {
@@ -235,8 +235,8 @@ describe("the message limit is settable", () => {
     registerOrgRoutes(app);
     const json = (method: string, body?: unknown) => ({ method, headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     assert.equal((await app.request("/api/baton/settings", json("PUT", { messagesMax: 0 }))).status, 400);
-    assert.deepEqual(await (await app.request("/api/baton/settings", json("PUT", { messagesMax: 40 }))).json(), { messagesMax: 40, photos: PHOTO_DEFAULTS, files: { maxBytes: 25 * MB } });
-    assert.deepEqual(await (await app.request("/api/baton/settings")).json(), { messagesMax: 40, photos: PHOTO_DEFAULTS, files: { maxBytes: 25 * MB } });
+    assert.deepEqual(await (await app.request("/api/baton/settings", json("PUT", { messagesMax: 40 }))).json(), { messagesMax: 40, photos: PHOTO_DEFAULTS, files: { maxBytes: 25 * MB }, assistant: null });
+    assert.deepEqual(await (await app.request("/api/baton/settings")).json(), { messagesMax: 40, photos: PHOTO_DEFAULTS, files: { maxBytes: 25 * MB }, assistant: null });
     const res = await app.request("/api/baton", json("POST", { orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "T", goal: "g", messagesMax: 12 }));
     assert.equal(res.status, 201);
     const created = (await res.json()) as { sessionId: string; link: string; linkWarning?: string };

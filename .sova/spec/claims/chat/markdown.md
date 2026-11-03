@@ -77,6 +77,8 @@ Wrap every fenced block like this, except a `vis <kind>` fence, which is a drawi
 </div>
 ```
 
+- **Rendered.** A closed `markdown` or `md` block's head also carries a Rendered/Source toggle,
+  before Copy Code (§chat.markdown/view-rendered); no other block has it.
 - **Language label.** The first word of the fence's info string, lowercased, and shown in
   uppercase eyebrow type. No info string means "text".
 - **Highlighting.**
@@ -104,6 +106,27 @@ Wrap every fenced block like this, except a `vis <kind>` fence, which is a drawi
   - On failure the label becomes "Couldn't copy" for 1.5s.
 - **Block tokens.** `--color-sunken` ground, a 1px `--color-border` edge, `--r-sm` (monospace
   corners), and code in `--color-ink`. The head is `--control-sm` tall with a 1px rule under it.
+
+## §chat.markdown/view-rendered — Rendered on a markdown block
+
+A closed code block whose fence word is `markdown` or `md` (any case) carries a toggle in its head,
+before Copy Code, that switches the block between its source and the markdown it describes, in
+place, the way a `vis` drawing's Source toggle does (§chat.markdown/visuals). It is
+`.button-sm.button-ghost` with `aria-pressed`: it reads **Rendered** with the `eye` icon while the
+source shows, and **Source** with the `terminal` icon while the rendered markdown shows. A block
+opens on its source.
+
+- **Rendered** replaces the block's `pre` with the block's raw source drawn by this same renderer
+  (tables, headings, lists, links, images by §chat.markdown/images-in-markdown, code blocks with
+  their own Copy Code, `vis` drawings), inside the block's frame, under its head, with no second
+  bubble. Nothing opens over the page.
+- Copy Code copies the raw source whichever side shows. A button inside the rendered side acts on
+  its own block, never on the block around it.
+- The choice belongs to that block while it stays on screen; a block that is drawn again (its
+  message re-renders it, the page reloads) opens on its source.
+- Every other fence word, a `vis` fence's source fallback and an indented code block get no toggle.
+- A fence still open mid-stream has no toggle: half a document is never rendered. It appears when
+  the fence closes.
 
 ## §chat.markdown/highlight-theme — Highlight theme (dark and light, tokens only)
 
@@ -158,6 +181,35 @@ Don't import a highlight.js stylesheet. These rules are the whole theme, and the
   scroll anchoring (`overflow-anchor`, on by default) holds your place.
 - **Author.** The `.live-dot` stays in the author row as in §chat/transcript, and there's no cursor glyph.
 
+## §chat.markdown/working-notes — Working notes fold closed
+
+Raw HTML is never rendered (above), so a model's `<details>` shows as text and can't fold. The one
+fold a reply can ask for is a fixed heading: a line that reads exactly `### Working notes` (level
+3, those words, any case, nothing else on the line), outside a code block. On an **assistant-text**
+row, the first such heading and everything after it to the end of the reply render as one
+disclosure, **closed**: a twist and "Working notes" as its summary, the rest of the reply as its
+body, rendered as markdown like the rest. What comes before the heading renders as today.
+
+```html
+<details class="disclosure md-working-notes">
+  <summary class="disclosure-summary">
+    <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
+    Working notes
+  </summary>
+  <div class="disclosure-body">{rendered markdown after the heading}</div>
+</details>
+```
+
+- It is closed whenever the reply renders, mid-stream too; once the user opens it, it stays open
+  while the same reply streams on, and opening is never remembered past that.
+- A later `### Working notes` heading inside the fold is an ordinary heading there. With nothing
+  after it, the heading renders as nothing.
+- Only assistant-text rows fold. Every other place this renderer draws (the markdown viewer, report
+  rows, team messages, briefs, idea text) shows the heading as an ordinary `h3`; so do the TUI and a
+  copy of the reply, which take the reply's own text.
+- The chat's agents are asked to write it while align is on (§chat.alignment/reply); any assistant
+  reply that has the heading folds the same way.
+
 ## §chat.markdown/visuals — Inline visuals (`vis` fences)
 
 A fenced block whose info string is `vis <kind>` is a **drawing**, not code. Sova draws it with its
@@ -172,8 +224,8 @@ broken block's source (§app.baton/outsider-view).
 
   | Fence | Draws | `mark` targets |
   |---|---|---|
-  | `vis flow` | boxes and arrows, laid out by rank; frames around some nodes (§chat.markdown/vis-flow-groups) | node id or label |
-  | `vis state` | a state machine (flow's layout, round nodes, `start`/`end` dots; frames as in flow) | state id |
+  | `vis flow` | boxes and arrows, laid out by rank, questions as hexagons, no text cut (§chat.markdown/vis-flow-text); frames around some nodes (§chat.markdown/vis-flow-groups); tap a shape to follow it (§chat.markdown/vis-flow-focus) | node id or label |
+  | `vis state` | a state machine (flow's layout, round nodes, `start`/`end` dots; text, frames and tapping as in flow) | state id |
   | `vis sequence` | actors, lifelines and numbered messages, with step-through | actor id or label, message number or exact label |
   | `vis layers` | a stack of labelled layers | layer label |
   | `vis tree` | an indented hierarchy | item name |
@@ -187,7 +239,9 @@ broken block's source (§app.baton/outsider-view).
   | `vis html`, `vis svg` | free-form, in a sandboxed frame (below) | — |
 
   A kind word that is neither in the registry nor one of its aliases
-  (§chat.markdown/vis-lenience-content) is an error (below). The grammar of each kind is taught to the model by the
+  (§chat.markdown/vis-lenience-content), nor a project's or extension's own `<owner>.<name>` kind
+  in the chat's snapshot (§chat.transcript-cards/drawing-kinds), is an error (below); an own kind
+  never replaces one of these. The grammar of each kind is taught to the model by the
   `vis` minor mode's guide (`pi-config/extensions/mode/vis/`: the shared rules and one file per
   kind); its examples are parsed by the renderer's own parser in tests, so the guide and the
   renderer can't drift.
@@ -215,7 +269,8 @@ broken block's source (§app.baton/outsider-view).
   cells carry an icon and a visually hidden word, flow frames carry a title.
 - **Step-through** (sequence). The drawing starts complete; nothing plays by itself.
   **Step Through** starts at the first item; Previous / Next walk it ("Step 3 of 8", "3/8" at phone
-  width, announced politely); later items are dimmed; **Show All** ends the walk.
+  width, announced politely); later items are dimmed; **Show All** ends the walk. A flow or state
+  drawing instead lets the reader pick one shape and follow its arrows (§chat.markdown/vis-flow-focus).
 - **Warnings (soft).** Where the intent is plain, a block draws instead of falling back: any one
   text (a label, a note, a `title:`, a `caption:`) over 200 characters is cut to 200, ending in "…"
   (the whole text stays in Source), and the marks above are dropped. The figure then draws with,
@@ -233,34 +288,47 @@ broken block's source (§app.baton/outsider-view).
   for a hard error. Only a hard error is a block that failed.
 - **Feedback to the model** (`server/vis-check.ts`). The model learns of a block that didn't draw
   through a hidden retry note, not through the reader's error line. In a chat Sova hosts (not the
-  Overseer's, a baton session's or a project overseer's) with the vis minor mode on, when a run is
-  about to settle, Sova parses every `vis` fence in that run's assistant text with the same
-  `parseVis`, finding fences as the reader's view does (per text block). If any block has a hard
-  error, Sova adds one hidden note (a `sova-vis-retry` custom message, `display: false`: never in
-  the transcript or the live view; the model sees it) naming each such block (its number in the
-  reply, its kind, its first line), the line and the error, and the model gets one more request in
-  the same run, asked to re-send only the fixed blocks. At most one retry per run: the retry's own
-  reply is never checked again, even if a block is still broken, and the broken block stays visible
-  above the fix. No retry when the run was stopped or failed, when a message is queued behind it
-  (that message goes first), when the session's file is held by another writer, or when vis is
-  off. A block that draws with warnings never triggers one.
+  Overseer's, a baton session's or a project overseer's) where drawings are on — the vis minor mode
+  on, or align on in a chat started with Visuals (§chat.alignment/visuals), the same rule that
+  gives the vis tools — and in the Project Assistant's chat always (§app.project-assistant/drawings),
+  when a run is about to settle, Sova parses every `vis` fence in that run's assistant text with the
+  same `parseVis`, finding fences as the reader's view does (per text block), and every visual the
+  run's `align` calls write inline on the alignment card (a `create`'s, an `edit_question`'s or an
+  `edit_doc`'s; not an `import`'s file, and not a call that failed). A block fails when it has a hard error, or when it is a `vis wireframe` the
+  layout finds cramped (§chat.markdown/vis-wireframe-room). If any block fails, Sova adds one hidden
+  note (a `sova-vis-retry` custom message, `display: false`: never in the transcript or the live
+  view; the model sees it) naming each such block (its number in the reply, or where it sits on the
+  card, its kind, its first line), the line and the error, or each cramped block and the width it
+  got, and the model gets one more request in the same run, asked to re-send only the fixed blocks
+  (a card's visual fixed with `edit_question` or `edit_doc`; a cramped screen given room, or drawn
+  as a `vis html` prototype when it is dense). At most one retry per run: the retry's own reply is
+  never checked again, even if a block is still broken or cramped, and the first drawing stays
+  visible above the fix. No retry when the run was stopped or failed, when a message is queued
+  behind it (that message goes first), when the session's file is held by another writer, or when
+  drawings are off. A block that draws with warnings never triggers one, except a cramped
+  wireframe.
 - **Tool-backed Tours.** The vis catalogue also lists `tour` (§app/tours), a recorded explanation of a real interface. It is not a fence kind and is not added to the pure renderer registry. `vis_guide {kind: "tour"}` returns the core of the tour authoring and recording workflow and points to `record_tour` and `show_tour`, not the shared drawing-fence grammar; `vis_guide` also takes the four parts that core names (`tour-signin`, `tour-sites`, `tour-sova`, `tour-sharing`) and returns each alone (§app.tours/authoring). The parts are no catalogue kind: the prompt's kind list is unchanged, and only the `tour` line names them. In ordinary chats, recording and showing require vis on; align's Visuals alone grants neither tour tool, even though the existing guide/check tools retain that availability. Scoped hand-off tour presentation is baseline conversation context. Opening a message never records a tour.
 - **`vis_guide`.** While vis is on, the model has a `vis_guide {kind}` tool. It returns the guide's
   shared rules (one statement per line, ids and quoting, tones, the strict parser, the "Not vis"
   pairs, the `mark` syntax) followed by that kind's file (its syntax, examples and `mark` targets);
-  `html` and `svg` return the same free-form file. `kind` is one of the kinds the prompt lists, or a tour part; a
-  stub or unknown kind is refused. It runs in Sova's process, never on a remote target, so it
+  `html` and `svg` return the same free-form file. `kind` is one of the kinds the prompt lists, a tour part, or
+  one of the chat's own kinds (§chat.transcript-cards/drawing-kinds); a stub or unknown kind is
+  refused. A Sova chat whose snapshot holds own kinds gets them from its start, fixed for the chat:
+  in the tool's `kind` list and one line each in its description, and for one the tool returns how
+  its `vis <owner>.<name>` fence is written, then its owner's guide. A chat with none, and a
+  terminal session, sees the tool exactly as before. It runs in Sova's process, never on a remote target, so it
   answers in every session the mode reaches (`mcp__sova__vis_guide` on the claude-code provider).
   It enters and leaves the loadout where `vis_check` does (at a session's start, when a prompt starts
   a run, when a run settles), so turning vis on or off changes the tool set once, and it adds no line
   to the system prompt. With vis off the tool is not in the model's loadout, unless align is on in a
   chat that started with Visuals (§chat.alignment/visuals), which wants the vis tools too.
-- **`vis_check`.** While vis is on, the model has a `vis_check` tool for draft `vis html` / `vis
-  svg` bodies (title/caption lines included). It answers whether the block would draw (or its error
-  and line), any warnings, and the document's size in characters against the budget (aim under
-  8K; over 16K doesn't draw). With vis off the tool is not in the model's loadout, with the same
-  exception as `vis_guide` (align on with Visuals); the retry after a reply stays with vis alone. The guide's
-  html/svg file names it in one line.
+- **`vis_check`.** While vis is on, the model has a `vis_check` tool for draft `vis html`, `vis
+  svg` and `vis wireframe` bodies (title/caption lines included). It answers whether the block would
+  draw (or its error and line) and any warnings; for html and svg also the document's size in
+  characters against the budget (aim under 8K; over 16K doesn't draw); for a wireframe also each
+  cramped block (§chat.markdown/vis-wireframe-room), or that none is. With vis off the tool is not
+  in the model's loadout, with the same exception as `vis_guide` (align on with Visuals), which the
+  retry after a reply shares. The guide's html/svg and wireframe files name it in one line each.
 - **Streaming.** An open `vis` fence is never drawn half-way: it holds a 200px dashed box reading
   "Drawing <kind>… N lines", with a pulsing dot (static under reduced motion). The drawing replaces
   it when the fence closes. A re-render keeps an unchanged drawing's DOM (and a frame's state); a
@@ -272,12 +340,18 @@ broken block's source (§app.baton/outsider-view).
   A drawing is never the scroll anchor, so one growing above the reader leaves their text in place.
 - **Size and phones.** SVG kinds draw at their natural size, shrink to 80 % to fit the pane, then
   scroll sideways inside a focusable region; the pane never widens (390 px included). Kinds that
-  can re-lay out do so first (flow turns `dir: right` downwards; bars turn horizontal when labels
-  can't fit). At a container width ≤ 420 px the head's buttons are icon-only.
+  can re-lay out do so first (flow turns `dir: right` downwards, then tightens its spacing, and
+  re-laying out never cuts its text: §chat.markdown/vis-flow-text; bars turn horizontal when labels
+  can't fit). A flow or state drawing's focusable region is its figure's one Tab stop, where the
+  arrow keys move between shapes and scroll them into view (§chat.markdown/vis-flow-focus). At a container width ≤ 420 px the head's buttons are icon-only.
 - **Tokens and theme.** Tokens only (`src/design/tokens.css`), through three tone variables
   (`--vis-fill`, `--vis-stroke`, `--vis-ink`) for `accent ok warn error info muted`. SVG is styled
   by classes, so a theme switch needs no re-render.
-- **Free-form (`vis html`, `vis svg`).** The fallback when no kind fits:
+- **Free-form (`vis html`, `vis svg`).** `vis html` is the guide's default for a screen beyond a
+  simple one (a clickable prototype: look and feel, colour and type, panes side by side, an editor
+  in a dialog, a dense desktop layout), with no need for the user to ask for HTML; a wireframe stays
+  for simple layouts (a plain page, a list, a form, a short dialog) and for flows across screens.
+  Either also draws what no kind covers, or something to play with:
   - a budget in **characters** (code points, not bytes) of the document after the `title:` /
     `caption:` lines: up to 8K (8,192) draws as is; up to 16K (16,384) draws with the warning
     "large: <n>K characters of <kind> (aim under 8K)"; over 16K is an error. The guide says to aim
@@ -304,7 +378,7 @@ broken block's source (§app.baton/outsider-view).
   draw (at most 1–2 per reply, small, captioned, next to prose that says what to notice), that
   every kind has its own syntax, never guessed from another, so the first fence of each kind in the
   conversation follows a `vis_guide` call for it, never to nest a `vis` fence in another fence, and
-  one line per kind saying what it draws (`vis/overview.md`, about 1.9K characters). The shared rules (with
+  one line per kind saying what it draws (`vis/overview.md`, about 2.1K characters). The shared rules (with
   the 200-character text limit and the one-line caption) and each kind's syntax reach the model
   only through `vis_guide`, so a reply that draws nothing carries no grammar. A kind flagged `stub`
   in the registry is never taught: its line is dropped from the list and `vis_guide` refuses it.
@@ -409,12 +483,60 @@ called `group` or `frame` in a chain still parses as before.
 - **Look.** A frame is a rounded, dashed `--color-border-strong` rectangle with a `--color-sunken`
   fill, drawn under edges and nodes. Its title sits inside at the top (caption size, semibold),
   drawn over the edges with a halo in the frame's fill, so it stays legible where an edge enters.
-  In `dir: right` the title is cut to the frame's width with an ellipsis, the whole label as a
-  tooltip. Share and owner pages draw a flow's frames the same way; the phone re-lays out as any
-  flow does.
+  The title is never cut: it wraps to as many lines as it needs, and the strip above the members
+  grows to hold them. In `dir: right` it wraps at the frame's width; downwards at the wider of a
+  shape's text width and the room the frame's members take side by side, so a long title never
+  widens its frame past that and a phone still fits the drawing. Share and
+  owner pages draw a flow's frames the same way; the phone re-lays out as any flow does.
 - **No regression.** A fence without group lines parses and lays out exactly as before, and a
   chain line that uses the word as an id (`frame -> x`) is a chain, not a group.
 - **The guide** teaches it in one line under flow, and its main flow example draws one group.
+
+## §chat.markdown/vis-flow-text — `vis flow` text: questions as hexagons, nothing cut
+
+In a `vis flow` or `vis state` drawing every word the fence wrote is on the drawing.
+
+- **Questions are wide hexagons.** A `decision` node draws as a hexagon with a flat top and bottom
+  and pointed sides. It wraps its whole text at the width an ordinary box wraps at, so it is about
+  as wide as one, and its text sits inside the flat part. Every decision in every flow and state
+  drawing has this shape; the fence word stays `decision` and the guide is unchanged.
+- **Nothing is cut.** Shape text, a shape's note, an arrow's label (a self-loop's too) and a
+  frame's title (§chat.markdown/vis-flow-groups) wrap to as many lines as they need and never end
+  in "…", at natural size and at every re-fitted spacing for a narrow pane. The 200-character
+  limit per text (§chat.markdown/visuals, Warnings) is what keeps a shape from growing without end.
+- **Arrows meet the outline.** An arrow into or out of a hexagon touches its outline: its flat top
+  or bottom in a downward flow, its pointed side in a `dir: right` one.
+- **No hover text.** A shape carries no tooltip; its whole text is already drawn, and it is the
+  shape's accessible name (§chat.markdown/vis-flow-focus).
+- **No regression.** A flow with no decision and no text the old limits cut lays out exactly as
+  before (`layout-master.json`); only fences with a decision, or with text that was cut, change.
+
+## §chat.markdown/vis-flow-focus — `vis flow` focus: tap a shape to follow it
+
+In a `vis flow` or `vis state` drawing, tapping (or clicking) a shape **picks** it; nothing
+happens on hover.
+
+- **What lights up.** The picked shape gets an accent ring outside its outline and a heavier
+  outline. Its direct neighbours (one arrow away, in either direction) and the arrows between them
+  and it stay at full strength, those arrows darker and thicker in ink, never accent; every other
+  shape, arrow and arrow label fades. A self-loop adds no neighbour. A mark on a shape stays
+  visible underneath. Tapping the picked shape again clears the pick; tapping another moves it.
+  One shape is picked per figure: in a figure with panels (§chat.markdown/vis-flow-sections),
+  picking in one panel clears the other's.
+- **Only a highlight.** Picking a shape opens nothing and moves no scroll: the drawing keeps its
+  height and the pane stays where it was.
+- **Keyboard and screen readers.** Each figure is one Tab stop, a panelled one included. While it
+  has focus the arrow keys move a focus ring from shape to shape in that direction (into the next
+  or previous panel at a panel's edge) and scroll the shape into view, Home and End go to the first
+  and last; Enter or Space picks the shape under the ring (or clears it if it is the picked one);
+  Escape clears the pick and, only when there was one, goes no further, so it closes nothing else
+  on the screen. Each shape is a button named by its kind (Question, Start, Step, Outcome; in a
+  state machine Start, State, End) and whole text, pressed while picked. Start and end dots take a
+  tap area of at least 32px.
+- **Where.** The same in chat replies, on alignment cards (§chat.alignment/visuals), and on share
+  and owner pages (§app.baton/outsider-view). A sideways swipe of a drawing that scrolls is not a
+  tap. The docs site's examples are still pictures: their shapes are not buttons and do nothing
+  (§site.docs/vis-examples).
 
 ## §chat.markdown/vis-lenience — `vis` lines models get wrong: one reading, or a did-you-mean
 
@@ -949,6 +1071,41 @@ each of up to 4 of them keeps about 12 characters' width with the chip at its wi
 goes on a line of its own under them; in a row that lays out by content (§chat.markdown/vis-wireframe,
 Rows) the chip is one more block after its last, on the same line while it fits, else wrapping onto
 the next. The reserved height counts the chip's own line.
+
+## §chat.markdown/vis-wireframe-room — `vis wireframe` gives its text room
+
+A wireframe sizes its blocks by the room they have, so no label is crushed into a narrow column:
+
+- **Dialogs by what they hold.** On a desktop screen a `modal` that holds only short content (a
+  confirm: text, a field, buttons, a `row` of buttons alone) is about 360px wide, as before. One
+  that holds any other `row`, a `grid`, `col`, `table` or `sidebar`, or two or more fields (a form),
+  is about 85% of the frame wide.
+  Nothing marks it: the content decides. A phone `modal` keeps the frame's width less its margins.
+- **Grid columns by room.** A `grid` has as many columns as the width it gets holds tiles no
+  narrower than the tiles' least width (a titled tile about 12 characters plus its padding; a
+  control its label, at most about 12 characters; an image its 96px thumbnail): up to 4 on a desktop
+  screen, 2 on a phone, never fewer than 1. A grid in a narrow column or a dialog thus has fewer
+  columns than one across the page. A `wide` tile spans 2 columns, or 1 in a one-column grid.
+- **Words, never letters.** Text wraps between words, whatever the page around the figure sets. A
+  word wider than its box, in any block (a title, a subtitle, text, a stat's label or value, a
+  check's label, an item's right text, an alert, a toast, a table cell), is cut short with an
+  ellipsis on its own line, never broken between letters. The height estimate counts lines the same
+  way. Its box never shrinks to a few letters because of how the text could break.
+- **Table columns by content.** A `table`'s columns are as wide as their content on one line (the
+  header, the cells' text, and in the last column the row's badges and buttons side by side), the
+  room left shared in proportion, so a short column stays narrow and a badge stays whole. Short of
+  room, columns first wrap their text between words, never narrower than their longest word or
+  widest badge; only when even those don't fit do the columns shrink in proportion (the last
+  column keeping its badges and buttons whole while the others can give way), and a word too wide
+  for its cell is cut with an ellipsis. A column never widens the table past its box.
+- **One source.** These widths and column counts come from the wireframe's own layout model
+  (`layout.ts`), which the View applies to the drawing, the height estimate counts and the server's
+  check reads, so the three agree.
+- **Cramped.** The same model, at each frame's full width (300px phone, 760px desktop), finds a
+  block whose text is cramped: a box narrower than about 12 characters that its text doesn't fit on
+  one line in, or a word wider than the box it is in. A cramped wireframe still draws as it is and
+  shows the reader no warning line for it; it is what the model hears about (§chat.markdown/visuals,
+  "Feedback to the model", and `vis_check`).
 
 ## §chat.markdown/accessibility — Accessibility
 

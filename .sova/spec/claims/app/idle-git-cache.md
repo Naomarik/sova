@@ -73,8 +73,7 @@ waiting on Git, ordinary unchanged-session refreshes retain their twenty-second 
 for idle and archived-idle sessions below, and only files that ever wrote a `worktrees` entry
 receive Git readiness reads. Ownership, checks,
 questions, follow-up judgments and derived readiness remain per session, never shared merely
-because sessions name the same tree. Routine refreshes still never query spec assessment status
-or recapture its inputs.
+because sessions name the same tree.
 
 **Idle sessions.** A session with nothing running (no turn and no working subagents) is re-read
 every five minutes instead of every twenty seconds, merged or not. Each listing still checks,

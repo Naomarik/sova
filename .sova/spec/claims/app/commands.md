@@ -52,21 +52,39 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `models.favorite`, `usage.costs`, `usage.performance`, `usage.today`, `usage.session`,
   `usage.sessions`, `usage.prices`, `usage.prices.refresh`, `insights.usage`,
   `insights.usage.history`, `insights.agents`, `insights.worktrees`, `insights.session.workers`,
+  `insights.session.inbox`,
   `sova.health`, `settings.sova.get`, `settings.models.get`, `settings.provider-limits.get`,
   `settings.align.get`, `settings.delegate.get`, `settings.spec.get`, `settings.team.get`,
   `settings.summarizer.get`, `settings.overseer.get`, `settings.memory.get`,
   `settings.subagents.get`, `settings.align.set`, `push.test`, `chat.stop`, `chat.compact`,
   `chat.rewind`, `chat.regenerate`, `chat.queue.remove`, `chat.reload-code`, `audit.list`,
-  `chat.mode-command`, `session.cleanup`, `session.title.auto`, `session.title.shorten`,
-  `session.tags.backfill`, `session.tags.backfill.status`, `session.tags.backfill.cancel`,
-  `session.worktree.summary`, `session.worktree.cleanup`, `session.diff.summary`, `overseer.get`,
-  `overseer.memory.get`, `project.overseer.get`, `project.overseer.actions`,
-  `project.overseer.memory.get`, `insights.usage.refresh`, `schedule.list`, `playbook.list`,
-  `draft-spec.list`.
+  `chat.mode-command`, `org.owner.request.chat`, `org.owner.request.done`,
+  `org.owner.request.decline`, `settings.assistant-default.set`, `session.offers.get`,
+  `session.offers.show`, `session.offers.choose`, `session.offers.snooze`,
+  `session.offers.unsnooze`, `project.offers.list`, `project.settings.get`,
+  `project.settings.history`, `project.settings.undo`, `project.settings.propose.withdraw`,
+  `project.overseer.settings.set`, `project.claude-login.get`, `project.claude-login.set`,
+  `org.claude-login.get`, `org.claude-login.set`, `server.restart`, `session.card.post`,
+  `session.card.get`, `session.card.answer`, `project.cards.list`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).
-  Running `audit.list` reads Sova's record of who ran what (§app.command-audit/list).
+  `insights.session.inbox` reads a team member's inbox (§app.subagents-pane/member-inbox).
+  Running `audit.list` reads Sova's record of who ran what (§app.command-audit/list). The
+  `org.owner.request.*` entries are an owner request's Start Chat, Mark Done and Decline
+  (§app.project-assistant/request-chat). `settings.assistant-default.set` sets the Project
+  Assistant's default model (§app.project-assistant/models). The `session.offers.*` entries read
+  a session's offer cards, show one from another chat, click a button, and set or clear Not Now;
+  `project.offers.list` is the project page's Offers list (§chat/offers). Approving an offers
+  file's run buttons is a trust grant and no entry (§chat.offers/approval). The `project.settings.*`
+  entries read a project's settings and their history, undo a change and dismiss a Settings change card;
+  `project.overseer.settings.set` is the project overseer's settings PATCH (§app.project-overseer/settings).
+  Applying a card is a trust grant and no entry. The `*.claude-login.*` entries read and set the
+  Claude login a project's, or an organization's projects', new chats start on
+  (§app.claude-logins/project-login). The `session.card.*` entries raise or update a transcript
+  card, read a session's cards and answer one (§chat.transcript-cards/raise-command), and
+  `project.cards.list` is the project page's Cards section (§chat.transcript-cards/files); trusting a
+  project's or an extension's cards is a trust grant and no entry (§chat.transcript-cards/trust).
 - **Its mesh reach is its route's.** Each entry's `meshNeed` is the capability the peer listener's
   classifier gives its method and path (§mesh.peers/grants), and a test fails when they differ.
 - **Never a door the operator keeps closed.** No entry targets the peer routes (`/api/peer`,
@@ -218,27 +236,3 @@ names its extension.
   its page (§app.extensions/page), and the page remembers it; they leave every reply at once. An
   extension whose answers are dropped, or have a part dropped, 3 times in a row, or whose frame
   navigated, is muted: no longer asked, and nothing of it drawn, until the page reloads.
-
-## §app.commands/opted-out — Areas left as is, by choice
-
-Every route the main listener registers is a catalogue entry's, in a class that is not a command,
-or pending: not yet a command, on a list that only shrinks, so a new route that arrives pending
-fails the inventory test. One of those classes is the areas the user chose not to make scriptable,
-"Left as is, by choice": every route under `/api/` in `orgs`, `outreach`, `mesh`, `session-shares`,
-`public-links`, `previews`, `shares-overview`, `tours`, `voice`, `settings`, `claude`, `profiles`,
-`push`, `updates`, `themes`, `visitor-logging`, `baton`, `monitor`, `provider-limits` and
-`services`. They are named in one list, `OPTED_OUT` in `server/commands-inventory/scan.ts`.
-
-- **A route there is never pending**, and a new route there needs no catalogue entry.
-- **An entry still wins.** A route there that a catalogue entry points at stays a command (the
-  `settings.*` entries, `push.test`, `project.preview.off` and the `org.owner.request.*` ones), and
-  that is no error there, while an entry on any other class's route is one.
-- **It overlaps no other class.** A route that matches it and another class is an error.
-- **The core areas keep the default.** Sessions, projects, the Overseer with its to-dos and ideas,
-  and chats are not on the list: a new user-visible action there still gets a catalogue entry, and
-  their routes not yet converted stay pending.
-- **Taking an area back** is removing its name from the list. Its routes not yet converted then turn
-  pending and fail the inventory test by design, so the same change converts them, or lists each
-  one still left as is on the list as a single `METHOD /path`.
-- **Adding an area is the user's decision.** The inventory test's failure names the list as a way
-  out only for an area already on it, never as a fix for a new one.

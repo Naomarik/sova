@@ -209,7 +209,7 @@ describe("baton sessions", async () => {
   test("any write to a baton row or its links re-diffs the session list at once, with no timer tick", async () => {
     const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Nudge", goal: "g" });
     let reads = 0;
-    const f = feed.configureSessionFeed({ list: async () => [{ path: `p${++reads}` } as never], debounceMs: 0, intervalMs: 60_000 });
+    const f = feed.configureSessionFeed({ list: async () => [{ path: `p${++reads}` } as never], debounceMs: 0, minGapMs: 0, intervalMs: 60_000 });
     const got: string[] = [];
     const off = f.add((m) => got.push(m.type));
     try {

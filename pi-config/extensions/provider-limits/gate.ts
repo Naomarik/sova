@@ -19,6 +19,7 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { isUsageExhausted } from "./usage-out.ts";
 
 export const PROVIDER_LIMITS_FILE_NAME = "provider-limits.json";
 export const PROVIDER_LIMITS_DIR_NAME = "provider-limits";
@@ -559,10 +560,10 @@ export async function acquireSlot(provider: string, opts: AcquireOptions): Promi
 
 // --- rate limits ------------------------------------------------------------------------------
 
-/** A 429 "rate limit" reply — not one that says the quota or balance ran out. */
+/** A 429 "rate limit" reply — not one that says the usage ran out (quota, balance, credits, billing, a monthly or weekly usage limit: usage-out.ts). */
 export function isRateLimit(message: string | undefined, status?: number): boolean {
 	const text = message ?? "";
-	if (/quota|balance|insufficient|billing|credit/i.test(text)) return false;
+	if (isUsageExhausted(text)) return false;
 	return status === 429 || /^\s*429\b/.test(text) || /\b429\b/.test(text) || /rate[ _-]?limit/i.test(text);
 }
 

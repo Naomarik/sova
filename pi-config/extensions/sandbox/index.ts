@@ -52,6 +52,8 @@ import { confinedDefinitions, type Snapshot, type StockOptions, stockDefinitions
 const FLAG = "sandbox";
 /** Set by a sandboxed parent on its workers: its level and writable roots (`ParentScope` JSON). */
 const PARENT_FLAG = "sandbox-parent";
+/** Set by Sova when the session runs in the home folder because its own folder is gone: the cwd is not a writable root. */
+const CWD_NOT_WRITABLE_FLAG = "sandbox-cwd-not-writable";
 const STATUS_KEY = "sandbox";
 /** remote/workers.ts: a session on a target runs its tools there, and remote owns the seven names. */
 const REMOTE_SESSION_EVENT = "remote:session";
@@ -81,6 +83,11 @@ export default function sandbox(pi: ExtensionAPI) {
 	pi.registerFlag(FLAG, {
 		description: "Start with the sandbox on, for subagents only, or off (on|subagents|off). Workers get it from their parent; a session started with --sandbox on cannot lower it",
 		type: "string",
+	});
+
+	pi.registerFlag(CWD_NOT_WRITABLE_FLAG, {
+		description: "The session's cwd is a stand-in for a folder that is gone (Sova sets it): never a writable root while the sandbox is on",
+		type: "boolean",
 	});
 
 	pi.registerFlag(PARENT_FLAG, {
@@ -173,7 +180,8 @@ export default function sandbox(pi: ExtensionAPI) {
 		}
 		if (typeof parentScope === "string") return { ok: false, reason: parentScope };
 		// The same resolution Sova's server makes for this session (session-policy.ts).
-		const resolved = resolveSessionPolicy({ agentDir: agentDir(), cwd, sessionId, tmpDir, parent: parentScope, worktreeRoots, backend });
+		const cwdWritable = pi.getFlag(CWD_NOT_WRITABLE_FLAG) !== true;
+		const resolved = resolveSessionPolicy({ agentDir: agentDir(), cwd, sessionId, tmpDir, parent: parentScope, worktreeRoots, backend, ...(cwdWritable ? {} : { cwdWritable: false }) });
 		if (!resolved.ok) return { ok: false, reason: resolved.error };
 		const policy = resolved.value;
 		if (policy.outsideParent) {

@@ -235,3 +235,11 @@ test("a server action answers with its own result over the socket, as in one pro
   const result = link.sent.find((f): f is FrameOf<"tool.result"> => f.t === "tool.result" && f.effectId === "fx-act");
   assert.deepEqual(result?.outcome, { ok: true, result: { ok: true, by: "operator" } });
 });
+
+test("mirrorListedKey: a mirror differing only in its LLM count starts no new listing", async () => {
+  const { mirrorListedKey } = await import("./chat-handle-remote");
+  const base = { sessionId: "s", busy: false } as any;
+  const a = mirrorListedKey({ ...base, llm: { tokens: { end: 1 } } });
+  assert.equal(mirrorListedKey({ ...base, llm: { tokens: { end: 2 } } }), a);
+  assert.notEqual(mirrorListedKey({ ...base, busy: true, llm: { tokens: { end: 1 } } }), a);
+});

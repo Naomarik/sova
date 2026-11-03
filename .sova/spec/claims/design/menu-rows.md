@@ -4,8 +4,7 @@
 Every row of a menu is the design system's popover row, `.popover-item`, ported into `base.css`.
 A menu row is any element with `role="menuitem"`, `"menuitemradio"` or `"menuitemcheckbox"`: the
 session list's `⋯` menus and every other `ActionMenu`, Move into group, a workspace's narrow More
-Actions, the composer flyout, the mode menu and its subagent profile panel, the host menu, the
-align chips and the Costs tab's pickers. The row owns its alignment, its height and its states, so
+Actions, the composer flyout, the mode menu and its subagent profile panel, the host menu and the Costs tab's pickers. The row owns its alignment, its height and its states, so
 every menu's rows line up the same way.
 
 ```html

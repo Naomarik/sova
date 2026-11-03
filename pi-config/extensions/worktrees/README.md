@@ -7,12 +7,23 @@ The git worktrees a session works in, kept in the session itself. Spec: `§chat/
 | Surface | Shape |
 |---|---|
 | Entry | `custom` entry `worktrees`: `{version: 1, trees: TrackedWorktree[]}` (`state.ts`), the **whole** set, appended on every change; `restoreActive(branch)` reads the newest usable one, so tree navigation, forks and rewinds move the set with the branch. A tree: `path` (canonical top level), `branch`, `base` (the commit it was created from, or its fork point from the default branch when attached), `baseBranch?`, `status` (`active` \| `dropped` \| `merged`), `merge?` (`{target, sha, at, how: "tool" \| "detected"}`), `session` (the id that created or attached it; another id means it was inherited, i.e. shared), `how` (`created` \| `attached`), `at`. Opening a session writes nothing. |
-| Tool | `worktree {action, name?, base?, path?, target?}`, the parent agent's only: `create` (`git worktree add -b feat/<name>` at `<parent of the main checkout>/.worktrees/<repo>-<name>` unless `path`), `attach` (a worktree's top level; another session's is fine), `detach` (status `dropped`, nothing deleted), `merge` (into `target`, default `master`, else `main`), `list`. git runs by argument list (`git.ts`, `execFile`), never a shell. Local sessions only. No command, no pane control. |
+| Tool | `worktree {action, name?, base?, path?, target?, withoutDocs?}`, the parent agent's only: `create` (`git worktree add -b feat/<name>` at `<parent of the main checkout>/.worktrees/<repo>-<name>` unless `path`; each main-checkout spec draft holding a record not yet official that carries `agreed` is copied whole into the new worktree's drafts, unless one of that name is there, so it becomes official when that branch lands; the main checkout keeps its copy, `carryAgreedDrafts` in `spec.ts`), `attach` (a worktree's top level; another session's is fine), `detach` (status `dropped`, nothing deleted), `merge` (into `target`, default `master`, else `main`; the branch's spec drafts are made official on it first, see **Merges**; in a repo Sova's merge queue serves (see **Served**), a merge into `master`, `main`, the main checkout's branch, the queue's target or its declared target (`.sova/project.json` `merge.target`, as the main checkout's HEAD or that branch commits it) is refused: branches reach it only through the queue; in any other repo it is a plain merge), `land` (on the user's go-ahead typed in this chat, "land it": in a served repo it queues the branch in Sova's merge queue ("skip review" in it: `withoutReview`, no review step); in any other repo it merges the branch into the main checkout's branch (else `master`/`main`) as `merge` does, its spec drafts made official first unless the user said "without its specs", and records nothing; either way only when the user's newest message says to land or merge, `typedGoAhead`, and the user typed it: one a `sova-overseer-sent`, `sova-baton-sent` or `sova-session-sent` marker names is refused, `newestUserMessage`; the branch at its head, nothing uncommitted; default the worktree the session's folder is in), `list`. git runs by argument list (`git.ts`, `execFile`), never a shell. Local sessions only. No command, no pane control. |
 | Sandbox | While the session's sandbox is on (`sandbox:state`), `create`, `attach` and `merge` ask the user (`ctx.ui.confirm`); declined or no UI changes nothing. The sandbox makes every active worktree writable and its `.agent` read-only. |
 | Event bus | `worktrees:state` (`{version: 1, active: string[]}`) on `session_start`, `session_tree`, every change, and in answer to `worktrees:discover`. The sandbox listens. |
+| Served | `served.ts`. Which repos Sova's merge queue serves, `<SOVA_CHAT_STATE_ROOT or <agent dir>/sova>/merge-served.json` (`{v: 1, at, roots: [{root, target}]}`, each `root` a main-checkout root, realpath'd, `servedKey`), written by the server alone (a project on its Projects list whose merge setup is done); the server imports `SERVED_FILE_NAME` and `ServedData` from here. `merge` and `land` read it afresh each call with the repo's main-checkout root (the folder above `git rev-parse --git-common-dir`), `queueServes` in `index.ts`: no `SOVA_CHAT_STATE_ROOT` → not served; the root listed → served (its `target`); not listed → not served; the file absent or damaged → served (fail closed). The tool's description and guidelines name no queue: they defer to the per-turn Sova landing note the server adds for each repo. |
+| Landing answers | `landing.ts`. The user's go-aheads, kept in `<SOVA_CHAT_STATE_ROOT or <agent dir>/sova>/landing.json` (`{v: 1, goAheads: [{branch, commit, session?, at, by, withoutSpecs?, withoutReview?, in?, drafts?}]}`), written by `worktree land` for the user's typed go-ahead (`by: "owner-chat"`). Sova's merge queue reads each new one and queues that branch at that commit (`server/merge-queue/ingest.ts`). Other `by` values are older records, still read; an older file's `notYet` and `docsEntries` lists are ignored. Every writer holds `<file>.lock` (made with O_EXCL; a writer waits up to 5 s, and a lock older than 10 s is taken over) while it re-reads, merges and replaces the file (`withLandingLock`). |
 | Merge card | `custom_message` `worktree-merge`, `display: true`, content the one line the model reads (`mergeNote`: "Merged feat/x into master at abc1234, 5 commits, +120 −30"; a detected merge's spec warnings follow it), details `WorktreeMergeDetails` (`path`, `branch`, `target`, `sha`, `commits`, `added`, `removed`, `fastForward`, `how`). Sent with `triggerTurn: false`: pi holds it to the end of the running turn. The TUI draws it with `registerMessageRenderer`; Sova renders it as a merge card. |
 
-Merges: `worktree merge` records one directly. Where the target is checked out, that checkout must
+Merges: `worktree merge` records one directly. First it makes the branch's spec drafts official on the
+branch (`landDocs` in `spec.ts`): the draft tool's `land --write` at the branch's head, then one
+commit of exactly the spec files it wrote, with its message and the trailer
+`Sova-Spec-Landing: worktree-tool`, and the answer says so with its counts. A project with no spec, a
+worktree with no draft, or a merge that can't run anyway gets no docs commit. When the spec has
+uncommitted changes (`spec-uncommitted`), `land` refuses, or the docs commit would clash with what landed on the
+target meanwhile (the commit is taken back and the drafts' `draft.json` put back), nothing is merged
+or changed and the answer names what doesn't fit: the chat fixes its drafts (no commit needed) and
+merges again. `withoutDocs` skips the step, only on the user's word, and the drafts stay behind.
+Where the target is checked out, that checkout must
 have no tracked changes and the merge runs there (fast-forward when possible, else a merge commit;
 a conflict is aborted). Where it is not checked out, only a fast-forward (`update-ref`, guarded by
 the old value). A merge made with plain git during a turn is detected when the run settles: each
@@ -32,9 +43,13 @@ merge and the spec tools sit beside this extension (`../spec/core`), a recorded 
 model one `Spec warning: …` line for each thing it can act on, from
 `sova-spec.mjs foreign --base <target before> --head <target after> --landing --drafts <worktree>`
 and the drafts' evidence: changed files no claim maps (spec any whose change a user sees); a draft
-with unpromoted records in the merged worktree or a worktree whose branch the merge brings in
-(`pending`, or `conflict` never promoted: promote what shipped; into the default branch, promote
-the landing's own drafts now; another worktree's are named with it); a merge commit that resolved §
+with records not yet official in the merged worktree or a worktree whose branch the merge brings in
+(`pending`, or `conflict` never promoted; the merged worktree's own were left on purpose with
+`withoutDocs`, since a merge makes them official first: into another branch, copy the draft into
+that branch's worktree so it lands with that branch; into the default branch, they didn't land with
+the code and the draft stays in the worktree's drafts folder until it lands with a fresh branch from
+the default branch, never on the default branch itself; another worktree's are named with it and
+land when that worktree's branch lands); a merge commit that resolved §
 by hand (it differs from both parents; `git show --cc`); an evidence commit a draft names that the
 branch doesn't contain (a rebase after evidence); and that the warnings could not be computed. Each
 is said once: a `worktree merge` says them in its tool result and its card's message is the merge
@@ -63,6 +78,6 @@ untracked-file read caps both sides apply. Change either only with both callers;
 ## Tests
 
 ```sh
-node --test state.test.ts git.test.ts spec.test.ts   # the fold, the cwd rule; git and the spec report against throwaway repos
+node --test state.test.ts git.test.ts spec.test.ts landing.test.ts served.test.ts   # the fold, the cwd rule; git, the spec report, go-aheads, the served file
 node tests/run.mjs                      # the extension against a fake pi: tool, approval, merge detection
 ```

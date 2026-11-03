@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { EntryKind, TranscriptItem } from "../../shared/protocol";
 import { emptyLive } from "./live";
-import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, visibleCount, type HideKinds } from "./hidden-rows";
+import { isAlignMarkOnly, isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, visibleCount, type HideKinds } from "./hidden-rows";
 
 const row = (id: string, kind: EntryKind, extra: Partial<TranscriptItem> = {}): TranscriptItem => ({ id, kind, ...extra });
 const call = (id: string, callId?: string) => row(id, "tool-call", { text: "bash", toolCallId: callId });
@@ -150,4 +150,26 @@ test("Hide tool calls never folds an Overseer card: card, legacy confirm and lin
   assert.equal(isHiddenBlock({ type: "toolCall", id: "b", name: "sova_confirm", argsText: "" }, TOOLS), false);
   assert.equal(isHiddenBlock({ type: "toolCall", id: "e", name: "sova_card", argsText: "" }, TOOLS), false);
   assert.equal(isHiddenBlock({ type: "toolCall", id: "a", name: "sova_navigate", argsText: "" }, TOOLS), true);
+});
+
+test("an align call that is only the change-request mark is working: hide tool calls folds it; any other align call stays", () => {
+  const mark = { ops: [{ op: "change_request" }] };
+  const alignCall = (id: string, callId: string, args: unknown) => row(id, "tool-call", { text: "align", toolCallId: callId, tool: { args } });
+  const items = [
+    row("u1", "user"),
+    alignCall("m1", "m", mark),
+    result("mr", "m"),
+    alignCall("c1", "c", { ops: [{ op: "change_request" }, { op: "create", title: "t", summary: "s" }] }),
+    alignCall("g1", "g", { ops: [{ op: "get" }] }),
+  ];
+  const s = splitHidden(items, TOOLS);
+  assert.deepEqual(s.hidden.map((it) => it.id), ["m1", "mr"], "the mark and its result fold together");
+  assert.deepEqual(s.shown.map((it) => it.id), ["u1", "c1", "g1"]);
+  assert.equal(s.calls, 1);
+  assert.equal(isHiddenBlock({ type: "toolCall", id: "m", name: "align", argsText: "", args: mark }, TOOLS), true, "streaming: the mark folds too");
+  assert.equal(isHiddenBlock({ type: "toolCall", id: "c", name: "align", argsText: "", args: { ops: [{ op: "create" }] } }, TOOLS), false);
+  assert.equal(isHiddenBlock({ type: "toolCall", id: "x", name: "align", argsText: "" }, TOOLS), false, "arguments not in yet: not folded");
+  assert.equal(isAlignMarkOnly("align", { ops: [] }), false);
+  assert.equal(isAlignMarkOnly("bash", mark), false);
+  assert.equal(isAlignMarkOnly("align", { ops: [{ op: "change_request" }, { op: "change_request", note: "x" }] }), true);
 });

@@ -25,9 +25,9 @@ const full = () => ({
   version: 1,
   slots: { cap: 2 },
   services: {
-    cache: { cmd: ["node", "srv.mjs"], scope: "shared", ports: { tcp: { fixed: BASE + 10 } }, ready: { tcp: "tcp", timeout: 10 } },
+    cache: { cmd: ["node", "srv.mjs"], scope: "shared", ports: { tcp: { fixed: BASE + 40 } }, ready: { tcp: "tcp", timeout: 10 } },
     api: { cmd: ["node", "srv.mjs"], requires: ["cache"], ports: { http: { base: BASE } }, ready: { tcp: "http", timeout: 10 } },
-    extra: { cmd: ["node", "srv.mjs"], ports: { http: { base: BASE + 5 } }, ready: { tcp: "http", timeout: 10 } },
+    extra: { cmd: ["node", "srv.mjs"], ports: { http: { base: BASE + 20 } }, ready: { tcp: "http", timeout: 10 } },
   },
 });
 const apiOnly = () => ({ version: 1, slots: { cap: 2 }, services: { api: { cmd: ["node", "srv.mjs"], ports: { http: { base: BASE } }, ready: { tcp: "http", timeout: 10 } } } });

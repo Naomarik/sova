@@ -13,7 +13,7 @@ process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 delete process.env.SOVA_JEV_KEY;
 after(() => rmSync(root, { recursive: true, force: true }));
 
-const { appendCall, callsFile, createDecisionRuntime, MAX_STATE_CHARS } = await import("./decide-runtime");
+const { appendCall, callsFile, createDecisionRuntime, MAX_STATE_CHARS, mayCarryPassword, withholdPasswords, WITHHELD } = await import("./decide-runtime");
 const { decisionDefaults } = await import("./decide-settings");
 import type { Question } from "./decide";
 
@@ -70,5 +70,51 @@ describe("the call ledger", () => {
 
   test("the default file is under the state root", () => {
     assert.equal(callsFile(), join(root, "agent", "sova", "decisions-calls.jsonl"));
+  });
+});
+
+describe("a pasted password never leaves (§app.decisions/privacy)", () => {
+  test("b1: Jev fails with network, the fallback model gets the state, and the password is not in it", async () => {
+    const seen: string[] = [];
+    const runtime = {
+      getModel: () => ({ id: "m", reasoning: false }),
+      hasConfiguredAuth: () => true,
+      completeSimple: async (_m: never, context: unknown) => {
+        seen.push(JSON.stringify(context));
+        return { content: [{ type: "text", text: JSON.stringify({ asks_user: { p: 0.2 } }) }], stopReason: "stop", usage: { input: 10, output: 5 } };
+      },
+    };
+    const netFail = (async () => {
+      throw new TypeError("fetch failed");
+    }) as unknown as typeof fetch;
+    const rt = createDecisionRuntime({
+      settings: () => ({ ...decisionDefaults(), jev: { enabled: true }, fallback: { backend: "pi", model: "prov/model-x", effort: "off" } }),
+      key: () => ({ key: KEY, source: "file" }),
+      fetch: netFail,
+      llm: { runtime: async () => runtime as never, denial: () => null },
+      callsFile: null,
+    });
+    const r = await rt.provider.decide({
+      purpose: "attention",
+      state: { title: "Deploy box", last_user_message: "log in with pw: hunter2-Xy9! and restart it", assistant_last: "Restarted. Should I also push?" },
+      questions: qs,
+    });
+    assert.equal(r.fellBackFrom?.provider, "jev");
+    assert.equal(r.fellBackFrom?.failure, "network");
+    assert.equal(seen.length, 1, "the fallback model was asked");
+    assert.equal(seen[0]!.includes("hunter2"), false);
+    assert.ok(seen[0]!.includes(WITHHELD));
+    assert.ok(seen[0]!.includes("Should I also push?"), "the rest of the state still goes");
+  });
+
+  test("what reads as a password or code next to a value, and what does not", () => {
+    for (const t of ["pw: hunter2-Xy9!", "my password is correcthorse", "Passcode=8812", "the token is abc123def", "use code 482913 to sign in", "PIN: 4711", "OTP 552211"])
+      assert.equal(mayCarryPassword(t), true, t);
+    for (const t of ["the code is fine now", "token budget is high", "a password-protected zip", "review the code base", "I changed the passcode screen", "tokens: 1200 used"])
+      assert.equal(mayCarryPassword(t), false, t);
+  });
+
+  test("strings go whole, keys and other values stay", () => {
+    assert.deepEqual(withholdPasswords({ a: "pw: hunter2", b: ["fine", "token=zz9zz"], n: 3, ok: true }), { a: WITHHELD, b: ["fine", WITHHELD], n: 3, ok: true });
   });
 });

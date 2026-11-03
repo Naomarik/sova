@@ -14,7 +14,9 @@ state. The answer names the outcome. Stop answers `stopped`, saying whether anyt
 and returning any queued text the stop cleared. Compact, Rewind, Regenerate and Remove answer
 `done` with the chat's own reply. Rewind's reply includes the text the composer would get.
 Reload Now answers `current`, `reloading`, `pending` or `failed`. A refusal answers 409 with the
-chat's own sentence.
+chat's own sentence. On an archived chat every action but Stop and Reload Now answers 409 (`code`
+`archived`) with "That session is archived; unarchive it first." and starts nothing
+(§chat.transcript/instant-open, "An archived chat").
 
 Two differences from a press: the rewound text comes back in the answer and is not placed into an
 open composer, and an action does not mark the session as seen, so its unread mark stays as it was.

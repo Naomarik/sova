@@ -3,3 +3,4 @@
 import path from "node:path";
 import { jiti, root } from "./runtime.mjs";
 await jiti.import(path.join(root, "index.test.ts"));
+await jiti.import(path.join(root, "spec-landing.test.ts"));

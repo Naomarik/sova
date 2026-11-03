@@ -365,6 +365,10 @@ function SenderLine(props: { sender: Sender; names: Record<string, string> }) {
         <Icon name="eye" small />
         <span>From the Overseer</span>
       </Show>
+      <Show when={s().kind === "merge-queue"}>
+        <Icon name="branch" small />
+        <span>From the merge queue</span>
+      </Show>
       <Show when={s().kind === "baton" && (s() as Extract<Sender, { kind: "baton" }>)}>
         {(b) => (
           <>

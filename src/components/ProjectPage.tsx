@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
+import { chatRefOf } from "../lib/merge-chat";
 import type { ProjectSummary } from "../../shared/projects";
 import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, archiveProject, getProjectPreviews, unarchiveProject } from "../lib/api";
@@ -13,10 +14,14 @@ import { PreviewsCard } from "./PreviewsCard";
 import { ActionMenu } from "./ActionMenu";
 import { costFigure, createProjectCost, ProjectCostCard } from "./ProjectCostCard";
 import { ProjectServicesTab } from "./ProjectServicesTab";
+import { MergeQueueTab } from "./MergeQueueTab";
 import { PlaybookReviewBanner } from "./PlaybookReview";
 import { ProjectDeployPanel } from "./ProjectDeployPanel";
 import { createRuntimePoll, ProjectSoftwareCard } from "./ProjectSoftwareCard";
 import { ProjectFilesCard } from "./ProjectFilesCard";
+import { ProjectCardsCard } from "./ProjectCardsCard";
+import { ProjectOffersCard } from "./ProjectOffersCard";
+import { createProjectSettings, ProjectAllSettings, ProjectSettingsChanges, ProjectSettingsHistory } from "./ProjectSettingsCards";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
 import "../orgs.css";
@@ -77,6 +82,8 @@ export interface ProjectOrgPart {
 export function ProjectPage(props: {
   project: ProjectSummary;
   tab: ProjectTab;
+  /** On the Merge Queue tab: one run's page. */
+  run?: string;
   titleRef(el: HTMLHeadingElement): void;
   onProject(p: ProjectSummary): void;
   refetchProject(): void;
@@ -331,12 +338,38 @@ export function ProjectPage(props: {
             {/* Its copies on this host and their verbs (§app.project-services/services-ui). */}
             <ProjectServicesTab projectId={projectId} archived={!!archived()} />
           </Match>
+          <Match when={tab() === "merge-queue"}>
+            {/* One branch at a time onto the target: what's checking, the line, what waits for you, recent landings. */}
+            <MergeQueueTab
+              projectId={projectId}
+              root={project().root}
+              name={project().name}
+              run={props.run}
+              // The queue records a chat by its id (an older record by its path); a worker is named as its chat's.
+              chatOf={(id) => chatRefOf(id, props.sessions?.())}
+            />
+          </Match>
           <Match when={tab() === "cost"}>
             <ProjectCostCard projectId={projectId} poll={cost} />
           </Match>
           <Match when={tab() === "settings"}>
-            <OverseerSettings po={po} placed={!!org} />
-            {org?.settings()}
+            {(() => {
+              // Every project setting and the overseer's Settings change cards (§app.project-overseer/settings), read while the tab shows.
+              const settings = createProjectSettings(projectId);
+              return (
+                <>
+                  <ProjectSettingsChanges projectId={projectId} data={settings} />
+                  <OverseerSettings po={po} placed={!!org} />
+                  {org?.settings()}
+                  {/* The project's offers file, read now (§chat.offers/project-list). */}
+                  <ProjectOffersCard projectId={projectId} />
+                  {/* Its card folders, broken ones with what is wrong, and its cards' trust. */}
+                  <ProjectCardsCard projectId={projectId} />
+                  <ProjectAllSettings data={settings} />
+                  <ProjectSettingsHistory projectId={projectId} data={settings} />
+                </>
+              );
+            })()}
             <section class="card orgs-section project-danger" aria-labelledby="project-danger">
               <h2 class="orgs-h2" id="project-danger">
                 Danger zone
@@ -368,7 +401,7 @@ export function ProjectPage(props: {
   );
 }
 
-const TAB_LABEL: Record<ProjectTab, string> = { overview: "Overview", requirements: "Requirements", branches: "Branches", cost: "Cost", settings: "Settings" };
+const TAB_LABEL: Record<ProjectTab, string> = { overview: "Overview", requirements: "Requirements", branches: "Branches", "merge-queue": "Merge Queue", cost: "Cost", settings: "Settings" };
 
 /** The page's tab strip, as the org page's: a tab per view (the tab is in the URL, each pick a history
     entry), Left/Right moving focus along it (wrapping), Home/End jumping; Enter or Space selects.

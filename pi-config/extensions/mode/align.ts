@@ -78,8 +78,13 @@ export interface AlignVisual {
 /** At most this many visuals per alignment, its questions' and its own together. */
 export const ALIGN_VISUALS_MAX = 3;
 
-/** The non-Default writing styles a document records (align-settings.ts AlignStyle; Default is no field). */
-export type AlignDocStyle = "simplified" | "pm";
+/**
+ * The writing style a document records (align-settings.ts AlignStyle): "default" is Technical. A document
+ * written before Technical was recorded has no field and names no style.
+ */
+export type AlignDocStyle = "default" | "simplified" | "pm";
+/** Each recorded style as the card, `get` and the viewer name it (align-settings.ts ALIGN_STYLE_LABELS). */
+export const ALIGN_DOC_STYLE_LABELS: Record<AlignDocStyle, string> = { pm: "Project manager", simplified: "Simplified", default: "Technical" };
 
 /** Adversarial review (behind the mode extension's `adversarial-review` flag): its two phases. */
 export type AlignReviewPhase = "plan" | "diff";
@@ -149,7 +154,7 @@ export interface AlignDocument {
 	rev: number;
 	/** The adversarial review record; absent until a review op ran (and always with the flag off). */
 	review?: AlignReview;
-	/** The writing style in effect at the document's latest change; absent for Default. */
+	/** The writing style in effect at the document's latest change ("default": Technical); absent on older documents. */
 	style?: AlignDocStyle;
 	/** The document's own drawing (§chat.alignment/visuals). */
 	visual?: AlignVisual;
@@ -457,6 +462,24 @@ export const ALIGN_FILE_SCHEMA = alignFileSchema();
 
 // ── Operations ───────────────────────────────────────────────────────────────
 
+/**
+ * The change-request mark (§chat.alignment/tool): the agent records that the user's latest prompt asks
+ * for something to be built, fixed or changed. It touches no document; only the settle nudge reads it,
+ * from the call's arguments (index.ts), for the run it is made in.
+ */
+export const CHANGE_REQUEST_OP = "change_request" as const;
+/** The mark's whole answer when it is alone in its call; before other ops it opens their answer. */
+export const CHANGE_REQUEST_TEXT = "Marked as a change request.";
+
+/**
+ * Whether an `align` call's arguments mark the run as a change request for the settle nudge: they name
+ * any op other than `get` (the mark itself, create, import or a document op), refused or not.
+ */
+export function marksChangeRequest(args: unknown): boolean {
+	const ops = isRecord(args) && Array.isArray(args.ops) ? (args.ops as unknown[]) : [];
+	return ops.some((o) => isRecord(o) && typeof o.op === "string" && o.op !== "get");
+}
+
 export const ALIGN_OPS = [
 	"create",
 	"import",
@@ -474,6 +497,7 @@ export const ALIGN_OPS = [
 	"drop_alignment",
 	"status",
 	"exempt",
+	CHANGE_REQUEST_OP,
 	"get",
 ] as const;
 /** The adversarial review's ops: accepted, and in the schema, only with the `adversarial-review` flag on. */
@@ -502,6 +526,7 @@ export const ALIGN_OP_FIELDS: Record<AlignOpName, { required: readonly string[];
 	drop_alignment: { required: ["reason"], optional: [] },
 	status: { required: ["to"], optional: [] },
 	exempt: { required: ["reason"], optional: [] },
+	change_request: { required: [], optional: ["note"] },
 	get: { required: [], optional: [] },
 	review: { required: ["phase", "state", "reason"], optional: ["model", "blockers"] },
 	close_blocker: { required: ["phase", "id", "by", "evidence"], optional: [] },
@@ -560,8 +585,8 @@ export interface AlignEnv {
 	review?: AlignReviewEnv;
 	/** The session started with Visuals on: the visual fields are taken (ALIGN_VISUAL_FIELDS). */
 	visuals?: boolean;
-	/** The writing style now; a changing call records it on the document (absent or "default": no field). */
-	style?: "default" | AlignDocStyle;
+	/** The writing style now; a changing call records it on the document (absent: the field is left as it was). */
+	style?: AlignDocStyle;
 }
 
 /** A worker tuple as the reviewer route names it. */
@@ -728,9 +753,20 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 	/** Text a started review adds to the result (the worker and the filled prompt). */
 	const extra: string[] = [];
 
+	// The change-request mark touches no document: alone, or before the call's other ops (`lead` of them).
+	let lead = 0;
+	while (lead < ops.length && ops[lead]!.op === CHANGE_REQUEST_OP) {
+		if (ops[lead]!.note !== undefined) text(ops[lead]!.note, `ops[${lead}] (${CHANGE_REQUEST_OP}): note`);
+		lead++;
+	}
+	const late = ops.findIndex((o, i) => i >= lead && o.op === CHANGE_REQUEST_OP);
+	need(late < 0, `ops[${late}] (${CHANGE_REQUEST_OP}): the mark comes alone or before the call's other ops`);
+	if (lead === ops.length) return { details: { v: 1, changes: [], line: "" }, text: CHANGE_REQUEST_TEXT };
+	const marked = lead > 0 ? `${CHANGE_REQUEST_TEXT}\n` : "";
+
 	// An exemption touches no document and stands alone.
 	if (ops.some((o) => o.op === "exempt")) {
-		need(ops.length === 1, "exempt stands alone in its call");
+		need(ops.length === 1, `exempt stands alone in its call${lead > 0 ? " (make the change-request mark in a call of its own)" : ""}`);
 		const reason = oneLine(text(ops[0]!.reason, "ops[0] (exempt): reason"));
 		return {
 			details: { v: 1, changes: [], line: "", exempt: { why: reason } },
@@ -739,19 +775,19 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 	}
 
 	const starts = ops.filter((o) => o.op === "create" || o.op === "import").length;
-	const first = ops[0]!.op;
-	need(starts === 0 || (starts === 1 && (first === "create" || first === "import")), "create or import must be the first op, once per call");
+	const first = ops[lead]!.op;
+	need(starts === 0 || (starts === 1 && (first === "create" || first === "import")), `create or import must be the first op${lead > 0 ? " after the change-request mark" : ""}, once per call`);
 	const creates = starts === 1;
-	const onlyGets = ops.every((o) => o.op === "get");
+	const onlyGets = ops.every((o) => o.op === "get" || o.op === CHANGE_REQUEST_OP);
 
 	let doc: AlignDocument | undefined;
 	const changes: AlignChange[] = [];
 	if (creates) {
-		const o = ops[0]!;
+		const o = ops[lead]!;
 		let parsed: AlignDocInput;
 		if (o.op === "import") {
-			const path = text(o.path, "ops[0] (import): path");
-			need(path.startsWith("/") || path.startsWith("~/"), `ops[0] (import): path must be absolute (e.g. "/tmp/align-plan.json"), not "${path}"`);
+			const path = text(o.path, `ops[${lead}] (import): path`);
+			need(path.startsWith("/") || path.startsWith("~/"), `ops[${lead}] (import): path must be absolute (e.g. "/tmp/align-plan.json"), not "${path}"`);
 			let raw: string;
 			try {
 				raw = env.readFile(path);
@@ -769,7 +805,7 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 			}
 			parsed = parseDocInput(json, `import ${path}`, visuals);
 		} else {
-			parsed = parseDocInput(Object.fromEntries([...DOC_INPUT_KEYS, ...(visuals ? ["visual"] : [])].map((k) => [k, o[k]])), "ops[0] (create)", visuals);
+			parsed = parseDocInput(Object.fromEntries([...DOC_INPUT_KEYS, ...(visuals ? ["visual"] : [])].map((k) => [k, o[k]])), `ops[${lead}] (create)`, visuals);
 		}
 		doc = freshDoc(nextDocId(docs), parsed, env.now);
 		changes.push(o.op === "import" ? { kind: "created", fromFile: true } : { kind: "created" });
@@ -789,7 +825,7 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 	}
 
 	const gets: AlignDocument[] = [];
-	for (let i = creates ? 1 : 0; i < ops.length; i++) {
+	for (let i = lead + (creates ? 1 : 0); i < ops.length; i++) {
 		const o = ops[i]!;
 		const where = `ops[${i}] (${o.op})`;
 		if (o.op === "get") continue;
@@ -965,9 +1001,8 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 	if (doc && changed) {
 		const n = visualCount(doc);
 		need(n <= ALIGN_VISUALS_MAX, `${doc.id} would carry ${n} visuals: at most ${ALIGN_VISUALS_MAX} per alignment (its questions' and its own); remove one with edit_question or edit_doc {visual: null}`);
-		// The style in effect at the document's latest change (§chat.alignment/document); Default is no field.
-		if (env.style !== undefined && env.style !== "default") doc.style = env.style;
-		else if (env.style === "default") delete doc.style;
+		// The style in effect at the document's latest change (§chat.alignment/document); "default" is Technical.
+		if (env.style !== undefined) doc.style = env.style;
 	}
 	if (doc && changed && !creates) {
 		doc.rev += 1;
@@ -984,7 +1019,7 @@ export function applyAlignCall(docs: readonly AlignDocument[], input: unknown, e
 	if (!doc) lines.push(...otherDocsLine(after, undefined));
 	const body = gets.length > 0 ? `\n\n${gets.map(toMarkdown).join("\n\n---\n\n")}` : "";
 	const more = extra.length > 0 ? `\n\n${extra.join("\n\n")}` : "";
-	return { details, text: `${lines.filter((l) => l !== "").join("\n")}${body}${more}`.trim() };
+	return { details, text: `${marked}${lines.filter((l) => l !== "").join("\n")}${body}${more}`.trim() };
 }
 
 function reviewPhaseOf(value: unknown, where: string): AlignReviewPhase {
@@ -1284,7 +1319,7 @@ export function normalizeAlignDocument(v: unknown): AlignDocument | undefined {
 		};
 		if (v.technical !== undefined) doc.technical = technical;
 		if (v.style !== undefined) {
-			if (v.style !== "simplified" && v.style !== "pm") return undefined;
+			if (v.style !== "default" && v.style !== "simplified" && v.style !== "pm") return undefined;
 			doc.style = v.style;
 		}
 		if (v.visual !== undefined) {
@@ -1540,7 +1575,7 @@ export function changeLine(changes: readonly AlignChange[]): string {
 
 /** The whole document as markdown: `get`, `/align export`, the TUI viewer. */
 export function toMarkdown(doc: AlignDocument): string {
-	const style = doc.style ? ` · ${doc.style === "pm" ? "Project manager" : "Simplified"} style` : "";
+	const style = doc.style ? ` · ${ALIGN_DOC_STYLE_LABELS[doc.style]} style` : "";
 	const out = [`## ${doc.id}: ${doc.title}`, "", `_${doc.summary}_`, "", `Status: ${alignStatusWord(alignStatus(doc))} · ${openText(doc)} · v${doc.rev}${style}`];
 	if (doc.visual) out.push("", ...visualMarkdown(doc.visual));
 	if (doc.phase === "dropped" && doc.droppedWhy) out.push(`Dropped: ${doc.droppedWhy}`);
@@ -1613,6 +1648,18 @@ const RUN_CONFIRM = /\b(?:merge|merging|push|release|restart|deploy|commit|rebas
 /** A leftover alignment block in the old markdown shape: its `## Alignment: <title>` anchor, colon and all. */
 const MARKDOWN_ALIGNMENT = /^\s*#{1,4}\s+alignment:\s*\S/im;
 const LIST_ITEM = /^\s*(?:\d+[.)]|[-*•])\s+\S/;
+/** The reply's working-notes fold (§chat.alignment/reply): a line reading exactly `### Working notes`, any case. */
+const WORKING_NOTES = /^### working notes[ \t]*$/im;
+
+/**
+ * A reply without its working notes: everything from the first `### Working notes` line outside a code
+ * fence to the end is dropped (§chat.alignment/reply), so what the user must read is what is judged.
+ */
+export function withoutWorkingNotes(reply: string): string {
+	const masked = reply.replace(FENCED, (fence) => fence.replace(/[^\n]/g, " "));
+	const at = masked.search(WORKING_NOTES);
+	return at < 0 ? reply : reply.slice(0, at);
+}
 
 /** What the nudge knows about the run beyond its reply. */
 export interface PlanContext {
@@ -1669,12 +1716,13 @@ function questionList(body: string): boolean {
  * - a list of two or more items with such words anywhere, closed by a go-ahead ask ("Go?", or one
  *   of the above);
  * - or, wherever it sits, a labelled list of questions (questionList).
- * Code fences and the spec mode's "Also changes" line are ignored. Calibrated offline against real
+ * The reply's working notes (withoutWorkingNotes), code fences and the spec mode's "Also changes"
+ * line are ignored. Calibrated offline against real
  * sessions (align.test.ts pins the shapes, false positives included).
  */
 export function planSignal(reply: string, context: PlanContext = {}): "markdown-alignment" | "question-list" | "asks-decision" | "list-then-decision" | null {
 	if (typeof reply !== "string") return null;
-	const body = reply.replace(FENCED, " ").replace(SPEC_TRAILER, "").trim();
+	const body = withoutWorkingNotes(reply).replace(FENCED, " ").replace(SPEC_TRAILER, "").trim();
 	if (MARKDOWN_ALIGNMENT.test(body)) return "markdown-alignment";
 	const paragraphs = body.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
 	const last = paragraphs[paragraphs.length - 1] ?? "";

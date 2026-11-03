@@ -12,7 +12,7 @@ export interface OverseerMemoryScope {
   /** Its name in copy: "Overseer" / "project overseer". */
   who: string;
   read(): Promise<OverseerMemoryInfo>;
-  write(patch: { on?: boolean; type?: MemoryType; size?: number }): Promise<OverseerMemoryInfo>;
+  write(patch: { on?: boolean; type?: MemoryType }): Promise<OverseerMemoryInfo>;
 }
 
 export const MAIN_OVERSEER_MEMORY: OverseerMemoryScope = { who: "Overseer", read: getOverseerMemory, write: putOverseerMemory };
@@ -25,9 +25,10 @@ export const projectOverseerMemory = (projectId: string): OverseerMemoryScope =>
 
 /**
  * An overseer's memory switch (the Overseer's, or a project overseer's): it has no mode menu, so its
- * memory has this button in its composer foot (the Overseer's before Quick Actions). The
- * popover holds a Memory checkbox row and the same type and size rows as the mode menu's panel; each pick
- * writes that overseer's switch at once and reaches it from its next turn.
+ * memory has this button in its composer foot (the Overseer's before Quick Actions). The popover holds a
+ * Memory checkbox row and the same type rows as the mode menu's panel, scrolling above the fixed foot (its
+ * size is Settings → Memory's); each pick writes that overseer's switch at once and reaches it from its
+ * next turn.
  */
 export function OverseerMemoryMenu(props: { scope?: OverseerMemoryScope }) {
   const scope = () => props.scope ?? MAIN_OVERSEER_MEMORY;
@@ -67,7 +68,7 @@ export function OverseerMemoryMenu(props: { scope?: OverseerMemoryScope }) {
     if (menu.matches(":popover-open")) menu.hidePopover();
   };
 
-  const write = async (patch: { on?: boolean; type?: MemoryType; size?: number }) => {
+  const write = async (patch: { on?: boolean; type?: MemoryType }) => {
     if (busy()) return;
     setBusy(true);
     setError(null);
@@ -119,7 +120,7 @@ export function OverseerMemoryMenu(props: { scope?: OverseerMemoryScope }) {
         }}
       >
         <Show when={error()}>{(e) => <Banner tone="error" title={e().title} body={e().body} />}</Show>
-        <div ref={rows}>
+        <div class="memory-panel-scroll" ref={rows}>
           <div class="model-menu-list" role="menu" aria-label={`${Who()} memory`}>
             <div
               class="popover-item popover-item-detail popover-item-mono"
@@ -141,13 +142,11 @@ export function OverseerMemoryMenu(props: { scope?: OverseerMemoryScope }) {
           <MemoryTypePanel
             idPrefix={paneId("overseer-memory")}
             types={info()?.types}
-            sizes={info()?.sizes}
             choice={info()}
             busy={busy() || !info()}
-            onPick={(patch) => {
-              const i = info();
-              if (i && (patch.type ?? i.type) === i.type && (patch.size ?? i.size) === i.size) return;
-              void write(patch);
+            onPick={(type) => {
+              if (info()?.type === type) return;
+              void write({ type });
             }}
           />
         </div>

@@ -56,15 +56,21 @@ const powersTools = (grant: string[]) =>
     part's own tools need an open org host, so they are not frozen here). */
 const poHost = (over: Record<string, unknown>) => ({ gaps: () => null, contributed: () => [], ...over }) as never;
 
+/** The copy verbs' stub (§app.overseer/copies): no click, no host. */
+const copyVerbs = { clicks: () => null, approved: () => false, host: () => ({}) as never };
+
 const fileWrites = { protectedRoots: () => [], attended: () => true, unattended: po.PO_UNATTENDED_WRITE_REFUSAL, log: () => {} };
 
 function families(): Record<string, Decl[]> {
   return {
     overseer: overseer.overseerTools({} as never, new overseer.TurnLimits(), identity).map(decl),
+    // As the live host has it: copies and leftover processes on its cards and verbs (§app.overseer/copies).
+    "overseer+copies": overseer.overseerTools({ confirmedClicks: () => null } as never, new overseer.TurnLimits(), identity).map(decl),
     "overseer-files": overseerFileTools(CWD, undefined, identity, undefined, fileWrites).map(decl),
     "project-overseer": po.projectOverseerTools(poHost({}), identity).map(decl),
     "project-overseer+onboard": po.projectOverseerTools(poHost({ onboard: () => {} }), identity).map(decl),
     "project-overseer+gaps": po.projectOverseerTools(poHost({ gaps: () => ({ param: GAP_PARAM }) }), identity).map(decl),
+    "project-overseer+copies": po.projectOverseerTools(poHost({ confirmedClicks: () => null }), identity).map(decl),
     "session-powers:read": powersTools(["sessions.read"]).map(decl),
     "session-powers:read+message": powersTools(["sessions.read", "sessions.message"]).map(decl),
     "session-powers:all": powersTools(["sessions.read", "sessions.message", "sessions.all"]).map(decl),
@@ -72,6 +78,8 @@ function families(): Record<string, Decl[]> {
     "project-verbs:overseer": [decl(verbs.overseerVerbsTool(engine, () => "o-1", (e) => e))],
     "project-verbs:overseer+onboard": [decl(verbs.overseerVerbsTool(engine, () => "o-1", (e) => e, noop))],
     "project-verbs:project-overseer": [decl(verbs.projectOverseerVerbsTool(engine, { id: () => "o-1", root: () => CWD, act: noop }))],
+    "project-verbs:overseer+copies": [decl(verbs.overseerVerbsTool(engine, () => "o-1", (e) => e, noop, copyVerbs))],
+    "project-verbs:project-overseer+copies": [decl(verbs.projectOverseerVerbsTool(engine, { id: () => "o-1", root: () => CWD, act: noop, copies: copyVerbs }))],
     links: linkTools({
       act: noop,
       read: noop,

@@ -1,7 +1,7 @@
 import { createEffect, createSignal, For, on, onCleanup, Show, type Accessor } from "solid-js";
 import { createStore } from "solid-js/store";
 import { createTouchMode } from "../lib/input-mode";
-import { composerEnterKeyHint, composerKeySends, composerPlaceholder, countFrom, type SendKey } from "../lib/share-composer";
+import { composerEnterKeyHint, composerKeySends, composerPlaceholder, composerSend, countFrom, type SendKey } from "../lib/share-composer";
 import { PhotoFormatError, processPhoto, sizeLabel, type UploadRefusal } from "./photos";
 import { filesWord } from "./files";
 
@@ -79,6 +79,9 @@ export function ShareComposer(props: {
   photosOff?: string;
   /** Called with the input once it exists (the page focuses it or puts a draft in it). */
   ref?(api: { input: HTMLTextAreaElement; fit(): void }): void;
+  /** Asked as a send starts: true empties the box at once (the page shows the message as `Sending…`,
+      §app.project-assistant/chat); a refusal then puts the words and photos back, before anything typed since. */
+  optimistic?(): boolean;
 }) {
   const [atts, setAtts] = createStore<Attachment[]>([]);
   const [announce, setAnnounce] = createSignal("");
@@ -207,23 +210,21 @@ export function ShareComposer(props: {
   };
   createEffect(on(props.draft, () => queueMicrotask(fit)));
 
+  const copyOf = (list: readonly Attachment[]): Attachment[] => list.map((a) => ({ ...a }));
   const send = async (e?: Event) => {
     e?.preventDefault();
-    const text = props.draft().trim();
-    if ((!text && !ready().length) || uploading()) return;
+    if ((!props.draft().trim() && !ready().length) || uploading()) return;
     setRefusal(null);
-    let r = await props.send(text, readyOf("photo"), readyOf("file"), false);
-    // A staged photo or file expired (a restart, a day's wait): upload them again, once, and resend.
-    if (typeof r === "object") {
-      const again = readyOf(r.expired);
-      const ok = again.length ? await Promise.all(again.map((a) => upload(a.cid))) : [false];
-      r = ok.every(Boolean) ? await props.send(text, readyOf("photo"), readyOf("file"), true) : "kept";
-      if (typeof r === "object") r = "kept";
-    }
-    if (r !== "sent") return;
-    // The previews now belong to the page's echo; the strip empties.
-    setAtts([]);
-    props.setDraft("");
+    await composerSend<Attachment>({
+      draft: props.draft,
+      setDraft: props.setDraft,
+      atts: () => atts,
+      setAtts: (list) => setAtts(list),
+      copy: copyOf,
+      upload,
+      send: props.send,
+      optimistic: props.optimistic?.() === true,
+    });
   };
 
   const placeholder = () => composerPlaceholder(props.sendKey, props.placeholder, touch());
@@ -376,6 +377,9 @@ export function ShareComposer(props: {
             class="button button-icon share-send"
             aria-label={props.sending() ? "Sending" : "Send"}
             title={props.sending() ? "Sending" : "Send"}
+            // Pressing Send leaves the focus (and a phone's keyboard) in the box. Taking it moved the page under
+            // the finger (the owner page's bar comes back when the box loses focus) and the release missed Send.
+            onMouseDown={(e) => e.preventDefault()}
             aria-disabled={props.sending() || uploading() || props.blocked?.() || (!props.draft().trim() && !ready().length) ? "true" : undefined}
           >
             <span class="icon share-icon-send" aria-hidden="true" />

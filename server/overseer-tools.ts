@@ -42,6 +42,8 @@ import { overseerVerbsTool, type LooseExec } from "./project-services/tools";
 import { operatorEnvelopeOf } from "./projects/spaces";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
 import { orgHistoryParams, orgHistoryRead } from "./org-history-tools";
+import { codeHistoryTools } from "./overseer-code-history";
+import { whatsappTool } from "./overseer-whatsapp";
 import { resolveAnyProject, resolveOrg, resolvePerson } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
 import { linkState as shareLinkState, listShares, type ShareLinkRecord } from "./session-shares";
@@ -58,11 +60,15 @@ import { MEMORY_CODING_REFUSAL } from "../shared/memory";
 import { alignDropRefusal, codingSpecRefusal, SPEC_ALWAYS_ON } from "./project-coding-mode";
 import { projectCodingIds } from "./project-sessions";
 import { listProjects } from "./projects/spaces";
+import { copyApproval, copyItem, leftoverItem, liveLeftoverHost, nameOr, realCopyRowHost, starterWorking } from "./overseer-copies";
+import type { ClickChoice } from "../shared/overseer-card";
+import { projectRootOf } from "./project-root";
 import { LookupRefusal, SPEC_LOOKUP_TOOL, specLookup } from "./spec-lookup";
 import { draftActTools, draftSpecsTool } from "./conversation-draft-routes";
 import type { TailEnding } from "./sessions-index";
 import type { RemovedWorktree } from "./removed-worktrees";
 import type { ProjectSummary } from "../shared/projects";
+import type { PreviewView } from "../shared/preview-links";
 import {
   byRecency,
   cursorOf,
@@ -138,6 +144,9 @@ export interface OverseerToolHost extends IdeaToolHost {
   /** A chat's sandbox now (opened here as `open` does), or null when its runtime has no sandbox
       extension (§chat.sandbox/states). Absent: no session's sandbox can be set. */
   sandbox?(path: string): Promise<SandboxInfo | null>;
+  /** A project's session whose alignment questions are the operator's alone (a verb playbook's run, or one an Overseer
+      started asking the operator to confirm the brief) waiting on them: its title; null otherwise (§app.project-overseer/confirm-brief). */
+  operatorAnswersWaiting?(sessionId: string): Promise<{ title: string; questions: number } | null>;
   /** The state a new session starts in: On when the policy's `defaultOn` is true, else Subagents only. */
   sandboxDefault?(): SandboxState;
   /** Record that the Overseer started work in this session (the concurrency cap). `prompted`: a
@@ -153,6 +162,9 @@ export interface OverseerToolHost extends IdeaToolHost {
   /** The items of the confirm card whose click opened this turn (the user's own run, not typed);
       null when no card click opened it (§app.overseer/org-people-facing). */
   confirmed(): SovaConfirmItem[] | null;
+  /** The same click, per row with the label it chose (§app.overseer/copies). Absent: cards take no copies or leftover
+      processes, and sova_project_verbs has no copy verbs. */
+  confirmedClicks?(): ClickChoice[] | null;
   /** The live approval for later or standing rule that covers `tool` on every one of `sessions`
       (ids), or null (§app.overseer/approvals). Absent: none ever does. */
   permit?(tool: string, sessions: string[]): { id: string; label: string } | null;
@@ -368,6 +380,17 @@ function readUsed(file: string): Record<LimitKind, number> {
   return used;
 }
 
+/**
+ * What a limit's refusal adds in a turn a click on a card opened (§app.overseer/caps,
+ * §app.overseer/card-partial-apply): record only the rows already acted on, so the card stays
+ * partly applied, and tell the user that Apply on it sends the rest.
+ */
+export const CARD_REST_REFUSAL =
+  "This turn was opened by a click on a card: record with sova_card answer only the rows you already acted on, so the card stays open with the rest, " +
+  "and tell the user how many rows you acted on, which limit stopped you, and that Apply on the card sends the rest (their next message renews the limit).";
+export const withCardRest = (refusal: string | null, cardTurn: () => boolean): string | null => (refusal && cardTurn() ? `${refusal} ${CARD_REST_REFUSAL}` : refusal);
+
+
 /** The concurrency cap: refusal sentence, or null when another Overseer-started session may run. */
 export function concurrencyRefusal(running: number, caps: OverseerCaps): string | null {
   if (running < caps.concurrentSessions) return null;
@@ -549,8 +572,25 @@ const PROJECT_MODES_PARAM =
  * Build the Overseer's tool set. `limits` is shared with the extension that resets it per turn.
  * Every tool's `promptSnippet` is its one line in the prompt's catalogue ({{TOOLS}}).
  */
-export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redactor: () => Redactor = serverRedactor): Tool[] {
+/** A project's name on a copy's card row: its registered name, else its folder's. */
+const copyProjectName = nameOr(() => listProjects());
+
+export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redactor: () => Redactor = serverRedactor): Tool[] {
   aliasesNow = () => host.aliases?.() ?? {};
+  // Every refusal of a limit in a turn a card's click opened also says to record the rows done.
+  const cardTurn = () => {
+    try {
+      return !!host.confirmed?.();
+    } catch {
+      return false;
+    }
+  };
+  const limits = {
+    take: (kind: LimitKind, caps: OverseerCaps, n = 1) => withCardRest(shared.take(kind, caps, n), cardTurn),
+    give: (kind: LimitKind, n = 1) => shared.give(kind, n),
+    reserveRun: (running: number, caps: OverseerCaps) => withCardRest(shared.reserveRun(running, caps), cardTurn),
+    releaseRun: () => shared.releaseRun(),
+  };
   async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<{ status: number; json: any }> {
     const card = host.confirmed();
     const res = await host.request(path, {
@@ -952,7 +992,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         const now = Date.now();
         const since = parseSince(p.since, now);
         const has = hasParam(p.has);
-        const all = (await host.sessions()).filter((s) => !s.overseer && !s.workerSession);
+        const all = (await host.sessions()).filter((s) => !s.overseer && !s.workerSession && !s.queueChat);
         const region = p.region ?? "active";
         const q = typeof p.query === "string" ? p.query.toLowerCase() : "";
         const matched = all.filter((s) => {
@@ -1130,15 +1170,15 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       name: "sova_public_links",
       label: "Public links",
       description:
-        "This host's live public links, with their URLs, to give the user when they ask for one: session shares (/s/), gathering hand-offs (/h/) and organization owner pages (/i/). One line per live link: its kind; a share's title, recipient and share id; a hand-off's org, person, gathering title and number; an owner link's org and owner; then its expiry and URL. A link made before links were kept reads 'link not kept': the user gets a new one on its page. This host only. Give a link only to the user, never into another session or message.",
-      promptSnippet: "this host's live share, hand-off and owner links with their URLs (give one when the user asks)",
+        "This host's live public links, with their URLs, to give the user when they ask for one: session shares (/s/), gathering hand-offs (/h/), organization owner pages (/i/), and every project's active preview links and running copies' share links (preview). One line per live link: its kind; a share's title, recipient and share id; a hand-off's org, person, gathering title and number; an owner link's org and owner; a preview's id, project, what it serves (a running copy's endpoint, a port or a folder) and branch; then its expiry, a preview's state, and URL. A link made before links were kept reads 'link not kept': the user gets a new one on its page. This host only. Give a link only to the user, never into another session or message.",
+      promptSnippet: "this host's live share, hand-off, owner and preview links with their URLs (give one when the user asks)",
       parameters: obj({
-        kind: str("session | handoff | owner (default all).", { enum: ["session", "handoff", "owner"] }),
-        session: str("Only this session's links: a session id (its shares, or a gathering session's hand-off links)."),
-        org: str("Only this organization's hand-off and owner links: its id or exact name."),
+        kind: str("session | handoff | owner | preview (default all).", { enum: ["session", "handoff", "owner", "preview"] }),
+        session: str("Only this session's links: a session id (its shares, a gathering session's hand-off links, or the previews of a coding session's app)."),
+        org: str("Only this organization's hand-off, owner and preview links: its id or exact name."),
       }),
       execute: read(async (p, call) => {
-        const kind = p.kind as "session" | "handoff" | "owner" | undefined;
+        const kind = p.kind as "session" | "handoff" | "owner" | "preview" | undefined;
         let orgId: string | undefined;
         if (typeof p.org === "string" && p.org) {
           try {
@@ -1165,7 +1205,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
             }
           }
         }
-        if (kind !== "session") {
+        if (kind !== "session" && kind !== "preview") {
           for (const r of orgLinkRows(now)) {
             if ((kind === "handoff" && r.kind !== "handoff") || (kind === "owner" && r.kind !== "owner")) continue;
             if (orgId && r.orgId !== orgId) continue;
@@ -1173,6 +1213,20 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
             if (r.link) kept++;
             const what = r.kind === "handoff" ? `hand-off · ${r.orgName} · ${r.personName} · "${cut(r.sessionTitle ?? "", 80)}" · hand-off #${r.n}` : `owner link · ${r.orgName} · ${r.personName}`;
             lines.push(`- ${what} · expires ${day(r.expiresAt)} · ${r.link ?? "link not kept"}`);
+          }
+        }
+        // Every project's active preview links and running copies' share links, never a person's own link to one
+        // (§app.overseer/tools, §app.outreach/links).
+        if (!kind || kind === "preview") {
+          const projects = host.projects?.() ?? listProjects();
+          const { previewViews } = await import("./project-previews");
+          for (const v of await previewViews()) {
+            if (v.state !== "active" || v.siblingOf) continue;
+            const pr = projects.find((x) => x.id === v.projectId);
+            if (orgId && !(pr?.space.kind === "org" && pr.space.orgId === orgId)) continue;
+            if (session && v.sessionId !== session) continue;
+            if (v.url) kept++;
+            lines.push(previewLinkLine(v, pr?.name ?? v.projectId, day));
           }
         }
         const warning = shareState().warning;
@@ -1346,7 +1400,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     {
       name: "sova_create_session",
       label: "Create session",
-      // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
+      // Its card reads the recorded result (EAGER_TOOLS): never a call another tool made.
       exposure: "model-only",
       description:
         "Start a new session in a local folder (cwd) or on a remote target (target + remote_cwd), optionally with a model, thinking level, mode, minor modes, title, group and a first prompt. The mode and minor modes are set before the first prompt is sent, so its first turn already runs in them; they apply to that session only. With host (a mesh peer's id) the session is made on that host (cwd is a folder there; no group). With link: true it is a link member session, the only kind sova_link accepts: it has the link tools from its first turn, and no other session ever gets them. Counts against the per-turn cap on new sessions (and on prompts, when it has one). The first prompt runs with no browser attached: any extension dialog it raises falls back to its default.",
@@ -1458,6 +1512,9 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         if (s.archived)
           throw new Refusal(`"${s.title}" is archived, and an archived session takes no messages (the UI says "Unarchive it to send"). Unarchiving it is an act of its own: do it with sova_archive only if the user asked for this session to be used, then send.`);
         if (p.delivery !== undefined && p.delivery !== "followUp" && p.delivery !== "steer") throw new Refusal('delivery is "followUp" or "steer".');
+        // Its alignment questions are the user's alone (§app.project-overseer/confirm-brief): your words would read to it as their answer.
+        const waiting = await host.operatorAnswersWaiting?.(s.id);
+        if (waiting) throw new Refusal(`${waiting.title} is waiting on the user's answers to its alignment questions. Tell the user; never answer them. Nothing was sent.`);
         const caps = host.caps();
         // A session counts once: a send into one that already counts (started by you and running)
         // takes no new slot; any other send makes it count from now on, so it needs one.
@@ -1777,6 +1834,13 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         project: orgConfirmLookup.project,
         org: orgConfirmLookup.org,
         folder: orgConfirmLookup.folder,
+        // Running copies and leftover processes of any project (§app.overseer/copies).
+        ...(host.confirmedClicks
+          ? {
+              copy: (ref: string) => copyItem(ref, realCopyRowHost({ session: (id) => host.session(id), projectName: copyProjectName })),
+              leftover: async (project: string, port: number) => leftoverItem((await projectRootOf(project)) ?? project, port, liveLeftoverHost(projectEngine()), copyProjectName),
+            }
+          : {}),
       },
       link: async (target) => (await navTarget(target)).href,
       wrap: (run) => act("sova_card", run, { unattended: true }),
@@ -1806,6 +1870,12 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         const pid = await projectByPath(typeof params.project === "string" ? params.project : "");
         return onboardAnswer(await startOnboard(pid, why ? { why } : {}, operatorEnvelopeOf(pid, { kind: "operator", via: "overseer", overseerId: host.overseerId() })));
       },
+      // Any project's copies and leftover processes, after the user's click on a card listing them (§app.overseer/copies).
+      host.confirmedClicks
+        ? { clicks: () => host.confirmedClicks!(), approved: copyApproval(() => host.confirmedClicks!()), host: () => liveLeftoverHost(projectEngine()) }
+        : undefined,
+      // The user's word opens stopping a copy and sharing; a finished conversation's copy, its teardown (§app.overseer/copies).
+      { word: () => host.attended(), working: starterWorking((id) => host.session(id)) },
     ),
     ...orgTools({
       act,
@@ -1829,6 +1899,19 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       str,
       int,
       bool,
+    }),
+    // A project's code history and Sova's own server log, read-only, any run (§app.overseer/code-history).
+    ...codeHistoryTools({ overseerId: () => host.overseerId(), refusal: (m) => new Refusal(m), obj, str, int }),
+    // The WhatsApp senders' state, and Start Sender of a stopped one in a turn the user started (§app.outreach/overseer-sender).
+    whatsappTool({
+      who: "global",
+      resolveOrg: (ref) => resolveOrg(ref).id,
+      attended: () => host.attended(),
+      unattendedRefusal: UNATTENDED_REFUSAL,
+      overseerId: () => host.overseerId(),
+      refusal: (m) => new Refusal(m),
+      obj,
+      str,
     }),
     // The organization's history: read when the operator's turn asks for it.
     {
@@ -1922,3 +2005,12 @@ export function contactRedactingTool<T extends ToolSpec>(tool: T): T {
 
 /** Every tool name the Overseer has: its own plus the file built-ins (write and edit guarded, overseer-file-tools.ts) and wake_nudge. */
 export const BUILTIN_ALLOWED = ["read", "grep", "find", "ls", "write", "edit", "wake_nudge"];
+
+/** One active preview or running copy's share link as sova_public_links lists it, its URL included. Pure. */
+export function previewLinkLine(v: PreviewView, project: string, day: (iso: string) => string): string {
+  const t = v.target ?? { kind: "port" as const, port: v.port };
+  const what = v.instance ? `running copy ${v.instance}, endpoint ${v.endpoint ?? `port ${v.port}`}` : t.kind === "static" ? `folder ${t.folder}` : `port ${t.port}`;
+  const branch = v.branch ?? (v.instance ? "main" : null);
+  const state = v.instance ? (v.running ? "the copy answers" : "the copy is not running") : v.running ? "app is running" : t.kind === "static" ? "not serving the folder" : `nothing on port ${t.port}`;
+  return `- preview · ${v.id} · ${project} · ${what}${branch ? ` · on ${branch}` : ""} · expires ${day(v.expiresAt)} · ${state} · ${v.url ?? "link not kept"}`;
+}

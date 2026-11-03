@@ -10,6 +10,7 @@ import { whereOf } from "./attention";
 import { redactingTool, serverRedactor } from "./overseer-redact";
 import { auditedAct, cut, hiddenFromProfiles, Refusal, readBounds, renderTranscript, sessionRef, text, writableRefusal, type AuditRecord } from "./session-guards";
 import { stateRoot } from "./state-root";
+import { ARCHIVED_REFUSAL } from "./archived-sessions";
 import { UserTurns, type TurnEvent, userMessageText } from "./user-turns";
 import { lockOwned } from "./write-guard";
 import { inviteFromSend, queueOpenTool } from "./topics";
@@ -214,12 +215,14 @@ export class SessionLimits {
  */
 export class RunState {
   readonly turns = new UserTurns();
-  private hops = new Map<string, number>();
+  /** Hops of session messages handed in and not seen yet, per text, oldest first: several can be in pi
+      at once (steers land together), and they enter in the order they were handed in. */
+  private hops = new Map<string, number[]>();
   hop = 0;
   constructor(private readonly limits: SessionLimits) {}
   /** The chat runtime is about to hand in a message another session sent. */
   expectHop(text: string, hop: number): void {
-    this.hops.set(text, hop);
+    this.hops.set(text, [...(this.hops.get(text) ?? []), hop]);
   }
   observe(event: TurnEvent): void {
     if (event.type === "run.start") {
@@ -229,9 +232,10 @@ export class RunState {
     if (event.type === "message.start") {
       const t = userMessageText(event.handle);
       if (t !== null) {
-        const h = this.hops.get(t);
+        const waiting = this.hops.get(t);
+        const h = waiting?.shift();
+        if (waiting && !waiting.length) this.hops.delete(t);
         if (h !== undefined) {
-          this.hops.delete(t);
           this.hop = h;
         } else if (!parseWakeNudge(t.trim())) this.hop = 0;
       }
@@ -431,7 +435,7 @@ export function sessionPowersTools(ctx: PowersContext, actionsFile?: () => strin
   tools.push({
     name: "session_send",
     label: "Send to session",
-    // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
+    // Its card reads the recorded result (EAGER_TOOLS): never a call another tool made.
     exposure: "model-only",
     description:
       "Send a message to another session you can see, as its composer would. Idle, it starts a turn; mid-turn it is queued as a follow-up (or as a steer with delivery=steer). It arrives tagged with this session's title and a hop count. Never a terminal-owned, archived or special session. Limited: hops, sends per user message, per day on its own, sessions per run, and per session per 10 minutes; a refusal takes nothing.",
@@ -454,7 +458,7 @@ export function sessionPowersTools(ctx: PowersContext, actionsFile?: () => strin
           if (params.delivery !== undefined && params.delivery !== "followUp" && params.delivery !== "steer") throw new Refusal('delivery is "followUp" or "steer".');
           const refused = writableRefusal(s, "a session never messages itself");
           if (refused) throw new Refusal(refused);
-          if (s.archived) throw new Refusal(`"${s.title}" is archived, and an archived session takes no messages.`);
+          if (s.archived) throw new Refusal(ARCHIVED_REFUSAL);
           const attended = ctx.run.attended();
           const over = ctx.limits.check(s.id, hop, attended);
           if (over) throw new Refusal(over);

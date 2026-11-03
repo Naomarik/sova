@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { OwnerConversationStatus, OwnerPerson } from "../../shared/owner";
-import { builtLine, byTopic, conversationChip, count, differenceLine, factsLine, ownerHash, ownerTab, parseOwnerHash, readsHome, personLine, plainAgo, plainDate, projectChip, waitingLine } from "./owner-words";
+import { builtLine, byTopic, conversationChip, conversationTabs, count, historyLine, outstandingRank, ownerTabTitle, differenceLine, factsLine, ownerHash, ownerTab, parseOwnerHash, readsHome, personLine, plainAgo, plainDate, projectChip, waitingLine } from "./owner-words";
 
 const NOW = Date.parse("2026-09-27T12:00:00Z");
 const ago = (ms: number) => new Date(NOW - ms).toISOString();
@@ -131,4 +131,31 @@ test("Home, the Assistant and Requests are one family: they read the Home answer
   );
   assert.equal(readsHome({ kind: "project", id: "q_abcd2345" }), false);
   assert.equal(readsHome({ kind: "conversation", id: "k_abcd2345" }), false);
+});
+
+test("Home's Conversations: Outstanding is on you, then someone else, then the team, newest first within each; History the most recently ended first", () => {
+  const row = (id: string, status: OwnerConversationStatus, since: string, project = "q_a", endedAt?: string) => ({ id, status, since, project, ...(endedAt ? { endedAt } : {}) });
+  const rows = [
+    row("team", { kind: "with-operator", name: "Omar", first: "Omar" }, "2026-10-05"),
+    row("bob-old", { kind: "waiting-on", name: "Bob B", first: "Bob" }, "2026-10-01"),
+    row("you-old", { kind: "waiting-on-you" }, "2026-10-02"),
+    row("offer", { kind: "offered", count: 3 }, "2026-10-04"),
+    row("you-new", { kind: "planning" }, "2026-10-06", "q_b"),
+    row("done", { kind: "done" }, "2026-10-01", "q_a", "2026-10-03"),
+    row("ended", { kind: "closed" }, "2026-10-01", "q_b", "2026-10-07"),
+    row("agreed", { kind: "plan-agreed" }, "2026-10-01", "q_a", "2026-10-02"),
+  ];
+  const all = conversationTabs(rows);
+  assert.deepEqual(all.outstanding.map((r) => r.id), ["you-new", "you-old", "offer", "bob-old", "team"]);
+  assert.deepEqual(all.history.map((r) => r.id), ["ended", "done", "agreed"]);
+  const b = conversationTabs(rows, "q_b");
+  assert.deepEqual([b.outstanding.map((r) => r.id), b.history.map((r) => r.id)], [["you-new"], ["ended"]]);
+  assert.equal(outstandingRank({ kind: "done" }), null);
+  assert.equal(historyLine({ kind: "closed" }), "ended");
+  assert.equal(historyLine({ kind: "done" }), "finished");
+});
+
+test("the browser tab's title leads with how many conversations wait on the owner", () => {
+  assert.equal(ownerTabTitle("Acme Archery", 0), "Acme Archery");
+  assert.equal(ownerTabTitle("Acme Archery", 2), "(2) Acme Archery");
 });

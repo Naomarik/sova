@@ -9,12 +9,14 @@ import { readBranch } from "./harness/pi/reader";
 import { extensionEntries } from "./harness/pi/state";
 import { markShutdown } from "./wrapup-recovery";
 import { startBudgetRecount } from "./baton-recount";
-import { openRegisteredProjects } from "./projects/spaces";
+import { listProjects, openRegisteredProjects } from "./projects/spaces";
+import { startGitMaintenance } from "./git-maintenance";
 import { reconcileProjectServices } from "./project-services/routes";
+import { startMergeQueue, stopMergeQueue } from "./merge-queue/wire";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
 import { finishImports, rollForwardCopies } from "./project-import";
-import { closeAllOrgHosts } from "./org-engine";
+import { closeAllOrgHosts, onOrgChange } from "./org-engine";
 import { flushWorkspaces } from "./workspace-commits";
 import { stopVoice } from "./voice/service";
 import { startStaticPreviews } from "./project-previews";
@@ -34,7 +36,7 @@ import { usageHistory } from "./usage-history";
 import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
 import { wireRequestChats } from "./owner-request-chat";
-import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
+import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
 import { detachChatHost, startChatHost, stopWorkersOf } from "./chat-host";
@@ -43,13 +45,16 @@ import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
 import { meshLinks } from "./mesh/links";
 import { setLinkOrigin } from "./link-delivery";
-import { setOverseerDispatch, startOverseerLoop } from "./overseer";
+import { feedFrameKey, feedFrames, setOverseerDispatch, startOverseerLoop } from "./overseer";
+import { watchFeedInputs } from "./session-feed-watch";
+import { setOffersDispatch } from "./session-offers";
+import { setCardsDispatch } from "./transcript-cards";
 import { setSovaPort } from "./extensions";
 import { startExtensionKeys } from "./extension-keys";
 import { startUpdates } from "./updates/routes";
-import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
+import { decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { AttentionSignals } from "./attention-signals";
-import { configureSessionFeed, nudgeMarks, publishFeed, sessionFeed } from "./session-feed";
+import { configureSessionFeed, nudgeMarks, sessionFeed } from "./session-feed";
 import { startEvents } from "./events";
 import { onAttentionNotified } from "./attention-memo";
 import { configureLlmInflight } from "./llm-inflight";
@@ -59,12 +64,10 @@ import { peerUrl } from "./mesh/peers";
 import { onTagsChanged } from "./session-tags";
 import { terminalSession } from "./decide-settings";
 import { MergeFollowUps } from "./merge-followup";
-import { configureReadiness } from "./merge-readiness";
-import { startSessionTags } from "./tags-backfill";
+import { checkReadinessInputs, configureReadiness } from "./merge-readiness";
 import { addOwnPid, readLiveRecords } from "./live";
 import { claimRecordedChats, scrubChatProcessEnv } from "./chat-runtime/supervisor";
 import { startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
-import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
 import { serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken } from "./auth";
 
@@ -153,6 +156,9 @@ rollForwardCopies();
 await openAttachedOrgs();
 await openRegisteredProjects();
 await finishImports();
+// Every project's repository on git's scheduled maintenance, since nothing Sova starts runs git's
+// background cleanup any longer: now, every 6 hours, and on each add.
+startGitMaintenance(() => listProjects().map((p) => p.root));
 // Deleted chats' leftover tours (§app.session-list/archive-cleanup): one pass now that every session
 // root is registered, then a cheap retry each minute. Any doubt about an owner keeps its tours.
 export const tourSweep = startTourSweep();
@@ -170,6 +176,8 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   void startShareRuntime();
   // Project instances back to their desired state (server/project-services/routes.ts).
   void reconcileProjectServices();
+  // The merge queue: its verbs, its queues recovered, the typed "land it" door (server/merge-queue/wire.ts).
+  void startMergeQueue({ request: (path, init) => app.request(path, init) }).catch((err) => console.error("[merge-queue] start failed:", err instanceof Error ? err.message : err));
   // Updates: the daily check, on the schedule updates.json keeps across restarts.
   startUpdates(info.port, HOST);
 }) as Server;
@@ -197,6 +205,9 @@ try {
 
 // The Overseer's tools call these same routes in-process (no socket, every guard applies).
 setOverseerDispatch((path, init) => app.request(path, init));
+// An offer card's buttons call the same routes in-process (§chat.offers/buttons).
+setOffersDispatch((path, init) => app.request(path, init));
+setCardsDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
 startProjectOverseerLoop();
 startScheduleKeeper((path, init) => app.request(path, init));
@@ -225,7 +236,29 @@ const events = startEvents({
   isHosted: (path) => chatHandle(path) !== undefined,
   idOf,
 });
-configureSessionFeed({ list: () => listSessions().then(events.seeList) });
+// Change-driven (§app.decisions/push): it compares when a watched input or an in-process store
+// changes, an org statechart moves or something the digest lists changes, and pushes the digest
+// and the Overseer's state built from its own list.
+let feedChanged: (() => void) | null = null;
+onOrgChange(() => feedChanged?.());
+configureSessionFeed({
+  // Re-reads only the session files the watch named since the last build (with a full sweep).
+  list: () => listSessionsTracked().then(events.seeList),
+  watch: (changed) => {
+    feedChanged = changed;
+    const tracked = trackSessionFiles();
+    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs], files: tracked.note });
+    const offAttention = onAttentionNotified(changed);
+    return () => {
+      feedChanged = null;
+      offWatch();
+      tracked.stop();
+      offAttention();
+    };
+  },
+  after: feedFrames,
+  frameKey: feedFrameKey,
+});
 // The LLM calls in flight, pushed on the same feed (server/llm-inflight.ts): this process's own
 // counter, the other processes' live records, and each peer's own count while a browser listens.
 configureLlmInflight({
@@ -252,24 +285,11 @@ const attentionSignals = new AttentionSignals({
   liveRecords: () => readLiveRecords({ includeOwn: true }),
   decodeWorkers: (presence) => decodeWorkers(presence),
   duties: teamDuties,
-  adapters: defaultAdapters,
   redact: (value) => serverRedactor().redactDeep(value),
   changed: nudgeMarks,
 });
 attentionSignals.start();
 onAgentSettled((path) => attentionSignals.turnSettled(path));
-startSessionTags({
-  list: listSessions,
-  onAgentSettled,
-  held: (path) => !!chatHandle(path),
-  provider: decisions,
-  settings: decisionSettings,
-  ready: () => {
-    const s = decisionRuntime().chain.status();
-    return { ready: s.ready, ...(s.reason ? { reason: s.reason } : {}) };
-  },
-  publish: (progress) => publishFeed({ type: "tags_backfill", progress }),
-});
 onTagsChanged(() => nudgeMarks());
 // Merge readiness (§chat.worktrees/readiness) is git and the file; its one follow-up check per
 // merge (§app.decisions/merge-followup) goes through the same seam, only with attention signals on.
@@ -304,6 +324,8 @@ async function shutdown() {
   claudeAccounts.dispose();
   meshResync.dispose();
   markShutdown();
+  // A merge run in flight is voided (rerun from its start at the next start; a landing intent is reconciled then).
+  await Promise.race([stopMergeQueue().catch(() => {}), new Promise((r) => setTimeout(r, 5_000))]);
   // Every chat runs in a process of its own and runs on, its reply included
   // (§app.chat-processes/survives-restart). Each chat process is told goodbye and let go of, never stopped.
   detachChatHost();

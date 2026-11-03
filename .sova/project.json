@@ -43,5 +43,24 @@
     "run": ["node", "scripts/run-tests.mjs"],
     "smoke": ["shared/project-contract.test.ts"]
   },
-  "share": {"allow": false}
+  "share": {"allow": false},
+  "merge": {
+    "target": "master",
+    "push": true,
+    "checks": [
+      {"id": "typecheck", "label": "Typecheck", "run": ["pnpm", "run", "typecheck"], "timeout": 600},
+      {"id": "unit", "label": "Unit tests", "run": ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs"], "rerun": true, "timeout": 1500},
+      {"id": "integration", "label": "Integration", "run": ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs", "--integration", "--landing", "--base", "${merge.base}"], "rerun": true, "timeout": 1800},
+      {"id": "extensions", "label": "Changed extensions", "run": ["node", "scripts/merge-checks/ext-suites.mjs"], "timeout": 900},
+      {"id": "spec-replay", "label": "Spec replay", "run": ["node", "scripts/merge-checks/spec-replay.mjs"], "timeout": 1800},
+      {"id": "statecharts", "label": "Statecharts", "run": ["node", "scripts/merge-checks/statecharts.mjs"], "timeout": 1200},
+      {"id": "build", "label": "Build", "run": ["pnpm", "run", "build"], "timeout": 900},
+      {"id": "spec", "label": "Spec check", "run": ["node", "scripts/merge-checks/spec.mjs"], "timeout": 300},
+      {"id": "leak-scan", "label": "Leak scan", "run": ["node", "scripts/merge-checks/leak-scan.mjs"], "timeout": 300},
+      {"id": "e2e", "label": "Walkthroughs", "run": ["node", "scripts/merge-checks/e2e.mjs"], "rerun": true, "timeout": 1800, "optional": true},
+      {"id": "integration-group", "label": "Slow test group", "run": ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs", "--integration", "--groups"], "rerun": true, "timeout": 1800, "optional": true}
+    ],
+    "install": {"run": ["pnpm", "install", "--frozen-lockfile", "--offline"], "inputs": ["pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json"], "timeout": 600},
+    "review": ".sova/playbooks/review"
+  }
 }

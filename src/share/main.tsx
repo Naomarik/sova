@@ -9,6 +9,7 @@ import { ShareApp } from "./ShareApp";
 import { TourShareApp } from "./TourShareApp";
 import { setShareFrameHost } from "./vis";
 import { FRAME_HOST_PATH } from "../../shared/vis-frame-host";
+import { startTheme } from "./theme";
 
 // The share build (§app.baton/outsider-view, §app.owner-page/page, §app/session-share): its own
 // bundle, served only by the share listener. `/i/<token>` is the Owner page; `/s/<token>` a shared
@@ -16,6 +17,8 @@ import { FRAME_HOST_PATH } from "../../shared/vis-frame-host";
 // CSS, the wire types and pure helpers.
 // An html drawing's frame loads this build's frame host from the page's own host (§chat.markdown/visuals).
 setShareFrameHost(FRAME_HOST_PATH);
+// The theme before the first frame (§app.owner-page/page): the visitor's pick, else the device's. No inline script.
+startTheme();
 const path = location.pathname;
 const App = path.startsWith("/t/") ? TourShareApp : path.startsWith("/i/") ? OwnerApp : path.startsWith("/s/") ? SessionShareApp : ShareApp;
 render(() => <App />, document.getElementById("root")!);

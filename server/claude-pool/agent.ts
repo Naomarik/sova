@@ -117,6 +117,8 @@ export interface PoolAgentOptions {
   quickCutMs?: number;
   slowCutMs?: number;
   tickMs?: number;
+  /** How long a tick reuses its /proc view (procScan); 0 = scan every tick. Actions rescan anyway. */
+  procScanMs?: number;
   syncMs?: number;
   /** Test seam: throws at a named step to simulate a crash there. */
   crash?: (step: string) => void;
@@ -136,6 +138,9 @@ const OFFER_TTL_MS = 2 * 60_000;
 const QUICK_CUT_MS = 2 * 60_000;
 const SLOW_CUT_MS = 15 * 60_000;
 const TICK_MS = 5_000;
+const PROC_SCAN_MS = 60_000;
+/** agent.json is rewritten when its device or pid changes, else once this old (readers want < 30 s). */
+const HEARTBEAT_MS = 10_000;
 const SYNC_MS = 60_000;
 const KILL_GRACE_MS = 10_000;
 const FREE_WAIT_MS = 8_000;
@@ -153,16 +158,18 @@ export function scanClaudeProcs(): Map<string, number[]> {
   try { pids = readdirSync("/proc").filter((n) => /^\d+$/.test(n)); } catch { return out; }
   for (const pid of pids) {
     if (Number(pid) === process.pid) continue;
+    let comm = "";
+    try { comm = readFileSync(`/proc/${pid}/comm`, "latin1").trim(); } catch { continue; }
+    if (comm !== "claude") {
+      let cmd = "";
+      try { cmd = readFileSync(`/proc/${pid}/cmdline`, "latin1"); } catch { continue; }
+      if (!/(^|[\/\0 ])claude([\0 .\-]|$)|fake-claude/.test(cmd)) continue;
+    }
     let env: string;
     try { env = readFileSync(`/proc/${pid}/environ`, "latin1"); } catch { continue; }
     const at = env.indexOf("CLAUDE_CONFIG_DIR=");
     if (at < 0 || (at > 0 && env[at - 1] !== "\0")) continue;
     const dir = env.slice(at + "CLAUDE_CONFIG_DIR=".length, env.indexOf("\0", at) < 0 ? undefined : env.indexOf("\0", at));
-    let comm = "";
-    let cmd = "";
-    try { comm = readFileSync(`/proc/${pid}/comm`, "latin1").trim(); } catch { /* gone */ }
-    try { cmd = readFileSync(`/proc/${pid}/cmdline`, "latin1"); } catch { /* gone */ }
-    if (comm !== "claude" && !/(^|[\/\0 ])claude([\0 .\-]|$)|fake-claude/.test(cmd)) continue;
     const list = out.get(dir) ?? [];
     list.push(Number(pid));
     out.set(dir, list);
@@ -180,7 +187,7 @@ export function clearPicksOf(agentDir: string, sessionId: string): void {
 }
 
 export class PoolAgent {
-  private readonly o: Required<Pick<PoolAgentOptions, "idleMs" | "offerTtlMs" | "freeWaitMs" | "quickCutMs" | "slowCutMs" | "tickMs" | "syncMs">> & PoolAgentOptions;
+  private readonly o: Required<Pick<PoolAgentOptions, "idleMs" | "offerTtlMs" | "freeWaitMs" | "quickCutMs" | "slowCutMs" | "tickMs" | "procScanMs" | "syncMs">> & PoolAgentOptions;
   private readonly now: () => number;
   private readonly alive: (pid: number) => boolean;
   private timer?: ReturnType<typeof setInterval>;
@@ -191,6 +198,8 @@ export class PoolAgent {
   private borrowing = false;
   private readonly startedAt: number;
   private ticking = false;
+  /** The last heartbeat written (agent.json): its content, and when. */
+  private lastBeat?: { key: string; at: number };
   /** This pass's /proc view (scanClaudeProcs): read once per tick or incoming call, dropped after. */
   private procs?: { at: number; map: Map<string, number[]> };
   /**
@@ -200,7 +209,7 @@ export class PoolAgent {
   private readonly seenActive = new Map<string, { seq: number; at: number }>();
 
   constructor(options: PoolAgentOptions) {
-    this.o = { idleMs: IDLE_MS, offerTtlMs: OFFER_TTL_MS, freeWaitMs: FREE_WAIT_MS, quickCutMs: QUICK_CUT_MS, slowCutMs: SLOW_CUT_MS, tickMs: TICK_MS, syncMs: SYNC_MS, ...options };
+    this.o = { idleMs: IDLE_MS, offerTtlMs: OFFER_TTL_MS, freeWaitMs: FREE_WAIT_MS, quickCutMs: QUICK_CUT_MS, slowCutMs: SLOW_CUT_MS, tickMs: TICK_MS, procScanMs: PROC_SCAN_MS, syncMs: SYNC_MS, ...options };
     this.now = options.now ?? Date.now;
     this.alive = options.pidAlive ?? pidAlive;
     this.startedAt = this.now();
@@ -239,8 +248,12 @@ export class PoolAgent {
 
   private heartbeat(): void {
     try {
+      const now = this.now();
+      const key = JSON.stringify([process.pid, this.self]);
+      if (this.lastBeat?.key === key && now - this.lastBeat.at < HEARTBEAT_MS && existsSync(poolAgentPath(this.o.agentDir))) return;
       mkdirSync(join(this.o.agentDir, "claude-pool"), { recursive: true });
-      writeFileAtomic(poolAgentPath(this.o.agentDir), JSON.stringify({ v: 1, pid: process.pid, at: this.now(), device: this.self }));
+      writeFileAtomic(poolAgentPath(this.o.agentDir), JSON.stringify({ v: 1, pid: process.pid, at: now, device: this.self }));
+      this.lastBeat = { key, at: now };
     } catch (err) {
       this.log(`heartbeat: ${String(err)}`);
     }
@@ -391,7 +404,7 @@ export class PoolAgent {
   async tick(): Promise<void> {
     if (this.ticking) return;
     this.ticking = true;
-    this.procs = undefined;
+    if (!this.procs || this.now() - this.procs.at >= this.o.procScanMs) this.procs = undefined;
     try {
       this.heartbeat();
       await this.recover();
@@ -856,6 +869,8 @@ export class PoolAgent {
   private async progressLeave(id: string, op: Extract<JournalOp, { op: "leave" }>): Promise<void> {
     if (op.kind === "return" && op.state !== "deleting" && this.keychainOnly(id)) return this.stayHere(id, "its sign-in is in the macOS keychain");
     if (op.state === "draining") {
+      // A fresh process list before a cut or a hand-over, never the tick's minute-old one.
+      this.procs = undefined;
       const use = this.use(id);
       if (use.inUse || use.children.length) {
         if (this.now() < op.cutAt) return;

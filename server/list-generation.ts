@@ -5,10 +5,25 @@
 // every store can bump it without an import cycle through sessions-index.ts.
 
 let generation = 0;
+const listeners = new Set<() => void>();
 
-/** Something a listing reads changed in this process: the next listing is built afresh. */
+/** Something a listing reads changed in this process: the next listing is built afresh, and the
+    session feed compares soon (server/session-feed.ts). */
 export function sessionsChanged(): void {
   generation++;
+  for (const fn of listeners) {
+    try {
+      fn();
+    } catch (err) {
+      console.error("[list-generation] listener failed", err);
+    }
+  }
+}
+
+/** Hear every bump (the session feed). Listeners must be cheap: a bump can come per frame. */
+export function onSessionsChanged(fn: () => void): () => void {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
 }
 
 export function listGeneration(): number {

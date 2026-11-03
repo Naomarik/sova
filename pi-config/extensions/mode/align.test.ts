@@ -16,6 +16,8 @@ import {
 	alignStatus,
 	applyAlignCall,
 	changeLine,
+	CHANGE_REQUEST_TEXT,
+	marksChangeRequest,
 	clampScroll,
 	foldAlignments,
 	legacyLine,
@@ -26,6 +28,7 @@ import {
 	openText,
 	optionLetter,
 	planSignal,
+	withoutWorkingNotes,
 	recommendedOption,
 	recommendedText,
 	toMarkdown,
@@ -210,6 +213,7 @@ test("ALIGN_OP_FIELDS is what applyAlignCall enforces: each op's minimal call ap
 		drop_alignment: { reason: "x" },
 		status: { to: "done" },
 		exempt: { reason: "x" },
+		change_request: {},
 		get: {},
 	};
 	assert.deepEqual(Object.keys(minimal).sort(), [...ALIGN_OPS].sort());
@@ -218,7 +222,7 @@ test("ALIGN_OP_FIELDS is what applyAlignCall enforces: each op's minimal call ap
 	const start = run([{ ops: [CREATE] }, { ops: [{ op: "decide", q: "q1", decision: "yes" }] }]).docs;
 	const startFor = (op: AlignOpName) => (op === "reopen" ? start : op === "status" ? run([{ ops: [{ op: "accept_all" }] }], start).docs : op === "decide" || op === "accept" || op === "edit_question" || op === "drop_question" ? run([{ ops: [{ op: "reopen", q: "q1" }] }], start).docs : start);
 	for (const op of ALIGN_OPS) {
-		const docs = op === "create" || op === "import" || op === "exempt" ? [] : startFor(op);
+		const docs = op === "create" || op === "import" || op === "exempt" || op === "change_request" ? [] : startFor(op);
 		applyAlignCall(docs, { ops: [{ op, ...minimal[op] }] }, env);
 		const { required, optional } = ALIGN_OP_FIELDS[op];
 		assert.deepEqual([...required, ...optional].filter((k) => !(k in minimal[op]) && required.includes(k)), [], `${op}: the minimal call has every required field`);
@@ -726,7 +730,7 @@ test("visuals: only in a session started with Visuals on; on questions and the d
 	assert.deepEqual(Object.keys(ALIGN_VISUAL_FIELDS).sort(), ["create", "edit_doc", "edit_question"]);
 });
 
-test("style: a changing call records the non-Default style in effect; Default records none and clears it", () => {
+test("style: a changing call records the style in effect, Technical (\"default\") included; a doc with none names none", () => {
 	const pm = applyAlignCall([], { ops: [CREATE] }, { ...env, style: "pm" }).details.doc!;
 	assert.equal(pm.style, "pm");
 	assert.match(toMarkdown(pm), /· v1 · Project manager style/);
@@ -735,8 +739,62 @@ test("style: a changing call records the non-Default style in effect; Default re
 	const simple = applyAlignCall([pm], { ops: [{ op: "decide", q: "q1", decision: "Full" }] }, { ...env, style: "simplified" }).details.doc!;
 	assert.equal(simple.style, "simplified", "the latest change's style");
 	const plain = applyAlignCall([simple], { ops: [{ op: "decide", q: "q2", decision: "JSONL" }] }, { ...env, style: "default" }).details.doc!;
-	assert.equal("style" in plain, false);
+	assert.equal(plain.style, "default", "Technical is recorded, so its card can name it");
+	assert.match(toMarkdown(plain), /· v\d+ · Technical style/);
+	assert.deepEqual(normalizeAlignDetails(JSON.parse(JSON.stringify({ v: 1, doc: plain, changes: [], line: "" })))?.doc, plain, "a recorded \"default\" reads back");
 	const none = applyAlignCall([], { ops: [CREATE] }, env).details.doc!;
 	assert.equal("style" in none, false, "no style given (an older host): no field");
+	assert.doesNotMatch(toMarkdown(none), / style/, "an older document with no style names none");
 	assert.equal(normalizeAlignDetails({ v: 1, doc: { ...pm, style: "expert" }, changes: [], line: "" })?.doc, undefined, "an unknown style is malformed");
+});
+
+test("change_request: the mark touches no document, alone or before the call's other ops", () => {
+	const alone = applyAlignCall([], { ops: [{ op: "change_request" }] }, env);
+	assert.deepEqual(alone.details, { v: 1, changes: [], line: "" }, "no document, no exemption: a working row");
+	assert.equal(alone.text, CHANGE_REQUEST_TEXT);
+	assert.equal(alone.text, "Marked as a change request.");
+	// A note is taken and changes nothing; made twice it is answered the same.
+	assert.deepEqual(applyAlignCall([], { ops: [{ op: "change_request", note: "an export" }, { op: "change_request" }] }, env), alone);
+	// Before a create: the document is made, the answer opens with the mark's line.
+	const created = applyAlignCall([], { ops: [{ op: "change_request" }, CREATE] }, env);
+	assert.equal(created.details.doc?.id, "al_1");
+	assert.match(created.text, /^Marked as a change request\.\nal_1 "Session export"/);
+	// Before a document op on the open alignment.
+	const { docs } = run([{ ops: [CREATE] }]);
+	const decided = applyAlignCall(docs, { ops: [{ op: "change_request" }, { op: "decide", q: "q2", decision: "plain JSONL" }] }, env);
+	assert.equal(decided.details.doc?.questions[1]?.decision?.text, "plain JSONL");
+	// Never after another op; never with exempt, which stands alone; refused errors name the true index.
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "get" }, { op: "change_request" }] }, env), /ops\[1\] \(change_request\): the mark comes alone or before/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "change_request" }, { op: "exempt", reason: "trivial" }] }, env), /exempt stands alone/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "change_request" }, { op: "change_request", extra: 1 }] }, env), /ops\[1\] \(change_request\)/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "change_request" }, { op: "create", title: "t" }] }, env), /ops\[1\] \(create\): summary is required/);
+	throwsAlign(() => applyAlignCall([], { ops: [{ op: "change_request" }, { op: "import", path: "plans/x.json" }] }, env), /ops\[1\] \(import\): path must be absolute/);
+	throwsAlign(() => applyAlignCall(docs, { ops: [{ op: "change_request" }, { op: "decide", q: "q2", decision: "x" }, CREATE] }, env), /create or import must be the first op after the change-request mark/);
+	assert.equal(normalizeAlignDetails(alone.details)?.doc, undefined, "Sova's reader takes the mark's details as a working row");
+});
+
+test("marksChangeRequest: any align op but get marks the run, refused or not; nothing else does", () => {
+	assert.equal(marksChangeRequest({ ops: [{ op: "change_request" }] }), true);
+	assert.equal(marksChangeRequest({ ops: [{ op: "create" }] }), true, "a refused create still names an op");
+	assert.equal(marksChangeRequest({ doc: "al_1", ops: [{ op: "get" }, { op: "decide" }] }), true);
+	assert.equal(marksChangeRequest({ ops: [{ op: "get" }] }), false, "a bare get is no mark");
+	assert.equal(marksChangeRequest({ ops: [] }), false);
+	assert.equal(marksChangeRequest({}), false);
+	assert.equal(marksChangeRequest(undefined), false);
+	assert.equal(marksChangeRequest({ ops: [{}] }), false);
+});
+
+test("planSignal: the reply is judged without its working notes (b2)", () => {
+	assert.equal(planSignal("Plan:\n- a\n- b\n\nShould I go ahead?\n\n### Working notes\nlong detail..."), "asks-decision");
+	// The fold's own words never decide it: a plan inside the notes is working, not the reply's end.
+	assert.equal(planSignal("Done: the export works.\n\n### Working notes\nOpen questions: which format do you prefer? Should I go ahead?"), null);
+	assert.equal(planSignal("Done.\n\n### Working notes\n## Alignment: Export\n- q1"), null, "nor an old alignment block in the notes");
+	// Any case, nothing else on the line; a lookalike heading is ordinary text.
+	assert.equal(withoutWorkingNotes("Top.\n### WORKING NOTES  \nmore"), "Top.\n");
+	assert.equal(withoutWorkingNotes("Top.\n### Working notes: detail\nmore"), "Top.\n### Working notes: detail\nmore");
+	assert.equal(withoutWorkingNotes("Top.\n## Working notes\nmore"), "Top.\n## Working notes\nmore");
+	// A heading inside a code fence is code; the first one outside it cuts.
+	const fenced = "Top.\n```md\n### Working notes\n```\nShould I go ahead?\n### Working notes\nx";
+	assert.equal(withoutWorkingNotes(fenced), "Top.\n```md\n### Working notes\n```\nShould I go ahead?\n");
+	assert.equal(withoutWorkingNotes("No notes here."), "No notes here.");
 });

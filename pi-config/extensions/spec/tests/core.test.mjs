@@ -202,7 +202,7 @@ test("deterministic output and no file writes", () => {
 
 const invalid = [
   ["malformed manifest JSON", () => project("{ nope", {}), "manifest-unreadable"],
-  ["wrong formatVersion", () => project({ ...M({}), formatVersion: 2 }), "manifest-version"],
+  ["wrong formatVersion", () => project({ ...M({}), formatVersion: 3 }), "manifest-version"],
   ["invalid id", () => base({}, { "chat input": { kind: "behavior", requires: [] } }), "id-invalid"],
   ["record without heading", () => base({}, { "§chat.input/ghost": { kind: "behavior", requires: [] } }), "undeclared-record"],
   ["heading without record", () => project(M({ "§core/net": { kind: "surface" } }), Object.fromEntries([claim("core/net.md", "# §core/net\n\nN.\n\n## §core.net/extra\n\nx\n")])), "unrecorded-declaration"],

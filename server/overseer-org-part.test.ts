@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { BATON_SENT_ENTRY } from "../shared/baton";
+import { readSpecFs, serialize } from "../pi-config/extensions/spec/core/layout.mjs";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-org-part-")));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
@@ -128,6 +129,41 @@ describe("its levels (§app.project-overseer/autonomy-levels)", () => {
     const ok = await run("sova_roster", { op: "approve", person: "Bea" }, { attended: false });
     assert.equal(textOf(ok), "Bea is now active.");
     await settings(portal.id, { autonomy: "L1" });
+  });
+
+  test("sova_roster add and contact: only on the operator's own word; contact is write-only, `[contact]` in its activity and history", async () => {
+    const own = (params: Record<string, unknown>, opts: { attended?: boolean; own?: boolean } = { own: true }) =>
+      po.toolsForTest(portal.id, opts).find((t) => t.name === "sova_roster")!.execute("call-roster", params as never, undefined, undefined, undefined as never);
+    const WORD = /^Error: Adding a person or a contact is the operator's: ask them in your reply or with sova_card\.$/;
+    const RITA = "+90 555 000 0111";
+    const before = orgs.readRoster(org.id).length;
+    // A run the operator did not start, and a message the global Overseer sent: refused, nothing written.
+    for (const opts of [{ attended: false }, { attended: true, own: false }]) {
+      await assert.rejects(() => own({ op: "add", name: "Rita Kaya", contact: { whatsapp: RITA } }, opts), WORD, JSON.stringify(opts));
+      await assert.rejects(() => own({ op: "contact", person: "Tony", contact: { whatsapp: RITA } }, opts), WORD, JSON.stringify(opts));
+    }
+    assert.equal(orgs.readRoster(org.id).length, before, "no one was added");
+    // The operator's own message: added, active, the contact never echoed.
+    const added = await own({ op: "add", name: "Rita Kaya", role: "Front desk", language: "tr", contact: { whatsapp: RITA } });
+    const rita = orgs.readRoster(org.id).find((p) => p.name === "Rita Kaya")!;
+    assert.equal(textOf(added), `Added Rita Kaya (${rita.id}), contact set.`);
+    assert.equal(rita.status, "active");
+    assert.equal(rita.contact?.whatsapp, RITA);
+    assert.equal(textOf(await own({ op: "add", name: "Sami" })), `Added Sami (${orgs.readRoster(org.id).find((p) => p.name === "Sami")!.id}).`);
+    // contact on an existing person: a key given replaces that one, the rest stay; empty clears them all.
+    assert.equal(textOf(await own({ op: "contact", person: "Tony", contact: { whatsapp: RITA } })), "Tony: contact set.");
+    assert.deepEqual(orgs.readRoster(org.id).find((p) => p.id === tony.id)!.contact, { email: "tony@example.invalid", phone: "15550000101", whatsapp: RITA });
+    assert.equal(textOf(await own({ op: "contact", person: "Sami", contact: {} })), "Sami: contact cleared.");
+    await assert.rejects(() => own({ op: "add", name: "Tony" }), /Tony is already on the roster\./, "the roster's own rules apply");
+    // The history names the project overseer as the writer; nothing it reads gives a value back.
+    const lines = orgs.readHistory(org.id, rita.id);
+    assert.ok(lines.length && lines.every((l) => l.by.kind === "overseer"), JSON.stringify(lines.map((l) => l.by)));
+    for (const r of [await run("sova_roster", { op: "read" }), await run("sova_project")]) assert.doesNotMatch(JSON.stringify(r), /555 000 0111|5550000111/);
+    assert.doesNotMatch(po.renderProjectOverseerPrompt(portal.id, []), /555 000 0111/);
+    const logged = actions().filter((a) => a.tool === "sova_roster" && (a.args?.op === "add" || a.args?.op === "contact"));
+    assert.ok(logged.length >= 4, "each call is in its activity");
+    for (const a of logged) if ("contact" in a.args) assert.equal(a.args.contact, "[contact]");
+    assert.doesNotMatch(JSON.stringify(logged), /555 000 0111/);
   });
 
   test("sova_send_status is a read at every level", async () => {
@@ -301,12 +337,16 @@ describe("what is built reaches the overseer (§app.requirements/decisions)", as
     await run("sova_reconcile", {}, { project: shop.id });
     await run("sova_promote", { ids: [a, b] }, { project: shop.id });
     // The builder records evidence and code on A; B's prose is edited in the spec.
-    const manifestFile = join(root, "shop", ".sova", "spec", "manifest.json");
-    const m = JSON.parse(readFileSync(manifestFile, "utf8"));
+    // In the spec's own layout (a project that started its spec here is in format 2).
+    const specDir = join(root, "shop", ".sova", "spec");
+    const spec = readSpecFs(specDir, ".");
+    if (spec.state !== "present") throw new Error(`${specDir}: no spec`);
     const rows = reconcile.listDecisions(org.id, shop.id).decisions;
     const ra = (rows.find((d) => d.id === a) as any).recordId;
-    Object.assign(m.claims[ra], { evidence: "verified", code: ["src/due.js"] });
-    writeFileSync(manifestFile, `${JSON.stringify(m, null, 2)}\n`);
+    const claims = structuredClone(spec.records) as Record<string, any>;
+    Object.assign(claims[ra], { evidence: "verified", code: ["src/due.js"] });
+    for (const [rel, text] of serialize(spec.layout, { ...spec.manifest, claims }, { prevRecordFiles: spec.recordFiles }))
+      if (text !== null) writeFileSync(join(specDir, rel), text);
     const md = join(root, "shop", ".sova", "spec", "claims", "requirements", "invoicing.md");
     writeFileSync(md, readFileSync(md, "utf8").replace("Invoices show the shop's logo.\n", "Invoices show the shop's logo, top left.\n"));
     await run("sova_reconcile", {}, { project: shop.id });

@@ -88,7 +88,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
 - **Needs you.** When anything in the org waits on the operator the card carries a warn chip,
   `Needs you · {n}` (dot and word, never hue alone), a warn border, and a line naming each kind
   that waits: `{n} reply/replies · {n} link(s) to send · {n} person/people to approve · {n}
-  stakeholder(s) to pick · {n} held act(s)`, zero kinds left out. It counts the same items the attention list raises (§app.baton/needs-you): baton
+  stakeholder(s) to pick · {n} held act(s) · {n} request(s) to answer`, zero kinds left out. It counts the same items the attention list raises (§app.baton/needs-you): baton
   sessions the operator holds and hasn't answered (state `needs-you`); open baton sessions whose
   holder, or an open offer's invitee, has no live link (the operator must send one); and roster
   people with status `proposed`, waiting for Approve or Decline — every proposed person, whether or
@@ -96,18 +96,19 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   that no baton session asks about yet (`{n} conflict(s) to settle`; one with a session is already
   counted once, as that session's reply); and projects whose main stakeholder left
   (§app.organizations/stakeholder); and acts a project's statechart holds before they reach a person or
-  the code (§app.project-overseer/holds).
+  the code (§app.project-overseer/holds); and the owner's requests still with the team
+  (§app.project-assistant/requests).
 - **Last activity** is the newest of the org's creation and its newest transition-log row
   (§app.project-overseer/statecharts): a roster change, a baton session's start, hand-off, offer or
   close, a person's message, anything any of its statecharts took.
 - **The server computes both** on `GET /api/orgs` only: each `OrgSummary` gains optional
-  `needsYou: {replies, links, proposals, conflicts, stakeholders, held}` and `lastActivityAt` (ISO). Absent (an older server),
+  `needsYou: {replies, links, proposals, conflicts, stakeholders, held, requests}` and `lastActivityAt` (ISO). Absent (an older server),
   the card shows no Needs-you highlight and no activity line. `shared/protocol.ts` is unchanged.
 - **Zero orgs:** in place of the grid, one card: "Create your first organization", the line
   "Each organization keeps its roster, projects and hand-off sessions in its own git repo.", and a
   secondary `New Organization` button that focuses the New Organization form's Name field.
 
-## §app.organizations/org-page — One org's page: five tabs
+## §app.organizations/org-page — One org's page: five tabs, six with an owner
 
 - Under the title, in this order: the workspace-problem banners and the new-links banner (they
   stay above the tabs whichever tab is open), then a tab strip (`.tabs`, `role="tablist"`), then
@@ -138,6 +139,8 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
     Session` button (closed by default; `Cancel` closes it; a started session closes it). Its
     project select leaves archived projects out. With no project yet (none that isn't archived) it
     says to add one on the Projects tab, linked.
+  - **Requests**, while the org has an owner or any owner request: the owner's requests and the
+    operator's answers to them (§app.project-assistant/requests-tab).
   - **People**: the Owner card (§app.owner-page/controls), then the roster, proposed people
     included, then Recent Profile Changes under it. A
     person's head is their name and status chip, the role · language line under them, and the
@@ -164,13 +167,16 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
     says what it did: "Committed {short sha} and pushed.", "Committed {short sha}.", "Nothing new
     to commit. Pushed the commits the remote lacked." or "Nothing new to commit." Then the
     **WhatsApp Number** card (§app.outreach/org-sender): which number the org's messages go from.
+    Last, the **Claude login for its projects** card (§app.claude-logins/project-login): the
+    Claude login every project the org places follows unless the project picks its own; kept on
+    this host, never in the workspace repo.
 - **Rows and width.** A hand-off session row's title and meta line wrap rather than truncate. Each
   card on the org list, org and project pages stops at 880px wide, left-aligned, except the
   project page's Overview, whose cards fill its columns (§app.organizations/project-page). The project
   page's title, cut with an ellipsis when it doesn't fit, carries the whole project name as its
   tooltip (`title`).
 - **Counts.** Each tab's label is followed by a count: Projects, the projects not archived;
-  Sessions, every baton session of the org; People, every roster person (active, proposed and
+  Sessions, every baton session of the org; Requests, the open owner requests; People, every roster person (active, proposed and
   left). History and Settings show no count: History is a filtered read with its own count line,
   and Settings holds the org's own settings, not a list.
 - **Needs-you dot.** A tab carries a warn dot, with its words as hidden text and as the tab's
@@ -178,10 +184,11 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   (§app.organizations/org-cards), whichever tab is open: Projects — open conflicts routed to the
   operator with no session (`{n} conflict(s) to settle`) and held acts (`{n} held act(s)`);
   Sessions — sessions the operator holds unanswered (`{n} to answer`) and sessions with a link to
-  send (`{n} link(s) to send`); People — proposed people (`{n} to approve`); Settings — file
+  send (`{n} link(s) to send`); Requests — owner requests with the team (`{n} to answer`); People — proposed people (`{n} to approve`); Settings — file
   problems in the workspace repo and a failed last commit or push. A session row with a link to
   send shows a `Link to send` warn chip in place of `Open`.
-- **In the URL.** `#/orgs/<id>/projects`, `/sessions`, `/people`, `/history` (and
+- **In the URL.** `#/orgs/<id>/projects`, `/sessions`, `/requests` (and `/requests/<rid>`,
+  §app.project-assistant/requests-tab), `/people`, `/history` (and
   `/history/events/<event id>`, §app.org-history/page), `/settings`; the bare
   `#/orgs/<id>` is Projects. An older `#/orgs/<id>/workspace` address (its `?host=` kept) is
   replaced (`location.replace`, no history entry) with the Settings tab's. `#/orgs/<id>/start/<person>` opens Sessions with the start form open
@@ -201,7 +208,9 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
 - **Width.** The tab strip tightens in steps by its own width: under 600px, tighter spacing; under
   500px, tighter still and the caption size. Every tab stays 44px tall. A 420px
   window, and any wider one, shows all five tabs with counts of up to three digits; a 390px window
-  with up to two digits; a 360px window with one digit. When the five tabs don't fit, the strip
+  with up to two digits; a 360px window with one digit. With the sixth tab (Requests), a 420px
+  window shows all six while every count is one digit; narrower, or with longer counts, the strip
+  scrolls. When the tabs don't fit, the strip
   scrolls sideways and the selected tab is kept in view whole. A section's heading (on an org, project or person page) keeps
   its whole word: when it and its buttons don't fit one line, the buttons wrap below it rather
   than cutting it off.
@@ -215,7 +224,8 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   every 30 seconds.
 - **Where the data comes from.** Every route that answers an `OrgDetail` adds `needsYou`, each
   baton row's `waiting` (`"reply"` or `"link"`), `projectConflicts` (`{projectId: n}`) and
-  `lastOpened` (`{personId: {at?, minted}}`, the People card's line), all optional on the wire;
+  `lastOpened` (`{personId: {at?, minted}}`, the People card's line) and `ownerRequests`
+  (`{open, withTeam, total}`, the Requests tab's presence and count), all optional on the wire;
   without `lastOpened` the card shows no such line.
 
 ## §app.organizations/person-page — One person's page
@@ -307,8 +317,8 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
     live one `Copy Link` when its token is kept and `Delete Owner Link`, asked twice like `Delete Link` (done: "Owner link deleted.").
     `Delete All` never touches them.
   - **Sent on WhatsApp** (§app.outreach/log), after the owner links, when they were sent anything:
-    one row per send, newest first: what went (the gathering's public title, "A preview" or "A
-    message"), the latest event as a chip (Sent, Delivered, Read, Failed, Unknown, Not sent), when,
+    one row per send, newest first: what went (the gathering's public title, "A preview", "Their
+    owner page" or "A message"), the latest event as a chip (Sent, Delivered, Read, Failed, Unknown, Not sent), when,
     the number it went from ("from {label} …123") when the log says, and a failure's code.
   - **Visits**, newest first, one row per visit (§app.baton/visits): `Opened {session title}`
     (`Opened the owner page` for a visit through an owner link),
@@ -410,10 +420,13 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   overseer line, the coding sessions with their branches, the counts, the cost, the cards), then
   updates each part in place as its fresh read answers. Nothing of it is kept once the tab closes
   or reloads, and nothing is written anywhere.
-- **Tabs**: Overview (the default) · Requirements (only while placed) · Branches · Cost · Settings, the org page's tab strip
+- **Tabs**: Overview (the default) · Requirements (only while placed) · Branches · Merge Queue · Cost · Settings, the org page's tab strip
   (`.tabs`, keyboard as §app.organizations/org-page; Requirements carries the warn dot while a
   conflict is open or a decision is ready to promote). The tab is in the URL:
-  `#/projects/<pid>` is Overview, `…/requirements`, `…/branches`, `…/cost`, `…/settings` the others
+  `#/projects/<pid>` is Overview, `…/requirements`, `…/branches`, `…/merge-queue` (the project's
+  merge queue, or, while the queue doesn't serve the project, its "No merge queue settings are
+  set up" note with Initialize, §app.merge-queue/view,
+  §app.merge-queue/setup; a run's page is `…/merge-queue/<run>`), `…/cost`, `…/settings` the others
   (`…/overseer` stays the overseer's door). Picking a tab or a chip adds a history entry, so Back
   returns to the previous tab and a reload opens the same one; the page is not reloaded and its
   fetched data stays.
@@ -445,14 +458,18 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   opening the add form.
 - **Branches**: the project's running copies on this host, one per branch, each opening its app where the project declares an entry (§app.project-services/services-ui).
 - **Cost**: the Cost card (§app.project-costs/card).
-- **Settings.** In this order: **Overseer** (the Watch switch and its hint); **What may happen
+- **Settings.** In this order: **Settings changes waiting** (only while a project overseer's Settings
+  change card or the folder's uncommitted settings edits wait, §app.project-overseer/settings); **Overseer** (the Watch switch and its hint); **What may happen
   without you** (§design.copy-deck/project-powers: the always-allowed line, the Paused banner with
   Resume while braked, the one-time note until dismissed, and the switches in groups, one column for
   the overseer on its own and, while an organization places the project, one for the Project
   Assistant from a client); **Sessions it starts** (the gathering and coding sessions'
-  model, thinking, abilities and mode selects, three to a row where they fit); **Extra
+  model, thinking, abilities and mode selects, three to a row where they fit); **Claude login**
+  (§app.claude-logins/project-login: the login the project's new chats start on, "Same as
+  organization" only while placed); **Extra
   instructions**; **Limits** (§app.project-overseer/limits); the Owner Page card while the org has
-  an owner (§app.owner-page/controls); and a **Danger zone** with **Archive Project** (or
+  an owner (§app.owner-page/controls); **Offers** (§chat.offers/project-list); **All settings** and
+  **Settings history** (§app.project-overseer/settings); and a **Danger zone** with **Archive Project** (or
   Unarchive). A pick or switch saves at once; Extra instructions and Limits on their own Save.
 - **Width.** At 390px nothing scrolls sideways: the chips wrap, the tab strip scrolls as the org
   page's does, and every control stays at least 44px tall.
@@ -846,7 +863,9 @@ Organizations region's own Needs you, never the global one.
     the operator's with `via: "overseer"` (§app.overseer/org-attribution). `via` never widens or
     narrows what a change may do.
   - `wrapup` and `overseer` (autonomous writers; `overseer` is a project's overseer, never the
-    global Overseer): only `skills`, `competence`, `language`, `voice`.
+    global Overseer): only `skills`, `competence`, `language`, `voice`. In a turn the operator's own
+    message started, `overseer` may also create an active person and write any person's `contact`
+    (§app.project-overseer/roster-add).
   - `referral`: only creating a `proposed` person with its referral details; its contact must be a
     real channel (§app.organizations/referrals).
 - A change outside its writer's fields is refused whole and appends nothing.
@@ -855,7 +874,9 @@ Organizations region's own Needs you, never the global one.
   `overseer`. No other status write is allowed to it, and none to the wrap-up.
 - A project's main stakeholder (§app.organizations/stakeholder) is the operator's alone: it is
   written only through the project PATCH, which no autonomous writer has (the global Overseer
-  calls it for the operator, as the operator), and cleared by Sova only when that person leaves.
+  calls it for the operator, as the operator; the project overseer's `sova_settings` changes it only
+  in a turn the operator started or at their Apply on its card, as the operator,
+  §app.project-overseer/settings), and cleared by Sova only when that person leaves.
   The org's owner (§app.owner-page/owner) is the same: written only through
   `PUT /api/orgs/:id/owner`, cleared by Sova only when that person leaves.
 
@@ -1067,7 +1088,8 @@ Public tour titles, summaries, step/view explanations, callouts and reference te
   (§app.organizations/person-page); the project overseer's prompt, `sova_project` and `sova_roster`
   name them (§app.project-overseer/identity, /tools), and its gaps go to them before the operator
   (§app.project-overseer/gaps). The global Overseer's `sova_orgs` and `sova_org_project` name them
-  too, and it may set one for the operator (§app.overseer/org-writes).
+  too, and it may set one for the operator (§app.overseer/org-writes). The project overseer may change
+  it in a turn the operator started, with Undo (§app.project-overseer/settings).
 
 ## §app.organizations/about — About this organization: the operator's context for project overseers
 

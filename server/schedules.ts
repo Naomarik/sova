@@ -11,8 +11,6 @@ import {
   LIMIT_RESET,
   LIMIT_RESET_INSTRUCTION,
   MAX_FIRES_PER_DAY,
-  MERGE_READY,
-  mergeReadyReason,
   dayKey,
   fireHead,
   maxFiresPerDay,
@@ -23,11 +21,9 @@ import {
   scheduleOf,
   scheduleText,
   wakeInstruction,
-  type ReadyBranch,
   type ScheduleHeader,
   type Trigger,
 } from "../shared/schedules";
-import type { BoardRow } from "./merge-board";
 import { singletonHolder } from "./session-profile";
 import { stateRoot } from "./state-root";
 
@@ -45,9 +41,7 @@ import { stateRoot } from "./state-root";
  * a wake of the schedule's session (an automation's own pointer, or the header profile's live One at
  * a time session), or a new session, with a `[schedule sN]` message that carries the playbook itself
  * (§chat.schedules/delivery). It also watches this host's Claude logins, and on a limit's reset
- * continues the schedule's sessions that stopped at it (§chat.schedules/limit-reset), and wakes it
- * when a branch in its project turns ready to merge on Sova's merge board
- * (§chat.schedules/merge-ready). Nothing fires unapproved.
+ * continues the schedule's sessions that stopped at it (§chat.schedules/limit-reset). Nothing fires unapproved.
  *
  * Everything that touches sessions, profiles, files, logins or the clock is injected (`KeeperDeps`),
  * so the rules are testable; server/schedule-routes.ts wires the real ones.
@@ -60,10 +54,6 @@ export const DEFAULT_TICK_MS = 30_000;
 export const PAUSED_UNOPENED = `Paused after ${UNOPENED_PAUSE} runs nobody opened.`;
 export const CHANGED = "Changed since you approved it";
 export const OTHER_DEVICE = "Runs on another device: this one fires nothing for it.";
-/** A branch fires again no sooner than this after it last fired (§chat.schedules/merge-ready). */
-export const MERGE_READY_QUIET_MS = 30 * 60_000;
-/** A branch remembered this long after it was last seen ready, then forgotten. */
-const MERGE_READY_FORGET_MS = 7 * 24 * 3600_000;
 /** How many fires each schedule keeps (the panel shows the last few; the pause counts back 10). */
 const KEEP_FIRES = 30;
 
@@ -104,9 +94,6 @@ export interface StoredSchedule {
   next?: { at: number; trigger: string };
   fires: StoredFire[];
   day?: { key: string; n: number };
-  /** merge-ready: each worktree path that fired, with its branch, when (keeper clock), and `out`
-      once it was seen not ready since (§chat.schedules/merge-ready). */
-  ready?: Record<string, { branch: string; at: number; out?: true }>;
   /** A long-running schedule's own session (§chat.schedules/store). */
   session?: { id: string; path: string };
   /** The device that runs it (its host id). */
@@ -254,9 +241,6 @@ export interface KeeperDeps {
   loginName?(id: string): string;
   /** The session's branch ends in a failed turn: when, and the Claude login it ran on (recorded). */
   lastTurn(path: string): Promise<{ failed: boolean; at: number; login?: string } | null>;
-  /** Sova's merge board (§chat.worktrees/merge-board): `pending` sessions not read yet, and the
-      rows in a project. Absent: merge-ready never fires. */
-  board?(): Promise<{ pending: number; rowsIn(root: string): BoardRow[] } | null>;
   /** Tell the Overseer (under Brief Me only). */
   brief?(text: string): void;
   zone?(): string;
@@ -283,8 +267,6 @@ const bundleOf = (info: PlaybookInfo): BundleRef => ({ id: info.id, dir: info.di
 
 export class ScheduleKeeper {
   private chain: Promise<unknown> = Promise.resolve();
-  /** An active merge-ready schedule was seen (the first tick reads the board to find out). */
-  private wantsBoard = true;
   /** The refusal last logged, so a broken store is said once, not every tick. */
   private refusedSaid = "";
   constructor(readonly deps: KeeperDeps) {}
@@ -726,8 +708,8 @@ export class ScheduleKeeper {
     return [head, ...(before ? [before] : []), ...(block ? [deliveryInstruction(title), block] : [])].join("\n");
   }
 
-  /** One fire of an active schedule (§chat.schedules/fire): a time, or a merge-ready transition with its own reason. */
-  private async fire(s: StoredSchedule, ev: Evaluated, trigger: string, lateMs: number | undefined, reason?: string): Promise<void> {
+  /** One fire of an active schedule (§chat.schedules/fire). */
+  private async fire(s: StoredSchedule, ev: Evaluated, trigger: string, lateMs: number | undefined): Promise<void> {
     const tz = this.zone(ev);
     const skip = (why: string) => this.log(s, trigger, "skipped", { why });
     if (this.dayFull(s, tz)) return skip(`it fired ${MAX_FIRES_PER_DAY} times today`);
@@ -740,7 +722,7 @@ export class ScheduleKeeper {
     if (this.deps.freeSlots() <= 0) return skip("the running-at-once limit was reached");
     const pb = ev.pb!.info;
     const bundle = bundleOf(pb);
-    const head = fireHead(s.id, trigger, ev.automation?.id ?? pb.id, reason ?? ev.task ?? DEFAULT_TASK, lateMs, ev.automation ? "automation" : "playbook");
+    const head = fireHead(s.id, trigger, ev.automation?.id ?? pb.id, ev.task ?? DEFAULT_TASK, lateMs, ev.automation ? "automation" : "playbook");
     const wakeText = async (path: string): Promise<string | { error: string }> => {
       const b = await this.block(bundle, path);
       if (!b.ok) return { error: b.error };
@@ -880,67 +862,11 @@ export class ScheduleKeeper {
     }
   }
 
-  /**
-   * merge-ready (§chat.schedules/merge-ready): fire once for the branches in the schedule's project
-   * that newly read ready to merge with an idle owner. A row the board hasn't read yet (`pending`)
-   * is unknown: it neither fires nor counts as having left. While the last run is still going the
-   * transition waits, unlogged; any fire attempt (fired, skipped by a cap, refused) spends it.
-   */
-  private async mergeReady(s: StoredSchedule, ev: Evaluated, board: { pending: number; rowsIn(root: string): BoardRow[] }): Promise<void> {
-    const now = this.deps.now();
-    const rows = board.rowsIn(s.root);
-    const seen = (s.ready ??= {});
-    const readyNow = new Set<string>();
-    const fresh: (ReadyBranch & { path: string })[] = [];
-    for (const r of rows) {
-      if ((r.state !== "ready" && r.state !== "waiting-approval") || r.owner.status !== "idle") continue;
-      readyNow.add(r.path);
-      const prev = seen[r.path];
-      if (!prev || prev.branch !== r.branch || (prev.out && now - prev.at >= MERGE_READY_QUIET_MS)) fresh.push({ path: r.path, branch: r.branch, waiting: r.state === "waiting-approval" });
-    }
-    for (const [path, prev] of Object.entries(seen)) {
-      if (readyNow.has(path)) continue;
-      const row = rows.find((r) => r.path === path);
-      if (!row && board.pending > 0) continue; // not read yet: unknown, never "left"
-      if (!row && now - prev.at >= MERGE_READY_FORGET_MS) delete seen[path];
-      else prev.out = true;
-    }
-    if (!fresh.length) return;
-    // Held, unlogged and unseen, so they go out together later: within 30 minutes of this
-    // schedule's last fire of any trigger, and while that run is in flight.
-    const lastFire = s.fires[s.fires.length - 1];
-    if (lastFire && now - lastFire.at < MERGE_READY_QUIET_MS) return;
-    const last = [...s.fires].reverse().find((f) => f.path);
-    if (last?.path && this.deps.busy(last.path)) return;
-    fresh.sort((a, b) => a.branch.localeCompare(b.branch));
-    for (const f of fresh) seen[f.path] = { branch: f.branch, at: now };
-    // The day's timed fires keep their room under the cap: merge-ready never takes it.
-    const tz = this.zone(ev);
-    const reserved = maxFiresPerDay(ev.triggers!).n;
-    if (s.day?.key === dayKey(now, tz) && s.day.n >= MAX_FIRES_PER_DAY - reserved) {
-      this.log(s, MERGE_READY, "skipped", { why: `merge-ready leaves today's last ${reserved} of ${MAX_FIRES_PER_DAY} fires to the timed triggers` });
-      return;
-    }
-    await this.fire(s, ev, MERGE_READY, undefined, mergeReadyReason(fresh));
-  }
-
-  /** One tick: limit resets first, then merge-ready transitions, then every approved schedule that is due. */
+  /** One tick: limit resets first, then every approved schedule that is due. */
   tick(): Promise<void> {
-    // The board is read outside the store's lock (it may wait on readiness), and only once a
-    // previous tick found an active merge-ready schedule.
-    const boardP = this.wantsBoard && this.deps.board ? this.deps.board().catch(() => null) : Promise.resolve(null);
-    return boardP.then((board) => this.locked(async (store) => {
+    return this.locked(async (store) => {
       for (const reset of this.resets(store)) await this.continueAfterReset(store, reset);
       const now = this.deps.now();
-      let wants = false;
-      for (const s of store.schedules) {
-        if (!s.approved) continue;
-        const ev = await this.evaluate(s);
-        if (ev.view.state !== "active" || !ev.triggers?.some((t) => t.kind === "merge-ready")) continue;
-        wants = true;
-        if (board) await this.mergeReady(s, ev, board);
-      }
-      this.wantsBoard = wants;
       for (const s of store.schedules) {
         if (!s.approved) continue;
         const ev = await this.evaluate(s);
@@ -965,7 +891,7 @@ export class ScheduleKeeper {
         }
         await this.fire(s, ev, due.trigger, late >= this.deps.lateAfterMs ? late : undefined);
       }
-    }));
+    });
   }
 }
 

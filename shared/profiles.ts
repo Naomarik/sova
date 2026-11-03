@@ -31,7 +31,7 @@ export const CAPABILITY_TOOLS: Record<Removable, readonly string[]> = {
     excludes them by exact name even when an extension registers one after load. */
 export const KNOWN_REMOVABLE_TOOLS = [
   "agent_spawn", "agent_resume", "agent_models", "agent_list", "agent_transcript", "agent_steer", "agent_kill", "agent_wait",
-  "team_create", "team_add", "team_eject", "team_list",
+  "team_create", "team_add", "team_eject", "team_succeed", "team_list",
 ] as const;
 
 /** The tools each grant adds (registered by the server's `sova-session-powers` extension). */
@@ -63,7 +63,7 @@ export const isSubagentsRef = (v: unknown): v is string => typeof v === "string"
 /** The minor modes a profile's `minorModes` may name, in the mode extension's order: a copy of
     pi-config's MINOR_MODES less its web-only ones (memory, which only a chat's own mode menu turns on;
     this file imports nothing), pinned equal by session-profiles.test.ts. */
-export const PROFILE_MINOR_MODES = ["align", "spec", "vis", "codemode"] as const;
+export const PROFILE_MINOR_MODES = ["align", "spec", "vis"] as const;
 export type ProfileMinorMode = (typeof PROFILE_MINOR_MODES)[number];
 
 export const PROFILE_ICONS = ["grid", "eye", "network", "branch", "wrench", "shield", "search", "terminal", "bulb", "building"] as const;
@@ -174,8 +174,9 @@ export interface ProfilesListing {
   /** Keys of profiles that can't be used on this host now, each with the sentence why (a model the
       policy turns off or with no credentials here, a subagent profile not in this device's library). */
   unusable?: Record<string, string>;
-  /** This device's subagent profiles ("off" first), for the cards' captions. */
-  subagents?: { id: string; name: string; footprint: string }[];
+  /** This device's subagent profiles ("off" first), for the cards' captions. `models`: how many
+      distinct primary models it names (0 for "off"); absent from an older server. */
+  subagents?: { id: string; name: string; footprint: string; models?: number }[];
   error?: string;
 }
 
@@ -280,7 +281,8 @@ function num(v: unknown, fallback: number): number {
   return typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 10_000 ? v : fallback;
 }
 
-const PROFILE_FIELDS = ["id", "label", "icon", "description", "remove", "grant", "singleton", "limits", "mode", "minorModes", "model", "thinking", "subagents", "firstMessage", "overseerMayStart"];
+/** Every field a profile file may hold (profileFileError refuses any other; the settings reference covers each). */
+export const PROFILE_FIELDS: readonly string[] = ["id", "label", "icon", "description", "remove", "grant", "singleton", "limits", "mode", "minorModes", "model", "thinking", "subagents", "firstMessage", "overseerMayStart"];
 /** Keys an older Sova wrote that this one accepts and ignores (§chat.profiles/playbook): profiles sync
     between devices, so a file still naming its playbook must keep parsing. */
 export const RETIRED_PROFILE_FIELDS: readonly string[] = ["playbook"];

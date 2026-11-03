@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { buildRequest, COMMANDS, findCommand } from "./commands-catalog";
-import { DEPLOY_READ_VERBS, DEPLOY_VERBS, READ_VERBS, VERBS } from "./project-contract";
+import { DEPLOY_READ_VERBS, DEPLOY_VERBS, MERGE_READ_VERBS, MERGE_VERBS, READ_VERBS, VERBS } from "./project-contract";
 
 const shipped = (JSON.parse(readFileSync(new URL("./commands-ids.json", import.meta.url), "utf8")) as { ids: string[] }).ids;
 
@@ -34,12 +34,12 @@ test("no entry points at the peer, auth, share-page or extension-proxy routes", 
   for (const p of ["/api/peer/hello", "/api/auth/token", "/h/x", "/i/x", "/s/x", "/ext/a/api/x", "/peer/b/api/x"]) assert.match(p, closed);
 });
 
-test("one project.verb entry per contract verb and deploy verb, reads marked looks", () => {
+test("one project.verb entry per contract verb, deploy verb and merge verb, reads marked looks", () => {
   const verbs = COMMANDS.filter((c) => c.id.startsWith("project.verb.")).map((c) => c.id.slice("project.verb.".length));
-  assert.deepEqual(verbs, [...VERBS, ...DEPLOY_VERBS]);
+  assert.deepEqual(verbs, [...VERBS, ...DEPLOY_VERBS, ...MERGE_VERBS]);
   for (const v of verbs) {
     const c = findCommand(`project.verb.${v}`)!;
-    const reads = (READ_VERBS as readonly string[]).includes(v) || (DEPLOY_READ_VERBS as readonly string[]).includes(v);
+    const reads = (READ_VERBS as readonly string[]).includes(v) || (DEPLOY_READ_VERBS as readonly string[]).includes(v) || (MERGE_READ_VERBS as readonly string[]).includes(v);
     assert.equal(c.effect, reads ? "looks" : "changes", v);
     assert.equal(c.route.path, `/api/project-services/${v}`);
   }

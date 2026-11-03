@@ -273,7 +273,7 @@
 
 (def acts
   {:project/edit      {:power nil}
-   :project/archive   {:power nil :people-facing true :card (fn [d] {:projects [(:id d)]})}
+   :project/archive   {:power nil}
    :project/unarchive {:power nil}
    :overseer/start    {:power nil}
    :overseer/clear    {:power nil :people-facing true :card (fn [d] {:projects [(:id d)]})}

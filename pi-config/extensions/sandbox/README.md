@@ -20,6 +20,7 @@ worker uses it today. Spec: `§chat/sandbox`, `§chat.sandbox/workers`.
 | Workers | Every worker start goes through ONE call, the event's `workerLaunch({cwd, root?, backend, owner})` (`state.ts` `WorkerLaunch`). It returns `{kind: "pi", extensionPath, flags}` for a pi worker (`{sandbox: "on", "sandbox-parent": <ParentScope JSON>}`: the parent's level, writable roots without its session tmp, and its read-only paths inside them, each tracked worktree's `.agent` included), `{kind: "confine", scope}` for any other backend (the opaque serializable scope its whole process would run under, `launch.ts`; the subagents extension refuses such a start), `{kind: "refused", reason}` (the cwd outside the parent's roots, the sandbox unavailable, or partial without `acceptPartial`), or `{kind: "none"}` (Subagents only and no tracked worktree, or Off for every worker; the event then carries `workers: "off"`, and the subagents gate accepts `none` for a worktree's worker only with it). A worker started with `--sandbox-parent` is on, writes exactly where its parent may (its own cwd is never added), and refuses every tool with `Sandbox: worker cwd <x> is outside the parent's sandbox` when its cwd is outside them. A malformed flag fails closed. Grandchildren inherit the same roots. |
 | Worktrees | The worktrees extension's `worktrees:state` (`{version: 1, active: string[]}`) lists the session's active tracked worktrees. While on, each is a writable root of the session (and of its workers' scope), and each `<worktree>/.agent` stays read-only inside it (`ResolveInput.extraWritable` / `extraReadOnly`). `workerLaunch` with `root` set confines a worker started inside one of them, so it writes only there (its `.agent` read-only): on, the parent's scope narrowed to `root`; **off**, a write-only scope (`writeOnly: true`: no policy file is read, nothing is hidden, the network is the host's (`network.mode: "host"`, no `--unshare-net`) and the environment is passed as is; only writes are confined, to `root`, its git dirs and the session tmp; on Linux the host's `/tmp` stays visible read-only with every Unix socket in it masked (`Policy.hostTmp`, `tmpSockets`: the pathnames in `/proc/net/unix` under `/tmp`, canonicalised and still a socket by `lstat`, plus a walk of `/tmp` and the folders directly in it of at most `TMP_WALK_BUDGET` entries, for sockets bound from another namespace), `TMPDIR` names the worker's own tmp, and a list that cannot be read unambiguously (a malformed line, a relative path, a name with a line break) falls back to the private one); **Off**, `none`. Absent in a remote session. §chat.worktrees/workers. |
 | Parent scope | `--sandbox-parent` also carries the parent's resolved `hidden`, `proxyAllow` and `envAllow`: a worker's hidden list is its own plus the parent's, and the two allowlists are the parent's, never the worker's own file's (a worktree's `.agent` may hold a looser one). |
+| Stand-in cwd | `--sandbox-cwd-not-writable` (boolean, Sova sets it on a session that runs in the home folder because its own folder is gone): the cwd is not a writable root; the session writes only in its tmp, the policy's `writable` roots and its tracked worktrees, and its workers' scope carries the same roots. `resolveSessionPolicy({cwdWritable: false})` is the same rule for a caller outside the extension. |
 | Presence | `extensionRunner.getCommand("sandbox") !== undefined`. |
 | Event bus | `sandbox:state` (`SandboxStateEvent`: `on`, `extensionPath`, `enforcement`, `workerLaunch?`) on `session_start`, every change, and in answer to `sandbox:discover`. `on` is false under a remote target, and `workerLaunch` is absent there. |
 | Confined launch | `launch.ts` (builtins only): `encodeLaunchScope`/`decodeLaunchScope`, the `confine` answer's scope (the parent's scope as a pi worker in that cwd gets it, its agent dir, session and owner). Nothing launches a whole worker process confined: the subagents extension refuses a backend other than pi while the sandbox is on or the start is worktree-confined, and a Claude Code worker is a pi worker. The launcher that ran one (`confineLaunch`, for the retired native Claude Code worker) is gone. |
@@ -118,6 +119,18 @@ commits work, so a sandboxed session can move other branches' refs there. Its ho
 | `darwin-seatbelt` | `/usr/bin/sandbox-exec -f <profile>`, a Seatbelt profile generated per policy (a 0600 file named by its hash beside the session tmp; never inline `-p`) | no remapping: hidden paths are refused (EPERM) rather than emptied, no `/tmp` mapping (bash uses `$TMPDIR`), shadowed caches are read-only with the tool variables (`XDG_CACHE_HOME`, `npm_config_cache`, `MAVEN_OPTS`) pointed at the private copy; SBPL is last-match-wins, so the write rules go shallow to deep (`writeLayers`); mach services denied except a short allowlist, Keychain always denied; the proxy is reached through a host TCP relay on one loopback port, and `localPorts` are allowed; setuid programs cannot run |
 | `unsupported` | nothing: every sandboxed tool refuses | Windows and the rest |
 
+**Git's background cleanup.** Every process a sandboxed command starts ends with it, so a
+`git maintenance run --auto --detach` started by a commit, merge or fetch would be killed partway
+(a killed run can leave `objects/pack/multi-pack-index.lock` behind, and every later run then writes
+a whole pack and gives up). Both backends add `GIT_CONFIG_SYSTEM` after the allowlist, naming
+`sova-no-background-cleanup.gitconfig` in the session tmp (`$TMPDIR` inside): the machine's own
+system config copied in, then `maintenance.auto = false` and `gc.auto = 0` (`env.ts`
+`addGitCleanupEnv`), and drop `GIT_CONFIG_NOSYSTEM`. It is git's lowest level: a repository's or the
+user's own `maintenance.auto`/`gc.auto`, `-c`, or a command's own `GIT_CONFIG_SYSTEM` or
+`GIT_CONFIG_NOSYSTEM` still override it; a command's own `GIT_CONFIG_COUNT` does not drop it. The
+file holds no `[include]` of its own (a machine config with includes is included by path instead).
+Sova's server gives its chat processes the same file through `writeGitCleanupConfig`.
+
 User-facing notes for macOS: `pi-config/sandbox-policy/darwin/CLAUDE.md`.
 
 ## Session resources
@@ -136,7 +149,7 @@ tmp, and a host TCP relay to the proxy socket lives until that socket is gone.
 | `policy.ts` | extension | load/validate, tighten-only project file, canonical paths, read/write verdicts |
 | `tools.ts` | extension | `stockDefinitions`, `confinedDefinitions` |
 | `launch.ts` | extension | `encodeLaunchScope`, `decodeLaunchScope`: the `confine` answer's scope |
-| `backend.ts`, `backends/*`, `env.ts`, `proxy.ts` | backend | the seam, bwrap, Seatbelt, env allowlist, proxy |
+| `backend.ts`, `backends/*`, `env.ts`, `proxy.ts` | backend | the seam, bwrap, Seatbelt, env allowlist and the git cleanup config, proxy |
 | `tests/unit/*.test.ts` | backend | unit tests of the backend files |
 | `tests/*.unit.test.ts` | extension | unit tests of the four files above (`index.unit.test.ts` drives the factory on a fake `pi`) |
 | `tests/*` (other) | red-team | contract and escape suite |

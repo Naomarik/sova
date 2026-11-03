@@ -1,0 +1,173 @@
+{
+  "§chat.alignment-review/card": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/AlignDocCard.tsx",
+      "src/components/ChatView.tsx",
+      "src/lib/align-review.ts",
+      "src/lib/align-review.test.ts",
+      "src/design/align-viewer.css"
+    ],
+    "requires": [
+      "§chat.alignment/card",
+      "§chat.alignment-review/record"
+    ]
+  },
+  "§chat.alignment-review/flag": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/align-tool.ts",
+      "pi-config/extensions/mode/tests/review-smoke.mjs",
+      "pi-config/extensions/mode/tests/fixtures/flag-off-master.json",
+      "pi-config/extensions/mode/README.md",
+      "pi-config/README.md",
+      "server/web-settings.ts",
+      "server/web-settings.test.ts",
+      "shared/protocol.ts",
+      "server/chat-manager.ts",
+      "server/adversarial-review-flag.test.ts",
+      "src/components/SettingsDialog.tsx",
+      "src/lib/experimental-draft.ts",
+      "src/App.tsx",
+      "src/lib/align-review.ts",
+      "server/harness/state-kinds.ts",
+      "server/harness/state-kinds.test.ts",
+      "server/harness/pi/open.ts",
+      "server/align-launch.test.ts",
+      "server/tail-hello.integration.test.ts",
+      "src/components/ChatView.tsx",
+      "src/components/AlignDocCard.tsx",
+      "src/lib/align-review.test.ts",
+      "src/lib/alignment-draft.ts",
+      "src/components/AlignmentSettings.tsx",
+      "server/harness/pi/golden/session/S1-open-first-prompt.jsonl",
+      "server/harness/pi/golden/session/S12-link-delivery.jsonl",
+      "server/harness/pi/golden/session/S13-dialog-bridge.jsonl",
+      "server/harness/pi/golden/session/S14-model-thinking.jsonl",
+      "server/harness/pi/golden/session/S15-mode-command.jsonl",
+      "server/harness/pi/golden/session/S2-steer-mid-turn.jsonl",
+      "server/harness/pi/golden/session/S3-follow-up-queue.jsonl",
+      "server/harness/pi/golden/session/S4-abort.jsonl",
+      "server/harness/pi/golden/session/S5-rewind.jsonl",
+      "server/harness/pi/golden/session/S6-regenerate.jsonl",
+      "server/harness/pi/golden/session/S7-compact-manual.jsonl",
+      "server/harness/pi/golden/session/S8-compact-auto.jsonl",
+      "server/harness/pi/golden/session/S9-deferred-in-settle.jsonl",
+      "server/harness/pi/golden/state/G1-rewind-no-thinking.jsonl",
+      "server/harness/pi/golden/state/G1-rewind.jsonl",
+      "server/harness/pi/golden/state/G10-open-dispose.jsonl",
+      "server/harness/pi/golden/state/G2-sender-markers.jsonl",
+      "server/harness/pi/golden/state/G3-topic-delivered.jsonl",
+      "server/harness/pi/golden/state/G4-pristine-setup.jsonl",
+      "server/harness/pi/golden/state/G7-overseer-target.jsonl",
+      "server/harness/pi/golden/state/G9-dialog-answer.jsonl"
+    ],
+    "requires": [
+      "§chat.alignment/tool"
+    ]
+  },
+  "§chat.alignment-review/op": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/align.ts",
+      "pi-config/extensions/mode/align-tool.ts",
+      "pi-config/extensions/mode/review.test.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/tests/review-smoke.mjs"
+    ],
+    "requires": [
+      "§chat.alignment-review/record",
+      "§chat.alignment-review/route"
+    ]
+  },
+  "§chat.alignment-review/prompt": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/review-prompt.ts",
+      "pi-config/extensions/mode/review.test.ts"
+    ],
+    "requires": [
+      "§chat.alignment/document"
+    ]
+  },
+  "§chat.alignment-review/record": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/align.ts",
+      "pi-config/extensions/mode/review.test.ts",
+      "shared/protocol.ts",
+      "server/align-state.test.ts"
+    ],
+    "requires": [
+      "§chat.alignment/state"
+    ]
+  },
+  "§chat.alignment-review/route": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/subagents/subagent-profiles.ts",
+      "pi-config/extensions/subagents/subagent-profiles.test.ts",
+      "pi-config/extensions/mode/index.ts",
+      "src/components/SubagentProfilesSettings.tsx",
+      "src/lib/subagent-profiles-draft.ts",
+      "server/web-settings.ts",
+      "server/web-settings.test.ts"
+    ],
+    "requires": [
+      "§chat.subagent-profiles/file",
+      "§chat.subagent-profiles/resolution"
+    ]
+  },
+  "§chat.alignment-review/rules": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/align-tool.ts"
+    ],
+    "requires": [
+      "§chat.alignment-review/op"
+    ]
+  },
+  "§chat.alignment-review/tui": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/align-ui.ts",
+      "pi-config/extensions/mode/align.ts",
+      "pi-config/extensions/mode/tests/review-smoke.mjs"
+    ],
+    "requires": [
+      "§chat.alignment/tui"
+    ]
+  },
+  "§chat/alignment-review": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/align.ts",
+      "pi-config/extensions/mode/index.ts"
+    ],
+    "notOwned": [
+      "§chat.alignment/tool",
+      "§chat.subagent-profiles/resolution",
+      "§app.settings-dialog/alignment"
+    ]
+  }
+}

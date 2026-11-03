@@ -44,6 +44,24 @@ test("viewer: reference text becomes one paragraph per blank-line-separated part
   assert.deepEqual(state.tourParagraphs("only one"), ["only one"]);
 });
 
+test("viewer: reopened at any saved place, it draws that step and view, with Finish Tour only on the last step", async () => {
+  const { tourNavFixture } = await import("./tour-nav-fixture");
+  const m = tourNavFixture();
+  const text = (html: string) => html.replace(/<!--[^>]*-->/g, "");
+  m.steps.forEach((s, step) => s.views.forEach((v, view) => {
+    const html = text(draw(TourViewer, { manifest: m, assetUrl: (f: string) => `/a/${f}`, onClose() {}, initialProgress: { stepId: s.id, viewId: v.id, size: "desktop" } }));
+    const where = `step ${step + 1} view ${view + 1}`;
+    assert.ok(html.includes(`Step ${step + 1} of 3`), where);
+    assert.ok(html.includes(`${view + 1}/${s.views.length} views`), where);
+    assert.equal([...html.matchAll(/class="button tour-view-chip" aria-pressed="true"/g)].length, 1, where);
+    const last = step === m.steps.length - 1;
+    assert.ok(html.includes(last ? "Finish Tour" : m.steps[step + 1]!.title), where);
+    assert.equal(html.includes("Finish Tour"), last, where);
+    if (v.kind === "reference") assert.ok(html.includes("Explained in words · not pictured"), where);
+    else if (!v.captures.desktop) assert.ok(html.includes("Desktop view unavailable"), where);
+  }));
+});
+
 const chaptered = (): TourPresentation => {
   const m: TourPresentation = tourManifestFixture();
   const base = m.steps[0]!;

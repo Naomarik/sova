@@ -1,12 +1,12 @@
 # §app/command-palette — Command palette and shortcut sheet
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-One place, opened from the keyboard, that lists where you can go and what you can run from where
-you are, and one sheet that lists the app's keyboard shortcuts. Both live in the browser only: the
+One place, opened from the keyboard or a chat composer's `plus` button, that lists where you can
+go and what you can run from where you are, and one sheet that lists the app's keyboard shortcuts. Both live in the browser only: the
 palette reads the server's command list (`GET /api/commands`) and runs an entry as exactly the request its route takes, so every refusal is
 the route's own. It adds no route and changes none.
 
-Owns: the two keys that open them, what the palette lists, how a row is picked, the panel a
+Owns: the two keys that open them, the `plus` button's opening of the palette, what the palette lists, how a row is picked, the panel a
 command runs from, the reasons a row is disabled, and the sheet. Not here: the slash menu itself
 (§chat/slash-commands), the dialogs a row opens (§app/new-session-dialog, §app/settings-dialog),
 and the other app-wide keys, which keep their own claims (Alt+O §app.overseer/identity-and-clear,
@@ -25,11 +25,20 @@ them. The two keys here take over these browser defaults, and nothing else in th
 
 - **`Ctrl+K` or `⌘K`** opens the palette from anywhere in the app, text fields included, and
   closes it when it's open. On a Mac, `Ctrl+K` in a text field stays the field's own.
+- **The composer's `plus` button** (§chat.composer/composer-flyout) opens it too, in any chat
+  (a watched one included) and at every width. Opened that way, every row about the open chat or
+  session acts on the chat whose `plus` was pressed, even in a workspace whose focused pane is
+  another (§workspace/groups). Opened by the key, they act on the open chat, a workspace's
+  focused pane.
 - It's a modal (`.modal`, a bottom sheet under 768px): the title **Commands**, a search field
   with focus and the placeholder "Type a command", the list, and one line of help at the foot:
   "Choose with ↑ ↓, then Enter. Esc closes."
+- **On a phone** (a coarse pointer, or a window under 768px), opened from `plus`, nothing takes
+  focus that would raise the keyboard: the search field is left unfocused, and tapping it types as
+  usual. The key still focuses it. The help line, which is about keys, isn't shown on a phone.
 - **Closing:** `Esc` (from a command's panel, `Esc` goes back to the list first), the scrim, or the
-  key again. Focus returns to what had it before. Each opening starts empty: no query, no row
+  key again. Focus returns to what had it before; opened from `plus`, `Esc` and the scrim return
+  it to that `plus` button. Each opening starts empty: no query, no row
   active, no panel. Holding the key down toggles it once, never open and closed again.
 - **Nothing before the first open.** Until it's first opened the palette costs the page only its
   key: its code is a separate file the browser fetches on the first open, and it asks the server
@@ -42,15 +51,21 @@ them. The two keys here take over these browser defaults, and nothing else in th
 Rows come in groups, each under a `.popover-label`, in this order. A group with no rows is left
 out.
 
-1. **Go to:** the views of this window. The Overseer, Overview, Usage, Agents, Projects,
+1. **This chat:** the chat's own actions, in this order: **Attach images**, **Hide tool calls**
+   (**Show tool calls** while they're hidden), **Hide thinking** (**Show thinking** while it's
+   hidden), **Playbooks**, and **Undo last turn**. Only while a chat with a composer is open, or
+   the one whose `plus` opened the palette. There are no Sandbox rows: the sandbox shield is the
+   one place to set the sandbox (§chat.composer/sandbox-shield).
+2. **Go to:** the views of this window. The Overseer, Overview, Usage, Agents, Projects,
    Organizations, Mesh and Shares pages; Search Sessions; Collapse Sessions Pane (Expand Sessions
    Pane while collapsed); Keyboard Shortcuts; each Settings tab ("Settings: Models"); and each
    installed extension's page, by its title. A keyed row does exactly what its key does (Collapse
    Sessions Pane is `Ctrl/⌘+B`). A view that has a key shows it at the row's
    end (`Alt+O`, `/`, `Ctrl/⌘+B`, `?`).
-2. **This chat:** the open chat's slash commands, as the slash menu lists them (§chat/slash-commands),
-   each as `/name` with its description. Only while a chat with a composer is open.
-3. **Commands:** every entry of the server's command list, core first, each by its label with its
+3. **Slash commands:** the chat's slash commands, as the slash menu lists them
+   (§chat/slash-commands), each as `/name` with its description. Only while a chat with a
+   composer is open, as This chat.
+4. **Commands:** every entry of the server's command list, core first, each by its label with its
    id in mono. Entries an installed extension adds come last, under **Extensions**.
 
 While the list loads the Commands group says "Loading commands…". If the server can't give it:
@@ -68,7 +83,19 @@ match “{query}”."
   palette never acts on the first match, a lone match, or anything at all on close.
 - A click acts on the clicked row.
 - **Go to** rows go there and close the palette.
-- **This chat** rows put `/name ` in the composer (with a trailing space, as the slash menu's
+- **This chat** rows act on that chat:
+  - **Attach images** opens the composer's file picker within the same click or key press (a
+    phone's browser opens a picker only from the tap that asked for it) and closes the palette.
+  - **Hide tool calls** and **Hide thinking** (and their Show forms) flip whether this chat's
+    transcript hides its tool calls or its thinking, a view preference this browser keeps per
+    session, and close the palette; the next opening shows the
+    other word.
+  - **Playbooks** closes the palette and opens the Playbooks dialog (§chat/playbooks).
+  - **Undo last turn** takes two picks, in place, with no modal: the first relabels the row
+    "Confirm: undo last turn", with "Pick it again to rewind." as its description, and the palette
+    stays open; the second rewinds to just before your last message, as §chat.timeline/rewind
+    does, and closes the palette. Each opening starts disarmed, and closing disarms it.
+- **Slash commands** rows put `/name ` in the composer (with a trailing space, as the slash menu's
   `Enter` does, §chat.slash-commands/keyboard-and-mouse), close the palette and focus the
   textarea. Nothing is sent: the composer's own `Enter` sends it.
 - **Commands** rows open the command's panel (§app.command-palette/command-panel). Picking never
@@ -86,8 +113,14 @@ still decides when it runs.
 | A command that names a session | No session is open | "Open a session first." |
 | A command its route refuses while a terminal has the session open | The open session is open in a terminal | "Not while a terminal has this session open." |
 | A command with a required param the panel can't take | Always | "Needs the command line: `sova run {id}`." |
-| A chat row | The composer holds a draft | "The composer has a draft." |
-| A chat row | The composer is off (read-only, connecting) | The composer's own reason, as it shows under the composer |
+| A slash command row | The composer holds a draft | "The composer has a draft." |
+| A slash command row | The composer is off (read-only, connecting) | The composer's own reason, as it shows under the composer |
+| Attach images, Playbooks | The composer is off (a watched session, read-only, connecting) | The composer's own reason |
+| Playbooks | The chat can't send one (no Sova chat holds it) and the composer gives no reason | "Only a chat open in Sova can send a playbook." |
+| Undo last turn | It can't rewind now | The composer's own reason; else "Stop the turn first, then undo.", "Wait for compaction to finish, then undo.", "A rewind is already in progress." or "Nothing to undo yet." (§design.copy-deck/timeline-tab); before the chat has said where its last message is, "This chat is still loading."; with no Sova chat holding it, "Only a chat open in Sova can rewind." |
+
+Hide tool calls and Hide thinking are never disabled: they change only how this tab draws the
+chat, so they work in a watched session too. A draft disables only the slash command rows.
 | Collapse Sessions Pane | The window is under 768px | "Only on a wide window." |
 
 ## §app.command-palette/command-panel — Running a command

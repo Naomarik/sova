@@ -4,7 +4,7 @@
  * server's keeper and catalog; the client only reads what the server computed). Imports nothing.
  *
  *   when    := trigger (';' trigger)*            at most 3 triggers
- *   trigger := daily T | weekdays T | weekends T | <day>,<day>… T | every 30m | every Nh | claude-limit-reset | merge-ready
+ *   trigger := daily T | weekdays T | weekends T | <day>,<day>… T | every 30m | every Nh | claude-limit-reset
  *   T       := HH:MM (',' HH:MM)*                24-hour, at most 4
  *
  * `every` is aligned to local midnight (every 2h = 00:00, 02:00, …), so a restart never drifts it.
@@ -13,16 +13,13 @@
 export type TimesTrigger = { kind: "times"; days: number[]; minutes: number[]; src: string };
 export type EveryTrigger = { kind: "every"; minutes: number; src: string };
 export type LimitTrigger = { kind: "limit-reset"; src: "claude-limit-reset" };
-/** A branch in the playbook's project turns ready to merge with an idle owner (§chat.schedules/merge-ready). */
-export type MergeReadyTrigger = { kind: "merge-ready"; src: "merge-ready" };
-export type Trigger = TimesTrigger | EveryTrigger | LimitTrigger | MergeReadyTrigger;
+export type Trigger = TimesTrigger | EveryTrigger | LimitTrigger;
 
 export const MAX_TRIGGERS = 3;
 export const MAX_TIMES = 4;
 export const MAX_FIRES_PER_DAY = 48;
 export const EVERY_HOURS = [1, 2, 3, 4, 6, 8, 12] as const;
 export const LIMIT_RESET = "claude-limit-reset";
-export const MERGE_READY = "merge-ready";
 export const DEFAULT_TASK = "Run this playbook";
 
 const DAY_NAMES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
@@ -52,7 +49,6 @@ function parseTrigger(src: string): Trigger | string {
   const t = src.trim().replace(/\s+/g, " ");
   const lower = t.toLowerCase();
   if (lower === LIMIT_RESET) return { kind: "limit-reset", src: LIMIT_RESET };
-  if (lower === MERGE_READY) return { kind: "merge-ready", src: MERGE_READY };
   const every = /^every (\S+)$/.exec(lower);
   if (every) {
     const v = every[1]!;
@@ -77,7 +73,7 @@ function parseTrigger(src: string): Trigger | string {
     }
     days.sort((a, b) => a - b);
   }
-  if (!days) return `"${t}" is not a trigger. Use daily, weekdays, weekends, a day list like mon,wed,fri, every 30m, every Nh, ${LIMIT_RESET} or ${MERGE_READY}`;
+  if (!days) return `"${t}" is not a trigger. Use daily, weekdays, weekends, a day list like mon,wed,fri, every 30m, every Nh or ${LIMIT_RESET}`;
   const minutes = parseTimes(rest, t);
   if (typeof minutes === "string") return minutes;
   return { kind: "times", days, minutes, src: `${head} ${minutes.map(hhmm).join(",")}` };
@@ -160,7 +156,6 @@ const hhmm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${St
 /** One trigger in words: "Weekdays at 09:00", "Every 30 min", "When a Claude limit resets". */
 export function triggerText(tr: Trigger): string {
   if (tr.kind === "limit-reset") return "When a Claude limit resets";
-  if (tr.kind === "merge-ready") return "When a branch is ready to merge";
   if (tr.kind === "every") return tr.minutes === 30 ? "Every 30 min" : tr.minutes === 60 ? "Every hour" : `Every ${tr.minutes / 60} hours`;
   const at = tr.minutes.map(hhmm).join(", ");
   const d = tr.days.join(",");
@@ -296,21 +291,5 @@ export function fireHead(id: string, trigger: string, playbook: string, reason: 
 
 /** A wake's instruction: run the playbook again, re-reading its entry file (PLAYBOOK.md or SKILL.md, as read at this fire). */
 export const wakeInstruction = (title: string, dir: string, entry: string): string => `Run the playbook "${title}" again: read ${dir}/${entry} first, since it may have changed.`;
-
-/** One branch the merge board shows ready (§chat.schedules/merge-ready): Ready to merge, or Waiting for an OK. */
-export interface ReadyBranch {
-  branch: string;
-  waiting: boolean;
-}
-
-/** How many branches a merge-ready reason names before "and N more". */
-export const MERGE_READY_NAMED = 5;
-
-/** A merge-ready fire's reason: "Ready to merge: feat/x, feat/y (waiting for an OK)." */
-export function mergeReadyReason(branches: readonly ReadyBranch[]): string {
-  const named = branches.slice(0, MERGE_READY_NAMED).map((b) => (b.waiting ? `${b.branch} (waiting for an OK)` : b.branch));
-  const more = branches.length - named.length;
-  return `Ready to merge: ${named.join(", ")}${more > 0 ? `, and ${more} more` : ""}.`;
-}
 
 export const LIMIT_RESET_INSTRUCTION = "Your last turn stopped at that Claude login's usage limit, which has now reset. Continue where you left off.";

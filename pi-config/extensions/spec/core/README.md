@@ -17,17 +17,53 @@ node sova-spec.mjs graph                [--json] [--budget BYTES] [--cursor TOKE
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs census --changed [--base REV] [--related] [--own-base REV]... [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...] [--root DIR] [--json]
+node sova-spec.mjs records [--at REV] [--id §ns/name]... [--root DIR] [--spec DIR] [--json]
 ```
 
 `--spec` picks which spec graph to read. It's a directory relative to the project root, and it
 defaults to `.sova/spec` (the current documentation). A feature draft is read with, for example,
-`--spec .sova/spec/drafts/NAME/spec`. Only the manifest and claims come from that directory.
+`--spec .sova/spec/drafts/NAME/spec`. Only the manifest and claims (in format 2, with the record files beside them) come from that directory.
 `code` and `incumbent` paths always stay relative to the project root. `--spec` is a usage error
 if it's absolute, contains `..`, or names the root itself. A symlink on any segment of the path to
 its manifest or claims makes the graph untrustworthy.
 
 Without `--root`, it looks for `<spec>/manifest.json` in the current directory and then in each
 parent.
+
+## Record layouts
+
+Each promise has its prose (a declaration in `claims/<path>.md`) and a record (kind, labels,
+`requires`, `code`, `agreed`, …). The records are kept one of two ways, named by `formatVersion` in
+`manifest.json`:
+
+- **Format 1:** `manifest.json` holds the project settings (`grammar`, `boundary`, `_`, …) and every
+  record under `claims`.
+- **Format 2:** `manifest.json` holds the same settings and `"claims": "records live beside each claim
+  file, in claims/**/*.json"` (a string, so an older `merge-manifest` driver refuses it and Git reports
+  a conflict instead of merging quietly); each area's records sit in `claims/<path>.json` beside
+  `claims/<path>.md`, placed by id exactly as the declaration is (`§a/b` and every `§a.b/*` in
+  `a/b.json`; a directory kind `§section.x/y` in `section/x/y.json`). A record file is a plain JSON
+  object of id → record, ids in code-point order, 2-space indent and a trailing newline; an area with
+  no records has no record file. Record values are byte-for-byte those of format 1, so evidence bound
+  to a record stays valid across the two. A new spec (`sova-spec-draft.mjs new` where none exists)
+  starts in format 2; an existing one stays in its format until someone runs `migrate`.
+
+Every command reads both and gives the same answer on the same spec in either; every reader goes
+through one module, `layout.mjs` (Node standard library only, with `layout.d.mts` for TypeScript
+callers): `readSpecFs`, `readSpecGit` (one `ls-tree` and `cat-file --batch` for a revision), `assemble`,
+`serialize`, `recordFileOf`, `readRecords`. Copy it with the other core files. A script that can't import
+it runs `records`, which prints `{layout, meta, records}` (`records` sorted by id; `--at REV` reads a
+revision, `--id` narrows it, an id with no record is `unknown-id`) and never writes.
+
+A spec holding records both ways is **mixed** (a format 2 root whose `claims` is an object, or a format 1
+root beside `claims/**/*.json` record files). Every command refuses it, exit 2: `layout-mixed` in
+`findings` (the pull and look views: `cause: "layout-mixed"` and its `message`), naming the one command
+that finishes it: `sova-spec-draft.mjs merge-manifest --root DIR --write` while a Git merge is in
+progress, else `migrate --root DIR --write` (`--draft NAME` for a draft; DRAFTS.md). In format 2, `check`
+also refuses, exit 2: `record-misfiled` (a record in a file its id doesn't place it in),
+`record-duplicate` (one id in two files), `records-orphaned` (a record file with no claim file beside
+it; its records are also `undeclared-record`), `records-unreadable` (bad JSON, or not an object). A
+format 2 root without its `claims` string is `manifest-unreadable`.
 
 ## Exit codes
 
@@ -83,7 +119,7 @@ to make progress. A known missing manifest adds `cause: manifest-not-found` to `
 other graph refusals do not imply a missing spec. Start a draft for that missing-manifest cause,
 but never overwrite orphaned claims: the draft tool still refuses `orphaned-spec`. Pagination is separate from dependency unknowns: the frontier does not
 substitute page omissions for graph findings. Inspect the stated frontier and unread inventory,
-not just the first readable page. This adds no assessment or release gate.
+not just the first readable page. This adds no release gate.
 
 Cursors are stateless navigation tokens, not authenticated identity or reading evidence. They bind
 root, spec, seed, read policy, captured inputs, and the actual ordered/serialized streams. Changed
@@ -346,9 +382,15 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
   separately as `containers`, never as consumers. A behavior that has no `requires` key could be
   an unlisted consumer, so it goes on the frontier.
 - **check**: validates the whole graph and every record's evidence. It also returns `counts`
-  (including `labels`) and `declarations: [{id, file, lines, level, textSha256}]`, sorted by id.
-  `textSha256` is the SHA-256 of exactly the text `scope` would return. `declarations` is still
-  emitted when the graph is broken, but it may then be partial.
+  (including `labels`) and `declarations: [{id, file, lines, level, textSha256, bytes}]`, sorted by id.
+  `textSha256` is the SHA-256 of exactly the text `scope` would return, and `bytes` its UTF-8 size,
+  as `read` and `toc` count it. `declarations` is still emitted when the graph is broken, but it may
+  then be partial. `counts.cap` is the declaration size cap (6,144 B, or the manifest's optional
+  top-level `declarationCap`, a whole number of bytes; any other value warns
+  `declaration-cap-invalid` and the default holds), and `counts.overCap` how many declarations are
+  over it. A claim's size is its claim-file prose only, so it is the same in either record layout.
+  Being over the cap is counted, never a finding, so it never changes the exit status; the draft
+  tool warns when a draft takes a claim over it or grows one there.
 - **census**: walks only the explicit `boundary: {include: [dir], exclude: [{path, reason}]}`.
   No directory is assumed. All of `.sova/spec` is never counted, and neither is the `--spec`
   directory. That covers current docs, drafts and reviews, whichever graph is read. Symlinks are listed and
@@ -456,43 +498,29 @@ in refusal output. Git still runs with fsmonitor disabled and without a local sh
 
 ## Capture-local internal reader
 
-Companions may import `createInspection(root, {spec, readPolicy})` from this module. Import is
-silent; direct CLI invocation, including through a directory symlink, retains the existing output
-and refusal contracts. The reader loads one graph and exposes synchronous `check()`, `scope(id)`,
-`impact(id)` and `census({base, related})` results with the same JSON envelopes. Returned objects
-are detached, so consumer mutation cannot alter another query. `sourceHashes()` returns detached
-raw-byte hashes from the graph's actual reads (including any repeated versions and a conflict flag),
-not re-encoded prose or another file read. The assessment checks these against bound present inputs
-and refuses a mixed-version capture as a race, even when its requested prose is unchanged.
-This is a capture-local graph, not a live or persistent cache: create a new reader for every
-independent capture/status check. Internal `readPolicy: "assessment"` applies review refusals and
-also refuses the assessment receipt store before graph or lazy incumbent contents are read;
-ordinary CLI policies are unchanged. The assessment companion uses this policy and batches only
-selected, size-approved immutable Git blobs.
+Companions may import `createInspection(root, {spec, readPolicy})` from this module, with
+`readPolicy` `default` or `review` (any other value is a usage error). Import is silent; direct CLI
+invocation, including through a directory symlink, retains the existing output and refusal
+contracts. The reader loads one graph and exposes synchronous `check()`, `scope(id)`, `impact(id)`
+and `census({base, related})` results with the same JSON envelopes. Returned objects are detached,
+so consumer mutation cannot alter another query. This is a one-graph reader, not a live or
+persistent cache: create a new reader to see changed inputs.
 
 The draft sibling exports silent, read-only `inspectDraft(root, name, {base, readPolicy})` for its
-existing `check` result. It accepts no write command. The assessment uses `readPolicy: "assessment"`
-through the proposed/baseline core checks and proposed/baseline/current claim-tree reads used by
-optional draft triage. Receipt/cache paths are refused before the draft's safe content reader,
-including when the selected proposed graph is safe but the current claims root names storage.
-Only this internal
-assessment-policy result includes detached `inputSources` metadata from the exact safe reads of
-proposed, baseline and current manifest/claim trees and draft state. Repeated source versions remain
-visible; the assessor binds these paths and refuses changed versions as a race. No raw bytes are
-returned. Candidate identities staying the same does not conceal changed draft inputs. Default
-API results and draft CLI checks retain their original JSON contracts and subprocess path. No new CLI flag, weaker read
-policy, source snapshot store or release gate is introduced.
+existing `check` result, with the same two policies. It accepts no write command. Default API
+results and draft CLI checks keep their JSON contracts and subprocess path.
 
 ## What this tool does not do
 
-This core only reads. It has no command that writes. Three sibling tools in this directory write,
+This core only reads. It has no command that writes. Two sibling tools in this directory write,
 explicitly and only under `.sova/spec/`, and all use this core for graph inspection (through its
 CLI or capture-local reader):
 
 - `sova-spec-draft.mjs` handles drafts. `new NAME --write` copies the whole current graph into
   `.sova/spec/drafts/NAME/`. Promotion checks the draft and the merged candidate with
   `check --spec` before it writes anything. A project with no `.sova/spec` starts here: `new`
-  begins from an empty baseline, `{"formatVersion": 1, "claims": {}}`. So there's no separate
+  begins from an empty baseline in format 2: a `manifest.json` of `{"formatVersion": 2, "claims":
+  "records live beside each claim file, in claims/**/*.json"}`, records beside each claim file. So there's no separate
   `init`, and docs are written piecemeal as features are worked on. `merge-manifest` merges a
   conflicted `manifest.json` record by record (as a Git merge driver it writes Git's `%A` file,
   the one write outside `.sova/spec/`). See `../DRAFTS.md`.
@@ -500,14 +528,9 @@ CLI or capture-local reader):
   a closure's inputs, `record` stores a reviewer's conclusion, and `status` rechecks them. It
   writes only under `.sova/spec/reviews/`. See `../README.md`.
 
-- `sova-spec-assess.mjs` records observation-only dispositions against exact claim and implementation
-  inputs, with metadata-only local receipts and separate applicability/coverage/verification outcomes.
-  Its `prepare`, `record`, and `status` commands do not change any existing release or review gate.
-  See `../README.md` for the CLI and the distinctions.
-
 None of these tools adopts a claim or decides that code implements prose. The `spec` minor mode
-(`../../mode/minor.ts`) tells the agent when to run them. The four entrypoints are shipped together:
-the three companions find this core as the sibling `sova-spec.mjs`.
-Ship all `core/*.mjs`, including `packet.mjs`; copying only the four entrypoints is insufficient.
+(`../../mode/minor.ts`) tells the agent when to run them. The three entrypoints are shipped together:
+the two companions find this core as the sibling `sova-spec.mjs`.
+Ship all `core/*.mjs`, including `packet.mjs`; copying only the three entrypoints is insufficient.
 
 Tests: `node --test ../tests/*.test.mjs`

@@ -181,6 +181,43 @@ const SESSIONS = [
   writeSession("01a0e2e0-0000-7000-8000-0000000f0a15", 5, { aligns: 0 }),
 ];
 
+/** A short session that fits on screen, rows appended while away: rewritten every run. */
+function writeShort(id, seed) {
+  const file = join(dir, `2026-09-28T00-00-0${seed}-000Z_${id}.jsonl`);
+  FILES.set(id, file);
+  const t0 = Date.parse("2026-09-28T00:00:00.000Z") + seed * 3_600_000;
+  const lines = [{ type: "session", version: 3, id, timestamp: new Date(t0).toISOString(), cwd }];
+  let parent = null;
+  let n = 0;
+  const push = (e) => {
+    lines.push({ ...e, parentId: parent, timestamp: new Date(t0 + n++ * 1000).toISOString() });
+    parent = e.id;
+  };
+  for (let i = 0; i < 4; i++) {
+    push({ type: "message", id: `u${seed}_${i}`, message: { role: "user", content: [{ type: "text", text: `Short ${i}: ${words(5, i)}` }], timestamp: 0 } });
+    push({ type: "message", id: `a${seed}_${i}`, message: { role: "assistant", content: [{ type: "text", text: words(8, i + seed) }], provider: "e2e", model: "m", api: "anthropic-messages", stopReason: "stop", timestamp: 0 } });
+  }
+  writeFileSync(file, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  utimesSync(file, new Date(t0), new Date(t0));
+  SESSIONS.push(id);
+  return id;
+}
+/** Fits on screen with the rows added; the same, overflowing by ~40px once they're added. */
+const SHORT_FITS = writeShort("01a0e2e0-0000-7000-8000-0000000f0a16", 6);
+const SHORT_OVER = writeShort("01a0e2e0-0000-7000-8000-0000000f0a17", 7);
+/** The 5 rows appended to a short session while away, as JSONL lines after its last entry. */
+function shortRows(file, tag) {
+  const lines = readFileSync(file, "utf8").trim().split("\n");
+  let parent = JSON.parse(lines.at(-1)).id;
+  const added = [0, 1, 2, 3, 4].map((i) => {
+    const id = `${tag}${Date.now().toString(36)}${i}`;
+    const e = { type: "message", id, parentId: parent, timestamp: new Date().toISOString(), message: i % 2 ? { role: "assistant", content: [{ type: "text", text: words(10, i) }], provider: "e2e", model: "m", api: "anthropic-messages", stopReason: "stop", timestamp: 0 } : { role: "user", content: [{ type: "text", text: `Added ${i}: ${words(4, i)}` }], timestamp: 0 } };
+    parent = id;
+    return JSON.stringify(e);
+  });
+  return lines.concat(added).join("\n") + "\n";
+}
+
 // ---- the browser ----
 
 const { chromium } = createRequire(join(SKILL, "package.json"))("playwright");
@@ -351,6 +388,68 @@ try {
     assert(!log.some((f) => f.pill) && s.gap < 2, `with no rows added: ${JSON.stringify(s)}`);
     await ctx.close();
   });
+
+  /** A short session left at its end, 5 rows appended while another is open, switched back to:
+      every frame from its rows on shows no Jump to Latest and the end, also once the hello has
+      landed. The viewport is sized so the session with the rows added fits with ~40px to spare,
+      or with `overflow` overflows it by ~40px. */
+  const shortBack = async (id, overflow) => {
+    const { ctx, page } = await newPage();
+    const other = SESSIONS[3];
+    const file = FILES.get(id);
+    {
+      // Measure the session as it will be, rows added, at a height it overflows, then size the
+      // view so it fits with 40px to spare or overflows by 40px.
+      const base = readFileSync(file, "utf8");
+      writeFileSync(file, shortRows(file, "cal"));
+      await sleep(1500);
+      await page.setViewportSize({ width: 1440, height: 300 });
+      await open(page, id);
+      await filled(page);
+      const m = await page.evaluate(() => {
+        const t = document.getElementById("transcript");
+        return { sh: t.scrollHeight, ch: t.clientHeight, vh: innerHeight };
+      });
+      assert(m.sh > m.ch, `the session with its rows added fits even at 300px: ${JSON.stringify(m)}`);
+      const height = m.sh + (overflow ? -40 : 40) + (m.vh - m.ch);
+      writeFileSync(file, base);
+      await open(page, other);
+      await filled(page);
+      await sleep(1500);
+      await page.setViewportSize({ width: 1440, height });
+    }
+    await open(page, id);
+    await filled(page);
+    await toEnd(page);
+    await sleep(300);
+    const left = await page.evaluate(() => {
+      const t = document.getElementById("transcript");
+      return { max: t.scrollHeight - t.clientHeight, rows: t.querySelectorAll(".thread > .entry").length };
+    });
+    assert(left.max === 0, `the short session doesn't fit when left: ${JSON.stringify(left)}`);
+    await open(page, other);
+    await filled(page);
+    writeFileSync(file, shortRows(file, "away"));
+    await sleep(1500);
+    await open(page, id);
+    await filled(page);
+    await sleep(1500);
+    const log = await frames(page);
+    const r = await page.evaluate(() => {
+      const t = document.getElementById("transcript");
+      const pill = t.parentElement.querySelector(".jump-latest");
+      return { max: t.scrollHeight - t.clientHeight, gap: Math.round(t.scrollHeight - t.scrollTop - t.clientHeight), pill: pill.hasAttribute("data-shown") ? pill.textContent : null, rows: t.querySelectorAll(".thread > .entry").length, innerHeight };
+    });
+    await ctx.close();
+    assert(r.rows >= left.rows + 5, `the rows added didn't come: ${JSON.stringify({ left, r })}`);
+    if (overflow) assert(r.max >= 20 && r.max < 80, `wanted an overflow of ~40px, got ${r.max}: ${JSON.stringify(r)}`);
+    else assert(r.max === 0, `the rows added don't fit: ${JSON.stringify(r)}`);
+    const drawn = log.filter((f) => f.rows > 5);
+    const bad = drawn.find((f) => f.pill) ?? drawn.slice(-8).find((f) => f.gap >= 2);
+    assert(!bad && !r.pill && r.gap < 2, `not at the end following: ${JSON.stringify({ frame: bad, now: r })}`);
+  };
+  await check("a short session that fits, left at its end, gains rows that still fit while away: back at the end, no Jump to Latest", () => shortBack(SHORT_FITS, false));
+  await check("a short session left at its end gains rows overflowing it by ~40px while away: back at the end following, no Jump to Latest", () => shortBack(SHORT_OVER, true));
 
   // ---- live rows: a running turn's and a queued message's rows were read when the reader left ----
   const fake = await api("/api/settings/claude-status").catch((err) => ({ error: String(err?.message ?? err) }));

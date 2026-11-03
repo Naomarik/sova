@@ -9,21 +9,31 @@
 import type { CommandEntry, CommandParam, ParamType } from "../../shared/commands-catalog";
 import type { SlashCommand } from "../../shared/protocol";
 
-export type PaletteGroup = "go" | "chat" | "commands" | "extensions";
+/** `this`: the chat's own actions; `chat`: its slash commands. */
+export type PaletteGroup = "this" | "go" | "chat" | "commands" | "extensions";
 
-/** The groups in the order they show, with their labels. */
+/** The groups in the order they show, with their labels (§app.command-palette/rows). */
 export const GROUPS: readonly { id: PaletteGroup; label: string }[] = [
+  { id: "this", label: "This chat" },
   { id: "go", label: "Go to" },
-  { id: "chat", label: "This chat" },
+  { id: "chat", label: "Slash commands" },
   { id: "commands", label: "Commands" },
   { id: "extensions", label: "Extensions" },
 ];
 
+/** The chat's own actions, the This chat group, in the order they show. No sandbox: the shield has it. */
+export const CHAT_ACTIONS = ["attach", "hide-tools", "hide-thinking", "playbooks", "undo"] as const;
+export type ChatActionId = (typeof CHAT_ACTIONS)[number];
+
 /** What acting on a row does; the view resolves it. */
-export type RowAct = { kind: "view"; id: string } | { kind: "chat"; name: string } | { kind: "command"; entry: CommandEntry };
+export type RowAct =
+  | { kind: "view"; id: string }
+  | { kind: "action"; id: ChatActionId }
+  | { kind: "chat"; name: string }
+  | { kind: "command"; entry: CommandEntry };
 
 export interface PaletteRow {
-  /** Unique within the list: `view:<id>`, `chat:<name>`, `cmd:<id>`. */
+  /** Unique within the list: `this:<id>`, `view:<id>`, `chat:<name>`, `cmd:<id>`. */
   key: string;
   group: PaletteGroup;
   label: string;
@@ -40,8 +50,24 @@ export interface PaletteRow {
 export interface PaletteContext {
   /** The open session, if any. `terminal`: a terminal has it open. */
   session: { path: string; id: string; title: string; terminal: boolean } | null;
-  /** The open chat's composer, if one is on screen. */
-  composer: { commands: SlashCommand[]; off: string | null; hasDraft: boolean } | null;
+  /** The chat's composer, if one is on screen. */
+  composer: PaletteComposer | null;
+}
+
+/** The chat's composer as the rows read it (commands/composers.ts' handle, read once). */
+export interface PaletteComposer {
+  commands: SlashCommand[];
+  /** Why the composer takes nothing now (its own reason line), or null. */
+  off: string | null;
+  hasDraft: boolean;
+  /** This chat's view preferences: its tool calls, its thinking hidden. */
+  hideTools: boolean;
+  hideThinking: boolean;
+  /** A Sova chat holds it, so it can send a playbook (a watch view can't). */
+  playbooks: boolean;
+  /** Why Undo last turn can't run now, null when it can, "" when it can't yet with nothing to say
+      (before the chat said where its last message is); undefined: no Sova chat holds it. */
+  undo: string | null | undefined;
 }
 
 /** A view row as the view gives it (commands/view.ts). */
@@ -59,6 +85,21 @@ export const REASON = {
   terminal: "Not while a terminal has this session open.",
   cli: (id: string) => `Needs the command line: sova run ${id}.`,
   draft: "The composer has a draft.",
+  noPlaybooks: "Only a chat open in Sova can send a playbook.",
+  noRewind: "Only a chat open in Sova can rewind.",
+  loading: "This chat is still loading.",
+} as const;
+
+/** The This chat rows' own copy (§design.copy-deck/composer-flyout, /timeline-tab). */
+export const ACTION_COPY = {
+  attach: "Attach images",
+  hideTools: (hidden: boolean) => (hidden ? "Show tool calls" : "Hide tool calls"),
+  hideThinking: (hidden: boolean) => (hidden ? "Show thinking" : "Hide thinking"),
+  playbooks: "Playbooks",
+  undo: "Undo last turn",
+  undoArmed: "Confirm: undo last turn",
+  undoDetail: "Rewind to before your last message; its text comes back to the composer",
+  undoArmedDetail: "Pick it again to rewind.",
 } as const;
 
 /** A param the generated form can't take: JSON. */
@@ -72,7 +113,34 @@ export function commandBlocked(entry: CommandEntry, ctx: PaletteContext, dialogs
   return null;
 }
 
-/** Why a chat row can't act now, or null. */
+/** Why a This chat row can't act now, or null. Hiding is a view preference: it always can. A
+    draft never stops these; only the slash rows wait for an empty composer. */
+export function actionBlocked(id: ChatActionId, composer: PaletteComposer): string | null {
+  if (id === "hide-tools" || id === "hide-thinking") return null;
+  if (composer.off) return composer.off;
+  if (id === "playbooks") return composer.playbooks ? null : REASON.noPlaybooks;
+  if (id === "undo") {
+    if (composer.undo === undefined) return REASON.noRewind;
+    if (composer.undo === "") return REASON.loading;
+    return composer.undo;
+  }
+  return null;
+}
+
+/** The This chat rows. `undoArmed`: Undo last turn's first pick happened (it shows its confirm). */
+export function actionRows(composer: PaletteComposer, undoArmed = false): PaletteRow[] {
+  return CHAT_ACTIONS.map((id): PaletteRow => {
+    const disabled = actionBlocked(id, composer);
+    const row = (label: string, detail?: string): PaletteRow => ({ key: `this:${id}`, group: "this", label, detail, disabled, act: { kind: "action", id } });
+    if (id === "attach") return row(ACTION_COPY.attach);
+    if (id === "hide-tools") return row(ACTION_COPY.hideTools(composer.hideTools));
+    if (id === "hide-thinking") return row(ACTION_COPY.hideThinking(composer.hideThinking));
+    if (id === "playbooks") return row(ACTION_COPY.playbooks);
+    return undoArmed && !disabled ? row(ACTION_COPY.undoArmed, ACTION_COPY.undoArmedDetail) : row(ACTION_COPY.undo, ACTION_COPY.undoDetail);
+  });
+}
+
+/** Why a slash command row can't act now, or null. */
 export function chatBlocked(composer: NonNullable<PaletteContext["composer"]>): string | null {
   if (composer.off) return composer.off;
   if (composer.hasDraft) return REASON.draft;
@@ -81,10 +149,20 @@ export function chatBlocked(composer: NonNullable<PaletteContext["composer"]>): 
 
 // ---- rows --------------------------------------------------------------------------------
 
-/** Every row, in group order: the views, the open chat's commands, then the served list. */
-export function buildRows(views: readonly ViewRowInput[], served: readonly CommandEntry[] | null, ctx: PaletteContext, dialogs: ReadonlySet<string>): PaletteRow[] {
-  const rows: PaletteRow[] = views.map((v) => ({ key: `view:${v.id}`, group: "go", label: v.label, keys: v.keys, disabled: v.disabled, act: { kind: "view", id: v.id } }));
+/**
+ * Every row, in group order: the chat's own actions, the views, the chat's slash commands, then
+ * the served list. `undoArmed`: Undo last turn shows its confirm.
+ */
+export function buildRows(
+  views: readonly ViewRowInput[],
+  served: readonly CommandEntry[] | null,
+  ctx: PaletteContext,
+  dialogs: ReadonlySet<string>,
+  undoArmed = false,
+): PaletteRow[] {
   const composer = ctx.composer;
+  const rows: PaletteRow[] = composer ? actionRows(composer, undoArmed) : [];
+  for (const v of views) rows.push({ key: `view:${v.id}`, group: "go", label: v.label, keys: v.keys, disabled: v.disabled, act: { kind: "view", id: v.id } });
   if (composer) {
     const why = chatBlocked(composer);
     const seen = new Set<string>();

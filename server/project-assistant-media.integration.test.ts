@@ -144,6 +144,32 @@ describe("the owner's photos", () => {
     assert.equal(((await again.json()) as { code: string }).code, "photo-expired");
   });
 
+  test("a send refused while an answer is written keeps its staged photo: the same id sends once the answer is done (§app.project-assistant/chat)", async () => {
+    resetUploadWindows();
+    const up = await upload();
+    assert.equal(up.status, 201, await up.clone().text());
+    const { id } = (await up.json()) as { id: string };
+    // An answer being written: the chat is busy until released.
+    const release = model.hold();
+    model.reply({ text: "Still thinking about the last one." });
+    assert.equal((await post(`/api/i/${token}/assistant`, { text: "First, a question." })).status, 202);
+    await until(() => isSessionBusy(path), "the answer to start");
+    const refused = await post(`/api/i/${token}/assistant`, { text: "And this screenshot.", images: [id] });
+    assert.equal(refused.status, 409);
+    assert.equal(((await refused.json()) as { code: string }).code, "busy");
+    release();
+    await until(() => !isSessionBusy(path), "the answer to finish");
+    // The very same staged photo goes through now: the refusal used nothing up.
+    const before = model.calls.length;
+    model.reply({ text: "Got the screenshot." });
+    const again = await post(`/api/i/${token}/assistant`, { text: "And this screenshot.", images: [id] });
+    assert.equal(again.status, 202, await again.clone().text());
+    await until(() => model.calls.length > before && !isSessionBusy(path), "the reply");
+    const ctx = model.calls.at(-1)!.context as { messages: { role: string; content: unknown }[] };
+    const user = [...ctx.messages].reverse().find((m) => m.role === "user")!;
+    assert.ok((user.content as { type: string }[]).some((b) => b.type === "image"), "the photo reached the model on the retry");
+  });
+
   test("more than the per-message limit is refused; there is no daily limit past 3 × the per-conversation one", async () => {
     settings.writeBatonSettings({ messagesMax: 60, photos: { ...PHOTO_DEFAULTS, enabled: true, perConversation: 1 } });
     resetUploadWindows();

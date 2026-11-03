@@ -444,6 +444,11 @@ export interface ResolveInput {
 	git?: (root: string) => { writable: string[]; readOnly: string[] };
 	/** Set in a worker of a sandboxed parent (`--sandbox-parent`): its writable roots replace this session's own. */
 	parent?: ParentScope;
+	/**
+	 * false: the cwd is not a writable root (a session running in a stand-in folder, its own being gone:
+	 * the home folder must not become writable by being the cwd). Default true.
+	 */
+	cwdWritable?: boolean;
 	/** Where a shadowed path's private copy lives (backend `shadowSource`). Without it nothing is shadowed. */
 	shadowSource?: (agentDir: string, path: string) => string;
 }
@@ -538,7 +543,7 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 			: parentRoots
 				? [tmpDir, ...parentRoots]
 				: [
-						workspaceRoot,
+						...(input.cwdWritable === false ? [] : [workspaceRoot]),
 						tmpDir,
 						...canon([...d.writable, ...policy.writable]).filter((w) => !inShadow(w)),
 						// Tracked worktrees are roots like the cwd: one inside a shadow stays real.

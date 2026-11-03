@@ -80,12 +80,26 @@ export interface UsageKindRow extends UsageSpend {
   kind: UsageKind;
 }
 
-/** One project's row: the org project when the calls named one, else the working directory. */
+/** A By project row's kind. */
+export type UsageProjectKind = "project" | "folder" | "overseer" | "other";
+
+/** One By project row: a registered project, a code checkout, the Overseer, or Other folders. */
+
 export interface UsageProjectRow extends UsageSpend {
-  /** `prj_…` when known (the browser names it from its projects), else null. */
+  /** `prj_…` for a project row, else null. */
   project: string | null;
-  /** The working directory, when no project: null for calls with neither (Sova's own decisions). */
+  /** A checkout row's folder (the Overseer's: its folder), else null: what an older browser names a row by. */
   cwd: string | null;
+  /** What the row groups (absent from an older server, whose rows are one per project or folder). */
+  kind?: UsageProjectKind;
+  /** The row's name: the project's, the checkout folder's, "Overseer", "Other folders". */
+  name?: string;
+  /** A project's root, a checkout's folder. */
+  path?: string;
+  /** How many distinct folders its calls ran in. */
+  folders?: number;
+  /** An archived project. */
+  archived?: true;
 }
 
 /** One owning session's spend: the calls it owns (its turns, housekeeping and the side calls made for

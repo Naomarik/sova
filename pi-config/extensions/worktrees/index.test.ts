@@ -1,11 +1,11 @@
 // Run through tests/run.mjs (pi imports resolve from the installed package).
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import worktrees from "./index.ts";
+import worktrees, { queueServes } from "./index.ts";
 import { restoreActive, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE, WORKTREES_STATE_EVENT } from "./state.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -119,6 +119,59 @@ test("with the sandbox on, create and attach ask first; declined or unanswerable
 		f.emit("sandbox:state", { version: 1, on: false });
 		await f.call(f.ctx(r.main), { action: "create", name: "free" });
 		assert.equal(f.confirms.length, 2);
+	} finally {
+		r.done();
+	}
+});
+
+test("under Sova, worktree merge into the branch others land into is refused (the merge queue lands it); into another branch it merges", async () => {
+	const r = repo();
+	try {
+		const f = fakePi();
+		worktrees(f.pi, { mergeQueue: true });
+		const c = f.ctx(r.main);
+		await f.fire("session_start", c);
+		await f.call(c, { action: "create", name: "q" });
+		const t = join(r.root, ".worktrees", "repo-q");
+		writeFileSync(join(t, "q.txt"), "q\n");
+		sh(t, "add", "q.txt");
+		sh(t, "commit", "-q", "-m", "q");
+		const before = sh(r.main, "rev-parse", "master");
+		await assert.rejects(f.call(c, { action: "merge", path: t }), /master is the branch others land into: branches reach it only through Sova's merge queue/);
+		await assert.rejects(f.call(c, { action: "merge", path: t, target: "master" }), /only through Sova's merge queue/);
+		assert.equal(sh(r.main, "rev-parse", "master"), before);
+		assert.equal(f.messages.length, 0);
+		sh(r.main, "branch", "side");
+		const out = await f.call(c, { action: "merge", path: t, target: "side" });
+		assert.match(out.content[0].text, /^Merged feat\/q into side/);
+	} finally {
+		r.done();
+	}
+});
+
+test("under Sova, merge into the merge queue's declared target (merge.target, not master) is refused too; with no declaration it merges", async () => {
+	const r = repo();
+	try {
+		sh(r.main, "branch", "release");
+		sh(r.main, "branch", "other");
+		mkdirSync(join(r.main, ".sova"));
+		writeFileSync(join(r.main, ".sova", "project.json"), JSON.stringify({ version: 1, merge: { target: "release", checks: "none" } }));
+		sh(r.main, "add", ".sova/project.json");
+		sh(r.main, "commit", "-q", "-m", "declare release");
+		const f = fakePi();
+		worktrees(f.pi, { mergeQueue: true });
+		const c = f.ctx(r.main);
+		await f.fire("session_start", c);
+		await f.call(c, { action: "create", name: "d" });
+		const t = join(r.root, ".worktrees", "repo-d");
+		writeFileSync(join(t, "d.txt"), "d\n");
+		sh(t, "add", "d.txt");
+		sh(t, "commit", "-q", "-m", "d");
+		const before = sh(r.main, "rev-parse", "release");
+		await assert.rejects(f.call(c, { action: "merge", path: t, target: "release" }), /release is the branch others land into: branches reach it only through Sova's merge queue/);
+		assert.equal(sh(r.main, "rev-parse", "release"), before, "nothing merged");
+		const out = await f.call(c, { action: "merge", path: t, target: "other" });
+		assert.match(out.content[0].text, /^Merged feat\/d into other/);
 	} finally {
 		r.done();
 	}
@@ -284,6 +337,357 @@ test("in a spec project the warnings are said once: a tool merge's answer (its c
 		const again = await f.call(c, { action: "merge", path: q });
 		assert.match(again.content[0].text, /\nSpec warning: draft d has 1 unpromoted record/);
 		assert.deepEqual(seen, [], "no merge event on the bus");
+	} finally {
+		r.done();
+	}
+});
+
+test("outside Sova's merge queue, merge brings a branch into master at once, with no go-ahead recorded; a retired mainMerges switch left in the repo changes nothing", async () => {
+	const r = repo();
+	try {
+		// The retired switch, as master may still hold it: it does nothing.
+		mkdirSync(join(r.main, ".sova"));
+		writeFileSync(join(r.main, ".sova", "offers.json"), JSON.stringify({ version: 1, mainMerges: "go-ahead", offers: {} }));
+		sh(r.main, "add", ".sova/offers.json");
+		sh(r.main, "commit", "-q", "-m", "leftover switch");
+		const f = fakePi();
+		// A chat Sova didn't start (no SOVA_CHAT_STATE_ROOT): no merge queue.
+		worktrees(f.pi, { mergeQueue: (root) => queueServes(root, {}) });
+		const c = f.ctx(r.main);
+		await f.fire("session_start", c);
+		await f.call(c, { action: "create", name: "g" });
+		const t = join(r.root, ".worktrees", "repo-g");
+		writeFileSync(join(t, "g.txt"), "g\n");
+		sh(t, "add", "g.txt");
+		sh(t, "commit", "-q", "-m", "g");
+		const head = sh(t, "rev-parse", "HEAD");
+		const out = await f.call(c, { action: "merge", path: t });
+		assert.match(out.content[0].text, /^Merged feat\/g into master/);
+		assert.equal(sh(r.main, "rev-parse", "master"), head, "master is the branch's head");
+	} finally {
+		r.done();
+	}
+});
+
+/** Runs `fn` as a chat Sova started with state root `root` (undefined: a chat Sova didn't start), restoring the env after. */
+async function asChat<T>(root: string | undefined, fn: () => Promise<T>): Promise<T> {
+	const was = process.env.SOVA_CHAT_STATE_ROOT;
+	if (root === undefined) delete process.env.SOVA_CHAT_STATE_ROOT;
+	else process.env.SOVA_CHAT_STATE_ROOT = root;
+	try {
+		return await fn();
+	} finally {
+		if (was === undefined) delete process.env.SOVA_CHAT_STATE_ROOT;
+		else process.env.SOVA_CHAT_STATE_ROOT = was;
+	}
+}
+
+/** The server's merge-served.json in state root `state`, serving `roots` (null: no file). */
+function serve(state: string, roots: { root: string; target: string }[] | null) {
+	mkdirSync(state, { recursive: true });
+	const file = join(state, "merge-served.json");
+	if (roots === null) rmSync(file, { force: true });
+	else writeFileSync(file, JSON.stringify({ v: 1, at: "2026-11-03T12:00:00.000Z", roots }));
+}
+
+test("in a chat Sova started, worktree merge into master is a plain merge where the merge queue doesn't serve the repo, refused where it does, and refused when the served answer is missing or damaged", async () => {
+	const r = repo();
+	try {
+		const state = join(r.root, "state");
+		await asChat(state, async () => {
+			const f = fakePi();
+			worktrees(f.pi);
+			const c = f.ctx(r.main);
+			await f.fire("session_start", c);
+			await f.call(c, { action: "create", name: "s" });
+			const t = join(r.root, ".worktrees", "repo-s");
+			writeFileSync(join(t, "s.txt"), "s\n");
+			sh(t, "add", "s.txt");
+			sh(t, "commit", "-q", "-m", "s");
+			const head = sh(t, "rev-parse", "HEAD");
+			const before = sh(r.main, "rev-parse", "master");
+			// Served (the file names this repo's main checkout): refused, nothing merged.
+			serve(state, [{ root: r.main, target: "master" }]);
+			await assert.rejects(f.call(c, { action: "merge", path: t }), /master is the branch others land into: branches reach it only through Sova's merge queue/);
+			// Fail closed: no answer, or a damaged one, reads as served.
+			serve(state, null);
+			await assert.rejects(f.call(c, { action: "merge", path: t }), /only through Sova's merge queue/);
+			writeFileSync(join(state, "merge-served.json"), "{damaged");
+			await assert.rejects(f.call(c, { action: "merge", path: t }), /only through Sova's merge queue/);
+			assert.equal(sh(r.main, "rev-parse", "master"), before, "nothing merged while served");
+			assert.equal(f.messages.length, 0);
+			// Not served (another repo listed, read afresh at this call, no restart): a plain merge into master.
+			serve(state, [{ root: join(r.root, "elsewhere"), target: "master" }]);
+			const out = await f.call(c, { action: "merge", path: t });
+			assert.match(out.content[0].text, /^Merged feat\/s into master/);
+			assert.equal(sh(r.main, "rev-parse", "master"), head, "master is the branch's head");
+			assert.equal(f.messages.length, 1, "the merge card");
+			assert.equal(existsSync(join(state, "landing.json")), false, "no go-ahead recorded");
+		});
+	} finally {
+		r.done();
+	}
+});
+
+test("served under its declared target (merge-served.json's target, not master): merge into it is refused, into master it merges", async () => {
+	const r = repo();
+	try {
+		const state = join(r.root, "state");
+		sh(r.main, "branch", "release");
+		await asChat(state, async () => {
+			const f = fakePi();
+			worktrees(f.pi);
+			const c = f.ctx(r.main);
+			await f.fire("session_start", c);
+			await f.call(c, { action: "create", name: "t" });
+			const t = join(r.root, ".worktrees", "repo-t");
+			writeFileSync(join(t, "t.txt"), "t\n");
+			sh(t, "add", "t.txt");
+			sh(t, "commit", "-q", "-m", "t");
+			serve(state, [{ root: r.main, target: "release" }]);
+			await assert.rejects(f.call(c, { action: "merge", path: t, target: "release" }), /release is the branch others land into/);
+		});
+	} finally {
+		r.done();
+	}
+});
+
+test("land, where the merge queue doesn't serve the repo: the user's word is a plain merge into the main checkout's branch, drafts made official first unless they said without its specs; nothing is recorded", async () => {
+	const r = repo();
+	try {
+		const state = join(r.root, "state");
+		const docsCalls: unknown[] = [];
+		await asChat(state, async () => {
+			serve(state, []);
+			const f = fakePi();
+			worktrees(f.pi, { docs: async (_git, req) => (docsCalls.push(req), { state: "none" }) as never });
+			const tree = join(r.root, "wt-u");
+			sh(r.main, "worktree", "add", "-q", "-b", "feat/u", tree);
+			writeFileSync(join(tree, "u.txt"), "u\n");
+			sh(tree, "add", "u.txt");
+			sh(tree, "commit", "-q", "-m", "u");
+			const c = f.ctx(tree);
+			await f.fire("session_start", c);
+			const say = (text: string) => f.entries.push({ type: "message", message: { role: "user", content: [{ type: "text", text }] } } as never);
+			// Still only the user's own word.
+			say("what's left before we land?");
+			await assert.rejects(f.call(c, { action: "land" }), /Only the user's own word lands a branch/);
+			say("land it");
+			const out = await f.call(c, { action: "land" });
+			assert.match(out.content[0].text, /^Merged feat\/u into master/);
+			assert.match(out.content[0].text, /No merge queue serves this repo/);
+			assert.doesNotMatch(out.content[0].text, /Queued/);
+			assert.equal(sh(r.main, "rev-parse", "master"), sh(tree, "rev-parse", "HEAD"));
+			assert.deepEqual(docsCalls, [{ path: tree, branch: "feat/u", target: "master" }], "drafts made official first");
+			assert.equal(f.messages.length, 1, "the merge card");
+			assert.equal(existsSync(join(state, "landing.json")), false, "no go-ahead recorded");
+			// "without its specs": the drafts step is skipped.
+			writeFileSync(join(tree, "v.txt"), "v\n");
+			sh(tree, "add", "v.txt");
+			sh(tree, "commit", "-q", "-m", "v");
+			say("merge it without its specs");
+			await f.call(c, { action: "land" });
+			assert.equal(docsCalls.length, 1);
+			assert.equal(sh(r.main, "rev-parse", "master"), sh(tree, "rev-parse", "HEAD"));
+			assert.equal(existsSync(join(state, "landing.json")), false, "still no go-ahead recorded");
+		});
+	} finally {
+		r.done();
+	}
+});
+
+test("land, where the merge queue doesn't serve the repo, with the sandbox on: asks first like merge; declined or unanswerable merges nothing", async () => {
+	const r = repo();
+	try {
+		const state = join(r.root, "state");
+		await asChat(state, async () => {
+			serve(state, []);
+			const f = fakePi();
+			worktrees(f.pi, { docs: async () => ({ state: "none" }) as never });
+			const tree = join(r.root, "wt-z");
+			sh(r.main, "worktree", "add", "-q", "-b", "feat/z", tree);
+			writeFileSync(join(tree, "z.txt"), "z\n");
+			sh(tree, "add", "z.txt");
+			sh(tree, "commit", "-q", "-m", "z");
+			const before = sh(r.main, "rev-parse", "master");
+			await f.fire("session_start", f.ctx(tree));
+			f.emit("sandbox:state", { version: 1, on: true });
+			f.entries.push({ type: "message", message: { role: "user", content: [{ type: "text", text: "land it" }] } } as never);
+			f.setConfirm(false);
+			await assert.rejects(f.call(f.ctx(tree), { action: "land" }), /declined/);
+			await assert.rejects(f.call(f.ctx(tree, false), { action: "land" }), /no one to ask/);
+			assert.equal(sh(r.main, "rev-parse", "master"), before, "nothing merged");
+			assert.equal(f.messages.length, 0);
+			f.setConfirm(true);
+			const out = await f.call(f.ctx(tree), { action: "land" });
+			assert.match(out.content[0].text, /^Merged feat\/z into master/);
+			assert.deepEqual(f.confirms, ["Merge a worktree?", "Merge a worktree?"]);
+			assert.equal(existsSync(join(state, "landing.json")), false);
+		});
+	} finally {
+		r.done();
+	}
+});
+
+test("land, where the merge queue serves the repo: the go-ahead is recorded and nothing is merged", async () => {
+	const r = repo();
+	try {
+		const state = join(r.root, "state");
+		await asChat(state, async () => {
+			serve(state, [{ root: r.main, target: "master" }]);
+			const f = fakePi();
+			worktrees(f.pi);
+			const tree = join(r.root, "wt-w");
+			sh(r.main, "worktree", "add", "-q", "-b", "feat/w", tree);
+			writeFileSync(join(tree, "w.txt"), "w\n");
+			sh(tree, "add", "w.txt");
+			sh(tree, "commit", "-q", "-m", "w");
+			const before = sh(r.main, "rev-parse", "master");
+			const c = f.ctx(tree);
+			await f.fire("session_start", c);
+			f.entries.push({ type: "message", message: { role: "user", content: [{ type: "text", text: "land it" }] } } as never);
+			const out = await f.call(c, { action: "land" });
+			assert.match(out.content[0].text, /^Queued feat\/w at [0-9a-f]{7} to land/);
+			assert.equal(sh(r.main, "rev-parse", "master"), before);
+			assert.equal(JSON.parse(readFileSync(join(state, "landing.json"), "utf8")).goAheads.at(-1).branch, "feat/w");
+		});
+	} finally {
+		r.done();
+	}
+});
+
+test("land records the user's go-ahead typed in this chat for the branch at its head, and only then", async () => {
+	const r = repo();
+	try {
+		const file = join(r.root, "state", "landing.json");
+		const f = fakePi();
+		worktrees(f.pi, { mergeQueue: true, landingFile: () => file, now: () => Date.parse("2026-10-26T10:00:00Z") });
+		const tree = join(r.root, "wt-x");
+		sh(r.main, "worktree", "add", "-q", "-b", "feat/x", tree);
+		writeFileSync(join(tree, "b.txt"), "two\n");
+		sh(tree, "add", "b.txt");
+		sh(tree, "commit", "-q", "-m", "two");
+		const head = sh(tree, "rev-parse", "HEAD");
+		const c = f.ctx(tree); // the session runs in the worktree: it needn't track it
+		await f.fire("session_start", c);
+		const say = (text: string) => f.entries.push({ type: "message", message: { role: "user", content: [{ type: "text", text }] } } as never);
+		const recorded = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).goAheads : []);
+		// Not the user's word: refused, nothing recorded.
+		say("Sova: feat/x is finished. Once nothing blocks it, the user can type \"land it\" here.");
+		await assert.rejects(f.call(c, { action: "land" }), /Only the user's own word lands a branch/);
+		say("don't merge it yet");
+		await assert.rejects(f.call(c, { action: "land" }), /Only the user's own word/);
+		assert.deepEqual(recorded(), []);
+		// Their word, but something is uncommitted: the go-ahead is for a commit.
+		say("land it");
+		writeFileSync(join(tree, "c.txt"), "loose\n");
+		await assert.rejects(f.call(c, { action: "land" }), /1 uncommitted file: the go-ahead is for a commit/);
+		assert.deepEqual(recorded(), []);
+		rmSync(join(tree, "c.txt"));
+		const out = await f.call(c, { action: "land" });
+		assert.match(out.content[0].text, /Queued feat\/x at [0-9a-f]{7} to land\. Sova's merge queue merges it onto the newest master in its own copy/);
+		assert.doesNotMatch(out.content[0].text, /captain|landing card/i);
+		assert.doesNotMatch(out.content[0].text, /press|Land It/);
+		assert.deepEqual(recorded(), [{ branch: "feat/x", commit: head, session: "s1", at: "2026-10-26T10:00:00.000Z", by: "owner-chat" }]);
+		// Without its specs, as the user said; by its branch name once tracked.
+		await f.call(c, { action: "attach", path: tree });
+		say("ok, merge it without its specs");
+		await f.call(c, { action: "land", path: "feat/x" });
+		assert.equal(recorded().at(-1).withoutSpecs, true);
+		// "skip review": the queue lands it without its review step.
+		say("land it, skip review");
+		const skipped = await f.call(c, { action: "land", path: "feat/x" });
+		assert.equal(recorded().at(-1).withoutReview, true);
+		assert.match(skipped.content[0].text, /to land, without review\./);
+		// The branch everything lands into has nothing to land.
+		say("land it");
+		await assert.rejects(f.call(f.ctx(r.main), { action: "land" }), /on master, which branches land into/);
+	} finally {
+		r.done();
+	}
+});
+
+test("'open a PR/MR': on a served repo a go-ahead naming the request; unserved, nothing recorded and the chat opens it itself", async () => {
+	const r = repo();
+	try {
+		const file = join(r.root, "state", "landing.json");
+		const tree = join(r.root, "wt-pr");
+		sh(r.main, "worktree", "add", "-q", "-b", "feat/pr", tree);
+		writeFileSync(join(tree, "p.txt"), "p\n");
+		sh(tree, "add", "p.txt");
+		sh(tree, "commit", "-q", "-m", "p");
+		const recorded = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).goAheads : []);
+		let served = false;
+		const asked: string[] = [];
+		const f = fakePi();
+		worktrees(f.pi, { landingFile: () => file, mergeQueue: (root) => (asked.push(root), served ? "master" : false) });
+		const c = f.ctx(tree);
+		await f.fire("session_start", c);
+		const say = (text: string) => f.entries.push({ type: "message", message: { role: "user", content: [{ type: "text", text }] } } as never);
+		say("open a PR");
+		const unserved = await f.call(c, { action: "land" });
+		assert.match(unserved.content[0].text, /doesn't serve this repo, so nothing was queued: open the request yourself, as the user asked, with gh pr create or glab mr create, whichever origin's host uses/);
+		assert.deepEqual(recorded(), []);
+		assert.equal(asked.length, 1);
+		say("open an MR");
+		assert.match((await f.call(c, { action: "land" })).content[0].text, /open the request yourself, as the user asked, with gh pr create or glab mr create/);
+		served = true;
+		say("open a PR");
+		const queued = await f.call(c, { action: "land" });
+		assert.match(queued.content[0].text, /^Queued feat\/pr at [0-9a-f]{7} to land as a request on origin's host \(a merge request on GitLab, a pull request on GitHub\)\./);
+		assert.equal(recorded().at(-1).via, "github-pr");
+		say("open an MR, skip review");
+		assert.match((await f.call(c, { action: "land" })).content[0].text, /to land as a request on origin's host \(a merge request on GitLab, a pull request on GitHub\), without review\./);
+		assert.equal(recorded().at(-1).via, "gitlab-mr");
+		// Plain "land it" on the served repo records no request.
+		say("land it");
+		await f.call(c, { action: "land" });
+		assert.equal(recorded().at(-1).via, undefined);
+	} finally {
+		r.done();
+	}
+});
+
+test("land refuses a newest message the Overseer, a baton or another session sent, whatever it says, and never looks past it", async () => {
+	const r = repo();
+	try {
+		const file = join(r.root, "state", "landing.json");
+		const f = fakePi();
+		worktrees(f.pi, { mergeQueue: true, landingFile: () => file, now: () => Date.parse("2026-10-26T10:00:00Z") });
+		const tree = join(r.root, "wt-y");
+		sh(r.main, "worktree", "add", "-q", "-b", "feat/y", tree);
+		writeFileSync(join(tree, "b.txt"), "two\n");
+		sh(tree, "add", "b.txt");
+		sh(tree, "commit", "-q", "-m", "two");
+		const c = f.ctx(tree);
+		await f.fire("session_start", c);
+		let n = 0;
+		const say = (text: string) => {
+			const id = `u${++n}`;
+			f.entries.push({ type: "message", id, message: { role: "user", content: [{ type: "text", text }] } } as never);
+			return id;
+		};
+		// As the server writes them: the marker after its message, then the reply after the marker.
+		const mark = (customType: string, targetId: string) => f.entries.push({ type: "custom", id: `m${++n}`, customType, data: { v: 1, targetId } } as never);
+		const reply = () => f.entries.push({ type: "message", id: `a${++n}`, message: { role: "assistant", content: [{ type: "text", text: "ok" }] } } as never);
+		const recorded = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).goAheads : []);
+		// The user's own "land it" came first; the newest is another sender's: refused, and the older one isn't used.
+		say("land it");
+		reply();
+		for (const [customType, who] of [["sova-overseer-sent", "the Overseer"], ["sova-baton-sent", "a baton participant"], ["sova-session-sent", "another session"]] as const) {
+			mark(customType, say("land it"));
+			reply();
+			await assert.rejects(f.call(c, { action: "land" }), new RegExp(`sent by ${who}, not typed by the user.*Nothing was recorded`));
+			assert.deepEqual(recorded(), []);
+		}
+		// A marker naming an older message doesn't touch the user's newest one.
+		const older = say("please look at the build");
+		reply();
+		say("land it");
+		mark("sova-overseer-sent", older);
+		await f.call(c, { action: "land" });
+		assert.equal(recorded().length, 1);
+		assert.equal(recorded()[0].by, "owner-chat");
 	} finally {
 		r.done();
 	}

@@ -8,16 +8,18 @@ phone first, where they read how every project is going: a status per project, t
 project overseer posts at each real milestone, who was asked and what was decided, how much work
 was built (as counts), and the client conversations themselves. On it they also talk to their
 Project Assistant (§app/project-assistant), see their requests and where they stand, and open the
-versions they can try. Reading changes nothing; only the Project Assistant's chat and the ask for
-a new link write. Reviewed checked tours attached within a conversation it already exposes are
+versions they can try. Reading changes nothing; only the Project Assistant's chat, the owner's
+answer in a conversation that waits on them, and the ask for a new link write. Reviewed checked tours attached within a conversation it already exposes are
 readable there (§app.tours/handoffs), without any new application access or agent controls.
 
 The word **owner** here always means the organization's owner. It is not a baton session's owner
 (who started the session, §app/baton) and it is not a project's main stakeholder
 (§app.organizations/stakeholder); the three are unrelated.
 
-The page is written for people who are not technical. None of Sova's own words reach it: the exact
-copy is §design.copy-deck/owner-page, and its list of words never used there is part of this claim.
+The page is written for people who are not technical. The organization's name is its title; Sova
+shows only as a small mark and name at the top. Beyond that name none of Sova's own words reach
+it: the exact copy is §design.copy-deck/owner-page, and its list of words never used there is part
+of this claim.
 
 ## §app.owner-page/owner — One owner per organization, picked by the operator
 
@@ -34,7 +36,9 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   that sets it (§app.organizations/field-authority), with one exception acting for the operator:
   the global Overseer's `sova_owner`, only in a turn the operator started, through the same route
   and recorded in `ownerHistory` with `via: "overseer"` (§app.overseer/org-attribution). No model
-  mints, shows or turns off an owner link.
+  shows or turns off an owner link, and none makes one, except the global Overseer's send of the
+  owner's link to the owner on WhatsApp, behind the user's click (§app.owner-page/send), which never
+  shows it.
 - **Changing the owner** turns off the previous owner's owner link at once (§app.owner-page/link).
 - **When they leave** (their status becomes `left`, by an edit or a revert): the owner is cleared
   (`why: "left"`, `ownerCleared` kept), their owner link stops working at once, and the People
@@ -68,7 +72,8 @@ Scoped tour reads additionally require current owner access and a tour handle bo
   turned off, or whose person is no longer the owner) offers `Ask for a new link`:
   `POST /i/<token>/ask-link` records `askedAt` on the link (asking again within a day answers the
   same and records nothing), and the operator's Needs you shows it (`owner-link-request`), with a
-  phone notification, until a new owner link is made for the org. Every other dead or unknown link answers that route as it
+  phone notification, until a new owner link is made for the org (one made by the Overseer's send
+  counts only once its message went, §app.owner-page/send). Every other dead or unknown link answers that route as it
   answers a read.
 - **One live link per org.** `GET /api/orgs/:id/owner/link` (main listener only) makes a new link
   for the current owner and turns off every older one of that org at once (Get New Owner Link).
@@ -99,22 +104,82 @@ Scoped tour reads additionally require current owner access and a tour handle bo
 
 A shown conversation can include its reviewed checked tour attachments (§app.tours/handoffs), through the same filtered public projection and opaque handles. Their viewer is read-only, with no Ask control, script, report, source identity or recorded site address. Pictures belong only to the exact attached edition; message-photo count-only behavior is unchanged.
 
-- **Three views**, each in the URL fragment so the browser's Back works:
-  - **Home** (`/i/<token>`): the org's name, a greeting to the owner by first name, when it was
-    last updated; the `Project Assistant` button (§app/project-assistant); **Waiting on you**,
-    only when something waits on them; **Your requests**, only when they made one: each its
-    title, its kind and where it stands (§app.project-assistant/requests), newest first;
-    **Versions you can try**, only when a shown project lists one
-    (§app.project-assistant/versions): each its name, its project, and `Open` or `Not running
-    right now`; **Your projects**, one card per shown project (name, status, the newest update,
-    and a line of counts), the whole card a link.
-  - **The Project Assistant** (`#a`): the conversation with it, newest at the bottom, with a
-    composer (§app.project-assistant/chat).
+- **Three tabs**: `Home`, `Assistant` and `Requests`, a bar at the bottom on a phone and a left
+  sidebar on a computer (§app.owner-page/page). `Requests` shows the count of open requests (with
+  the team or being worked on) while there is one, and `Home` the count of conversations waiting on
+  the owner while there is one; that count also leads the browser tab's title. A project and a
+  conversation open inside Home,
+  and Home stays highlighted. All three read the same Home data and keep it current the same way:
+  while a version is starting, every tab reads again every 3 seconds, so it moves to `Open` on
+  whichever tab is showing.
+- **Its frame.** At the top of every view (the top of the left sidebar on a computer), Sova's mark
+  and the name "sova" (lower case), small, with the theme toggle on the same row, to their right (§app.owner-page/page). Each view's
+  main heading is the organization's name, and the browser tab's title is that name too; the
+  view's own title (the greeting, a project's name, a conversation's title, `Project Assistant`,
+  `Your requests`) comes under it.
+- **Its views**, each in the URL fragment so the browser's Back and a shared address work:
+  - **Home** (`/i/<token>`), in this order: a greeting to the owner by first name, with when it
+    was last updated in small type under it; **Waiting on you**, only when something waits on
+    them; the **Project Assistant card**, headed "What it can do for you" (the one strong colour
+    on the page): its lines (§app.project-assistant/abilities), each tappable, and `Open the Chat`;
+    one line on the owner's requests ("Your requests: 1 with the team ›"), only when they made
+    one, opening the Requests tab; **Versions you can try**, only when a shown project lists one
+    (§app.project-assistant/versions): each its name, its project, and `Open`, `Starting…`, "It
+    didn't start. The team knows." or `Not running right now`; **Your projects**, one card per
+    shown project (name, status, the newest update, and a line of counts), the whole card a link;
+    **Conversations** (below); the footer.
+  - **Conversations** on Home gathers every shown conversation of every shown project
+    (§app.owner-page/conversations) in two tabs. `Outstanding`: everything still open, those
+    waiting on the owner first, then those waiting on someone else (a person, or an offer still
+    out), then those with the team; newest first within each; each row its title, its project,
+    its status chip (who it waits on, by first name) and since when (the hand-off or offer that
+    put it there, else when it started). `History`: every finished, agreed or ended
+    conversation, the most recently ended first, each with its project, its chip and when it
+    ended. A `Project` select narrows both to one project when there are several. Each shows 5,
+    then a button that shows all; a row opens the conversation.
+  - **New since your last visit.** A project card, an update, a conversation row and a request
+    that changed after this browser's previous visit carry a `New` chip. The previous visit is
+    remembered in the browser, per organization; a browser's first visit marks nothing. The
+    mark's starting point holds for the tab's session, so a reload keeps the marks.
+  - **The Project Assistant** (`#a`): a chat screen that fills the window's height: the title at
+    the top, the conversation in the middle, newest at the bottom, its first bubble the
+    assistant's greeting, and the composer (§app.project-assistant/chat) pinned at the bottom while
+    the conversation scrolls, never covering the newest message as it grows (an error line,
+    pending photos). It opens at its newest 50 messages and loads the 50 before them each time the
+    owner scrolls near the top, back to the first message, keeping what they read where it was. A
+    fresh read or a pushed update carries only the newest messages and is merged into what is on
+    screen by each message's number: messages loaded earlier stay, in order. A sent message shows
+    at once (§app.project-assistant/chat). It opens scrolled to its newest message, the message box focused where there is a
+    mouse or trackpad (never on a touch-only screen, where focus would raise the keyboard). It
+    follows an answer as it is written only while the owner is at the end (within 80px): once they
+    scroll up to read, nothing moves the page until they scroll back down or send, and a send
+    takes it to the end again. A fresh read of the conversation redraws only the messages that
+    changed, so an interactive drawing keeps its state while a version on screen starts. The
+    owner's own photos show in their messages (§app.project-assistant/photos), the assistant's
+    drawings in its answers (§app.project-assistant/drawings), and a version it started as a row
+    with `Open` (§app.project-assistant/versions). Before the first message, the card's lines show
+    as tappable suggestions under its greeting; once there are messages, a `What Can I Ask?` button
+    at the top opens a sheet with the same list and suggestions (a modal dialog, focus kept in
+    it). A suggestion starts the message box as a card line does; nothing is sent until `Send`.
+    On a phone the tab bar hides while the owner types in the box and comes back when they leave
+    it. The operator's Preview as shows the same, read only.
+  - **Requests** (`#r`): every one of the owner's requests (§app.project-assistant/requests),
+    newest first, each its title, its project, kind and where it stands, an open one with `Close`;
+    the ones the owner closed below the rest under **Closed**, greyed, each with `Reopen`
+    (§app.project-assistant/closing); with none, a line saying nothing was asked yet and `Open the
+    Chat`. `Requests`' count and Home's line leave closed requests out.
+  - **Versions you can try** show each version's summary under its name when one is shown
+    (§app.project-assistant/versions).
   - **A project** (`#p/<handle>`): its name and status, then in this order: **Updates**,
     **Waiting on you** (this project's, only when there is something), **Who we've talked to**,
-    **What's been decided**, **What's been built**, **Conversations**. Updates, decisions and
-    conversations show 5, then a button that shows all.
-  - **A conversation** (`#c/<handle>`): its title, one status line, then the conversation.
+    **What's been decided**, **What's been built**, **Versions you can try** (this project's, only
+    when it lists one), **Conversations**. Updates, decisions and conversations show 5, then a
+    button that shows all.
+  - **A conversation** (`#c/<handle>`): its title, one status line, then the conversation. It
+    pages as the Project Assistant does: its newest 60 items, then 60 more each time the owner
+    scrolls near the top, back to the first; a fresh read or a socket update merges into what is
+    loaded and never drops it. The page's socket says when any shown conversation changed and
+    carries its reply while it is written, so the open one reads again at once.
 - **Project status**, worked out from records, never typed by anyone; the first that applies:
   `Waiting on you` (the owner holds one of its shown conversations, or an open offer includes
   them) · `Asking questions` (a shown conversation is open) · `Building` (a piece of work is in
@@ -146,9 +211,24 @@ A shown conversation can include its reviewed checked tour attachments (§app.to
 - **A conversation** reads exactly as a share page shows it (§app.baton/outsider-view), with the
   owner as the viewer: the same filter, redaction and sender labels; briefings only when addressed
   to the owner; how many people an offer went to, never who; never cut at an offer; done and closed
-  conversations included; no composer. A message's photos (§app.baton/images) show as their count
-  only ("2 photos"), never the pictures. When it is the owner's turn in it, the page says to answer
-  through the link the operator sent for it.
+  conversations included; a composer only while the conversation waits on the owner (below) and
+  in the owner's own feature request chat while they hold it
+  (§app.project-assistant/feature-chats), which also draws its plan cards. A message's photos (§app.baton/images) show as their count
+  only ("2 photos"), never the pictures: only the owner's own photos, in their own Project
+  Assistant chat, show as pictures.
+- **Answering on the page.** While a conversation waits on the owner (they hold it through its
+  current hand-off, or an open offer reached them, or they hold that offer's lease) the
+  conversation shows a message box (text only, up to 4,000 characters, the hand-off page's keys)
+  and says it is their turn. `POST /api/i/<token>/c/<k_handle>/message {text}` takes it exactly as
+  the hand-off page's write takes a message (§app.baton/links): checked against the owner link
+  (§app.owner-page/link) and the conversation being shown to them (else 404), then the same
+  baton lock decides it: refused while someone else holds it (409 `not-holder`), once an offer
+  went to someone else (409 `taken`), at the message limit (409 `budget`), once it is done or
+  closed (409 `closed`), at 10 messages a minute per link (429), and a message starting with `/`
+  (400). An accepted message is the owner's own (their person id, never operator identity), claims
+  an open offer as a link's first message does, and sends the reply's live text to the page as a
+  feature request chat's does. No photos or files go through the page; a hand-off link still
+  takes them.
 
 ## §app.owner-page/conversations — Which conversations the owner reads
 
@@ -166,6 +246,12 @@ A visible conversation's reviewed tour attachment follows that same conversation
   (the placement's `ownerHidden`, §app.projects/placement, shown by default; `PATCH
   /api/orgs/:id/projects/:pid/placement {ownerHidden}`). A project switched off disappears from the page with everything in it, and its
   handle answers 404.
+- **A feature request chat** (§app.project-assistant/feature-chats) is shown only to the person who
+  opened it, while they are the owner; Hide From is never offered for it.
+- **Gathered on Home** (§app.owner-page/content, Conversations): the same shown set, across the
+  shown projects, regrouped as Outstanding and History. A hidden conversation or a switched-off
+  project is never in either tab, nor in any count or filter; the `Project` select lists only shown
+  projects.
 - **Never shown**: the project overseer's conversations (current and history), coding sessions
   (their titles and topic summaries too), and every other session of the operator's.
 - **Handles.** Projects and conversations are addressed on the page by a handle (`q_` + 8
@@ -192,11 +278,12 @@ A visible conversation's reviewed tour attachment follows that same conversation
 - **For the client, never the private context.** The overseer's prompt says updates are for a
   non-technical client: plain words, no names of tools, branches, files or models, no judgments
   about people, and never anything from "About this organization", its notes, a goal or a
-  person's profile. As a backstop the tool refuses a text that repeats 24 or more characters in a
-  row (ignoring case and spacing) of the org's About text, the overseer's notes, the operator's
+  person's profile. As a backstop the tool refuses a text that repeats about 60 or more characters
+  in a row (ignoring case and spacing) of the org's About text, the overseer's notes, the operator's
   extra instructions, a conversation's goal or briefing, or a roster person's role, voice, skills
   or referral reason, or that contains any of their contact details; it says which kind of text
-  (About and notes, or the rest), never the text. The text is at most 2,000
+  (About and notes, or the rest) and names the words it matched, so the overseer can rewrite just
+  them (a contact detail is named only as "a contact", never shown). The text is at most 2,000
   characters, plain text; an `http://` or `https://` address in it becomes a link on the page (a
   demo address the operator gave goes there). A text that holds a preview link this host keeps
   is refused: a preview link goes to people through the operator
@@ -234,31 +321,85 @@ Tour reads reveal only a checked public presentation bound to a conversation and
     and branch names (§app.project-assistant/never);
   - conflict routing reasons, stakeholder history, Needs-you items, proposed people;
   - hidden conversations and switched-off projects, their counts included.
+- **One exception**: what the Project Assistant can do for the owner is shown as outcome words
+  worked out from its column (§app.project-assistant/abilities): right away, on its own, the team,
+  none. Never a switch's name or label, a level, the overseer's column, a model, a brake's reason
+  or a limit.
+- **One carve-out**: a version's summary (§app.project-assistant/versions), one or two plain
+  sentences a model wrote from a fix's commits and changed files, is shown under its version: only
+  through the outsider filter's `said`, then the secret redactor, never the commits, files,
+  branches or messages it was written from, and never once the team hid it (their own rewrite,
+  through the secret redactor, replaces it).
+- Home's Conversations rows carry only what the project's own rows already show: a conversation
+  handle, its public title, its project's handle and name, its status (with a first name when it
+  waits on a person) and times (`since`, `endedAt`). A paged read (`older`) carries only items of
+  the same filtered view and a count; no answer carries a cursor that names an entry id.
 - A test plants a distinct marker in every one of those fields, checks each marker is present in
   the operator's own views (so its absence means something), then reads every owner-page answer
+  (Home with its Conversations rows, the paged reads of the chat and of a conversation included)
   and the shell and finds none of them.
 
 ## §app.owner-page/page — Phone first; reading changes nothing
 
-- One column at every width, at most 720px wide and centred; at 390px nothing scrolls sideways,
-  every button and row is at least 44px tall, and lines wrap rather than being cut. It is part of
-  the share build (`dist-share/`), using its styles; dark only. A reply's markdown reads as
+- Narrower than 768px (the page's own width, so the operator's preview follows its own box): one
+  column, full width, with the tab bar fixed at the bottom (above the phone's home area) and the
+  chat's composer above it. 768px and wider: the tabs as a left sidebar and a wider main pane,
+  with chat and reading text kept at a comfortable width; never a chat beside the page. At 390px
+  nothing scrolls sideways, every button, row and tab is at least 44px tall, and lines wrap rather
+  than being cut. It is part of the share build (`dist-share/`), using its styles. The
+  share build's page shell asks for `interactive-widget=resizes-content`, as Sova's own shell does
+  (§app/shell), so an on-screen keyboard shrinks the page and a pinned composer stays above it. A
+  reply's markdown reads as
   §app.session-share/reading describes.
+- **Light, dark or the device's.** One small icon button, the theme toggle, sits on the same row
+  as Sova's mark and name, to their right (in the sidebar's top row on a computer, the slim top
+  bar on a phone), never a row of its own. Its icon shows the action: a sun while the page is
+  dark ("Switch to light theme"), a moon while it is light ("Switch to dark theme"), as both its
+  accessible label and its tooltip. Until the visitor clicks it, the page follows the device's
+  light or dark setting, and changes with it; a click draws the opposite of what shows and makes
+  that the pick. There is no "System" choice; a remembered "system" from before reads as no pick.
+  A pick is remembered in that browser for the share address (its `localStorage`), so
+  every page of the share build opened there (the owner page, a hand-off page, a shared session,
+  a tour) follows it from its first frame; only the owner page shows the toggle. The theme is set
+  by the page's own script before it draws (no inline script, the page's CSP unchanged), and the
+  shell declares `color-scheme: light dark`, so the browser's own background matches before
+  then. Drawings, frames, code and the photo viewer follow it (§app.baton/outsider-view).
+- **The browser tab** carries Sova's icon, bundled into the share build (which has no public
+  folder).
 - **Its routes**, and no others: `GET /i/<token>` (the same page shell as `/h/`),
   `GET /api/i/<token>` (home), `GET /api/i/<token>/p/<q_handle>`, `GET /api/i/<token>/c/<k_handle>`,
+  `GET /api/i/<token>/c/<k_handle>/older?before=<n>` (a conversation's earlier items),
   `GET /api/i/<token>/c/<k_handle>/tours/<handle>` and its narrowly scoped exact-edition asset reads
-  (§app.tours/handoffs), `GET /api/i/<token>/assistant` (the chat), `POST /api/i/<token>/assistant`
-  (a message to it), the socket `/ws/i?token=` (the chat's live view), `GET /i/<token>/v/<v_handle>`
+  (§app.tours/handoffs), `POST /api/i/<token>/c/<k_handle>/message` (the owner's answer, and a
+  message in their feature request chat) and `POST
+  /api/i/<token>/c/<k_handle>/end` (the owner's feature request chat,
+  §app.project-assistant/feature-chats), `GET /api/i/<token>/assistant` (the chat), `GET
+  /api/i/<token>/assistant/older?before=<n>` (its earlier messages), `POST /api/i/<token>/assistant`
+  (a message to it), `POST /api/i/<token>/assistant/image` and `GET
+  /api/i/<token>/assistant/img/<n>` (the owner's photos, §app.project-assistant/photos), `POST
+  /api/i/<token>/requests/<r_handle>` (close or reopen a request, §app.project-assistant/closing), the socket
+  `/ws/i?token=` (the chat's live view), `GET /i/<token>/v/<v_handle>`
   (a version) and `POST /i/<token>/ask-link` (§app.owner-page/link). The tour reads check current
   owner access and the already-exposed conversation cut before any file read, and recheck after
   asynchronous reads; denial is indistinguishable missing 404. They have no Ask control. Any other
-  `/i/` or `/api/i/` path or method answers 404. Only a message to the Project Assistant reaches a
-  model.
+  `/i/` or `/api/i/` path or method answers 404. Only a message to the Project Assistant or to the
+  owner's own feature request chat, or the owner's answer in a conversation that waits on them,
+  reaches a model. Each route is on the share listener's allowlist (§app.baton/share-listener)
+  and routes to its own host by the token on a gateway, like the others.
 - **Fresh.** The page reads again every 60 seconds while it is visible (paused while hidden, at
   once when shown again) and says when it last did.
-- **Limits.** The listener's per-address limit applies, and the ordinary page and scoped tour-manifest reads share the existing per-token ceiling of 120 requests a minute (429). Exact tour-picture reads use a separate per-token bucket of 120 a minute, so reading pictures does not spend the page's allowance. Tour denial remains indistinguishable missing 404 even when a rate bucket is exhausted; current access and exact picture membership are checked before the bucket and before any picture read.
+- **Limits.** The listener's per-address limit applies, and the ordinary page and scoped tour-manifest reads share the existing per-token ceiling of 120 requests a minute (429), the paged reads (`older`) included. Exact tour-picture reads use a separate per-token bucket of 120 a minute, so reading pictures does not spend the page's allowance. The owner's photo reads (`/api/i/<token>/assistant/img/<n>`) count in the listener's photo bucket (§app.baton/share-listener), never the page's; a photo upload has the hand-off upload's body cap and time (§app.baton/share-listener). Tour denial remains indistinguishable missing 404 even when a rate bucket is exhausted; current access and exact picture membership are checked before the bucket and before any picture read.
 - **Errors.** When a read fails for any reason but a dead link, the page says it couldn't load,
   that the link still works, and offers `Try Again`; what it showed before stays.
+- **The Project Assistant's errors** read its answer's status as the page's own read does: a
+  turned-off or replaced link (410) is the page's dead-link screen (`Ask for a New Link` where
+  that applies), an unknown link (404 `not-found`) the unknown-link screen, too many requests
+  (429) the busy screen, an offline host (503) the offline answer, read again with backoff. A 404
+  with no `code` (an older gateway refusing the address) says the Project Assistant can't open on
+  this link yet, that {op} has to update the server the link goes through, and that the projects
+  still open (the Home tab), with no `Try Again`. Any other failure says it couldn't load
+  the Project Assistant and offers `Try Again`, never that the link still works. The message box
+  shows only once the chat's view has loaded.
 
 ## §app.owner-page/controls — The operator's side
 
@@ -274,27 +415,101 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   `Get New Owner Link` while a live one exists (with a confirm: the current one stops);
   `Preview Owner Page`; and `Delete Owner Link` set apart as destructive (its confirm:
   §design.copy-deck/owner-page). A new link shows with Copy Link, as on the baton strip.
-- **The Owner card's Project Assistant part** (§app/project-assistant): the owner's open requests
-  with `Mark Done` and `Decline`; `Open Assistant Chat` once the conversation exists; its models
-  per kind of work (reply, coding, gathering), each with its price and, for coding and gathering,
-  whether a project overrides it (§app.project-assistant/models); and, per project, its Project
+- **The Owner card's Project Assistant part** (§app/project-assistant): one line, "{n} open
+  requests from {first name}", linking to the org's Requests tab (§app.project-assistant/requests-tab),
+  which lists them and answers them, in place of a list here; `Open Assistant Chat` once the conversation exists; its models
+  (§app.project-assistant/models) as three rows, `Its replies`, `Fixes it starts` and `Feature request
+  chats it starts` (the `gathering` kind, which runs the feature request chats it opens), each saying where its model comes from, the model and its
+  thinking level ("Default · Opus 5.5 · medium", "This organization · glm-5.3 · high") and its
+  price, with `Change`, which opens the chat composer's model picker (the model row and its
+  thinking ladder, then providers and models: favorites, search, the vision tag, models Settings →
+  Models turned off left out) and saves the model and thinking at once, and, only on the
+  organization's own pick, `Use Default`, which clears it. With no default and no pick the row says
+  "Not set. Set a default in Settings → Organizations.", linking there. A reply model this host can't
+  run or Settings → Models turned off is said under its row; for fixes, a project that overrides it
+  is named; and, per project, its Project
   Assistant column of power switches (§app.project-overseer/autonomy-levels; its copy
-  §design.copy-deck/project-powers), the same control as the project page's.
+  §design.copy-deck/project-powers), the same control as the project page's, with one line under
+  them saying the owner sees what these let the assistant do, in plain words, on their page
+  (§app.project-assistant/abilities).
 - **Preview.** `Preview Owner Page` opens a modal that shows exactly what the owner sees, from the
   same function with no token (`GET /api/orgs/:id/owner/preview[?project=<q_handle>|?c=<k_handle>]`, main listener only); it
-  records no visit and changes nothing. A test pins that the preview's data equals the token
+  records no visit and changes nothing. It shows the Project Assistant card, the three tabs (as a
+  row at the top of the modal, never a fixed bar) and the chat's suggestions, read only. A test pins that the preview's data equals the token
   route's for the same org.
 - **Project page: an Owner Page card** (only while the org has an owner): the `Show this project
-  on {first name}'s page` switch and the updates log with `Take Down` (§app.owner-page/updates).
+  on {first name}'s page` switch, the updates log with `Take Down` (§app.owner-page/updates), and
+  the versions on the owner's page with their summaries, `Rewrite`, `Use Automatic`, `Hide` and
+  `Show` (§app.project-assistant/versions; `GET /api/orgs/:id/projects/:pid/versions`, `PUT
+  /api/orgs/:id/projects/:pid/versions/:instance {text?: string | null, hidden?: boolean}`).
 - **Baton strip**: `Hide From {first name}` / `Show To {first name}`, a row of the strip's More
-  actions menu (§app.baton/strip-layout), on each conversation of an org with an owner, and a line
-  while it is hidden (§app.owner-page/conversations).
+  actions menu (§app.baton/strip-layout), on each conversation of an org with an owner but a feature
+  request chat (§app.project-assistant/feature-chats), and a line while it is hidden
+  (§app.owner-page/conversations).
 - **Person page**: an `Owner` chip beside the owner's status, their owner link among their links
   (state, made, expires, Copy Link while live and kept, Delete), and their visits to the owner page as "Opened the owner page"
   rows (§app.organizations/person-page).
 
+## §app.owner-page/send — The Overseer sends the owner their page link
+
+- **Only when the user asks, behind a card.** The global Overseer's
+  `sova_owner {op: "send_link", org, person, note?}` sends an org's current owner their owner page
+  link on WhatsApp. It runs only in the turn a click on a confirm card opened, the card listing that
+  person in that org (§app.overseer/org-people-facing). Anywhere else (a typed "yes", no card, a
+  Retry of the click, a later turn, a card already answered, superseded or dropped, a card listing
+  someone else or a same-named person of another org) it refuses before anything is made or sent.
+  Like every org act it is refused in a run the user did not start, no approval for later or
+  standing rule covers it (§app.overseer/tools), and it counts as one organization write
+  (§app.overseer/caps). Project overseers and the Project Assistant have no way to it: the act is
+  the operator's alone.
+- **The owner, and only them.** `person` must be the org's current owner and active. Anyone else is
+  refused, "{name} isn't {org}'s owner. Nothing was sent.", and an org with no owner "{org} has
+  no owner, so there is no owner page to send. Nothing was sent.". The org statechart's
+  `owner/send-link` act checks it again (the person active and the org's owner, the note), with the
+  confirm card as its backstop, so a card raised before the owner changed sends nothing.
+- **One step, checked as it runs.** The act's effect is the organization's own send
+  (§app.outreach/send). As it runs it checks again that the person is still the org's active
+  owner, the org is attached here, they have a WhatsApp number on the roster, outreach is on and
+  not paused, the org's number is up and not paused, and links can be opened from outside. Any
+  refusal makes nothing and sends nothing.
+- **Which link.** The owner's live link, when Sova still holds its token (the one Get Owner Link
+  would give): that same link goes, and nothing the owner holds stops working. Otherwise a new one
+  is made exactly as Get New Owner Link makes it (§app.owner-page/link): every older owner link of
+  the org stops at once, so the org still has one live link. The org's read (`sova_orgs {org}`)
+  says which it will be, and the Overseer is told (its instructions and the tool's description, not
+  a check) to say on its card beforehand "Their current link will stop working." when a new one
+  will be made.
+- **The message.** "{operator name} sent you your page for {org name}." (§design.copy-deck/owner-page),
+  or the user's note instead when they asked for one, then the link (§app.outreach/channels). A
+  note is at most 500 characters and is refused when it repeats a contact or private text of the
+  org or any of its projects, on the terms of §app.outreach/channels (about 60 characters in a
+  row, the matched words named).
+- **What the Overseer says.** Sent: "Sent {name} their owner page link on WhatsApp." A definite
+  failure or refusal: "Not sent to {name}: {why}.", then, when the send made a new link, "A new
+  owner link was made but not delivered, and their old link no longer works: copy the new one from
+  the People tab.", else "You can send it yourself from the People tab.". The new link stays: it is
+  the org's one live link. No answer (a timeout, the connection closed, a restart mid-send): "It
+  isn't known whether the message to {name} went. It won't be sent again: check {name}'s page under
+  Sent on WhatsApp before sending another.". A step is never retried, and the same step run twice
+  delivers once (§app.outreach/send). Its result, its error and its action-log line never hold the
+  link, the token or the number (§app.overseer/org-projection).
+- **The owner's ask.** A link the send made answers the owner's `Ask for a new link`
+  (§app.owner-page/link) only once its message went: until then it carries the ask (`askedAt`) and
+  an `undelivered` mark, so Needs you keeps `owner-link-request` after a failed or unknown send. A
+  delivered send of that link, or Get New Owner Link, clears it.
+- **The owner changing meanwhile.** Changing the owner, or the owner leaving, turns every owner
+  link of the org off as always (§app.owner-page/owner), a link this send made included. The send
+  itself never turns off or changes a link of anyone else, so a new owner's link stays untouched.
+- **Recorded.** The send log line (§app.outreach/log) says `link: "owner"` and has no
+  `projectId`; the owner's person page lists it under Sent on WhatsApp as "Their owner page"
+  (§app.organizations/person-page); the org's history records it as the operator's, via the
+  Overseer, a message sent to the owner.
+
 ## §app.owner-page/rejected — Considered and not done
 
+- **A send that turns the older owner link off only once its message went** (al_1 review): it
+  would leave two live owner links of one org while the send is in flight. The Overseer's send makes
+  a new link as Get New Owner Link does, and is told to say so on its card first (§app.owner-page/send).
 - **Telling staff the owner can read their conversations** (rejected by the user): one more line
   on every share page, for a fact the operator already manages with Hide From.
 - **An operator news editor or an approval step** (rejected by the user): the overseer posts on its
@@ -304,8 +519,14 @@ Tour reads reveal only a checked public presentation bound to a conversation and
   files, branches and tools; the counts and the updates say what was built.
 - **Showing or summarising the overseer's conversation**: it is candid, technical, and its tool
   results carry roster data and the About text.
-- **Answering a conversation from the page**: the owner still answers their own questions through
-  the links they are sent; the page writes only to the Project Assistant.
+- **Showing a conversation's own link on the page**, so the owner could copy it (al_1): the page
+  never shows a link, so a forwarded owner link can't leak the others; the conversation opens
+  from its row and is answered there.
+- **Recognising the same person across organizations by email or phone** (al_1): a shared office
+  number or a typo would show one client's projects to another. The page lists this
+  organization's projects only.
+- **Sending a second message while an answer is written** (queued, as in Sova's own chat; al_1):
+  it changes how the assistant takes turns; the instant `Sending…` row fixes the delay without it.
 - **An owner per project, or a login**: one person per org with one personal link is what the
   user asked for.
 - **Showing costs**: never on this page; the assistant's models and their costs are on the

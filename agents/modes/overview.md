@@ -5,7 +5,7 @@ alsoUpdate: ["pi-config/extensions/mode/README.md"]
 # Modes
 
 The `mode` extension: the per-session major mode (normal ↔ Delegate) and the minor modes (`align`, `spec`, `vis`,
-`codemode`, `memory`), plus a project's own minor modes from `.sova/minor-modes/<id>/MODE.md`
+`memory`), plus a project's own minor modes from `.sova/minor-modes/<id>/MODE.md`
 (§chat.mode-menu/project-modes). Sova imports more of it than of any other extension, and the dev watcher watches all of it.
 This page is the extension's guide; each mode has its own below.
 
@@ -13,22 +13,22 @@ This page is the extension's guide; each mode has its own below.
 
 - [`pi-config/extensions/mode/README.md`](../../pi-config/extensions/mode/README.md) (usage, minor modes, alignments,
   Delegate routing, writing style and Visuals, the spec writer, workers, verification). The user-facing pages are
-  `site/src/content/docs/modes/` (`index.md`, `delegate.md`, `spec.md`, `vis.md`, `codemode.md`,
+  `site/src/content/docs/modes/` (`index.md`, `delegate.md`, `spec.md`, `vis.md`,
   `project-modes.md`, `align/`).
 - Guides: [delegate](delegate/overview.md), [align](align/overview.md), [spec](spec/overview.md),
-  [vis](vis/overview.md), [memory](memory/overview.md). `codemode` is a pi built-in Sova adds and this mode switches
-  (§chat.mode-menu/codemode); see [the harness guide](../server/harness/overview.md).
+  [vis](vis/overview.md), [memory](memory/overview.md).
 - Tests: the `mode` line of `pi-config/README.md` "Tests" (`cd pi-config/extensions/mode && node --test index.test.ts …`;
-  the README's Verification section says what each file covers). Sova-only, from the repo root:
-  `node server/tests/spec-assessment.mjs`.
+  the README's Verification section says what each file covers).
 
 ## What Sova relies on
 
 **Imports.** The server imports `state.ts`, `minor.ts`, `delegate.ts`, `spec.ts` and `align-settings.ts`:
 `server/mode-state.ts`, `server/delegate.ts`, `server/spec-settings.ts`, `server/align-settings.ts` and
 `server/sync/docs.ts` (the files' mesh registration). `server/vis-check.ts` and `server/chat-manager.ts` take
-`visToolsWanted`, the one rule for the vis tools, from `minor.ts`. `server/transcript.ts` and `server/align-state.ts`
-import `align.ts`. Keep all of them pi-runtime-free: node builtins, each other, and (for `delegate.ts`)
+`visToolsWanted`, the one rule for the vis tools, from `minor.ts`. `server/transcript.ts`, `server/align-state.ts`,
+`server/baton-view.ts`, `server/baton-loadout.ts` and `server/feature-chat-align.ts` (a feature request chat's
+served `align` and its plan card, §app.project-assistant/feature-chats) import `align.ts`; `src/lib/plan-answers.ts`
+words the owner page's plan answers with `src/lib/align-picks.ts`. Keep all of them pi-runtime-free: node builtins, each other, and (for `delegate.ts`)
 claude-code's `catalog.ts`, which imports nothing. `minor.ts` also reads its
 sibling `spec-mode.md` once at load and refuses to load if that file's shell block is malformed, so a malformed
 guide stops pi and the server alike.
@@ -73,4 +73,4 @@ live unit restarts on nothing (AGENTS.md's restart rules).
 - A contract above: the README section that documents it, and Sova's reader in the same branch.
 - What a mode does for the user: its page under `site/src/content/docs/modes/`.
 - The injected text of a mode: its guide below says what else moves with it.
-- `spec-guard.ts`: the merge round runs the spec replay suite ([spec](spec/overview.md)).
+- `spec-guard.ts`: the merge queue runs the spec replay suite ([spec](spec/overview.md)).

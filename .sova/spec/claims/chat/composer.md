@@ -3,9 +3,12 @@
 
 The composer is the form pinned to the foot of a chat where you write its next message, with Send,
 Steer and Stop beside the textarea and the model indicator and mode switch in the foot below it.
+In Focus (§chat.transcript/focus-view) it is hidden but kept, draft and all.
 
 Owns: its markup, the textarea's keys and placeholder, sending, steering and stopping, drafts, the
-disabled reasons, the `plus` flyout that holds the panels, the sandbox shield, the @ menu's folder read,
+disabled reasons, the waiting badge and its dialog, the `plus` button (it opens the Commands palette, §app/command-palette), the
+flyout that holds the model, login and sandbox panels, the sandbox shield, the worktrees control and its modal
+(§chat.composer/worktrees-control), the @ menu's folder read,
 and what the foot shows from a switch's first frame. Not here: the mode menu (§chat/mode-menu), the
 model picker (§chat/model-menu), the slash menu (§chat/slash-commands), attaching images
 (§chat.images/composer-attachments), dictation (§chat/voice), staged alignment answers
@@ -31,12 +34,16 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
     <p class="run-status"><span class="live-dot" aria-hidden="true"></span><span class="run-status-state" title="Working · running bash"><span class="icon icon-sm run-status-narrow" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="run-status-say">Working<span class="run-status-detail">· running bash</span></span></span></p>
     <!-- and, with workers: the subagents trigger, button.run-status-link, its ring meter and count
          and no dot of its own (§app/subagents-pane) -->
-    <!-- with an open alignment: the alignment chip, a menu button immediately left of the Inputs
-         trigger, both at the row's right end (§chat.alignment/chip) -->
+    <!-- and, when this chat tracks worktrees: the worktrees control, a branch icon, a state dot and
+         "2 ready" or "3 worktrees", just left of the "N inputs" trigger, in that trigger's quiet
+         link style; it opens the Worktrees modal (§chat.composer/worktrees-control) -->
+    <!-- open alignments and option cards are not here: they are the waiting badge inside the
+         message box, below (§chat.composer/waiting-badge) -->
 
     <!-- answers picked on an alignment card (recommendations ticked, options picked), staged for
          the next send (§chat.alignment/card); each question reads "rec" or its option's letter;
-         omit when there are none -->
+         a gathering transcript card's picks join them by its id, "cd_4 b"
+         (§chat.transcript-cards/answering); omit when there are none -->
     <div class="align-picks" role="group" aria-label="Staged answers">
       <span class="icon icon-sm" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
       <span class="align-picks-text">Answering: <span class="text-mono">al_3 q1 rec, q2 b; al_4 q2 rec</span></span>
@@ -55,19 +62,24 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
       <button class="button button-icon button-ghost voice-button" type="button" aria-label="Dictate" title="Dictate">
         <span class="icon" style="--icon: url(/icons/mic.svg)" aria-hidden="true"></span>
       </button>
-      <!-- the one flyout trigger; the menu itself is below -->
+      <!-- the plus: opens the Commands palette on this chat (§app.command-palette/opening) -->
       <button class="button button-icon button-ghost composer-menu-trigger" type="button" id="composer-menu-trigger"
-              aria-label="More Actions" title="More Actions" aria-haspopup="menu" aria-expanded="false"
-              aria-controls="composer-flyout">
+              aria-label="More Actions" title="More Actions" aria-haspopup="dialog" aria-expanded="false">
         <span class="icon" style="--icon: url(/icons/plus.svg)" aria-hidden="true"></span>
       </button>
+      <!-- the model, login and sandbox panels' popover -->
       <div class="model-menu composer-flyout" id="composer-flyout" popover="auto">…see "Composer flyout"…</div>
       <input class="visually-hidden" type="file" multiple tabindex="-1" aria-hidden="true"
              accept="image/png,image/jpeg,image/gif,image/webp">
       <label class="visually-hidden" for="composer-input">Message</label>
-      <textarea class="input textarea composer-input" id="composer-input" rows="1"
-                placeholder="Enter sends" enterkeyhint="send"
-                aria-describedby="composer-reason"></textarea>   <!-- touch mode: no placeholder, enterkeyhint="enter" -->
+      <div class="composer-field">
+        <!-- with an open alignment or option card: the waiting badge, at the box's left edge on its
+             last line (§chat.composer/waiting-badge) -->
+        <button class="waiting-badge" type="button" aria-haspopup="dialog" aria-label="…">…</button>
+        <textarea class="input textarea composer-input" id="composer-input" rows="1"
+                  placeholder="Enter sends" enterkeyhint="send"
+                  aria-describedby="composer-reason"></textarea>   <!-- touch mode: no placeholder, enterkeyhint="enter" -->
+      </div>
       <div class="composer-actions">
         <button class="button button-primary" type="submit">
           <span class="icon" style="--icon: url(/icons/arrow-right.svg)" aria-hidden="true"></span><span class="button-label">Send</span>
@@ -82,20 +94,18 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
     <div class="composer-foot">
       <!-- chat sessions only: the model indicator, the flyout's second trigger -->
       <button class="composer-model" type="button" aria-haspopup="menu" aria-controls="composer-flyout"
-              aria-expanded="false" title="zai/glm-5.3 · Change model & thinking"
+              aria-expanded="false" title="zai/glm-5.3 · thinking high · Change model & thinking"
               aria-label="zai/glm-5.3, thinking high — Change Model &amp; Thinking">
+        <!-- the effort ring: a small 270° open ring, its arc filled to the level, a mark inside -->
+        <svg class="effort-ring" data-level="high" aria-hidden="true">…track, arc, mark "H"…</svg>
         <span class="composer-model-id">glm-5.3</span>
-        <span class="composer-model-meta">zai</span>
-        <span class="composer-model-sep" aria-hidden="true">·</span>
-        <span class="composer-model-level">high</span>
-        <span class="icon icon-sm composer-model-caret" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
       </button>
       <!-- a Claude Code model on a device with several Claude logins: the chat's login, the
            flyout's login trigger; see §app.claude-logins/active-login, /switch-login -->
       <button class="composer-login" type="button" aria-haspopup="menu" aria-controls="composer-flyout"
               aria-expanded="false" title="This chat runs on this Claude login: …" aria-label="Claude login: own@example.com">
-        <span class="composer-login-full">own@example.com</span>
-        <span class="composer-login-short">own</span>
+        <span class="composer-login-avatar" aria-hidden="true">o</span>   <!-- round letter avatar -->
+        <span class="composer-login-full" aria-hidden="true">own@example.com</span>  <!-- only at a composer 620px or wider -->
       </button>
       <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
       <!-- chat sessions only: the mode switch, pushed to the right edge; see §chat/mode-menu -->
@@ -167,11 +177,19 @@ are kept, and what the foot and its model indicator show.
     body line height, so it stays centred in the box.
   - Empty or whitespace-only text doesn't send, and Send is `aria-disabled` with no reason text,
     because the reason is obvious.
-- **Send.** Sends `{type:"prompt"}`. Clear the textarea only after the socket accepts the message.
+- **Send.** Sends `{type:"steer"}`, as every message typed here does, whether or not a reply runs:
+  idle, the server starts a turn with it exactly as with a prompt (the same checks, the same holds
+  while a turn is starting or a compaction runs, the message marked as yours); busy, it is a steer,
+  even when this pane hasn't seen the reply start yet (a quick second message). Only sends that are
+  not typed here stay `{type:"prompt"}`, a follow-up mid-turn: a playbook (§chat/playbooks), a quick
+  action, a review button and a card's confirm click. `/compact` is still Sova's own request, never a
+  message. Clear the textarea only after the socket accepts the message.
   Show the user bubble optimistically and resume auto-follow.
-- **While streaming.** Send stays available and its label changes to `Steer`, which sends
-  `{type:"steer"}`. The placeholder becomes "Steer the current turn…" (plus the key hint when Enter
-  sends, see Keys). `Stop`
+- **While streaming.** Send stays available and its label changes to `Steer`. Steers sent while
+  the turn runs land together: each reaches the agent at its next step, in the order sent, each its
+  own message, and the one reply after them answers them all (§chat.transcript/a-queued-message).
+  The placeholder becomes "Steer the current turn…" (plus the key hint when Enter sends, see Keys).
+  `Stop`
   (`.button-destructive`, outlined, never filled, one word so the button stays narrow) sends
   `{type:"abort"}`. Show it only while streaming, after Steer. `Esc` does **not** abort, to prevent
   accidental stops. While a dictation is recording, `Esc` cancels the recording and nothing else
@@ -179,13 +197,8 @@ are kept, and what the foot and its model indicator show.
 - **After Stop.** The status reads "Stopping…" until the turn settles. Then the run status
   disappears, and an info row says "Stopped by you at `1:43 PM`." (the transcript's stamp: a
   12-hour clock, with the date in front on another day).
-- **Focus.** Returns to the textarea after Send, Steer, or Stop pressed with a mouse or pen, and
-  after an `Enter` or `Ctrl+Enter` / `⌘+Enter` send. After one pressed by touch it returns only if
-  the textarea had focus when the press began and the on-screen keyboard was up (up and down as in
-  §chat.voice/button); otherwise nothing is refocused, a textarea still focused with the keyboard
-  down loses focus, and a keyboard that was down stays down. The message is sent either way.
-  The mic never moves focus: its press keeps the textarea's focus and selection, and dictated
-  text lands at the caret (§chat.voice/insertion) as part of the draft.
+- **Focus.** Where focus and the on-screen keyboard go after a send, and why the mic never moves
+  them: §chat.composer/focus.
 - **Drafts** are never discarded. The draft survives disable/enable, reconnects, and errors, and
   it survives a reload too. Each session's draft lives in two places:
   - **In memory, per session path.** This is the authority within a tab, so switching sessions
@@ -202,22 +215,62 @@ are kept, and what the foot and its model indicator show.
   images. A draft is deleted only when it has neither text nor attachments. A send clears the
   draft in both places. A draft on a session nothing was ever sent in — images alone included — also keeps that session in the list (§app/session-list).
 - **The foot** reads left to right: the model indicator, the disabled reason, then the mode switch
-  (§chat/mode-menu) pushed to the right edge. Both triggers stay at every width and shrink instead of
-  widening the row: the model id and the minor modes are the parts that ellipsize.
-- **Model indicator.** Chat sessions only. It says what this turn will run — the id in mono, the
-  provider beside it, then `· {level}` for the thinking level — and clicking it opens the flyout
+  (§chat/mode-menu) pushed to the right edge. It is a row of icons at every width: the effort ring,
+  the login's avatar (§app.claude-logins/active-login), the sandbox shield and the mode icons
+  (§chat.mode-menu/trigger). Where the composer is at least 620px wide, words come back beside the
+  icons (the login's email, the modes' names); the icons never go. Under 480px the gaps between
+  the foot's items narrow (from `--space-3` to `--space-2`), and an empty disabled reason takes no
+  place. **The model's short name is the last thing to shrink**: where the row is still too tight
+  once the gaps have narrowed, the mode switch's icons fold (§chat.mode-menu/trigger: the first
+  mode icon, then "+N" for the rest), and only if that still doesn't fit does the name ellipsize,
+  so a short name such as `Opus 5.5` reads whole at 320px. Both triggers stay at every width and
+  shrink instead of widening the row: the mode switch drops its words before any icon and folds
+  its icons before the name loses a letter. Every icon item keeps its complete wording as its accessible name and, on
+  desktop, as its hover text.
+- **Model indicator.** Chat sessions only. One item says what this turn will run, model and effort
+  together: a small **effort ring**, then the model's short name, and no caret. Clicking it opens the flyout
   on its **model panel**, anchored above itself, which holds exactly those two controls (§chat/images).
-  The thinking
-  segment is omitted when the model's ladder has one level or none, exactly as the flyout's group
-  is; until the model catalog brings that ladder, a known level other than "off" shows. While a switch is pending it shows the **target** with a `.live-dot`, the model's and the
-  level's each before their own value; with no model yet it reads "Choose model". The full
-  `provider/id` is in `title`. It carries `aria-haspopup="menu"`,
+  - **The effort ring** is the waiting badge's 270° open ring (§chat.composer/waiting-badge), much
+    smaller (about 17px). Its arc fills on one seven-step scale for every model, whatever its
+    ladder: off, minimal, low, medium, high, xhigh, max, off an empty ring and max the full arc.
+    It is drawn in quiet ink, never the accent, with a mark in the middle: off none (the empty
+    ring), minimal a dot, low `L`, medium `M`, high `H`, xhigh `X`, max a bolt (Sova's own SVG,
+    not a star). The ring is omitted when the model's ladder has one level or none, exactly as
+    the flyout's group is (a model with no effort choice shows no ring); until the model catalog
+    brings that ladder, a known level other than "off" shows its ring.
+  - **The name** is the model's existing short name: its Claude catalog name (`Opus 5.5`), else
+    its id without provider, date or `claude-` prefix (`gpt-6.1-sol`), cut with an ellipsis only
+    when the foot is still too tight after its gaps narrow and the mode icons fold (**The foot**,
+    above). The backend
+    or provider name is not shown, and no provider icon is drawn, here or anywhere.
+  - While a switch is pending it shows the **target** with a `.live-dot`, the model's and the
+    level's each before their own value (the level's before the ring, the model's before the name); with no model yet it reads "Choose model". Its
+    accessible name and desktop hover text are the complete wording: the full `provider/id`, the
+    thinking level and what a click does. It carries `aria-haspopup="menu"`,
   `aria-controls="composer-flyout"` and an `aria-expanded` that is true only while the flyout is
-  open **and anchored to it** — clicking it again closes it; the "+" trigger keeps its own. The
-  id is the one part that shrinks, so a long ref ellipsizes rather than pushing the mode switch out.
+  open **and anchored to it** — clicking it again closes it; the "+" button opens the palette instead. The
+  name is the indicator's one part that shrinks, and the foot's last: a long one ellipsizes rather
+  than pushing the mode switch out, once the mode icons have folded; the ring never shrinks.
   While the composer is disabled it still shows the model and is `aria-disabled` with a dead
   click, like the flyout's own rows. It stays at every width, because it's the only place the
   model is on screen.
+
+## §chat.composer/focus — Focus after a send
+
+- Focus returns to the textarea after Send, Steer, or Stop pressed with a mouse or pen, and after
+  an `Enter` or `Ctrl+Enter` / `⌘+Enter` send. After one pressed by touch it returns only if the
+  textarea had focus when the press began and the on-screen keyboard was up (up and down as in
+  §chat.voice/button); otherwise nothing is refocused, a textarea still focused with the keyboard
+  down loses focus, and a keyboard that was down stays down. The message is sent either way.
+- **The same rule holds for every other button that sends a message on your behalf:** a Quick
+  Actions pick (judged from the press on the Quick Actions button, a menu opened by keyboard
+  counting as `Enter`, §app.overseer/quick-actions), an alignment card's Go With Recommendations
+  and Review Plan / Review Implementation, a send from the Overseer's Ideas panel, Send Playbook
+  and Regenerate.
+- Rewind and a tour's Ask About This Step still put focus in the textarea: they leave text there
+  to edit and send nothing.
+- The mic never moves focus: its press keeps the textarea's focus and selection, and dictated text
+  lands at the caret (§chat.voice/insertion) as part of the draft.
 
 ## §chat.composer/disabled-states — Disabled states
 
@@ -236,6 +289,7 @@ the controls work and wake it, and they wait as "Chat connecting or starting" on
 | Chat connecting or starting (first connect, until this connection's `hello`) | enabled (typing is fine) | Send `aria-disabled` until the `hello`, Stop until the socket is open; the model, mode, sandbox and login controls too | `clock` — "Connecting to chat…" (hidden; shown as the floating note) |
 | Chat socket dropped, or its chat failed to start for now (until the next `hello`) | enabled | Send `aria-disabled` until the `hello`, Stop until the socket is open | `clock` — "Reconnecting. Your draft is kept." (hidden; shown as the floating note) |
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
+| Session is archived (§chat.transcript/instant-open, "An archived chat"; no socket is held) | enabled (typing and the draft kept) | `Unarchive` in place of Send; the model, mode, sandbox and login controls wait | `archive` — "This session is archived. Unarchive it to send." |
 | Server `error` with `code:"busy"` (the session reopens read only) | `disabled` | Send hidden | `attention` — "Read only while this session is open in the TUI." |
 
 The mic (§chat.voice/button) follows the textarea, not Send: it is hidden when the session is live
@@ -248,8 +302,9 @@ the session's list not here yet) fades in after a short delay, about 300 ms, so 
 flashes it; under reduced motion it appears after the same delay without the fade. "Reconnecting"
 and every other reason show at once, and the controls are disabled from the first frame either way.
 
-Send is enabled by typed text, an attachment, **or answers picked on an alignment card alone**
-(§chat.alignment/card): with picks and no text it sends just their line. With picks staged, a
+Send is enabled by typed text, an attachment, **or answers picked on an alignment card or a
+gathering transcript card alone** (§chat.alignment/card, §chat.transcript-cards/answering): with
+picks and no text it sends just their lines. With picks staged, a
 typed local command (`/new`, `/tree`, `/agents`…) is sent as text after them, not run.
 
 Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matters. That keeps them
@@ -259,50 +314,43 @@ read-only live case.
 
 ## §chat.composer/composer-flyout — Composer flyout
 
-Everything you do to a session that isn't typing lives behind one ghost `plus` button in
+Everything you do to a session that isn't typing starts at one ghost `plus` button in
 `.composer-row`, right after the mic (§chat.voice/button). It replaced the two icon buttons that used to sit there (Attach Images and
 Commands) and took the model trigger and the session's own facts out of the head (§chat/transcript): the
 composer is where the session is acted on, and the head is for reading.
 
-**One popover, up to four triggers and five panels.** The `plus` button opens the **menu** panel — Attach
-images, Commands, Playbooks, Hide tool calls, Hide thinking, the Sandbox group and Undo
-last turn, each present only where it applies (below). The sandbox shield (§chat.composer/sandbox-shield)
-opens the **sandbox** panel: the same Sandbox group alone. The model indicator in `.composer-foot` (§chat/composer) opens the **model**
+**The `plus` button opens the Commands palette** (§app.command-palette/opening), at every width,
+on the chat it belongs to. The palette leads with this chat's actions — Attach images, Hide tool
+calls, Hide thinking, Playbooks and Undo last turn (§app.command-palette/rows) — and lists the
+slash commands, the views and the server's commands after them, so there is no Commands row. The
+button has no popover of its own: `aria-haspopup="dialog"`, and `aria-expanded` true while the
+palette it opened is open. Its `aria-label` and `title` stay "More Actions".
+
+**One popover, up to three triggers and four panels.** The sandbox shield (§chat.composer/sandbox-shield)
+opens the **sandbox** panel: the Sandbox group alone, its one place. The model indicator in `.composer-foot` (§chat/composer) opens the **model**
 panel — the Model row and this model's Thinking ladder, the two things the indicator is the label
-for. The Model row opens the §chat/model-menu **picker** as the third panel, which comes back to the model
+for, under a one-line summary at its top that spells the choice out in full: "{model} · {backend} ·
+{effort}" (the model's Claude catalog name, else its id without the provider; its provider; the level; the effort part left out when the model
+has no effort choice; the target while a switch is pending). The summary describes the panel's
+menu (`aria-describedby`). The Model row opens the §chat/model-menu **picker** as a third panel, which comes back to the model
 panel it was opened from. Where the Claude login label is shown (§app.claude-logins/active-login),
-it is a third trigger and opens a fourth panel, **login** (§app.claude-logins/switch-login). Each trigger anchors the popover above **itself**: the math is the same,
+it is a third trigger and opens the fourth panel, **login** (§app.claude-logins/switch-login). Each trigger anchors the popover above **itself**: the math is the same,
 measured on whichever element opened it, and closing returns focus there. The composer holds the
 flyout's handle (`show(panel, anchor)` · `close()` · `open` · `anchor`, handed over once on
 mount), so the indicator can toggle the menu it opened and mirror its state in `aria-expanded`.
 
-The model row and the ladder live in the panel the indicator names, not in the `plus` menu:
+The model row and the ladder live in the panel the indicator names, not in the palette:
 one control, one way in, and the thing that says what the session runs is the thing that changes
 it.
 
 ```html
-<!-- the "menu" panel: what the "+" button opens -->
+<!-- the flyout, empty until a trigger opens one of its panels -->
 <div class="model-menu composer-flyout" id="composer-flyout" popover="auto"
-     style="--menu-bottom: 72px; --menu-left: 388px">
-  <div class="composer-flyout-list" role="menu" aria-label="More actions">
-    <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-attach" tabindex="0"
-         aria-describedby="composer-reason">
-      <span class="icon icon-sm composer-flyout-icon" style="--icon: url(/icons/attach.svg)" aria-hidden="true"></span>
-      <span class="composer-flyout-label">Attach images</span>
-    </div>
-    <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-commands" tabindex="-1">…Commands…</div>
-    <!-- chat sessions only; aria-disabled while the composer is; see §chat/playbooks -->
-    <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-playbooks" tabindex="-1">…Playbooks…</div>
-
-    <div class="composer-flyout-sep" role="separator"></div>
-    …Hide tool calls, Hide thinking…
-    <!-- the Sandbox group, after its own separator: three menuitemradio rows, Off, Subagents only, On -->
-    …then Undo last turn after its own separator (§chat/timeline)…
-  </div>
-</div>
+     style="--menu-bottom: 72px; --menu-left: 388px">…</div>
 
 <!-- the "model" panel: what the model indicator opens, in the same popover -->
-<div class="composer-flyout-list" role="menu" aria-label="Model and thinking">
+<p class="composer-flyout-summary" id="composer-flyout-summary">glm-5.3 · zai · high</p>
+<div class="composer-flyout-list" role="menu" aria-label="Model and thinking" aria-describedby="composer-flyout-summary">
   <div class="mode-option composer-flyout-item" role="menuitem" id="composer-flyout-model" tabindex="0"
        aria-haspopup="true" title="zai/glm-5.3">
     <span class="icon icon-sm composer-flyout-icon" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
@@ -318,6 +366,7 @@ it.
     <div class="mode-option composer-flyout-item" role="menuitemradio" id="composer-flyout-thinking-high"
          tabindex="-1" aria-checked="true">
       <span class="icon icon-sm mode-option-check" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
+      <svg class="effort-ring" data-level="high" aria-hidden="true">…</svg>
       <span class="composer-flyout-label">high</span>
     </div>
     …one row per level…
@@ -332,7 +381,7 @@ it.
   {rect.left}px`, moved left only as far as keeps the popover 4px inside the window (the sandbox
   shield sits at the right end). A resize re-anchors it; it closes only when the anchor isn't laid out anymore.
   Under 768px it's the same bottom sheet the model menu is.
-- **Panels.** Up to four, one popover: **menu** (the `plus` button's), **model** (the indicator's), and
+- **Panels.** Up to four, one popover: **model** (the indicator's),
   the §chat/model-menu **picker**, which the Model row opens on its Providers step and a `Back` button above its search field returns
   from — to the model panel, which is the only way in (on a provider's step, `Back` first returns to Providers); and **login**, the login label's, where it
   is shown; and **sandbox**, the shield's, where it is shown. Only the panel in front is rendered, so it
@@ -345,30 +394,17 @@ it.
   first row that isn't disabled. **`Ctrl+P` / `⌘P`** opens the flyout straight on the picker (and
   closes it if the picker is already in front), with `preventDefault()` so print never fires. It's
   bound in chat sessions only; watch sessions print as usual.
-- **Rows.** The menu panel's, in order: Attach images, Commands, Playbooks, Hide tool calls, Hide
-  thinking, the Sandbox group after its own separator and, after its own separator, Undo last
-  turn (§chat/timeline).
-  §design.copy-deck/composer-flyout is the inventory. Model and Thinking are the model panel's.
-  - **Attach images** opens the composer's hidden file picker (§chat/images). `aria-disabled` and
-    `aria-describedby="composer-reason"` while the composer is disabled.
-  - **Commands** closes the flyout and opens the slash menu exactly as the old button did (§chat/slash-commands).
-    `aria-disabled` when the composer is disabled or there's no command list; then its `title` is
-    "No commands available".
-  - **Playbooks** closes the flyout and opens the Playbooks dialog (§chat/playbooks) on its catalog step, or
-    on the playbook whose unsent text it kept.
-    You pick a recipe, optionally add a line, and `Send Playbook` sends it into this chat as your
-    turn. Mid-turn it goes as a **follow-up** that runs after the current turn, never a steer.
-    **Chat sessions only**: it is present where `onPlaybooks` is passed, and absent in a watch
-    view (TUI-live included). While the composer is disabled it is `aria-disabled` with
-    `aria-describedby="composer-reason"`, like Attach images. Focus follows the rule under
-    Behavior: after `Send Playbook` it goes to the textarea; closing the dialog unsent returns it
-    to the `plus` trigger.
+- **Rows.** The panels' rows; §design.copy-deck/composer-flyout is the inventory. Model and
+  Thinking are the model panel's, the Sandbox group the sandbox panel's. Attach images, Playbooks,
+  Hide tool calls, Hide thinking and Undo last turn are the palette's This chat rows
+  (§app.command-palette/rows), not the flyout's.
   - **Model** is the model panel's first row: the current id in mono with its provider, and a
     chevron. It's the picker's trigger: `aria-haspopup="true"`, and while a switch is pending it's `aria-busy` with a
     `.live-dot` before the target id, and `aria-disabled` (§chat/model-menu "Pending"). Choosing applies
     immediately, closes the flyout, and focus returns to the textarea.
   - **Thinking** follows the Model row on the same panel: one `menuitemradio` per level of the **current model's** `thinkingLevels`,
-    in ladder order, checked on the active one. **The whole group is hidden when the model has
+    in ladder order, checked on the active one, each with that level's effort ring beside its name
+    (the same ring and mark as the model indicator's). **The whole group is hidden when the model has
     one level or isn't in the model list yet** — a ladder with one rung is not a choice. Picking
     sends `{type:"set_thinking"}`; the checked state follows the server's `{type:"thinking"}`
     echo, never the click, because the server clamps to what the model supports. The flyout stays
@@ -377,7 +413,7 @@ it.
     with the reason in `title`.
   - **Sandbox** sets this session's sandbox state (§chat.sandbox/states): a group labelled
     "Sandbox" of three `menuitemradio` rows, **Off**, **Subagents only** and **On**, checked on
-    the state the session reports, never on the click, like the Thinking group. Present only when
+    the state the session reports, never on the click, like the Thinking group, in the shield's panel only. Present only when
     the session's runtime has the sandbox extension's `/sandbox` command; otherwise the group is
     absent. A click on an unchecked row sends `POST /api/sandbox?path=` with `{state, on}`
     (`on` true only for On, so a host whose server predates the three states still understands
@@ -424,7 +460,8 @@ about it.
 While this chat's runtime has the sandbox extension, the composer foot shows a shield at its
 right end, just before the mode switch, in every state (§chat.sandbox/states). It is a control:
 a button that opens the flyout on its **sandbox** panel, anchored above the shield, holding the
-same Sandbox group as the `plus` menu (§chat.composer/composer-flyout); clicking it again, or
+Sandbox group (§chat.composer/composer-flyout). It is the one place to set the sandbox: the
+Commands palette the `plus` opens has no Sandbox rows. Clicking it again, or
 `Esc`, closes it, and focus returns to the shield.
 
 ```html
@@ -489,9 +526,18 @@ composer taller. A placeholder at the caption size keeps the body line height, s
 in the 44px box instead of riding up with a smaller line box. Send is
 `.button-primary` (`--color-accent` / `--color-on-accent`). Stop is `.button-destructive`
 (`--status-error` border and label, `--status-error-bg` on hover). The reason is `--fs-caption` in
-`--color-ink-2`. The model indicator borrows the pair the foot uses — the id `--fs-mono` in `--color-ink-2`, everything else
+`--color-ink-2`. The model indicator borrows the pair the foot uses — the name `--fs-mono` in `--color-ink-2`, everything else
 `--fs-caption` in `--color-ink-muted` — with a `--color-sunken` fill on hover and while open, and
-a `--tap-min` target stretched over a `--control-sm` row by a `::after`.
+a `--tap-min` target stretched over a `--control-sm` row by a `::after`. Its effort ring is about
+17px square: the track in `--color-border-strong`, the filled arc and the middle mark in
+`--color-ink-2`, never `--color-accent`; the same ring sits beside each level of the flyout's
+Thinking ladder and on the profile cards (§chat.profiles/picker). The login's avatar is a soft
+chip about 17px tall, with no outline: a pale `--color-sunken` fill, `--r-full` (a circle for
+one letter, a pill for two or three letters or a number), its text `--fs-micro` semibold in
+`--color-ink-2`. While the login button is hovered or open, when the button itself takes the
+`--color-sunken` fill, the chip takes the `--color-border` fill so it stays visible. The model panel's summary line is
+`--fs-caption` in `--color-ink-2`, one line, ellipsized. The foot's gap is `--space-3`, `--space-2`
+under 480px.
 `.composer-inner` is centred at `--measure` plus `--space-9`, the transcript column's width, so it
 widens with the column on desktop (§chat/transcript "Column width"). The slash menu spans it, and the model
 menu keeps its own 360px cap.
@@ -565,7 +611,7 @@ first of these that knows it:
 The placeholders ("Choose model", "Mode") show only when none of them knows. A known thinking level
 shows before the model catalog has brought the model's ladder, unless it is "off" (a one-level
 ladder's only level), so it doesn't pop in with the catalog; once the ladder is known the model
-indicator's rule for omitting the segment applies. A remembered mode
+indicator's rule for omitting the effort ring applies. A remembered mode
 says nothing about when a switch applies: until the socket's `mode` message the trigger makes no
 "applies after this turn" promise and the menu shows neither the mid-turn nor the can't-switch
 banner. A remembered running turn shows as one (Steer, Stop, the run status, and the sidebar's
@@ -573,3 +619,179 @@ Busy mark stays on), but until the socket is open Send and Stop are both `aria-d
 the chat's `hello`) with the "Connecting to chat…" reason, so nothing goes into a closed socket or
 a chat still starting, and it counts as no turn starting (no list refresh). Answering an alignment card, "Switching model…" and the other pending states still
 wait for the socket's own word.
+
+## §chat.composer/waiting-badge — What's waiting on you, inside the message box
+
+One small badge inside the message box, at its left edge and centred on the last text line, says
+what in this chat waits for your answer: its open alignments (§chat/alignment) and its open option
+cards. With one line it is centred on that line, beside the text; as the message grows to more
+lines it stays on the bottom one, next to Send, and never rides up with the first. It replaces
+the alignment chip and the Overseer's open-cards chip that used to sit in the
+run-status row, and it adds no row: the run-status row keeps only its other parts, and the box
+keeps its height. The text, typed or placeholder, starts right of the badge on every line, so a
+wrapped message reads as one column beside it, at the 390px phone width too.
+
+```html
+<div class="composer-field" data-waiting="">
+  <button type="button" class="waiting-badge" aria-haspopup="dialog"
+          aria-label="3 questions open in 2 alignments, 1 card waiting — show what's waiting">
+    <svg viewBox="-20 -22 40 42" aria-hidden="true">
+      <circle r="14" class="waiting-badge-track" stroke-dasharray="65.97 87.96" transform="rotate(135)" />
+      <circle r="14" class="waiting-badge-progress" stroke-dasharray="26.39 87.96" transform="rotate(135)" />
+      <text class="waiting-badge-count" y="5">3</text>
+      <circle class="waiting-badge-dot" cx="-3" cy="17" r="2" /><circle class="waiting-badge-dot" cx="3" cy="17" r="2" />
+      <text class="waiting-badge-cards" y="-9">I</text>
+    </svg>
+  </button>
+  <textarea class="input textarea composer-input" …></textarea>
+</div>
+```
+
+- **Its size.** The glyph draws 30px wide and about 31px tall, so its number and numeral read at
+  a glance; it still sits on the bottom text line and never makes the box taller.
+- **The ring.** A 270° arc open at the bottom: its track in border-strong (stroke 2.6 units), and over it in the
+  accent the share of questions decided, `decided / total` over the live (not dropped) questions
+  of the branch's open alignments, the counts the alignment rows show (§chat.alignment/chip).
+- **The middle number** is the open (undecided) questions of those alignments, bold (weight
+  700) at 14 units, 11.5 units for two digits; above 99 it reads "99+" at 9.2 units. Its
+  baseline sits at 0.36 × its size below the centre.
+- **The dots** under it are one per open alignment, radius 2 units, centred, 6 units apart (closer together past
+  6, so they stay within the ring's width).
+- **The numeral on top**, in the accent, in a serif (Georgia, bold, 12.5 units) with a surface-coloured halo so it
+  reads over the ring, counts the open option cards: I, II, III, IV, then V+
+  for 5 or more; it is left out at 0. An option card is any open offer card of the session
+  (§chat.offers/card), whatever offer the project declared, and in the Overseer's chat any of its
+  open cards (§app.overseer/confirm). It never depends on which offer a card is: there are no
+  per-offer icons.
+- **Only option cards.** With option cards and no open alignment it shows the track and the
+  numeral alone: no progress, no number, no dots.
+- **Nothing undecided.** With open alignments whose questions are all decided (or which have none)
+  and no option card, the badge fades: muted ink, the progress drawn in the track's colour, at low
+  opacity; it still opens the dialog. With no open alignment and no option card it is not there,
+  and the text starts at the box's own padding again.
+- **Its name.** The accessible name says the counts in words: "{q} questions open in {n}
+  alignments, {c} cards waiting — show what's waiting" (1: "question", "alignment", "card";
+  parts with nothing in them are left out, "1 card waiting — show what's waiting"; faded: "All
+  questions decided in 1 alignment — show what's waiting", or "1 alignment open — show what's
+  waiting" when it has no questions). It is a button with a 44px target,
+  never inside the textarea's own text; the ring is `aria-hidden`.
+- **Clicking it** opens the Waiting on you dialog (§chat.composer/waiting-dialog).
+- The counts follow the transcript as it streams, as the alignment counts do, and the option
+  cards follow the session's cards as Sova reads them.
+
+## §chat.composer/waiting-dialog — The Waiting on you dialog
+
+The badge (§chat.composer/waiting-badge) opens a centred dialog, "Waiting on you · {n}" where `n`
+counts its items, with a close button (x), over a backdrop. Escape, a click on the backdrop and
+the close button close it, and focus goes back to the badge. Below 768px it is the design
+system's bottom sheet, and it fits a 390×844 screen, its list scrolling inside it.
+
+It holds two groups, each a list of bordered cards, and leaves out a group with nothing in it:
+
+- **Option cards.** Each open option card shows its title, its note under it, and its buttons,
+  which act exactly as the card in the chat does (§chat.offers/card, §chat.offers/buttons): the
+  same choice is sent for the same card, a button with a `confirm` asks its question first
+  (Cancel, then its label again), and a card that is busy or can't be acted on here shows its
+  buttons disabled. A card with rows (§chat.offers/card, Rows) shows its rows, each with its
+  label, its owner link when it has one, and its own buttons, and its `all` button with its
+  confirm; a press answers that row of the card in the chat. A press answers the card in the chat; it never makes a second card. Each also
+  has **Show in Chat**, which closes the dialog and jumps to the card. In the Overseer's chat its
+  open cards are listed instead, by id and title, with Show in Chat only.
+- **Alignments.** Each open alignment shows its title, a meter "{decided}/{total}" of its live
+  questions decided, the topic of its next open question ("Next: {topic}"; "All decided" when
+  none is open), and only **Show in Chat**, which closes the dialog and jumps to the alignment's
+  newest card (§chat.alignment/chip). The dialog never answers an alignment and never draws a
+  second copy of its card.
+
+Option cards come first, newest first; alignments in the order the chip's menu listed them, those
+with an open question first, each group the last touched first. While the dialog is open its
+counts and cards follow the chat; once nothing is left in it, it says "Nothing is waiting on you
+in this chat." with the close button.
+
+## §chat.composer/worktrees-control — The worktrees control and its modal
+
+When the chat tracks at least one worktree that isn't dropped (§chat/worktrees), the composer's
+run-status row has a **worktrees control** just left of the "N inputs" trigger, in the same quiet
+link style. It shows a branch icon, a dot and the one most useful fact with its count, the first
+that holds:
+- "1 needs you" / "{n} need you" (warn dot): behaviour differs, review flagged, can't tell whose failure,
+  drafts changed, or a request waiting for you to review it (§app.merge-queue/requests);
+- "1 needs a fix" / "{n} need a fix" (error dot);
+- "{n} ready" (success dot);
+- "1 checking";
+- "{n} queued";
+- "{n} worktrees" (no dot).
+
+A chat with no worktrees has no control. At a narrow width the control shows the number alone, and
+its words stay in its accessible name ("Worktrees: 2 ready · 1 queued"). It is a button with
+`aria-haspopup="dialog"` and `aria-expanded`. Enter or a click opens the modal, and Escape closes it
+and returns focus to the control (with the Land menu open, Escape closes the menu first).
+
+**The Worktrees modal** is titled "Worktrees", with the chat's title and a summary under it ("2 ready
+· 1 queued · 1 landed"). When a row's repository is one the merge queue serves, one line says what
+Land does: the branch is merged onto the target, checked there on its own, and lands as exactly the
+commit that was tested; while that queue is paused, a line says so with its why, and that Land still
+takes the approval. With no served row, neither line shows. Then comes one row per worktree
+(dropped ones left out):
+- the branch, in mono;
+- its state, in the one vocabulary the pane and the Merge Queue view also use: **Ready** (with its
+  short commit) · **Uncommitted** ("{n} files not committed", and to commit it in its chat) · **No
+  commits yet** · **Queued · 2nd** (with "starts in ~N min · takes ~N min") · **Checking** ·
+  **Conflict** · **Behaviour differs** (the target's side, the branch's side and the proposal) ·
+  **Review flagged** (the review's text) · **Can't tell whose failure** (the check that failed on
+  the merge and on the target alone) · **Drafts changed** · **Needs a fix** (its reason, and
+  **See Why**) · **Landed** ("as {sha}", "· not pushed" when it wasn't, and every note, named by its
+  writer: "Merge thread: …", "You: …", "Flaky: …") · **Merged** · **Removed**;
+- on a live row (ready, uncommitted, in the queue or waiting), its commits ahead of the target's
+  head and lines added and removed: "3 commits · +40 −2"; landed, merged and removed rows show none;
+- "1 newer commit not included" when the branch moved past the approved commit;
+- its action, where one applies:
+  - **Land** on a Ready or Drafts changed row (never on Needs a fix, below), with a menu holding **Land Without
+    Review** (only when the project has a review kit) and **Land Without Its Specs…**, which asks
+    first: "Its spec drafts stay drafts in this worktree. Only the code lands.";
+  - **Set Up Queue** on a Ready to merge row of a project on the Projects list whose merge setup
+    isn't done, which opens its Merge Queue tab (§app.merge-queue/setup). A project whose definition doesn't parse keeps Land (never
+    Set Up Queue), and the row reads "This project's .sova/project.json doesn't parse: {path:
+    message}. Fix it on the target, or land a branch that fixes it; nothing else lands until it
+    parses.";
+  - **Cancel** on a queued row;
+  - **Accept** and **Send Back** on Behaviour differs;
+  - **Land Anyway** and **Send Back** on Review flagged and on Can't tell whose failure;
+- its reviewer line while the branch's review runs and after it ends, with **Open Reviewer Chat**,
+  the same row as the pane's (§chat.worktrees/pane);
+- **Review Changes**, first among the row's actions, on every row of an active worktree whose folder
+  exists and that has commits of its own (Ready, Uncommitted with commits, queued, checking, waiting
+  for you, Needs a fix), the same button as the pane's rows (§chat.worktrees/pane). It opens the
+  changes viewer over the modal on the branch as it is now against its merge-base with the branch it
+  lands on, with the worktree's uncommitted files included and marked as uncommitted
+  (§chat.changes/endpoint). Close or Esc
+  closes the viewer alone, never the modal behind it, and focus returns to the row's Review Changes.
+
+**Nothing to land while it's sent back.** A branch the queue sent back to its chat (Needs a fix,
+after Send Back or a failed check) offers no Land and no Land menu, here, in the session pane and on
+the Merge Queue tab, while its chat fixes it. Its line is the queue's reason, else "Sent back to its
+chat. Land comes back here once its chat commits a fix and finishes." It stays so at the sent-back
+commit, whatever that commit reads, until the branch is merged into the target (the row reads
+**Merged**) or its worktree folder is removed (**Removed**); after that, a later note on the old
+sent-back entry never brings Needs a fix back. Once the branch reads ready again at a newer commit (clean, no
+conflicts, its chat idle, §chat.worktrees/ready-to-land), that commit wins: the row reads Ready, with
+Land, at the new commit. No row says whether its chat is working on the fix meanwhile.
+
+**In a repository the merge queue doesn't serve** (§app.merge-queue/served) no row reads Ready,
+Landing specs or a queue state, and none offers Land: a ready branch reads **Ready to merge**, with
+"Say “land it” in the chat to merge it into main.". Such a row counts as ready all the same:
+the control reads "1 ready" with its success dot, and the summary says so.
+
+On a phone (narrower than 600px) each row has 12px side padding, names its folder by its last name
+(the full path as its `title`), and puts its actions on a line of their own, Review Changes on the
+left and the row's queue action on the right, each at least 44px tall.
+
+The modal ends with **View Merge Queue**, which opens the project's Merge Queue view
+(§app.merge-queue/view), and **Close**. View Merge Queue shows only when a row's repository is a
+project on the Projects list, set up or not; in a repository that isn't on the list it is left out.
+
+The actions are the merge verbs (§app.project-services/merge-verbs). Land sends the commit the row
+showed, so a branch that moved meanwhile lands what the user saw (§app.merge-queue/approve). After one, the row is read again
+at once and then follows the queue's feed. A refusal shows its reason under the row and leaves the
+row as it was. The modal, the control and the pane's Worktrees rows (§chat.worktrees/pane) read the
+same state, so they always agree. Nothing here shows live state or offers a restart.

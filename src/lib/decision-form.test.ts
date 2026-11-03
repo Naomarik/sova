@@ -4,13 +4,10 @@ import type { DecisionChainStatus, DecisionKeyInfo, DecisionSettings } from "../
 import { RECONCILE_DEFAULT } from "../../shared/decisions";
 import { decisionDraft, decisionSaved, resetDecisionDraft, setDecisionDraft, setDecisionSaved } from "./decision-draft";
 import {
-  backfillBlocked,
-  backfillLine,
   chainLine,
   failedPhrase,
   jevChip,
   keyAfterProbe,
-  newerProgress,
   offeredSuggestions,
   decisionDraftReady,
   draftOf,
@@ -208,27 +205,6 @@ test("the chain line: in order, paused providers marked, and the unavailable sen
   );
   assert.equal(chainLine({ ...defaults, jev: { enabled: false } }, goodKey, { ready: false, providers: [] }), "Unavailable: Jev is off and no fallback model is set. Nothing is checked.");
   assert.equal(chainLine({ ...defaults, fallback: haiku }, noKey, { ready: false, providers: [], reason: "Model policy denies haiku." }), "Model policy denies haiku.", "with a fallback set, the server's reason");
-});
-
-test("backfill: held while nobody can answer; its line counts; the newer report wins", () => {
-  assert.match(backfillBlocked({ ready: false, providers: [] })!, /Nothing can answer/);
-  assert.equal(backfillBlocked(ready), null);
-  assert.equal(backfillLine(undefined), null);
-  assert.equal(backfillLine({ running: false, done: 0, total: 0, failed: 0 }), null, "never run: no line");
-  assert.equal(backfillLine({ running: true, done: 40, total: 147, failed: 2, startedAt: 1 }), "Tagged 40 of 147 · 2 failed.");
-  assert.equal(backfillLine({ running: true, done: 0, total: 0, failed: 0, startedAt: 1 }), "Finding sessions to tag…", "the first push, before the list is read");
-  assert.equal(backfillLine({ running: false, done: 147, total: 147, failed: 2, startedAt: 1, finishedAt: 5 }), "Tagged 147 sessions · 2 failed. New sessions are tagged as they finish.");
-  assert.equal(backfillLine({ running: false, scope: "recent", done: 0, total: 0, failed: 0, startedAt: 1, finishedAt: 2 }), "Every session from the last 30 days is tagged.");
-  assert.equal(backfillLine({ running: false, done: 10, total: 147, failed: 0, startedAt: 1, finishedAt: 5, stoppedReason: "Stopped." }), "Stopped at 10 of 147.", "a cancel doesn't say it twice");
-  assert.equal(backfillLine({ running: false, done: 10, total: 147, failed: 5, startedAt: 1, finishedAt: 5, stoppedReason: "5 failures in a row." }), "Stopped at 10 of 147 · 5 failed. 5 failures in a row.");
-  const running = { running: true, done: 10, total: 40, failed: 0, startedAt: 100 };
-  const finished = { running: false, done: 40, total: 40, failed: 0, startedAt: 100, finishedAt: 200 };
-  assert.equal(newerProgress(running, finished), finished);
-  assert.equal(newerProgress(finished, running), finished, "a late poll of the same run can't bring back 'running'");
-  assert.equal(newerProgress({ ...running, done: 20 }, running)?.done, 20);
-  const next = { running: true, done: 1, total: 40, failed: 0, startedAt: 300 };
-  assert.equal(newerProgress(finished, next), next, "a new run is newer than the last one's finish");
-  assert.equal(newerProgress(null, null), null);
 });
 
 test("the draft outlives a tab switch until the dialog resets it, and a reload never overwrites it", () => {

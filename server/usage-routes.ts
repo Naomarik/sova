@@ -1,5 +1,11 @@
 import type { Context, Hono } from "hono";
+import { tmpdir } from "node:os";
 import { askUsage, type HelperAnswer } from "./usage-helper/client";
+import type { FoldInput } from "./usage-helper/project-fold";
+import { listProjects } from "./projects/spaces";
+import { attachedWorkspaces, defaultWorkspacesDir } from "./orgs";
+import { overseerDir } from "./overseer-store";
+import { agentRoot } from "./state-root";
 
 /**
  * The usage ledger's routes (shared/usage/wire.ts, §app.insights/usage-ledger and
@@ -12,6 +18,24 @@ const relay = (a: HelperAnswer): Response =>
 
 const bad = (c: Context, error: string) => c.json({ error }, 400);
 
+/** What the helper needs to fold the By project rows: every project here, archived
+    ones too, the Overseer's and the organizations' folders, the agent dir and the temp folders. */
+function foldInput(): FoldInput {
+  let projects: FoldInput["projects"] = [];
+  let workspaces: string[] = [];
+  try {
+    projects = listProjects().map((p) => ({ id: p.id, name: p.name, root: p.root, ...(p.archived ? { archived: true } : {}) }));
+  } catch {
+    // no engine open yet: no project is registered
+  }
+  try {
+    workspaces = attachedWorkspaces().map((o) => o.dir);
+  } catch {
+    // no org index
+  }
+  return { projects, overseer: [overseerDir(), defaultWorkspacesDir(), ...workspaces], exclude: agentRoot(), temp: [...new Set([tmpdir(), "/tmp", "/var/tmp"])] };
+}
+
 export function registerUsageRoutes(app: Hono<any>): void {
   app.get("/api/usage/costs", async (c) =>
     relay(
@@ -20,6 +44,7 @@ export function registerUsageRoutes(app: Hono<any>): void {
         provider: c.req.queries("provider") ?? [],
         model: c.req.queries("model") ?? [],
         tz: c.req.query("tz") ?? "UTC",
+        fold: foldInput(),
       }),
     ),
   );

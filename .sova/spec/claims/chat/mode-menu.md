@@ -11,7 +11,7 @@ Overseer's Quick Actions in this slot (§app.overseer/quick-actions).
 
 pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
 `delegate`, and any set of **minor modes** (today `align`, `spec`, `vis`, which teaches the inline
-visuals of §chat.markdown/visuals, `codemode`, §chat.mode-menu/codemode, and `memory`, §chat/memory).
+visuals of §chat.markdown/visuals, and `memory`, §chat/memory).
 Every chat with the extension offers all of them, in that order, except that only Sova's own mode menu
 turns `memory` on (§chat.memory/where). A chat in a project's checkout also offers that project's
 own minor modes, from its `.sova/minor-modes/` folder (§chat.mode-menu/project-modes); none is ever on
@@ -40,9 +40,15 @@ longer a side effect of being new: setting one up is not a statement about every
 next, and the state that made it look like one (an empty session) was invisible in the act of
 switching.
 
+There is no `codemode` minor mode: no chat or menu offers it, and a profile, an automation or an
+Overseer naming it is refused like any unknown mode. A chat, a saved default or a hidden note that
+named it drops the name like any unknown one, so a chat that had it on reopens without it. A
+codemode call already in a transcript shows as an ordinary tool step (its name, arguments and
+output), with no script card, no Copy Script and no rows for the calls it made.
+
 ## §chat.mode-menu/trigger — Trigger
 
-The trigger is a ghost button that names this chat's modes and opens the menu.
+The trigger is a ghost button that shows this chat's modes as icons and opens the menu.
 
 In chat sessions it sits in the composer foot (§chat/composer), at the right end: the foot reads the model
 indicator, the disabled reason, then this. It's in reach of the message it affects, next to the
@@ -58,18 +64,26 @@ this slot (§app.overseer/quick-actions).
 ```html
 <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu"
         aria-expanded="false" aria-controls="mode-menu"
-        aria-label="Mode: delegate · align" title="Mode: delegate · align">
-  <span class="icon icon-sm" style="--icon: url(/icons/sliders.svg)" aria-hidden="true"></span>
-  <span class="mode-trigger-label">delegate</span>
-  <span class="mode-trigger-label mode-trigger-minor">· align</span>   <!-- only with a minor on -->
-  <span class="icon icon-sm" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
+        aria-label="Mode: delegate · align · deploy-notes" title="Mode: delegate · align · deploy-notes">
+  <span class="icon icon-sm" style="--icon: url(/icons/mode-delegate.svg)" aria-hidden="true"></span>  <!-- the major mode; normal: sliders -->
+  <span class="icon icon-sm" style="--icon: url(/icons/mode-align.svg)" aria-hidden="true"></span>     <!-- one per minor mode on -->
+  <span class="mode-letter" aria-hidden="true">D</span>                                                 <!-- one per project mode on -->
+  <span class="mode-more" aria-hidden="true">+2</span>                                                <!-- the others' count: drawn only while folded -->
+  <span class="mode-trigger-label" aria-hidden="true">delegate · align · deploy-notes</span>         <!-- in the foot: only at a composer 620px or wider -->
+  <span class="icon icon-sm" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span> <!-- kept: it opens a menu -->
 </button>
 ```
 
-- **Label.** This chat's major mode, then each minor mode on, joined with " · ", in mono. It has
-  no fixed cap: whatever fits reads in full, with the full text in `title` either way. Only real
-  pressure in the foot shrinks it, and it shares that squeeze with the model indicator's 24ch cap
-  beside it. The minors are their own span, so they ellipsize first and the major mode last.
+- **Icons.** One icon for the major mode (normal adds none of its own: the sliders icon stands for
+  it), then one icon for each built-in minor mode on (align, spec, vis, memory), then, for
+  each project mode on (§chat.mode-menu/project-modes), its id's first letter or digit, upper
+  case, in a rounded square drawn like an icon. The chevron-down stays last, at every width: the
+  button opens a menu. Until this chat's mode is known it shows the sliders icon alone. The menu's
+  rows carry the same icons beside their names, so the menu is the legend (§chat.mode-menu/menu).
+- **Label.** This chat's major mode, then each minor mode on, then each project mode on, joined
+  with " · ", in mono. In the composer foot it shows beside the icons only where the composer is
+  at least 620px wide; the full text is in `title` and the accessible name either way. The minors ellipsize first and the major mode last, and the
+  words go before any icon does.
   Until this chat's mode is known it reads just "Mode" and no row is checked: the default is not
   this chat's state. It is known once the chat's `mode` message arrives, and before that from the
   session list's row for a chat the server holds, or from what this tab last saw of the chat
@@ -77,11 +91,22 @@ this slot (§app.overseer/quick-actions).
   does; a mode known only from what this tab last saw makes no promise about when a switch applies.
 - **Name.** `aria-label` repeats the label with "Mode: " in front, so it survives when the label
   hides. A pending switch adds ", applies after this turn".
-- **Every width.** It never hides and never goes icon-only: the label is the fact. It narrows the
-  way the model id beside it does — at 320px the minor modes shrink to an ellipsis first, then the
-  major mode, and the row never grows wider than the composer. The icons, the padding and the
-  `title` stay. In the foot it takes the model indicator's scale: a `--control-sm` row with a
+- **Every width.** It never hides, and it is icon-first: the icons are the fact, and the words
+  are extra where there's room. Under a 620px composer, at 320px too, it is the icons and the
+  chevron alone and the row never grows wider than the composer. The icons, the padding, the accessible name and the desktop `title` stay. In the
+  foot it takes the model indicator's scale: a `--control-sm` row with a
   `--tap-min` target stretched over it by a `::after`, mirrored to the right edge.
+- **Fold.** Where the foot is still too tight once its gaps narrow (§chat.composer/behavior), and
+  the trigger draws at least two mode icons, the mode icons fold, before the model's short name
+  loses a letter: the first icon (the major mode's) stays, followed by "+{n}", the count of the
+  other mode icons (minor and project modes alike, e.g. "+3"), then the chevron. With one icon
+  (or before the mode is known) there is nothing to fold, and the name is what gives. Under a
+  620px composer the trigger never clips its own icons: it gives way only by folding. Whether it
+  folds is decided from the unfolded foot, measured with every icon out before the frame is
+  drawn, so it never flickers and the same width always gives the same foot; it unfolds when the
+  room comes back (a wider composer, a shorter name, a mode turned off). A fold hides nothing from
+  the words: the accessible name and the desktop `title` keep the full wording, and the menu still
+  lists every mode.
 
 ## §chat.mode-menu/menu — Menu
 
@@ -125,7 +150,7 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
     </div>
     <div class="model-menu-group" role="group" aria-labelledby="mode-group-subagents">
       <div class="list-group-label" id="mode-group-subagents">Subagents</div>
-      <div class="popover-item" role="menuitem" aria-haspopup="true" tabindex="-1">…worker… Subagents · My setup …chevron-right…</div>
+      <div class="popover-item" role="menuitem" aria-haspopup="true" tabindex="-1">…subagents… Subagents · My setup …chevron-right…</div>
     </div>
   </div>
   <div class="mode-menu-foot">
@@ -136,6 +161,10 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
 </div>
 ```
 
+- **Row icons.** Each mode row shows, beside its name, the icon the trigger uses for it: the
+  major modes theirs (normal the sliders icon), each built-in minor mode its own, and each project
+  mode its letter in a rounded square. The menu doubles as the trigger's legend. The Subagents row
+  leads with the subagents icon, branching nodes.
 - **This project's modes.** A chat whose checkout has project modes (§chat.mode-menu/project-modes)
   shows them after the minor modes and before Subagents, in their own group labelled "This
   project · {name}" (the checkout's name; "This project" when there is none), one
@@ -225,7 +254,7 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
 `POST /api/mode?path=<session>` switches exactly the chat that file belongs to, and `mode.json` is
 not written. A chat this server doesn't hold open (one closed for being quiet,
 §app.chat-processes/idle-stop) is opened for it, as a send opens it; a session that can't open (a
-TUI holds it, its folder is gone) is refused with why (409), and a file that isn't there is a 404.
+TUI holds it, its remote placeholder folder is gone) is refused with why (409), and a file that isn't there is a 404.
 A switch of a project's coding session whose minor modes leave `spec` out is refused before
 anything switches (409, "Spec is always on for coding sessions; it can't be turned off.",
 §app.project-overseer/coding-mode). The chat then:
@@ -318,7 +347,7 @@ on the first turn, on later turns, or after the chat is reopened.
 
 ## §chat.mode-menu/minor-toggle-keeps-prompt — A minor toggle keeps the cached prompt
 
-Turning a minor mode (`align`, `spec`, `vis`, `codemode`, `memory`, or a project's own,
+Turning a minor mode (`align`, `spec`, `vis`, `memory`, or a project's own,
 §chat.mode-menu/project-modes) on or off mid-session never rewrites the
 prompt the model already has, on any provider; the one exception is align while in Delegate, whose
 bridge paragraph in the Delegate block follows the active align. The `<mode>` section's minor blocks stay those of the **head**:
@@ -329,13 +358,12 @@ folds it into a new head, and the claude-code bridge restarts its CLI
 (§app.worker-restore/claude-bridge-restart), so one toggle re-sent the whole conversation uncached
 (measured: 53K–180K tokens per toggle).
 
-The tool list is another matter: turning `vis`, `align` or `codemode` on or off does change the
+The tool list is another matter: turning `vis` or `align` on or off does change the
 active tools (`vis` adds or removes `vis_guide`, and in Sova's hosted sessions `vis_check` with it,
 unless align with the chat's Visuals still wants them, §chat.alignment/visuals; `align` its `align`
-tool, and with Visuals on the vis tools too; `codemode` its `codemode` tool, §chat.mode-menu/codemode), while the
-system prompt stays as it was (none of them adds a line to it). That is one tool-set change per
+tool, and with Visuals on the vis tools too), while the
+system prompt stays as it was (neither adds a line to it). That is one tool-set change per
 toggle; in the plain TUI, where `vis` used to change no tool, it costs a prompt-cache rebuild. In an ordinary Sova chat, vis also adds or removes `record_tour` and `show_tour` (§app.tours/authoring): these two require vis itself, so align's Visuals alone never keeps them active. A hand-off's baseline scoped presentation is separate from this ordinary-chat loadout.
-`codemode` has no block, so no note tells the model about it either: its tool is the whole switch.
 A project mode with tools adds or removes them the same way, one tool-set change per toggle, and
 its block still reaches the model as a note, never by rewriting the prompt.
 
@@ -371,7 +399,7 @@ once, as their net change.
 changes is the history every request sends from the next turn on (§chat.memory/turn), plus its `zoom`
 and `date` tools.
 
-Not covered: `align`, `vis`, `codemode` and project modes with tools also add or remove their tools, and a tool-set change
+Not covered: `align`, `vis` and project modes with tools also add or remove their tools, and a tool-set change
 breaks the cached prefix on every provider and restarts the claude-code CLI, note or not. A
 major-mode switch still changes the section, as before.
 
@@ -392,8 +420,7 @@ A worker is not a chat: it has no mode menu, and its parent's major mode never r
 whether it reaches workers** (`MINOR_WORKER` in `pi-config/extensions/mode/minor.ts`, a record
 over every minor mode, so a new one cannot be added without deciding): `spec` does; `align`
 does not (aligning is a conversation with the user, which a worker doesn't have), nor does `vis`
-(its visuals are for the user, and a worker's replies are read by its parent session), nor does
-`codemode` (it changes the chat's own tool set, and a worker's tools are its brief's), nor does `memory`
+(its visuals are for the user, and a worker's replies are read by its parent session), nor does `memory`
 (it is the chat's own memory of its conversation; a worker starts fresh from its brief, and its report
 enters the parent's memory like any other message). A project mode declares it in its own file
 (§chat.mode-menu/project-modes), `no` unless it says `yes`; one that reaches workers comes after
@@ -402,11 +429,14 @@ spec's block, from the parent's saved copy of it, with its tools when the worker
 
 - **What a worker gets.** While the parent chat has spec on, every worker it starts — pi or
   Claude Code, plain, remote, sandboxed, hosted, or a team member — gets the spec block
-  (`spec-mode.md`, byte for byte) at the end of its system prompt, after its agent type, its
-  brief and any remote instructions, followed by a short **worker note**: the brief is its
-  go-ahead; it works in the draft its brief names (or says which it started); it doesn't promote,
-  commit or record `--commit` evidence unless the brief says so — the parent promotes; and its final
-  report lists each foreign § it updated. Nothing else of the parent's mode reaches it: no
+  (`spec-mode.md`, byte for byte: the guide's short part) at the end of its system prompt, after its agent type, its
+  brief and any remote instructions, followed by a short **worker note**: its parent's branch's
+  landing makes the drafts official; the brief is its go-ahead; it works in the draft its brief
+  names (or says which it started) and records its notes there; it commits only when the brief says
+  so, and then only on the brief's branch, never by landing on the default branch; and its final
+  report lists each foreign § it updated. The note never tells it to promote. The writing procedure reaches a worker that writes code once,
+  with its first census note, its Workers section first, in the note's own words
+  (§tools.spec/writing-on-demand). Nothing else of the parent's mode reaches it: no
   Delegate block, no align block, no Delegate+align bridge, and never the spec-writer paragraph
   (a worker can't spawn one). With spec off the worker's prompt carries nothing from the mode.
 - **Not everyone.** A team's monitor (it has no tools) gets no spec block. A worker on its
@@ -429,45 +459,6 @@ worker prompt on the extension bus (`mode:worker`), the way the sandbox publishe
 (§chat.sandbox/workers), and the subagents extension appends that text at spawn without
 interpreting it. A parent without the mode extension publishes nothing, and its workers get
 nothing.
-
-## §chat.mode-menu/codemode — codemode: scripts that call the chat's tools
-
-The `codemode` minor mode gives the model pi's `codemode` tool: a JavaScript script that calls the
-chat's other tools, several at once, and filters their output before the model reads it.
-
-- **The tool is the whole mode.** On, `codemode` is in the chat's tool set; off, it is nowhere in
-  it, even when something else had turned it on (the default tools, a restored transcript's tool
-  set). The one exception: while a tool only scripts can reach is registered (an MCP tool with
-  `codemode` or `deferred` exposure), turning the mode off leaves `codemode` in, since that tool has
-  no other way in. The mode has no prompt block and no hidden mode note, on or off: the tool's own
-  description is its guide (`MINOR_PROMPTLESS` in `pi-config/extensions/mode/minor.ts`).
-- **When it applies.** A switch made between runs puts the tool in or takes it out at once; a switch
-  during a run applies when that run settles, and the run under way keeps its tools
-  (§chat.mode-menu/how-a-switch-reaches-the-chat). A reopened chat comes back with the tool as its
-  `mode` entry says. A toggle is a tool-set change, so, like align's tool, it costs the cached prompt
-  prefix and restarts a Claude Code chat's CLI (§chat.mode-menu/minor-toggle-keeps-prompt).
-- **Where.** pi's built-in extensions load only in its CLI, so a terminal session has pi's own
-  tool, while Sova adds it to every ordinary chat it runs, registered inactive
-  (`server/harness/pi/codemode.ts`, in the chat manager's default extension factories). A Claude
-  Code chat is like any other: off, no tool and no prompt line mentions it; on, it is declared from
-  the next run. The special loadouts (the Overseer, organizations, baton) don't load it, and where
-  the tool isn't registered the mode changes nothing.
-- **Workers never get it** (`MINOR_WORKER`): a worker's tools are its brief's
-  (§chat.mode-menu/workers).
-- **What a script can call.** The chat's tools, except the ones declared **model-only**: a tool
-  whose state Sova reads back from its own recorded result (the `align` tool, spawning a worker,
-  creating a team, sending to another session, the Overseer's cards) is offered to the model but is
-  never callable from a script. A script's model calls (`models.classify`,
-  `models.generateImages`) go through this device's model policy, which refuses a turned-off model
-  ("<provider/id> is turned off in this device's model policy (Settings → Models).") without
-  calling it; each call that runs holds one of the provider's request slots and is recorded as the
-  chat's own usage.
-- **What the chat shows.** The calls a script makes write no transcript entries of their own: the
-  script's result keeps them, and its tool card shows the script (with **Copy Script**) and each
-  call it made with its status (Running, Done, Failed, Cancelled), live while it runs, then its
-  output.
-- **With spec on**, a `[spec census]` or spec-guard note about a call the script made is repeated on
-  the script's own result, the one the model reads (§tools.spec/census-note).
 
 ## §chat.mode-menu/project-modes — A project's own minor modes
 
@@ -499,13 +490,14 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   id is invalid, its `MODE.md` is missing or doesn't parse (its tool declarations included, and a
   `./` file a tool names that is missing, and a mode with tools, commands or hooks whose folder holds more than 1000
   files or 50 MB: such a mode is approved as its whole folder, so it is kept small), or its
-  id is a built-in minor mode's (`align`, `spec`, `vis`, `codemode`, `memory`, or any added
+  id is a built-in minor mode's (`align`, `spec`, `vis`, `memory`, or any added
   later). A broken mode can't be turned on. A name clash never replaces the built-in: the two live
   in separate namespaces, so a built-in added later never takes over a project's mode either. One
   broken folder never hides the others.
 - **Never on by themselves.** A project mode is on only when someone turned it on in that chat:
-  the user, from the chat's mode menu or `/mode` (§chat.mode-menu/terminal), or the Overseer
-  (§app.overseer/tools). A mode file has no way to say "on by default". `Save as default` never
+  the user, from the chat's mode menu or `/mode` (§chat.mode-menu/terminal), the Overseer
+  (§app.overseer/tools), or a script, a chat's agent or an extension through the mode request, whose
+  approval is kept as theirs (§chat.mode-menu/project-mode-hooks). A mode file has no way to say "on by default". `Save as default` never
   stores one and `mode.json` never holds one. A profile, an automation, a project's coding session
   (§app.project-overseer/coding-mode) and `pi --minor` can't name one. Settings shows none.
 - **The chat keeps the version it turned on.** Turning a mode on saves a copy of its `MODE.md`
@@ -648,7 +640,9 @@ answer anything, and they never send a message into a chat.
   agent's or an extension's), its tools and commands work but its hooks
   stay inactive, and the mode's row says "Hooks need your approval" with **Approve Hooks**, which
   approves that exact version (refused, like a stale approval, when it changed since the row was
-  drawn). Only you approve hooks, from Sova's own page on this machine: an approval of hooks sent by
+  drawn). **Apply and Approve** on a project overseer's Settings change card that grants a mode records your
+  own approval of the version it lands (§app.project-overseer/settings), under the same page-only rule.
+  Only you approve hooks, from Sova's own page on this machine: an approval of hooks sent by
   the Overseer, by a chat's agent with its chat's key, by a script or extension sending Sova's token,
   or through a mesh peer is refused. An approval those callers give when turning a mode on is kept
   as theirs: its tools and commands run, its hooks wait for yours. Telling your page from a script is a heuristic (the
@@ -668,9 +662,9 @@ answer anything, and they never send a message into a chat.
 ## §chat.mode-menu/memory-panel — The memory row and its Memory type panel
 
 The `memory` row is in a chat's minor modes only while that chat's `mode` message carries `memory`
-(its choice of type and size, which a chat whose runtime can run memory sends, §chat.memory/where);
+(its type, and the size Settings gives that type, which a chat whose runtime can run memory sends, §chat.memory/where);
 a chat whose message has none lists the other minor modes and no memory row. It is the last minor
-row, after `codemode`, a checkbox like the others: clicking it turns memory on or off and keeps the
+row, after `vis`, a checkbox like the others: clicking it turns memory on or off and keeps the
 menu open. Its description is the chosen type's row description and, while memory is on, its detail
 line names the type ("UniiChat — by Victor Taelin", "Zoomable compaction — Sova").
 
@@ -678,20 +672,18 @@ line names the type ("UniiChat — by Victor Taelin", "Zoomable compaction — S
   inside it, named "Memory type", with a 44px target, next in the roving focus) swaps the menu for
   the **Memory type** panel in the same popover, the Subagents picker's pattern: a Back header
   titled "Memory type", then, under a **Type** label, one `menuitemradio` row per type — its name, its author ("by Victor
-  Taelin", "Sova") and its one-line description, the chat's type checked — with UniiChat's "Read the
-  design ↗" under it, a link (a sibling of the row, opening Taelin's write-up in a new tab).
-- **Size.** Under the types, **Summary size**: one `menuitemradio` row per suggested size, the
-  chat's size checked and a size outside the list shown as its own checked row. For UniiChat a size
-  reads as the range the view keeps, "64–128 KB" for 128 (it grows to the size and merges to half
-  of it); for zoomable compaction as the size the compacted lines get, "32 KB". The type's own
-  default size says "default".
-- **Picking** a type or a size posts `{ memory: { type } }` or `{ memory: { size } }` for this chat
-  (§chat.memory/choice) and keeps the panel open; the check moves when the chat's `mode` message
-  says so. The foot line reads "This chat only. Kept while memory is off." While a pick is saving
+  Taelin", "Sova") and its one-line description, the chat's type checked. That is all the panel
+  holds: no link and no size (each type's Summary size is Settings → Memory's, §chat.memory/settings;
+  the design write-up is linked from its help card, §chat.memory/help). The chevron's description
+  reads "Choose this chat's memory type".
+- **Scrolling.** The rows scroll between the Back header and the foot, which stay put, as in the
+  Subagents picker, so on a short window (or in the phone's sheet) no row is ever cut off.
+- **Picking** a type posts `{ memory: { type } }` for this chat (§chat.memory/choice) and keeps the
+  panel open; the check moves when the chat's `mode` message says so. The foot line reads "This chat only. Kept while memory is off." While a pick is saving
   the rows are `aria-disabled`; a refused pick shows "Couldn't change memory." with the reason, and
   the choice is unchanged.
-- **Save as default** saves the chat's type and size with its modes (§chat.memory/choice), and
-  reads "Already the default" only while they also match the saved default (`GET /api/mode`'s
+- **Save as default** saves the chat's type with its modes (§chat.memory/choice), and reads
+  "Already the default" only while it also matches the saved default type (`GET /api/mode`'s
   `memory`).
 
 ## §chat.mode-menu/strict — strict: Delegate without edit and write
@@ -715,6 +707,26 @@ tools away from the orchestrator.
 - **Sova never sets it.** A switch from the menu can't carry it, the Overseer leaves it as it is
   (§app.overseer/hosting), and a project's coding sessions never set or offer it
   (§app.project-overseer/coding-mode). A worker is never strict.
+
+## §chat.mode-menu/delegate-teams — Delegate: a team, or separate workers
+
+In Delegate, the instructions tell the orchestrator how to choose between a team (`team_create`)
+and separate workers (`agent_spawn`):
+
+- **Asked for a team.** When the user asks for a team, the orchestrator always starts a real team
+  with `team_create`. It never starts separate workers and calls them the team.
+- **Parts that depend on each other.** Without being asked, it starts a team when parts of the work
+  must run at the same time on shared work (the same files or interfaces), or when an implementer
+  and a checker must go back and forth.
+- **Otherwise, separate workers.** Independent parts and single jobs go to separate workers with
+  `agent_spawn`. The align planning worker (§chat.alignment/model), the align reviewer
+  (§chat.alignment-review/route) and the spec writer stay single separate workers, as before.
+- **The tool says the same.** `team_create`'s guideline, which a chat's model has in either major
+  mode, says to use a team when the user asks for one or when the parts of the work depend on each
+  other mid-task, and `agent_spawn` for independent parts and single jobs.
+- **Teams themselves don't change.** A team still gets the standing coordinator and monitor its
+  chat's subagent profile configures (§teams/defaults), and the limits of 24 running workers per
+  chat and 24 seats per team still hold (§app.teams/running-limit, §app.teams/seats).
 
 ## §chat.mode-menu/terminal — From a terminal
 
@@ -760,6 +772,10 @@ Sova's menu turns on, has no row), then one row per project mode of this checkou
   saved mode wins over them, and an unknown minor name is warned about, as is `memory` (dropped: web only).
   `--minor` names only built-in modes: a project mode's id there is an unknown name.
   `minorShortcuts` binds no key to `memory` or to a project mode.
+- **pi's own tools.** pi's built-in tools, its `codemode` tool among them, follow pi's own settings
+  in a terminal session: the mode extension neither offers, toggles nor syncs them. `codemode` is no
+  built-in minor mode: `pi --minor codemode` is warned about as an unknown name, and `/mode codemode`
+  is a bare id like any other (a project mode of that name, else the usage line).
 - **The status line** in the TUI's footer reads the mode, then in Delegate `fallback:<profiles>`,
   `ask:<profiles>` and `strict`, then each minor mode on (project modes after the built-in ones), then `writer:fallback` or `writer:ask`
   while spec's writer is off its primary route: dim in normal with no minor mode, accent otherwise,
@@ -771,8 +787,8 @@ What the trigger and the menu show in each state, from a mode not known yet to a
 
 | State | Shows |
 |---|---|
-| Idle | Trigger label, and this chat's rows checked |
-| Mode not known yet (no `mode` message, nothing in the list's row, nothing this tab saw) | Trigger reads "Mode", nothing checked (the default isn't this chat's state) |
+| Idle | Trigger icons and label, and this chat's rows checked |
+| Mode not known yet (no `mode` message, nothing in the list's row, nothing this tab saw) | Trigger shows the sliders icon alone and its label reads "Mode", nothing checked (the default isn't this chat's state) |
 | Known before the `mode` message (§chat.composer/known-on-switch) | Trigger label and rows checked as Idle; from the list's row, the name and banners follow how it says a switch applies; from what this tab last saw, no "applies after this turn" in the name and neither switch banner until the message says |
 | Saving | Rows `aria-disabled` (the cursor is `progress`) |
 | Mid-turn switch | Info banner "Applies after this turn." (trigger name adds it too) |
@@ -791,14 +807,16 @@ What the trigger and the menu show in each state, from a mode not known yet to a
 | Project mode's tools changed since approval | Row on, state line "Its tools changed since you approved them…"; its tool calls are refused |
 | Project mode broken | Row off, `aria-disabled`, state line "Can't turn on: {problem}" |
 | Project mode switch failed | The same "Couldn't switch the mode." banner |
-| Memory type or size refused (§chat.mode-menu/memory-panel) | Error banner "Couldn't change memory." with the reason, in the panel. The choice is unchanged |
+| Memory type refused (§chat.mode-menu/memory-panel) | Error banner "Couldn't change memory." with the reason, in the panel. The choice is unchanged |
 
 ## §chat.mode-menu/tokens — Tokens
 
 The tokens the trigger, the menu's rows and its foot are drawn with.
 
 Trigger: `--font-mono`, `--fs-mono`, `--color-ink-2`, sunken fill while open, icons
-`--color-ink-muted`. Rows (`.popover-item`, §design/menu-rows): `--control-md` min height, `--space-3` at the
+`--color-ink-muted`. A project mode's letter square is drawn like an icon: 16px, a `--stroke-icon`
+border in its ink, `--r-xs` corners, the letter 10px semibold in the body face, `--color-ink-muted`. The folded count "+N" (and a profile card caption's, §chat.profiles/picker)
+is quiet: `--fs-caption` in the body face, tabular figures, `--color-ink-muted`. Rows (`.popover-item`, §design/menu-rows): `--control-md` min height, `--space-3` at the
 sides and `--space-2` above and below a mode row, id in `--font-mono` `--color-ink`, description `--fs-caption` `--color-ink-muted`,
 checked `--color-accent-tint`, focus `--focus-ring` inset. A mode row's check sits on its id's line, the
 first of its two; the one-line Subagents row's icon, label and chevron sit on the row's centre line. Foot: `--fs-caption`
@@ -812,6 +830,10 @@ why.
 - **A segmented control in the composer.** It reads as a per-message option, not a per-chat
   one, and every mode as a segment costs composer width at 320px. The menu trigger that sits in
   the foot now is one control whose label shrinks, so it fits.
+- **A trigger that never goes icon-only.** It used to name the modes in words at every width,
+  because the label was the fact. Reversed on purpose (al_1): the foot now shows icons for the
+  modes, with the menu's rows as their legend and the full wording kept as the accessible name and
+  desktop hover text, and words come back beside the icons at a composer 620px or wider.
 - **The session head.** Where the trigger used to sit, after the context gauge. It was the head's
   one menu trigger, went icon-only under 520px and vanished under 360px, and it was a screen away
   from the composer whose next message it changes.

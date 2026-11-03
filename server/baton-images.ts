@@ -346,7 +346,8 @@ export function dropStaged(sessionId: string, ids: readonly string[]): void {
 
 /**
  * The sweep: staged photos older than 24 hours, leftover parts older than an hour, and every
- * photo of a session that is closed, done or no longer registered here, go. Empty folders go too.
+ * photo of a session that is closed, done or no longer registered here, go. Empty folders go too,
+ * once an hour old.
  */
 export function sweepUploads(now = Date.now(), root = uploadsRoot(), open = (sessionId: string) => {
   // A Project Assistant owner's staging (`pa-…`, §app.project-assistant/photos) is no session: only its age counts.
@@ -388,7 +389,9 @@ export function sweepUploads(now = Date.now(), root = uploadsRoot(), open = (ses
       }
     }
     try {
-      if (!readdirSync(dir).length) rmSync(dir, { recursive: true, force: true });
+      // An empty folder goes only once it is an hour old, like a leftover part: a fresh one may be an
+      // upload that just made it and is about to open its part (the first upload starts this sweep).
+      if (!readdirSync(dir).length && now - statSync(dir).mtimeMs > 60 * 60 * 1000) rmSync(dir, { recursive: true, force: true });
     } catch {
       // gone meanwhile
     }

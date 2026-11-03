@@ -14,17 +14,18 @@ ports and env in declaration order.
 | key | value |
 |---|---|
 | `version` | `1` |
-| `slots` | `{cap}` (`cap`): instances besides the main checkout's, 1–16, default 4. Conformance uses slots cap+1 and cap+2 |
+| `slots` | `{cap}` (`cap`): the project's default for how many copies besides the main checkout's may run at once, 1–16, default 4; only the main checkout's saved value counts, and a limit set on the machine (the Branches tab) overrides it. The main checkout's port numbering numbers every copy. Copies take slots 1 to 16 whatever the limit; conformance uses 17 and 18 |
 | `host` | names (`A-Z0-9_`) of host variables kept in Sova's state, read as `${host.NAME}`; never put their values in the repo |
 | `sources` | the checkout files the definition was derived from (at most 50, relative, each once). Drift is a change to one of them at HEAD. Not hashed |
 | `setup` | steps `{id, run, inputs?, timeout?}` run at create, in order; skipped while the rendered argv and the hash of `inputs` (checkout files) are unchanged |
 | `data` | `{name: resource}` in declaration order, below |
-| `services` | `{name: service}` in declaration order, at least one, below |
+| `services` | `{name: service}` in declaration order, below. Absent or empty is valid (a library, or a project the queue only checks): `up` then starts nothing |
 | `open` | `{endpoint, path?}`, below: the app's entry point, where a person opens it. Required for every project with a page; absent only for a library or an API-only project. Not hashed |
 | `hooks` | `probe` (`{run, timeout?}`, a step): conformance calls `<run> write <token>` and `<run> read <token>` (exit 0: the token is there) |
 | `test` | `{run, requires?, timeout?, smoke}`, below |
 | `share` | `{endpoints, maxDays?, allow?}`, below: what a running copy may share as a preview link. Absent: never shared. Hashed |
 | `deploy` | `{targets}`, below: how the project ships. The Project deploy playbook writes it, never this one; keep it byte for byte as you found it. Outside this hash, under its own (`deployHash`) |
+| `merge` | `{target?, push?, checks?, install?, review?, land?, request?}`, below: how the merge queue lands branches. Outside this hash |
 
 ## A step (`setup`, a service's `build`, `hooks.probe`)
 | key | value |
@@ -43,7 +44,7 @@ Exactly one of `cmd` and `static`.
 | `static` | a folder of the checkout Sova serves itself on 127.0.0.1; exactly one port, and none of `cwd`, `env`, `build`, `container`, `ready`; `reload` is `none`; never shared |
 | `cwd` | relative to the checkout, default `.` |
 | `env` | `{NAME: template}`; never a name Sova sets (`SOVA_V`, `SOVA_SLOT`, `SOVA_PORT_…`, see below) |
-| `ports` | `{name: {base, stride?}}` → `base + slot × stride` (`stride` default 1), or `{name: {fixed}}` (`fixed`), the same in every slot. 1024–65535 in every slot up to cap+2, and no two ports' ranges may meet |
+| `ports` | `{name: {base, stride?}}` → `base + slot × stride` (`stride` default 1), or `{name: {fixed}}` (`fixed`), the same in every slot. 1024–65535 in every slot from 0 to 18, and no two ports' ranges may meet in them |
 | `requires` | services started first (a shared service requires only shared ones) |
 | `ready` | `{tcp: <port name>}` (`tcp`) or `{http: <port name>, path?}` (`http`, `path`) (any answer below 500), `timeout` seconds (default 60, max 600). Without it: ready when its first port listens, or after 1 s with no ports |
 | `reload` | `"restart"` (default), `"none"`, `{signal: HUP\|USR1\|USR2\|INT\|TERM}` (`signal`) or `{cmd: argv}` |
@@ -94,11 +95,26 @@ Written by the Project deploy playbook (`playbooks/project-deploy`) from the ope
 
 Deploy templates read `${host.<NAME>}`, `${commit}`, `${target}`, `${checkout}` and `${branch}` only.
 
+## `merge`
+How the merge queue lands a branch: it merges the approved commit onto the newest `target` in a merge copy beside the project, runs the checks there, and fast-forwards the target to exactly that commit. The queue reads this section from the target's own head, never from the branch being landed.
+
+| key | value |
+|---|---|
+| `target` | the branch branches land on (default: the main checkout's branch) |
+| `push` | `true` or `false`: push the target after each landing (default: when an `origin` remote exists) |
+| `checks` | `[{id, label?, run, timeout?, rerun?, requires?, optional?}]` in order, 1 to 30, or `"none"` (the project has no automated tests: its landings say "No checks declared"). Absent: the `test` command, else the project isn't set up for the queue |
+| `install` | `{run, inputs, timeout?}`: run in the merge copy when a branch changes one of `inputs` (a lockfile): an offline install |
+| `review` | the review kit's folder (a relative path): a fresh read-only reviewer reads each branch with it while the checks run. Absent: no review step |
+| `land` | how a branch lands once its checks pass: `"local"` (the target fast-forwards to the tested commit, today's way), `"github-pr"` (a pull request on GitHub), `"gitlab-mr"` (a merge request on GitLab) or `"push-branch"` (the branch pushed, nothing more). Absent: `"local"`. A choice saved on this computer wins over it |
+| `request` | the request skill folder (a relative path): how a pull or merge request's title and description are written, with its own checks on that text. Absent: Sova's plain default |
+
+A check: `id` a name, unique; `label` what the queue shows (default the id, at most 60 characters); `run` an argv (default `timeout` 600 s) that may use `${merge.base}`, `${merge.tip}` and `${merge.target}` beside the templates below; `rerun` `true` when its failures name test files that `run` followed by those files reruns alone; `requires` services brought up in the merge copy first; `optional` `true` keeps it out of the required set: it runs only when the merge thread picks it for a branch (at least one check is required). A check also gets `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP`, `SOVA_MERGE_TARGET` and `SOVA_MERGE_CHANGED` (a file listing the changed paths); one with nothing to do exits 0 and writes `{"passed": 0, "failed": 0, "skipped": "<why>"}` to `SOVA_OUT`.
+
 ## Templates
 `${slot}`, `${instance}`, `${project}`, `${checkout}`, `${main}` (the main checkout), `${branch}`, `${data}` (the instance's data dir), `${data.<resource>}`, `${ports.<service>.<port>}`, `${host.<NAME>}`; `$$` is a literal `$`. Every process and hook also gets `SOVA_V=1`, `SOVA_PROJECT`, `SOVA_INSTANCE`, `SOVA_SLOT`, `SOVA_CHECKOUT`, `SOVA_MAIN`, `SOVA_BRANCH`, `SOVA_DATA`, `SOVA_PORT_<SERVICE>_<PORT>` for every port of the instance and `SOVA_PORT_<PORT>` for its own; a hook also `SOVA_VERB`, `SOVA_STEP`, `SOVA_OUT`; a test run also `SOVA_TEST_SELECT`. `<SERVICE>` and `<PORT>` are upper case with anything else `_`.
 
 ## The definition's hash
-A conformance stamp proves exactly one hash. The hash covers the whole parsed definition (a data resource's `sensitive` and `share` included) except every `timeout`, readiness `path`, `about`, `isolation`, `sources`, `open`, `deploy` (hashed apart, under its own hash) and the default `start: "up"`. So rewording a `why` or an `about`, listing another source or moving the entry point keeps the proof; any command, env, port, hook, data source, `test` or `start: "on-demand"` needs a new conformance.
+A conformance stamp proves exactly one hash. The hash covers the whole parsed definition (a data resource's `sensitive` and `share` included) except every `timeout`, readiness `path`, `about`, `isolation`, `sources`, `open`, `deploy` (hashed apart, under its own hash), `merge` and the default `start: "up"`. So rewording a `why` or an `about`, listing another source or moving the entry point keeps the proof; any command, env, port, hook, data source, `test` or `start: "on-demand"` needs a new conformance.
 
 ## Error codes
 | code | exit | meaning for you |
@@ -107,7 +123,8 @@ A conformance stamp proves exactly one hash. The hash covers the whole parsed de
 | `invalid-request` | 3 | a bad verb argument |
 | `not-found` | 3 | no such project, instance or ref |
 | `not-conformant` | 2 | a verb that needs a passing conformance |
-| `cap-reached` | 2 | no free slot |
+| `cap-reached` | 2 | as many copies already run as the limit in force allows (only running copies count): stop one, or ask the operator to raise the limit |
+| `slots-blocked` | 2 | the limit isn't used up, but every slot of 1 to 16 is blocked (a listener or another instance on its ports): the message names each holder; never stop one |
 | `port-held` | 2 | something else holds a port of the slot: change `base`/`stride`, never stop the holder |
 | `dirty-worktree` | 2 | commit first |
 | `unsupported` | 2 | the verb or method isn't available here (no `test` declared, no supervisor) |

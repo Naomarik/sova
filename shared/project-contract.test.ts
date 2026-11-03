@@ -13,7 +13,6 @@ import {
   parseDefinition,
   portsFor,
   render,
-  scratchSlots,
   serviceOrder,
   type VerbResult,
 } from "./project-contract";
@@ -37,7 +36,7 @@ test("a static site is one service with one port", () => {
   assert.equal(def.services[0]!.reload, "none");
   assert.deepEqual(portsFor(def, 0), { site: { http: 8731 } });
   assert.deepEqual(portsFor(def, 3), { site: { http: 8734 } });
-  assert.deepEqual(scratchSlots(def), [5, 6]);
+  assert.deepEqual(def.slots, { cap: 4 });
 });
 
 test("a full definition parses with defaults filled in", () => {
@@ -65,7 +64,7 @@ test("a full definition parses with defaults filled in", () => {
   });
   assert.deepEqual(def.share, { endpoints: [], allow: false });
   assert.equal(def.deploy, undefined);
-  assert.equal(def.slots.cap, 2);
+  assert.deepEqual(def.slots, { cap: 2 });
   assert.equal(def.setup[0]!.timeout, 120);
   const server = def.services.find((s) => s.name === "server")!;
   assert.deepEqual(server.ready, { http: "http", path: "/api/health", timeout: 90 });
@@ -82,7 +81,7 @@ test("refusals name the JSON path of the first problem", () => {
   const svc = { static: ".", ports: { http: { base: 8000 } } };
   assert.equal(refusedAt({ version: 1, services: { site: svc }, extra: 1 }), "$.extra");
   assert.equal(refusedAt({ version: 2, services: { site: svc } }), "$.version");
-  assert.equal(refusedAt({ version: 1, services: {} }), "$.services");
+  assert.equal(refusedAt({ version: 1, services: [] }), "$.services");
   assert.equal(refusedAt({ version: 1, services: { Site: svc } }), "$.services.Site");
   assert.equal(refusedAt({ version: 1, services: { web: { cmd: "npm start" } } }), "$.services.web.cmd");
   assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["npm", ""] } } }), "$.services.web.cmd[1]");
@@ -112,6 +111,34 @@ test("refusals name the JSON path of the first problem", () => {
   assert.throws(() => parseDefinition("{not json"), (e) => e instanceof DefinitionError && e.path === "$");
 });
 
+/** Motorsaif's shape: web's nrepl (7850, stride 20) meets cljs's test-http (8020, stride 11) only in slots 14 and 10. */
+const MOTORSAIF_SHAPE = {
+  version: 1,
+  services: {
+    db: { cmd: ["x"], ports: { port: { base: 4334, stride: 20 }, h2: { base: 4335, stride: 20 } } },
+    redis: { cmd: ["x"], ports: { port: { base: 6375, stride: 20 } } },
+    cljs: { cmd: ["x"], ports: { nrepl: { base: 9100, stride: 20 }, http: { base: 9830, stride: 20 }, "test-http": { base: 8020, stride: 11 } } },
+    web: { cmd: ["x"], ports: { http: { base: 4100, stride: 20 }, nrepl: { base: 7850, stride: 20 } } },
+    "test-repl": { cmd: ["x"], ports: { nrepl: { base: 7852, stride: 20 } } },
+  },
+};
+
+test("ports are checked over slots 0 to cap + 2 only: a meeting further up never makes a file invalid", () => {
+  // Valid before the copies' fixed range existed, valid now: the meetings are past cap + 2.
+  assert.doesNotThrow(() => parse(MOTORSAIF_SHAPE), "Motorsaif's definition (slot 14 meets slot 10)");
+  assert.doesNotThrow(() => parse({ version: 1, slots: { cap: 4 }, services: { web: { cmd: ["x"], ports: { http: { base: 3000 } } }, api: { cmd: ["y"], ports: { http: { base: 3010 } } } } }), "3000/3010 meet in slot 10, past cap + 2 of 4");
+  assert.doesNotThrow(() => parse({ version: 1, slots: { cap: 2 }, services: { w: { cmd: ["x"], ports: { p: { base: 65_520 } } } } }), "slot 18 would pass 65535, but cap + 2 is 4");
+  // Within cap + 2 the old rule holds.
+  assert.throws(
+    () => parse({ version: 1, slots: { cap: 4 }, services: { web: { cmd: ["x"], ports: { http: { base: 3040 } } }, api: { cmd: ["y"], ports: { http: { base: 3044 } } } } }),
+    (e) => e instanceof DefinitionError && e.path === "$.services.web.ports.http" && /slot 4 gives it port 3044, which api\.http has in slot 0/.test(e.message),
+  );
+  assert.throws(
+    () => parse({ version: 1, slots: { cap: 2 }, services: { w: { cmd: ["x"], ports: { p: { base: 65_532 } } } } }),
+    (e) => e instanceof DefinitionError && /slot 4 would need port 65536/.test(e.message),
+  );
+});
+
 test("templates render every known variable and $$ as a literal $", () => {
   assert.equal(render("${ports.web.http}/x $$HOME", { "ports.web.http": "4010" }), "4010/x $HOME");
   assert.throws(() => render("${slot}", {}), /no value/);
@@ -120,7 +147,7 @@ test("templates render every known variable and $$ as a literal $", () => {
 test("every error code has one exit class and one status", () => {
   const want: Record<number, string[]> = {
     1: ["not-ready", "start-failed", "hook-failed", "tests-failed", "deploy-failed", "verify-failed"],
-    2: ["not-conformant", "cap-reached", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "needs-override"],
+    2: ["not-conformant", "cap-reached", "slots-blocked", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "needs-override"],
     3: ["invalid-request", "invalid-definition", "not-found"],
     4: ["busy"],
   };
@@ -307,4 +334,107 @@ test("open: a checkout service's declared port and a path from / (default /), ke
     assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web.http", path } }), "$.open.path", JSON.stringify(path));
   assert.equal(refusedAt({ version: 1, services, open: { endpoint: "web.http", url: "/" } }), "$.open.url");
   assert.ok(DEFINITION_KEYS.top.includes("open"));
+});
+
+test("merge: target, push, checks (a list or \"none\"), install and review, parsed strictly, outside the hash", async () => {
+  const { defHashOf } = await import("../server/project-services/def-hash");
+  const services = { web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } } };
+  const plain = parse({ version: 1, services });
+  assert.equal(plain.merge, undefined);
+  const full = parse({
+    version: 1,
+    services,
+    merge: {
+      target: "main",
+      push: false,
+      checks: [
+        { id: "unit", label: "Unit tests", run: ["node", "t.mjs", "--base", "${merge.base}"], rerun: true, timeout: 900 },
+        { id: "e2e", run: ["node", "e2e.mjs", "${ports.web.http}"], requires: ["web"] },
+      ],
+      install: { run: ["pnpm", "install", "--offline"], inputs: ["pnpm-lock.yaml"] },
+      review: ".sova/playbooks/review",
+    },
+  });
+  assert.deepEqual(full.merge, {
+    target: "main",
+    push: false,
+    checks: [
+      { id: "unit", label: "Unit tests", run: ["node", "t.mjs", "--base", "${merge.base}"], timeout: 900, rerun: true, requires: [] },
+      { id: "e2e", label: "e2e", run: ["node", "e2e.mjs", "${ports.web.http}"], timeout: 600, rerun: false, requires: ["web"] },
+    ],
+    install: { run: ["pnpm", "install", "--offline"], inputs: ["pnpm-lock.yaml"], timeout: 120 },
+    review: ".sova/playbooks/review",
+  });
+  // What the queue runs never changes what an instance runs: the conformance hash ignores it.
+  assert.equal(defHashOf(full), defHashOf(plain));
+  assert.deepEqual(parse({ version: 1, services, merge: { checks: "none" } }).merge, { checks: "none" });
+  assert.deepEqual(parse({ version: 1, services, merge: {} }).merge, {});
+  const m = (merge: unknown) => refusedAt({ version: 1, services, merge });
+  assert.equal(m("x"), "$.merge");
+  assert.equal(m({ queue: 1 }), "$.merge.queue");
+  assert.equal(m({ target: "a..b" }), "$.merge.target");
+  assert.equal(m({ target: "-x" }), "$.merge.target");
+  assert.equal(m({ push: "yes" }), "$.merge.push");
+  assert.equal(m({ checks: [] }), "$.merge.checks");
+  assert.equal(m({ checks: "all" }), "$.merge.checks");
+  assert.equal(m({ checks: [{ id: "a", run: "pnpm test" }] }), "$.merge.checks[0].run");
+  assert.equal(m({ checks: [{ id: "A", run: ["x"] }] }), "$.merge.checks[0].id");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"] }, { id: "a", run: ["y"] }] }), "$.merge.checks");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], when: ["x/**"] }] }), "$.merge.checks[0].when");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], requires: ["db"] }] }), "$.merge.checks[0].requires");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], rerun: 1 }] }), "$.merge.checks[0].rerun");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], label: "" }] }), "$.merge.checks[0].label");
+  assert.equal(m({ checks: [{ id: "a", run: ["x", "${merge.nope}"] }] }), "$.merge.checks[0].run[1]");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], optional: "yes" }] }), "$.merge.checks[0].optional");
+  assert.equal(m({ checks: [{ id: "a", run: ["x"], optional: true }] }), "$.merge.checks");
+  assert.deepEqual(parse({ version: 1, services, merge: { checks: [{ id: "a", run: ["x"] }, { id: "b", run: ["y"], optional: true }] } }).merge?.checks, [
+    { id: "a", label: "a", run: ["x"], timeout: 600, rerun: false, requires: [] },
+    { id: "b", label: "b", run: ["y"], timeout: 600, rerun: false, requires: [], optional: true },
+  ]);
+  assert.equal(m({ install: { run: ["x"] } }), "$.merge.install.inputs");
+  assert.equal(m({ install: { run: ["x", "${merge.base}"], inputs: ["l"] } }), "$.merge.install.run[1]");
+  assert.equal(m({ review: "/abs" }), "$.merge.review");
+  assert.equal(m({ review: "../out" }), "$.merge.review");
+  for (const k of ["target", "push", "checks", "install", "review"]) assert.ok(DEFINITION_KEYS.merge.includes(k as never));
+});
+
+test("merge.land (how a branch lands) and merge.request (the request skill folder): optional, strict, outside the hash", async () => {
+  const { defHashOf } = await import("../server/project-services/def-hash");
+  const services = { web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } } };
+  const plain = parse({ version: 1, services, merge: { checks: "none" } });
+  assert.equal(plain.merge?.land, undefined, "absent: merged locally, as every project before");
+  for (const land of ["local", "github-pr", "gitlab-mr", "push-branch"]) {
+    const d = parse({ version: 1, services, merge: { checks: "none", land, request: ".sova/playbooks/request" } });
+    assert.deepEqual(d.merge, { checks: "none", land, request: ".sova/playbooks/request" });
+    assert.equal(defHashOf(d), defHashOf(plain));
+  }
+  const m = (merge: unknown) => refusedAt({ version: 1, services, merge });
+  assert.equal(m({ land: "pr" }), "$.merge.land");
+  assert.equal(m({ land: true }), "$.merge.land");
+  assert.equal(m({ request: "/abs" }), "$.merge.request");
+  assert.equal(m({ request: "../out" }), "$.merge.request");
+});
+
+test("Sova's own definition declares its merge checks", async () => {
+  const { readFileSync } = await import("node:fs");
+  const def = parseDefinition(readFileSync(new URL("../.sova/project.json", import.meta.url), "utf8"));
+  const checks = def.merge?.checks;
+  assert.ok(Array.isArray(checks));
+  assert.deepEqual(checks.filter((c) => !c.optional).map((c) => c.id), ["typecheck", "unit", "integration", "extensions", "spec-replay", "statecharts", "build", "spec", "leak-scan"]);
+  assert.deepEqual(checks.filter((c) => c.optional).map((c) => c.id), ["e2e", "integration-group"]);
+  assert.equal(def.merge?.target, "master");
+  assert.equal(def.merge?.install?.inputs.includes("pnpm-lock.yaml"), true);
+});
+
+test("a definition with no services is valid (a library, a static site built elsewhere, checks only)", () => {
+  for (const d of [{ version: 1 }, { version: 1, services: {} }, { version: 1, merge: { checks: [{ id: "unit", run: ["npm", "test"] }] } }, { version: 1, merge: { checks: "none" } }]) {
+    const def = parse(d);
+    assert.deepEqual(def.services, [], JSON.stringify(d));
+  }
+  const withTest = parse({ version: 1, test: { run: ["npm", "test"], smoke: ["a.test.js"] }, setup: [{ id: "deps", run: ["npm", "ci"] }] });
+  assert.equal(withTest.test?.run[0], "npm");
+  // What would need a service still says so.
+  assert.equal(refusedAt({ version: 1, test: { run: ["npm", "test"], requires: ["db"], smoke: ["a"] } }), "$.test.requires");
+  assert.equal(refusedAt({ version: 1, open: { endpoint: "web.http" } }), "$.open.endpoint");
+  assert.equal(refusedAt({ version: 1, merge: { checks: [{ id: "e2e", run: ["x"], requires: ["web"] }] } }), "$.merge.checks[0].requires");
 });

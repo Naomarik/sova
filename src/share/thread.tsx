@@ -6,6 +6,7 @@ import "./thread.css";
 import { createMarkdownPatcher } from "../vis/hydrate";
 import { batonKinds, renderShareMarkdown, type ShareVisKinds, type ShareVisual } from "./markdown";
 import { mountShareVisual } from "./vis";
+import { PlanCard } from "./plan-card";
 
 // A conversation's items as an outsider reads them: the share page and the owner page render the
 // same thread with these.
@@ -151,7 +152,16 @@ export function MessagePhotos(props: { srcs: string[]; from: string; own?: boole
     name of whoever reads (the share page): the first hand-off to them is "Your question", since the
     status line above already names them. `drawings`: the view's, so a reply's `vis html` runs in
     a frame only while the session allows it (§app.baton/outsider-view). */
-export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n: number) => string; viewer?: string; drawings?: BatonView["drawings"]; tour?: TourHost }) {
+export function Item(props: {
+  item: BatonViewItem;
+  reader?: boolean;
+  photo?: (n: number) => string;
+  viewer?: string;
+  drawings?: BatonView["drawings"];
+  tour?: TourHost;
+  /** A feature request chat's plan cards answer through this (the owner holds the chat); absent: read only. */
+  answerPlan?: (text: string) => Promise<boolean>;
+}) {
   const it = props.item;
   const photos = (m: { images?: BatonViewImage[] }) => m.images ?? [];
   return (
@@ -237,6 +247,7 @@ export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n:
           </aside>
         )}
       </Match>
+      <Match when={it.kind === "plan" && it}>{(pl) => <PlanCard plan={pl().plan} answer={props.answerPlan} drawHtml={props.drawings?.html === true} />}</Match>
       <Match when={it.kind === "done" && it}>
         {(d) => (
           <aside class="share-card" aria-label="Done">

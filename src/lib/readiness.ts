@@ -63,10 +63,22 @@ const STATE_WORD: Record<ReadinessState, string> = {
 /** A worktree's state word (the Session tab's rows and the badge's title). */
 export const readinessWord = (state: ReadinessState): string => STATE_WORD[state];
 
-/** The badge's `title`: one line per worktree, then each routine follow-up in words. */
+/** The branch status line (§chat.worktrees/readiness), counted in code: "merged a1b2c3d · pushed ·
+    live · spec promoted". null with no merge. */
+export function branchStatusLine(st: SessionReadiness["status"]): string | null {
+  if (!st) return null;
+  const parts = [`merged ${st.commit}`];
+  if (st.pushed !== undefined) parts.push(st.pushed ? "pushed" : "not pushed");
+  parts.push(st.live ? "live" : "restart owed");
+  if (st.specDrafts !== undefined) parts.push(st.specDrafts === 0 ? "spec promoted" : `${st.specDrafts} spec draft${st.specDrafts === 1 ? "" : "s"} not promoted`);
+  return `${st.branch}: ${parts.join(" · ")}`;
+}
+
+/** The badge's `title`: the branch status line, one line per worktree, then each routine follow-up in words. */
 export function readinessTitle(r: SessionReadiness | undefined): string | null {
   if (!r || r.trees.length === 0) return null;
-  const lines = r.trees.map((t) => `${t.branch}: ${readinessWord(t.state)}${t.why ? `, ${t.why}` : ""}`);
+  const status = branchStatusLine(r.status);
+  const lines = [...(status ? [status] : []), ...r.trees.map((t) => `${t.branch}: ${readinessWord(t.state)}${t.why ? `, ${t.why}` : ""}`)];
   if (r.restartPending) lines.push("A merge changed the server since it started: restart it to run the new code.");
   if (r.pushPending) lines.push("The merge isn't pushed yet.");
   if (r.cleanup) lines.push(`${r.cleanup} merged worktree${r.cleanup === 1 ? " is" : "s are"} still tracked active.`);

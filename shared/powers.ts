@@ -39,12 +39,15 @@ export interface PowerInfo {
   assistant: boolean;
   /** The switch row's label; refusals name the power with it. */
   label: string;
+  /** What the power means in the Project Assistant column, where that differs: its row, refusals and history
+      lines there use it (§app.project-overseer/autonomy-levels). */
+  assistantLabel?: string;
   /** Only an organization's project has it (people, a roster): a standalone project's view omits it. */
   placedOnly?: true;
 }
 
 export const POWER_INFO: Record<PowerId, PowerInfo> = {
-  gather: { group: "people", oldLevel: "L1", assistant: true, label: "Start, offer and close gatherings", placedOnly: true },
+  gather: { group: "people", oldLevel: "L1", assistant: true, label: "Start, offer and close gatherings", assistantLabel: "Open feature request chats with the owner", placedOnly: true },
   whatsapp: { group: "people", oldLevel: "L1", assistant: false, label: "Message people on WhatsApp", placedOnly: true },
   ownerUpdates: { group: "people", oldLevel: "L1", assistant: false, label: "Post owner updates", placedOnly: true },
   roster: { group: "people", oldLevel: "L2", assistant: false, label: "Approve or decline proposed people", placedOnly: true },
@@ -335,9 +338,12 @@ export const powerGroupsView = (): PowersView["groups"] => POWER_GROUPS.map((g) 
 
 // ---- refusals (the statecharts' power check words them the same; a test pins them) ----------------
 
+/** A power's label in a column: the Project Assistant's own words where it has them. */
+export const powerLabel = (p: PowerId, col: PowerColumn): string => (col === "assistant" ? (POWER_INFO[p].assistantLabel ?? POWER_INFO[p].label) : POWER_INFO[p].label);
+
 export const powerOffSentence = (p: PowerId, col: PowerColumn): string =>
   col === "assistant"
-    ? `${POWER_INFO[p].label} is off for the Project Assistant. Do not retry it. Tell the owner it went to the team: it reaches the operator as a request.`
+    ? `${powerLabel(p, "assistant")} is off for the Project Assistant. Do not retry it. Tell the owner it went to the team: it reaches the operator as a request.`
     : `${POWER_INFO[p].label} is off for the overseer on its own. Do not retry it. File what you would do as an idea (sova_idea) or raise a sova_card card that says what and why; the operator's click starts a turn in which you may act.`;
 
 /** The GET view of a project's powers. Pure. A standalone project (`placed` false) omits the acts only an
@@ -370,6 +376,6 @@ export function powerWord(power: string | undefined, column?: PowerColumn): stri
   const col = column === "assistant" ? "the Project Assistant's switch" : "the overseer's switch";
   if (power === "always") return "No switch needed";
   if (power === "operator") return "The operator's alone";
-  if (isPowerId(power)) return `${POWER_INFO[power].label} (${col})`;
+  if (isPowerId(power)) return `${powerLabel(power, column === "assistant" ? "assistant" : "overseer")} (${col})`;
   return column ? (column === "assistant" ? "The Project Assistant's switches" : "The overseer's switches") : undefined;
 }

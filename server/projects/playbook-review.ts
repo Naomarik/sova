@@ -26,6 +26,8 @@ export interface PlaybookReviewFact extends PlaybookReviewWords {
   since: number;
   /** What it proposes (§app.project-runtime/verb-playbooks). */
   proposes: "definition" | "deploy";
+  /** The branch tip the proposal (its hash) was read at. */
+  commit?: string;
 }
 
 export const DEFAULT_PLAYBOOK_LABEL = "Project verbs";
@@ -58,6 +60,7 @@ export function playbookReviewOf(projectId: string): PlaybookReviewFact | null {
     branch: str(pb.branch) || str(build.branch),
     target: str(build.target) || "main",
     ...(hash ? { hash } : {}),
+    ...(str(bf.commit) ? { commit: str(bf.commit) } : {}),
     proposes,
     since: typeof build.lastTurnAt === "number" ? build.lastTurnAt : typeof pb.at === "number" ? pb.at : 0,
   };

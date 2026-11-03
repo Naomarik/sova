@@ -13,7 +13,7 @@ import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact"
 import { logAction, NOTES_MAX, readNotes, writeNotes } from "./overseer-store";
 import { addTodo, readTodos, removeTodo, TodoError, updateTodo } from "./overseer-todos";
 import { renderTranscript, sessionRef } from "./session-guards";
-import { alignDropRefusal, describeCodingMode, profileName, type ModeRequest } from "./project-coding-mode";
+import { ALREADY_AGREED_PARAM, alignDropRefusal, alreadyAgreedOf, confirmBriefWords, describeCodingMode, overseerStartMode, profileName, type ModeRequest } from "./project-coding-mode";
 import { OrgError } from "./org-error";
 import { statechartInfo, statechartVersions } from "./statecharts";
 import type { ProjectOverseerPaths } from "./project-overseer-store";
@@ -21,16 +21,22 @@ import type { EnabledEvent } from "./statecharts";
 import type { FeedEntry } from "./org-host";
 import type { HeldAct, PipelineRow } from "../shared/pipeline";
 import { PREVIEW_PURPOSE_MAX, type PreviewView } from "../shared/preview-links";
-import { holdsPreviewLink, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
+import { holdsPreviewLink, keptLabels, keptPreview, linkLabel, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
+import { listPreviews } from "./preview-links";
 import { handoffOf } from "./project-previews";
 import { contributedRead, otherSessionsOf, type GapPart, type OverseerToolCtx } from "./projects/contributions";
 import { projectEngine } from "./project-services/routes";
 import { projectOverseerVerbsTool } from "./project-services/tools";
+import { projectRootOf } from "./project-root";
+import { copyApproval, copyItem, leftoverItem, liveLeftoverHost, realCopyRowHost, starterWorking } from "./overseer-copies";
+import type { ClickChoice } from "../shared/overseer-card";
 import type { VerbActOutcome } from "./project-services/engine";
 import { READ_VERBS } from "../shared/project-contract";
 import { copyIntoWorktree, deleteFile, fileListLine, namedFileRows } from "./project-files-tool";
 import { FileRefusal } from "./project-files";
 import { trialActWait } from "./chat-handle";
+import { runSettingsTool, SETTINGS_TOOL_DESCRIPTION, SETTINGS_TOOL_PARAMETERS } from "./project-settings-tool";
+import { SettingsRefusal } from "./project-settings";
 
 /**
  * The project overseer's tools (§app.project-overseer/tools, /autonomy-levels). Scoped to one
@@ -60,6 +66,9 @@ export interface PoToolHost {
   effective(): { overseer: PowerMap; assistant: PowerMap; brake: Brake | null; autonomy: Autonomy; reason?: string };
   /** The run is the operator's (their message from the UI). */
   attended(): boolean;
+  /** The operator's click that opened this run, per card row with its chosen label (§app.overseer/copies). Absent: its
+      cards take no copies or leftover processes and sova_project_verbs has no copy verbs. */
+  confirmedClicks?(): ClickChoice[] | null;
   overseerId(): string;
   /** The engine that holds the project. */
   engine(): string;
@@ -79,11 +88,12 @@ export interface PoToolHost {
   codingSwitch(req: ModeRequest): { mode: CodingModeSwitch | null } | { error: string };
   /** This computer's subagent profiles (sova_list_subagent_profiles; the default's name in a start's result). */
   subagentProfiles(): SubagentProfilesInfo;
-  /** A verb playbook's run waiting on the operator's alignment answers, or null (any other session, or not waiting). */
+  /** A session whose alignment questions are the operator's alone (a verb playbook's run, or one an Overseer started asking
+      the operator to confirm the brief, §app.project-overseer/confirm-brief) waiting on them, or null (any other session, or not waiting). */
   playbookWaiting(sessionId: string): Promise<{ title: string; questions: number } | null>;
   /** A new ordinary session for `cwd` (inside the root; it runs in the same folder of its own
       worktree when the root is in git), its mode set and pinned, then its first prompt sent. */
-  createCoding(input: { cwd: string; prompt: string; title?: string; model?: string; thinking?: string; mode: ProjectCodingMode; gap?: string; decisions?: string[] }): Promise<{ id: string; path: string; cwd: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string; held?: { id: string; until: number } }>;
+  createCoding(input: { cwd: string; prompt: string; title?: string; model?: string; thinking?: string; mode: ProjectCodingMode; gap?: string; decisions?: string[]; alreadyAgreed?: boolean }): Promise<{ id: string; path: string; cwd: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string; held?: { id: string; until: number }; confirmBrief?: boolean }>;
   /** One message to a coding session, as its composer would send it (a build's through its statechart's build/prompt, `live`
       when a terminal holds it); with `mode`, what it names of the session's mode and subagent profile is set (the mode pinned)
       first, and the result says what it is on. Held when the statechart holds it. */
@@ -167,18 +177,25 @@ const PLAIN_POWER: Record<string, ToolPower> = {
   sova_draft_specs: "always", // every conversation's draft vs master, a read
   sova_draft_approve: "operator",
   sova_draft_build: "operator",
+  sova_settings: "per-op", // §app.project-overseer/settings: it prepares; applying is the operator's click
+  sova_whatsapp: "per-op", // §app.outreach/overseer-sender (server/overseer-whatsapp-part.ts): status any run, start the operator's
 };
 
 /** Per op, for the tools whose ops differ in power. */
 export const OP_POWER: Record<string, Record<string, PowerId | "always" | "operator">> = {
-  sova_roster: { read: "always", approve: "roster", decline: "roster" },
+  sova_roster: { read: "always", approve: "roster", decline: "roster", add: "operator", contact: "operator" },
   sova_files: { list: "always", copy: "codingPrompt", delete: "operator" },
   sova_correct: { reopen: "bookkeeping", "skip-stall": "bookkeeping", relink: "bookkeeping", "clear-failed": "bookkeeping", merged: "markMerged" },
   sova_hold: { cancel: "always" },
+  // Applying a settings card (and its approvals) is never a tool's op: the operator's click on the card.
+  sova_settings: { get: "always", reference: "always", propose: "always", withdraw: "always", apply: "operator" },
+  sova_whatsapp: { status: "always", start: "operator" },
   sova_project_verbs: {
     status: "always", logs: "always", doctor: "always", down: "always", revoke: "always",
     create: "copiesRun", up: "copiesRun", apply: "copiesRun", conform: "copiesRun", test: "copiesRun",
     reset: "copiesReset", teardown: "copiesReset", share: "share", onboard: "onboard",
+    // §app.overseer/copies: the read any time; the stop only in the turn the operator's click opens.
+    leftovers: "always", "stop-leftover": "operator",
     "deploy.status": "always", "deploy.logs": "always", "deploy.check": "always", "deploy.request": "always",
     "deploy.plan": "deploy", "deploy.run": "deploy", "deploy.rollback": "operator",
   },
@@ -335,6 +352,13 @@ export function gapOf(q: { gap?: unknown }): string {
   return g.startsWith("§") ? g : `§${g}`;
 }
 
+/** A call's arguments as its action log keeps them: every `contact` value is `[contact]`. */
+function contactScrubbed<T>(v: T): T {
+  if (Array.isArray(v)) return v.map(contactScrubbed) as T;
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, k === "contact" && x !== undefined ? "[contact]" : contactScrubbed(x)])) as T;
+  return v;
+}
+
 // ---- the tools -------------------------------------------------------------------------------------
 
 export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor = serverRedactor): Tool[] {
@@ -343,8 +367,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
   function act(name: string, run: (params: any, toolCallId: string) => Promise<Out>, counts: PoLimitKind | undefined = COUNTS[name]) {
     return async (toolCallId: string, params: any, signal?: AbortSignal): Promise<Out> => {
       const log = (outcome: "ok" | "partial" | "refused" | "error", error?: string, note?: string) =>
-        // A kept preview link never reaches the log, even in a refused call's arguments (§app.project-overseer/previews).
-        logAction(redactPreviewLinksDeep({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: params, outcome, ...(error !== undefined ? { error } : {}), ...(note ? { note } : {}) }), p.actions);
+        // A kept preview link never reaches the log, even in a refused call's arguments (§app.project-overseer/previews);
+        // a contact it was given (sova_roster add, contact) is `[contact]` there, never the value.
+        logAction(redactPreviewLinksDeep({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: contactScrubbed(params), outcome, ...(error !== undefined ? { error } : {}), ...(note ? { note } : {}) }), p.actions);
       try {
         const refused = operatorOnlyRefusal(name, host.attended());
         if (refused) throw new Refusal(refused);
@@ -385,9 +410,12 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     const root = host.project().root;
     const all = await host.sessions();
     const mine = host.startedCoding();
-    const coding = all.filter((s) => (underRoot(root, s.cwd) || mine.has(s.id)) && !s.overseer && !s.baton && !s.projectOverseer && !s.workerSession);
+    const coding = all.filter((s) => (underRoot(root, s.cwd) || mine.has(s.id)) && !s.overseer && !s.baton && !s.projectOverseer && !s.workerSession && !s.queueChat);
     return { coding, otherIds: new Set(others().flatMap((o) => o.list().map((x) => x.id))) };
   }
+
+  /** Its project's root, as the services engine keys it. */
+  const ownRoot = async (): Promise<string> => (await projectRootOf(host.project().root)) ?? host.project().root;
 
   /** This project overseer's own conversation: by id, or by its marker for this project. */
   const isOwn = (s: SessionSummary) => s.id === host.overseerId() || s.projectOverseer?.projectId === host.project().id;
@@ -558,6 +586,17 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           return id ? { id, title: m.ideas[id]!.title } : null;
         },
         todo: (ref) => readTodos(p.todos).todos.find((t) => t.id === ref) ?? null,
+        // Its own project's running copies and leftover processes, never another's (§app.overseer/copies).
+        ...(host.confirmedClicks
+          ? {
+              copy: async (ref: string) => copyItem(ref, realCopyRowHost({ session: async (id) => (await host.sessions()).find((x) => x.id === id) ?? null, projectName: () => host.project().name }), await ownRoot()),
+              leftover: async (project: string, port: number) => {
+                const root = await ownRoot();
+                if (((await projectRootOf(project)) ?? project) !== root) return { refused: `port ${port} of ${project}: a card here lists only this project's leftover processes (${root}).` };
+                return leftoverItem(root, port, liveLeftoverHost(projectEngine()), () => host.project().name);
+              },
+            }
+          : {}),
       },
       // A session it may read, or an outside https URL; never an org page (§app.overseer/confirm).
       link: async (t) => {
@@ -645,9 +684,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       label: "Previews",
       description:
         "The project's preview links: each shows one coding session's running app (a port it serves, or a folder of its worktree that Sova serves) to a stakeholder at its own public address, until it is deleted or expires. " +
-        "Lists each one's id, whether the operator has its link (previews made before links were kept have none), what it serves, its coding session and branch, its purpose, who made it, its expiry and whether the app answers now. Active ones first. You never see a link: send a preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has it on the project page. " +
-        "It also lists the links to the project's running copies (sova_project_verbs share): each one's id, endpoint, the copy's branch, expiry and state. In a standalone project such a link is only for the operator; in an organization's project you may send it to one of its people by its id (sova_send_to_person).",
-      promptSnippet: "list the project's preview links and running copies' links (id, what it serves, state; never the link)",
+        "Lists each one's id, its link (previews made before links were kept have none), what it serves, its coding session and branch, its purpose, who made it, its expiry and whether the app answers now. Active ones first. Anyone with a link can use the app: give it to the operator in your reply when they ask for it; send a preview to a person with sova_send_to_person and its `preview` id (they get their own link to it). " +
+        "It also lists the links to the project's running copies (sova_project_verbs share): each one's id, endpoint, the copy's branch, expiry, state and link. Give such a link to the operator in a reply; in an organization's project you may also send it to one of its people by its id (sova_send_to_person).",
+      promptSnippet: "list the project's preview links and running copies' links (id, what it serves, state, link)",
       parameters: obj({}),
       execute: read(async () => {
         const all = await host.previews();
@@ -664,9 +703,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       description:
         "Start or delete a preview link: one of the project's coding sessions' running apps at its own public address, for a stakeholder to see now. " +
         "start: `session` (a coding session with a worktree), and either `port` (one that session already serves: the program listening must run from its worktree) or `folder` (a folder of its worktree, relative to it, that Sova serves: built static files, never a dot-folder), plus `purpose` (one line: what it shows and to whom). " +
-        "Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now and check it answers. You never see the link (it would land in your session file): send the preview to a person with sova_send_to_person and its `preview` id (they get their own link to it), or tell the operator, who has the link on the project page. Sova never starts the app: if it stopped, have its coding session start it again (sova_send). " +
-        "Unattended it needs L1 and waits in a hold the operator can cancel. off: `id` deletes one at once and for good (its link and every link sent from it stop working, and nothing brings one back), at any level; delete a preview once it has served its purpose.",
-      promptSnippet: "start (L1, held unattended) or delete a preview link of a coding session's app",
+        "Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now and check it answers. The result carries its link: give it to the operator in your reply when they ask for it (it stays in your conversation); send the preview to a person with sova_send_to_person and its `preview` id (they get their own link to it). Sova never starts the app: if it stopped, have its coding session start it again (sova_send). " +
+        "Unattended it needs the Share power and waits in a hold the operator can cancel. off: `id` deletes one at once and for good (its link and every link sent from it stop working, and nothing brings one back), always allowed; delete a preview once it has served its purpose.",
+      promptSnippet: "start (the Share power, held unattended) or delete a preview link of a coding session's app",
       parameters: obj(
         {
           op: str("start | off", { enum: ["start", "off"] }),
@@ -702,7 +741,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         if ("held" in made) return { content: text(heldText(`the preview link "${cut(purpose, 80)}"`, made.held)), details: { v: 1, held: made.held.id } };
         const v = made.preview;
         return {
-          content: text(`Made a preview link: ${previewLine(v).slice(2)}. Check sova_previews says it is serving; the link is the operator's (you never see it): send it to a person with sova_send_to_person, preview "${v.id}", or tell the operator it is ready.`),
+          content: text(`Made a preview link: ${previewLine(v).slice(2)}. Check sova_previews says it is serving; give the link to the operator in your reply, or send it to a person with sova_send_to_person, preview "${v.id}" (they get their own link).`),
           details: { v: 1, preview: handoffOf(v), note: `Made a preview link: ${cut(purpose, 120)}` },
         };
       }),
@@ -712,10 +751,10 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     {
       name: "sova_create_session",
       label: "Start coding session",
-      // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
+      // Its card reads the recorded result (EAGER_TOOLS): never a call another tool made.
       exposure: "model-only",
       description:
-        "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Counts against your coding caps.",
+        "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
       promptSnippet: "start a coding session in the project with a first prompt",
       parameters: obj(
         {
@@ -725,8 +764,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           model: str('Model ref "provider/model".'),
           thinking: str("off | minimal | low | medium | high | xhigh"),
           mode: str("normal | delegate. Omitted: this computer's default."),
-          minor_modes: { type: "array", items: { type: "string" }, description: 'The minor modes on, the whole set: any of align, spec, vis, codemode, e.g. ["spec"]; [] turns them all off. Omitted: this computer\'s default.' },
+          minor_modes: { type: "array", items: { type: "string" }, description: 'The minor modes on, the whole set: any of align, spec, vis, e.g. ["spec"]; [] turns them all off. Omitted: this computer\'s default.' },
           subagent_profile: str("A subagent profile id or off (sova_list_subagent_profiles), for this session only. Omitted: this computer's default profile."),
+          already_agreed: { type: "boolean", description: ALREADY_AGREED_PARAM },
           ...(gaps
             ? { gap: str(gaps.param), decisions: strs("With a gap: the promoted, not yet built decisions it builds (DecisionRow ids); omitted: all of them.") }
             : {}),
@@ -746,15 +786,21 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         if (typeof q.prompt !== "string" || !q.prompt.trim()) throw new Refusal("prompt must not be blank.");
         const gap = gaps ? gapOf(q) : undefined;
         const decisions = gaps && Array.isArray(q.decisions) ? q.decisions.map(String) : undefined;
-        const made = await host.createCoding({ cwd, prompt: q.prompt, mode: m.mode, ...(gap ? { gap } : {}), ...(decisions?.length ? { decisions } : {}), ...(q.title ? { title: String(q.title) } : {}), ...(q.model ? { model: String(q.model) } : {}), ...(q.thinking ? { thinking: String(q.thinking) } : {}) });
+        const alreadyAgreed = alreadyAgreedOf(q.already_agreed);
+        // Not already agreed: align on, so the operator answers the confirm question (§app.project-overseer/confirm-brief).
+        const runs = overseerStartMode(m.mode, alreadyAgreed);
+        const made = await host.createCoding({ cwd, prompt: q.prompt, mode: runs, ...(alreadyAgreed ? { alreadyAgreed } : {}), ...(gap ? { gap } : {}), ...(decisions?.length ? { decisions } : {}), ...(q.title ? { title: String(q.title) } : {}), ...(q.model ? { model: String(q.model) } : {}), ...(q.thinking ? { thinking: String(q.thinking) } : {}) });
         if (made.held) return { content: text(heldText(`starting the coding session "${q.title ? String(q.title) : cut(q.prompt, 60)}"`, made.held)), details: { held: made.held.id } };
         const where = made.worktree ? `its worktree ${made.worktree.path} on ${made.worktree.branch}` : `the project root ${made.cwd} (${made.note ?? "no worktree"})`;
         const note = made.worktree ? `On ${made.worktree.branch}.` : `In the project root: ${made.note ?? "no worktree."}`;
         const said = link({ id: made.id, title: q.title ? String(q.title) : cut(q.prompt, 60) });
         // Created and listed, but its first prompt was never sent: a failure the model must see.
         if (made.notPrompted) throw new Error(`${made.notPrompted} ${said} is in ${where}; send the prompt with sova_send once its mode is set.`);
-        const profile = profileName(host.subagentProfiles(), m.mode.subagentProfile);
-        return { content: text(`Started ${said} in ${where}, mode ${describeCodingMode(m.mode)}${profile ? `, subagent profile ${profile}` : ""}.`), details: { ...made, mode: m.mode, note } };
+        const profile = profileName(host.subagentProfiles(), runs.subagentProfile);
+        return {
+          content: text(`Started ${said} in ${where}, mode ${describeCodingMode(runs)}${profile ? `, subagent profile ${profile}` : ""}.${confirmBriefWords(!!made.confirmBrief, alreadyAgreed)}`),
+          details: { ...made, mode: runs, note },
+        };
       }),
     },
     {
@@ -768,7 +814,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           session: str(SESSION_PARAM),
           text: str("The message."),
           mode: str("normal | delegate: change its mode first."),
-          minor_modes: { type: "array", items: { type: "string" }, description: 'Its minor modes on, the whole set, first: any of align, spec, vis, codemode, e.g. ["spec"]; [] turns them all off.' },
+          minor_modes: { type: "array", items: { type: "string" }, description: 'Its minor modes on, the whole set, first: any of align, spec, vis, e.g. ["spec"]; [] turns them all off.' },
           subagent_profile: str("Change its subagent profile first: an id or off (sova_list_subagent_profiles)."),
         },
         ["session", "text"],
@@ -804,7 +850,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       label: "Files",
       description:
         "The files people sent this project in gathering sessions with files on. list: each one's id, name, sender, gathering, time, size, kind and status (Received, or Confirmed once its gathering's model and the person agreed it is what's needed). " +
-        "copy {id, session}: into that coding session's worktree as incoming/<name> (needs L3 in a turn the operator didn't start), so the session can use it; tell the session where it is with sova_send. delete {id}: only in a turn the operator started.",
+        "copy {id, session}: into that coding session's worktree as incoming/<name> (needs Send coding sessions prompts in a turn the operator didn't start), so the session can use it; tell the session where it is with sova_send. delete {id}: only in a turn the operator started.",
       promptSnippet: "list files people sent; copy one into a coding session's worktree",
       parameters: obj({ op: str("list | copy | delete", { enum: ["list", "copy", "delete"] }), id: str("For copy and delete: the file's id (f_…)."), session: str(`For copy: ${SESSION_PARAM}`) }, ["op"]),
       execute: async (toolCallId: string, params: any) => {
@@ -929,6 +975,22 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         return { content: text(`${String(q.session).trim()} is now in ${now.join(", ")}.`), details: { states: now, note: `Set state by hand: ${cut(reason, 160)}` } };
       }),
     },
+    // ---- the project's settings (§app.project-overseer/settings) -----------------------------------------
+    {
+      name: "sova_settings",
+      label: "Settings",
+      description: SETTINGS_TOOL_DESCRIPTION,
+      promptSnippet: "every project setting: get, reference, propose a change (a card the operator applies), withdraw",
+      parameters: SETTINGS_TOOL_PARAMETERS as any,
+      execute: act("sova_settings", async (q) => {
+        try {
+          return await runSettingsTool(host.project().id, q, host.attended());
+        } catch (err) {
+          if (err instanceof SettingsRefusal || (err instanceof OrgError && err.status !== 404)) throw new Refusal(err.message);
+          throw err;
+        }
+      }),
+    },
     // ---- the operator's own list ----------------------------------------------------------------------
     {
       name: "sova_todo",
@@ -960,7 +1022,17 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     // Project instances (§app.project-services/callers): this project only; every verb but the reads is the project
     // statechart's services/down or services/run, sent once the engine's own checks pass, and logged like any act.
     (() => {
-      const t = projectOverseerVerbsTool(projectEngine, { id: () => host.overseerId(), root: () => host.project().root, act: (verb, instance, detail) => host.servicesAct(verb, instance, detail), ...(host.onboard ? { onboard: (why: string) => host.onboard!(why) } : {}) });
+      const clicks = host.confirmedClicks ? () => host.confirmedClicks!() : null;
+      const t = projectOverseerVerbsTool(projectEngine, {
+        id: () => host.overseerId(),
+        root: () => host.project().root,
+        act: (verb, instance, detail) => host.servicesAct(verb, instance, detail),
+        ...(host.onboard ? { onboard: (why: string) => host.onboard!(why) } : {}),
+        // Its own project's copies and leftover processes, after the operator's click (§app.overseer/copies).
+        ...(clicks ? { copies: { clicks, approved: copyApproval(clicks), host: () => liveLeftoverHost(projectEngine()), root: ownRoot } } : {}),
+        // The operator's word opens stopping a linked copy; a finished conversation's copy, its teardown (§app.overseer/copies).
+        turn: { word: () => host.attended(), working: starterWorking(async (id) => (await host.sessions()).find((x) => x.id === id) ?? null) },
+      });
       const exec = (id: string, params: any) => t.execute(id, params, undefined, undefined, undefined as never) as Promise<Out>;
       // The engine's own refusal or failure (forbidden, needs-confirm, a verb that failed) comes back as the result,
       // never thrown: the model reads it whole, and the activity log records it refused with the engine's sentence.
@@ -976,32 +1048,52 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         return { content: text(said), details: { verb: "deploy/run" } };
       });
       const viaAct = (v: unknown) => host.deployAct && (v === "deploy.plan" || v === "deploy.run");
-      return { ...t, execute: (id: string, params: any) => (viaAct(params?.verb) ? deployed(id, params) : (READ_VERBS as readonly string[]).includes(String(params?.verb)) ? exec(id, params) : acted(id, params)) } as Tool;
+      const reads = new Set<string>([...READ_VERBS, "leftovers"]);
+      return { ...t, execute: (id: string, params: any) => (viaAct(params?.verb) ? deployed(id, params) : reads.has(String(params?.verb)) ? exec(id, params) : acted(id, params)) } as Tool;
     })(),
     // Another layer's tools (an org's roster, gatherings, decisions, owner updates), wrapped as these are.
     ...host.contributed({ act: (name, run, counts) => act(name, run, counts), read, heldText }),
   ];
 
-  return tools.map((t) => previewLinkFree(redactingTool(t, redactor)));
+  return tools.map((t) => previewLinkFree(redactingTool(t, redactor), () => host.project().id));
 }
 
 /**
- * No tool result or error of the overseer's carries a kept preview link (§app.project-overseer/previews): its
- * results are part of its session file, which the org's workspace repo commits. The preview tools never put one
- * there; this is the backstop for any other text that holds one (a transcript sova_read_session reads, say).
+ * The overseer sees its own project's kept preview links, and may hand one to the operator
+ * (§app.project-overseer/previews); no tool result or error of its carries any other: a person's own link
+ * (§app.outreach/links) or another project's. This is the backstop for any text that holds one (a transcript
+ * sova_read_session reads, a file). With no `project`, every kept link is redacted.
  */
-export function previewLinkFree(t: Tool): Tool {
+export function previewLinkFree(t: Tool, project?: () => string): Tool {
+  const labels = () => {
+    const all = keptLabels();
+    if (!project) return all;
+    const own = new Set(ownPreviewLabels(project()));
+    return all.filter((l) => !own.has(l));
+  };
   return {
     ...t,
     execute: async (...args: Parameters<Tool["execute"]>) => {
+      const hidden = labels();
       try {
-        return redactPreviewLinksDeep(await t.execute(...args));
+        return redactPreviewLinksDeep(await t.execute(...args), hidden);
       } catch (err) {
-        if (err instanceof Error && holdsPreviewLink(err.message)) throw new Error(redactPreviewLinks(err.message));
+        if (err instanceof Error && holdsPreviewLink(err.message, hidden)) throw new Error(redactPreviewLinks(err.message, hidden));
         throw err;
       }
     },
   };
+}
+
+/** The labels of `projectId`'s own previews' kept links (never a person's sibling). */
+function ownPreviewLabels(projectId: string): string[] {
+  const out: string[] = [];
+  for (const v of listPreviews({ projectId })) {
+    if (v.siblingOf) continue;
+    const l = linkLabel(keptPreview(v.id)?.url);
+    if (l) out.push(l);
+  }
+  return out;
 }
 
 /** The session parameter's description: the id as the tools print it. */
@@ -1010,7 +1102,7 @@ const SESSION_PARAM = 'Session id as sova_list_sessions lists it (a bare id; "so
 /** A gathering's texts reach a person as written: a kept preview link never goes there (§app.project-overseer/previews). */
 export const PREVIEW_IN_GATHERING = "A preview link goes to people through the operator, never in a gathering's title, question, goal or why.";
 
-/** One preview as the tools list it: id, what it serves, its session, purpose, who, state, expiry and whether a link is kept (never the link). Pure. */
+/** One preview as the tools list it: id, what it serves, its session, purpose, who, state, expiry and its kept link. Pure. */
 export function previewLine(v: PreviewView): string {
   if (v.instance) return copyLinkLine(v);
   const t = v.target ?? { kind: "port" as const, port: v.port };
@@ -1019,15 +1111,15 @@ export function previewLine(v: PreviewView): string {
     v.state === "off" ? "turned off" : v.state === "expired" ? "expired" : t.kind === "static" ? (v.running ? "active, serving the folder" : "active, not serving the folder") : v.running ? "active, app is running" : `active, nothing on port ${t.port}`;
   const session = v.sessionId ? ` · ${v.sessionId}${v.sessionTitle ? ` "${cut(v.sessionTitle, 60)}"` : ""}${v.branch ? ` on ${v.branch}` : ""}${v.sessionFrom === "worktree" ? " (matched by its worktree)" : ""}` : "";
   const who = v.createdBy === "operator" ? "the operator" : "you";
-  return `- ${v.id} · ${what}${session}${v.purpose ? ` · "${cut(v.purpose, 120)}"` : ""} · made by ${who} · ${state} · ${v.state === "active" ? `expires ${v.expiresAt}` : v.revokedAt ? `off since ${v.revokedAt}` : `expired ${v.expiresAt}`} · ${v.url ? "link kept for the operator" : "no link kept for the operator (shown only when it was made)"} · send it by its id`;
+  return `- ${v.id} · ${what}${session}${v.purpose ? ` · "${cut(v.purpose, 120)}"` : ""} · made by ${who} · ${state} · ${v.state === "active" ? `expires ${v.expiresAt}` : v.revokedAt ? `off since ${v.revokedAt}` : `expired ${v.expiresAt}`} · ${v.url ? (v.state === "active" ? `link ${v.url}` : "link no longer active") : "no link kept (shown only when it was made)"} · send it by its id`;
 }
 
-/** A running copy's share link (§app.project-overseer/previews): id, endpoint, the copy's branch, who, state and expiry (never the link). Pure. */
+/** A running copy's share link (§app.project-overseer/previews): id, endpoint, the copy's branch, who, state, expiry and its link. Pure. */
 export function copyLinkLine(v: PreviewView): string {
   const state = v.state === "off" ? "revoked" : v.state === "expired" ? "expired" : v.running ? "active, the copy answers" : "active, the copy is not running";
   const who = v.createdBy === "operator" ? "the operator" : "you";
   const when = v.state === "active" ? `expires ${v.expiresAt}` : v.revokedAt ? `revoked ${v.revokedAt}` : `expired ${v.expiresAt}`;
-  return `- ${v.id} · running copy ${v.instance}, endpoint ${v.endpoint ?? `port ${v.port}`}, on ${v.branch ?? "the main checkout"} · shared by ${who} · ${state} · ${when} · send it by its id`;
+  return `- ${v.id} · running copy ${v.instance}, endpoint ${v.endpoint ?? `port ${v.port}`}, on ${v.branch ?? "the main checkout"} · shared by ${who} · ${state} · ${when}${v.url && v.state === "active" ? ` · link ${v.url}` : ""} · send it by its id`;
 }
 
 /** The built-ins it has besides its own tools: file access in the project root (write and edit in the operator's turns only). */

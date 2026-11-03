@@ -97,38 +97,51 @@ describe("the Overseer's read/grep/find/ls never reach a secret", () => {
   });
 });
 
-describe("the project overseer's read/grep/find/ls stay inside the project root", () => {
-  const { box, proot, orgWs, innerWs, state, IN, pcall, outside, excluded } = cbox;
+describe("the project overseer's read/grep/find/ls read anywhere but other clients' work, Sova's and pi's state and secrets", () => {
+  const { box, proot, orgWs, innerWs, state, client, exclusions, IN, pcall, outside, excluded, otherProject } = cbox;
 
-  test("read: files in the root read; every way out is refused", async () => {
+  test("read: the root and the rest of the host read; every excluded folder is refused, by path, `..` and symlink", async () => {
     for (const p of IN) assert.match(await pcall("read", { path: p }), /MARK/, p);
-    assert.match(await pcall("read", { path: "src/a.ts" }), /MARK/);
     assert.match(await pcall("read", { path: "src/../README.md" }), /MARK/);
-    assert.equal(await pcall("read", { path: join(proot, ".env") }), refused, "still no secret inside the root");
-    for (const p of [join(orgWs, "roster.json"), join(box, "outside.txt"), join(state, "baton-links.json"), join(home, "AGENTS.md"), "/etc/hostname"])
-      assert.equal(await pcall("read", { path: p }), outside, p);
-    for (const p of ["../outside.txt", "../org/roster.json", "src/../../outside.txt", "~/AGENTS.md", "@../outside.txt"]) assert.equal(await pcall("read", { path: p }), outside, p);
-    for (const p of ["org-link/roster.json", "notes.md", "up/outside.txt"]) assert.equal(await pcall("read", { path: p }), outside, `symlink ${p}`);
-    assert.equal(await pcall("read", { path: "ws/roster.json" }), excluded, "a workspace inside the root");
+    for (const p of [join(box, "outside.txt"), "../outside.txt", "src/../../outside.txt", join(home, "AGENTS.md"), "notes.md", "up/outside.txt"])
+      assert.match(await pcall("read", { path: p }), /MARK/, `outside the root: ${p}`);
+    assert.equal(await pcall("read", { path: join(proot, ".env") }), refused, "still no secret");
+    for (const p of [join(orgWs, "roster.json"), "../org/roster.json", "org-link/roster.json", "up/org/roster.json", "ws/roster.json", join(state, "baton-links.json"), "up/state/baton-links.json"])
+      assert.equal(await pcall("read", { path: p }), excluded, p);
+    for (const p of [join(client, "plan.md"), "../client/plan.md", "client-link/plan.md", "up/client/plan.md"]) assert.equal(await pcall("read", { path: p }), otherProject, p);
+    for (const p of Object.values(SECRETS)) assert.equal(await pcall("read", { path: p }), refused, `secret ${p}`);
   });
 
-  test("ls: the root lists without the excluded and the escaping entries; nothing else lists", async () => {
+  test("ls: a listing from a parent leaves the excluded folders and links to them out; an excluded folder is refused", async () => {
     const list = await pcall("ls", { path: "." });
     assert.match(list, /^README\.md$/m);
     assert.match(list, /^src\/$/m);
-    assert.doesNotMatch(list, /^(ws|org-link|notes\.md|up|\.env)\/?$/m);
-    for (const p of ["..", orgWs, "/", "~", "org-link", "up", "../proj/.."]) assert.equal(await pcall("ls", { path: p }), outside, p);
-    assert.equal(await pcall("ls", { path: "ws" }), excluded);
+    assert.doesNotMatch(list, /^(ws|org-link|client-link|\.env)\/?$/m);
+    const up = await pcall("ls", { path: ".." });
+    assert.match(up, /^outside\.txt$/m);
+    assert.match(up, /^proj\/$/m);
+    assert.doesNotMatch(up, /^(org|state|client)\/?$/m);
+    for (const p of [orgWs, "org-link", "ws", state]) assert.equal(await pcall("ls", { path: p }), excluded, p);
+    for (const p of [client, "client-link"]) assert.equal(await pcall("ls", { path: p }), otherProject, p);
   });
 
-  test("find: a path outside the root, or an excluded folder, is refused (searches from the root: the integration file)", async () => {
-    for (const p of ["..", "/", box, "org-link", "~"]) assert.equal(await pcall("find", { pattern: "*", path: p }), outside, p);
-    assert.equal(await pcall("find", { pattern: "*", path: "ws" }), excluded);
+  test("find and grep: an excluded folder is refused (searches from a parent: the integration file)", async () => {
+    for (const name of ["find", "grep"] as const) {
+      const args = (path: string) => (name === "find" ? { pattern: "*", path } : { pattern: "MARK", path });
+      for (const p of [orgWs, "org-link", "ws", state]) assert.equal(await pcall(name, args(p)), excluded, `${name} ${p}`);
+      for (const p of [client, "client-link"]) assert.equal(await pcall(name, args(p)), otherProject, `${name} ${p}`);
+    }
   });
 
-  test("grep: a path outside the root, or an excluded folder, is refused (searches from the root: the integration file)", async () => {
-    for (const p of ["..", "/", box, orgWs, "org-link", "notes.md", "~", "../outside.txt"]) assert.equal(await pcall("grep", { pattern: "MARK", path: p }), outside, p);
-    assert.equal(await pcall("grep", { pattern: "MARK", path: "ws" }), excluded);
+  test("held to the root (context files, writes): the same confinement without readAnywhere", () => {
+    const rooted = new RootConfinement(proot, exclusions);
+    assert.equal(rooted.problem(join(box, "outside.txt")), outside.slice("ERROR: ".length));
+    assert.equal(rooted.problem(join(proot, "README.md")), null);
+    assert.equal(rooted.problem(join(innerWs, "roster.json")), EXCLUDED_REFUSAL);
+    const anywhere = new RootConfinement(proot, exclusions, [], { readAnywhere: true });
+    assert.equal(anywhere.problem(join(box, "outside.txt")), null);
+    assert.equal(anywhere.writeProblem(join(box, "outside.txt")), outsideRootWriteRefusal(proot), "a write stays in the root");
+    assert.equal(anywhere.writeProblem(join(innerWs, "roster.json")), EXCLUDED_WRITE_REFUSAL);
   });
 
   test("read alone opens the conversation's own attachments folder, and nothing beside it", async () => {
@@ -145,7 +158,7 @@ describe("the project overseer's read/grep/find/ls stay inside the project root"
     symlinkSync(join(box, "outside.txt"), join(own, "sova-link.txt"));
     symlinkSync(other, join(own, "sova-other"));
     const atools = Object.fromEntries(
-      overseerFileTools(proot, guard, undefined, () => new RootConfinement(proot, [orgWs, innerWs, state], [own])).map((t) => [t.name, t]),
+      overseerFileTools(proot, guard, undefined, () => new RootConfinement(proot, exclusions, [own], { readAnywhere: true })).map((t) => [t.name, t]),
     );
     const acall = async (name: string, params: Record<string, unknown>) => {
       try {
@@ -159,15 +172,15 @@ describe("the project overseer's read/grep/find/ls stay inside the project root"
     assert.match(await acall("read", { path: join(own, "sova-shot.png") }), /\[image image\/png\]/, "an image comes back as an image");
     assert.match(await acall("read", { path: "README.md" }), /MARK/, "the root still reads");
     for (const p of [join(other, "sova-theirs.txt"), join(state, "baton-links.json"), join(own, "..", "..", "baton-links.json"), join(own, "..", basename(other), "sova-theirs.txt")])
-      assert.equal(await acall("read", { path: p }), outside, p);
-    for (const p of [join(own, "sova-link.txt"), join(own, "sova-other", "sova-theirs.txt")]) assert.match(await acall("read", { path: p }), /^ERROR: /, `symlink ${p}`);
-    for (const p of [join(own, "..", "..", "..", "outside.txt"), join(home, "AGENTS.md"), "/etc/hostname"]) assert.equal(await acall("read", { path: p }), outside, p);
-    // Only read: grep, find and ls stay in the root.
-    assert.equal(await acall("ls", { path: own }), outside);
-    assert.equal(await acall("find", { pattern: "*", path: own }), outside);
-    assert.equal(await acall("grep", { pattern: "MARK", path: own }), outside);
+      assert.equal(await acall("read", { path: p }), excluded, p);
+    // A symlink in it that leads elsewhere is refused, wherever it leads.
+    for (const p of [join(own, "sova-link.txt"), join(own, "sova-other", "sova-theirs.txt")]) assert.equal(await acall("read", { path: p }), excluded, `symlink ${p}`);
+    // Only read: grep, find and ls never reach it.
+    assert.equal(await acall("ls", { path: own }), excluded);
+    assert.equal(await acall("find", { pattern: "*", path: own }), excluded);
+    assert.equal(await acall("grep", { pattern: "MARK", path: own }), excluded);
     // Without the folder (as before), the same file is refused.
-    assert.equal(await pcall("read", { path: join(own, "note.txt") }), outside);
+    assert.equal(await pcall("read", { path: join(own, "note.txt") }), excluded);
     // A root that holds Sova's state: the own folder wins over the exclusion, for read and itself alone.
     const wide = new RootConfinement(box, [state], [own]);
     assert.equal(wide.readProblem(join(own, "sova-shot.png")), null);

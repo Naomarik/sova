@@ -749,6 +749,375 @@ would list master's changes instead.
     The existing stamps' source on this branch resolves to a user message.
   - Upgrade: see UPGRADING step 10, "`agree` resolves pi-session references".
 
+### 2026-10-22
+
+- **Docs land with the code they describe, with no separate permission.**
+  - Commit: on branch `feat/spec-lands-with-code` (folds in the unlanded `feat/promote-before-landing`,
+    d202e854); not on master yet: the merge round folds it in.
+  - Why: since 42c63467 nobody made a branch's drafts official at landing. Sessions were told their
+    go-ahead didn't cover committing and to promote on the default branch after landing; the merge round
+    promoted none and removed the worktree, so about 1 in 4 landings since 2026-10-08 left docs
+    unpromoted, and sessions asked the user for a second, docs-only merge.
+  - Changed:
+    - `mode/spec-mode.md`: "A branch isn't done or ready to land until its drafts are promoted on it,
+      by you, after its checks pass; nothing at landing promotes for you." The go-ahead paragraph: "A
+      go-ahead to build or merge covers committing them with the code, never asked separately; told
+      not to commit, leave evidence pending". It names no project's merge process (constraint 1);
+      word cap 906 → 944 (942 words). The worker note: the parent promotes on its own branch; a
+      worker promotes, commits or records `--commit` evidence only when its brief says to, and then
+      only on its brief's branch, never by landing on the default branch;
+    - `PROMOTE.md`: the go-ahead covers committing the docs; promote on your own branch before you call
+      it ready; a draft whose branch landed without it is promoted on a fresh branch, never on the
+      default branch itself; drafts are deleted with `prune --official` or an approved list;
+    - `sova-spec-draft.mjs prune --official [--from DIR]`: deletes only drafts the tool confirms are
+      already official (own drafts read `promoted`; with `--from`, copies kept outside the project read
+      against the current spec alone, every changed record already current); keeps and lists the rest.
+      The `git-requires-commit` refusal no longer says "without permission to commit";
+    - `worktrees/spec.ts`: a merge into the default branch with the worktree's own drafts unpromoted
+      says they didn't land with the code and stay in the worktree's drafts folder until promoted on a
+      fresh branch, never on it directly (was "so promote them now"); into another branch, promote
+      them on it before it lands;
+    - the merge round (Sova's playbook, `round.mjs`): `ask` names drafts not confirmed promoted; a
+      `READY` with them left, or a `check` that finds them (`docs not promoted: …`, a need), is handed
+      back to the owner with the text to send; a merge of master that conflicts in the spec
+      (`claims/*.md`, or a manifest `merge-manifest` refuses) is aborted and handed back to re-promote
+      on top of master (was "resolve, commit, then check"); `landed` keeps a copy of drafts not
+      confirmed promoted under `<state root>/playbooks/merge-round/drafts/<head>/`, withholds the clean
+      up if the copy fails, and prunes earlier copies the draft tool confirms official. The captain
+      never promotes; a branch whose owner is gone stays the user's call;
+    - GOALS.md gains the rule "Docs land with their code" and a goal-4 measure; the site page says the same.
+    - review B1 (c0639814): `drafts` rows list `promotedConflict` (ids the draft promoted before that current
+      now says differently; state unchanged). The merge round's hold-back counts them as not promoted, so a
+      branch that took master's spec in a conflict without promoting again is handed back, and
+      `prune --official` keeps such a draft. §chat.merge-round/driver, §tools.spec/draft-hygiene (draft
+      `b1-promoted-conflict`, f8a6f806).
+    - A/B B7 (e96c8470): `mode/spec-mode.md` "Before finishing" adds "A draft whose branch already landed is
+      promoted on a fresh branch from the default branch, never on the default branch itself." (it was only
+      in PROMOTE.md; 1 of 8 runs promoted on master). Word cap 944 → 966 (964 words). §tools.spec/mode-reading
+      (draft `landed-draft-fresh-branch`).
+  - §: §tools.spec/mode-reading, §tools.spec/no-turn-end-check, §tools.spec/draft-hygiene, §tools/spec,
+    §chat.merge-round/round, §chat.merge-round/driver, §chat.worktrees/merge-card,
+    §chat.mode-menu/workers reworded (draft `spec-lands-with-code`, promoted on the branch at 005f437f;
+    `foreign --base 11459693 --head 005f437f`). Base: 2aa27857.
+  - Goal 4 (code and spec agree after building), measured L0: the merge round's tests on master's
+    `round.mjs` with this branch's tests: 6 of 38 fail (the hand-back of a READY with drafts left, the
+    check need, the spec-conflict hand-back for claims and for a refused manifest, the kept-copy prune,
+    the notice wording); 38/38 on this branch. `tests/draft-hygiene.test.mjs`: 3 new tests (the prune
+    mode). Constraint 5 (light): the mode text grows 37 words.
+  - Upgrade: see UPGRADING step 11.
+
+### 2026-10-26
+
+- **Each area's records may live beside its claim file; every tool reads both layouts** (al_6, landing 1:
+  the tools; the conversion of Sova's own spec is a later landing).
+  - Commit: on branch `feat/spec-store`; not on master yet.
+  - Why: one 787 KB `manifest.json` holds all 1,165 records, so 304 of 678 merges since 2026-09-23 changed
+    it on both sides; a merge driver, about 100 re-apply commits and 4 take-master's-whole-spec merges
+    followed. With a record list per area, the same replay puts both-sides changes at 98 of 678 (14%) and
+    Git conflicts at 30 (from 118). This landing ships the tools only: Sova's spec stays in format 1.
+  - Changed:
+    - format version 2: `manifest.json` keeps every setting (`grammar`, `boundary`, `_`, …) and
+      `"claims": "records live beside each claim file, in claims/**/*.json"` (a string, so an older
+      branch's `merge-manifest` driver refuses it and Git reports a conflict instead of merging a format 2
+      master quietly); records move to `claims/<path>.json` beside `<path>.md`, placed by id, sorted,
+      2-space JSON. Format 1 is unchanged and stays the default (`new` on a project with no spec still
+      starts format 1);
+    - `core/layout.mjs` (+ `layout.d.mts`) is the one reader and writer of records in both layouts; the
+      core, the draft tool, review, assessment, Sova's spec lookup, draft writer and conversation drafts,
+      the merge round, the release check (`docs-drift.mjs`) and the simulation's look-up probe go through
+      it or through the new read-only `sova-spec.mjs records [--at REV] [--id §x]… --json`; a guard test
+      (`tests/layout-guard.test.mjs`, `server/spec-layout-boundary.test.ts`) fails new code that reads the
+      records file directly, against an allowlist that only shrinks;
+    - a spec holding records both ways is refused by every command (`layout-mixed`, exit 2) with the one
+      command that finishes it (`merge-manifest --write` during a merge, else `migrate --write`); new
+      format 2 check findings `record-misfiled`, `record-duplicate`, `records-orphaned`,
+      `records-unreadable`;
+    - `sova-spec-draft.mjs migrate [--reverse] [--drafts | --draft NAME] [--write]`: previews, converts
+      under the drafts lock as one journalled write, and refuses unless ids, records, settings and the
+      core's check read back the same (it undoes a write that doesn't); drafts keep their old files in
+      `.layout-backup/` and `--reverse` restores them while their records match;
+    - `merge-manifest`: as a driver, sides in different layouts exit 1 (`layout-mismatch`) and write
+      nothing; in index mode a format 2 side, a conflicted record file, or a mixed tree during a merge is
+      merged per record from the merge's commits and written in the default branch tip's layout;
+    - a spec conflict in a format 2 spec recovers per area (take master's copy of only the clashing areas,
+      claim file and record file together, and promote again only those areas), in the draft tool's
+      refusals, the census note, the merge round's hand-back and PROMOTE.md; format 1 keeps the whole-spec
+      recovery word for word;
+    - the census note asks the core whether the spec is mixed each time HEAD moves (once per HEAD); the
+      merge round merges master with `--no-commit`, finishes a mixed result with `merge-manifest --write`
+      before the merge commit, stages the record files merge-manifest wrote, and aborts the merge (the
+      worktree as it was) when the records don't read or the tool gives no answer;
+    - `.sova/spec/.gitignore` admits `claims/**/*.json`.
+  - §: + §tools.spec/record-layout; §tools.spec/git-merge, §tools.spec/conflict-recovery,
+    §tools.spec/census-note, §chat.merge-round/driver reworded, §tools/spec (its new child) (drafts
+    `spec-store`, `spec-store-2`, promoted on the branch at 8729de33 (9eca2773 before the history rewrite), and `spec-store-3` at
+    1f530638 (ede39a14 before the history rewrite); `foreign --base f16b237e --head 1f530638` gives the same list).
+  - Numbers: every read command (check, map, map app, graph, where by words and by path, toc out/in/down,
+    read, read --whole, scope, impact, impact --near, packet, census, foreign) gives byte-identical JSON on
+    Sova's spec at f16b237e (9b7297f8 before the history rewrite) in format 1 and converted to format 2 at the same path (17 of 17); `migrate`
+    converts it into 101 record files (1,167 records) with every identity check passing, and back.
+    Median latency over 15 runs, old core on format 1 → new core on format 1 → new core on format 2:
+    check 125 → 132 → 138 ms, map 175 → 180 → 177, where (3 words) 465 → 452 → 474, read 78 → 79 → 86,
+    census 131 → 127 → 137. Merge-collision numbers after the conversion: at 1 and 2 weeks after landing 2.
+  - Upgrade: see UPGRADING step 12.
+
+- **The mode text splits: finding your way for everyone, the writing steps when behavior changes.**
+  - Commit: on branch `feat/spec-slim` (alignment al_3); not on master yet. Round 3 passed its
+    pre-registered rule (KEEP), the condition for landing.
+  - Why: in round 2 of the context test (spec-ctx-2026-10-25, 12 real requests), briefs with the spec
+    found 60% of the facts that mattered against 67% without it. They spent 26 items on documentation
+    process against 9, and 52 items named no file against 15. But that round changed the content and
+    the instructions together. About two thirds of the 964-word text rode every turn but mattered only
+    once an agent changed behavior.
+  - Changed:
+    - `mode/spec-mode.md` is now the short finding-your-way part: search, read, verify in the code,
+      cite files, report the product. It also says where the writing procedure is. 964 → 306 words,
+      cap 966 → 320.
+    - New `spec/WRITING.md` holds the writing procedure (drafts, agree, evidence, promotion, machine
+      inspection and a `## Workers` section). Its sentences are today's, word for word, so the meaning
+      is the same. 976 words, cap 990.
+    - The procedure reaches a session once per chat, as text appended to a tool result. It comes with
+      the session's first `[spec census]` note of any kind or, with align on, the go-ahead's result,
+      unless the agent read it first. A compaction re-arms it; a reopened session restores it from its
+      history. It never enters the prompt, so a Claude Code chat doesn't restart for it.
+    - A worker's hand-over (`spec-worker.ts`) leads with its Workers section.
+    - The fallback worker brief is generated from both parts and keeps every rule it carried, plus the
+      finding-your-way steps and the Workers paragraph. Its commands gain `where` and `map`.
+    - `SPEC_WORKER_NOTE` is unchanged, and a test pins it to the Workers paragraph.
+    - The replay agent arm copies `WRITING.md` into its work directory.
+    - A codemode script's call that hands the procedure over passes it whole to the script's result, the
+      one the model reads (`mode/tests/codemode-handover.mjs`).
+  - §: +§tools.spec/writing-on-demand, §tools.spec/mode-reading, §tools.spec/census-note,
+    §tools.spec/align-agree, §chat.mode-menu/workers, §site.docs/spec-mode, §tools.spec/context-packets,
+    §tools.spec/agree-source-relay, §tools/spec, §chat.alignment/tool, §chat.mode-menu/codemode (draft
+    `spec-slim-guide`, promoted on the branch at 83b3ef82 (526e0a07 before the history rewrite); `foreign --base f16b237e
+    --head 83b3ef82`, after merging al_6 landing 1 `foreign --base 27019745 --head c0a7dfd3` (ca8ab14e,
+    814d49a8 before the history rewrite), and after merging landing 2 `foreign --base c0d556a4 --head 0985bc61` give the
+    same list). Base: c0d556a4 (was f16b237e, then 27019745).
+  - Numbers: round 3 of the context test (pre-registered, PREREG-ctx3 sha256 a67ad622…fbca; report
+    sha256 0eaa5cfd…9ffb). Three arms on the same 12 real requests × 2: A no spec, B today's text
+    (f16b237e; 9b7297f8 before the history rewrite), C the short part (brief runs at 18f97803, edit check at 5a776cbe;
+    328788c3 / 07265a27 before the history rewrite); graded item by item
+    with the arms pooled. Verdict under its rule §7.2: **KEEP** (not worse than B).
+    - Recall A / B / C: 60.6 / 55.2 / 56.6. C − B +1.5 [−4.1, +7.2]; B − A −5.4 [−9.0, −1.3];
+      C − A −3.9 [−9.3, +0.9].
+    - Wrong items per brief, C − B: −0.04 [−0.38, +0.25]. Misled 0 / 0, reinvented 0 / 0.
+    - Process items per brief B 1.79 → C 1.58 (A 1.00); items naming no file B 3.50 → C 2.71 (A 0.79).
+    - Tokens per brief (geometric mean) B 204k → C 189k.
+    - Edit check (t02 t03 t04 t05 t08 t09, real builds): claim before the first code edit B 5/6,
+      C 5/6. In 5 of 6 C builds the agent read `WRITING.md` itself before any code edit; in t02 the
+      procedure arrived once with the first census note (the safety net, counted a miss), and that
+      agent called its change a defect fix with no claim, as B's t02 agent did. A draft with no error
+      finding: 5/6 in both arms (`check` exit 0: 0/6 in both, since it exits 1 on any note).
+    - Blinding: tell check 40%, grader arm guesses 35%, double-grade κ 0.87.
+    - Constraint 5 (light): 964 → 306 words ride every turn; the 976-word procedure is sent once per
+      chat. The verdict holds for spec-mode.md sha256 bd4831dc… and WRITING.md 95381eb5… only: a
+      change to either needs a new measured run.
+    - WRITING.md: measured text 95381eb5…; changed one sentence for the record layout at 25ac47f4 ("A
+      `manifest.json` conflict" → "A spec conflict in a Git merge", both "follow the census note";
+      now c8f4b273…). round 3's measures don't read that sentence; spec-mode.md is unchanged.
+  - Upgrade: see UPGRADING step 15.
+- **One rule says whether a draft is official, and Sova and the merge round both call it.**
+  - Commit: on branch `feat/landing-dependable`; not on master yet: the merge round folds it in.
+  - Why: Sova's readiness called a draft promoted when any promotion wrote its files after its last edit
+    (so a catch-up merge that took master's spec read the same as a reword), while `drafts` marked an id in
+    conflict whenever any file it sits in had a file-level conflict, so the merge round handed back
+    branches whose drafts were official (steer-keys, flow-legibility, owner-page-sova).
+  - Changed:
+    - `core/official.mjs` (new, Node builtins and `sova-spec.mjs`'s `declarationSpans` only; types in
+      `official.d.mts`): `draftOfficial(specDir, draftDir, draftsDir)` compares per claim (a record, a
+      declaration's prose, the non-blank lines outside every declaration): official when current says what
+      the draft says or what a promotion recorded in the tree wrote, other than what the draft started from,
+      or, for prose, its blocks carry the draft's change (as `merge-claims` leaves a claim both sides
+      changed). `blocksOf` moved here from `sova-spec-draft.mjs`, which imports it.
+    - `promote --write`: each receipt also records `claims` (`{unit: [said, wrote]}`); older receipts count
+      what their draft says now, for the ids they name.
+    - `drafts`: an id current says differently counts current when the rule calls it official;
+      `promotedConflict` keeps only the ones it doesn't. Output shape unchanged.
+    - `prune --official --from DIR` reads each copy with the rule (no temp copy of the spec, no `status`);
+      `deleted`/`wouldDelete` entries from `--from` no longer carry `draftSha256`.
+    - The merge round: `go <branch> [without-specs]` records the user's word as a go-ahead; `landed` tidies
+      official drafts out of a worktree whose check passed, after copying them to `tidied/<head>/`.
+  - §: §tools.spec/draft-official (+), §tools.spec/draft-hygiene, §chat.worktrees/readiness,
+    §chat.worktrees/ready-to-land, §chat.merge-round/round, §chat.merge-round/driver,
+    §chat.schedules/merge-ready (draft `landing-dependable`).
+  - Goal 4 (code and spec agree after building), measured on the live worktrees: `drafts` on
+    `sova-project-page-copies` read 44 ids in `promotedConflict` across 4 drafts (each record and prose
+    equal to current, checked by hand on §app.merge-queue/card); with the rule, 0. On `sova-spec-sidebar-scroll`
+    (master's spec taken in a catch-up merge, never promoted again) both readings keep its 2 drafts unofficial
+    on §app.session-list/content-rules and /search. 62 drafts across Sova's worktrees: about 70 ms each.
+  - Upgrade: see UPGRADING step 13.
+
+- **One verdict: `drafts` reports the rule's `official`, and every reader holds on it.**
+  - Commit: on branch `feat/landing-dependable`; not on master yet: the merge round folds it in.
+  - Why: `drafts` turned the rule into per-id lists and dropped a claim outside any § (a manifest key,
+    a claim file's lines outside its declarations), so a draft the rule called not official read with
+    nothing pending, and the merge round's check passed what Sova's readiness held (review F1).
+  - Changed:
+    - `drafts`: each row carries `official` (false for an unreadable draft); its ids sort by the verdict, and
+      one made unofficial only outside any § reads `active` with a reason. The default-branch shortcut that
+      counted an id current when it was byte-equal on the default branch is gone.
+    - `prune --official` reads each folder by the rule directly, in the project as with `--from`: one loop,
+      `kept` states `pending`, `empty` or `unreadable`, and no `draftSha256`.
+  - §: §tools.spec/draft-official, §tools.spec/draft-hygiene (draft `landing-dependable-2`).
+  - Goal 4 (code and spec agree after building): `tests/draft-official.test.mjs` "one verdict" (a draft
+    changing only a manifest key, current holding a third value) failed before (`drafts` gave no verdict,
+    `pending: []`) and passes after. Tool tests 587 pass, 0 fail.
+  - Upgrade: see UPGRADING step 13.
+
+- **Sova's spec keeps each area's records beside its claim file; new specs start that way** (al_6, landing 2:
+  the conversion).
+  - Commit: on branch `feat/spec-convert`; not on master yet. The conversion is one commit of its own:
+    first 516ca52b (`.sova/spec/manifest.json`, 101 new `.sova/spec/claims/**/*.json`, `.gitattributes`).
+    Master then moved seven times; each merge of master (2bf59cab, 012d7940, 8d463940, 8d463e94, c4def502, 42fb09cc, then b51a7d22) finished the spec with
+    `merge-manifest --write`, which writes the default branch's layout (format 1, with every record master
+    had changed: 36, 1, 1, 9, 15, 6, then 77), and each was followed by a fresh conversion; the last, e5b1b647,
+    converts the merged spec again: plain `migrate --write` output, `manifest.json` and 102 record files,
+    nothing else. e5b1b647 is the conversion that lands.
+  - Why: landing 1 shipped the tools with Sova's spec still in format 1; this converts it, so two branches
+    meet in one record file only when they change the same area.
+  - Changed:
+    - Sova's spec is format 2 (`migrate --write`): 1,187 records leave `manifest.json` for 102 record files
+      beside their claim files; `manifest.json` keeps the settings and the `claims` string;
+    - `.gitattributes` drops `.sova/spec/manifest.json merge=sova-spec-manifest` (kept:
+      `merge=sova-spec-claims` for `claims/**/*.md`); `manifest.json` and the record files merge with Git's
+      line merge. The protection against an older branch's driver stays: its own `.gitattributes` still
+      routes `manifest.json` to `merge-manifest`, which refuses format 2's string `claims`, so its merge of
+      master stops with a conflict that `merge-manifest --write` finishes, never a quiet merge;
+    - `sova-spec-draft.mjs new` in a project with no spec starts format 2 (`{"formatVersion": 2, "claims":
+      "records live beside each claim file, in claims/**/*.json"}`), and its first promotion writes format 2;
+      an existing spec keeps its format until someone runs `migrate`;
+    - `tests/bench/merge-collisions.mjs`: replays a repository's merges (`--since DATE|REV`) and counts, per
+      layout period, both-sides changes and Git line-merge conflicts on the record files as they were and
+      re-laid one file per area, the same record changed two ways, merges that took one side's whole spec
+      (or one area's pair), and re-apply commits per week; it reads history through `layout.mjs`, so it
+      spans the cutover;
+    - tests that read the real spec's records from `manifest.json` read them through `records` or
+      `layout.mjs` (`toc`, `packet-acceptance`, `layout`); `worktrees/spec.test.ts` gains two landings
+      across the cutover with nothing to report;
+    - docs: `.sova/spec/README.md`, `USAGE.md`, `DRAFTS.md`, `core/README.md`, `spec/README.md`, `MODE.md`,
+      the site page.
+  - §: §tools.spec/record-layout, §tools.spec/git-merge (both agreed again under the al_6 go-ahead),
+    §app.requirements/drafts-with-provenance reworded; §app.requirements/decisions,
+    §app.requirements/conversation-drafts, §tools.spec/record-fields: "manifest record" becomes "record"
+    (draft `spec-convert`, promoted on the branch at 8c5a9359; `foreign --base 24973451 --head 8c5a9359`
+    gives the same list; `foreign` over either conversion alone, 27019745..516ca52b or b51a7d22..e5b1b647,
+    gives none).
+  - Numbers: the identity check at e5b1b647 against its parent, the merge: `records` equal (1,187),
+    settings equal but `formatVersion`; `check`, `graph`, `map`, `census`, `where`, `toc`, `read`, `impact`,
+    `scope` and `packet` JSON byte-identical before and after; `foreign --base b51a7d22 --head e5b1b647`
+    gives `foreign`, `changes` and `created` empty; `git check-ignore` ignores none of the 102 record files
+    and `git ls-files` tracks all 102. Every record the merges took from master reads at
+    e5b1b647 with master's values (`records --at master` against `records`). Size, measured at e5b1b647:
+    one `manifest.json` of 823,298 bytes at the merge (793,538 at 27019745, the plan's "787 KB") becomes a
+    4,305-byte `manifest.json` and 102 record files (768,369 bytes in all): median 5,061 bytes (between
+    `mesh/remote-sessions` 5,025 and `app/project-costs` 5,097), largest 39,802 bytes (`app/overseer`, 56
+    records), then `app/project-overseer` 32,761 and `app/insights` 26,991; an agent editing a draft's
+    records edits one of those instead of the whole list. Latency (median of 15 interleaved runs, Node, 27019745's tools on its
+    format 1 spec against this branch's tools on the converted spec, both as plain copies, on a loaded
+    machine), after `freshOrder` in `layout.mjs` dropped its comparator sort (same order, byte-identical
+    output): records +6 ms (+12–17%), all other commands ≤ +7% (check, map, where, read, toc, impact,
+    packet, scope, census). This misses the plan's ±10% latency target for `records`; the main thread
+    accepted the miss. Merge collisions before the conversion (`merge-collisions.mjs --since 2026-09-23 --until 27019745`,
+    688 merges, all format 1): both sides changed the records file in 309 (45%), Git's line merge
+    conflicted in 118 (17%); re-laid one file per area, both sides changed one area's file in 100 (15%)
+    and Git conflicted in 30 (4%); the same record changed two ways in 29; 27 merges took one side's whole
+    spec, dropping the other side's own change, and 7 took one area's pair; 34 re-apply commits in 32.9
+    days (7.2 a week). After: at 1 and 2 weeks (`--since <conversion commit>`).
+  - Rollback: revert the conversion commit (e5b1b647) to get the format 1 `manifest.json` back byte for
+    byte as the merge b51a7d22 left it, and restore the `.gitattributes` line (516ca52b dropped it) in the
+    same commit. Once anything has been promoted in format 2, `migrate --reverse --write` on a fresh
+    branch rebuilds it instead, with the same records and values and the same identity check, but the ids
+    grouped by area rather than in the old file's order; restore the `.gitattributes` line in that commit.
+    The tools read both layouts, so neither needs a tool change.
+  - Upgrade: see UPGRADING step 14.
+
+- **A claim over 6 KB is warned about; a conversation's decision goes official with its build's branch; the
+  assessment tool is retired** (al_5, first part: the warning, decision a7 and decision a8; the claim migration
+  waits for al_6's conversion).
+  - Commit: on branch `feat/spec-size`; not on master yet.
+  - Why: claims over 8 KB were 23% of reads and 56% of the bytes read (goal 6). Decisions agreed in a
+    conversation were published on the main line before their build existed, so a reversal took a second spec
+    change (goal 1, constraint 5). The assessment companion had served no goal since 10-03.
+  - Changed:
+    - size cap: one claim's size is its prose bytes in its claim file, as `read`/`toc` count it, never its
+      record's, so both record layouts agree. The cap is 6,144 B, or the spec's top-level `declarationCap`
+      (`declaration-cap-invalid` warns on a bad value). `check` gives `counts.cap`, `counts.overCap` and each
+      declaration's `bytes`, with no finding per declaration, so its exit never moves. `draft check` warns
+      `declaration-over-cap` (in `introduced`, with `bytes`, `cap`, `was`) when a draft takes a claim over the
+      cap or grows one that is over; an unchanged or shrinking one counts under `preexisting`. `promote` gives
+      `sizeWarnings` for the selected claims. Nothing refuses, and `agree`'s clean-plan test ignores it. The
+      warning says how to split (by topic into sibling claims, the old § keeping a summary that requires its
+      parts); the mode text is unchanged (al_3 holds `spec-mode.md`);
+    - Sova's server: Build of a conversation's draft copies that draft into the coding session's new worktree
+      after the cut and before the session starts (only where Git ignores the drafts folder). Its items
+      record the branch (`buildBranch`). Approve and the reconciler's promotion leave such items to that
+      branch until its records are in the main line's spec, so they become official when the branch lands. A
+      build with no branch (a folder outside Git, a worktree named later) changes nothing: Approve still
+      publishes directly;
+    - retired: `core/sova-spec-assess.mjs`, its tests, `mode/spec-assessment.ts` (+ test,
+      `tests/assessment-absence.mjs`), `server/tests/spec-assessment.mjs`, the bench case, the core's and the
+      draft tool's `assessment` read policy, `inputSources` and `sourceHashes()`. `createInspection` and
+      `inspectDraft` keep `default` and `review`, and their tests moved to `tests/inspection-reader.test.mjs`.
+      The review tool's tests pass alone (58/58). The local packets are archived, not deleted (36 in the main
+      checkout, 130 in 4 older worktrees).
+  - §: + §tools.spec/declaration-cap; − §tools.spec/change-assessments, − §tools.spec/assessment-observations;
+    §tools/spec, §tools.spec/review-playbook, §tools.spec/record-layout, §tools.spec/context-packets,
+    §tools.spec/inspection-safety (code), §app.requirements/draft-approval, §app.requirements/promotion,
+    §chat.worktrees/readiness, §app/idle-git-cache (draft `spec-size`).
+  - Numbers: Sova's spec at ca8ab14 has 124 claims over 6,144 B; a draft that changes none introduces 0
+    warnings (`preexisting: declaration-over-cap 124`). `check` keeps its exit (1, as before) and its JSON
+    grows 2.1% (1,155,126 → 1,179,463 B, the `bytes` field). `draft check` text on an unchanged draft:
+    31,798 → 31,824 B. The read-cost measures (median/p90 bytes per read) move only with the migration.
+  - Upgrade: see UPGRADING step 16.
+
+- **Landing makes a branch's drafts official; chats no longer promote** (al_4).
+  - Commit: on branch `feat/spec-land`; not on master yet: the merge round folds it in.
+  - Why: 615–667 commits since 09-23 (18%) were docs-only, 483 of them promote commits a chat made a median
+    83 s after its code commit; about 2,000 bookkeeping calls in 14 days; 100+ re-apply commits after master
+    merges; 1 in 4–5 product landings left docs behind; 195 agree stamps the user never gave.
+  - Depends on: the shared record layer (al_6 landing 1, `layout.mjs`).
+  - Changed:
+    - `sova-spec-draft.mjs land --commit REV --by WHO --verification TEXT [--write]`: every draft's pending
+      records in one all-or-nothing step under the drafts lock, each needing its chat's verification note
+      (`verification-missing`, `verification-stale`), evidence recorded at REV (doc-only where that applies),
+      new or rewritten prose with no label landing `accepted` (never edited in the draft), proposal-only
+      drafts left, a journal (`drafts/.land/`) that puts everything back on any failure and that `recover
+      --write` puts back after an interruption; it never commits and returns the paths and a commit message;
+    - `evidence --note`: the chat's note, bound to the record and prose, never evidence for a manual promote;
+    - `refresh NAME [--write]`: re-bases a draft on current, a declaration both changed one marked block,
+      refused by land and promote while it holds the markers (`conflict-markers`);
+    - `agree` stamps and records doc-only evidence but no longer promotes; the branch's landing does;
+    - the merge round's `check` runs every check first and only then lands the drafts as one docs commit
+      with the trailer `Sova-Spec-Landing: <round>` (a failing check writes nothing about the docs); Land It
+      carries across that recorded commit only; a Land It whose drafts changed since (its drafts hash) holds
+      the branch; drafts that don't fit hold it with a hand-back; `ask`/`reply` no longer hand back drafts;
+      `"specLanding": "off"` in the round's settings brings back the old hold;
+    - the `worktree` tool's merge lands the drafts first (one docs commit, taken back when it would clash
+      with the target), `withoutDocs` on the user's word; its create carries the main checkout's agreed drafts;
+      the orphaned-evidence warning goes;
+    - Sova: drafts no longer keep a branch from Ready to land; Sova tries them once per head and set of
+      drafts; Landing specs only for drafts that don't fit or changed since Land It; the Landing card's
+      docs line with the promises one click away; Land It records the drafts it showed;
+    - PROMOTE.md leads with the landing and keeps the manual path; GOALS.md: "Docs land with their code"
+      is now done by the landing, and Agree is only for the person's own decision.
+    - the mode text's promote instructions (approved wording, applied on top of al_3): WRITING.md's step 4
+      agree sentence, the evidence/agree paragraph (a note per promise; `agree` only for the user's own
+      decision; Land It is never agreement), the promote bullet (the landing makes drafts official; one
+      `land` before the last commit where nothing lands branches), the finishing bullet, the go-ahead
+      paragraph and the worker paragraph; the worker note (mode/prompt.ts) and the worker brief's pin
+      follow; align-tool.ts's result no longer says `agree` promotes; AGENTS.md's Landing bullet.
+    - Hashes: WRITING.md 95381eb5… (round 3, measured) → c8f4b273… (al_6 landing 2's merge sentence) →
+      e1c22f58… (this change; 980 → 1023 words, its cap 990 → 1030); spec-mode.md unchanged, bd4831dc….
+      Round 3's verdict covers 95381eb5… only: these sentences need their own measured run to extend it.
+  - §: computed at landing with `sova-spec.mjs foreign --base <first parent> --head <commit>` (expected
+    §chat.worktrees/ready-to-land, §chat.worktrees/pane, §chat.worktrees/landing-answers, §chat.merge-round/round,
+    §chat.merge-round/driver, §chat.offers/conditions, §chat.offers/sova-landing, §tools.spec/agree-command,
+    §tools/spec, + §tools.spec/land).
+  - Numbers: before (09-23..10-23, the baseline frozen for this build) spec-only commits 18%, median 83 s,
+    bookkeeping calls ~1,970/14 days, landings without docs 20–25%; after: filled in 14 days after landing.
+  - Upgrade: see UPGRADING step 17.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration
@@ -786,9 +1155,9 @@ The tools are Node standard library only. Nothing is installed.
    | `toc.mjs`, `read.mjs` | The pull path |
    | `map.mjs`, `where.mjs`, `topic.mjs`, `graph.mjs` | The look views and `impact --near`; `topic.mjs` ranks `where`'s topic rows |
    | `fields.mjs` | The optional record fields and the frame |
+   | `official.mjs` | The one rule for whether a draft is official (`drafts`, `prune --official`, a host's own readiness) |
    | `sova-spec-draft.mjs` | Drafts, evidence, promotion, `merge-manifest`, `merge-claims` |
    | `sova-spec-review.mjs` | The review companion |
-   | `sova-spec-assess.mjs` | The assessment companion |
 
 2. **Set up the merge drivers, once per clone.** Add these two lines to `.gitattributes`:
 
@@ -806,6 +1175,8 @@ The tools are Node standard library only. Nothing is installed.
      'node <tools dir>/sova-spec-draft.mjs merge-claims --root . --base %O --ours %A --theirs %B --path %P --write'
    ```
 
+   A format 2 spec (step 14; every spec started since then) adds only the `claims/**/*.md` line and
+   the `merge-claims` driver: its `manifest.json` and record files take Git's line merge.
    Two branches that change different records, or different declarations of one claim file, then
    merge without a conflict, and the result doesn't depend on which landed first. One record or one
    declaration changed differently on both sides still stops; a claim file keeps Git's conflict
@@ -917,3 +1288,57 @@ The tools are Node standard library only. Nothing is installed.
       0.036 or stale. A hook of your own that parses the unread line reads "; lower-ranked: <command>"
       (was "; +N more: <command>") and "none read first; lower-ranked: <command>" (was "N unread:
       <command>"): no count.
+11. **The 2026-10-22 mode text** (branch `feat/spec-lands-with-code`). Copy `core/sova-spec-draft.mjs` again
+    (step 1). A project that points its agents at `mode/spec-mode.md` gets the new rule: a branch isn't
+    done or ready to land until its drafts are promoted on it, and the go-ahead to build or merge covers
+    committing them. A merge process of your own that promoted drafts at landing stops doing so; one that
+    removed worktrees should keep a copy of their unpromoted drafts first. New: `prune --official [--from
+    DIR]` deletes only drafts the tool confirms are already official.
+12. **Records beside each claim file** (2026-10-26, branch `feat/spec-store`). Copy every `core/*.mjs` again,
+    `layout.mjs` (and `layout.d.mts` for TypeScript callers) included. Nothing else is required: format 1
+    specs keep working, byte for byte. To move to per-area records, run `sova-spec-draft.mjs migrate
+    --root . --json`, then `--write` (and `--drafts` to convert open drafts) in a tree with `.sova/spec`
+    committed, add `!/claims/**/*.json` to `.sova/spec/.gitignore`, and commit `.sova/spec` as one commit.
+    Scripts that read records from `manifest.json` switch to `sova-spec.mjs records --json` (or import
+    `layout.mjs`). A merge process of your own that runs `merge-manifest --write` on a `manifest.json`
+    conflict should also run it on a conflicted `claims/**/*.json`, and stage the `files` it lists.
+13. **One rule for official drafts** (branch `feat/landing-dependable`). Copy `core/official.mjs` with the
+    tools (step 1). Promotions now record `claims` in their receipt; nothing else changes shape. A merge
+    process of your own that judged drafts by `promotedConflict` gets fewer false hand-backs; one that reads
+    `draftSha256` from `prune --official --from` reads the name instead. A process that holds work until a
+    draft is official reads the `drafts` row's `official`, never its state or lists; `prune --official`
+    without `--from` now keeps drafts as `pending`, `empty` or `unreadable`, without `draftSha256`.
+14. **New specs start in format 2** (2026-10-26, branch `feat/spec-convert`). Copy
+    `core/sova-spec-draft.mjs` again (step 1). Nothing is required of an existing spec: it keeps its
+    format until you run `migrate`. A project with no spec now gets format 2 from its first `new`: its
+    records go in `claims/<path>.json` beside each claim file, so if `.sova/spec/.gitignore` denies
+    everything under `claims/` but `*.md`, add `!/claims/**/*.json`; give it only the `merge-claims` line
+    of step 2. Converting an existing spec (step 12): in the same commit, drop any
+    `.sova/spec/manifest.json merge=sova-spec-manifest` line from `.gitattributes` and keep the
+    `merge=sova-spec-claims` one; branches from before the conversion still carry the old line, so their
+    next merge of the default branch stops with a conflict that `merge-manifest --write` finishes. With
+    the spec mode on, the census note calls the converted files a direct write to the current spec; they
+    are `migrate`'s, so commit them as its `next` says. Instructions of your own that tell agents to edit
+    records in `manifest.json` now point at the `.json` beside each claim file.
+15. **The 2026-10-26 split mode text** (branch `feat/spec-slim`). The spec extension ships a new file,
+    `spec/WRITING.md`, beside `PROMOTE.md`; `install.sh` links the whole `spec` directory, so it arrives
+    with the tools. A project that points its agents at `mode/spec-mode.md` now gets only the short
+    finding-your-way part. Its own agent instructions must also name the writing procedure, before
+    behavior-changing edits: `$core/../WRITING.md` for the installed copy, or the path in this repo, as
+    Sova's `AGENTS.md` does. Without the mode on, nothing hands it over. With the mode on, the first
+    `[spec census]` note carries it once. A hook of your own that parses census notes sees it after the
+    digest, from its `Writing procedure (once` head.
+16. **The size cap and the retired assessment tool** (2026-10-26, branch `feat/spec-size`). Copy every
+    `core/*.mjs` again and delete `core/sova-spec-assess.mjs` from any copy. `check --json` declarations
+    gain `bytes` and its `counts` gain `cap`/`overCap`; `draft check` may list `declaration-over-cap`
+    warnings and `promote` gives `sizeWarnings`. No exit code changes. A project that wants another cap sets
+    a top-level `declarationCap` (bytes) in `manifest.json`. A script that ran `sova-spec-assess.mjs` or
+    passed `readPolicy: "assessment"` to `createInspection`/`inspectDraft` loses it: use the review tool.
+17. **Landing makes drafts official** (branch `feat/spec-land`). Copy every `core/*.mjs` again. A merge process
+    of your own runs `sova-spec-draft.mjs land --commit <branch head> --by <who> --verification <text> --write`
+    in the branch's worktree after its checks pass and before merging, and commits exactly the `paths` it
+    returns with the `commitMessage` it returns; when it exits 1 nothing was written: hand the branch back
+    with its `findings`. Chats record a note per promise (`evidence --note`) instead of evidence and
+    promotion; `agree` no longer promotes, so a project with no landing step runs `land --write` once before
+    its last commit. Scripts parsing `Landing specs`, `docs not promoted`, `agree-not-promoted` or the
+    orphaned-evidence warning change.

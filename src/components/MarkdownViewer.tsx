@@ -77,7 +77,6 @@ export function MarkdownViewer() {
       <Show when={markdownViewer()}>
         {(s) => (
           <div class="md-viewer-frame">
-            <div class="sheet-grip" aria-hidden="true" />
             <div class="md-viewer-head">
               <div class="md-viewer-titles">
                 <h2 class="md-viewer-title" id="md-viewer-title">

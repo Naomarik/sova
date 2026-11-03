@@ -584,3 +584,52 @@ test("contract: subagents-team-v1 members keep an optional successorOf worker ID
 	assert.equal(decodeTeamEntry({ version: 1, op: "add", teamId: "team_01", members: [member(4, { role: "dev-2" })] })?.members[0].successorOf, undefined);
 	assert.equal(decodeTeamEntry({ version: 1, op: "add", teamId: "team_01", members: [{ ...member(4), successorOf: "dev" }] }), undefined);
 });
+
+test("planTeamDefaults names the standing roles Sova adds and each one turned off, and by what", async () => {
+	const { planTeamDefaults } = await import("./teams.ts");
+	const file = {
+		version: 1,
+		coordinator: { enabled: true, role: "lead", primary: { backend: "pi", model: "a/b" }, fallback: null, instructions: "" },
+		monitor: { enabled: true, role: "watch", primary: { backend: "pi", model: "a/b" }, fallback: null, contextPct: 60, everyMinutes: 10, usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 }, instructions: "" },
+		handover: { retireTimeoutMinutes: 10 },
+	} as any;
+	const ok = (value: any) => ({ state: "ok", file: "f.json", value } as any);
+	const members = [{ role: "dev", prompt: "p" }];
+	assert.equal(planTeamDefaults({ state: "absent" } as any, members).standing, "Standing roles: none; this chat's subagent settings give teams no coordinator or monitor.");
+	assert.equal(planTeamDefaults(ok(file), members).standing, `Standing roles — coordinator: "lead", added by Sova; monitor: "watch", added by Sova.`);
+	assert.equal(planTeamDefaults(ok(file), members, { monitor: false }).standing, `Standing roles — coordinator: "lead", added by Sova; monitor: off for this team (defaults.monitor: false).`);
+	assert.equal(planTeamDefaults(ok({ ...file, monitor: { ...file.monitor, enabled: false } }), members).standing, `Standing roles — coordinator: "lead", added by Sova; monitor: off in this chat's subagent settings.`);
+	assert.equal(planTeamDefaults(ok(file), members, { coordinator: false }).standing, "Standing roles: none; the coordinator and monitor are off for this team (defaults.coordinator: false).");
+	assert.equal(planTeamDefaults(ok({ ...file, coordinator: { ...file.coordinator, enabled: false } }), members).standing, "Standing roles: none; the coordinator, and with it the monitor, is off in this chat's subagent settings.");
+	assert.equal(planTeamDefaults(ok(file), [{ role: "boss", prompt: "p", orchestrator: true }]).standing, `Standing roles — coordinator: your orchestrator boss (none added); monitor: "watch", added by Sova.`);
+	assert.throws(() => planTeamDefaults(ok(file), [{ role: "a", prompt: "p", orchestrator: true }, { role: "b", prompt: "p", orchestrator: true }]),
+		/only the coordinator is a team's orchestrator, so at most one member may have orchestrator: true \(got a, b\)\. Mark only the member that should coordinate: it becomes the coordinator, and hands members \(itself included\) over to successors with team_succeed\. A member that only watches or reports needs no orchestrator mark\./);
+});
+
+test("checkReplacement: only the newest coordinator or monitor, only while none with that duty is live", () => {
+	const store = new TeamStore("/tmp/teams", () => "s");
+	const prepared = store.prepareCreate({
+		name: "Crew", objective: "o", coordination: {},
+		members: [{ role: "lead", prompt: "c", orchestrator: true, duty: "coordinator" }, { role: "dev", prompt: "d" }, { role: "watch", prompt: "m", duty: "monitor", tools: [] }],
+	});
+	store.commitCreate(prepared, 1, [
+		member(1, { role: "lead", orchestrator: true, duty: "coordinator" }), member(2, { role: "dev" }), member(3, { role: "watch", duty: "monitor" }),
+	]);
+	const live = new Set(["ag_01", "ag_02", "ag_03"]);
+	const isLive = (id: string) => live.has(id);
+	assert.throws(() => store.checkReplacement("Crew", "lead", isLive), /lead \(ag_01\) is team_01's live coordinator/);
+	assert.throws(() => store.checkReplacement("Crew", "dev", isLive), /dev is not team_01's coordinator or monitor/);
+	assert.throws(() => store.checkReplacement("Crew", "nobody", isLive), /No member nobody in team_01\. Members: ag_01 \(lead, coordinator\), ag_02 \(dev\), ag_03 \(watch, monitor\)\./);
+	live.delete("ag_01");
+	assert.deepEqual(store.checkReplacement("team_01", "ag_01", isLive).target.role, "lead");
+	assert.throws(() => store.checkReplacement("Crew", "dev", isLive), /No coordinator is live: replace the coordinator first, and it can then succeed dev\./);
+	assert.throws(() => store.checkReplacement("Crew", "watch", isLive), /watch \(ag_03\) is team_01's live monitor/);
+	// A newer coordinator (a successor) that has ended too: only it may be replaced.
+	const add = store.prepareAdd("Crew", [{ role: "lead-2", prompt: "c", orchestrator: true, duty: "coordinator", successorOf: "lead", successorOfId: "ag_01" }]);
+	store.commitAdd(add, [member(4, { role: "lead-2", orchestrator: true, duty: "coordinator", successorOf: "ag_01", addedAt: 2 })]);
+	add.release();
+	assert.throws(() => store.checkReplacement("Crew", "lead", isLive), /lead \(ag_01\) is not team_01's newest coordinator; replace lead-2 \(ag_04\) instead\./);
+	assert.equal(store.checkReplacement("Crew", "lead-2", isLive).target.workerId, "ag_04");
+	live.add("ag_04");
+	assert.throws(() => store.checkReplacement("Crew", "lead", isLive), /lead-2 \(ag_04\) is team_01's live coordinator/);
+});

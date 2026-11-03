@@ -12,6 +12,7 @@ import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
 import type { ReplyTiming, RowFacts, SovaEvent, SovaPart } from "./harness-wire";
 import type { OwnerRequestCard } from "./project-assistant";
+import type { CardInfo } from "./transcript-cards";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -78,6 +79,10 @@ export interface SessionSummary {
       Safe by absence: absent = a main thread, and an older server that never sends it hides
       nothing. */
   workerSession?: true;
+  /** With `workerSession`: the chat that runs it (a live record listing it, or a completion naming it) and the
+      worker's name there, so a worker is shown as `Worker {name} of "{its chat's title}"`, never by its prompt.
+      Absent: no parent known. */
+  workerOf?: { id: string; path: string; name?: string };
   /** While the server holds this session's runtime AND it is mid-agent-turn (streaming): true.
       The sidebar shows a "Busy" marker. false when idle/closed or not held by this server.
       Never pulsing (design rule). */
@@ -158,6 +163,10 @@ export interface SessionSummary {
   /** The session's profile (§chat.profiles/model), from the newest `sova-profile` entry before its
       first user message; absent for Default. */
   profile?: SessionProfileField;
+  /** One of the merge queue's own chats (§chat/merge-queue): the project's merge thread or a run's reviewer, by the
+      Sova profile it was started on (shared/merge-queue.ts queueChatRole), never by title. Every list of the session
+      pane and the server leaves it out; the project's Merge Queue tab lists it, and a link still opens it. Safe by absence. */
+  queueChat?: { role: import("./merge-queue").QueueChatRole };
   /** Activity from this session's live record (a TUI's, or this server's own runtime): the
       sessions extension's `presence.activity`. Absent when no live record reports one (closed
       sessions, older writers). `error` is set only for state "error", ≤200 chars. */
@@ -225,6 +234,8 @@ export type EntryKind =
   | "report" // subagent reports and other long extension messages (custom_message); see `report`
   | "worktree-merge" // a merge the session recorded (pi-config worktrees extension); see `worktreeMerge`
   | "align" // an `align` tool result that changed an alignment, or an exemption (pi-config mode extension); see `align`
+  | "card" // a transcript card raised from outside the chat (§chat.transcript-cards/raise-command): the page
+           // places it after the entry it was raised after (`card.after`); the server sends no such row. See `card`.
   | "spec-turn" // legacy: the retired spec card; no longer produced, older mesh peers may still send it (renders nothing)
   | "unknown";
 
@@ -270,6 +281,12 @@ export const EAGER_TOOLS: ReadonlySet<string> = new Set([
   "session_send",
   "sova_create_session",
   "sova_navigate",
+  // An offer card (§chat.offers/card, shared/session-offers.ts OFFER_TOOL): its details are the card.
+  "offer",
+  // A project's transcript card, raised by the agent's `card` tool (shared/transcript-cards.ts CARD_TOOL): its details are the card.
+  "card",
+  // The project overseer's Settings change card (§app.project-overseer/settings): a propose's details are the card.
+  "sova_settings",
   // Tours retain only a validated small card projection; full authoring input remains lazy.
   "record_tour",
   "show_tour",
@@ -285,9 +302,6 @@ export interface ToolRowInfo {
   /** tool-result whose details record a patch: its "+n −m" (src/lib/tool-diff-stats.ts summaryStats,
       counted as for an edit). The card shows it only when its call is an edit or a write. */
   stats?: { added: number; removed: number };
-  /** tool-result of a codemode script (§chat.transcript/codemode-card): its calls, failed and still running
-      as recorded, for the folded line's "4 calls · 1 failed" before the card's content is fetched. */
-  calls?: { total: number; failed: number; running: number };
   /** EAGER_TOOLS only: the call's arguments; tours keep only small validated references. */
   args?: unknown;
   /** EAGER_TOOLS only: the result's output (its text blocks joined, as the card shows it). */
@@ -413,6 +427,8 @@ export interface TranscriptItem {
       call, whose tool-call row renders nothing once this row is there. A failed call, a `get`, or
       details that don't check out stay an ordinary tool-result. */
   align?: AlignRowInfo;
+  /** kind "card": the card, as GET /api/session-cards reads it (§chat/transcript-cards). */
+  card?: CardInfo;
   /** The entry's timestamp (ISO), on every row whose entry has one. */
   at?: string;
   /** The entry's facts, on its first row only (EntryMeta). Absent on rows to a consumer that asked
@@ -452,8 +468,8 @@ export interface AlignDocInfo {
   /** The adversarial review record (§chat.alignment-review/record); absent on every document no
       review op touched, which is all of them with the `adversarial-review` flag off. */
   review?: AlignReviewInfo;
-  /** The writing style in effect at the document's latest change; absent for Default. */
-  style?: "simplified" | "pm";
+  /** The writing style in effect at the document's latest change ("default": Technical); absent on older documents. */
+  style?: "default" | "simplified" | "pm";
   /** The document's own drawing (§chat.alignment/visuals); a question can carry one too. */
   visual?: AlignVisualInfo;
 }
@@ -1019,7 +1035,7 @@ export interface PlaybookCatalog {
 //                                   are ignored)
 // GET /api/settings/claude-status -> ClaudeCliStatus
 // GET /api/settings/align        -> AlignSettingsInfo
-// PUT /api/settings/align        -> AlignSettingsInfo (400 bad body: `{version: 1, style, visuals}`,
+// PUT /api/settings/align        -> AlignSettingsInfo (400 bad body: `{version: 1, style, visuals, eagerness?}`,
 //                                   the mode extension's strict parse, align-settings.ts)
 // ---------------------------------------------------------------------------
 /** Sova's own settings, stored in <agentDir>/sova/settings.json (server/web-settings.ts).
@@ -1027,7 +1043,7 @@ export interface PlaybookCatalog {
     subagent policy is. */
 export interface WebSettings {
   experimental: ExperimentalSettings;
-  /** Settings → Alignment's part of this file (style and visuals are mode-align.json's, AlignSettingsInfo). */
+  /** Settings → Alignment's part of this file (eagerness, style and visuals are mode-align.json's, AlignSettingsInfo). */
   alignment: AlignmentWebSettings;
 }
 
@@ -1045,10 +1061,11 @@ export interface AlignmentWebSettings {
   review: boolean;
 }
 
-/** GET/PUT /api/settings/align: the align mode's writing style and Visuals
-    (`<agent dir>/mode-align.json`, §chat.alignment/settings-file), and where they are stored. */
+/** GET/PUT /api/settings/align: the align mode's Eagerness, writing style and Visuals
+    (`<agent dir>/mode-align.json`, §chat.alignment/settings-file), and where they are stored.
+    `eagerness` is present only for Careful (absent: Eager, §chat.alignment/eagerness). */
 export interface AlignSettingsInfo {
-  settings: { version: 1; style: "default" | "simplified" | "pm"; visuals: boolean };
+  settings: { version: 1; style: "default" | "simplified" | "pm"; visuals: boolean; eagerness?: "eager" | "careful" };
   file: string;
 }
 
@@ -1117,6 +1134,9 @@ export interface ClaudeAccountsInfo {
   pool?: ClaudePoolInfo;
   /** macOS only: Claude Code's own login can't be read here (§app.claude-logins/macos-keychain). Absent otherwise. */
   claudeOwnLoginUnreadable?: true;
+  /** Login id → the projects and organizations here that use it ("Project Acme", "Organization Fold")
+      (§app.claude-logins/project-login). Absent when none does. */
+  usedBy?: Record<string, string[]>;
 }
 /** A device of the mesh, as the pool shows it. */
 export interface ClaudePoolDevice {
@@ -1184,6 +1204,9 @@ export interface ChatClaudeLogin {
   /** A pick waiting for the running reply to end, or being applied (a borrow in flight)
       (§app.claude-logins/switch-queue). */
   pending?: { id: string; name: string };
+  /** Not recorded yet, and the login shown is the chat's project's (`project`) or its organization's
+      for its projects (`org`) (§app.claude-logins/project-login). Absent otherwise. */
+  source?: "project" | "org";
 }
 /** How every refusal of `set_claude_login` begins, so the chat shows it as that switch's banner. */
 export const LOGIN_UNCHANGED = "Claude login unchanged:";
@@ -1298,6 +1321,27 @@ export interface GitCommit {
   at: number;
 }
 
+/** A repository's git folder (the one a linked worktree shares with its main checkout), read by
+    stat: every file's size summed, and what says git's cleanup there is stuck or overdue. */
+export interface GitFolderReading {
+  /** The git folder, absolute. */
+  path: string;
+  /** Sum of the files' sizes; a lower bound when `partial`. */
+  bytes: number;
+  /** The walk stopped at its entry cap. */
+  partial: boolean;
+  /** `objects/pack/*.pack` files (always whole: the pack folder is walked first). */
+  packs: number;
+  /** Loose objects (`objects/xx/*`); a lower bound when `partial`. */
+  loose: number;
+  /** At most one, stuck first. `stuck`: a cleanup lock (multi-pack-index.lock or
+      commit-graph-chain.lock) more than an hour old, `since` its mtime (ms epoch). `overdue`: more
+      than 50 pack files or 6,700 loose objects; each count present only when it is over. */
+  warning: { kind: "stuck"; lock: string; path: string; since: number } | { kind: "overdue"; packs?: number; loose?: number } | null;
+  /** When it was read (ms epoch); a cached reading keeps its time. */
+  checkedAt: number;
+}
+
 /** Where the read ran: this machine, or the session's target. */
 export type GitWhere = { kind: "local" } | { kind: "remote"; target: string };
 
@@ -1330,6 +1374,10 @@ export interface GitRepoSummary {
       yet reads `lastCommit` instead and shows the one commit it has. A transitional read, not a
       permanent contract. */
   commits?: GitCommit[];
+  /** The repository's git folder, for the new-session card (server/git-folder.ts). Local
+      repositories only; absent on a target, when the folder couldn't be read, and from a server
+      older than the field. Additive. */
+  gitFolder?: GitFolderReading;
   /** Changed paths, conflicted first, then by path; cut at the server's cap (`filesTotal`). */
   files: GitFileChange[];
   /** Changed paths git reported, before the cap. */
@@ -1429,6 +1477,22 @@ export type SessionSetup =
   | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; checkedAt: number }
   /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
   | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
+
+// GET /api/sessions/context/file?path=<session file>&file=<listed path> -> SessionSetupFileText
+//                                  (server/session-setup.ts, §chat.transcript/setup-card-open-file:
+//                                  the text of ONE file the session's own setup read lists, for the
+//                                  markdown viewer. Any other path is a 404, so it reads nothing else
+//                                  on disk; a remote session or an unreadable setup is a 409; a file
+//                                  over SETUP_FILE_MAX_BYTES a 413. 400 a bad path, 404 a missing
+//                                  session file. Never cached.)
+// ---------------------------------------------------------------------------
+/** The largest file the setup card opens in the viewer. */
+export const SETUP_FILE_MAX_BYTES = 1024 * 1024;
+
+export interface SessionSetupFileText {
+  path: string;
+  text: string;
+}
 
 // GET /api/sessions/tools?path=<session file> -> SessionTools   (server/session-tools.ts,
 //                                  §chat.transcript/setup-card-tools: the tools the HELD chat declares
@@ -1905,16 +1969,18 @@ export interface ProjectModeApprovalNeeded {
 // The `memory` minor mode: the model works from a summary of the whole chat (the VIEW: one-line
 // summaries, recent ones fine and old ones coarse) and opens any line word for word with its `zoom`
 // tool. Turned on from a chat's mode menu only (web; never the terminal, a worker or a profile) and,
-// for the Overseer, from its own toggle. Two types; each chat keeps its own type and view size.
+// for the Overseer, from its own toggle. Two types; each chat keeps its own type, and every chat uses
+// the view size Settings → Memory holds for its type (MemorySettings.sizes).
 //
 // POST /api/mode?path=… { minorModes?, memory?: Partial<ChatMemoryChoice> } -> ChatModeResult
-//                                  `memory` alone is a valid body (a type or size change; kept even while
-//                                  memory is off). 400 a bad type or size; 400 "memory" in minorModes for a
+//                                  `memory` alone is a valid body (a type change; kept even while memory is
+//                                  off). `memory.size` is ignored: the size is Settings'. 400 a bad type;
+//                                  400 "memory" in minorModes for a
 //                                  chat that can't have it (the Overseer: use its own route below; a baton or
 //                                  project-overseer session).
-// POST /api/mode?path=… { saveDefault: true } also saves this chat's memory choice as the default (the
+// POST /api/mode?path=… { saveDefault: true } also saves this chat's memory type as the default (the
 //                                  memory settings file's `default`).
-// POST /api/mode { minorModes?, memory? } (no path) writes the default only, as before.
+// POST /api/mode { minorModes?, memory? } (no path) writes the default only, as before (a memory type only).
 // GET  /api/memory?path=…        -> MemoryOutline (the lines the model sees now, oldest first; works for a
 //                                  chat that isn't open too. 400 no/bad path, 404 not a session)
 // GET  /api/memory/open?path=…&id=<first message>&n=<messages, a power of 2>
@@ -1922,17 +1988,21 @@ export interface ProjectModeApprovalNeeded {
 //                                  long ones in pages). 400 bad id/n, 404 no such line yet
 // GET  /api/settings/memory      -> MemorySettingsInfo (<agent dir>/mode-memory.json; missing → defaults)
 // GET  /api/settings/memory/options -> DelegateOptions (the same discovery as spec/options)
-// PUT  /api/settings/memory MemorySettings -> MemorySaveResult (replaces the summarizer; `default` absent keeps
-//                                  the stored one. 400 bad shape; unverifiable or policy-denied models save
-//                                  with a warning. Every chat's summarizer reads it at its next summary)
-// GET  /api/overseer/memory      -> OverseerMemoryInfo (no saved choice: on, UniiChat at 128 KB, whatever the
-//                                  chats' saved default is)
-// PUT  /api/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept in overseer.json; reaches the
-//                                  Overseer from its next turn. 400 bad body)
+// PUT  /api/settings/memory MemorySettings -> MemorySaveResult (replaces the summarizer and the sizes; `sizes`
+//                                  or `default` absent keeps the stored ones. 400 bad shape or a size outside
+//                                  [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX]; unverifiable or policy-denied models save
+//                                  with a warning. Every chat's summarizer reads it at its next summary, and
+//                                  its size at its next turn or compaction)
+// GET  /api/overseer/memory      -> OverseerMemoryInfo (no saved choice: on, UniiChat, whatever the chats'
+//                                  saved default is; the size is Settings' for the type)
+// PUT  /api/overseer/memory { on?, type? } -> OverseerMemoryInfo (kept in overseer.json; reaches the
+//                                  Overseer from its next turn. `size` is ignored: the size is Settings'.
+//                                  400 bad body)
 // GET  /api/projects/:pid/overseer/memory -> OverseerMemoryInfo (that project overseer's own switch, on the
 //                                  same terms; 404 unknown project)
-// PUT  /api/projects/:pid/overseer/memory { on?, type?, size? } -> OverseerMemoryInfo (kept as `memory` in the
-//                                  project overseer's overseer.json; reaches it from its next turn. 400 bad body)
+// PUT  /api/projects/:pid/overseer/memory { on?, type? } -> OverseerMemoryInfo (kept as `memory` in the
+//                                  project overseer's overseer.json; reaches it from its next turn. `size` is
+//                                  ignored. 400 bad body)
 // WS (chat): { type: "memory_status", status } after hello while memory is on, and on every change
 //                                  (the turn it goes off included), only from a runtime with the memory
 //                                  engine (an ordinary chat, the Overseer, a project overseer). No message:
@@ -1960,22 +2030,22 @@ export interface MemoryTypeInfo {
   rowDescription: string;
   /** "UniiChat — by Victor Taelin" */
   detail: string;
-  /** "Read the design ↗" target, when the type has a write-up. */
+  /** The help card's "Read the design ↗" target, when the type has a write-up. */
   link?: string;
-  /** The view size (KB) a chat of this type uses until it picks one. */
+  /** The view size (KB) of this type until Settings → Memory sets one. */
   defaultSize: number;
 }
 
 /** A chat's memory choice. `size`: the view grows to `size` KB, then merges down to half of it
     (UniiChat's 64–128 KB is 128); for zoomable compaction, the size of the openable summary a
-    compaction leaves. */
+    compaction leaves. The type is the chat's; the size is always Settings' for that type. */
 export interface ChatMemoryChoice {
   type: MemoryType;
   size: number;
 }
 
-/** ModeInfo.memory: the choice, plus what can be chosen. `sizes`: the panel's suggested sizes (KB);
-    any whole number in [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX] is accepted. */
+/** ModeInfo.memory: the choice, plus what can be chosen. `sizes`: the suggested sizes (KB) Settings →
+    Memory offers; any whole number in [MEMORY_SIZE_MIN, MEMORY_SIZE_MAX] is accepted there. */
 export interface MemoryModeInfo extends ChatMemoryChoice {
   types: MemoryTypeInfo[];
   sizes: number[];
@@ -2041,11 +2111,15 @@ export interface MemoryOutline {
 export type MemoryOpen = { lines: MemoryLine[] } | { message: MemoryMessage };
 
 /** <agent dir>/mode-memory.json. `summarizer`: who writes the summaries (default Claude Code
-    claude-haiku-5-5 at low effort); `default`: the choice new chats start from (Save as default). */
+    claude-haiku-5-5 at low effort); `sizes`: each type's view size (KB) every chat and the Overseer use
+    (absent on a write: keep the stored ones; always both on a read); `default`: the type new chats
+    start from (Save as default). An older file's `default.size` is read once into `sizes` and never
+    written again. */
 export interface MemorySettings {
   version: 1;
   summarizer: { primary: WorkerChoice; fallback: WorkerChoice | null };
-  default?: ChatMemoryChoice;
+  sizes?: Partial<Record<MemoryType, number>>;
+  default?: { type: MemoryType; size?: number };
 }
 
 export interface MemorySettingsInfo {
@@ -2209,6 +2283,8 @@ export interface QueueItem {
   /** Stable for the item's whole life; equals the sender's `clientId` when it gave one. */
   id: string;
   kind: "steer" | "followUp";
+  /** "queued": Sova can still take it back on its own (it holds it, or it is a steer handed to the agent
+      that the agent hasn't taken yet); "sending": handed to the agent with no way back but Stop. */
   state: "queued" | "sending";
   text: string;
   /** How many images ride with it. The bytes are never echoed back. */
@@ -2386,7 +2462,9 @@ export type ChatServerMessage =
   /** `after` (only to a client that asked with `&have=`): the client's rows up to and including
       this row are the branch's first `older` rows, and `items` are the rows after it (possibly
       none); `olderSummary` sums up all `older` of them, the client's own included. */
-  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string }
+  /** `cwdFallback` (§app.shell/missing-folder-home): the chat runs in the home folder because its stored
+      local folder is gone; absent when it runs in its own folder. */
+  | { type: "hello"; items: TranscriptItem[]; isStreaming: boolean; isCompacting?: boolean; model: string | null; thinking: string; context: ContextInfo | null; older?: number; olderSummary?: OlderSummary; prefetch?: boolean; alignReview?: boolean; live?: HelloLive; after?: string; cwdFallback?: CwdFallback }
   /** Which code a chat in its own process runs (§app.chat-processes/code-pickup). Sent after the
       hello when not current, and to every client on each change; none received = current. A chat
       hosted in the server sends it only to answer `reload_code`. See ChatCodeState. */
@@ -2635,7 +2713,7 @@ export type WatchServerMessage =
 // missing/corrupt sources: they return an honest empty/unavailable payload.
 // ---------------------------------------------------------------------------
 // GET /api/insights/usage          -> UsageInsight
-// GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s)
+// GET /api/insights/agents         -> AgentsInsight     (all live pi processes; poll ~5s; ?tokens=1 adds `tokens`)
 // POST /api/upload                -> UploadResult 201  (raw image bytes; Content-Type: image/*; saved in /tmp)
 // POST /api/upload?draft=<session path> -> UploadResult 201  (same, saved durably in that session's folder
 //                                  <agent dir>/sova/attachments/<session id>/; 400 invalid session path, 404 no such session)
@@ -2979,6 +3057,54 @@ export interface TeamMember {
   /** The newest `retire` event for this member. `reason`: the successor confirmed, or the handover
       timed out; absent when the event's detail says neither. */
   retired?: { at: string; reason?: "confirmed" | "timeout" };
+  /** The member's team inbox (§app.subagents-pane/member-inbox), counted from the items file the
+      main chat's subagents extension keeps for it. `open`: new or read, not returned, not an
+      instruction copy; `urgent`: the open ones marked urgent; `total`: every item its file folds
+      to. Absent when the member has no items file, and from older servers. */
+  inbox?: TeamInboxCounts;
+}
+/** `closedByMember`: addressed items the member closed itself (`team_inbox done` or a reply);
+    `closedAutomatically`: addressed items Sova's safety net closed (§app.teams/inbox-zero). Both
+    absent from older servers, which show no summary line. */
+export interface TeamInboxCounts { open: number; urgent: number; total: number; closedByMember?: number; closedAutomatically?: number }
+export type TeamInboxKind = "message" | "question" | "report" | "handover" | "notice" | "instruction";
+export type TeamInboxStatus = "new" | "read" | "addressed";
+/** One item in a member's inbox, without its body (GET /api/insights/session/inbox). `from` is
+    the sender (`workerId` "parent" for the main thread and for Sova); `movedFrom`: the members it
+    was first sent to, oldest first, when a handover or a forward moved it here; `returned`: it was
+    sent back to its sender and is no longer open; `closedBy`: how an addressed item was closed
+    (`member` by `team_inbox done`, `reply` by a reply naming it, `auto` by Sova's safety net),
+    absent on older items and from older servers (read as the member). Times are epoch ms. */
+export interface TeamInboxItemInfo {
+  id: string;
+  from: { role: string; workerId: string };
+  kind: TeamInboxKind;
+  subject: string;
+  urgent: boolean;
+  status: TeamInboxStatus;
+  sentAt: number;
+  readAt?: number;
+  addressedAt?: number;
+  note?: string;
+  replyTo?: string;
+  movedFrom?: { role: string; workerId: string; at: number; why: "handover" | "forward" }[];
+  returned?: { at: number; why: string };
+  closedBy?: TeamInboxClosedBy;
+}
+export type TeamInboxClosedBy = "member" | "reply" | "auto";
+/** GET /api/insights/session/inbox?path=&team=&worker=: one member's items, newest first.
+    `items` is capped at the newest 500; `total` counts them all. */
+export interface TeamInboxView {
+  teamId: string;
+  workerId: string;
+  items: TeamInboxItemInfo[];
+  total: number;
+  counts: TeamInboxCounts;
+}
+/** GET /api/insights/session/inbox?path=&team=&worker=&item=<id>: one item's whole message. */
+export interface TeamInboxBody {
+  id: string;
+  body: string;
 }
 export type TeamDuty = "coordinator" | "monitor";
 export type TeamEventKind = "handover" | "retire" | "pause" | "resume" | "wrap-up";
@@ -3034,6 +3160,30 @@ export interface AgentsInsight {
   at: number;
   totals: { sessions: number; working: number; total: number; teams: number; teamWorking: number; soloWorking: number };
   sessions: LiveAgentSession[]; // working first, then by lastActivity
+  /** Output tokens of each Sova-hosted main thread, its workers at any depth rolled up, keyed by
+      its session id: only sessions with tokens in the last 5 minutes (§app.insights/session-token-rate),
+      each one `SessionTokens` as one string (shared/session-tokens-wire.ts). Only on `?tokens=1`
+      (the board asks while it is shown): then `{}` when none, and absent only from older servers
+      (every row then reads as unmeasured). */
+  tokens?: Record<string, string>;
+}
+
+/** One board row's output tokens: its last 5 minutes as 30 s epoch slots (`end` = the server's
+    current slot), oldest first, each list starting at its oldest non-zero slot and ending at `end`,
+    and each part's 30-minute total. A list absent = no tokens in the last 5 minutes; a total absent =
+    none in the last 30 (a part idle over 5 minutes still sends its total). Sent encoded
+    (shared/session-tokens-wire.ts). */
+export interface SessionTokens {
+  end: number;
+  /** The session's own chat processes'. */
+  own?: number[];
+  /** Its 30-minute total, present even without `own` when it wrote only earlier in the 30. */
+  own30?: number;
+  /** Its workers', at any depth. */
+  workers?: number[];
+  workers30?: number;
+  /** Some of these calls' tokens are known missing (a Claude Code turn running, a ring not reported). */
+  partial?: true;
 }
 
 export interface OutlineTopic {
@@ -3205,6 +3355,18 @@ export interface SessionWorktreeInfo {
   /** Tracked active with its folder gone: what its work came to, the same answer readiness gives
       (§chat.worktrees/pane). "unknown": its branch is gone too and nothing records a merge. */
   gone?: "merged" | "unmerged" | "empty" | "unknown";
+  /** Its newest merge queue entry (shared/merge-queue.ts), when it has one. Additive. */
+  queue?: import("./merge-queue").WorktreeQueueInfo;
+  /** The merge queue of its project (a registered project's), entry or not: Land, Set Up and View Merge Queue read
+      it. Additive. */
+  mergeProject?: import("./merge-queue").WorktreeMergeProject;
+  /** Its branch against the project's merge target (commits ahead, lines +/−), for a registered project's worktree.
+      Additive. */
+  mergeStats?: import("./merge-queue").WorktreeMergeStats;
+  /** Present only when its repo is one the merge queue serves (on the Projects list and its merge setup done): Land,
+      "Ready to land" and "Landing specs" key on it, never on `mergeProject` being missing. Absent: the repo merges
+      plainly (the chat merges it into main). Additive. */
+  mergeServed?: true;
 }
 
 // ---------------------------------------------------------------------------
@@ -3289,7 +3451,7 @@ export type OverseerProactivity = "off" | "badge" | "brief";
 
 export interface OverseerQuickAction {
   id: string;
-  /** Title Case, short: "What Needs Me". */
+  /** Title Case, short: "Get Things Moving". */
   label: string;
   /** One line shown under the label in the flyout. */
   description: string;
@@ -3312,7 +3474,8 @@ export interface OverseerCaps {
 
 /** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */
 export interface OverseerSettings {
-  version: 1;
+  /** 2 since the one-time move off the old five quick actions (§app.overseer/quick-actions-move). */
+  version: 2;
   /** "provider/model"; null = pi's default. Never becomes the default for new sessions. */
   model: string | null;
   /** off…max, clamped to the model; null = the model's default. */
@@ -3328,9 +3491,10 @@ export interface OverseerSettings {
   explorer: WorkerChoice;
   /** Resume the runs a server restart cut off (§app.overseer/auto-resume). Absent = on. */
   autoResume?: boolean;
-  /** The Overseer's memory: its own switch, type and size. Absent = no choice made:
-      on, UniiChat at 128 KB. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. */
-  memory?: { on: boolean; type: MemoryType; size: number };
+  /** The Overseer's memory (§chat.memory/overseer): its own switch and type. Absent = no choice made: on,
+      UniiChat. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. `size`: an older
+      file's, kept but ignored (the size is Settings → Memory's for the type). */
+  memory?: { on: boolean; type: MemoryType; size?: number };
 }
 
 export interface OverseerSettingsInfo {
@@ -3359,8 +3523,10 @@ export interface OverseerInfo {
   id: string;
   /** Up to 20 previous Overseer files, newest first; openable read-only (watch, no chat). */
   history: { id: string; path: string; title: string; lastActiveAt: string }[];
-  /** Attention counts for the entry button (from the digest). act = needs you; decide = finished/look. */
-  badge: { act: number; decide: number };
+  /** Attention counts for the entry button (from the digest). act = blockers; decide = finished/look;
+      needsYou = sessions Needs you lists (act or soft items, shared/needs-you.ts), the head's "need
+      you" (additive: absent from older servers, then read `act`). */
+  badge: { act: number; decide: number; needsYou?: number };
   /** Overseer assistant messages newer than the Overseer's own seenAt: the chat-unread badge on the
       entry button, separate from `badge`. */
   unread: number;
@@ -3386,6 +3552,8 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
+  | "offer-waiting"       // act tier, never pushed or briefed: the session shows an open offer card (§chat.offers/card), idle or working
+  | "card-waiting"        // act tier, never pushed or briefed: the session shows an open transcript card waiting on an answer (§chat.transcript-cards/answering), one per card, idle or working
   | "tour-sign-in"        // act tier, never pushed: one of the session's tour recordings waits for the user to sign in on its card (§app.tours/sites; from the server's memory, gone on restart)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
@@ -3393,7 +3561,8 @@ export type AttentionKind =
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "whatsapp-down"       // act tier, pushed (kind `whatsapp-down`): WhatsApp sending is down, logged out, replaced, blocked, unpaired, or unreachable 5 min (§app.outreach/sender-health; no session: `path` "", `href` "#/settings/outreach")
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
-  | "asks-you"        // decide tier: decisions' guess that the last reply of a turn with no open alignment question asks the user something
+  | "asks-you"        // decide tier, soft: decisions' guess that the last reply of a turn with no open alignment question asks the user something
+  | "unverified"      // decide tier, soft: decisions' guess that the last reply says it is done but names something it didn't run or check
   | "ready-to-merge"  // decide tier: a worktree is ready, or ready and waiting for the go-ahead (SessionSummary.readiness)
   | "merged-open-work" // a merge whose reply names significant open work (§app.decisions/merge-followup)
   | "restart-pending" // merges changed the server since it started (one item, no session: `path` "")
@@ -3402,11 +3571,16 @@ export type AttentionKind =
   | "owner-request"      // act tier, never pushed: an org owner's open request from the Project Assistant (§app.project-assistant/requests; no session: `path` "", `href` the org's People tab)
   | "owner-outage"       // act tier, pushed (kind `owner-outage`): the owner reports the app is down
   | "owner-link-request" // act tier, never pushed: the owner asks for a new owner link (theirs turned off unused, §app.owner-page/link)
-  | "owner-version-request"; // act tier, never pushed: the owner asks to try a version that wasn't started (an open `try` request; `href` the project's Branches tab)
+  | "owner-version-request" // act tier, never pushed: the owner asks to try a version that wasn't started (an open `try` request; `href` the project's Branches tab)
+  | "owner-request-closed" // act tier, never pushed: the owner closed a request the team was working on, until the operator's Got It (§app.project-assistant/closing)
+  | "owner-feature-ended"; // act tier, never pushed: a feature request chat ended because its owner stopped being the owner (its request still with the team; `href` the Requests tab)
 
 export interface AttentionItem {
   /** Session id. */
   id: string;
+  /** A guess of the turn card (§app.overseer/attention-digest, the softer tier): listed in Needs
+      you and counted in "need you", never a brief or a phone notification. Additive. */
+  soft?: true;
   path: string;
   title: string;
   /** cwd (or target:remoteCwd), home-shortened. */
@@ -3555,10 +3729,11 @@ export interface SovaConfirmDetails {
 }
 
 /** One thing a confirm card is about. A session row: its folder's short name (`project`), last
-    activity (ISO), a one-line summary when it has one, and how many subagents were working.
-    `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
-    sentences, `CONFIRM_NOTE_MAX` characters). */
-export type SovaConfirmItem =
+    activity (ISO), a one-line summary when it has one, and how many subagents were working. `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
+    sentences, `CONFIRM_NOTE_MAX` characters). Every kind may also carry the row fields of
+    `SovaConfirmRow` (a section heading, what Go sends). */
+export type SovaConfirmItem = SovaConfirmRow &
+  (
   | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; note?: string }
   | { kind: "idea"; id: string; title: string; note?: string }
   | { kind: "todo"; id: string; text: string; note?: string }
@@ -3570,7 +3745,65 @@ export type SovaConfirmItem =
   | { kind: "org"; id: string; name: string; note?: string }
   /** A folder to add as a project (§app.overseer/org-project-add): `id` is its checkout root, `asked` the folder as
       given when that differs, the org it goes into (none: standalone) and the name it gets when the card named one. */
-  | { kind: "folder"; id: string; asked?: string; orgId?: string; orgName?: string; name?: string; note?: string };
+  | { kind: "folder"; id: string; asked?: string; orgId?: string; orgName?: string; name?: string; note?: string }
+  /** A running copy of a project (§app.overseer/copies): `id` is its instance id. Its own row, never a session's; who
+      started it; whether its folder has uncommitted edits or is gone; how many active share links it has (never a URL);
+      `working`: the session that started it is working now. */
+  | {
+      kind: "copy";
+      id: string;
+      project: string;
+      projectName: string;
+      slot: number;
+      branch: string | null;
+      checkout: string;
+      state: "running" | "stopped" | "broken";
+      startedBy: CopyStarter;
+      edits: "clean" | "uncommitted" | "folder-gone";
+      links: number;
+      working?: boolean;
+      note?: string;
+    }
+  /** A process holding one of a project's copy ports that Sova calls safe to stop (§app.overseer/copies): `id` is
+      `<port>:<pid>:<start>`, which the stop checks again; `command` redacted, at most 120 characters. */
+  | {
+      kind: "leftover";
+      id: string;
+      project: string;
+      projectName: string;
+      slot: number;
+      port: number;
+      pid: number;
+      start: string;
+      command: string;
+      folder: string;
+      reason: LeftoverReason;
+      unit?: string;
+      note?: string;
+    }
+  );
+
+/**
+ * What a card row carries whatever its kind (§app.overseer/card-sections), snapshotted when the
+ * card was raised: `section`, the heading it sits under; `sends`, the exact message the Overseer
+ * sends that session when the row's Go (its first choice) is applied. New per-row facts go here
+ * (any kind) or on one kind's variant above (a session's alone).
+ */
+export interface SovaConfirmRow {
+  section?: string;
+  sends?: string;
+}
+
+/** The longest section heading and Go-sends text one confirm item may carry. */
+export const CONFIRM_SECTION_MAX = 40;
+export const CONFIRM_SENDS_MAX = 600;
+
+/** Who started a copy, as its card row shows it. */
+export type CopyStarter = { kind: "session"; id: string; title: string } | { kind: "operator" | "overseer" | "conform" | "other"; label: string };
+
+/** Why a process holding a copy port is a leftover: its folder is deleted or missing, or its branch's own commits are
+    already merged into the main checkout's. */
+export type LeftoverReason = "folder-gone" | "branch-on-main";
 
 /** The longest note one confirm item may carry. */
 export const CONFIRM_NOTE_MAX = 220;
@@ -3852,7 +4085,15 @@ export interface ExtensionOffers {
   /** The places on Sova's screens it adds to; Sova asks it for each through GET
       /ext/<id>/api/screens/<place> (shared/extension-offers.ts SCREEN_PLACES). */
   screens?: ScreenPlace[];
+  /** Since v1.17: its transcript card types, each its checked declaration, typed `<id>.<name>`
+      (§app.extensions/views, shared/transcript-cards.ts checkExtCard). */
+  cards?: import("./transcript-cards").CardDecl[];
+  /** Since v1.17: its drawing kinds, each its checked declaration by its fence word `<id>.<name>`, with
+      its view and guide paths inside `dist`. */
+  drawings?: ExtensionDrawingOffer[];
 }
+/** An extension's drawing kind as its offers carry it (§app.extensions/views). */
+export type ExtensionDrawingOffer = Omit<import("./drawing-kinds").DrawingDecl, "guide" | "ext"> & { view: string; guide: string };
 export interface ExtensionCommandInfo {
   name: string; // [a-z0-9][a-z0-9-]{0,47}
   label: string;
@@ -4125,7 +4366,8 @@ export interface FrontDoorConfig {
 // Push: WS /ws/watch?feed=sessions — the existing read-only socket, in a session-less mode (no
 // ?path=). Sends SessionFeedMessage: a full `marks` snapshot on connect, then one `marks` message
 // per change (a signal, tag or turn error written, cleared, or pruned) and `tags_backfill` progress while a
-// backfill runs. The client overlays these onto its SessionSummary list by id without waiting for
+// backfill runs; `list_changed`, `attention` and `overseer` when those change (never on connect: the
+// client reads the list, digest and Overseer once per open and when its tab becomes visible). The client overlays these onto its SessionSummary list by id without waiting for
 // the list poll; the list itself still carries the same fields (the poll stays the source of truth
 // after a reconnect). Never writes; the socket ignores anything the client sends.
 // ---------------------------------------------------------------------------
@@ -4241,7 +4483,41 @@ export interface DecisionProbeResult {
     "asks-you": the last reply of a turn with no open alignment question asks the user something
     (open alignment questions stay SessionSummary.align's deterministic count); "looping": the turn
     went in circles. */
-export type SignalKind = "asks-you" | "looping";
+export type SignalKind = "asks-you" | "looping" | "unverified";
+
+/** An alignment question's stakes (§app.decisions/align-triage). */
+export const ALIGN_STAKES = ["low-risk", "deletes-data", "costs-money", "changes-architecture-or-contract"] as const;
+export type AlignStakes = (typeof ALIGN_STAKES)[number];
+/** GET /api/sessions/align-triage: per open card (by `al_N`), the version answered and each open question's stakes. */
+export interface AlignTriage {
+  docs: Record<string, { rev: number; provider: DecisionProviderId; model: string; stakes: Record<string, AlignStakes> }>;
+}
+
+/** A worker report check's outcome choice (§app.decisions/worker-report). */
+export const WORKER_REPORT_OUTCOMES = ["finished", "partial", "blocked", "failed"] as const;
+export type WorkerReportOutcome = (typeof WORKER_REPORT_OUTCOMES)[number];
+/** GET /api/sessions/worker-checks: per worker id, the check of its newest done report. `report` is
+    the report's entry id; `unverified`: it reads finished but doesn't say it ran tests or checks. */
+export interface WorkerChecks {
+  workers: Record<string, { report: string; provider: DecisionProviderId; model: string; outcome: WorkerReportOutcome; unverified: boolean }>;
+}
+
+/** The turn card's outcome choice (§app.decisions/attention-signals). */
+export const TURN_OUTCOMES = ["did-what-was-asked", "partial-stopped", "waiting-on-user", "waiting-on-team", "hit-unfixed-failure", "progress-report"] as const;
+export type TurnOutcome = (typeof TURN_OUTCOMES)[number];
+/** The turn card's kind of ask. */
+export const ASK_KINDS = ["choose-between-options", "approve-risky-action", "needs-info", "restart-or-merge-go", "optional-offer", "none"] as const;
+export type AskKind = (typeof ASK_KINDS)[number];
+
+/** A finished turn's card as the wire carries it (additive): the chosen options and the two probabilities. */
+export interface TurnCard {
+  outcome?: TurnOutcome;
+  askKind?: AskKind;
+  /** P(it says it is done but names something not run, tested or checked). */
+  claimsUnverified?: number;
+  /** P(it names work still to do). */
+  leftOpen?: number;
+}
 
 /** One classified finished turn of a session (<stateRoot>/signals.json keeps the raw answers). */
 export interface SessionSignals {
@@ -4249,11 +4525,16 @@ export interface SessionSignals {
   at: number;
   /** Id of the last assistant entry on the active branch when classified (the cache key). */
   turnId: string;
+  /** Who actually answered: the mark's tooltip names it ("Guessed by Jev", or the model). */
   provider: DecisionProviderId;
+  /** The answering model's id (additive; absent from older servers). */
+  model?: string;
   /** score in [0, 2]: 0 progressing … 2 clearly looping. */
   stuck?: { score: number; confidence: number };
   /** P(the last reply asks the user something), 0..1, when that turn was asked. */
   asksUser?: number;
+  /** The turn card's answers (additive; absent on records from before the card). */
+  card?: TurnCard;
   /** The kinds that fire under the server's thresholds; [] = none. The client never re-derives
       them. Visibility is server-computed too: `signals` (and `workerSignals`) are present on a
       SessionSummary / SessionMarks only while the mark should show (attention on, kinds non-empty,
@@ -4313,6 +4594,14 @@ export interface SessionSummary {
 }
 
 /** One worktree's merge readiness (§chat.worktrees/readiness). */
+/** A chat running in the home folder because its stored local working directory is gone
+    (§app.shell/missing-folder-home): `original` is the stored folder, unchanged in the file; `cwd` the
+    home folder of the machine the chat runs on. */
+export interface CwdFallback {
+  original: string;
+  cwd: string;
+}
+
 /** "removed": the worktree's folder is gone and its work isn't known merged (§chat.worktrees/readiness). */
 export type ReadinessState = "merged" | "stale" | "in-progress" | "blocked" | "ready" | "waiting-approval" | "removed";
 
@@ -4339,6 +4628,34 @@ export interface WorktreeReadiness {
   /** Readable, unmerged, and no commit of its own past its base (what "no commits yet" says,
       whatever the state): the row has no Review Changes (§chat.changes/entry). Absent otherwise. */
   noCommits?: true;
+  /** Ready to land at its head commit, or Landing specs (§chat.worktrees/ready-to-land). Absent otherwise. */
+  landing?: WorktreeLanding;
+}
+
+/** A worktree whose work is finished at its head commit (§chat.worktrees/ready-to-land). */
+export interface WorktreeLanding {
+  /** "ready": Ready to land (its drafts, if any, land with it); "specs": finished, but its drafts don't fit
+      (Landing specs). */
+  state: "ready" | "specs";
+  /** The full head sha it holds for. */
+  commit: string;
+  /** The spec drafts not yet official, by name. */
+  drafts?: string[];
+  /** The session's own reason it can't land them (its reply's `Can't land specs:` line). */
+  specsWhy?: string;
+  /** What lands with it (§chat.worktrees/ready-to-land): the drafts' promises, from Sova's try of the landing. */
+  docs?: WorktreeLandingDocs;
+}
+
+export interface WorktreeLandingDocs {
+  /** How many drafts land, and how many of their promises are new and changed (removed count as changed). */
+  drafts: number;
+  added: number;
+  changed: number;
+  /** The promises' § ids. */
+  names: string[];
+  /** Why they don't fit (state "specs"), one line each. */
+  problems?: string[];
 }
 
 /** The row's badge, the first that holds (§chat.worktrees/readiness). */
@@ -4365,6 +4682,21 @@ export interface SessionReadiness {
   /** The follow-up check's answer for the newest merge (§app.decisions/merge-followup), when it
       names work: its weight and the reply's own line naming it. */
   followUp?: { weight: "small" | "significant"; cue: string };
+  /** The branch status line of the newest merge (additive): code only, no model. */
+  status?: BranchStatus;
+}
+
+/** "merged {commit} · pushed · live · spec promoted" (§chat.worktrees/readiness), as facts. */
+export interface BranchStatus {
+  branch: string;
+  /** The merge's commit, 7 characters. */
+  commit: string;
+  /** On the target's origin branch; absent when there is no origin to ask. */
+  pushed?: boolean;
+  /** This server already runs the merge (false: a restart is owed). */
+  live: boolean;
+  /** Spec drafts in the merged worktree not promoted yet; absent when it has none or is gone. */
+  specDrafts?: number;
 }
 
 export type TagsBackfillScope = "recent" | "all";
@@ -4403,10 +4735,42 @@ export type SessionFeedMessage =
       to live, busy/activity or lastActiveAt). No payload: the client refetches the list
       (coalesced). */
   | { type: "list_changed" }
+  /** Only on a socket that asked for rows (`/ws/watch?feed=sessions&rows=1`), always its FIRST
+      frame: the list's current version. `epoch` names this feed's run (a restart, or the feed
+      stopping with its last listener, starts a new one); `version` counts its row changes. GET
+      /api/sessions names the version its body is at in `X-Sova-List-Version: <epoch>:<version>`.
+      A client that gets any other first frame is talking to a server without rows (it re-reads
+      on `list_changed`). Additive: a socket without `rows=1` never gets it. */
+  | { type: "rows_hello"; epoch: string; version: number }
+  /** On a rows socket instead of `list_changed`: the rows that changed between versions `from`
+      and `to` (= from + 1), whole (`upsert`, new or changed on any field a row shows), and the
+      paths that left the list (`remove`). The client applies it only at version `from`, sorts by
+      lastActiveAt, and re-reads the list on a gap or an epoch it doesn't hold. A change too big for
+      one frame (over ROWS_MAX_ROWS rows or ROWS_MAX_BYTES) comes as `list_changed` instead. */
+  | { type: "rows"; epoch: string; from: number; to: number; upsert: SessionSummary[]; remove: string[] }
+  /** On a rows socket once a minute: the digest (src/lib/summary-diff.ts rowsDigest) of the list at
+      `version`. A client at that version whose own digest differs re-reads the list. */
+  | { type: "rows_check"; epoch: string; version: number; digest: string }
+  /** The session groups changed (a group made, renamed, reordered or deleted, or a session put into
+      or taken out of one, by any client or the Overseer: server/session-groups.ts writes it). No
+      payload: the client re-reads GET /api/session-groups and the list. Never on connect. Additive:
+      a client that predates it ignores it. */
+  | { type: "groups_changed" }
   /** The logical LLM calls in flight on this host and every connected host: sent once on every
       connect, then on each change of the total or its coverage. Never a reason to re-read the
       list. */
   | { type: "llm_inflight"; inflight: LlmInflight }
+  /** The attention digest (as GET /api/overseer/attention returns it), sent only when it differs
+      from the last one this server pushed; never on connect (the client reads it once when the
+      feed opens and when the tab becomes visible again). */
+  | { type: "attention"; digest: AttentionDigest }
+  /** The Overseer's state (as GET /api/overseer returns it), sent the same way as `attention`. */
+  | { type: "overseer"; info: OverseerInfo }
+  /** A project's merge queue changed (an entry added, moved, a step of the run, a landing): its whole view, as
+      merge.status answers it. Never on connect (the client reads merge.status when it opens a view). Additive. */
+  | import("./merge-queue").MergeQueueFeed
+  /** One chat's merge queue cards changed (shared/merge-queue.ts MergeCard): all of that chat's cards. Additive. */
+  | import("./merge-queue").MergeCardsFeed
   | { type: "error"; message: string };
 
 /** Why an LlmInflight count is only a floor. `host` is the peer's id; absent = this host. */
@@ -4471,7 +4835,8 @@ export type LlmFeedMessage =
 //    `context=1` adds `oldText`, the file's old side whole (for expanding folded context).
 //    `origins=1` adds the commits each hunk came from (`hunkCommits`, `commits`, or `originsUnknown`).
 // <scope> as query parameters: kind=worktree&session=<sessionPath>&path=<worktreePath>
-//                                 [&base=<oid>&head=<oid>[&baseRef=<label>][&branch=<label>]]
+//                                 [&base=<oid>&head=<oid>[&baseRef=<label>][&branch=<label>]][&uncommitted=1]
+//                            | kind=queue&project=<projectId>&(entry=<mq_…>|branch=<branch>)   (no session)
 //                            | kind=commit&session=<sessionPath>&path=<repoPath>&sha=<hex sha>
 //                            | kind=merge&session=<sessionPath>&path=<repoPath>&sha=<full sha>
 //                            | kind=dirty&session=<sessionPath>&path=<cwd>
@@ -4496,7 +4861,24 @@ export type DiffScope = (
   /** A worktree's branch (committed HEAD) against its review base, chosen by the rule the
       show_changes tool uses (pi-config/extensions/worktrees/git.ts reviewBase). With `pin`, the
       card's saved base..head instead, recomputing nothing. */
-  | { kind: "worktree"; sessionPath: string; worktreePath: string; pin?: DiffPin }
+  | {
+      kind: "worktree";
+      sessionPath: string;
+      worktreePath: string;
+      pin?: DiffPin;
+      /** Unpinned only: when the worktree has uncommitted files, the head side is its working tree
+          (the branch's commits plus them), and each file with uncommitted changes is marked
+          `uncommitted` (§chat.changes/entry). A clean worktree reads as without it. */
+      uncommitted?: true;
+    }
+  /** A Merge Queue row's branch, with no session (§chat.changes/endpoint): the server derives
+      both sides from the queue's own records for project `project` (its id). `entry`: an entry's
+      pinned commit against its merge-base with the target, or, once landed, what its landing
+      brought in (the target before it to the landing commit). `branch`: a branch checked out in a
+      worktree of that project's main checkout (never the checkout itself), its tip against its
+      merge-base with the target, its uncommitted files included and marked as the worktree
+      scope's `uncommitted` does. Exactly one of the two. */
+  | { kind: "queue"; project: string; entry?: string; branch?: string; sessionPath?: undefined }
   /** One commit against its first parent (a root commit: against the empty tree). `sha` is hex,
       4–64 chars, resolved to a commit in that repository; a merge card's sha, typically. */
   | { kind: "commit"; sessionPath: string; repoPath: string; sha: string }
@@ -4511,9 +4893,17 @@ export type DiffScope = (
 
 /** The scope's query string (no leading `?`). */
 export function diffScopeQuery(s: DiffScope): string {
+  if (s.kind === "queue") {
+    const out = new URLSearchParams({ kind: s.kind, project: s.project });
+    if (s.entry) out.set("entry", s.entry);
+    if (s.branch) out.set("branch", s.branch);
+    for (const p of s.paths ?? []) out.append("paths", p);
+    return out.toString();
+  }
   const q = new URLSearchParams({ kind: s.kind, session: s.sessionPath });
   if (s.kind === "worktree") {
     q.set("path", s.worktreePath);
+    if (s.uncommitted) q.set("uncommitted", "1");
     if (s.pin) {
       q.set("base", s.pin.base);
       q.set("head", s.pin.head);
@@ -4557,8 +4947,12 @@ export interface DiffFileSummary {
       side git has not hashed (dirty scope). */
   oldOid?: string;
   newOid?: string;
-  /** Dirty scope only: the file is not tracked (shown as added). */
+  /** Dirty scope, or a comparison that includes uncommitted files: the file is not tracked (shown as added). */
   untracked?: true;
+  /** A comparison whose head is a working tree beyond its branch's commits (a worktree scope's
+      `uncommitted`, a queue scope's branch): this file has changes not committed yet (untracked
+      files included). Never set in the dirty scope, where every file is. */
+  uncommitted?: true;
   /** Untracked only: too large to diff, or past the summary's read budget; `added` counts only the
       lines read (server/git-diff.ts MAX_UNTRACKED_READ, UNTRACKED_BUDGET), 0 when none were. */
   tooLarge?: true;
@@ -4584,6 +4978,8 @@ export interface DiffSummary {
   totals: { files: number; added: number; removed: number };
   /** The file list stopped at the cap; `totals.files` is the real count. */
   truncated?: true;
+  /** How many listed files carry `uncommitted` (absent when none, or the head is a commit). */
+  uncommitted?: number;
   generatedAt: number;
 }
 
@@ -5216,6 +5612,25 @@ export interface UpdatesRunning {
   canUpgrade: boolean;
   /** Why not, in a sentence, when it can't. */
   whyNot: string | null;
+  /** When this server started (`GET /api/health`'s startedAt). Absent from older servers. */
+  startedAt?: string;
+  /** May Restart Sova restart this server now (a service runs it, and no upgrade runs). */
+  canRestart?: boolean;
+  /** Why not, in a sentence, when it can't. */
+  restartWhyNot?: string | null;
+  /** The service that runs this server, for a terminal check (`systemctl --user status <name>`, or a launchd label). */
+  restartUnit?: { manager: "systemd" | "launchd"; name: string } | null;
+  /** Code on disk newer than what runs: commits since the start, and changes not committed since then; null when it matches or can't be read. */
+  diskAhead?: { commits: number; dirty: boolean } | null;
+}
+
+/** `POST /api/updates/restart`'s answer (202): the restart is scheduled. */
+export interface RestartScheduled {
+  scheduled: true;
+  /** The server's startedAt now: the restart is done once `GET /api/health` answers another. */
+  startedAt: string;
+  /** Seconds until the service restarts. */
+  inSeconds: number;
 }
 
 /** What a check found newer, or not. */

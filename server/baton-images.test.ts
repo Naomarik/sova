@@ -189,6 +189,12 @@ describe("the staging area", () => {
     assert.deepEqual(readdirSync(sweepRoot), ["open-one"]);
     images.sweepUploads(later, sweepRoot, () => true);
     assert.deepEqual(readdirSync(sweepRoot), [], "a day later the photo and its empty folder are gone");
+    // A fresh empty folder is an upload about to open its part: the sweep leaves it (it raced the first upload).
+    mkdirSync(join(sweepRoot, "pa-fresh"), { recursive: true });
+    images.sweepUploads(Date.now(), sweepRoot, () => true);
+    assert.deepEqual(readdirSync(sweepRoot), ["pa-fresh"], "a folder made a moment ago stays");
+    images.sweepUploads(Date.now() + 2 * 60 * 60 * 1000, sweepRoot, () => true);
+    assert.deepEqual(readdirSync(sweepRoot), [], "an hour on, the empty folder goes");
   });
 });
 

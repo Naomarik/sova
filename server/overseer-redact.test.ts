@@ -328,6 +328,13 @@ describe("secrets recognised by shape (no credential file names them)", () => {
     ["ghp_ token", `${"ghp_" + "FAKE0123456789abcdefFAKE0123"}`, REDACTED],
     ["gho_ token", `t=${"gho_" + "FAKE0123456789abcdefFAKE0123"}`, `t=${REDACTED}`],
     ["github_pat_", `${"github_pat_" + "11FAKE0123456789_abcdefFAKE0123456789"}`, REDACTED],
+    ["glpat- token", `x ${"glpat-" + "FAKEfake0123456789abcd"} y`, `x ${REDACTED} y`],
+    ["glpat- routable token", `${"glpat-" + "FAKEfake0123456789abcdefFAKE.01.0w1xyz2ab"}`, REDACTED],
+    ["glrt- runner token", `${"glrt-" + "t1_FAKEfake0123456789abcd"}`, REDACTED],
+    ["gldt- deploy token", `${"gldt-" + "FAKEfake0123456789abcd"}`, REDACTED],
+    ["glcbt- job token", `${"glcbt-" + "64_FAKEfake0123456789abcd"}`, REDACTED],
+    ["gloas- OAuth secret", `${"gloas-" + "FAKEfake0123456789abcdefFAKEfake0123456789"}`, REDACTED],
+    ["GR1348941 runner registration", `${"GR1348941" + "FAKEfake0123456789abcd"}`, REDACTED],
     ["AKIA id", `aws ${"AKIA" + "FAKE0123456789AB"} ok`, `aws ${REDACTED} ok`],
     ["ASIA id", `${"ASIA" + "FAKE0123456789AB"}`, REDACTED],
     ["xoxb- token", `${"xoxb-" + "123456789012-FAKEfakeFAKE"}`, REDACTED],
@@ -361,6 +368,7 @@ describe("secrets recognised by shape (no credential file names them)", () => {
       "sk-ant-oat01- is only a prefix; sk-learn is a library",
       "Bearer short",
       "GIT_AUTHOR_NAME=someone",
+      "glpat- is GitLab's prefix; the glab-cli config and gl-pat-docs",
     ];
     for (const t of plain) assert.equal(redactPatterns(t), t, t);
   });

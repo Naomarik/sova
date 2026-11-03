@@ -66,3 +66,14 @@ test("the check reads plain and sealed ledger files, once per key, and writes no
   assert.equal(read.length, sample().length);
   assert.equal(readLedger(root, "2026-10-09").length, 0);
 });
+
+test("the check leaves out a [1m] residual, a double count, as the ledger does", () => {
+  const root = join(scratchRoot("cache-check-1m-"), "usage", "v1");
+  mkdirSync(join(root, "2026-10-05"), { recursive: true });
+  const lines = [rec({ key: "cc:a" }), rec({ key: "ccr:s:1:claude-opus-5-5[1m]", src: "claude-residual" }), rec({ key: "ccr:s:2:claude-opus-5-5", src: "claude-residual" })];
+  writeFileSync(join(root, "2026-10-05", "p1.jsonl"), lines.map((r) => formatUsageRecord(r)!).join(""));
+  assert.deepEqual(
+    readLedger(root).map((r) => r.key).sort(),
+    ["cc:a", "ccr:s:2:claude-opus-5-5"],
+  );
+});

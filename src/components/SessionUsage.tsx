@@ -1,11 +1,13 @@
-import { createEffect, For, on, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
 import type { WorkerInfo } from "../../shared/protocol";
 import type { UsageSessionModelRow, UsageSessionSpend, UsageSpend } from "../../shared/usage/wire";
 import { getUsageSession } from "../lib/api";
 import { formatTokens } from "../lib/context";
+import { newInput, newInputTitle } from "../lib/cost-history";
 import { compactModel, usageModelNote } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
-import { originLabel, spendTitle, spendUsd, spentAnything, spoken, usageTabRows } from "../lib/spend";
+import { cacheHeadline, hitRateCell, originLabel, spendTitle, spendUsd, spentAnything, spoken, usageTabRows } from "../lib/spend";
+import { CostBreakdown, detailId, keepListed, OpenName, rowClick, toggleKey } from "./CostBreakdown";
 import { ResendLine } from "./ResendLine";
 import { Banner } from "./ui";
 
@@ -39,6 +41,13 @@ export function SessionUsageTab(props: { spend: Poll<UsageSessionSpend>; workers
   const spend = () => props.spend.data();
   const rows = () => usageTabRows(spend());
   const working = () => props.workers.filter((w) => w.working).length;
+  /** The rows opened, by row key: any number, all closed at first, kept through the pane's polls. */
+  const [open, setOpen] = createSignal<ReadonlySet<string>>(new Set());
+  // Keyed by row key, not by the row objects a poll builds afresh: an opened row stays open, its button keeps focus.
+  const keys = createMemo(() => rows().map(usageRowKey), undefined, { equals: (a, b) => a.length === b.length && a.every((x, i) => x === b[i]) });
+  const rowOf = (key: string) => rows().find((r) => usageRowKey(r) === key);
+  // A row that leaves the table doesn't come back open.
+  createEffect(on(keys, (k) => setOpen((o) => keepListed(o, k)), { defer: true }));
 
   return (
     <div class="session-panel-scroll" tabindex="0">
@@ -79,36 +88,41 @@ export function SessionUsageTab(props: { spend: Poll<UsageSessionSpend>; workers
               </h3>
               <p class="text-mono" style={{ margin: 0 }} title={spendTitle(s().total)}>
                 {formatTokens(spoken(s().total))} tokens in and out · {spendUsd(s().total.usd)}
+                <Show when={cacheHeadline(s().total)}>{(c) => <> · {c()}</>}</Show>
               </p>
               <ResendLine resend={s().resend} spendUsd={s().own.usd} of="the main thread" />
               <Show when={rows().length > 0}>
                 <div class="md md-table-wrap usage-table-wrap">
                   <table class="usage-table">
-                    <caption class="visually-hidden">Tokens and cost by model and where they were spent</caption>
+                    <caption class="visually-hidden">Tokens and cost by model and where they were spent; open a row for where its cost went</caption>
                     <thead>
                       <tr>
                         <th scope="col">Model</th>
                         <th scope="col">Where</th>
                         <th scope="col" align="right">
-                          In
+                          New input
                         </th>
                         <th scope="col" align="right">
                           Out
                         </th>
                         <th scope="col" align="right">
-                          Cache read
+                          Cache reads
                         </th>
                         <th scope="col" align="right">
-                          Cache write
+                          Hit rate
                         </th>
                         <th scope="col" align="right">
                           Cost
                         </th>
                       </tr>
                     </thead>
-                    <tbody>
-                      <For each={rows()}>{(row) => <SpendRow row={row} />}</For>
-                    </tbody>
+                    <For each={keys()}>
+                      {(key) => (
+                        <Show when={rowOf(key)}>
+                          {(row) => <SpendRow row={row()} open={open().has(key)} onToggle={() => setOpen((o) => toggleKey(o, key))} />}
+                        </Show>
+                      )}
+                    </For>
                     <tfoot>
                       <tr>
                         <th scope="row" colSpan={2}>
@@ -149,20 +163,22 @@ function WorkerCount(props: { total: number; working: number }) {
   );
 }
 
-/** The four token columns and the cost. Each cell names its column, so a narrow pane can stack the
-    row and still say which count is which. */
+/** New input, output, cache reads, the cache hit rate and the cost. Each cell names its column, so a
+    narrow pane can stack the row and still say which count is which. */
 function Cells(props: { spend: UsageSpend }) {
-  const cell = (label: string, n: number) => (
-    <td align="right" class="text-mono text-num" data-label={label}>
+  const cell = (label: string, n: number, title?: string) => (
+    <td align="right" class="text-mono text-num" data-label={label} title={title}>
       {formatTokens(n)}
     </td>
   );
   return (
     <>
-      {cell("In", props.spend.tokens.input)}
+      {cell("New input", newInput(props.spend.tokens), newInputTitle(props.spend.tokens, formatTokens))}
       {cell("Out", props.spend.tokens.output)}
-      {cell("Cache read", props.spend.tokens.cacheRead)}
-      {cell("Cache write", props.spend.tokens.cacheWrite)}
+      {cell("Cache reads", props.spend.tokens.cacheRead)}
+      <td align="right" class="text-mono text-num" style={oneLine} data-label="Hit rate" title={hitRateCell(props.spend).title}>
+        {hitRateCell(props.spend).text}
+      </td>
       <td align="right" class="text-mono text-num" style={oneLine} data-label="Cost">
         {spendUsd(props.spend.usd)}
       </td>
@@ -170,8 +186,13 @@ function Cells(props: { spend: UsageSpend }) {
   );
 }
 
+/** A row's key: its origin and model, and what was asked for when another model answered. */
+const usageRowKey = (r: UsageSessionModelRow) => `${r.origin}:${r.provider}/${r.model}${r.asked ? `?asked=${r.asked}` : ""}`;
+
 /** A model × origin row. The id is shortened; the full one, and how it was priced, stay in the `title`. */
-function SpendRow(props: { row: UsageSessionModelRow }) {
+function SpendRow(props: { row: UsageSessionModelRow; open: boolean; onToggle(): void }) {
+  const detail = detailId();
+  const name = () => compactModel(props.row.model) ?? props.row.model;
   const title = () => [priced(), usageModelNote(props.row)].filter(Boolean).join(". ");
   const priced = () => {
     const id = `${props.row.provider}/${props.row.model}`;
@@ -179,17 +200,30 @@ function SpendRow(props: { row: UsageSessionModelRow }) {
     return props.row.priceKey && props.row.priceKey !== id ? `${id}, priced as ${props.row.priceKey}` : id;
   };
   return (
-    <tr>
-      {/* One line per row ("glm-5.3" broke at its hyphen, "Main thread" at its space): the table
-          scrolls sideways instead of rows growing taller, until the pane is narrow enough to stack. */}
-      <td class="text-mono usage-table-model" style={oneLine} title={title()}>
-        {compactModel(props.row.model) ?? props.row.model}
-        {props.row.asked ? " ⚠" : ""}
-      </td>
-      <td class="usage-table-where" style={oneLine}>
-        {originLabel(props.row.origin)}
-      </td>
-      <Cells spend={props.row} />
-    </tr>
+    <tbody class="cost-model">
+      <tr class="cost-model-row" onClick={rowClick(() => props.onToggle())}>
+        {/* One line per row ("glm-5.3" broke at its hyphen, "Main thread" at its space): the table
+            scrolls sideways instead of rows growing taller, until the pane is narrow enough to stack. */}
+        <td class="text-mono usage-table-model" style={oneLine} title={title()}>
+          <OpenName open={props.open} controls={detail} name={name()}>
+            <span class="text-mono">
+              {name()}
+              {props.row.asked ? " ⚠" : ""}
+            </span>
+          </OpenName>
+        </td>
+        <td class="usage-table-where" style={oneLine}>
+          {originLabel(props.row.origin)}
+        </td>
+        <Cells spend={props.row} />
+      </tr>
+      <tr class="cost-detail-row" id={detail} hidden={!props.open}>
+        <td colSpan={7}>
+          <Show when={props.open}>
+            <CostBreakdown row={props.row} name={name()} fmt={formatTokens} />
+          </Show>
+        </td>
+      </tr>
+    </tbody>
   );
 }

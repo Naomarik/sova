@@ -78,8 +78,8 @@ death: nothing is reported and nothing is resumed.
 
 An ordinary chat receives `record_tour` and `show_tour` only while vis is on; align's Visuals alone does not enable either tool. A hand-off's already-reviewed, scoped `show_tour` is separate baseline context, never recording access (§app.tours/authoring).
 
-A few tools act on the server's own state: an ordinary chat's `project_verbs` (a project's running
-instances), `queue_push` (a topic's queue) and the tool-backed tour actions `record_tour` and `show_tour` (§app.tours/authoring); every tool of the Overseer, a project overseer and a
+A few tools act on the server's own state: `project_verbs` (a project's running instances) of an
+ordinary chat, a worker or a team member (§app.project-services/callers), `queue_push` (a topic's queue), `offer` (a project's offer cards, §chat.offers/tool) and the tool-backed tour actions `record_tour` and `show_tour` (§app.tours/authoring); every tool of the Overseer, a project overseer and a
 baton session, their file tools (`read`, `grep`, `find`, `ls`, `write`, `edit`) included; and a
 powers chat's `queue_open`. Some of what a chat does without a tool acts on it too: a baton
 composer's message (who sent it, and the statechart's note of it), saving the model or thinking a
@@ -93,7 +93,7 @@ before you try it again." Stopping the reply cancels the call on the server. The
 to the model as if they ran in the chat, so the chat's prompt and tool list don't change. A baton
 composer's message whose outcome is unknown fails with that sentence; a powers send whose outcome is
 unknown keeps what it spent of its limits. What else an ordinary chat reads of the server (a project's
-instance note, a schedule's playbook, its linked agents, the singleton check) is asked of the server
+instance note, an offer button's outcome note, a schedule's playbook, its linked agents, the singleton check) is asked of the server
 when needed; while no server is connected it reads as none. A special chat's run-start, compaction
 and reply-end hooks, and a powers chat's reads (sessions, a transcript, an insight, whether a session
 is busy, a project's root), wait for a server instead, and are asked again of the next one: after
@@ -156,7 +156,8 @@ nothing but the server ever starts a chat again.
   directory of the Claude program the server resolved, then the server's `PATH`. It also gets
   `HOME`, `PI_CODING_AGENT_DIR` and the chat's own `SOVA_CHAT_*` (among them the checkout's and the
   copies' places, `SOVA_CHAT_LIVE_ROOT` and `SOVA_CHAT_COPIES_ROOT`), and its own key,
-  `SOVA_CALLER_KEY` (§app.command-audit/keys). A chat process's own
+  `SOVA_CALLER_KEY` (§app.command-audit/keys), and `GIT_CONFIG_SYSTEM` naming Sova's git system
+  config, so nothing it runs starts git's background cleanup (§app.git-cleanup/no-background). A chat process's own
   variables (`SOVA_CHAT_SOCK`, `_PATH`, `_ID`, `_UNIT`, `_BUILD`, `_STATE_ROOT`, `_LIVE_ROOT`,
   `_COPIES_ROOT`, and `SOVA_CALLER_KEY`) are never passed on from the server's environment, and a server deletes them from
   its own at start, so a server started from a chat's tools never acts as that chat or its server. All of it is passed in a file only
@@ -207,9 +208,12 @@ by it, under either driver. An idle stop is not a death and never gets a "contin
 its rows and draft and doesn't reconnect: its socket, a reconnect or a server restart never starts
 the chat again; only something that needs the chat does, such as sending from that tab
 (§chat.transcript/instant-open, "A chat closed while its tab is open"). The chat stays closed until
-someone sends to it or acts on it, a jump in its Timeline to a row its tab doesn't hold and
-scrolling back by hand for older rows included (opening it to read doesn't,
-§chat.transcript/instant-open), which starts a new process: its `hello`
+someone sends to it or acts on it, opens it (a click, a reload, every pane of a workspace), brings
+its workspace tab to the front (§workspace.groups/layout-tabs), or another chat or the Overseer
+sends it a message, which starts a new process; a jump in its Timeline or scrolling up for older
+rows doesn't, they read the file (§chat.transcript/instant-open). An archived chat is the
+exception: none of these starts it until someone unarchives it; opening it reads its file, and the
+rest is refused (§chat.transcript/instant-open, "An archived chat"). Its `hello`
 comes about 0.5 s after the socket opens for a 240 KB session and about 0.8 s for an 11 MB one
 (median on a hermetic server, detached chats, 2026-10-13), while its saved rows already show
 (§chat.transcript/instant-open). Its workers run on in their own processes; a waiting worker's process stops the same way, idle, and stays listed waiting (§app.chat-processes/workers).
@@ -380,7 +384,9 @@ included), a team member, coordinator, monitor or successor, and a resumed worke
 hidden chat: `/explain`'s fork, a compaction's hand-off fork and `/btw`'s side thread. The server
 starts each from the loadout its parent computed (model, effort, tools, extensions, flags, system
 prompt, sandbox, remote target, modes, team identity, agent dir), with nothing of an ordinary chat
-added (no profile, mode menu, memory, topics, links, Sova-served tools or session powers), and
+added (no profile, mode menu, memory, topics, links or session powers, and of the Sova-served tools
+only `project_verbs` with its instance note, which a worker or team member gets and a hidden chat
+doesn't, §app.project-services/callers), and
 opens it the way it opens any chat. The parent never starts a worker's process and never talks to
 it directly: the server passes it the parent's task, steers, follow-ups, aborts and stops, and
 passes its events back. A worker never runs inside the server's process.
@@ -400,7 +406,9 @@ passes its events back. A worker never runs inside the server's process.
   comes from its file, and a run that finished while the parent was away is announced to the parent
   once (waking it under the worker's `wake`), never twice and never lost. A steer sent after the
   reattach reaches the worker once. When a worker's run finishes and no parent chat picks it up
-  within 10 seconds, the server opens the parent chat once so that it takes the report. A parent that
+  within 10 seconds, the server opens the parent chat once so that it takes the report, unless the
+  parent is archived: archiving cancels a report's pending open, and an archived parent is never
+  opened for one (it takes the report when it is unarchived and next opens). A parent that
   doesn't open is tried again after 10, 30 and 90 seconds; the report counts as taken only once the
   parent opened, so one still not taken then is the next server's to deliver, if the worker is still running;
   otherwise the parent finds it when it next opens.
@@ -457,11 +465,40 @@ next instruction starts it in a new process. Otherwise (the setting off, or it d
 resumed run, or the reopen failed) it ends: its status is error, with the error "This
 worker's process stopped unexpectedly (exit N | signal S | it stopped answering)" followed by
 "Last output: …" with its log's last 20 lines, at most 2 KB, the newest kept. No second continue is
-sent.
+sent. Either way, an instruction the worker had accepted whose message it never ran goes with the
+dead process, and is reported as never run (§app.chat-processes/worker-instructions).
 
 A server restart is never a death, nor is a stop the server asked for (idle, a code reload, an
 archive, a kill): nothing is reported and nothing is resumed.
 
+
+## §app.chat-processes/worker-instructions — Which instruction started which reply
+
+Every task, steer and follow-up a parent sends a worker carries a key of its own, and the worker's
+chat keeps that key with the message all the way to the model: while Sova's queue holds it, when it
+is handed over, and on the message the model is given. When that message starts the worker's reply
+or enters the reply already running, the worker's events name its key, and the parent moves the
+worker's current task, and the final answer it reports for that task, at exactly that instruction:
+never at whatever reply starts next, never at another message with the same text. Two identical
+instructions are two tasks, each starting at its own message. Events read again after a dropped
+link (§app.chat-processes/workers) carry the same keys, and the task moves once.
+
+- **Never unlabelled.** A keyed instruction is never handed to the model in the moment a reply is
+  settling, where pi would run it later, outside the send that carried its key: it waits until that
+  moment has passed, then goes, labelled.
+- **Several in one step.** Instructions that land together (steers sent while the worker's reply
+  runs reach it at its next step together) each name their own key. The worker's current task starts
+  at the last of them, and the reply after them is that task's.
+- **Accepted but never ran.** An instruction the worker accepted whose turn never started (Stop
+  pressed while it was queued, the worker's process died, a message taken off the queue, a turn that
+  failed before it began) is reported plainly: one line in the worker's transcript, "This
+  instruction was accepted but never ran: <its first line>", and the same line in the error of the
+  next report the parent gets. Each instruction that never ran gets its own line, in the order sent. When nothing else is running that report comes at once, with the
+  outcome error; the parent never waits for a delivery that can't come.
+- **Workers on older code.** A worker still running code from before these keys
+  (§app.chat-processes/code-generations) has a feed that names no keys, and its parent tells which
+  instruction started which reply as it did before: best-effort, from pi's queue and the message
+  text.
 
 ## §app.chat-processes/boot-log — A chat's start leaves a trail
 

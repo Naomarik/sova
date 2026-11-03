@@ -16,7 +16,9 @@ failing. Every pi process claims through it, and so do Sova's own one-shots.
 
 `gate.ts` (builtins only) holds the limits file's parse, reader and writer, the lease gate a one-shot claims its
 slot through, the Overseer's background mark, and the queue read for the web. `server/provider-limits.ts`,
-`server/decide-llm.ts`, `server/overseer.ts` and `server/sync/docs.ts` import it. Its gate state is a `globalThis`
+`server/decide-llm.ts`, `server/overseer.ts` and `server/sync/docs.ts` import it. It imports one sibling,
+`usage-out.ts` (no imports at all): the one out-of-usage classifier, which the subagents extension imports too
+(a team's coordinator or monitor that runs out of usage moves to its fallback). Its gate state is a `globalThis`
 singleton, so the extension's copy in a hosted runtime and the server's share it.
 
 Contracts (paths under the agent dir):

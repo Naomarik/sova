@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmodSync, closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, unlinkSync, utimesSync, writeFileSync, writeSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -8,7 +8,7 @@ import type { WorktreeMergeDetails } from "../pi-config/extensions/worktrees/sta
 import type { DiffScope } from "../shared/protocol";
 import { agentRoot } from "./state-root";
 import { knownRoots, sessionFolderCandidates } from "../pi-config/extensions/show-changes/folders.ts";
-import { DiffError, execGitRaw, GitDiffs, knownFoldersOf, MAX_UNTRACKED_READ, PATCH_CAP, parseNumstatZ, parseRawZ, quotePath, scopeFromQuery, splitPatch } from "./git-diff";
+import { DiffError, execGitRaw, GitDiffs, type QueueSubject, knownFoldersOf, MAX_UNTRACKED_READ, PATCH_CAP, parseNumstatZ, parseRawZ, quotePath, scopeFromQuery, splitPatch } from "./git-diff";
 
 const git = (cwd: string, ...args: string[]) =>
   execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", ...args], { cwd, encoding: "utf8" }).trim();
@@ -21,9 +21,11 @@ let firstSha: string;
 let secondSha: string;
 const SESSION = "/fake/session.jsonl";
 
-function diffs(roots: () => string[], trees: { path: string; baseBranch?: string; base?: string }[] = [], untrackedBudget?: number, merges: WorktreeMergeDetails[] = []) {
+/** `landing`: the branch the project holding the repository lands into (its merge queue's target); none by default. */
+function diffs(roots: () => string[], trees: { path: string; baseBranch?: string; base?: string }[] = [], untrackedBudget?: number, merges: WorktreeMergeDetails[] = [], landing?: string) {
   return new GitDiffs({
     untrackedBudget,
+    landingTarget: async () => landing ?? null,
     sessionKnown: async (p) =>
       p === SESSION ? { roots: roots(), trees: trees.map((t) => ({ branch: "x", base: "0", status: "active", session: "s", how: "created", at: 0, ...t }) as never), merges } : null,
   });
@@ -187,9 +189,14 @@ describe("worktree scope", () => {
     assert.equal(s.head.label, "feat/x");
   });
 
-  it("uses the tracked worktree's baseBranch when it exists", async () => {
+  it("compares against the branch its project lands on, never the tracked baseBranch", async () => {
     git(repo, "branch", "-f", "release", firstSha);
-    const d = diffs(() => [tree], [{ path: tree, baseBranch: "release" }]);
+    // Tracked from release, with no project landing it: master, where it would land by default.
+    const tracked = await diffs(() => [tree], [{ path: tree, baseBranch: "release" }]).summary({ kind: "worktree", sessionPath: SESSION, worktreePath: tree });
+    assert.equal(tracked.base.label, "master (merge-base)");
+    assert.equal(tracked.base.oid, secondSha);
+    // A project whose merge queue lands into release: release, whatever the record says.
+    const d = diffs(() => [tree], [{ path: tree, baseBranch: "master" }], undefined, [], "release");
     const s = await d.summary({ kind: "worktree", sessionPath: SESSION, worktreePath: tree });
     assert.equal(s.base.label, "release (merge-base)");
     assert.equal(s.base.oid, firstSha);
@@ -319,6 +326,25 @@ describe("merge scope", () => {
     assert.equal(s.head.oid, landing);
   });
 
+  it("a branch the merge queue landed for this chat: exactly from the target before it to the landing, the project folder known through its card; any other sha refused", async () => {
+    const { main, wt, c0, commit, scope } = setup(["f1.txt", "f2.txt"]);
+    commit(main, "m1.txt");
+    const from = git(main, "rev-parse", "HEAD");
+    git(main, "merge", "-q", "--no-ff", "--no-edit", "feat/m");
+    const landing = git(main, "rev-parse", "HEAD");
+    const queueLandings = async (p: string) => (p === SESSION ? [{ root: main, sha: landing, from, branch: "feat/m", target: "master" }] : []);
+    // The chat only ever knew its worktree, not the project's main folder.
+    const d = new GitDiffs({ sessionKnown: async (p) => (p === SESSION ? { roots: [wt], trees: [], merges: [] } : null), queueLandings });
+    const s = await d.summary(scope(landing, main));
+    assert.deepEqual(s.files.map((f) => f.path), ["f1.txt", "f2.txt"]);
+    assert.equal(s.base.oid, from);
+    assert.equal(s.base.label, `master before ${landing.slice(0, 7)}`);
+    assert.deepEqual([s.head.label, s.head.oid], ["feat/m", landing]);
+    await rejects(d.summary(scope(c0, main)), 400, /not one this session knows/);
+    const other = new GitDiffs({ sessionKnown: async () => ({ roots: [wt], trees: [], merges: [] }), queueLandings: async () => [] });
+    await rejects(other.summary(scope(landing, main)), 400, /not one this session knows/);
+  });
+
   it("shows every commit a fast-forward brought, from the tracked base", async () => {
     const { main, wt, c0, card, scope } = setup(["f1.txt", "f2.txt", "f3.txt"]);
     git(main, "merge", "-q", "--ff-only", "feat/m");
@@ -351,6 +377,30 @@ describe("merge scope", () => {
     assert.deepEqual(s.files.map((f) => f.path), ["f1.txt", "f2.txt", "f3.txt"]);
     const p = await diffs(() => [main, wt], [{ path: wt, base: c0 }], undefined, [card(tip, true)]).patch(scope(tip), "f2.txt");
     assert.match(p.patch ?? "", /\+f2\.txt/);
+  });
+
+  it("reads a removed worktree's merge from another known folder when its folder is left behind with no .git", async () => {
+    const { main, wt, c0, card, scope } = setup(["f1.txt", "f2.txt"]);
+    git(main, "merge", "-q", "--ff-only", "feat/m");
+    const tip = git(main, "rev-parse", "HEAD");
+    git(main, "worktree", "remove", "--force", wt);
+    // What `git worktree remove` left: the folder with stray files, no checkout.
+    mkdirSync(join(wt, "node_modules"), { recursive: true });
+    writeFileSync(join(wt, "node_modules", "stray.txt"), "x\n");
+    assert.equal(existsSync(join(wt, ".git")), false);
+    const tracked = [{ path: wt, base: c0 }];
+    const s = await diffs(() => [main, wt], tracked, undefined, [card(tip, true)]).summary(scope(tip));
+    assert.equal(s.repo, main);
+    assert.deepEqual(s.files.map((f) => f.path), ["f1.txt", "f2.txt"]);
+    // A commit scope falls back the same way.
+    const c = await diffs(() => [main, wt]).summary({ kind: "commit", sessionPath: SESSION, repoPath: wt, sha: tip });
+    assert.deepEqual(c.files.map((f) => f.path), ["f2.txt"]);
+    // No known folder holds the commit: still not a work tree.
+    await rejects(diffs(() => [outside, wt], tracked, undefined, [card(tip, true)]).summary(scope(tip)), 400, /not in a git work tree/);
+    // Nothing to fall back on for an uncommitted read.
+    await rejects(diffs(() => [main, wt]).summary({ kind: "dirty", sessionPath: SESSION, cwd: wt }), 400, /not in a git work tree/);
+    // The merge scope still needs its recorded card.
+    await rejects(diffs(() => [main, wt]).summary(scope(tip)), 400, /not a merge this session recorded/);
   });
 
   it("refuses a sha that is not a merge card in the session, before any git runs", async () => {
@@ -634,9 +684,11 @@ describe("worktree scope: the shared base rule", () => {
     git(dir, "checkout", "-q", "-b", "feat/y");
     commitAt(dir, 2_000, "y", { "y.txt": "y\n" });
     const scope: DiffScope = { kind: "worktree", sessionPath: SESSION, worktreePath: dir };
-    // No master/main/origin: the tracked base commit.
-    const s = await diffs(() => [dir], [{ path: dir, baseBranch: "trunk", base }]).summary(scope);
+    // No master/main/origin: the branch the project lands on, else the tracked base commit (never its baseBranch).
+    const s = await diffs(() => [dir], [{ path: dir, base }], undefined, [], "trunk").summary(scope);
     assert.equal(s.base.label, "trunk (merge-base)");
+    const ignored = await diffs(() => [dir], [{ path: dir, baseBranch: "trunk", base }]).summary(scope);
+    assert.equal(ignored.base.label, `${base.slice(0, 7)} (created from)`);
     const created = await diffs(() => [dir], [{ path: dir, baseBranch: "gone", base }]).summary(scope);
     assert.equal(created.base.label, `${base.slice(0, 7)} (created from)`);
     assert.equal(created.base.oid, base);
@@ -873,5 +925,131 @@ describe("commits per hunk (origins)", () => {
     const late = await slow.patch({ kind: "worktree", sessionPath: SESSION, worktreePath: dir }, "a.txt", undefined, { origins: true });
     assert.equal(late.originsUnknown, true);
     assert.ok(late.patch?.includes("added by c1"));
+  });
+});
+
+/** master with a.txt and b.txt; a worktree on feat/q with one commit (q.txt, a.txt edited). */
+function queueRepo() {
+  const { dir } = newRepo({ "a.txt": "a\n", "b.txt": "b\n" });
+  const wt = `${dir}-wt`;
+  git(dir, "worktree", "add", "-q", "-b", "feat/q", wt);
+  const tip = commitAt(wt, 2_000, "q", { "q.txt": "q\n", "a.txt": "a2\n" });
+  const masterAt = commitAt(dir, 3_000, "master moves", { "m.txt": "m\n" });
+  return { dir, wt, tip, masterAt, base: git(dir, "merge-base", "master", "feat/q") };
+}
+/** No session at all: any read of one fails the test. */
+const noSession = async () => assert.fail("a queue scope never reads a session");
+
+describe("uncommitted files ride along (Review Changes on a worktree row)", () => {
+  it("shows the branch's commits plus its uncommitted and untracked files, each marked; a clean worktree reads as before", async () => {
+    const { wt, base, tip } = queueRepo();
+    const scope: DiffScope = { kind: "worktree", sessionPath: SESSION, worktreePath: wt, uncommitted: true };
+    const clean = await diffs(() => [wt]).summary(scope);
+    assert.equal(clean.head.oid, tip);
+    assert.equal(clean.uncommitted, undefined);
+    assert.deepEqual(clean.files.map((f) => [f.path, !!f.uncommitted]), [["a.txt", false], ["q.txt", false]]);
+    writeFileSync(join(wt, "b.txt"), "b changed\n");
+    writeFileSync(join(wt, "q.txt"), "q\nmore\n");
+    writeFileSync(join(wt, "new.txt"), "new\n");
+    const s = await diffs(() => [wt]).summary(scope);
+    assert.equal(s.base.oid, base);
+    assert.equal(s.head.oid, undefined, "the head is the working tree");
+    assert.equal(s.head.label, "feat/q with uncommitted files");
+    assert.deepEqual(
+      s.files.map((f) => [f.path, !!f.uncommitted, !!f.untracked]),
+      [["a.txt", false, false], ["b.txt", true, false], ["new.txt", true, true], ["q.txt", true, false]],
+    );
+    assert.equal(s.uncommitted, 3);
+    // Each file's patch is the working tree's, the untracked one included.
+    assert.match((await diffs(() => [wt]).patch(scope, "q.txt")).patch ?? "", /\+more/);
+    assert.match((await diffs(() => [wt]).patch(scope, "new.txt")).patch ?? "", /\+new/);
+    // Without asking for them: the branch's commits only, as a pinned or older reader expects.
+    const committed = await diffs(() => [wt]).summary({ kind: "worktree", sessionPath: SESSION, worktreePath: wt });
+    assert.equal(committed.head.oid, tip);
+    assert.deepEqual(committed.files.map((f) => f.path), ["a.txt", "q.txt"]);
+  });
+});
+
+describe("queue scope (a Merge Queue row, no session)", () => {
+  const queueDiffs = (subject: QueueSubject | null, seen: unknown[] = []) =>
+    new GitDiffs({
+      sessionKnown: noSession,
+      queueLandings: noSession,
+      landingTarget: noSession,
+      queueSubject: async (project, sel) => {
+        seen.push({ project, ...sel });
+        return subject;
+      },
+    });
+
+  it("a ready branch: its tip against the merge-base with the target, uncommitted files marked, with no session", async () => {
+    const { dir, wt, tip, base } = queueRepo();
+    const seen: unknown[] = [];
+    const d = queueDiffs({ kind: "ready", root: dir, target: "master", branch: "feat/q", worktree: wt }, seen);
+    const scope: DiffScope = { kind: "queue", project: "prj_1", branch: "feat/q" };
+    const s = await d.summary(scope);
+    assert.deepEqual(seen, [{ project: "prj_1", branch: "feat/q" }]);
+    assert.equal(s.base.label, "master (merge-base)");
+    assert.equal(s.base.oid, base);
+    assert.equal(s.head.oid, tip);
+    assert.deepEqual(s.files.map((f) => f.path), ["a.txt", "q.txt"], "master's own later commit is not the branch's");
+    writeFileSync(join(wt, "loose.txt"), "x\n");
+    const dirty = await d.summary(scope);
+    assert.deepEqual(dirty.files.filter((f) => f.uncommitted).map((f) => f.path), ["loose.txt"]);
+    assert.match((await d.patch(scope, "a.txt")).patch ?? "", /\+a2/);
+  });
+
+  it("an entry: its pinned commit against the merge-base with the target, however far the branch moved", async () => {
+    const { dir, wt, tip, base } = queueRepo();
+    commitAt(wt, 4_000, "later", { "later.txt": "l\n" });
+    const s = await queueDiffs({ kind: "entry", root: dir, target: "master", branch: "feat/q", commit: tip }).summary({ kind: "queue", project: "p", entry: "mq_1" });
+    assert.equal(s.base.oid, base);
+    assert.equal(s.head.oid, tip);
+    assert.equal(s.head.label, `feat/q at ${tip.slice(0, 7)}`);
+    assert.deepEqual(s.files.map((f) => f.path), ["a.txt", "q.txt"]);
+  });
+
+  it("a landed entry: what its landing brought in, the target before it to the landing commit", async () => {
+    const { dir, tip, masterAt } = queueRepo();
+    gitAt(dir, 5_000, "merge", "-q", "--no-ff", "-m", "land feat/q", "feat/q");
+    const landed = git(dir, "rev-parse", "HEAD");
+    const s = await queueDiffs({ kind: "landed", root: dir, target: "master", branch: "feat/q", sha: landed, from: masterAt }).summary({ kind: "queue", project: "p", entry: "mq_2" });
+    assert.equal(s.base.label, `master before ${landed.slice(0, 7)}`);
+    assert.equal(s.base.oid, masterAt);
+    assert.deepEqual(s.files.map((f) => f.path), ["a.txt", "q.txt"]);
+    assert.ok(tip);
+  });
+
+  it("refuses what the queue's records don't name, and a worktree no longer on the branch", async () => {
+    const { dir, wt } = queueRepo();
+    await rejects(queueDiffs(null).summary({ kind: "queue", project: "p", branch: "feat/q" }), 404, /not checked out in a worktree of that project/);
+    await rejects(queueDiffs(null).summary({ kind: "queue", project: "p", entry: "mq_x" }), 404, /No such entry/);
+    git(wt, "checkout", "-q", "-b", "other");
+    await rejects(queueDiffs({ kind: "ready", root: dir, target: "master", branch: "feat/q", worktree: wt }).summary({ kind: "queue", project: "p", branch: "feat/q" }), 404, /no longer on that branch/);
+  });
+
+  it("parses from a query with no session: a project and exactly one of entry or branch", () => {
+    const q = (o: Record<string, string>) => scopeFromQuery((n) => o[n]);
+    assert.deepEqual(q({ kind: "queue", project: "prj_1", branch: "feat/q" }), { kind: "queue", project: "prj_1", branch: "feat/q" });
+    assert.deepEqual(q({ kind: "queue", project: "prj_1", entry: "mq_ab-1" }), { kind: "queue", project: "prj_1", entry: "mq_ab-1" });
+    assert.throws(() => q({ kind: "queue", project: "prj_1" }), /exactly one/);
+    assert.throws(() => q({ kind: "queue", project: "prj_1", entry: "mq_1", branch: "b" }), /exactly one/);
+    assert.throws(() => q({ kind: "queue", branch: "b" }), /project/);
+    assert.throws(() => q({ kind: "queue", project: "p", branch: "--output=x" }), /branch/);
+    assert.throws(() => q({ kind: "queue", project: "p", branch: "a..b" }), /branch/);
+    assert.throws(() => q({ kind: "queue", project: "p", entry: "../x" }), /entry/);
+    // The worktree scope's flag: only unpinned.
+    assert.equal((q({ kind: "worktree", session: SESSION, path: "/x", uncommitted: "1" }) as { uncommitted?: true }).uncommitted, true);
+  });
+});
+
+describe("show_changes cards keep their own comparison", () => {
+  it("a pinned card shows its saved base..head, whatever branch the project lands on", async () => {
+    const { wt, tip } = queueRepo();
+    const first = git(wt, "rev-list", "--max-parents=0", "HEAD");
+    const s = await diffs(() => [wt], [], undefined, [], "master").summary({ kind: "worktree", sessionPath: SESSION, worktreePath: wt, pin: { base: first, head: tip, baseRef: "card base" } });
+    assert.equal(s.base.oid, first);
+    assert.equal(s.base.label, "card base");
+    assert.equal(s.head.oid, tip);
   });
 });

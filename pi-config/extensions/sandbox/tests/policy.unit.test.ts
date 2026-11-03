@@ -327,6 +327,36 @@ test("tracked worktrees: writable roots of the session, their .agent read-only; 
 	rmSync(ws, { recursive: true, force: true });
 });
 
+test("a stand-in cwd (cwdWritable: false) is never a writable root; tmp, policy roots and worktrees still are, and its workers get no more", () => {
+	const ws = tmp();
+	const agentDir = join(ws, "agent");
+	mkdirSync(join(agentDir, "sandbox-policy", "linux"), { recursive: true });
+	const extra = join(ws, "extra");
+	writeFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), JSON.stringify({ ...template(), writable: [extra], shadowed: [] }));
+	const home = join(ws, "home");
+	const wt = join(home, "wt");
+	mkdirSync(join(wt, ".agent"), { recursive: true });
+	mkdirSync(extra);
+	const tmpDir = join(ws, "t");
+	const own = resolvePolicy({ agentDir, cwd: home, tmpDir, platform: "linux", extraWritable: [wt] });
+	assert.ok(own.ok);
+	assert.equal(writeDenial(own.value, join(home, "notes.txt"), { creating: true }), undefined, "the default: the cwd is writable");
+	const r = resolvePolicy({ agentDir, cwd: home, tmpDir, platform: "linux", extraWritable: [wt], cwdWritable: false });
+	assert.ok(r.ok, r.ok ? "" : r.error);
+	assert.ok(!r.value.writable.includes(home));
+	assert.equal(r.value.workspaceRoot, home, "it is still the cwd tools run in");
+	assert.match(writeDenial(r.value, join(home, "notes.txt"), { creating: true }) ?? "", /outside the sandbox's writable roots/);
+	assert.match(writeDenial(r.value, join(home, ".bashrc")) ?? "", /outside/);
+	assert.equal(writeDenial(r.value, join(tmpDir, "x"), { creating: true }), undefined);
+	assert.equal(writeDenial(r.value, join(extra, "x"), { creating: true }), undefined);
+	assert.equal(writeDenial(r.value, join(wt, "src", "a.ts"), { creating: true }), undefined);
+	// Its workers are handed its roots: the home folder is not among them.
+	const scope = parentScopeOf(r.value);
+	assert.ok(!scope.writable.includes(home));
+	assert.match(workerCwdRefusal(scope, home) ?? "", /outside the parent's sandbox/);
+	rmSync(ws, { recursive: true, force: true });
+});
+
 test("a worker keeps a tracked worktree's .agent read-only: full scope, narrowed and write-only", () => {
 	const ws = tmp();
 	const agentDir = join(ws, "agent");

@@ -67,12 +67,28 @@ export function worktreeChips(
   return out;
 }
 
+/** What lands with a branch, for its reason line: "docs: 2 new, 1 changed" (server/ready-to-land.ts docsWords). */
+export const docsWords = (d: { drafts: number; added: number; changed: number }): string =>
+  `docs: ${[d.added ? `${d.added} new` : "", d.changed ? `${d.changed} changed` : ""].filter(Boolean).join(", ") || `${d.drafts} draft${d.drafts === 1 ? "" : "s"}`}`;
+
 /** The merge-readiness chip after the status chip (§chat.worktrees/readiness); none while merged,
     which the status chip already says, and none before the server has read git. */
 export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): WorktreeChip | null {
   const r = w.readiness;
   if (!r || r.state === "merged") return null;
   const why = r.why ? `${r.why[0]!.toUpperCase()}${r.why.slice(1)}.` : "";
+  // Finished at its head (§chat.worktrees/ready-to-land): said in place of Ready to merge / Waiting for your OK.
+  const l = r.landing;
+  if (l?.state === "ready")
+    return { label: "Ready to land", tone: "success", title: `The work is finished and committed at ${l.commit.slice(0, 7)}.${l.docs ? ` Its spec drafts land with it (${docsWords(l.docs)}).` : ""} ${why}`.trim() };
+  if (l?.state === "specs")
+    return {
+      label: "Landing specs",
+      tone: l.specsWhy ? "warn" : "info",
+      title: l.specsWhy
+        ? `Its specs can't land: ${l.specsWhy}`
+        : `Finished, but its spec drafts don't fit yet: ${(l.docs?.problems ?? l.drafts ?? []).join("; ")}.`,
+    };
   switch (r.state) {
     case "ready":
       return { label: "Ready to merge", tone: "success", title: why || "Nothing stands in the way of a merge." };
@@ -91,11 +107,12 @@ export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): Worktr
 }
 
 /** The visible muted line under a worktree with a readiness, so a phone gets the reason without
-    hover: the server's `reason` ("Ready to merge · checks passed · 19 commits ahead"), else its
-    state and why. None with neither: the chip alone already says the state. */
+    hover: the server's `reason` ("Ready to land · 19 commits ahead", §chat.worktrees/ready-to-land), else
+    its state and why. None with neither: the chip alone already says the state. */
 export function readinessReason(w: Pick<SessionWorktreeInfo, "readiness">): string | null {
   const r = w.readiness;
   if (r?.reason) return r.reason;
+  // An older peer's reading may have no reason: its state and why instead.
   if (!r?.why) return null;
   const label = r.state === "merged" ? "Merged" : readinessChip(w)!.label;
   return `${label} · ${r.why}`;

@@ -114,11 +114,13 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     id: "P5",
     name: "settle-window",
     kind: "private-read",
-    relies: "_isEmittingAgentSettled is true while agent_settled is emitted, and a prompt() made then is deferred: it resolves at once and its turn runs after the emit. Topic delivery stays out of that window.",
+    relies: "_isEmittingAgentSettled is true while agent_settled is emitted, and a prompt() made then is deferred: it resolves at once and its turn runs after the emit, outside the async context of the call that made it. Topic delivery stays out of that window, and so does a keyed send (its message would go unlabelled).",
     pi: ["AgentSession._isEmittingAgentSettled", "AgentSession.prompt", "AgentSession._emitAgentSettled"],
     where: [
       { file: SESSION, symbol: "PiHarnessSession.inSettleWindow" },
       { file: CM, symbol: "ChatSession.deliverTopicBatch" },
+      { file: CM, symbol: "ChatSession.acceptPrompt" },
+      { file: "server/queue.ts", symbol: "WebQueue.pumpOnce" },
     ],
     canary: "P5 settle-window: inside an agent_settled emit _isEmittingAgentSettled is true and a prompt resolves at once, its turn running after",
     retireWhen: "pi exposes the settle window, or stops deferring a prompt made inside it",
@@ -147,6 +149,7 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     where: [
       { file: "server/harness/pi/turns.ts", symbol: "watchUserMessages" },
       { file: "server/user-turns.ts", symbol: "UserTurns.watch" },
+      { file: "server/send-keys.ts", symbol: "SendKeys.watch" },
     ],
     canary: "P7 user-turns-wrap: prompt, steer and followUp reach the agent by property lookup, and the object passed is the one message_start carries",
     retireWhen: "pi offers an input-identity hook",
@@ -169,12 +172,12 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     name: "queue-one-bit",
     kind: "semantic",
     relies:
-      "agent.hasQueuedMessages() is the real queue; the session's steering/follow-up mirror is spliced on message_start by text only, so an image-only steer stays in it after delivery; clearQueue() returns and clears both kinds; continue() drains steering before follow-ups. peekQueuedMessages() exists and is unused.",
+      "agent.hasQueuedMessages() is the real queue; the session's steering/follow-up mirror is spliced on message_start by text only, so an image-only steer stays in it after delivery; clearQueue() returns and clears both kinds; continue() drains steering before follow-ups, so Sova never hands a steer in behind a follow-up of its own still in pi. With steering in all-mode (P26) a drain takes the whole steering lane, so an empty real queue proves every steer Sova handed in delivered. peekQueuedMessages() exists and is unused.",
     pi: ["Agent.hasQueuedMessages", "Agent.continue", "Agent.peekQueuedMessages", "AgentSession.getSteeringMessages", "AgentSession.getFollowUpMessages", "AgentSession.clearQueue"],
     where: [
       { file: SESSION, symbol: "PiHarnessSession.queue" },
       { file: "server/queue.ts", symbol: "SdkQueueView" },
-      { file: "server/queue.ts", symbol: "WebQueue.sdkHolds" },
+      { file: "server/queue.ts", symbol: "WebQueue.sdkTookHanded" },
     ],
     canary: "P9 queue-one-bit: an image-only steer stays in the mirror after delivery while the agent's queue is empty; clearQueue() returns both kinds; continue() takes steering first",
     retireWhen: "Sova adopts peekQueuedMessages(), or pi's mirror tracks delivery by identity",
@@ -326,20 +329,6 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi restores a recorded model on any branch",
   },
   {
-    id: "P21",
-    name: "codemode-definition",
-    kind: "semantic",
-    relies:
-      "createCodemodeExtension's factory registers exactly one tool, `codemode`, inactive, through the API it is handed (so Sova catches the definition and registers it itself); a script's models.classify / generateImages reach the tool context's modelRegistry; and its nested calls emit tool_execution_* with parentToolCallId and ids <parent>/<n>, writing no transcript entries.",
-    pi: ["createCodemodeExtension", "ExtensionAPI.registerTool", "ExtensionContext.modelRegistry", "ExtensionToolContext.executeTool"],
-    where: [
-      { file: "server/harness/pi/codemode.ts", symbol: "captureCodemode" },
-      { file: "server/harness/pi/codemode.ts", symbol: "scriptRegistry" },
-    ],
-    canary: "P21 codemode-definition: the factory registers one inactive codemode tool, its models.* reach ctx.modelRegistry, nested calls carry parentToolCallId",
-    retireWhen: "pi exports the codemode tool definition and a model hook for scripts",
-  },
-  {
     id: "P22",
     name: "declared-tools",
     kind: "private-read",
@@ -412,6 +401,39 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     ],
     canary: "P27 headless-standins: pi-tui keeps its text, key and colour helpers apart from its drawing modules, pi's theme takes only the highlighter, and outside its terminal mode pi takes a drawing module only in renderers, its CLI and its entry",
     retireWhen: "pi ships an entry point without its terminal drawing code",
+  },
+  {
+    id: "P28",
+    name: "steer-all",
+    kind: "monkey-patch",
+    relies:
+      "pi builds the agent's steering mode from settingsManager.getSteeringMode() (createAgentSession) and reads it again on AgentSession.reload() (syncQueueModesFromSettings, after settingsManager.reload()), so replacing that getter on a runtime's own settings object makes every queued steer land in one step (PendingMessageQueue in \"all\" mode), survives a reload, and writes nothing to settings.json; follow-ups keep pi's one-at-a-time.",
+    pi: ["SettingsManager.getSteeringMode", "AgentSession.reload", "AgentSession.syncQueueModesFromSettings", "createAgentSession", "PendingMessageQueue.peek"],
+    where: [
+      { file: "server/harness/pi/queue-modes.ts", symbol: "steerAllAtOnce" },
+      { file: OPEN, symbol: "servicesForCwd" },
+      { file: "server/queue.ts", symbol: "WebQueue.pumpOnce" },
+    ],
+    canary: "P28 steer-all: with the getter replaced, every queued steer lands in one step, the mode survives reload(), and settings.json holds no steeringMode",
+    retireWhen: "pi takes a steering mode per session that no settings reload resets",
+  },
+  {
+    id: "P29",
+    name: "steer-remove",
+    kind: "monkey-patch",
+    relies:
+      "pi's _queueSteer pushes the text onto AgentSession._steeringMessages, announces it (queue_update) and hands the message object to this.agent.steer in one synchronous block; the agent keeps it in steeringQueue.messages (PendingMessageQueue, reassigned on each drain) until the loop drains it, and message_start splices the mirror by text. So a wrap of agent.steer, after the call, sees the very object a hand-off queued (told by the hand-off's async context), and splicing that object out of the lane and one entry of its text out of the mirror, synchronously, takes exactly that steer back: the agent never gets it, the other steers (twins of the same words included) still land together, and clearQueue() hands back only the rest.",
+    pi: ["Agent.steer", "Agent.steeringQueue", "PendingMessageQueue.messages", "PendingMessageQueue.drain", "AgentSession._steeringMessages", "AgentSession._queueSteer", "AgentSession._emitQueueUpdate", "AgentSession.clearQueue", "Agent.peekQueuedMessages"],
+    where: [
+      { file: "server/harness/pi/steer-ticket.ts", symbol: "tapSteers" },
+      { file: "server/harness/pi/steer-ticket.ts", symbol: "laneOf" },
+      { file: "server/harness/pi/steer-ticket.ts", symbol: "mirrorOf" },
+      { file: "server/harness/pi/steer-ticket.ts", symbol: "takeSteerOut" },
+      { file: "server/harness/pi/session.ts", symbol: "PiHarnessSession.queue" },
+      { file: "server/queue.ts", symbol: "WebQueue.removeHanded" },
+    ],
+    canary: "P29 steer-remove: the object agent.steer is handed sits in steeringQueue.messages, and splicing it and its text out of both copies takes exactly that steer back",
+    retireWhen: "pi offers removing one queued message by identity",
   },
   {
     id: "T1",

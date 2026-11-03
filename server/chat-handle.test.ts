@@ -297,3 +297,34 @@ test("a server that will install a router makes boot readers wait for it: chats 
   await chatsReady(); // with none expected and none installed: at once
   installInProcessChats();
 });
+
+test("an ordinary chat is served its offer tool last, from its snapshot; a chat without offers or a special kind is served exactly what it was", async () => {
+  const { servedToolsForChat } = await import("./chat-handle");
+  const project = join(agentDir, "offers-project");
+  mkdirSync(join(project, ".sova"), { recursive: true });
+  const write = (names: string[]) =>
+    writeFileSync(join(project, ".sova", "offers.json"), JSON.stringify({ version: 1, offers: Object.fromEntries(names.map((n) => [n, { when: `When ${n}.`, title: n, buttons: [{ label: "Go", about: "Goes.", send: "go" }] }])) }));
+  const at = (id: string, dir: string): string => {
+    const path = join(sessionsDir, `2026-10-23T00-00-00-000Z_${id}.jsonl`);
+    writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-23T00:00:00.000Z", cwd: dir })}\n`);
+    return canonicalPath(path);
+  };
+  const names = (decls: { name: string }[]) => decls.map((d) => d.name);
+  // No offers file: what servedToolsFor serves, and nothing more.
+  const plain = at("01a0-offers-plain", cwd);
+  assert.deepEqual(names(await servedToolsForChat(plain, "01a0-offers-plain", () => undefined, null)), names(servedToolsFor(plain, "01a0-offers-plain", () => undefined, false)));
+  write(["alpha"]);
+  const withOffers = at("01a0-offers-yes", project);
+  const decls = await servedToolsForChat(withOffers, "01a0-offers-yes", () => undefined, null);
+  assert.equal(decls.at(-1)!.name, "offer", "last, after every tool a chat had before");
+  assert.deepEqual(names(decls).slice(0, -1), names(servedToolsFor(withOffers, "01a0-offers-yes", () => undefined, false)));
+  // Its reopen reads the snapshot, whatever the file says now.
+  write(["alpha", "charlie"]);
+  const again = await servedToolsForChat(withOffers, "01a0-offers-yes", () => undefined, null);
+  assert.deepEqual(JSON.stringify(again.at(-1)), JSON.stringify(decls.at(-1)), "the declaration is byte-identical");
+  // A special chat (the Overseer, a project overseer) never gets it; a powers profile's chat does.
+  const special = at("01a0-offers-special", project);
+  assert.ok(!names(await servedToolsForChat(special, "01a0-offers-special", () => undefined, "overseer")).includes("offer"));
+  const powers = at("01a0-offers-powers", project);
+  assert.ok(names(await servedToolsForChat(powers, "01a0-offers-powers", () => undefined, "powers")).includes("offer"));
+});

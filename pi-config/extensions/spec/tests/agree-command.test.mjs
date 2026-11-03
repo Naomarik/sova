@@ -1,6 +1,6 @@
-// `agree`: stamps the draft's records with who agreed and when, records doc-only evidence for those with no
-// code, and promotes them only when promote's own plan is clean; otherwise it writes nothing to the current
-// spec. Black-box tests for core/sova-spec-draft.mjs on a Git fixture.
+// `agree`: stamps the draft's records with who agreed and when, and records doc-only evidence for those with no
+// code; it promotes nothing: the branch's `land` makes them official. Black-box tests for
+// core/sova-spec-draft.mjs on a Git fixture.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -75,35 +75,49 @@ const SOURCE = "chat:c1#m3";
 const agree = (root, name, ...more) => run(root, "agree", name, "--id", ID, "--by", "user", "--source", SOURCE, "--verification", "agreed in alignment al_1", ...more, "--write");
 const currentSpec = (root) => read(root, MANIFEST) + read(root, FILE);
 const evidenceOf = (root, name) => JSON.parse(read(root, `.sova/spec/drafts/${name}/draft.json`)).evidence ?? [];
+const draftRec = (root, name) => JSON.parse(read(root, D(name, "manifest.json"))).claims[ID];
+// The branch's landing: every draft made official at HEAD (agree's verification counts as the chat's note).
+const land = (root) => run(root, "land", "--commit", "HEAD", "--by", "the landing", "--verification", "landed", "--write");
 const codes = (j) => [...(j.findings ?? []).map((f) => f.code), ...(j.refusals ?? []).map((r) => r.code)];
 
-test("agree lands a decided promise with no code in the current spec: agreed {by, at}, doc-only evidence, a receipt naming the plan", () => {
+test("agree stamps a decided promise with no code and records doc-only evidence, but promotes nothing: the landing makes it official", () => {
   const root = project();
   decided(root, "talk");
-  const a = agree(root, "talk");
-  assert.equal(a.exit, 0, JSON.stringify(a));
-  const rec = JSON.parse(read(root, MANIFEST)).claims[ID];
-  assert.ok(rec, "the record is in the current spec");
-  assert.equal(rec.agreed.by, "user");
-  assert.equal(rec.agreed.source, SOURCE, "the stamp says where the go-ahead was given");
-  assert.match(rec.agreed.at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/, "now, to the UTC minute");
-  assert.equal(rec.authority, "accepted");
-  assert.equal(rec.code, undefined);
-  assert.ok(read(root, FILE).includes(SIXTY));
-  assert.ok(evidenceOf(root, "talk").some((e) => e.mode === "doc-only" && e.ids.some((i) => (i.id ?? i) === ID)), "doc-only evidence recorded");
-  assert.match(JSON.stringify(a), /"plan[^"]*":"[0-9a-f]{12,64}"/, "the receipt carries promote's plan sha");
-});
-
-test("guard: a conflict with the current spec (the same § promoted since the draft was made) refuses and writes nothing", () => {
-  const root = project();
-  decided(root, "talk");
-  // elsewhere, the same § lands with other words
-  decided(root, "other", {}, "A session title shows at most 80 characters.");
-  assert.equal(agree(root, "other").exit, 0);
   const before = currentSpec(root);
   const a = agree(root, "talk");
-  assert.notEqual(a.exit, 0, "refused");
+  assert.equal(a.exit, 0, JSON.stringify(a));
+  assert.equal(currentSpec(root), before, "agree leaves the current spec as it was");
+  const stamp = draftRec(root, "talk");
+  assert.equal(stamp.agreed.by, "user");
+  assert.equal(stamp.agreed.source, SOURCE, "the stamp says where the go-ahead was given");
+  assert.match(stamp.agreed.at, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/, "now, to the UTC minute");
+  assert.equal(stamp.authority, "accepted");
+  assert.ok(evidenceOf(root, "talk").some((e) => e.mode === "doc-only" && e.ids.some((i) => (i.id ?? i) === ID)), "doc-only evidence recorded");
+  assert.match(JSON.stringify(a.lands ?? []), /lands/, "the output says it becomes official when its branch lands");
+  const d = run(root, "drafts");
+  assert.deepEqual(d.drafts.find((x) => x.name === "talk").pending, [ID], "the record stays pending in its draft");
+  const l = land(root);
+  assert.equal(l.exit, 0, JSON.stringify(l));
+  const rec = JSON.parse(read(root, MANIFEST)).claims[ID];
+  assert.ok(rec, "the landing put the record in the current spec");
+  assert.deepEqual(rec.agreed, stamp.agreed, "with the agreement agree stamped");
+  assert.equal(rec.code, undefined);
+  assert.ok(read(root, FILE).includes(SIXTY));
+});
+
+test("guard: two drafts agreeing the same § differently never both land: the landing refuses and writes nothing", () => {
+  const root = project();
+  decided(root, "talk");
+  decided(root, "other", {}, "A session title shows at most 80 characters.");
+  assert.equal(agree(root, "talk").exit, 0);
+  assert.equal(agree(root, "other").exit, 0);
+  const before = currentSpec(root);
+  const l = land(root);
+  assert.equal(l.exit, 1, JSON.stringify(l));
+  assert.ok(codes(l).includes("drafts-overlap"), JSON.stringify(codes(l)));
   assert.equal(currentSpec(root), before, "the current spec is byte-identical");
+  rmSync(join(root, ".sova/spec/drafts/talk"), { recursive: true, force: true });
+  assert.equal(land(root).exit, 0);
   assert.ok(read(root, FILE).includes("80 characters") && !read(root, FILE).includes(SIXTY));
 });
 
@@ -123,11 +137,11 @@ test("guard: agree run twice is idempotent", () => {
   const root = project();
   decided(root, "talk");
   assert.equal(agree(root, "talk").exit, 0);
-  const once = currentSpec(root), at = JSON.parse(read(root, MANIFEST)).claims[ID].agreed.at;
+  const once = read(root, D("talk", "manifest.json")) + currentSpec(root), at = draftRec(root, "talk").agreed.at;
   const b = agree(root, "talk");
   assert.equal(b.exit, 0, JSON.stringify(b));
-  assert.equal(currentSpec(root), once, "the current spec is byte-identical after the second run");
-  assert.equal(JSON.parse(read(root, MANIFEST)).claims[ID].agreed.at, at);
+  assert.equal(read(root, D("talk", "manifest.json")) + currentSpec(root), once, "the draft and the current spec are byte-identical after the second run");
+  assert.equal(draftRec(root, "talk").agreed.at, at);
 });
 
 test("agree says where the go-ahead was given: with no --source and no SPEC_AGREE_SOURCE it stamps nothing", () => {
@@ -148,7 +162,7 @@ test("the runtime's SPEC_AGREE_SOURCE is the source when --source is absent; a m
   const a = runEnv(root, { SPEC_AGREE_SOURCE: "pi-session:s1#e7" }, "agree", "talk", "--id", ID, "--by", "user", "--verification", "v", "--write");
   assert.equal(a.exit, 0, JSON.stringify(a));
   assert.equal(a.ids[0].agreed.source, "pi-session:s1#e7", "the output names the source");
-  assert.equal(JSON.parse(read(root, MANIFEST)).claims[ID].agreed.source, "pi-session:s1#e7", "the landed record carries it");
+  assert.equal(draftRec(root, "talk").agreed.source, "pi-session:s1#e7", "the draft's record carries it");
   const root2 = project();
   decided(root2, "talk");
   const b = runEnv(root2, {}, "agree", "talk", "--id", ID, "--by", "user", "--source", "review:r9", "--verification", "v");
@@ -197,7 +211,7 @@ test("SPEC_AGREE_SOURCE set: no --source, or the same reference, stamps with the
     decided(root, "talk");
     const a = agreeEnv(root, { SPEC_AGREE_SOURCE: ENV_REF }, ...more);
     assert.equal(a.exit, 0, JSON.stringify(a));
-    assert.equal(JSON.parse(read(root, MANIFEST)).claims[ID].agreed.source, ENV_REF, `stamped with the env reference (${more.join(" ") || "no --source"})`);
+    assert.equal(draftRec(root, "talk").agreed.source, ENV_REF, `stamped with the env reference (${more.join(" ") || "no --source"})`);
   }
 });
 
@@ -231,7 +245,7 @@ test("no SPEC_AGREE_SOURCE: a description in --source is refused; a reference is
     decided(root, "talk");
     const a = agreeEnv(root, {}, "--source", ref);
     assert.equal(a.exit, 0, `${ref}: ${JSON.stringify(a)}`);
-    assert.equal(JSON.parse(read(root, MANIFEST)).claims[ID].agreed.source, ref);
+    assert.equal(draftRec(root, "talk").agreed.source, ref);
   }
 });
 
@@ -302,7 +316,7 @@ test("a worker (SPEC_AGREE_GIVEN set by the spawn path) given no reference refus
   assert.equal(unchanged(root), before);
   const b = agreeEnv(root, { SPEC_AGREE_GIVEN: ENV_REF, SPEC_AGREE_SOURCE: ENV_REF });
   assert.equal(b.exit, 0, JSON.stringify(b));
-  assert.equal(JSON.parse(read(root, MANIFEST)).claims[ID].agreed.source, ENV_REF);
+  assert.equal(draftRec(root, "talk").agreed.source, ENV_REF);
 });
 
 test("promote refuses a hand-written pi-session source that resolves to no user message, and takes one that does", () => {

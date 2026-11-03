@@ -179,6 +179,22 @@ const RETIRED_TIMEOUT = /^retired: handover to (.+?) \((ag_\d+)\) timed out/;
 /** pause/resume detail: "pause → coordinator, writer: <message>" */
 const NOTICE = /^(?:pause|resume) → [^:]*: ([\s\S]*)$/;
 
+/** A runtime fallback's handover detail (§teams.defaults/runtime-fallback):
+    "successor monitor-2 (ag_05) on pi/claude-code-cli/claude-sonnet-5-5; fallback: primary pi/ollama-cloud/deepseek-v4.1-flash/low hit its monthly usage limit (429: …)" */
+const FALLBACK = /^successor .+? \(ag_\d+\) on (\S+); fallback: primary (\S+) ([^(]+?)(?: \(|$)/;
+const EFFORTS: ReadonlySet<string> = new Set(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+/** A model's own name, without its backend, provider or effort: "pi/ollama-cloud/deepseek-v4.1-flash/low" → "deepseek-v4.1-flash". */
+function modelName(tuple: string): string {
+  const parts = tuple.split("/").filter(Boolean);
+  if (parts.length > 2 && EFFORTS.has(parts[parts.length - 1]!)) parts.pop();
+  return parts[parts.length - 1] ?? tuple;
+}
+/** The fallback a handover event moved to, and why, when it was a runtime fallback. */
+export function handoverFallback(e: Pick<TeamEventData, "kind" | "detail">): { model: string; primary: string; reason: string } | null {
+  const m = e.kind === "handover" && e.detail ? FALLBACK.exec(e.detail) : null;
+  return m ? { model: modelName(m[1]!), primary: modelName(m[2]!), reason: m[3]!.trim().replace(/[.]$/, "") } : null;
+}
+
 /** The successor a handover event names, if its detail says. */
 export function handoverSuccessor(e: Pick<TeamEventData, "kind" | "detail">): { role: string; workerId: string } | null {
   const m = e.kind === "handover" && e.detail ? HANDOVER.exec(e.detail) : null;
@@ -204,6 +220,8 @@ function noticeLine(s: string): string {
 export function teamEventText(e: TeamEventData): string {
   switch (e.kind) {
     case "handover": {
+      const fell = handoverFallback(e);
+      if (fell) return `${e.role.charAt(0).toUpperCase()}${e.role.slice(1)} moved to its fallback ${fell.model}: ${fell.primary} ${fell.reason}.`;
       const next = handoverSuccessor(e);
       return next ? `${e.role} handed over to ${next.role} (${next.workerId}).` : `${e.role} is handing over to a successor.`;
     }

@@ -21,8 +21,22 @@ function fakeSession() {
     },
     persistedId: (h: unknown) => ((h as { id?: string } | undefined)?.id ?? null),
     emit(event: Record<string, unknown>) {
-      const e = { type: "other", frame: () => ({ type: "event", event }), ...(event.type === "message_end" ? { handle: event.message } : {}) };
+      const e = { type: "other", frame: () => ({ type: "event", event: { ...event } }), ...(event.type === "message_end" || event.type === "message_start" ? { handle: event.message } : {}) };
       for (const fn of fns) fn(e);
+    },
+  };
+}
+
+/** The chat's send keys as the feed reads them (server/send-keys.ts): `label` a message, `done` a key. */
+function fakeKeys() {
+  const of = new WeakMap<object, string>();
+  const fns = new Set<(key: string) => void>();
+  return {
+    keyOf: (h: unknown) => (h && typeof h === "object" ? of.get(h) : undefined),
+    onDone: (fn: (key: string) => void) => (fns.add(fn), () => void fns.delete(fn)),
+    label: (m: object, key: string) => void of.set(m, key),
+    done: (key: string) => {
+      for (const fn of fns) fn(key);
     },
   };
 }
@@ -69,6 +83,56 @@ describe("WorkerFeed", () => {
     assert.deepEqual(out.map((f) => (f.event as { type: string }).type), ["message_end", "message_end", "agent_settled"]);
     assert.equal((out[2]!.event as { settleKey?: string }).settleKey, "k:task#1");
     assert.equal((out[2]!.event as { settleEntryId?: string }).settleEntryId, "e2");
+  });
+
+  test("a user message names the key of the send it came from (on its start and its end); others none", async () => {
+    const out: FeedFrame[] = [];
+    const feed = new WorkerFeed((f) => out.push(f), { proc: "P" });
+    const s = fakeSession();
+    const keys = fakeKeys();
+    feed.attach(s as never, keys);
+    const mine = { role: "user", content: "do it" };
+    const twin = { role: "user", content: "do it" };
+    keys.label(mine, "w:s1");
+    s.emit({ type: "agent_start" });
+    for (const message of [mine, twin]) for (const type of ["message_start", "message_end"]) s.emit({ type, message });
+    await Promise.resolve();
+    const keyed = out.map((f) => (f.event as { type: string; sendKey?: string }).sendKey ?? null);
+    assert.deepEqual(keyed, [null, "w:s1", "w:s1", null, null], "by identity: the twin with the same text names none");
+    // Read again after a dropped link (`since`), the frames still name it.
+    const again = feed.since("P", 0) as { frames: FeedFrame[] };
+    assert.deepEqual(again.frames.map((f) => (f.event as { sendKey?: string }).sendKey ?? null), keyed);
+  });
+
+  test("a keyed send that never ran is told: at once when no run is going, else just before the run's settle", async () => {
+    const out: FeedFrame[] = [];
+    const feed = new WorkerFeed((f) => out.push(f), { proc: "P" });
+    const s = fakeSession();
+    const keys = fakeKeys();
+    feed.attach(s as never, keys);
+    const types = () => out.map((f) => { const e = f.event as { type: string; sendKey?: string }; return e.sendKey && e.type === "send_dropped" ? `dropped ${e.sendKey}` : e.type; });
+    keys.done("idle-1"); // a turn that failed before it began
+    await Promise.resolve();
+    assert.deepEqual(types(), ["dropped idle-1"]);
+    out.length = 0;
+    const ran = { role: "user", content: "ran" };
+    keys.label(ran, "ran-1");
+    s.emit({ type: "agent_start" });
+    s.emit({ type: "message_start", message: ran });
+    keys.done("ran-1"); // its turn's end: it ran, so nothing to tell
+    keys.done("stop-1"); // Stop drained it while the run went on
+    const late = { role: "user", content: "late" };
+    keys.label(late, "late-1");
+    keys.done("late-1"); // given up on, then the loop delivered it after all
+    s.emit({ type: "message_start", message: late });
+    s.emit({ type: "message_end", message: { role: "assistant", stopReason: "aborted" } });
+    s.emit({ type: "agent_settled" });
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.deepEqual(types(), ["agent_start", "message_start", "message_start", "message_end", "dropped stop-1", "agent_settled"]);
+    keys.done("ran-1"); // a late repeat for a key that ran
+    await Promise.resolve();
+    assert.equal(out.length, 6);
   });
 
   test("since: the frames after a seq of this process; another process or one out of the ring is a gap", () => {

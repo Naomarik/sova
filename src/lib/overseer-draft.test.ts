@@ -27,7 +27,7 @@ import {
 } from "./overseer-draft";
 
 const settings = (): OverseerSettings => ({
-  version: 1,
+  version: 2,
   model: null,
   thinking: null,
   extraSystemPrompt: "",

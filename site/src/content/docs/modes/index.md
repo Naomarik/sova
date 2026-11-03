@@ -9,7 +9,7 @@ order: 1
 
 The **major mode** is one of two:
 
-- **normal**: Pi as usual. The agent does the work itself.
+- **[normal](/docs/modes/normal/)**: Pi as usual. The agent does the work itself.
 - **delegate**: Orchestrate: route planning, investigation and implementation to workers by
   profile. See [Delegate](/docs/modes/delegate/).
 
@@ -20,7 +20,6 @@ The **major mode** is one of two:
 | [align](/docs/modes/align/) | The agent agrees with you on what to build before building it, and records each agreement as an alignment. | No |
 | [spec](/docs/modes/spec/) | The agent works from the project's spec: it reads the claims a task touches, and proposes changes in drafts. | Yes |
 | [vis](/docs/modes/vis/) | The agent can draw small diagrams and charts in its replies. | No |
-| [codemode](/docs/modes/codemode/) | The agent can run a short script that calls its other tools, several at once, and filters their output. | No |
 | [memory](/docs/modes/memory/) | A cheap model folds the chat's messages into one-line summaries, and the model opens any of them back to the original message with its `zoom` tool, so a chat can outgrow its context. The transcript you read never changes. Only Sova's mode menu turns it on. | No |
 
 A project can also ship minor modes of its own, with instructions and its own command-line tools,
@@ -43,15 +42,16 @@ Press it to open the menu. It has these groups:
 - **Major mode**: normal and delegate, each with its one-line description. Picking one switches
   the chat and keeps the menu open. Delegate's row has a gear, **Configure Delegate**, that opens Settings → Subagents without
   switching anything, so you can set Delegate up before you turn it on.
-- **Minor modes**: align, spec, vis, codemode and memory, each with its description. Toggling one
+- **Minor modes**: align, spec, vis and memory, each with its description. Toggling one
   keeps the menu open, so you can set several. Spec's row has a gear too, **Configure Spec**, that
   opens Settings → Subagents at its spec writer section. Memory is the last row, listed only in a
   chat whose runtime can run it; its row has a chevron, **Memory type**, that opens a panel to
-  choose the chat's [memory type and summary size](#memory).
+  choose the chat's [memory type](#memory).
 - **This project · {name}**, only in a chat whose project has [project modes](/docs/modes/project-modes/):
   one row per mode, with its description and, when it applies, its state, such as **Asks before
-  turning on** for a mode with tools, commands or hooks you haven't approved. A mode the Overseer
-  turned on whose hooks wait for you has an **Approve Hooks** button beside its row.
+  turning on** for a mode with tools, commands or hooks you haven't approved. A mode turned on
+  by someone else (the Overseer, a script, a chat's agent or an extension) whose hooks wait for you
+  has an **Approve Hooks** button beside its row.
 - **Subagents**: one row, **Subagents · {profile}**, that opens the picker for this chat's
   [subagent profile](/docs/subagent-profiles/).
 
@@ -74,8 +74,8 @@ chat, and the chat's running workers keep running.
 Switching a minor mode in the middle of a chat doesn't rewrite the instructions the model already
 has (except align in Delegate, which changes one paragraph of Delegate's instructions). The change reaches the model as a hidden note with its next message, which you don't see in
 the transcript. This keeps the model provider's prompt cache, so a toggle doesn't re-send the whole
-conversation. Turning **align**, **vis** or **codemode** on or off does change the agent's tools:
-align adds its `align` tool, vis its drawing tools, and codemode its `codemode` tool. A project mode
+conversation. Turning **align** or **vis** on or off does change the agent's tools:
+align adds its `align` tool and vis its drawing tools. A project mode
 with tools adds or removes its own tools the same way. **memory** sends no note at all: it changes
 the history the model is sent from the next turn, and adds its `zoom` and `date` tools.
 
@@ -91,7 +91,7 @@ follows it; its first switch pins that chat to its own modes from then on.
 you ask for exactly that:
 
 - **Save as default** in the menu. It makes this chat's major mode, strict flag, minor modes and
-  subagent profile what new sessions start from, with its memory type and size. Project modes are
+  subagent profile what new sessions start from, with its memory type. Project modes are
   never part of the default. It reads **Already the default**, and can't be pressed, when all of
   these already match.
 - `/mode default` in a terminal, which saves the current session's mode (not its subagent profile).
@@ -140,7 +140,6 @@ mode whose file says `workers: yes`. A worker gets at most 8 modes, built-in and
   promotes. See [Spec](/docs/modes/spec/).
 - **align** doesn't: aligning is a conversation with you, and a worker doesn't have one.
 - **vis** doesn't: drawings are for you, and a worker's replies are read by its parent.
-- **codemode** doesn't: it changes the chat's own tools, and a worker's tools come from its brief.
 - **memory** doesn't: it is the chat's own memory of its conversation, and a worker starts fresh
   from its brief.
 - A **project mode** does when its file says `workers: yes`: the worker gets the chat's copy of it,
@@ -177,17 +176,18 @@ chat's full history back.
 Each chat picks one of two types in the **Memory type** panel:
 
 - **UniiChat**, by Victor Taelin: one chat that never ends. Every turn sends the summary lines of
-  the whole chat before it, then the turn itself. The lines grow to the chat's size, 128 KB by
-  default, then merge down to half of it.
+  the whole chat before it, then the turn itself. The lines grow to UniiChat's summary size,
+  128 KB by default, then merge down to half of it.
 - **Zoomable compaction**, Sova's: the chat runs as without memory until it would compact. Then the
   compacted part becomes summary lines the model can open, instead of a one-off summary. Its size is
   the size of those lines, 32 KB by default.
 
-The type and size are this chat's own, kept while memory is off, and Save as default saves them.
+The type is this chat's own, kept while memory is off, and Save as default saves it. Each type's
+summary size is set once for every chat, in Settings → Memory.
 Turning memory on in a chat that already has messages prepares it in the background ("Preparing
 memory: 120 of 480 messages"); its turns go out as without memory until that's done. The Session
 pane's Memory outline shows the lines the model sees now. Settings → Memory picks the summarizer's
-model, with a fallback.
+model, with a fallback, and each type's summary size.
 
 Only a Sova chat's mode menu turns memory on, whatever the chat's model. A terminal can turn it off
 but not on, a terminal session that starts from a default with memory drops it, and workers and

@@ -19,6 +19,8 @@ import type {
   TeamEvent,
   TeamInfo,
   TeamMember,
+  TeamInboxBody,
+  TeamInboxView,
   ClaudeLoginRow,
   ClaudePoolInfo,
   ClaudePoolLogin,
@@ -55,10 +57,12 @@ import { describeWorktrees, worktreesOf } from "./worktrees-state";
 import { goneWorkOf, REMOVED_EMPTY, treeReadinessOf } from "./merge-readiness";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
 import { workerSkills } from "./worker-skills";
+import { addInboxCounts, inboxBody, inboxView, itemsFileOf, mailboxRootOf, readItems, validSegment } from "./team-inbox";
 import { defaultAdapters } from "./worker-adapters";
 import { WorkerRestorer, workersFromRecords } from "./worker-restore";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { handoverSuccessor, retireReason, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
+import { sessionTokens } from "./session-tokens";
 import { readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
@@ -1135,15 +1139,22 @@ async function liveSession({ sessionFile, pid, rec }: RawLiveRecord): Promise<Li
   };
 }
 
-/** Every running pi process (including this server's embedded runtimes), with workers and teams. */
-export async function getAgentsInsight(): Promise<AgentsInsight> {
+/**
+ * Every running pi process (including this server's embedded runtimes), with workers and teams.
+ * `tokens`: add each Sova-hosted row's output tokens (the Agents board asks, `?tokens=1`, only while
+ * it is shown); otherwise no token work is done and the field is left out.
+ */
+export async function getAgentsInsight(opts: { tokens?: boolean } = {}): Promise<AgentsInsight> {
   const at = Date.now();
   const lastActivity = new Map<LiveAgentSession, number>();
   const sessions: LiveAgentSession[] = [];
+  const { getSessionSummary } = await import("./sessions-index");
   for (const raw of readLiveRecords({ includeOwn: true })) {
     try {
       const s = await liveSession(raw);
       if (!s) continue;
+      // The merge queue's own chats are its tab's: never on the Agents board nor in what is working now.
+      if (s.path && (await getSessionSummary(s.path).catch(() => null))?.queueChat) continue;
       sessions.push(s);
       lastActivity.set(s, num(raw.rec.session?.lastActivity) ?? 0);
     } catch {
@@ -1167,7 +1178,10 @@ export async function getAgentsInsight(): Promise<AgentsInsight> {
     for (const t of s.teams) totals.teamWorking += t.working;
   }
   totals.soloWorking = Math.max(0, totals.working - totals.teamWorking);
-  return { at, totals, sessions };
+  // Each Sova-hosted row's output tokens, from memory, built once per change and 30 s slot, only
+  // when asked (§app.insights/session-token-rate). Then always sent (`{}` when none), so the board
+  // tells a server that measures from an older one that doesn't.
+  return opts.tokens ? { at, totals, sessions, tokens: sessionTokens().wire() } : { at, totals, sessions };
 }
 
 // ---------------------------------------------------------------------------
@@ -1257,6 +1271,27 @@ async function linkRows(sessionId: string | null, path: string): Promise<Pick<Se
   return links.length ? { links } : {};
 }
 
+/** One team member's inbox (§app.subagents-pane/member-inbox), read-only: its items without bodies,
+    or with `item` one item's whole message. Only a member of one of this session's teams is read.
+    `path` must already be validated with resolveSessionPath(). */
+export async function getMemberInbox(
+  path: string,
+  teamId: string,
+  workerId: string,
+  item?: string,
+): Promise<{ ok: true; body: TeamInboxView | TeamInboxBody } | { ok: false; status: 400 | 404; error: string }> {
+  if (!validSegment(teamId) || !validSegment(workerId)) return { ok: false, status: 400, error: "Invalid ?team= or ?worker=" };
+  if (item !== undefined && !validSegment(item)) return { ok: false, status: 400, error: "Invalid ?item=" };
+  const facts = await sessionFacts(path);
+  const team = facts.teams.find((t) => t.id === teamId);
+  if (!team || !team.members.some((m) => m.workerId === workerId)) return { ok: false, status: 404, error: "No such member in this session's teams" };
+  const root = mailboxRootOf(agentRoot(), facts.sessionId);
+  const items = (root ? await readItems(itemsFileOf(root, teamId, workerId)) : null) ?? [];
+  if (item === undefined) return { ok: true, body: inboxView(teamId, workerId, items) };
+  const one = inboxBody(items, item);
+  return one ? { ok: true, body: one } : { ok: false, status: 404, error: "No such item in this inbox" };
+}
+
 /** `path` must already be validated with resolveSessionPath(). Never throws. */
 export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const facts = await sessionFacts(path);
@@ -1279,6 +1314,8 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
   const workerTotal = workers && counted !== undefined && counted > workers.length ? counted : undefined;
   // What the session spent is the usage ledger's (/api/usage/session), never counted here.
   const teams = joinTeams(facts, path, workers);
+  // Each member's inbox counts, folded from the main chat's items files (server/team-inbox.ts).
+  await addInboxCounts(teams, mailboxRootOf(agentRoot(), facts.sessionId));
   // A worker's own transcript is the only record of what it loaded (see server/worker-skills.ts).
   // mtime-cached, because this endpoint is polled every 3s while the pane is open.
   const skillsLoaded = workers && workers.length > 0 ? await workerSkills(workers) : undefined;

@@ -1,0 +1,18 @@
+{
+  "id": "merge-reviewer",
+  "label": "Merge reviewer",
+  "icon": "search",
+  "description": "The merge queue's review step, started by Sova for one run: reads the branch with the project's review kit and answers ok, notes or blocking. No edit tools, no web, workers, timers or worktrees.",
+  "remove": [
+    "edit",
+    "web",
+    "workers",
+    "timers",
+    "worktrees"
+  ],
+  "grant": [],
+  "singleton": false,
+  "overseerMayStart": false,
+  "mode": "normal",
+  "minorModes": []
+}

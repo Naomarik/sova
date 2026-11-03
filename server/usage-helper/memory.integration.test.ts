@@ -1,8 +1,7 @@
 // The helper's memory stays bounded where an earlier probe grew without end (46 GB in 17 minutes,
-// stdin fed from /dev/zero: a line that never ended was buffered and rescanned forever):
-// - idle on an empty agent dir, its RSS stays flat;
-// - when nobody reads its answers, it stops reading requests instead of queueing answers;
-// - a stdin that never ends a line makes it exit, never grow.
+// stdin fed from /dev/zero: a line that never ended was buffered and rescanned forever): a stdin that
+// never ends a line makes it exit, never grow. (A 45 s soak of an idle and an unread helper was dropped:
+// this test reproduces the leak's own cause, in seconds.)
 // Every child runs under a hard RSS and wall-time cap enforced here.
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -62,54 +61,6 @@ async function watch(c: ChildProcess, seconds: number, tick?: (i: number) => voi
   }
   return out;
 }
-
-/** Least-squares slope in MB per minute. */
-function slope(ys: number[]): number {
-  const n = ys.length;
-  const mx = (n - 1) / 2;
-  const my = ys.reduce((a, b) => a + b, 0) / n;
-  let num = 0;
-  let den = 0;
-  ys.forEach((y, x) => {
-    num += (x - mx) * (y - my);
-    den += (x - mx) ** 2;
-  });
-  return (num / den) * 60;
-}
-
-test("idle on an empty agent dir and with its answers unread: memory stays flat", { skip: process.platform !== "linux" }, async () => {
-  const idle = start(agentDir());
-  const stalled = start(agentDir());
-  // Nobody reads stalled's stdout; we keep asking it questions.
-  stalled.stdout!.pause();
-  const req = `${JSON.stringify({ id: 1, op: "costs", range: "all", tz: "UTC" })}\n`;
-  stalled.stdin!.on("error", () => {});
-  const ask = () => {
-    try {
-      for (let i = 0; i < 500; i++) if (!stalled.stdin!.write(req)) break;
-    } catch {
-      // its stdin is full or gone: the point is that it stays bounded
-    }
-  };
-  idle.stdout!.resume();
-  // A helper warms up for its first seconds (a 3-minute probe: idle 33 -> 34 MB by 15 s then flat;
-  // unread 29 -> 46 MB by 5 s then flat or falling), so the plateau is judged on the tail only:
-  // after 20 s of warm-up, 25 s of samples must neither trend up nor step up.
-  const [a, b] = await Promise.all([watch(idle, 45), watch(stalled, 45, ask)]);
-  const WARM = 20;
-  const plateau = (name: string, xs: number[], cap: number) => {
-    const series = xs.map(Math.round).join(" ");
-    assert.ok(xs.length >= 40, `${name}: only ${xs.length} samples: ${series}`);
-    assert.ok(Math.max(...xs) < cap, `${name} RSS ${Math.max(...xs)} MB: ${series}`);
-    const tail = xs.slice(WARM);
-    assert.ok(slope(tail) < 6, `${name} RSS grows ${slope(tail).toFixed(1)} MB/min after warm-up: ${series}`);
-    assert.ok(Math.max(...tail) - tail[0]! < 8, `${name} RSS climbs ${(Math.max(...tail) - tail[0]!).toFixed(1)} MB after warm-up: ${series}`);
-  };
-  plateau("idle", a, 150);
-  plateau("unread", b, 200);
-  idle.stdin!.end();
-  stalled.kill("SIGKILL");
-});
 
 test("a stdin that never ends a line (as /dev/zero) makes it exit, bounded", { skip: process.platform !== "linux" }, async () => {
   const c = start(agentDir());

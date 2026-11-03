@@ -11,9 +11,15 @@ export type Verb = (typeof VERBS)[number];
 /** The deploy verbs (§app.project-services/deploy): a target of the definition's `deploy`, never an instance. */
 export const DEPLOY_VERBS = ["deploy.check", "deploy.plan", "deploy.run", "deploy.status", "deploy.logs", "deploy.rollback", "deploy.request"] as const;
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
-export type AnyVerb = Verb | DeployVerb;
+/** The merge queue's verbs (shared/merge-queue.ts): a project's queue, its entries and runs, never an instance. */
+export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear"] as const;
+export type MergeVerb = (typeof MERGE_VERBS)[number];
+/** The merge verbs that change nothing. */
+export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs"];
+export type AnyVerb = Verb | DeployVerb | MergeVerb;
 export const isDeployVerb = (v: unknown): v is DeployVerb => (DEPLOY_VERBS as readonly unknown[]).includes(v);
-export const isVerb = (v: unknown): v is AnyVerb => (VERBS as readonly unknown[]).includes(v) || isDeployVerb(v);
+export const isMergeVerb = (v: unknown): v is MergeVerb => (MERGE_VERBS as readonly unknown[]).includes(v);
+export const isVerb = (v: unknown): v is AnyVerb => (VERBS as readonly unknown[]).includes(v) || isDeployVerb(v) || isMergeVerb(v);
 /** Verbs that change nothing and take no lock. */
 export const READ_VERBS: readonly Verb[] = ["status", "logs", "doctor"];
 /** The deploy verbs anyone with the project in scope may call: they read (§app.project-services/deploy-callers). */
@@ -45,6 +51,8 @@ export interface VerbParam {
   };
   /** On the command line: its flag and description, and its default for a deploy verb. Absent: not there. */
   cli?: { flag: string; description: string; deployDefault?: string };
+  /** Only the merge verbs take it: on the merge thread's tool, never the generic project tools. */
+  mergeOnly?: true;
 }
 
 export const VERB_PARAMS: readonly VerbParam[] = [
@@ -78,6 +86,30 @@ export const VERB_PARAMS: readonly VerbParam[] = [
     },
     cli: { flag: "why", description: "Why" },
   },
+  // The merge verbs' own keys (shared/merge-queue.ts). On no generic tool: the merge thread's tool lists them.
+  { wire: "entry", type: "string", mergeOnly: true, tool: { name: "entry", description: "merge.*: a queue entry, by its id (mq_…; merge.status lists them)." }, cli: { flag: "entry", description: "A merge queue entry id" } },
+  { wire: "run", type: "string", mergeOnly: true, tool: { name: "run", description: "merge.logs/merge.review: a run, by its id (mr_…)." }, cli: { flag: "run", description: "A merge run id" } },
+  { wire: "step", type: "string", mergeOnly: true, tool: { name: "step", description: "merge.logs: one step of the run, by its id (default every step's tail)." }, cli: { flag: "step", description: "A run step id" } },
+  { wire: "note", type: "string", mergeOnly: true, tool: { name: "note", description: "merge.note (and every merge verb the merge thread calls): the entry's note, short free text shown on its row (at most 300 characters; empty clears it)." }, cli: { flag: "note", description: "A note on the entry" } },
+  { wire: "withoutSpecs", type: "boolean", mergeOnly: true, cli: { flag: "without-specs", description: "Land without its spec drafts" } },
+  { wire: "withoutReview", type: "boolean", mergeOnly: true, cli: { flag: "without-review", description: "Land without the review step" } },
+  { wire: "chat", type: "string", mergeOnly: true, cli: { flag: "chat", description: "The chat the approval was given in" } },
+  { wire: "via", type: "string", mergeOnly: true, cli: { flag: "via", description: "merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed \"open a PR\")" } },
+  { wire: "checks", type: "list", mergeOnly: true, tool: { name: "checks", description: "merge.extend: check ids from the project's merge section to add to this entry's run (never removes one)." }, cli: { flag: "checks", description: "Check ids, comma-separated" } },
+  { wire: "verdict", type: "string", mergeOnly: true, tool: { name: "verdict", description: "merge.resolve: no-behaviour-change | behaviour-differs; merge.review: ok | notes | blocking." }, cli: { flag: "verdict", description: "A verdict" } },
+  { wire: "files", type: "list", mergeOnly: true, tool: { name: "files", description: "merge.resolve: the conflicted files the judgement covers." }, cli: { flag: "files", description: "Files, comma-separated" } },
+  { wire: "ours", type: "string", mergeOnly: true, tool: { name: "ours", description: "merge.resolve: what the target's side does, in plain words." }, cli: { flag: "ours", description: "The target's side, in plain words" } },
+  { wire: "theirs", type: "string", mergeOnly: true, tool: { name: "theirs", description: "merge.resolve: what the branch's side does, in plain words." }, cli: { flag: "theirs", description: "The branch's side, in plain words" } },
+  { wire: "proposal", type: "string", mergeOnly: true, tool: { name: "proposal", description: "merge.resolve: what the resolution does, in plain words." }, cli: { flag: "proposal", description: "The proposed resolution, in plain words" } },
+  { wire: "answer", type: "string", mergeOnly: true, cli: { flag: "answer", description: "accept | send-back | land-anyway" } },
+  { wire: "command", type: "string", mergeOnly: true, cli: { flag: "command", description: "merge.setup: the project's one test command" } },
+  { wire: "commands", type: "list", mergeOnly: true, cli: { flag: "commands", description: "merge.setup: its checks, each \"Label: command\", comma-separated" } },
+  { wire: "none", type: "boolean", mergeOnly: true, cli: { flag: "none", description: "merge.setup: the project has no automated tests" } },
+  { wire: "takesMin", type: "integer", mergeOnly: true, cli: { flag: "takes-min", description: "merge.setup: about how many minutes the tests take" } },
+  { wire: "requires", type: "list", mergeOnly: true, cli: { flag: "requires", description: "merge.setup: services that must start first, comma-separated" } },
+  { wire: "dryRun", type: "boolean", mergeOnly: true, cli: { flag: "dry-run", description: "merge.setup: Try It on Main, saving nothing" } },
+  { wire: "text", type: "string", mergeOnly: true, tool: { name: "text", description: "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words." }, cli: { flag: "text", description: "Text" } },
+  { wire: "ask", type: "string", mergeOnly: true, tool: { name: "ask", description: "merge.reply: the merge thread's question you relay the user's answer to, by its id (ak_…, in the merge queue's message)." }, cli: { flag: "ask", description: "A merge thread question id" } },
   { wire: "overrideTests", type: "string", cli: { flag: "override-tests", description: "Why the tests are overridden" } },
   { wire: "overrideDirty", type: "string", cli: { flag: "override-dirty", description: "Why a dirty tree is overridden" } },
   { wire: "confirm", type: "boolean", cli: { flag: "confirm", description: "The operator's confirm" } },
@@ -85,9 +117,10 @@ export const VERB_PARAMS: readonly VerbParam[] = [
 ];
 
 /** The flags each kind of verb takes on the command line, in the order they are listed there. */
-export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy: readonly string[] } = {
+export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy: readonly string[]; readonly merge: readonly string[] } = {
   instance: ["project", "instance", "checkout", "branch", "from", "slot", "services", "restart", "lines", "keep-data", "resources", "ref", "select", "endpoint", "days", "link", "confirm"],
   deploy: ["project", "target", "commit", "ref", "plan", "deploy", "why", "lines", "override-tests", "override-dirty", "confirm", "dismiss"],
+  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "via", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run", "ask"],
 };
 
 export const ERROR_CODES = [
@@ -96,6 +129,7 @@ export const ERROR_CODES = [
   "invalid-definition",
   "not-conformant",
   "cap-reached",
+  "slots-blocked",
   "port-held",
   "not-ready",
   "start-failed",
@@ -125,6 +159,7 @@ const EXIT: Record<ErrorCode, ExitClass> = {
   "verify-failed": 1,
   "not-conformant": 2,
   "cap-reached": 2,
+  "slots-blocked": 2,
   "port-held": 2,
   "dirty-worktree": 2,
   unsupported: 2,
@@ -226,6 +261,37 @@ export interface ProjectDef {
   deploy?: DeployDecl;
   /** The checkout files the definition was written from; their change at HEAD is drift. Outside the hash. */
   sources?: string[];
+  /** How the merge queue lands branches (its checks): outside the definition's hash. */
+  merge?: MergeDecl;
+}
+
+/** One check the merge queue runs on a merged commit, in declaration order. `run` may use the definition's template
+ *  variables and `${merge.base}`, `${merge.tip}`, `${merge.target}`. `rerun`: its failures name test files, and
+ *  `run` + those files reruns only them (attribution). `requires`: services brought up in the merge copy first.
+ *  `optional`: not part of the required set; runs only when the merge thread picks it. */
+export interface MergeCheckDecl {
+  id: string;
+  label: string;
+  run: Argv;
+  timeout: number;
+  rerun: boolean;
+  requires: string[];
+  optional?: true;
+}
+/** The definition's `merge` section. `checks`: the required set, `"none"` (declared: no automated tests), or absent
+ *  (the queue falls back to `test.run`, else the project isn't set up). `target`: the branch it lands on (absent: the
+ *  main checkout's). `push`: absent means push when an `origin` remote exists. `install`: run in the merge copy when
+ *  a merged branch changes one of its `inputs` (an offline install). `review`: the review kit's folder. `land`: how a
+ *  branch lands (al_3; absent: merged locally; this computer's own choice wins over it). `request`: the request skill
+ *  folder (how a pull or merge request's title and description are written, and their checks). */
+export interface MergeDecl {
+  target?: string;
+  push?: boolean;
+  checks?: MergeCheckDecl[] | "none";
+  install?: { run: Argv; inputs: string[]; timeout: number };
+  review?: string;
+  land?: import("./merge-queue").LandHow;
+  request?: string;
 }
 
 /** The endpoints a copy may share (`"<service>.<port>"`, checkout services only; none when absent), at most `maxDays` per link, and whether at all. */
@@ -298,6 +364,10 @@ export const SHARE_ENDPOINTS_MAX = 20;
 export const CONTRACT_FILE = ".sova/project.json";
 export const SLOT_CAP_DEFAULT = 4;
 export const SLOT_CAP_MAX = 16;
+/** Every copy's slot is one of 1 to COPY_SLOT_TOP, whatever the copy limit (§app.project-services/instances). */
+export const COPY_SLOT_TOP = 16;
+/** Conformance's scratch slots are searched from here up (shared/project-slots.ts slotLayoutOf). */
+export const SCRATCH_FROM = COPY_SLOT_TOP + 1;
 export const READY_TIMEOUT_DEFAULT = 60;
 export const READY_TIMEOUT_MAX = 600;
 export const HOOK_TIMEOUT_DEFAULT = 120;
@@ -315,8 +385,6 @@ export function selectorsProblem(v: unknown): string | null {
   for (const x of v) if (typeof x !== "string" || !SELECTOR.test(x)) return `${JSON.stringify(x)} is not a selector (letters, digits and _ . / : * -, starting with a letter, digit or _, at most 200)`;
   return null;
 }
-/** Conformance takes the two slots above the cap (§app.project-services/conform). */
-export const scratchSlots = (def: Pick<ProjectDef, "slots">): [number, number] => [def.slots.cap + 1, def.slots.cap + 2];
 
 const NAME = /^[a-z][a-z0-9-]{0,30}$/;
 /** The variables Sova sets itself (§app.project-services/contract): a definition's env never names one. */
@@ -340,7 +408,7 @@ const isObj = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.i
 
 /** Every key the declaration accepts, by where it sits (the parse refuses any other; the playbook's reference is pinned to these). */
 export const DEFINITION_KEYS = {
-  top: ["version", "slots", "host", "setup", "data", "services", "open", "hooks", "test", "share", "deploy", "sources"],
+  top: ["version", "slots", "host", "setup", "data", "services", "open", "hooks", "test", "share", "deploy", "sources", "merge"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
   service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation", "adopt", "onMerge"],
@@ -364,6 +432,9 @@ export const DEFINITION_KEYS = {
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request"],
+  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
+  mergeInstall: ["run", "inputs", "timeout"],
 } as const;
 const K = DEFINITION_KEYS;
 
@@ -762,6 +833,58 @@ function* deployTemplates(d: DeployDecl): Generator<[string, string]> {
 }
 
 /** Parse `.sova/project.json`'s text. Throws DefinitionError naming the first problem's path. */
+/** The variables a merge check's `run` may use beside the definition's own. */
+export const MERGE_VARS = ["merge.base", "merge.tip", "merge.target"] as const;
+/** `merge.land`'s values (shared/merge-queue.ts LandHow). */
+export const MERGE_LAND_HOWS = ["local", "github-pr", "gitlab-mr", "push-branch"] as const;
+
+function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
+  const o = obj(v, "$.merge");
+  keysOnly(o, K.merge, "$.merge");
+  const out: MergeDecl = {};
+  if (o.target !== undefined) {
+    if (typeof o.target !== "string" || !BRANCH.test(o.target) || o.target.includes("..") || o.target.endsWith(".lock") || o.target.endsWith("/")) throw new DefinitionError("$.merge.target", "must be a branch name");
+    out.target = o.target;
+  }
+  if (o.push !== undefined) {
+    if (typeof o.push !== "boolean") throw new DefinitionError("$.merge.push", "must be true or false");
+    out.push = o.push;
+  }
+  if (o.checks === "none") out.checks = "none";
+  else if (o.checks !== undefined) {
+    if (!Array.isArray(o.checks) || !o.checks.length) throw new DefinitionError("$.merge.checks", 'must be a non-empty list of checks, or "none" (no automated tests)');
+    if (o.checks.length > 30) throw new DefinitionError("$.merge.checks", "at most 30 checks");
+    out.checks = o.checks.map((c, i) => {
+      const path = `$.merge.checks[${i}]`;
+      const x = obj(c, path);
+      keysOnly(x, K.mergeCheck, path);
+      const id = name(typeof x.id === "string" ? x.id : "", `${path}.id`);
+      if (x.label !== undefined && (typeof x.label !== "string" || !x.label.trim() || x.label.length > 60)) throw new DefinitionError(`${path}.label`, "must be a short label (1 to 60 characters)");
+      if (x.rerun !== undefined && typeof x.rerun !== "boolean") throw new DefinitionError(`${path}.rerun`, "must be true or false");
+      if (x.optional !== undefined && typeof x.optional !== "boolean") throw new DefinitionError(`${path}.optional`, "must be true or false");
+      const requires = strList(x.requires, `${path}.requires`);
+      for (const r of requires) if (!services.some((s) => s.name === r)) throw new DefinitionError(`${path}.requires`, `names no service "${r}"`);
+      return { id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires, ...(x.optional === true ? { optional: true as const } : {}) };
+    });
+    if (!out.checks.some((c) => !c.optional)) throw new DefinitionError("$.merge.checks", "at least one check is required (not optional)");
+    if (new Set(out.checks.map((c) => c.id)).size !== out.checks.length) throw new DefinitionError("$.merge.checks", "check ids must be unique");
+  }
+  if (o.install !== undefined) {
+    const x = obj(o.install, "$.merge.install");
+    keysOnly(x, K.mergeInstall, "$.merge.install");
+    const inputs = strList(x.inputs, "$.merge.install.inputs").map((p, i) => relPath(p, `$.merge.install.inputs[${i}]`, true));
+    if (!inputs.length) throw new DefinitionError("$.merge.install.inputs", "name the files whose change needs the install (a lockfile)");
+    out.install = { run: argv(x.run, "$.merge.install.run"), inputs, timeout: timeout(x.timeout, "$.merge.install.timeout", HOOK_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX) };
+  }
+  if (o.review !== undefined) out.review = relPath(o.review, "$.merge.review", true);
+  if (o.land !== undefined) {
+    if (typeof o.land !== "string" || !(MERGE_LAND_HOWS as readonly string[]).includes(o.land)) throw new DefinitionError("$.merge.land", `must be one of ${MERGE_LAND_HOWS.map((h) => `"${h}"`).join(", ")}`);
+    out.land = o.land as (typeof MERGE_LAND_HOWS)[number];
+  }
+  if (o.request !== undefined) out.request = relPath(o.request, "$.merge.request", true);
+  return out;
+}
+
 export function parseDefinition(text: string): ProjectDef {
   let raw: unknown;
   try {
@@ -784,9 +907,9 @@ export function parseDefinition(text: string): ProjectDef {
   const setup = ((o.setup as unknown[] | undefined) ?? []).map((s, i) => step(s, `$.setup[${i}]`, true));
   if (new Set(setup.map((s) => s.id)).size !== setup.length) throw new DefinitionError("$.setup", "step ids must be unique");
   const dataList = o.data === undefined ? [] : Object.entries(obj(o.data, "$.data")).map(([k, v]) => data(name(k, `$.data.${k}`), v, `$.data.${k}`));
-  const svcObj = obj(o.services, "$.services");
+  // No services (a library, a static site built elsewhere, a project with only checks): valid; up starts nothing.
+  const svcObj = o.services === undefined ? {} : obj(o.services, "$.services");
   const services = Object.entries(svcObj).map(([k, v]) => service(name(k, `$.services.${k}`), v, `$.services.${k}`));
-  if (!services.length) throw new DefinitionError("$.services", "declare at least one service");
   const hooks: ProjectDef["hooks"] = {};
   if (o.hooks !== undefined) {
     const h = obj(o.hooks, "$.hooks");
@@ -827,6 +950,7 @@ export function parseDefinition(text: string): ProjectDef {
     ...(o.open !== undefined ? { open: openDecl(o.open, services) } : {}),
     ...(o.deploy !== undefined ? { deploy: deployDecl(o.deploy, test) } : {}),
     ...(sources ? { sources } : {}),
+    ...(o.merge !== undefined ? { merge: mergeDecl(o.merge, services) } : {}),
   };
   // requires: known, scope-consistent, acyclic.
   const byName = new Map(services.map((s) => [s.name, s]));
@@ -839,8 +963,9 @@ export function parseDefinition(text: string): ProjectDef {
   serviceOrder(def);
   const adopting = services.filter((s) => s.adopt);
   if (adopting.length > 1) throw new DefinitionError(`$.services.${adopting[1]!.name}.adopt`, "at most one service adopts a unit");
-  // Ports: every allocated port, in every slot up to the scratch slots, must fit, and no two ports
-  // of one instance may coincide.
+  // Ports: every allocated port, in every slot up to cap + 2, must fit, and no two ports of one
+  // instance may coincide. Higher slots (the copies' fixed range, the scratch slots) never make a
+  // file invalid: a slot whose ports overlap is only a place no copy takes (shared/project-slots.ts slotLayoutOf).
   const top = cap + 2;
   for (const s of services)
     for (const [k, p] of Object.entries(s.ports))
@@ -868,6 +993,18 @@ export function parseDefinition(text: string): ProjectDef {
   for (const [t, where] of templates(def)) {
     const bad = unknownVars(t, vars);
     if (bad) throw new DefinitionError(`$.${where}`, bad);
+  }
+  if (def.merge) {
+    const mv = new Set([...vars, ...MERGE_VARS]);
+    for (const [i, c] of (Array.isArray(def.merge.checks) ? def.merge.checks : []).entries())
+      for (const [j, a] of c.run.entries()) {
+        const bad = unknownVars(a, mv);
+        if (bad) throw new DefinitionError(`$.merge.checks[${i}].run[${j}]`, bad);
+      }
+    for (const [j, a] of (def.merge.install?.run ?? []).entries()) {
+      const bad = unknownVars(a, vars);
+      if (bad) throw new DefinitionError(`$.merge.install.run[${j}]`, bad);
+    }
   }
   if (def.deploy) {
     const dv = deployVars(def);
@@ -1058,6 +1195,8 @@ export interface ConformReport {
   /** On a failed run: the last lines of each service (or step) that was not ready or failed, read before teardown. */
   logs?: ConformLog[];
   memory?: ConformMemory;
+  /** What the run says besides its checks: its scratch slots' ports overlapping other places' (§app.project-services/instances). */
+  notes?: string[];
 }
 export interface TestFailure {
   name: string;
@@ -1208,6 +1347,8 @@ export interface VerbResult {
   conform?: ConformReport;
   tests?: TestsReport;
   deploy?: DeployReport;
+  /** The merge verbs' answer (shared/merge-queue.ts). */
+  merge?: import("./merge-queue").MergeReport;
   error?: VerbError;
   defHash: string | null;
   at: string;
@@ -1237,6 +1378,7 @@ export function ordered(r: VerbResult): VerbResult {
     ...(r.conform !== undefined ? { conform: r.conform } : {}),
     ...(r.tests !== undefined ? { tests: r.tests } : {}),
     ...(r.deploy !== undefined ? { deploy: r.deploy } : {}),
+    ...(r.merge !== undefined ? { merge: r.merge } : {}),
     ...(r.error !== undefined ? { error: r.error } : {}),
     defHash: r.defHash,
     at: r.at,
@@ -1251,7 +1393,7 @@ export function isVerbResult(v: unknown): v is VerbResult {
   const want = ["v", "verb", "project", "instance", "slot", "generation", "checkout", "branch", "ok", "changed", "state", "steps", "services", "data", "links"];
   if (keys.slice(0, want.length).join() !== want.join()) return false;
   const tail = keys.slice(want.length);
-  const optional = ["instances", "lines", "checks", "conform", "tests", "deploy", "error"];
+  const optional = ["instances", "lines", "checks", "conform", "tests", "deploy", "merge", "error"];
   const fixedTail = ["defHash", "at"];
   if (tail.slice(-2).join() !== fixedTail.join()) return false;
   const mid = tail.slice(0, -2);

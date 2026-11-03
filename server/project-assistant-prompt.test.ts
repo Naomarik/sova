@@ -18,9 +18,9 @@ test("it forbids Sova's internal words to the owner and gives the plain ones", (
   for (const plain of ["what's been agreed", "the project's plan", "the team"]) assert.ok(line!.includes(plain), plain);
 });
 
-test("its placeholders are the six the loadout fills", () => {
+test("its placeholders are the ones the loadout fills", () => {
   const used = new Set([...template.matchAll(/\{\{([A-Z_]+)\}\}/g)].map((m) => m[1]));
-  assert.deepEqual([...used].sort(), ["DRAWING", "LOOKUP_RULES", "OPERATOR", "OWNER", "PHOTOS", "PROJECTS"]);
+  assert.deepEqual([...used].sort(), ["DRAWING", "FIX", "LOOKUP_RULES", "OPERATOR", "OWNER", "PHOTOS", "PLANNING", "PROJECTS", "RELEASE", "REQUIREMENTS", "VERSIONS"]);
 });
 
 // §app.project-assistant/drawings: the hand-off guide's grammar, interactive drawings included, with an opening for the owner.
@@ -50,4 +50,20 @@ test("its photo lines follow whether the owner can send photos", () => {
   assert.match(ASSISTANT_PHOTOS_ON, /Never describe a person's face/);
   assert.match(ASSISTANT_PHOTOS_ON, /never read personal numbers/);
   assert.match(ASSISTANT_PHOTOS_OFF, /can't send photos here/);
+});
+
+test("it offers to close a request made moot, and closes or reopens only after the owner's clear yes", () => {
+  const line = template.split("\n").find((l) => l.includes("close_request"));
+  assert.ok(line, "the closing line");
+  assert.match(line!, /made it moot/);
+  assert.match(line!, /only after their clear yes in their next message/);
+  assert.match(line!, /reopen_request/);
+  assert.match(line!, /the team's call/);
+});
+
+test("it looks at what's new and the versions' summaries before it says it can't tell", () => {
+  const line = template.split("\n").find((l) => l.includes("project_news"));
+  assert.ok(line, "the what's-new line");
+  assert.match(line!, /owner_versions/);
+  assert.match(line!, /Never say you can't tell until you have looked at both/);
 });

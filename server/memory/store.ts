@@ -1,7 +1,8 @@
 // A chat's memory sidecar (§chat.memory/log): `<agent dir>/sova/memory/<session id>/`, beside the chat,
 // never in its session file. `tree.jsonl` holds the built nodes (append-only; rewritten whole only when a
-// rewind or fork drops nodes), `state.json` the saved views and their cached prefixes. Sessions don't sync
-// across devices, so neither does this.
+// rewind or fork drops nodes), `state.json` the saved views and their cached prefixes, `retry.json` the failed
+// summaries' tries and retry times (§chat.memory/recovery). Sessions don't sync across devices, so neither
+// does this.
 import { appendFileSync, cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { agentRoot } from "../state-root";
@@ -29,6 +30,31 @@ export interface MemoryFileState {
   cprefix?: string[];
 }
 
+/** One node's failed tries and when it is tried again (epoch ms). */
+export interface NodeRetry {
+  l: number;
+  i: number;
+  attempts: number;
+  retryAt: number;
+  /** A leaf's message source, as for a built leaf: whether the tries are still this message's. */
+  src?: string;
+}
+
+/** The queue's pause after a failure that stops every summary: when it is tried again, the step it waited
+    (it doubles), and the status sentence naming the cause. */
+export interface MemoryPause {
+  until: number;
+  step: number;
+  problem: string;
+}
+
+/** What `retry.json` keeps (§chat.memory/recovery). */
+export interface MemoryRetryState {
+  v: 1;
+  nodes: NodeRetry[];
+  pause?: MemoryPause;
+}
+
 export const emptyState = (): MemoryFileState => ({ v: 1, view: [], merging: false, cview: [], cmerging: false });
 
 const isRef = (v: unknown): v is NodeRef => Array.isArray(v) && v.length === 2 && v.every((x) => Number.isInteger(x) && x >= 0);
@@ -48,11 +74,28 @@ function parseState(raw: unknown): MemoryFileState {
   return s;
 }
 
+const time = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0;
+
+function parseRetry(raw: unknown): MemoryRetryState {
+  const out: MemoryRetryState = { v: 1, nodes: [] };
+  if (!raw || typeof raw !== "object") return out;
+  const r = raw as Record<string, unknown>;
+  if (Array.isArray(r.nodes))
+    for (const n of r.nodes as Partial<NodeRetry>[])
+      if (n && Number.isInteger(n.l) && n.l! >= 0 && Number.isInteger(n.i) && n.i! >= 0 && Number.isInteger(n.attempts) && n.attempts! > 0 && time(n.retryAt))
+        out.nodes.push({ l: n.l!, i: n.i!, attempts: n.attempts!, retryAt: n.retryAt!, ...(typeof n.src === "string" ? { src: n.src } : {}) });
+  const p = r.pause as Partial<MemoryPause> | undefined;
+  if (p && time(p.until) && time(p.step) && typeof p.problem === "string") out.pause = { until: p.until, step: p.step, problem: p.problem };
+  return out;
+}
+
+const nodeJson = (n: TreeNode): string => JSON.stringify({ l: n.l, i: n.i, text: n.text, ...(n.src ? { src: n.src } : {}), ...(n.excerpt ? { excerpt: true } : {}) });
+
 function parseNode(line: string): TreeNode | undefined {
   try {
     const n = JSON.parse(line) as Partial<TreeNode>;
     if (!Number.isInteger(n.l) || !Number.isInteger(n.i) || typeof n.text !== "string") return undefined;
-    return { l: n.l!, i: n.i!, text: n.text, size: Buffer.byteLength(n.text), ...(typeof n.src === "string" ? { src: n.src } : {}) };
+    return { l: n.l!, i: n.i!, text: n.text, size: Buffer.byteLength(n.text), ...(typeof n.src === "string" ? { src: n.src } : {}), ...(n.excerpt === true ? { excerpt: true as const } : {}) };
   } catch {
     return undefined;
   }
@@ -92,7 +135,7 @@ export class MemoryStore {
 
   appendNode(n: TreeNode): void {
     mkdirSync(this.dir, { recursive: true });
-    appendFileSync(join(this.dir, "tree.jsonl"), `${JSON.stringify({ l: n.l, i: n.i, text: n.text, ...(n.src ? { src: n.src } : {}) })}\n`);
+    appendFileSync(join(this.dir, "tree.jsonl"), `${nodeJson(n)}\n`);
   }
 
   /** The whole tree again (after dropping nodes), atomically. */
@@ -101,16 +144,37 @@ export class MemoryStore {
     const file = join(this.dir, "tree.jsonl");
     const tmp = `${file}.tmp-${process.pid}`;
     let text = "";
-    for (const n of nodes) text += `${JSON.stringify({ l: n.l, i: n.i, text: n.text, ...(n.src ? { src: n.src } : {}) })}\n`;
+    for (const n of nodes) text += `${nodeJson(n)}\n`;
     writeFileSync(tmp, text);
     renameSync(tmp, file);
   }
 
   saveState(state: MemoryFileState): void {
+    this.writeJson("state.json", state);
+  }
+
+  loadRetry(): MemoryRetryState {
+    try {
+      return parseRetry(JSON.parse(readFileSync(join(this.dir, "retry.json"), "utf8")));
+    } catch {
+      return { v: 1, nodes: [] };
+    }
+  }
+
+  /** The failed summaries' tries and the pause; an empty one removes the file. */
+  saveRetry(retry: MemoryRetryState): void {
+    if (!retry.nodes.length && !retry.pause) {
+      rmSync(join(this.dir, "retry.json"), { force: true });
+      return;
+    }
+    this.writeJson("retry.json", retry);
+  }
+
+  private writeJson(name: string, value: unknown): void {
     mkdirSync(this.dir, { recursive: true });
-    const file = join(this.dir, "state.json");
+    const file = join(this.dir, name);
     const tmp = `${file}.tmp-${process.pid}`;
-    writeFileSync(tmp, `${JSON.stringify(state)}\n`);
+    writeFileSync(tmp, `${JSON.stringify(value)}\n`);
     renameSync(tmp, file);
   }
 }

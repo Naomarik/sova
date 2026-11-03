@@ -62,7 +62,7 @@ export const CAPABILITY_LINKS: readonly RouteKey[] = ["GET /api/projects/:pid/pr
 /** Approvals, permits and grants, and their revoke: what any chat running a command could otherwise grant itself. */
 export const GRANTS: readonly RouteKey[] = [
   "POST /api/schedules/approve", "POST /api/schedules/revoke", "GET /api/overseer/autonomy", "POST /api/overseer/autonomy/revoke",
-  "POST /api/projects/:pid/draft-specs/:sid/approve", "PATCH /api/projects/:pid/overseer",
+  "POST /api/projects/:pid/draft-specs/:sid/approve",
 ];
 
 export const ROUTE_CLASSES: readonly RouteClass[] = [
@@ -115,6 +115,18 @@ export const ROUTE_CLASSES: readonly RouteClass[] = [
     matches: (m, p) => (m === "GET" && p === "/*") || /^\/design\//.test(p) || /^\/explain(?:\/|$)/.test(p),
   },
   {
+    id: "trust-grants",
+    label: "Trust grants",
+    why: "Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.",
+    matches: (m, p) => (m === "POST" && (p === "/api/projects/:pid/offers/approve" || p === "/api/projects/:pid/settings/apply" || p === "/api/session-cards/trust")) || (m === "PUT" && p === "/api/projects/:pid/services/limit") || (m === "GET" && p === "/api/session-cards/trust"),
+  },
+  {
+    id: "card-box",
+    label: "A card view's own calls",
+    why: "What a transcript card's or a drawing's sealed view asks through its box, for its own card only (§chat.transcript-cards/view-api, /drawing-kinds): its built code, the state Sova keeps for it, and a catalogue command run as the card (which records the command itself). The box's plumbing, from the page: never an action of its own.",
+    matches: (m, p) => (m === "GET" && (p === "/api/session-cards/view" || p === "/api/session-cards/drawing")) || (m === "POST" && (p === "/api/session-cards/state" || p === "/api/session-cards/run")),
+  },
+  {
     id: "middleware",
     label: "Middleware and fallbacks",
     why: "`app.use` gates and the `/api` not-found answer: they run around routes, they are not routes.",
@@ -148,7 +160,7 @@ export const ROUTE_CLASSES: readonly RouteClass[] = [
   {
     id: "grants",
     label: "Approvals and grants",
-    why: "Approving a schedule or a draft spec, the Overseer's permits and their revoke, a project overseer's autonomy, powers and limits: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).",
+    why: "Approving a schedule or a draft spec, the Overseer's permits and their revoke: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).",
     matches: exactly(GRANTS),
   },
 ];

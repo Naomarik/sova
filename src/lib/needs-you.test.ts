@@ -155,3 +155,17 @@ test("WhatsApp sending down lists in the region as an item of no session, and th
   assert.equal(needsYouTitle(0, 0, true), "WhatsApp sending waiting on you.");
   assert.equal(needsYouTitle(2, 1, true), "The 2 sessions waiting on you, newest first, and 1 deploy item and WhatsApp sending.");
 });
+
+test("the softer tier: guesses list under the blockers, newest first; a session with a blocker is a blocker row", () => {
+  const soft = (id: string, kind: AttentionItem["kind"], since: number, detail: string): AttentionItem => ({ ...item(id, "decide", kind, since, detail), soft: true });
+  const items = [
+    soft("g1", "asks-you", 900, "Asks you: Should I push?"),
+    item("b1", "act", "error", 100, "429 rate limited"),
+    soft("g2", "unverified", 950, "Says it's done, but didn't run or check everything."),
+    soft("b1", "asks-you", 999, "Asks you: retry?"),
+    item("x", "decide", "finished", 990),
+  ];
+  const rows = needsYouRows(digest(items), ["g1", "b1", "g2", "x"].map(session));
+  assert.deepEqual(rows.map((r) => [r.session.id, r.soft]), [["b1", false], ["g2", true], ["g1", true]]);
+  assert.equal(rows[0]!.detail, "Asks you: retry?", "its newest item's sentence, blocker or guess");
+});

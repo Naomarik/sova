@@ -16,26 +16,12 @@ control sends to the route named, so every answer and refusal is the route's own
 - `session.sandbox.set` (`POST /api/sandbox`): set a held chat's sandbox state.
 - `session.tools.get` (`GET /api/sessions/tools`): the tools a held chat declares to its model.
 - `session.context` (`GET /api/sessions/context`): what pi loads for a session's folder.
+- `session.align.triage` (`GET /api/sessions/align-triage`): each open alignment question's guessed stakes (§app.decisions/align-triage).
+- `session.workers.checks` (`GET /api/sessions/worker-checks`): whether each worker's newest done report says it ran its tests or checks (§app.decisions/worker-report).
 - `session.group.list|create|rename|delete|assign|send` (`/api/session-groups…`): the sidebar's groups, and one message to a group's sessions.
 - `session.insights` (`GET /api/insights/session`): one session's insight.
 - `worker.resume` (`POST /api/workers/resume`): resume one restored subagent worker of a held chat.
-- `session.cleanup` (`POST /api/sessions/cleanup`): delete session files for good, by age (7 or 30
-  days), as empty husks, or the named archived sessions; live, busy and just-written ones are
-  skipped, and a dry run only lists what would go.
-- `session.title.auto` (`POST /api/sessions/auto-title`): name the given sessions with the title
-  model, as Auto-title does; with redo, replace one session's title.
-- `session.title.shorten` (`POST /api/sessions/shorten-titles`): rename this host's long generated
-  titles with the title model; a typed title is kept.
-- `session.tags.backfill`, `session.tags.backfill.status`, `session.tags.backfill.cancel`
-  (`POST`/`GET /api/sessions/tags/backfill`, `POST …/cancel`): start tagging existing sessions in
-  the background (the last 30 days' or all), read how far it has got, or stop it.
-- `session.worktree.summary`, `session.worktree.cleanup` (`GET /api/worktrees/summary`,
-  `POST /api/worktrees/cleanup`): count a session's repository's merged worktrees, list them (dry
-  run) and remove exactly the paths named, never forced.
-- `session.diff.summary` (`GET /api/diff/summary`): the files a session's worktree, commit, merge or
-  dirty folder changed, as the changes viewer lists them. Its session is given as `--session-path`
-  (sent under the query key `session`), not as a session param.
 
-Each entry's mesh need is what the peer listener's classifier gives its route. A file's patch
-(`/api/diff/patch`) is not an entry, and `session.diff.summary` has no `paths` filter: that is a
-repeated query key, which an entry cannot express.
+Each entry's mesh need is what the peer listener's classifier gives its route. The changes viewer's
+diffs (`/api/diff/summary`, `/api/diff/patch`) are not entries: their session travels under the
+query key `session` and their `paths` filter is a repeated query key, which an entry cannot express.

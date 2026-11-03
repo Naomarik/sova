@@ -16,7 +16,7 @@ with a guide of its own lists its contracts.
 - `~/pi-config` is a compatibility symlink to this directory. `~/.pi/agent` symlinks `keybindings.json`,
   `models.json`, `vision-delegate.json` and every extension into it.
 - Not here: **Sova extensions** (`extensions.json`: a web app with its own backend, shown at
-  `#/ext/<id>`). They add nothing to pi. Their contract (ext-contract-v1.16: the manifest, the proxy,
+  `#/ext/<id>`). They add nothing to pi. Their contract (ext-contract-v1.17: the manifest, the proxy,
   the `offers` field, what an extension adds under replies and to the session ⋯ menu, and each
   backend's own key in `server/extension-keys.ts`) is `docs/customization.md` "Sova
   extensions" and `§app/extensions`; the places they add to are in
@@ -105,7 +105,7 @@ Extensions with no guide, and the contract Sova parses where there is one:
 - `install.sh` behavior: `pi-config/README.md` "Install", and `install.test.mjs`.
 - An import Sova adds or drops: the extension's guide here, and its README where it names Sova's import.
 - A contract Sova parses: the extension's README, its guide here, and the Sova reader in the same branch.
-- Landing (the merge round's `check`) runs the typecheck, `pnpm test`, `pnpm test:int`, the build, and, for each
+- Landing (the merge queue's checks, `.sova/project.json` `merge`) runs the typecheck, `pnpm test`, `pnpm test:int`, the build, and, for each
   extension the branch changed, that extension's line in `pi-config/README.md` "Tests" (the line starting
   `cd extensions/<name> && `, split on ` && ` and run without a shell). So that line is a contract: one per
   extension, plain commands only. A branch that changes `pi-config/` outside `*.md` and tests needs the live

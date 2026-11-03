@@ -21,8 +21,15 @@ import { sectionsHeight } from "./sections";
 export const FLOW_FONT = { label: 13, note: 11.5, edge: 11.5 } as const;
 const LINE = { label: 17, note: 15, edge: 15 };
 const RANK_GAP = 18;
-/** An edge label wraps rather than loses its end: in a state machine it is the event's name. */
-const EDGE_LINES = 4;
+/**
+ * No text on a flow is ever cut: shape text, notes, edge and loop labels and frame titles wrap to
+ * as many lines as they need. The parser's 200-character limit per text bounds how tall that gets.
+ */
+const ALL = Infinity;
+/** A decision is a wide hexagon: flat top and bottom, its pointed sides this far out from its text box. */
+export const HEX_INSET = 12;
+/** A frame title's line height (GROUP.font), past its first line, which GROUP.title holds. */
+const GROUP_LINE = 16;
 /** Spacing and wrap widths by level: 0 roomy; 1 and 2 for a pane the roomier drawing would overflow (a phone). */
 const SPACING = [
   { padX: 14, padY: 9, maxText: 168, maxEdgeText: 140, nodeGap: 28, virtualGap: 12, margin: 12, minW: 64 },
@@ -42,7 +49,7 @@ export interface PlacedFlowNode {
   tone?: Tone;
   lines: string[];
   noteLines: string[];
-  /** Full text, for a <title> when lines were cut. */
+  /** Full text (label, then note): the shape's accessible name and the reading panel's text. */
   full: string;
 }
 export interface PlacedFlowEdge {
@@ -54,8 +61,8 @@ export interface PlacedFlowEdge {
 }
 export interface PlacedFlowGroup {
   label: string;
-  /** The label as drawn: whole, or cut to the frame's width with "…" (dir: right; the View adds a tooltip). */
-  title: string;
+  /** The label as drawn: one line, or wrapped to the frame's width (dir: right), never cut. */
+  titleLines: string[];
   /** Top-left corner and size of the frame; its label sits inside, at the top. */
   x: number;
   y: number;
@@ -70,7 +77,7 @@ export interface FlowLayout {
   groups?: PlacedFlowGroup[];
 }
 /** A group's frame: padding around its nodes, and its label's line above them (flow.css: fs-caption semibold). */
-export const GROUP = { pad: 10, title: 18, font: 12.5 } as const;
+export const GROUP = { pad: 10, title: 18, font: 12.5, line: GROUP_LINE } as const;
 /** The title is set semibold; the measure is medium: room for the difference. */
 const SEMIBOLD = 1.06;
 
@@ -98,7 +105,6 @@ interface Chain {
 }
 
 export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, level = 0): FlowLayout {
-  const compact = level > 0;
   const { padX, padY, maxText: MAX_TEXT, maxEdgeText: MAX_EDGE_TEXT, nodeGap: NODE_GAP, virtualGap: VIRTUAL_GAP, margin: MARGIN, minW } = SPACING[Math.min(level, SPACING.length - 1)]!;
   const right = spec.dir === "right";
   const index = new Map(spec.nodes.map((n, i) => [n.id, i]));
@@ -106,21 +112,17 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   // ---- boxes -------------------------------------------------------------------------------
   const boxes = spec.nodes.map((n) => {
     const tiny = n.shape === "start" || n.shape === "end";
-    // A decision wraps early (two short lines make a squarer, narrower diamond), never mid-word.
-    const longestWord = Math.max(0, ...n.label.split(/\s+/).map((w) => measure(w, FLOW_FONT.label)));
-    const maxText = n.shape === "decision" ? Math.min(MAX_TEXT, Math.max(compact ? 80 : 90, longestWord + 1)) : MAX_TEXT;
-    const lines = tiny ? [] : wrap(n.label, maxText, 3, FLOW_FONT.label, measure);
-    const noteLines = tiny || !n.note ? [] : wrap(n.note, maxText, 2, FLOW_FONT.note, measure);
+    // Every shape, a decision included, wraps its whole text at the level's width.
+    const lines = tiny ? [] : wrap(n.label, MAX_TEXT, ALL, FLOW_FONT.label, measure);
+    const noteLines = tiny || !n.note ? [] : wrap(n.note, MAX_TEXT, ALL, FLOW_FONT.note, measure);
     const tw = Math.max(widest(lines, FLOW_FONT.label, measure), widest(noteLines, FLOW_FONT.note, measure));
     const th = lines.length * LINE.label + noteLines.length * LINE.note;
     let w = Math.max(minW, tw + 2 * padX);
     let h = th + 2 * padY;
     if (tiny) w = h = n.shape === "start" ? 18 : 22;
-    else if (n.shape === "decision") {
-      // The text box fits inside the diamond when tw/w + th/h <= 1: a taller diamond is a narrower one.
-      h = Math.max(48, 2.2 * th + 8);
-      w = Math.max(88, tw / (1 - th / h) + 18);
-    } else if (n.shape === "circle") w = h = Math.max(w, h, 56);
+    // A hexagon holds its text box in its flat part, between the two points.
+    else if (n.shape === "decision") w = Math.max(minW, tw + 2 * padX + 2 * HEX_INSET);
+    else if (n.shape === "circle") w = h = Math.max(w, h, 56);
     else if (n.shape === "store") h += 10;
     return { w, h, lines, noteLines };
   });
@@ -194,7 +196,7 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
     if (!label) return null;
     // Never narrower than the longest word: a word split mid-way reads as two.
     const longest = Math.max(0, ...label.split(/\s+/).map((w) => measure(w, FLOW_FONT.edge)));
-    const lines = wrap(label, Math.max(MAX_EDGE_TEXT, Math.min(160, longest + 1)), EDGE_LINES, FLOW_FONT.edge, measure);
+    const lines = wrap(label, Math.max(MAX_EDGE_TEXT, Math.min(160, longest + 1)), ALL, FLOW_FONT.edge, measure);
     return { w: widest(lines, FLOW_FONT.edge, measure) + 10, h: lines.length * LINE.edge + 4, lines };
   };
   const labels = dag.map((ed) => edgeLabel(spec.edges[ed.e]!.label));
@@ -251,7 +253,7 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
     const label = spec.edges[e]!.label;
     let extra = 26;
     if (label) {
-      const lines = wrap(label, MAX_EDGE_TEXT, EDGE_LINES, FLOW_FONT.edge, measure);
+      const lines = wrap(label, MAX_EDGE_TEXT, ALL, FLOW_FONT.edge, measure);
       const lb = { w: widest(lines, FLOW_FONT.edge, measure) + 10, h: lines.length * LINE.edge + 4, lines };
       loopLabels.set(e, lb);
       extra += (right ? lb.h : lb.w) + 4;
@@ -405,12 +407,53 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   best.forEach((l, r) => (layers[r] = l));
   setOrder();
 
+  // ---- frame titles, downwards: a title runs across the frame, so it wraps to the wider of the
+  // level's text width and the least room its members take side by side on one rank (the frame is
+  // at least that wide), and its strip above the members grows a line per extra line. A frame
+  // never widens past its members for a long title, so the drawing still fits a phone.
+  const downLines = groups.map((g, gi) => {
+    if (right) return [g.label];
+    const rows = new Map<number, LNode[]>();
+    for (const n of L) if (grp[n.key] === gi) rows.set(n.rank, [...(rows.get(n.rank) ?? []), n]);
+    const row = Math.max(0, ...[...rows.values()].map((ns) => ns.reduce((a, n) => a + n.across + n.extra, 0) + (ns.length - 1) * VIRTUAL_GAP));
+    const fit = Math.max(MAX_TEXT, row / SEMIBOLD);
+    return measure(g.label, GROUP.font) <= fit ? [g.label] : wrap(g.label, fit, ALL, GROUP.font, measure);
+  });
+  /** The strip above a downward frame's members that holds its title's lines. */
+  const titleAlongOf = (gi: number) => (right ? 0 : GROUP.title + (downLines[gi]!.length - 1) * GROUP.line);
+
+  // ---- along: rank thickness and offsets ---------------------------------------------------
+  const thick = layers.map((layer) => Math.max(0, ...layer.map((k) => L[k]!.along)));
+  const at: number[] = [];
+  let cursor = MARGIN;
+  const before = new Array<number>(maxRank + 1).fill(0);
+  const after = new Array<number>(maxRank + 1).fill(0);
+  // Nested ranks of several frames stack their pads; one frame's title and pad sit in the gap above it.
+  grpRanks.forEach(({ from, to }, gi) => {
+    before[from] = Math.max(before[from]!, GROUP.pad + titleAlongOf(gi));
+    after[to] = Math.max(after[to]!, GROUP.pad);
+  });
+  for (let r = 0; r <= maxRank; r++) {
+    cursor += before[r]!;
+    at.push(cursor + thick[r]! / 2);
+    cursor += thick[r]! + after[r]! + (r < maxRank ? RANK_GAP : 0);
+  }
+  // ---- frame titles: in dir: right a title runs along the frame, whose length the ranks alone
+  // fix, so it wraps to that width before anything is placed across (where its lines take room).
+  const titleLines = groups.map((g, gi) => {
+    if (!right) return downLines[gi]!;
+    const { from, to } = grpRanks[gi]!;
+    const len = at[to]! + thick[to]! / 2 - (at[from]! - thick[from]! / 2);
+    const fit = len / SEMIBOLD;
+    return measure(g.label, GROUP.font) <= fit ? [g.label] : wrap(g.label, Math.max(1, fit), ALL, GROUP.font, measure);
+  });
+  const titleAcrossOf = (gi: number) => (right ? GROUP.title + (titleLines[gi]!.length - 1) * GROUP.line : 0);
+
   // ---- placement across each rank ---------------------------------------------------------
-  const titleAcross = right ? GROUP.title : 0;
   const framePad = (a: LNode, b: LNode) => {
     const ga = grp[a.key]!;
     const gb = grp[b.key]!;
-    return (ga >= 0 && ga !== gb ? GROUP.pad + NODE_GAP / 2 : 0) + (gb >= 0 && gb !== ga ? GROUP.pad + titleAcross + NODE_GAP / 2 : 0);
+    return (ga >= 0 && ga !== gb ? GROUP.pad + NODE_GAP / 2 : 0) + (gb >= 0 && gb !== ga ? GROUP.pad + titleAcrossOf(gb) + NODE_GAP / 2 : 0);
   };
   const sep = (a: LNode, b: LNode) => (a.across / 2 + a.extra) + b.across / 2 + (a.real >= 0 && b.real >= 0 ? NODE_GAP : VIRTUAL_GAP) + framePad(a, b);
   const place = (layer: number[], desired: (n: LNode) => number) => {
@@ -444,10 +487,10 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   // ---- groups: a frame is one rectangle over all its ranks, so every other node on those ranks
   // must sit left or right of its span. Pushes only ever move things right (a node, a frame and
   // what lies after them), in the one left-to-right order of groups, so this settles.
-  const titleW = groups.map((g) => measure(g.label, GROUP.font) * SEMIBOLD + 2 * GROUP.pad);
+  const titleW = groups.map((_, gi) => widest(titleLines[gi]!, GROUP.font, measure) * SEMIBOLD + 2 * GROUP.pad);
   const span = (gi: number) => {
     const ms = L.filter((n) => grp[n.key] === gi);
-    let lo = Math.min(...ms.map((n) => n.pos - n.across / 2)) - GROUP.pad - titleAcross;
+    let lo = Math.min(...ms.map((n) => n.pos - n.across / 2)) - GROUP.pad - titleAcrossOf(gi);
     let hi = Math.max(...ms.map((n) => n.pos + n.across / 2 + n.extra)) + GROUP.pad;
     if (!right && hi - lo < titleW[gi]!) hi = lo + titleW[gi]!;
     return { lo, hi };
@@ -521,22 +564,6 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
     if (!moved) break;
   }
 
-  // ---- along: rank thickness and offsets ---------------------------------------------------
-  const thick = layers.map((layer) => Math.max(0, ...layer.map((k) => L[k]!.along)));
-  const at: number[] = [];
-  let cursor = MARGIN;
-  const before = new Array<number>(maxRank + 1).fill(0);
-  const after = new Array<number>(maxRank + 1).fill(0);
-  // Nested ranks of several frames stack their pads; one frame's title and pad sit in the gap above it.
-  grpRanks.forEach(({ from, to }) => {
-    before[from] = Math.max(before[from]!, GROUP.pad + (right ? 0 : GROUP.title));
-    after[to] = Math.max(after[to]!, GROUP.pad);
-  });
-  for (let r = 0; r <= maxRank; r++) {
-    cursor += before[r]!;
-    at.push(cursor + thick[r]! / 2);
-    cursor += thick[r]! + after[r]! + (r < maxRank ? RANK_GAP : 0);
-  }
   const alongSize = cursor + MARGIN;
   const frameSpans = groups.map((_, gi) => span(gi));
   const minAcross = Math.min(...L.map((n) => n.pos - n.across / 2), ...frameSpans.map((f) => f.lo));
@@ -570,8 +597,13 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
     const half = n.along / 2;
     const shape = spec.nodes[i]!.shape;
     let a = half;
-    if (shape === "decision") a = half * Math.max(0.15, 1 - Math.abs(off) / (n.across / 2));
-    else if (shape === "circle" || shape === "start" || shape === "end") a = Math.sqrt(Math.max(0, half * half - off * off));
+    if (shape === "decision") {
+      // The hexagon's points face sideways on screen: downwards an edge meets its flat top or
+      // bottom (sloping only past the flat part); in dir: right it meets a pointed side.
+      const d = Math.abs(off);
+      if (!right) a = d <= n.across / 2 - HEX_INSET ? half : half * Math.max(0, (n.across / 2 - d) / HEX_INSET);
+      else a = half - HEX_INSET * Math.min(1, d / (n.across / 2));
+    } else if (shape === "circle" || shape === "start" || shape === "end") a = Math.sqrt(Math.max(0, half * half - off * off));
     return { across: n.pos + off, along: at[n.rank]! + side * a };
   };
 
@@ -623,17 +655,25 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   const placedGroups: PlacedFlowGroup[] = groups.map((g, gi) => {
     const f = frameSpans[gi]!;
     const { from, to } = grpRanks[gi]!;
-    const a0 = at[from]! - thick[from]! / 2 - GROUP.pad - (right ? 0 : GROUP.title);
+    const a0 = at[from]! - thick[from]! / 2 - GROUP.pad - titleAlongOf(gi);
     const a1 = at[to]! + thick[to]! / 2 + GROUP.pad;
     const p0 = pt(f.lo + shift, a0);
     const p1 = pt(f.hi + shift, a1);
     const w = Math.abs(p1.x - p0.x);
-    const fit = (w - 2 * GROUP.pad) / SEMIBOLD;
-    const title = measure(g.label, GROUP.font) <= fit ? g.label : wrap(g.label, Math.max(1, fit), 1, GROUP.font, measure)[0] ?? "";
-    return { label: g.label, title, x: Math.min(p0.x, p1.x), y: Math.min(p0.y, p1.y), w, h: Math.abs(p1.y - p0.y) };
+    return { label: g.label, titleLines: titleLines[gi]!, x: Math.min(p0.x, p1.x), y: Math.min(p0.y, p1.y), w, h: Math.abs(p1.y - p0.y) };
   });
   const size = pt(acrossSize, alongSize);
   return { width: Math.ceil(size.x), height: Math.ceil(size.y), nodes, edges: edgesOut, ...(placedGroups.length ? { groups: placedGroups } : {}) };
+}
+
+/**
+ * Which nodes each of layoutFlow's `edges` joins, in the same order: every edge between two nodes
+ * in the spec's order, then the self-loops in theirs. Kept out of the layout itself, whose shape the
+ * no-regression hashes pin (groups.test.ts).
+ */
+export function placedEdgeEnds(spec: FlowSpec): { from: string; to: string; label?: string }[] {
+  const ends = (e: FlowSpec["edges"][number]) => ({ from: e.from, to: e.to, ...(e.label ? { label: e.label } : {}) });
+  return [...spec.edges.filter((e) => e.from !== e.to).map(ends), ...spec.edges.filter((e) => e.from === e.to).map(ends)];
 }
 
 /** S-curves with tangents along the rank axis between consecutive points; straight where aligned. */

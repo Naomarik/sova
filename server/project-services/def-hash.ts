@@ -8,7 +8,8 @@ import type { DeployDecl, ProjectDef } from "../../shared/project-contract";
 
 /** Drop what tuning may change without changing what runs: every `timeout`, readiness paths, a service's `about` and
     `isolation` (words for builders and readers), the top-level `sources` (what drift reads), `open` (the entry
-    point, which exposes nothing) and `deploy` (hashed on its own, `deployHashOf`); the default `start: "up"` too,
+    point, which exposes nothing), `deploy` (hashed on its own, `deployHashOf`) and `merge` (what the merge queue runs,
+    read from the target's own definition at each run); the default `start: "up"` too,
     so a definition hashes as it did before `start` existed. */
 export function hashed(v: unknown, key = ""): unknown {
   if (Array.isArray(v)) return v.map((x) => hashed(x, key));
@@ -16,7 +17,7 @@ export function hashed(v: unknown, key = ""): unknown {
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(v as Record<string, unknown>).sort()) {
     if (k === "timeout") continue;
-    if (key === "" && (k === "sources" || k === "open" || k === "deploy")) continue;
+    if (key === "" && (k === "sources" || k === "open" || k === "deploy" || k === "merge")) continue;
     if (key === "ready" && k === "path") continue;
     if (key === "services" && (k === "about" || k === "isolation" || (k === "start" && (v as Record<string, unknown>)[k] === "up"))) continue;
     out[k] = hashed((v as Record<string, unknown>)[k], k);

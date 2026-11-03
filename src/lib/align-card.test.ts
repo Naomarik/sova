@@ -163,8 +163,9 @@ test("DOM: technical notes sit right under the approach, closed, in the approach
   assert.equal(html.match(/<details class="disclosure align-section">/g)?.length, 2, "findings and rejected still fold below the questions");
 });
 
-test("DOM: the meta line says a non-Default style; Default says nothing", () => {
+test("DOM: the meta line names every recorded style, Technical included; an older doc with none says nothing", () => {
   assert.ok(!draw(AlignDocCard, { doc: doc() }).includes("style</span>"));
+  assert.match(draw(AlignDocCard, { doc: doc({ style: "default" }) }), /Technical style/);
   assert.match(draw(AlignDocCard, { doc: doc({ style: "pm" }) }), /<span class="align-doc-style"> · <!--\$-->Project manager style<!--\/-->|<span class="align-doc-style"> · Project manager style/);
   assert.match(draw(AlignDocCard, { doc: doc({ style: "simplified" }) }), /Simplified style/);
 });

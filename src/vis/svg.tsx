@@ -14,16 +14,19 @@ export const useMarkerId = () => `vis-arrow-${++markerSeq}`;
 /**
  * A drawing at its natural size that shrinks with the pane down to 80% of that size, then scrolls
  * sideways inside its own box: text stays legible on a phone and the pane never widens.
+ * `controls`: its shapes are buttons and an ancestor is the drawing's one Tab stop (flow's
+ * View), so the box is no Tab stop of its own (-1: Chrome would make a scrolling box one) and the
+ * drawing is a group, not an image.
  */
-export function SvgScroll(props: { width: number; height: number; label: string; children: JSX.Element }) {
+export function SvgScroll(props: { width: number; height: number; label: string; controls?: boolean; children: JSX.Element }) {
   return (
-    <div class="vis-scroll" tabindex="0" role="region" aria-label={`${props.label} (scrolls sideways)`}>
+    <div class="vis-scroll" tabindex={props.controls ? "-1" : "0"} role={props.controls ? undefined : "region"} aria-label={props.controls ? undefined : `${props.label} (scrolls sideways)`}>
       <svg
         class="vis-svg"
         viewBox={`0 0 ${props.width} ${props.height}`}
         width={props.width}
         style={{ width: "100%", "max-width": `${props.width}px`, "min-width": `${Math.round(props.width * 0.8)}px` }}
-        role="img"
+        role={props.controls ? "group" : "img"}
         aria-label={props.label}
       >
         {props.children}

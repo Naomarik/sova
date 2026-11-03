@@ -1,11 +1,19 @@
 // The Branches tab's view of a project's status (§app.project-services/services-ui): copies by slot with
 // their checkout services, the shared services once each, HTTP readiness ports, and what runs now.
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, test } from "node:test";
 import type { InstanceSummary, ProjectDef, ServiceView } from "../../shared/project-contract";
 import { parseDefinition } from "../../shared/project-contract";
 
-const { runningOf, servicesView, withHttp } = await import("./view-routes");
+const agentDir = mkdtempSync(join(tmpdir(), "sova-view-routes-"));
+process.env.PI_CODING_AGENT_DIR = agentDir;
+after(() => rmSync(agentDir, { recursive: true, force: true }));
+
+const { copyEstimate, limitView, runningOf, servicesView, withHttp } = await import("./view-routes");
+const { setMachineCopyLimit } = await import("./copy-limit");
 
 const def: ProjectDef = parseDefinition(
   JSON.stringify({
@@ -154,4 +162,67 @@ test("each copy carries its entry under its own definition: the open endpoint's 
   );
   // A copy whose status lacks the endpoint's port (its record predates the port) has no entry.
   assert.equal(servicesView("prj_1", "/p", [inst("x", 2, "running", [svc("web", "checkout", "ready", {})])], () => opened).copies[0]!.open, undefined);
+});
+
+test("the copy estimate: the current definition's passing stamp, else the newest older reading, else none; the larger of A and B", () => {
+  const mem = (a: [number | null, number | null], b: [number | null, number | null]) => ({
+    instances: [
+      { label: "A" as const, steadyBytes: a[0], peakBytes: a[1], services: [] },
+      { label: "B" as const, steadyBytes: b[0], peakBytes: b[1], services: [] },
+    ],
+  });
+  const st = (at: string, pass: boolean, memory?: ReturnType<typeof mem>) => ({ suiteVersion: 4, pass, at, report: "r", ...(memory ? { memory } : {}) });
+  const stamps = {
+    cur: st("2026-10-20T10:00:00Z", true, mem([2e9, 3e9], [2.5e9, 2.8e9])),
+    old1: st("2026-10-01T10:00:00Z", true, mem([1e9, 1.2e9], [1e9, 1.1e9])),
+    old2: st("2026-10-10T10:00:00Z", false, mem([1.5e9, null], [null, null])),
+    none: st("2026-10-15T10:00:00Z", true),
+  };
+  assert.deepEqual(copyEstimate(stamps, "cur"), { steadyBytes: 2.5e9, peakBytes: 3e9, source: "current", at: "2026-10-20T10:00:00Z" });
+  assert.deepEqual(copyEstimate({ ...stamps, cur: { ...stamps.cur, pass: false } }, "cur"), { steadyBytes: 1.5e9, peakBytes: 1.5e9, source: "older", at: "2026-10-10T10:00:00Z" }, "a failed run of the current hash is no proof: an older definition's newest reading stands in");
+  assert.deepEqual(copyEstimate(stamps, "new"), { steadyBytes: 2.5e9, peakBytes: 3e9, source: "older", at: "2026-10-20T10:00:00Z" });
+  const { cur: _c, ...olds } = stamps;
+  assert.deepEqual(copyEstimate(olds, "new"), { steadyBytes: 1.5e9, peakBytes: 1.5e9, source: "older", at: "2026-10-10T10:00:00Z" }, "the newest with a reading, its peak at least its steady");
+  assert.equal(copyEstimate({ none: stamps.none }, "none"), null);
+  assert.equal(copyEstimate({}, null), null);
+});
+
+test("the tab's limit view: only running copies count, the main checkout's and conformance's never; the machine's value overrides the file's", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-view-limit-")));
+  try {
+    mkdirSync(join(root, ".sova"));
+    writeFileSync(join(root, ".sova", "project.json"), JSON.stringify({ version: 1, slots: { cap: 2 }, services: { web: { cmd: ["x"], ports: { http: { base: 4300 } } } } }));
+    const rec = (id: string, slot: number, running: boolean, createdBy = "operator") =>
+      ({ id, project: root, checkout: `${root}/${id}`, branch: id, slot, generation: 1, createdBy, createdAt: "", cutWorktree: false, desired: { web: running ? "running" : "stopped" }, prints: {}, data: {}, ports: {} }) as const;
+    const registry = {
+      version: 1 as const,
+      shared: [],
+      instances: [rec("main", 0, true), rec("a", 1, true), rec("b", 2, true), rec("c", 3, true), rec("d", 4, false), rec("conf", 17, true, "conform:x")].map((r) => ({ ...r, desired: { ...r.desired } })),
+    };
+    const host = { totalBytes: 121e9, availableBytes: 30e9 };
+    const v = limitView(root, registry, { host, stamps: {} });
+    assert.deepEqual(
+      { ...v },
+      { value: 2, source: "file", file: 2, copies: 4, running: 3, over: "3 running, 1 over the limit of 2: no new copy starts until 2 stop.", usable: 16, unavailable: [], estimate: null, host },
+    );
+    setMachineCopyLimit(root, 12);
+    const m = limitView(root, registry, { host: null, stamps: {} });
+    assert.deepEqual([m.value, m.source, m.file, m.over, m.host], [12, "machine", 2, null, null]);
+    setMachineCopyLimit(root, null);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("the tab's limit view names the slots the main checkout's definition can't use", () => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-view-places-")));
+  try {
+    mkdirSync(join(root, ".sova"));
+    writeFileSync(join(root, ".sova", "project.json"), JSON.stringify({ version: 1, slots: { cap: 4 }, services: { web: { cmd: ["x"], ports: { http: { base: 3000 } } }, api: { cmd: ["y"], ports: { http: { base: 3010 } } } } }));
+    const v = limitView(root, { version: 1, shared: [], instances: [] }, { host: null, stamps: {} });
+    assert.equal(v.usable, 9);
+    assert.deepEqual(v.unavailable.slice(0, 2), ["Slot 10 is unavailable: its ports overlap slot 0's.", "Slot 11 is unavailable: its ports overlap slot 1's."]);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

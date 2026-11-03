@@ -116,16 +116,17 @@
                    Then at most ONE needs-you mark, the most urgent kind first:
                      questions    count alone, --color-accent    "3 open questions. "  (§chat.alignment/session-mark)
                      asks-you     chat,         --color-accent   "Asks you something. "  (§app.decisions/asks-user)
-                     looping      refresh,      --status-warn    "May be looping. "  (a subagent's: "A subagent may be stuck. ")
-                   Open questions come from the session's `align` counts; asks-you and looping from the server's
-                   attention signals (the session's `signals.kinds`, and its subagents'
-                   `workerSignals` counts, §app.decisions/attention-signals); kind precedence first,
-                   then the session's own signal over its subagents'. The glyph sits in a span whose
-                   `title` says the fact in one sentence ("3 open questions in 2 alignments", "The
-                   last reply asks you something.", "The last turn looks like it went in circles.",
-                   "A subagent looks stuck.").
-                   Kinds differ in shape as well as tone: questions are the bare accent count, no glyph. The looping mark is gone once the session
-                   is seen after it was classified; asks-you stays until the user answers (their next turn replaces it); open questions stay until they are answered, the user moves on, or align is turned off. No
+                     unverified   check,        muted ink        "Done, not checked. "  (§app.decisions/attention-signals)
+                   Open questions come from the session's `align` counts; asks-you from the server's
+                   attention signals (the session's `signals.kinds`, §app.decisions/attention-signals);
+                   kind precedence first. The glyph sits in a span whose `title` says the fact in one
+                   sentence, then its source ("3 open questions in 2 alignments. From code.", "The
+                   last reply waits on your approval. Guessed by Jev.", "The last reply says it's
+                   done, but names something it didn't run or check. Guessed by Jev."). An ask's
+                   sentence names its kind when the turn card gave one (decision, approval,
+                   information), else "The last reply asks you something.". Done, not checked is
+                   news: gone once the session is seen after it was classified.
+                   Kinds differ in shape as well as tone: questions are the bare accent count, no glyph. Asks-you stays until the user answers (their next turn replaces it); open questions stay until they are answered, the user moves on, or align is turned off. No
                    mark shows while this tab runs a turn there.
                    Every line-1 mark is hidden on the open session,
                    so this row (the open one) has none; on another row line 1 reads:
@@ -370,7 +371,7 @@ label a person reads says "sessions pane".
   `rtl` + `<bdi>` pair in `.session-group-path` handles this. Labels stick to the top while their
   group scrolls.
 - **Folder open/closed state.** Every folder is a `<details>` and its label a `<summary>`, in
-  every region alike: Folders, inside a user group, and inside an Archive date section. The
+  every region alike: Folders and inside an Archive date section. The
   whole label toggles it and the chevron rotates 90° when open, as the Archive's sections do, and
   like them a folder is **collapsed by default**: whatever is active already shows in Recent, so a
   folder starts as one line and opening it is how its rows are reached.
@@ -381,11 +382,11 @@ label a person reads says "sessions pane".
   - The user's choice per folder lives in `sessionStorage["sova:folder-open-{idPrefix}-{cwd}"]`
     (`"1"`/`"0"`, `folderOpenKey` in `src/lib/folder-open.ts`, written through `writeKey`) for the
     browser session. The region
-    prefix is part of the key, so the same folder under Folders and inside a group are two
+    prefix is part of the key, so the same folder under Folders and inside an Archive day are two
     separate choices — they are two sections, and one holds rows the other doesn't.
   - It opens **without** changing the stored choice while a search query is non-empty (every hit
     has to be visible); when the search ends it goes back to the stored choice (`folderOpen`).
-    Unlike an Archive date section, holding the selected session does NOT force it open: an active
+    Unlike an Archive date section, moving to a session inside it does NOT open it: an active
     session is already in Recent, and the folder keeps the user's choice.
   - A folder builds its rows only once it is first open (by the user, a stored choice or a
     search), and keeps them after it closes again. A folder never opened holds its head and count
@@ -553,11 +554,12 @@ label a person reads says "sessions pane".
   list's 16px text inset: it is a gutter the eye skips, not a column of content, and the titles
   start a bare 2px right of where the old rows' text did. The rail is reserved on **every** row, including the ones
   with nothing to say, so 278 titles start on one left edge instead of jittering with whatever
-  chip the row happens to carry. Every folder, in every list (Folders, the Archive, each
-  group), wraps its head and rows in one guide rule: a 2px `--color-border` rule flush with the
-  pane edge, then 2px of padding, so the folder's content sits 4px in and reads as one block. The
-  rule sits outside the rows' 34px rail, whose hover and open-row fills start after it; a sticky
-  folder head keeps its own surface. The shell owns the divider, the hover
+  chip the row happens to carry. Every folder, in every list (Folders, the Archive), sets its
+  head and rows 4px in from its own left edge (the pane edge in Folders; inside an Archive day
+  the folder itself sits one step in, beside that day's own line), and an open folder draws one guide line down its rows' rail axis, under its chevron,
+  which sits on that axis: the arrow lines up with the rows' dots, and the line breaks around
+  each rail item (§app.session-list/guide-lines). Pressing the line collapses the open folder,
+  as its head does. A sticky folder head keeps its own surface. The shell owns the divider, the hover
   (`--color-sunken`) and the open-row tint (`--color-accent-tint`, via
   `.session-row-shell-current`), so the rail is skin, not a dead zone. Rail items are
   `<button type="button" tabindex="-1">` — pointer and AT affordances, never tab stops
@@ -684,16 +686,37 @@ label a person reads says "sessions pane".
   the only signal, because the head of the main pane repeats the title.
 - **Refreshing** (polling or a WS nudge). Update rows in place and never re-show the skeleton.
   Keep scroll position and focus. If the focused row moves, it stays focused.
+- **Only the user scrolls the list.** Nothing the app does moves what the session list shows:
+  not a refresh, not a click on a row, not a row or a Needs you item arriving or going away above
+  what is on screen, not a section above opening or closing on its own, not a search ending, on
+  every device (an iPhone or iPad included). Every section, project and row keeps its element
+  across refreshes (each is keyed by its id, a row by its path), so a refresh never tears down and
+  rebuilds what the user is looking at, and a focused row keeps its focus. The rows on screen hold
+  still: the first row in view stays exactly where it was, and what arrives or leaves above it
+  shifts the list's scroll offset by its own height so that nothing on screen moves. A row that
+  itself moves (into another state group or an open Done, or to another place in its list) or goes
+  away is never followed: the next row or section head in view that kept its place holds still
+  instead, so a moving row never carries the rest of the list with it. A list
+  scrolled to its very top stays at its top, so what arrives there shows. When the user opens or
+  closes a section themselves, the head they pressed is what holds still, except where the second
+  exception below scrolls the list instead. On a phone, where an open session puts the list away,
+  the list comes back where it was. Two exceptions, both presses the user makes: pressing a
+  region's count on the side strip (the spine, §app.session-list/spine) scrolls that region into
+  view, which is what the press asks for; and collapsing a group from its guide line while its
+  head has scrolled out above the list's top scrolls the list so the collapsed head sits at the
+  top (§app.session-list/guide-lines "Where you land").
 
 ## §app.session-list/needs-you — Needs you
 
 The top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
 whose branch is not merged (§chat.alignment/session-mark), a baton hand-off (the baton is with you, or a person needs
-their link, §app.baton/needs-you), and a tour recording waiting for you to sign in (§app.tours/sites); a roster proposal stays a decide item. A reply that seems to ask you (§app.decisions/asks-user) and
-a team gone quiet (§app.decisions/team-stall) are not blockers: each is a quiet mark on its row,
-never a row here. Neither is a worktree ready to merge or waiting for your OK: that is the row's
-worktree count, lit (§chat.worktrees/readiness). A stuck subagent is not one either: it is its parent session's decide item. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
+their link, §app.baton/needs-you), a tour recording waiting for you to sign in (§app.tours/sites), and an option card waiting for your answer (§chat.offers/card); a roster proposal stays a decide item. Then, as a
+**softer tier** under the blockers, the turn card's guesses (§app.overseer/attention-digest, soft
+items): a reply that waits on you (§app.decisions/asks-user) and a reply that says it is done
+without checking. A team gone quiet (§app.decisions/team-stall) is not here: it is a quiet mark
+on its row. Neither is a worktree ready to merge or waiting for your OK: that is the row's
+worktree count, lit (§chat.worktrees/readiness). The blockers are the attention digest's **act** tier (§app.overseer/attention-digest), read
 from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts — less the
 organization sessions (§app.session-list/ordinary-surfaces), which wait in the Organizations
 region's own Needs you (§app.session-list/organizations). **The Overseer's count still includes
@@ -724,12 +747,16 @@ thing it waits on being done.
 </details>
 ```
 
-- **Which sessions.** Every session with at least one act item in the digest, **one row per
-  session** however many act items it has, joined by path to the sidebar's search-hit list. So the
+- **Which sessions.** Every session with at least one act item or soft item in the digest, **one
+  row per session** however many items it has, joined by path to the sidebar's search-hit list. So the
   search and the host filter narrow it like every other region, and a digest session the list
   doesn't carry is not listed. **The count in the head is the rows**, and the region never lists a
   row the rest of the pane hides.
-- **Order: newest first**, by each session's newest act item (`since`); ties break on path.
+- **Order: blockers first, then the softer tier**, each newest first by the session's newest
+  item (`since`); ties break on path. A session with a blocker lists among the blockers. The
+  softer tier sits under its own quiet label, "Maybe waiting on you", read as the name of its
+  list. The head's count is every row, both tiers, by the same rule as the Overseer's "need you"
+  count, so the two agree but for the organization sessions the Overseer also counts.
 - **A project's deploy items** (`deploy-failed`, `deploy-request`, §app.project-services/deploy-status) belong
   to no session, so they list under the session rows as rows of their own, newest first, narrowed by the
   search (project, folder or sentence): the project's name, the digest's sentence and the folder, each
@@ -768,10 +795,11 @@ thing it waits on being done.
 - **Omitted entirely** when it has no rows — an empty "Needs you · 0" is a standing alarm at rest —
   and while Overseer proactivity is **Off** (§app.overseer/proactivity), or not yet read. The
   region appearing and going is the signal; Recent's divider moves up with it.
-- **Freshness.** App reads the digest once for the page, on the Overseer entry button's 10-second
-  cadence (paused while the tab is hidden, again on window focus, and at once when a view's action
-  asks for the session list — a baton strip's Get Link, hand-off, Take Back or Approve), and hands
-  that read to this region. The server keeps a digest for 3 seconds; an org or baton write that lands drops it, so the read right
+- **Freshness.** App holds the digest once for the page, with no timer: it reads it when the
+  session feed opens (and after every reconnect), when the tab becomes visible again, and at once
+  when a view's action asks for the session list — a baton strip's Get Link, hand-off, Take Back or
+  Approve; between reads the feed pushes each changed digest (`attention`, §app.decisions/push),
+  within about 5 s of the change. It hands that value to this region. The server keeps a digest for 3 seconds; an org or baton write that lands drops it, so the read right
   after one says what it changed.
 - **The spine** carries its door, "Needs you · {n} sessions", shown exactly when the region is
   (§app.session-list/spine).
@@ -802,8 +830,8 @@ lives.
 </section>
 ```
 
-- **Flat, no folders.** The only region without `<details class="session-group">` heads. At five
-rows a folder head per row would BE the region, and the folder is already on each row's own meta
+- **Flat, no folders.** A region without `<details class="session-group">` heads, as each user
+group is inside (§app.session-list/groups). At five rows a folder head per row would BE the region, and the folder is already on each row's own meta
 line. Rows are the same `SessionRow` as everywhere else, with the same rail, summary line, remote
 mark, menu and accessible name.
 - **Not collapsible, and nothing persisted about it.** It is five rows; a twist would be a control
@@ -852,12 +880,26 @@ loses nothing. `GET /api/session-groups` lists them; the other routes are in `sh
 list: a grouped session still shows under Folders, its project's block or the Archive, so the same row can
 appear in a group and below it at once. A session belongs to **at most one** group.
 
-**Organization sessions are never grouped**, like the Overseer's files (§app.session-list/ordinary-surfaces):
-the Groups region never draws one, and the drop overlay's group tiles, the session pane's `Move into group` and
-the server (`POST /api/session-groups/assign`, 400) all refuse it with "Organization sessions stay
-with their project." — on the disabled control, as its reason, before the press. An assignment made
-before this rule is kept on the server and not drawn; a group left holding only organization
-sessions shows as empty.
+**Who can be grouped.** Every main thread that no organization owns (`canJoinGroup` in
+`src/lib/regions.ts`): every ordinary session (§app.session-list/ordinary-surfaces), and a
+registered project's own sessions as well — its overseer's conversations and its builds, whether
+the operator or the project's overseer started them. A group draws and counts such a session like any
+other member while it keeps its place in its project's block; it still stays out of Folders, Needs
+you, Recent and the Archive as before. **Organization sessions are never grouped**, like the
+Overseer's files and worker sessions: the Groups region never draws one, and the drop overlay's
+group tiles, the session pane's `Move into group`, the Overseer and the server
+(`POST /api/session-groups/assign`, 400) all refuse it with "Organization sessions stay with their
+project." — on the disabled control, as its reason, before the press (the Overseer says the
+server's reason in its reply). An assignment made before this rule is kept on the server and not
+drawn; a group left holding only such sessions shows as empty. A group opened as a workspace
+(§workspace.groups/data) lists exactly the sessions its sidebar group draws, by the same rule
+(`groupMembersOf`).
+
+**Every open window sees a change at once.** Creating, renaming, reordering or deleting a group,
+and putting a session into one or taking it out (from any window, the session pane or the
+Overseer), reaches every open window of this server through the session feed's `groups_changed`
+push, written by the group store itself; each window re-reads its groups and its list, with no
+reload and no wait for a poll. An older window that doesn't know the push ignores it.
 
 ### Anatomy
 
@@ -882,7 +924,7 @@ sessions shows as empty.
   <!-- One group: a <details>, like an Archive date section, and collapsed like one too. -->
   <details class="group-section">
     <!-- The twist, the name, the count, the actions — and NO folder icon: a group is the user's
-         own name for a set of sessions, not a folder on disk. The cwd heads inside it keep theirs. -->
+         own name for a set of sessions, not a folder on disk. -->
     <summary class="list-group-label group-label" title="Work">
       <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
       <span class="group-name"><bdi>Work</bdi></span>
@@ -911,12 +953,8 @@ sessions shows as empty.
       <!-- Rename… and Delete group… each swap the rows for one screen inside this same menu:
            the name field (§ Renaming), or the question with Delete group + Cancel (§ Deleting). -->
     </div>
-    <details class="session-group" aria-labelledby="g-…" open>
-      <summary class="session-group-head">
-        <h4 class="list-group-label" id="g-…">…twist, folder, path, count…</h4>
-      </summary>
-      <ul class="list">…session rows, exactly as everywhere else…</ul>
-    </details>
+    <!-- Its members, flat: no folder level inside a group. -->
+    <ul class="list">…session rows, exactly as Recent draws them…</ul>
   </details>
 
   <!-- A group with no sessions: the note. -->
@@ -929,18 +967,20 @@ groups it holds its head, with its `Open Groups` button, and the note "No groups
 session to start one." — because dragging a row is the feature's front door (its overlay's
 `+ New group` makes the first group), the way the top region keeps its head when it is empty.
 - **Order.** Groups keep their creation order, so a rename or a new group never shuffles the list.
-Within a group, rows and folder groups follow the usual rule (newest `lastActiveAt` first), and
-the folder labels are `h4`, one level under the group's own label.
-- **Indent.** A group's folders carry the same guide rule as every other folder
-(§app.session-list/content-rules). Under a group name that rule is what tells its folders apart as
-the group's contents rather than siblings of its name.
+Within a group every member is a row directly under the group's name, newest `lastActiveAt`
+first, in one flat list as Recent draws them: no folder head, no per-folder section, and no folder
+name on a row. A group is the user's own set, and the folder each member ran in is no part of it.
+- **Indent.** An open group draws its own guide line under its chevron, down beside its rows
+with its rows one step (`--space-5`) plus a folder's own 4px in, where its folders' rows used to
+sit, so no title moved (§app.session-list/guide-lines). Under a group name the line and the step
+are what tell its rows apart as the group's contents rather than the next group's; pressing the
+line collapses the group.
 - **The name row.** Twist, name, count, actions — and no folder icon. A group is the user's own
 name for a set of sessions, not a folder on disk, and the icon read as a claim about the file
-system directly above the `cwd` heads that really are one. Those keep their folder (or `terminal`)
-icon; it is what tells the two kinds of head apart at a glance.
+system that the `cwd` heads of Folders really make.
 - **Count.** The region head counts **groups**. Within Groups only, a group's own session count
-and each nested folder's count appear only while that particular section is collapsed; expanded
-sections show their rows instead of repeating the numbers. Folders' and the Archive's folder counts
+(every member it draws, the operator's coding sessions included) appears only while that group is
+collapsed; an expanded group shows its rows instead of repeating the number. Folders' and the Archive's folder counts
 remain visible whether expanded or collapsed. (Folders' head counts folders and the Archive's sessions, never groups.) While
 searching the Groups region head reads `· {matching groups} of {all groups}`.
 - **The region is a `<details>`**, and it is **collapsed on every page load**. The Groups region
@@ -1025,9 +1065,8 @@ than one region's slice, and the region disappears when no group matches.
 
 **Accessibility.** The region is a `section` labelled by its `h2`. The group label is a
 `<summary>` and deliberately **not** a heading: headings inside `<summary>` are exposed
-inconsistently (the same rule the Archive's summary follows), so the folder labels inside a group
-are `h4` and the outline reads region → folder with one level deliberately skipped rather than a
-heading nobody can rely on. The label is a `<summary>`, so Enter or
+inconsistently (the same rule the Archive's summary follows), so the outline reads the region's
+`h2` and then the group's rows, rather than a heading nobody can rely on. The label is a `<summary>`, so Enter or
 Space opens and closes the section and AT announces expanded or collapsed. The `⋯` trigger inside
 it keeps the section's own gestures: it stops click and keydown, so Enter or Space on the trigger
 opens the menu and does not also toggle the section, and Tab reaches the trigger after the
@@ -1235,7 +1274,9 @@ is the same gesture with a mouse and a thumb: one Pointer Events path. The pure 
 - **The row's current group** is marked `Current` and inert: a drop there does nothing.
 - **Tiles that can't take the row are disabled, and say why in words.** The overlay always
   opens. An organization session can't join a group: the new-group and group tiles are disabled,
-  and the head's note says "Organization sessions stay with their project." once. A peer's
+  and the head's note says "Organization sessions stay with their project." once. A project's own
+  session — its overseer's conversation or any of its builds — is not refused, and each group
+  tile's count includes the project sessions it holds. A peer's
   session gets "Groups hold this host's sessions only. That one lives on {host}." in the same
   way (a peer's own groups aren't this host's, so it gets no `Current` or `Remove` tile). Taking
   an organization session out of a group still works. Archive, when it can't archive, says why
@@ -1496,7 +1537,8 @@ sessions sharing a millisecond still have one order, and it is the same order on
 - **The Archive and its date sections** order by **`lastActiveAt`, newest first** — unchanged. The
 Archive is a place you look back from, and the last thing that happened is the handle you reach
 for. **Recent** reads the same field for the same reason (§app.session-list/recent).
-- **A user's group** orders by `lastActiveAt` too, inside the folder sections it draws.
+- **A user's group** orders by `lastActiveAt` too, one flat list with no folder sections
+  (§app.session-list/groups).
 
 Both rules live in `src/lib/session-order.ts` (`groupByCreation`, `groupByActivity`); the sidebar
 picks one per region and the folder markup is shared.
@@ -1557,9 +1599,12 @@ rest." The archive is also forced open (case 1 below).
 **Folders open/closed state.** Folders is a native `<details>`, **open by default**, like Projects:
 the whole summary row toggles it and the chevron rotates. A collapse is remembered for the tab in
 `sessionStorage["sova:top-open"]` through `writeKey`, `"0"` collapsed and anything else open. It is
-**forced open**, without changing the stored choice, while a search has matches in it and while it
-holds the selected session (from the URL), so its `aria-current` row is visible; when that ends it
-goes back to the stored choice. Collapsed, its head carries Busy's pulsing dot while an agent works
+**forced open**, without changing the stored choice, while a search has matches in it. When you
+move to a session inside it (a click, a link, a notification, the palette, or loading the page on
+it) it opens for that visit, without changing the stored choice, so its `aria-current` row is
+visible, then it is yours to close: a collapse you make while on that session stays shut through
+every refresh, running agent and new message until you open it or move to a session again. When
+the search ends, or you move to a session outside it, it goes back to the stored choice. Collapsed, its head carries Busy's pulsing dot while an agent works
 in one of its sessions (the Projects head's mark). Each folder inside keeps its own open state and
 key (prefix `t`, §app.session-list/content-rules).
 
@@ -1571,18 +1616,22 @@ key (prefix `t`, §app.session-list/content-rules).
   load and written on `toggle`. It lasts for the browser session, not across restarts.
 - It opens automatically, **without** changing the stored choice, when:
   1. Folders is empty (otherwise the sidebar would show nothing but a closed strip);
-  2. the selected session (from the URL) is in the archive, so its `aria-current` row is
-     visible;
+  2. you move to a session in the archive (a click, a link, a notification, the palette, or
+     loading the page on it), or the open session moves into it (archived while open), so its
+     `aria-current` row is visible: opened once for that visit, then yours to close, and a
+     collapse you make while on that session stays shut through every refresh until you open it
+     or move to a session again;
   3. a search query is non-empty (see Search).
 
-  When the condition ends, it goes back to the stored choice. Case 2 is the exception: it doesn't
-  close under the user while they're on that session.
+  When the condition ends, it goes back to the stored choice. Case 2 never closes under the user
+  while they're on that session, and never reopens over their collapse either.
 
 **Ordering.** Needs you, Recent, Groups, Automations, Projects, Folders, Organizations, Archive:
 the shortcut regions first, then Projects with Folders directly under it, then Organizations, and
 the Archive last. Inside each region, groups and rows are ordered by the rules above. A session moves between regions in place on refresh, for
 example when its TUI closes and `live` becomes null. If it's the selected row, it keeps
-`aria-current`, and case 2 keeps the archive open.
+`aria-current`, and case 2 keeps the archive open unless the user collapsed it while on that
+session.
 
 **Archiving.** Sessions started from Sova (`origin === "web"`) can be archived by hand, so
 the top region doesn't keep every one of them forever.
@@ -1613,7 +1662,12 @@ the top region doesn't keep every one of them forever.
 - **Failure.** Toast: "Couldn't archive this session. {server message}". Nothing moves on a
   failed non-drag archive action. A drag's optimistic move is restored. Failed Undo
   restores the archived row and says "Couldn't unarchive this session. {server message}".
-- An archived session opens, chats, and searches exactly like any other row.
+- An archived session opens and searches like any other row, but reads only until you press
+  Unarchive: opening it (a click, a link, a reload, another device) shows its saved conversation
+  and starts nothing, and its composer keeps what you type but says it is archived, with an
+  Unarchive button in place of Send (§chat.transcript/instant-open, "An archived chat"). Unarchive there
+  does what Unarchive Session does (the same request and toast) and brings Send back; the chat
+  starts at the first send, like one closed for being quiet (§app.chat-processes/idle-stop).
 
 **Accessibility.**
 
@@ -1635,7 +1689,7 @@ the top region doesn't keep every one of them forever.
 ## §app.session-list/ordinary-surfaces — Ordinary surfaces and the sessions they leave out
 
 Most of the pane is **ordinary surfaces**: they list the operator's own sessions, and every one of
-them reads the same predicate, so no surface can drift from the others. Two kinds of session are
+them reads the same predicate, so no surface can drift from the others. Three kinds of session are
 **special** and never appear on any of them:
 
 - **Overseer files** (`SessionSummary.overseer`, §app.overseer/identity-and-clear) — reached only through
@@ -1644,11 +1698,15 @@ them reads the same predicate, so no surface can drift from the others. Two kind
 - **Organization sessions** (`SessionSummary.org`, §app.organizations/org-sessions) — reached only through
   the Organizations region (§app.session-list/organizations), which is built from the same search hits as
   every other region, so they stay searchable there.
+- **The merge queue's own chats** (the merge thread and its reviewers, §app.merge-queue/chats) —
+  reached only from the project's Merge Queue tab, a run, and the branch's own Worktrees row. Like an
+  Overseer file they are in no region, no search and no group, nor in the Organizations region, the
+  Overseer page or the Agents board.
 
 Worker sessions are left out of every region too (they are reached through their owner's row), and
 for the same reason: something other than the operator runs them.
 
-**The ordinary surfaces**, each of which leaves both special kinds out:
+**The ordinary surfaces**, each of which leaves every special kind out:
 
 - the global **Needs you** region (§app.session-list/needs-you) and its spine door;
 - **Recent** (§app.session-list/recent), the spine's tiles, and the overview's `Last active` / `Resume`
@@ -1662,15 +1720,19 @@ for the same reason: something other than the operator runs them.
   archived): it is listed with its project only. The overview's `{live} live` still counts it;
 - the **Archive cleanup**: its counts, its sweeps and its one-session list (§app.session-list/archive-cleanup;
   the server's guard is §app.session-list/cleanup-org-guard);
-- the **Groups** region and every way into a group (§app.session-list/groups);
+- the **Groups** region and every way into a group (§app.session-list/groups), which add back
+  every session a registered project owns (its overseer's conversations and its builds, whoever
+  started them): those can be grouped and are drawn in their group, while they stay out of Folders,
+  Needs you, Recent (but for the operator's own builds) and the Archive and keep their place in their project's block;
 - the **recent folders** offered for a new session (`GET /api/cwds`, the New Session dialog's Recent
   folders, `sova_list_folders`): never the Overseer's folder
   (`<stateRoot>/overseer/`), never an attached org's workspace dir, and never a folder only an org's
   own conversations (a hand-off, a project overseer) ran in. A project root is still offered once an
   ordinary or coding session has run there: the operator codes there.
 
-The rule is one predicate on the client, `isOrdinarySession` in `src/lib/regions.ts`: a main thread
-(not a worker, not an Overseer file) with no `org` that no registered project owns. A project owns
+The rule is one predicate on the client, `isOrdinarySession` in `src/lib/regions.ts` (Recent widens it with `isOperatorBuild`, and the groups read their own rule, `canJoinGroup`: every
+main thread with no `org`; neither changes it): a main thread
+(not a worker, not an Overseer file, not one of the queue's own chats) with no `org` that no registered project owns. A project owns
 its overseer's conversations and its builds (`project.kind` `overseer` or `coding`), which its own
 region lists (§app.projects/list), until the operator archives a standalone project's build: then it
 is ordinary again and lives in the Archive (and its cleanup) like any archived session, never in the
@@ -1853,7 +1915,9 @@ projects (§app.projects/list).
   their own level, in the Projects region too (its projects are the project level): an org head
   is the pane's largest name (heading-s, semibold, full ink); a project head is a step down
   (body size, semibold, full ink, a muted `folder` icon before the name), set in one step under
-  its org behind a guide rule that runs down the project's block; its groups and states keep their
+  its org beside the org's guide line, one unbroken line centred under the org's chevron from its
+  head down past its last project (in the Projects region, with no org, the project's own guide
+  line runs from its arrow down its rows' rail instead; §app.session-list/guide-lines); its groups and states keep their
   quieter labels (the eyebrow and caption), and its rows are the unchanged rows. Counts stay muted.
   Consecutive projects are split by space and a rule, at every width.
 - **Order inside a project.** Rows by `lastActiveAt`, newest first, ties on `createdAt` then `id`
@@ -1894,7 +1958,8 @@ projects (§app.projects/list).
   waiting while it is live, or a web session not archived (the Folders rule); otherwise it is in
   Done, and once archived it is not in the region at all.
 - **Done** is a collapsed tail in each group (memory only, like the Archive's date sections), omitted
-  when empty; it replaces the old per-project Finished list. Like a folder's rows
+  when empty; open, its rows sit one step in beside its own guide line, under its chevron
+  (§app.session-list/guide-lines); it replaces the old per-project Finished list. Like a folder's rows
   (§app.session-list/content-rules), a Done builds its rows only once it is first open (by the
   operator, a search or the selected session) and keeps them after it closes, so a project whose
   folder holds hundreds of finished sessions costs its Done head alone. A **cleared overseer conversation** (an
@@ -1913,12 +1978,15 @@ projects (§app.projects/list).
 - **Open by default; a collapse is remembered for the tab** in `sessionStorage["sova:orgs-open"]`
   through `writeKey`, `"0"` collapsed and anything else open (the Needs you pattern). Orgs open by
   default and every Done stays closed, both in memory only. **Forced open**, without changing the stored
-  choice: while a search is on (with every org and Done that holds a hit); and while the selected
-  session (from the URL) is inside — then its org and, if needed, its Done are forced open too, so
-  its `aria-current` row, or its project's `aria-current` eye, is visible (the Archive's case 2: it
-  doesn't close under the operator while they're on that session). A folder session of this
-  computer's project forces it open too, here or in the Projects region, since Folders no longer
-  lists it; one Folders still lists (a peer's, or an archived one) forces nothing open.
+  choice, while a search is on (with every org and Done that holds a hit). When you move to a
+  session inside it (a click, a link, a notification, the palette, or loading the page on it) the
+  region, its org and, if needed, its Done open for that visit without changing any choice, so its
+  `aria-current` row, or its project's `aria-current` eye, is visible; then each is yours to close
+  (the Archive's case 2): a collapse you make while on that session stays shut through every
+  refresh, running agent and new message until you open it or move to a session again. A folder
+  session of this computer's project opens its sections the same way, here or in the Projects
+  region, since Folders no longer lists it; one Folders still lists (a peer's, or an archived one)
+  opens nothing here.
 - **The org link.** Each org summary ends with a 44px ghost icon link to `#/orgs/<id>`, hung into the
   right gutter like a group's `⋯`; it stops its own click and keydown so it doesn't also toggle the org.
   Names truncate with an ellipsis, the full name in `title`.
@@ -1996,12 +2064,16 @@ usual folder groups inside each section. Sections, newest first, keyed on `lastA
   `sessionStorage["sova:archive-date-open-{id}"]` (`id` is `today`, `yesterday`, `week`,
   `month`, `older`; `"1"`/`"0"`), read on load and written on `toggle`. A section opens
   **without** changing its stored choice while a search query is non-empty (so every hit is
-  visible) or while it holds the selected session.
+  visible), and when you move to a session inside it it opens for that visit, then is yours to
+  close: a collapse you make while on that session stays shut until you open it or move to a
+  session again.
 - **Look.** The summary is the `.list-group-label` eyebrow (mono, micro, uppercase, muted), plus
   semibold, at `--row-height`: a 16px twist in the folder icon's column, the name, and the count
   at the right. Hover inks it. It doesn't stick; the folder labels under it keep sticking. A
-  `--color-border` rule separates sections and sits under an open section's summary. No new
-  colors.
+  `--color-border` rule separates sections and sits under an open section's summary. An open
+  section draws a guide line under its chevron and its folders sit one step (`--space-5`) in
+  beside it;
+  pressing the line collapses the section (§app.session-list/guide-lines). No new colors.
 - **Accessibility.** AT reads the summary ("Today 4, collapsed"); it holds spans, not a heading,
   for the reason given under Regions. Folder labels inside stay `h3`, each inside its own folder
   `<summary>`. Tab reaches each summary,
@@ -2009,6 +2081,62 @@ usual folder groups inside each section. Sections, newest first, keyed on `lastA
 - **Row time vs section.** Row line 2 still uses `relativeTime`, which counts 24-hour spans, so
   just after midnight a row can read "3h ago" under Yesterday, or "yesterday" under Last 7 days.
   Accepted: the section answers "which day", and the row answers "how long ago".
+
+## §app.session-list/guide-lines — A group's guide line collapses it
+
+Every collapsible group inside a region has a guide line beside its contents, and pressing the
+line while the group is open collapses it. The groups are organizations, user groups, folders (in
+every list: Folders, inside an Archive day), the Projects region's projects, every
+Done (an organization project's three, and a Projects-region project's "{n} done"), and every
+Archive day. The region bands themselves (Needs you, Groups, Automations, Projects, Folders,
+Organizations, Archive) have no line, and neither do the labels that don't collapse: an org's
+project heading, Conversations, Conflicts to settle, Sessions, their state labels, and Other.
+
+- **Every line runs down from its head's chevron**, its centre on the chevron's centre (within
+  half a pixel, at any zoom: both are placed from the same tokens), from the head down to the end
+  of the group's contents. An organization's line is one unbroken line down past all its
+  projects, never a piece per project. Two kinds:
+  - **Beside the contents**: an organization, a user group, an organization project's Done and
+    an Archive day. The chevron keeps its place (the head's `--space-4` inset plus half the 16px
+    icon), the line starts at the head's bottom, and the contents sit one step in to give it a
+    lane of its own: an org's projects and its Done's rows `--space-5` + `--space-1` (28px, where
+    an org's projects already sat), an Archive day's folders `--space-5` (24px), clear of the
+    folder's own line further in, and a user group's rows `--space-5` plus a folder's 4px (28px),
+    where its folders' rows sat. A user group holds its rows directly, so its line runs from its
+    head down past its last row.
+  - **Down the rows' rail**: a folder (in every list) and a Projects-region project, and that
+    project's "{n} done". The chevron sits on the axis of its rows' state rail (the rail's 2px
+    margin plus half its 30px column, from the row's left edge), so the arrow lines up with the
+    rows' dots, and the line runs down that axis behind the rail: a TUI chip, a Busy dot or a
+    worker count sits on top of it, each in a small ring of the row's own ground (its rest,
+    hover, focus or current tint, never a patch of another colour), so the line visibly breaks
+    around it. Across the open session's row the line takes `--color-border-strong`, since the
+    current tint is as dark as `--color-border` and the line would vanish there. The rows stay where they were (4px in), so no title loses width; the old 2px rule
+    at the group's left edge is gone. A project's "{n} done" sets its rows one step in
+    (`--space-5`), with its chevron on their rail's axis, clear of the project's own line.
+- **The look.** Every line is 2px of `--color-border`, as before. On hover the pointer becomes a
+  hand, the line takes `--color-border-strong`, its group's head lights up (the `--color-sunken`
+  hover fill and full ink) so you can see what will close, and a tooltip reads "Collapse {name}",
+  where {name} is what the head shows: the org's or group's name, the folder's path, the project's
+  name, "Done" (or "{n} done"), the day's name.
+- **What a press does.** The line is a transparent box about 12px wide (`--space-3`), centred on
+  the 2px line, so a press up to 6px either side of it lands. Nested lines (a folder's inside an
+  Archive day, a "{n} done" inside its project) stand far enough apart that
+  their boxes never overlap; were two ever closer, their boxes would split at the midpoint
+  between them. What sits on a line keeps its own press: a head on top of it (a sticky folder or
+  project head) and a rail item (its chip, dot or count). Pressing the line of an open group closes it exactly as pressing its head
+  would: the same `toggle`, so the choice is remembered the same way, in the same place
+  (a folder's and an Archive day's in `sessionStorage`, an org's, a group's, a Done's and a
+  project's in memory), and it counts as your own collapse while you are on a session inside it
+  (§app.session-list/organizations "Open by default"). A closed group draws no line.
+- **Where you land.** If the group's head had scrolled out of view above the list's top, the list
+  scrolls so the collapsed head sits at the top of the list, a sticky head included (its rows
+  vanish under it). If the head was in view, nothing moves.
+- **Keyboard and screen readers** keep using the head, which already opens and closes the group
+  (Enter or Space on its `<summary>`, or the project's arrow button). The line is `aria-hidden`,
+  has no `tabindex` and no role: a shortcut for a pointer, never another Tab stop. Its box is under
+  the 44px target minimum on purpose, as the rail's buttons are (§app.session-list/accessibility):
+  an affordance, not a destination, beside a head that is the full 44px control.
 
 ## §app.session-list/archive-cleanup — Archive cleanup
 
@@ -2096,10 +2224,6 @@ after).
 - **Request.** `{ mode: "paths", paths: string[] }` — 1 to 100 paths, each validated exactly like
   the archive route's `path` (`resolveSessionPath`), so a path outside the sessions dir is a 400
   before anything runs. The UI always sends exactly one.
-- **Every field is checked first.** In every mode, a `dryRun` that is present and not a boolean
-  ("dryRun must be true or false"), a mode that isn't `age`, `husks` or `paths`, a `minAgeDays`
-  that is present and not 7 or 30, and a `paths` that is present and not 1 to 100 strings are each
-  a 400 with its sentence before anything runs: a malformed `dryRun` is never read as a real run.
 - **Guard.** Only sessions carrying the archive mark are deletable this way; that's the order of
   operations (§app/session-list "Archiving"), and it's what stops a mis-click from destroying live work. An
   unarchived session is refused with the reason "Not archived — archive it first, then delete it."
@@ -2157,8 +2281,7 @@ record whose transcript is gone.
 ## §app.session-list/search — Search
 
 - **Matching.** Case-insensitive substring match on `title`, `cwd`, `model`, and the session's
-  tags (§app.decisions/session-tags: its topic, as stored and as displayed — `bugfix` and
-  "bug fix" — and its manual tags), filtered on the client as
+  manual tags (§app.decisions/session-tags; never a topic), filtered on the client as
   the user types (no debounce needed for fewer than 2k rows). Without tags, a row matches as before.
 - **Empty groups.** A group with no matching rows is hidden, and so is a region with none.
 - **Organization rows** also match on the org's name, the project's name and the baton holder's
@@ -2190,8 +2313,9 @@ record whose transcript is gone.
 - **Keys.** `/` anywhere, while focus isn't in a text field, focuses the field (from the spine,
   the pane expands first, §app.session-list/spine). `Esc` inside the field clears the query
   first; a second `Esc`, on the empty field, leaves it (the split button returns), and focus goes
-  back to the list: the open
-  session's row, else the list's first row (with no row on screen the field simply loses focus).
+  back to the list without moving it: the open session's row if it is on screen, else the first
+  row on screen (with no row on screen the field simply loses focus). The list stays where it
+  was scrolled.
   Clear Search returns focus to the input.
 
 ## §app.session-list/working-now — Working now: the one count
@@ -2324,8 +2448,8 @@ word never does.
 ## §app.session-list/accessibility — Accessibility
 
 - **Landmarks.** `aside[aria-label="Sessions"]` > `nav[aria-label="Session list"]`. Each folder is
-  a `<details>` labelled (`aria-labelledby`) by the heading in its `<summary>`: an `h3`, or an `h4`
-  inside a user group. Rows are plain links in a `ul`, so the browser provides
+  a `<details>` labelled (`aria-labelledby`) by the `h3` in its `<summary>`; a user group holds
+  its rows directly, with no folder inside it. Rows are plain links in a `ul`, so the browser provides
   Tab/Enter behavior with no roving tabindex. Collapsed, the `aside` keeps its name and holds
   `nav[aria-label="Recent sessions"]` instead; every spine item is a real tab stop in reading
   order, with an `aria-label` and a `title` — the skill's rule, "an unlabeled icon is a guess",
@@ -2420,6 +2544,31 @@ hands a finished list to further callers for up to **1 second** after its build 
 session feed's comparison, the attention scan, the Overseer, the profile, schedule and share routes
 and `GET /api/sessions` all read the same list then. A change made outside this server (a TUI writing
 a session, another server's stores) therefore reaches a listing up to 1 second later.
+
+The schedule's discovery, which runs on a timer, reads the session
+feed's last list instead while a feed is connected and nothing it watches has changed since that
+list was built (§app.decisions/push), a list at most two minutes old (the feed's safety net
+renews it every minute); otherwise it lists as above. So an idle
+server with windows open builds the list only for the feed's safety net.
+
+**Only what changed is read again.** The session feed's comparisons don't read every file. The
+folder watch names each session file written, added or removed, and the next comparison
+stats and reads only those files and keeps every other session as it was last read. A listing
+opens a changed file once to build its row: its head, its outline and one window of its last
+256 KB, which the row's model, context and ending all read from (a file's first read may go
+further back, to its outline); its alignment and worker marks read only what the file gained
+since their last read. The feed's
+listing looks at every folder and every file (a full build) only on its first listing, when the
+watch can't say what changed (a folder joins or leaves the watched set, a watch fails, a change
+comes with no file name), and every 5 minutes. Once a minute it also checks the size and
+modification time of every session file it already knows, without listing a folder, and reads
+again only those that moved, so a write the watch missed reaches the list within about a minute;
+a file the watch missed altogether appears with the next full build. With nothing written, a
+comparison reads no session file.
+A session with no message of the user's yet is told apart from the read its row already made,
+never by reading its file again. Every session stays in the list, however old: none is left out
+to save work. Rows with the same last activity come in path order, so two listings of the same
+sessions come in the same order. Every caller other than the feed lists as above.
 
 A change a caller makes through this server is never missed that way. Any request other than a
 read (a REST call that is not `GET` or `HEAD`, a peer's included, before it runs and again when it

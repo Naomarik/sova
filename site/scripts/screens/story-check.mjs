@@ -3,7 +3,9 @@
 // replayed in memory, show_changes coverage, the align tool's own rules, privacy). Every problem is
 // { pointer, message, hint? }; load-story.mjs turns pointers into story.json:LINE:COL.
 
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { hostname, homedir, userInfo } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { pointerOf } from "./json-pos.mjs";
@@ -156,10 +158,12 @@ export function schemaKeywords(schema, out = new Set()) {
 // ---- helpers shared with load-story --------------------------------------------------------------
 
 export const text = (t) => (Array.isArray(t) ? t.join("\n") : t);
-export const STEP_ACTIONS = ["user", "say", "read", "edit", "write", "bash", "align", "decide", "worktree", "spawn", "wait", "show_changes", "tool", "error", "hold"];
+export const STEP_ACTIONS = ["user", "say", "read", "edit", "write", "bash", "align", "decide", "worktree", "spawn", "wait", "show_changes", "tool", "error", "hold", "summary"];
 export const actionOf = (step) => STEP_ACTIONS.find((a) => a in step);
 /** Steps a static (written-to-disk) session may hold. */
-export const STATIC_ACTIONS = new Set(["user", "say", "read", "bash", "align", "decide", "error"]);
+export const STATIC_ACTIONS = new Set(["user", "say", "read", "bash", "align", "decide", "error", "summary"]);
+/** Steps that are not part of the conversation the model sees: markers between its turns. */
+export const MARKER_ACTIONS = new Set(["hold", "summary"]);
 const MODEL_ACTIONS = new Set(["say", "read", "edit", "write", "bash", "align", "decide", "worktree", "spawn", "wait", "show_changes", "tool"]);
 
 export function durationMs(d) {
@@ -171,6 +175,79 @@ export function offsetMs(o) {
   const m = /^-([0-9]+)([smhd])$/.exec(o);
   return m ? Number(m[1]) * { s: 1e3, m: 6e4, h: 36e5, d: 864e5 }[m[2]] : 0;
 }
+
+// ---- video pacing -------------------------------------------------------------------------------
+
+/**
+ * The video's pacing rules, in seconds. The recorder moves the pointer by them; the lint below and
+ * screens:verify (on the recorded timeline) hold the story to them.
+ *   reading hold: 1 s + 0.3 s a meaningful word, never under 1.5 s, never over 5 s
+ *   a new panel or new text: 1.5 s on screen before the pointer moves
+ *   pointer travel 0.5–0.9 s (by distance, eased), 0.3 s rest on the target, a 0.35 s ripple,
+ *   0.4 s still after; typing about 30 characters a second, a typed prompt at most 90 characters;
+ *   a caption (page text under the video) at most 8 words and 48 characters, shown at least
+ *   max(2 s, its reading time)
+ */
+export const PACE = {
+  read: { base: 1, perWord: 0.3, min: 1.5, max: 5 },
+  settle: 1.5,
+  travel: { min: 0.5, max: 0.9 },
+  rest: 0.3,
+  ripple: 0.35,
+  after: 0.4,
+  typingMs: { min: 28, max: 40 },
+  promptMax: 90,
+  caption: { words: 8, chars: 48, min: 2 },
+  scroll: 0.8,
+};
+
+/** Words a viewer reads: tokens with a letter or digit ("30 s" is 2, "—" is none). */
+export const meaningfulWords = (t) => t.split(/\s+/).filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+
+/** The reading time of `t` in ms: 1 s + 0.3 s a word, clamped to 1.5–5 s. */
+export const readingMs = (t) => Math.round(1000 * Math.min(PACE.read.max, Math.max(PACE.read.min, PACE.read.base + PACE.read.perWord * meaningfulWords(t))));
+
+/** How long a caption must stay on the page (ms): its reading time, never under PACE.caption.min. */
+export const captionMinMs = (t) => Math.max(PACE.caption.min * 1000, readingMs(t));
+
+/** A caption's own problems (words, characters), or []. */
+export function captionProblems(t) {
+  const out = [];
+  if (meaningfulWords(t) > PACE.caption.words) out.push(`${meaningfulWords(t)} words; a caption has at most ${PACE.caption.words}`);
+  if (t.length > PACE.caption.chars) out.push(`${t.length} characters; a caption has at most ${PACE.caption.chars}`);
+  return out;
+}
+
+/** What a beat that moves the pointer costs, travel to after (ms). A tap has no travel. */
+export const pressMs = (pointer) => Math.round(1000 * ((pointer === "tap" ? 0 : (PACE.travel.min + PACE.travel.max) / 2) + PACE.rest + PACE.ripple + PACE.after));
+
+/** A beat's estimated length in ms (a release's streaming is a rough 0.8 s, as measured on the
+    story's replies, divided by its speed). */
+export function beatMs(b, { typingMs, loopMs, pointer }) {
+  switch (b.do) {
+    case "hold":
+      return b.ms ?? 0;
+    case "type":
+      return pressMs(pointer) + (b.text?.length ?? 0) * typingMs;
+    case "click":
+    case "tap":
+      return pressMs(pointer);
+    case "release":
+      return Math.round(800 / (b.speed ?? 1));
+    case "scroll":
+      return PACE.scroll * 1000;
+    case "home":
+      return Math.round(1000 * (PACE.travel.max + PACE.rest)) + loopMs;
+    default:
+      return 0;
+  }
+}
+
+/** Beats after which something new is on screen (a page, a panel, streamed text): the pointer
+    waits PACE.settle before it moves again. */
+const NEW_CONTENT = new Set(["link", "session-row", "workers", "worker", "close-panel", "review-changes", "changes-step", "pane-tab"]);
+export const bringsNewContent = (b) => b.do === "release" || b.do === "scroll" || ((b.do === "click" || b.do === "tap") && NEW_CONTENT.has(b.target));
+const movesPointer = (b) => ["type", "click", "tap", "home"].includes(b.do);
 
 /** A file body: Text, or { file } read from story/files (the caller has checked the path). */
 export function fileBody(body, storyDir) {
@@ -204,11 +281,12 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
     if (!models.has(s.model)) err(["sessions", i, "model"], `unknown model "${s.model}"`, `models are: ${[...models].join(", ")}`);
     const has = ["messages", "script"].filter((k) => k in s);
     if (has.length !== 1) err(["sessions", i], has.length ? "has both messages and script; a session is static or live, not both" : "needs messages (a static session) or script (a live one)");
-    if (s.modes && !s.script) err(["sessions", i, "modes"], "modes apply to a live session (one with a script)");
+    if (s.then && !s.messages) err(["sessions", i, "then"], "then follows a static session's messages; a live session's script plays it all");
     if (s.title.length > 38) warn(["sessions", i, "title"], `title is ${s.title.length} characters; the sidebar shows about 38 before it cuts`);
   });
   for (const [id, w] of Object.entries(workers)) if (!models.has(w.model)) err(["workers", id, "model"], `unknown model "${w.model}"`, `models are: ${[...models].join(", ")}`);
   if (story.overseer && !models.has(story.overseer.model)) err(["overseer", "model"], `unknown model "${story.overseer.model}"`);
+  if (story.summarizer && !models.has(story.summarizer)) err(["summarizer"], `unknown model "${story.summarizer}"`, `models are: ${[...models].join(", ")}`);
 
   // file bodies
   const fileRef = (body, path) => {
@@ -241,12 +319,39 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
   sessions.forEach((s, i) => {
     if (s.messages) scripts.push({ path: ["sessions", i, "messages"], steps: s.messages, kind: "static", owner: s.id });
     if (s.script) scripts.push({ path: ["sessions", i, "script"], steps: s.script, kind: "live", owner: s.id });
+    if (s.then && s.messages) scripts.push({ path: ["sessions", i, "then"], steps: s.then, kind: "then", owner: s.id, pre: { steps: s.messages, path: ["sessions", i, "messages"] } });
   });
   for (const [id, w] of Object.entries(workers)) scripts.push({ path: ["workers", id, "script"], steps: w.script, kind: "worker", owner: id });
   if (story.overseer) scripts.push({ path: ["overseer", "script"], steps: story.overseer.script, kind: "overseer", owner: "overseer" });
+  for (const [name, v] of Object.entries(story.videos ?? {}))
+    if (v.overseer) {
+      scripts.push({ path: ["videos", name, "overseer", "script"], steps: v.overseer.script, kind: "overseer", owner: `${name}-overseer` });
+      if (!story.overseer) err(["videos", name, "overseer"], "the story has no overseer, whose model the opener runs on");
+    }
 
   const firstUser = new Map(); // first user text -> where
   const holdsOf = new Map(); // owner -> Set(hold)
+  // A summary: the session's topics so far (t1, t2… in order), its static ones anchored at a user step.
+  const topicsOf = new Map(); // owner -> number of topics
+  function summaryChecks(sc, step, at, k) {
+    const sum = step.summary;
+    let n = topicsOf.get(sc.owner) ?? 0;
+    if (sum.now.length > 60) err([...at, "summary", "now"], `${sum.now.length} characters; the summarizer writes "now" in at most 60`);
+    if (meaningfulWords(sum.overall) > 8) err([...at, "summary", "overall"], `${meaningfulWords(sum.overall)} words; the summarizer writes "overall" in at most 8`);
+    sum.topics.forEach((t, j) => {
+      const tp = [...at, "summary", "topics", j];
+      if (t.update) {
+        const m = /^t([1-9][0-9]*)$/.exec(t.update);
+        if (!m || Number(m[1]) > n) err([...tp, "update"], `no topic ${t.update} before this summary`, n ? `topics so far: ${Array.from({ length: n }, (_, i) => `t${i + 1}`).join(", ")}` : "there are none yet");
+      } else n++;
+      for (const [b, line] of t.summary.entries()) if (line.length > 70) err([...tp, "summary", b], `${line.length} characters; a summary bullet is at most 70`);
+      if (sc.kind === "static") {
+        if (t.from === undefined && !t.update) err(tp, 'a written-in topic needs "from": the index of the user step it starts at');
+        if (t.from !== undefined && (t.from >= k || actionOf(sc.steps[t.from] ?? {}) !== "user")) err([...tp, "from"], `step ${t.from} is not a user step before this summary`);
+      } else if (t.from !== undefined) err([...tp, "from"], 'a live summary takes its range from the summarizer\'s prompt; "from" is for written-in ones');
+    });
+    topicsOf.set(sc.owner, n);
+  }
   for (const sc of scripts) {
     const holds = new Set();
     holdsOf.set(sc.owner, holds);
@@ -257,10 +362,13 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
       if (sc.kind === "static" && !STATIC_ACTIONS.has(a)) err([...at, a], `a static session can't hold a ${a} step`, `static sessions take: ${[...STATIC_ACTIONS].join(", ")}`);
       if (sc.kind !== "static" && a === "error") err([...at, a], "error steps are for static sessions only");
       if (sc.kind === "worker" && ["user", "spawn", "wait"].includes(a)) err([...at, a], `a worker's script can't hold a ${a} step`, a === "user" ? "its task is its first message" : "workers can't start workers");
+      if ((sc.kind === "worker" || sc.kind === "overseer") && a === "summary") err([...at, a], "only a session's own steps take a summary (workers and the Overseer get none)");
+      if (a === "summary") summaryChecks(sc, step, at, k);
       if (sc.kind === "overseer" && ["spawn", "wait", "worktree", "edit", "write", "bash", "read", "show_changes", "align", "decide"].includes(a)) err([...at, a], `the Overseer has no ${a} tool`, "use a tool step with one of its sova_* tools");
       if (k === 0 && sc.kind !== "worker" && a !== "user") err(at, "must start with a user step");
+      if (sc.kind === "then" && a === "say" && k === 0) err(at, "then starts with the user step the video sends");
       if (a === "user" && k > 0 && prev && prev !== "say" && prev !== "error") err(at, "the reply before this user step ends in a tool call", "a turn ends with a say step");
-      if (a === "user" && k === 0) {
+      if (a === "user" && k === 0 && sc.kind !== "then") {
         const key = norm(text(step.user));
         if (firstUser.has(key)) err([...at, "user"], `same first message as ${firstUser.get(key)}`, "the director tells live sessions apart by their first message");
         firstUser.set(key, pointerOf(at));
@@ -269,16 +377,16 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
         if (holds.has(step.hold)) err([...at, "hold"], `hold "${step.hold}" appears twice in this script`);
         if (["end", "start"].includes(step.hold)) err([...at, "hold"], `"${step.hold}" is reserved`);
         holds.add(step.hold);
-        const next = sc.steps.slice(k + 1).find((x) => actionOf(x) !== "hold");
+        const next = sc.steps.slice(k + 1).find((x) => !MARKER_ACTIONS.has(actionOf(x)));
         if (sc.kind === "static") err([...at, "hold"], "holds belong in live scripts");
         else if (next && actionOf(next) === "hold") err([...at, "hold"], "two holds in a row");
         void next;
       }
       if (a === "edit" && text(step.edit.old) === text(step.edit.new)) err([...at, "edit"], "old and new are the same");
       if (a === "write") fileRef(step.write.content, [...at, "write", "content"]);
-      if (a !== "hold") prev = a;
+      if (!MARKER_ACTIONS.has(a)) prev = a;
     });
-    const last = [...sc.steps].reverse().find((x) => actionOf(x) !== "hold");
+    const last = [...sc.steps].reverse().find((x) => !MARKER_ACTIONS.has(actionOf(x)));
     if (last && !["say", "error"].includes(actionOf(last)) && sc.kind !== "static") err([...sc.path, sc.steps.length - 1], "the script ends in a tool call", "end it with a say step");
     if (sc.kind === "worker") {
       const key = norm(text(workers[sc.owner].task));
@@ -293,7 +401,7 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
   // Spawns: who spawns which worker, and worker worktrees.
   const spawnedBy = new Map(); // worker -> session id
   const worktreesOf = new Map(); // session -> Set(created worktree names, in order seen)
-  for (const sc of scripts.filter((x) => x.kind === "live")) {
+  for (const sc of scripts.filter((x) => x.kind === "live" || x.kind === "then")) {
     const trees = new Set();
     worktreesOf.set(sc.owner, trees);
     sc.steps.forEach((step, k) => {
@@ -390,11 +498,13 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
         }
       });
     };
+    if (sc.pre) run(sc.pre.steps, sc.pre.path, "");
     run(sc.steps, sc.path, "");
   }
 
   // Shots, slots, video.
   const liveIds = new Set(sessions.filter((s) => s.script).map((s) => s.id));
+  const playable = new Set(sessions.filter((s) => s.script || s.then).map((s) => s.id));
   const holdsFor = (sid) => {
     const out = new Set(holdsOf.get(sid) ?? []);
     for (const [w, owner] of spawnedBy) if (owner === sid) for (const h of holdsOf.get(w) ?? []) out.add(h);
@@ -408,9 +518,9 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
     const page = shot.session === "overseer" || shot.session === "access";
     if (shot.session === "overseer" && !story.overseer) err([...at, "session"], "the story has no overseer");
     if (!page && !byId.has(shot.session)) return err([...at, "session"], `unknown session "${shot.session}"`, `sessions are: ${[...byId.keys()].join(", ")}`);
-    const live = shot.session === "overseer" ? true : liveIds.has(shot.session);
+    const live = shot.session === "overseer" ? true : playable.has(shot.session);
     if (shot.at === "start") {
-      if (live && shot.session !== "overseer") err([...at, "at"], `"start" is for a static session or a page; ${shot.session} is live`, `its holds: ${[...holdsFor(shot.session)].join(", ") || "(none)"}, or "end"`);
+      if (liveIds.has(shot.session)) err([...at, "at"], `"start" is for a static session or a page; ${shot.session} is live`, `its holds: ${[...holdsFor(shot.session)].join(", ") || "(none)"}, or "end"`);
     } else if (!live) err([...at, "at"], `${shot.session} is static, so the only point is "start"`);
     else if (shot.at !== "end" && !holdsFor(shot.session === "overseer" ? "overseer" : shot.session).has(shot.at))
       err([...at, "at"], `no hold "${shot.at}" in ${shot.session}'s script or its workers'`, `holds: ${[...holdsFor(shot.session)].join(", ") || "(none)"}, or "end"`);
@@ -423,34 +533,125 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
   });
   for (const [slot, id] of Object.entries(story.pageShots)) if (!shotIds.has(id)) err(["pageShots", slot], `unknown shot "${id}"`, didYouMean(id, [...shotIds]) ? `did you mean "${didYouMean(id, [...shotIds])}"?` : undefined);
 
-  if (story.video) {
-    const v = story.video;
-    if (!liveIds.has(v.session)) err(["video", "session"], `"${v.session}" isn't a live session`);
-    if (!story.viewports[v.viewport]) err(["video", "viewport"], `unknown viewport "${v.viewport}"`, `viewports are: ${Object.keys(story.viewports).join(", ")}`);
+  for (const [name, v] of Object.entries(story.videos ?? {})) checkVideo(name, v);
+
+  function checkVideo(name, v) {
+    const base = ["videos", name];
+    const sess = byId.get(v.session)?.s;
+    if (!sess || !playable.has(v.session)) return err([...base, "session"], `"${v.session}" isn't a live session or a static one with then`);
+    const vp = story.viewports[v.viewport];
+    if (!vp) err([...base, "viewport"], `unknown viewport "${v.viewport}"`, `viewports are: ${Object.keys(story.viewports).join(", ")}`);
+    const slotShot = story.shots.find((x) => x.id === story.pageShots[v.slot]);
+    if (!slotShot) err([...base, "slot"], `no pageShots slot "${v.slot}"`);
+    else if (vp && story.viewports[slotShot.viewport] && Math.abs(vp.width / vp.height - story.viewports[slotShot.viewport].width / story.viewports[slotShot.viewport].height) > 0.005)
+      err([...base, "viewport"], `the ${v.viewport} viewport (${vp.width}x${vp.height}) isn't the shape of slot ${v.slot}'s shot (${slotShot.viewport}): the page plays the video over that still`);
+    if (v.width % 2) err([...base, "width"], "must be even (yuv420p)");
+    if ((v.start ?? "session") === "overseer" && !v.overseer) err([...base, "start"], 'start "overseer" needs the video\'s own overseer opener');
+    if (v.prefill) {
+      const st = (v.prefill.scene === "overseer" ? v.overseer?.script ?? [] : sess.script ?? sess.then)[v.prefill.step];
+      if (!st || actionOf(st) !== "user") err([...base, "prefill", "step"], "not a user step");
+      else if (text(st.user).length > PACE.promptMax) err([...base, "prefill", "step"], `that prompt is over ${PACE.promptMax} characters`);
+      if ((v.prefill.scene === "overseer") !== ((v.start ?? "session") === "overseer")) err([...base, "prefill", "scene"], "the prefill goes in the first screen's composer");
+    }
+    const typing = durationMs(v.typing);
+    if (typing < PACE.typingMs.min || typing > PACE.typingMs.max) err([...base, "typing"], `${v.typing} a character is not about 30 a second (${PACE.typingMs.min}–${PACE.typingMs.max}ms)`);
+    const lo = durationMs(v.length.min);
+    const hi = durationMs(v.length.max);
+    if (lo >= hi) err([...base, "length"], "min must be under max");
     const holds = holdsFor(v.session);
-    const script = byId.get(v.session)?.s.script ?? [];
+    const openerHolds = holdsOf.get(`${name}-overseer`) ?? new Set();
+    if (!v.line?.trim()) err(base, 'a video needs "line": the fixed line under its still (reduced motion, no JS)');
+    const workersOf = new Set([...spawnedBy].filter(([, o]) => o === v.session).map(([w]) => w));
+    const steps = sess.script ?? sess.then;
+    let pending = null; // what came on screen and hasn't had its settle time
+    let caption = null; // { text, ms, at }
     let ms = 0;
+    const loopMs = durationMs(v.loop ?? "1s");
+    const closeCaption = () => {
+      if (caption && caption.ms < captionMinMs(caption.text)) warn(caption.at, `caption "${caption.text}" is on the page about ${(caption.ms / 1000).toFixed(1)} s (estimated), under its ${(captionMinMs(caption.text) / 1000).toFixed(1)} s`);
+      caption = null;
+    };
     v.beats.forEach((b, i) => {
-      const at = ["video", "beats", i];
-      const need = { type: [], send: [], release: ["until"], click: ["target"], pause: ["for"] }[b.do];
-      for (const k of need) if (b[k] === undefined) err(at, `do "${b.do}" needs "${k}"`);
-      for (const k of ["step", "until", "target", "for", "worker"]) if (b[k] !== undefined && !({ type: ["step"], release: ["until"], click: ["target", "worker"], pause: ["for"] }[b.do] ?? []).includes(k)) err([...at, k], `"${k}" doesn't go with do "${b.do}"`);
-      if (b.do === "type") {
-        if (b.step === undefined) err(at, 'do "type" needs "step"');
-        else if (!script[b.step] || actionOf(script[b.step]) !== "user") err([...at, "step"], `step ${b.step} of ${v.session}'s script is not a user step`);
-        else ms += text(script[b.step].user).length * durationMs(v.typing);
+      const at = [...base, "beats", i];
+      const allowed = { type: ["scene", "step"], click: ["target", "text", "worker", "q", "option", "n"], tap: ["target", "text", "worker", "q", "option", "n"], release: ["scene", "until", "speed", "summary"], hold: ["for", "read"], scroll: ["to"], home: [] }[b.do];
+      for (const k of ["scene", "step", "until", "speed", "summary", "target", "text", "worker", "q", "option", "n", "to", "for", "read"]) if (b[k] !== undefined && !allowed.includes(k)) err([...at, k], `"${k}" doesn't go with do "${b.do}"`);
+      if (b.do === "type" && b.step === undefined) err(at, 'do "type" needs "step"');
+      if ((b.do === "click" || b.do === "tap") && !b.target) err(at, `do "${b.do}" needs "target"`);
+      if (b.do === "release" && !b.until) err(at, 'do "release" needs "until"');
+      if (b.do === "scroll" && !b.to) err(at, 'do "scroll" needs "to"');
+      if (b.do === "hold" && !b.for && !b.read) err(at, 'a hold needs "read" (what the viewer reads) or "for"');
+      if (v.pointer === "tap" && (b.do === "click" || b.do === "type")) err([...at, "do"], `a tap video presses with "tap"${b.do === "type" ? " and types nothing" : ""}`);
+      if (v.pointer === "arrow" && b.do === "tap") err([...at, "do"], 'an arrow video presses with "click"');
+      if (b.scene === "overseer" && !v.overseer) err([...at, "scene"], "this video has no overseer opener");
+      const scSteps = b.scene === "overseer" ? v.overseer?.script ?? [] : steps;
+      if (b.do === "type" && b.step !== undefined) {
+        const st = scSteps[b.step];
+        if (!st || actionOf(st) !== "user") err([...at, "step"], `step ${b.step} of ${b.scene === "overseer" ? "the opener" : sess.script ? `${v.session}'s script` : `${v.session}'s then`} is not a user step`);
+        else if (text(st.user).length > PACE.promptMax) err([...at, "step"], `that prompt is ${text(st.user).length} characters; a typed prompt is at most ${PACE.promptMax}`);
       }
-      if (b.do === "release" && b.until && b.until !== "end" && !holds.has(b.until)) err([...at, "until"], `no hold "${b.until}" in ${v.session}'s script or its workers'`, `holds: ${[...holds].join(", ")}, or "end"`);
-      if (b.do === "click" && b.target === "worker" && !b.worker) err(at, 'click "worker" needs "worker"');
-      if (b.do === "pause") ms += durationMs(b.for);
+      if (b.do === "release" && b.until && b.until !== "end" && !(b.scene === "overseer" ? openerHolds : holds).has(b.until)) err([...at, "until"], `no hold "${b.until}" in ${b.scene === "overseer" ? "the opener" : `${v.session}'s script or its workers'`}`, `holds: ${[...(b.scene === "overseer" ? openerHolds : holds)].join(", ") || "(none)"}, or "end"`);
+      if (b.summary && (b.scene === "overseer" || !steps.some((st) => actionOf(st) === "summary"))) err([...at, "summary"], `${v.session}'s ${sess.script ? "script" : "then"} has no summary step to wait for`);
+      if (b.target === "worker" && (!b.worker || !workersOf.has(b.worker))) err([...at, "worker"], `"worker" must name one of ${v.session}'s workers: ${[...workersOf].join(", ") || "(none)"}`);
+      if (["link", "session-row", "pane-tab"].includes(b.target) && !b.text) err(at, `target ${b.target} needs "text"`);
+      if (b.target === "align-option" && (b.q === undefined || b.option === undefined)) err(at, 'target align-option needs "q" and "option"');
+      if (b.target === "changes-step" && !b.n) err(at, 'target changes-step needs "n"');
+      if (b.speed && b.do !== "release") err([...at, "speed"], "only a release is sped up");
+      if (b.do === "home" && i !== v.beats.length - 1) err(at, '"home" closes the video: it is the last beat');
+      // Reading time (pacing rule 1).
+      let dur = 0;
+      if (b.do === "hold") {
+        const need = b.read ? readingMs(b.read) : 0;
+        const given = b.for ? durationMs(b.for) : 0;
+        if (b.for && b.read && given < need) err([...at, "for"], `${b.for} is under the reading time of "${b.read}" (${(need / 1000).toFixed(1)} s: 1 s + 0.3 s for each of its ${meaningfulWords(b.read)} words)`);
+        if (b.read && given > PACE.read.max * 1000) err([...at, "for"], `a reading hold is at most ${PACE.read.max} s`);
+        dur = Math.max(need, given);
+      } else dur = beatMs({ ...b, text: b.do === "type" ? text(scSteps[b.step]?.user ?? "") : undefined }, { typingMs: typing, loopMs, pointer: v.pointer });
+      // One thing at a time (pacing rule 2): new content gets its settle time before the pointer moves.
+      if (movesPointer(b) && pending) err(at, `the pointer moves ${pending.what === "release" ? "while the reply may still be arriving" : `before what beat ${pending.i} brought has been on screen ${PACE.settle} s`}`, "put a hold of at least 1.5 s (a read of 2+ words) before it");
+      if (b.do === "hold" && dur >= PACE.settle * 1000) pending = null;
+      if (bringsNewContent(b)) pending = { i, what: b.do };
+      // Captions (pacing rule 5).
+      if (b.caption !== undefined) {
+        closeCaption();
+        if (b.caption !== null) {
+          for (const p of captionProblems(b.caption)) err([...at, "caption"], p);
+          caption = { text: b.caption, ms: 0, at: [...at, "caption"] };
+        }
+      }
+      if (caption) caption.ms += dur;
+      ms += dur;
     });
-    // Streaming: about 4 characters per chunk.
-    const streamed = [script, ...[...spawnedBy].filter(([, o]) => o === v.session).map(([w]) => workers[w].script)].flat().filter((s) => "say" in s).reduce((n, s) => n + text(s.say).length, 0);
-    ms += (streamed / 4) * durationMs(v.chunk);
-    if (ms > 40_000) warn(["video"], `estimated length ${Math.round(ms / 1000)}s (typing, pauses and streaming) is over 40s`);
-    if (v.poster && !shotIds.has(v.poster)) err(["video", "poster"], `unknown shot "${v.poster}"`);
-    if (!v.poster && !story.pageShots["hero.desk"]) err(["video"], "needs a poster: a shot id, or a hero.desk slot");
+    closeCaption();
+    // Chapters (the page's chapter bar): on caption beats only, on all of them or none, each one run.
+    const capBeats = v.beats.map((b, i) => [b, i]).filter(([b]) => typeof b.caption === "string");
+    for (const [b, i] of v.beats.map((b, i) => [b, i])) if (b.chapter !== undefined && typeof b.caption !== "string") err([...base, "beats", i, "chapter"], "a chapter goes on a beat that starts a caption");
+    if (capBeats.some(([b]) => b.chapter !== undefined)) {
+      const done = new Set();
+      let last = null;
+      for (const [b, i] of capBeats) {
+        if (typeof b.chapter !== "string" || !b.chapter.trim()) {
+          err([...base, "beats", i], "when one caption names a chapter, every caption does: the page's bar has no segment for it otherwise");
+          continue;
+        }
+        if (b.chapter.length > 16) err([...base, "beats", i, "chapter"], `chapter "${b.chapter}" is ${b.chapter.length} characters; a chapter name has at most 16 (one word above the caption)`);
+        if (b.chapter !== last && done.has(b.chapter)) err([...base, "beats", i, "chapter"], `chapter "${b.chapter}" comes back after another: a chapter's captions are consecutive`);
+        if (last !== null && b.chapter !== last) done.add(last);
+        last = b.chapter;
+      }
+    }
+    if (v.beats.some((b) => typeof b.caption === "string") && typeof v.beats[0]?.caption !== "string") err([...base, "beats", 0], "the first beat needs a caption: the page shows one from the video's first frame");
+    if (v.beats.at(-1)?.do !== "home") err([...base, "beats"], 'the last beat is "home": the pointer goes back to its start and the video fades into its first frame');
+    if (ms < lo || ms > hi) warn(base, `estimated length ${(ms / 1000).toFixed(1)} s is outside ${v.length.min}–${v.length.max} (the recording's own length is checked by screens:verify)`);
   }
+
+  // $session:<id> inside text (an Overseer's link) names a session of the story.
+  const refs = (v, path) => {
+    if (typeof v === "string") {
+      for (const m of v.matchAll(/\$session:([a-z][a-z0-9-]*)/g)) if (!byId.has(m[1])) err(path, `unknown session "${m[1]}" in "$session:${m[1]}"`);
+    } else if (Array.isArray(v)) v.forEach((x, i) => refs(x, [...path, i]));
+    else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) refs(x, [...path, k]);
+  };
+  refs(story, []);
 
   // Privacy: every string in the story, and the bodies it points at.
   const each = (v, path) => {
@@ -466,10 +667,52 @@ export async function crossCheck(story, { storyDir, repoRoot, banned = runtimeBa
   };
   each(story, []);
 
+  // Drawings: every ```vis fence in a reply parses with the app's own parser.
+  const fences = [];
+  const says = (steps, path) => steps.forEach((st, k) => actionOf(st) === "say" && fences.push(...visFences(text(st.say)).map((f) => ({ ...f, path: [...path, k, "say"] }))));
+  sessions.forEach((s, i) => ["messages", "script", "then"].forEach((key) => s[key] && says(s[key], ["sessions", i, key])));
+  for (const [id, w] of Object.entries(workers)) says(w.script, ["workers", id, "script"]);
+  if (story.overseer) says(story.overseer.script, ["overseer", "script"]);
+  for (const [name, v] of Object.entries(story.videos ?? {})) if (v.overseer) says(v.overseer.script, ["videos", name, "overseer", "script"]);
+  if (fences.length) {
+    const r = parseFences(fences, repoRoot);
+    if (r.skipped) warn([], `vis drawings not checked: ${r.skipped}`);
+    else r.results.forEach((x, i) => !x.ok && err(fences[i].path, `the vis ${fences[i].kind} drawing doesn't parse: line ${x.line}: ${x.message}`, "the app would show its source instead of the drawing"));
+  }
+
   return { errors, warnings, facts: { spawnedBy, holdsOf, worktreesOf, liveIds } };
 }
 
 const norm = (s) => s.replace(/\s+/g, " ").trim();
+
+/** The ```vis <kind> fences in a reply's text: { kind, body }. */
+export function visFences(t) {
+  const out = [];
+  for (const m of t.matchAll(/^```(vis(?:[-:][A-Za-z][\w-]*)?(?:[ \t]+[A-Za-z][\w-]*)?)[ \t]*\n([\s\S]*?)^```[ \t]*$/gm)) {
+    const info = m[1].trim().split(/\s+/);
+    const kind = /^vis[-:](.+)$/.exec(info[0])?.[1] ?? info[1] ?? "";
+    out.push({ kind: kind.toLowerCase(), body: m[2].replace(/\n$/, "") });
+  }
+  return out;
+}
+
+/** Parse the fences with src/vis/parse.ts. The app's TypeScript needs more than Node's type
+    stripping, so Bun (the repo's runtime) runs it; without Bun the check is skipped with a warning. */
+function parseFences(fences, repoRoot) {
+  const parser = join(repoRoot, "src", "vis", "parse.ts");
+  if (!existsSync(parser)) return { skipped: "src/vis/parse.ts not found" };
+  const dir = mkdtempSync(join(tmpdir(), "vis-lint-"));
+  try {
+    const script = join(dir, "lint.ts");
+    writeFileSync(script, `import { parseVis } from ${JSON.stringify(parser)};\nconst input = JSON.parse(await Bun.stdin.text());\nconsole.log(JSON.stringify(input.map((f) => { const r = parseVis(f.kind, f.body); return r.ok ? { ok: true } : r; })));\n`);
+    const out = execFileSync("bun", [script], { input: JSON.stringify(fences.map(({ kind, body }) => ({ kind, body }))), stdio: ["pipe", "pipe", "pipe"] }).toString();
+    return { results: JSON.parse(out) };
+  } catch (e) {
+    return { skipped: e.code === "ENOENT" ? "bun is not on PATH" : String(e.stderr ?? e.message).slice(0, 300) };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
 
 function closest(content, old) {
   const want = old.split("\n").find((l) => l.trim()) ?? old;

@@ -16,14 +16,14 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, readdirSync, readlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 export const CONTRACT_FILE = ".sova/project.json";
 
 // ---- canonical key order (references/contract.md; pinned against the parser by tests/) ----------
 
 export const ORDER = {
-  top: ["version", "slots", "host", "sources", "setup", "data", "services", "open", "hooks", "test", "share", "deploy"],
+  top: ["version", "slots", "host", "sources", "setup", "data", "services", "open", "hooks", "test", "share", "deploy", "merge"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
   data: ["kind", "path", "from", "provision", "deprovision", "timeout", "sensitive"],
@@ -45,6 +45,9 @@ export const ORDER = {
   rollback: ["steps", "none"],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request"],
+  mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
+  mergeInstall: ["run", "inputs", "timeout"],
 };
 /** Maps whose keys are names in declaration order, kept as written. */
 const NAMED_MAPS = new Set(["data", "services", "ports", "env", "targets"]);
@@ -85,6 +88,11 @@ export function canonical(def) {
   if (isObj(d.test)) d.test = sortKeys(d.test, ORDER.test);
   if (isObj(d.share)) d.share = sortKeys(d.share, ORDER.share);
   if (isObj(d.open)) d.open = sortKeys(d.open, ORDER.open);
+  if (isObj(d.merge)) {
+    d.merge = sortKeys(d.merge, ORDER.merge);
+    if (Array.isArray(d.merge.checks)) d.merge.checks = d.merge.checks.map((c) => (isObj(c) ? sortKeys(c, ORDER.mergeCheck) : c));
+    if (isObj(d.merge.install)) d.merge.install = sortKeys(d.merge.install, ORDER.mergeInstall);
+  }
   if (isObj(d.deploy)) {
     d.deploy = sortKeys(d.deploy, ORDER.deploy);
     const steps = (v) => (Array.isArray(v) ? v.map((x) => (isObj(x) ? sortKeys(x, ORDER.deployStep) : x)) : v);
@@ -175,6 +183,18 @@ async function loadContract() {
     contract = null;
   }
   return contract;
+}
+
+let slotsModule;
+/** Sova's slot module (a definition's slot layout), or null outside a Sova checkout. */
+async function loadSlots() {
+  if (slotsModule !== undefined) return slotsModule;
+  try {
+    slotsModule = await import(new URL("../../../shared/project-slots.ts", import.meta.url).href);
+  } catch {
+    slotsModule = null;
+  }
+  return slotsModule;
 }
 
 /** Whether the parser takes `key` (probed with a minimal definition, since its key lists are private). */
@@ -701,15 +721,22 @@ export async function check(file, root) {
   }
   const listen = new Map(listening().map((l) => [l.port, l]));
   const held = sovaHeld().ports;
-  const top = def.slots.cap + 2;
+  // Every slot an instance may take (§app.project-services/instances): slot 0, this definition's usable
+  // slots of 1 to 16 and its scratch slots, whatever the copy limit. A slot whose ports overlap another
+  // place's is no copy's: a note, never a problem.
+  const slots = await loadSlots();
+  const layout = slots?.slotLayoutOf ? slots.slotLayoutOf(def, null) : null;
+  const places = layout ? [0, ...layout.ordinary, ...layout.scratch] : Array.from({ length: 19 }, (_, i) => i);
+  for (const u of layout?.unavailable ?? []) notes.push(`slot ${u.slot} is unavailable: ${u.why} (no copy takes it)`);
   for (const s of def.services) {
     const at = `$.services.${s.name}`;
     if (takesIsolation && !isObj(raw.services?.[s.name]?.isolation)) problems.push(`${at}.isolation: record {method, why} (references/isolation.md)`);
     if (Object.keys(s.ports).length && !s.about) notes.push(`${at}.about: say how a builder uses it (a client command with its port)`);
     for (const [k, p] of Object.entries(s.ports)) {
       if ("fixed" in p && s.scope === "checkout") problems.push(`${at}.ports.${k}: a fixed port on a checkout service gives every instance the same port; use {base, stride}`);
-      for (let slot = 0; slot <= top; slot++) {
+      for (const slot of places) {
         const n = c.portFor(p, slot);
+        if (n > 65535) break;
         const l = listen.get(n);
         const h = held.find((x) => x.port === n && !(resolve(x.project) === resolve(root ?? "") && x.slot === slot && x.service === s.name));
         // Slot 0 is the main checkout's own: what listens there today is usually the app itself.

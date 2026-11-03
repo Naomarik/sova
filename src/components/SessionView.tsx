@@ -32,6 +32,7 @@ import { Banner, Chip, Icon } from "./ui";
 import { hostOf } from "../lib/mesh";
 import { HostStateMark } from "./HostStateMark";
 import { HostScopeProvider } from "../lib/host-scope";
+import { mergeChanged } from "../lib/merge-queue-client";
 
 /**
  * An open session's Regenerate title (§app.session-list/auto-titles), at the start of the
@@ -224,6 +225,9 @@ export function SessionView(props: {
   // loadInsight, not reloadInsight: nothing here says the transcript moved (no `changed` bump).
   const pulse = createMemo(() => teamPulse(agentsFeed(), path));
   createEffect(on(pulse, () => void loadInsight(), { defer: true }));
+  // A merge-queue action or event (Land, Cancel, a landing) changes the worktree rows the composer's
+  // control and the pane draw: read them again.
+  createEffect(on(mergeChanged, () => void loadInsight(), { defer: true }));
 
   const working = () => sessionWorking(s());
   /** What's working, by kind: team members and plain subagents are different things. */
@@ -507,6 +511,9 @@ export function SessionView(props: {
                       overseer={props.overseer}
                       projectOverseer={poControl && !poEarlier && po ? { projectId: po.projectId, onClear: poControl.clear, onReloaded: poControl.onReloaded } : undefined}
                       teams={insight.data?.teams}
+                      worktrees={insight.data?.worktrees}
+                      worktreesTitle={s().title}
+                      onWorktreesChanged={() => void loadInsight()}
                     />
                   );
                 }}

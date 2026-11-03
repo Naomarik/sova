@@ -47,6 +47,70 @@ The policy is saved in `~/.pi/agent/model-policy.json`. The optional
 restrictions in the terminal. Model favorites are read from the command palette's
 `~/.pi/agent/model-favorites.json`.
 
+## Offers: button cards for your project's chats
+
+A project can give its chats a few named **offers**: button cards the agent shows under its reply,
+so you answer "merge it" or "go on" with a click. Declare them in `.sova/offers.json` on the
+project's main checkout (a branch's own copy is never read, so a branch can't give itself offers):
+
+```json
+{ "version": 1, "offers": { "merge": {
+  "when": "The branch's work is finished, committed and its checks passed.",
+  "why": "Saves typing 'merge it'.",
+  "onlyIf": ["branch-ready", "no-open-alignment"],
+  "repeat": "once-per-commit",
+  "title": "Merge {branch} into {base}?",
+  "buttons": [
+    { "label": "Merge", "about": "Sova merges this branch into main now.", "run": "project.worktree.merge" },
+    { "label": "Not yet", "about": "Keep working on this branch.", "send": "Not yet, keep going." } ] } } }
+```
+
+- **The agent picks an offer by name**, with at most a one-sentence note; it never writes a button.
+  It learns each offer only from its `when`, `why` and the buttons' `about` lines. Only ordinary chats
+  get the `offer` tool (pi and Claude Code alike), never workers or the overseers, and only in a
+  project whose file has an offer the agent may show; every other chat's tools are unchanged.
+- **Buttons** either `send` a message as you (`{branch}`, `{base}`, `{commit}`, `{project}` are
+  filled in) or `run` one of Sova's own actions on the session's branch (today only
+  `project.worktree.merge`, for a coding session a project's overseer tracks). A file with any run
+  button needs your approval on the project page (Settings tab, **Offers**): **Approve Run Buttons**.
+  Changing a run button asks again.
+- **Limits**: at most 8 offers and 4 buttons each; `onlyIf` takes `branch-ready`,
+  `waiting-for-ok`, `tree-clean`, `no-open-alignment` and `specs-promoted`; `repeat` is
+  `once-per-commit` (the default), `once-per-reply` or `once-per-session`. `"disabled": true` turns
+  one off; `"shownBy": "another-chat"` keeps it for another chat to show
+  (`sova run session.offers.show --session <path> --offer <name> --from <its own session>`). A
+  broken offer is listed with its reason on the project page and never hides the others.
+- **The file is the only switch.** Sova reads it again at every show and click, so removing an
+  offer stops it at once, in running chats too. A chat's tool keeps the offers it started with: new
+  ones reach new chats. **Not Now** on a card hides that offer for the rest of that session.
+
+## The Project Overseer sets up the project for you
+
+The Project Overseer (Open Overseer on a project page) knows every setting of its project and can
+change any of them for you: its own (Watch, what may happen without you, models, limits, the hold,
+extra instructions, its memory), the project's name, and the project's files: services
+(`.sova/project.json`), session profiles (`.sova/profiles/`), playbooks and their schedules, project
+modes (`.sova/minor-modes/`) and offers (`.sova/offers.json`). Ask it in plain words ("add an offer
+that asks to carry on", "let the Reviewer profile read other sessions").
+
+- **What narrows it applies at once.** Turning a power off, lowering a limit or picking a model
+  applies in your turn, with **Undo** on its card and in the Settings history.
+- **Everything else waits for your click.** A change that widens what can happen without you (a
+  power on, a limit raised, the hold shortened, a profile, schedule, mode or offer that needs
+  approval, the services file) and every change to the project's files waits on a **Settings change
+  card**: each setting with its before and after, what approving it allows, and **Show File Changes**.
+  **Apply and Approve** applies it, lands the file changes on the project folder's branch as one
+  commit (settings files only, Sova's own project included) and records the approvals of exactly
+  what the card showed. The overseer never approves anything itself, and on its own looks it only
+  prepares cards.
+- **Uncommitted settings edits** in the project folder show as one card too: **Land** commits them,
+  **Discard Edits** puts them back.
+- **The Settings tab** lists every project setting under **All settings**, with its state and where
+  it is changed or approved, the cards waiting, and the **Settings history** with **Undo**. From a
+  script: `sova run project.settings.get --pid <id>`, `project.settings.history`,
+  `project.settings.undo`, `project.settings.propose.withdraw` and `project.overseer.settings.set`;
+  applying a card is yours, on the page.
+
 ## Optional extensions
 
 Parallel web sessions, shared prompts, branching, and transcript browsing are Sova features.
@@ -184,8 +248,9 @@ installs, and it never calls your backend to answer.
 
 What an entry offers is in `GET /api/extensions` as its `offers` field (since extension contract
 v1.15):
-`commands` as `{name, label, summary?}` and `screens`, each only when something valid is declared.
-An entry that declares neither has no `offers` field, as before.
+`commands` as `{name, label, summary?}` and `screens`, and since v1.17 `cards` and `drawings`
+(each checked declaration by its `<id>.<name>`), each only when something valid is declared.
+An entry that declares none of them has no `offers` field, as before.
 
 **Under replies.** With `"screens": ["reply"]`, Sova shows what your backend says under the replies
 of a chat on this machine, after Sova's own buttons. It asks once when the chat opens, once when a
@@ -270,6 +335,43 @@ never on a later poll, and draws what you answer as data:
 - Answer within 2 seconds, with at most 64 KB. A late, malformed or oversized answer draws nothing;
   after 3 in a row Sova stops asking until the page reloads. The user can hide the line from your
   page (`Hide on Home Card`). While your backend is down, Sova doesn't ask.
+
+**Cards and drawings in chats** (extension contract v1.17). An entry may add card types and
+drawing kinds to chat transcripts, with the meanings and rules of a project's own
+(`.sova/cards/<name>/card.json`, `.sova/drawings/<name>/kind.json`):
+
+```json
+{ "id": "notes", "dist": "/home/you/notes-ext/dist", "api": "http://127.0.0.1:4840",
+  "cards": [{ "name": "review", "title": "Review", "when": "When a note needs the user's review",
+               "draws": "view", "view": "cards/review.js", "toolkit": 1, "answer": "at-once",
+               "data": { "type": "object", "properties": { "note": { "type": "string" } }, "required": ["note"] } }],
+  "drawings": [{ "name": "mindmap", "accepts": "text", "view": "drawings/mindmap.js",
+                  "guide": "drawings/mindmap.md", "toolkit": 1, "height": 240 }] }
+```
+
+- `cards`: up to 16, each `{name, title, when?, draws, data?, answer?, placement?, height?, view?,
+  toolkit}`. `draws` is `question`, `checklist`, `status`, `table`, `buttons` (Sova draws them) or
+  `view`, your own view module. Its type is `<id>.<name>` (`notes.review`); the agent raises it with
+  its `card` tool when it has a `when`, and your backend with `session.card.post` at any time.
+- `drawings`: up to 8, each `{name, accepts, data?, height?, view, guide, toolkit}`. `accepts` is
+  `text` (the fence's body as text) or `data` (JSON checked against `data`, a JSON Schema of types,
+  required fields, enums and lengths). The agent draws one as a ` ```vis notes.mindmap ` fence and
+  reads your `guide` (markdown) through its `vis_guide` tool while the vis mode is on.
+- `view` and `guide` are paths inside `dist`. A view is an ES module that imports `sova:card`
+  (`import { card, mount } from "sova:card"`), `solid-js` and files beside it. Sova bundles it with
+  its own fixed settings and runs it only in a sealed box, walled off from Sova and the network,
+  told only its own card's data (a drawing: its fence's body as `card.data()`). A drawing only
+  draws: it has no answer and runs no commands.
+- Rebuilding a view module redraws every card and drawing using it, within about a second, each
+  keeping its data, answer and state. The declarations themselves are fixed per chat: a chat keeps
+  the ones installed when it started.
+- Each declaration is checked on its own: a bad one (an unknown key, a bad name, a path outside
+  `dist` or missing) is left out and logged, never the entry or its other ones. An id of `project`
+  declares none: that is the namespace of a project's own.
+- The first time one of your cards wants to act (send, run a command) it asks the user to trust
+  your extension's cards, once. A view runs no command at all until then, not even one that only
+  reads: untrusted, it has only its own card's data, state and answer. Your page shows Stop Trusting Cards
+  while they are trusted.
 
 To open a session the extension just created, hand it to Sova rather than setting the page's
 hash. A new session has no messages yet, so it isn't in Sova's list, and `#/s/<path>` would find

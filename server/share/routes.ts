@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { extname, join } from "node:path";
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { FILES_PER_MESSAGE, SHARE_TEXT_MAX, type GoneWhy } from "../../shared/baton";
 import { FRAME_HOST_NAME, FRAME_HOST_PATH, frameHostHeaders } from "../../shared/vis-frame-host";
 import { linkAccess, nameOf, noteMessage, sessionPathOf, undoNote } from "../baton";
@@ -13,10 +13,10 @@ import { imageForToken, refreshShare, viewForToken } from "./hub";
 import { assertBudget, countUpload, dropStaged, ensureSweep, isPhotoType, photoCount, PhotoRefusal, photosFor, stagePhoto, takeStaged, type SdkImage } from "../baton-images";
 import { askForNewLink, noteOwnerUse, ownerAccess } from "../owner";
 import { attentionChanged } from "../attention-memo";
-import { ownerVersionOf, ownerView } from "../owner-page";
+import { ownerConversationOlder, ownerVersionOf, ownerView } from "../owner-page";
 import { openVersion, STARTING_PAGE } from "../owner-versions";
-import { AssistantRefusal, assistantPhoto, assistantPhotoLimits, assistantStagingKey, assistantView, sendOwnerMessage } from "../project-assistant";
-import { readAssistantStore } from "../project-assistant-store";
+import { AssistantRefusal, assistantOlder, assistantPhoto, assistantPhotoLimits, assistantStagingKey, assistantView, sendOwnerMessage } from "../project-assistant";
+import { assistantReady } from "../project-assistant-ready";
 import { ASSISTANT_TEXT_MAX } from "../../shared/project-assistant";
 import { mountSessionShareRoutes } from "./session-routes";
 import { mountPublicTourRoutes } from "./tour-routes";
@@ -407,6 +407,38 @@ export function createShareApp(): Hono {
     if (classify(c.req.header("user-agent")).kind === "person") noteOwnerUse(access);
     return c.json(await assistantView(access.orgId));
   });
+  // Earlier pages (§app.project-assistant/chat, Paged; §app.owner-page/page): the chat's, and a conversation's.
+  const beforeOf = (c: Context): number | null => {
+    const raw = c.req.query("before") ?? "";
+    return /^(?:0|[1-9][0-9]{0,6})$/.test(raw) ? Number(raw) : null;
+  };
+  app.get("/api/i/:token/assistant/older", async (c) => {
+    const token = c.req.param("token");
+    if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    const before = beforeOf(c);
+    if (before === null) return c.json(refusal("bad-request", "before is a message number."), 400);
+    if (classify(c.req.header("user-agent")).kind === "person") noteOwnerUse(access);
+    return c.json(await assistantOlder(access.orgId, before));
+  });
+  app.get("/api/i/:token/c/:handle/older", async (c) => {
+    const token = c.req.param("token");
+    if (ownerTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    const before = beforeOf(c);
+    if (before === null) return c.json(refusal("bad-request", "before is a position."), 400);
+    try {
+      const page = await ownerConversationOlder(access.orgId, c.req.param("handle"), before);
+      if (classify(c.req.header("user-agent")).kind === "person") noteOwnerUse(access);
+      return c.json(page);
+    } catch (err) {
+      // An unknown handle, a hidden conversation and a project switched off answer alike.
+      if (err instanceof OrgError && err.status === 404) return c.json(refusal("missing", "Not found."), 404);
+      throw err;
+    }
+  });
   app.post("/api/i/:token/assistant", async (c) => {
     const token = c.req.param("token");
     const access = ownerAccess(token);
@@ -441,7 +473,7 @@ export function createShareApp(): Hono {
     const token = c.req.param("token");
     const access = ownerAccess(token);
     if (!access.ok) return ownerDead(c, access);
-    if (!readAssistantStore(access.orgId).models.reply) return c.json(refusal("not-ready", "The Project Assistant isn't ready yet."), 409);
+    if (!(await assistantReady(access.orgId))) return c.json(refusal("not-ready", "The Project Assistant isn't ready yet."), 409);
     const photos = await assistantPhotoLimits(access.orgId).catch(() => null);
     if (!photos) return c.json(refusal("no-photos", "Photos can't be sent here."), 409);
     const mime = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
@@ -511,6 +543,55 @@ export function createShareApp(): Hono {
     if (r.status === 409) return c.json(refusal("live", "This link still works."), 409);
     return ownerDead(c, ownerAccess(token));
   });
+  // The owner's own feature request chat (§app.project-assistant/feature-chats): their message, and End Chat. Only a
+  // chat this person opened while they are the owner; anything else answers 404, as a handle that never existed.
+  const featureRoute = (act: (orgId: string, personId: string, handle: string, body: Record<string, unknown>) => Promise<void>, keys: readonly string[]) => async (c: Context) => {
+    const token = c.req.param("token") ?? "";
+    const access = ownerAccess(token);
+    if (!access.ok) return ownerDead(c, access);
+    let body: unknown = {};
+    if (keys.length)
+      try {
+        body = await c.req.json();
+      } catch {
+        return c.json(refusal("bad-request", "Expected JSON { text }."), 400);
+      }
+    if (typeof body !== "object" || body === null || Array.isArray(body) || Object.keys(body).some((k) => !keys.includes(k))) return c.json(refusal("bad-request", `Only { ${keys.join(", ")} } is accepted.`), 400);
+    if (tokenLimited(token)) return c.json(refusal("rate-limited", "Too many messages. Wait a minute."), 429);
+    try {
+      await act(access.orgId, access.link.personId, c.req.param("handle") ?? "", body as Record<string, unknown>);
+    } catch (err) {
+      if (err instanceof OrgError) {
+        if (err.code === "busy") return c.json(refusal("busy", "The chat can't take a message right now. Try again in a moment."), 503);
+        if (err.status === 404) return c.json(refusal("missing", "Not found."), 404);
+        return c.json(refusal(err.code ?? "refused", err.message), err.status === 400 ? (err.code === "too-long" ? 413 : 400) : 409);
+      }
+      console.warn(`[share] feature chat on ${tokenTag(token)} refused: ${err instanceof Error ? err.message : String(err)}`);
+      return c.json(refusal("busy", "The chat can't take a message right now. Try again in a moment."), 503);
+    }
+    noteOwnerUse(access);
+    return c.json({ ok: true }, 202);
+  };
+  // The owner's message: in their feature request chat, or their answer to a conversation that waits on them
+  // (§app.owner-page/content, Answering on the page), taken as a hand-off link's would be.
+  app.post(
+    "/api/i/:token/c/:handle/message",
+    featureRoute(async (orgId, personId, handle, body) => (await import("../owner-answer")).sendOwnerPageMessage(orgId, personId, handle, body.text), ["text"]),
+  );
+  app.post(
+    "/api/i/:token/c/:handle/end",
+    featureRoute(async (orgId, personId, handle) => {
+      const f = await import("../feature-chats");
+      await f.ownerEndsFeatureChat(orgId, f.ownersChatByHandle(orgId, personId, handle).sessionId);
+    }, []),
+  );
+  // The owner closes or reopens their own request (§app.project-assistant/closing), by its page handle.
+  app.post(
+    "/api/i/:token/requests/:handle",
+    featureRoute(async (orgId, personId, handle, body) => {
+      await (await import("../owner-request-close")).ownerRequestAction(orgId, personId, handle, body.action);
+    }, ["action"]),
+  );
   app.get("/api/i/:token", ownerRead(() => ({})));
   app.get("/api/i/:token/p/:handle", ownerRead((c) => ({ project: c.req.param("handle") ?? "" })));
   app.get("/api/i/:token/c/:handle", ownerRead((c) => ({ conversation: c.req.param("handle") ?? "" })));

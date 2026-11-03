@@ -8,6 +8,7 @@
 
 import type { AlignDocInfo, AlignQuestionInfo, AlignReportInfo, AlignRowInfo, ReportInfo, TranscriptItem } from "../../shared/protocol";
 import type { Tone } from "../components/ui";
+import { newestByKey } from "./transcript-placement";
 
 export type AlignStatus = "aligning" | "confirmed" | "implementing" | "done" | "dropped";
 export type AlignQuestionState = "open" | "decided" | "dropped";
@@ -165,9 +166,12 @@ export function foldAlignRows(
 
 /** Row id → true for the newest row of each document: those render the full card, the rest one line. */
 export function newestAlignRows(items: readonly TranscriptItem[]): Set<string> {
-  const newest = new Map<string, string>();
-  for (const it of items) if (it.kind === "align" && it.align?.doc) newest.set(it.align.doc.id, it.id);
-  return new Set(newest.values());
+  return newestByKey(items, alignKey, (it) => it.id);
+}
+
+/** An alignment row's card: its document, shared by every revision. */
+export function alignKey(it: TranscriptItem): string | undefined {
+  return it.kind === "align" ? it.align?.doc?.id : undefined;
 }
 
 /** The composer chip's counts over the open documents: how many, their decided questions, all their live questions. */
@@ -255,9 +259,9 @@ export function alignMetrics(a: AlignInfo): string {
   return parts.join(" · ");
 }
 
-/** The meta line's writing style mark (§chat.alignment/card): "Simplified style", "Project manager style"; none for Default. */
+/** The meta line's writing style mark (§chat.alignment/card): "Project manager style", "Simplified style", "Technical style"; none on an older document that recorded no style. */
 export function alignStyleMark(doc: Pick<AlignDocInfo, "style">): string | undefined {
-  return doc.style === "pm" ? "Project manager style" : doc.style === "simplified" ? "Simplified style" : undefined;
+  return doc.style === "pm" ? "Project manager style" : doc.style === "simplified" ? "Simplified style" : doc.style === "default" ? "Technical style" : undefined;
 }
 
 /** A visual as the fence the chat draws it from: `vis {kind}`, its source as the body (a source holding a backtick fence takes tildes). */

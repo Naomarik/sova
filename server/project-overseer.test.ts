@@ -2,6 +2,7 @@
 // this tree's pi-config extensions linked in, so "no pi-config extension loads" is a real claim), an
 // org workspace and a project root in the OS temp dir; ~/.pi is never touched. No model is called.
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -39,6 +40,7 @@ const { watchSid } = await import("./projects/sids");
 const orgPart = await import("./overseer-org-part");
 const { fakeLooks, noteWatchReason, seedBuild } = await import("./org-test-fixtures");
 const { stateRoot } = await import("./state-root");
+const { EXCLUDED_REFUSAL, OTHER_PROJECT_REFUSAL } = await import("./overseer-deny");
 
 after(async () => {
   await disposeAllChats();
@@ -180,12 +182,14 @@ describe("a project overseer", async () => {
     const info = await po.projectOverseerInfo(project.id);
     assert.equal(info.effective.autonomy, "L2");
     const prompt = po.renderProjectOverseerPrompt(project.id, []);
-    assert.match(prompt, /Level in force now: \*\*L2/);
+    // What it may do on its own is the powers in force, never a level (al_5: the stale L0–L3 text is gone).
+    assert.match(prompt, /On your own you may: [^\n]*Promote decisions into the spec/);
+    assert.doesNotMatch(prompt, /Level in force|\bL[0-3]\b/, "no level anywhere in its prompt, the organization's part included");
     assert.match(prompt, /Tony \(id p_[a-z0-9]+\) — IT; decides: invoicing/);
   });
 });
 
-describe("its reach: the project root only", async () => {
+describe("its reach: read anywhere but other clients' work and the state; write in the root", async () => {
   // A context file in the agent dir and one above the root (the host's), one in the root (the project's).
   const box = join(root, "p4");
   const projRoot = join(box, "proj");
@@ -207,12 +211,56 @@ describe("its reach: the project root only", async () => {
     }
   };
 
-  test("its file tools read the root and refuse the org's workspace, the folder above and the agent dir", async () => {
+  test("its file tools read anywhere but every org's workspace, another organization's projects, Sova's and pi's state", async () => {
     assert.match(await run("read", { path: "README.md" }), /inside/);
-    for (const p of ["../outside.txt", join(root, "ws4", "org.json"), join(agentDir, "AGENTS.md")]) assert.match(await run("read", { path: p }), /^ERROR: .*outside the project root/, p);
-    assert.match(await run("ls", { path: join(root, "ws4") }), /^ERROR: .*outside the project root/);
-    assert.match(await run("grep", { pattern: "context", path: box }), /^ERROR: .*outside the project root/);
-    assert.match(await run("find", { pattern: "*", path: root }), /^ERROR: .*outside the project root/);
+    // Outside the root: the folder above it, and a project of its own organization, read.
+    assert.match(await run("read", { path: "../outside.txt" }), /outside/);
+    const sibling = join(box, "sibling");
+    mkdirSync(sibling, { recursive: true });
+    writeFileSync(join(sibling, "NOTES.md"), "sibling\n");
+    await orgs.addProject(org.id, { name: "Reach Two", root: sibling });
+    assert.match(await run("read", { path: join(sibling, "NOTES.md") }), /sibling/, "a project of its own organization");
+    assert.match(await run("ls", { path: box }), /outside\.txt/);
+    // Another organization's project (Gate's Portal, above): another client's work.
+    writeFileSync(join(root, "proj", "GATE.md"), "gate\n");
+    // …its git worktrees (the one Sova would cut beside the repo, one anywhere) and a running copy's checkout too.
+    const g = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main", ...a], { cwd, stdio: "ignore" });
+    g(join(root, "proj"), "init", "-q");
+    g(join(root, "proj"), "add", "GATE.md");
+    g(join(root, "proj"), "commit", "-qm", "gate");
+    const besideWt = join(root, ".worktrees", "proj-x");
+    const otherWt = join(root, "elsewhere-wt");
+    g(join(root, "proj"), "worktree", "add", "-q", "-b", "x", besideWt);
+    g(join(root, "proj"), "worktree", "add", "-q", "-b", "y", otherWt);
+    const copy = join(root, "copy-gate");
+    mkdirSync(copy);
+    writeFileSync(join(copy, "GATE.md"), "gate\n");
+    const { mutateRegistry } = await import("./project-services/store");
+    mutateRegistry((r) => void r.instances.push({ id: "gate-copy", project: join(root, "proj"), checkout: copy, branch: null, slot: 1, generation: 1, createdBy: "operator", createdAt: new Date().toISOString(), cutWorktree: false, desired: {}, prints: {}, data: {}, ports: {} }));
+    for (const dir of [join(root, "proj"), besideWt, otherWt, copy])
+      for (const [name, params] of [["read", { path: join(dir, "GATE.md") }], ["ls", { path: dir }], ["grep", { pattern: "gate", path: dir }], ["find", { pattern: "*", path: dir }]] as const)
+        assert.equal(await run(name, params), `ERROR: ${OTHER_PROJECT_REFUSAL}`, `${name} ${JSON.stringify(params)}`);
+    // Searched from a folder they share, they are left out (fd and rg in-process, server/search-tools-fake.ts).
+    const { setSearchSpawnForTest } = await import("./overseer-file-tools");
+    setSearchSpawnForTest((await import("./search-tools-fake")).fakeSearchSpawn());
+    try {
+      writeFileSync(join(box, "GATE.md"), "gate\n");
+      const grepped = await run("grep", { pattern: "gate", path: root });
+      assert.match(grepped, /p4\/GATE\.md/, "the search ran");
+      assert.doesNotMatch(grepped, /(proj|proj-x|elsewhere-wt|copy-gate)\/GATE\.md/, grepped);
+      const found = await run("find", { pattern: "**/GATE.md", path: root });
+      assert.match(found, /p4\/GATE\.md/, "the search ran");
+      assert.doesNotMatch(found, /(proj|proj-x|elsewhere-wt|copy-gate)\/GATE\.md/, found);
+    } finally {
+      setSearchSpawnForTest(null);
+    }
+    // Every org's workspace (its own included), the agent dir and Sova's state.
+    for (const p of [join(root, "ws4", "org.json"), join(root, "ws", "org.json"), join(agentDir, "AGENTS.md"), join(agentDir, "sova", "x.json")]) assert.equal(await run("read", { path: p }), `ERROR: ${EXCLUDED_REFUSAL}`, p);
+    assert.equal(await run("ls", { path: join(root, "ws4") }), `ERROR: ${EXCLUDED_REFUSAL}`);
+    assert.equal(await run("find", { pattern: "*", path: agentDir }), `ERROR: ${EXCLUDED_REFUSAL}`);
+    // A listing from a parent leaves them out.
+    const listed = await run("ls", { path: root });
+    assert.doesNotMatch(listed, /^(ws4?|agent|proj)\/?$/m, listed);
   });
 
   test("its write and edit are the operator's: a run it did not get from them (a fresh runtime) writes nothing, and the action log says so", async () => {
@@ -692,7 +740,8 @@ describe("limits through PATCH, held items and their retry", async () => {
     const prompt = po.renderProjectOverseerPrompt(project.id, po.toolsForTest(project.id));
     assert.match(prompt, /Every start names its gap \(`gap: "§gap\/<name>"`\), or\s+`gap: "none"`/);
     assert.match(prompt, /Don't do these again by hand: read the feed first\./);
-    assert.match(prompt, /wait past the hold for your review: approve\s+them early or cancel them with `sova_hold` \(a reason is required\)/);
+    assert.match(prompt, /Nothing waits for your own approval, and you approve nothing: `sova_hold` cancels a held act\s+\(a reason is required\)/);
+    assert.doesNotMatch(prompt, /needs overseer confirmation|approve\s+them early/);
     assert.match(prompt, /`gap: "none"` builds only in a\s+turn the operator started\./);
     assert.match(prompt, /`sova_correct` and a reason/);
     assert.match(prompt, /\(`sova_set_state`\) is\s+only for a turn the operator started/);
@@ -714,10 +763,10 @@ describe("a standalone project's prompt names nothing of an organization", async
   const { project } = await registerProjectIn("standalone", join(root, "proj-alone"), { name: "Alone", origin: "folder" });
   await po.ensureProjectOverseer(project.id);
 
-  test("its level reads as a standalone project's, and its limits leave out gathering sessions and promotions", async () => {
+  test("its powers read as a standalone project's, and its limits leave out gathering sessions and promotions", async () => {
     await po.patchProjectOverseer(project.id, { autonomy: "L1" });
     const prompt = po.renderProjectOverseerPrompt(project.id, po.toolsForTest(project.id));
-    assert.match(prompt, /L1 — Gather: may also publish preview links of its coding sessions' apps\./);
+    assert.match(prompt, /On your own you may: Fix the pipeline's bookkeeping; Share a version to try\./);
     assert.match(prompt, /each message the operator sends: coding sessions \S+, prompts to them \S+; on your own each day: coding sessions /);
     assert.match(prompt, /at once: \d+ coding sessions running/);
     assert.doesNotMatch(prompt, /gathering session|promotion|roster/i);

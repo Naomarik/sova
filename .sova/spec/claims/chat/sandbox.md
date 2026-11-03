@@ -141,7 +141,8 @@ services, and sends the network through an allowlisting proxy, on Linux and on m
 On means the policy file's `level`: `workspace-write` by default, `read-only` if the file says
 so. It is not a choice in the UI. Under `workspace-write`:
 
-- **Filesystem.** The whole filesystem is readable and read-only, except the session's cwd, a
+- **Filesystem.** The whole filesystem is readable and read-only, except the session's cwd (not
+  when it is the home folder standing in for a folder that is gone, §app.shell/missing-folder-home), a
   per-session tmp mounted as `/tmp`, the policy's `writable` roots (`~/.local/state/mise` in
   the shipped policy), and the session's active tracked worktrees, each with its `.agent`
   read-only (§chat.worktrees/sandbox). `read-only` drops the cwd, the `writable` roots and the
@@ -157,7 +158,8 @@ so. It is not a choice in the UI. Under `workspace-write`:
   the sandbox fails closed on it. Under `read-only` nothing is shadowed and the caches are
   read-only.
 - **Hidden secrets.** Credential directories read as empty and read-only (`~/.ssh`, `~/.gnupg`,
-  `~/.aws`, `~/.docker`, `~/.config/gh`, the agent dir's `claude-accounts/`, where every added
+  `~/.aws`, `~/.docker`, `~/.config/gh`, GitLab's tool's `~/.config/glab-cli` (and on macOS
+  `~/Library/Application Support/glab-cli`), the agent dir's `claude-accounts/`, where every added
   Claude login keeps its own credentials, §app.claude-logins/registry), and credential files cannot be opened at all
   (`~/.netrc`, `~/.git-credentials`, pi's `auth.json`, Claude Code's credentials). The list is
   the policy's `hidden`.
@@ -199,7 +201,8 @@ so. It is not a choice in the UI. Under `workspace-write`:
   ("Device or resource busy") instead of letting a fresh copy be planted in its place.
 - **Environment allowlist.** Commands see only allowlisted variables (`PATH`, `HOME`, locale,
   `TERM`, `TZ`, `TMPDIR`, pi's own `PI_*`, toolchain homes, the proxy variables). Everything else
-  is dropped: session-bus and agent sockets, `DISPLAY`, `TMUX`, provider API keys, tokens.
+  is dropped: session-bus and agent sockets, `DISPLAY`, `TMUX`, provider API keys, tokens. To
+  these the sandbox adds one of its own, `GIT_CONFIG_SYSTEM` (§chat.sandbox/git-cleanup).
 - **The file tools see the same view.** For `read`, `write`, `edit`, `ls`, `find` and `grep`,
   `/tmp` is the session tmp, as it is for `bash`, except where a writable root sits under `/tmp`.
   `find` and `grep` drop results under hidden paths and say how many they dropped.
@@ -296,6 +299,26 @@ same holds for a session whose model is Claude (the chat provider).
 
 Any worker whose enforcement is `partial` refuses to start unattended unless the policy sets
 `acceptPartial`.
+
+## §chat.sandbox/git-cleanup — Sandboxed commands start no background git cleanup
+
+A sandboxed command's processes all end when the command ends (§chat.sandbox/limits), so a
+background git cleanup started by a commit, a merge or a fetch inside it would be cut off partway
+(§app/git-cleanup). So every sandboxed command, in every project and at either level, a
+write-only worker's included, runs with `GIT_CONFIG_SYSTEM` naming a git system config the sandbox
+writes into the session's tmp, `sova-no-background-cleanup.gitconfig` under the command's
+`TMPDIR`: the machine's own git system config, then `maintenance.auto = false` and `gc.auto = 0`,
+written as §app.git-cleanup/no-background says. The backend adds it itself, after the environment
+allowlist, on Linux and on macOS; an inherited `GIT_CONFIG_SYSTEM` is dropped by the allowlist as
+before and only decides which machine config is copied in. Commits are as fast as before.
+
+- **What still overrides it** is §app.git-cleanup/no-background's list: a command's own
+  `GIT_CONFIG_SYSTEM` or `GIT_CONFIG_NOSYSTEM`, `-c`, or `maintenance.auto` or `gc.auto` set in a
+  repository's or the user's own config. A command's own `GIT_CONFIG_COUNT` adds to it and never
+  drops it.
+- **The file is the command's to change.** It sits in the session's tmp, which commands may
+  write; the sandbox writes it again before every command, so one that deletes or edits it changes
+  only itself and the commands it starts.
 
 ## §chat.sandbox/backends — Platform-neutral: Linux and macOS
 

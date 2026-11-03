@@ -3,7 +3,9 @@
  *
  * The set is the session's own `worktrees` custom entry (state.ts), a whole snapshot per change,
  * restored from the branch like mode's and the sandbox's. The parent agent manages it with one
- * tool, `worktree` (create, attach, detach, merge, list); there is no command and no pane control.
+ * tool, `worktree` (create, attach, detach, merge, land, list); there is no command and no pane control.
+ * `land` acts on the user's go-ahead typed in this chat ("land it"): in a repo Sova's merge queue serves (served.ts) it
+ * records it for the queue (landing.ts); in any other repo it is a plain merge into the main branch, as `merge` is there.
  * Workers never load this extension (subagents refuses it as a worker extension), so they never
  * have the tool.
  *
@@ -21,8 +23,11 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { createWorktree, defaultTarget, forkPoint, GitError, type Git, inspectWorktree, landedStats, mergeWorktree, type MergeProbe, probeMerge, runGit } from "./git.ts";
-import { type MergeSpecReport, mergeSpecReport, specLines } from "./spec.ts";
+import { dirname } from "node:path";
+import { createWorktree, defaultTarget, forkPoint, GitError, type Git, inspectWorktree, landedStats, listWorktrees, mergeWorktree, type MergeProbe, probeMerge, runGit } from "./git.ts";
+import { landingFile, newestUserMessage, recordGoAhead, typedGoAhead } from "./landing.ts";
+import { servedFile, servedKey, servedRoot } from "./served.ts";
+import { carryAgreedDrafts, landDocs, type MergeSpecReport, mergeSpecReport, specLines } from "./spec.ts";
 import {
 	activeTrees,
 	canonical,
@@ -50,7 +55,7 @@ const SANDBOX_DISCOVER_EVENT = "sandbox:discover";
 const REMOTE_SESSION_EVENT = "remote:session";
 const REMOTE_DISCOVER_EVENT = "remote:discover";
 
-const Action = StringEnum(["create", "attach", "detach", "merge", "list"] as const);
+const Action = StringEnum(["create", "attach", "detach", "merge", "land", "list"] as const);
 
 /** @internal Test seam. */
 export interface WorktreesOptions {
@@ -58,12 +63,58 @@ export interface WorktreesOptions {
 	now?: () => number;
 	/** The spec report of a merge (default spec.ts `mergeSpecReport`). */
 	specReport?: typeof mergeSpecReport;
+	/** The docs step before a merge (default spec.ts `landDocs`). */
+	docs?: typeof landDocs;
+	/** The agreed drafts a new worktree takes from the main checkout (default spec.ts `carryAgreedDrafts`). */
+	carry?: typeof carryAgreedDrafts;
+	/** Where `land` records the go-ahead (default landing.ts `landingFile()`). */
+	landingFile?: () => string;
+	/** Whether Sova's merge queue serves a repo, asked with its main-checkout root at each `merge` and `land`
+	    (default `queueServes`: the server's merge-served.json, read afresh). Served: `merge` into the branch the
+	    queue lands into is refused and `land` records the go-ahead; unserved: both are plain merges. A boolean
+	    answers for every repo; a string is the queue's target branch (served). */
+	mergeQueue?: boolean | ((mainRoot: string) => boolean | string);
+}
+
+/** The default `mergeQueue` answer: a chat Sova didn't start (no `SOVA_CHAT_STATE_ROOT`) merges plainly; one it
+ *  did asks the server's merge-served.json, and an absent or damaged file reads as served (fail closed: a served
+ *  repo never merges around its queue). → false | true | the queue's target branch. */
+export function queueServes(mainRoot: string, env: NodeJS.ProcessEnv = process.env): boolean | string {
+	if (!env.SOVA_CHAT_STATE_ROOT) return false;
+	const s = servedRoot(mainRoot, servedFile(env));
+	return s === "unknown" ? true : s ? s.target : false;
 }
 
 export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = {}) {
 	const git = options.git ?? runGit;
 	const now = options.now ?? Date.now;
 	const specReport = options.specReport ?? mergeSpecReport;
+	const docsOf = options.docs ?? landDocs;
+	const carryOf = options.carry ?? carryAgreedDrafts;
+	const goAheadFile = options.landingFile ?? (() => landingFile());
+	const mergeQueue = options.mergeQueue ?? ((root: string) => queueServes(root));
+
+	/** Whether the queue serves the repo `cwd` is in: false, or the queue's target branch (true: served, target unknown). */
+	async function servedAt(cwd: string): Promise<boolean | string> {
+		if (typeof mergeQueue === "boolean") return mergeQueue;
+		const r = await git(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
+		if (r.code !== 0) throw new GitError(`Not a git repository: ${cwd}`);
+		return mergeQueue(servedKey(dirname(r.stdout.trim())));
+	}
+
+	/** A plain merge of a worktree's branch into `target`: its spec drafts made official on it first (unless
+	    `withoutDocs`; drafts that don't fit stop it), then the merge, the record when tracked, and the card. */
+	async function plainMerge(t: { path: string; branch: string }, tracked: TrackedWorktree | undefined, target: string, withoutDocs: boolean) {
+		const docs = withoutDocs ? undefined : await docsOf(git, { path: t.path, branch: t.branch, target });
+		if (docs?.state === "refused") throw new Error(docs.text);
+		const { before, branchSha, ...m } = await mergeWorktree(git, { tree: t, target });
+		if (tracked) markMerged(tracked, { target: m.target, sha: m.sha, how: "tool" });
+		const spec = await reportOf(t.path, t.branch, before, m.sha, branchSha, target);
+		card({ ...m, how: "tool" });
+		const specText = spec ? specLines(spec, said).map((l) => `\n${l}`).join("") : "";
+		const docsText = docs?.state === "landed" ? `\nIts spec drafts were made official first, as one docs commit ${shortSha(docs.sha)} (${docs.counts.added} new, ${docs.counts.changed} changed${docs.counts.removed ? `, ${docs.counts.removed} removed` : ""}: ${docs.drafts.join(", ")}).` : "";
+		return { m, text: `${mergeNote(m)} (${m.fastForward ? "fast-forward" : "merge commit"}).${docsText}${specText}`, details: { merge: m, ...(spec ? { spec } : {}), ...(docs && docs.state !== "none" ? { docs } : {}) } };
+	}
 	let set: WorktreesActive | undefined;
 	let sessionId = "";
 	let sandboxOn = false;
@@ -201,19 +252,22 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 		name: "worktree",
 		label: "Worktree",
 		description:
-			"Manage the git worktrees this session works in. create {name, base?, path?} runs git worktree add -b feat/<name> (default path <parent of the main checkout>/.worktrees/<repo>-<name>, base the session cwd's HEAD); attach {path} tracks an existing worktree's top level (one another session created is fine); detach {path} stops tracking it (nothing is deleted); merge {path, target?} merges its branch into target (default master) where target is checked out and clean, else fast-forward only; list shows the set. Workers may start only in the session cwd or inside an active tracked worktree.",
-		promptSnippet: "Create, attach, detach, merge and list this session's git worktrees",
+			"Manage the git worktrees this session works in. create {name, base?, path?} runs git worktree add -b feat/<name> (default path <parent of the main checkout>/.worktrees/<repo>-<name>, base the session cwd's HEAD); attach {path} tracks an existing worktree's top level (one another session created is fine); detach {path} stops tracking it (nothing is deleted); merge {path, target?} merges its branch into another branch (into main or master only as this turn's Sova landing note allows; the branch's spec drafts are made official first unless withoutDocs); land {path?} lands the branch at its head commit the way this turn's Sova landing note says, on the user's word typed in this chat (\"land it\", \"merge it\"; default the worktree this session's folder is in; only when the user's newest message says so, with nothing uncommitted); list shows the set. Workers may start only in the session cwd or inside an active tracked worktree.",
+		promptSnippet: "Create, attach, detach, merge, land and list this session's git worktrees",
 		promptGuidelines: [
 			"Use the worktree tool, not bash, to create or track a git worktree: workers may only start in this session's cwd or inside a worktree the session tracks.",
-			"Merge a worktree's branch with worktree merge so the merge is recorded; a merge you make with plain git during a turn is detected afterwards.",
+			"Merge a branch into main or master only as this turn's Sova landing note for that repo allows.",
+			"When the user types in this chat that its branch should land (\"land it\", \"merge it\"), commit what is left, then call worktree land at once: it lands the branch the way this turn's Sova landing note says.",
+			"When a [merge-queue] message says the merge thread needs the user, ask them its question in your reply and relay their answer in their words with the project verbs tool's merge.reply {ask, text}; never answer it yourself.",
 		],
 		parameters: Type.Object(
 			{
 				action: Action,
 				name: Type.Optional(Type.String({ description: "create: the worktree name; the branch is feat/<name>." })),
 				base: Type.Optional(Type.String({ description: "create: commit or branch to base on (default the session cwd's HEAD)." })),
-				path: Type.Optional(Type.String({ description: "create: where to put it; attach, detach, merge: the worktree (its path, or its branch name)." })),
+				path: Type.Optional(Type.String({ description: "create: where to put it; attach, detach, merge, land: the worktree (its path, or its branch name; land defaults to the worktree this session's folder is in)." })),
 				target: Type.Optional(Type.String({ description: "merge: the branch to merge into (default master)." })),
+				withoutDocs: Type.Optional(Type.Boolean({ description: "merge: leave the branch's spec drafts behind instead of making them official before the merge. Pass it only when the user says to." })),
 			},
 			{ additionalProperties: false },
 		),
@@ -230,10 +284,12 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						if (!params.name) throw new Error("create needs a name.");
 						await approve(ctx, "Create a worktree?", `Create worktree feat/${params.name}${params.path ? ` at ${params.path}` : ""}${params.base ? ` from ${params.base}` : ""} for this session.`);
 						const f = await createWorktree(git, { repoCwd: ctx.cwd, name: params.name, ...(params.base ? { base: params.base } : {}), ...(params.path ? { path: expand(params.path, ctx.cwd) } : {}) });
+						// Decisions agreed in the main checkout ride with the new branch, to become official when it lands.
+						const carried = await carryOf(git, { from: ctx.cwd, to: f.path }).catch(() => [] as string[]);
 						const tree: TrackedWorktree = { path: f.path, branch: f.branch, base: f.base, ...(f.baseBranch ? { baseBranch: f.baseBranch } : {}), status: "active", session: sessionId, how: "created", at: now() };
 						record(withTree(set, tree));
 						await watchFromNow(tree);
-						return done(`Created ${f.path} on ${f.branch} from ${shortSha(f.base)}${f.baseBranch ? ` (${f.baseBranch})` : ""}.\n${listing()}`);
+						return done(`Created ${f.path} on ${f.branch} from ${shortSha(f.base)}${f.baseBranch ? ` (${f.baseBranch})` : ""}.${carried.length ? `\nCopied the main checkout's agreed spec draft${carried.length === 1 ? "" : "s"} into it, to land with this branch: ${carried.join(", ")}.` : ""}\n${listing()}`);
 					}
 					case "attach": {
 						if (!params.path) throw new Error("attach needs a path.");
@@ -257,19 +313,59 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						record(withTree(set, { ...t, status: "dropped" }));
 						return done(`Detached ${t.path}; nothing on disk was touched.\n${listing()}`);
 					}
+					case "land": {
+						const newest = newestUserMessage(ctx.sessionManager.getBranch());
+						// Another sender's message is never the user's word, whatever it says (§chat.worktrees/land-own-word).
+						if (newest.sentBy)
+							throw new Error(
+								`The newest message in this chat was sent by ${newest.sentBy}, not typed by the user, so it isn't their go-ahead to land, whatever it says. Nothing was recorded. Only the user's own word lands a branch: "land it" typed by them in this chat, or their Land button.`,
+							);
+						const word = typedGoAhead(newest.text);
+						if (!word) throw new Error("Only the user's own word lands a branch: their newest message in this chat must say to land or merge it (\"land it\"). Nothing was recorded; ask them to type it here.");
+						const tracked = params.path ? find(params.path, ctx.cwd) : undefined;
+						if (params.path && !tracked) throw new Error(`No tracked worktree ${params.path}.\n${listing()}`);
+						const top = tracked?.path ?? canonical((await git(["rev-parse", "--show-toplevel"], ctx.cwd)).stdout.trim() || ctx.cwd);
+						const f = await inspectWorktree(git, top);
+						const main = await defaultTarget(git, f.path);
+						if (f.branch === main || f.branch === "master" || f.branch === "main") throw new Error(`${f.path} is on ${f.branch}, which branches land into: there is nothing to land. Nothing was recorded.`);
+						const dirty = await git(["status", "--porcelain"], f.path);
+						if (dirty.code !== 0) throw new GitError(`git status failed in ${f.path}: ${dirty.stderr.trim()}`);
+						const files = dirty.stdout.split("\n").filter(Boolean).length;
+						if (files) throw new Error(`${f.branch} has ${files} uncommitted file${files === 1 ? "" : "s"}: the go-ahead is for a commit. Commit or remove them, then call worktree land again. Nothing was recorded.`);
+						const served = await servedAt(f.path);
+						const asked = word.via === "github-pr" ? "pull request" : word.via === "gitlab-mr" ? "merge request" : null;
+						// q12: "open a PR/MR" is never blocked. Unserved, the chat opens it itself; served, the queue does.
+						if (asked && served === false)
+							return done(`Sova's merge queue doesn't serve this repo, so nothing was queued: open the request yourself, as the user asked, with gh pr create or glab mr create, whichever origin's host uses (after pushing ${f.branch}).`, { landing: null, trees: set?.trees ?? [] });
+						if (served === false) {
+							// No merge queue here: the user's word is a plain merge into the main checkout's branch.
+							const checkouts = await listWorktrees(git, f.path);
+							const mainBranch = checkouts[0]?.branch;
+							const target = mainBranch && mainBranch !== f.branch ? mainBranch : main;
+							if (!target) throw new Error(`${f.path}'s repository has no master or main branch to merge ${f.branch} into. Nothing was merged.`);
+							const own = tracked ?? set?.trees.find((t) => t.path === f.path && t.status === "active");
+							await approve(ctx, "Merge a worktree?", `Merge ${f.branch} (${f.path}) into ${target}.`);
+							const r = await plainMerge(f, own, target, word.withoutSpecs);
+							return done(`${r.text}\nNo merge queue serves this repo, so the user's word merged it here.\n${listing()}`, { ...r.details, trees: set?.trees ?? [] });
+						}
+						recordGoAhead({ branch: f.branch, commit: f.head, ...(sessionId ? { session: sessionId } : {}), at: new Date(now()).toISOString(), by: "owner-chat", ...(word.withoutSpecs ? { withoutSpecs: true as const } : {}), ...(word.withoutReview ? { withoutReview: true as const } : {}), ...(word.via ? { via: word.via } : {}) }, goAheadFile());
+						return done(
+							`Queued ${f.branch} at ${shortSha(f.head)} to land${asked ? " as a request on origin's host (a merge request on GitLab, a pull request on GitHub)" : ""}${word.withoutSpecs ? ", without its specs" : ""}${word.withoutReview ? ", without review" : ""}. Sova's merge queue merges it onto the newest master in its own copy, runs the checks and lands exactly that commit; it tells this chat when it lands or if it needs a fix. Tell the user it is queued; nothing else is needed from them. A newer commit on ${f.branch} isn't included unless they land it again.`,
+							{ landing: { branch: f.branch, commit: f.head, withoutSpecs: word.withoutSpecs, withoutReview: word.withoutReview, ...(word.via ? { via: word.via } : {}) }, trees: set?.trees ?? [] },
+						);
+					}
 					case "merge": {
 						if (!params.path) throw new Error("merge needs a path or branch.");
 						const t = find(params.path, ctx.cwd);
 						if (!t) throw new Error(`No tracked worktree ${params.path}.\n${listing()}`);
 						if (t.status !== "active") throw new Error(`${t.path} is ${statusText(t)}; only an active worktree is merged.`);
 						const target = params.target ?? (await defaultTarget(git, t.path)) ?? "master";
+						const served = await servedAt(t.path);
+						if (served !== false && (served === target || (await landsThroughQueue(git, t.path, target))))
+							throw new Error(`${target} is the branch others land into: branches reach it only through Sova's merge queue, never a merge from a chat. Nothing was merged. When the work is finished, tell the user they can type "land it" here (or press Land).`);
 						await approve(ctx, "Merge a worktree?", `Merge ${t.branch} (${t.path}) into ${target}.`);
-						const { before, branchSha, ...m } = await mergeWorktree(git, { tree: t, target });
-						markMerged(t, { target: m.target, sha: m.sha, how: "tool" });
-						const spec = await reportOf(t.path, t.branch, before, m.sha, branchSha, target);
-						card({ ...m, how: "tool" });
-						const specText = spec ? specLines(spec, said).map((l) => `\n${l}`).join("") : "";
-						return done(`${mergeNote(m)} (${m.fastForward ? "fast-forward" : "merge commit"}).${specText}\n${listing()}`, { merge: m, trees: set?.trees ?? [], ...(spec ? { spec } : {}) });
+						const r = await plainMerge(t, t, target, !!params.withoutDocs);
+						return done(`${r.text}\n${listing()}`, { ...r.details, trees: set?.trees ?? [] });
 					}
 				}
 			} catch (e) {
@@ -288,4 +384,27 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 		const tail = theme.fg("dim", `${d.commits} commit${d.commits === 1 ? "" : "s"} · +${d.added} −${d.removed} · ${d.fastForward ? "fast-forward" : "merge commit"}${d.how === "detected" ? " · detected" : ""} · ${d.path}`);
 		return new Text(`${head}\n${tail}`, 1, 0);
 	});
+}
+
+/** Whether `target` is the branch the project's branches land into: master, main, the main checkout's branch, or the
+ *  merge queue's declared target (`.sova/project.json` `merge.target`, as the main checkout's HEAD or the target
+ *  branch itself commits it; absent or unreadable: only the other three). */
+async function landsThroughQueue(git: Git, cwd: string, target: string): Promise<boolean> {
+	if (target === "master" || target === "main") return true;
+	const r = await git(["worktree", "list", "--porcelain"], cwd);
+	const first = r.code === 0 ? (r.stdout.split("\n\n")[0] ?? "") : "";
+	const main = /^branch refs\/heads\/(.+)$/m.exec(first)?.[1];
+	if (main === target) return true;
+	const mainPath = /^worktree (.+)$/m.exec(first)?.[1] ?? cwd;
+	for (const rev of ["HEAD", `refs/heads/${target}`]) {
+		const shown = await git(["show", `${rev}:.sova/project.json`], mainPath);
+		if (shown.code !== 0) continue;
+		try {
+			const declared = (JSON.parse(shown.stdout) as { merge?: { target?: unknown } } | null)?.merge?.target;
+			if (declared === target) return true;
+		} catch {
+			// not JSON: nothing declared
+		}
+	}
+	return false;
 }

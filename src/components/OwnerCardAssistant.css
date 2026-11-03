@@ -4,5 +4,10 @@
 .orgs-assistant-requests,
 .orgs-assistant-models,
 .orgs-assistant-powers { display: flex; flex-direction: column; gap: var(--space-2); }
-/* The three models side by side where they fit, as the project's Sessions it starts sets its selects. */
-.orgs-fields.orgs-assistant-model-fields { grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); align-items: start; }
+
+/* Its models as rows (§app.owner-page/controls): where the model comes from, the model and thinking, its
+   price, then Change and Use Default. The buttons wrap under the text where the card is narrow. */
+.orgs-assistant-model-rows { display: flex; flex-direction: column; gap: var(--space-3); }
+.orgs-assistant-model-row { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: var(--space-2) var(--space-3); }
+.orgs-assistant-model-main { display: flex; flex-direction: column; gap: var(--space-1); min-width: 14rem; flex: 1 1 14rem; }
+.orgs-assistant-model-source { font-weight: var(--fw-medium); color: var(--color-ink); }

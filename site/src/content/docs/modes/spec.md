@@ -1,6 +1,6 @@
 ---
 title: Spec
-description: With spec on, the agent works from the project's spec. It reads the claims a task touches before coding, and proposes changes to them in drafts it promotes once the work is done.
+description: With spec on, the agent works from the project's spec. It reads the claims a task touches before coding, and proposes changes to them in drafts that become official when its branch lands.
 group: Modes
 subgroup: Minor
 order: 6
@@ -9,29 +9,41 @@ order: 6
 ## The project's spec
 
 A project's spec is its documentation of what the product does, kept in the repository under
-`.sova/spec/`: a `manifest.json` that records every claim, and Markdown files that state them. A
+`.sova/spec/`: Markdown files that state the claims, and a record of each claim in a small file
+beside its Markdown file (an older spec may keep every record in one `manifest.json`; the tools read
+both, and one command converts it). A
 claim is one promise about the product, listed with the files that implement it and labels saying
 how far it has been checked. A project with no spec yet can start one: the agent begins it in a
 draft.
 
 Spec is a minor mode: turn it on in the chat's mode menu (see [Modes](/docs/modes/)), in either
-major mode. While it's on, the agent gets a guide to the project's spec tools and follows it.
+major mode. While it's on, the agent follows a guide in two parts. A short **finding-your-way**
+part rides every turn. The **writing procedure** (drafts, agreement, evidence, promotion) reaches
+the agent once, when it starts to change what the product does.
+
+## Finding its way
+
+The short part has the agent:
+
+1. Search the spec with a few words of the task, a file or a name, and use the spec's map when
+   that finds nothing.
+2. Read the claims that fit, look at their neighbours, and check what relies on a claim it will
+   change. A link it didn't read is unread, never absent.
+3. Check each claim against the code it lists: a claim's labels are not proof, and where a claim
+   and the code disagree, it says so.
+4. Name the file or commit behind every finding, and report on the product, not on the spec
+   procedure.
 
 ## Before coding
 
-The guide has the agent read before it writes:
+Before its first edit that changes what the product does, the agent reads the writing procedure.
+If it hasn't read it by then, the procedure arrives once on its own, with the first spec note after
+an edit or with your go-ahead on an alignment. After the chat is compacted it arrives again. It
+never changes the chat's instructions, so a Claude Code chat doesn't restart for it.
 
-1. Find the claims the task starts from with a search by a few words of the task, a file
-   or a name, and the spec's map when that finds nothing or the task spans a whole area.
-2. Look at each claim's neighbours before reading them, and check what a claim it will change
-   reaches.
-3. Read each claim it starts from, and each linked claim that could matter, one passage at a time.
-4. Treat a link it didn't read as unread, never as absent, and "not investigated" as unknown,
-   never as "none".
-
-When the work changes what the product does, the agent proposes the change to the spec in a
-**draft**, kept apart from the current spec. A change reaches the spec only when it is
-**promoted**.
+The procedure has the agent read the claims the task touches, one passage at a time. It then
+proposes the change to the spec in a **draft**, kept apart from the current spec, writing the new
+promise before the code. A change reaches the spec only when it is **promoted**.
 
 ## While coding
 
@@ -47,8 +59,9 @@ covers it. Its reply lists each one as "Also updates {claim}: {what}".
 
 When you confirm an alignment, that go-ahead is also your agreement to the promises it decides.
 Before it builds anything, the agent writes each decision that changes behavior as a promise in a
-draft, stamps it with who agreed and when, and promotes the new ones into the spec right away, marked
-*agreed, not built*. The build then updates those same promises. If a later change edits the
+draft and stamps it with who agreed and when, marked *agreed, not built*; the promises become official
+when the branch lands. If the agent hasn't been given the writing procedure yet, it comes with that
+go-ahead. The build then updates those same promises. If a later change edits the
 numbers or names in a promise you agreed to without a new agreement, promotion points it out.
 
 ## Finishing
@@ -63,8 +76,16 @@ states a value the change removed (say, "12 MB" after a limit went to 16 MB) say
 marked read first. The agent reads the ones
 marked first. The line comes once, and again only when a later edit lands in other claims.
 
-When the work is done, the agent checks each promise it changed against what it built, records
-what it checked, and promotes the drafts it verified. The session promotes its own drafts.
+When the work is done, the agent checks each promise it changed against what it built and records a
+short note on what it checked. Its drafts become official when its branch lands: after the landing's
+checks pass, the landing makes every draft on the branch official in one step and commits that with
+the code, so the docs land in the same merge as the code they describe, and there is no second,
+docs-only merge. Drafts that wouldn't fit (a promise with no note, or one that changed on the default
+branch since) hold the branch and go back to its chat, which fixes them without a new commit. The
+merge queue makes them official in its merge copy before its checks run, so the docs that land were
+tested; pressing Land never records you as agreeing to them. Where nothing lands branches, the agent runs that one step
+itself before its last commit. A draft whose branch already landed without it lands with a fresh
+branch from the default branch, never on the default branch itself.
 
 A turn with spec on ends when the model stops, as one with spec off does. Nothing re-prompts it,
 and the "Also updates" line is the only spec line a reply carries; nothing checks it.
@@ -83,11 +104,15 @@ the spec itself. Without a fallback, if the writer can't run, the session writes
 ## What workers get
 
 Spec is the one minor mode that reaches workers. While it's on, every worker the chat starts gets
-the same guide and a short note:
+the same short part and a short note. A worker that writes code also gets the writing procedure
+once, with its first spec note, its own duties first. A worker whose instructions don't carry the
+guide gets a brief quoting the rules from both parts. The note says:
 
 - its brief is its go-ahead;
 - it works in the draft its brief names, or says which one it started;
-- it doesn't promote or commit unless its brief says so, because the parent promotes;
+- it doesn't commit unless its brief says so, and then only on its brief's branch, never by
+  landing on the default branch; its notes on what it verified go in its draft, which lands with
+  the branch;
 - its final report lists each claim it updated that existed before the task.
 
 When a worker that wrote code finishes, its summary carries one line naming the claims its changes

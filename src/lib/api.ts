@@ -1,9 +1,13 @@
-import type { AssistantInfo, AssistantView } from "../../shared/project-assistant";
-import type { WorkModels } from "../../shared/powers";
+import type { AssistantInfo, AssistantOlder, AssistantView, PricedPick, VersionSummaryRow } from "../../shared/project-assistant";
+import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
+import type { ModelPick, WorkModels } from "../../shared/powers";
+import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
+import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer } from "../../shared/transcript-cards";
+import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
-import type { HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
+import type { CopyLimitView, HostServicesView, ProjectServicesView, ServicesUiVerb } from "../../shared/services-view";
 import type { SubagentProfilesFile, SubagentProfilesInfo } from "../../shared/subagent-profiles";
 import type {
   VoiceDeviceInfo,
@@ -16,7 +20,6 @@ import type {
   SessionsDirInfo,
   AttentionDigest,
   ChatModeResult,
-  ChatMemoryChoice,
   ProjectModeApproval,
   MemoryOpen,
   MemoryOutline,
@@ -60,8 +63,11 @@ import type {
   BatchRefusal,
   SessionGroup,
   SessionHiddenWorkers,
+  TeamInboxBody,
+  TeamInboxView,
   SessionInsight,
   SessionSetup,
+  SessionSetupFileText,
   SessionTools,
   SessionSummary,
   ThemeList,
@@ -90,6 +96,7 @@ import type {
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import { WIRE_PARAM } from "../../shared/protocol";
+import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
   MeshAccessPut,
@@ -99,7 +106,7 @@ import type {
   MeshPreset,
   MeshSessionsView as MeshSessions,
 } from "../../shared/mesh-access";
-import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
+import type { OwnerConversation, OwnerConversationOlder, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { EventDetail, EvidenceView, HistoryChain, HistoryPacket, HistoryPage, HistoryQuery } from "../../shared/org-history";
 import type { BatonOutreach, SendLinkAnswer } from "../../shared/outreach";
@@ -116,7 +123,7 @@ import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, Host
 import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
 import type { MonitorHistory, MonitorResolution, MonitorSnapshot } from "../../shared/protocol";
-import type { UpdatesSettings, UpdatesState } from "../../shared/protocol";
+import type { RestartScheduled, UpdatesSettings, UpdatesState } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -134,7 +141,7 @@ import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../
 import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
 import type { CommandEntry } from "../../shared/commands-catalog";
-import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
+import type { AlignTriage, WorkerChecks, DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
 import { upgradeLegacyRows } from "./legacy-rows";
 import { onAuthorized, onUnauthorized } from "./auth";
@@ -175,6 +182,11 @@ export function withJsonType(init?: RequestInit): RequestInit | undefined {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  return (await requestWithHeaders<T>(url, init)).body;
+}
+
+/** `request`, with the answer's headers. */
+async function requestWithHeaders<T>(url: string, init?: RequestInit): Promise<{ body: T; headers: Headers }> {
   let res: Response;
   try {
     // A request about a peer's session goes to that peer, through this host (lib/mesh.ts).
@@ -197,7 +209,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     throw new ApiError(message, res.status, parsed);
   }
   onAuthorized();
-  return (await res.json()) as T;
+  return { body: (await res.json()) as T, headers: res.headers };
 }
 
 export const mintAccessCode = () =>
@@ -205,6 +217,11 @@ export const mintAccessCode = () =>
 export const revealAccessToken = () => request<{ token: string }>("/api/auth/token", { cache: "no-store" });
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
+/** The list and the feed version it is at (`X-Sova-List-Version`; null from a server without it). */
+export const listSessionsVersioned = async () => {
+  const { body, headers } = await requestWithHeaders<SessionSummary[]>("/api/sessions");
+  return { rows: body, at: parseListVersion(headers.get(LIST_VERSION_HEADER)) };
+};
 export const sessionsDir = () => request<SessionsDirInfo>("/api/sessions/dir");
 
 /** A link's message thread as `host` (the pane's session's host) holds it (§mesh.links/agents-pane). */
@@ -289,6 +306,14 @@ export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/te
 
 /** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */
 export const getClaudeAccounts = () => request<ClaudeAccountsInfo>("/api/claude/accounts");
+/** A project's Claude login (§app.claude-logins/project-login); a peer's project is asked on its peer. */
+export const getProjectClaudeLogin = (pid: string) => request<ProjectClaudeLogin>(`/api/projects/${encodeURIComponent(pid)}/claude-login`);
+export const putProjectClaudeLogin = (pid: string, login: string) =>
+  request<ProjectClaudeLogin>(`/api/projects/${encodeURIComponent(pid)}/claude-login`, { method: "PUT", body: JSON.stringify({ login }) });
+/** An organization's Claude login for its projects. */
+export const getOrgClaudeLogin = (id: string) => request<OrgClaudeLogin>(`/api/orgs/${encodeURIComponent(id)}/claude-login`);
+export const putOrgClaudeLogin = (id: string, login: string) =>
+  request<OrgClaudeLogin>(`/api/orgs/${encodeURIComponent(id)}/claude-login`, { method: "PUT", body: JSON.stringify({ login }) });
 /** The logins of the host that holds chat `path` (the query only routes the request there). */
 export const getChatClaudeAccounts = (path: string) =>
   request<ClaudeAccountsInfo>(`/api/claude/accounts?path=${encodeURIComponent(path)}`);
@@ -456,6 +481,8 @@ export const checkUpdates = () => request<UpdatesState>("/api/updates/check", { 
 export const putUpdatesSettings = (settings: UpdatesSettings) => request<UpdatesState>("/api/updates/settings", { method: "PUT", body: JSON.stringify(settings) });
 /** Start the upgrade to `target`, the commit the last check offered. */
 export const applyUpdate = (target: string) => request<UpdatesState>("/api/updates/apply", { method: "POST", body: JSON.stringify({ target, confirm: true }) });
+/** Restart Sova (Settings → General): 202 once its service is scheduled to restart a few seconds later. */
+export const restartSova = () => request<RestartScheduled>("/api/updates/restart", { method: "POST" });
 
 /** The align mode's writing style and Visuals (GET /api/settings/align, mode-align.json). */
 export const getAlignSettings = () => request<AlignSettingsInfo>("/api/settings/align");
@@ -501,7 +528,7 @@ export const getChatMode = (path: string) => request<ChatModeResult>(`/api/mode?
  * without its hash is refused with 409, whose body (ProjectModeApprovalNeeded) is on the ApiError.
  */
 export const postMode = (
-  patch: { mode?: string; minorModes?: string[]; memory?: Partial<ChatMemoryChoice>; projectModes?: string[]; approve?: ProjectModeApproval[]; approveHooks?: ProjectModeApproval[] },
+  patch: { mode?: string; minorModes?: string[]; memory?: { type: MemoryType }; projectModes?: string[]; approve?: ProjectModeApproval[]; approveHooks?: ProjectModeApproval[] },
   path?: string,
 ) =>
   request<ModeInfo | ChatModeResult>(`/api/mode${path ? `?path=${encodeURIComponent(path)}` : ""}`, {
@@ -529,11 +556,11 @@ export const getMemoryOptions = () => request<DelegateOptions>("/api/settings/me
 export const putMemorySettings = (settings: MemorySettings) =>
   request<MemorySaveResult>("/api/settings/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(settings) });
 export const getOverseerMemory = () => request<OverseerMemoryInfo>("/api/overseer/memory");
-export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType; size?: number }) =>
+export const putOverseerMemory = (patch: { on?: boolean; type?: MemoryType }) =>
   request<OverseerMemoryInfo>("/api/overseer/memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 /** A project overseer's own memory switch: the Overseer's shape. */
 export const getProjectOverseerMemory = (projectId: string) => request<OverseerMemoryInfo>(`/api/projects/${encodeURIComponent(projectId)}/overseer/memory`);
-export const putProjectOverseerMemory = (projectId: string, patch: { on?: boolean; type?: MemoryType; size?: number }) =>
+export const putProjectOverseerMemory = (projectId: string, patch: { on?: boolean; type?: MemoryType }) =>
   request<OverseerMemoryInfo>(`/api/projects/${encodeURIComponent(projectId)}/overseer/memory`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 
 /** POST /api/sandbox?path=… { state, on }: set that held chat's sandbox state (§chat.sandbox/states)
@@ -928,7 +955,16 @@ export const fetchUsageHistory = (series: string, window: string, at: number | n
 export const fetchUsageStrip = (series: string, window: string) =>
   request<UsageHistoryStrip>(`/api/insights/usage/history?series=${encodeURIComponent(series)}&window=${encodeURIComponent(window)}&strip=1`);
 
-export const fetchAgents = () => request<AgentsInsight>("/api/insights/agents");
+/** GET /api/insights/agents as the browser keeps it: `tokensAsked` (browser-side only) says the request
+    asked for `tokens`, so a missing field means an older server only then (§app.insights/session-token-rate). */
+export type AgentsAnswer = AgentsInsight & { tokensAsked?: true };
+
+/** `tokens`: ask for each row's output tokens too (only while the Agents board is shown). */
+export const fetchAgents = async (opts: { tokens?: boolean } = {}): Promise<AgentsAnswer> => {
+  if (!opts.tokens) return request<AgentsInsight>("/api/insights/agents");
+  const a = await request<AgentsInsight>("/api/insights/agents?tokens=1");
+  return { ...a, tokensAsked: true };
+};
 
 /** The git worktrees of the named sessions (the Agents board's visible rows). */
 export const fetchWorktrees = (paths: readonly string[]) =>
@@ -947,6 +983,16 @@ export const fetchSessionInsight = (path: string) =>
 export const fetchHiddenWorkers = (path: string) =>
   request<SessionHiddenWorkers>(`/api/insights/session/workers?path=${encodeURIComponent(path)}`);
 
+/** One team member's inbox, read-only (§app.subagents-pane/member-inbox): its items, newest first,
+    without bodies. Polled while the pane's Inbox tab is open. */
+export const fetchTeamInbox = (path: string, teamId: string, workerId: string) =>
+  request<TeamInboxView>(`/api/insights/session/inbox?path=${encodeURIComponent(path)}&team=${encodeURIComponent(teamId)}&worker=${encodeURIComponent(workerId)}`);
+/** One inbox item's whole message, read when it is opened. */
+export const fetchTeamInboxBody = (path: string, teamId: string, workerId: string, id: string) =>
+  request<TeamInboxBody>(
+    `/api/insights/session/inbox?path=${encodeURIComponent(path)}&team=${encodeURIComponent(teamId)}&worker=${encodeURIComponent(workerId)}&item=${encodeURIComponent(id)}`,
+  );
+
 /** The repository around a session's folder (read-only git). `fresh` skips the server's ~10s cache.
     Use loadGitSummary (lib/git-summary.ts), which shares a request already running. */
 export const fetchGitSummary = (path: string, fresh = false) =>
@@ -956,6 +1002,9 @@ export const fetchGitSummary = (path: string, fresh = false) =>
     folder. `fresh` skips the server's cache. */
 export const fetchSessionSetup = (path: string, fresh = false) =>
   request<SessionSetup>(`/api/sessions/context?path=${encodeURIComponent(path)}${fresh ? "&fresh=1" : ""}`);
+/** One file the session's setup lists, as text (§chat.transcript/setup-card-open-file). Never cached. */
+export const fetchSetupFile = (path: string, file: string) =>
+  request<SessionSetupFileText>(`/api/sessions/context/file?path=${encodeURIComponent(path)}&file=${encodeURIComponent(file)}`);
 /** The tools a held chat declares to its model now (§chat.transcript/setup-card-tools). Never cached. */
 export const fetchSessionTools = (path: string) => request<SessionTools>(`/api/sessions/tools?path=${encodeURIComponent(path)}`);
 /** Switch a new session's context files and skills (§chat.transcript/setup-card-toggles): the
@@ -1120,19 +1169,15 @@ export async function putDecisionKey(key: string): Promise<DecisionKeyInfo> {
   }
 }
 
+/** The open alignment cards' triage (§app.decisions/align-triage): asked once per card version, only with attention signals on. */
+export const getAlignTriage = (path: string) => request<AlignTriage>(`/api/sessions/align-triage?path=${encodeURIComponent(path)}`);
+/** Each worker's newest done report check (§app.decisions/worker-report): asked once per report, only with attention signals on. */
+export const getWorkerChecks = (path: string) => request<WorkerChecks>(`/api/sessions/worker-checks?path=${encodeURIComponent(path)}`);
+
 export const deleteDecisionKey = () => request<DecisionKeyInfo>("/api/settings/decisions/key", { method: "DELETE" });
 
 /** One canned decision through the chain (the Test button). A provider failure is `ok: false`, not a throw. */
 export const probeDecisions = () => request<DecisionProbeResult>("/api/settings/decisions/probe", { method: "POST" });
-
-export const getTagsBackfill = () => request<TagsBackfillProgress>("/api/sessions/tags/backfill");
-
-/** Start tagging past sessions, or get the job already running. */
-export const startTagsBackfill = (scope: TagsBackfillScope) =>
-  request<TagsBackfillProgress>("/api/sessions/tags/backfill", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ scope }) });
-
-/** Stop the running backfill; what it tagged stays. */
-export const cancelTagsBackfill = () => request<TagsBackfillProgress>("/api/sessions/tags/backfill/cancel", { method: "POST" });
 
 // ---- organizations and baton sessions (§app/organizations, §app/baton) -------------------------------
 
@@ -1263,6 +1308,8 @@ export const assistantInfo = (id: string) => request<AssistantInfo>(assistantUrl
 export const setAssistantModels = (id: string, models: WorkModels) => request<AssistantInfo>(assistantUrl(id, "assistant"), jsonInit("PUT", { models }));
 /** Mark Done or Decline an owner request. */
 export const setOwnerRequest = (id: string, rid: string, status: "done" | "declined") => request<AssistantInfo>(assistantUrl(id, `requests/${encodeURIComponent(rid)}`), jsonInit("POST", { status }));
+/** Got It on a request the owner closed while it was being worked on (§app.project-assistant/closing): its Needs you item ends. */
+export const noteOwnerRequest = (id: string, rid: string) => request<AssistantInfo>(assistantUrl(id, `requests/${encodeURIComponent(rid)}`), jsonInit("POST", { noted: true }));
 /** Start Chat on an owner request: a new chat in its project with the request as a note
     (§app.project-assistant/request-chat). 409 `has-chat` carries the live chat's path, `closed` none. */
 export const startOwnerRequestChat = (id: string, rid: string) => request<{ sessionId: string; path: string }>(assistantUrl(id, `requests/${encodeURIComponent(rid)}/chat`), jsonInit("POST"));
@@ -1270,6 +1317,11 @@ export const startOwnerRequestChat = (id: string, rid: string) => request<{ sess
 export const openAssistantChat = (id: string) => request<{ sessionId: string; path: string }>(assistantUrl(id, "assistant/open"), jsonInit("POST"));
 /** The assistant's conversation as the owner sees it (the preview); no token, no use. */
 export const previewAssistant = (id: string) => request<AssistantView>(assistantUrl(id, "preview?assistant=1"));
+/** An earlier page of it (§app.project-assistant/chat, Paged). */
+export const previewAssistantOlder = (id: string, before: number) => request<AssistantOlder>(assistantUrl(id, `preview?assistant=1&before=${before}`));
+/** A conversation's earlier items on the preview (§app.owner-page/content). */
+export const previewConversationOlder = (id: string, c: string, before: number) =>
+  request<OwnerConversationOlder>(`/api/orgs/${encodeURIComponent(id)}/owner/preview?c=${encodeURIComponent(c)}&before=${before}`);
 
 /** Show this project on the owner's page, or not. */
 export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: boolean) =>
@@ -1278,6 +1330,11 @@ export const setProjectOwnerHidden = (id: string, pid: string, ownerHidden: bool
 export const setBatonHiddenFromOwner = (sid: string, hidden: boolean) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/owner`, jsonInit("POST", { hidden }));
 /** The project's updates on the owner's page, newest first, withdrawn ones included. */
 export const getProjectUpdates = (id: string, pid: string) => request<ProjectUpdate[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/updates`);
+/** The versions on the owner's page with their summaries (§app.project-assistant/versions). */
+export const getVersionSummaries = (id: string, pid: string) => request<VersionSummaryRow[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/versions`);
+/** Rewrite (`text`), Use Automatic (`text: null`), Hide or Show (`hidden`) a version's summary. */
+export const setVersionSummary = (id: string, pid: string, instance: string, body: { text?: string | null; hidden?: boolean }) =>
+  request<VersionSummaryRow[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/versions/${encodeURIComponent(instance)}`, jsonInit("PUT", body));
 export const withdrawProjectUpdate = (id: string, pid: string, uid: string) =>
   request<ProjectUpdate[]>(`/api/orgs/${encodeURIComponent(id)}/projects/${encodeURIComponent(pid)}/updates/${encodeURIComponent(uid)}/withdraw`, jsonInit("POST"));
 
@@ -1303,6 +1360,9 @@ export const setBatonAbilities = (sid: string, abilities: Partial<GatheringAbili
 /** The host's defaults for new hand-off sessions (Settings → Organizations). */
 export const getBatonSettings = () => request<BatonSettings>("/api/baton/settings");
 export const putBatonSettings = (settings: BatonSettings) => request<BatonSettings>("/api/baton/settings", jsonInit("PUT", settings));
+/** The Project Assistant's default model (Settings → Organizations); its own route, mesh `admin`. */
+export const putAssistantDefault = (assistant: ModelPick | null) =>
+  request<{ assistant: PricedPick | null }>("/api/settings/project-assistant", jsonInit("PUT", { assistant }));
 export const offerBaton = (sid: string, to: string[], question?: string, briefing?: string) =>
   request<{ links: OfferLink[]; info?: BatonInfo; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
 export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/offer/withdraw`, jsonInit("POST"));
@@ -1383,6 +1443,9 @@ export const refreshPrices = () => request<PricesInfo>("/api/usage/prices/refres
 // ---- a project's software registry (§app/project-runtime) -------------------------------------------
 /** The project's copies on this host, for its Branches tab (§app.project-services/services-ui). */
 export const getProjectServices = (projectId: string) => request<ProjectServicesView>(`${projectPath(projectId)}/services`);
+/** Set this machine's copy limit for the project (null: back to the project's file's): the operator's own page only. */
+export const setCopyLimit = (projectId: string, cap: number | null) =>
+  request<{ limit: CopyLimitView }>(`${projectPath(projectId)}/services/limit`, jsonInit("PUT", { cap }));
 /** Run one verb on the project as the operator. A refusal is a result too (its `error`), never thrown;
     only an unreachable server or an unknown project throws. */
 export async function runProjectVerb(projectId: string, verb: ServicesUiVerb, body: Record<string, unknown>): Promise<VerbResult> {
@@ -1417,6 +1480,19 @@ export async function runDeployVerb(root: string, verb: DeployVerb, body: Record
     throw err;
   }
 }
+/** A merge-queue verb as the operator (merge.status, merge.add, merge.cancel, …): `project` is the project's root or a
+    worktree of it. A refusal is a result too, never thrown. */
+export async function runMergeVerb(project: string | null, verb: `merge.${string}`, body: Record<string, unknown> = {}): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", project ? { ...body, project } : body));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
+export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);
@@ -1542,3 +1618,76 @@ export async function runCommandRequest(method: string, url: string, body?: Reco
   else if (res.ok) onAuthorized();
   return { status: res.status, body: parsed };
 }
+
+// ---- session offers: a session's offer cards and the project page's list (§chat/offers) --------
+
+export const getSessionOffers = (path: string) => request<SessionOffersAnswer>(`/api/session-offers?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+/** A button's click; on a rows card, `row` names the row it answers. */
+export const chooseOfferButton = (path: string, card: string, button: number, row?: string) =>
+  request<{ card: OfferCard }>("/api/session-offers/choose", { method: "POST", body: JSON.stringify({ path, card, button, ...(row ? { row } : {}) }) });
+/** A rows card's all button, over the rows its confirm named. */
+export const chooseOfferAll = (path: string, card: string, rows: string[]) =>
+  request<{ card: OfferCard }>("/api/session-offers/choose", { method: "POST", body: JSON.stringify({ path, card, all: rows }) });
+export const setOfferNotNow = (path: string, offer: string) => request<{ notNow: string[] }>("/api/session-offers/snooze", { method: "POST", body: JSON.stringify({ path, offer }) });
+// A project's settings (§app.project-overseer/settings, shared/project-settings.ts).
+export const getProjectSettings = (projectId: string) => request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings`, { cache: "no-store" });
+export const getSettingsHistory = (projectId: string) => request<SettingsHistoryRow[]>(`${projectPath(projectId)}/settings/history`, { cache: "no-store" });
+/** Apply and Approve (or Land, `card` "local"): a trust grant, from this page only. */
+export const applySettingsCard = (projectId: string, card: string, fingerprint: string) =>
+  request<SettingsApplyResult>(`${projectPath(projectId)}/settings/apply`, jsonInit("POST", { card, fingerprint }));
+/** Dismiss a card (Discard, for "local", with the fingerprint it showed). */
+export const withdrawSettingsCard = (projectId: string, card: string, fingerprint?: string) =>
+  request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings/cards/${encodeURIComponent(card)}/withdraw`, jsonInit("POST", fingerprint ? { fingerprint } : {}));
+export const undoSettingsRow = (projectId: string, id: string) =>
+  request<{ undone?: SettingsHistoryRow[]; card?: SettingsCardView }>(`${projectPath(projectId)}/settings/undo`, jsonInit("POST", { id }));
+export const getProjectOffers = (projectId: string) => request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers`, { cache: "no-store" });
+export const approveProjectOfferRuns = (projectId: string, fingerprint: string) =>
+  request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers/approve`, { method: "POST", body: JSON.stringify({ fingerprint }) });
+
+// ---- transcript cards: a session's cards, answering one, trusting a project's cards (§chat/transcript-cards) ----
+
+export const getSessionCards = (path: string) => request<SessionCardsAnswer>(`/api/session-cards?path=${encodeURIComponent(path)}`, { cache: "no-store" });
+/** A press on a card, at once; `sent`: a gathered pick recorded once its message went out. A refusal that needs trust carries `needsTrust` in its body. */
+export const answerSessionCard = (path: string, card: string, answer: CardAnswerValue, sent = false) =>
+  request<{ card: CardInfo }>("/api/session-cards/answer", { method: "POST", body: JSON.stringify({ path, card, answer, ...(sent ? { sent } : {}) }) });
+/** Trust a project's cards to act, or stop: a trust grant, from this page only. */
+/** An extension's cards' trust, for its page (§chat.transcript-cards/trust). */
+export const getExtensionCardsTrust = (id: string) => request<{ owner: string; name: string; trusted: boolean }>(`/api/session-cards/trust?ext=${encodeURIComponent(id)}`, { cache: "no-store" });
+/** A drawing kind's built view (§chat.transcript-cards/drawing-kinds), the way getCardView gets a card's. */
+export const getDrawingView = (path: string, kind: string, have?: string | null, wait = false, signal?: AbortSignal) =>
+  request<{ ok: true; hash: string; code: string } | { ok: false; hash: string; error: string; outdated?: boolean }>(
+    `/api/session-cards/drawing?path=${encodeURIComponent(path)}&kind=${encodeURIComponent(kind)}${have ? `&have=${encodeURIComponent(have)}` : ""}${wait ? "&wait=1" : ""}`,
+    { cache: "no-store", ...(signal ? { signal } : {}) },
+  );
+export const setCardTrust = (owner: string, on: boolean) => request<{ owner: string; trusted: boolean }>("/api/session-cards/trust", { method: "POST", body: JSON.stringify({ owner, on }) });
+/** A view card's built code (§chat.transcript-cards/building): at once, or with `have` and `wait`, once a save changes it. */
+export const getCardView = (path: string, type: string, have?: string | null, wait = false, signal?: AbortSignal) =>
+  request<{ ok: true; hash: string; code: string } | { ok: false; hash: string; error: string; outdated?: boolean }>(
+    `/api/session-cards/view?path=${encodeURIComponent(path)}&type=${encodeURIComponent(type)}${have ? `&have=${encodeURIComponent(have)}` : ""}${wait ? "&wait=1" : ""}`,
+    { cache: "no-store", ...(signal ? { signal } : {}) },
+  );
+/** The state Sova keeps for a view's card. */
+export const setSessionCardState = (path: string, card: string, state: unknown) =>
+  request<{ ok: true }>("/api/session-cards/state", { method: "POST", body: JSON.stringify({ path, card, state }) });
+/** A view's command, run as its card; a refusal that needs trust carries `needsTrust` in its body. */
+export const runSessionCardCommand = (path: string, card: string, command: string, params: unknown) =>
+  request<{ ok: boolean; status: number; body: unknown }>("/api/session-cards/run", { method: "POST", body: JSON.stringify({ path, card, command, params }) });
+/** A project's card folders on its main checkout, read now, and whether its cards are trusted. */
+export const getProjectCards = (projectId: string) => request<ProjectCardsAnswer>(`${projectPath(projectId)}/cards`, { cache: "no-store" });
+
+// ---- The read-only folder viewer (shared/folder-read.ts) and Settings → Merge Queue ----
+/** A folder's files: a project's at a ref, or one Sova ships. Never runs anything. */
+export const listFolder = (src: import("../../shared/folder-read").FolderSource) =>
+  request<import("../../shared/folder-read").FolderListing>(`/api/folders/list?src=${encodeURIComponent(JSON.stringify(src))}`, { cache: "no-store" });
+/** One file of that folder, as text. */
+export const readFolderFile = (src: import("../../shared/folder-read").FolderSource, path: string) =>
+  request<import("../../shared/folder-read").FolderFile>(`/api/folders/read?src=${encodeURIComponent(JSON.stringify(src))}&path=${encodeURIComponent(path)}`, { cache: "no-store" });
+type ModelChoiceWire = import("../../shared/merge-queue-settings").ModelChoice;
+/** The review's and the merge thread's models for one project, on this computer; null = Same as new chats. */
+export const putMergeModels = (projectId: string, models: { review?: ModelChoiceWire | null; thread?: ModelChoiceWire | null }) =>
+  request<unknown>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/models`, jsonInit("PUT", models));
+/** Saves the project-file settings onto the target as one commit, after the user confirmed; waits behind a run. */
+export const saveMergeSettings = (projectId: string, changes: import("../../shared/merge-queue-settings").MergeSettingsChange) =>
+  request<import("../../shared/merge-queue-settings").MergeSettingsSaveResult>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings`, jsonInit("POST", { changes, confirm: true }));
+/** Cancels a save waiting for the current branch. */
+export const cancelMergeSettings = (projectId: string) => request<unknown>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings/pending`, { method: "DELETE" });

@@ -269,7 +269,7 @@ provider and is still waiting on or receiving, from the moment it is issued unti
 ends, fails or is aborted. Time spent running tools between calls never counts, and neither does
 a request still queued for a provider-limits slot or sitting out a cooldown
 (§app/provider-limits): it counts from the moment the slot is granted. Every caller counts alike —
-a main thread's turn, a subagent's or team member's, and background work: titles, tags,
+a main thread's turn, a subagent's or team member's, and background work: titles,
 decisions, topic outlines, compaction, cache warming.
 
 - **Where it is measured.** Each process counts its own calls, at the boundary every model
@@ -405,6 +405,9 @@ host and every connected host.**
   (§app.insights/sidebar-foot-phone); on the spine, no item of its own: the agents tally's name and
   toast, and the Agents doorway's, end with its sentence (§app.session-list/spine). Every one of
   those names carries the sentence; the figure and chart alone are never the only place it is said.
+  Per session, each Agents board row has its own 5-minute figure from the same slots
+  (§app.insights/session-token-rate), delivered with the Agents page's poll and never on this
+  frame; the rows are not shares of this figure and never add up to it.
 - **The newest minute is hollow.** Tokens land when a reply ends, so the newest minute reads low
   while replies stream. Its column (the phone's newest two-minute column) is drawn as a 1px
   `--color-ink-2` outline with no fill, a shape and not only a tone, so the dip reads as "not in
@@ -459,7 +462,13 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   caller names, so two concurrent side calls never take each other's owner. A worker names its
   parent session.
 - **Counted once.** Records are deduplicated by their key, so a replayed stream or a record read
-  twice adds nothing. Nothing is recounted from transcripts: spend from before the ledger existed
+  twice adds nothing. A Claude Code residual record whose key names a `[1m]` model
+  (`ccr:<session>:<total>:claude-opus-5-5[1m]`) is a double count, written before 7 Oct 2026 when
+  the residual compared the CLI's `[1m]`-keyed totals with messages naming the model without it,
+  so it re-added its whole turn: such a record is never folded into any figure, in any day, and the
+  developer cache check (§app.insights/usage-resend) leaves it out too. No record written since
+  has that key; the one-off repair (§app.insights/usage-ledger-repair) removes the old ones from
+  the files. Nothing is recounted from transcripts: spend from before the ledger existed
   is not shown.
 - **Off the main loop.** A helper child process of the server reads the records (at its start it
   catches up every day and every file past what it already read, then follows appends), keeps a
@@ -473,6 +482,32 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   checked-in seed is only the starting copy when that file is missing. The server pulls models.dev
   every 6 hours and on demand, and a pull only adds dated periods: an old period is never dropped
   or rewritten.
+
+## §app.insights/usage-ledger-repair — Removing the 4–7 Oct doubled residuals from the usage files
+
+**A one-off script, `bun scripts/usage-repair-1m-residuals.ts`, removes the doubled `[1m]` Claude
+Code residual records (§app.insights/usage-ledger, "Counted once") from the usage files of
+2026-10-04 to 2026-10-07, keeping a backup first.** It reads the agent dir from `--agent-dir`, else
+`$PI_CODING_AGENT_DIR`, else `~/.pi/agent`, and no other days.
+
+- **Dry run by default.** Without `--write` it changes nothing: it lists per day and file how many
+  lines go, the records removed, the expected drop in dollars, and those days' totals by model
+  before and after (`--json` for the same as data), then says to stop Sova's server and run it
+  again with `--write`.
+- **`--write`.** First it copies the four day folders, and the usage helper's saved snapshots of
+  those days, to `<agent dir>/usage/v1-backup-<yyyymmdd-hhmmss>/` beside `v1`, and checks each copy
+  byte for byte. Then it rewrites each file without the doubled lines, through a temporary file and
+  a rename (a sealed `.jsonl.gz` gzipped again, an unfinished last line kept as it is), and deletes
+  those days' snapshots so the helper counts the days again from their files when the server next
+  starts, reusing no saved offset or row.
+- **It refuses** to write, changing nothing, while a Sova server or usage helper on this agent dir
+  runs (read from `/proc` on Linux); when it can't see this machine's processes (no `/proc`, or a
+  sandbox's own), unless `--assume-stopped` says the server was stopped by hand; when a day holds a
+  half-done helper write (`.sealing`, `.tmp`); and when the backup folder already exists.
+- **No notice** on any tab: the totals of those days simply fall once the helper recounts them.
+- **Undo.** Stop the server, put the backup's day folders back under `usage/v1` and its snapshots
+  back under `sova/usage-ledger/days`, and start it again. The files come back as they were, but the
+  ledger still never folds a doubled residual, so the doubled amounts don't return.
 
 ## §app.insights/reply-timing — Measured reply timing: each reply's wait, thinking and reply time, recorded once
 
@@ -639,7 +674,8 @@ launch with `launch` recorded: the re-send dollars and tokens, how many launches
 many picked up Claude's saved copy, and the reasons (each `why` with its `fallback`), costliest
 first. A conversation's own calls only: its workers and side calls are not in it, and records from
 before the field existed count nothing. A developer check (`pnpm run claude:cache-check`) reads the
-ledger files only, never calls a model, and prints per kind of conversation the share of its Claude
+ledger files only, never calls a model, leaves out the doubled `[1m]` residuals the ledger leaves
+out (§app.insights/usage-ledger), and prints per kind of conversation the share of its Claude
 spend that went to re-sending history and the top reasons; for records without `launch` it
 estimates a re-send from the token pattern (a cache write over 5,000 tokens where the cache read
 falls short of the call before it by at least 5,000).
@@ -677,18 +713,105 @@ and neither does one whose launches were never recorded.
 - **Controls.** Range chips `7d` · `30d` · `All` (30d by default), and beside them multi-select **Provider** and
   **Model** filters; the model choices narrow to the selected providers. The range and both filters
   apply to every section below.
-- **Sections.** Stats: Total, Main sessions, Workers, One-shots. A daily cost bar chart (local
-  days). Tables by provider, by model (input · cache · output · cost), by kind and by project
-  (the org project, else the working directory). Top sessions, most expensive first; a click opens
+- **Sections.** Stats: Total, Main sessions, Workers, One-shots, each a dollar figure with a small
+  line under it, its cache hit rate (`96% from cache`; with no cache read or write in it, "No cache
+  use reported"). A daily cost bar chart (local days). Tables by provider (tokens · hit rate ·
+  cost), by model (Model · New input · Cache reads · Hit rate · Output · Cost, below), by kind and by project
+  (registered projects, code checkouts, the Overseer and Other folders, §app.insights/cost-by-project).
+  Top sessions, most expensive first; a click opens
   the session, and a row whose conversation re-sent its history says so under its name
   (§app.insights/usage-resend-display).
+- **Cache hit rate.** The share of input tokens read from cache: cache read ÷ (input + cache read +
+  cache write), output left out, in whole percent (`<1%` and `>99%` at the edges, never a rounded
+  `0%` or `100%` that isn't exact). A table row with no cache read or write shows `—`, its `title`
+  "No cache use reported for this model." (a provider row: "… for this provider."); such rows still
+  count their input in a card's rate. A rate only: no figure of money saved. A Hit rate cell's
+  `title` reads `{reads} of {new input + reads} input tokens read from cache`.
+- **By model.** **New input** is the input tokens not read from cache: uncached input plus cache
+  writes, so a provider that bills its new content as cache writes (Claude Code) and one that bills
+  it as plain input read alike; its `title` gives the split, `{uncached} uncached · {writes}
+  written to cache` (`91k uncached · 162.6M written to cache`). **Cache reads** is the cache read
+  tokens alone. There is no separate cache write column: writes show in New input's `title` and in
+  the row's breakdown.
+- **A model row opens to where its cost went.** A click anywhere on the row (not one that ends a
+  text selection), or Enter or Space on its name, opens or closes it; the name is a button with a
+  chevron that turns when open (`aria-expanded`, `aria-controls` the detail row; screen readers
+  hear ", show where {model}'s cost went" / ", hide …"). Every row starts closed and any number
+  can be open. An open row stays open through the tab's refresh and a change of range or filter
+  while its model is still listed; a model that leaves the table comes back closed. The open state
+  is not in the URL. The open row shows **Where {model}'s cost went**: one horizontal bar in four
+  parts, each as wide as its share of the row's dollars, then a legend in one fixed order, never
+  sorted by size: **Cache writes, Cache reads, Output, Input**. Each part shows its dollars, its
+  share of the row's cost in whole percent (`<1%` and `>99%` at the edges, as Hit rate) and its
+  token count (`{n} tok`). Hovering Cache writes splits it into 1-hour and 5-minute writes, each
+  its dollars and tokens (screen readers get the split as text). The parts are ink shades told
+  apart by label and order as much as by shade, never by color alone.
+  - **No price.** A model with no price on record shows the token split only and "No price on
+    record, so no cost split."
+  - **Free.** A model that costs nothing shows the token split only and, for a local model, "It
+    runs on this device, so it costs nothing." (otherwise "It costs nothing, so there is no cost
+    split.").
+  - **Partly priced.** The dollars and shares split the priced calls only; each part's tokens
+    still count every call, and a note says so: "{n} tokens had no price: the dollars split the
+    priced calls, the token counts cover every call." (1: "1 token …").
 - **Prices.** "Prices as of {date}" with the last change found, and a **Refresh Prices** button that
   pulls the prices now (§app.insights/usage-ledger); it says so when pulling is off or the prices are
   still the starter list.
 - **When the helper is down** the tab says the counter isn't running yet and that nothing was lost;
   it never shows another count.
 - **This device.** The tab says it counts this device only.
-- Works at phone widths: tables stack under 560px of page width.
+- Works at phone widths: tables stack under 560px of page width. Stacked, By model keeps one block
+  per model; tapping the model's name opens its breakdown under the block, the legend one part per
+  line with its tokens under its name. Where a table scrolls sideways, an open breakdown keeps to
+  the visible width.
+
+## §app.insights/cost-by-project — The Costs tab's By project table
+
+**The Costs tab's By project table (§app.insights/cost-history) has one row per registered
+project, one per code checkout on this computer that is no project, one Overseer row and one
+Other folders row, and its rows add up to the tab's Total.** Every call is in exactly one row,
+decided from the folder it ran in (its working directory), once per distinct folder:
+
+- **Overseer.** A call that ran in the Overseer's folder (`<state root>/overseer`) or in an
+  attached organization's workspace (`<state root>/workspaces/<org>`, or the folder the org is
+  attached from) is the Overseer's: the global Overseer's conversations and each organization's
+  sessions are one row, "Overseer".
+- **Registered projects.** Otherwise a call belongs to the registered project whose folder it ran
+  in, by the same rule as the sidebar (§app.projects/folder-sessions): the project's root, a folder
+  inside it, or a folder inside one of its worktrees, a worktree that no longer exists included
+  (`<root's parent>/.worktrees/<root's name>-…`); the deepest root wins. Unlike the sidebar, a
+  worktree folder still on disk whose checkout is gone (its `.git` removed, a husk left, in no
+  checkout) counts as gone, so it is its project's too. A call the ledger records
+  with a project id is that project's. An archived project keeps its row, marked "archived". A
+  project overseer's conversation runs in its project's root, so it counts in its project's row. The
+  row shows the project's name.
+- **Any other Overseer call** (a call recorded as kind `overseer` whose folder is in no project)
+  is in the Overseer row.
+- **Code checkouts.** A folder in no project that sits in a git checkout on this computer gets that
+  checkout's row, named after the checkout's folder: walking up to the first `.git`, a folder there
+  is the checkout; a `.git` file names its main checkout, so a linked worktree and its subfolders
+  roll into the main checkout's row. A folder that no longer exists, or a husk in no checkout, is
+  the checkout's when it was one of its worktrees as Sova names them (`<x>/.worktrees/<name>-…`
+  beside an existing checkout `<x>/<name>`); a folder that no longer exists also when it sat inside
+  an existing checkout. Git is never run.
+- **Other folders.** Everything else is one row, "Other folders", always last whatever it cost:
+  temporary and scratch folders (the system's temp folders, even holding a repository), folders
+  that no longer exist and were never in a checkout, folders inside Sova's agent folder (a remote
+  session's stand-in folder), and calls that name no folder.
+- **Hover.** A project row's `title` says where its spend comes from: its root, then "Every
+  session in this project's folders, worktrees included.", since it counts every session there and
+  can be higher than the project page's Cost card (§app.project-costs/scope); an archived one adds
+  " Archived.". The archived mark is a muted `archived` line under the name.
+  A checkout row's: its path, then "Every session in this checkout, worktrees included." The
+  Overseer row's: "The Overseer's and your organizations' conversations." Other folders': "{n}
+  folders that are no project or checkout, and calls with no folder." (1: "1 folder …").
+- **Order.** Most expensive first, Other folders last.
+- **Unchanged.** The Total, the daily chart and every other table and stat are not affected by
+  this grouping.
+- **Wire.** Each row carries `kind` (`project` · `folder` · `overseer` · `other`), `name`, `path`
+  (a checkout's folder, a project's root), `folders` (how many distinct folders it holds) and
+  `archived` when it applies, beside `project` (the project id) and `cwd` (a checkout's folder) for
+  an older browser. A browser shows `name` when it is there, else as before.
 
 ## §app.insights/usage-model-rows — One row per real model
 
@@ -828,8 +951,8 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 ```
 
 - **Split.** Usage and agents never share a page. The Agents page is the board
-  (§app.insights/team-cards): one row per session, its workers counted in a column, and what
-  it's about, where it stands and its worktrees folded inside the row. When nothing is in view, its whole body under the bar is one `.empty`
+  (§app.insights/team-cards): one row per session, its workers counted in a column, its tokens a
+  minute in another, and what it's about, where it stands and its worktrees folded inside the row. When nothing is in view, its whole body under the bar is one `.empty`
   (§design/copy-deck): the live fact first ("{n} sessions live." or "No session is live right
   now."), then the absence for the chip or search in force.
 - **Tabs (Agents).** Under the head the Agents page has three tabs, Board (everything this section
@@ -1445,7 +1568,8 @@ over time on this device. Activity-only Ollama readings are not quota windows: t
 (main threads only: never a worker's own session or an Overseer file), joined by path with
 `GET /api/insights/agents` (host sessions only: a headless worker pi owns no row). The default
 scope, with no chip on, is what the sidebar keeps on top: live sessions, and sessions started in
-Sova that aren't archived.
+Sova that aren't archived. An archived session is in it only while it is open in a TUI or Working
+(below); otherwise it shows only under Archived and in a search.
 
 ```html
 <div class="board-bar">
@@ -1460,23 +1584,23 @@ Sova that aren't archived.
   </div>
 </div>
 <div class="card board">
-  <div class="board-head" aria-hidden="true">Session · Activity · Workers · Worktrees</div>   <!-- desktop only -->
+  <div class="board-head" aria-hidden="true">Session · Activity · Workers · Tokens/min</div>   <!-- desktop only -->
   <h2 class="board-group-head" data-state="needs-you" id="board-group-needs-you">Needs you · 2</h2>   <!-- only when 2+ groups show -->
   <ul class="board-list" aria-labelledby="board-group-needs-you">   <!-- one group: aria-label="Sessions" -->
     <li class="board-row" data-state="needs-you">          <!-- working | needs-you | idle | archived; a click on it opens the session -->
       <div class="board-line">
-        <div class="board-cell board-session">rail · twist (aria-expanded; only when the open row has something to say) · title (+ visually hidden ", Needs you") / gist</div>
+        <div class="board-cell board-session">rail · twist (aria-expanded; only when the open row has something to say) · <a class="board-title" href="#/s/…">title</a> (+ visually hidden ", Needs you") / gist</div>
         <div class="board-cell board-activity">model · context ring · 5m ago</div>   <!-- one muted line -->
         <div class="board-cell board-workers">2/5 working · $1.20 / team chip · team chip · +3 → its Session details pane, on Agents</div>
-        <div class="board-cell board-trees">feat/x · ↑3 ↓1 · +120 −4 · dirty dot / feat/y · merged · +1</div>
-        <div class="board-cell board-actions">Open · Session details (aria-expanded) · ⋯</div>
+        <div class="board-cell board-tokens">48k tok/min</div>   <!-- §app.insights/session-token-rate; idle or unmeasurable: a muted dash -->
+        <div class="board-cell board-actions">Session details (aria-expanded) · ⋯</div>
       </div>
       <div class="board-detail">   <!-- open rows only: in the title column, behind a guide rule under the twist -->
         <p class="board-reason">…why it needs you…</p>
         <p class="board-note">…1 open question in al_2 …, or the last turn's error…</p>
         <p class="board-now">…the full now line…</p>
         <ul class="board-topic-list" aria-label="Recent topics">…up to 5 headings, newest first…</ul>
-        <ul class="board-tree-list" aria-label="Worktrees">…one line per worktree, when there are 2 or more or one is dirty…</ul>
+        <ul class="board-tree-list" aria-label="Worktrees">…one line per worktree: branch · merged or unmerged · uncommitted…</ul>
       </div>
     </li>
   </ul>
@@ -1484,13 +1608,24 @@ Sova that aren't archived.
 ```
 
 - **State.** One per row, on its rail (a colored left edge) and under its group's heading; no
-  row carries a state chip at any width. A row's state reaches screen readers as visually
-  hidden text after its title (", Needs you", ", Working", ", Idle", ", Archived"), so it is
-  never carried by the rail's color or the heading alone. The states: **Needs you** when the session waits on input or has an extension dialog open; else
-  **Working** when its turn runs or any of its workers works; else **Needs you** when its last
-  turn failed or stopped on an error, or it has open alignment questions, or its decision marks (an unseen reply that asks you, unseen
-  looping, a stuck subagent) say so; else **Idle**, or **Archived** for an archived session nothing runs in. The
-  open row says why a row needs you, in a line.
+  row carries a state chip or a second badge at any width. The states: **Needs you** when the
+  session waits on input or has an extension dialog open; else **Working** when its turn runs or
+  any of its workers works; else **Needs you** when its last turn failed or stopped on an error,
+  or it has open alignment questions, or its decision marks (a reply that waits on you, a reply
+  that says it is done without checking, §app.decisions/attention-signals) say so; else
+  **Idle**. An archived session has only two states: **Working** while its turn runs or any of its
+  workers works (until it stops), else **Archived**, whatever it waits on or last left: never
+  Needs you.
+- **The state's word.** Each row's state has one word, said to screen readers as visually hidden
+  text after its title (", Waiting on you: approval"), so it is never carried by the rail's color
+  or the heading alone: **Waiting on you** (an input request or a dialog), **Working**,
+  **Working (team)** (only its workers work), **Broken** (the last turn failed or stopped on an
+  error), **Waiting on you: decision** (open alignment questions, or a reply that asks you to
+  choose), **Waiting on you: approval** / **: info** (a reply that asks for an approval or for
+  information), **Done, unverified**, **Done** (an idle session whose last turn card says it did
+  what was asked), **Idle** and **Archived**. Broken, Working and Working (team) are counted in
+  code; only the waiting kind and the done words come from the turn card. The open row says why
+  a row needs you, in a line that ends with its source ("Guessed by Jev.", "From code.").
 - **Sort.** Needs you first, then Working, then the rest; within each, last active first.
 - **Groups.** The rendered rows sit under a heading per state, in that order: "Needs you · {n}",
   "Working · {n}", "Idle · {n}" (the rest; "Archived · {n}" when every one of them is archived),
@@ -1515,15 +1650,20 @@ Sova that aren't archived.
   still narrows it.
 - **Paging.** 50 rows render; "Show {n} More" adds 50. Paging counts the one sorted list, and
   the groups split only the rows it renders.
-- **Row click.** A click or tap anywhere on a row that isn't a control (the title, the gist, the
-  open row, its bare surface), at every width, opens the session, as Open does. Every control
+- **Title link.** The title is a real link to the session (`href` its session address, the
+  sidebar's): Tab reaches it, Enter opens the session, and Ctrl/Cmd-click, a middle click and the
+  browser's own link menu open it in a new tab. A plain click on it opens the session in this tab.
+  A click on it that ends a text selection inside the row doesn't follow it. No row has an Open
+  button; while the rename field shows, it replaces the title, link included.
+- **Row click.** A click or tap anywhere else on a row that isn't a control (the gist, the open
+  row, its bare surface), at every width, opens the session, as the title link does. Every control
   keeps its own action and never opens it: the twist, the team chips and their `+{n}`, the action buttons, ⋯ and
   its menu, and the rename field with its hint. A click that ends a text selection inside the row
-  doesn't open it, nor does one with a modifier key. The row itself takes no focus: Open is its
-  keyboard target.
+  doesn't open it, nor does one with a modifier key. The row itself takes no focus: the title
+  link is its keyboard target.
 - **Columns** (the `insights` container ≥1000px). Every row is at most 2 lines tall (an open
-  row adds its detail below), and every cell fits in those 2 lines. Session: the title as plain
-  text, then the gist (`outlineGist`, else the now line, else the cwd in mono), each one line.
+  row adds its detail below), and every cell fits in those 2 lines. Session: the title (the
+  link above), then the gist (`outlineGist`, else the now line, else the cwd in mono), each one line.
   Activity: one muted line, the compact model, the context ring (the sidebar row's rule: the open
   view's live fill wins, never without a window) and last active in relative time ("Opus 5.5 ·
   ◔ · 5m ago"). Workers: `{working}/{total} working`, or `{total} workers` while none
@@ -1531,8 +1671,10 @@ Sova that aren't archived.
   (§app.insights/usage-ledger) ("9/21 working · $610.10"); under it at most 2 team chips, working
   teams first, then a `+{n}` count chip for the rest. A team chip is a link to
   `#/agents/{teamKey}`; a click on it, or on `+{n}`, opens that session's Session details pane in
-  place on its Agents tab. Worktrees: see §app.insights/subagent-cards. Actions: Open, Session
-  details and ⋯; Archive and Move to group are in ⋯ only.
+  place on its Agents tab. Tokens/min: one line, §app.insights/session-token-rate. No cell shows
+  a worktree, an ahead/behind count or a line count (the open row lists the worktrees,
+  §app.insights/subagent-cards). Actions: Session details and ⋯ (a 2-button track); Archive and
+  Move to group are in ⋯ only.
 - **Totals.** The totals line (working · live · spend today · unmerged, with its `title`,
   §app.insights/usage-page-and-agents-page) shows once on the Board tab at every width: on the
   count line directly above the board (`.board-caption`), never in the page head. From 768px it
@@ -1541,20 +1683,19 @@ Sova that aren't archived.
   open). The title and the branches get the room: Activity shows the context ring and the age
   only ("◔ · 5m ago"), its model kept for screen readers and in the age's hover title; the team
   chips collapse into one `{n} teams` count chip (`1 team`) that opens the same pane as `+{n}`;
-  the readings and line counts take only their content's width, the branch the rest; and the
-  Session and Worktrees tracks share equally what Activity (5.5rem) and Workers (8–9.5rem)
-  leave, with `--space-2` between columns, so a
-  typical title shows whole and a branch shows at least 16 characters.
+  and the Session track takes what Activity (5.5rem), Workers (8–9.5rem), Tokens/min (6rem) and
+  the 2-button actions leave, with `--space-2` between columns, so a typical title shows whole.
 - **Wide** (the `insights` container ≥1600px). Session takes the width the other columns leave
-  (never under 20rem), Activity a 10rem track, Workers 17rem, Worktrees 28rem, the actions their
-  fixed width, so Workers and Worktrees never wrap past their 2 lines.
+  (never under 20rem), Activity a 10rem track, Workers 17rem, Tokens/min 8rem, the actions their
+  fixed width (2 buttons), so Workers never wraps past its 2 lines.
 - **Page.** Only this page drops the 1280px page cap: side margins `--space-4` below 1600px and
   `--space-6` from there, the content capped at 2400px and centered; the head, the bar and the
   board share the same left and right edges. Other insights pages keep 1280px.
 - **Condensed** (768–999px): one column holds the Activity line over the Workers cell's first
-  line (the team chips are left out); the actions are Open, Session
+  line (the team chips are left out), then the Tokens/min column; the actions are Session
   details and ⋯. **Folded** (<768px): stacked rows — the title across the full width, the gist, a micro line
-  (model · `{working}/{total} working` or `{total} workers` · last active), the worktree chips — and
+  (model · `{working}/{total} working` or `{total} workers` · last active · the row's
+  `{n} tok/min` when it has a figure, §app.insights/session-token-rate) — no worktree chips, and
   ⋯ is the door to every action. The group headings show at every width. Every target is 44px.
 - **Session details.** The info button (`aria-controls="session-pane"`, named "Session details of
   “{title}”") opens that session's Session detail pane (§app/subagents-pane) on its Session tab in
@@ -1568,7 +1709,7 @@ Sova that aren't archived.
   insight, the Timeline can't rewind ("Only a chat open in Sova can rewind."), and a row's jump
   says the message isn't in the transcript on screen.
 - **⋯ menu.** Session Details (Close Session Details while that row's pane is open), Open
-  Session, Open Subagents (opens the session with its pane on the Agents tab), Rename…, Use Gist as Title (the gist on one line,
+  Subagents (opens the session with its pane on the Agents tab), Rename…, Use Gist as Title (the gist on one line,
   cut to the title limit; off, with the reason, when there's none or it already is the title),
   Reset to Original Title (off when not renamed), Move to Group… (a screen of the groups, with
   "No group"), Archive or Unarchive, Copy Path. After them, for a session on this host, comes
@@ -1589,7 +1730,7 @@ Sova that aren't archived.
   …", the session mark's words) and the last turn's error, each unless the reason line already
   says it; the full now line (`outlineNow`, which the gist cuts to one line); the last 5 topic
   headings, newest first (the Timeline's order), each with its relative time; then one line per
-  worktree (§app.insights/subagent-cards). The headings come from one read-only `GET
+  worktree, whenever it has one (§app.insights/subagent-cards). The headings come from one read-only `GET
   /api/insights/session` when the row opens, kept while it stays open, never polled; while it
   runs the list says "Reading topics…", and a failed read says "Couldn't read the topics." with
   nothing else. Workers and teams aren't in it: the Workers column counts them, and a team chip
@@ -1604,30 +1745,77 @@ Sova that aren't archived.
 
 ## §app.insights/subagent-cards — Board worktrees
 
-The Worktrees column reads `GET /api/insights/worktrees?paths=…` for the rendered rows only
-(under Unmerged, for the default scope, which that chip needs a reading to decide), every 15s
-and whenever that set of rows changes. Readings are kept per session across requests. A failed
-or missing route (an older server) shows "—" in every row it hasn't read, and nothing else: no
-banner, no toast.
+The board reads `GET /api/insights/worktrees?paths=…` for the rendered rows only (under
+Unmerged, for the default scope, which that chip needs a reading to decide), every 15s and
+whenever that set of rows changes. Readings are kept per session across requests. They feed the
+Unmerged chip and its count, the totals line's unmerged figure, the search's branch and path
+words, and the open row's worktree lines; no column and no folded chip shows them. A failed or
+missing route (an older server) leaves those as unread, and says nothing else: no banner, no
+toast.
 
-- **Cell.** At most 2 lines, one tree each, the most useful first: unmerged, then those with
-  uncommitted changes, then merged, then the rest, then gone (each kind in the session's own
-  order). A line: the branch in mono (`detached` on a detached HEAD, the folder name when it's
-  gone), then **merged** (a success chip) when the tip is in the base, **content merged** when
-  merging would change nothing, else `↑{ahead} ↓{behind}` in mono; `+{added} −{removed}` when the
-  branch changes any line; a dot for uncommitted changes (its word for AT and in the `title`).
-  The readings and line counts of the 2 lines line up in columns on the right, and the branch
-  takes what's left. When either count is over 9,999, both shorten (`+326k −8.8k`), the exact
-  numbers in the counts' `title`. More trees: a `+{n}` count chip ends the second line. When the
-  session has 2 or more trees and every one is gone, the cell is one muted line, "{n} worktrees,
-  all gone". The cell's `title` states every tree.
-  No tree: "—". A tree that's gone reads "gone"; a git failure "unreadable"; no base "no base".
-- **Open row.** Worktree lines only when the session has 2 or more trees, or one with
-  uncommitted changes (a single clean tree is the cell already): one line per tree, with branch,
-  the same reading, lines, "uncommitted" in words, "a worker's" when a worker's cwd is the source,
-  and the path in mono.
-- **Folded.** The cell sits under the session as chips: the first tree in that order, then
-  `+{n}` for the rest; a row with no tree drops it.
+- **Open row.** One line per worktree whenever the session has any, most useful first:
+  unmerged, then those with uncommitted changes, then merged, then the rest, then gone (each kind
+  in the session's own order). A line: the branch in mono (`detached` on a detached HEAD, the
+  folder name when it's gone), then **merged** (a success chip) when the tip is in the base or
+  merging would change nothing, else **unmerged** in words; "uncommitted" in words when it has
+  uncommitted changes; "a worker's" when a worker's cwd is the source; and the path in mono. A
+  tree that's gone reads "gone"; a git failure "unreadable"; no base "no base". The line's
+  `title` says the same in a sentence (the base it is or isn't merged into).
+- **No counts.** Nothing on the board shows ahead/behind arrows or counts, or lines added and
+  removed, in a line, a chip or a `title`.
+
+## §app.insights/session-token-rate — Each board row's tokens a minute
+
+**Each Agents board row shows how fast that session is writing: the output tokens a minute over
+the last 5 minutes, for the session and its workers at any depth together, in the sidebar's
+format (`48k tok/min`), under the Tokens/min column (on a phone, on the row's micro line).**
+
+- **What is counted.** The tokens the sidebar's figure counts (§app.insights/token-velocity):
+  each model call's output tokens, landed when the call ends and spread back over its reply, in 30 s
+  epoch slots. For a row: the calls of its own chat process and of every worker chat it started,
+  and theirs, at any depth (explain, handoff and btw chats count as its workers), each counted once:
+  a process whose report already folds in another's is never added a second time.
+- **Who has one.** Only sessions whose chats Sova's server runs on this host. A session on another
+  host shows a muted dash whose `title` says "On another host: its tokens aren't counted here." A
+  session open in a terminal pi shows one saying "Open in a terminal pi: Sova can't see its
+  tokens.", unless a worker Sova runs for it wrote in the window: then the row shows that figure,
+  as partial.
+- **Not the sidebar's sum.** The rows never add up to the sidebar's figure, and nothing says they
+  do: the sidebar also counts connected hosts, hidden chats and Sova's own one-shots.
+- **Idle.** Nothing written in the last 5 minutes: a muted dash, its `title` "No output in the last
+  5 minutes.".
+- **Hover.** The figure's `title` (and its accessible name) is one sentence: "Output tokens a
+  minute: 48k over the last 5 minutes, 12k over 30 (this session 8k, its workers 40k). Replies
+  still being written aren't counted yet." Partial (a Claude Code turn running, whose tokens land
+  when it ends; a process that reports no ring or a partial one; a terminal pi row's own
+  calls): "at least" before the 5-minute figure and "Some calls' tokens can't be seen." before the
+  last sentence; the figure itself stays bare, as the sidebar's does.
+- **Kept after a process goes.** A session's tokens stay on its row, attributed to it (a worker's to
+  its parent's row), when its chat or worker process exits, idles out, is stopped, or reloads onto
+  new code, until they age out of the window; a reload's new process adds to them, never replaces
+  them. Once aged out they leave the server's memory too, whether or not a board is open (checked
+  at most once per 30 s slot on the store's own calls, never on a timer). Tokens from processes
+  that ended before this server started are not there.
+- **Delivered with the poll.** The server keeps each session's slots in memory from what its chat
+  processes already report with their state (no disk, no git, no new route, no timer, nothing per
+  token; a report that repeats the last one is compared in place and costs nothing more) and
+  puts them on `GET /api/insights/agents` only when the request asks (`?tokens=1`; then `tokens`,
+  `{}` when none; without it the answer has no `tokens` and the server does no token work), keyed by
+  the row's session id:
+  only sessions with tokens in the last 5 minutes, each one compact string holding its last 5
+  minutes' slots (from the oldest non-zero one) and its 30-minute total, its own and its workers'
+  apart. The server builds that answer once per change and per 30 s slot; every poll in between
+  reads the same copy. Never on the `llm_inflight` frame, whose host part goes to peers. The app's
+  one agents poll (the sidebar's feed reads it on every page) asks only while the Agents board's
+  Board tab is shown, and entering the tab asks at once; the poll pauses while the browser tab is
+  hidden, and no second poll is added. Every other page's poll costs what it did without the
+  column. An older server that sends no `tokens` on a request that asked: every row's dash says
+  "This server doesn't report tokens per session."
+- **Moves by itself.** The browser reads the 5-minute means with the sidebar's
+  `tokenVelocityView()` once per answer whose `tokens` read differently from the last and on one
+  shared 30 s tick for the whole board (an answer with the same `tokens` reuses the last reading
+  whole), which runs only while a shown row has tokens and the tab is visible; nothing is computed
+  per row per redraw. The 30-minute figure in the sentence is the latest answer's.
 
 ## §app.insights/worktrees-endpoint — Which worktrees a session touched
 
@@ -1907,6 +2095,8 @@ which draws them on the session's axis; the strip keeps no history of its own.
 - **Refetching.** Refetch after a watch `append` or chat `agent_settled`, debounced. Update in
   place.
 - **Folded width.** `.outline-body` caps at 50vh instead of `--outline-max` (40vh).
+- **Focus.** In Focus (§chat.transcript/focus-view) the strip is hidden on a single-chat screen;
+  it comes back as it was when Focus turns off.
 
 ## §app.insights/summary-sections — One section of the conversation per topic
 

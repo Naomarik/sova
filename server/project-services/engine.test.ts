@@ -9,7 +9,7 @@ import { SelectedDriver } from "./adapters";
 import { DetachedDriver, SystemdDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { FakeHost } from "./fake-host";
-import { readRegistry } from "./store";
+import { mutateRegistry, readRegistry } from "./store";
 import { defHashOf } from "./def-hash";
 import { parseDefinition } from "../../shared/project-contract";
 
@@ -379,4 +379,25 @@ test("reset gives fresh data; down keeps it; teardown deletes it and keeps the b
   const m = shaped(await engine.run("create", { project }, op));
   assert.equal(m.slot, 0);
   assert.equal((await engine.run("teardown", { instance: m.instance }, op)).error?.code, "refused-slot0");
+});
+
+test("the Project Assistant's Current version: a bare up of the main checkout, only while it has no copy, once its act is taken", async () => {
+  const acts: string[] = [];
+  const pm = (act = true): Caller => ({ kind: "assistant", id: "project-assistant", root: project, upMain: true, ...(act ? { act: async (verb: string, instance: string | null) => void acts.push(`${verb}:${instance}`) } : {}) }) as Caller;
+  const mainCopy = () => readRegistry().instances.find((i) => i.project === project && i.checkout === project);
+  // The main checkout's copy (slot 0) is never torn down: forget the one an earlier test made, for a project with none.
+  mutateRegistry((r) => void (r.instances = r.instances.filter((i) => !(i.project === project && i.checkout === project))));
+  for (const [verb, body, caller] of [
+    ["up", { project }, pm(false)],
+    ["up", { project, branch: "sova/pa-main" }, pm()],
+    ["create", { project }, pm()],
+    ["up", { project: "/elsewhere" }, pm()],
+  ] as [string, Record<string, unknown>, Caller][])
+    assert.notEqual((await engine.run(verb, body, caller)).ok, true, `${verb} ${JSON.stringify(body)}`);
+  assert.equal(mainCopy(), undefined, "no copy was made");
+  const up = shaped(await engine.run("up", { project }, pm()));
+  assert.equal(up.ok, true, JSON.stringify(up.error));
+  assert.deepEqual(acts, ["up:null"]);
+  assert.ok(mainCopy(), "the main checkout's copy exists now");
+  assert.equal((await engine.run("up", { project }, pm())).error?.code, "forbidden", "it has a copy now: a bare up is no longer its");
 });

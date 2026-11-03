@@ -1,7 +1,9 @@
 // The sidebar's "Needs you" region: the sessions the attention digest puts in its act tier
 // (server/attention.ts — a dialog open, an errored turn, a subagent error, open alignment questions
-// waiting on you, a baton hand-off), said once more above Recent. A reply that asks, a team gone
-// quiet and a branch ready to merge are decide items: quiet marks on their rows, never listed here.
+// waiting on you, a baton hand-off), said once more above Recent, then, as a softer tier under
+// them, the turn card's guesses (soft items: a reply that waits on you, one that says it's done
+// without checking). A team gone quiet and a branch ready to merge are decide items: quiet marks
+// on their rows, never listed here.
 //
 // One decide-tier kind lists too: a roster proposal (§app.organizations/referrals) waits on the
 // operator's Approve or Decline and on nothing else, so it is a thing to act on here.
@@ -13,7 +15,10 @@
 // Pure on purpose, like `recent` and `group-open`: the rules run under tsx --test, and the sidebar
 // keeps the (sessionStorage) state.
 
+import { listsInNeedsYou } from "../../shared/needs-you";
 import type { AttentionDigest, AttentionItem, OverseerProactivity, SessionSummary } from "../../shared/protocol";
+
+export { listsInNeedsYou };
 
 /** Open by default; a collapse is remembered for the tab, like the Archive's `sova:archive-open`. */
 export const NEEDS_YOU_KEY = "sova:needs-you-open";
@@ -30,10 +35,10 @@ export interface NeedsYouRow {
   /** A proposed verb playbook run's item (`playbook-review`): what the row's Merge Branch needs
       (§app.project-runtime/review), the one button a Needs you row carries. */
   playbook?: NonNullable<AttentionItem["playbook"]>;
+  /** Only guesses list it (soft items): it sits in the softer tier, under the blockers. */
+  soft: boolean;
 }
 
-/** Whether a digest item lists in the region: every act item, and a roster proposal. */
-export const listsInNeedsYou = (it: Pick<AttentionItem, "tier" | "kind">): boolean => it.tier === "act" || it.kind === "roster-proposal";
 
 /**
  * The region's rows: one per session with at least one act item (or roster proposal), newest first by that session's
@@ -44,13 +49,14 @@ export const listsInNeedsYou = (it: Pick<AttentionItem, "tier" | "kind">): boole
 export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined, sessions: readonly SessionSummary[]): NeedsYouRow[] {
   if (!digest) return [];
   const byPath = new Map(sessions.map((s) => [s.path, s]));
-  const acc = new Map<string, { session: SessionSummary; since: number; details: { at: number; text: string }[]; playbook?: NeedsYouRow["playbook"] }>();
+  const acc = new Map<string, { session: SessionSummary; since: number; details: { at: number; text: string }[]; playbook?: NeedsYouRow["playbook"]; soft: boolean }>();
   for (const it of digest.items) {
     if (!listsInNeedsYou(it)) continue;
     const session = byPath.get(it.path);
     if (!session) continue;
     let a = acc.get(it.path);
-    if (!a) acc.set(it.path, (a = { session, since: it.since, details: [] }));
+    if (!a) acc.set(it.path, (a = { session, since: it.since, details: [], soft: true }));
+    if (!it.soft) a.soft = false;
     a.since = Math.max(a.since, it.since);
     if (it.detail) a.details.push({ at: it.since, text: it.detail });
     if (it.kind === "playbook-review" && it.playbook) a.playbook = it.playbook;
@@ -59,15 +65,16 @@ export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined,
     .map((a) => {
       // Newest first; the sort is stable, so one time keeps the digest's own order (most urgent kind first).
       const details = a.details.sort((x, y) => y.at - x.at).map((d) => d.text);
-      return { session: a.session, since: a.since, details, detail: details[0] ?? null, ...(a.playbook ? { playbook: a.playbook } : {}) };
+      return { session: a.session, since: a.since, details, detail: details[0] ?? null, soft: a.soft, ...(a.playbook ? { playbook: a.playbook } : {}) };
     })
-    .sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
+    // Blockers first, then the softer tier; each newest first.
+    .sort((a, b) => Number(a.soft) - Number(b.soft) || b.since - a.since || a.session.path.localeCompare(b.session.path));
 }
 
 /** The digest kinds of no session the region lists itself (a project's deploy, §app.project-services/deploy-status;
     WhatsApp sending down, §app.outreach/sender-health; an org owner's request, outage or ask for a new link,
     §app.project-assistant/requests). */
-const DEPLOY_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["deploy-failed", "deploy-request", "whatsapp-down", "owner-request", "owner-outage", "owner-link-request", "owner-version-request"]);
+const DEPLOY_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["deploy-failed", "deploy-request", "whatsapp-down", "owner-request", "owner-outage", "owner-link-request", "owner-version-request", "owner-feature-ended", "owner-request-closed"]);
 
 /**
  * The region's items of no session: a deploy target whose latest deploy failed, an overseer's request to deploy,

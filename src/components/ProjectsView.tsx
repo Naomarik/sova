@@ -27,6 +27,7 @@ const errText = (err: unknown) => (err instanceof ApiError || err instanceof Err
  */
 export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHeadingElement): void; /** The sidebar's session list. */ sessions?: () => readonly SessionSummary[] | undefined }) {
   const tab = createMemo((): ProjectTab => (props.route.kind === "project" ? (props.route.tab ?? "overview") : "overview"));
+  const run = createMemo(() => (props.route.kind === "project" ? props.route.run : undefined));
   return (
     <Switch>
       <Match when={props.route.kind === "list"}>
@@ -34,7 +35,7 @@ export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHea
       </Match>
       {/* Keyed on the project alone: a tab change keeps the page and what it fetched. */}
       <Match when={props.route.kind === "project" && props.route.projectId} keyed>
-        {(pid) => <ProjectRoute projectId={pid} tab={tab()} titleRef={props.titleRef} sessions={props.sessions} />}
+        {(pid) => <ProjectRoute projectId={pid} tab={tab()} run={run()} titleRef={props.titleRef} sessions={props.sessions} />}
       </Match>
       <Match when={props.route.kind === "overseer" && props.route.projectId} keyed>
         {(pid) => <OverseerDoor projectId={pid} titleRef={props.titleRef} />}
@@ -44,7 +45,7 @@ export function ProjectsView(props: { route: ProjectsRoute; titleRef(el: HTMLHea
 }
 
 /** One project's page, once its read lands: the org's part composed in only while one places it. */
-function ProjectRoute(props: { projectId: string; tab: ProjectTab; titleRef(el: HTMLHeadingElement): void; sessions?: () => readonly SessionSummary[] | undefined }) {
+function ProjectRoute(props: { projectId: string; tab: ProjectTab; run?: string; titleRef(el: HTMLHeadingElement): void; sessions?: () => readonly SessionSummary[] | undefined }) {
   // What this tab last read of it (here, or the sidebar's project list) draws the page at once; the read updates it.
   const [project, { refetch, mutate }] = createResource(
     () => props.projectId,
@@ -74,11 +75,12 @@ function ProjectRoute(props: { projectId: string; tab: ProjectTab; titleRef(el: 
         </InsightsPage>
       }
     >
-      <Show when={space()} keyed fallback={<ProjectPage project={latest()!} tab={props.tab} titleRef={props.titleRef} onProject={mutate} refetchProject={() => void refetch()} sessions={props.sessions} />}>
+      <Show when={space()} keyed fallback={<ProjectPage project={latest()!} tab={props.tab} run={props.run} titleRef={props.titleRef} onProject={mutate} refetchProject={() => void refetch()} sessions={props.sessions} />}>
         {(orgId) => (
           <ProjectPage
             project={latest()!}
             tab={props.tab}
+            run={props.run}
             titleRef={props.titleRef}
             onProject={mutate}
             refetchProject={() => void refetch()}

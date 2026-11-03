@@ -5,6 +5,7 @@ import { Ledger } from "./ledger";
 import { createPriceBook, type PriceBook, type PriceBookOptions } from "./price-book";
 import { orgCosts, projectCost, type ProjectDeps, type ProjectScope } from "./project";
 import { PerfStore } from "./perf-store";
+import { foldCache, foldInputOf } from "./project-fold";
 import { Queries } from "./query";
 
 /**
@@ -74,13 +75,17 @@ export function createService(opts: ServiceOptions): Service {
 
   const projectDeps: ProjectDeps = { ledger, queries, prices, device: opts.device ?? (() => null), now: opts.now ?? Date.now };
 
+  // The By project rows' fold, kept across polls while the server sends the same projects.
+  const folds = foldCache(opts.now);
+
   const answer = async (req: Record<string, unknown>): Promise<unknown> => {
     const tz = typeof req.tz === "string" ? req.tz : "UTC";
     switch (req.op) {
       case "costs": {
         const range = (req.range ?? "30d") as UsageRange;
         if (!USAGE_RANGES.includes(range)) throw new BadRequest(`range must be one of ${USAGE_RANGES.join(", ")}`);
-        return queries.costs({ range, providers: strings(req.provider), models: strings(req.model), tz });
+        const fold = foldInputOf(req.fold);
+        return queries.costs({ range, providers: strings(req.provider), models: strings(req.model), tz, ...(fold ? { fold: folds(fold) } : {}) });
       }
       case "today":
         return queries.today({ tz });

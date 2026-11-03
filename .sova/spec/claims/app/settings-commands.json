@@ -1,0 +1,20 @@
+{
+  "§app/settings-commands": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "shared/commands/other.ts",
+      "shared/commands-ids.json",
+      "server/commands-settings.test.ts"
+    ],
+    "requires": [
+      "§app.commands/catalogue"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T05:59Z",
+      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+    }
+  }
+}

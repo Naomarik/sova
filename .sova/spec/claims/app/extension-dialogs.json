@@ -1,0 +1,12 @@
+{
+  "§app/extension-dialogs": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "notOwned": [
+      "§app.harness/session-open",
+      "§app.overseer/dialog-answers",
+      "§app/extensions"
+    ]
+  }
+}

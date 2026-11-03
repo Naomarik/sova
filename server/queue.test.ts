@@ -9,7 +9,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { ChatServerMessage, QueueGoneReason, QueueItem } from "../shared/protocol";
-import { type QueueDeps, WebQueue, type WebQueueItem } from "./queue";
+import { HANDED_REFUSAL, type HandedTicket, type QueueDeps, WebQueue, type WebQueueItem } from "./queue";
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 /** Let every pending microtask AND timer settle; the pump is `void`-ed, so nothing awaits it. */
@@ -50,6 +50,10 @@ class FakeSdk {
   streaming = true;
   /** A compaction is running: `QueueDeps.paused`, which pi's prompt() refusal makes necessary. */
   paused = false;
+  /** pi is emitting agent_settled (quirk P5): `QueueDeps.settling`. */
+  settling = false;
+  /** The key each hand-off carried, in order. */
+  readonly keys: (string | undefined)[] = [];
   handlerDelay = 0;
   /** Applied at hand-off, like the real input handlers + template expansion. null = swallowed. */
   transform: ((text: string) => string | null) | null = null;
@@ -61,12 +65,29 @@ class FakeSdk {
       (`_emitQueueUpdate`). Modelled, because the queue reads GROWTH out of that sequence and a
       fake that stayed silent would hide the one-in-one-out case entirely. */
   onQueueUpdate: ((steering: number, followUp: number) => void) | null = null;
+  /** One identity per REAL steering entry, index for index (pi's message objects): what a ticket names,
+      so twins of the same text are told apart, as the real lane's objects are. */
+  steerTokens: object[] = [];
+  /** The ticket whose `run` is calling `handOff` right now: the fake's stand-in for the async context
+      the real ticket reads (steer-ticket.ts). Taken by the hand-off it starts, synchronously. */
+  activeTicket: FakeTicket | null = null;
+  /** Held open, the hand-off waits here before queueing (an input handler describing an image). */
+  gate: Promise<void> | null = null;
+  /** The hand-off queues its steer twice in its own context (no one message to name). */
+  doublePush = false;
+  /** The input step queues a steer of its own, in the hand-off's context, before ours (then waits on `gate`). */
+  inContextForeign: string | null = null;
 
   async handOff(item: WebQueueItem, streaming: boolean): Promise<void> {
+    const ticket = this.activeTicket;
+    this.activeTicket = null;
     if (this.guardError) throw this.guardError;
     await tick(this.handlerDelay);
+    if (this.inContextForeign !== null && item.kind === "steer") this.enqueue("steer", this.inContextForeign, ticket);
+    if (this.gate) await this.gate;
     if (this.guardError) throw this.guardError;
     this.handed.push({ kind: item.kind, text: item.text, images: item.images?.length ?? 0, streaming });
+    this.keys.push(item.key);
     const expanded = this.transform ? this.transform(item.text) : item.text;
     if (expanded === null) return; // an input handler swallowed it
     if (!streaming) {
@@ -74,24 +95,50 @@ class FakeSdk {
       this.streaming = true;
       return;
     }
-    this.enqueue(item.kind, expanded);
+    this.enqueue(item.kind, expanded, ticket);
+    if (this.doublePush && item.kind === "steer") this.enqueue(item.kind, expanded, ticket);
   }
 
-  /** AgentSession._queueSteer/_queueFollowUp: push BOTH structures. */
-  enqueue(kind: "steer" | "followUp", text: string): void {
+  /** AgentSession._queueSteer/_queueFollowUp: push BOTH structures; a steer's object is shown to the
+      ticket of the hand-off that queued it, after the push (tapSteers). */
+  enqueue(kind: "steer" | "followUp", text: string, ticket?: FakeTicket | null): void {
     (kind === "steer" ? this.realSteering : this.realFollowUp).push(text);
     (kind === "steer" ? this.mirrorSteering : this.mirrorFollowUp).push(text);
     this.emitQueueUpdate();
+    if (kind !== "steer") return;
+    const token = {};
+    this.steerTokens.push(token);
+    ticket?.queued(token);
+  }
+
+  /** Another sender's steer (an extension, a reminder): queued in no ticket's hand-off. */
+  foreignSteer(text: string): void {
+    this.enqueue("steer", text);
+  }
+
+  /** takeSteerOut: that very entry out of the real lane, one entry of its text out of the mirror. */
+  takeOut(token: object): "removed" | "taken" {
+    const i = this.steerTokens.indexOf(token);
+    if (i < 0) return "taken";
+    const [text] = this.realSteering.splice(i, 1);
+    this.steerTokens.splice(i, 1);
+    const j = this.mirrorSteering.lastIndexOf(text!);
+    if (j >= 0) this.mirrorSteering.splice(j, 1);
+    this.emitQueueUpdate();
+    return "removed";
   }
 
   private emitQueueUpdate(): void {
     this.onQueueUpdate?.(this.mirrorSteering.length, this.mirrorFollowUp.length);
   }
 
-  /** The agent loop taking the front message: it leaves the REAL queue and is committed to the
-      model. The mirror still lists it until `announce` — the window BUG 2 lives in. */
-  drain(kind: "steer" | "followUp" = "steer"): string | undefined {
-    return (kind === "steer" ? this.realSteering : this.realFollowUp).shift();
+  /** The agent loop taking messages: they leave the REAL queue and are committed to the model. The
+      steering lane drains WHOLE (Sova's runtimes run pi's steering in "all" mode, quirk P28), the
+      follow-up lane one at a time (pi's default). The mirror still lists them until `announce` — the
+      window BUG 2 lives in. */
+  drain(kind: "steer" | "followUp" = "steer"): string[] {
+    if (kind === "steer") this.steerTokens.splice(0);
+    return kind === "steer" ? this.realSteering.splice(0) : this.realFollowUp.splice(0, 1);
   }
 
   /**
@@ -118,11 +165,11 @@ class FakeSdk {
     this.emitQueueUpdate();
   }
 
-  /** The loop delivering one message end to end. */
-  deliver(kind: "steer" | "followUp" = "steer"): string | undefined {
-    const text = this.drain(kind);
-    this.announce(kind, text);
-    return text;
+  /** The loop delivering end to end what one poll takes (every steer, or one follow-up). */
+  deliver(kind: "steer" | "followUp" = "steer"): string[] {
+    const texts = this.drain(kind);
+    for (const text of texts) this.announce(kind, text);
+    return texts;
   }
 
   /** An extension queueing work of its own (`pi.sendUserMessage(…, {deliverAs:"followUp"})`). */
@@ -148,9 +195,10 @@ class FakeSdk {
     const kind = this.realSteering.length ? "steer" : this.realFollowUp.length ? "followUp" : null;
     if (!kind) return;
     this.streaming = true;
-    const text = this.drain(kind);
-    this.woke.push(text ?? "");
-    this.announce(kind, text); // its message_start
+    for (const text of this.drain(kind)) {
+      this.woke.push(text);
+      this.announce(kind, text); // its message_start
+    }
   }
   readonly woke: string[] = [];
 
@@ -158,6 +206,7 @@ class FakeSdk {
     const drained = { steering: [...this.mirrorSteering], followUp: [...this.mirrorFollowUp] };
     this.realSteering = [];
     this.realFollowUp = [];
+    this.steerTokens = [];
     this.mirrorSteering = [];
     this.mirrorFollowUp = [];
     this.onQueueUpdate?.(0, 0); // clearQueue() emits too, synchronously, before it returns
@@ -165,9 +214,50 @@ class FakeSdk {
   }
 }
 
+/**
+ * The fake's SteerTicket, to the contract's words (shared/harness-session.ts; the real one, steer-ticket.ts,
+ * is pinned against pi by contract.test.ts P29): the first steer its own hand-off queues is its; removed
+ * while the hand-off runs, it comes out when the hand-off settles, only if exactly one was queued;
+ * two in its hand-off, or none once settled: unknown, and nothing is spliced.
+ */
+class FakeTicket implements HandedTicket {
+  private token: object | null = null;
+  private pushes = 0;
+  private settled = false;
+  private wanted = false;
+  private removed = false;
+  constructor(private readonly sdk: FakeSdk) {}
+  run<T>(handOff: () => T): T {
+    this.sdk.activeTicket = this;
+    const out = handOff();
+    const done = () => {
+      this.settled = true;
+      if (this.wanted && this.pushes === 1 && this.token) this.removed = this.sdk.takeOut(this.token) === "removed";
+    };
+    void (out as unknown as Promise<unknown>).then(done, done);
+    return out;
+  }
+  queued(token: object): void {
+    if (++this.pushes !== 1) return;
+    this.token = token;
+  }
+  remove(): "removed" | "later" | "taken" | "unknown" {
+    if (this.removed) return "removed";
+    if (!this.settled) {
+      this.wanted = true;
+      return "later";
+    }
+    if (this.pushes !== 1 || !this.token) return "unknown";
+    const out = this.sdk.takeOut(this.token);
+    if (out === "removed") this.removed = true;
+    return out;
+  }
+}
+
 /** The queue, wired to the fake exactly as `ChatSession` wires it to the real session, and two
-    clients behind one broadcast — the fan-out the contract promises for every departure. */
-function rig(sdk = new FakeSdk()) {
+    clients behind one broadcast — the fan-out the contract promises for every departure. `tickets`:
+    the harness names each handed steer (the pi adapter does), so a handed steer stays removable. */
+function rig(sdk = new FakeSdk(), o: { tickets?: boolean } = {}) {
   const one: ChatServerMessage[] = [];
   const two: ChatServerMessage[] = [];
   const broadcast = (m: ChatServerMessage) => {
@@ -181,9 +271,11 @@ function rig(sdk = new FakeSdk()) {
       mirrorTotal: () => sdk.mirrorTotal(),
       mirrorFor: (kind) => (kind === "steer" ? sdk.mirrorSteering : sdk.mirrorFollowUp).length,
       mirrorHas: (kind, text) => (kind === "steer" ? sdk.mirrorSteering : sdk.mirrorFollowUp).includes(text),
+      ...(o.tickets ? { steerTicket: () => new FakeTicket(sdk) } : {}),
     },
     streaming: () => sdk.streaming,
     paused: () => sdk.paused,
+    settling: () => sdk.settling,
     clearSdkQueue: () => sdk.clearQueue(),
     guard: () => {
       if (sdk.guardError) throw sdk.guardError;
@@ -239,59 +331,100 @@ describe("the outgoing queue", () => {
     );
   });
 
-  test("hands exactly one item to the SDK and holds the rest, in order", async () => {
+  test("hands ONE follow-up to the SDK at a time and holds the rest, in order", async () => {
     const r = rig();
-    for (const id of ["a", "b", "c"]) r.queue.enqueue({ kind: "steer", text: id, origin: "client", id });
+    for (const id of ["a", "b", "c"]) r.queue.enqueue({ kind: "followUp", text: id, origin: "client", id });
     await settle();
-    assert.deepEqual(r.sdk.realSteering, ["a"], "only the head is inside the SDK");
+    assert.deepEqual(r.sdk.realFollowUp, ["a"], "only the head is inside the SDK");
     assert.deepEqual(states(r.lastSnapshot(r.one)), ["a:sending", "b:queued", "c:queued"]);
 
-    r.sdk.deliver("steer"); // the loop takes "a"
+    r.sdk.deliver("followUp"); // the loop takes "a"
     r.queue.onSdkEvent();
     await settle();
-    assert.deepEqual(r.sdk.realSteering, ["b"], "the next one goes in as soon as the first drains");
+    assert.deepEqual(r.sdk.realFollowUp, ["b"], "the next one goes in as soon as the first drains");
     assert.deepEqual(states(r.lastSnapshot(r.one)), ["b:sending", "c:queued"]);
     assert.deepEqual(r.gone(r.one), [["a", "delivered"]]);
   });
 
-  test("removes a MIDDLE held item without touching the SDK or the order", async () => {
+  test("STEERS LAND TOGETHER: every waiting steer goes in behind the ones pi holds, in order, and all depart delivered at its next step", async () => {
     const r = rig();
     for (const id of ["a", "b", "c"]) r.queue.enqueue({ kind: "steer", text: id, origin: "client", id });
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["a", "b", "c"], "all three are in pi, in the order sent");
+    assert.deepEqual(r.sdk.handed.map((h) => [h.text, h.streaming]), [["a", true], ["b", true], ["c", true]], "each its own hand-off, one after another");
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["a:sending", "b:sending", "c:sending"]);
+
+    assert.deepEqual(r.sdk.deliver("steer"), ["a", "b", "c"], "pi's next step takes them all");
+    r.queue.onSdkEvent();
+    await settle();
+    assert.deepEqual(r.gone(r.one), [["a", "delivered"], ["b", "delivered"], ["c", "delivered"]]);
+    assert.equal(r.queue.size, 0);
+  });
+
+  test("steers pi took while the next was still in its input handler are delivered then, not when the next drains", async () => {
+    const r = rig();
+    r.queue.enqueue({ kind: "steer", text: "a", origin: "client", id: "a" });
+    await settle();
+    r.sdk.handlerDelay = 20; // the next one's input handler is slow (an image being described)
+    r.queue.enqueue({ kind: "steer", text: "b", origin: "client", id: "b" });
+    await tick(1);
+    assert.deepEqual(r.sdk.deliver("steer"), ["a"], "pi's step takes a while b is not in pi yet");
+    assert.deepEqual(r.gone(r.one), [["a", "delivered"]], "the empty queue said so at once");
+    await tick(30);
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["b"], "b lands at the step after: the narrow window splits the batch, in order");
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["b:sending"]);
+  });
+
+  test("a steer sent while earlier steers are still queued in pi joins them", async () => {
+    const r = rig();
+    r.queue.enqueue({ kind: "steer", text: "first", origin: "client", id: "1" });
+    await settle();
+    r.queue.enqueue({ kind: "steer", text: "second", origin: "client", id: "2" });
+    await settle();
+    r.queue.enqueue({ kind: "steer", text: "third", origin: "client", id: "3" });
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["first", "second", "third"], "none waited for the one before to be taken");
+    assert.deepEqual(r.gone(r.one), []);
+  });
+
+  test("removes a MIDDLE held item without touching the SDK or the order", async () => {
+    const r = rig();
+    for (const id of ["a", "b", "c"]) r.queue.enqueue({ kind: "followUp", text: id, origin: "client", id });
     await settle();
 
     const outcome = await r.queue.remove("b");
     assert.equal(outcome.ok, true);
-    assert.deepEqual(r.sdk.realSteering, ["a"], "the SDK queue is untouched by a held-item removal");
+    assert.deepEqual(r.sdk.realFollowUp, ["a"], "the SDK queue is untouched by a held-item removal");
     assert.deepEqual(ids(r.lastSnapshot(r.one)), ["a", "c"]);
 
-    r.sdk.deliver("steer");
+    r.sdk.deliver("followUp");
     r.queue.onSdkEvent();
     await settle();
-    assert.deepEqual(r.sdk.realSteering, ["c"], "c follows a, and b never reaches the model");
+    assert.deepEqual(r.sdk.realFollowUp, ["c"], "c follows a, and b never reaches the model");
     assert.deepEqual(r.sdk.handed.map((h) => h.text), ["a", "c"]);
   });
 
   test("duplicate texts are removed by id, not by text", async () => {
     const r = rig();
-    for (const id of ["1", "2", "3"]) r.queue.enqueue({ kind: "steer", text: "go", origin: "client", id });
+    for (const id of ["1", "2", "3"]) r.queue.enqueue({ kind: "followUp", text: "go", origin: "client", id });
     await settle();
 
     assert.equal((await r.queue.remove("2")).ok, true);
     assert.deepEqual(ids(r.lastSnapshot(r.one)), ["1", "3"], "the SECOND 'go' left; the other two stand");
     // Three identical strings is exactly the case the SDK's own indexOf bookkeeping cannot answer.
-    // Here the question never arises: the held list is indexed by id and only one copy is ever
-    // inside the SDK at a time.
-    r.sdk.deliver("steer");
+    // Here the question never arises: the held list is indexed by id.
+    r.sdk.deliver("followUp");
     r.queue.onSdkEvent();
     await settle();
-    assert.deepEqual(r.sdk.realSteering, ["go"]);
+    assert.deepEqual(r.sdk.realFollowUp, ["go"]);
     assert.deepEqual(ids(r.lastSnapshot(r.one)), ["3"]);
   });
 
   test("an image-only message queues and removes like any other", async () => {
     const r = rig();
-    r.queue.enqueue({ kind: "steer", text: "", images: [{ type: "image", data: "AAAA", mimeType: "image/png" }], origin: "client", id: "pic" });
-    r.queue.enqueue({ kind: "steer", text: "", images: [{ type: "image", data: "BBBB", mimeType: "image/png" }], origin: "client", id: "pic2" });
+    r.queue.enqueue({ kind: "followUp", text: "", images: [{ type: "image", data: "AAAA", mimeType: "image/png" }], origin: "client", id: "pic" });
+    r.queue.enqueue({ kind: "followUp", text: "", images: [{ type: "image", data: "BBBB", mimeType: "image/png" }], origin: "client", id: "pic2" });
     await settle();
     const held = r.lastSnapshot(r.one);
     assert.deepEqual(held.map((i) => [i.id, i.text, i.images]), [["pic", "", 1], ["pic2", "", 1]]);
@@ -300,50 +433,31 @@ describe("the outgoing queue", () => {
     assert.equal(r.sdk.handed[0]?.images, 1, "the bytes went with it");
   });
 
-  test("removing the handed-off item takes it back when the SDK holds nothing else", async () => {
+  test("a handed item is never removed on its own: refused, nothing of anyone's is cleared, and a held one still goes", async () => {
+    // §chat.transcript/a-queued-message: once pi has it, Stop is how it comes back. Taking one of
+    // several out of pi would need clearQueue(), which empties everything.
     const r = rig();
     r.queue.enqueue({ kind: "steer", text: "wait no", origin: "client", id: "a" });
-    await settle();
-    assert.deepEqual(r.sdk.realSteering, ["wait no"]);
-
-    const outcome = await r.queue.remove("a");
-    assert.equal(outcome.ok, true);
-    assert.deepEqual(r.sdk.realSteering, [], "clearQueue() was safe here: our item was all that was in there");
-    assert.deepEqual(r.gone(r.one), [["a", "removed"]]);
-  });
-
-  test("removing the handed-off item is REFUSED when an extension shares the SDK queue", async () => {
-    const r = rig();
-    r.queue.enqueue({ kind: "steer", text: "wait no", origin: "client", id: "a" });
+    r.queue.enqueue({ kind: "steer", text: "and this", origin: "client", id: "b" });
+    r.queue.enqueue({ kind: "followUp", text: "later", origin: "client", id: "c" });
     await settle();
     r.sdk.extensionFollowUp("subagent finished: 3 files changed"); // pi's own work, not ours
-
-    const outcome = await r.queue.remove("a");
-    assert.equal(outcome.ok, false);
-    assert.equal(outcome.ok === false && outcome.reason, "shared_queue");
-    // The point of the refusal, asserted as a state and not as a code: NOTHING was dropped.
-    assert.deepEqual(r.sdk.realSteering, ["wait no"]);
-    assert.deepEqual(r.sdk.realFollowUp, ["subagent finished: 3 files changed"]);
-    assert.deepEqual(r.gone(r.one), [], "and no client was told anything left");
-
-    // AND IT STAYS REFUSED for this item's lifetime, even after the extension's message is gone.
-    // Once something else has been in the queue alongside ours, "something is queued" can never be
-    // attributed to ours again: the reading that would un-stick it ("the mirror holds exactly one
-    // item, of our kind") is satisfied just as well by OURS HAVING BEEN DELIVERED and the foreign
-    // one remaining. No public API this queue reads separates those, so the refusal is permanent rather
-    // than probabilistic — which is why the copy must not promise "try again in a moment".
-    r.sdk.deliver("followUp");
-    const after = await r.queue.remove("a");
-    assert.equal(after.ok, false, "still refused, and honestly so");
-    assert.equal(after.ok === false && after.reason, "shared_queue");
-    assert.deepEqual(r.sdk.realSteering, ["wait no"], "and ours is still on its way, untouched");
+    for (const id of ["a", "b"]) {
+      const outcome = await r.queue.remove(id);
+      assert.deepEqual(outcome, { ok: false, reason: "internal", message: HANDED_REFUSAL }, id);
+    }
+    assert.deepEqual(r.sdk.realSteering, ["wait no", "and this"], "both still on their way");
+    assert.deepEqual(r.sdk.realFollowUp, ["subagent finished: 3 files changed"], "and the extension's work untouched");
+    assert.deepEqual(r.gone(r.one), [], "no client was told anything left");
+    assert.equal((await r.queue.remove("c")).ok, true, "the follow-up Sova still holds is removable");
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["a:sending", "b:sending"]);
   });
 
   test("removing an item the loop already drained is refused as consumed", async () => {
     const r = rig();
     r.queue.enqueue({ kind: "steer", text: "too late", origin: "client", id: "a" });
     await settle();
-    r.sdk.deliver("steer"); // drained, message_start not emitted yet
+    r.sdk.drain("steer"); // drained, message_start not emitted yet
 
     const outcome = await r.queue.remove("a");
     assert.equal(outcome.ok, false);
@@ -351,11 +465,9 @@ describe("the outgoing queue", () => {
     assert.deepEqual(r.gone(r.one), [["a", "delivered"]], "and the client is told it was SENT, not removed");
   });
 
-  test("a removal DURING the hand-off waits it out instead of calling it consumed", async () => {
-    // The bug this test was written for: while `handOff` awaits the extension `input` handlers the
-    // SDK's count for the item is 0 — identical to "the loop already took it". Reading the count
-    // then answered "consumed" for a message that had not been sent and could still be stopped,
-    // which is the one wrong answer this feature must never give.
+  test("a removal DURING the hand-off is refused (never called consumed), and the item still goes in", async () => {
+    // While `handOff` awaits the extension `input` handlers the SDK's count for the item is 0 —
+    // identical to "the loop already took it". It is neither consumed nor removable: on its way.
     const r = rig();
     r.sdk.handlerDelay = 25; // vision-delegate describing an image
     r.queue.enqueue({ kind: "steer", text: "stop stop stop", origin: "client", id: "a" });
@@ -363,21 +475,21 @@ describe("the outgoing queue", () => {
     assert.deepEqual(r.sdk.realSteering, [], "nothing is in the SDK yet");
 
     const outcome = await r.queue.remove("a");
-    assert.equal(outcome.ok, true, "it was taken back, not declared sent");
-    assert.deepEqual(r.sdk.realSteering, []);
+    assert.deepEqual(outcome, { ok: false, reason: "internal", message: HANDED_REFUSAL });
+    await tick(30);
     await settle();
-    assert.deepEqual(r.sdk.realSteering, [], "and it did not reappear once the handler finished");
-    assert.deepEqual(r.gone(r.one), [["a", "removed"]]);
+    assert.deepEqual(r.sdk.realSteering, ["stop stop stop"]);
+    assert.deepEqual(r.gone(r.one), []);
   });
 
   test("a removal that loses the race to delivery says CONSUMED, not unknown", async () => {
     // The item is not in the queue by the time the request arrives, but "not here" has two very
     // different meanings for the row: a sent message stays as a message, an unknown one disappears.
     const r = rig();
-    r.queue.enqueue({ kind: "steer", text: "a", origin: "client", id: "a" });
-    r.queue.enqueue({ kind: "steer", text: "b", origin: "client", id: "b" });
+    r.queue.enqueue({ kind: "followUp", text: "a", origin: "client", id: "a" });
+    r.queue.enqueue({ kind: "followUp", text: "b", origin: "client", id: "b" });
     await settle();
-    r.sdk.deliver("steer");
+    r.sdk.deliver("followUp");
     r.queue.onSdkEvent();
     await settle(); // "a" is gone and "b" has taken its place
 
@@ -397,36 +509,26 @@ describe("the outgoing queue", () => {
     assert.deepEqual(r.sdk.realSteering, ["a"]);
   });
 
-  test("a removal is refused while the session is not writable", async () => {
-    const r = rig();
-    r.queue.enqueue({ kind: "steer", text: "a", origin: "client", id: "a" });
-    await settle();
-    r.sdk.guardError = new Error("a terminal owns this session");
-    const busy = await r.queue.remove("a");
-    assert.equal(busy.ok, false);
-    assert.equal(busy.ok === false && busy.reason, "busy");
-  });
-
-  test("a slow input handler cannot reorder the queue", async () => {
+  test("a slow input handler cannot reorder the steers", async () => {
     // vision-delegate describes an image for a non-vision model before the message is queued at
     // all; two sends racing through that would be the classic reordering bug.
     const r = rig();
     r.sdk.handlerDelay = 8;
     r.queue.enqueue({ kind: "steer", text: "first", origin: "client", id: "1" });
     r.queue.enqueue({ kind: "steer", text: "second", origin: "client", id: "2" });
+    await tick(1);
+    assert.equal(r.sdk.handed.length, 0, "the first is still in its handler");
+    await tick(30);
     await settle();
-    assert.deepEqual(r.sdk.realSteering, ["first"], "the second waited for the first to be accepted");
-    r.sdk.deliver("steer");
-    r.queue.onSdkEvent();
-    await settle();
-    assert.deepEqual(r.sdk.handed.map((h) => h.text), ["first", "second"]);
+    assert.deepEqual(r.sdk.handed.map((h) => h.text), ["first", "second"], "the second waited for the first to be accepted");
+    assert.deepEqual(r.sdk.realSteering, ["first", "second"]);
   });
 
   test("the queued text is the RAW text; the SDK gets the expansion", async () => {
     const r = rig();
     r.sdk.transform = (t) => (t === "/mytemplate x" ? "EXPANDED: do x" : t);
     r.queue.enqueue({ kind: "steer", text: "/mytemplate x", origin: "client", id: "t" });
-    r.queue.enqueue({ kind: "steer", text: "after", origin: "client", id: "u" });
+    r.queue.enqueue({ kind: "followUp", text: "after", origin: "client", id: "u" });
     await settle();
     assert.deepEqual(r.sdk.realSteering, ["EXPANDED: do x"]);
     assert.equal(r.lastSnapshot(r.one)[0]?.text, "/mytemplate x", "the row reads as typed");
@@ -443,6 +545,17 @@ describe("the outgoing queue", () => {
     await settle();
     assert.deepEqual(r.gone(r.one), [["a", "dropped"]]);
     assert.deepEqual(r.sdk.realSteering, ["keep me"], "and the next item moved up at once");
+  });
+
+  test("a steer swallowed while joining others is DROPPED although pi still holds ours; the others stay handed", async () => {
+    // Joining, `hasQueued()` is true whatever became of the new one: only its own push says so.
+    const r = rig();
+    r.sdk.transform = (t) => (t === "eat me" ? null : t);
+    for (const [id, text] of [["a", "one"], ["b", "eat me"], ["c", "three"]]) r.queue.enqueue({ kind: "steer", text: text!, origin: "client", id: id! });
+    await settle();
+    assert.deepEqual(r.gone(r.one), [["b", "dropped"]]);
+    assert.deepEqual(r.sdk.realSteering, ["one", "three"]);
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["a:sending", "c:sending"]);
   });
 
   test("a hand-off the guards refuse reports FAILED and hands the text back", async () => {
@@ -479,7 +592,7 @@ describe("the outgoing queue", () => {
     assert.deepEqual(r.sdk.realFollowUp, ["mine"]);
   });
 
-  test("an extension's parked follow-up does NOT demote a steer into a post-turn message", async () => {
+  test("an extension's parked follow-up does NOT demote a steer into a post-turn message, nor stop the next steer joining it", async () => {
     // Extensions park follow-ups routinely (a subagent reporting, wake-nudge, btw, explain) and
     // they are drained only at the END of the run. Waiting for the SDK to be globally empty would
     // hold every typed steer until the turn finished — the user's steer would silently stop being
@@ -490,29 +603,43 @@ describe("the outgoing queue", () => {
     r.queue.enqueue({ kind: "steer", text: "actually, stop and do X", origin: "client", id: "s" });
     await settle();
     assert.deepEqual(r.sdk.realSteering, ["actually, stop and do X"], "delivered as a steer, mid-turn");
+    r.queue.enqueue({ kind: "steer", text: "and Y", origin: "client", id: "t" });
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["actually, stop and do X", "and Y"], "the next steer joins it");
     assert.deepEqual(r.sdk.realFollowUp, ["subagent finished: 3 files changed"], "and the extension's work is untouched");
 
-    // The price, stated as a behaviour: this one can only be REFUSED, never pulled back, because
-    // `hasQueuedMessages()` is both queues at once and cannot say which of the two is still there.
-    const outcome = await r.queue.remove("s");
-    assert.equal(outcome.ok === false && outcome.reason, "shared_queue");
-    assert.deepEqual(r.sdk.realSteering, ["actually, stop and do X"], "and nothing was dropped to find out");
+    r.sdk.deliver("steer");
+    r.queue.onSdkEvent();
+    await settle();
+    assert.deepEqual(r.gone(r.one), [["s", "delivered"], ["t", "delivered"]], "both delivered though the extension's follow-up still waits");
   });
 
-  test("a follow-up waits behind OUR OWN in-flight steer, which is what keeps both removable", async () => {
+  test("a follow-up waits behind OUR OWN steers in pi", async () => {
     const r = rig();
     r.queue.enqueue({ kind: "steer", text: "s1", origin: "client", id: "s1" });
     r.queue.enqueue({ kind: "followUp", text: "f1", origin: "client", id: "f1" });
+    r.queue.enqueue({ kind: "steer", text: "s2", origin: "client", id: "s2" });
     await settle();
-    // The one-at-a-time rule is GLOBAL, not per kind. Letting both in would put two of our own
-    // messages in the SDK at once, and `clearQueue()` — the only way to take one back out — cannot
-    // remove one of two. Both would then be stuck as `shared_queue` until delivery, which is the
-    // exact outcome per-item removal exists to avoid.
-    assert.deepEqual(r.sdk.realSteering, ["s1"]);
+    assert.deepEqual(r.sdk.realSteering, ["s1"], "a steer behind the follow-up waits behind it too: the order sent is kept");
     assert.deepEqual(r.sdk.realFollowUp, [], "the follow-up is still ours to hold");
-    assert.deepEqual(states(r.lastSnapshot(r.one)), ["s1:sending", "f1:queued"]);
-    assert.equal((await r.queue.remove("s1")).ok, true, "the steer can still be pulled back");
-    assert.equal((await r.queue.remove("f1")).ok, true, "and so can the follow-up");
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["s1:sending", "f1:queued", "s2:queued"]);
+    assert.equal((await r.queue.remove("f1")).ok, true, "and so it can still be removed");
+  });
+
+  test("a steer waits behind OUR OWN follow-up in pi, so the follow-up is committed first", async () => {
+    // pi's loop takes steering before follow-ups (continue(), quirk P9): a steer handed in beside
+    // our follow-up would reach the model first although it was sent second.
+    const r = rig();
+    r.queue.enqueue({ kind: "followUp", text: "f", origin: "client", id: "f" });
+    r.queue.enqueue({ kind: "steer", text: "s", origin: "client", id: "s" });
+    await settle();
+    assert.deepEqual([r.sdk.realFollowUp, r.sdk.realSteering], [["f"], []], "the steer is held in Sova");
+    const committed = [...r.sdk.deliver("followUp")];
+    r.queue.onSdkEvent();
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["s"], "it goes in once the follow-up was taken");
+    committed.push(...r.sdk.deliver("steer"));
+    assert.deepEqual(committed, ["f", "s"], "the order they were sent in");
   });
 
   test("Stop drains everything Sova holds AND everything the SDK holds, in order", async () => {
@@ -534,12 +661,37 @@ describe("the outgoing queue", () => {
     assert.equal(r.queue.size, 0);
   });
 
+  test("Stop with N steers in pi, two of the same text and one image-only: each comes back once, in order, each cleared", async () => {
+    const r = rig();
+    const image = [{ type: "image" as const, data: "AAAA", mimeType: "image/png" }];
+    r.queue.enqueue({ kind: "steer", text: "same", origin: "client", id: "1", key: "w:s1" });
+    r.queue.enqueue({ kind: "steer", text: "", images: image, origin: "client", id: "2", key: "w:s2" });
+    r.queue.enqueue({ kind: "steer", text: "same", origin: "client", id: "3", key: "w:s3" });
+    r.queue.enqueue({ kind: "followUp", text: "held", origin: "client", id: "4" });
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["same", "", "same"]);
+    const drained = await r.queue.drain();
+    assert.deepEqual(drained, { steering: ["same", "", "same"], followUp: ["held"], kept: [] });
+    assert.deepEqual(r.gone(r.one), [["1", "cleared"], ["2", "cleared"], ["3", "cleared"], ["4", "cleared"]], "one departure each: a keyed one is told never run");
+    assert.deepEqual([r.sdk.realSteering, r.sdk.realFollowUp], [[], []]);
+  });
+
+  test("Stop after pi's step took the steers: delivered, never cleared, and their texts don't come back", async () => {
+    const r = rig();
+    for (const id of ["a", "b"]) r.queue.enqueue({ kind: "steer", text: id, origin: "client", id, key: `w:${id}` });
+    await settle();
+    r.sdk.drain("steer"); // committed to the model; the mirror still lists both until message_start
+    const drained = await r.queue.drain();
+    assert.deepEqual(drained, { steering: [], followUp: [], kept: [] });
+    assert.deepEqual(r.gone(r.one), [["a", "delivered"], ["b", "delivered"]], "no never-ran line for a message that ran");
+  });
+
   test("every departure reaches EVERY client, not just the one that asked", async () => {
     const r = rig();
-    for (const id of ["a", "b"]) r.queue.enqueue({ kind: "steer", text: id, origin: "client", id });
+    for (const id of ["a", "b"]) r.queue.enqueue({ kind: "followUp", text: id, origin: "client", id });
     await settle();
     await r.queue.remove("b");
-    r.sdk.deliver("steer");
+    r.sdk.deliver("followUp");
     r.queue.onSdkEvent();
     await settle();
     // A second tab on the same chat must end up with the same story, event for event.
@@ -555,8 +707,8 @@ describe("the outgoing queue", () => {
     // What attach() sends. Nothing about it depends on the client having seen earlier events.
     assert.deepEqual(r.queue.snapshot(), [
       { id: "a", kind: "steer", state: "sending", text: "a", origin: "client" },
-      { id: "b", kind: "steer", state: "queued", text: "b", origin: "client" },
-      { id: "c", kind: "steer", state: "queued", text: "c", origin: "client" },
+      { id: "b", kind: "steer", state: "sending", text: "b", origin: "client" },
+      { id: "c", kind: "steer", state: "sending", text: "c", origin: "client" },
       // "server side" is a server-originated prompt (a group batch, a remote probe): it queues on
       // the same terms as a client's and waits its turn behind them, rather than skipping the line.
       { id: "s", kind: "followUp", state: "queued", text: "server side", origin: "server" },
@@ -564,8 +716,8 @@ describe("the outgoing queue", () => {
   });
 
   // ---------------------------------------------------------------------------------------------
-  // The three counterexamples the reviewer (ag_13) produced against the first implementation, kept
-  // as regressions. Each one was GREEN in the earlier suite, because the earlier fake modelled one
+  // The counterexamples the reviewer (ag_13) produced against the first implementation, kept as
+  // regressions. Each one was GREEN in the earlier suite, because the earlier fake modelled one
   // array per kind and so could not express the state that breaks it.
   // ---------------------------------------------------------------------------------------------
 
@@ -575,7 +727,7 @@ describe("the outgoing queue", () => {
     // later message is stranded. Presence is read from the REAL queue, so it does not.
     const r = rig();
     r.queue.enqueue({ kind: "steer", text: "", images: [{ type: "image", data: "AAAA", mimeType: "image/png" }], origin: "client", id: "img" });
-    r.queue.enqueue({ kind: "steer", text: "next", origin: "client", id: "n" });
+    r.queue.enqueue({ kind: "followUp", text: "next", origin: "client", id: "n" });
     await settle();
     assert.deepEqual(r.sdk.realSteering, [""], "the image-only send went in");
 
@@ -584,7 +736,7 @@ describe("the outgoing queue", () => {
     r.queue.onSdkEvent();
     await settle();
 
-    assert.deepEqual(r.sdk.realSteering, ["next"], "the queue moved on regardless");
+    assert.deepEqual(r.sdk.realFollowUp, ["next"], "the queue moved on regardless");
     assert.deepEqual(r.gone(r.one), [["img", "delivered"]]);
     assert.deepEqual(ids(r.lastSnapshot(r.one)), ["n"]);
   });
@@ -595,8 +747,7 @@ describe("the outgoing queue", () => {
     const r = rig();
     r.queue.enqueue({ kind: "steer", text: "too late", origin: "client", id: "a" });
     await settle();
-    const taken = r.sdk.drain("steer"); // committed to the model; not yet announced
-    assert.equal(taken, "too late");
+    assert.deepEqual(r.sdk.drain("steer"), ["too late"]); // committed to the model; not yet announced
     assert.deepEqual(r.sdk.mirrorSteering, ["too late"], "the mirror would have said 'still queued'");
 
     const outcome = await r.queue.remove("a");
@@ -621,18 +772,33 @@ describe("the outgoing queue", () => {
     assert.deepEqual(r.gone(r.one), [["a", "cleared"]]);
   });
 
-  test("a foreign message queued behind ours makes removal refuse, never guess", async () => {
-    // With only `hasQueuedMessages()` to read, "something is queued" cannot be attributed to our
-    // item once anything else has been enqueued since. That is a refusal, not a coin flip.
+  test("BUG 3, batched — Stop while a steer is in its handler: the steer behind it never joins after the Stop", async () => {
+    const r = rig();
+    r.sdk.handlerDelay = 10;
+    r.queue.enqueue({ kind: "steer", text: "one", origin: "client", id: "a" });
+    r.queue.enqueue({ kind: "steer", text: "two", origin: "client", id: "b" });
+    await tick(1); // "one" is inside its handler, "two" waits to join it
+    const drained = await r.queue.drain();
+    await tick(30);
+    await settle();
+    assert.deepEqual(drained.steering, ["one", "two"], "both come back, in order");
+    assert.deepEqual(r.sdk.handed.map((h) => h.text), ["one"], "the second was never handed over");
+    assert.deepEqual(r.sdk.realSteering, [], "nothing is left in pi to run after Stop");
+    assert.deepEqual(r.gone(r.one), [["a", "cleared"], ["b", "cleared"]]);
+  });
+
+  test("a foreign follow-up queued behind our steer never makes ours look delivered, nor holds the next steer back", async () => {
     const r = rig();
     r.queue.enqueue({ kind: "steer", text: "mine", origin: "client", id: "a" });
     await settle();
     r.sdk.extensionFollowUp("subagent finished");
-
-    const outcome = await r.queue.remove("a");
-    assert.equal(outcome.ok === false && outcome.reason, "shared_queue");
-    assert.deepEqual(r.sdk.realSteering, ["mine"], "ours is untouched");
-    assert.deepEqual(r.sdk.realFollowUp, ["subagent finished"], "and so is theirs");
+    r.queue.onSdkEvent();
+    await settle();
+    assert.deepEqual(r.gone(r.one), [], "still held: the steering mirror still lists ours");
+    r.queue.enqueue({ kind: "steer", text: "mine too", origin: "client", id: "b" });
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["mine", "mine too"]);
+    assert.deepEqual(r.sdk.realFollowUp, ["subagent finished"], "theirs is untouched");
   });
 
   test("an extension rewriting the message text is a non-event for delivery", async () => {
@@ -642,7 +808,7 @@ describe("the outgoing queue", () => {
     // the real queue, so this is invisible here — asserted rather than assumed.
     const r = rig();
     r.queue.enqueue({ kind: "steer", text: "original", origin: "client", id: "a" });
-    r.queue.enqueue({ kind: "steer", text: "after", origin: "client", id: "b" });
+    r.queue.enqueue({ kind: "followUp", text: "after", origin: "client", id: "b" });
     await settle();
     r.sdk.drain("steer");
     r.sdk.announce("steer", "REWRITTEN BY AN EXTENSION"); // indexOf misses; the mirror keeps "original"
@@ -651,14 +817,12 @@ describe("the outgoing queue", () => {
     r.queue.onSdkEvent();
     await settle();
     assert.deepEqual(r.gone(r.one), [["a", "delivered"]]);
-    assert.deepEqual(r.sdk.realSteering, ["after"], "and the queue moved on");
+    assert.deepEqual(r.sdk.realFollowUp, ["after"], "and the queue moved on");
   });
 
   test("ONE IN, ONE OUT: an extension's message is never mistaken for ours", async () => {
-    // The hole a TOTALS rule has, and it is not exotic: an extension enqueues (+1) while our item
-    // is announced (-1), so the mirror total is exactly what it was at hand-off. Read as "nothing
-    // was queued since", that says our item is still in there — and a removal would then clear the
-    // extension's message AND report ours, already delivered, as removed. Both failures at once.
+    // An extension enqueues (+1) while our item is announced (-1), so the mirror total is exactly
+    // what it was at hand-off. Ours was delivered, and a removal must say so.
     const r = rig();
     r.queue.enqueue({ kind: "steer", text: "mine", origin: "client", id: "a" });
     await settle();
@@ -673,10 +837,7 @@ describe("the outgoing queue", () => {
     assert.ok(!r.gone(r.one).some(([id, reason]) => id === "a" && reason === "removed"));
   });
 
-  test("ONE IN, ONE OUT with an image-only item, where the mirror never sheds ours", async () => {
-    // The same race, minus the signal that rescues it above: our empty-text item stays in the
-    // steering mirror for ever, so "our kind's mirror is empty" never fires. What catches it is
-    // the GROWTH seen in the queue_update sequence, which a bare total cannot show.
+  test("ONE IN, ONE OUT with an image-only item, where the mirror never sheds ours: held, never guessed delivered or removed", async () => {
     const r = rig();
     r.queue.enqueue({ kind: "steer", text: "", images: [{ type: "image", data: "AAAA", mimeType: "image/png" }], origin: "client", id: "img" });
     await settle();
@@ -685,16 +846,15 @@ describe("the outgoing queue", () => {
     assert.deepEqual(r.sdk.mirrorSteering, [""], "ours is still mirrored, as pi leaves it");
 
     const outcome = await r.queue.remove("img");
-    assert.equal(outcome.ok, false, "refused rather than guessed");
-    assert.equal(outcome.ok === false && outcome.reason, "shared_queue");
+    assert.deepEqual(outcome, { ok: false, reason: "internal", message: HANDED_REFUSAL });
     assert.deepEqual(r.sdk.realFollowUp, ["wake nudge"], "nothing of anyone else's was dropped to find out");
+    r.sdk.deliver("followUp");
+    r.queue.onSdkEvent();
+    await settle();
+    assert.deepEqual(r.gone(r.one), [["img", "delivered"]], "delivered once the real queue is empty");
   });
 
   test("a foreign message with BYTE-IDENTICAL text in the same lane is still not mistaken for ours", async () => {
-    // The residual the reviewer flagged as unanswerable: any rule that compares STRINGS cannot tell
-    // our delivered "check the build" from an extension queueing the very same words a moment
-    // later. Nothing here compares strings — the growth is seen as an EVENT, so identical text is
-    // not a special case.
     const r = rig();
     r.queue.enqueue({ kind: "followUp", text: "check the build", origin: "client", id: "a" });
     await settle();
@@ -709,12 +869,11 @@ describe("the outgoing queue", () => {
   test("a follow-up delivered with OUR STEER'S TEXT must not report our steer delivered", async () => {
     // The SDK splices the STEERING mirror first for any delivered user message, whatever lane it
     // came from. So a follow-up carrying the same words empties the steering mirror while our
-    // steer is still really queued. A per-kind mirror reading called that DELIVERED, cleared
-    // inFlight, and let a second item of ours into the SDK — breaking the one-item precondition
-    // clearQueue() depends on. Presence is never read per kind now.
+    // steer is still really queued. A per-kind mirror reading called that DELIVERED and let our
+    // follow-up into the SDK beside it, where pi's loop would take the steer first.
     const r = rig();
     r.queue.enqueue({ kind: "steer", text: "go", origin: "client", id: "a" });
-    r.queue.enqueue({ kind: "steer", text: "second", origin: "client", id: "b" });
+    r.queue.enqueue({ kind: "followUp", text: "second", origin: "client", id: "b" });
     await settle();
     assert.deepEqual(r.sdk.realSteering, ["go"], "ours is handed off and still queued");
 
@@ -726,20 +885,14 @@ describe("the outgoing queue", () => {
     await settle();
 
     assert.ok(!r.gone(r.one).some(([id, reason]) => id === "a" && reason === "delivered"), "ours was NOT reported delivered");
-    assert.deepEqual(r.sdk.realSteering, ["go"], "and nothing of ours went in behind it");
-    // Refused rather than guessed: the guard turned the unsound "no" into "unsure", and an
-    // unattributable queue is exactly what a refusal is for.
-    const outcome = await r.queue.remove("a");
-    assert.equal(outcome.ok === false && outcome.reason, "shared_queue");
-    assert.deepEqual(r.sdk.realSteering, ["go"], "and nothing was cleared to find out");
+    assert.deepEqual([r.sdk.realSteering, r.sdk.realFollowUp], [["go"], []], "and nothing of ours went in behind it");
   });
 
   test("A LATE ITEM WITH NO RUN is woken, not waited on, and it goes out FIRST", async () => {
     // The deadlock: `steer()` awaits the extension input handlers, so an item can reach the SDK's
     // real queue after the turn it meant to interrupt has ended. Nothing drains a queue while the
-    // agent is idle, and this queue will not hand anything over while the SDK holds something — so
-    // the user's next message would wait for ever behind a message waiting for a run that never
-    // starts.
+    // agent is idle, and this queue will not start a run while the SDK holds something — so the
+    // user's next message would wait for ever behind a message waiting for a run that never starts.
     const r = rig();
     r.sdk.streaming = false;
     r.sdk.enqueue("steer", "late steer"); // landed after the turn ended; no run active
@@ -833,14 +986,14 @@ describe("the outgoing queue", () => {
 
   test("a closed queue hands nothing else over", async () => {
     const r = rig();
-    r.queue.enqueue({ kind: "steer", text: "a", origin: "client", id: "a" });
-    r.queue.enqueue({ kind: "steer", text: "b", origin: "client", id: "b" });
+    r.queue.enqueue({ kind: "followUp", text: "a", origin: "client", id: "a" });
+    r.queue.enqueue({ kind: "followUp", text: "b", origin: "client", id: "b" });
     await settle();
     r.queue.close();
-    r.sdk.deliver("steer");
+    r.sdk.deliver("followUp");
     r.queue.onSdkEvent();
     await settle();
-    assert.deepEqual(r.sdk.realSteering, [], "b never went in after the runtime went away");
+    assert.deepEqual(r.sdk.realFollowUp, [], "b never went in after the runtime went away");
     assert.equal(r.queue.size, 0);
   });
 });
@@ -929,5 +1082,262 @@ describe("a compaction pauses the queue", () => {
     const drained = await r.queue.drain();
     assert.deepEqual(drained.steering, ["held"]);
     assert.deepEqual(r.sdk.handed, []);
+  });
+});
+
+describe("a keyed item and pi's settle window (§app.chat-processes/worker-instructions)", () => {
+  test("a keyed item keeps its key to the hand-off, and waits out the settle window before it goes in", async () => {
+    const r = rig();
+    r.sdk.streaming = false;
+    r.sdk.settling = true;
+    r.queue.enqueue({ kind: "followUp", text: "keyed", origin: "server", id: "k", key: "w:s1" });
+    await settle();
+    assert.deepEqual(r.sdk.handed, [], "not handed over inside the window: its prompt would run unlabelled");
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["k:queued"]);
+    r.sdk.settling = false; // the emit is over; nothing else wakes the queue
+    await settle();
+    assert.deepEqual(r.sdk.started, ["keyed"], "handed over once the window has passed");
+    assert.deepEqual(r.sdk.keys, ["w:s1"], "with its key");
+    assert.deepEqual(r.gone(r.one), [["k", "delivered"]]);
+  });
+
+  test("an unkeyed item goes in inside the window as before", async () => {
+    const r = rig();
+    r.sdk.streaming = false;
+    r.sdk.settling = true;
+    r.queue.enqueue({ kind: "followUp", text: "plain", origin: "client", id: "p" });
+    await settle();
+    assert.deepEqual(r.sdk.started, ["plain"]);
+    assert.deepEqual(r.sdk.keys, [undefined]);
+  });
+
+  test("a keyed batch across a settle window: each steer is held while it lasts, then joins the others, labelled", async () => {
+    const r = rig();
+    r.queue.enqueue({ kind: "steer", text: "one", origin: "server", id: "1", key: "w:s1" });
+    await settle();
+    r.sdk.settling = true;
+    r.queue.enqueue({ kind: "steer", text: "two", origin: "server", id: "2", key: "w:s2" });
+    r.queue.enqueue({ kind: "steer", text: "three", origin: "server", id: "3" });
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["one"], "the keyed one waits out the window, and the one behind it waits too");
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["1:sending", "2:queued", "3:queued"]);
+    r.sdk.settling = false;
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["one", "two", "three"], "then both join, in order");
+    assert.deepEqual(r.sdk.keys, ["w:s1", "w:s2", undefined], "each hand-off with its own key");
+  });
+
+  test("a keyed item held for the window is still removable, and a close stops the look again", async () => {
+    const r = rig();
+    r.sdk.streaming = false;
+    r.sdk.settling = true;
+    r.queue.enqueue({ kind: "followUp", text: "keyed", origin: "server", id: "k", key: "w:s1" });
+    await settle();
+    assert.deepEqual(await r.queue.remove("k"), { ok: true, item: { id: "k", kind: "followUp", text: "keyed", origin: "server", key: "w:s1" } });
+    r.queue.enqueue({ kind: "followUp", text: "later", origin: "server", id: "l", key: "w:s2" });
+    r.queue.close();
+    r.sdk.settling = false;
+    await settle();
+    assert.deepEqual(r.sdk.handed, []);
+  });
+});
+
+describe("a handed steer stays removable until the agent takes it (§chat.transcript/a-queued-message)", () => {
+  const steer = (r: ReturnType<typeof rig>, id: string, text = id, images?: { type: "image"; data: string; mimeType: string }[]) =>
+    r.queue.enqueue({ kind: "steer", text, origin: "client", id, ...(images ? { images } : {}) });
+
+  test("handed steers read Queued; the middle of three identical ones goes, its twins stay in order and land together", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    for (const id of ["a1", "a2", "a3"]) steer(r, id, "same");
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["same", "same", "same"], "all three handed to pi at once");
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["a1:queued", "a2:queued", "a3:queued"], "handed, yet still Queued: removable");
+    const outcome = await r.queue.remove("a2");
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(r.gone(r.one), [["a2", "removed"]]);
+    assert.deepEqual(r.gone(r.two), [["a2", "removed"]], "every client is told");
+    assert.deepEqual(r.sdk.realSteering, ["same", "same"], "one entry left pi's real lane");
+    assert.deepEqual(r.sdk.mirrorSteering, ["same", "same"], "and one entry of its text left the mirror");
+    assert.deepEqual(ids(r.lastSnapshot(r.one)), ["a1", "a3"]);
+    assert.equal(r.one.some((m) => m.type === "queue_cleared"), false, "a removal is no Stop: nothing comes back");
+    assert.deepEqual(r.sdk.deliver(), ["same", "same"], "the agent's next step takes the other two together");
+    r.queue.onSdkEvent();
+    await settle();
+    assert.deepEqual(r.gone(r.one), [["a2", "removed"], ["a1", "delivered"], ["a3", "delivered"]], "in the order sent");
+    assert.equal(r.queue.size, 0);
+  });
+
+  test("removing the FIRST and the LAST of identical twins takes exactly those entries", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    for (const id of ["t1", "t2", "t3"]) steer(r, id, "same");
+    await settle();
+    const tokens = [...r.sdk.steerTokens];
+    assert.equal((await r.queue.remove("t3")).ok, true);
+    assert.equal((await r.queue.remove("t1")).ok, true);
+    assert.deepEqual(r.sdk.steerTokens, [tokens[1]], "only t2's own entry is left, by identity");
+  });
+
+  test("another sender's steer between ours is never removed, even with the same words", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    steer(r, "A1", "A");
+    await settle();
+    r.sdk.foreignSteer("A"); // an extension's steer, queued in no hand-off of ours
+    steer(r, "A2", "A");
+    steer(r, "A3", "A");
+    await settle();
+    const [mine1, foreign, mine2, mine3] = r.sdk.steerTokens;
+    assert.equal(r.sdk.steerTokens.length, 4, "[A, foreign A, A, A] in pi's lane");
+    assert.equal((await r.queue.remove("A2")).ok, true);
+    assert.deepEqual(r.sdk.steerTokens, [mine1, foreign, mine3], "A2's own entry went; the foreign twin stays");
+    assert.equal((await r.queue.remove("A1")).ok, true);
+    assert.equal((await r.queue.remove("A3")).ok, true);
+    assert.deepEqual(r.sdk.steerTokens, [foreign], "after removing all of ours, the foreign one is still there");
+    assert.deepEqual(r.sdk.realSteering, ["A"]);
+    assert.notEqual(mine2, foreign);
+  });
+
+  test("a hand-off that queued two steers names no one message: refused shared_queue, nothing taken out", async () => {
+    const sdk = new FakeSdk();
+    sdk.doublePush = true;
+    const r = rig(sdk, { tickets: true });
+    steer(r, "d", "dup");
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["dup", "dup"]);
+    const outcome = await r.queue.remove("d");
+    assert.deepEqual(outcome.ok ? null : outcome.reason, "shared_queue", "refused, never guessed");
+    assert.deepEqual(r.sdk.realSteering, ["dup", "dup"], "nothing of anyone's was removed");
+    assert.deepEqual(r.gone(r.one), []);
+  });
+
+  test("removed while its hand-off is still in its input handler: it goes the moment pi queues it, and the agent never gets it", async () => {
+    const sdk = new FakeSdk();
+    let open!: () => void;
+    sdk.gate = new Promise<void>((resolve) => (open = resolve));
+    const r = rig(sdk, { tickets: true });
+    steer(r, "img", "look", [{ type: "image", data: "AAAA", mimeType: "image/png" }]);
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, [], "still in its handler: pi has nothing yet");
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["img:queued"], "Queued while its image is described");
+    const removal = r.queue.remove("img");
+    let answered = false;
+    void removal.then(() => (answered = true));
+    await settle();
+    assert.equal(answered, false, "the answer waits for the hand-off to settle");
+    open();
+    const outcome = await removal;
+    assert.equal(outcome.ok, true);
+    assert.deepEqual(r.gone(r.one), [["img", "removed"]]);
+    assert.equal(r.sdk.handed.length, 1, "the hand-off did run to its end");
+    assert.equal(r.sdk.hasQueued(), false, "and pi holds nothing");
+    assert.deepEqual(r.sdk.mirrorSteering, []);
+    assert.deepEqual(r.sdk.deliver(), [], "the agent's next step gets nothing of it");
+    assert.equal(r.queue.size, 0);
+    await settle();
+    assert.deepEqual(r.gone(r.one), [["img", "removed"]], "and it never departs a second time");
+  });
+
+  test("X during the image step, with an input step that queued a foreign steer first in its context: refused shared_queue, the foreign steer stays", async () => {
+    const sdk = new FakeSdk();
+    let open!: () => void;
+    sdk.gate = new Promise<void>((resolve) => (open = resolve));
+    sdk.inContextForeign = "an extension's own steer";
+    const r = rig(sdk, { tickets: true });
+    steer(r, "img", "look", [{ type: "image", data: "AAAA", mimeType: "image/png" }]);
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["an extension's own steer"], "the foreign steer is in pi; ours is still in its handler");
+    const removal = r.queue.remove("img");
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["an extension's own steer"], "nothing was taken out at the first push");
+    open();
+    const outcome = await removal;
+    assert.deepEqual(outcome.ok ? null : outcome.reason, "shared_queue", "no one message to name: refused, never guessed");
+    assert.deepEqual(r.sdk.realSteering, ["an extension's own steer", "look"], "nothing spliced: the foreign steer stays, and so does ours");
+    assert.deepEqual(r.gone(r.one), [], "nothing departed");
+  });
+
+  test("a removal waiting on a hand-off that fails is refused, and the failure is what is reported", async () => {
+    const sdk = new FakeSdk();
+    let open!: () => void;
+    sdk.gate = new Promise<void>((resolve) => (open = resolve));
+    const r = rig(sdk, { tickets: true });
+    steer(r, "f");
+    await settle();
+    const removal = r.queue.remove("f");
+    sdk.guardError = new Error("a terminal took the file");
+    open();
+    const outcome = await removal;
+    assert.equal(outcome.ok, false);
+    assert.deepEqual(r.gone(r.one), [["f", "failed"]]);
+  });
+
+  test("the steer behind one removed mid-hand-off still goes in, and lands", async () => {
+    const sdk = new FakeSdk();
+    let open!: () => void;
+    sdk.gate = new Promise<void>((resolve) => (open = resolve));
+    const r = rig(sdk, { tickets: true });
+    steer(r, "x");
+    steer(r, "y");
+    await settle();
+    const removal = r.queue.remove("x");
+    sdk.gate = null;
+    open();
+    assert.equal((await removal).ok, true);
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["y"], "only y is in pi");
+    r.sdk.deliver();
+    r.queue.onSdkEvent();
+    await settle();
+    assert.deepEqual(r.gone(r.one), [["x", "removed"], ["y", "delivered"]]);
+  });
+
+  test("remove vs the agent's drain: once the loop took it, refused consumed and the row is delivered, even with someone else's steer queued after", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    steer(r, "a");
+    steer(r, "b");
+    await settle();
+    r.sdk.drain(); // the loop takes both; message_start not yet emitted
+    r.sdk.foreignSteer("someone else's"); // pi holds something again, not ours
+    const outcome = await r.queue.remove("b");
+    assert.deepEqual(outcome.ok ? null : [outcome.reason, outcome.message], ["consumed", "That message has already been sent."]);
+    assert.deepEqual(r.gone(r.one), [["a", "delivered"], ["b", "delivered"]], "taken in order, both delivered");
+    assert.deepEqual(r.sdk.realSteering, ["someone else's"], "the foreign steer is untouched");
+  });
+
+  test("Stop after a removal hands back only the survivors", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    for (const id of ["s1", "s2", "s3"]) steer(r, id);
+    await settle();
+    assert.equal((await r.queue.remove("s2")).ok, true);
+    const cleared = await r.queue.drain();
+    assert.deepEqual(cleared.steering, ["s1", "s3"], "the removed text never comes back to the composer");
+    assert.deepEqual(r.gone(r.one), [["s2", "removed"], ["s1", "cleared"], ["s3", "cleared"]]);
+  });
+
+  test("an images-only handed steer is removable, and the queue is not stranded by its empty text", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    steer(r, "pic", "", [{ type: "image", data: "AAAA", mimeType: "image/png" }]);
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, [""]);
+    assert.equal((await r.queue.remove("pic")).ok, true);
+    assert.deepEqual([r.sdk.realSteering, r.sdk.mirrorSteering], [[], []], "out of both copies, though its text is empty");
+    steer(r, "next");
+    await settle();
+    assert.deepEqual(r.sdk.realSteering, ["next"], "the next steer goes straight in");
+  });
+
+  test("still not removable on its own: a handed follow-up, and a steer that started a turn", async () => {
+    const r = rig(new FakeSdk(), { tickets: true });
+    r.queue.enqueue({ kind: "followUp", text: "later", origin: "client", id: "fu" });
+    await settle();
+    assert.deepEqual(states(r.lastSnapshot(r.one)), ["fu:sending"]);
+    assert.deepEqual(await r.queue.remove("fu"), { ok: false, reason: "internal", message: HANDED_REFUSAL });
+    const idle = new FakeSdk();
+    idle.streaming = false;
+    idle.handlerDelay = 5;
+    const r2 = rig(idle, { tickets: true });
+    steer(r2, "go");
+    await tick(1);
+    assert.deepEqual(states(r2.lastSnapshot(r2.one)), ["go:sending"], "a steer to an idle agent starts a turn: no ticket");
+    assert.deepEqual(await r2.queue.remove("go"), { ok: false, reason: "internal", message: HANDED_REFUSAL });
   });
 });

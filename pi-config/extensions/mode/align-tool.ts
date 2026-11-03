@@ -9,6 +9,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type, type TSchema } from "typebox";
 import { ALIGN_FILE_MAX_BYTES, readAlignFile } from "./align-file.ts";
 import { renderAlignCall, renderAlignResult } from "./align-ui.ts";
+import { ALIGN_TRIGGER_SHARED } from "./minor.ts";
 import {
 	ALIGN_BLOCKER_CLOSES,
 	alignFileSchema,
@@ -40,6 +41,8 @@ export interface AlignToolHost {
 	style?(): "default" | "simplified" | "pm";
 	/** Whether the spec minor mode is on now: a go-ahead then is also the spec's Agree step. */
 	specOn?(): boolean;
+	/** The spec writing procedure, once per session: its text when the session hasn't been told it yet, else undefined. */
+	specProcedure?(): Promise<string | undefined>;
 }
 
 /**
@@ -48,7 +51,7 @@ export interface AlignToolHost {
  * block's trusted-tools prefix, which is in context whenever spec is on.
  */
 export function alignSpecAgreeText(docId: string): string {
-	return `Spec mode is on too, so this go-ahead is the Agree step. Before building, write each decision of ${docId} that changes behavior as a promise in a spec draft (a new claim, or the claim it changes), then run \`node "$core/sova-spec-draft.mjs" agree <draft> --id '<§id>' --by <who gave the go-ahead> --verification "${docId} go-ahead" --root <project root> --json --write\`. For records that map no code, \`agree\` records doc-only evidence and promotes them itself when the plan is clean; if it says agree-not-promoted, resolve what it lists and promote. A changed claim that maps code keeps its new \`agreed\` in the draft and lands with the build. The build updates those same records. Skip this when no decision changes behavior.`;
+	return `Spec mode is on too, so this go-ahead is the Agree step. Before building, write each decision of ${docId} that changes behavior as a promise in a spec draft (a new claim, or the claim it changes), then run \`node "$core/sova-spec-draft.mjs" agree <draft> --id '<§id>' --by <who gave the go-ahead> --verification "${docId} go-ahead" --root <project root> --json --write\`. For records that map no code, \`agree\` records doc-only evidence; they become official when the branch lands. A changed claim that maps code keeps its new \`agreed\` in the draft and lands with the build. The build updates those same records. Skip this when no decision changes behavior.`;
 }
 
 /** Which form of the tool is registered: the review ops, and the visual fields (§chat.alignment/visuals). */
@@ -58,6 +61,8 @@ export interface AlignToolForm {
 }
 
 export const ALIGN_TOOL_DESCRIPTION = `Record alignments with the user: one document per concern (id al_N) with a title, a one-line summary, findings (f1, f2…), approach steps (a1…), rejected alternatives (x1…), technical notes (t1…) and questions for the user (q1…), each question carrying your recommendation. Ids are assigned in order and never change or get reused.
+
+${ALIGN_TRIGGER_SHARED} The mark is {"ops": [{"op": "change_request"}]} (alone, or as the first op of a call). Any other prompt is answered in chat with no align call.
 
 A call applies its ops in order to ONE alignment, atomically: if any op is invalid nothing changes and the error says why. To change an existing alignment pass doc ("al_2"); it is required while more than one is open. Each op takes only the fields its schema lists. The result lists the alignment's open questions.
 
@@ -70,6 +75,7 @@ Example: the user replied "q2: weekly is fine; take your rec on q4", and asked t
 {"doc": "al_3", "ops": [{"op": "decide", "q": "q2", "decision": "Weekly"}, {"op": "accept", "qs": ["q4"]}, {"op": "edit", "id": "a2", "text": "Upload to GCS"}]}`;
 
 export const ALIGN_TOOL_GUIDELINES = [
+	`While the align minor mode is on: ${ALIGN_TRIGGER_SHARED} The mark is align change_request; answer any other prompt in chat.`,
 	"While the align minor mode is on, record every alignment (a plan, open questions, decisions the user must make) with the align tool — never as reply text or a numbered list in prose; the user reads the alignment card, so keep the reply to a sentence or two.",
 	"Record the user's answers by question id (\"3a\" is q3's option a: decide it with that option's label): decide the ones they answered, in their words; accept only the ones they told you to take your recommendation on (accept_all only when they said it for every open question); leave the rest open. Change an alignment only with ops; never create it again.",
 	"Set status implementing before building, never while a question is open, and done when finished and verified; use exempt with a reason for a work request that needs no alignment.",
@@ -83,7 +89,10 @@ const S = (description?: string, extra: Record<string, unknown> = {}) => Type.St
 const Strict = { additionalProperties: false } as const;
 
 const QID = S('A question id, e.g. "q3".', { pattern: "^q[1-9][0-9]*$" });
-const Option = Type.Object({ label: S("The choice, short."), tradeoff: S("What it costs and what it buys.") }, Strict);
+const Option = Type.Object(
+	{ label: S("The choice, short."), tradeoff: S('What happens if the user picks this, in one plain line: what they will see, what it costs and what it buys (e.g. "Old rows are deleted for good; the export runs twice as fast").') },
+	Strict,
+);
 const Recommendation = Type.Object(
 	{ choice: S("The answer you recommend (one of the options' labels when there are options)."), why: S("Why, in a sentence.") },
 	{ ...Strict, description: "Your recommended answer. Required: the user can accept it as is." },
@@ -101,7 +110,7 @@ const questionSchema = (visual: boolean) =>
 			topic: S('Short label, e.g. "Counter store".'),
 			ask: S("The question to the user, one sentence."),
 			context: Type.Optional(S("What the user needs to know to answer it (optional).")),
-			options: Type.Optional(Type.Array(Option, { description: "The real choices, each with its trade-off (optional)." })),
+			options: Type.Optional(Type.Array(Option, { description: "The real choices, each with a one-line consequence of picking it (optional)." })),
 			recommendation: Recommendation,
 			...(visual ? { visual: Type.Optional(Visual) } : {}),
 		},
@@ -190,6 +199,11 @@ const opSchemas = (visual: boolean): Record<AlignOpName, { description: string; 
 		description: "Record that the user's request needs no alignment (a trivial or mechanical change). Must be the only op in its call; no doc.",
 		fields: { reason: S("Why no alignment is needed.") },
 	},
+	change_request: {
+		description:
+			"Mark this run as a change request: the user's latest prompt is one the align instructions say opens an alignment. Before anything else in the run; alone in its call or before its other ops. Touches no alignment. Never for a prompt that opens none.",
+		fields: { note: S("Optional: what was asked, in a few words.") },
+	},
 	get: { description: "Return the alignment as markdown (every open one when there is no doc).", fields: {} },
 	review: {
 		description:
@@ -230,9 +244,9 @@ const parameters = (ops: readonly AlignOpName[], visual = false) =>
 	Type.Object(
 		{
 			doc: Type.Optional(
-				S('The alignment to change, e.g. "al_2". Required while more than one alignment is open; omit for create, import and exempt.', { pattern: "^al_[1-9][0-9]*$" }),
+				S('The alignment to change, e.g. "al_2". Required while more than one alignment is open; omit for create, import, exempt and change_request.', { pattern: "^al_[1-9][0-9]*$" }),
 			),
-			ops: Type.Array(Type.Union(ops.map((op) => opSchema(op, visual))), { description: "Operations, applied in order. create or import must come first and appear once.", minItems: 1 }),
+			ops: Type.Array(Type.Union(ops.map((op) => opSchema(op, visual))), { description: "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.", minItems: 1 }),
 		},
 		Strict,
 	);
@@ -269,7 +283,7 @@ export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost, form: A
 	pi.registerTool({
 		name: ALIGN_TOOL,
 		label: "Align",
-		// Alignments are folded from this tool's recorded results, which a codemode script's call never has.
+		// Alignments are folded from this tool's recorded results, which a call another tool made never has.
 		exposure: "model-only",
 		description: review ? `${ALIGN_TOOL_DESCRIPTION}\n\n${ALIGN_REVIEW_DESCRIPTION}` : ALIGN_TOOL_DESCRIPTION,
 		promptSnippet: ALIGN_PROMPT_SNIPPET,
@@ -290,7 +304,10 @@ export function registerAlignTool(pi: ExtensionAPI, host: AlignToolHost, form: A
 				});
 				if (outcome.details.doc) host.changed(outcome.details.doc);
 				const goAhead = outcome.details.doc && outcome.details.changes.some((c) => c.kind === "status" && c.to === "implementing");
-				const text = goAhead && host.specOn?.() ? `${outcome.text}\n\n${alignSpecAgreeText(outcome.details.doc!.id)}` : outcome.text;
+				const agree = goAhead && host.specOn?.();
+				// The go-ahead is a moment to hand the writing procedure over, after the Agree step (§tools.spec/writing-on-demand).
+				const procedure = agree ? await host.specProcedure?.() : undefined;
+				const text = agree ? [outcome.text, alignSpecAgreeText(outcome.details.doc!.id), procedure].filter(Boolean).join("\n\n") : outcome.text;
 				return { content: [{ type: "text" as const, text }], details: outcome.details as AlignDetails };
 			} catch (error) {
 				if (error instanceof AlignError) throw new Error(`${error.message}. Nothing was changed.`);

@@ -77,14 +77,14 @@ const req = store.fileRequest(org.id, { projectId: proj.id, kind: "fix", title: 
 store.setRequestStatus(org.id, req.id, "started", { sessionId: "s_fix" });
 
 describe("Versions you can try", () => {
-  test("current first, a fix by its request's title, another by number and date; no branch, title or port", async () => {
+  test("current first, a fix the owner asked for by its request's title, the team's own work as work in progress; no branch, title or port", async () => {
     const vs = await versions.projectVersions(org.id, proj);
     assert.deepEqual(
       vs.map((v) => [v.label, v.running]),
       [
         ["Current version", true],
         ["Fix: The bow page is slow", true],
-        ["Fix 1 · started Oct 12", true],
+        ["Work in progress · started Oct 12", true],
       ],
     );
     const home = await ownerHome(org.id);
@@ -110,7 +110,7 @@ describe("Versions you can try", () => {
     git("symbolic-ref", "HEAD", "refs/heads/x");
     try {
       const vs = await versions.projectVersions(org.id, proj);
-      assert.deepEqual(vs.map((v) => v.label), ["Fix: The bow page is slow", "Fix 1 · started Oct 12"]);
+      assert.deepEqual(vs.map((v) => v.label), ["Fix: The bow page is slow", "Work in progress · started Oct 12"]);
       assert.ok(!vs.some((v) => v.rec.id === "i_main"), "the main checkout's copy is not offered");
       const home = await ownerHome(org.id);
       assert.ok(!home.versions!.some((v) => v.label === "Current version"));
@@ -208,5 +208,126 @@ describe("Versions you can try", () => {
     await versions.openVersion(current!, a.link);
     const p = listPreviews({ projectId: proj.id }).find((x) => keptPreviews()[x.id]?.owner === a.link.hash)!;
     assert.ok(Math.abs(Date.parse(p.expiresAt) - Date.parse(a.link.expiresAt)) < 2000);
+  });
+});
+
+describe("a version is its copy, not its label (§app.project-assistant/versions)", () => {
+  const twin = join(root, "site-twin");
+  mkdirSync(join(twin, ".sova"), { recursive: true });
+  writeFileSync(join(twin, ".sova", "project.json"), JSON.stringify(DEF));
+  const withTwin = () =>
+    writeFileSync(
+      registryFile(),
+      JSON.stringify({
+        version: 1,
+        instances: [inst("i_main", site, 0, "2026-10-01T00:00:00.000Z", null), inst("i_other", otherTree, 2, "2026-10-12T00:00:00.000Z", "sova/a"), inst("i_twin", twin, 3, "2026-10-12T09:00:00.000Z", "sova/b")],
+        shared: [],
+      }),
+    );
+  const trees = async () => [
+    { sessionId: "s_other", branch: "sova/a", path: otherTree, title: "x", sessionPath: null },
+    { sessionId: "s_twin", branch: "sova/b", path: twin, title: "y", sessionPath: null },
+  ];
+
+  test("two team sessions started the same day get distinct labels; a copy of one running leaves the other's request open", async () => {
+    withTwin();
+    versions.setVersionTreesForTest(trees);
+    up = new Set([23_000]);
+    try {
+      const vs = await versions.projectVersions(org.id, proj);
+      assert.deepEqual(vs.map((v) => v.label), ["Current version", "Work in progress · started Oct 12", "Work in progress · started Oct 12 (2)"]);
+      assert.deepEqual(vs.map((v) => v.legacyLabel ?? null), [null, "Fix 1 · started Oct 12", "Fix 2 · started Oct 12"]);
+      const a = store.fileRequest(org.id, { projectId: proj.id, kind: "try", title: vs[1]!.label, text: "x", version: "i_other" });
+      const b = store.fileRequest(org.id, { projectId: proj.id, kind: "try", title: vs[2]!.label, text: "x", version: "i_twin" });
+      up = new Set([23_000, 23_003]);
+      await versions.projectVersions(org.id, proj);
+      assert.deepEqual([store.findRequest(org.id, a.id)?.status, store.findRequest(org.id, b.id)?.status], ["with-team", "done"], "only the copy that runs closes its own request");
+    } finally {
+      up = new Set([23_000, 23_001, 23_002]);
+    }
+  });
+
+  test("an open request filed under an old label (no copy named) still closes once its copy runs; a closed one is never touched", async () => {
+    withTwin();
+    versions.setVersionTreesForTest(trees);
+    up = new Set([23_000]);
+    try {
+      const old = store.fileRequest(org.id, { projectId: proj.id, kind: "try", title: "Fix 2 · started Oct 12", text: "filed before labels changed" });
+      const closed = store.fileRequest(org.id, { projectId: proj.id, kind: "try", title: "Fix 2 · started Oct 12", text: "closed by the owner" });
+      store.closeRequestLine(org.id, closed.id, { kind: "owner", personId: alp.id });
+      up = new Set([23_000, 23_003]);
+      await versions.projectVersions(org.id, proj);
+      assert.equal(store.findRequest(org.id, old.id)?.status, "done");
+      assert.equal(store.findRequest(org.id, closed.id)?.status, "closed");
+    } finally {
+      up = new Set([23_000, 23_001, 23_002]);
+    }
+  });
+
+  test("start_version's pick: a label, an old label or a unique short name; several ask which", async () => {
+    const { pickVersion } = await import("./project-assistant-tools");
+    const vs = [{ label: "Current version" }, { label: "Work in progress · started Oct 12", legacyLabel: "Fix 1 · started Oct 12" }, { label: "Work in progress · started Oct 12 (2)", legacyLabel: "Fix 2 · started Oct 12" }, { label: "Fix: The bow page is slow" }];
+    assert.equal(pickVersion(vs, "current").label, "Current version");
+    assert.equal(pickVersion(vs, "Fix 1").label, "Work in progress · started Oct 12");
+    assert.equal(pickVersion(vs, "fix 2 · started oct 12").label, "Work in progress · started Oct 12 (2)");
+    assert.equal(pickVersion(vs, "Work in progress · started Oct 12").label, "Work in progress · started Oct 12", "an exact label wins over a longer one it starts");
+    assert.equal(pickVersion(vs, "Fix: the bow").label, "Fix: The bow page is slow");
+    assert.throws(() => pickVersion(vs, "Fix"), /Say which version: one of "Work in progress · started Oct 12", "Work in progress · started Oct 12 \(2\)", "Fix: The bow page is slow"\./);
+    assert.throws(() => pickVersion(vs, "the purple one"), /Say which version: one of "Current version"/);
+  });
+});
+
+describe("the Current version's copy, made when there is none (q6, §app.project-assistant/tools)", () => {
+  const writeReg = (withMain: boolean) =>
+    writeFileSync(registryFile(), JSON.stringify({ version: 1, instances: [...(withMain ? [inst("i_main", site, 0, "2026-10-01T00:00:00.000Z", null)] : []), inst("i_fix", fixTree, 1, "2026-10-10T00:00:00.000Z", "sova/fix-the-bow-page")], shared: [] }));
+
+  test("makeable only while the main checkout has no copy, is on master and may be shown", async () => {
+    writeReg(false);
+    assert.equal(await versions.currentVersionMakeable(proj), site);
+    writeReg(true);
+    assert.equal(await versions.currentVersionMakeable(proj), null, "it has a copy");
+    writeReg(false);
+    writeFileSync(join(site, ".sova", "project.json"), JSON.stringify({ ...DEF, data: { db: { kind: "dir", sensitive: true } } }));
+    assert.equal(await versions.currentVersionMakeable(proj), null, "sensitive data: never shown");
+    writeFileSync(join(site, ".sova", "project.json"), JSON.stringify(DEF));
+  });
+
+  test("start_version on the Current version makes and starts the main checkout's copy as the assistant, under its switch", async () => {
+    writeReg(false);
+    versions.setVersionTreesForTest(async () => [{ sessionId: "s_fix", branch: "sova/fix-the-bow-page", path: fixTree, title: "x", sessionPath: null }]);
+    const tools = await import("./project-assistant-tools");
+    const would = await import("./assistant-would-act");
+    const calls: unknown[] = [];
+    tools.setAssistantActsForTest({
+      buildStart: async () => ({ taken: false, code: "x", sentence: "x" }),
+      deployRun: async () => ({ taken: false, code: "x", sentence: "x" }),
+      copyStart: async (_pid, a) => {
+        calls.push(a);
+        return { taken: true, done: Promise.resolve({ ok: true as const }) };
+      },
+    });
+    let column = true;
+    would.setWouldActFactsForTest({
+      column: () => ({ assistant: { ...(column ? { copiesRun: true } : { copiesRun: false }) } as never, models: null }),
+      braked: async () => false,
+      codingModel: () => null,
+      hasRelease: async () => false,
+      hasVersion: async () => true,
+      engine: async () => ({ refusal: null, holdMs: 0 }),
+    });
+    try {
+      const sv = tools.assistantTools({ orgId: org.id, sessionId: "s1", owner: () => ({ id: alp.id, name: alp.name }), branch: () => [] }).find((t) => t.name === "start_version")!;
+      const out = (await sv.execute("c", { version: "Current version" } as never, undefined, undefined, undefined as never)) as { content: { text: string }[] };
+      assert.deepEqual(calls, [{ main: true, root: site }]);
+      assert.match(out.content[0]!.text, /^Current version of Archery website is starting\./);
+      column = false;
+      const off = (await sv.execute("c", { version: "current" } as never, undefined, undefined, undefined as never)) as { content: { text: string }[]; details: { started?: boolean } };
+      assert.equal(calls.length, 1, "switch off: nothing is made");
+      assert.equal(off.details.started, false);
+    } finally {
+      tools.setAssistantActsForTest(null);
+      would.setWouldActFactsForTest(null);
+      writeReg(true);
+    }
   });
 });

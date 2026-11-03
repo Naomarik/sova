@@ -91,7 +91,7 @@ list, or an extension, by default, without anyone re-implementing it. Spec: `§a
 
 | Rule | Held by |
 | --- | --- |
-| A new user-visible action gets a catalogue entry by default, in the same change, outside the areas left as is (below) | review, this guide's `watches` (the merge round's also-update nudge on `server/app.ts`), and `server/commands-inventory.test.ts`: a new route that is in no class arrives pending and fails |
+| A new user-visible action gets a catalogue entry by default, in the same change, outside the areas left as is (below) | review, this guide's `watches`, and `server/commands-inventory.test.ts`: a new route that is in no class arrives pending and fails |
 | The areas left as is by choice are one list, `OPTED_OUT` in `server/commands-inventory/scan.ts`: none of their routes is pending, none is in a second class, an entry on one still makes it a command; a route in a core area still counts as pending growth | `server/commands-inventory.test.ts` ("the areas left as is, by choice" and the real app's "no route in an area left as is is pending") |
 | An entry points at the existing route and never re-implements it: running it is the web app's own request | `server/commands-catalog.test.ts` (every route registered; an entry's request gets the route's own answer, refusals word for word) |
 | Additions only add: nothing intercepts, vetoes or rewrites one of Sova's actions | the catalogue holds no handler, only data; `src/lib/reply-slot.test.ts` (a chip can't take one of Sova's action names) |
@@ -128,7 +128,12 @@ When a rule changes, change its test in the same change; a rule without a test i
 - Anything at a door the operator keeps closed: the peer listener's routes, `/api/auth/*`, the
   share pages, `/ext/*` (an extension's own actions are `ext.*`, reached through the proxy).
 - Settings writes that grant power, trust or reach, or that show a secret: autonomy and permits,
-  profile and schedule approvals, logins, keys, decisions settings, mesh grants. A plain preference
+  profile and schedule approvals, logins, keys, decisions settings, mesh grants, an offers
+  file's run-button approval (`POST /api/projects/:pid/offers/approve`) and applying a project's
+  Settings change card or landing its folder's settings edits (`POST /api/projects/:pid/settings/apply`,
+  §app.project-overseer/settings), the inventory's Trust grants class. The project overseer's own settings
+  PATCH is a command (`project.overseer.settings.set`): it is the page's and a script's plain write, and what
+  the overseer widens reaches it only through a card the operator applies. A plain preference
   a person sets (`settings.align.set`, the Overseer's own notes `overseer.notes.set`) is a command.
   A write to a file the runtime no longer reads is left out (`settings.spec.set`, `settings.delegate.set`).
 - A public link that is minted or lengthened (`project.preview.create|extend`) or a list that
@@ -141,12 +146,13 @@ When a rule changes, change its test in the same change; a rule without a test i
   link's thread and seen mark, the remote folder picker, the explanations feed, the sessions
   folder's name), `chat-start` (`CHAT_START`: the new chat's setup card and profile pick),
   `capability-links` (`CAPABILITY_LINKS`: a project's preview links) and `grants` (`GRANTS`:
-  schedule and draft-spec approval, schedule revoke, the Overseer's permits and their revoke, a
-  project overseer's PATCH). Any chat can run catalogue actions with the operator's token, so an
+  schedule and draft-spec approval, schedule revoke, the Overseer's permits and their revoke).
+  Any chat can run catalogue actions with the operator's token, so an
   approval or a grant is never one.
-- For the Overseer and the project overseers the catalogue only reads. Routes that start, message,
-  run, code or clear an overseer, or turn its memory on, spend model time: they stay pending ("not
-  yet"), never a class, so adding one is a decision of its own.
+- No entry sets an overseer working: of the Overseer and the project overseers the catalogue reads
+  them, keeps their lists and notes, and sets a project overseer's settings. Routes that start,
+  message, run, code or clear an overseer, or turn its memory on, spend model time: they stay pending
+  ("not yet"), never a class, so adding one is a decision of its own.
 - The other core routes left pending, on purpose, unclassified: `GET /api/sessions/by-id/:id` runs
   the same `summaryById` as `session.get` (a duplicate); `POST /api/projects/:pid/services/:verb`
   runs the same verbs as `project.verb.*`. Undecided: `GET /api/diff/patch` (one file's patch, maybe

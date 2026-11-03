@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
 import type { UsageOrigin, UsageSessionModelRow, UsageSessionSpend, UsageSpend, UsageWorkerRow } from "../../shared/usage/wire";
-import { absoluteTime, firstLine, headChipSpend, headChipWords, headerTokenWords, transcriptHeaderSid, originLabel, paneTitleCost, spendTitle, spendUsd, spentAnything, timelineEntries, transcriptHeaderSpend, usageTabRows, workerRowSpend, workerSpendOf } from "./spend";
+import { absoluteTime, cacheHeadline, firstLine, hitRateCell, headChipSpend, headChipWords, headerTokenWords, transcriptHeaderSid, originLabel, paneTitleCost, spendTitle, spendUsd, spentAnything, timelineEntries, transcriptHeaderSpend, usageTabRows, workerRowSpend, workerSpendOf } from "./spend";
 
 const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cacheWrite1h: 0 };
 const sum = (input: number, output: number, usd = 0, calls = 1): UsageSpend => ({ usd, tokens: { ...zero, input, output }, usdBy: zero, calls, unpricedTokens: 0 });
@@ -169,4 +169,13 @@ test("timelineEntries collapses consecutive repeats but keeps a real switch back
     entries.map((e) => e.id),
     ["i1", "i3", "i4"],
   );
+});
+
+test("the Usage tab's cache hit rate: headline part and cell, with no cache use said, not zeroed", () => {
+  const t = (input: number, cacheRead: number, cacheWrite: number) => ({ tokens: { ...zero, input, cacheRead, cacheWrite } });
+  assert.equal(cacheHeadline(t(40, 960, 0)), "96% from cache");
+  assert.equal(cacheHeadline(t(1000, 0, 0)), null, "no cache use: the headline leaves the rate out");
+  assert.deepEqual(hitRateCell(t(40, 960, 0)), { text: "96%", title: "960 of 1k input tokens read from cache" });
+  assert.deepEqual(hitRateCell(t(1000, 0, 0)), { text: "—", title: "No cache use reported for this model." });
+  assert.deepEqual(hitRateCell(t(0, 0, 0)), { text: "—", title: "No cache use reported for this model." });
 });

@@ -42,8 +42,9 @@ export function automationSnapshot(root: string, a: Automation): SnapshotProfile
 
 export type SendResult = { ok: true } | { ok: false; error: string };
 
-/** Set the session's model, effort, mode and minor modes (memory with its type and size) to the
-    automation's, where they differ; what the file leaves out stays as the session has it. */
+/** Set the session's model, effort, mode and minor modes (memory with its type) to the automation's, where
+    they differ; what the file leaves out stays as the session has it. A memory size the file names is ignored:
+    every chat's size is Settings → Memory's for its type (§chat.memory/choice). */
 export async function configureAutomationSession(path: string, a: Automation): Promise<SendResult> {
   const s = a.settings;
   if (!s.model && !s.thinking && !s.mode && !s.minorModes && !s.memory) return { ok: true };
@@ -55,12 +56,12 @@ export async function configureAutomationSession(path: string, a: Automation): P
     const wantMinors = s.minorModes ? [...s.minorModes].sort().join(",") : null;
     const modeDiffers = (s.mode && now.mode !== s.mode) || (wantMinors !== null && [...now.minorModes].sort().join(",") !== wantMinors);
     const mem = s.memory ? chat.mirror.memory : null;
-    const memoryDiffers = !!s.memory && !!mem && (mem.type !== s.memory.type || mem.size !== s.memory.size);
+    const memoryDiffers = !!s.memory && !!mem && mem.type !== s.memory.type;
     if (modeDiffers || memoryDiffers) {
       await chat.switchMode({
         ...(s.mode ? { mode: s.mode } : {}),
         ...(s.minorModes ? { minorModes: s.minorModes as ChatModePatch["minorModes"] } : {}),
-        ...(memoryDiffers ? { memory: s.memory } : {}),
+        ...(memoryDiffers && s.memory ? { memory: { type: s.memory.type } } : {}),
       });
       await chat.pinMode();
     }

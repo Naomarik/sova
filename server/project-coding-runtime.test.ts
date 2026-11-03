@@ -178,6 +178,12 @@ describe("a project's coding sessions", async () => {
       "a merged branch with a new commit is open again, and its last merge stays as history",
     );
     assert.equal(offersMerge(rowOf()!), true, "Merge Branch is offered again");
+    // No merge guard (§chat.worktrees/landing-answers): a leftover mainMerges in master's own offers file does
+    // nothing, and Merge Branch merges with no go-ahead recorded, asked any way.
+    mkdirSync(join(client, ".sova"), { recursive: true });
+    writeFileSync(join(client, ".sova", "offers.json"), JSON.stringify({ version: 1, mainMerges: "go-ahead", offers: {} }));
+    git(client, "add", ".sova/offers.json");
+    git(client, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "leftover switch");
     wt = await po.mergeCodingWorktree(project.id, started.sessionId);
     assert.equal(readFileSync(join(client, "logout.txt"), "utf8"), "logout\n");
     assert.deepEqual([rowOf()?.state, rowOf()?.merged, rowOf()?.newSinceMerge], ["merged", true, undefined]);
@@ -237,13 +243,14 @@ describe("a project's coding sessions", async () => {
     const info2 = await po.projectOverseerInfo(project.id);
     assert.equal(info2.coding.find((s) => s.sessionId === rows2.at(-1)!.sessionId)?.title, "Fix the footer");
     assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "delegate", strict: false, minorModes: ["align", "spec"] }, "unnamed: this computer's default");
-    // Any mode it names, minor modes included: no ceiling.
+    // Any mode it names, minor modes included: no ceiling. Already agreed, so exactly as named (otherwise align is
+    // added: §app.project-overseer/confirm-brief).
     const before3 = readBuilds(project.id).length;
     store.patchPoSettings(store.projectOverseerPaths(project.id), { caps: { createPerTurn: 10 } });
-    await asked.execute("t6", { gap: "none", prompt: "Draw it", mode: "normal", minor_modes: ["spec", "vis", "codemode"], subagent_profile: "off" }, undefined, undefined, undefined as never).catch(() => {});
+    await asked.execute("t6", { gap: "none", prompt: "Draw it", mode: "normal", minor_modes: ["align", "spec", "vis"], subagent_profile: "off", already_agreed: true }, undefined, undefined, undefined as never).catch(() => {});
     const named = readBuilds(project.id).slice(before3)[0];
     assert.ok(named?.path, "started");
-    assert.deepEqual(modeEntries(named.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec", "vis", "codemode"] });
+    assert.deepEqual(modeEntries(named.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["align", "spec", "vis"] });
     const picked = (await acquireChat(named.path)).subagentProfileInfo().current;
     assert.equal(picked.id, "off", "the profile it named, picked for that session");
   });

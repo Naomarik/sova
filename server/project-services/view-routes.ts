@@ -1,13 +1,22 @@
 import { existsSync, readFileSync } from "node:fs";
+import { freemem, totalmem } from "node:os";
 import { basename, join } from "node:path";
 import type { Context, Hono } from "hono";
 import { adoptedService, CONTRACT_FILE, httpStatusOf, parseDefinition, type InstanceSummary, type ProjectDef, type ServiceView } from "../../shared/project-contract";
-import { isStarting, SERVICES_UI_VERBS, type CopyView, type EntryView, type HostServicesView, type ProjectServicesView, type RunningProject, type ServiceRowView } from "../../shared/services-view";
+import { COPY_SLOT_TOP } from "../../shared/project-contract";
+import { copyLimitOf, overLimitSentence, slotLayoutOf, unavailableSentence } from "../../shared/project-slots";
+import { isStarting, SERVICES_UI_VERBS, type CopyLimitView, type CopyView, type EntryView, type HostServicesView, type ProjectServicesView, type RunningProject, type ServiceRowView } from "../../shared/services-view";
 import { OrgError } from "../org-error";
 import { canonicalPath } from "../paths";
 import { listProjects, readProject } from "../projects/spaces";
 import { projectEngine } from "./routes";
-import { readRegistry } from "./store";
+import { pageOnlyRefusal } from "../page-only";
+import { setCopyLimit } from "../project-settings";
+import { parseMeminfo } from "../resource-monitor-proc";
+import { stampsOf, type Stamp } from "./conform";
+import { countsAsRunning, machineCopyLimit } from "./copy-limit";
+import { defHashOf } from "./def-hash";
+import { readRegistry, type Registry } from "./store";
 
 /**
  * The Branches tab's and Running branches' routes (§app.project-services/services-ui):
@@ -85,6 +94,83 @@ export function servicesView(projectId: string, root: string, instances: Instanc
   return { projectId, root, sensitive: !!main?.data.some((d) => d.sensitive), copies, shared: [...shared.values()] };
 }
 
+/**
+ * What one copy takes in memory (§app.project-services/services-ui): the larger of conformance's two scratch
+ * copies' steady and peak readings, from the newest passing stamp of the current definition's hash; else the
+ * newest stamp of another hash that has a reading (`older`); else null. Pure.
+ */
+export function copyEstimate(stamps: Record<string, Stamp>, currentHash: string | null): CopyLimitView["estimate"] {
+  const readingOf = (st: Stamp): { steadyBytes: number; peakBytes: number } | null => {
+    const inst = st.memory?.instances ?? [];
+    const steady = inst.map((i) => i.steadyBytes).filter((v): v is number => typeof v === "number");
+    if (!steady.length) return null;
+    const peak = inst.map((i) => i.peakBytes ?? i.steadyBytes).filter((v): v is number => typeof v === "number");
+    const steadyBytes = Math.max(...steady);
+    return { steadyBytes, peakBytes: Math.max(steadyBytes, ...peak) };
+  };
+  const current = currentHash ? stamps[currentHash] : undefined;
+  if (current?.pass) {
+    const r = readingOf(current);
+    if (r) return { ...r, source: "current", at: current.at };
+  }
+  const older = Object.entries(stamps)
+    .filter(([h]) => h !== currentHash)
+    .map(([, st]) => st)
+    .sort((a, b) => b.at.localeCompare(a.at));
+  for (const st of older) {
+    const r = readingOf(st);
+    if (r) return { ...r, source: "older", at: st.at };
+  }
+  return null;
+}
+
+/** This machine's memory now: /proc/meminfo's MemTotal and MemAvailable, else the runtime's own numbers. */
+function hostMemory(): CopyLimitView["host"] {
+  try {
+    const mi = parseMeminfo(readFileSync("/proc/meminfo", "utf8"));
+    const total = mi.get("MemTotal");
+    const avail = mi.get("MemAvailable");
+    if (total && avail !== undefined) return { totalBytes: total, availableBytes: avail };
+  } catch {
+    // not Linux
+  }
+  const total = totalmem();
+  return total > 0 ? { totalBytes: total, availableBytes: freemem() } : null;
+}
+
+/** The tab's copy limit for the project at `root`: the limit in force (one rule, copyLimitOf), its copies and their cost. */
+export function limitView(root: string, registry: Registry, opts: { host?: CopyLimitView["host"]; stamps?: Record<string, Stamp> } = {}): CopyLimitView {
+  const project = canonicalPath(root);
+  const limit = copyLimitOf(project, { machine: machineCopyLimit(project) });
+  const mine = registry.instances.filter((i) => canonicalPath(i.project) === project && i.slot !== 0 && !i.createdBy.startsWith("conform:"));
+  const running = mine.filter(countsAsRunning).length;
+  const main = definitionAt(project);
+  const stamps = opts.stamps ?? { ...stampsOf(root), ...stampsOf(project) };
+  return {
+    value: limit.cap,
+    source: limit.source === "machine" ? "machine" : "file",
+    file: limit.fileCap,
+    copies: mine.length,
+    running,
+    over: running > limit.cap ? overLimitSentence(running, limit.cap) : null,
+    ...(() => {
+      const layout = main ? slotLayoutOf(main, limit.numbering) : null;
+      return { usable: layout ? layout.ordinary.length : COPY_SLOT_TOP, unavailable: (layout?.unavailable ?? []).map(unavailableSentence) };
+    })(),
+    estimate: copyEstimate(stamps, main ? defHashOf(main) : null),
+    host: opts.host !== undefined ? opts.host : hostMemory(),
+  };
+}
+
+/** Why a request may not change the copy limit: only the operator's own page does (raising it is a grant). */
+const LIMIT_WORDS = {
+  overseer: "Only you change the copy limit here: the Overseer can't.",
+  local: "The copy limit is changed only on this machine.",
+  chat: "A chat can't change the copy limit: its project overseer proposes it through sova_settings.",
+  script: "A script can't change the copy limit: change it on the Branches tab.",
+  extension: "An extension can't change the copy limit.",
+};
+
 const sumRss = (services: ServiceView[]): number | null => {
   const r = services.filter((s) => typeof s.rssBytes === "number");
   return r.length ? r.reduce((n, s) => n + s.rssBytes!, 0) : null;
@@ -134,8 +220,23 @@ export function registerServicesViewRoutes(app: Hono<any>): void {
       const pid = c.req.param("pid") ?? "";
       const root = readProject(pid).root;
       const st = await statusOf(root);
-      const view: ProjectServicesView = { ...servicesView(pid, root, st.instances, definitionAt), supervisor: st.supervisor, ...(st.error ? { error: st.error } : {}) };
+      const view: ProjectServicesView = { ...servicesView(pid, root, st.instances, definitionAt), supervisor: st.supervisor, ...(st.error ? { error: st.error } : {}), limit: limitView(root, readRegistry()) };
       return c.json(view, 200, NO_STORE);
+    }),
+  );
+
+  // This machine's copy limit (§app.project-services/services-ui): `{cap: 1–16 | null}`, the operator's own page only.
+  app.put(
+    "/api/projects/:pid/services/limit",
+    handle(async (c) => {
+      const notYou = pageOnlyRefusal(c, LIMIT_WORDS);
+      if (notYou) return c.json({ error: notYou }, 403);
+      const pid = c.req.param("pid") ?? "";
+      const root = readProject(pid).root;
+      const body = await c.req.json().catch(() => null);
+      if (!body || typeof body !== "object" || Array.isArray(body) || !("cap" in body)) return c.json({ error: "Send {cap}: 1 to 16, or null for the project's file's value." }, 400);
+      const rows = setCopyLimit(pid, (body as { cap: unknown }).cap, { kind: "operator", via: "page" });
+      return c.json({ limit: limitView(root, readRegistry()), history: rows }, 200, NO_STORE);
     }),
   );
 

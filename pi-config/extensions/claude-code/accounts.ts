@@ -160,6 +160,24 @@ export interface ClaudeLoginSwitch {
 	text: string;
 }
 
+/**
+ * What the host that started this process says about the login its chats should prefer (a Sova
+ * chat in a project with a login of its own): `prefer` names that login and whose it is; `saved`
+ * names logins kept for other work, taken only when no other added login has room. Handed over in
+ * LOGIN_CONTEXT_ENV (JSON); absent (a terminal session) = the device's order, as always.
+ */
+export interface ClaudeLoginPreference {
+	login: string;
+	source: "project" | "org";
+	/** The project's or organization's name, as the note names it. */
+	name: string;
+}
+export interface ClaudeLoginContext {
+	prefer?: ClaudeLoginPreference;
+	saved?: string[];
+}
+export const LOGIN_CONTEXT_ENV = "SOVA_CLAUDE_LOGIN_CONTEXT";
+
 // ---------------------------------------------------------------------------
 // Paths
 // ---------------------------------------------------------------------------
@@ -904,6 +922,49 @@ export function manualSwitchText(from: ClaudeLoginChoice, to: ClaudeLoginChoice)
 export function movedText(from: ClaudeLoginChoice, to: ClaudeLoginChoice, cause: string): string {
 	return `Claude: switched ${from.label} → ${to.label} (${from.label} ${cause})`;
 }
+/** A chat that starts off its project's login: `label` and `cause` as ClaudeLogins.absence gives them for it. */
+export function preferenceText(to: ClaudeLoginChoice, prefer: ClaudeLoginPreference, label: string, cause: string): string {
+	const whose = `${prefer.source === "org" ? "organization" : "project"}${prefer.name ? ` ${prefer.name}` : ""}'s login`;
+	return `Claude: using ${to.label} (${whose} ${label} ${cause})`;
+}
+
+/** A ClaudeLoginContext from untrusted input, or undefined when it says nothing usable. */
+export function parseLoginContext(input: unknown): ClaudeLoginContext | undefined {
+	if (!input || typeof input !== "object") return undefined;
+	const o = input as Record<string, unknown>;
+	const out: ClaudeLoginContext = {};
+	const p = o.prefer as Record<string, unknown> | undefined;
+	if (p && typeof p === "object" && (p.login === DEFAULT_LOGIN_ID || isLoginId(p.login)) && (p.source === "project" || p.source === "org"))
+		out.prefer = { login: p.login as string, source: p.source, name: typeof p.name === "string" ? p.name.slice(0, 200) : "" };
+	if (Array.isArray(o.saved)) {
+		const saved = o.saved.filter((id): id is string => isLoginId(id) && id !== out.prefer?.login);
+		if (saved.length) out.saved = [...new Set(saved)];
+	}
+	return out.prefer || out.saved ? out : undefined;
+}
+
+/** The context this process was started with (LOGIN_CONTEXT_ENV), read per call; undefined outside a Sova chat. */
+export function loginContextFromEnv(env: NodeJS.ProcessEnv = process.env): ClaudeLoginContext | undefined {
+	const raw = env[LOGIN_CONTEXT_ENV];
+	if (!raw) return undefined;
+	try { return parseLoginContext(JSON.parse(raw)); } catch { return undefined; }
+}
+
+/**
+ * `order` as a spawn with `ctx` walks it: the preferred login first, then the rest, then the logins
+ * saved for other work, then `default` (always last, unless it is the preferred one). No context:
+ * `order` unchanged.
+ */
+export function orderWithContext(order: readonly string[], ctx?: ClaudeLoginContext): string[] {
+	if (!ctx) return [...order];
+	const prefer = ctx.prefer?.login;
+	const saved = new Set((ctx.saved ?? []).filter((id) => id !== prefer && id !== DEFAULT_LOGIN_ID));
+	const head = prefer && order.includes(prefer) ? [prefer] : [];
+	const rest = order.filter((id) => id !== prefer && id !== DEFAULT_LOGIN_ID && !saved.has(id));
+	const kept = order.filter((id) => saved.has(id));
+	const tail = order.includes(DEFAULT_LOGIN_ID) && prefer !== DEFAULT_LOGIN_ID ? [DEFAULT_LOGIN_ID] : [];
+	return [...head, ...rest, ...kept, ...tail];
+}
 
 // ---------------------------------------------------------------------------
 // The resolver
@@ -998,14 +1059,18 @@ export class ClaudeLogins {
 	 * login in this device's order; with none usable, `current` if it is still here, else the
 	 * order's first (as before: the failure it meets is the one it would have met).
 	 */
-	select(current?: string): ClaudeLoginChoice {
+	select(current?: string, ctx?: ClaudeLoginContext): ClaudeLoginChoice {
 		const accounts = this.accounts();
-		return this.choice(this.selectId(current, accounts), accounts) ?? this.choice(DEFAULT_LOGIN_ID, accounts)!;
+		return this.choice(this.selectId(current, accounts, ctx), accounts) ?? this.choice(DEFAULT_LOGIN_ID, accounts)!;
 	}
-	/** The id `select` would run on, without touching the login's directory: what a display asks. */
-	selectId(current?: string, accounts = this.accounts()): string {
+	/**
+	 * The id `select` would run on, without touching the login's directory: what a display asks.
+	 * `ctx` (a Sova chat's, §app.claude-logins/project-login): its preferred login comes first and
+	 * logins saved for other work last; `current` still wins while usable.
+	 */
+	selectId(current?: string, accounts = this.accounts(), ctx?: ClaudeLoginContext): string {
 		const state = readAccountsState(this.agentDir);
-		const order = this.order(accounts);
+		const order = orderWithContext(this.order(accounts), ctx);
 		if (current && order.includes(current) && this.usable(current, accounts, state)) return current;
 		const first = order.find((id) => this.usable(id, accounts, state));
 		if (first) return first;
@@ -1016,17 +1081,17 @@ export class ClaudeLogins {
 	 * then the next usable login in order, skipping — for a limit — every login of that account.
 	 * Undefined when none is left.
 	 */
-	failover(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): ClaudeLoginChoice | undefined {
+	failover(from: ClaudeLoginChoice, failure: ClaudeAccountFailure, ctx?: ClaudeLoginContext): ClaudeLoginChoice | undefined {
 		this.recordFailure(from, failure);
-		const next = this.nextAfter(from, failure, true);
+		const next = this.nextAfter(from, failure, true, ctx);
 		return next ? this.choice(next) : undefined;
 	}
-	/** The next usable login after `from` in this device's order (`default` only when `withDefault`). */
-	private nextAfter(from: ClaudeLoginChoice, failure: ClaudeAccountFailure, withDefault: boolean): string | undefined {
+	/** The next usable login after `from` in this device's order as `ctx` walks it (`default` only when `withDefault`). */
+	private nextAfter(from: ClaudeLoginChoice, failure: ClaudeAccountFailure, withDefault: boolean, ctx?: ClaudeLoginContext): string | undefined {
 		const accounts = this.accounts();
 		const state = readAccountsState(this.agentDir);
 		const account = from.accountUuid;
-		return this.order(accounts).find((id) => {
+		return orderWithContext(this.order(accounts), ctx).find((id) => {
 			if (id === from.id || !this.usable(id, accounts, state)) return false;
 			if (!withDefault && id === DEFAULT_LOGIN_ID) return false;
 			if (failure.kind === "limit" && account && this.identityOf(id, accounts)?.accountUuid === account) return false;
@@ -1046,31 +1111,41 @@ export class ClaudeLogins {
 	 * first asks this host's pool agent to borrow one and waits for it (only while the pool is on
 	 * and the agent runs). What chat children and workers start on.
 	 */
-	async acquire(current?: string): Promise<ClaudeLoginChoice> {
-		const accounts = this.accounts();
-		const id = this.selectId(current, accounts);
-		if (id !== DEFAULT_LOGIN_ID && this.usable(id, accounts, readAccountsState(this.agentDir))) return this.select(current);
-		if (this.firstHeld() === undefined && this.pool && poolAgentAlive(this.agentDir, this.now())) await this.borrow({});
-		return this.select(current);
+	async acquire(current?: string, ctx?: ClaudeLoginContext): Promise<ClaudeLoginChoice> {
+		let accounts = this.accounts();
+		if (current && current !== DEFAULT_LOGIN_ID && this.usable(current, accounts, readAccountsState(this.agentDir)) && this.order(accounts).includes(current)) return this.select(current, ctx);
+		// A project's login free at the keeper is borrowed by name first, as a composer pick is.
+		const prefer = ctx?.prefer?.login;
+		if (prefer && prefer !== DEFAULT_LOGIN_ID) {
+			let free = false;
+			try { free = this.absence(prefer)?.free === true; } catch { free = false; }
+			if (free) { await this.take(prefer); accounts = this.accounts(); }
+		}
+		const saved = (ctx?.saved ?? []).filter((x) => x !== prefer);
+		const id = this.selectId(current, accounts, ctx);
+		if (id !== DEFAULT_LOGIN_ID && !saved.includes(id) && this.usable(id, accounts, readAccountsState(this.agentDir))) return this.select(current, ctx);
+		if (this.firstHeld([], saved) === undefined && this.pool && poolAgentAlive(this.agentDir, this.now())) await this.borrow(saved.length ? { excludeLogins: saved } : {});
+		return this.select(current, ctx);
 	}
 	/**
 	 * A failure on `from` while the pool is on: `from` goes back (it leaves this device, with its
 	 * standing), and the turn moves to the next usable login held here, else to one borrowed now
 	 * (not of the same account on a limit), else to `default`. With the pool off: `failover`.
 	 */
-	async failoverAsync(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): Promise<ClaudeLoginChoice | undefined> {
-		if (!this.pool) return this.failover(from, failure);
+	async failoverAsync(from: ClaudeLoginChoice, failure: ClaudeAccountFailure, ctx?: ClaudeLoginContext): Promise<ClaudeLoginChoice | undefined> {
+		if (!this.pool) return this.failover(from, failure, ctx);
 		this.recordFailure(from, failure);
 		if (from.id !== DEFAULT_LOGIN_ID && isLoginId(from.id)) {
 			try { markLeaving(this.agentDir, from.id, failure.kind, this.now()); } catch { /* the agent sees the standing */ }
 		}
 		const excludeAccounts = failure.kind === "limit" && from.accountUuid ? [from.accountUuid] : [];
-		let next = this.nextAfter(from, failure, false);
-		if (!next && poolAgentAlive(this.agentDir, this.now())) {
-			await this.borrow({ excludeAccounts, excludeLogins: [from.id] });
-			next = this.nextAfter(from, failure, false);
+		const saved = (ctx?.saved ?? []).filter((x) => x !== ctx?.prefer?.login);
+		let next = this.nextAfter(from, failure, false, ctx);
+		if ((!next || saved.includes(next)) && poolAgentAlive(this.agentDir, this.now())) {
+			await this.borrow({ excludeAccounts, excludeLogins: [from.id, ...saved] });
+			next = this.nextAfter(from, failure, false, ctx);
 		}
-		next ??= this.nextAfter(from, failure, true);
+		next ??= this.nextAfter(from, failure, true, ctx);
 		return next ? this.choice(next) : undefined;
 	}
 	/**

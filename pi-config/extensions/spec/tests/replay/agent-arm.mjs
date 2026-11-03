@@ -110,7 +110,7 @@ export function workDir(base, tree, pinnedRoot) {
   cpSync(join(pinnedRoot, ".sova/spec/claims"), join(base, ".sova/spec/claims"), { recursive: true });
   cpSync(join(tree, "spec/core"), join(base, "tools"), { recursive: true });
   // The docs the instructions point at as `$core/../X.md` (tools/../X.md), so every path they name exists here.
-  for (const doc of ["PROMOTE.md", "README.md", "DRAFTS.md"]) if (existsSync(join(tree, "spec", doc))) cpSync(join(tree, "spec", doc), join(base, doc));
+  for (const doc of ["PROMOTE.md", "README.md", "DRAFTS.md", "WRITING.md"]) if (existsSync(join(tree, "spec", doc))) cpSync(join(tree, "spec", doc), join(base, doc));
   return base;
 }
 

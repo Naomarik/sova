@@ -13,11 +13,12 @@ import {
   outlineNote,
   outlineShown,
   sameMemoryChoice,
+  sameMemoryType,
   sizeChoices,
   sizeLabel,
   UPDATING_WORDS,
 } from "./memory-ui";
-import { memoryDraftProblem, sameMemorySettings, toMemoryDraft, toMemorySettings } from "./memory-settings-draft";
+import { memoryDraftProblem, sameMemorySettings, sameSizes, sameSummarizer, toMemoryDraft, toMemorySettings } from "./memory-settings-draft";
 
 const outline = (o: Partial<MemoryOutline>): MemoryOutline => ({
   on: true,
@@ -109,6 +110,12 @@ test("a memory choice is the default only when both are known and equal", () => 
   assert.equal(sameMemoryChoice(null, { type: "uniichat", size: 128 }), false);
 });
 
+test("Save as default saves the type only: Already the default compares types", () => {
+  assert.equal(sameMemoryType({ type: "uniichat", size: 128 }, { type: "uniichat", size: 64 }), true);
+  assert.equal(sameMemoryType({ type: "uniichat", size: 128 }, { type: "zoomable", size: 128 }), false);
+  assert.equal(sameMemoryType(undefined, { type: "uniichat", size: 128 }), false);
+});
+
 test("Settings → Memory's draft: complete rows only, the PUT never carries the default", () => {
   const saved = {
     version: 1 as const,
@@ -124,4 +131,20 @@ test("Settings → Memory's draft: complete rows only, the PUT never carries the
   const body = toMemorySettings(d);
   assert.equal("default" in body, false);
   assert.deepEqual(body.summarizer, saved.summarizer);
+  assert.deepEqual(body.sizes, { uniichat: 128, zoomable: 32 }, "an older server's file without sizes: each type's own");
+});
+
+test("Settings → Memory's sizes: in the draft and the PUT, each half with its own Reset", () => {
+  const saved = {
+    version: 1 as const,
+    summarizer: { primary: { backend: "claude-code" as const, model: "claude-haiku-5-5", effort: "low" }, fallback: null },
+    sizes: { uniichat: 64, zoomable: 256 },
+  };
+  const d = toMemoryDraft(saved);
+  assert.deepEqual(d.sizes, { uniichat: 64, zoomable: 256 });
+  const bigger = { ...d, sizes: { ...d.sizes, uniichat: 128 } };
+  assert.equal(sameMemorySettings(bigger, saved), false, "a size change is an unsaved edit");
+  assert.equal(sameSummarizer(bigger, saved), true);
+  assert.equal(sameSizes(bigger, saved), false);
+  assert.deepEqual(toMemorySettings(bigger).sizes, { uniichat: 128, zoomable: 256 });
 });

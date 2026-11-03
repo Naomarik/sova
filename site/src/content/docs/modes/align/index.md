@@ -13,6 +13,25 @@ major mode. While it's on, the agent works out what to build with you first, and
 agreement as an **alignment** with its `align` tool. A chat can hold several alignments at once,
 one per concern.
 
+When an alignment opens depends on the **Eagerness** you choose in Settings → Alignment:
+
+- **Eager**, the default: any request that implies work (a feature, a fix it investigated, a
+  refactor, new files, any multi-step change) gets an alignment first, even one that already looks
+  fully specified, and the agent leans toward asking. Questions and explanations need none.
+- **Careful**: the agent asks itself what you want to be different when it's done. If it's the
+  product, however you phrase it, it opens an alignment; if you want to know or understand
+  something and the product can stay as it is, the answer comes in chat. Looking into something
+  broken or missing is the first step of a change, so what it finds goes on a card, not into a plan
+  in the reply. When it can't tell, it opens the alignment anyway.
+
+Either way, nothing is built until you confirm an alignment (unless you said to skip alignment),
+and a "go", "yes" or "fix it" to anything the agent sketched in chat opens a card first rather than
+starting the build.
+
+While align is on, every reply opens with a short part for you: the answer, what changed, what you
+must decide, and any warnings or things it didn't check. The agent's working detail, when there
+is any, comes after it under **Working notes**, which the chat shows folded closed.
+
 You never edit an alignment yourself. You answer in chat, and the agent records your answer. It
 works the same in Sova and in pi's terminal UI.
 
@@ -24,7 +43,7 @@ Each alignment has an id (`al_1`, `al_2`…), a title and a one-line summary of 
 - **Approach** (`a1`, `a2`…): the steps it proposes.
 - **Rejected** (`x1`, `x2`…): alternatives it turned down, each with why.
 - **Questions** (`q1`, `q2`…): what it needs you to decide. A question has a topic, the ask,
-  optional context, optional options lettered a, b, c…, each with its trade-off, and a
+  optional context, optional options lettered a, b, c…, each with a one-line consequence of picking it, and a
   **recommendation** with its reason.
 - **Technical notes** (`t1`, `t2`…): the files, code and technical detail that a plan written for
   someone who doesn't read code leaves out of the other fields.
@@ -33,21 +52,25 @@ Ids are never reused within an alignment, so "q3" keeps meaning the same questio
 
 ## Settings → Alignment
 
-How the agent writes alignments is set in **Settings → Alignment**:
+How readily alignments open and how the agent writes them is set in **Settings → Alignment**:
 
-- **Writing style.** **Default** keeps files, code and technical trade-offs in the plan.
-  **Simplified** uses short sentences in everyday words and fewer items. **Project manager**
-  describes only screens, wording and behaviour, with no code; it still asks a technical choice
-  you'd notice (speed, cost, data kept or lost) as a product question, and puts the technical
-  detail in the technical notes. A change reaches open chats at their next message.
+- **Eagerness.** **Eager**, the default, opens an alignment card for any request that implies
+  work, and leans toward asking first. **Careful** opens one when you want something changed;
+  questions get their answer in chat. Either way, nothing is built until you confirm a card. A
+  change reaches open chats at their next message.
+- **Writing style.** **Project manager**, the default, describes only screens, wording and
+  behaviour, with no code; it still asks a technical choice you'd notice (speed, cost, data kept or
+  lost) as a product question, and puts the technical detail in the technical notes. **Simplified**
+  uses short sentences in everyday words and fewer items. **Technical** keeps files, code and
+  technical trade-offs in the plan. A change reaches open chats at their next message.
 - **Visuals.** With **Draw when it helps** on, the agent can draw a wireframe or a flow on the
   card when a picture explains faster than words, at most 3 per alignment. It applies to sessions
   you start after saving.
 - **Review.** **Adversarial review** has a read-only reviewer check the plan and the diff of risky
   work. See [Adversarial review](/docs/modes/align/review/).
 
-A subagent profile can set its own writing style and visuals (Settings → Subagents). pi's terminal
-UI reads the same writing style and Visuals.
+A subagent profile can set its own eagerness, writing style and visuals (Settings → Subagents).
+pi's terminal UI reads the same eagerness, writing style and Visuals.
 
 ## Status
 
@@ -85,7 +108,8 @@ The card shows the summary, then the **Approach**, then the questions. Open ques
 decided and dropped ones fold to one line with their outcome. **Technical notes** sit folded under
 the Approach; **Findings** and **Rejected** start folded at the bottom. Past Aligning, a chip shows
 the status. A visual is drawn under its question's context, or the alignment's under the summary,
-and an alignment written in a non-Default style says so in its header ("Simplified style").
+and each alignment names its writing style in its header ("Project manager style"; an
+older one may name none).
 When the agent decides a request needs no alignment, it shows one line instead:
 "No alignment needed", with why.
 
@@ -103,11 +127,13 @@ In a chat Sova runs with align on, the newest card of an open alignment can be a
 None of these change the alignment directly. They write an ordinary message for the agent to
 record, exactly as if you had typed it.
 
-## The chip in the composer
+## The badge in the message box
 
-While an alignment is open, the composer shows a chip such as **1 align · 5/7 decided**: the open
-alignments, and how many of their questions are decided. Press it to list them, each with a
-progress bar; choose one to jump to its card.
+While an alignment is open, a small badge sits at the left edge of the message box. Its ring fills
+as questions are decided, the number in the middle is the questions still open, and the dots under
+it are the open alignments. A numeral on top (I, II, III…) counts any option cards waiting too.
+Press it to open **Waiting on you**: each alignment with its progress and its next open question,
+and **Show in Chat** to jump to its card.
 
 ## When the agent is waiting on you
 
@@ -120,7 +146,7 @@ session is **waiting on your answers**:
   [Needs you](/docs/needs-you/).
 
 Once you've replied and the agent moved on without touching an alignment, or you turn align off,
-the questions stay on the card and the chip but leave the row, Needs you and notifications. Once
+the questions stay on the card and the badge but leave the row, Needs you and notifications. Once
 the session's branch is merged, they leave Needs you too.
 
 ## What keeps the agent on it
@@ -128,8 +154,9 @@ the session's branch is merged, they leave Needs you too.
 - With each message you send while an alignment is open, the agent gets a hidden note listing the
   open questions with their ids, options and recommendations, so "3a" maps onto the right
   question. After a compaction it gets the same, with the decided questions too.
-- If a reply reads like a plan that asks you to decide, but the agent recorded nothing, it gets one
-  reminder to record it, once per run.
+- When you asked for a change and the agent's reply reads like a plan that asks you to decide, but
+  it recorded nothing, it gets one reminder to record it, once per run. A reply to a question is
+  never reminded.
 - **Nothing blocks the agent.** It can still edit, start workers or create worktrees while a
   question is open, so a stuck worker or a parallel concern never leaves the session stuck.
 

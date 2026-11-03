@@ -44,9 +44,13 @@ export function inputHashes(story, plan) {
   );
 }
 
-export function videoHash(story, plan) {
-  const workers = Object.entries(story.workers ?? {}).filter(([id]) => plan.workers[id]?.owner === story.video.session);
-  return h({ video: story.video, sess: story.sessions.find((s) => s.id === story.video.session), workers, project: story.project, models: story.models, provider: story.provider, sidebar: story.sessions.map((s) => [s.id, s.title, s.at]), rev: appRev(), scripts: scriptsHash() });
+/** A video's input hash. Its captions, their chapters and fixed line are page text (record.mjs --cues), not part
+    of the picture, so they are left out: rewording one never asks for a new recording. */
+export function videoHash(story, plan, name) {
+  const { line: _line, ...rest } = story.videos[name];
+  const video = { ...rest, beats: rest.beats.map(({ caption: _c, chapter: _ch, ...b }) => b) };
+  const workers = Object.entries(story.workers ?? {}).filter(([id]) => plan.workers[id]?.owner === video.session);
+  return h({ video, sess: story.sessions.find((s) => s.id === video.session), workers, overseer: video.overseer ? story.overseer?.model : null, viewport: story.viewports[video.viewport], project: story.project, models: story.models, provider: story.provider, sidebar: story.sessions.map((s) => [s.id, s.title, s.at]), rev: appRev(), scripts: scriptsHash() });
 }
 
 /** A file's content hash, as manifest.json records it. */

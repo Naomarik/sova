@@ -154,8 +154,7 @@ test("every action has an accessible name, and no two share one", () => {
   assert.ok(labels.every((l) => l.trim().length > 0));
 });
 
-test("a queued row may only be removed once the server holds it", () => {
-  assert.match(queueRemoveReason({ state: "sending", pending: false, chat: true })!, /Not queued yet/);
+test("a queued row's Remove: on while the server holds it, off while removing, once sent, or outside a chat", () => {
   assert.equal(queueRemoveReason({ state: "queued", pending: false, chat: true }), null);
   assert.match(queueRemoveReason({ state: "queued", pending: true, chat: true })!, /Removing/);
   assert.match(queueRemoveReason({ state: "delivered", pending: false, chat: true })!, /Already sent/);

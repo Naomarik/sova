@@ -1,0 +1,546 @@
+{
+  "§app.claude-logins/accounts-tab": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/AccountsSettings.tsx",
+      "src/components/SettingsDialog.tsx",
+      "src/lib/settings-nav.ts",
+      "src/lib/api.ts",
+      "src/design/base.css",
+      "server/claude-accounts.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "src/lib/settings-nav.test.ts",
+      "src/lib/claude-pool.ts",
+      "src/components/MeshView.tsx",
+      "server/claude-pool/index.ts",
+      "src/lib/claude-pool.test.ts",
+      "src/lib/claude-login-groups.ts",
+      "src/lib/claude-login-groups.test.ts"
+    ],
+    "requires": [
+      "§app.claude-logins/add-remove",
+      "§app.claude-logins/device-order"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T04:43Z",
+      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+    }
+  },
+  "§app.claude-logins/active-login": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/spawn-selection",
+      "§app.claude-logins/device-order"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/claude-login-state.ts",
+      "server/chat-manager.ts",
+      "shared/protocol.ts",
+      "src/lib/claude-login.ts",
+      "src/components/Composer.tsx",
+      "src/components/ChatView.tsx",
+      "src/design/base.css",
+      "pi-config/extensions/usage-status/index.ts",
+      "server/claude-login-state.test.ts",
+      "src/lib/claude-login.test.ts",
+      "pi-config/extensions/usage-status/fetch.ts",
+      "pi-config/extensions/usage-status/fetch.test.ts"
+    ],
+    "agreed": {
+      "by": "omar (user)",
+      "at": "2026-10-27T08:43Z",
+      "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#db36b4af"
+    }
+  },
+  "§app.claude-logins/add-remove": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/registry"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/claude-accounts.ts",
+      "shared/protocol.ts",
+      "server/index.ts",
+      "src/components/AccountsSettings.tsx",
+      "src/lib/api.ts",
+      "server/claude-accounts.test.ts",
+      "server/claude-accounts.integration.test.ts",
+      "scripts/fake-claude.mjs",
+      "server/claude-pool/agent.ts",
+      "server/app.ts"
+    ]
+  },
+  "§app.claude-logins/borrow-return": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/pool",
+      "§app.claude-logins/keeper",
+      "§app.claude-logins/drain"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/claude-pool/agent.ts",
+      "server/claude-pool/creds.ts",
+      "server/claude-pool/journal.ts",
+      "server/claude-pool/index.ts",
+      "pi-config/extensions/claude-code/accounts.ts",
+      "server/claude-pool/agent.test.ts",
+      "server/claude-pool/pool-test-fixtures.ts",
+      "server/claude-pool/agent.integration.test.ts",
+      "scripts/claude-pool-e2e/run.mjs",
+      "scripts/fake-claude.mjs"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T04:43Z",
+      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+    }
+  },
+  "§app.claude-logins/cli-status": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/accounts-tab"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/SettingsDialog.tsx",
+      "server/claude-status.ts",
+      "server/index.ts",
+      "server/app.ts",
+      "server/models.ts",
+      "shared/protocol.ts"
+    ]
+  },
+  "§app.claude-logins/device-order": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/registry"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/claude-code/accounts.ts",
+      "server/claude-accounts.ts",
+      "src/components/AccountsSettings.tsx",
+      "src/lib/api.ts",
+      "server/claude-accounts.test.ts",
+      "server/claude-accounts.integration.test.ts",
+      "pi-config/extensions/claude-code/accounts.test.ts",
+      "server/insights-claude-logins.test.ts",
+      "src/lib/claude-login-groups.ts",
+      "src/lib/claude-login-groups.test.ts",
+      "src/design/base.css"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T04:43Z",
+      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+    }
+  },
+  "§app.claude-logins/drain": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/spawn-selection"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/claude-code/accounts.test.ts",
+      "pi-config/extensions/claude-code/accounts.ts",
+      "pi-config/extensions/claude-code/models.ts",
+      "pi-config/extensions/claude-code/provider/session-bridge.ts",
+      "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+      "server/claude-pool/agent.test.ts",
+      "server/claude-pool/pool-test-fixtures.ts",
+      "server/claude-pool/agent.integration.test.ts",
+      "server/claude-pool/agent.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T06:48Z",
+      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#7e28f246"
+    }
+  },
+  "§app.claude-logins/failover": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/spawn-selection"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/claude-code/transport.ts",
+      "pi-config/extensions/claude-code/accounts.ts",
+      "pi-config/extensions/claude-code/provider/session-bridge.ts",
+      "server/transcript.ts",
+      "pi-config/extensions/claude-code/accounts.test.ts",
+      "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+      "server/claude-accounts.test.ts",
+      "server/claude-accounts.integration.test.ts",
+      "pi-config/extensions/claude-code/tests/fixtures/failures/limit-rejected.ndjson",
+      "server/claude-pool/agent.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T04:43Z",
+      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+    }
+  },
+  "§app.claude-logins/idle-pin": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/borrow-return"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/claude-pool/agent.ts",
+      "server/claude-pool/index.ts",
+      "src/components/AccountsSettings.tsx",
+      "server/claude-pool/agent.test.ts",
+      "server/claude-pool/pool-test-fixtures.ts",
+      "server/claude-pool/agent.integration.test.ts",
+      "pi-config/extensions/claude-code/accounts.ts",
+      "pi-config/extensions/claude-code/accounts.test.ts",
+      "scripts/claude-pool-e2e/run.mjs",
+      "server/index.ts",
+      "server/app.ts"
+    ]
+  },
+  "§app.claude-logins/keeper": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/pool"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/claude-pool/agent.ts",
+      "server/claude-pool/index.ts",
+      "src/components/AccountsSettings.tsx",
+      "server/claude-pool/agent.test.ts",
+      "server/claude-pool/pool-test-fixtures.ts",
+      "server/claude-pool/agent.integration.test.ts"
+    ]
+  },
+  "§app.claude-logins/login-moved": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/spawn-selection",
+      "§app.claude-logins/borrow-return",
+      "§app.claude-logins/failover"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/claude-code/provider/session-bridge.ts",
+      "pi-config/extensions/claude-code/accounts.ts",
+      "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+      "pi-config/extensions/claude-code/accounts.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T04:43Z",
+      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+    }
+  },
+  "§app.claude-logins/macos-keychain": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§app.insights/usage-refresh",
+      "§app.claude-logins/accounts-tab",
+      "§app.insights/usage-cards",
+      "§app.claude-logins/add-remove",
+      "§app.claude-logins/pool"
+    ],
+    "code": [
+      "pi-config/extensions/claude-code/keychain.ts",
+      "pi-config/extensions/claude-code/keychain.test.ts",
+      "pi-config/extensions/usage-status/fetch.ts",
+      "pi-config/extensions/usage-status/fetch.test.ts",
+      "server/auth-status.ts",
+      "server/auth-status.test.ts",
+      "server/insights.ts",
+      "server/claude-accounts.ts",
+      "shared/protocol.ts",
+      "src/components/UsageView.tsx",
+      "src/components/AccountsSettings.tsx",
+      "pi-config/extensions/claude-code/accounts.ts",
+      "pi-config/extensions/claude-code/accounts.test.ts",
+      "server/claude-accounts.test.ts",
+      "server/claude-accounts.integration.test.ts",
+      "scripts/fake-claude.mjs",
+      "server/claude-pool/agent.ts",
+      "server/claude-pool/agent.test.ts",
+      "src/lib/claude-pool.ts",
+      "src/lib/claude-pool.test.ts",
+      "server/claude-pool/pool-test-fixtures.ts",
+      "server/claude-pool/agent.integration.test.ts"
+    ]
+  },
+  "§app.claude-logins/migration": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/pool",
+      "§app.claude-logins/registry"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/claude-pool/agent.ts",
+      "pi-config/extensions/claude-code/accounts.ts",
+      "server/claude-pool/agent.test.ts",
+      "server/claude-pool/pool-test-fixtures.ts",
+      "server/claude-pool/agent.integration.test.ts"
+    ]
+  },
+  "§app.claude-logins/pool": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/registry",
+      "§mesh.peers/off"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/claude-pool/doc.ts",
+      "server/claude-pool/agent.ts",
+      "server/claude-pool/index.ts",
+      "server/index.ts",
+      "shared/protocol.ts",
+      "server/claude-pool/agent.test.ts",
+      "server/claude-pool/pool-test-fixtures.ts",
+      "server/claude-pool/agent.integration.test.ts",
+      "scripts/claude-pool-e2e/run.mjs",
+      "server/app.ts",
+      "server/claude-pool/doc.test.ts"
+    ]
+  },
+  "§app.claude-logins/project-login": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/spawn-selection",
+      "§app.claude-logins/failover",
+      "§app.claude-logins/switch-login",
+      "§app.claude-logins/borrow-return",
+      "§app.claude-logins/accounts-tab",
+      "§app/projects",
+      "§app.projects/seam",
+      "§app.organizations/project-page",
+      "§app.organizations/org-page"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/claude-login-store.ts",
+      "server/claude-login-known.ts",
+      "server/claude-login-context.ts",
+      "server/org-claude-login.ts",
+      "server/projects/claude-login.ts",
+      "server/projects/claude-login.test.ts",
+      "server/project-claude-login.integration.test.ts",
+      "src/components/ClaudeLoginCard.tsx",
+      "src/lib/claude-login-card.ts",
+      "src/lib/claude-login-card.test.ts",
+      "pi-config/extensions/claude-code/accounts.ts",
+      "pi-config/extensions/claude-code/accounts.test.ts",
+      "pi-config/extensions/claude-code/provider/session-bridge.ts",
+      "pi-config/extensions/claude-code/provider/index.ts",
+      "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+      "server/projects/contributions.ts",
+      "server/projects/routes.ts",
+      "server/org-routes.ts",
+      "server/chat-host.ts",
+      "server/chat-host-login-context.test.ts",
+      "server/chat-runtime/supervisor.ts",
+      "server/claude-login-state.ts",
+      "server/claude-accounts.ts",
+      "shared/projects.ts",
+      "shared/protocol.ts",
+      "src/lib/api.ts",
+      "src/components/ProjectOverseerPanel.tsx",
+      "src/components/OrgsView.tsx",
+      "src/components/AccountsSettings.tsx",
+      "src/lib/claude-login.ts",
+      "src/lib/claude-login.test.ts",
+      "shared/commands/projects.ts",
+      "shared/commands/other.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T04:43Z",
+      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+    }
+  },
+  "§app.claude-logins/registry": {
+    "kind": "behavior",
+    "requires": [],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/claude-code/accounts.ts",
+      "server/claude-accounts.ts",
+      "pi-config/extensions/claude-code/accounts.test.ts",
+      "src/components/AccountsSettings.tsx",
+      "server/claude-pool/agent.ts",
+      "server/claude-pool/doc.ts",
+      "src/lib/claude-login-groups.ts",
+      "src/lib/claude-login-groups.test.ts",
+      "server/claude-pool/agent.test.ts",
+      "server/claude-pool/pool-test-fixtures.ts",
+      "server/claude-pool/agent.integration.test.ts"
+    ]
+  },
+  "§app.claude-logins/spawn-selection": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/registry",
+      "§app.claude-logins/device-order"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/claude-code/accounts.ts",
+      "pi-config/extensions/claude-code/provider/session-bridge.ts",
+      "pi-config/extensions/claude-code/provider/index.ts",
+      "pi-config/extensions/claude-code/provider/types.ts",
+      "pi-config/extensions/claude-code/index.ts",
+      "pi-config/extensions/claude-code/models.ts",
+      "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+      "server/claude-accounts.ts",
+      "server/claude-models.ts",
+      "server/claude-status.ts",
+      "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+      "pi-config/extensions/claude-code/transport.ts",
+      "pi-config/extensions/claude-code/accounts.test.ts",
+      "server/claude-models.test.ts",
+      "server/claude-models.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T04:43Z",
+      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+    }
+  },
+  "§app.claude-logins/stuck": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/borrow-return"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/claude-pool/agent.ts",
+      "server/claude-accounts.ts",
+      "src/lib/claude-pool.ts",
+      "src/components/AccountsSettings.tsx",
+      "server/claude-pool/agent.test.ts",
+      "server/claude-pool/pool-test-fixtures.ts",
+      "server/claude-pool/agent.integration.test.ts",
+      "src/lib/claude-pool.test.ts"
+    ]
+  },
+  "§app.claude-logins/switch-cost": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/switch-login",
+      "§chat.context-window/last-reply",
+      "§chat.context-window/format"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/lib/claude-login.ts",
+      "src/components/ComposerMenu.tsx",
+      "src/lib/claude-login.test.ts",
+      "src/design/base.css"
+    ]
+  },
+  "§app.claude-logins/switch-login": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/active-login",
+      "§app.claude-logins/spawn-selection",
+      "§app.claude-logins/failover",
+      "§app.claude-logins/borrow-return",
+      "§chat.composer/composer-flyout"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/claude-code/accounts.ts",
+      "pi-config/extensions/claude-code/provider/session-bridge.ts",
+      "pi-config/extensions/claude-code/provider/index.ts",
+      "pi-config/extensions/claude-code/provider/types.ts",
+      "server/claude-pool/agent.ts",
+      "server/chat-manager.ts",
+      "server/claude-login-state.ts",
+      "shared/protocol.ts",
+      "src/lib/claude-login.ts",
+      "src/components/ComposerMenu.tsx",
+      "src/components/Composer.tsx",
+      "src/components/ChatView.tsx",
+      "src/design/base.css",
+      "pi-config/extensions/claude-code/provider/login-command.ts",
+      "src/lib/api.ts",
+      "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+      "pi-config/extensions/claude-code/provider/registration.test.ts",
+      "pi-config/extensions/claude-code/accounts.test.ts",
+      "server/claude-pool/agent.test.ts",
+      "server/claude-pool/pool-test-fixtures.ts",
+      "server/claude-pool/agent.integration.test.ts",
+      "src/lib/claude-login.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-24T04:43Z",
+      "source": "pi-session:7f908742-ede6-496f-8c6c-d2b6a83e2aa5#8fa54616"
+    }
+  },
+  "§app.claude-logins/switch-queue": {
+    "kind": "behavior",
+    "requires": [
+      "§app.claude-logins/switch-login"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/chat-manager.ts",
+      "server/claude-login-state.ts",
+      "shared/protocol.ts",
+      "src/lib/claude-login.ts",
+      "src/components/ComposerMenu.tsx",
+      "src/components/Composer.tsx",
+      "server/claude-login-state.test.ts",
+      "src/components/ChatView.tsx",
+      "src/design/base.css"
+    ]
+  },
+  "§app/claude-logins": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/claude-code/accounts.ts",
+      "pi-config/extensions/claude-code/README.md"
+    ],
+    "notOwned": [
+      "§app/claude-code-provider",
+      "§app.insights/usage-cards",
+      "§mesh/peers"
+    ]
+  }
+}

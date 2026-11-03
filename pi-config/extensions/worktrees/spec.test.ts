@@ -43,7 +43,7 @@ async function merge(r: { tree: string }, extra: { onDefault?: boolean } = {}) {
 	return mergeSpecReport(runGit, { path: r.tree, branch: "feat/x", before: m.before, after: m.sha, branchSha: m.branchSha, ...extra });
 }
 
-test("a merge's unpromoted drafts and orphaned evidence; no foreign §, no code-after-spec warning", async () => {
+test("a merge's unpromoted drafts, and no orphaned-evidence warning (the landing records evidence again); no foreign §, no code-after-spec warning", async () => {
 	const r = repo();
 	try {
 		// Code, then its spec, then more code: no longer a warning.
@@ -71,9 +71,9 @@ test("a merge's unpromoted drafts and orphaned evidence; no foreign §, no code-
 
 		const rep = await merge(r);
 		assert.ok(rep);
-		assert.equal(rep.warnings.length, 2, texts(rep).join("\n"));
-		assert.equal(rep.warnings[0]!.text, "draft left has 1 unpromoted record (§app/list): promote what shipped");
-		assert.match(rep.warnings[1]!.text, new RegExp(`^evidence commit ${gone.slice(0, 7)} \\(draft old\\) is not on feat/x`));
+		assert.equal(rep.warnings.length, 1, texts(rep).join("\n"));
+		assert.equal(rep.warnings[0]!.text, "draft left has 1 unpromoted record (§app/list): it didn't land with the code; copy the draft into the worktree of the branch it merged into, so it lands with that branch");
+		assert.ok(!texts(rep).some((w) => w.includes(gone.slice(0, 7))), "evidence naming a commit the branch lacks is no warning: the landing records evidence at the commit that lands");
 		assert.deepEqual(specLines(rep), texts(rep).map((t) => `Spec warning: ${t}`));
 		assert.ok(!specLines(rep).some((l) => /Foreign §|last line|Deferred|Plumbing/.test(l)));
 	} finally {
@@ -147,14 +147,14 @@ test("the landing lists: an unmapped file and an unpromoted draft, worded with n
 		assert.deepEqual(rep.landing.unmappedChanged, [{ path: "scripts/links.sh", status: "A", inBoundary: false }]);
 		assert.deepEqual(rep.landing.unpromotedDrafts.map((d) => [d.draft, d.ids]), [["links", ["§app.list/mark"]]]);
 		assert.equal(rep.warnings[0]!.text, "1 changed file no claim maps (scripts/links.sh): spec any whose change a user sees");
-		assert.equal(rep.warnings[1]!.text, "draft links has 1 unpromoted record (§app.list/mark): promote what shipped");
+		assert.equal(rep.warnings[1]!.text, "draft links has 1 unpromoted record (§app.list/mark): it didn't land with the code; copy the draft into the worktree of the branch it merged into, so it lands with that branch");
 		assert.ok(rep.warnings[1]!.key);
 	} finally {
 		r.done();
 	}
 });
 
-test("q14: into the default branch, the landing's own draft is to be promoted now", async () => {
+test("into the default branch, the landing's own draft is reported as kept for a fresh branch, never to promote on it", async () => {
 	const r = repo();
 	try {
 		execFileSync(process.execPath, [DRAFT, "new", "links", "--write", "--root", r.tree]);
@@ -162,7 +162,8 @@ test("q14: into the default branch, the landing's own draft is to be promoted no
 		put(r.tree, "src/list.ts", "v2 links\n");
 		sh(r.tree, "commit", "-qam", "links, spec deferred");
 		const rep = await merge(r, { onDefault: true });
-		assert.deepEqual(texts(rep).filter((w) => w.startsWith("draft links")), ["draft links has 1 unpromoted record (§app.list/mark): this landed on the default branch, so promote it now"]);
+		assert.deepEqual(texts(rep).filter((w) => w.startsWith("draft links")), [`draft links has 1 unpromoted record (§app.list/mark): it didn't land with the code; the draft stays in ${r.tree}/.sova/spec/drafts/links until it lands with a fresh branch from the default branch (copy it into that worktree's .sova/spec/drafts/), never on it directly`]);
+		assert.ok(!texts(rep).some((w) => /promote (it|them) now|so promote/.test(w)), "never asks to promote on the default branch");
 	} finally {
 		r.done();
 	}
@@ -255,6 +256,45 @@ test("when the core can't compute the landing, the note says so", async () => {
 		const m = await mergeWorktree(runGit, { tree: { path: r.tree, branch: "feat/x" }, target: "master" });
 		const rep = await mergeSpecReport(runGit, { path: r.tree, branch: "feat/x", before: m.before, after: m.sha, branchSha: m.branchSha }, { node: async () => ({ code: 2, stdout: "" }) });
 		assert.deepEqual(texts(rep), ["the merge's unmapped files and unpromoted drafts could not be computed (no output); check them yourself"]);
+	} finally {
+		r.done();
+	}
+});
+
+// Across the cutover to one record file per area (format version 2): the tools compare records, never files.
+const migrate = (root: string) => {
+	const r = spawnSync(process.execPath, [DRAFT, "migrate", "--root", root, "--write", "--json"], { encoding: "utf8" });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.equal(JSON.parse(readFileSync(join(root, ".sova/spec/manifest.json"), "utf8")).formatVersion, 2);
+	sh(root, "add", "-A");
+	sh(root, "commit", "-qm", "spec: one record file per area");
+};
+
+test("across the cutover: the branch that converts the spec lands with nothing to report", async () => {
+	const r = repo();
+	try {
+		migrate(r.tree);
+		const rep = await merge(r);
+		assert.deepEqual(rep?.landing, { unmappedChanged: [], unpromotedDrafts: [], handResolved: [] });
+		assert.deepEqual(rep?.warnings, []);
+		const f = JSON.parse(execFileSync(process.execPath, [join(dirname(DRAFT), "sova-spec.mjs"), "foreign", "--base", "HEAD~1", "--head", "HEAD", "--root", r.main, "--json"], { cwd: r.main, encoding: "utf8" }));
+		assert.deepEqual([f.foreign, f.changes, f.created], [[], [], []], "a v1 → v2 range changes no record and no declaration");
+	} finally {
+		r.done();
+	}
+});
+
+test("across the cutover: a branch from before it lands on the converted master with nothing to report", async () => {
+	const r = repo();
+	try {
+		migrate(r.main);
+		put(r.tree, ".sova/spec/claims/app/list.md", LIST.replace("A speech bubble and", "Only"));
+		put(r.tree, "src/list.ts", "v2\n");
+		sh(r.tree, "commit", "-qam", "feat: code and spec, still format 1");
+		const rep = await merge(r);
+		assert.deepEqual(rep?.landing?.handResolved, [], "a merge of a format 1 side into a format 2 one is not a hand resolution");
+		assert.deepEqual(rep?.warnings, []);
+		assert.equal(JSON.parse(readFileSync(join(r.main, ".sova/spec/manifest.json"), "utf8")).formatVersion, 2, "the merged master stays in format 2");
 	} finally {
 		r.done();
 	}

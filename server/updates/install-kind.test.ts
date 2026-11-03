@@ -113,6 +113,20 @@ test("check only: a worktree, a terminal-started checkout, no checkout at all, e
   assert.equal(none.kind, "check-only");
 });
 
+test("Restart Sova's service: a worktree a transient unit runs (its MainPID this server) has none, so it can't restart itself", async () => {
+  // project-services starts a worktree's server as a systemd-run unit: ownServiceUnit would match it,
+  // detectInstall never hands it out.
+  const wt = "/home/u/webapps/.worktrees/sova-x";
+  const w = await detectInstall(probe({ checkout: wt, files: { [`${wt}/.git`]: "gitdir: /x\n" }, cgroup: SVC_CGROUP("sova-svc-abc123-sova-1234-server.service"), mainPid: 4242 }));
+  assert.equal(w.unit, null);
+  // The same unit on a checkout of its own is the service that runs it.
+  const dev = await detectInstall(probe({ checkout: "/src/sova", dirs: ["/src/sova/.git"], cgroup: SVC_CGROUP("sova-runtime.service"), mainPid: 4242 }));
+  assert.deepEqual(dev.unit, { manager: "systemd", name: "sova-runtime.service" });
+  // A unit whose main process is another (this server is its child): none.
+  const child = await detectInstall(probe({ checkout: "/src/sova", dirs: ["/src/sova/.git"], cgroup: SVC_CGROUP("sova-runtime.service"), mainPid: 1 }));
+  assert.equal(child.unit, null);
+});
+
 test("parsers: the launcher's quoted dir, a cgroup's user unit, a unit's or plist's program", () => {
   assert.equal(unquoteShell("/home/u/my\\ apps/sova"), "/home/u/my apps/sova");
   assert.equal(unquoteShell("'/a b'"), "/a b");

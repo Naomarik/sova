@@ -35,6 +35,7 @@ import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wi
 import type { HEntry, HookCtx, ImageInput, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
 import type { ChatClientMessage, ChatModeResult, HeldChatState, ProjectModeApproval } from "../shared/protocol";
 import {
+  ArchivedError,
   BusyError,
   type ChatClient,
   type ChatSession,
@@ -70,10 +71,15 @@ import { stateRoot } from "./state-root";
 import { queueOpenTool, queuePushTool } from "./topics";
 import type { PowersSend } from "./session-powers";
 import { tourTools } from "./tours/tools";
+import { sessionOfferTools } from "./session-offers-tool";
+import { offerNoteFor } from "./session-offers";
+import { sessionCardTools } from "./transcript-cards-tool";
+import { cardNoteFor } from "./transcript-cards";
+import { withMergeCardNote } from "./merge-queue/card-note";
 /** The powers host, loaded when first needed (session-profile-routes binds chat-manager at its import). */
 const powersHost = () => import("./session-profile-routes").then((m) => m.powersHost);
 
-export { BusyError, ConfigError, ModeRefusedError, RefusedError, onChatEvent, chatEventsSince };
+export { ArchivedError, BusyError, ConfigError, ModeRefusedError, RefusedError, onChatEvent, chatEventsSince };
 export type { ChatClient };
 export {
   activeConfigFailure,
@@ -665,6 +671,29 @@ export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => s
   return specs.map(declOfTool);
 }
 
+/** The server-hosted tools of a worker or team member (WorkerKind "worker", never a hidden chat), hosted
+    here: only `project_verbs`, under an ordinary session's rules (§app.project-services/callers). */
+export function servedWorkerTools(chatId: ChatId): ServerToolDecl[] {
+  const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine())];
+  serveTools(chatId, specs);
+  return specs.map(declOfTool);
+}
+
+/**
+ * Every server-hosted tool of a chat this server opens or adopts: servedToolsFor's, then, for an
+ * ordinary chat (no special kind but a powers profile), its `offer` tool when its snapshot names any
+ * (§chat.offers/tool). Last in the list, so a chat with none declares exactly what it did before.
+ */
+export async function servedToolsForChat(chatId: ChatId, sessionId: string, known: () => string | undefined, kind: string | null): Promise<ServerToolDecl[]> {
+  const decls = servedToolsFor(chatId, sessionId, known, kind === "powers");
+  if (kind !== null && kind !== "powers") return decls;
+  // Then its `card` tool when its snapshot has a type the agent may raise (§chat.transcript-cards/card-tool).
+  const extra = [...(await sessionOfferTools(sessionId, chatId)), ...(await sessionCardTools(sessionId, chatId))];
+  if (!extra.length) return decls;
+  serveTools(chatId, extra);
+  return [...decls, ...extra.map(declOfTool)];
+}
+
 /** A pusher's title, the one Sova shows for its session (§chat.topics/push): its display title, else
     the title its chat reports, else "Untitled"; never blank. */
 async function senderTitle(path: string, known: () => string | undefined): Promise<string> {
@@ -748,6 +777,10 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
       return singletonFor(a.key, a.path ?? path);
     case "reply.timings":
       return fetchSessionTimings(String(a.sessionId ?? ""));
+    case "offers.note":
+      return offerNoteFor(String(a.sessionId ?? ""));
+    case "cards.note":
+      return withMergeCardNote(cardNoteFor(String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null), String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null);
     case "powers.sessions":
       return (await powersHost()).sessions();
     case "powers.session":

@@ -125,15 +125,17 @@ const manifestRefusal = (m: unknown): string => {
 };
 
 test("a manifest's steps become the plan with Sova's checks and Publish between prepare and after", () => {
-  const m = parseReleaseManifest(JSON.stringify({ v: 1, steps: [{ id: "version", label: "Pick the version", phase: "prepare" }, { id: "try-live", label: "Try it live", phase: "prepare", held: true }, { id: "page", label: "Release page", phase: "after" }] }));
+  const m = parseReleaseManifest(JSON.stringify({ v: 1, steps: [{ id: "version", label: "Pick the version", phase: "prepare" }, { id: "try-live", label: "Try it live", phase: "check", held: true }, { id: "page", label: "Release page", phase: "after" }, { id: "app", label: "Build the app", phase: "after", artifact: true }, { id: "unlist", label: "Mark the page withdrawn", phase: "withdraw" }] }));
   assert.deepEqual(
     planOf(m).map((s) => [s.id, s.phase, s.state, s.held ?? false]),
     [
       ["version", "prepare", "waiting", false],
-      ["try-live", "prepare", "waiting", true],
       ["checks", "sova", "waiting", false],
+      ["try-live", "check", "waiting", true],
       ["publish", "sova", "waiting", false],
       ["page", "after", "waiting", false],
+      ["app", "after", "waiting", false],
+      ["unlist", "withdraw", "waiting", false],
     ],
   );
   assert.deepEqual(parseReleaseManifest('{"v":1,"steps":[]}').steps, []);
@@ -151,7 +153,9 @@ test("a manifest is parsed strictly", () => {
   assert.equal(manifestRefusal({ v: 1, steps: [{ id: "x", label: "X", phase: "during" }] }), "$.steps[0].phase");
   assert.equal(manifestRefusal({ v: 1, steps: [{ id: "x", label: "X", phase: "prepare", held: false }] }), "$.steps[0].held");
   assert.equal(manifestRefusal({ v: 1, steps: [{ id: "x", label: "X", phase: "prepare" }, { id: "x", label: "Y", phase: "after" }] }), "$.steps");
-  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "a", label: "A", phase: "after" }, { id: "b", label: "B", phase: "prepare" }] }), "$.steps");
+  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "a", label: "A", phase: "after" }, { id: "b", label: "B", phase: "prepare" }] }), "$.steps[1].phase");
+  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "withdraw", label: "A", phase: "withdraw" }] }), "$.steps[0].id");
+  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "a", label: "A", phase: "after", artifact: false }] }), "$.steps[0].artifact");
 });
 
 test("facts parse from key=value items, and an artifact's sha and size need its path", () => {

@@ -15,18 +15,23 @@ import type { PushState } from "./merge-queue";
 
 export const RELEASE_MANIFEST_FILE = "release.json";
 /** The step ids Sova keeps for its own steps; a manifest never declares them. */
-export const SOVA_STEP_IDS = ["checks", "publish"] as const;
+export const SOVA_STEP_IDS = ["checks", "publish", "withdraw", "abandon"] as const;
 export const MANIFEST_STEPS_MAX = 30;
 export const STEP_LABEL_MAX = 60;
 
-export type ManifestPhase = "prepare" | "after";
+/** Where a step runs in the plan: `prepare` before Sova's gating checks (the release commit is made here); `check` after
+    the checks passed and the release commit landed on the frozen master, before Publish (a live try-out); `after`
+    after Publish (a failure there never undoes it); `withdraw` after a Withdraw (the release page marked withdrawn). */
+export const MANIFEST_PHASES = ["prepare", "check", "after", "withdraw"] as const;
+export type ManifestPhase = (typeof MANIFEST_PHASES)[number];
 export interface ManifestStep {
   id: string;
   label: string;
-  /** `prepare`: before Sova's checks and Publish; `after`: after Publish (a failure there never undoes it). */
   phase: ManifestPhase;
   /** Ends `held` until the operator's Continue (judgement, such as a live try-out). */
   held?: true;
+  /** Its done report must carry an artifact's facts (artifact=<path>, sha256, size): a local build kept outside the repository. */
+  artifact?: true;
 }
 export interface ReleaseManifest {
   v: 1;
@@ -61,18 +66,20 @@ export function parseReleaseManifest(text: string): ReleaseManifest {
   const steps = raw.steps.map((s, i): ManifestStep => {
     const at = `$.steps[${i}]`;
     if (!isObj(s)) throw new ManifestError(at, "must be an object {id, label, phase}");
-    for (const k of Object.keys(s)) if (!["id", "label", "phase", "held"].includes(k)) throw new ManifestError(`${at}.${k}`, "unknown key");
+    for (const k of Object.keys(s)) if (!["id", "label", "phase", "held", "artifact"].includes(k)) throw new ManifestError(`${at}.${k}`, "unknown key");
     if (typeof s.id !== "string" || !STEP_ID.test(s.id)) throw new ManifestError(`${at}.id`, "a step id is lowercase letters, digits and hyphens, starting with a letter, at most 31 characters");
     if ((SOVA_STEP_IDS as readonly string[]).includes(s.id)) throw new ManifestError(`${at}.id`, `"${s.id}" is Sova's own step: the playbook never declares it`);
     if (typeof s.label !== "string" || !s.label.trim() || s.label.length > STEP_LABEL_MAX) throw new ManifestError(`${at}.label`, `must be a short label (1 to ${STEP_LABEL_MAX} characters)`);
-    if (s.phase !== "prepare" && s.phase !== "after") throw new ManifestError(`${at}.phase`, 'must be "prepare" (before checks and Publish) or "after" (after Publish)');
+    if (!(MANIFEST_PHASES as readonly unknown[]).includes(s.phase)) throw new ManifestError(`${at}.phase`, 'must be "prepare" (before the checks), "check" (after the checks, before Publish), "after" (after Publish) or "withdraw" (after a Withdraw)');
     if (s.held !== undefined && s.held !== true) throw new ManifestError(`${at}.held`, "must be true, or absent");
-    return { id: s.id, label: s.label.trim(), phase: s.phase, ...(s.held === true ? { held: true as const } : {}) };
+    if (s.artifact !== undefined && s.artifact !== true) throw new ManifestError(`${at}.artifact`, "must be true, or absent");
+    return { id: s.id, label: s.label.trim(), phase: s.phase as ManifestPhase, ...(s.held === true ? { held: true as const } : {}), ...(s.artifact === true ? { artifact: true as const } : {}) };
   });
   if (new Set(steps.map((s) => s.id)).size !== steps.length) throw new ManifestError("$.steps", "step ids must be unique");
-  // Prepare steps come first, then after-publish steps: Sova's checks and Publish sit between them.
-  const firstAfter = steps.findIndex((s) => s.phase === "after");
-  if (firstAfter >= 0 && steps.slice(firstAfter).some((s) => s.phase === "prepare")) throw new ManifestError("$.steps", "every prepare step comes before every after step");
+  // Listed in plan order: prepare, check, after, withdraw (Sova's checks and Publish sit between them).
+  const rank = (p: ManifestPhase) => MANIFEST_PHASES.indexOf(p);
+  for (let i = 1; i < steps.length; i++)
+    if (rank(steps[i]!.phase) < rank(steps[i - 1]!.phase)) throw new ManifestError(`$.steps[${i}].phase`, "list the steps in plan order: prepare, then check, then after, then withdraw");
   return { v: 1, steps };
 }
 
@@ -146,13 +153,16 @@ export function parseFacts(list: readonly string[]): ReleaseFacts {
   return out;
 }
 
-export type StepPhase = "prepare" | "sova" | "after";
+export type StepPhase = ManifestPhase | "sova";
 export interface ReleaseStep {
   id: string;
   label: string;
   phase: StepPhase;
   held?: true;
+  artifact?: true;
   state: StepState;
+  /** The `checks` step: its newest merge run (mr_…), for the run page link. */
+  run?: string;
   /** One line (at most STEP_SUMMARY_MAX). */
   summary?: string;
   /** In full (at most STEP_DETAIL_MAX); release.logs {step} reads it too. */
@@ -196,16 +206,18 @@ export interface ReleaseRecord {
   settings: ReleaseDecl;
 }
 
-/** The full plan from a manifest: prepare steps, Sova's checks and Publish, then after-publish steps. */
+/** The full plan from a manifest: prepare steps, Sova's gating checks, check steps, Publish, after-publish steps, then
+    the withdraw steps (they stay `waiting` unless the release is withdrawn). */
 export function planOf(m: ReleaseManifest): ReleaseStep[] {
-  const prep = m.steps.filter((s) => s.phase === "prepare");
-  const after = m.steps.filter((s) => s.phase === "after");
-  const own = (s: ManifestStep, phase: StepPhase): ReleaseStep => ({ id: s.id, label: s.label, phase, ...(s.held ? { held: true as const } : {}), state: "waiting" });
+  const own = (s: ManifestStep): ReleaseStep => ({ id: s.id, label: s.label, phase: s.phase, ...(s.held ? { held: true as const } : {}), ...(s.artifact ? { artifact: true as const } : {}), state: "waiting" });
+  const of = (p: ManifestPhase) => m.steps.filter((s) => s.phase === p).map(own);
   return [
-    ...prep.map((s) => own(s, "prepare")),
+    ...of("prepare"),
     { id: "checks", label: "Gating checks", phase: "sova", state: "waiting" },
+    ...of("check"),
     { id: "publish", label: "Publish", phase: "sova", state: "waiting" },
-    ...after.map((s) => own(s, "after")),
+    ...of("after"),
+    ...of("withdraw"),
   ];
 }
 
@@ -243,6 +255,10 @@ export interface ReleaseView {
   /** The settings or the manifest don't parse: what's wrong. */
   problem?: string;
   open: ReleaseRecord | null;
+  /** The newest record that is not open (published, abandoned or withdrawn): its after or withdraw steps may still run. */
+  last: ReleaseRecord | null;
+  /** The project's deploy targets, for Plan Deploy of a release. */
+  deployTargets: string[];
   /** Newest first, from the tags matching the pattern. */
   history: ReleaseHistoryItem[];
   /** The newest numbered tag not withdrawn. */

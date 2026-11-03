@@ -13,9 +13,12 @@ export const isTopSession = (s: Pick<SessionSummary, "live" | "origin" | "archiv
  * team member's own session, never a thread the user started, so the sidebar lists only main
  * threads; worker transcripts stay reachable from the owner's row and the Agents/Subagents pane.
  * An Overseer file (current or old) is not one either: the Overseer lives at its own route and is
- * never a row. A server that predates `workerSession` or `overseer` sends none: a main thread.
+ * never a row. Nor is one of the merge queue's own chats (`queueChat`: its thread, a reviewer): the
+ * project's Merge Queue tab lists those, and a link still opens them. A server that predates
+ * `workerSession`, `overseer` or `queueChat` sends none: a main thread.
  */
-export const isMainThread = (s: Pick<SessionSummary, "workerSession" | "overseer">): boolean => s.workerSession !== true && s.overseer !== true;
+export const isMainThread = (s: Pick<SessionSummary, "workerSession" | "overseer"> & Partial<Pick<SessionSummary, "queueChat">>): boolean =>
+  s.workerSession !== true && s.overseer !== true && !s.queueChat;
 
 /**
  * Whether a session belongs to an organization (`SessionSummary.org`, §app.session-list/organizations):
@@ -82,8 +85,8 @@ export const groupRefusal = (s: Pick<SessionSummary, "org">): string | null => (
  * the pane, so Folders leaves it out. `here`: the row is this computer's; a mesh peer's row carries the peer's own
  * `project` and always stays in Folders. A remote target's session never carries a folder project (the server's rule).
  */
-export const listedWithLocalProject = (s: Pick<SessionSummary, "org" | "project" | "folderOrg"> & { archived?: boolean }, here: boolean): boolean =>
-  here && !s.org && s.project?.kind === "folder" && s.project.archived !== true && s.folderOrg?.projectArchived !== true && s.archived !== true;
+export const listedWithLocalProject = (s: Pick<SessionSummary, "org" | "project" | "folderOrg"> & Partial<Pick<SessionSummary, "queueChat">> & { archived?: boolean }, here: boolean): boolean =>
+  here && !s.queueChat && !s.org && s.project?.kind === "folder" && s.project.archived !== true && s.folderOrg?.projectArchived !== true && s.archived !== true;
 
 /** Folders, the top region (§app.session-list/regions-top-and-archive): an ordinary session that is live or a web session
     not archived, unless a project of this computer lists it. */

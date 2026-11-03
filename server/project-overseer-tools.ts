@@ -410,7 +410,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     const root = host.project().root;
     const all = await host.sessions();
     const mine = host.startedCoding();
-    const coding = all.filter((s) => (underRoot(root, s.cwd) || mine.has(s.id)) && !s.overseer && !s.baton && !s.projectOverseer && !s.workerSession);
+    const coding = all.filter((s) => (underRoot(root, s.cwd) || mine.has(s.id)) && !s.overseer && !s.baton && !s.projectOverseer && !s.workerSession && !s.queueChat);
     return { coding, otherIds: new Set(others().flatMap((o) => o.list().map((x) => x.id))) };
   }
 

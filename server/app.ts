@@ -65,6 +65,7 @@ import { registerUsageRoutes } from "./usage-routes";
 import { sessionFeed } from "./session-feed";
 import { LIST_VERSION_HEADER } from "../src/lib/summary-diff";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
+import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { rowsOf } from "./transcript";
 import { readBranch, unknownEntries } from "./harness/pi/reader";
@@ -1291,6 +1292,8 @@ export function buildApp(deps: AppDeps) {
       if (request.patch.projectModes !== undefined) return c.json({ error: "Project modes belong to one chat: send projectModes with ?path=" }, 400);
       return c.json(await switchMode(request.patch));
     }
+    // The merge queue's own chats keep the modes Sova started them with (profiles/system, thread.ts threadMemoryOn).
+    if (queueChatRole((await getSessionSummary(path).catch(() => null))?.profile)) return c.json({ error: QUEUE_CHAT_MODE_REFUSAL }, 409);
     const got = await chatFor(path);
     if ("error" in got) return c.json({ error: got.error }, got.status);
     // A project's coding session keeps spec on (§app.project-overseer/coding-mode).

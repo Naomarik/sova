@@ -757,6 +757,8 @@ takes the approval. With no served row, neither line shows. Then comes one row p
   - **Cancel** on a queued row;
   - **Accept** and **Send Back** on Behaviour differs;
   - **Land Anyway** and **Send Back** on Review flagged and on Can't tell whose failure;
+- its reviewer line while the branch's review runs and after it ends, with **Open Reviewer Chat**,
+  the same row as the pane's (§chat.worktrees/pane);
 - **Review Changes**, first among the row's actions, on every row of an active worktree whose folder
   exists and that has commits of its own (Ready, Uncommitted with commits, queued, checking, waiting
   for you, Needs a fix), the same button as the pane's rows (§chat.worktrees/pane). It opens the
@@ -769,7 +771,9 @@ takes the approval. With no served row, neither line shows. Then comes one row p
 after Send Back or a failed check) offers no Land and no Land menu, here, in the session pane and on
 the Merge Queue tab, while its chat fixes it. Its line is the queue's reason, else "Sent back to its
 chat. Land comes back here once its chat commits a fix and finishes." It stays so at the sent-back
-commit, whatever that commit reads. Once the branch reads ready again at a newer commit (clean, no
+commit, whatever that commit reads, until the branch is merged into the target (the row reads
+**Merged**) or its worktree folder is removed (**Removed**); after that, a later note on the old
+sent-back entry never brings Needs a fix back. Once the branch reads ready again at a newer commit (clean, no
 conflicts, its chat idle, §chat.worktrees/ready-to-land), that commit wins: the row reads Ready, with
 Land, at the new commit. No row says whether its chat is working on the fix meanwhile.
 

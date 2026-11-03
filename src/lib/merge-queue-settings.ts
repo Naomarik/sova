@@ -38,6 +38,13 @@ export function checksCaption(c: MergeQueueSettings["checks"]): string | null {
 }
 
 /** "10 min", "1 min 30 s", "45 s". */
+/** The Merge thread's "Fresh chat" row (thread.ts replaceReason): one endless chat with memory, replaced only when it
+    must be. The half-context rule still applies to every thread, as a safety net. */
+export function freshChatWords(f: Pick<MergeQueueSettings["fixed"], "threadMaxContext">): string {
+  const share = f.threadMaxContext === 0.5 ? "half" : `${Math.round(f.threadMaxContext * 100)}%`;
+  return `One endless thread with memory (UniiChat). A new one only when it's gone, open in a terminal, keeps refusing messages or past ${share} of its context, or when you press Start Fresh.`;
+}
+
 export function minutes(sec: number): string {
   if (sec < 60) return `${sec} s`;
   const m = Math.floor(sec / 60);

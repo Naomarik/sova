@@ -185,7 +185,7 @@ function viewOf(x: Partial<MergeQueueView> = {}): MergeQueueView {
     ],
     heads: { target: sha("1"), pushed: sha("1") },
     ready: [{ branch: "feat/ready-one", worktree: "/w/.worktrees/sova-ready-one", commit: sha("9"), ahead: 3 }],
-    thread: { session: "/w/sessions/thread.jsonl", startedAt: iso(60) },
+    thread: { session: "/w/sessions/thread.jsonl", startedAt: iso(60), state: "idle" },
     at: iso(0),
     ...x,
   };
@@ -660,7 +660,9 @@ for (const width of [1280, 390]) {
       await until("a send-back", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "send-back" && c.body.entry === "me_b"));
       await tab.getByRole("button", { name: "Land feat/hack anyway" }).click();
       await until("a land-anyway", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "land-anyway"));
-      assert.equal(await tab.getByRole("link", { name: "Open Merge Thread" }).count(), 1);
+      // The head's and the Merge thread card's (al_7).
+      assert.equal(await tab.getByRole("link", { name: "Open Merge Thread" }).count(), 2);
+      assert.equal(await tab.locator(".mq-head").getByRole("link", { name: "Open Merge Thread" }).count(), 1);
       // Ready to land, not approved: Land and its ▾, on the queue's own page.
       const ready = tab.locator('[data-branch="feat/ready-one"]');
       assert.match(await words(ready), /3 commits ahead/);
@@ -1195,6 +1197,128 @@ for (const width of [1280, 390]) {
       await noSideScroll(page);
       await page.keyboard.press("Escape");
       await until("the modal closed", async () => (await page.getByRole("dialog", { name: "Worktrees" }).count()) === 0);
+      await o.ctx.close();
+    });
+  });
+}
+
+// ---- the queue's own chats (al_7): the Merge thread card, the running review, History, reviewer links ----------
+
+const REVIEWER_PATH = "/w/sessions/rev2.jsonl";
+const CHATS: NonNullable<MergeQueueView["chats"]> = [
+  { kind: "thread", session: "01a0mergethread", path: "/w/sessions/thread.jsonl", startedAt: iso(600), current: true, memory: "uniichat" },
+  { kind: "reviewer", session: "rev2", path: REVIEWER_PATH, startedAt: iso(2), running: true, run: "mr_now", branch: "feat/composer-drafts", attempt: 2 },
+  { kind: "reviewer", session: "rev1", path: "/w/sessions/rev1.jsonl", startedAt: iso(20), endedAt: iso(3), run: "mr_now", branch: "feat/composer-drafts", attempt: 1, verdict: "failed", why: "no verdict within 20 min" },
+  { kind: "reviewer", session: "revold", path: "/w/sessions/revold.jsonl", startedAt: iso(45), endedAt: iso(41), run: "mr_old", branch: "feat/composer-hints", attempt: 1, verdict: "ok" },
+  { kind: "thread", session: "01a0oldthread", path: "/w/sessions/oldthread.jsonl", startedAt: iso(5000), endedAt: iso(600), why: "you started a fresh one", memory: "uniichat" },
+];
+const ASKED = {
+  thread: { session: "01a0mergethread", path: "/w/sessions/thread.jsonl", startedAt: iso(600), memory: "uniichat", state: "asking" as const, lastEvent: { kind: "names", at: iso(4) }, ask: { id: "ak_1", question: "What else must never reach the public repo?", at: iso(4), entry: "me_l", branch: "feat/composer-hints", askedIn: { session: SESSION.id, path: PATH } } },
+  reviewing: { run: "mr_now", branch: "feat/composer-drafts", session: "rev2", path: REVIEWER_PATH, attempt: 2, startedAt: iso(2) },
+  chats: CHATS,
+};
+
+for (const width of [1280, 390]) {
+  describe(`${width}px: the queue's own chats`, () => {
+    test("the Merge thread card asks through the branch's chat; the head opens the running review; Start Fresh confirms", async () => {
+      const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf(ASKED) });
+      const { page } = o;
+      const card = page.getByRole("generic", { name: "Merge thread" }).first();
+      await page.locator(".mq-thread-card").waitFor({ timeout: 20_000 });
+      const text = await words(page.locator(".mq-thread-card"));
+      for (const w of ["Merge thread", "Asking you", "UniiChat", "started", "Asked for private names", "The merge thread is asking you something.", "What else must never reach the public repo?", "Waiting on you · asked in"]) assert.ok(text.includes(w), `${w} in: ${text}`);
+      assert.ok((await page.locator(".mq-thread-card").getByRole("link", { name: SESSION.title }).getAttribute("href"))!.endsWith(`/s/${encodeURIComponent(PATH)}`), "asked in: the branch's chat");
+      const running = page.locator("a.mq-reviewing");
+      assert.equal((await words(running)).trim(), "Review running · feat/composer-drafts (attempt 2) · Open");
+      assert.ok((await running.getAttribute("href"))!.includes(encodeURIComponent(REVIEWER_PATH)));
+      const box = (await running.boundingBox())!;
+      assert.ok(box.x >= 0 && box.x + box.width <= width + 1, `the head button fits at ${width}px`);
+      await shot(page, `${width}-thread-card`);
+      void card;
+      await page.locator(".mq-thread-card").getByRole("button", { name: "Start Fresh…" }).click();
+      const confirm = page.getByRole("group", { name: "Start a fresh merge thread" });
+      assert.match(await words(confirm), /stays readable in History/);
+      assert.equal(o.calls.filter((c) => c.verb === "merge.fresh").length, 0, "nothing until the confirm");
+      await confirm.getByRole("button", { name: "Start Fresh", exact: true }).click();
+      await called(o, "merge.fresh");
+      await o.ctx.close();
+    });
+
+    test("History: every chat, filters, each row opens its chat; Clear and Clear All… call merge.clear; never the current thread or a running review", async () => {
+      const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf(ASKED) });
+      const { page } = o;
+      const history = page.locator(".mq-history");
+      await history.waitFor({ timeout: 20_000 });
+      await history.scrollIntoViewIfNeeded();
+      assert.equal(await history.locator("li").count(), 5);
+      assert.equal(await history.locator('li[data-session="01a0mergethread"]').getByRole("button", { name: /^Clear/ }).count(), 0, "the current thread has no Clear");
+      assert.equal(await history.locator('li[data-session="rev2"]').getByRole("button", { name: /^Clear/ }).count(), 0, "a running review has no Clear");
+      assert.ok((await history.locator('li[data-session="revold"] a').getAttribute("href"))!.includes(encodeURIComponent("/w/sessions/revold.jsonl")));
+      await history.getByRole("button", { name: "Reviews" }).click();
+      assert.equal(await history.locator("li").count(), 3);
+      await history.getByRole("button", { name: "Merge threads" }).click();
+      assert.equal(await history.locator("li").count(), 2);
+      assert.match(await words(history.locator('li[data-session="01a0oldthread"]')), /ended: you started a fresh one/);
+      await shot(page, `${width}-history`);
+      await history.locator('li[data-session="01a0oldthread"]').getByRole("button", { name: /^Clear/ }).click();
+      await called(o, "merge.clear");
+      assert.deepEqual(o.calls.find((c) => c.verb === "merge.clear")!.body.chat, "01a0oldthread");
+      await history.getByRole("button", { name: "Clear All…" }).click();
+      const confirm = page.getByRole("group", { name: "Clear the queue's chats" });
+      assert.match(await words(confirm), /Deletes 3 chats for good\. Runs keep their verdicts and findings/);
+      await confirm.getByRole("button", { name: "Clear All", exact: true }).click();
+      await until("Clear All", () => o.calls.filter((c) => c.verb === "merge.clear").length === 2);
+      assert.equal(o.calls.filter((c) => c.verb === "merge.clear")[1]!.body.chat, "all");
+      await o.ctx.close();
+    });
+
+    test("runs link their reviewer chats: Recent's row, and the run page per attempt", async () => {
+      const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf(ASKED) });
+      const { page } = o;
+      const recent = page.locator('[data-state="landed"][data-branch="feat/composer-hints"]');
+      await recent.waitFor({ timeout: 20_000 });
+      assert.match(await words(recent.locator(".mq-reviewers")), /Review: ok · Open Reviewer Chat/);
+      assert.ok((await recent.getByRole("link", { name: "Open Reviewer Chat" }).getAttribute("href"))!.includes(encodeURIComponent("/w/sessions/revold.jsonl")));
+      await o.ctx.close();
+      const r = await open(width, `#/projects/${PID}/merge-queue/mr_now`, { view: viewOf(ASKED) });
+      const links = r.page.locator(".mq-reviewers").first();
+      await links.waitFor({ timeout: 20_000 });
+      const t = await words(links);
+      assert.match(t, /Review \(attempt 1\): no verdict · Open Reviewer Chat/);
+      assert.match(t, /Review running \(attempt 2\) · Open Reviewer Chat/);
+      assert.equal(await links.getByRole("link", { name: "Open Reviewer Chat" }).count(), 2);
+      await shot(r.page, `${width}-run-reviewers`);
+      await r.ctx.close();
+    });
+
+    test("a question with no chat to ask: answered on the tab with merge.reply", async () => {
+      const view = viewOf({ ...ASKED, thread: { ...ASKED.thread, ask: { ...ASKED.thread.ask, askedIn: undefined, onTab: true as const } } });
+      const o = await open(width, `#/projects/${PID}/merge-queue`, { view });
+      const { page } = o;
+      const box = page.getByLabel("Your answer");
+      await box.waitFor({ timeout: 20_000 });
+      assert.equal(await page.locator(".mq-thread-card").getByRole("link", { name: "Answer in Merge Thread" }).count(), 1);
+      await box.fill("The lab's hostnames and the office IPs.");
+      await page.getByRole("button", { name: "Send Answer" }).click();
+      await called(o, "merge.reply");
+      assert.deepEqual(o.calls.find((c) => c.verb === "merge.reply")!.body, { ask: "ak_1", text: "The lab's hostnames and the office IPs.", project: ROOT_DIR });
+      await shot(page, `${width}-thread-asking-tab`);
+      await o.ctx.close();
+    });
+
+    test("the branch's own Worktrees row: Open Reviewer Chat while its review runs", async () => {
+      const rows = ALL_ROWS.map((w) => (w.queue && w.branch === "fix/paste-images" ? { ...w, queue: { ...w.queue, reviewer: { session: "rev2", path: REVIEWER_PATH, state: "running" as const } } } : w));
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows });
+      const { page } = o;
+      await page.getByRole("button", { name: /^Worktrees: / }).waitFor({ timeout: 20_000 });
+      await page.getByRole("button", { name: "Session details" }).first().click();
+      const section = page.locator("section", { has: page.getByRole("heading", { name: "Worktrees" }) }).last();
+      const row = section.locator('[data-branch="fix/paste-images"]');
+      await row.waitFor({ timeout: 10_000 });
+      assert.match(await words(row.locator(".wt-queue-reviewer")), /Review running · Open Reviewer Chat/);
+      assert.ok((await row.getByRole("link", { name: "Open Reviewer Chat" }).getAttribute("href"))!.endsWith(`/s/${encodeURIComponent(REVIEWER_PATH)}`));
+      await row.scrollIntoViewIfNeeded();
+      await shot(page, `${width}-worktree-reviewer`);
       await o.ctx.close();
     });
   });

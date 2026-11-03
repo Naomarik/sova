@@ -1,0 +1,95 @@
+// Run: pnpm test server/queue-chats.test.ts
+// The merge queue's own chats (its thread, each reviewer) are marked by the Sova profile they were started on,
+// read from the file alone, and every server list and act leaves them out: Needs you, the push/decision
+// eligibility, the quiet-team signal, the Overseer's and project overseers' session lists, session_list/
+// session_send, mesh links, auto-titles, readiness and Clean Up. A chat that merely carries the same title,
+// or a user profile with the same id, is ordinary.
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, test } from "node:test";
+
+const agentDir = mkdtempSync(join(tmpdir(), "sova-queue-chats-"));
+process.env.PI_CODING_AGENT_DIR = agentDir;
+const sessionsDir = join(agentDir, "sessions", "--tmp-queue-chats--");
+mkdirSync(sessionsDir, { recursive: true });
+after(() => rmSync(agentDir, { recursive: true, force: true }));
+
+const { getSessionSummary, cleanupSessions, archiveSession } = await import("./sessions-index");
+const { canonicalPath } = await import("./paths");
+const { sessionItems } = await import("./attention");
+const { exclusionReason, quietTeam } = await import("./attention-signals");
+const { writableRefusal, hiddenFromProfiles, QUEUE_CHAT_REFUSAL } = await import("./session-guards");
+const { configureRefusal } = await import("./sessions-configure");
+const { queueChatRole } = await import("../shared/merge-queue");
+const { addWebSession } = await import("./web-sessions");
+
+const NOW = "2026-11-03T10:00:00.000Z";
+function session(name: string, profile: Record<string, unknown> | null, title = "Review · feat/x · abc1234"): string {
+  const path = join(sessionsDir, `2026-11-03T00-00-00-000Z_${name}.jsonl`);
+  const lines = [
+    { type: "session", version: 3, id: name, timestamp: NOW, cwd: "/tmp/proj" },
+    ...(profile ? [{ type: "custom", customType: "sova-profile", id: "p1", parentId: null, data: { v: 1, profile } }] : []),
+    { type: "message", id: "u1", parentId: profile ? "p1" : null, message: { role: "user", content: "Review the branch." } },
+    { type: "session_info", id: "t1", parentId: "u1", name: title },
+  ];
+  writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  const old = new Date(Date.parse(NOW) - 90 * 86_400_000);
+  utimesSync(path, old, old);
+  return canonicalPath(path);
+}
+const sova = (id: string) => ({ id, label: id, icon: "branch", source: "sova" });
+
+test("queueChatRole: Sova's merge-thread and merge-reviewer profiles only, never by title or a user profile", () => {
+  assert.equal(queueChatRole({ id: "merge-thread", source: "sova" }), "thread");
+  assert.equal(queueChatRole({ id: "merge-reviewer", source: "sova" }), "reviewer");
+  assert.equal(queueChatRole({ id: "merge-reviewer", builtin: true }), "reviewer", "an older entry's builtin reads as sova");
+  assert.equal(queueChatRole({ id: "merge-reviewer", source: "user" }), undefined);
+  assert.equal(queueChatRole({ id: "merge-reviewer", source: "project" }), undefined);
+  assert.equal(queueChatRole({ id: "reviewer", source: "sova" }), undefined);
+  assert.equal(queueChatRole(undefined), undefined);
+});
+
+test("SessionSummary.queueChat comes from the file's own profile entry", async () => {
+  assert.deepEqual((await getSessionSummary(session("thread", sova("merge-thread"))))?.queueChat, { role: "thread" });
+  assert.deepEqual((await getSessionSummary(session("rev", sova("merge-reviewer"))))?.queueChat, { role: "reviewer" });
+  assert.equal((await getSessionSummary(session("titled", null)))?.queueChat, undefined, "a title alone marks nothing");
+  assert.equal((await getSessionSummary(session("userprof", { ...sova("merge-reviewer"), source: "user" })))?.queueChat, undefined);
+});
+
+test("every server list and act leaves a queue chat out; the same chat without the mark is in", async () => {
+  const marked = (await getSessionSummary(session("rev2", sova("merge-reviewer"))))!;
+  const plain = { ...marked, queueChat: undefined };
+  const row = (s: typeof marked) => ({ ...s, live: null, archived: false, origin: "web" as const, busy: false, activity: { state: "needs-input" as const } });
+  // Needs you: an ordinary chat waiting on input is an item; the queue chat never is.
+  const att = (s: typeof marked) => ({ summary: row(s), dialogs: [], failedWorkers: 0 }) as never;
+  assert.ok(sessionItems(att(plain), Date.parse(NOW)).length > 0, "the control is a Needs you item");
+  assert.deepEqual(sessionItems(att(marked), Date.parse(NOW)), []);
+  // Push/decision eligibility and the quiet-team signal.
+  const settings = { attention: { enabled: true } } as never;
+  assert.equal(exclusionReason(row(marked), settings, true), "merge queue chat");
+  assert.equal(quietTeam(row(marked), [], new Map(), { at: Date.parse(NOW), stopReason: "stop" }, Date.parse(NOW)), null);
+  // The Overseer's acts and session_send, session_list (hiddenFromProfiles), the configure route.
+  assert.equal(writableRefusal(row(marked)), QUEUE_CHAT_REFUSAL);
+  assert.equal(writableRefusal(row(plain)), null);
+  assert.equal(hiddenFromProfiles(row(marked)), true);
+  assert.equal(hiddenFromProfiles(row(plain)), false);
+  assert.ok(configureRefusal(row(marked), false, 0));
+});
+
+test("Clean Up never sweeps a queue chat by age or as a husk, and refuses it by path; the History's clear may", async () => {
+  const kept = session("old-rev", sova("merge-reviewer"));
+  session("old-plain", null, "An old chat");
+  const dry = await cleanupSessions({ mode: "age", minAgeDays: 30, dryRun: true });
+  assert.ok(dry.deletedIds.includes("old-plain"), `the control is swept: ${dry.deletedIds}`);
+  assert.ok(!dry.deletedIds.includes("old-rev"), `the queue chat is kept: ${dry.deletedIds}`);
+  addWebSession("old-rev");
+  assert.equal((await archiveSession(kept, true)).ok, true);
+  const byPath = await cleanupSessions({ mode: "paths", paths: [kept], dryRun: true });
+  assert.match(JSON.stringify(byPath.refused ?? []), /merge queue's own chats/);
+  assert.deepEqual(byPath.deletedIds, []);
+  const cleared = await cleanupSessions({ mode: "paths", paths: [kept], dryRun: true }, { queueChats: true });
+  assert.deepEqual(cleared.refused ?? [], [], JSON.stringify(cleared));
+  assert.deepEqual(cleared.deletedIds, ["old-rev"]);
+});

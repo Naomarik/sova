@@ -22,7 +22,7 @@ Step 5, and only after the user's explicit word to publish (PLAYBOOK.md step 4).
      git push --atomic "--force-with-lease=refs/tags/stable:${old}" origin "${sha}:refs/heads/master" refs/tags/vX.Y.Z refs/tags/stable
      ```
    A refusal ("stale info", "atomic push failed", "non-fast-forward") changed nothing on GitHub: read `stable` and master again and tell the user; never retry with a broader force.
-5. **Check `stable` on GitHub before anything else reads it**: `git ls-remote origin 'refs/tags/stable^{}' 'refs/tags/vX.Y.Z^{}' refs/heads/master` prints `"${sha}"` three times. Not three times: stop, deploy nothing, tell the user. Then tell the merge captain the release is published, and ask the user to resume the Merge round.
+5. **Check `stable` on GitHub before anything else reads it**: `git ls-remote origin 'refs/tags/stable^{}' 'refs/tags/vX.Y.Z^{}' refs/heads/master` prints `"${sha}"` three times. Not three times: stop, deploy nothing, tell the user. Then ask the user to resume the merge queue (`references/prepare.md`).
 
 ## The GitHub release page
 The notes are the release's `CHANGELOG.md` entry, without its heading:
@@ -48,4 +48,4 @@ Nothing automated gates `stable`; the user decides whether a release is good. Of
 - **The live landing page** shows `vX.Y.Z` in its pill, linking to the release page, and the `stable` install command.
 - **An existing install updates**: on a machine that installed `vPREV` by the public command, re-running it says "installed stable (<short sha>)".
 
-Then report: the tags and their commit, the release page, the site deploy and its check, which outside checks ran and their results, and that the Merge round may resume.
+Then report: the tags and their commit, the release page, the site deploy and its check, which outside checks ran and their results, and that the merge queue may resume.

@@ -340,7 +340,8 @@ Rewind; the `gap` rows are measured again between the rows that remain, so "idle
 silence between two of your messages. Every other row goes: chapters, compactions, rewind markers,
 subagents started and finished, model/thinking/mode changes and past summaries, and the input rows
 you didn't type, with their density lines — a message another session sent, one the Overseer sent
-(its briefs included), one a teammate sent in a shared session, and a fired wake nudge. The rows a
+(its briefs included), one a teammate sent in a shared session, a turn the merge queue started
+("From the merge queue", §chat.merge-queue/chat-turns), and a fired wake nudge. The rows a
 fresh rewind left behind (below) stay when you typed them, and go when someone else sent them: a
 left-behind row keeps its sender, so the filter never brings it back.
 

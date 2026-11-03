@@ -1,8 +1,8 @@
 // What became of a tracked worktree whose folder is gone (§chat.worktrees/readiness) and the ledger
 // of Sova's own removals (§chat.worktrees/cleanup): `<state root>/removed-worktrees.json`,
 // `{v: 1, entries: [...]}`, newest last, written by atomic rename. Merge readiness asks
-// `goneTreeState` so an owner whose merged worktree was removed (by the cleanup button, the Merge
-// Captain's plain git, or by hand) reads merged, never in progress. Git by argv, read-only.
+// `goneTreeState` so an owner whose merged worktree was removed (by the cleanup button, another
+// session's plain git, or by hand) reads merged, never in progress. Git by argv, read-only.
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";

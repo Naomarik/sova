@@ -372,6 +372,8 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
 
 /** A card's reserved height: its data card's estimate, or a line for data that doesn't fit (its error box). */
 function cardEstimate(card: CardInfo): number {
+  // The merge queue's own card (Sova draws it): a head, a facts line, a note or two and its buttons.
+  if (card.type === "sova.merge-queue") return card.state === "superseded" ? 40 : 150;
   if (card.draws === "view") return (card.view?.height ?? 160) + (card.by.kind === "agent" ? 0 : 24) + (card.answer ? 28 : 0);
   const c = checkCardData(card.draws, card.data);
   return (c.ok ? dataCardHeight(card.draws, c.data) : 56) + (card.by.kind === "agent" ? 0 : 24) + (card.answer ? 28 : 0);

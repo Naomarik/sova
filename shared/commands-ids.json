@@ -157,7 +157,21 @@
     "session.card.post",
     "session.card.get",
     "session.card.answer",
-    "project.cards.list"
+    "project.cards.list",
+    "project.verb.merge.status",
+    "project.verb.merge.logs",
+    "project.verb.merge.add",
+    "project.verb.merge.cancel",
+    "project.verb.merge.pause",
+    "project.verb.merge.resume",
+    "project.verb.merge.note",
+    "project.verb.merge.extend",
+    "project.verb.merge.resolve",
+    "project.verb.merge.answer",
+    "project.verb.merge.review",
+    "project.verb.merge.retry",
+    "project.verb.merge.setup",
+    "session.merge-cards"
   ],
   "retired": [
     "settings.agents.get"

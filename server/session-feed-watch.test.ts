@@ -61,6 +61,38 @@ describe("watchFeedInputs", () => {
     }
   });
 
+  test("`files` hears each session file's full path before the change, and null when a folder joins or leaves", async () => {
+    const f = fixture();
+    const heard: (string | null)[] = [];
+    let atChange = -1;
+    const stop = watchFeedInputs(() => (atChange = heard.length), {
+      sessionsDir: f.sessionsDir,
+      liveDir: f.liveDir,
+      roots: () => [f.extra],
+      liveSignature: () => "same",
+      files: (p) => heard.push(p),
+    });
+    try {
+      const a = join(f.sessionsDir, "--w--", "a.jsonl");
+      writeFileSync(a, "{}\n");
+      assert.ok(await until(() => heard.includes(a)), "a cwd folder's session, by full path");
+      assert.ok(atChange > heard.indexOf(a), "noted before the change");
+      const b = join(f.extra, "b.jsonl");
+      writeFileSync(b, "{}\n");
+      assert.ok(await until(() => heard.includes(b)), "an extra root's session");
+      assert.equal(heard.includes(null), false, "no null for file events");
+      writeFileSync(join(f.sessionsDir, "--w--", "notes.txt"), "x");
+      mkdirSync(join(f.sessionsDir, "--new--"));
+      assert.ok(await until(() => heard.includes(null)), "a folder added to the watched set");
+      assert.equal(heard.some((p) => p?.endsWith("notes.txt")), false, "a file that is no session is never named");
+      heard.length = 0;
+      rmSync(join(f.sessionsDir, "--new--"), { recursive: true });
+      assert.ok(await until(() => heard.includes(null)), "a folder gone");
+    } finally {
+      stop();
+    }
+  });
+
   test("a live record is a change only when its signature moves: a heartbeat alone is none", async () => {
     const f = fixture();
     let sig = "s1";

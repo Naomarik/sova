@@ -57,7 +57,6 @@
       "server/session-offers.test.ts",
       "server/attention.ts",
       "server/overseer.ts",
-      "server/session-offers-rows.test.ts",
       "src/lib/offer-rows-card.test.ts",
       "src/waiting.css"
     ],
@@ -129,31 +128,6 @@
       "source": "pi-session:01a17a2d-9525-7412-baca-957c5a5a99a8#7f582fd6"
     }
   },
-  "§chat.offers/landing-rows": {
-    "kind": "behavior",
-    "authority": "accepted",
-    "evidence": "verified",
-    "code": [
-      "server/session-offers.ts",
-      "server/session-offers-rows.ts",
-      "server/session-offers-rows.test.ts",
-      "server/landing-queue.ts",
-      "server/landing-queue.test.ts",
-      "src/components/OfferCard.tsx",
-      "src/lib/offer-rows-card.test.ts",
-      ".sova/offers.json"
-    ],
-    "requires": [
-      "§chat.offers/sova-landing",
-      "§chat.offers/card",
-      "§chat.worktrees/landing-answers"
-    ],
-    "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-27T12:36Z",
-      "source": "pi-session:01a17a2d-9525-7412-baca-957c5a5a99a8#7f582fd6"
-    }
-  },
   "§chat.offers/project-list": {
     "kind": "behavior",
     "authority": "accepted",
@@ -174,32 +148,6 @@
       "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
     }
   },
-  "§chat.offers/sova-landing": {
-    "kind": "behavior",
-    "authority": "accepted",
-    "evidence": "verified",
-    "code": [
-      ".sova/offers.json",
-      "shared/session-offers.test.ts",
-      "server/landing-queue.ts",
-      "server/landing-queue.test.ts",
-      "server/session-offers.test.ts",
-      "server/index.ts",
-      "server/session-offers.ts",
-      "shared/session-offers.ts",
-      "src/components/OfferCard.tsx",
-      "src/waiting.css",
-      "server/session-offers.landing.test.ts"
-    ],
-    "requires": [
-      "§chat.offers/from-another-chat"
-    ],
-    "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-28T15:18Z",
-      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
-    }
-  },
   "§chat.offers/tool": {
     "kind": "behavior",
     "authority": "accepted",
@@ -217,8 +165,7 @@
       "server/session-offers-claude.integration.test.ts",
       "server/chat-handle.test.ts",
       "server/session-offers.test.ts",
-      "scripts/fake-claude.mjs",
-      "server/session-offers-rows.test.ts"
+      "scripts/fake-claude.mjs"
     ],
     "requires": [
       "§app.claude-code-provider/continuity",
@@ -237,7 +184,8 @@
     "code": [
       "shared/session-offers.ts",
       "server/session-offers.ts",
-      "shared/protocol.ts"
+      "shared/protocol.ts",
+      "server/landing-removal-guard.test.ts"
     ],
     "notOwned": [
       "§app.overseer/confirm",

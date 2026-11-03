@@ -43,7 +43,7 @@ export const FILE_MAX_BYTES = 64 * 1024;
 export const RARE_MIN_SHOWN = 5;
 export const RARE_SHARE = 0.2;
 
-export const CONDITIONS = ["branch-ready", "waiting-for-ok", "tree-clean", "no-open-alignment", "has-merge-captain", "ready-to-land", "specs-promoted", "specs-left", "docs-fit", "specs-why"] as const;
+export const CONDITIONS = ["branch-ready", "waiting-for-ok", "tree-clean", "no-open-alignment", "specs-promoted"] as const;
 export type OfferCondition = (typeof CONDITIONS)[number];
 export const REPEATS = ["once-per-commit", "once-per-reply", "once-per-session"] as const;
 export type OfferRepeat = (typeof REPEATS)[number];
@@ -63,9 +63,6 @@ export type RunId = (typeof RUN_ALLOWED)[number];
 export const TITLE_FILLS = ["branch", "base", "commit", "project"] as const;
 export const TITLE_COMMIT_LEN = 7;
 export const SEND_FILLS = ["branch", "base", "commit", "project", "drafts"] as const;
-/** What a button's landing key records (§chat.offers/buttons): the user's go-ahead for this commit, or Not Yet. */
-export const LANDING_RECORDS = ["go-ahead", "go-ahead-without-specs", "not-yet"] as const;
-export type LandingRecord = (typeof LANDING_RECORDS)[number];
 /** The retired merge guard's top-level switch: a leftover one is accepted and does nothing (§chat.offers/file). */
 export const RETIRED_FILE_KEYS = ["mainMerges"] as const;
 
@@ -82,8 +79,6 @@ export interface OfferButtonDef {
   onlyIf?: OfferCondition[];
   /** The card asks this first (`{drafts}` and the send fills filled in). */
   confirm?: string;
-  /** With send: what the click records once its send went through. */
-  landing?: LandingRecord;
 }
 
 /** An offer's rows (§chat.offers/file): each row repeats its buttons for one item. */
@@ -116,7 +111,7 @@ export const OFFERS_FILE_KEYS = ["version", "offers"] as const;
 export const OFFER_KEYS = ["when", "why", "title", "onlyIf", "repeat", "shownBy", "disabled", "buttons", "rows"] as const;
 export const ROWS_KEYS = ["max", "all"] as const;
 export const ALL_KEYS = ["label", "about", "confirm"] as const;
-export const BUTTON_KEYS = ["label", "about", "send", "run", "to", "onlyIf", "confirm", "landing"] as const;
+export const BUTTON_KEYS = ["label", "about", "send", "run", "to", "onlyIf", "confirm"] as const;
 
 class OfferError extends Error {}
 const fail = (message: string): never => {
@@ -196,11 +191,6 @@ function parseButton(raw: unknown, i: number, shownBy: OfferShownBy, rows: boole
   if (raw.confirm !== undefined) {
     out.confirm = text(raw, "confirm", CONFIRM_MAX, where, true);
     checkFills(out.confirm, SEND_FILLS, `${where}.confirm`, rows);
-  }
-  if (raw.landing !== undefined) {
-    if (typeof raw.landing !== "string" || !(LANDING_RECORDS as readonly string[]).includes(raw.landing)) fail(`${where}: "landing" is one of ${LANDING_RECORDS.join(", ")}`);
-    if (!hasSend) fail(`${where}: "landing" goes with "send" only`);
-    out.landing = raw.landing as LandingRecord;
   }
   return out;
 }
@@ -466,12 +456,10 @@ export interface OfferCardButton {
 
 export type OfferRowState = "open" | "chosen" | "superseded" | "withdrawn";
 
-/** Where an answer was given, when it wasn't on this card (§chat.offers/landing-rows): a chat's title, or "this chat". */
 export interface OfferChoice {
   index: number;
   label: string;
   at: string;
-  where?: string;
 }
 
 /** One row of a rows card (§chat.offers/card, Rows). */
@@ -482,13 +470,6 @@ export interface OfferCardRow {
   buttons: OfferCardButton[];
   state: OfferRowState;
   choice?: OfferChoice;
-  /** A go-ahead row's landing (§chat.offers/landing-rows): Landing, then Landed. */
-  progress?: "landing" | "landed";
-  /** The captain's landing rows: the branch, its commit (7 characters), the owner chat, the drafts left. */
-  branch?: string;
-  commit?: string;
-  owner?: { id: string; title: string };
-  drafts?: string;
 }
 
 export interface OfferCard {
@@ -497,9 +478,6 @@ export interface OfferCard {
   name: string;
   title: string;
   note?: string;
-  /** The docs that land with the branch (Sova's Landing card, §chat.offers/sova-landing): one line, and the promises'
-      § ids behind "Show the promises". */
-  docs?: { line: string; names: string[] };
   buttons: OfferCardButton[];
   /** ISO time it was shown. */
   at: string;
@@ -514,8 +492,6 @@ export interface OfferCard {
   rows?: OfferCardRow[];
   /** The file's all button, while a row it answers is open: its confirm names those rows. */
   all?: { label: string; about: string; confirm: string; rows: string[] };
-  /** The captain's landing card: how many queued branches wait for this card to be answered. */
-  more?: number;
   /** A run button's outcome. */
   outcome?: { state: "running" | "done" | "failed"; text?: string };
   /** The card that replaced it. */
@@ -533,7 +509,7 @@ const ROW_STATES: readonly OfferRowState[] = ["open", "chosen", "superseded", "w
 
 function choiceOf(raw: unknown): OfferChoice | undefined {
   if (!isObj(raw) || typeof raw.index !== "number" || typeof raw.label !== "string" || typeof raw.at !== "string") return undefined;
-  return { index: raw.index, label: raw.label, at: raw.at, ...(typeof raw.where === "string" && raw.where ? { where: raw.where } : {}) };
+  return { index: raw.index, label: raw.label, at: raw.at };
 }
 
 function buttonsOf(raw: unknown): OfferCardButton[] | undefined {
@@ -554,9 +530,6 @@ function rowOf(raw: unknown): OfferCardRow | undefined {
   const out: OfferCardRow = { id: raw.id, label: raw.label, buttons, state: raw.state as OfferRowState };
   const choice = choiceOf(raw.choice);
   if (choice) out.choice = choice;
-  if (raw.progress === "landing" || raw.progress === "landed") out.progress = raw.progress;
-  for (const k of ["branch", "commit", "drafts"] as const) if (typeof raw[k] === "string") out[k] = raw[k] as string;
-  if (isObj(raw.owner) && typeof raw.owner.id === "string" && typeof raw.owner.title === "string") out.owner = { id: raw.owner.id, title: raw.owner.title };
   return out;
 }
 
@@ -571,7 +544,6 @@ export function normalizeOfferCard(raw: unknown): OfferCard | undefined {
   if (!buttons) return undefined;
   const out: OfferCard = { id, name, title, buttons, at, by, state: state as OfferCardState };
   if (typeof raw.note === "string") out.note = raw.note;
-  if (isObj(raw.docs) && typeof raw.docs.line === "string" && Array.isArray(raw.docs.names)) out.docs = { line: raw.docs.line, names: raw.docs.names.filter((n): n is string => typeof n === "string") };
   if (isObj(raw.from) && typeof raw.from.id === "string" && typeof raw.from.title === "string") out.from = { id: raw.from.id, title: raw.from.title };
   if (typeof raw.toolCallId === "string") out.toolCallId = raw.toolCallId;
   const choice = choiceOf(raw.choice);
@@ -583,7 +555,6 @@ export function normalizeOfferCard(raw: unknown): OfferCard | undefined {
   }
   if (isObj(raw.all) && typeof raw.all.label === "string" && typeof raw.all.about === "string" && typeof raw.all.confirm === "string" && Array.isArray(raw.all.rows) && raw.all.rows.every((r) => typeof r === "string"))
     out.all = { label: raw.all.label, about: raw.all.about, confirm: raw.all.confirm, rows: raw.all.rows as string[] };
-  if (typeof raw.more === "number" && Number.isInteger(raw.more) && raw.more > 0) out.more = raw.more;
   if (isObj(raw.outcome) && (raw.outcome.state === "running" || raw.outcome.state === "done" || raw.outcome.state === "failed"))
     out.outcome = { state: raw.outcome.state, ...(typeof raw.outcome.text === "string" ? { text: raw.outcome.text } : {}) };
   if (typeof raw.supersededBy === "string") out.supersededBy = raw.supersededBy;
@@ -617,7 +588,7 @@ export interface ProjectOfferRow {
   shownBy?: OfferShownBy;
   onlyIf?: OfferCondition[];
   repeat?: OfferRepeat;
-  buttons?: { label: string; about: string; kind: "send" | "run"; run?: string; to?: "shower"; onlyIf?: OfferCondition[]; confirm?: string; landing?: LandingRecord }[];
+  buttons?: { label: string; about: string; kind: "send" | "run"; run?: string; to?: "shower"; onlyIf?: OfferCondition[]; confirm?: string }[];
   rows?: OfferRowsDef;
   shown: number;
   used: number;

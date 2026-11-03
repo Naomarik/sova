@@ -420,10 +420,12 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   overseer line, the coding sessions with their branches, the counts, the cost, the cards), then
   updates each part in place as its fresh read answers. Nothing of it is kept once the tab closes
   or reloads, and nothing is written anywhere.
-- **Tabs**: Overview (the default) · Requirements (only while placed) · Branches · Cost · Settings, the org page's tab strip
+- **Tabs**: Overview (the default) · Requirements (only while placed) · Branches · Merge Queue · Cost · Settings, the org page's tab strip
   (`.tabs`, keyboard as §app.organizations/org-page; Requirements carries the warn dot while a
   conflict is open or a decision is ready to promote). The tab is in the URL:
-  `#/projects/<pid>` is Overview, `…/requirements`, `…/branches`, `…/cost`, `…/settings` the others
+  `#/projects/<pid>` is Overview, `…/requirements`, `…/branches`, `…/merge-queue` (the project's
+  merge queue, or its onboarding screen while not set up, §app.merge-queue/view,
+  §app.merge-queue/setup; a run's page is `…/merge-queue/<run>`), `…/cost`, `…/settings` the others
   (`…/overseer` stays the overseer's door). Picking a tab or a chip adds a history entry, so Back
   returns to the previous tab and a reload opens the same one; the page is not reloaded and its
   fetched data stays.

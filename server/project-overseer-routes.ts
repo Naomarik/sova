@@ -247,7 +247,8 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   // A coding session's own worktree: merge its branch back into its target, or remove it once merged (or empty).
   app.post(`${base}/worktrees/merge`, handle(async (c) => {
     const p = pathsOf(c);
-    return c.json(await mergeCodingWorktree(p.projectId, (await body(c)).sessionId), 200, NO_STORE);
+    const b = await body(c);
+    return c.json(await mergeCodingWorktree(p.projectId, b.sessionId, b.commit), 200, NO_STORE);
   }));
   app.post(`${base}/worktrees/remove`, handle(async (c) => {
     const p = pathsOf(c);

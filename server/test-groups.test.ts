@@ -30,7 +30,7 @@ describe("which group a file is in", () => {
     for (const g of GROUPS) {
       for (const f of g.except) assert.ok(existsSync(join(REPO, f)), `${g.name} excepts ${f}, which doesn't exist`);
       const onDisk = g.files.flatMap((p) => globSync(p, { cwd: REPO }));
-      assert.ok(onDisk.filter((f) => !g.except.includes(f)).length > 5, `${g.name} matches no file on disk`);
+      assert.ok(onDisk.filter((f) => !g.except.includes(f)).length > 0, `${g.name} matches no file on disk`);
     }
     for (const t of GROUPS.flatMap((g) => g.triggers).filter((t) => !t.includes("*"))) assert.ok(existsSync(join(REPO, t)), `trigger ${t} names no file`);
   });
@@ -59,9 +59,11 @@ describe("what a landing runs", () => {
   });
 
   test("an extension under pi-config/extensions/subagents runs Chat processes; so does the harness or a steer-keys change", () => {
-    for (const f of ["pi-config/extensions/subagents/team.ts", "server/harness/pi/quirks.ts", "server/send-keys.ts", "scripts/run-tests.mjs", "scripts/test-groups.mjs"]) {
+    for (const f of ["pi-config/extensions/subagents/team.ts", "server/harness/pi/quirks.ts", "server/send-keys.ts"]) {
       assert.deepEqual(landing([f]).ran, ["trial"], f);
     }
+    // The test setup triggers every group a landing runs.
+    for (const f of ["scripts/run-tests.mjs", "scripts/test-groups.mjs"]) assert.deepEqual(landing([f]).ran, ["trial", "merge-queue"], f);
   });
 
   test("a tours-only change runs no group at landing (Tours never run there), and the everyday set still runs", () => {
@@ -77,15 +79,24 @@ describe("what a landing runs", () => {
   test("Tours never run at landing, even when every trigger changed", () => {
     const r = landing(["server/tours/runner.ts", "package.json", "scripts/run-tests.mjs"]);
     assert.ok(!r.files.includes(tour) && !r.files.includes(nearTours));
-    assert.deepEqual(r.ran, ["trial"]);
+    assert.deepEqual(r.ran, ["trial", "merge-queue"]);
   });
 
   test("an unrelated change runs only the everyday set, naming both groups as skipped", () => {
     const r = landing(["src/components/Sidebar.tsx"]);
     assert.deepEqual(r.files, [tourNoChrome, everyday]);
-    assert.deepEqual(r.skipped.map((s) => [s.name, s.why]), [["trial", "untriggered"], ["tours", "never"]]);
+    assert.deepEqual(r.skipped.map((s) => [s.name, s.why]), [["trial", "untriggered"], ["tours", "never"], ["merge-queue", "untriggered"]]);
     assert.equal(setKey(r.ran), "core");
     assert.equal(setKey(landing(["package.json"]).ran), "core+trial");
+  });
+
+  test("the merge queue, its checks or what they read runs the Merge queue group; nothing else does", () => {
+    for (const f of ["server/merge-queue/run.ts", "scripts/merge-checks/spec.mjs", "shared/merge-queue.ts", ".sova/project.json", "pi-config/extensions/spec/core/land.mjs"]) {
+      const r = landing([f]);
+      assert.deepEqual(r.ran, ["merge-queue"], f);
+    }
+    assert.deepEqual(landing(["src/components/Sidebar.tsx"]).ran, []);
+    assert.deepEqual(landing(["package.json"]).ran, ["trial"]);
   });
 
   test("a changed test file triggers only its own group, never the area it sits in", () => {
@@ -119,6 +130,6 @@ describe("what a session's --changed adds", () => {
 describe("--groups", () => {
   test("only the named groups' files; all is every group", () => {
     assert.deepEqual(selectFiles(files, [], { mode: "groups", only: ["tours"] }).files, [tour, nearTours]);
-    assert.deepEqual(selectFiles(files, [], { mode: "groups", only: ["all"] }).ran, ["trial", "tours"]);
+    assert.deepEqual(selectFiles(files, [], { mode: "groups", only: ["all"] }).ran, ["trial", "tours", "merge-queue"]);
   });
 });

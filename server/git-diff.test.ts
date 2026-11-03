@@ -319,6 +319,25 @@ describe("merge scope", () => {
     assert.equal(s.head.oid, landing);
   });
 
+  it("a branch the merge queue landed for this chat: exactly from the target before it to the landing, the project folder known through its card; any other sha refused", async () => {
+    const { main, wt, c0, commit, scope } = setup(["f1.txt", "f2.txt"]);
+    commit(main, "m1.txt");
+    const from = git(main, "rev-parse", "HEAD");
+    git(main, "merge", "-q", "--no-ff", "--no-edit", "feat/m");
+    const landing = git(main, "rev-parse", "HEAD");
+    const queueLandings = async (p: string) => (p === SESSION ? [{ root: main, sha: landing, from, branch: "feat/m", target: "master" }] : []);
+    // The chat only ever knew its worktree, not the project's main folder.
+    const d = new GitDiffs({ sessionKnown: async (p) => (p === SESSION ? { roots: [wt], trees: [], merges: [] } : null), queueLandings });
+    const s = await d.summary(scope(landing, main));
+    assert.deepEqual(s.files.map((f) => f.path), ["f1.txt", "f2.txt"]);
+    assert.equal(s.base.oid, from);
+    assert.equal(s.base.label, `master before ${landing.slice(0, 7)}`);
+    assert.deepEqual([s.head.label, s.head.oid], ["feat/m", landing]);
+    await rejects(d.summary(scope(c0, main)), 400, /not one this session knows/);
+    const other = new GitDiffs({ sessionKnown: async () => ({ roots: [wt], trees: [], merges: [] }), queueLandings: async () => [] });
+    await rejects(other.summary(scope(landing, main)), 400, /not one this session knows/);
+  });
+
   it("shows every commit a fast-forward brought, from the tracked base", async () => {
     const { main, wt, c0, card, scope } = setup(["f1.txt", "f2.txt", "f3.txt"]);
     git(main, "merge", "-q", "--ff-only", "feat/m");

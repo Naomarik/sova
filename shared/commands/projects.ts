@@ -2,7 +2,7 @@
  * Projects: the project verbs, made from the contract's lists, and the project screens. Part of the command catalogue, assembled by shared/commands-catalog.ts
  * (rules: agents/server/commands/overview.md). Pure, erasable syntax only.
  */
-import { DEPLOY_READ_VERBS, DEPLOY_VERBS, READ_VERBS, VERB_FLAGS, VERB_PARAMS, VERBS } from "../project-contract.ts";
+import { DEPLOY_READ_VERBS, DEPLOY_VERBS, MERGE_READ_VERBS, MERGE_VERBS, READ_VERBS, VERB_FLAGS, VERB_PARAMS, VERBS } from "../project-contract.ts";
 import type { CommandEntry, CommandParam } from "./types.ts";
 import { PROJECT_OVERSEER_ENTRIES } from "./overseer.ts";
 
@@ -20,16 +20,20 @@ const INSTANCE_PARAMS: Record<string, CommandParam> = Object.fromEntries(VERB_FL
 /** The keys scripts/sova-project.mjs sends for a deploy verb, as params. */
 const DEPLOY_PARAMS: Record<string, CommandParam> = Object.fromEntries(VERB_FLAGS.deploy.map((f) => verbParam(f, true)));
 
-/** One entry per project verb and deploy verb, from the contract's own lists. */
-export const VERB_ENTRIES: CommandEntry[] = [...VERBS, ...DEPLOY_VERBS].map((verb): CommandEntry => {
+/** The keys scripts/sova-project.mjs sends for a merge verb, as params. */
+const MERGE_PARAMS: Record<string, CommandParam> = Object.fromEntries(VERB_FLAGS.merge.map((f) => verbParam(f, false)));
+
+/** One entry per project verb, deploy verb and merge verb, from the contract's own lists. */
+export const VERB_ENTRIES: CommandEntry[] = [...VERBS, ...DEPLOY_VERBS, ...MERGE_VERBS].map((verb): CommandEntry => {
   const deploy = (DEPLOY_VERBS as readonly string[]).includes(verb);
-  const reads = (READ_VERBS as readonly string[]).includes(verb) || (DEPLOY_READ_VERBS as readonly string[]).includes(verb);
+  const merge = (MERGE_VERBS as readonly string[]).includes(verb);
+  const reads = (READ_VERBS as readonly string[]).includes(verb) || (DEPLOY_READ_VERBS as readonly string[]).includes(verb) || (MERGE_READ_VERBS as readonly string[]).includes(verb);
   return {
     id: `project.verb.${verb}`,
     label: `Project ${verb}`,
     summary: `The project verb ${verb}, as the operator (sova-project ${verb}).`,
     effect: reads ? "looks" : "changes",
-    params: deploy ? DEPLOY_PARAMS : INSTANCE_PARAMS,
+    params: deploy ? DEPLOY_PARAMS : merge ? MERGE_PARAMS : INSTANCE_PARAMS,
     route: { method: "POST", path: `/api/project-services/${verb}` },
     sessionKey: null,
     sessionFile: "never",

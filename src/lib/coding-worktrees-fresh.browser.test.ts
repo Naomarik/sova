@@ -1,6 +1,6 @@
 // Run: pnpm test -- src/lib/coding-worktrees-fresh.browser.test.ts (Solid's reactive build).
 // Reopening a project shows its remembered branch details at once (§app.organizations/project-page,
-// "Reopening a project"), but no branch gesture acts on them: Merge Branch and Remove Worktree stay
+// "Reopening a project"), but no branch gesture acts on them: Land and Remove Worktree stay
 // "Reading its branch" until this page's own branch read has landed
 // (§app.project-overseer/coding-worktrees, "Read in two steps").
 import assert from "node:assert/strict";

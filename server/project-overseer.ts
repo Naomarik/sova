@@ -412,6 +412,7 @@ async function codingWorktrees(projectId: string, root: string, repo?: Awaited<R
         ...(!w.branch ? { branchGone: true } : {}),
         ...(r.merged && w.branch && !w.error && !w.merged && w.unmerged > 0 ? { newSinceMerge: w.unmerged } : {}),
         ahead: w.ahead,
+        ...(w.head ? { head: w.head } : {}),
         dirty: w.dirty,
         ...(w.error ? { error: w.error } : {}),
       };
@@ -1201,12 +1202,38 @@ async function worktreeAct(projectId: string, sessionId: unknown, event: "build/
 }
 
 /** POST …/worktrees/merge: Merge Branch, into its target in the project root's checkout. */
-export async function mergeCodingWorktree(projectId: string, sessionId: unknown): Promise<ProjectWorktrees> {
-  projectOf(projectId);
+export async function mergeCodingWorktree(projectId: string, sessionId: unknown, commit?: unknown): Promise<ProjectWorktrees> {
+  const project = projectOf(projectId);
+  // Once the project's merge queue is set up, Merge Branch is Land: the branch is approved at its head in the queue
+  // (server/merge-queue), never merged in the project root.
+  const landed = await landThroughQueue(projectId, project.root, sessionId, commit);
+  if (landed) return projectWorktrees(projectId);
   // The branch reached its target: the build statechart tells the overseer (build/merged), which can't see the
   // operator merge otherwise; git's refusal too (build/merge-refused), unless the root's own checkout is the operator's.
   await worktreeAct(projectId, sessionId, "build/merge");
   return projectWorktrees(projectId);
+}
+
+/** Land through the project's merge queue when it is set up (checks declared); false: not set up, merge as before. */
+/** `commit`: the head the screen showed (Land pins it; a branch that moved past it lands that one). */
+export async function landThroughQueue(projectId: string, root: string, sessionId: unknown, commit?: unknown): Promise<boolean> {
+  if (typeof sessionId !== "string" || !sessionId) return false;
+  const { mergeQueues } = await import("./merge-queue/wire");
+  const queues = mergeQueues();
+  if (!queues) return false;
+  const q = await queues.get(root);
+  const d = await q.declared();
+  if (d.checks === "unset" && !d.invalid) return false;
+  const branch = readBuild(projectId, sessionId)?.worktree?.branch;
+  if (!branch) throw new OrgError("Its branch isn't known yet: nothing to land", 409);
+  const { MergeFailure } = await import("./merge-queue/queue");
+  try {
+    await q.add({ branch, by: "land-button", session: sessionId, chat: sessionId, ...(typeof commit === "string" && commit ? { commit } : {}) });
+  } catch (err) {
+    if (err instanceof MergeFailure) throw new OrgError(err.message, err.code === "not-found" ? 404 : 409);
+    throw err;
+  }
+  return true;
 }
 
 /** POST …/worktrees/remove: Remove Worktree; the branch goes too only when merged. The session stays. */

@@ -1556,3 +1556,146 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 .setup-open:hover { text-decoration: underline; text-underline-offset: 0.2em; }
 .setup-open:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+
+/* ── The merge queue: the composer's worktrees control, its modal, the pane's rows, the project's
+   Merge Queue tab and a run's page. One vocabulary of chips (dot and word), drawn from one state. */
+
+/* The control sits just left of "N inputs", in the same quiet link style; its dot says ready (success),
+   needs you (warn) or needs a fix (error), and the words say it too. */
+.run-status-worktrees + .run-status-inputs { margin-left: 0; }
+.run-status > .run-status-worktrees { font-size: var(--fs-caption); color: var(--color-ink-2); }
+.wt-dot { width: 6px; height: 6px; border-radius: var(--r-full); flex: none; background: var(--color-ink-muted); }
+.wt-dot-ok { background: var(--status-success); }
+.wt-dot-warn { background: var(--status-warn); }
+.wt-dot-err { background: var(--status-error); }
+
+/* The rows, in the modal and in the pane: branch in mono, the path, then the chip and its facts;
+   the action at the row's end, wrapping under the facts on a narrow pane. */
+.wt-queue-list { margin: 0; padding: 0; }
+.wt-queue-row { align-items: flex-start; flex-wrap: wrap; row-gap: var(--space-2); }
+.wt-queue-row > .list-main { flex: 1 1 16rem; min-width: 0; }
+.wt-queue-row .list-title { font-weight: var(--fw-medium); white-space: normal; overflow-wrap: anywhere; }
+.wt-queue-path { white-space: normal; overflow-wrap: anywhere; }
+.wt-queue-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin-top: var(--space-1); }
+.wt-queue-reason,
+.wt-queue-note,
+.wt-queue-error { margin-top: var(--space-1); white-space: normal; overflow-wrap: anywhere; }
+/* Behaviour differs: target, branch and proposal on lines of their own. */
+.wt-queue-reason { white-space: pre-line; }
+.wt-queue-error,
+.mq-error { color: var(--status-error); }
+.wt-queue-act { display: flex; flex-wrap: wrap; gap: var(--space-2); flex: none; align-items: center; }
+.wt-queue-confirm { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--r-md); background: var(--color-sunken); }
+.wt-queue-confirm p { margin: 0 0 var(--space-2); }
+@media (pointer: coarse) {
+  .wt-queue-act .button,
+  .mq-row .button,
+  .mq-step-end .button { min-height: var(--tap-min); }
+}
+.wt-queue-modal .modal-body { display: grid; gap: var(--space-3); }
+.wt-queue-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
+.wt-queue-head p { margin: var(--space-1) 0 0; }
+.wt-queue-intro { margin: 0; color: var(--color-ink-2); }
+.wt-queue-paused { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--status-warn-bg); color: var(--color-ink); }
+
+/* The tab. */
+.mq-body { gap: var(--space-4); }
+.mq-head { flex-wrap: wrap; gap: var(--space-2); }
+.mq-intro { margin: 0; }
+.mq-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: var(--space-3); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-sunken); }
+.mq-cell p { margin: 0; }
+.mq-cell-value { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-1) 0; font-weight: var(--fw-medium); }
+.mq-red { color: var(--status-error); }
+.mq-card { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
+.mq-card p,
+.mq-card h3 { margin: 0; }
+.mq-card .spread { flex-wrap: wrap; gap: var(--space-2); }
+.mq-card-title { font-weight: var(--fw-medium); flex-wrap: wrap; }
+.mq-now { color: var(--color-ink); font-weight: var(--fw-medium); }
+.mq-empty { margin: 0; padding: var(--space-3) var(--space-4); border: 1px dashed var(--color-border-strong); border-radius: var(--r-lg); color: var(--color-ink-2); }
+.mq-list { margin: 0; padding: 0; border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
+.mq-row { align-items: flex-start; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
+.mq-row > .list-main { flex: 1 1 16rem; min-width: 0; }
+.mq-row .list-title { flex-wrap: wrap; white-space: normal; }
+.mq-row .list-meta { white-space: normal; overflow-wrap: anywhere; margin-top: var(--space-1); }
+.mq-row .list-meta .icon { vertical-align: -3px; }
+.mq-pos { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--r-full); background: var(--color-sunken); font-size: var(--fs-caption); color: var(--color-ink-2); }
+.mq-row-act { flex: none; }
+/* Destructive apart from the primary: never adjacent in a thumb arc. */
+.mq-row-act .button-destructive,
+.wt-queue-act .button-destructive { margin-left: var(--space-2); }
+.mq-sides { display: grid; gap: var(--space-2); margin: var(--space-2) 0 0; }
+.mq-sides > div { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+.mq-sides dt { margin: 0 0 var(--space-1); }
+.mq-sides dd { margin: 0; white-space: normal; overflow-wrap: anywhere; }
+.mq-note { color: var(--color-ink-2); }
+.mq-pass { color: var(--status-success); }
+.mq-fail { color: var(--status-error); }
+.mq-running { color: var(--color-accent); }
+.mq-wait,
+.mq-skip { color: var(--color-ink-muted); }
+
+/* The run's page. */
+.mq-crumbs { color: var(--color-ink-muted); }
+.mq-run > .button-row { flex-wrap: wrap; }
+.mq-legend { margin: 0; }
+.mq-steps { list-style: none; margin: 0; padding: 0; }
+.mq-step { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); align-items: start; padding: var(--space-2) 0; border-top: 1px solid var(--color-border); }
+.mq-step:first-child { border-top: 0; }
+.mq-step-skipped .mq-step-name { color: var(--color-ink-muted); }
+.mq-mark { display: grid; place-items: center; height: 24px; }
+.mq-step-main { min-width: 0; }
+.mq-step-main p { margin: 0; }
+.mq-step-name { flex-wrap: wrap; font-weight: var(--fw-medium); }
+.mq-step-end { display: flex; align-items: center; gap: var(--space-2); justify-content: flex-end; flex-wrap: wrap; }
+.mq-fail-line { color: var(--status-error); overflow-wrap: anywhere; }
+.mq-log { margin: var(--space-2) 0 0; max-height: 360px; overflow: auto; padding: var(--space-2) var(--space-3); border-radius: var(--r-sm); background: var(--color-sunken); font-size: var(--fs-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.mq-log-all { flex-basis: 100%; }
+.mq-whose { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-2); margin: 0; }
+.mq-whose > div { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+.mq-whose dd { margin: var(--space-1) 0 0; font-weight: var(--fw-medium); }
+.mq-whose-failed { color: var(--status-error); }
+.mq-whose-ok { color: var(--status-success); }
+/* At phone width a step's time and Log wrap under its name. */
+@container (max-width: 520px) {
+  .mq-step { grid-template-columns: 24px minmax(0, 1fr); }
+  .mq-step-end { grid-column: 2; justify-content: flex-start; }
+}
+@media (max-width: 767px) {
+  .mq-step { grid-template-columns: 24px minmax(0, 1fr); }
+  .mq-step-end { grid-column: 2; justify-content: flex-start; }
+}
+
+/* Onboarding. */
+.mq-choice { display: flex; gap: var(--space-3); align-items: flex-start; padding: var(--space-3); border: 1.5px solid var(--color-border); border-radius: var(--r-md); cursor: pointer; min-height: var(--tap-min); }
+.mq-choice:has(input:checked) { border-color: var(--color-accent); background: var(--color-accent-tint); }
+.mq-choice input { margin-top: 3px; accent-color: var(--color-accent); }
+.mq-choice > span { display: grid; gap: var(--space-1); }
+.mq-choice-desc { color: var(--color-ink-2); }
+.mq-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--space-3); padding-left: var(--space-6); }
+.mq-field-wide { grid-column: 1 / -1; }
+.mq-steps-head { margin: 0 0 var(--space-1); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.mq-what { margin: 0; padding-left: var(--space-5); color: var(--color-ink-2); display: grid; gap: var(--space-1); }
+/* Land ▾: the menu's panel sits after its trigger inside the split, so the trigger isn't :last-child;
+   give it back the split's closing edge. */
+.wt-queue-split > .button[aria-haspopup="menu"] {
+  border-right: var(--stroke-icon) solid var(--color-border-strong);
+  border-top-right-radius: var(--r-md);
+  border-bottom-right-radius: var(--r-md);
+}
+.mq-run p { margin: 0; }
+
+/* The merge queue's card in the branch's chat: the Merged card's frame, plus its lines and actions. */
+.mq-chat-card .mq-card-line { margin: 0; overflow-wrap: anywhere; white-space: normal; }
+.mq-chat-card .mq-card-warn { color: var(--status-warn); }
+.mq-chat-card .mq-card-sides { margin: var(--space-1) 0; }
+.mq-card-failures { margin: 0; padding-left: var(--space-4); }
+.mq-card-failures li { overflow-wrap: anywhere; }
+.mq-card-actions { flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+.mq-card-actions .button-destructive { margin-left: var(--space-2); }
+@media (pointer: coarse) { .mq-card-actions .button { min-height: var(--tap-min); } }
+.mq-card-folded .disclosure-label { overflow-wrap: anywhere; }
+/* Can't tell whose failure: the checks that failed on both sides, each with its log. */
+.mq-unclear { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
+.mq-unclear li { overflow-wrap: anywhere; }
+.mq-unattributed .mq-unclear { margin-bottom: var(--space-2); }

@@ -720,6 +720,7 @@ const FIXTURES: Record<string, Fixture> = {
     oracle: async (_b, v) => assert.deepEqual((await read("GET", `/api/session-offers?path=${encodeURIComponent(String(v.session))}`)).notNow, []),
   },
   "session.card.get": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.merge-cards": { values: () => ({ session: session()[0] }), status: 200 },
   "session.card.post": {
     values: () => ({ session: cardsSession(), type: "project.note", data: { title: "Build", tone: "ok", line: "Green." } }),
     status: 200,

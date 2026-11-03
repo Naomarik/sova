@@ -7,6 +7,8 @@ import CardView from "./CardView";
 import { CardErrorBox } from "./TranscriptKind";
 import { DataCard, type DataCardAnswer } from "./DataCards";
 import { Icon } from "./ui";
+import { MergeQueueCard } from "./MergeQueueCard";
+import { MERGE_QUEUE_CARD } from "../lib/merge-queue-card";
 
 /**
  * A transcript card a project declared (§chat/transcript-cards), drawn by the toolkit as one of
@@ -22,8 +24,14 @@ export default function TranscriptCard(props: KindViewProps<CardInfo>) {
   const newest = () => ctx?.newest(card()) ?? true;
   return (
     <div class="transcript-card" data-card-id={card().id}>
-      <Show when={newest()} fallback={<Revision card={card()} />}>
-        <CardBody card={card()} ctx={ctx} />
+      {/* The merge queue's own card is Sova's built-in: drawn by Sova, never a data card or a view. */}
+      <Show
+        when={card().type !== MERGE_QUEUE_CARD}
+        fallback={<MergeQueueCard card={props.value} onReload={() => ctx?.refresh()} />}
+      >
+        <Show when={newest()} fallback={<Revision card={card()} />}>
+          <CardBody card={card()} ctx={ctx} />
+        </Show>
       </Show>
     </div>
   );

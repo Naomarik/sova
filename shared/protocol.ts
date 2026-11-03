@@ -3350,6 +3350,14 @@ export interface SessionWorktreeInfo {
   /** Tracked active with its folder gone: what its work came to, the same answer readiness gives
       (§chat.worktrees/pane). "unknown": its branch is gone too and nothing records a merge. */
   gone?: "merged" | "unmerged" | "empty" | "unknown";
+  /** Its newest merge queue entry (shared/merge-queue.ts), when it has one. Additive. */
+  queue?: import("./merge-queue").WorktreeQueueInfo;
+  /** The merge queue of its project (a registered project's), entry or not: Land, Set Up and View Merge Queue read
+      it. Additive. */
+  mergeProject?: import("./merge-queue").WorktreeMergeProject;
+  /** Its branch against the project's merge target (commits ahead, lines +/−), for a registered project's worktree.
+      Additive. */
+  mergeStats?: import("./merge-queue").WorktreeMergeStats;
 }
 
 // ---------------------------------------------------------------------------
@@ -3535,7 +3543,7 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
-  | "offer-waiting"       // act tier, never pushed or briefed: the session shows an open offer card (Land It, §chat.offers/card), idle or working
+  | "offer-waiting"       // act tier, never pushed or briefed: the session shows an open offer card (§chat.offers/card), idle or working
   | "card-waiting"        // act tier, never pushed or briefed: the session shows an open transcript card waiting on an answer (§chat.transcript-cards/answering), one per card, idle or working
   | "tour-sign-in"        // act tier, never pushed: one of the session's tour recordings waits for the user to sign in on its card (§app.tours/sites; from the server's memory, gone on restart)
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
@@ -3712,14 +3720,12 @@ export interface SovaConfirmDetails {
 }
 
 /** One thing a confirm card is about. A session row: its folder's short name (`project`), last
-    activity (ISO), a one-line summary when it has one, and how many subagents were working; a land
-    row (the global Overseer's only, §app.overseer/card-land) also the branch Ready to land and its
-    full head sha when the card was raised, which its Go lands at. `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
+    activity (ISO), a one-line summary when it has one, and how many subagents were working. `note`: the Overseer's own words on what the item is and why the card acts on it (≤ 2 short
     sentences, `CONFIRM_NOTE_MAX` characters). Every kind may also carry the row fields of
     `SovaConfirmRow` (a section heading, what Go sends). */
 export type SovaConfirmItem = SovaConfirmRow &
   (
-  | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; land?: { branch: string; head: string }; note?: string }
+  | { kind: "session"; id: string; title: string; project?: string; lastActiveAt?: string; summary?: string; workers?: number; note?: string }
   | { kind: "idea"; id: string; title: string; note?: string }
   | { kind: "todo"; id: string; text: string; note?: string }
   /** A project registered on this host: its name, and the org's when one places it (§app.overseer/org-tools). */
@@ -4619,8 +4625,8 @@ export interface WorktreeReadiness {
 
 /** A worktree whose work is finished at its head commit (§chat.worktrees/ready-to-land). */
 export interface WorktreeLanding {
-  /** "ready": Ready to land (its drafts, if any, land with it); "specs": finished, but its drafts don't fit or
-      changed since the user's Land It (Landing specs). */
+  /** "ready": Ready to land (its drafts, if any, land with it); "specs": finished, but its drafts don't fit
+      (Landing specs). */
   state: "ready" | "specs";
   /** The full head sha it holds for. */
   commit: string;
@@ -4641,8 +4647,6 @@ export interface WorktreeLandingDocs {
   names: string[];
   /** Why they don't fit (state "specs"), one line each. */
   problems?: string[];
-  /** The drafts whose files changed since the user's Land It at this head (state "specs"). */
-  changedSinceGoAhead?: string[];
 }
 
 /** The row's badge, the first that holds (§chat.worktrees/readiness). */
@@ -4722,6 +4726,22 @@ export type SessionFeedMessage =
       to live, busy/activity or lastActiveAt). No payload: the client refetches the list
       (coalesced). */
   | { type: "list_changed" }
+  /** Only on a socket that asked for rows (`/ws/watch?feed=sessions&rows=1`), always its FIRST
+      frame: the list's current version. `epoch` names this feed's run (a restart, or the feed
+      stopping with its last listener, starts a new one); `version` counts its row changes. GET
+      /api/sessions names the version its body is at in `X-Sova-List-Version: <epoch>:<version>`.
+      A client that gets any other first frame is talking to a server without rows (it re-reads
+      on `list_changed`). Additive: a socket without `rows=1` never gets it. */
+  | { type: "rows_hello"; epoch: string; version: number }
+  /** On a rows socket instead of `list_changed`: the rows that changed between versions `from`
+      and `to` (= from + 1), whole (`upsert`, new or changed on any field a row shows), and the
+      paths that left the list (`remove`). The client applies it only at version `from`, sorts by
+      lastActiveAt, and re-reads the list on a gap or an epoch it doesn't hold. A change too big for
+      one frame (over ROWS_MAX_ROWS rows or ROWS_MAX_BYTES) comes as `list_changed` instead. */
+  | { type: "rows"; epoch: string; from: number; to: number; upsert: SessionSummary[]; remove: string[] }
+  /** On a rows socket once a minute: the digest (src/lib/summary-diff.ts rowsDigest) of the list at
+      `version`. A client at that version whose own digest differs re-reads the list. */
+  | { type: "rows_check"; epoch: string; version: number; digest: string }
   /** The session groups changed (a group made, renamed, reordered or deleted, or a session put into
       or taken out of one, by any client or the Overseer: server/session-groups.ts writes it). No
       payload: the client re-reads GET /api/session-groups and the list. Never on connect. Additive:
@@ -4737,6 +4757,11 @@ export type SessionFeedMessage =
   | { type: "attention"; digest: AttentionDigest }
   /** The Overseer's state (as GET /api/overseer returns it), sent the same way as `attention`. */
   | { type: "overseer"; info: OverseerInfo }
+  /** A project's merge queue changed (an entry added, moved, a step of the run, a landing): its whole view, as
+      merge.status answers it. Never on connect (the client reads merge.status when it opens a view). Additive. */
+  | import("./merge-queue").MergeQueueFeed
+  /** One chat's merge queue cards changed (shared/merge-queue.ts MergeCard): all of that chat's cards. Additive. */
+  | import("./merge-queue").MergeCardsFeed
   | { type: "error"; message: string };
 
 /** Why an LlmInflight count is only a floor. `host` is the peer's id; absent = this host. */

@@ -55,7 +55,14 @@
 // checkout, which a sandboxed session can't write) and the next run sorts by it; a file never timed
 // falls back to KNOWN_SLOW, then to its alphabetical place. The run ends with the 10 slowest files.
 // Both: a temp dir inside a git repository is refused (exit 2) before anything runs, and no test
-// process gets a GIT_DIR-like variable; git's search stops at its temp dir (GIT_CEILING_DIRECTORIES).
+// process gets a GIT_DIR-like variable; git's search stops at its temp dir (GIT_CEILING_DIRECTORIES). Nor any
+// variable of a chat process the runner was started from (scripts/test-env.mjs: SOVA_CHAT_*, the session's ids).
+// SOVA_OUT=<file> (a project verb's or a merge check's report file): the run's counts are written there
+// as JSON when it ends, `{passed, failed, errors, skipped, failures: [{name, file, message?}]}` (at most
+// 50 failures; `failingFiles` lists every failing file, uncapped): one per failing test (bun's `(fail)` lines, the error printed above each as its
+// message), and a file that failed with no failing test (a crash, a load error, a kill) counts as an
+// error with the file as its name. On Node (whose output isn't read) only failing files are named.
+// --plan and an empty selection write none.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
@@ -64,6 +71,12 @@ import path from "node:path";
 import { chosenRuntime, resolveBun } from "../server/runtime-choice.ts";
 import { affected, changedSince } from "./test-changed.mjs";
 import { GROUPS, groupOf, selectFiles } from "./test-groups.mjs";
+import { bunReport } from "./test-report.mjs";
+import { dropChatEnv } from "./test-env.mjs";
+
+// Started from inside a chat, the shell carries that chat process's own variables (SOVA_CHAT_UNIT, the session's ids):
+// a test would then act as that chat (an org engine refuses to open "in a chat process"). None reaches a test.
+dropChatEnv(process.env);
 
 const ROOT = path.join(import.meta.dirname, "..");
 const PRELOAD = "./pi-config/extensions/claude-code/tests/hermetic-env.mjs";
@@ -75,8 +88,10 @@ const isIntegration = (f) => f.endsWith(INTEGRATION_SUFFIX);
 const GLOBS = [
   "shared/*.test.ts",
   "scripts/*.test.ts",
+  "scripts/merge-checks/*.test.ts",
   "server/*.test.ts",
   "server/project-services/*.test.ts",
+  "server/merge-queue/*.test.ts",
   "server/tours/*.test.ts",
   "server/share/*.test.ts",
   "server/chat-runtime/*.test.ts",
@@ -299,7 +314,19 @@ const sets = ["unit", "integration"].flatMap((tier) => {
 }).filter((s) => s.files.length);
 if (!sets.length) {
   console.log("run-tests: no test file to run.");
+  writeSovaOut({ passed: 0, failed: 0, errors: 0, skipped: 0, failures: [] });
   process.exit(0);
+}
+
+/** The run's report in $SOVA_OUT, when the caller asked for one (the header). Best effort. */
+function writeSovaOut(report) {
+  const out = process.env.SOVA_OUT;
+  if (!out) return;
+  try {
+    fs.writeFileSync(out, `${JSON.stringify({ ...report, failures: report.failures.slice(0, 50) })}\n`);
+  } catch (err) {
+    console.error(`run-tests: could not write SOVA_OUT ${out}: ${err.message}`);
+  }
 }
 
 /** `files` narrowed to those a change since `base` may break (scripts/test-changed.mjs). */
@@ -424,6 +451,12 @@ if (runtime === "node") {
     if (code !== 0 || stuck) failed = true;
   }
   const refused = guardReport(process.env.SOVA_TEST_GUARD_DIR);
+  // node --test's output went to the terminal unread: the failing files the guard refused, or the run as one.
+  writeSovaOut({
+    passed: 0, failed: failed || refused.length ? 1 : 0, errors: 0, skipped: 0,
+    failures: refused.length ? refused.map((f) => ({ name: f, file: f, message: "refused by the tier guard" })) : failed ? [{ name: "node --test run (see its output)" }] : [],
+    failingFiles: refused,
+  });
   process.exit(failed || refused.length ? 1 : 0);
 }
 
@@ -656,6 +689,7 @@ if (results.length > 1) {
   console.log("\nslowest files:");
   for (const r of [...results].sort((a, b) => b.ms - a.ms).slice(0, 10)) console.log(`  ${(r.ms / 1000).toFixed(1).padStart(6)} s  ${r.file}`);
 }
+writeSovaOut(bunReport(results));
 const tierNames = [...new Set(sets.map((s) => s.tier))].join(" + ");
 console.log(`\nrun-tests (bun): ${results.length} files (${tierNames}), ${sum("pass")} pass, ${sum("fail")} fail, ${sum("skip")} skip, ${failed.length} failing files, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 for (const r of failed) console.log(`  FAIL ${r.file}`);

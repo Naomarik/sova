@@ -614,8 +614,9 @@ Driven by `ChatServerMessage.event`. Streaming working blocks follow the same br
   "Compacting context", "Retrying after a provider error", "Updating memory…" (§chat.composer/memory-status), "Waiting for zai · 5 of 5 in use" (§app.provider-limits/waiting-shown). Short of room they end in an ellipsis,
   with the whole text in the tooltip; in the narrow form they give way first, down to about 4em of
   their words. The row is shared: it also carries the subagents trigger (§app/subagents-pane)
+  the worktrees control ("2 ready", just left of the inputs trigger, §chat.composer/worktrees-control)
   and the inputs trigger ("7 inputs", which opens the Timeline with Inputs Only on, §chat/timeline), and it
-  renders whenever any of the three has something to show,
+  renders whenever any of the four has something to show,
   so an idle session with messages still has one. The subagents trigger follows the same two forms
   (words wide, its ring and a count narrow, §app/subagents-pane). The triggers never shrink, so none
   runs its words into the next. Open alignments and option cards are not in this row: they are the

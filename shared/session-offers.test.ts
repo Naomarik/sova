@@ -107,26 +107,12 @@ test("the snapshot names only enabled offers the agent shows, with only their wh
   assert.equal(snapshotOf(parseOffersFile(file({ captain: offer({ shownBy: "another-chat" }) }))), null, "none the agent shows: no tool");
 });
 
-test("Sova's own offers file parses, and gives no Sova chat the tool", () => {
+test("Sova's own offers file parses, holds no offer, and gives no Sova chat the tool", () => {
   const f = parseOffersFile(readFileSync(new URL("../.sova/offers.json", import.meta.url), "utf8"));
   assert.equal(f.state, "ok");
   if (f.state !== "ok") return;
-  assert.deepEqual(f.offers.map((o) => [o.name, o.ok]), [["landing", true]]);
-  const landing = f.offers[0]!.ok ? f.offers[0]!.def : null;
-  assert.ok(landing && landing.shownBy === "another-chat");
-  assert.deepEqual(
-    landing.buttons.map((b) => [b.label, !!b.send, b.to ?? null, b.onlyIf ?? [], b.landing ?? null, !!b.confirm]),
-    [
-      ["Land It", true, "shower", ["docs-fit"], "go-ahead", false],
-      ["Merge Without Specs…", true, "shower", ["specs-left", "specs-why"], "go-ahead-without-specs", true],
-      ["Not Yet", true, null, [], "not-yet", false],
-    ],
-  );
-  assert.deepEqual(landing.onlyIf, ["no-open-alignment", "ready-to-land"]);
-  // The captain's landing card (§chat.offers/landing-rows): rows, and Land All naming the rows it lands.
-  assert.equal(landing.rows?.max, 10);
-  assert.equal(landing.rows?.all?.label, "Land All");
-  assert.match(landing.rows?.all?.confirm ?? "", /\{rows\}/);
+  // Branches land through the merge queue, never an offer card: Sova ships no landing offer.
+  assert.deepEqual(f.offers, []);
   assert.equal(JSON.parse(readFileSync(new URL("../.sova/offers.json", import.meta.url), "utf8")).mainMerges, undefined, "Sova's repository has no merge guard switch");
   assert.equal(snapshotOf(f), null);
 });
@@ -140,14 +126,15 @@ test("a leftover mainMerges (the retired merge guard's switch) is accepted, what
   assert.equal(parseOffersFile(file({ a: offer() }, { mainMergez: "go-ahead" })).state, "broken", "any other unknown key still breaks the file");
 });
 
-test("a button's onlyIf, confirm and landing keys are checked like the offer's", () => {
-  const ok = parseOffersFile(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", send: "go {drafts}", onlyIf: ["specs-left", "specs-left"], confirm: "Sure? {drafts}", landing: "go-ahead" }] }) }));
+test("a button's onlyIf and confirm keys are checked like the offer's; the retired landing key breaks the offer", () => {
+  const ok = parseOffersFile(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", send: "go {drafts}", onlyIf: ["specs-promoted", "specs-promoted"], confirm: "Sure? {drafts}" }] }) }));
   assert.ok(ok.state === "ok" && ok.offers[0]!.ok);
   const b = ok.state === "ok" && ok.offers[0]!.ok ? ok.offers[0]!.def.buttons[0]! : null;
-  assert.deepEqual(b && [b.onlyIf, b.confirm, b.landing], [["specs-left"], "Sure? {drafts}", "go-ahead"]);
+  assert.deepEqual(b && [b.onlyIf, b.confirm], [["specs-promoted"], "Sure? {drafts}"]);
   assert.match(errorOf(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", send: "go", onlyIf: ["nope"] }] }) }), "a"), /Unknown condition "nope"/);
-  assert.match(errorOf(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", send: "go", landing: "maybe" }] }) }), "a"), /"landing" is one of/i);
-  assert.match(errorOf(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", run: "project.worktree.merge", landing: "go-ahead" }] }) }), "a"), /"landing" goes with "send" only/);
+  for (const gone of ["ready-to-land", "docs-fit", "specs-left", "specs-why", "has-merge-captain"])
+    assert.match(errorOf(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", send: "go", onlyIf: [gone] }] }) }), "a"), /Unknown condition/, gone);
+  assert.match(errorOf(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", send: "go", landing: "go-ahead" }] }) }), "a"), /landing/);
   assert.match(errorOf(file({ a: offer({ buttons: [{ label: "Go", about: "Goes.", send: "go", confirm: "Sure {nope}?" }] }) }), "a"), /uses \{nope\}/);
   assert.equal(fillText("Left: {drafts}.", {}), "Left: its spec drafts.");
 });
@@ -192,8 +179,11 @@ test("rows: the shape, the caps and the placeholders (§chat.offers/file, §chat
 });
 
 test("a card's rows read back strictly from the wire", () => {
-  const card = { id: "of_1", name: "landing", title: "Branches ready to land", buttons: [], at: "t", by: "another-chat", state: "open", rows: [{ id: "r_1", label: "feat/x", buttons: [{ label: "Land It", about: "a", kind: "send" }], state: "chosen", choice: { index: 0, label: "Land It", at: "t", where: "Merge Captain" }, progress: "landing", branch: "feat/x", commit: "abc1234", owner: { id: "o", title: "Fix" } }], all: { label: "Land All", about: "a", confirm: "c", rows: ["r_1"] }, more: 2 };
+  const card = { id: "of_1", name: "tidy", title: "Folders to tidy", buttons: [], at: "t", by: "another-chat", state: "open", rows: [{ id: "r_1", label: "notes/", buttons: [{ label: "Tidy", about: "a", kind: "send" }], state: "chosen", choice: { index: 0, label: "Tidy", at: "t" } }], all: { label: "Tidy All", about: "a", confirm: "c", rows: ["r_1"] } };
   const back = normalizeOfferDetails({ v: 1, card });
   assert.deepEqual(back, card);
+  // The retired landing rows' fields never read back.
+  const old = { ...card, more: 2, docs: { line: "l", names: [] }, rows: [{ ...card.rows[0], branch: "feat/x", commit: "abc1234", owner: { id: "o", title: "Fix" }, progress: "landing", choice: { ...card.rows[0]!.choice, where: "Merge Captain" } }] };
+  assert.deepEqual(normalizeOfferDetails({ v: 1, card: old }), card);
   assert.equal(normalizeOfferDetails({ v: 1, card: { ...card, rows: [{ ...card.rows[0], state: "bogus" }] } }), undefined, "a bad row makes no card");
 });

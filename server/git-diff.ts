@@ -278,6 +278,23 @@ export function knownFoldersOf(text: string): Known {
   return { roots: knownRoots(candidates, agentRoot()), trees, merges };
 }
 
+/** A branch the merge queue landed for a chat (server/merge-queue/cards.ts): its project root, the landing commit, the target before it. */
+export interface QueueLanding {
+  root: string;
+  sha: string;
+  from: string;
+  branch: string;
+  target: string;
+}
+
+async function queueLandingsOf(sessionPath: string): Promise<QueueLanding[]> {
+  const { getSessionSummary } = await import("./sessions-index");
+  const s = await getSessionSummary(sessionPath).catch(() => null);
+  if (!s) return [];
+  const { mergeCardsOf } = await import("./merge-queue/wire");
+  return mergeCardsOf(s.id).flatMap((c) => (c.landed ? [{ root: c.root, sha: c.landed.sha, from: c.landed.from, branch: c.branch, target: c.target }] : []));
+}
+
 export interface DiffDeps {
   run?: RawGitRunner;
   /** The session file's contents by resolved path (default: resolveSessionPath + readFile, cached). */
@@ -287,6 +304,8 @@ export interface DiffDeps {
   untrackedBudget?: number;
   /** MAX_DIFF_FILES, smaller for tests. */
   maxFiles?: number;
+  /** The merge queue's landings of this chat's branches (its Landed cards): a merge scope may name one. */
+  queueLandings?: (sessionPath: string) => Promise<QueueLanding[]>;
   /** ORIGINS_DEADLINE_MS, smaller for tests. */
   originsDeadlineMs?: number;
 }
@@ -298,6 +317,7 @@ export class GitDiffs {
   private readonly maxFiles: number;
   private readonly originsDeadlineMs: number;
   private readonly sessionKnownFn: (sessionPath: string) => Promise<Known | null>;
+  private readonly queueLandingsFn: (sessionPath: string) => Promise<QueueLanding[]>;
   private readonly sessions = new Map<string, { mtimeMs: number; size: number; value: Known }>();
   private readonly emptyTrees = new Map<string, string>();
   /** Commit oids are immutable, so a comparison's topological order never changes. */
@@ -312,6 +332,7 @@ export class GitDiffs {
     this.maxFiles = deps.maxFiles ?? MAX_DIFF_FILES;
     this.originsDeadlineMs = deps.originsDeadlineMs ?? ORIGINS_DEADLINE_MS;
     this.sessionKnownFn = deps.sessionKnown ?? ((p) => this.readKnown(p));
+    this.queueLandingsFn = deps.queueLandings ?? queueLandingsOf;
   }
 
   private async git(cwd: string, args: readonly string[], cap = LIST_CAP): Promise<RawGitResult> {
@@ -352,12 +373,26 @@ export class GitDiffs {
   }
 
   /** The repository top level of a client-named folder the session knows, or a DiffError. */
-  private async trustedTop(scope: DiffScope): Promise<{ top: string; known: Known; card?: WorktreeMergeDetails }> {
+  private async trustedTop(scope: DiffScope): Promise<{ top: string; known: Known; card?: WorktreeMergeDetails; landing?: QueueLanding }> {
     const known = await this.sessionKnownFn(scope.sessionPath);
     if (!known) throw new DiffError("Unknown session");
     const raw = scope.kind === "worktree" ? scope.worktreePath : scope.kind === "commit" || scope.kind === "merge" ? scope.repoPath : scope.cwd;
     if (typeof raw !== "string" || !isAbsolute(raw) || raw.includes("\0")) throw new DiffError("Invalid ?path= (an absolute folder)");
     const dir = canonical(raw);
+    // A branch the merge queue landed for this chat: its Landed card names the project and the commit, so the
+    // project's folder is known through it (the chat itself may only ever have worked in the branch's worktree).
+    if (scope.kind === "merge") {
+      const sha = scope.sha.toLowerCase();
+      if (!known.merges.some((m) => m.sha.toLowerCase() === sha && canonical(m.path) === dir)) {
+        const landing = (await this.queueLandingsFn(scope.sessionPath).catch(() => [] as QueueLanding[])).filter((l) => l.sha.toLowerCase() === sha && canonical(l.root) === dir).at(-1);
+        if (landing) {
+          if (!(await isDir(dir))) throw new DiffError("That folder does not exist", 404);
+          const top = await this.topOf(dir);
+          if (!top) throw new DiffError("That folder is not in a git repository", 404);
+          return { top, known, landing };
+        }
+      }
+    }
     if (!folderKnown(dir, known.roots)) throw new DiffError("That folder is not one this session knows");
     let card: WorktreeMergeDetails | undefined;
     if (scope.kind === "merge") {
@@ -424,7 +459,19 @@ export class GitDiffs {
 
   /** Resolve every ref of the scope, server-side. */
   async resolve(scope: DiffScope): Promise<Resolved> {
-    const { top, known, card } = await this.trustedTop(scope);
+    const { top, known, card, landing } = await this.trustedTop(scope);
+    if (scope.kind === "merge" && landing) {
+      // Exactly what the queue landed: the target before it to the landing commit.
+      const sides: string[] = [];
+      for (const ref of [landing.sha, landing.from]) {
+        const r = await this.git(top, ["rev-parse", "--verify", "-q", `${ref}^{commit}`]);
+        const oid = r.stdout.toString("utf8").trim();
+        if (r.code !== 0 || !isOid(oid)) throw new DiffError("No such commit in that repository", 404);
+        sides.push(oid);
+      }
+      const [oid, from] = sides as [string, string];
+      return { scope, top, base: { label: `${landing.target} before ${oid.slice(0, 7)}`, oid: from, treeish: from }, head: { label: landing.branch, oid, treeish: oid } };
+    }
     if (scope.kind === "dirty") {
       const head = await this.headOid(top);
       return {

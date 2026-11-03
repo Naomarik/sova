@@ -3,8 +3,7 @@
 // the asks-you fold. What the rest of the server answers (summaries, readiness, git, the routes a button
 // calls) is stubbed through setOfferDeps; the store and the files are real, in a throwaway agent dir.
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
@@ -27,7 +26,6 @@ const writeOffers = (o: Record<string, unknown>) => writeFileSync(join(project, 
 let head = "a".repeat(40);
 let summaryOver: Partial<SessionSummary> = {};
 let readinessState: string | null = null;
-let landingTree: Record<string, unknown> | null = null;
 const requests: { url: string; body: unknown }[] = [];
 let answer: { status: number; body: unknown } = { status: 200, body: { ok: true } };
 let n = 0;
@@ -39,7 +37,6 @@ beforeEach(() => {
   head = "a".repeat(40);
   summaryOver = {};
   readinessState = null;
-  landingTree = null;
   requests.length = 0;
   answer = { status: 200, body: { ok: true } };
   offers.setOfferDeps({
@@ -48,7 +45,6 @@ beforeEach(() => {
       return { id, path, cwd: project, title: `Session ${id}`, lastActiveAt: 1, ...summaries.get(path), ...summaryOver } as SessionSummary;
     },
     async readiness() {
-      if (landingTree) return { trees: [landingTree], since: 0 } as unknown as SessionSummary["readiness"];
       return readinessState ? ({ trees: [{ path: project, branch: "feat/x", state: readinessState }], since: 0 } as unknown as SessionSummary["readiness"]) : undefined;
     },
     async sessions() {
@@ -170,42 +166,33 @@ describe("showing an offer", () => {
     assert.deepEqual(cards.map((c) => [c.id, c.state]), [["of_1", "chosen"], ["of_2", "open"]]);
   });
 
-  test("a once-per-commit card can't be pressed once its branch moved on: refused, nothing sent or recorded; a show at the new head replaces it", async () => {
-    writeFileSync(join(project, ".sova", "offers.json"), readFileSync(new URL("../.sova/offers.json", import.meta.url), "utf8"));
-    rmSync(join(project, ".sova", "spec"), { recursive: true, force: true });
-    const landing = join(root, "agent", "sova", "landing.json");
-    const { goAheadFor, readLanding } = await import("../pi-config/extensions/worktrees/landing.ts");
-    const captain = sid();
+  test("a once-per-commit card can't be pressed once its branch moved on: refused, nothing sent; a show at the new head replaces it", async () => {
+    writeOffers({ review: def({ shownBy: "another-chat", title: "Review {branch} at {commit}?", buttons: [send("Review It", "Review {branch} at {commit}.", { to: "shower" }), send("Skip")] }) });
+    const asker = sid();
     const owner = sid();
     const A = "1".repeat(40);
     const B = "2".repeat(40);
     head = A;
-    landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "ready", commit: head } };
-    const showLanding = () => offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
-    const atA = await showLanding();
-    assert.equal(atA.title, `Land feat/x at ${A.slice(0, 7)}?`);
-    // The branch moves on to B: Land It at A is refused, and nothing reaches the captain or landing.json.
+    const showIt = (id: string) => offers.showOffer({ path: pathOf(id), sessionId: id, offer: "review", by: "another-chat", from: pathOf(asker), tree: project });
+    const atA = await showIt(owner);
+    assert.equal(atA.title, `Review feat/x at ${A.slice(0, 7)}?`);
+    // The branch moves on to B: a click at A is refused, and nothing is sent.
     head = B;
     await refused(offers.chooseOffer(pathOf(owner), owner, atA.id, 0), /newer commit/);
     await refused(offers.chooseOffer(pathOf(owner), owner, atA.id, 1), /no longer open/);
     assert.equal(requests.length, 0, "nothing sent");
-    assert.equal(await goAheadFor("feat/x", A, landing), undefined, "no go-ahead at A");
-    assert.equal(await goAheadFor("feat/x", B, landing), undefined, "nor at B");
-    assert.equal(readLanding(landing).notYet.some((n) => n.commit === A || n.commit === B), false, "no Not Yet");
     assert.equal((await offers.sessionOffers(owner, project)).cards.find((c) => c.id === atA.id)?.state, "superseded");
     // Shown at B while A's card were still open: A's is replaced and B's shows at once.
     head = A;
     const other = sid();
-    const first = await offers.showOffer({ path: pathOf(other), sessionId: other, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
+    const first = await showIt(other);
     head = B;
-    landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "ready", commit: head } };
-    const atB = await offers.showOffer({ path: pathOf(other), sessionId: other, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
-    assert.equal(atB.title, `Land feat/x at ${B.slice(0, 7)}?`);
+    const atB = await showIt(other);
+    assert.equal(atB.title, `Review feat/x at ${B.slice(0, 7)}?`);
     const cards = (await offers.sessionOffers(other, project)).cards;
     assert.deepEqual(cards.map((c) => [c.id, c.state, c.supersededBy ?? null]), [[first.id, "superseded", atB.id], [atB.id, "open", null]]);
     await offers.chooseOffer(pathOf(other), other, atB.id, 0);
-    assert.match((requests.at(-1)!.body as { text: string }).text, new RegExp(`^Go ahead: land feat/x at ${B.slice(0, 12)}\\.$`));
-    assert.equal((await goAheadFor("feat/x", B, landing))?.session, other);
+    assert.deepEqual(requests.at(-1), { url: "/api/sessions/prompt", body: { path: pathOf(asker), text: `Review feat/x at ${B.slice(0, 12)}.`, delivery: "followUp" } });
   });
 
   test("a click whose branch head can't be read is refused and leaves the card open", async () => {
@@ -269,14 +256,14 @@ describe("showing an offer", () => {
   });
 
   test("another chat shows one; a button sending to it needs from", async () => {
-    writeOffers({ landing: def({ shownBy: "another-chat", buttons: [send("Land It", "go", { to: "shower" }), send("Not Yet")] }) });
+    writeOffers({ review: def({ shownBy: "another-chat", buttons: [send("Review It", "go", { to: "shower" }), send("Skip")] }) });
     const id = sid();
-    const captain = sid();
-    await refused(offers.showOffer({ path: pathOf(id), offer: "landing", by: "another-chat" }), /name that chat with from/);
-    const card = await offers.showOffer({ path: pathOf(id), offer: "landing", by: "another-chat", from: pathOf(captain) });
-    assert.deepEqual(card.from, { id: captain, title: `Session ${captain}` });
+    const asker = sid();
+    await refused(offers.showOffer({ path: pathOf(id), offer: "review", by: "another-chat" }), /name that chat with from/);
+    const card = await offers.showOffer({ path: pathOf(id), offer: "review", by: "another-chat", from: pathOf(asker) });
+    assert.deepEqual(card.from, { id: asker, title: `Session ${asker}` });
     await offers.chooseOffer(pathOf(id), id, card.id, 0);
-    assert.deepEqual(requests.at(-1), { url: "/api/sessions/prompt", body: { path: pathOf(captain), text: "go", delivery: "followUp" } }, "Land It goes to the captain");
+    assert.deepEqual(requests.at(-1), { url: "/api/sessions/prompt", body: { path: pathOf(asker), text: "go", delivery: "followUp" } }, "Review It goes to the chat that showed it");
   });
 });
 
@@ -386,76 +373,5 @@ describe("the project page's list", () => {
     assert.equal(offers.projectOffers(project).file, "broken");
     rmSync(join(project, ".sova", "offers.json"));
     assert.equal(offers.projectOffers(project).file, "missing");
-  });
-});
-
-describe("the Landing offer (§chat.offers/sova-landing, §chat.offers/buttons)", () => {
-  const sovaFile = () => writeFileSync(join(project, ".sova", "offers.json"), readFileSync(new URL("../.sova/offers.json", import.meta.url), "utf8"));
-  const landingFile = () => join(root, "agent", "sova", "landing.json");
-  const drafts = (on: boolean) => {
-    const sha = (t: string) => createHash("sha256").update(t).digest("hex");
-    const d = join(project, ".sova", "spec", "drafts", "my-draft");
-    rmSync(join(project, ".sova", "spec"), { recursive: true, force: true });
-    if (!on) return;
-    mkdirSync(join(d, "spec", "claims"), { recursive: true });
-    mkdirSync(join(project, ".sova", "spec", "claims"), { recursive: true });
-    writeFileSync(join(project, ".sova", "spec", "claims", "a.md"), "old");
-    writeFileSync(join(d, "draft.json"), JSON.stringify({ format: "sova-spec-draft/1", name: "my-draft", base: { files: { "claims/a.md": sha("old") } } }));
-    writeFileSync(join(d, "spec", "claims", "a.md"), "new");
-  };
-
-  test("shown for the worktree when Ready to land; Land It records the go-ahead for that exact commit and sends it to the captain", async () => {
-    sovaFile();
-    drafts(false);
-    const captain = sid();
-    const owner = sid();
-    landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "ready", commit: head } };
-    const card = await offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
-    assert.equal(card.title, `Land feat/x at ${head.slice(0, 7)}?`);
-    assert.deepEqual(card.buttons.map((b) => b.label), ["Land It", "Not Yet"], "Merge Without Specs… is off the card: no draft is left");
-    await offers.chooseOffer(pathOf(owner), owner, card.id, 0);
-    assert.equal((requests.at(-1)!.body as { path: string }).path, pathOf(captain));
-    assert.match((requests.at(-1)!.body as { text: string }).text, /^Go ahead: land feat\/x at a{12}\.$/);
-    const { goAheadFor } = await import("../pi-config/extensions/worktrees/landing.ts");
-    assert.equal((await goAheadFor("feat/x", head, landingFile()))?.session, owner);
-    assert.equal(await goAheadFor("feat/x", "b".repeat(40), landingFile()), undefined);
-  });
-
-  test("not Ready to land: nothing is shown; Not Yet records Not Yet; a refused send records nothing", async () => {
-    sovaFile();
-    drafts(false);
-    const captain = sid();
-    const owner = sid();
-    landingTree = { path: project, branch: "feat/x", state: "waiting-approval" };
-    await refused(offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project }), /ready to land/);
-    head = "c".repeat(40);
-    landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "ready", commit: head } };
-    const card = await offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
-    answer = { status: 409, body: { error: "busy" } };
-    await assert.rejects(offers.chooseOffer(pathOf(owner), owner, card.id, 1), /busy/);
-    const { readLanding } = await import("../pi-config/extensions/worktrees/landing.ts");
-    assert.equal(readLanding(landingFile()).notYet.some((n) => n.commit === head), false);
-    answer = { status: 200, body: { ok: true } };
-    await offers.chooseOffer(pathOf(owner), owner, card.id, 1);
-    assert.equal(readLanding(landingFile()).notYet.some((n) => n.commit === head && n.branch === "feat/x"), true);
-  });
-
-  test("specs left and the session says why: Merge Without Specs… asks first, naming the drafts, and records the go-ahead without specs", async () => {
-    sovaFile();
-    drafts(true);
-    head = "d".repeat(40);
-    const captain = sid();
-    const owner = sid();
-    landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "specs", commit: head, drafts: ["my-draft"] } };
-    await refused(offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project }), /ready to land/);
-    landingTree = { path: project, branch: "feat/x", state: "ready", landing: { state: "specs", commit: head, drafts: ["my-draft"], specsWhy: "no spec tools" } };
-    const card = await offers.showOffer({ path: pathOf(owner), sessionId: owner, offer: "landing", by: "another-chat", from: pathOf(captain), tree: project });
-    assert.deepEqual(card.buttons.map((b) => b.label), ["Merge Without Specs…", "Not Yet"]);
-    assert.match(card.buttons[0]!.confirm ?? "", /^Land feat\/x without its specs\? These spec drafts stay behind, to promote later on a fresh branch from master: my-draft\.$/);
-    await offers.chooseOffer(pathOf(owner), owner, card.id, 0);
-    assert.match((requests.at(-1)!.body as { text: string }).text, /without its specs \(my-draft\)/);
-    const { goAheadFor } = await import("../pi-config/extensions/worktrees/landing.ts");
-    assert.equal((await goAheadFor("feat/x", head, landingFile()))?.withoutSpecs, true);
-    drafts(false);
   });
 });

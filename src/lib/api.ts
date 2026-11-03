@@ -96,6 +96,7 @@ import type {
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import { WIRE_PARAM } from "../../shared/protocol";
+import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
   MeshAccessPut,
@@ -181,6 +182,11 @@ export function withJsonType(init?: RequestInit): RequestInit | undefined {
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  return (await requestWithHeaders<T>(url, init)).body;
+}
+
+/** `request`, with the answer's headers. */
+async function requestWithHeaders<T>(url: string, init?: RequestInit): Promise<{ body: T; headers: Headers }> {
   let res: Response;
   try {
     // A request about a peer's session goes to that peer, through this host (lib/mesh.ts).
@@ -203,7 +209,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     throw new ApiError(message, res.status, parsed);
   }
   onAuthorized();
-  return (await res.json()) as T;
+  return { body: (await res.json()) as T, headers: res.headers };
 }
 
 export const mintAccessCode = () =>
@@ -211,6 +217,11 @@ export const mintAccessCode = () =>
 export const revealAccessToken = () => request<{ token: string }>("/api/auth/token", { cache: "no-store" });
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");
+/** The list and the feed version it is at (`X-Sova-List-Version`; null from a server without it). */
+export const listSessionsVersioned = async () => {
+  const { body, headers } = await requestWithHeaders<SessionSummary[]>("/api/sessions");
+  return { rows: body, at: parseListVersion(headers.get(LIST_VERSION_HEADER)) };
+};
 export const sessionsDir = () => request<SessionsDirInfo>("/api/sessions/dir");
 
 /** A link's message thread as `host` (the pane's session's host) holds it (§mesh.links/agents-pane). */
@@ -1469,6 +1480,19 @@ export async function runDeployVerb(root: string, verb: DeployVerb, body: Record
     throw err;
   }
 }
+/** A merge-queue verb as the operator (merge.status, merge.add, merge.cancel, …): `project` is the project's root or a
+    worktree of it. A refusal is a result too, never thrown. */
+export async function runMergeVerb(project: string | null, verb: `merge.${string}`, body: Record<string, unknown> = {}): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", project ? { ...body, project } : body));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
+export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
 export const getHostServices = () => request<HostServicesView>("/api/services");
 export const getProjectRuntime = (projectId: string) => request<ProjectRuntimeView>(`${projectPath(projectId)}/runtime`);

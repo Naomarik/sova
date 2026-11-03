@@ -128,11 +128,16 @@
       "server/project-overseer-fast.integration.test.ts",
       "server/overseer-org-view.ts",
       "src/lib/coding-worktrees-fresh.browser.test.ts",
-      "server/worktree-targeted-removal.test.ts"
+      "server/worktree-targeted-removal.test.ts",
+      "src/lib/project-queue.ts",
+      "src/lib/project-queue.test.ts",
+      "server/merge-queue-ui.integration.test.ts",
+      "server/merge-queue/wire.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-15T19:32Z"
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
     }
   },
   "§app.project-overseer/confirm-brief": {

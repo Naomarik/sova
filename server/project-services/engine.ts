@@ -10,6 +10,7 @@ import {
   DefinitionError,
   envPart,
   isDeployVerb,
+  isMergeVerb,
   isVerb,
   ordered,
   parseDefinition,
@@ -40,6 +41,7 @@ import {
 } from "../../shared/project-contract";
 import { numberedPorts, overLimitSentence, slotLayoutOf, unavailableSentence, type CopyLimit } from "../../shared/project-slots";
 import { COPY_SLOT_TOP } from "../../shared/project-contract";
+import { inheritedEnv } from "./env-allow";
 import { countsAsRunning, limitInForce, runningCopies } from "./copy-limit";
 import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
@@ -250,17 +252,8 @@ const canonical = (p: string) => {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 
-/** The variables a service or hook process inherits from the server: nothing secret. */
-const ENV_ALLOW = ["PATH", "HOME", "USER", "LOGNAME", "LANG", "LC_ALL", "TZ", "XDG_RUNTIME_DIR", "SHELL", "TMPDIR"];
-function baseEnv(): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const k of ENV_ALLOW) {
-    const v = process.env[k];
-    if (v !== undefined) out[k] = v;
-  }
-  out.LANG ??= "C.UTF-8";
-  return out;
-}
+/** The variables a service or hook process inherits from the server: nothing secret (env-allow.ts). */
+const baseEnv = (): Record<string, string> => inheritedEnv();
 
 function tcpOpen(port: number, timeoutMs = 1_000): Promise<boolean> {
   return new Promise((done) => {
@@ -428,6 +421,8 @@ export class ProjectEngine {
   conformer: ((body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
   /** The deploy verbs (server/project-services/deploy.ts), wired at startup. */
   deployer: ((verb: string, body: unknown, caller: Caller, opts: { signal?: AbortSignal }) => Promise<VerbResult>) | null = null;
+  /** The merge queue's verbs (server/merge-queue/routes.ts), wired at startup. */
+  merger: ((verb: string, body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
 
   constructor(deps: EngineDeps) {
     this.driver = deps.driver;
@@ -482,10 +477,12 @@ export class ProjectEngine {
     let release: (() => void) | null = null;
     if (verb === "conform" && this.conformer) return this.conformer(body, caller);
     if (isDeployVerb(verb) && this.deployer) return this.deployer(verb, body, caller, opts);
+    if (isMergeVerb(verb) && this.merger) return this.merger(verb, body, caller);
     try {
       if (!isVerb(verb)) throw new VerbFailure("invalid-request", `unknown verb "${verb}"`);
       run.req = parseRequest(body);
       if (isDeployVerb(verb)) throw new VerbFailure("unsupported", `${verb} runs through the deployer, which this engine has not got`);
+      if (isMergeVerb(verb)) throw new VerbFailure("unsupported", `${verb} runs through the merge queue, which this engine has not got`);
       await this.resolveTarget(run);
       if (run.verb === "teardown" && !run.rec) return await this.result(run);
       this.authorize(run, await this.starterWorking(run));

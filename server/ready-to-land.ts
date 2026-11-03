@@ -1,3 +1,4 @@
+import { MERGE_QUEUE_SENT_PREFIX } from "../shared/senders";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ReadinessState, WorktreeLanding, WorktreeLandingDocs } from "../shared/protocol";
@@ -62,7 +63,7 @@ export interface LandingBlocker {
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /**
- * What still blocks a finished branch's landing card (§chat.worktrees/ready-to-land), each counted, for the
+ * What still blocks a finished branch's landing (§chat.worktrees/ready-to-land), each counted, for the
  * things the session can fix itself: uncommitted files, conflicts with its base, a
  * temporary commit, a failing check. undefined when the rule doesn't ask (nothing to land, merged, a turn
  * running, an open question: none of those is the session's to fix now). Pure.
@@ -83,13 +84,14 @@ export function landingBlockers(t: LandingTree, s: LandingSession): LandingBlock
   return out;
 }
 
-/** The message Sova sends a finished session whose branch can't be offered for landing yet (§chat.worktrees/ready-to-land).
-    It names what blocks the landing and never mentions Land It or a card: there is no card to press. Once nothing
-    blocks it, the user's typed go-ahead lands it, which the session records with `worktree land`. */
+/** The wake Sova sends a finished session whose branch can't be approved for landing yet (§chat.worktrees/ready-to-land),
+    marked as the merge queue's (MERGE_QUEUE_SENT_PREFIX), never drawn as the user's message.
+    It names what blocks the landing. Once nothing blocks it, the user's go-ahead lands it: Land, or "land it" typed in
+    the chat, which the session records with `worktree land`. */
 export function blockedNoteText(branch: string, commit: string, blockers: readonly LandingBlocker[]): string {
   const list = blockers.map((b) => b.text).join(", ");
   const fixes = blockers.map((b) => b.fix).join("; ");
-  return `Sova: ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Once nothing blocks it, the user's go-ahead lands it: when they type "land it" in this chat, record it with the worktree tool's land action.`;
+  return `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Once nothing blocks it, the user's go-ahead lands it through the merge queue: they press Land, or type "land it" in this chat, which you record with the worktree tool's land action.`;
 }
 
 /** The line a session answers with when it can't land its specs. */
@@ -115,8 +117,6 @@ export interface LandingDocs {
   /** The drafts not yet official, by name (the file-only count). */
   drafts: readonly string[];
   preview: DocsPreview | "pending";
-  /** The drafts changed since the user's Land It at this head. */
-  changedSinceGoAhead?: readonly string[];
 }
 
 const docsOf = (p: DocsPreview, extra: Partial<WorktreeLandingDocs> = {}): WorktreeLandingDocs => ({
@@ -131,7 +131,7 @@ const docsOf = (p: DocsPreview, extra: Partial<WorktreeLandingDocs> = {}): Workt
 /**
  * A tree's landing, or undefined. `held`: the store says this head was Ready to land already. Drafts don't block it:
  * they land with it, once Sova's try says they would (until then the head isn't Ready to land yet); drafts that
- * wouldn't, or that changed since the user's Land It, make it Landing specs. Pure.
+ * wouldn't make it Landing specs. Drafts changed since the user approved the branch are the merge queue's to catch. Pure.
  */
 export function landingOf(t: LandingTree, state: ReadinessState, finished: Finished, held: boolean, docs?: LandingDocs, specsWhy?: string): WorktreeLanding | undefined {
   if (!landingLive(t, state)) return undefined;
@@ -140,11 +140,6 @@ export function landingOf(t: LandingTree, state: ReadinessState, finished: Finis
   if (!docs?.drafts.length) return { state: "ready", commit };
   const drafts = [...docs.drafts];
   const why = specsWhy ? { specsWhy } : {};
-  const changed = docs.changedSinceGoAhead?.length ? [...docs.changedSinceGoAhead] : undefined;
-  if (changed) {
-    const p = docs.preview === "pending" ? { drafts, added: [], changed: [], problems: [] } : docs.preview;
-    return { state: "specs", commit, drafts, ...why, docs: docsOf(p, { changedSinceGoAhead: changed }) };
-  }
   if (docs.preview === "pending") return undefined;
   if (docs.preview.problems.length) return { state: "specs", commit, drafts, ...why, docs: docsOf(docs.preview) };
   if (!docs.preview.drafts.length) return { state: "ready", commit };
@@ -157,13 +152,13 @@ export const docsWords = (d: WorktreeLandingDocs): string => `docs: ${[d.added ?
 /** The reason line of a landing: "Ready to land · 3 commits ahead · docs: 2 new, 1 changed", "Landing specs · docs don't fit". */
 export function landingReason(l: WorktreeLanding, ahead?: number): string {
   if (l.state === "ready") return ["Ready to land", ...(ahead ? [`${ahead} commit${ahead === 1 ? "" : "s"} ahead`] : []), ...(l.docs ? [docsWords(l.docs)] : [])].join(" · ");
-  const what = l.docs?.changedSinceGoAhead?.length ? "docs changed since Land It" : l.docs?.problems?.length ? "docs don't fit" : `${l.drafts?.length ?? 0} draft${l.drafts?.length === 1 ? "" : "s"}`;
+  const what = l.docs?.problems?.length ? "docs don't fit" : `${l.drafts?.length ?? 0} draft${l.drafts?.length === 1 ? "" : "s"}`;
   return ["Landing specs", what, ...(l.specsWhy ? [`can't land them: ${l.specsWhy}`] : [])].join(" · ");
 }
 
 /** Whether one turn outcome says the last reply's work is finished (§chat.worktrees/ready-to-land): it is
     that reply's, and it did what was asked, or it waits only for the go-ahead to land, merge, push or
-    restart, from the user or the merge captain. Pure. */
+    restart, from the user or a teammate. Pure. */
 export function finishedFromOutcome(rec: TurnOutcomeRecord | undefined, lastReplyId: string | undefined): "yes" | "no" {
   if (!rec || !lastReplyId || rec.turnId !== lastReplyId) return "no";
   if (rec.outcome === "did-what-was-asked") return "yes";
@@ -193,7 +188,7 @@ export interface HeldLanding {
 interface StoreFile {
   v: 1;
   trees: Record<string, HeldLanding>;
-  /** Per session and tree, the head commit Sova last told the session what blocks its landing card at. */
+  /** Per session and tree, the head commit Sova last told the session what blocks its landing at. */
   told?: Record<string, string>;
 }
 
@@ -239,7 +234,7 @@ export interface LandingStore {
   drop(sessionId: string, path: string): void;
   /** Mark that Sova told the session its drafts wouldn't land at this commit; false when it already had. */
   nudge(sessionId: string, path: string, commit: string): boolean;
-  /** Mark that Sova told the session what blocks its landing card at this commit; false when it already had. */
+  /** Mark that Sova told the session what blocks its landing at this commit; false when it already had. */
   tell(sessionId: string, path: string, commit: string): boolean;
 }
 
@@ -282,12 +277,13 @@ export function fileLandingStore(file: () => string = readyToLandFile): LandingS
   };
 }
 
-/** The message Sova sends a session whose finished branch's drafts wouldn't land with it (§chat.worktrees/ready-to-land).
-    It names each problem and that fixing a draft needs no commit; never Land It. */
+/** The wake Sova sends a session whose finished branch's drafts wouldn't land with it (§chat.worktrees/ready-to-land),
+    marked as the merge queue's (MERGE_QUEUE_SENT_PREFIX).
+    It names each problem and that fixing a draft needs no commit. */
 export function docsNudgeText(branch: string, commit: string, problems: readonly string[]): string {
   const shown = problems.slice(0, 8).join("; ") + (problems.length > 8 ? `; and ${problems.length - 8} more` : "");
   return (
-    `Sova: ${branch} is finished at ${commit.slice(0, 7)}, but its spec drafts wouldn't land with it: ${shown}. ` +
+    `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but its spec drafts wouldn't land with it: ${shown}. ` +
     `Fix them in your drafts on ${branch}: that needs no commit (a promise with no note: record what you verified with the draft tool's evidence <draft> --id '<§id>' --by <you> --verification "<what you checked>" --note --write; a promise changed in the spec since the draft was made: run the draft tool's refresh <draft> --write and rewrite what it marks). ` +
     "If you can't, answer with one line: Can't land specs: <why>."
   );

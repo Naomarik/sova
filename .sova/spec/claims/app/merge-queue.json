@@ -1,0 +1,335 @@
+{
+  "§app.merge-queue/approve": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.worktrees/tool",
+      "§chat.worktrees/land-own-word",
+      "§chat.composer/worktrees-control",
+      "§chat.worktrees/pane",
+      "§chat.worktrees/ready-to-land"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/ingest.ts",
+      "server/merge-queue/routes.ts",
+      "shared/merge-queue.ts",
+      "pi-config/extensions/worktrees/index.ts",
+      "pi-config/extensions/worktrees/landing.ts",
+      "server/merge-queue/scenarios-approval.integration.test.ts",
+      "server/merge-queue/queue.test.ts",
+      "pi-config/extensions/worktrees/index.test.ts",
+      "pi-config/extensions/worktrees/landing.test.ts",
+      "server/project-overseer.ts",
+      "server/project-worktrees.ts"
+    ]
+  },
+  "§app.merge-queue/blame": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/run",
+      "§app.merge-queue/checks"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T22:41Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "server/merge-queue/attribute.ts",
+      "server/merge-queue/attribute.test.ts",
+      "server/merge-queue/checks.ts",
+      "server/merge-queue/checks.test.ts",
+      "server/merge-queue/run.ts",
+      "server/merge-queue/run.integration.test.ts",
+      "server/merge-queue/scenarios-blame.integration.test.ts"
+    ]
+  },
+  "§app.merge-queue/checks": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.project-services/contract",
+      "§app.project-services/test",
+      "§app.server-runtime/test-tiers"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "server/merge-queue/checks.ts",
+      "server/merge-queue/checks.test.ts",
+      ".sova/project.json",
+      "scripts/merge-checks/lib.mjs",
+      "scripts/merge-checks/ext-suites.mjs",
+      "scripts/merge-checks/spec-replay.mjs",
+      "scripts/merge-checks/statecharts.mjs",
+      "scripts/merge-checks/spec.mjs",
+      "scripts/merge-checks/leak-scan.mjs",
+      "scripts/merge-checks/lib.test.ts",
+      "scripts/merge-checks/merge-checks.integration.test.ts",
+      "scripts/merge-checks/e2e.mjs",
+      "server/merge-queue/run.ts",
+      "server/merge-queue/scenarios-blame.integration.test.ts",
+      "server/project-services/env-allow.ts",
+      "server/project-services/env-allow.test.ts"
+    ]
+  },
+  "§app.merge-queue/conflicts": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.merge-queue/thread",
+      "§app.merge-queue/run"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "server/merge-queue/conflicts.ts",
+      "server/merge-queue/conflicts.test.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/scenarios-conflicts.integration.test.ts",
+      "server/merge-queue/queue.test.ts"
+    ]
+  },
+  "§app.merge-queue/land": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/run"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T22:41Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "server/merge-queue/land.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/store.ts",
+      "server/merge-queue/scenarios-land.integration.test.ts",
+      "server/merge-queue/queue.test.ts",
+      "server/merge-queue/cards.ts",
+      "server/merge-queue/guard.ts",
+      "server/merge-queue/guard.test.ts"
+    ]
+  },
+  "§app.merge-queue/master-moved": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/land",
+      "§chat.worktrees/tool"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "server/merge-queue/queue.ts",
+      "pi-config/extensions/worktrees/index.ts",
+      "server/merge-queue/scenarios-land.integration.test.ts",
+      "server/merge-queue/queue.test.ts",
+      "server/build-loadout.ts",
+      "server/merge-queue/wire.ts",
+      "server/project-overseer.ts"
+    ]
+  },
+  "§app.merge-queue/note": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.merge-queue/thread"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/notices.ts",
+      "server/merge-queue/view.ts",
+      "server/merge-queue/scenarios-thread-review.integration.test.ts",
+      "server/merge-queue/queue.test.ts"
+    ]
+  },
+  "§app.merge-queue/push": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/land"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "server/merge-queue/land.ts",
+      "scripts/merge-checks/leak-scan.mjs",
+      "server/merge-queue/scenarios-land.integration.test.ts",
+      "server/merge-queue/queue.test.ts",
+      "server/merge-queue/store.ts",
+      "server/merge-queue/queue.ts"
+    ]
+  },
+  "§app.merge-queue/review": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/run"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      ".sova/playbooks/review/PLAYBOOK.md",
+      ".sova/playbooks/review/references/checklist.md",
+      ".sova/playbooks/review/scripts/verdict.mjs",
+      "server/merge-queue/playbooks.test.ts",
+      "server/merge-queue/review-step.ts",
+      "server/merge-queue/reviewer.ts",
+      "server/merge-queue/reviewer.test.ts",
+      "profiles/system/merge-reviewer.json",
+      "server/merge-queue/scenarios-thread-review.integration.test.ts",
+      "server/merge-queue/queue.test.ts"
+    ]
+  },
+  "§app.merge-queue/run": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.project-services/instances",
+      "§app.project-services/contract",
+      "§tools.spec/land"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "server/merge-queue/run.ts",
+      "server/merge-queue/copy.ts",
+      "server/merge-queue/guard.ts",
+      "server/merge-queue/contract.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/copy.test.ts",
+      "server/merge-queue/run.integration.test.ts",
+      "server/merge-queue/scenarios-land.integration.test.ts",
+      "server/merge-queue/testing/expect.ts",
+      "server/merge-queue/testing/harness.ts",
+      "server/merge-queue/testing/queue-child.ts",
+      "server/merge-queue/testing/queue-kit.ts",
+      "server/merge-queue/testing/repo.ts",
+      "server/merge-queue/testing/scenario-kit.ts"
+    ]
+  },
+  "§app.merge-queue/setup": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/checks",
+      "§app.project-services/contract"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "src/components/MergeOnboarding.tsx",
+      "server/merge-queue-ui.integration.test.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/routes.ts",
+      "shared/merge-queue.ts",
+      "server/merge-queue/queue.test.ts"
+    ]
+  },
+  "§app.merge-queue/view": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.organizations/project-page",
+      "§app.project-services/merge-verbs",
+      "§app/commands"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "server/merge-queue/view.ts",
+      "server/merge-queue/estimate.ts",
+      "server/merge-queue/estimate.test.ts",
+      "server/merge-queue/queue.test.ts",
+      "server/worktrees-state.ts",
+      "server/merge-queue/wire.ts",
+      "src/components/MergeQueueTab.tsx",
+      "src/components/MergeRunView.tsx",
+      "src/lib/merge-queue-client.ts",
+      "src/lib/session-feed.ts",
+      "src/lib/projects-route.ts",
+      "src/components/ProjectPage.tsx",
+      "server/merge-queue-ui.integration.test.ts",
+      "server/merge-queue/queue.ts",
+      "src/lib/merge-queue-types.ts"
+    ]
+  },
+  "§app/merge-queue": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app/project-services",
+      "§chat.merge-queue/thread",
+      "§app.project-services/merge-verbs"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/wire.ts",
+      "shared/merge-queue.ts",
+      "server/merge-queue/store.ts",
+      "server/merge-queue/testing/expect.ts",
+      "server/merge-queue/testing/harness.ts",
+      "server/merge-queue/testing/queue-child.ts",
+      "server/merge-queue/testing/queue-kit.ts",
+      "server/merge-queue/testing/repo.ts",
+      "server/merge-queue/testing/scenario-kit.ts",
+      "server/merge-queue/wire.integration.test.ts"
+    ]
+  }
+}

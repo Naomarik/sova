@@ -29,6 +29,7 @@ import { createOfferControls, OfferContext, OfferTray } from "./OfferCard";
 import { CardContext, createCardControls } from "../lib/card-controls";
 import { cardPicksLabel, cardPicksMessage } from "../lib/card-picks";
 import { outsideCardRowId, placeOutsideCards } from "../lib/transcript-placement";
+import { createMergeCards } from "../lib/merge-cards";
 import type { OfferCard } from "../../shared/session-offers";
 import { SettingsCardContext } from "./SettingsChangeCard";
 import type { OverseerApprovals } from "./OverseerApprovalsPanel";
@@ -159,6 +160,7 @@ import { SubagentLimitRow } from "./SubagentLimitRow";
 import { failureHasRow } from "../lib/subagent-limit";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
+import type { QueueWorktree } from "./WorktreesModal";
 
 export type ChatRefusal = "busy" | "recent";
 
@@ -254,6 +256,10 @@ export function ChatView(props: {
   onRewound?(info: { path: string; entryId: string }): void;
   /** This session's teams (polled insight), so the status row can name team members as such. */
   teams?: TeamInfo[];
+  /** This session's tracked worktrees with their merge-queue state (polled insight): the composer's worktrees control. */
+  worktrees?: QueueWorktree[];
+  worktreesTitle?: string;
+  onWorktreesChanged?(): void;
   /** This pane's turn-error state, for the workspace's roll-up: the latest
       turn-error message while it is current, or null. Current means the last turn ended in an
       error and no newer turn has started — a fresh turn (or a rewind) clears it, so the workspace
@@ -1682,10 +1688,12 @@ export function ChatView(props: {
           session: () => ({ id: props.summary?.()?.id ?? "", title: props.summary?.()?.title ?? "" }),
         });
   if (raisedCards) createEffect(on(() => live.running, (now, before) => void (before && !now && raisedCards.refresh()), { defer: true }));
+  // The merge queue's cards for this chat's branches (one per branch, from Land on): Sova's own, placed like outside cards.
+  const queueCards = props.overseer || props.projectOverseer ? undefined : createMergeCards(() => props.summary?.()?.id);
   /** The thread's rows with the cards raised from outside the chat placed where they were raised (lib/transcript-placement). */
   const threadItems = createMemo(() => {
     const list = items();
-    const outside = raisedCards?.outside() ?? [];
+    const outside = [...(raisedCards?.outside() ?? []), ...(queueCards?.rows() ?? [])];
     return list && outside.length ? placeOutsideCards(list, outside, (card): TranscriptItem => ({ id: outsideCardRowId(card.id), kind: "card", at: card.at, card })) : list;
   });
   /** Show in Chat for an offer card (§chat.composer/waiting-dialog): its `offer` call's row (the
@@ -2556,6 +2564,9 @@ export function ChatView(props: {
         }
         onShowTimeline={props.onShowTimeline}
         inputCount={inputCount() ?? 0}
+        worktrees={props.overseer ? undefined : props.worktrees}
+        worktreesTitle={props.worktreesTitle}
+        onWorktreesChanged={props.onWorktreesChanged}
         inputsPending={inputsPending(inputCount(), items(), !!props.summary?.() && knownInputs(props.summary()!))}
         waiting={{
           get aligns() {

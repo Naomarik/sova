@@ -100,6 +100,8 @@ export async function describeWorktrees(
         hasAgentDir: exists && isDir(join(t.path, ".agent")),
         runningWorkers: alive.filter((c) => isWithin(c, root)).length,
       };
+      // Its merge queue entry and project (server/merge-queue/wire.ts); nothing while the queue isn't started.
+      if (exists) Object.assign(row, await (await import("./merge-queue/wire")).worktreeQueueOf(t.path, t.branch));
       return row;
     }),
   );

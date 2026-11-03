@@ -12,6 +12,7 @@ import { startBudgetRecount } from "./baton-recount";
 import { listProjects, openRegisteredProjects } from "./projects/spaces";
 import { startGitMaintenance } from "./git-maintenance";
 import { reconcileProjectServices } from "./project-services/routes";
+import { startMergeQueue, stopMergeQueue } from "./merge-queue/wire";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
 import { finishImports, rollForwardCopies } from "./project-import";
@@ -35,7 +36,7 @@ import { usageHistory } from "./usage-history";
 import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
 import { wireRequestChats } from "./owner-request-chat";
-import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
+import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
 import { detachChatHost, startChatHost, stopWorkersOf } from "./chat-host";
@@ -46,7 +47,6 @@ import { meshLinks } from "./mesh/links";
 import { setLinkOrigin } from "./link-delivery";
 import { feedFrameKey, feedFrames, setOverseerDispatch, startOverseerLoop } from "./overseer";
 import { watchFeedInputs } from "./session-feed-watch";
-import { startLandingQueue } from "./landing-queue";
 import { setOffersDispatch } from "./session-offers";
 import { setCardsDispatch } from "./transcript-cards";
 import { setSovaPort } from "./extensions";
@@ -176,6 +176,8 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   void startShareRuntime();
   // Project instances back to their desired state (server/project-services/routes.ts).
   void reconcileProjectServices();
+  // The merge queue: its verbs, its queues recovered, the typed "land it" door (server/merge-queue/wire.ts).
+  void startMergeQueue({ request: (path, init) => app.request(path, init) }).catch((err) => console.error("[merge-queue] start failed:", err instanceof Error ? err.message : err));
   // Updates: the daily check, on the schedule updates.json keeps across restarts.
   startUpdates(info.port, HOST);
 }) as Server;
@@ -206,8 +208,6 @@ setOverseerDispatch((path, init) => app.request(path, init));
 // An offer card's buttons call the same routes in-process (§chat.offers/buttons).
 setOffersDispatch((path, init) => app.request(path, init));
 setCardsDispatch((path, init) => app.request(path, init));
-// The merge captain's landing queue: Sova shows the Landing card itself (§chat.offers/sova-landing).
-startLandingQueue();
 startOverseerLoop();
 startProjectOverseerLoop();
 startScheduleKeeper((path, init) => app.request(path, init));
@@ -242,14 +242,17 @@ const events = startEvents({
 let feedChanged: (() => void) | null = null;
 onOrgChange(() => feedChanged?.());
 configureSessionFeed({
-  list: () => listSessions().then(events.seeList),
+  // Re-reads only the session files the watch named since the last build (with a full sweep).
+  list: () => listSessionsTracked().then(events.seeList),
   watch: (changed) => {
     feedChanged = changed;
-    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs] });
+    const tracked = trackSessionFiles();
+    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs], files: tracked.note });
     const offAttention = onAttentionNotified(changed);
     return () => {
       feedChanged = null;
       offWatch();
+      tracked.stop();
       offAttention();
     };
   },
@@ -321,6 +324,8 @@ async function shutdown() {
   claudeAccounts.dispose();
   meshResync.dispose();
   markShutdown();
+  // A merge run in flight is voided (rerun from its start at the next start; a landing intent is reconciled then).
+  await Promise.race([stopMergeQueue().catch(() => {}), new Promise((r) => setTimeout(r, 5_000))]);
   // Every chat runs in a process of its own and runs on, its reply included
   // (§app.chat-processes/survives-restart). Each chat process is told goodbye and let go of, never stopped.
   detachChatHost();

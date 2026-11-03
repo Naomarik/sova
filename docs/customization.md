@@ -75,7 +75,7 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
   button needs your approval on the project page (Settings tab, **Offers**): **Approve Run Buttons**.
   Changing a run button asks again.
 - **Limits**: at most 8 offers and 4 buttons each; `onlyIf` takes `branch-ready`,
-  `waiting-for-ok`, `tree-clean`, `no-open-alignment` and `has-merge-captain`; `repeat` is
+  `waiting-for-ok`, `tree-clean`, `no-open-alignment` and `specs-promoted`; `repeat` is
   `once-per-commit` (the default), `once-per-reply` or `once-per-session`. `"disabled": true` turns
   one off; `"shownBy": "another-chat"` keeps it for another chat to show
   (`sova run session.offers.show --session <path> --offer <name> --from <its own session>`). A

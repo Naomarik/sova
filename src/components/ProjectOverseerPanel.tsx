@@ -27,7 +27,6 @@ import {
   getProjectWorktrees,
   getSessionSummaryById,
   listModels,
-  mergeCodingWorktree,
   openProjectOverseer,
   patchProjectOverseer,
   patchProjectOverseerTodo,
@@ -36,6 +35,7 @@ import {
   projectOverseerTodos,
   removeCodingWorktree,
   runProjectOverseer,
+  mergeCodingWorktree,
   startProjectCoding,
 } from "../lib/api";
 import type { GatheringAbilities } from "../../shared/baton";
@@ -49,6 +49,10 @@ import { ACTIVITY_SHOWN, LIMIT_COLUMN_LABEL, LIMIT_COLUMNS, LIMIT_ROWS, limitCel
 import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGap, IDEA_TITLE_MAX, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
+import { land, refusal } from "../lib/merge-queue-client";
+import { queueRow } from "../lib/merge-queue";
+import { createProjectQueue } from "../lib/project-queue";
+import { QueueChip } from "./WorktreesModal";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon, Placeholder } from "./ui";
 import { PowersPanel } from "./PowersGrid";
@@ -917,6 +921,8 @@ function CodingSessions(props: {
   const po = () => props.po;
   const wt = () => po().worktrees.data();
   const rows = createMemo(() => codingRows(po().info.data()?.coding, po().listed(), wt()?.sessions));
+  /** The project's merge queue: set up, Land replaces Merge Branch and each row shows its queue state. */
+  const queue = createProjectQueue(() => po().projectId());
   /** Nothing to list yet, and nothing read: placeholders, not "None yet". */
   const unknown = () => !rows().length && !po().info.data() && !wt();
   const [confirming, setConfirming] = createSignal<string | null>(null);
@@ -963,6 +969,26 @@ function CodingSessions(props: {
     } finally {
       // Done or refused, the confirmation has had its answer; a refusal stays under the row.
       setConfirming(null);
+      setWorking(null);
+    }
+  };
+  /** Land: the branch joins the project's merge queue at its head commit; the queue merges it onto
+      the target in its own copy, checks it there and moves the target to exactly that commit. */
+  const landRow = async (w: CodingRow & { worktree: string }) => {
+    if (working() || !po().worktrees.fresh()) return;
+    setWorking(w.sessionId);
+    try {
+      // The head this page read (CodingWorktree.head): the queue pins it, never a newer one.
+      const no = refusal(await land(w.worktree, { commit: w.head }));
+      if (no) throw new Error(no);
+      po().worktrees.refetch();
+      setErrors(({ [w.sessionId]: _, ...rest }) => rest);
+      const done = `Queued ${w.branch} to land on ${w.target}.`;
+      toast(done);
+      announce(done);
+    } catch (x) {
+      setErrors((e) => ({ ...e, [w.sessionId]: errText(x) }));
+    } finally {
       setWorking(null);
     }
   };
@@ -1063,20 +1089,49 @@ function CodingSessions(props: {
                       </>
                     )}
                   </Show>
+                  <Show when={queue.info(row.branch)}>
+                    {(q) => {
+                      const qr = () => queueRow({ status: "active", exists: true, readiness: undefined, branch: row.branch ?? "", queue: q() });
+                      return (
+                        <span class="list-meta project-worktree-queue cluster">
+                          <QueueChip row={qr()} />
+                          <Show when={qr().detail}>{(d) => <span class="text-mono">{d()}</span>}</Show>
+                          <Show when={qr().reason ?? qr().notes[0]?.text}>{(why) => <span>{why()}</span>}</Show>
+                        </span>
+                      );
+                    }}
+                  </Show>
                 </span>
                 <Show when={gestures().merge !== false || gestures().remove !== false}>
                   <ActionMenu label={`Actions · ${title()}`} title="Actions" icon="more">
                     {(menu) => (
                       <>
                         <Show when={gestures().merge !== false}>
-                          <menu.Item
-                            label="Merge Branch"
-                            aria={`Merge Branch: ${row.branch} into ${row.target}`}
-                            icon={<Icon name="branch" small />}
-                            description={`${row.branch} into ${row.target}`}
-                            disabled={(gestures().merge || undefined) ?? (working() ? "Working" : undefined)}
-                            onRun={() => void act(row, () => mergeCodingWorktree(po().projectId(), row.sessionId), `Merged ${row.branch} into ${row.target}.`)}
-                          />
+                          <Show
+                            when={queue.setUp()}
+                            fallback={
+                              <menu.Item
+                                label="Merge Branch"
+                                aria={`Merge Branch: ${row.branch} into ${row.target}`}
+                                icon={<Icon name="branch" small />}
+                                description={`${row.branch} into ${row.target}`}
+                                disabled={(gestures().merge || undefined) ?? (working() ? "Working" : undefined)}
+                                onRun={() => void act(row, () => mergeCodingWorktree(po().projectId(), row.sessionId), `Merged ${row.branch} into ${row.target}.`)}
+                              />
+                            }
+                          >
+                            <menu.Item
+                              label="Land"
+                              aria={`Land ${row.branch} on ${row.target}`}
+                              icon={<Icon name="branch" small />}
+                              description={`Queues ${row.branch}: checked on ${row.target} first, then ${row.target} moves to it.`}
+                              disabled={
+                                (gestures().merge || undefined) ??
+                                (working() ? "Working" : !row.worktree ? "Its folder is gone: land it from its chat." : queue.info(row.branch) && ["queued", "checking", "conflict", "behaviour-differs", "review-flagged"].includes(queue.info(row.branch)!.state) ? "Already in the merge queue." : undefined)
+                              }
+                              onRun={() => row.worktree && void landRow({ ...row, worktree: row.worktree })}
+                            />
+                          </Show>
                         </Show>
                         <Show when={gestures().remove !== false}>
                           <menu.Item

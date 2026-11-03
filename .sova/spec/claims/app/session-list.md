@@ -711,7 +711,7 @@ label a person reads says "sessions pane".
 The top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
 whose branch is not merged (§chat.alignment/session-mark), a baton hand-off (the baton is with you, or a person needs
-their link, §app.baton/needs-you), a tour recording waiting for you to sign in (§app.tours/sites), and an option card waiting for your answer, such as Land It (§chat.offers/card); a roster proposal stays a decide item. Then, as a
+their link, §app.baton/needs-you), a tour recording waiting for you to sign in (§app.tours/sites), and an option card waiting for your answer (§chat.offers/card); a roster proposal stays a decide item. Then, as a
 **softer tier** under the blockers, the turn card's guesses (§app.overseer/attention-digest, soft
 items): a reply that waits on you (§app.decisions/asks-user) and a reply that says it is done
 without checking. A team gone quiet (§app.decisions/team-stall) is not here: it is a quiet mark
@@ -2541,11 +2541,30 @@ session feed's comparison, the attention scan, the Overseer, the profile, schedu
 and `GET /api/sessions` all read the same list then. A change made outside this server (a TUI writing
 a session, another server's stores) therefore reaches a listing up to 1 second later.
 
-The merge board's rebuild and the schedule's discovery, which run on timers, read the session
+The schedule's discovery, which runs on a timer, reads the session
 feed's last list instead while a feed is connected and nothing it watches has changed since that
 list was built (§app.decisions/push), a list at most two minutes old (the feed's safety net
-renews it every minute); otherwise they list as above. So an idle
+renews it every minute); otherwise it lists as above. So an idle
 server with windows open builds the list only for the feed's safety net.
+
+**Only what changed is read again.** The session feed's comparisons don't read every file. The
+folder watch names each session file written, added or removed, and the next comparison
+stats and reads only those files and keeps every other session as it was last read. A listing
+opens a changed file once to build its row: its head, its outline and one window of its last
+256 KB, which the row's model, context and ending all read from (a file's first read may go
+further back, to its outline); its alignment and worker marks read only what the file gained
+since their last read. The feed's
+listing looks at every folder and every file (a full build) only on its first listing, when the
+watch can't say what changed (a folder joins or leaves the watched set, a watch fails, a change
+comes with no file name), and every 5 minutes. Once a minute it also checks the size and
+modification time of every session file it already knows, without listing a folder, and reads
+again only those that moved, so a write the watch missed reaches the list within about a minute;
+a file the watch missed altogether appears with the next full build. With nothing written, a
+comparison reads no session file.
+A session with no message of the user's yet is told apart from the read its row already made,
+never by reading its file again. Every session stays in the list, however old: none is left out
+to save work. Rows with the same last activity come in path order, so two listings of the same
+sessions come in the same order. Every caller other than the feed lists as above.
 
 A change a caller makes through this server is never missed that way. Any request other than a
 read (a REST call that is not `GET` or `HEAD`, a peer's included, before it runs and again when it

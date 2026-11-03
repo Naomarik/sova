@@ -4,7 +4,7 @@ import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import type { HookCtx, ToolCtx, ToolSpec } from "../../shared/harness";
 import type { ClickChoice } from "../../shared/overseer-card";
-import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
+import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, MERGE_VERBS, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
 import { toPiTool } from "../harness/pi/tools";
 import { WORKTREES } from "../harness/state-kinds";
@@ -25,7 +25,22 @@ import { registerInstanceNote, resultNote, sessionNote } from "./note";
 type Tool = ToolSpec;
 
 /** The rows of the contract's param table the tools take, in its order. */
-const TOOL_PARAMS = VERB_PARAMS.filter((p) => p.tool);
+const TOOL_PARAMS = VERB_PARAMS.filter((p) => p.tool && !p.mergeOnly);
+
+/** The merge thread's tool params (the merge verbs and the rows they take, plus project): its own tool, never the
+    generic project tools. */
+export function mergeToolParams() {
+  const rows = VERB_PARAMS.filter((p) => p.tool && (p.mergeOnly || ["project", "lines", "select", "why", "commit"].includes(p.wire)));
+  return {
+    type: "object",
+    properties: {
+      verb: { type: "string", enum: [...MERGE_VERBS], description: "The merge verb." },
+      ...Object.fromEntries(rows.map((p) => [p.tool!.name, toolSchema(p, false)])),
+    },
+    required: ["verb"],
+    additionalProperties: false,
+  };
+}
 
 /** A tool's JSON schema for one row of the contract's param table. */
 function toolSchema(p: VerbParam, overseer: boolean): Record<string, unknown> {
@@ -55,6 +70,16 @@ function paramsOf(verbs: readonly string[], overseer: boolean) {
 }
 
 const PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS], false);
+
+/** A chat's own tool: the verbs, the deploy verbs and the merge verbs, with the merge verbs' rows after the rest
+    (the merger decides who may call which: any chat reads its project's queue; the recorded merge thread notes,
+    extends, resolves and retries; a run's reviewer posts merge.review). */
+const SESSION_PARAMS = (() => {
+  const p = paramsOf([...VERBS, ...DEPLOY_VERBS, ...MERGE_VERBS], false);
+  const merge = VERB_PARAMS.filter((r) => r.tool && r.mergeOnly);
+  return { ...p, properties: { ...p.properties, ...Object.fromEntries(merge.map((r) => [r.tool!.name, toolSchema(r, false)])) } };
+})();
+const MERGE_TOOL_ROWS = VERB_PARAMS.filter((p) => p.tool && p.mergeOnly);
 
 /** The Overseers' parameters: the verbs, plus `onboard` (the Project verbs playbook, §app.project-runtime/onboard). */
 const OVERSEER_PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS, "onboard"], true);
@@ -132,6 +157,8 @@ function bodyOf(p: Record<string, unknown>, defaultProject: string | null): Reco
   // A param whose tool name is its wire key is sent when it has a value; a renamed one (keep_data) whenever it is given.
   for (const { wire, tool } of TOOL_PARAMS) if (tool!.name === wire && p[wire] !== undefined && p[wire] !== null && p[wire] !== "") out[wire] = p[wire];
   for (const { wire, tool } of TOOL_PARAMS) if (tool!.name !== wire && p[tool!.name] !== undefined) out[wire] = p[tool!.name];
+  // The merge verbs' own keys reach only a merge verb (the other verbs refuse a key they don't take).
+  if (String(p.verb ?? "").startsWith("merge.")) for (const { wire, tool } of MERGE_TOOL_ROWS) if (p[tool!.name] !== undefined && p[tool!.name] !== null && p[tool!.name] !== "") out[wire] = p[tool!.name];
   if (!out.project && !out.instance && !out.checkout && defaultProject) out.project = defaultProject;
   return out;
 }
@@ -174,6 +201,8 @@ export function renderResult(r: VerbResult, note?: string | null): string {
 }
 
 export interface VerbToolOptions {
+  /** The merge verbs too (a chat's own tool). */
+  merge?: true;
   /** Whether results keep a share link's `url` (the Overseers'); absent: never (a coding session's). */
   urls?: boolean;
   name: string;
@@ -228,7 +257,7 @@ export function projectVerbsTool(o: VerbToolOptions): Tool {
     label: o.label,
     description: `${o.description} ${(o.urls ? VERB_HELP.replace(COPY_LINK_RULE, "") : VERB_HELP).replace(URL_RULE, o.urls ? URL_RULE_OVERSEER : URL_RULE)}${DEPLOY_HELP[o.deploy]}${o.onboard ? ONBOARD_HELP : ""}${o.copies ? COPIES_HELP : ""}`,
     promptSnippet: o.promptSnippet,
-    parameters: (o.copies ? COPIES_PARAMS : o.onboard ? OVERSEER_PARAMS : PARAMS) as unknown as Tool["parameters"],
+    parameters: (o.copies ? COPIES_PARAMS : o.onboard ? OVERSEER_PARAMS : o.merge ? SESSION_PARAMS : PARAMS) as unknown as Tool["parameters"],
     async execute(_id: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: ToolCtx) {
       const p = (params ?? {}) as Record<string, unknown>;
       if (o.copies && (COPY_VERBS as readonly string[]).includes(String(p.verb))) {
@@ -314,10 +343,12 @@ export function sessionVerbsTool(engine: () => ProjectEngine): Tool {
     description:
       "Run this project's services for your own worktree through Sova: never start servers by hand (no nohup/setsid loops), use up/apply/logs here. " +
       "You may create/up/down/apply/test instances of your own worktrees (never the main checkout), reset or teardown instances you created, and read status/logs/doctor or conform for your project. " +
-      "Run tests with test {select: [...]} rather than by hand: it runs in your instance, against its own ports and data.",
+      "Run tests with test {select: [...]} rather than by hand: it runs in your instance, against its own ports and data. " +
+      "merge.status / merge.logs read this project's merge queue; the project's merge thread and a run's reviewer use the other merge verbs their instructions name.",
     promptSnippet: "run, reload, inspect and tear down your own worktree's running copy of the project (up, apply, logs, status…)",
     engine,
     deploy: "session",
+    merge: true,
     defaultProject: async (ctx) => {
       const cwd = ctx?.cwd;
       return cwd ? projectRootOf(cwd) : null;

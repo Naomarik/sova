@@ -169,7 +169,7 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   // A tour recording waiting for a sign-in (§app.tours/sites): a blocker until it stops waiting.
   const tour = row.tourSignIn;
   if (tour && !s.archived) add("act", "tour-sign-in", tour.since || lastActive, tour.code ? `Enter the sign-in code for ${tour.origin} on the tour card.` : `Sign in to ${tour.origin} on the tour card.`);
-  // An open option card (§chat.offers/card, Land It today): it waits on the user's click whether or not a turn
+  // An open option card (§chat.offers/card): it waits on the user's click whether or not a turn
   // runs, so it is a blocker; never a push (no push kind) and never a brief (NEVER_BRIEFED).
   const offer = row.offer;
   if (offer && !s.archived) add("act", "offer-waiting", offer.at || lastActive, `Waiting on your answer: ${offer.title}`);

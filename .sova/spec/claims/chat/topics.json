@@ -111,7 +111,7 @@
       "shared/topic-message.ts"
     ],
     "notOwned": [
-      "§chat/merge-round",
+      "§chat/merge-queue",
       "§mesh.links/delivery",
       "§app.decisions/session-tags"
     ],

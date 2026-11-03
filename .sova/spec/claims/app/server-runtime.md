@@ -150,7 +150,14 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   except the nine that start no browser, triggered by tour code (`server/tours/**`,
   `shared/tour*`, `server/project-services/tour-target*`, `server/share/tour-*`,
   `server/tour-routes.ts`, `pi-config/extensions/sandbox/**`), the package files, the test setup
-  and the groups module. A changed test file triggers only the group it belongs to. Every other
+  and the groups module. **Merge queue** (`merge-queue`) is the merge queue's integration files on throwaway
+  repositories (`server/merge-queue/*.integration.test.ts`, `scripts/merge-checks/*.integration.test.ts`:
+  runs in a merge copy, checks as real processes, landing and recovery, and Sova's own checks in a
+  copy of Sova), run at a landing only when triggered. Its triggers are the queue's code
+  (`server/merge-queue/**`, `server/merge-queue-*`, `shared/merge-queue.ts`), its checks
+  (`scripts/merge-checks/**`), the project contract and slots (`shared/project-contract.ts`,
+  `shared/project-slots.ts`), `.sova/project.json`, the spec core, the worktrees extension, the test
+  setup and the groups module. A changed test file triggers only the group it belongs to. Every other
   integration file is the **everyday set**.
 - **`pnpm test:int --changed`** runs only the integration files a change may break: everyday files
   whose import closure (relative imports, followed file to file) holds a file changed since the
@@ -159,7 +166,8 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   change touches (never a slow group's file by its imports alone). It prints how many files it
   chose of how many and which groups it added and why; when it chooses none it runs nothing and
   exits 0. An agent runs it before asking to land.
-- **`pnpm test:int -- --landing [--base <rev>]`** is what a landing runs (§chat.merge-round/driver):
+- **`pnpm test:int -- --landing [--base <rev>]`** is what a landing runs (one of Sova's required
+  merge checks, §app.merge-queue/checks):
   the whole everyday set, plus Chat processes only when the change since the merge base touches
   its triggers; Tours never run at landing. It prints one line per group it skipped, with its file
   count, its recorded time and why (no change to its triggers, or never at landing). `--groups
@@ -169,6 +177,10 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   still runs the whole tier, every group included, and a release runs it so
   (`.sova/playbooks/release/references/checks.md`): there is no other catch-up run of the groups
   landings skip.
+- **Counts for the caller.** When `SOVA_OUT` names a file, the runner writes its result there as
+  JSON when it ends: `passed`, `failed`, `errors`, `skipped`, and `failures` (`[{name, message?,
+  file?}]`), the shape the project verbs read (§app.project-services/test), so a merge check or a
+  `test` verb run has real counts and the failing files to rerun.
 - **The tier guard.** A second test preload (`scripts/test-tier-guard.mjs`) records, for each file
   in either tier, the programs it starts, the addresses it listens on or connects to, the URLs it
   fetches and whether it imports `server/index.ts`, merged into `.cache/test-audit.json`. By
@@ -180,6 +192,11 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   `server/tier-guard.test.ts` proves each refusal on both runtimes: an ESM named-import `spawn`,
   `execFileSync`, `net.connect`, `http.createServer().listen`, a `fetch` to localhost (and Bun's
   `Bun.connect`, `Bun.spawn`, `Bun.serve`), and a dynamic import of `server/index.ts`.
+- **No chat's variables.** Before any test runs, the runner drops the variables a chat process
+  carries (Sova's chat variables, apart from the test's own slice and code pin; the caller key; the
+  Claude login context; the spec landing file; pi's session id and file; the team-member and
+  built-in-tools marks of subagents), so a run started from a chat is as hermetic as one started by
+  hand.
 - **No real Claude program.** Every test process the runner starts, in either tier and on either
   runtime, finds a stand-in `claude` (`scripts/fake-claude.mjs`) first on its `PATH`, so code under
   test that runs the Claude program (§app.claude-code-provider/one-program) never reaches the

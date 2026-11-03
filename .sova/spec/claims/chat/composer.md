@@ -7,7 +7,8 @@ In Focus (§chat.transcript/focus-view) it is hidden but kept, draft and all.
 
 Owns: its markup, the textarea's keys and placeholder, sending, steering and stopping, drafts, the
 disabled reasons, the waiting badge and its dialog, the `plus` button (it opens the Commands palette, §app/command-palette), the
-flyout that holds the model, login and sandbox panels, the sandbox shield, the @ menu's folder read,
+flyout that holds the model, login and sandbox panels, the sandbox shield, the worktrees control and its modal
+(§chat.composer/worktrees-control), the @ menu's folder read,
 and what the foot shows from a switch's first frame. Not here: the mode menu (§chat/mode-menu), the
 model picker (§chat/model-menu), the slash menu (§chat/slash-commands), attaching images
 (§chat.images/composer-attachments), dictation (§chat/voice), staged alignment answers
@@ -33,6 +34,9 @@ pending attachments, then the input row (mic, `plus` trigger, textarea, Send, St
     <p class="run-status"><span class="live-dot" aria-hidden="true"></span><span class="run-status-state" title="Working · running bash"><span class="icon icon-sm run-status-narrow" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="run-status-say">Working<span class="run-status-detail">· running bash</span></span></span></p>
     <!-- and, with workers: the subagents trigger, button.run-status-link, its ring meter and count
          and no dot of its own (§app/subagents-pane) -->
+    <!-- and, when this chat tracks worktrees: the worktrees control, a branch icon, a state dot and
+         "2 ready" or "3 worktrees", just left of the "N inputs" trigger, in that trigger's quiet
+         link style; it opens the Worktrees modal (§chat.composer/worktrees-control) -->
     <!-- open alignments and option cards are not here: they are the waiting badge inside the
          message box, below (§chat.composer/waiting-badge) -->
 
@@ -703,3 +707,61 @@ Option cards come first, newest first; alignments in the order the chip's menu l
 with an open question first, each group the last touched first. While the dialog is open its
 counts and cards follow the chat; once nothing is left in it, it says "Nothing is waiting on you
 in this chat." with the close button.
+
+## §chat.composer/worktrees-control — The worktrees control and its modal
+
+When the chat tracks at least one worktree that isn't dropped (§chat/worktrees), the composer's
+run-status row has a **worktrees control** just left of the "N inputs" trigger, in the same quiet
+link style. It shows a branch icon, a dot and the one most useful fact with its count, the first
+that holds:
+- "1 needs you" / "{n} need you" (warn dot): behaviour differs, review flagged, can't tell whose failure or
+  drafts changed;
+- "1 needs a fix" / "{n} need a fix" (error dot);
+- "{n} ready" (success dot);
+- "1 checking";
+- "{n} queued";
+- "{n} worktrees" (no dot).
+
+A chat with no worktrees has no control. At a narrow width the control shows the number alone, and
+its words stay in its accessible name ("Worktrees: 2 ready · 1 queued"). It is a button with
+`aria-haspopup="dialog"` and `aria-expanded`. Enter or a click opens the modal, and Escape closes it
+and returns focus to the control (with the Land menu open, Escape closes the menu first).
+
+**The Worktrees modal** is titled "Worktrees", with the chat's title and a summary under it ("2 ready
+· 1 queued · 1 landed"). One line says what Land does: the branch is merged onto the target, checked
+there on its own, and lands as exactly the commit that was tested. While the queue is paused, a
+line says so with its why, and that Land still takes the approval. Then comes one row per worktree
+(dropped ones left out):
+- the branch, in mono;
+- its state, in the one vocabulary the pane and the Merge Queue view also use: **Ready** (with its
+  short commit) · **Uncommitted** ("{n} files not committed", and to commit it in its chat) · **No
+  commits yet** · **Queued · 2nd** (with "starts in ~N min · takes ~N min") · **Checking** ·
+  **Conflict** · **Behaviour differs** (the target's side, the branch's side and the proposal) ·
+  **Review flagged** (the review's text) · **Can't tell whose failure** (the check that failed on
+  the merge and on the target alone) · **Drafts changed** · **Needs a fix** (its reason, and
+  **See Why**) · **Landed** ("as {sha}", "· not pushed" when it wasn't, and every note, named by its
+  writer: "Merge thread: …", "You: …", "Flaky: …") · **Merged** · **Removed**;
+- on a live row (ready, uncommitted, in the queue or waiting), its commits ahead of the target's
+  head and lines added and removed: "3 commits · +40 −2"; landed, merged and removed rows show none;
+- "1 newer commit not included" when the branch moved past the approved commit;
+- its action, where one applies:
+  - **Land** on a Ready, Needs a fix or Drafts changed row, with a menu holding **Land Without
+    Review** (only when the project has a review kit) and **Land Without Its Specs…**, which asks
+    first: "Its spec drafts stay drafts in this worktree. Only the code lands.";
+  - **Set Up Queue** on a Ready row of a project whose queue isn't set up, which opens its Merge
+    Queue tab (§app.merge-queue/setup). A project whose definition doesn't parse keeps Land (never
+    Set Up Queue), and the row reads "This project's .sova/project.json doesn't parse: {path:
+    message}. Fix it on the target, or land a branch that fixes it; nothing else lands until it
+    parses.";
+  - **Cancel** on a queued row;
+  - **Accept** and **Send Back** on Behaviour differs;
+  - **Land Anyway** and **Send Back** on Review flagged and on Can't tell whose failure.
+
+The modal ends with **View Merge Queue**, which opens the project's Merge Queue view
+(§app.merge-queue/view), and **Close**.
+
+The actions are the merge verbs (§app.project-services/merge-verbs). Land sends the commit the row
+showed, so a branch that moved meanwhile lands what the user saw (§app.merge-queue/approve). After one, the row is read again
+at once and then follows the queue's feed. A refusal shows its reason under the row and leaves the
+row as it was. The modal, the control and the pane's Worktrees rows (§chat.worktrees/pane) read the
+same state, so they always agree. Nothing here shows live state or offers a restart.

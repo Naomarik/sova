@@ -75,6 +75,7 @@ import { sessionOfferTools } from "./session-offers-tool";
 import { offerNoteFor } from "./session-offers";
 import { sessionCardTools } from "./transcript-cards-tool";
 import { cardNoteFor } from "./transcript-cards";
+import { withMergeCardNote } from "./merge-queue/card-note";
 /** The powers host, loaded when first needed (session-profile-routes binds chat-manager at its import). */
 const powersHost = () => import("./session-profile-routes").then((m) => m.powersHost);
 
@@ -779,7 +780,7 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
     case "offers.note":
       return offerNoteFor(String(a.sessionId ?? ""));
     case "cards.note":
-      return cardNoteFor(String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null);
+      return withMergeCardNote(cardNoteFor(String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null), String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null);
     case "powers.sessions":
       return (await powersHost()).sessions();
     case "powers.session":

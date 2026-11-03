@@ -135,6 +135,36 @@
     ],
     "requires": []
   },
+  "§app.decisions/list-rows": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/session-feed.ts",
+      "server/ws.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "src/lib/list-rows.ts",
+      "src/lib/list-rows.test.ts",
+      "src/lib/session-feed.ts",
+      "src/lib/session-feed.browser.test.ts",
+      "src/lib/summary-diff.ts",
+      "src/lib/api.ts",
+      "src/App.tsx",
+      "server/session-feed-rows.test.ts",
+      "server/session-feed-rows.parity.test.ts",
+      "server/list-rows-merge.test.ts",
+      "server/session-list-consumers.parity.test.ts"
+    ],
+    "agreed": {
+      "by": "omar",
+      "at": "2026-11-02T12:59Z",
+      "source": "pi-session:01a18cb0-f0e4-7660-9a5a-04c677298d6a#b28c43e2"
+    },
+    "requires": [
+      "§app.session-list/listing-reuse"
+    ]
+  },
   "§app.decisions/merge-followup": {
     "kind": "behavior",
     "authority": "accepted",
@@ -145,17 +175,20 @@
       "server/merge-readiness.integration.test.ts",
       "server/decide.ts",
       "server/index.ts",
-      "server/app.ts"
+      "server/app.ts",
+      "server/merge-readiness.ts",
+      "server/harness/pi/golden/expected/synthetic/align-merge/readiness-scan.json"
     ],
     "requires": [
       "§app.decisions/interface",
       "§app.decisions/privacy",
-      "§chat.worktrees/merge-card"
+      "§chat.worktrees/merge-card",
+      "§chat.merge-queue/chat-card"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "user",
+      "at": "2026-11-02T22:41Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
     }
   },
   "§app.decisions/privacy": {
@@ -241,12 +274,13 @@
     ],
     "requires": [
       "§app.decisions/attention-signals",
-      "§app.decisions/session-tags"
+      "§app.decisions/session-tags",
+      "§app.decisions/list-rows"
     ],
     "agreed": {
       "by": "omar",
-      "at": "2026-10-27T08:48Z",
-      "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+      "at": "2026-11-02T10:50Z",
+      "source": "pi-session:01a18cb0-f0e4-7660-9a5a-04c677298d6a#b28c43e2"
     }
   },
   "§app.decisions/session-tags": {

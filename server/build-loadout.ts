@@ -451,6 +451,9 @@ export function registerBuildEffects(host: OrgHostApi, engine: string): void {
     const path = buildSessionPath(sessionId);
     const listed = path ? (await getSessionSummary(path).catch(() => null))?.title : undefined;
     const title = readSessionTitles()[sessionId] || titleOf(d) || (listed && listed !== "Untitled" ? listed : "") || row.worktree.branch;
+    // A target the project's merge queue manages takes branches only through the queue (Land), never a direct merge.
+    const target = row.worktree.target ?? "master";
+    if (await (await import("./merge-queue/wire")).queueManages(root, target)) throw new Error(`${target} takes branches only through the merge queue: Land the branch instead (nothing was merged).`);
     const m = await mergeBack(row.worktree, root, title);
     noteBuildMerged(sessionId, true);
     // Main moved: its copy's onMerge services reload now, never holding up the merge (§app.project-services/on-merge).

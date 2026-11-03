@@ -152,7 +152,11 @@
       "scripts/test-groups.mjs",
       "scripts/test-groups.d.mts",
       "server/test-groups.test.ts",
-      ".sova/playbooks/release/references/checks.md"
+      ".sova/playbooks/release/references/checks.md",
+      "scripts/test-report.mjs",
+      "scripts/test-env.mjs",
+      "server/test-env.test.ts",
+      "server/test-env.integration.test.ts"
     ],
     "requires": [
       "§app.server-runtime/choice",

@@ -87,9 +87,7 @@ export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): Worktr
       tone: l.specsWhy ? "warn" : "info",
       title: l.specsWhy
         ? `Its specs can't land: ${l.specsWhy}`
-        : l.docs?.changedSinceGoAhead?.length
-          ? `Its spec drafts changed since your Land It: ${l.docs.changedSinceGoAhead.join(", ")}.`
-          : `Finished, but its spec drafts don't fit yet: ${(l.docs?.problems ?? l.drafts ?? []).join("; ")}.`,
+        : `Finished, but its spec drafts don't fit yet: ${(l.docs?.problems ?? l.drafts ?? []).join("; ")}.`,
     };
   switch (r.state) {
     case "ready":

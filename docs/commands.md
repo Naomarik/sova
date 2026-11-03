@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 497 |
-| Routes a catalogue entry points at | 126 |
-| Catalogue entries | 157 |
+| Routes registered | 498 |
+| Routes a catalogue entry points at | 127 |
+| Catalogue entries | 171 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -29,8 +29,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Middleware and fallbacks | 2 |
 | Pending (not yet a command) | 304 |
 | Chat socket frame types | 12 |
-| Document/window keydown listeners | 8 |
-| Hand-written tool specs | 128 |
+| Document/window keydown listeners | 9 |
+| Hand-written tool specs | 127 |
 
 ## Catalogue entries
 
@@ -73,6 +73,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.offers.unsnooze` | Offer Again | changes | `POST /api/session-offers/unsnooze` | admin |
 | `session.card.post` | Raise Card | changes | `POST /api/session-cards/post` | admin |
 | `session.card.get` | Session Cards | looks | `GET /api/session-cards` | sessions |
+| `session.merge-cards` | Merge Queue Cards | looks | `GET /api/merge-queue/cards` | sessions |
 | `session.card.answer` | Answer Card | changes | `POST /api/session-cards/answer` | admin |
 | `project.verb.create` | Project create | changes | `POST /api/project-services/create` | admin |
 | `project.verb.up` | Project up | changes | `POST /api/project-services/up` | admin |
@@ -94,6 +95,19 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.verb.deploy.logs` | Project deploy.logs | looks | `POST /api/project-services/deploy.logs` | admin |
 | `project.verb.deploy.rollback` | Project deploy.rollback | changes | `POST /api/project-services/deploy.rollback` | admin |
 | `project.verb.deploy.request` | Project deploy.request | changes | `POST /api/project-services/deploy.request` | admin |
+| `project.verb.merge.status` | Project merge.status | looks | `POST /api/project-services/merge.status` | admin |
+| `project.verb.merge.logs` | Project merge.logs | looks | `POST /api/project-services/merge.logs` | admin |
+| `project.verb.merge.add` | Project merge.add | changes | `POST /api/project-services/merge.add` | admin |
+| `project.verb.merge.cancel` | Project merge.cancel | changes | `POST /api/project-services/merge.cancel` | admin |
+| `project.verb.merge.pause` | Project merge.pause | changes | `POST /api/project-services/merge.pause` | admin |
+| `project.verb.merge.resume` | Project merge.resume | changes | `POST /api/project-services/merge.resume` | admin |
+| `project.verb.merge.note` | Project merge.note | changes | `POST /api/project-services/merge.note` | admin |
+| `project.verb.merge.extend` | Project merge.extend | changes | `POST /api/project-services/merge.extend` | admin |
+| `project.verb.merge.resolve` | Project merge.resolve | changes | `POST /api/project-services/merge.resolve` | admin |
+| `project.verb.merge.answer` | Project merge.answer | changes | `POST /api/project-services/merge.answer` | admin |
+| `project.verb.merge.review` | Project merge.review | changes | `POST /api/project-services/merge.review` | admin |
+| `project.verb.merge.retry` | Project merge.retry | changes | `POST /api/project-services/merge.retry` | admin |
+| `project.verb.merge.setup` | Project merge.setup | changes | `POST /api/project-services/merge.setup` | admin |
 | `project.services.view` | Show Project Services | looks | `GET /api/projects/:pid/services` | sessions |
 | `project.overseer.idea.list` | List Project Ideas | looks | `GET /api/projects/:pid/overseer/ideas` | sessions |
 | `project.overseer.idea.get` | Show Project Idea | looks | `GET /api/projects/:pid/overseer/idea` | sessions |
@@ -668,6 +682,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `GET /api/insights/usage` | sessions | `insights.usage` |
 | `GET /api/insights/usage/history` | sessions | `insights.usage.history` |
 | `GET /api/insights/worktrees` | sessions | `insights.worktrees` |
+| `GET /api/merge-queue/cards` | sessions | `session.merge-cards` |
 | `GET /api/mode` | sessions | `session.mode.get` |
 | `POST /api/mode` | sessions | `session.mode.set` |
 | `POST /api/mode/command` | full | `chat.mode-command` |
@@ -692,7 +707,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `DELETE /api/overseer/todos/done` | admin | `overseer.todo.clear-done` |
 | `PUT /api/overseer/todos/order` | admin | `overseer.todo.reorder` |
 | `POST /api/previews/:id/off` | admin | `project.preview.off` |
-| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
+| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.cancel`, `project.verb.merge.extend`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.resolve`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
 | `GET /api/projects` | sessions | `project.list` |
 | `POST /api/projects` | admin | `project.create` |
 | `GET /api/projects/:pid` | sessions | `project.get` |
@@ -799,6 +814,7 @@ The `type` of every `ChatClientMessage` (`shared/protocol.ts`), the frames a pag
 | `src/components/InsightStrip.tsx` | document |
 | `src/components/Sidebar.tsx` | global |
 | `src/components/VoiceInput.tsx` | window |
+| `src/components/WorktreesModal.tsx` | document |
 | `src/vis/kinds/frame/srcdoc.ts` | global |
 
 ## Hand-written tool specs
@@ -828,7 +844,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/overseer-org-part.ts` | 10 | `sova_decisions`, `sova_roster`, `sova_start_gathering`, `sova_offer`, `sova_close_gathering`, `sova_owner_update`, `sova_send_to_person`, `sova_send_status`, `sova_reconcile`, `sova_promote` |
 | `server/overseer-org-tools.ts` | 10 | `sova_orgs`, `sova_org_person`, `sova_projects`, `sova_org_project`, `sova_org`, `sova_roster`, `sova_owner`, `sova_project_decisions`, `sova_gather`, `sova_project_overseer` |
 | `server/overseer-todo-tools.ts` | 2 | `sova_todos`, `sova_todo` |
-| `server/overseer-tools.ts` | 24 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_land`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
+| `server/overseer-tools.ts` | 23 | `sova_attention`, `sova_list_sessions`, `sova_outstanding`, `sova_search_sessions`, `sova_session`, `sova_public_links`, `sova_alignment`, `sova_read_session`, `sova_list_groups`, `sova_list_targets`, `sova_list_models`, `sova_list_subagent_profiles`, `sova_list_folders`, `sova_create_session`, `sova_send`, `sova_set_session`, `sova_archive`, `sova_group`, `sova_answer_dialog`, `sova_navigate`, `sova_note`, `sova_org_history`, `<computed: SPEC_LOOKUP_TOOL>` |
 | `server/overseer-whatsapp.ts` | 1 | `sova_whatsapp` |
 | `server/playbook-tools.ts` | 1 | `<computed: PLAYBOOK_READ_TOOL>` |
 | `server/project-assistant-tools.ts` | 7 | `report_issue`, `start_fix`, `deploy`, `owner_versions`, `start_version`, `start_feature_chat`, `requirement_agree` |

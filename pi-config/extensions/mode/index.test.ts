@@ -581,7 +581,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never counts/);
 	assert.match(spec, /wherever you put the claim\. Read it with `read`;/, "a foreign § is read alone, not with its chain");
 	// Agreed decisions: one pointer to the shortcut, whose rules PROMOTE.md says once; the Agree step itself rides the align result.
-	assert.match(spec, /`agree <name> --id '<§id>' --by <who> --verification <text> --write` is only for a decision the user made in this chat: it stamps `agreed` with where the go-ahead is \(`\$SPEC_AGREE_SOURCE` if set, no `--source`; else `--source <ref>`, never a description; else report it ready, never stamp\); Land It is never agreement\./);
+	assert.match(spec, /`agree <name> --id '<§id>' --by <who> --verification <text> --write` is only for a decision the user made in this chat: it stamps `agreed` with where the go-ahead is \(`\$SPEC_AGREE_SOURCE` if set, no `--source`; else `--source <ref>`, never a description; else report it ready, never stamp\); a Land is never agreement\./);
 	assert.ok(!spec.includes("Agree step"), "the Agree step is the align result's, never the guide's");
 	// The short part: finding your way, and nothing of the writing steps.
 	assert.match(short, /Finding your way:\n1\. Search with `where` and 3–5 of the task's words, never one \(`where password reset email expiry`\), or a path or name; if no hit fits, try other words once, then `map`\.\n2\. `read` what fits/);

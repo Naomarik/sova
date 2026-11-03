@@ -124,6 +124,59 @@ test("with the sandbox on, create and attach ask first; declined or unanswerable
 	}
 });
 
+test("under Sova, worktree merge into the branch others land into is refused (the merge queue lands it); into another branch it merges", async () => {
+	const r = repo();
+	try {
+		const f = fakePi();
+		worktrees(f.pi, { mergeQueue: true });
+		const c = f.ctx(r.main);
+		await f.fire("session_start", c);
+		await f.call(c, { action: "create", name: "q" });
+		const t = join(r.root, ".worktrees", "repo-q");
+		writeFileSync(join(t, "q.txt"), "q\n");
+		sh(t, "add", "q.txt");
+		sh(t, "commit", "-q", "-m", "q");
+		const before = sh(r.main, "rev-parse", "master");
+		await assert.rejects(f.call(c, { action: "merge", path: t }), /master is the branch others land into: branches reach it only through Sova's merge queue/);
+		await assert.rejects(f.call(c, { action: "merge", path: t, target: "master" }), /only through Sova's merge queue/);
+		assert.equal(sh(r.main, "rev-parse", "master"), before);
+		assert.equal(f.messages.length, 0);
+		sh(r.main, "branch", "side");
+		const out = await f.call(c, { action: "merge", path: t, target: "side" });
+		assert.match(out.content[0].text, /^Merged feat\/q into side/);
+	} finally {
+		r.done();
+	}
+});
+
+test("under Sova, merge into the merge queue's declared target (merge.target, not master) is refused too; with no declaration it merges", async () => {
+	const r = repo();
+	try {
+		sh(r.main, "branch", "release");
+		sh(r.main, "branch", "other");
+		mkdirSync(join(r.main, ".sova"));
+		writeFileSync(join(r.main, ".sova", "project.json"), JSON.stringify({ version: 1, merge: { target: "release", checks: "none" } }));
+		sh(r.main, "add", ".sova/project.json");
+		sh(r.main, "commit", "-q", "-m", "declare release");
+		const f = fakePi();
+		worktrees(f.pi, { mergeQueue: true });
+		const c = f.ctx(r.main);
+		await f.fire("session_start", c);
+		await f.call(c, { action: "create", name: "d" });
+		const t = join(r.root, ".worktrees", "repo-d");
+		writeFileSync(join(t, "d.txt"), "d\n");
+		sh(t, "add", "d.txt");
+		sh(t, "commit", "-q", "-m", "d");
+		const before = sh(r.main, "rev-parse", "release");
+		await assert.rejects(f.call(c, { action: "merge", path: t, target: "release" }), /release is the branch others land into: branches reach it only through Sova's merge queue/);
+		assert.equal(sh(r.main, "rev-parse", "release"), before, "nothing merged");
+		const out = await f.call(c, { action: "merge", path: t, target: "other" });
+		assert.match(out.content[0].text, /^Merged feat\/d into other/);
+	} finally {
+		r.done();
+	}
+});
+
 test("worktree merge records the merge and sends the card; a plain-git merge in a turn is detected after it", async () => {
 	const r = repo();
 	try {
@@ -289,7 +342,7 @@ test("in a spec project the warnings are said once: a tool merge's answer (its c
 	}
 });
 
-test("no merge guard: a session that isn't the captain merges into master with no recorded go-ahead, even where the offers file still names mainMerges", async () => {
+test("outside Sova's merge queue, merge brings a branch into master at once, with no go-ahead recorded; a retired mainMerges switch left in the repo changes nothing", async () => {
 	const r = repo();
 	try {
 		// The retired switch, as master may still hold it: it does nothing.
@@ -344,7 +397,8 @@ test("land records the user's go-ahead typed in this chat for the branch at its 
 		assert.deepEqual(recorded(), []);
 		rmSync(join(tree, "c.txt"));
 		const out = await f.call(c, { action: "land" });
-		assert.match(out.content[0].text, /Recorded the user's go-ahead to land feat\/x at [0-9a-f]{7}\. The merge captain checks it and lands it once its checks pass/);
+		assert.match(out.content[0].text, /Queued feat\/x at [0-9a-f]{7} to land\. Sova's merge queue merges it onto the newest master in its own copy/);
+		assert.doesNotMatch(out.content[0].text, /captain|landing card/i);
 		assert.doesNotMatch(out.content[0].text, /press|Land It/);
 		assert.deepEqual(recorded(), [{ branch: "feat/x", commit: head, session: "s1", at: "2026-10-26T10:00:00.000Z", by: "owner-chat" }]);
 		// Without its specs, as the user said; by its branch name once tracked.
@@ -352,6 +406,11 @@ test("land records the user's go-ahead typed in this chat for the branch at its 
 		say("ok, merge it without its specs");
 		await f.call(c, { action: "land", path: "feat/x" });
 		assert.equal(recorded().at(-1).withoutSpecs, true);
+		// "skip review": the queue lands it without its review step.
+		say("land it, skip review");
+		const skipped = await f.call(c, { action: "land", path: "feat/x" });
+		assert.equal(recorded().at(-1).withoutReview, true);
+		assert.match(skipped.content[0].text, /to land, without review\./);
 		// The branch everything lands into has nothing to land.
 		say("land it");
 		await assert.rejects(f.call(f.ctx(r.main), { action: "land" }), /on master, which branches land into/);

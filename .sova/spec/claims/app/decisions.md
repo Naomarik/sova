@@ -324,11 +324,15 @@ appends (one line each).
   in or leaves the list, or a row's live record, running state, last activity, archived flag or
   title changes (a stored title changes in Sova's title store, never in the file: the Overseer's
   rename, the automatic namer's, §app.session-list/auto-titles), or its merge readiness changes
-  (read from git in the background, §chat.worktrees/readiness), or the group it is in changes. The sidebar then reads the list again: at once if its last such read was at least a
-  second ago, otherwise once, a second after that read, however many more arrive meanwhile. It
-  also reads the list after every reconnect of the feed, since the list may have changed while
-  the socket was down. The feed adds no polling of its own. The in-flight count adds none in the
-  browser either: on the server, while any feed (or a peer's count feed) is connected, one 5 s
+  (read from git in the background, §chat.worktrees/readiness), or the group it is in changes.
+  A socket that gets it reads the list again: at once if its last such read was at least a second
+  ago, otherwise once, a second after that read, however many more arrive meanwhile. It also
+  reads the list after every reconnect of the feed, since the list may have changed while the
+  socket was down. Every socket that doesn't ask for changed rows gets this, exactly as before: a
+  window from before them, a peer's feed opened through this server, anything else.
+- A window that asks for them gets the changed rows themselves in place of `list_changed`, and
+  reads the whole list again only when it can't follow them (§app.decisions/list-rows).
+- The feed adds no polling of its own. The in-flight count adds none in the browser either: on the server, while any feed (or a peer's count feed) is connected, one 5 s
   timer re-judges the live records it already holds (a stale heartbeat, a dead pid) and re-reads
   the live-record folder every 30 s, or every 5 s where the folder can't be watched; it never
   reads the list. So a session started in a TUI reaches
@@ -345,6 +349,46 @@ appends (one line each).
   every 5 s while a row is busy runs only then, since an open feed says when a row changes; after the socket stops
   retrying, it tries again when the window regains focus.
 - The feed never writes and ignores anything the client sends.
+
+## §app.decisions/list-rows — Changed rows, not the whole list
+
+The session feed (§app.decisions/push) can send a window the rows that changed instead of asking
+it to read the whole list on each change.
+
+- While the feed runs, the server numbers the list it compares: an `epoch` (a random id, new each time the feed starts after no one listened) and a
+  `version` that moves by one with each comparison in which any row appeared, changed or left. A
+  window opens the feed with `rows=1` (`/ws/watch?feed=sessions&rows=1`). That socket's first frame
+  is `rows_hello` (`epoch`, `version`); from then on, in place of `list_changed`, each comparison
+  that moves the version sends it one `rows` frame: `epoch`, `from` and `to` (the version before
+  and after), `upsert` (the full summary of every row that appeared or changed, as the list gives
+  it) and `remove` (the path of every row that left). A row counts as changed when any field the
+  sidebar compares differs (its last-seen stamp aside), so such a window also gets a row whose
+  outline, context, model or marks changed, which `list_changed` never told of. A change of more
+  than 200 rows or 256 KB goes to that socket as `list_changed` instead. A row reaches the window
+  as soon as the comparison that sees it runs, so no later than `list_changed` would have.
+- `GET /api/sessions` answers exactly as before (the same array, every session, built as
+  §app.session-list/listing-reuse says), with the header `X-Sova-List-Version: <epoch>:<version>`:
+  its read waits for a comparison in progress, never runs beside one, and the header names the last
+  comparison finished before the read began. (A read while no window listens names the feed's last
+  run; a window that then opens the feed gets a new epoch and reads again.) The window keeps the version of its copy. It
+  holds `rows` frames that arrive before its read answers, then applies, in order, each one whose
+  `from` is its version: changed rows replace theirs, removed rows go, rows it didn't touch stay
+  the same objects, and the list keeps its order (last activity, then path, as a full read gives it). A row it applies looks exactly
+  as it would after a full read.
+- **Safety net.** A window reads the whole list again, as before, whenever its copy may be
+  wrong: a frame whose `from` isn't its version (one was missed), a frame from another epoch, a
+  `rows_hello` on a reconnect that names another epoch or version than its copy's (the list moved
+  while the socket was down, or the feed started again), a `rows` or `rows_check` frame before any
+  `rows_hello` (taken as the hello: the window follows from its next read), a list read with no
+  version header or from another epoch than the socket's (read again up to 3 times, then the
+  window takes `list_changed` as an older one does), a `list_changed`, and a failed check. A socket
+  whose first frame is anything else (an older server, or a peer running one) is read as an older
+  window's, with `list_changed`. With each once-a-minute safety-net comparison the server
+  sends every window that asked for rows `rows_check` (`epoch`, `version`, `digest`: a hash of every row's path
+  and compared fields, in no order); a window whose version differs, or whose own rows hash
+  differently, reads the list again. So a lost frame leaves the list stale for at most about a
+  minute. Every full read is paced like `list_changed`'s: at once if the last one was at least a
+  second ago, otherwise once, a second after it, however many more are asked for meanwhile.
 
 ## §app.decisions/align-triage — Triage on an alignment card
 
@@ -392,19 +436,21 @@ appends (one line each).
 ## §app.decisions/merge-followup — One follow-up check per merge
 
 - **What it asks.** Once per merge card (§chat.worktrees/merge-card), on the first reply that ends
-  a turn after the card: `follow_up`, a boolean — does the reply name work still to be done beyond
+  a turn after the card, and once per branch's queue card that lands, on the chat's last reply
+  that ended a turn before that branch's approval (a landing starts no turn, §chat.merge-queue/chat-turns): `follow_up`, a boolean — does the reply name work still to be done beyond
   a restart, push or cleanup (open gaps, a known regression, "I'd fix it separately", unverified
   parts)? — and `follow_up_weight`, a score over none / small / significant.
-- **The excerpt**: the branch, target, commits and lines of the card, the reply's last 1,500
+- **The excerpt**: the branch, target, commits and lines of the card (for a queue landing, of its
+  Landed queue card, §chat.merge-queue/chat-card), the reply's last 1,500
   characters with its closing spec lines cut (`Also changes:`, `Also updates`, `Deferred:`,
   `Plumbing:`, `Spec check override:`), its `Deferred:` line apart when it has one, and the
   mechanical follow-ups (§chat.worktrees/readiness) as facts so they are not judged again.
   Redacted before it leaves.
 - **When and which.** Only with **attention signals on** and through the same privacy gate
-  (§app.decisions/privacy), for the sessions readiness covers, never for a merge captain's
-  session (its reply after a merge is a round report about other branches) or an Overseer's, and only for a reply from the last
+  (§app.decisions/privacy), for the sessions readiness covers, never for a merge thread
+  (§chat.merge-queue/thread, whose replies are about other branches) or an Overseer's, and only for a reply from the last
   24 hours: switching the feature on never checks old merges. A merge is checked at most once; a
-  failed check is retried after 5 minutes, at most 3 times. The answer is stored per merge card in
+  failed check is retried after 5 minutes, at most 3 times. The answer is stored per merge card or queue landing in
   `<stateRoot>/merge-followups.json`, kept only while its session is listed.
 - **Reading it.** Follow-up work when `follow_up` P ≥ 0.5 and the weight's score is 0.5 or more:
   significant at 1.5 or more with confidence ≥ 0.5, else small. The cue shown is the reply's own

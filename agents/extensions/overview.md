@@ -105,7 +105,7 @@ Extensions with no guide, and the contract Sova parses where there is one:
 - `install.sh` behavior: `pi-config/README.md` "Install", and `install.test.mjs`.
 - An import Sova adds or drops: the extension's guide here, and its README where it names Sova's import.
 - A contract Sova parses: the extension's README, its guide here, and the Sova reader in the same branch.
-- Landing (the merge round's `check`) runs the typecheck, `pnpm test`, `pnpm test:int`, the build, and, for each
+- Landing (the merge queue's checks, `.sova/project.json` `merge`) runs the typecheck, `pnpm test`, `pnpm test:int`, the build, and, for each
   extension the branch changed, that extension's line in `pi-config/README.md` "Tests" (the line starting
   `cd extensions/<name> && `, split on ` && ` and run without a shell). So that line is a contract: one per
   extension, plain commands only. A branch that changes `pi-config/` outside `*.md` and tests needs the live

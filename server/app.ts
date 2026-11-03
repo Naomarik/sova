@@ -29,6 +29,7 @@ import { registerTranscriptCardRoutes } from "./transcript-cards-routes";
 import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
+import { registerMergeCardRoutes } from "./merge-queue/routes";
 import { registerServicesViewRoutes } from "./project-services/view-routes";
 import { serverStart } from "./project-services/self-host";
 import { registerDecisionRoutes } from "./decisions-routes";
@@ -60,6 +61,8 @@ import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { getAgentsInsight, getHiddenWorkers, getMemberInbox, getSessionInsight, setInsightLinks, getUsageHistory, getUsageInsight, getUsageStrip, refreshUsageInsight } from "./insights";
 import { registerUsageRoutes } from "./usage-routes";
+import { sessionFeed } from "./session-feed";
+import { LIST_VERSION_HEADER } from "../src/lib/summary-diff";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { rowsOf } from "./transcript";
@@ -271,7 +274,15 @@ export function buildApp(deps: AppDeps) {
   // Updates: what runs, the daily check, and the operator's upgrade.
   registerUpdatesRoutes(app);
 
-  app.get("/api/sessions", async (c) => c.json(await listSessions()));
+  // The body is the list as it always was; with the session feed running, read in turn with its
+  // re-diffs and named by the version it is at, so a tab can apply the feed's `rows` frames from it.
+  app.get("/api/sessions", async (c) => {
+    const feed = sessionFeed();
+    if (!feed) return c.json(await listSessions());
+    const { body, epoch, version } = await feed.snapshot(listSessions);
+    c.header(LIST_VERSION_HEADER, `${epoch}:${version}`);
+    return c.json(body);
+  });
   registerProfileRoutes(app);
 
   /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
@@ -412,6 +423,8 @@ export function buildApp(deps: AppDeps) {
   registerProjectRoutes(app);
   // Project services: the verbs over a project's .sova/project.json (server/project-services/; §app/project-services).
   registerProjectServiceRoutes(app);
+  // A chat's merge queue cards (server/merge-queue/cards.ts).
+  registerMergeCardRoutes(app);
   registerServicesViewRoutes(app);
   // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
   registerDecisionRoutes(app);

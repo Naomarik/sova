@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,12 +9,10 @@ import { parseWakeNudge } from "../shared/wake";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
 import { canonical, normalizeMergeDetails, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
-import { goAheadFor, LANDING_FILE_NAME } from "../pi-config/extensions/worktrees/landing.ts";
 import { stateRoot } from "./state-root";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
-import { isCaptain } from "./merge-board";
-import { type DraftsHash, draftsChanged, draftsHash, unofficialDrafts } from "./spec-drafts-state";
+import { type DraftsHash, draftsHash, unofficialDrafts } from "./spec-drafts-state";
 import { blockedNoteText, type DocsPreview, docsNudgeText, type Finished, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, type LandingDocs, landingLive, landingOf, landingReason, type LandingStore, specsWhyOf } from "./ready-to-land";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
@@ -304,6 +302,33 @@ export interface FileFacts {
   lastCheck?: { at: number; ok: boolean };
   /** The branch's last word is this reply (no user prompt after it). */
   lastReply?: { id: string; at: number; text: string };
+  /** The newest replies that ended a turn, oldest first (at most REPLIES_KEPT): a queue landing's follow-up check
+      reads the one before its Land. */
+  replies?: { id: string; at: number; text: string }[];
+}
+
+/** Replies kept per branch for the queue landings' follow-up check. */
+export const REPLIES_KEPT = 30;
+
+/** A branch the merge queue landed for a chat (its Landed card), as the follow-up check reads it. */
+export interface QueueLandingFacts {
+  /** The card's id: the follow-up record's key is `mq:<id>`. */
+  id: string;
+  /** When it landed and when the user approved it (Land, or a typed "land it"), ms. */
+  at: number;
+  approvedAt: number;
+  branch: string;
+  target: string;
+  commits: number;
+  added: number;
+  removed: number;
+}
+
+/** The chat's last reply that ended a turn at or before `t` (a queue landing reads the one before its Land). */
+export function replyBefore(replies: readonly { id: string; at: number; text: string }[] | undefined, t: number): { id: string; at: number; text: string } | undefined {
+  let out: { id: string; at: number; text: string } | undefined;
+  for (const r of replies ?? []) if (r.at <= t) out = r;
+  return out;
 }
 
 /** One session entry, only as far as readiness needs it. */
@@ -393,17 +418,20 @@ export function factsOf(branch: readonly ScanEntry[]): FileFacts {
   const merges: MergeCard[] = [];
   let lastCheck: FileFacts["lastCheck"];
   let lastReply: FileFacts["lastReply"];
+  const replies: NonNullable<FileFacts["replies"]> = [];
   for (const e of branch) {
     if (e.merge && e.id) merges.push({ ...e.merge, id: e.id, at: e.at ?? 0 });
     if (e.reply?.stop && e.id) {
       const reply = { id: e.id, at: e.at ?? 0, text: e.reply.text };
       lastReply = reply;
+      replies.push(reply);
+      if (replies.length > REPLIES_KEPT) replies.shift();
       for (const c of merges) c.reply ??= reply;
     }
     if (e.userPrompt) lastReply = undefined;
     if (e.check) lastCheck = { at: e.at ?? 0, ok: e.check.ok };
   }
-  return { trees: set?.trees ?? [], merges, ...(lastCheck ? { lastCheck } : {}), ...(lastReply ? { lastReply } : {}) };
+  return { trees: set?.trees ?? [], merges, ...(lastCheck ? { lastCheck } : {}), ...(lastReply ? { lastReply } : {}), ...(replies.length ? { replies } : {}) };
 }
 
 /** How far a file's read got (the marker search, then its compact entries). */
@@ -496,20 +524,36 @@ export interface ReadinessDeps {
   finished: (sessionId: string, cwd: string, lastReplyId: string | undefined) => Finished;
   /** The spec drafts a tree holds not promoted, by name. */
   drafts: (dir: string) => string[] | undefined;
-  /** The drafts' hash as a Land It sees them (spec-drafts-state draftsHash). */
+  /** The drafts' hash (spec-drafts-state draftsHash): Sova's try of the drafts runs once per head and hash. */
   draftsHash?: (dir: string) => DraftsHash | undefined;
   /** Sova's try of a tree's drafts at a head and drafts hash, the way the landing will (§chat.worktrees/ready-to-land):
       the answer once known, else "pending" (it is started, and `done` runs when it has answered). */
   docsPreview?: (dir: string, head: string, hash: string, done: () => void) => DocsPreview | "pending";
-  /** The user's Land It at exactly this branch and commit, with the drafts it was pressed for (landing.json). */
-  goAheadAt?: (branch: string, commit: string) => { drafts?: { hash: string; names: string[]; each?: Record<string, string> } } | undefined;
   /** The heads kept Ready to land. */
   landing: LandingStore;
   /** Sova's message to a session (the specs nudge); absent: never sent. */
   nudge?: (sessionPath: string, text: string) => Promise<void>;
-  /** Whether a tree's project offers a landing card at all: its offers file has an enabled offer shown only
-      when Ready to land (§chat.worktrees/ready-to-land, what still blocks the card). */
+  /** The branches the merge queue landed for a chat (its Landed cards), by session id. */
+  queueLandings?: (sessionId: string) => QueueLandingFacts[];
+  /** Whether a tree's project lands through the merge queue: its `.sova/project.json` declares a `merge` section
+      (§chat.worktrees/ready-to-land, what still blocks the landing). */
   landingOffered?: (dir: string) => Promise<boolean>;
+}
+
+let wireMod: typeof import("./merge-queue/wire") | null = null;
+let wireAsked = false;
+/** The queue's Landed cards of a chat, as the follow-up check reads them; [] until the queue's module is loaded. */
+function queueLandingsHere(sessionId: string): QueueLandingFacts[] {
+  if (!wireMod && !wireAsked) {
+    wireAsked = true;
+    void import("./merge-queue/wire").then((m) => (wireMod = m)).catch(() => {});
+  }
+  return (wireMod?.mergeCardsOf(sessionId) ?? []).flatMap((c) => {
+    if (!c.landed) return [];
+    const approved = [...c.revisions].reverse().find((r) => r.kind === "approved");
+    const at = Date.parse(c.landed.at) || 0;
+    return [{ id: c.id, at, approvedAt: approved ? Date.parse(approved.at) || at : at, branch: c.branch, target: c.target, commits: c.stats?.commits ?? 0, added: c.stats?.added ?? 0, removed: c.stats?.removed ?? 0 }];
+  });
 }
 
 const defaultDeps = (): ReadinessDeps => ({
@@ -526,22 +570,32 @@ const defaultDeps = (): ReadinessDeps => ({
   drafts: (dir) => unofficialDrafts(dir),
   draftsHash,
   docsPreview: previewDocs,
-  goAheadAt: (branch, commit) => goAheadOf(branch, commit),
   landing: fileLandingStore(),
-  nudge: async (path, text) => (await import("./session-offers")).sendToSession(path, text),
+  // A marked wake, as the merge queue's own (server/merge-queue/wake.ts): never read as the user's word.
+  nudge: async (path, text) => (await import("./merge-queue/wake")).sendQueueWake(path, text),
+  queueLandings: (sessionId) => queueLandingsHere(sessionId),
   landingOffered: async (dir) => {
     const { projectRootOf } = await import("./project-root");
-    const { readOffersFile } = await import("./session-offers");
     const root = await projectRootOf(dir).catch(() => null);
-    const file = root ? readOffersFile(root) : null;
-    return file?.state === "ok" && file.offers.some((o) => o.ok && !o.def.disabled && o.def.onlyIf.includes("ready-to-land"));
+    if (!root) return false;
+    try {
+      const def = JSON.parse(readFileSync(join(root, ".sova", "project.json"), "utf8")) as { merge?: unknown };
+      return !!def && typeof def.merge === "object" && def.merge !== null;
+    } catch {
+      return false;
+    }
   },
 });
 
-/** Per session file, what blocks each finished tree's landing card, from the last published reading (nudgeSpecs). */
+/** Per session file, what blocks each finished tree's landing, from the last published reading (nudgeSpecs). */
 const blockedBySession = new Map<string, { path: string; branch: string; commit: string; blockers: LandingBlocker[] }[]>();
 
 let deps: ReadinessDeps = defaultDeps();
+
+/** The chats the merge queue starts itself (its merge thread and its review step) run as these profiles: they
+    never own a branch, and their replies after a merge are about the queue's branches. */
+export const MERGE_QUEUE_PROFILES: readonly string[] = ["merge-thread", "merge-reviewer"];
+const isMergeThread = (s: SessionSummary) => !!s.profile && MERGE_QUEUE_PROFILES.includes(s.profile.id);
 
 /** index.ts wires the follow-up check and the privacy gate's terminal test; tests swap git. */
 export function configureReadiness(over: Partial<ReadinessDeps>): void {
@@ -614,7 +668,7 @@ async function treeFacts(t: TrackedWorktree, dirs: readonly string[]): Promise<T
   };
 }
 
-/** Another session's file records this tree merged: the Merge Captain's own record of the merge it
+/** Another session's file records this tree merged: that session's own record of the merge it
     made, which outlives the `git branch -d` of its clean-up (as far as readiness has read it). */
 function mergedElsewhere(t: TrackedWorktree): boolean {
   for (const c of cache.values()) if (c.facts?.trees.some((o) => o.status === "merged" && o.path === t.path && o.branch === t.branch)) return true;
@@ -643,8 +697,8 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
   }
   const sf: SessionFacts = { running, openQuestions: s.align?.openQuestions ?? 0, asks, ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}) };
   for (const t of own) deps.insights.dirtyLifetime?.(t.path, dirtyTtlFor(s, t.path, fresh));
-  // Ready to land (§chat.worktrees/ready-to-land): never for the merge captain's own trees, which it only checks.
-  const landingOn = !isCaptain(s);
+  // Ready to land (§chat.worktrees/ready-to-land): never for the merge thread's own trees (a conflict's side worktree).
+  const landingOn = !isMergeThread(s);
   const finished = landingOn ? deps.finished(s.id, s.cwd, reply?.id) : "no";
   const specsWhy = specsWhyOf(reply?.text);
   const writes = publishChecks();
@@ -667,9 +721,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
       if (drafts?.length && tf.head && landingLive(tf, r.state)) {
         const hashed = deps.draftsHash?.(t.path);
         const preview = deps.docsPreview ? deps.docsPreview(t.path, tf.head, hashed?.hash ?? "", () => requeue(s.path)) : ({ drafts, added: [], changed: [], problems: [] } as DocsPreview);
-        const pressed = deps.goAheadAt?.(tf.branch, tf.head)?.drafts;
-        const changedSinceGoAhead = pressed ? draftsChanged(pressed, hashed) : [];
-        docs = { drafts, preview, ...(changedSinceGoAhead.length ? { changedSinceGoAhead } : {}) };
+        docs = { drafts, preview };
       }
       landing = landingOf(tf, r.state, finished, heldHere, docs, specsWhy);
       // Finished but not Ready to land: what the session can fix, for Sova's once-per-commit note.
@@ -707,7 +759,9 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
     pushed = await mergePushed(newest, cwd).catch(() => undefined);
     pushPending = pushed === false;
   }
-  const followUp = newest ? followUpFor(s.id, newest.id) : undefined;
+  // The newest merge, a card of the chat's own or a branch the queue landed for it: its follow-up check's answer.
+  const queued = (deps.queueLandings?.(s.id) ?? []).at(-1);
+  const followUp = queued && (!newest || queued.at > newest.at) ? followUpFor(s.id, `mq:${queued.id}`) : newest ? followUpFor(s.id, newest.id) : undefined;
   const lastReplyAt = reply?.at ?? (Date.parse(s.lastActiveAt) || 0);
   if (publishChecks()) {
     checksBySession.set(s.path, { ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}), heads });
@@ -728,7 +782,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
 }
 
 /** Ask the follow-up check for every merge card with a reply it hasn't answered. */
-async function checkFollowUps(s: SessionSummary, facts: FileFacts, r: SessionReadiness | undefined): Promise<boolean> {
+export async function checkFollowUps(s: SessionSummary, facts: FileFacts, r: SessionReadiness | undefined): Promise<boolean> {
   const f = deps.followUps;
   if (!f) return false;
   let stored = false;
@@ -742,8 +796,25 @@ async function checkFollowUps(s: SessionSummary, facts: FileFacts, r: SessionRea
       card: { branch: c.branch, target: c.target, commits: c.commits, added: c.added, removed: c.removed },
       reply: c.reply,
       routine: { restart_pending: !!r?.restartPending, push_pending: !!r?.pushPending, cleanup: r?.cleanup ?? 0 },
-      // A merge captain's reply after a merge is a round report about other branches; an Overseer's isn't the work's.
-      ...(isCaptain(s) ? { skip: "captain" as const } : s.overseer || s.projectOverseer ? { skip: "overseer" as const } : {}),
+      // The merge thread's reply after a merge is about the queue's branches; an Overseer's isn't the work's.
+      ...(isMergeThread(s) ? { skip: "merge-thread" as const } : s.overseer || s.projectOverseer ? { skip: "overseer" as const } : {}),
+    };
+    if (f.skipReason(input) !== null) continue;
+    if (await f.check(input)) stored = true;
+  }
+  // A branch the merge queue landed: the reply the chat ended on before the user pressed Land (or typed "land it").
+  for (const q of deps.queueLandings?.(s.id) ?? []) {
+    const reply = replyBefore(facts.replies, q.approvedAt);
+    if (!reply) continue;
+    const input: FollowUpInput = {
+      sessionId: s.id,
+      cardId: `mq:${q.id}`,
+      cwd: s.cwd,
+      terminal: deps.terminal?.(s) ?? !!s.live,
+      card: { branch: q.branch, target: q.target, commits: q.commits, added: q.added, removed: q.removed },
+      reply,
+      routine: { restart_pending: !!r?.restartPending, push_pending: !!r?.pushPending, cleanup: r?.cleanup ?? 0 },
+      ...(isMergeThread(s) ? { skip: "merge-thread" as const } : s.overseer || s.projectOverseer ? { skip: "overseer" as const } : {}),
     };
     if (f.skipReason(input) !== null) continue;
     if (await f.check(input)) stored = true;
@@ -916,19 +987,18 @@ export function checkReadinessInputs(): number {
 }
 
 /** Once per head commit, tell a session whose finished branch's drafts wouldn't land with it what doesn't fit
-    (§chat.worktrees/ready-to-land): never the user, never again for that commit. Drafts changed since the user's
-    Land It are the user's to answer again, on a new Landing card: nothing is sent for them. */
+    (§chat.worktrees/ready-to-land): never the user, never again for that commit. */
 function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
   const send = deps.nudge;
   if (!send || s.archived || s.live) return;
   for (const t of value.trees) {
     const l = t.landing;
-    if (l?.state !== "specs" || l.specsWhy || !l.docs?.problems?.length || l.docs.changedSinceGoAhead?.length) continue;
+    if (l?.state !== "specs" || l.specsWhy || !l.docs?.problems?.length) continue;
     if (!deps.landing.nudge(s.id, t.path, l.commit)) continue;
     void send(s.path, docsNudgeText(t.branch, l.commit, l.docs.problems)).catch((err) => console.warn(`[readiness] docs nudge to ${s.path}: ${(err as Error).message}`));
   }
-  // A finished branch its landing card can't show for yet: what blocks it, once per head commit, only in a
-  // project that offers the card at all, and never a word of Land It (§chat.worktrees/ready-to-land).
+  // A finished branch that can't be approved yet: what blocks it, once per head commit, only in a project whose
+  // merge queue is set up (§chat.worktrees/ready-to-land).
   for (const b of blockedBySession.get(s.path) ?? []) {
     const offered = deps.landingOffered;
     if (!offered) continue;
@@ -988,15 +1058,6 @@ export function previewOf(stdout: string, err?: unknown): DocsPreview {
   const changed = (j.drafts ?? []).flatMap((d) => [...(d.changed ?? []), ...(d.removed ?? [])]);
   const problems = j.exit === 0 ? [] : (j.findings ?? []).map((f) => `${f.id ?? (f.draft ? `draft ${f.draft}` : f.code ?? "a draft")}${f.draft && f.id ? ` (draft ${f.draft})` : ""}: ${f.message ?? f.code ?? "refused"}`);
   return { drafts, added, changed, problems: j.exit !== 0 && !problems.length ? ["the draft tool refused the landing"] : problems };
-}
-
-/** The Land It at exactly this branch and commit (landing.json), with its drafts. */
-function goAheadOf(branch: string, commit: string): { drafts?: { hash: string; names: string[]; each?: Record<string, string> } } | undefined {
-  try {
-    return goAheadFor(branch, commit, join(stateRoot(), LANDING_FILE_NAME));
-  } catch {
-    return undefined;
-  }
 }
 
 function drain(): Promise<void> {
@@ -1072,7 +1133,7 @@ export function readinessChecksOf(sessionPath: string): ReadinessChecks | undefi
 
 /** The last background answer for a session, without queueing a read: `known` false while it was
     never read (right after a start), so a reader tells "not read yet" from "tracks nothing"
-    (the merge board, §chat.worktrees/merge-board). `at` is when it was computed. */
+    (the Overseer's roundup and the schedules read it so). `at` is when it was computed. */
 export function readinessReading(sessionPath: string): { known: false } | { known: true; at: number; value?: SessionReadiness } {
   const hit = cache.get(sessionPath);
   if (!hit) return { known: false };

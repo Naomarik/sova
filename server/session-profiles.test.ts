@@ -33,6 +33,7 @@ type SessionSummary = import("../shared/protocol").SessionSummary;
 const { linkedPlaybook, playbookTurnText } = await import("../shared/playbooks");
 const { readProfiles } = await import("./profiles-store");
 const { findProfile, profileSources } = await import("./profile-sources");
+const { profilesListing } = await import("./session-profile-routes");
 const { approve, trustFile } = await import("./profile-trust");
 const { clearProjectCache, projectOf } = await import("./project-root");
 const { listPlaybooks } = await import("./playbooks");
@@ -87,11 +88,23 @@ describe("the model", () => {
     assert.equal(lockedReason("web", ["web", "workers"]), null);
   });
 
-  test("Sova ships no profile file: only Default (My settings) is built in, in code", async () => {
+  test("Sova ships no listed profile file: only Default (My settings) is built in; its system profiles are never listed", async () => {
     const src = await profileSources(null);
     assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default"]);
     assert.equal(src.builtins[0]!.label, "My settings");
-    assert.deepEqual(src.problems, [], "a missing profiles/ folder lists none, and is no problem");
+    assert.deepEqual(src.problems, [], "a profiles/ folder with no profile files lists none, and is no problem");
+    // The merge queue's thread and reviewer: found only by an explicit Sova pick, never by a bare id, never in a list.
+    const system = ["merge-reviewer", "merge-thread"];
+    for (const id of system) {
+      assert.equal((await findProfile({ source: "sova", id }, null))?.key, `sova:${id}`, id);
+      assert.equal(await findProfile(id, null), null, `${id} by a bare id`);
+    }
+    const listing = await profilesListing(null);
+    const listed = [...listing.builtins, ...listing.yours, ...listing.project.profiles].map((p) => p.id);
+    for (const id of system) assert.ok(!listed.includes(id), `${id} listed for a picker`);
+    const { readdirSync } = await import("node:fs");
+    const dir = join(import.meta.dirname, "..", "profiles", "system");
+    assert.deepEqual(readdirSync(dir).sort(), system.map((id) => `${id}.json`), "exactly these two system profiles");
   });
 
   test("a shipped profile file is listed after Default, in its normal form", async () => {

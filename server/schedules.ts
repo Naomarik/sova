@@ -11,8 +11,6 @@ import {
   LIMIT_RESET,
   LIMIT_RESET_INSTRUCTION,
   MAX_FIRES_PER_DAY,
-  MERGE_READY,
-  mergeReadyReason,
   dayKey,
   fireHead,
   maxFiresPerDay,
@@ -26,7 +24,6 @@ import {
   type ScheduleHeader,
   type Trigger,
 } from "../shared/schedules";
-import type { BoardRow } from "./merge-board";
 import { singletonHolder } from "./session-profile";
 import { stateRoot } from "./state-root";
 
@@ -44,9 +41,7 @@ import { stateRoot } from "./state-root";
  * a wake of the schedule's session (an automation's own pointer, or the header profile's live One at
  * a time session), or a new session, with a `[schedule sN]` message that carries the playbook itself
  * (§chat.schedules/delivery). It also watches this host's Claude logins, and on a limit's reset
- * continues the schedule's sessions that stopped at it (§chat.schedules/limit-reset), and wakes it
- * when a branch in its project turns Ready to land on Sova's merge board
- * (§chat.schedules/merge-ready). Nothing fires unapproved.
+ * continues the schedule's sessions that stopped at it (§chat.schedules/limit-reset). Nothing fires unapproved.
  *
  * Everything that touches sessions, profiles, files, logins or the clock is injected (`KeeperDeps`),
  * so the rules are testable; server/schedule-routes.ts wires the real ones.
@@ -59,8 +54,6 @@ export const DEFAULT_TICK_MS = 30_000;
 export const PAUSED_UNOPENED = `Paused after ${UNOPENED_PAUSE} runs nobody opened.`;
 export const CHANGED = "Changed since you approved it";
 export const OTHER_DEVICE = "Runs on another device: this one fires nothing for it.";
-/** A branch remembered this long after it last fired, then forgotten once it isn't Ready to land. */
-const MERGE_READY_FORGET_MS = 7 * 24 * 3600_000;
 /** How many fires each schedule keeps (the panel shows the last few; the pause counts back 10). */
 const KEEP_FIRES = 30;
 
@@ -101,15 +94,6 @@ export interface StoredSchedule {
   next?: { at: number; trigger: string };
   fires: StoredFire[];
   day?: { key: string; n: number };
-  /** merge-ready: each worktree path that fired, with its branch, the landing commit it fired for, and
-      when (keeper clock) (§chat.schedules/merge-ready). A row stored before commits were has none, so it reads fresh. */
-  ready?: Record<string, { branch: string; commit: string; at: number }>;
-  /** merge-ready: each worktree path woken for the user's go-ahead typed in its own chat, with the commit the
-      go-ahead names (§chat.schedules/merge-ready). */
-  typed?: Record<string, { branch: string; commit: string; at: number }>;
-  /** merge-ready: each worktree path woken for Go on an Overseer card's Ready to land row, with the commit it
-      names (§app.overseer/card-land). */
-  card?: Record<string, { branch: string; commit: string; at: number }>;
   /** A long-running schedule's own session (§chat.schedules/store). */
   session?: { id: string; path: string };
   /** The device that runs it (its host id). */
@@ -257,13 +241,6 @@ export interface KeeperDeps {
   loginName?(id: string): string;
   /** The session's branch ends in a failed turn: when, and the Claude login it ran on (recorded). */
   lastTurn(path: string): Promise<{ failed: boolean; at: number; login?: string } | null>;
-  /** Sova's merge board (§chat.worktrees/merge-board): `pending` sessions not read yet, and the
-      rows in a project. Absent: merge-ready never fires. */
-  board?(): Promise<{ pending: number; rowsIn(root: string): BoardRow[] } | null>;
-  /** The user's go-aheads typed in a branch's own chat (`landing.json`, `by: "owner-chat"`), oldest first. */
-  typedGoAheads?(): { branch: string; commit: string }[];
-  /** Go on an Overseer card's Ready to land row (`landing.json`, `by: "overseer-card"`), oldest first. */
-  cardGoAheads?(): { branch: string; commit: string }[];
   /** Tell the Overseer (under Brief Me only). */
   brief?(text: string): void;
   zone?(): string;
@@ -290,8 +267,6 @@ const bundleOf = (info: PlaybookInfo): BundleRef => ({ id: info.id, dir: info.di
 
 export class ScheduleKeeper {
   private chain: Promise<unknown> = Promise.resolve();
-  /** An active merge-ready schedule was seen (the first tick reads the board to find out). */
-  private wantsBoard = true;
   /** The refusal last logged, so a broken store is said once, not every tick. */
   private refusedSaid = "";
   constructor(readonly deps: KeeperDeps) {}
@@ -733,8 +708,8 @@ export class ScheduleKeeper {
     return [head, ...(before ? [before] : []), ...(block ? [deliveryInstruction(title), block] : [])].join("\n");
   }
 
-  /** One fire of an active schedule (§chat.schedules/fire): a time, or a merge-ready transition with its own reason. */
-  private async fire(s: StoredSchedule, ev: Evaluated, trigger: string, lateMs: number | undefined, reason?: string): Promise<void> {
+  /** One fire of an active schedule (§chat.schedules/fire). */
+  private async fire(s: StoredSchedule, ev: Evaluated, trigger: string, lateMs: number | undefined): Promise<void> {
     const tz = this.zone(ev);
     const skip = (why: string) => this.log(s, trigger, "skipped", { why });
     if (this.dayFull(s, tz)) return skip(`it fired ${MAX_FIRES_PER_DAY} times today`);
@@ -747,7 +722,7 @@ export class ScheduleKeeper {
     if (this.deps.freeSlots() <= 0) return skip("the running-at-once limit was reached");
     const pb = ev.pb!.info;
     const bundle = bundleOf(pb);
-    const head = fireHead(s.id, trigger, ev.automation?.id ?? pb.id, reason ?? ev.task ?? DEFAULT_TASK, lateMs, ev.automation ? "automation" : "playbook");
+    const head = fireHead(s.id, trigger, ev.automation?.id ?? pb.id, ev.task ?? DEFAULT_TASK, lateMs, ev.automation ? "automation" : "playbook");
     const wakeText = async (path: string): Promise<string | { error: string }> => {
       const b = await this.block(bundle, path);
       if (!b.ok) return { error: b.error };
@@ -887,83 +862,11 @@ export class ScheduleKeeper {
     }
   }
 
-  /**
-   * merge-ready (§chat.schedules/merge-ready): fire, at once, for the branches in the schedule's project
-   * that read Ready to land with an idle owner at a commit they haven't fired for. A row the board hasn't
-   * read yet (`pending`) is unknown: it is never forgotten. While the last run is still going the
-   * transition waits, unlogged; any fire attempt (fired, skipped by a cap, refused) spends it.
-   */
-  private async mergeReady(s: StoredSchedule, ev: Evaluated, board: { pending: number; rowsIn(root: string): BoardRow[] }): Promise<void> {
-    const now = this.deps.now();
-    const rows = board.rowsIn(s.root);
-    const seen = (s.ready ??= {});
-    const fresh: { path: string; branch: string; commit: string }[] = [];
-    for (const r of rows) {
-      if (r.landing?.state !== "ready" || r.owner.status !== "idle") continue;
-      const prev = seen[r.path];
-      if (prev?.branch !== r.branch || prev.commit !== r.landing.commit) fresh.push({ path: r.path, branch: r.branch, commit: r.landing.commit });
-    }
-    for (const [path, prev] of Object.entries(seen)) {
-      const row = rows.find((r) => r.path === path);
-      if (row?.landing?.state === "ready" || (!row && board.pending > 0)) continue; // ready, or not read yet
-      if (now - prev.at >= MERGE_READY_FORGET_MS) delete seen[path];
-    }
-    // The user's go-ahead typed in a branch's own chat, or given with Go on an Overseer card, wakes the round too,
-    // whatever its row reads: once per commit.
-    const goAheadsIn = (seenMap: NonNullable<StoredSchedule["typed"]>, goAheads: readonly { branch: string; commit: string }[]) => {
-      const out: { path: string; branch: string; commit: string }[] = [];
-      for (const r of rows) {
-        const g = goAheads.filter((x) => x.branch === r.branch).at(-1);
-        const prev = seenMap[r.path];
-        if (g && (prev?.branch !== r.branch || prev.commit !== g.commit)) out.push({ path: r.path, branch: r.branch, commit: g.commit });
-      }
-      for (const [path, prev] of Object.entries(seenMap)) {
-        if (rows.some((r) => r.path === path) || board.pending > 0) continue;
-        if (now - prev.at >= MERGE_READY_FORGET_MS) delete seenMap[path];
-      }
-      return out;
-    };
-    const typedSeen = (s.typed ??= {});
-    const typed = goAheadsIn(typedSeen, this.deps.typedGoAheads?.() ?? []);
-    const cardSeen = (s.card ??= {});
-    const card = goAheadsIn(cardSeen, this.deps.cardGoAheads?.() ?? []);
-    if (!fresh.length && !typed.length && !card.length) return;
-    // Held, unlogged and unseen, so they go out together later, while the run it last fired into is in flight.
-    const last = [...s.fires].reverse().find((f) => f.path);
-    if (last?.path && this.deps.busy(last.path)) return;
-    fresh.sort((a, b) => a.branch.localeCompare(b.branch));
-    typed.sort((a, b) => a.branch.localeCompare(b.branch));
-    card.sort((a, b) => a.branch.localeCompare(b.branch));
-    for (const f of fresh) seen[f.path] = { branch: f.branch, commit: f.commit, at: now };
-    for (const f of typed) typedSeen[f.path] = { branch: f.branch, commit: f.commit, at: now };
-    for (const f of card) cardSeen[f.path] = { branch: f.branch, commit: f.commit, at: now };
-    // The day's timed fires keep their room under the cap: merge-ready never takes it.
-    const tz = this.zone(ev);
-    const reserved = maxFiresPerDay(ev.triggers!).n;
-    if (s.day?.key === dayKey(now, tz) && s.day.n >= MAX_FIRES_PER_DAY - reserved) {
-      this.log(s, MERGE_READY, "skipped", { why: `merge-ready leaves today's last ${reserved} of ${MAX_FIRES_PER_DAY} fires to the timed triggers` });
-      return;
-    }
-    await this.fire(s, ev, MERGE_READY, undefined, mergeReadyReason(fresh.map((f) => f.branch), typed.map((f) => f.branch), card.map((f) => f.branch)));
-  }
-
-  /** One tick: limit resets first, then merge-ready transitions, then every approved schedule that is due. */
+  /** One tick: limit resets first, then every approved schedule that is due. */
   tick(): Promise<void> {
-    // The board is read outside the store's lock (it may wait on readiness), and only once a
-    // previous tick found an active merge-ready schedule.
-    const boardP = this.wantsBoard && this.deps.board ? this.deps.board().catch(() => null) : Promise.resolve(null);
-    return boardP.then((board) => this.locked(async (store) => {
+    return this.locked(async (store) => {
       for (const reset of this.resets(store)) await this.continueAfterReset(store, reset);
       const now = this.deps.now();
-      let wants = false;
-      for (const s of store.schedules) {
-        if (!s.approved) continue;
-        const ev = await this.evaluate(s);
-        if (ev.view.state !== "active" || !ev.triggers?.some((t) => t.kind === "merge-ready")) continue;
-        wants = true;
-        if (board) await this.mergeReady(s, ev, board);
-      }
-      this.wantsBoard = wants;
       for (const s of store.schedules) {
         if (!s.approved) continue;
         const ev = await this.evaluate(s);
@@ -988,7 +891,7 @@ export class ScheduleKeeper {
         }
         await this.fire(s, ev, due.trigger, late >= this.deps.lateAfterMs ? late : undefined);
       }
-    }));
+    });
   }
 }
 

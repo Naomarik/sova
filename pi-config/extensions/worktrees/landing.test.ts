@@ -3,39 +3,32 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { answerAt, goAheadFor, landingFile, newestUserMessage, readLanding, recordGoAhead, recordNotYet, typedGoAhead } from "./landing.ts";
+import { landingFile, newestUserMessage, readLanding, recordGoAhead, typedGoAhead } from "./landing.ts";
+
 
 const A = "a".repeat(40);
 const B = "b".repeat(40);
+/** The go-ahead recorded for this branch at exactly this commit (the merge queue's ingest reads the same records). */
+const goAheadFor = (branch: string, commit: string, file: string) => readLanding(file).goAheads.filter((g) => g.branch === branch && g.commit === commit).at(-1);
 
-test("go-aheads are kept per branch and exact commit; Not Yet is cleared by a go-ahead at the same commit", () => {
+test("go-aheads are kept per branch and exact commit; an older file's Not Yet and docs lists are ignored and dropped", () => {
 	const dir = mkdtempSync(join(tmpdir(), "landing-"));
 	const file = join(dir, "landing.json");
 	try {
 		assert.equal(goAheadFor("feat/x", A, file), undefined);
-		recordNotYet({ branch: "feat/x", commit: A, at: "2026-10-23T00:00:00Z" }, file);
-		assert.equal(readLanding(file).notYet.length, 1);
+		writeFileSync(file, JSON.stringify({ v: 1, goAheads: [], notYet: [{ branch: "feat/x", commit: A, at: "2026-10-23T00:00:00Z" }], docsEntries: [{ branch: "feat/x", sha: B, parent: A, at: "t", drafts: [] }] }));
+		assert.deepEqual(readLanding(file), { v: 1, goAheads: [] });
 		recordGoAhead({ branch: "feat/x", commit: A, at: "2026-10-23T00:01:00Z", by: "land-it", session: "s1" }, file);
 		assert.equal(goAheadFor("feat/x", A, file)?.session, "s1");
 		assert.equal(goAheadFor("feat/x", B, file), undefined, "another commit");
 		assert.equal(goAheadFor("feat/y", A, file), undefined, "another branch");
-		assert.equal(readLanding(file).notYet.length, 0);
+		assert.deepEqual(Object.keys(JSON.parse(readFileSync(file, "utf8"))), ["v", "goAheads"], "the next write drops the old lists");
 		assert.throws(() => recordGoAhead({ branch: "feat/x", commit: "abc", at: "x", by: "land-it" }, file), /full commit sha/);
 		writeFileSync(file, "{broken");
-		assert.deepEqual(readLanding(file), { v: 1, goAheads: [], notYet: [] });
+		assert.deepEqual(readLanding(file), { v: 1, goAheads: [] });
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
-});
-
-test("the newest answer at a commit wins; Not Yet wins a tie or a time that can't be read", () => {
-	const at = (go: string | undefined, no: string | undefined) =>
-		answerAt({ v: 1, goAheads: go ? [{ branch: "f", commit: A, at: go, by: "land-it" }] : [], notYet: no ? [{ branch: "f", commit: A, at: no }] : [] }, "f", A)?.kind ?? null;
-	assert.equal(at("2026-10-24T00:05:00Z", "2026-10-24T00:00:00Z"), "go-ahead");
-	assert.equal(at("2026-10-24T00:00:00Z", "2026-10-24T00:05:00Z"), "not-yet");
-	assert.equal(at("2026-10-24T00:00:00Z", "2026-10-24T00:00:00Z"), "not-yet");
-	assert.equal(at("x", "2026-10-24T00:00:00Z"), "not-yet");
-	assert.equal(at(undefined, undefined), null);
 });
 
 test("a Merge Branch record from before the guard was removed still reads", () => {
@@ -56,9 +49,12 @@ test("the file lives in the chat's state root, else the agent dir's sova folder"
 
 test("typedGoAhead: the user's word to land now, never a question, a condition, a refusal or a message Sova or another session sent", () => {
 	for (const t of ["land it", "Land it.", "merge it", "ok, merge it", "yes land it", "go ahead and land feat/x", "please land this now", "lgtm, land it\nthanks"])
-		assert.deepEqual(typedGoAhead(t), { withoutSpecs: false }, t);
-	assert.deepEqual(typedGoAhead("land it without its specs"), { withoutSpecs: true });
-	assert.deepEqual(typedGoAhead("merge it\n(without specs, they can follow)"), { withoutSpecs: true });
+		assert.deepEqual(typedGoAhead(t), { withoutSpecs: false, withoutReview: false }, t);
+	assert.deepEqual(typedGoAhead("land it without its specs"), { withoutSpecs: true, withoutReview: false });
+	assert.deepEqual(typedGoAhead("merge it\n(without specs, they can follow)"), { withoutSpecs: true, withoutReview: false });
+	for (const t of ["land it, skip review", "land it, skip the review", "land it without review", "merge it, no review needed"])
+		assert.deepEqual(typedGoAhead(t), { withoutSpecs: false, withoutReview: true }, t);
+	assert.deepEqual(typedGoAhead("land it without specs, skip review"), { withoutSpecs: true, withoutReview: true });
 	for (const t of [
 		"don't land it",
 		"do not merge it yet",
@@ -72,6 +68,10 @@ test("typedGoAhead: the user's word to land now, never a question, a condition, 
 		"no, don't land",
 		"what does land it do",
 		"Sova: feat/x is finished at abc1234. Once nothing blocks it, type \"land it\" in this chat.",
+		"[merge-queue] feat/x didn't land: unit failed.",
+		"[merge-queue] The user sent feat/x back: merge master into it.",
+		"[merge-queue] feat/land-it is finished at abc1234, but it can't be queued to land yet",
+		"[overseer-brief] land it",
 		"[from session \"Captain\" (abc), hop 1]\nland it",
 		"[schedule s1] Scheduled run fired (merge-ready). Reason: Ready to land: feat/x.",
 		"Go ahead: land feat/x at abc1234.",
@@ -82,36 +82,20 @@ test("typedGoAhead: the user's word to land now, never a question, a condition, 
 		assert.equal(typedGoAhead(t), null, t);
 });
 
-test("a go-ahead typed in the owner's chat is kept like Land It and read back as the newest answer", () => {
+test("a go-ahead typed in the owner's chat is kept, and a newer one at the same commit replaces it", () => {
 	const dir = mkdtempSync(join(tmpdir(), "landing-"));
 	const file = join(dir, "landing.json");
 	try {
-		recordNotYet({ branch: "feat/x", commit: A, at: "2026-10-23T00:00:00Z" }, file);
-		recordGoAhead({ branch: "feat/x", commit: A, at: "2026-10-23T00:01:00Z", by: "owner-chat", session: "s1" }, file);
-		assert.equal(goAheadFor("feat/x", A, file)?.by, "owner-chat");
-		assert.equal(readLanding(file).notYet.length, 0);
+		recordGoAhead({ branch: "feat/x", commit: A, at: "2026-10-23T00:00:00Z", by: "owner-chat", session: "s1" }, file);
+		recordGoAhead({ branch: "feat/x", commit: A, at: "2026-10-23T00:01:00Z", by: "owner-chat", session: "s1", withoutReview: true }, file);
+		assert.equal(goAheadFor("feat/x", A, file)?.withoutReview, true);
+		assert.equal(readLanding(file).goAheads.length, 1);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
 
-test("Go on an Overseer card's land row is kept like Land It, and every later write keeps it", () => {
-	const dir = mkdtempSync(join(tmpdir(), "landing-"));
-	const file = join(dir, "landing.json");
-	try {
-		recordGoAhead({ branch: "feat/x", commit: A, at: "2026-10-23T00:01:00Z", by: "overseer-card", session: "s1" }, file);
-		recordGoAhead({ branch: "feat/y", commit: B, at: "2026-10-23T00:02:00Z", by: "land-it" }, file);
-		recordNotYet({ branch: "feat/z", commit: B, at: "2026-10-23T00:03:00Z" }, file);
-		assert.equal(goAheadFor("feat/x", A, file)?.by, "overseer-card");
-		assert.equal(readLanding(file).goAheads.length, 2);
-		// An unknown recorder is still dropped.
-		assert.throws(() => recordGoAhead({ branch: "feat/w", commit: A, at: "2026-10-23T00:04:00Z", by: "someone" as never }, file), /Not a go-ahead/);
-	} finally {
-		rmSync(dir, { recursive: true, force: true });
-	}
-});
-
-test("every go-ahead kind (captain-chat with its `in`, overseer-card) survives the other's write", () => {
+test("older go-ahead kinds (captain-chat with its `in`, overseer-card) still read, and survive a new write; an unknown kind is refused", () => {
 	const dir = mkdtempSync(join(tmpdir(), "landing-"));
 	const file = join(dir, "landing.json");
 	try {
@@ -119,6 +103,7 @@ test("every go-ahead kind (captain-chat with its `in`, overseer-card) survives t
 		recordGoAhead({ branch: "feat/o", commit: B, at: "2026-10-23T00:02:00Z", by: "overseer-card", session: "s1" }, file);
 		assert.deepEqual(goAheadFor("feat/c", A, file), { branch: "feat/c", commit: A, at: "2026-10-23T00:01:00Z", by: "captain-chat", in: "cap" });
 		assert.equal(goAheadFor("feat/o", B, file)?.by, "overseer-card");
+		assert.throws(() => recordGoAhead({ branch: "feat/w", commit: A, at: "2026-10-23T00:04:00Z", by: "someone" as never }, file), /Not a go-ahead/);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}
@@ -139,13 +124,12 @@ test("newestUserMessage: the newest user message's text, and who sent it when a 
 	assert.deepEqual(newestUserMessage([user("u1", "land it"), reply, user("u2", "land it"), mark("sova-session-sent", "u2")]).sentBy, "another session");
 });
 
-test("Sova's go-aheads and the merge round's docs entries, written at once from many processes, never drop each other (one lock)", async () => {
+test("go-aheads written at once from many processes never drop each other (one lock)", async () => {
 	const { spawn } = await import("node:child_process");
 	const { existsSync, utimesSync } = await import("node:fs");
 	const dir = mkdtempSync(join(tmpdir(), "landing-lock-"));
 	const file = join(dir, "landing.json");
 	const landingTs = join(import.meta.dirname, "landing.ts");
-	const roundMjs = join(import.meta.dirname, "..", "..", "..", ".sova", "playbooks", "merge-round", "scripts", "round.mjs");
 	const hex = (n: number, k: number) => `${n.toString(16).padStart(4, "0")}${k.toString(16).padStart(4, "0")}`.padEnd(40, "a");
 	const run = (code: string) =>
 		new Promise<number>((done) => {
@@ -156,14 +140,13 @@ test("Sova's go-aheads and the merge round's docs entries, written at once from 
 	const jobs: Promise<number>[] = [];
 	for (let w = 0; w < 4; w++) {
 		jobs.push(run(`import { recordGoAhead } from ${JSON.stringify(landingTs)}; for (let i = 0; i < ${N}; i++) recordGoAhead({ branch: "b", commit: ${JSON.stringify("")} + "${hex(w, 0).slice(0, 8)}".slice(0, 4) + String(i).padStart(4, "0") + "b".repeat(32), at: new Date().toISOString(), by: "land-it" }, ${JSON.stringify(file)});`));
-		jobs.push(run(`import { appendDocsEntry } from ${JSON.stringify(roundMjs)}; for (let i = 0; i < ${N}; i++) appendDocsEntry(${JSON.stringify(file)}, { branch: "b", sha: "${hex(w, 0).slice(0, 4)}" + String(i).padStart(4, "0") + "c".repeat(32), parent: "d".repeat(40), at: new Date().toISOString(), drafts: [] });`));
+		jobs.push(run(`import { recordGoAhead } from ${JSON.stringify(landingTs)}; for (let i = 0; i < ${N}; i++) recordGoAhead({ branch: "c", commit: "${hex(w, 1).slice(0, 4)}" + String(i).padStart(4, "0") + "c".repeat(32), at: new Date().toISOString(), by: "owner-chat" }, ${JSON.stringify(file)});`));
 	}
 	try {
 		assert.deepEqual(await Promise.all(jobs), Array(8).fill(0), "every writer finished");
 		const d = JSON.parse(readFileSync(file, "utf8"));
-		assert.equal(d.goAheads.length, 4 * N, "no go-ahead was dropped");
-		assert.equal(d.docsEntries.length, 4 * N, "no docs entry was dropped");
-		assert.equal(readLanding(file).docsEntries?.length, 4 * N, "landing.ts reads them back");
+		assert.equal(d.goAheads.length, 8 * N, "no go-ahead was dropped");
+		assert.equal(readLanding(file).goAheads.length, 8 * N, "landing.ts reads them back");
 		assert.ok(!existsSync(`${file}.lock`), "the lock is gone");
 		// A lock left behind by a writer that died is taken over once stale; a fresh one is waited for.
 		writeFileSync(`${file}.lock`, "");

@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import { mergeQueueBody } from "../../shared/senders";
 import type { TmpAttachment } from "../../shared/protocol";
 import { stripSessionHeader } from "../../shared/profiles";
 import type { ReplyTiming } from "../../shared/usage/perf";
@@ -10,6 +11,7 @@ import { ReplyMarkdown } from "./ReplyMarkdown";
 import { PathAttachment } from "./PathAttachment";
 import { ReplyTimingHead } from "./ReplyTiming";
 import { Banner, Icon } from "./ui";
+
 /**
  * The message rows of a transcript (a user's turn, a reply's text, its thinking, a turn's error), drawn
  * the same by the settled list (as Sova's own kinds on the card toolkit, components/BuiltinKinds.tsx)
@@ -64,13 +66,15 @@ export function UserTurn(props: {
   sender?: string;
   /** Another session sent this message (its `sova-session-sent` marker, §chat.profiles/delivery). */
   fromSession?: { sessionId: string; title: string; hop?: number };
+  /** The merge queue started this turn (Needs a fix, Send Back): its prefix is dropped, never drawn as yours. */
+  mergeQueue?: boolean;
   images?: string[];
   attachments?: TmpAttachment[];
 }) {
   const author = () =>
-    props.fromSession ? "From a session" : props.overseer ? "Overseer" : (props.sender ?? AUTHOR[props.origin ?? "client"]);
+    props.fromSession ? "From a session" : props.overseer ? "Overseer" : props.mergeQueue ? "Merge queue" : (props.sender ?? AUTHOR[props.origin ?? "client"]);
   // The model reads the header line; the row shows it as the sender header instead.
-  const text = () => (props.fromSession ? stripSessionHeader(props.text) : props.text);
+  const text = () => (props.fromSession ? stripSessionHeader(props.text) : props.mergeQueue ? mergeQueueBody(props.text) : props.text);
   return (
     <>
     <Show when={props.fromSession}>
@@ -89,10 +93,22 @@ export function UserTurn(props: {
     <article
       class="message message-user"
       classList={{ "message-from-session": !!props.fromSession }}
+      // An attribute, absent unless set: every other row's markup stays exactly as it was.
+      data-from-queue={props.mergeQueue ? "" : undefined}
       aria-label={props.time ? `${author()}, ${stampTime(props.time)}` : author()}
     >
       <div class="message-head">
-        <Show when={props.overseer} fallback={<span class="message-author">{author()}</span>}>
+        <Show
+          when={props.overseer}
+          fallback={
+            <Show when={props.mergeQueue} fallback={<span class="message-author">{author()}</span>}>
+              <span class="message-author overseer-author" title="Sent by the merge queue">
+                <Icon name="branch" small />
+                Merge queue
+              </span>
+            </Show>
+          }
+        >
           <span class="message-author overseer-author" title="Sent by the Overseer">
             <Icon name="eye" small />
             Overseer

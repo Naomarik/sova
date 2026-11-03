@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
 import { accessSync, closeSync, constants, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import {
   deployStepsOf,
   isDeployVerb,
@@ -31,6 +31,7 @@ import { realExec, SLICE } from "./drivers";
 import { defHashOf, deployHashOf } from "./def-hash";
 import { hostVars, servicesRoot, stateHash, tryLock } from "./store";
 import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
+import { assertCopyOutsideState } from "../merge-queue/copy";
 
 /**
  * The deploy verbs (§app.project-services/deploy): a target of the definition's `deploy`, never an
@@ -46,6 +47,7 @@ type Git = typeof realGit;
 export const deployRoot = () => join(servicesRoot(), "deploy");
 const recordsDir = () => join(deployRoot(), "records");
 const notesFile = () => join(deployRoot(), "notes.json");
+/** Where an older Sova cut deploy checkouts (under its state): only ever removed now. */
 const checkoutsDir = () => join(deployRoot(), "checkouts");
 const checksDir = () => join(deployRoot(), "checks");
 const plansDir = () => join(deployRoot(), "plans");
@@ -940,17 +942,27 @@ export class Deployer {
 
 // ---- fresh checkouts (never the main checkout's working tree) -------------------------------------------
 
-/** Cut a detached worktree of `commit` under Sova's state, for a check or a plan. */
+/** Where a deploy check's or plan's fresh checkout goes: beside the project, as every copy (`<parent>/.worktrees/
+    <repo>-deploy-<name>`), never under Sova's state root (a checkout there reads the state root's files as its own). */
+export const deployCheckoutPath = (root: string, name: string): string => join(dirname(root), ".worktrees", `${basename(root)}-deploy-${name}`);
+
+/** Cut a detached worktree of `commit` beside the project, for a check or a plan. */
 export async function cutCheckout(git: Git, root: string, commit: string, name: string): Promise<string> {
-  const dir = join(checkoutsDir(), name);
-  mkdirSync(checkoutsDir(), { recursive: true });
+  const dir = deployCheckoutPath(root, name);
+  try {
+    assertCopyOutsideState(dir, { root });
+  } catch (err) {
+    throw new DeployFailure("start-failed", err instanceof Error ? err.message : String(err));
+  }
+  mkdirSync(dirname(dir), { recursive: true });
   const r = await git(["worktree", "add", "--detach", "--force", dir, commit], root);
   if (r.code !== 0) throw new DeployFailure("start-failed", `cutting a fresh checkout of ${commit.slice(0, 12)} failed: ${r.stderr.trim() || `exit ${r.code}`}`);
   return dir;
 }
-/** Remove a checkout cut by `cutCheckout`, whatever it holds. */
+/** Remove a checkout cut by `cutCheckout` (or one an older Sova cut under its state), whatever it holds. */
 export async function dropCheckout(git: Git, root: string, dir: string): Promise<void> {
-  if (!dir.startsWith(checkoutsDir() + "/")) return;
+  const ours = dir.startsWith(join(dirname(root), ".worktrees", `${basename(root)}-deploy-`)) || dir.startsWith(checkoutsDir() + "/");
+  if (!ours) return;
   await git(["worktree", "remove", "--force", "--force", "--", dir], root);
   rmSync(dir, { recursive: true, force: true });
   // Whatever git couldn't remove is gone now: drop this one's record, never another worktree's

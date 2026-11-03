@@ -4,10 +4,12 @@
 // It also carries the sidebar's one live figure, the LLM calls in flight across this host and every
 // connected host, which the server adds up itself.
 
+import { noteMergeCards, noteMergeFeed } from "./merge-queue-client";
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { AttentionDigest, LlmInflight, OverseerInfo, SessionFeedMessage } from "../../shared/protocol";
 import { sameInflight } from "./llm-inflight";
 import { loadSessionGroups } from "./session-groups";
+import type { ListRows } from "./list-rows";
 import { applyMarks, createNudgeThrottle, EMPTY_OVERLAY, type MarksOverlay } from "./signals";
 import { createReconnectingSocket } from "./socket";
 
@@ -41,7 +43,27 @@ export function onFeedPush(l: FeedPushListener): () => void {
   return () => void listeners.delete(l);
 }
 
-export const sessionFeedUrl = () => `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws/watch?feed=sessions`;
+/** The list that follows the feed's `rows` frames (App's, lib/list-rows.ts), if one is set. */
+let rows: ListRows | null = null;
+/** The open feed's throttled list read, while one is open. */
+let readList: (() => void) | null = null;
+
+/** Follow the feed's changed rows with `r` (App, before the sidebar opens the feed): the feed then
+    asks for rows (`&rows=1`) and hands every rows frame to `r`. Until the returned function. */
+export function followListRows(r: ListRows): () => void {
+  rows = r;
+  return () => {
+    if (rows === r) rows = null;
+  };
+}
+
+/** Re-read the list through the open feed's throttle (one burst, two reads), or at once with no feed. */
+export function requestListRead(fallback: () => void): void {
+  if (readList) readList();
+  else fallback();
+}
+
+export const sessionFeedUrl = () => `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws/watch?feed=sessions${rows ? "&rows=1" : ""}`;
 
 /**
  * Opens the feed for as long as the calling owner lives (the sidebar, which lives as long as the
@@ -57,12 +79,22 @@ export const sessionFeedUrl = () => `${location.protocol === "https:" ? "wss:" :
  *
  * It also carries the Overseer's state and the attention digest, each pushed whole when it changes
  * (no snapshot on connect): every open tells the `onFeedPush` listeners to read both once.
+ *
+ * With a list following rows (`followListRows`), the socket asks for them: a server that has them
+ * sends the changed rows instead of `list_changed`, and the list re-reads only when it can't follow
+ * them (lib/list-rows.ts); one that doesn't is read the old way.
  */
 export function openSessionFeed(refreshList: () => void): void {
   const nudges = createNudgeThrottle(refreshList);
-  onCleanup(() => nudges.cancel());
+  const following = rows;
+  readList = () => nudges.nudge();
+  onCleanup(() => {
+    nudges.cancel();
+    readList = null;
+  });
   const socket = createReconnectingSocket<SessionFeedMessage>(sessionFeedUrl(), {
     onOpen: (isReconnect) => {
+      following?.socketOpened();
       setOverlay(EMPTY_OVERLAY);
       setInflight(null);
       if (isReconnect) {
@@ -73,6 +105,7 @@ export function openSessionFeed(refreshList: () => void): void {
       for (const l of listeners) l.resync();
     },
     onMessage: (msg) => {
+      if (following?.message(msg)) return;
       if (msg.type === "marks") setOverlay((o) => applyMarks(o, msg));
       else if (msg.type === "list_changed") nudges.nudge();
       // A group made, renamed, reordered or deleted, or a member in or out, in any window or by the Overseer: the
@@ -85,6 +118,10 @@ export function openSessionFeed(refreshList: () => void): void {
       else if (msg.type === "llm_inflight") setInflight(msg.inflight);
       else if (msg.type === "attention") for (const l of listeners) l.attention(msg.digest);
       else if (msg.type === "overseer") for (const l of listeners) l.overseer(msg.info);
+      // A project's merge queue moved: its tab takes the view, and worktree rows reload when an entry moved.
+      else if (msg.type === "merge_queue") noteMergeFeed(msg);
+      // A chat's merge queue cards moved: that chat's thread takes them.
+      else if (msg.type === "merge_cards") noteMergeCards(msg);
     },
   });
   createEffect(() => setOpen(socket.status() === "open"));
@@ -101,6 +138,7 @@ export function openSessionFeed(refreshList: () => void): void {
   // Down is down: stale marks and a stale count must not outlive the socket that kept them current.
   createEffect(() => {
     if (socket.status() === "open") return;
+    following?.socketClosed();
     setOverlay(EMPTY_OVERLAY);
     setInflight(null);
   });

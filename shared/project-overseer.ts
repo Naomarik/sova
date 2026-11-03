@@ -421,6 +421,8 @@ export interface CodingWorktree extends CodingSession {
   newSinceMerge?: number;
   /** Commits on the branch beyond base. */
   ahead: number;
+  /** The branch's head commit as this read saw it (Land pins it). Absent when the branch is gone. */
+  head?: string;
   /** Uncommitted changes in the worktree. */
   dirty: boolean;
   /** Git could not be read. */

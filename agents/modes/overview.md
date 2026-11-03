@@ -74,4 +74,4 @@ live unit restarts on nothing (AGENTS.md's restart rules).
 - A contract above: the README section that documents it, and Sova's reader in the same branch.
 - What a mode does for the user: its page under `site/src/content/docs/modes/`.
 - The injected text of a mode: its guide below says what else moves with it.
-- `spec-guard.ts`: the merge round runs the spec replay suite ([spec](spec/overview.md)).
+- `spec-guard.ts`: the merge queue runs the spec replay suite ([spec](spec/overview.md)).

@@ -38,7 +38,7 @@ export function mergeNote(w: Pick<CodingWorktree, "state" | "merged" | "mergedAt
   return `${n} new commit${n === 1 ? "" : "s"} since the last merge into`;
 }
 
-/** Merge Branch is offered on a branch not yet in its target: open, or its folder gone (removed or missing) before a merge. */
+/** Land is offered on a branch not yet in its target: open, or its folder gone (removed or missing) before a merge. */
 export const offersMerge = (w: Row): boolean => (w.state === "open" || w.state === "removed" || w.state === "missing") && !w.merged && !w.branchGone;
 /** Remove Worktree is offered while the worktree folder is there. */
 export const offersRemove = (w: Row): boolean => w.state === "open" || w.state === "merged";
@@ -107,7 +107,7 @@ export function codingRows(recorded: readonly CodingSession[] | undefined, fromL
 /** A branch gesture's reason while the row's branch facts haven't arrived. */
 export const READING_BRANCH = "Reading its branch";
 
-/** Merge Branch and Remove Worktree on a row: false when not offered, null when it can run, else the disabled reason.
+/** Land and Remove Worktree on a row: false when not offered, null when it can run, else the disabled reason.
     Before its branch facts arrive, a row with a recorded branch (not removed) offers both, disabled. `fresh`: the
     facts came from this page's own branch read; remembered ones (a reopened project, lib/page-cache) are shown but
     never acted on, so until the first fresh read lands both gestures are disabled too. */

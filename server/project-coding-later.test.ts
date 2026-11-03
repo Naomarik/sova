@@ -187,6 +187,64 @@ describe("New Session's Project tab: a coding session in the root, adopting the 
     assert.equal(git(client, "branch", "--list", "feat/pay"), "", "a merged branch goes with it");
   });
 
+  test("with the project's merge queue set up, Merge Branch is Land: the branch is queued at its head, nothing merged in the root; not set up, it merges", async () => {
+    const { MergeQueues } = await import("./merge-queue/queue");
+    const { setMergeQueuesForTest } = await import("./merge-queue/wire");
+    const held: string[] = [];
+    const queuesWith = (checks: "declared" | "unset") =>
+      new MergeQueues({
+        base: join(tmp, "mq-state", checks),
+        // The run waits: the entry stays in line while the test reads it.
+        runMerge: (input) => new Promise((done) => (held.push(input.runId), input.signal.addEventListener("abort", () => done({ verdict: "void", notes: [], checks: [] })))),
+        checksOf: () => checks,
+        definitionAt: async () => ({ def: null, error: null }),
+        log: () => {},
+      });
+    const res = await post(project.id, { worktree: "later" });
+    const made = (await res.json()) as { path: string; sessionId: string };
+    const tree = toolCreate(client, "queued");
+    await writeTreesElsewhere(made.path, [{ ...tree, baseBranch: "master", status: "active", session: made.sessionId, how: "created", at: 1 }]);
+    await po.projectWorktrees(project.id);
+    commit(tree.path, "queued.txt", "q\n");
+    const before = git(client, "rev-parse", "master");
+    const setUp = queuesWith("declared");
+    setMergeQueuesForTest(setUp);
+    try {
+      // Land pins the head the page showed, even when the branch moved past it since.
+      const shown = (await po.projectWorktrees(project.id)).sessions.find((x) => x.sessionId === made.sessionId)!.head!;
+      assert.equal(shown, git(tree.path, "rev-parse", "HEAD"));
+      commit(tree.path, "later.txt", "later\n");
+      await po.mergeCodingWorktree(project.id, made.sessionId, shown);
+      const q = await setUp.get(client);
+      const e = q.entries().find((x) => x.branch === "feat/queued")!;
+      assert.ok(e, "queued");
+      assert.equal(e.commit, shown, "the shown head, not the newer one");
+      assert.equal(e.approval.by, "land-button");
+      assert.equal(e.session, made.sessionId);
+      assert.equal(git(client, "rev-parse", "master"), before, "nothing merged in the root");
+      // The queue's refusal is the row's: already queued at that head is no error; a dirty tree is.
+      writeFileSync(join(tree.path, "loose.txt"), "x\n");
+      await assert.rejects(po.mergeCodingWorktree(project.id, made.sessionId), /uncommitted file/);
+      rmSync(join(tree.path, "loose.txt"));
+      // Any direct merge into the queue's target is refused, whoever sends it (the build's own merge act).
+      const { actOrThrow } = await import("./org-engine");
+      const { engineOrThrow, projectEnvelope } = await import("./projects/spaces");
+      const { buildSid } = await import("./build-loadout");
+      const out = await actOrThrow(engineOrThrow(project.id), buildSid(project.id, made.sessionId), "build/merge", { elsewhere: false }, projectEnvelope(project.id, { by: "operator", attended: true }), { settle: true }).catch((err: Error) => ({ effects: [{ error: err.message }] }));
+      const refused = (out.effects ?? []).find((x: { error?: string }) => x.error)?.error ?? "";
+      assert.match(refused, /master takes branches only through the merge queue: Land the branch instead \(nothing was merged\)/);
+      assert.equal(git(client, "rev-parse", "master"), before, "still nothing merged");
+      await setUp.stop();
+      // Not set up: Merge Branch merges in the root as before.
+      setMergeQueuesForTest(queuesWith("unset"));
+      await po.mergeCodingWorktree(project.id, made.sessionId);
+      assert.equal(readFileSync(join(client, "queued.txt"), "utf8"), "q\n");
+    } finally {
+      await (await import("./merge-queue/wire")).mergeQueues()?.stop();
+      setMergeQueuesForTest(null);
+    }
+  });
+
   test("the page's read adopts too (a session run in a terminal); with no base branch recorded, the target is the root's branch then", async () => {
     const res = await post(project.id, { worktree: "later" });
     const made = (await res.json()) as { path: string; sessionId: string };

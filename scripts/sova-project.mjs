@@ -23,8 +23,8 @@ import { resolve } from "node:path";
 import { exitOf } from "../shared/project-contract.ts";
 import { tokenHeaders } from "./sova-token.mjs";
 
-const VALUE = new Set(["project", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty"]);
-const FLAG = new Set(["restart", "keep-data", "confirm", "dismiss"]);
+const VALUE = new Set(["project", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty", "entry", "run", "step", "note", "chat", "checks", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "takes-min", "requires"]);
+const FLAG = new Set(["restart", "keep-data", "confirm", "dismiss", "without-specs", "without-review", "none", "dry-run"]);
 const PATHS = new Set(["project", "checkout"]);
 
 function usage(msg) {
@@ -59,7 +59,41 @@ const num = (k) => {
 
 let path;
 let body;
-if (verb.startsWith("deploy.")) {
+if (verb.startsWith("merge.")) {
+  // The merge queue's verbs (shared/merge-queue.ts): a project's queue, its entries and runs.
+  path = `/api/project-services/${encodeURIComponent(verb)}`;
+  body = {
+    project: opts.project ?? (opts.entry || opts.run || opts.checkout ? undefined : resolve(".")),
+    branch: opts.branch,
+    checkout: opts.checkout,
+    commit: opts.commit,
+    entry: opts.entry,
+    run: opts.run,
+    step: opts.step,
+    lines: num("lines"),
+    note: opts.note,
+    withoutSpecs: opts["without-specs"],
+    withoutReview: opts["without-review"],
+    chat: opts.chat,
+    checks: list(opts.checks),
+    select: list(opts.select),
+    why: opts.why,
+    verdict: opts.verdict,
+    files: list(opts.files),
+    ours: opts.ours,
+    theirs: opts.theirs,
+    proposal: opts.proposal,
+    answer: opts.answer,
+    text: opts.text,
+    command: opts.command,
+    commands: list(opts.commands),
+    none: opts.none,
+    takesMin: num("takes-min"),
+    requires: list(opts.requires),
+    dryRun: opts["dry-run"],
+  };
+  for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];
+} else if (verb.startsWith("deploy.")) {
   // The deploy verbs take their own keys (a target, never an instance).
   path = `/api/project-services/${encodeURIComponent(verb)}`;
   body = {

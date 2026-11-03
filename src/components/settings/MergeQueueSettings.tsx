@@ -17,7 +17,7 @@ import {
   parseMinutes,
   rebaseDraft,
   refusalWords,
-  savedWords,
+  saveResultWords,
   SOURCE_TAG,
   threadFolderCaption,
   toProjectDraft,
@@ -245,12 +245,20 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [said, setSaid] = createSignal<string | null>(null);
+  /** The request a save opened (Open PR / Open MR), beside what it said. */
+  const [saidLink, setSaidLink] = createSignal<{ href: string; label: string } | null>(null);
   const [showAll, setShowAll] = createSignal(false);
   const [folder, setFolder] = createSignal<"review" | "thread" | null>(null);
   /** The controls a project-file edit uses: off while the file has an uncommitted edit, a save waits, or one is in flight. */
   const locked = () => !!blocked() || !!pending() || busy();
   const target = () => s().landing.target;
   const pushesAfter = () => draft().push && props.hasOrigin;
+  /** The project lands by request or by pushing a branch: a save goes out the same way, not onto the target. */
+  const how = () => s().how?.effective ?? "local";
+  const byRequest = () => how() !== "local";
+  const saveVerb = () => (how() === "github-pr" ? "Open a PR" : how() === "gitlab-mr" ? "Open an MR" : "Push a Branch");
+  const viaWords = () =>
+    how() === "github-pr" ? ` in a PR into ${target()}` : how() === "gitlab-mr" ? ` in an MR into ${target()}` : how() === "push-branch" ? ` on a branch pushed to origin` : ` as 1 commit on ${target()}`;
 
   const editCheck = (id: string, next: Partial<ProjectDraft["checks"][string]>) => {
     const d = draft();
@@ -258,6 +266,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
     if (!cur) return;
     setDraft({ ...d, checks: { ...d.checks, [id]: { ...cur, ...next } } });
     setSaid(null);
+    setSaidLink(null);
   };
 
   const save = async (ch: MergeSettingsChange) => {
@@ -265,8 +274,10 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
     setError(null);
     try {
       const r = await saveMergeSettings(props.projectId, ch);
-      const m = r.state === "saved" ? savedWords(target(), r.commit, pushesAfter()) : "Saves when the current branch finishes.";
+      const w = saveResultWords(r, { target: target(), pushes: pushesAfter(), gitlab: s().how?.effective === "gitlab-mr" });
+      const m = w.text;
       setSaid(m);
+      setSaidLink(w.link ?? null);
       toast(m);
       announce(m);
       setConfirming(false);
@@ -287,6 +298,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
       await cancelMergeSettings(props.projectId);
       const m = "Cancelled the waiting save. Nothing changed.";
       setSaid(m);
+      setSaidLink(null);
       announce(m);
       props.onChanged();
     } catch (err) {
@@ -507,6 +519,16 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
           <Show when={said() && !changes()}>
             <p class="text-caption" role="status">
               {said()}
+              <Show when={saidLink()}>
+                {(l) => (
+                  <>
+                    {" "}
+                    <a href={l().href} target="_blank" rel="noopener noreferrer">
+                      {l().label}
+                    </a>
+                  </>
+                )}
+              </Show>
             </p>
           </Show>
           <Show when={changes()}>
@@ -523,7 +545,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
                         Discard Changes
                       </button>
                       <button type="button" class="button button-sm button-primary" disabled={locked()} onClick={() => setConfirming(true)}>
-                        Save to {target()}…
+                        {byRequest() ? saveVerb() : `Save to ${target()}`}…
                       </button>
                     </span>
                   </div>
@@ -531,22 +553,22 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
               >
                 <div class="mqs-confirm" role="group" aria-label="Confirm the save">
                   <p class="text-body">
-                    Save {changeLines(ch(), s()).length === 1 ? "this change" : "these changes"} to <span class="text-mono">.sova/project.json</span> as 1 commit on {target()}?
+                    Save {changeLines(ch(), s()).length === 1 ? "this change" : "these changes"} to <span class="text-mono">.sova/project.json</span> {viaWords()}?
                   </p>
                   <ul class="mqs-confirm-list">
                     <For each={changeLines(ch(), s())}>{(l) => <li>{l}</li>}</For>
                   </ul>
                   <p class="text-caption text-muted">
-                    It applies from the next landing and isn't checked first.
-                    {props.running ? " A branch is being checked now, so it saves when that branch finishes." : ""}
-                    {pushesAfter() ? " It goes to origin with the next landing." : ""}
+                    {byRequest() ? `It applies once it's merged into ${target()}.` : "It applies from the next landing and isn't checked first."}
+                    {props.running && !byRequest() ? " A branch is being checked now, so it saves when that branch finishes." : ""}
+                    {pushesAfter() && !byRequest() ? " It goes to origin with the next landing." : ""}
                   </p>
                   <div class="button-row">
                     <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={() => setConfirming(false)}>
                       Cancel
                     </button>
                     <button type="button" class="button button-sm button-primary" disabled={locked()} onClick={() => void save(ch())}>
-                      {busy() ? "Saving…" : props.running ? "Save When It Finishes" : `Save to ${target()}`}
+                      {busy() ? "Saving…" : props.running && !byRequest() ? "Save When It Finishes" : byRequest() ? saveVerb() : `Save to ${target()}`}
                     </button>
                   </div>
                 </div>

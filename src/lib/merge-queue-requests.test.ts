@@ -100,9 +100,16 @@ test("each host state reads as the brief's words, the most pressing first", () =
   assert.equal(requestChip("closed", mr()).label, "Closed on GitLab");
   assert.equal(requestChip("pushed", { how: "push-branch" }).label, "Pushed");
   assert.equal(requestChip("request-review", pr()).label, "Review the request");
-  const drafted = pr(undefined, { text: { title: "Add x", body: "…", draft: false } });
-  assert.equal(requestChip("request-review", drafted, "Waiting for the chat to go idle.").label, "Opening the PR", "on its way, while it waits for the chat");
-  assert.equal(requestReason("request-review", drafted, "main", "publishing"), "Publishing to GitHub.");
+  const text = { title: "Add x", body: "…", draft: false };
+  const going = pr(undefined, { text, publishRequested: true });
+  assert.equal(requestChip("request-review", going, "Waiting for the chat to go idle.").label, "Opening the PR", "on its way, while it waits for the chat");
+  assert.equal(requestReason("request-review", going, "main", "Waiting for the chat to go idle."), "Waiting for the chat to go idle.");
+  assert.equal(requestReason("request-review", going, "main", "publishing"), "Publishing to GitHub.");
+  // A refused Publish: reason and text both there, no flag: the user's to fix and publish again.
+  const refused = pr(undefined, { text });
+  assert.equal(requestChip("request-review", refused, "Sign in to GitHub on this computer first (gh auth login).").label, "Review the request", "a refusal is never read as on its way");
+  assert.deepEqual(requestActions("request-review", refused, { reason: "Sign in to GitHub on this computer first (gh auth login)." }), ["review"]);
+  assert.equal(requestReason("request-review", refused, "main", "Sign in to GitHub on this computer first (gh auth login)"), "Sign in to GitHub on this computer first (gh auth login). Fix it, then publish again.");
   assert.equal(requestChip("request-review", pr(), "The request folder's drafter failed.").label, "Review the request", "no text drafted: still yours to write");
   assert.match(requestReason("request-review", pr(), "main", "The request folder's drafter failed.")!, /Write the title and description yourself/);
 });
@@ -122,7 +129,7 @@ test("actions: Open on the host always once linked; Send Back to Chat on host tr
   assert.deepEqual(requestActions("requested", pr({}), { newerCommits: 2 }), ["open-host", "land-again"]);
   assert.deepEqual(requestActions("requested", pr({ state: "merged" }), { newerCommits: 2 }), ["open-host"], "merged: nothing to update");
   assert.deepEqual(requestActions("request-review", pr()), ["review"]);
-  assert.deepEqual(requestActions("request-review", pr(undefined, { text: { title: "t", body: "", draft: false } }), { reason: "Waiting for the chat to go idle." }), [], "on its way: nothing to review again");
+  assert.deepEqual(requestActions("request-review", pr(undefined, { text: { title: "t", body: "", draft: false }, publishRequested: true }), { reason: "Waiting for the chat to go idle." }), [], "on its way: nothing to review again");
   assert.deepEqual(requestActions("request-review", pr(), { reason: "Couldn't draft it." }), ["review"], "not drafted: Review Request to write it");
   assert.equal(requestActionLabel("open-host", pr()), "Open on GitHub");
   assert.equal(requestActionLabel("open-host", mr()), "Open on GitLab");

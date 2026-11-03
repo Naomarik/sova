@@ -110,3 +110,14 @@ test("the merge thread's Instructions caption shows only when the project folder
   assert.equal(threadFolderCaption(with_([method, own()])), null);
   assert.equal(threadFolderCaption(with_([])), null);
 });
+
+test("a save says where it went: the target, waiting, a PR or MR opened, or a branch pushed", async () => {
+  const { saveResultWords } = await import("./merge-queue-settings");
+  const o = { target: "master", pushes: true, gitlab: false };
+  assert.deepEqual(saveResultWords({ state: "saved", commit: "1a2b3c4d5e", pushed: false }, o), { text: "Saved to master as 1a2b3c4; pushed with the next landing." });
+  assert.deepEqual(saveResultWords({ state: "waiting" }, o), { text: "Saves when the current branch finishes." });
+  const req = { state: "requested" as const, commit: "c", branch: "sova/settings-1", url: "https://example.invalid/pr/12", number: 12 };
+  assert.deepEqual(saveResultWords(req, o), { text: "Opened PR #12 for the settings change. It applies once it's merged into master.", link: { href: req.url, label: "Open PR" } });
+  assert.equal(saveResultWords(req, { ...o, gitlab: true }).text, "Opened MR !12 for the settings change. It applies once it's merged into master.");
+  assert.equal(saveResultWords({ state: "pushed", commit: "c", branch: "sova/settings-1" }, o).text, "Pushed the settings change as sova/settings-1. It applies once it's merged into master.");
+});

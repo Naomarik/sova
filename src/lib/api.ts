@@ -1688,6 +1688,6 @@ export const putMergeModels = (projectId: string, models: { review?: ModelChoice
   request<unknown>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/models`, jsonInit("PUT", models));
 /** Saves the project-file settings onto the target as one commit, after the user confirmed; waits behind a run. */
 export const saveMergeSettings = (projectId: string, changes: import("../../shared/merge-queue-settings").MergeSettingsChange) =>
-  request<{ state: "saved"; commit: string; pushed: boolean } | { state: "waiting" }>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings`, jsonInit("POST", { changes, confirm: true }));
+  request<import("../../shared/merge-queue-settings").MergeSettingsSaveResult>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings`, jsonInit("POST", { changes, confirm: true }));
 /** Cancels a save waiting for the current branch. */
 export const cancelMergeSettings = (projectId: string) => request<unknown>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings/pending`, { method: "DELETE" });

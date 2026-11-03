@@ -97,6 +97,10 @@ export interface MergeRequestInfo {
   text?: { title: string; body: string; draft: boolean; checks?: { name: string; ok: boolean; why?: string }[] };
   /** The request skill folder the text was written by (relative to the project); absent: Sova's plain default. */
   folder?: string;
+  /** Publish was given (or Land Again publishes onto an open request) and it is on its way: it goes out once the
+   *  branch's chat is idle with a clean folder (`reason` says what it waits for). Absent: the text is the user's to
+   *  review and Publish. */
+  publishRequested?: true;
 }
 
 /** A note on an entry, shown on its row (queue view, composer popup, pane). Sova attaches no meaning to the text. */

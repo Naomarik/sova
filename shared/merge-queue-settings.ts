@@ -120,7 +120,13 @@ export interface LandHowSetting {
 }
 
 /** What a save answers. */
-export type MergeSettingsSaveResult = { state: "saved"; commit: string; pushed: false } | { state: "waiting" };
+/** What a save answers: committed on the target; waiting for the branch checking now; or, on a project that lands by
+ *  request or by pushing a branch, published that way (the change applies once the host merges it). */
+export type MergeSettingsSaveResult =
+  | { state: "saved"; commit: string; pushed: false }
+  | { state: "waiting" }
+  | { state: "requested"; commit: string; branch: string; url: string; number: number }
+  | { state: "pushed"; commit: string; branch: string };
 
 /** The words a refused save says while the settings file has uncommitted edits. */
 export const SETTINGS_DIRTY_WORDS = "Commit or discard the edit in the project folder first";

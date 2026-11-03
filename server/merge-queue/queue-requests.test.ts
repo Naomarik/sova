@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, test } from "node:test";
 import type { QueueDeps } from "./queue";
 import { writeOverride } from "./strategy";
-import { makeKit, sh, tryGit, until } from "./testing/queue-kit";
+import { makeKit, sh, tryGit, until, untilAborted } from "./testing/queue-kit";
 
 /** An in-process host over the kit's bare origin: requests by number; `close` and `merge` are the host's buttons. */
 function host() {
@@ -145,7 +145,8 @@ describe("how it lands, at the queue", () => {
       writeOverride(q.store.dir, "github-pr");
       const before = k.repo.head();
       const r = await q.saveSettings({ push: false });
-      assert.equal(r.state, "saved");
+      // The save's answer says it went as a request, and where.
+      assert.equal(r.state, "requested");
       assert.equal(k.repo.head(), before, "local main never moves");
       assert.equal(sh(k.repo.origin, "rev-parse", "master"), before, "origin's main waits for the host's merge");
       const published = q.lastSettingsPublish;
@@ -154,8 +155,79 @@ describe("how it lands, at the queue", () => {
       assert.equal(sh(k.repo.origin, "rev-parse", `refs/heads/${published!.branch}^`), before);
       assert.match(sh(k.repo.origin, "show", `refs/heads/${published!.branch}:.sova/project.json`), /"push": false/);
       assert.equal([...h.reqs.values()][0]?.title.startsWith("Merge queue settings:"), true);
+      assert.ok(r.state === "requested" && r.branch === published!.branch && r.number === (published as { number: number }).number && r.url === (published as { url: string }).url && r.commit === published!.commit);
     } finally {
       await k.done();
+    }
+  });
+
+  test("q7: a request project's save while a branch is checking doesn't wait: it opens its request at once", async () => {
+    const h = host();
+    const k = makeKit({ deps: h.deps });
+    let release = () => {};
+    try {
+      const q = await k.q();
+      h.setOrigin(k.repo.origin);
+      writeOverride(q.store.dir, "github-pr");
+      const gate = new Promise<void>((r) => (release = r));
+      k.run.set(async (input) => {
+        await Promise.race([gate, untilAborted(input)]);
+        return {};
+      });
+      k.repo.branch("feat/a", { "b.txt": "b\n" });
+      await q.add({ branch: "feat/a", by: "land-button" });
+      await until(() => k.run.inputs.length === 1, "a's run started");
+      const before = k.repo.head();
+      const r = await q.saveSettings({ push: false });
+      assert.equal(r.state, "requested", `never "waiting" on a request project, got ${JSON.stringify(r)}`);
+      assert.equal(q.file.pendingSave, undefined);
+      assert.equal(k.repo.head(), before, "local main never moves");
+    } finally {
+      release();
+      await k.done();
+    }
+  });
+
+  test("a publication waits for a busy chat (flagged publishRequested); stopped mid-way, it is finished from its run, never rerun", async () => {
+    let idle = false;
+    const k = makeKit({ deps: { chatIdle: async () => idle } as Partial<QueueDeps> });
+    try {
+      const q = await k.q();
+      writeOverride(q.store.dir, "push-branch");
+      const b = k.repo.branch("feat/w", { "w.txt": "w\n" });
+      const { entry } = await q.add({ branch: "feat/w", by: "land-button", session: "s-w" });
+      // No docs here, so the idle gate needs a docs commit to matter: give the run one.
+      k.run.set((input, merged) => {
+        if (!("tip" in merged)) return {};
+        const tree = sh(k.repo.root, "rev-parse", `${merged.tip}^{tree}`);
+        const docs = sh(k.repo.root, "commit-tree", tree, "-p", merged.tip, "-m", `Spec: land w\n\nSova-Spec-Landing: merge-queue ${input.runId}`);
+        return { tip: docs, mergeSha: merged.tip };
+      });
+      await until(async () => (await k.entry(entry.id)).state === "request-review", "waiting");
+      const waiting = await k.entry(entry.id);
+      assert.equal(waiting.request?.publishRequested, true, "on its way, not the user's to write");
+      assert.match(waiting.reason ?? "", /busy/);
+      const runs = waiting.runs.length;
+      // As if Sova stopped mid-publish while the entry still read Checking.
+      waiting.state = "checking";
+      q.save();
+      await k.queues.stop();
+      idle = true;
+      const k2 = makeKit({ repo: k.repo, deps: { chatIdle: async () => idle } as Partial<QueueDeps> });
+      try {
+        const q2 = await k2.q();
+        assert.equal((await k2.entry(entry.id)).state, "request-review", "kept, not requeued");
+        await q2.pollHost();
+        const e = await k2.entry(entry.id);
+        assert.equal(e.state, "pushed", e.reason);
+        assert.equal(e.runs.length, runs, "never rerun");
+        assert.equal(e.request?.publishRequested, undefined);
+        assert.equal(sh(k.repo.root, "rev-parse", "feat/w^"), b.head, "one docs commit on the chat's branch");
+      } finally {
+        await k2.queues.stop();
+      }
+    } finally {
+      k.repo.done();
     }
   });
 

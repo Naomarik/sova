@@ -9,6 +9,10 @@ import type { HostFactsWire, HostKind } from "../../shared/merge-queue-hosts";
 import type { LandHowSetting } from "../../shared/merge-queue-settings";
 export { LAND_HOWS } from "../../shared/merge-queue";
 export type { HostKind, LandHow };
+const sentence = (s: string): string => {
+  const t = s.trim();
+  return /[.!?…]$/.test(t) ? t : `${t}.`;
+};
 
 /** The settings row's facts: the way in effect, where it comes from, what origin suggests, the host's sign-in. */
 export type { LandHowSetting };
@@ -100,14 +104,11 @@ export function requestRef(host: HostKind, n: number | undefined): string {
 
 const hostOfReq = (p: Pick<RequestView, "how" | "host">): HostKind | null => p.host ?? hostOf(p.how);
 
-type ReqFacts = Pick<RequestView, "how" | "host" | "number" | "url" | "facts" | "text">;
+type ReqFacts = Pick<RequestView, "how" | "host" | "number" | "url" | "facts" | "text" | "publishRequested">;
 
-/**
- * A request-review entry that is already on its way out (published, waiting for the chat to go idle or a clean
- * folder, or "publishing"): it has drafted text and the queue's reason says what it waits for. One with a reason and
- * no text is one Sova couldn't draft: still yours to write and publish.
- */
-export const requestOnItsWay = (state: string, p: Pick<RequestView, "text"> | undefined, reason?: string): boolean => state === "request-review" && !!reason?.trim() && !!p?.text;
+/** A request-review entry already on its way out: Publish was given (or Land Again / Push branch only publishes by
+ *  itself) and the queue hasn't sent or refused it yet. The queue's own flag says so; nothing is inferred. */
+export const requestOnItsWay = (state: string, p: Pick<RequestView, "publishRequested"> | undefined): boolean => state === "request-review" && p?.publishRequested === true;
 
 /**
  * An entry past Sova's checks, as one chip. The host's facts read the most pressing first: merged, closed, conflicts,
@@ -119,7 +120,7 @@ export function requestChip(state: RequestState | "landed", p: ReqFacts | undefi
   switch (state) {
     case "request-review":
       // After Publish the entry waits here for the chat to go idle (its reason says so) until the request is created.
-      return requestOnItsWay(state, p, reason) ? { label: host ? `Opening the ${REQUEST_NOUN[host]}` : "Pushing the branch", tone: "accent", live: true } : { label: "Review the request", tone: "warn" };
+      return requestOnItsWay(state, p) ? { label: host ? `Opening the ${REQUEST_NOUN[host]}` : "Pushing the branch", tone: "accent", live: true } : { label: "Review the request", tone: "warn" };
     case "pushed":
       return { label: "Pushed", tone: "success" };
     case "closed":
@@ -151,8 +152,9 @@ export function requestReason(state: RequestState | "landed", p: (ReqFacts & Pic
   const merged = `Merged on ${H}. Sova checked it merged with ${target}; ${H}'s merge is final.`;
   switch (state) {
     case "request-review":
-      if (requestOnItsWay(state, p, reason)) return reason!.trim() === "publishing" ? `Publishing to ${H}.` : reason!.trim();
-      if (reason?.trim()) return `${reason.trim()} Write the title and description yourself, then publish.`;
+      if (requestOnItsWay(state, p)) return !reason?.trim() || reason.trim() === "publishing" ? `Publishing to ${H}.` : reason.trim();
+      // Not on its way: a reason is why Sova couldn't draft the text (no text), or why the last Publish didn't go.
+      if (reason?.trim()) return p?.text ? `${sentence(reason)} Fix it, then publish again.` : `${sentence(reason)} Write the title and description yourself, then publish.`;
       return `Sova's checks passed. Read the title and description, then publish; nothing goes to ${H} until you do.`;
     case "pushed":
       return p ? `Pushed to origin as ${p.branch}. Open the request yourself.` : "Pushed to origin. Open the request yourself.";
@@ -176,7 +178,7 @@ export function requestReason(state: RequestState | "landed", p: (ReqFacts & Pic
 /** What a request row offers. Every one is a merge verb or a link; none starts a chat turn by itself. */
 export type RequestAction = "open-host" | "send-back" | "land-again" | "review";
 export function requestActions(state: RequestState | "landed", p: ReqFacts | undefined, o: { newerCommits?: number; reason?: string } = {}): RequestAction[] {
-  if (state === "request-review") return requestOnItsWay(state, p, o.reason) ? [] : ["review"];
+  if (state === "request-review") return requestOnItsWay(state, p) ? [] : ["review"];
   const out: RequestAction[] = [];
   if (p?.url && hostOfReq(p)) out.push("open-host");
   const f = p?.facts;

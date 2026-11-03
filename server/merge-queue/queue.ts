@@ -128,6 +128,7 @@ export interface QueueDeps {
 }
 
 const SETTINGS_FILE = ".sova/project.json";
+type QueueSettingsPublish = { state: "requested"; branch: string; url: string; number: number; commit: string } | { state: "pushed"; branch: string; commit: string };
 
 export interface AddRequest {
   branch?: string;
@@ -442,7 +443,9 @@ export class ProjectQueue {
       await this.settingsText(head, changes);
       const file = await this.settingsFileState(head);
       if (file.blocked) throw new MergeFailure("invalid-request", file.blocked);
-      if (this.current || this.trying || this.landing) {
+      // A project that lands by request or by pushing a branch never moves the target with a save: nothing to wait for.
+      const how = effectiveHow((await this.declared()).def?.merge?.land, this.store.dir).effective;
+      if (!publishes(how) && (this.current || this.trying || this.landing)) {
         // A second save while one waits joins it (the later value of each setting wins).
         const was = this.q.pendingSave && !this.q.pendingSave.failed ? this.q.pendingSave.changes : {};
         const checks = { ...(was.checks ?? {}) };
@@ -454,7 +457,12 @@ export class ProjectQueue {
         this.settingsChanged();
         return { state: "waiting" as const };
       }
+      this.lastSettingsPublish = null;
       const commit = await this.publishSettings(head, changes);
+      // A request (or push-branch) project published it as its own branch: the answer says where.
+      const pub = this.lastSettingsPublish as QueueSettingsPublish | null;
+      if (pub?.state === "requested") return { state: "requested" as const, commit, branch: pub.branch, url: pub.url, number: pub.number };
+      if (pub?.state === "pushed") return { state: "pushed" as const, commit, branch: pub.branch };
       return { state: "saved" as const, commit, pushed: false as const };
     });
   }
@@ -1684,6 +1692,7 @@ export class ProjectQueue {
     }
     // Published at once: it stays `checking` until the outcome is known (a wait reads request-review, with why).
     this.q.awaitingPublish = { ...(this.q.awaitingPublish ?? {}), [e.id]: null };
+    e.request.publishRequested = true;
     this.save();
     await this.publishNow(e);
     this.kickSoon();
@@ -1705,6 +1714,7 @@ export class ProjectQueue {
         e.request.text = { title: c.title, body: c.body, draft: t.draft, checks: c.checks };
       }
       this.q.awaitingPublish = { ...(this.q.awaitingPublish ?? {}), [e.id]: text };
+      e.request.publishRequested = true;
       e.reason = "publishing";
       e.updatedAt = this.iso();
       this.save();
@@ -1722,6 +1732,7 @@ export class ProjectQueue {
     const drop = () => {
       const { [e.id]: _gone, ...rest } = this.q.awaitingPublish ?? {};
       this.q.awaitingPublish = rest;
+      if (e.request) delete e.request.publishRequested;
     };
     const run = e.run ? this.store.readRun(e.run) : null;
     if ((e.state !== "request-review" && e.state !== "checking") || !e.request || !run?.tip) {
@@ -1761,6 +1772,7 @@ export class ProjectQueue {
     const drop = () => {
       const { [e.id]: _gone, ...rest } = this.q.awaitingPublish ?? {};
       this.q.awaitingPublish = rest;
+      if (e.request) delete e.request.publishRequested;
     };
     delete this.q.publish;
     e.updatedAt = this.iso();
@@ -2023,6 +2035,15 @@ export class ProjectQueue {
     for (const e of this.q.entries) {
       if (e.state !== "checking") continue;
       if (this.q.paused?.kind === "main-checkout-dirty" && this.q.paused.run === e.run) continue;
+      // Stopped while publishing a tested run (Land Again onto an open request, Push branch only): its docs commit may
+      // be on the chat's branch already, so it is finished from that run, never rerun.
+      if (e.id in (this.q.awaitingPublish ?? {}) && e.request && e.run && this.store.readRun(e.run)?.tip) {
+        e.state = "request-review";
+        e.reason = "Sova stopped while publishing it: finishing it";
+        e.updatedAt = this.iso();
+        did.push(`kept ${e.branch}'s publication: Sova stopped during it`);
+        continue;
+      }
       const run = e.run ? this.store.readRun(e.run) : null;
       if (run && run.verdict === "running") {
         run.verdict = "void";

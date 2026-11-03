@@ -29,7 +29,8 @@ import { estimateFromRuns } from "./estimate";
 import { deliverReview } from "./review-step";
 import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
-import { buildView, superseded } from "./view";
+import { settledFacts } from "./settled";
+import { buildView } from "./view";
 import { type MergeQueueSettings, type MergeSettingsChange, type MergeSettingsSaveResult, SETTINGS_DIRTY_WORDS } from "../../shared/merge-queue-settings";
 import { effectiveModel, type ModelCheck, readModels } from "./models";
 import { buildSettings, fixedValues, playbookDiffers } from "./settings";
@@ -594,20 +595,10 @@ export class ProjectQueue {
   }
 
   private settledCache: { at: number; head: string; facts: Map<string, "merged" | "gone"> } | null = null;
-  /**
-   * Sent-back entries git says need no fix any more (the view's `settled`): `merged` when the sent-back commit or the
-   * branch's tip is already in the target, `gone` when the branch or the worktree it was approved from was removed.
-   * Superseded ones are the view's to see and skip git here. Re-read at most every 15 s or when the target moves.
-   */
+  /** Sent-back entries git says need no fix any more (settled.ts), re-read at most every 15 s or when the target moves. */
   private async settledFacts(head: string): Promise<Map<string, "merged" | "gone">> {
     if (this.settledCache && this.settledCache.head === head && this.now() - this.settledCache.at < 15_000) return this.settledCache.facts;
-    const facts = new Map<string, "merged" | "gone">();
-    for (const e of this.q.entries) {
-      if (e.state !== "needs-fix" || superseded(this.q.entries, e)) continue;
-      const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
-      if (head && ((await isAncestor(this.git, this.root, e.commit, head)) || (tip && (await isAncestor(this.git, this.root, tip, head))))) facts.set(e.id, "merged");
-      else if (!tip || (e.worktree && !existsSync(e.worktree))) facts.set(e.id, "gone");
-    }
+    const facts = await settledFacts(this.git, this.root, head, this.q.entries);
     this.settledCache = { at: this.now(), head, facts };
     return facts;
   }

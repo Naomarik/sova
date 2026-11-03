@@ -198,7 +198,8 @@ function queueRowOf(w: QueueRowInput): QueueRow {
       case "needs-fix":
         // Sent back: no Land at all while its chat fixes it. Once the branch reads finished again at a newer commit
         // (clean, no conflicts, its chat idle: Sova's ready reading), that commit wins and the row is Ready with Land.
-        if (fixedPast(w, e.commit) || pastSentBack(w)) break;
+        // Settled (a later entry for the branch, already in the target, its branch or folder removed): nothing to fix.
+        if (e.settled || fixedPast(w, e.commit) || pastSentBack(w)) break;
         return { ...base, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "none" };
       case "landed":
         return {

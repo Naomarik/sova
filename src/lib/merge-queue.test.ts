@@ -286,3 +286,17 @@ test("a merged or removed worktree wins over Needs a fix", () => {
   assert.equal(queueRow(wt({ queue: sent, exists: false })).key, "removed");
   assert.equal(queueRow(wt({ queue: sent, gone: "unknown" } as never)).key, "removed");
 });
+
+test("a sent-back entry superseded by a later cancelled one no longer reads Needs a fix on its worktree row", async () => {
+  const { buildView, worktreeQueueInfo } = await import("../../server/merge-queue/view");
+  const base = { project: "p", target: "master", branch: "feat/x", commit: SHA, approval: { by: "land-button", at: "t", commit: SHA }, runs: [], picks: [], notes: [] };
+  const a = { ...base, id: "mq_a", seq: 1, state: "needs-fix", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-03T00:00:00Z" };
+  const b = { ...base, id: "mq_b", seq: 2, state: "cancelled", createdAt: "2026-01-02T00:00:00Z", updatedAt: "2026-01-02T00:00:00Z" };
+  const q = { v: 1, project: "p", root: "/r", target: "master", entries: [a, b], landed: [], heads: {}, machineTries: {}, seq: 2 } as never;
+  const v = buildView({ q, root: "/r", current: null, checks: "declared", review: false, head: "h", takesMs: null, now: 0, readRun: () => null });
+  const info = worktreeQueueInfo(v, "feat/x");
+  assert.equal(info?.id, "mq_a", "the cancelled entry isn't in the view: the old one is what the row sees");
+  assert.equal(info?.settled, "superseded");
+  assert.notEqual(queueRow(wt({ queue: info, mergeServed: true })).key, "needs-fix");
+  assert.equal(queueRow(wt({ queue: { ...info!, settled: undefined }, mergeServed: true })).key, "needs-fix", "unsettled, it still would");
+});

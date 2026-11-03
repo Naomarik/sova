@@ -41,6 +41,7 @@ export const queueInfoOf = (e: MergeEntry): WorktreeQueueInfo => ({
   review: e.review,
   project: e.project,
   run: e.run,
+  settled: e.settled,
 });
 
 export interface ProjectQueue {

@@ -108,6 +108,8 @@ describe("who may call which release verb (t17, q3, q12)", () => {
     ["release.withdraw", { kind: "project-overseer", id: "po", root, act: async () => {}, releaseAct: true }, false, /operator's alone/],
     ["release.request", { kind: "project-overseer", id: "po", root, act: async () => {} }, false, null],
     ["release.request", { kind: "overseer", id: "o" }, false, null],
+    ["release.request", { kind: "assistant", id: "pa", root }, false, null],
+    ["release.start", { kind: "assistant", id: "pa", root }, false, /needs the release power/],
     ["release.request", { kind: "operator" }, false, /release.start/],
     ["release.status", { kind: "project-overseer", id: "po", root: "/other", act: async () => {} }, false, /its own project/],
     ["release.status", { kind: "conform", id: "c" }, false, /never releases/],
@@ -491,6 +493,9 @@ describe("the quiet release chat (t23) and Needs you", () => {
       assert.ok(t.r.attentionFacts().some((f) => f.kind === "release-request" && /lots landed/.test(f.detail)));
       const s = await t.r.run("release.request", { why: "x" }, { kind: "session", id: "c", root: t.repo.root, own: [] });
       assert.equal(s.error?.code, "forbidden");
+      const pa = await t.r.run("release.request", { why: "the owner wants the new version out" }, { kind: "assistant", id: "project-assistant", root: t.repo.root });
+      assert.equal(pa.ok, true, JSON.stringify(pa.error));
+      assert.ok(t.r.attentionFacts().some((f) => f.kind === "release-request" && /^The Project Assistant asks you to release: the owner wants/.test(f.detail)));
       assert.equal((await t.call("release.request", { dismiss: true })).ok, true);
       assert.equal(t.r.attentionFacts().filter((f) => f.kind === "release-request").length, 0);
     } finally {

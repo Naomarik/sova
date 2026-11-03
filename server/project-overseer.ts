@@ -1802,7 +1802,6 @@ async function runReleaseAct(projectId: string, e: Record<string, unknown>): Pro
   const by = String(e.by ?? "");
   const caller: Caller =
     by === "operator" ? { kind: "operator", confirm: true }
-    : by === "assistant" ? { kind: "assistant", id: "project-assistant", root, releaseAct: true }
     : { kind: "project-overseer", id: readPoState(projectOverseerPaths(projectId))?.current ?? "", root, act: async () => {}, releaseAct: true };
   const { projectEngine } = await import("./project-services/routes");
   const verb = e.verb === "publish" ? "release.publish" : "release.start";

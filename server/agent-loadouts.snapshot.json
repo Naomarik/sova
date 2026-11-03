@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 90036,
+      "bytes": 90054,
       "tools": [
         {
           "name": "sova_attention",
@@ -2829,7 +2829,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 95821,
+      "bytes": 95839,
       "tools": [
         {
           "name": "sova_attention",
@@ -11970,7 +11970,7 @@
       ]
     },
     "links": {
-      "bytes": 2400,
+      "bytes": 2418,
       "tools": [
         {
           "name": "sova_link",

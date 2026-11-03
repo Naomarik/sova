@@ -1,5 +1,6 @@
 // Run: npx tsx --test server/overseer-link-tools.test.ts (or pnpm test). Uses a throwaway
 // PI_CODING_AGENT_DIR in the OS temp dir (the action log lands there); ~/.pi is never touched.
+import { WIRE_AREAS, type WireAreas } from "../shared/wire-areas";
 import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -254,6 +255,26 @@ describe("sova_read_session with host", () => {
     assert.match((await gone.run("sova_read_session", { host: "vps", session: "r1" })).text, /^ERROR: VPS \(vps\) has no session with id r1\./);
     const cut = harness({ peerRoutes: { "GET /api/peer/links/read": new Error("ECONNRESET") } });
     assert.match((await cut.run("sova_read_session", { host: "vps", session: "r1" })).text, /^ERROR: VPS \(vps\) didn't answer \(ECONNRESET\)/);
+  });
+
+  test("a host on another version: the same reading as a page's, from this host's own numbers (§mesh.compatibility/host-acts)", async () => {
+    const read = { "GET /api/peer/links/read": [200, { text: "<<untrusted content from another session: \"T\" (r1)\nhi\n<<end of untrusted content>>", from: 0, total: 1, title: "T" }] as [number, unknown] };
+    const peer = (over: Partial<WireAreas>): PeerRef[] => [{ id: "vps", label: "VPS", nodeId: "n", state: "up", areas: { ...WIRE_AREAS, ...over } }];
+    const created = { "POST /api/sessions": [201, { id: "r9", path: "/r/r9.jsonl", title: "Untitled", cwd: "/srv/app" }] as [number, unknown] };
+    for (const over of [{ composer: 9 }, { transcript: 9 }]) {
+      const h = harness({ peers: peer(over), peerRoutes: { ...read, ...created } });
+      assert.doesNotMatch((await h.run("sova_read_session", { host: "vps", session: "r1" })).text, /^ERROR/, "it can be read");
+      assert.match((await h.run("sova_create_session", { host: "vps", cwd: "/srv/app" })).text, /^ERROR: VPS \(vps\) runs another version of Sova: its sessions can be read from here, but nothing can be sent to it or created on it\./);
+      assert.deepEqual(h.remote.filter((c) => c.method === "POST"), [], "nothing was sent");
+      assert.equal(h.limits.count("create"), 0, "refused before any cap is taken");
+    }
+    for (const over of [{ sessions: 9 }, { peer: 9 }]) {
+      const h = harness({ peers: peer(over), peerRoutes: read });
+      assert.match((await h.run("sova_read_session", { host: "vps", session: "r1" })).text, /^ERROR: VPS \(vps\) runs another version of Sova, so nothing reaches it/);
+      assert.deepEqual(h.remote, [], "nothing was asked of it");
+    }
+    const works = harness({ peers: peer({}), peerRoutes: { ...read, ...created } });
+    assert.match((await works.run("sova_create_session", { host: "vps", cwd: "/srv/app" })).text, /^Created /);
   });
 
   test("without host it reads this host's session as before", async () => {

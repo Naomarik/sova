@@ -1,5 +1,5 @@
 // Mesh version resync (§mesh.peers/resync), the page's side: what the host menu says under a host
-// on another version, whether it offers Resync, and the words of the confirm sheet. Pure, so node
+// on another build, whether it offers Resync, and the words of the confirm sheet. Pure, so node
 // tests run it without a DOM. Types: shared/mesh-resync.ts.
 
 import { noRecipeReason, type ResyncHost, type ResyncJob, type ResyncSelf } from "../../shared/mesh-resync";
@@ -15,40 +15,52 @@ const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? o
 
 export const jobRunning = (job: ResyncJob | undefined): boolean => job?.state === "running" || job?.state === "waiting";
 
+/** Whether a host answers, so its commit can be read; the placing comes from commits, never its state. */
+const answers = (h: ResyncHost): boolean => h.state === "up" || h.state === "skewed";
+
+/**
+ * Where a host's build sits against this host's, or null when there is nothing to say: it is on this
+ * host's commit, doesn't answer, or says no commit while sharing this host's fingerprint.
+ */
+export function buildLine(h: ResyncHost, self: Pick<ResyncSelf, "label">): string | null {
+  if (!answers(h) || h.relation === "same") return null;
+  if (!h.commit && h.state === "up") return null;
+  const said = (where: string) => `On another build: ${where}`;
+  switch (h.relation) {
+    case "behind":
+      return said(h.distance !== undefined ? `${plural(h.distance, "commit")} behind ${self.label}` : `behind ${self.label}`);
+    case "ahead":
+      return said(`newer than ${self.label}. Update ${self.label} to match it.`);
+    case "diverged":
+      return said(`on another branch than ${self.label}`);
+    default:
+      return said(h.commit ? `its commit ${shortCommit(h.commit)} isn't in ${self.label}'s checkout` : "it doesn't say its commit");
+  }
+}
+
 /**
  * What the host menu shows under a host: `line` (null: nothing), and the Resync button (null: none;
- * `reason` set: shown disabled, the reason said under the host too). Only a skewed host that is
- * behind gets a button, and a running job replaces it with its progress.
+ * `reason` set: shown disabled, the reason said under the host too). Any host that is behind gets a
+ * button, whatever its state, and a running job replaces it with its progress.
  */
 export function resyncView(h: ResyncHost | undefined, self: ResyncSelf): { line: string | null; button: { reason?: string } | null } {
   if (!h) return { line: null, button: null };
   if (h.job?.state === "running") return { line: `Resyncing to ${shortCommit(h.job.commit)}…`, button: null };
   if (h.job?.state === "waiting") return { line: `Deployed; waiting for ${h.label} to come back…`, button: null };
-  if (h.state !== "skewed") return { line: h.job?.state === "done" ? `Resynced to ${shortCommit(h.job.commit)}` : null, button: null };
+  const where = buildLine(h, self);
+  if (!where) return { line: h.job?.state === "done" ? `Resynced to ${shortCommit(h.job.commit)}` : null, button: null };
   const failed = h.job?.state === "failed" ? "Last resync failed. " : "";
-  switch (h.relation) {
-    case "behind": {
-      const where = h.distance !== undefined ? `${plural(h.distance, "commit")} behind ${self.label}` : `Behind ${self.label}`;
-      // This host's own block is about every host: the menu says it once (resyncNote), not under each.
-      if (self.blocked) return { line: `${failed}${where}`, button: { reason: self.blocked } };
-      const reason = h.recipe === null ? noRecipeReason(h, self.label) : h.recipeProblem ? `Its recipe can't run: ${h.recipeProblem}` : undefined;
-      return { line: `${failed}${where}${reason ? `. ${reason}` : ""}`, button: reason ? { reason } : {} };
-    }
-    case "ahead":
-      return { line: `${failed}Newer than ${self.label}. Update ${self.label} to match it.`, button: null };
-    case "same":
-      return { line: `${failed}Same commit as ${self.label}`, button: null };
-    case "diverged":
-      return { line: `${failed}On another branch than ${self.label}`, button: null };
-    default:
-      return { line: `${failed}${h.commit ? `Its commit ${shortCommit(h.commit)} isn't in ${self.label}'s checkout` : "It doesn't say its commit"}`, button: null };
-  }
+  if (h.relation !== "behind") return { line: `${failed}${where}`, button: null };
+  // This host's own block is about every host: the menu says it once (resyncNote), not under each.
+  if (self.blocked) return { line: `${failed}${where}`, button: { reason: self.blocked } };
+  const reason = h.recipe === null ? noRecipeReason(h, self.label) : h.recipeProblem ? `Its recipe can't run: ${h.recipeProblem}` : undefined;
+  return { line: `${failed}${where}${reason ? `. ${reason}` : ""}`, button: reason ? { reason } : {} };
 }
 
 /** The one sentence the menu says about resync as a whole: why none can start from this host now,
     shown only when some host is behind (else it would be noise). null: nothing to say. */
 export function resyncNote(r: { self: ResyncSelf; hosts: ResyncHost[] } | null): string | null {
-  if (!r?.self.blocked || !r.hosts.some((h) => h.state === "skewed" && h.relation === "behind" && !jobRunning(h.job))) return null;
+  if (!r?.self.blocked || !r.hosts.some((h) => answers(h) && h.relation === "behind" && !jobRunning(h.job))) return null;
   return `Resync is off: ${r.self.blocked}`;
 }
 

@@ -87,7 +87,7 @@ export const ROW_SOVA_WORDS: readonly string[] = [
   "restart pending",
   ...(["merged", "stale", "in-progress", "blocked", "ready", "waiting-approval", "removed"] as const).map(readinessWord),
   // The host mark's state words, on the same meta line with the same dot (src/lib/mesh-details.ts).
-  ...(["down", "skewed", "refused", "hidden"] as const).map((state) => hostTone(state).word!),
+  ...(["read-only", "display", "update", "down", "refused", "hidden"] as const).map((reading) => hostTone(reading).word!),
 ];
 const SOVA_WORDS = new Set(ROW_SOVA_WORDS.map((w) => w.toLowerCase()));
 /** The follow-up count ("2 follow-ups") and the worktree count ("2 of 3"). */

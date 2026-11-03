@@ -567,3 +567,26 @@ describe("a releases-only deploy target (q2's opt-in)", () => {
     }
   });
 });
+
+describe("a queue event lost to a stop", () => {
+  test("release.status applies the release entry's landing from the queue itself", async () => {
+    const t = releaseKit();
+    try {
+      const { rec, sha } = await prepared(t);
+      // The releaser is deaf while the entry lands (as when the queue recovers a landing before the releaser is wired).
+      const onQueueEvent = t.r.onQueueEvent.bind(t.r);
+      t.r.onQueueEvent = () => {};
+      await t.call("release.step", { step: "commit", state: "done", summary: "c", facts: [`commit=${sha}`] }, t.chat);
+      const entry = t.r.record(t.repo.root, rec.id)!.entry!;
+      await landedState(t.k, entry);
+      assert.notEqual(t.r.record(t.repo.root, rec.id)!.steps.find((s) => s.id === "checks")!.state, "done");
+      t.r.onQueueEvent = onQueueEvent;
+      const s = await t.call("release.status", {});
+      assert.equal(s.changed, true);
+      assert.equal(s.release!.view!.open!.state, "ready");
+      assert.equal(s.release!.view!.open!.commit, t.repo.head());
+    } finally {
+      await t.done();
+    }
+  });
+});

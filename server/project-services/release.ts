@@ -403,8 +403,10 @@ export class Releaser {
 
   private async dispatch(verb: ReleaseVerb, req: Req, root: string, caller: Caller): Promise<{ changed: boolean; report: ReleaseReport }> {
     switch (verb) {
-      case "release.status":
-        return { changed: false, report: { view: await this.view(root) } };
+      case "release.status": {
+        const changed = await this.reconcile(root);
+        return { changed, report: { view: await this.view(root) } };
+      }
       case "release.logs":
         return { changed: false, report: { lines: await this.logs(root, req) } };
       case "release.request":
@@ -940,7 +942,12 @@ export class Releaser {
 
   /** A release entry moved in the queue (queue.ts releaseEvent). Never throws. */
   onQueueEvent(ev: ReleaseQueueEvent, root: string): void {
-    void this.serial(root, async () => {
+    void this.serial(root, () => this.applyQueueEvent(ev, root)).catch((err) => this.log(`queue event failed: ${err instanceof Error ? err.message : err}`));
+  }
+
+  /** One queue event, applied (inside the project's chain). */
+  private async applyQueueEvent(ev: ReleaseQueueEvent, root: string): Promise<void> {
+    {
       const rec = this.record(root, ev.release);
       if (!rec) return;
       if (ev.kind === "revert") {
@@ -980,7 +987,23 @@ export class Releaser {
       }
       this.save(rec);
       this.changed(root);
-    }).catch((err) => this.log(`queue event failed: ${err instanceof Error ? err.message : err}`));
+    }
+  }
+
+  /** The open release's entry as the queue has it now: an event lost to a stop (the queue recovers a landing before
+   *  the releaser is wired) is applied from the entry itself. Answers whether the record changed. */
+  async reconcile(root: string): Promise<boolean> {
+    const rec = this.openRecord(root);
+    if (!rec?.entry || rec.state === "publishing") return false;
+    const q = await this.deps.queue(root);
+    const e = q.entry(rec.entry);
+    if (!e) return false;
+    const c = rec.steps.find((s) => s.id === "checks")!;
+    const ev = (what: ReleaseQueueEvent["what"], why?: string): ReleaseQueueEvent => ({ root, release: rec.id, kind: "release", entry: q.withPosition(e), what, ...(why ? { why } : {}) });
+    if (e.state === "landed" && c.state !== "done") await this.applyQueueEvent(ev("landed"), root);
+    else if ((e.state === "needs-fix" || e.state === "unattributed") && c.state === "running") await this.applyQueueEvent(ev(e.state === "needs-fix" ? "failed" : "waiting", e.reason), root);
+    else return false;
+    return true;
   }
 
   // ---- reading --------------------------------------------------------------------------------------

@@ -2,7 +2,7 @@ import { createEffect, createMemo, createResource, createSignal, For, Match, on,
 import type { TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { fetchSessionContextView, fetchSetupFile } from "../lib/api";
 import { formatTokens } from "../lib/context";
-import { approxTokens, contextHeadline, contextLines, contextRoom, flatParts, type ContextPart, type ContextPartGroup } from "../lib/context-parts";
+import { approxTokens, contextHeadline, contextLines, contextRoom, flatParts, workerReplyKey, type ContextPart, type ContextPartGroup } from "../lib/context-parts";
 import type { FolderGroup } from "../lib/folder-viewer";
 import { workerLabel } from "../lib/workers";
 import { FolderViewer } from "./FolderViewer";
@@ -23,15 +23,18 @@ const GROUPS: readonly { id: ContextPartGroup; label: string }[] = [
  * The Context tab: what fills this chat's window (or one of its workers'), as of the last reply.
  * The total is the reply's own usage; each part is an estimate, and Other is what the estimates
  * don't explain. A line opens its part in the folder viewer, read-only. It reads once on open and
- * again on each change to the session's file (`changed`, the pane's insight signal); never polls.
+ * again on each change to the session's file (`changed`, the pane's insight signal) and, for a
+ * picked worker, when one of its replies ends (`workerReplyKey`); never polls.
  */
 export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?: TeamInfo[]; changed: number }) {
   const pickable = () => props.workers.filter((w) => w.sessionFile);
   const [who, setWho] = createSignal(props.path);
   /** The session read: this chat, or the picked worker while it is still listed. */
   const target = createMemo(() => (pickable().some((w) => w.sessionFile === who()) ? who() : props.path));
+  /** A picked worker's own reply-end signal: its replies don't move the parent's file. */
+  const workerKey = createMemo(() => workerReplyKey(pickable().find((w) => w.sessionFile === target())));
   const [view] = createResource(
-    () => `${props.changed}\u0001${target()}`,
+    () => `${props.changed}\u0002${workerKey()}\u0001${target()}`,
     (key) => fetchSessionContextView(key.slice(key.indexOf("\u0001") + 1)),
   );
   const ok = createMemo(() => {

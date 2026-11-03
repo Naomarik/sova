@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SessionContextView } from "../../shared/protocol";
-import { contextHeadline, contextLines, contextRoom, flatParts, type ContextPart, type ContextSizes } from "./context-parts";
+import { contextHeadline, contextLines, contextRoom, flatParts, workerReplyKey, type ContextPart, type ContextSizes } from "./context-parts";
 
 const parts: ContextPart[] = [
   { id: "file:/p/AGENTS.md", group: "instructions", label: "AGENTS.md", tokens: 3_000, path: "/p/AGENTS.md" },
@@ -57,6 +57,17 @@ describe("the Context tab's lines", () => {
     assert.deepEqual(ps.map((p) => p.group), ["instructions", "subfolder", "mode", "tools"]);
     assert.equal(new Set(ps.map((p) => p.id)).size, ps.length);
     assert.deepEqual(ps[1], { id: "subfolder:/p/api/AGENTS.md", group: "subfolder", label: "api/AGENTS.md", tokens: 1, path: "/p/api/AGENTS.md", folder: "api", loaded: false });
+  });
+
+  test("a worker's reply-end key moves when a reply ends, and not while one streams", () => {
+    const idle = { turns: 2, context: { tokens: 900, window: 1000 }, endedAt: undefined };
+    const streaming = { ...idle, working: true, preview: "typing…", lastActivity: 5 };
+    assert.equal(workerReplyKey(streaming), workerReplyKey(idle));
+    assert.notEqual(workerReplyKey({ ...idle, turns: 3 }), workerReplyKey(idle));
+    assert.notEqual(workerReplyKey({ ...idle, context: { tokens: 950, window: 1000 } }), workerReplyKey(idle));
+    assert.notEqual(workerReplyKey({ ...idle, context: "compacted" }), workerReplyKey(idle));
+    assert.notEqual(workerReplyKey({ ...idle, endedAt: 7 }), workerReplyKey(idle));
+    assert.equal(workerReplyKey(undefined), "");
   });
 
   test("the headline and the room left", () => {

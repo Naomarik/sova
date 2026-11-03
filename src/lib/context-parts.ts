@@ -3,7 +3,7 @@
 // estimates don't explain (total minus the parts, floored at 0); "Free" is the room left. Pure (no
 // DOM, no Solid), so it tests under tsx.
 
-import type { SessionContextView } from "../../shared/protocol";
+import type { SessionContextView, WorkerInfo } from "../../shared/protocol";
 import { formatPercent, formatTokens } from "./context";
 
 export type ContextPartGroup = "instructions" | "subfolder" | "mode" | "rules" | "skills" | "tools";
@@ -35,6 +35,15 @@ export function flatParts(v: Extract<SessionContextView, { state: "ok" }>): Cont
     ...of("skills", v.skills),
     ...of("tools", v.tools),
   ];
+}
+
+/** A worker's reply-end signal, from the pane's own worker list: it changes when a reply ends
+    (its reply count, the fill that reply reported, or its end), never while one streams. The
+    Context tab re-reads a picked worker on it, since the parent's file may not move. Pure. */
+export function workerReplyKey(w: Pick<WorkerInfo, "turns" | "context" | "endedAt"> | undefined): string {
+  if (!w) return "";
+  const c = w.context === "compacted" ? "c" : w.context ? String(w.context.tokens) : "";
+  return `${w.turns ?? ""}:${c}:${w.endedAt ?? ""}`;
 }
 
 /** What the lines are worked out from. */

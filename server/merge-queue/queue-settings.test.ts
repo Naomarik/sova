@@ -6,7 +6,11 @@ import { SETTINGS_DIRTY_WORDS } from "../../shared/merge-queue-settings";
 import { parseDefinition } from "../../shared/project-contract";
 import { writeModels } from "./models";
 import { PUSH_WAITS_NEXT_LANDING } from "./queue";
-import { makeKit, sh, tryGit, until, untilAborted } from "./testing/queue-kit";
+import { makeKit, makeRepo, sh, tryGit, until, untilAborted } from "./testing/queue-kit";
+import { existsSync, readdirSync } from "node:fs";
+import { realGit } from "./guard";
+import { bareSettings } from "./settings";
+import { projectKey } from "./store";
 
 // §app.merge-queue/settings, §app.merge-queue/settings-save, §app.merge-queue/models, §app.merge-queue/view
 
@@ -206,6 +210,36 @@ describe("saving", () => {
     } finally {
       release();
       await k.done();
+    }
+  });
+});
+
+describe("a project the queue doesn't serve yet", () => {
+  test("its settings are read from Git and this computer's files; no queue record is written", async () => {
+    const repo = makeRepo();
+    try {
+      repo.commitOn(repo.root, { ".sova/project.json": '{\n  "version": 1\n}\n', ...KIT }, "no merge section");
+      const base = join(repo.state, "merge-queue");
+      const s = await bareSettings(repo.root, {
+        base,
+        git: realGit,
+        setupOf: async () => ({ target: "master", head: repo.head(), checks: "unset" }),
+        definitionAt: realDefinition.definitionAt,
+        projectIdOf: () => "prj_bare",
+        modelCheck: { defaults: () => ({ model: "a/b" }), denial: () => null },
+        hosts: { suggest: async () => ({ how: "github-pr", why: "origin is on GitHub" }), adapterFor: () => { throw new Error("not asked"); } },
+      });
+      assert.ok(s);
+      assert.equal(s!.checks.mode, "unset");
+      assert.deepEqual(s!.checks.list, []);
+      assert.equal(s!.review.canTurnOn, true, "the kit is on the target");
+      assert.deepEqual(s!.how?.suggested, { how: "github-pr", why: "origin is on GitHub" });
+      assert.equal(s!.review.model.picked, null);
+      // The served rule's promise: answering made no queue and wrote no record.
+      assert.equal(existsSync(join(base, projectKey(repo.root))), false);
+      assert.deepEqual(existsSync(base) ? readdirSync(base) : [], []);
+    } finally {
+      repo.done();
     }
   });
 });

@@ -3,6 +3,7 @@ import type { EffectiveModel, MergeQueueSettings, MergeSettingsChange, MergeSett
 import { parseChange, SettingsEditError } from "./settings-edit";
 import { effectiveModel, liveModelCheck, type ModelCheck, parseChoice, writeModels } from "./models";
 import { pageOnlyRefusal } from "../page-only";
+import { NOT_SERVED } from "./served";
 
 /**
  * The merge queue's settings (the Settings dialog's Merge Queue tab), beside the merge verbs (routes.ts): REST, not
@@ -26,7 +27,11 @@ export interface SettingsQueue {
 }
 
 export interface SettingsRouteDeps {
-  queueOf(projectId: string): Promise<SettingsQueue | null>;
+  /** The project's queue when the queue serves it; `{unserved: root}` for a listed project it doesn't serve yet (no
+   *  queue is made for it); null: no such project. */
+  queueOf(projectId: string): Promise<SettingsQueue | { unserved: string } | null>;
+  /** A not-yet-served project's settings, made without a queue (settings.ts bareSettings); null: nothing to read. */
+  bareSettings(root: string): Promise<MergeQueueSettings | null>;
   modelCheck: ModelCheck;
   /** Why this request isn't the operator's own page (server/page-only.ts), or null. */
   notPage?: (c: Context) => string | null;
@@ -50,10 +55,16 @@ async function jsonBody(c: Context): Promise<Record<string, unknown> | null> {
 }
 
 export function registerMergeSettingsRoutes(app: Hono<any>, deps: SettingsRouteDeps): void {
-  const queue = async (c: Context) => {
+  const found = async (c: Context) => {
     const id = c.req.param("project") ?? "";
     const q = await deps.queueOf(id);
     if (!q) throw Object.assign(new Error(`no project ${id}`), { code: "not-found" });
+    return q;
+  };
+  // A write needs a queue the project is served by: before Initialize there is none, and none is made.
+  const queue = async (c: Context): Promise<SettingsQueue> => {
+    const q = await found(c);
+    if ("unserved" in q) throw Object.assign(new Error(NOT_SERVED), { code: "unsupported" });
     return q;
   };
   const guard = (c: Context) => {
@@ -69,7 +80,15 @@ export function registerMergeSettingsRoutes(app: Hono<any>, deps: SettingsRouteD
     }
   };
 
-  app.get("/api/merge-queue/projects/:project/settings", (c) => run(c, async () => (await queue(c)).settings()));
+  app.get("/api/merge-queue/projects/:project/settings", (c) =>
+    run(c, async () => {
+      const q = await found(c);
+      if (!("unserved" in q)) return q.settings();
+      const s = await deps.bareSettings(q.unserved);
+      if (!s) throw Object.assign(new Error("the project's target has no commit yet"), { code: "not-found" });
+      return s;
+    }),
+  );
 
   app.put("/api/merge-queue/projects/:project/models", (c) =>
     run(c, async () => {
@@ -125,19 +144,26 @@ export function registerMergeSettingsRoutes(app: Hono<any>, deps: SettingsRouteD
   );
 }
 
+/** A listed root's queue for these routes: loaded only when the queue serves it (the served rule); else unserved. */
+export async function settingsQueueOf(root: string | null, d: { served: (root: string) => Promise<boolean>; queues: { get(root: string): Promise<SettingsQueue> } }): Promise<SettingsQueue | { unserved: string } | null> {
+  if (!root) return null;
+  return (await d.served(root)) ? d.queues.get(root) : { unserved: root };
+}
+
 /** The live wiring: the server's queues by project id, Settings → Models, the page-only rule. */
 export function registerLiveMergeSettingsRoutes(app: Hono<any>): void {
   registerMergeSettingsRoutes(app, {
     async queueOf(id) {
-      const [{ mergeQueues }, { listProjects }] = await Promise.all([import("./wire"), import("../projects/spaces")]);
+      const [{ mergeQueues }, { listProjects }, { servedRule }] = await Promise.all([import("./wire"), import("../projects/spaces"), import("./served")]);
       const qs = mergeQueues();
       if (!qs) return null;
       let root: string | null = null;
       try {
-        root = listProjects().find((p) => p.id === id)?.root ?? null;
+        root = listProjects().find((p) => p.id === id && !p.archived)?.root ?? null;
       } catch {}
-      return root ? qs.get(root) : null;
+      return settingsQueueOf(root, { served: async (r) => (await servedRule()).served(r), queues: qs });
     },
+    bareSettings: async (root) => (await import("./wire")).mergeBareSettings(root),
     modelCheck: liveModelCheck(),
     notPage: (c) => pageOnlyRefusal(c, WRITE_WORDS),
   });

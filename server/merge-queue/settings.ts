@@ -4,6 +4,12 @@ import { HOOK_TIMEOUT_MAX, type ProjectDef } from "../../shared/project-contract
 import { mergeCopyPath } from "./copy";
 import type { Git } from "./guard";
 import { PROJECT_PLAYBOOK, THREAD_MAX_AGE_MS, THREAD_MAX_CONTEXT } from "./thread";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { effectiveModel, type ModelCheck, readModels } from "./models";
+import { QueueStore } from "./store";
+import { landHowSetting } from "./strategy";
+import { REVIEW_KIT_DIR } from "./settings-edit";
 
 /**
  * The settings block of the queue's view (§app.merge-queue/settings): what the queue uses, read from the target's
@@ -102,4 +108,65 @@ export function buildSettings(a: SettingsInput): MergeQueueSettings {
     fixed: a.fixed,
     ...(a.how ? { how: a.how } : {}),
   };
+}
+
+// ---- a project the queue doesn't serve yet ------------------------------------------------------
+
+export interface BareSettingsDeps {
+  /** The queues' records folder (`<state>/merge-queue`): only read here. */
+  base: string;
+  git: Git;
+  /** The served rule's reading of the root (served.ts setupOf): its target, the target's head, what it declares. */
+  setupOf: (root: string) => Promise<{ target: string; head: string; checks: ChecksDeclared }>;
+  definitionAt: (root: string, ref: string) => Promise<{ def: ProjectDef | null; error: string | null }>;
+  projectIdOf: (root: string) => string | null;
+  modelCheck: ModelCheck;
+  legacyNames?: { root: string; file: string };
+  hosts?: Parameters<typeof landHowSetting>[0]["hosts"];
+}
+
+/**
+ * The settings of a listed project the queue doesn't serve yet (the not-set-up screen: How it lands with its
+ * suggestion from origin, the models, Sova's fixed values), read from Git, the definition and this computer's files
+ * alone: no queue is made and nothing is written (the served rule's promise). Null: its target has no commit yet.
+ */
+export async function bareSettings(root: string, d: BareSettingsDeps): Promise<MergeQueueSettings | null> {
+  const s = await d.setupOf(root);
+  if (!s.head) return null;
+  const at = await d.definitionAt(root, s.head);
+  const def = at.def;
+  const store = new QueueStore(d.base, root);
+  const names = store.namesFileOf(d.legacyNames);
+  let count = 0;
+  if (names.exists)
+    try {
+      const raw = JSON.parse(readFileSync(names.file, "utf8")) as { privateNames?: unknown[] };
+      count = Array.isArray(raw.privateNames) ? raw.privateNames.length : 0;
+    } catch {}
+  const has = async (path: string) => (await d.git(["cat-file", "-e", `${s.head}:${path}`], root)).code === 0;
+  const shown = await d.git(["show", `${s.head}:.sova/project.json`], root);
+  let local: string | null = null;
+  try {
+    local = readFileSync(join(root, ".sova/project.json"), "utf8");
+  } catch {}
+  const picks = readModels(store.dir);
+  const playbook = existsSync(join(root, PROJECT_PLAYBOOK, "PLAYBOOK.md"));
+  return buildSettings({
+    root,
+    projectId: d.projectIdOf(root),
+    head: s.head,
+    target: s.target,
+    def,
+    checks: s.checks,
+    review: false,
+    kitFiles: [],
+    kitOnTarget: await has(REVIEW_KIT_DIR),
+    projectPlaybook: playbook,
+    ...(playbook ? { projectPlaybookDiffers: await playbookDiffers(d.git, root, s.head) } : {}),
+    names: { setUp: names.exists, count },
+    models: { review: await effectiveModel(picks.review, d.modelCheck), thread: await effectiveModel(picks.thread, d.modelCheck) },
+    projectFileDiffers: (shown.code === 0 ? shown.stdout : null) !== local,
+    fixed: fixedValues(root),
+    how: await landHowSetting({ dir: store.dir, root, projectHow: def?.merge?.land, ...(d.hosts ? { hosts: d.hosts } : {}) }),
+  });
 }

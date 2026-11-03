@@ -28,6 +28,8 @@ export interface MergerDeps {
   /** The served rule (served.ts): a root not on the Projects list gets no verb at all; one listed but not set up
    *  only merge.status (its bare view, served: false, made without a queue) and merge.setup (Initialize). */
   served: { isListed(root: string): boolean; served(root: string): Promise<boolean>; bareView(root: string): Promise<MergeQueueView> };
+  /** A not-yet-served project's settings, made without a queue (settings.ts bareSettings): the bare view carries them. */
+  bareSettings?: (root: string) => Promise<import("../../shared/merge-queue-settings").MergeQueueSettings | null>;
   /** The recorded merge thread of `root` is `sessionId`. */
   isThreadChat?: (root: string, sessionId: string) => boolean;
   /** The reviewer chat run `run` waits on. */
@@ -145,7 +147,9 @@ export function merger(deps: MergerDeps): (verb: string, body: unknown, caller: 
         // A listed project with no merge setup: its status is read from Git alone, no queue made (a4).
         root = got.bare;
         authorize(deps, verb, caller, root, req);
-        return result(verb, root, true, false, { view: await deps.served.bareView(root) }, undefined, now());
+        const bare = await deps.served.bareView(root);
+        const settings = (await deps.bareSettings?.(root)) ?? null;
+        return result(verb, root, true, false, { view: settings ? { ...bare, settings } : bare }, undefined, now());
       }
       const q = got;
       root = q.root;

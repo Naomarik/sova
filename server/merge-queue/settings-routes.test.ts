@@ -4,7 +4,8 @@ import { Hono } from "hono";
 import { SETTINGS_DIRTY_WORDS, type MergeSettingsChange } from "../../shared/merge-queue-settings";
 import { readModels } from "./models";
 import { MergeFailure } from "./queue";
-import { registerMergeSettingsRoutes, type SettingsQueue } from "./settings-routes";
+import { registerMergeSettingsRoutes, settingsQueueOf, type SettingsQueue } from "./settings-routes";
+import { NOT_SERVED } from "./served";
 import { scratchRoot } from "../test-scratch";
 
 // §app.merge-queue/settings-save, §app.merge-queue/models
@@ -26,7 +27,8 @@ function setup(o: { notPage?: string | null; dirty?: boolean } = {}) {
   };
   const app = new Hono();
   registerMergeSettingsRoutes(app, {
-    queueOf: async (id) => (id === "prj_1" ? q : null),
+    queueOf: async (id) => (id === "prj_1" ? q : id === "prj_u" ? { unserved: "/unserved" } : null),
+    bareSettings: async (root) => (root === "/unserved" ? ({ at: "bare", how: { suggested: { how: "github-pr", why: "origin is on GitHub" } } } as never) : null),
     modelCheck: { defaults: () => ({ model: "claude-code-cli/claude-opus-5-5", thinking: "medium" }), denial: (ref) => (ref === "off/model" ? "off/model is turned off in Settings → Models and can't be used." : null) },
     notPage: () => o.notPage ?? null,
   });
@@ -97,5 +99,34 @@ describe("the models", () => {
     assert.deepEqual(readModels(t.dir), {});
     assert.equal((await t.call("PUT", "/api/merge-queue/projects/prj_1/models", { review: { model: "nope" } })).status, 400);
     assert.equal((await t.call("PUT", "/api/merge-queue/projects/prj_1/models", {})).status, 400);
+  });
+});
+
+describe("a project the queue doesn't serve yet", () => {
+  test("its settings read without a queue (with How it lands' suggestion); every write is refused with NOT_SERVED", async () => {
+    const t = setup();
+    const g = await t.call("GET", "/api/merge-queue/projects/prj_u/settings");
+    assert.equal(g.status, 200);
+    assert.deepEqual(await g.json(), { at: "bare", how: { suggested: { how: "github-pr", why: "origin is on GitHub" } } });
+    for (const [m, p, b] of [
+      ["POST", "/api/merge-queue/projects/prj_u/settings", { changes: { push: false }, confirm: true }],
+      ["PUT", "/api/merge-queue/projects/prj_u/models", { review: { model: "zai/glm-5.3" } }],
+      ["DELETE", "/api/merge-queue/projects/prj_u/settings/pending", undefined],
+    ] as const) {
+      const r = await t.call(m, p, b);
+      assert.equal(r.status, 400, `${m} ${p}`);
+      assert.deepEqual(await r.json(), { error: { code: "unsupported", message: NOT_SERVED } });
+    }
+    assert.equal(t.saved.length, 0);
+  });
+
+  test("settingsQueueOf loads a queue only for a served root", async () => {
+    const got: string[] = [];
+    const queues = { get: async (root: string) => (got.push(root), {} as SettingsQueue) };
+    assert.deepEqual(await settingsQueueOf("/u", { served: async () => false, queues }), { unserved: "/u" });
+    assert.deepEqual(got, [], "no queue made for an unserved root");
+    await settingsQueueOf("/s", { served: async () => true, queues });
+    assert.deepEqual(got, ["/s"]);
+    assert.equal(await settingsQueueOf(null, { served: async () => true, queues }), null);
   });
 });

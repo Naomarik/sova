@@ -38,16 +38,20 @@ export function writableRefusal(s: SessionSummary, self = "you never act on your
   if (s.overseer) return `That is an Overseer conversation; ${self}.`;
   if (s.live) return `"${s.title}" is open in a terminal (pid ${s.live.pid}), so it is read-only. Point the user to it instead.`;
   if (s.workerSession) return subagentSessionRefusal(s.title);
+  if (s.queueChat) return QUEUE_CHAT_REFUSAL;
   return null;
 }
+
+/** The merge queue's own chats (SessionSummary.queueChat): Sova alone writes to them; the user may, in the chat itself. */
+export const QUEUE_CHAT_REFUSAL = "That is one of the merge queue's own chats: only Sova writes to it. Open it from the project's Merge Queue tab.";
 
 /** A worker's or hidden chat's own session: what an act on it, or a browser opening it, is told. */
 export const subagentSessionRefusal = (title: string) => `"${title}" is a subagent's own session; act on the session that runs it.`;
 
 /** Sessions no profile session ever sees (§chat.profiles/session-tools): the Overseer's, project
-    overseers', organization and baton sessions, and workers' own. */
+    overseers', organization and baton sessions, workers' own and the merge queue's own chats. */
 export function hiddenFromProfiles(s: SessionSummary): boolean {
-  return !!(s.overseer || s.projectOverseer || s.org || s.baton || s.workerSession);
+  return !!(s.overseer || s.projectOverseer || s.org || s.baton || s.workerSession || s.queueChat);
 }
 
 function argSummary(h: HEntry | undefined, toolCallId?: string): string {

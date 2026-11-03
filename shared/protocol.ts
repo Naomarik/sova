@@ -79,6 +79,10 @@ export interface SessionSummary {
       Safe by absence: absent = a main thread, and an older server that never sends it hides
       nothing. */
   workerSession?: true;
+  /** With `workerSession`: the chat that runs it (a live record listing it, or a completion naming it) and the
+      worker's name there, so a worker is shown as `Worker {name} of "{its chat's title}"`, never by its prompt.
+      Absent: no parent known. */
+  workerOf?: { id: string; path: string; name?: string };
   /** While the server holds this session's runtime AND it is mid-agent-turn (streaming): true.
       The sidebar shows a "Busy" marker. false when idle/closed or not held by this server.
       Never pulsing (design rule). */
@@ -159,6 +163,10 @@ export interface SessionSummary {
   /** The session's profile (§chat.profiles/model), from the newest `sova-profile` entry before its
       first user message; absent for Default. */
   profile?: SessionProfileField;
+  /** One of the merge queue's own chats (§chat/merge-queue): the project's merge thread or a run's reviewer, by the
+      Sova profile it was started on (shared/merge-queue.ts queueChatRole), never by title. Every list of the session
+      pane and the server leaves it out; the project's Merge Queue tab lists it, and a link still opens it. Safe by absence. */
+  queueChat?: { role: import("./merge-queue").QueueChatRole };
   /** Activity from this session's live record (a TUI's, or this server's own runtime): the
       sessions extension's `presence.activity`. Absent when no live record reports one (closed
       sessions, older writers). `error` is set only for state "error", ≤200 chars. */
@@ -294,9 +302,6 @@ export interface ToolRowInfo {
   /** tool-result whose details record a patch: its "+n −m" (src/lib/tool-diff-stats.ts summaryStats,
       counted as for an edit). The card shows it only when its call is an edit or a write. */
   stats?: { added: number; removed: number };
-  /** tool-result of a codemode script (§chat.transcript/codemode-card): its calls, failed and still running
-      as recorded, for the folded line's "4 calls · 1 failed" before the card's content is fetched. */
-  calls?: { total: number; failed: number; running: number };
   /** EAGER_TOOLS only: the call's arguments; tours keep only small validated references. */
   args?: unknown;
   /** EAGER_TOOLS only: the result's output (its text blocks joined, as the card shows it). */

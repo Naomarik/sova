@@ -1,0 +1,29 @@
+{
+  "§app/folder-viewer": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.spec-lookup/code-read",
+      "§chat/markdown"
+    ],
+    "code": [
+      "server/folder-read.ts",
+      "server/folder-read.test.ts",
+      "shared/folder-read.ts",
+      "server/code-read.ts",
+      "src/components/FolderViewer.tsx",
+      "src/components/FolderViewer.css",
+      "src/lib/folder-viewer.ts",
+      "src/lib/folder-viewer.test.ts",
+      "src/lib/folder-sources.ts",
+      "server/app.ts",
+      "shared/commands/projects.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T11:29Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+    }
+  }
+}

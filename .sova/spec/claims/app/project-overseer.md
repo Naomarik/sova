@@ -700,7 +700,8 @@ user row.
 - **The Settings tab lists every setting.** Its **All settings** section lists each project setting,
   Sova-kept and in the project's files (the **Copy limit**, its value and "set on this machine" or
   "from the project's file", linking to the Branches tab; services, profiles, playbooks and their schedules, modes,
-  offers), with its state (on, off, set, not set, broken, needs approval, approved) and a link to
+  offers; the **Merge queue**, linking to Settings → Merge Queue on this project, §app.merge-queue/settings,
+  which `sova_settings` refuses to change), with its state (on, off, set, not set, broken, needs approval, approved) and a link to
   where it is changed or approved (its section on the tab, Settings → Profiles, the Playbooks dialog,
   a chat's mode menu, the Offers list, the Branches tab; a section of the tab itself scrolls into view).
   The Offers list is one of its sections.
@@ -749,13 +750,13 @@ user row.
 - **Any mode, for both Overseers.** The project overseer's `sova_create_session` and `sova_send`,
   and the Overseer's `sova_project_overseer` `code` (§app.overseer/org-project-overseers), take
   `mode` (`normal` or `delegate`), `minor_modes` (the whole set on: any of `align`, `spec`, `vis`,
-  `codemode`, never `memory` (§chat.memory/where); `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
+  never `memory` (§chat.memory/where); `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
   profiles, or `off`; the project overseer's `sova_list_subagent_profiles` lists them). There is no
   ceiling but spec (above): any mode, any minor modes with `spec` among them and any profile are taken. On a start, what the call names
   replaces that part of this computer's default and the rest is the default's, except that a start
   without `already_agreed` also gets align on (§app.project-overseer/confirm-brief); a named profile is
   picked for that session only. Only an unknown name is refused: "Unknown mode {x}: use normal or
-  delegate.", "Unknown minor mode {x}: use align, spec, vis or codemode.", "Unknown subagent
+  delegate.", "Unknown minor mode {x}: use align, spec or vis.", "Unknown subagent
   profile: {x}. sova_list_subagent_profiles lists them." Each refusal happens before anything
   else: no session is created, nothing is sent, and no cap or counter is taken, attended or not.
   The reply names the mode and the subagent profile the session started with ("…, mode delegate ·
@@ -945,7 +946,12 @@ judgement.
   (§app.merge-queue/approve) instead of merging it in the project root; once it has an entry the row
   reads its queue state in the chips the composer's modal uses (§chat.composer/worktrees-control),
   with its estimates or reason, and while it is queued, checking or waiting for the user its Land is
-  disabled: "Already in the merge queue.". The queue's refusals are shown under the row as Merge
+  disabled: "Already in the merge queue.". While it is sent back to its chat (Needs a fix) its Land
+  is disabled too, "Sent back to its chat. Land comes back here once its chat commits a fix and
+  finishes." (§chat.composer/worktrees-control); this menu reads no readiness, so Land stays off there
+  after the fix until the branch lands another way: from the Worktrees modal, the session pane, the
+  Merge Queue tab, or "land it" typed in its chat.
+  Drafts changed keeps Land. The queue's refusals are shown under the row as Merge
   Branch's are. A project whose queue isn't set up keeps Merge Branch as above, and its Merge Queue
   tab shows the note "No merge queue settings are set up for this project" with Initialize
   (§app.merge-queue/setup). A project whose definition doesn't parse

@@ -836,7 +836,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         prompt: str("code: the first prompt (default: the item's text)."),
         item: str("code: a to-do (td_…) or idea (§…) of the project to start from, and link it."),
         mode: str("code: normal | delegate. Omitted: this computer's default."),
-        minor_modes: { type: "array", items: { type: "string" }, description: 'code: the minor modes on, the whole set: any of align, spec, vis, codemode; [] turns them all off. Omitted: this computer\'s default.' },
+        minor_modes: { type: "array", items: { type: "string" }, description: 'code: the minor modes on, the whole set: any of align, spec, vis; [] turns them all off. Omitted: this computer\'s default.' },
         subagent_profile: str("code: a subagent profile id or off (sova_list_subagent_profiles), for that session only. Omitted: this computer's default."),
         already_agreed: { type: "boolean", description: `code: ${ALREADY_AGREED_PARAM}` },
       },

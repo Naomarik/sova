@@ -143,19 +143,19 @@ describe("fromV1: the table", () => {
     assert.deepEqual(v1({ type: "tool_execution_end", toolName: "bash" }), [{ type: "tool.end", callId: "", name: "bash", args: undefined, isError: false, output: "", images: [] }]);
   });
 
-  test("a call another tool made (a codemode script's) names its caller on start, update and end; an update keeps its details", () => {
+  test("a call another tool made names its caller on start, update and end; an update keeps its details", () => {
     const nested = { toolCallId: "c1/1", toolName: "read", parentToolCallId: "c1" };
     assert.deepEqual(v1({ type: "tool_execution_start", ...nested, args: { path: "a" } }), [{ type: "tool.start", callId: "c1/1", name: "read", args: { path: "a" }, parentCallId: "c1" }]);
     assert.deepEqual(v1({ type: "tool_execution_update", ...nested, partialResult: { content: [] } }), [{ type: "tool.update", callId: "c1/1", output: "", images: [], parentCallId: "c1" }]);
     assert.deepEqual(v1({ type: "tool_execution_end", ...nested, args: { path: "a" }, result: { content: [{ type: "text", text: "x" }] }, isError: false }), [
       { type: "tool.end", callId: "c1/1", name: "read", args: { path: "a" }, isError: false, output: "x", images: [], parentCallId: "c1" },
     ]);
-    // The script's own progress: its calls so far, on the caller's update.
+    // The caller's own progress, on its update.
     const calls = { calls: [{ id: "c1/1", name: "read", args: "{}", status: "running" }] };
-    assert.deepEqual(v1({ type: "tool_execution_update", toolCallId: "c1", toolName: "codemode", partialResult: { content: [], details: calls } }), [
+    assert.deepEqual(v1({ type: "tool_execution_update", toolCallId: "c1", toolName: "orch", partialResult: { content: [], details: calls } }), [
       { type: "tool.update", callId: "c1", output: "", images: [], details: calls },
     ]);
-    assert.equal("parentCallId" in v1({ type: "tool_execution_start", toolCallId: "c1", toolName: "codemode", parentToolCallId: 3 })[0]!, false, "only a string names a caller");
+    assert.equal("parentCallId" in v1({ type: "tool_execution_start", toolCallId: "c1", toolName: "orch", parentToolCallId: 3 })[0]!, false, "only a string names a caller");
   });
 
   test("retry and compaction activity; a compaction that wrote one says so", () => {

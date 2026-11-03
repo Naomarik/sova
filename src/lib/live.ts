@@ -595,8 +595,8 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
           else if (event.stop === "aborted") entry.stoppedAt = new Date().toISOString();
           break;
         }
-        // A call another tool made (a codemode script's) is no live tool and has no effects: its caller's
-        // updates and result record it (§chat.transcript/codemode-card).
+        // A call another tool made (pi's parentToolCallId) is no live tool and has no effects: its
+        // caller's updates and result record it.
         case "tool.start":
           if (event.parentCallId) break;
           if (event.callId) s.tools[event.callId] = { name: event.name, args: event.args, status: "running", output: "", images: [] };

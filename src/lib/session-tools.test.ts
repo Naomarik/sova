@@ -52,7 +52,7 @@ test("sourceWord: built-in, the extension's name (or 'extension' with none), Sov
   assert.equal(sourceWord({ source: "builtin" }), "built-in");
   assert.equal(sourceWord({ source: "extension", origin: "subagents" }), "subagents");
   assert.equal(sourceWord({ source: "extension" }), "extension");
-  assert.equal(sourceWord({ source: "sova", origin: "pi-codemode" }), "Sova");
+  assert.equal(sourceWord({ source: "sova", origin: "sova-fork-cache" }), "Sova");
 });
 
 test("stillOpen keeps the open rows whose tool is still listed, across a switch of naming", () => {

@@ -62,6 +62,9 @@ const LINE_KINDS: readonly MergeCardOutcome[] = ["landed", "drafts-changed"];
 const OUTCOME_OF_STATE: Partial<Record<MergeEntry["state"], MergeCardOutcome>> = {
   landed: "landed",
   "needs-fix": "needs-fix",
+  requested: "requested",
+  pushed: "pushed",
+  closed: "closed",
   // A conflict the merge thread is still judging is shown in place; its outcome is Behaviour differs or a hand-back.
   "behaviour-differs": "behaviour-differs",
   "review-flagged": "review-flagged",
@@ -371,6 +374,7 @@ export class MergeCards {
     setOpt(card, "review", e.review ? structuredClone(e.review) : undefined);
     setOpt(card, "unclear", e.state === "unattributed" && e.unclear?.length ? structuredClone(e.unclear) : undefined);
     setOpt(card, "landed", e.landed ? structuredClone(e.landed) : undefined);
+    setOpt(card, "request", e.request ? structuredClone(e.request) : undefined);
     setOpt(card, "worktree", e.worktree);
     const thread = e.state === "needs-fix" ? e.notes.find((n) => n.kind === "thread") : undefined;
     setOpt(card, "explanation", thread ? { text: thread.text, at: thread.at } : undefined);

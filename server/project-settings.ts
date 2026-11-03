@@ -710,7 +710,8 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
       const f = await fileEdit(project.root, e as never);
       if (fileEdits.some((x) => x.rel === f.rel)) refuse(`Two edits change ${f.rel}: make it one.`);
       fileEdits.push(f);
-    } else refuse(`Unknown setting "${String((raw as { setting: unknown }).setting)}".`);
+    } else if ((e.setting as string) === "merge-queue") refuse("The merge queue's settings aren't proposed here: the operator changes push, review and the checks' limits in Settings → Merge Queue; anything else changes in a branch that lands through the queue.");
+    else refuse(`Unknown setting "${String((raw as { setting: unknown }).setting)}".`);
   }
   let next: ProjectOverseerSettings = current;
   try {
@@ -1158,6 +1159,26 @@ export async function settingsInfo(projectId: string): Promise<ProjectSettingsIn
     } catch (err) {
       file("services", "Broken", `#/projects/${projectId}/branches`, "the Branches tab", { detail: err instanceof Error ? err.message : String(err) });
     }
+  // The merge queue (its settings live in Settings → Merge Queue).
+  {
+    const href = `#/settings/merge-queue/${projectId}`;
+    const where = "Settings → Merge Queue";
+    let state = "Not set up";
+    let detail: string | undefined;
+    if (svc !== null)
+      try {
+        const m = parseDefinition(svc).merge;
+        const checks = m?.checks === "none" ? "no automated tests" : Array.isArray(m?.checks) ? `${m.checks.length} check${m.checks.length === 1 ? "" : "s"}` : null;
+        if (m && (checks || m.review || m.push !== undefined)) {
+          state = [checks ?? "checks from the test command", m.review ? "review on" : "review off", m.push === false ? "doesn't push" : "pushes to origin"].join(" · ");
+          detail = "as the project folder has it; the queue uses the target's";
+        }
+      } catch {
+        state = "Broken";
+        detail = CONTRACT_FILE;
+      }
+    file("merge-queue", state, href, where, detail ? { detail } : {});
+  }
   // Profiles.
   try {
     const src = await profileSources(root);

@@ -74,7 +74,8 @@ tier and comes back is new again.
   body one line per session ("{session name} — {Kind}"), tag `sova:several`. A session's name is
   summary-first (§app.overseer/session-names). Kind words:
   Needs input, Open questions, Error, Baton, Subagent error, Playbook needs you, WhatsApp down, App down. A
-  blocker of no session (WhatsApp down, App down) is titled with its kind word alone. While nothing could be sent
+  blocker of no session (WhatsApp down, App down) is titled with its kind word alone. The merge
+  queue's own chats (§app.merge-queue/chats) are never a blocker's session. While nothing could be sent
   (sending off, no contact, no device) the loop doesn't read the digest for this at all, and its
   first reading once something could be sent is a new baseline — the same outcome as dropping.
 - **Redacted.** Titles and details come from other sessions and show on a lock screen: both go
@@ -92,6 +93,11 @@ tier and comes back is new again.
   urgency high, kept by the push service up to 6 hours. A device the push service answers 404 or
   410 is gone and is removed; any other failure is kept on the device as its last error, and it
   stays subscribed.
+- **A merge thread's question with no chat to ask** (§chat.merge-queue/asks) is sent once, at
+  once, outside this loop and its kinds: to every device, when sending is on, a contact is set, a
+  device is subscribed and it isn't quiet hours (else it is dropped), redacted like the others.
+  Its title is "The merge thread needs you · {project}", its body the question, its tag
+  `sova:merge-ask:{project id}`, and a tap opens the project's Merge Queue tab.
 - **No silent pushes.** The service worker shows a notification for every push it receives,
   whatever the payload — with a generic "Sova" title when it can't read one.
 

@@ -45,7 +45,7 @@ export const ORDER = {
   rollback: ["steps", "none"],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request"],
   mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
   mergeInstall: ["run", "inputs", "timeout"],
   release: ["playbook", "tag", "scheme", "channels", "commit", "checks", "quietMin"],

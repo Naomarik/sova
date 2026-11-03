@@ -27,7 +27,7 @@ const landedState = (k: Kit, id: string) =>
   }, `${id} landed`);
 
 /** A project with a release section and its playbook's manifest on master (pushed), plus v0.1.0 and stable. */
-function releaseKit(o: { settings?: Partial<ReleaseDecl>; manifest?: unknown; origin?: boolean; push?: boolean } = {}) {
+function releaseKit(o: { settings?: Partial<ReleaseDecl>; manifest?: unknown; origin?: boolean; push?: boolean; land?: string } = {}) {
   const repo = makeRepo({ prefix: "release-unit-" });
   if (o.origin === false) sh(repo.root, "remote", "remove", "origin");
   mkdirSync(join(repo.root, ".sova", "playbooks", "release"), { recursive: true });
@@ -39,7 +39,7 @@ function releaseKit(o: { settings?: Partial<ReleaseDecl>; manifest?: unknown; or
   sh(repo.root, "tag", "-a", "stable", "-m", "stable: v0.1.0");
   if (o.origin !== false) sh(repo.root, "push", "-q", "origin", "master", "v0.1.0", "stable");
   const settings = { ...RELEASE, ...o.settings };
-  const def = { ...DEF, merge: { ...(DEF as { merge: object }).merge, ...(o.push === false ? { push: false } : {}) }, release: settings } as unknown as ProjectDef;
+  const def = { ...DEF, merge: { ...(DEF as { merge: object }).merge, ...(o.push === false ? { push: false } : {}), ...(o.land ? { land: o.land } : {}) }, release: settings } as unknown as ProjectDef;
   const k = makeKit({ repo, deps: { definitionAt: async () => ({ def, error: null }), releaseEvent: (ev) => r.onQueueEvent(ev, ev.root) } });
   const wakes: { path: string; text: string }[] = [];
   const titles: string[] = [];
@@ -651,6 +651,62 @@ describe("a queue event lost to a stop", () => {
       assert.equal(s.changed, true);
       assert.equal(s.release!.view!.open!.state, "ready");
       assert.equal(s.release!.view!.open!.commit, t.repo.head());
+    } finally {
+      await t.done();
+    }
+  });
+});
+
+describe("master's how-it-lands, settings saves and local-main updates against the freeze", () => {
+  test("a settings save waits while a release holds the queue (the target stays at the base) and is made once the hold lifts; Update Local Main and a computer's how-it-lands are refused meanwhile", async () => {
+    const t = releaseKit();
+    try {
+      const base = t.repo.head();
+      await t.call("release.start", {});
+      const q = await t.k.q();
+      const r = await q.saveSettings({ push: false });
+      assert.equal(r.state, "waiting");
+      assert.equal(t.repo.head(), base, "the save never moves the frozen target");
+      await assert.rejects(q.updateLocalMain(), /stays on the release commit while release/);
+      await assert.rejects(q.setLandHow("push-branch", "computer"), /can't change while release/);
+      // Nothing landed: Abandon lifts the hold at once, and the waiting save is made then.
+      assert.equal((await t.call("release.abandon", { confirm: true, why: "not now" })).ok, true);
+      await until(() => t.repo.head() !== base, "the save made after the hold lifted");
+      assert.match(sh(t.repo.root, "log", "-1", "--format=%s"), /^Merge queue settings/);
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("a project that lands by request or by pushing a branch can't start a release: refused with how to change it, nothing frozen", async () => {
+    for (const land of ["push-branch", "github-pr"]) {
+      const t = releaseKit({ land });
+      try {
+        const r = await t.call("release.start", {});
+        assert.equal(r.ok, false, land);
+        assert.match(r.error!.message, /set how it lands to local/);
+        assert.equal((await t.k.q()).releaseHold(), null, "no hold");
+        assert.equal(t.r.openRecord(t.repo.root), null, "no record");
+      } finally {
+        await t.done();
+      }
+    }
+  });
+
+  test("the release entry still lands locally under a request-free project, and only it runs while held", async () => {
+    const t = releaseKit();
+    try {
+      const { rec, sha } = await prepared(t);
+      const b = t.repo.branch("feat/b", { "b.txt": "b\n" });
+      const q = await t.k.q();
+      const { entry: eb } = await q.add({ branch: "feat/b", by: "land-button" });
+      await t.call("release.step", { step: "commit", state: "done", summary: "c", facts: [`commit=${sha}`] }, t.chat);
+      await until(() => t.r.record(t.repo.root, rec.id)!.state === "ready", "ready");
+      const e = q.entry(t.r.record(t.repo.root, rec.id)!.entry!)!;
+      assert.equal(e.approval.by, "release");
+      assert.equal(e.landed?.via, undefined, "landed here, not on a host");
+      assert.equal((await t.k.entry(eb.id)).state, "queued");
+      assert.ok(!t.k.run.inputs.some((i) => i.commit === b.head), "B never ran while held");
     } finally {
       await t.done();
     }

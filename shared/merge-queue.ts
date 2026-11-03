@@ -23,16 +23,31 @@
  * - `drafts-changed`: the branch's spec drafts changed since the user approved: waits for a new Land.
  * - `needs-fix`: handed back to the branch's chat (a failure blamed on the branch, a conflict sent back, or the
  *   user's Send Back); a new Land queues it again.
- * - `landed`: master holds it (`landed`).
+ * - `landed`: master holds it (`landed`); on a request project, the host said merged (`landed.via` "host").
  * - `cancelled`: the user (or the branch's chat, on the user's word) took it out of the line.
+ *
+ * Landing by request or by pushing the branch alone (`approval.how`, al_3), after the checks pass:
+ * - `request-review`: the request's title and description wait for the user's look (Publish); then, until the
+ *   branch's chat is idle with a clean folder, `reason` says what it waits for. Never holds the copy.
+ * - `requested`: the request is open on the host (`request`); the host decides. Never holds the line or the copy.
+ * - `pushed`: Push branch only: the branch is on origin; the user opens the request.
+ * - `closed`: the request was closed on the host without merging; Land Again opens or updates it.
  */
-export type MergeEntryState = "queued" | "checking" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "needs-fix" | "landed" | "cancelled";
+export type MergeEntryState = "queued" | "checking" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "needs-fix" | "landed" | "cancelled" | "request-review" | "requested" | "pushed" | "closed";
 /** The states that wait for the user's answer (the "needs you" list). */
-export const WAITING_FOR_USER: readonly MergeEntryState[] = ["behaviour-differs", "review-flagged", "unattributed", "drafts-changed"];
+export const WAITING_FOR_USER: readonly MergeEntryState[] = ["behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "request-review"];
 /** The states an entry never leaves by itself. */
-export const ENTRY_FINAL: readonly MergeEntryState[] = ["landed", "cancelled", "needs-fix"];
+export const ENTRY_FINAL: readonly MergeEntryState[] = ["landed", "cancelled", "needs-fix", "pushed", "closed"];
+/** On the host: open there, followed by the queue; neither in line nor final. */
+export const ENTRY_ON_HOST: readonly MergeEntryState[] = ["requested"];
 /** States that hold a place in the line (one live entry per branch at a time). */
 export const ENTRY_OPEN: readonly MergeEntryState[] = ["queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed"];
+
+/** How a branch lands (al_3): merged locally (today's path), a pull request on GitHub, a merge request on GitLab,
+ *  or the branch pushed and nothing more. Effective = this computer's choice ?? the project file's `merge.land` ??
+ *  "local", pinned on each approval. */
+export type LandHow = "local" | "github-pr" | "gitlab-mr" | "push-branch";
+export const LAND_HOWS: readonly LandHow[] = ["local", "github-pr", "gitlab-mr", "push-branch"];
 
 /** How the user approved: the Land button (composer modal, session pane, Merge Queue view) or "land it" typed in the
  *  branch's own chat (ingested from the worktree tool's go-ahead record). */
@@ -55,6 +70,37 @@ export interface MergeApproval {
   withoutReview?: true;
   /** Land Anyway on "Can't tell whose failure": a rerun that again can't tell lands its tested tip. */
   overUnattributed?: true;
+  /** How it lands, pinned at approval (the project's effective choice then). Absent: local (approved before). */
+  how?: LandHow;
+  /** "open a PR" / "open an MR" typed in the branch's chat: wins over `how` for this approval. */
+  via?: "github-pr" | "gitlab-mr";
+}
+
+/** A branch published by the queue (a request, or the branch pushed alone), on its entry. */
+export interface MergeRequestInfo {
+  how: Exclude<LandHow, "local">;
+  host?: import("./merge-queue-hosts").HostKind;
+  /** The branch published (the chat's own branch) and the one it goes into. */
+  branch: string;
+  base: string;
+  /** The request on the host, once opened. */
+  number?: number;
+  url?: string;
+  /** The last tip pushed to origin's `branch`: Land Again adds on top of it (fast-forward, never forced). */
+  publishedHead?: string;
+  /** What the host last said, and when. */
+  facts?: import("./merge-queue-hosts").HostFactsWire;
+  checkedAt?: string;
+  /** merged: the host's commit on the base branch. */
+  mergeCommit?: string;
+  /** The request's title and description: drafted after the checks, shown for review (request-review), then sent. */
+  text?: { title: string; body: string; draft: boolean; checks?: { name: string; ok: boolean; why?: string }[] };
+  /** The request skill folder the text was written by (relative to the project); absent: Sova's plain default. */
+  folder?: string;
+  /** Publish was given (or Land Again publishes onto an open request) and it is on its way: it goes out once the
+   *  branch's chat is idle with a clean folder (`reason` says what it waits for). Absent: the text is the user's to
+   *  review and Publish. */
+  publishRequested?: true;
 }
 
 /** A note on an entry, shown on its row (queue view, composer popup, pane). Sova attaches no meaning to the text. */
@@ -173,8 +219,11 @@ export interface MergeEntry {
    *  named no failures; its log is merge.logs {run, step}. */
   unclear?: MergeUnclear[];
   notes: MergeNote[];
-  /** landed: where master went. */
-  landed?: { sha: string; from: string; at: string; pushed: PushState; pushWhy?: string };
+  /** landed: where master went. `via` "host": the host merged the request (`sha` is the host's commit, which may be a
+   *  squash or rebase of what Sova checked). */
+  landed?: { sha: string; from: string; at: string; pushed: PushState; pushWhy?: string; via?: "host" };
+  /** Landing by request or by push (approval.how not local): what was published, and the host's request. */
+  request?: MergeRequestInfo;
   /** Estimates (ms): when it should start from now, and how long its run takes. */
   eta?: { startsInMs: number; takesMs: number };
   /** The release this entry belongs to (rl_…): its release commit, or the revert of an abandoned one. Sova adds it
@@ -182,9 +231,14 @@ export interface MergeEntry {
   release?: string;
   /** A release entry's kind: the release commit, or the revert of an abandoned release's landed commit. */
   releaseKind?: "release" | "revert";
+  /** needs-fix only, derived when the view is read (never stored): the entry no longer needs a fix. `superseded`: the
+   *  branch has a later entry for the same target; `merged`: its sent-back commit or the branch's tip is already in the
+   *  target; `gone`: the branch or its worktree folder was removed. A settled entry leaves the Sent back list. */
+  settled?: MergeSettled;
   createdAt: string;
   updatedAt: string;
 }
+export type MergeSettled = "superseded" | "merged" | "gone";
 
 export type PushState = "pending" | "pushed" | "not-pushed" | "no-remote";
 
@@ -288,12 +342,18 @@ export type ChecksDeclared = "declared" | "test-command" | "none" | "unset";
 export interface MergeQueueHeads {
   /** The target's head now. */
   target: string;
-  /** origin's copy of the target, when known. */
+  /** origin's copy of the target, when known: the queue's own push, else the remote-tracking ref (as last fetched). */
   pushed?: string;
+  /** The project has a remote named origin (false: the strip says No remote). */
+  hasOrigin?: boolean;
   /** Why the last landing wasn't pushed ("held for a release", "leak scan: …", "origin moved"). */
   pushWhy?: string;
   /** Checks red on the target alone, by label. */
   targetRed?: string[];
+  /** Request projects: how many commits local target is behind origin's (as last fetched); Update Local Main. */
+  behind?: number;
+  /** Update Local Main can't now: why (the main folder has uncommitted edits). */
+  behindBlocked?: string;
 }
 
 /** The landed row of the view: the entry and its run summary. */
@@ -329,13 +389,20 @@ export interface MergeQueueView {
   /** Entries waiting for the user (behaviour differs, review flagged, drafts changed) and conflicts the thread
    *  judges. */
   needsYou: MergeEntry[];
-  /** Handed back to their chats, newest first (last 20). */
+  /** Handed back to their chats, newest first: the 20 newest that still need a fix (no `settled`), plus the settled
+   *  ones among the 20 newest overall (kept so a run or card can still find its entry). */
   needsFix: MergeEntry[];
+  /** Waiting on the host: open requests (`requested`), newest first; closed ones and pushed branches recently. */
+  waitingOnHost?: MergeEntry[];
   /** Landed, newest first (last 20), each with its notes. */
   recent: MergeLanded[];
   heads: MergeQueueHeads;
-  /** The merge thread's chat for this project, when one is recorded. */
-  thread?: { session: string; startedAt: string };
+  /** The merge thread's chat for this project, when one is recorded (the Merge thread card). */
+  thread?: MergeThreadInfo;
+  /** The reviewer chat running now, for the head's "Review running · <branch> · Open" (a retry: its current attempt). */
+  reviewing?: { run: string; branch: string; session: string; path: string; attempt: number; startedAt: string };
+  /** The queue's chats, newest first: the current thread, earlier ones, every reviewer chat (the History section). */
+  chats?: MergeQueueChat[];
   /** Ready, not approved: this project's worktree branches with commits the target hasn't, a clean tree, a head that
    *  isn't TEMP, and no entry in line or landed at that commit (the view's Land list). */
   ready?: MergeReady[];
@@ -344,6 +411,8 @@ export interface MergeQueueView {
   /** A release holds the queue (the freeze banner): only its entries land and nothing is pushed until it is
    *  published or abandoned. */
   release?: MergeReleaseHold;
+  /** Every setting the queue uses, where each is kept, and the saves the Settings tab may make. */
+  settings?: import("./merge-queue-settings").MergeQueueSettings;
   at: string;
 }
 
@@ -370,9 +439,11 @@ export interface MergeUnclear {
   why?: string;
 }
 
-export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear"> & {
+export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled"> & {
   project: string;
   run?: string;
+  /** The run's newest reviewer chat (Open Reviewer Chat on the branch's Worktrees row), while it runs and after. */
+  reviewer?: { session: string; path: string; state: "running" | "ok" | "notes" | "blocking" | "failed"; cleared?: true };
   /** The project has a review kit (the Land menu shows "Land without review"). */
   reviewKit?: boolean;
 };
@@ -445,6 +516,11 @@ export interface MergeReport {
   run?: MergeRun;
   /** merge.logs: the step's log lines (newest last). */
   lines?: string[];
+  /** merge.ask / merge.reply: the question as recorded. */
+  ask?: MergeThreadAsk;
+  /** merge.fresh: whether a thread was retired; merge.clear: the chats deleted. */
+  fresh?: boolean;
+  cleared?: number;
 }
 
 // ---- the WS feed --------------------------------------------------------------------------------
@@ -466,8 +542,8 @@ export interface MergeCardsFeed {
 // ---- a branch's card in the chat that built it ---------------------------------------------------
 
 /** An outcome that moves the card to the bottom of the chat as a new revision. */
-export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "sent-back";
-export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "sent-back"];
+export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "sent-back" | "requested" | "pushed" | "closed";
+export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "sent-back", "requested", "pushed", "closed"];
 
 /**
  * One copy of the card at its own point in the chat. The newest revision draws the whole card (the card's live data);
@@ -530,6 +606,8 @@ export interface MergeCard {
   review?: ReviewVerdict;
   unclear?: MergeUnclear[];
   landed?: MergeEntry["landed"];
+  /** Landing by request or push: the entry's request, live. */
+  request?: MergeRequestInfo;
   /** Commits and lines the branch brought, frozen at landing (absent before). */
   stats?: { commits: number; added: number; removed: number };
   failures?: MergeCardFailure[];
@@ -568,6 +646,14 @@ export function entryStateWords(e: Pick<MergeEntry, "state" | "position">): stri
       return "Landed";
     case "cancelled":
       return "Cancelled";
+    case "request-review":
+      return "Request ready for your look";
+    case "requested":
+      return "Request open on the host";
+    case "pushed":
+      return "Pushed";
+    case "closed":
+      return "Closed on the host";
   }
 }
 
@@ -581,4 +667,70 @@ export function ordinal(n: number): string {
 export function newerWords(n: number | undefined): string | null {
   if (!n) return null;
   return `${n} newer commit${n === 1 ? "" : "s"} not included`;
+}
+
+/** The merge queue's own chats, by the profile Sova started them on (never by title): the project's merge
+    thread and each run's reviewer. A rename, a move or a restart keeps the mark; any other chat has none. */
+export type QueueChatRole = "thread" | "reviewer";
+export const QUEUE_CHAT_PROFILES: Readonly<Record<string, QueueChatRole>> = { "merge-thread": "thread", "merge-reviewer": "reviewer" };
+export function queueChatRole(profile: { id?: string; source?: string; builtin?: boolean } | null | undefined): QueueChatRole | undefined {
+  if (!profile || typeof profile.id !== "string") return undefined;
+  const sova = profile.source === "sova" || (profile.source === undefined && profile.builtin === true);
+  return sova ? QUEUE_CHAT_PROFILES[profile.id] : undefined;
+}
+/** Why a queue chat's modes can't be switched from a menu or a tool. */
+export const QUEUE_CHAT_MODE_REFUSAL = "That is one of the merge queue's own chats: it keeps the modes and settings Sova starts it with.";
+
+/** The Merge thread card's facts. `state`: asking (a question is open), working (its turn runs), else idle. */
+export interface MergeThreadInfo {
+  session: string;
+  path?: string;
+  startedAt: string;
+  /** Its memory type as switched on at the start (UniiChat); absent: none. */
+  memory?: string;
+  state: "idle" | "working" | "asking";
+  /** The last event Sova sent it. */
+  lastEvent?: { kind: string; at: string; branch?: string };
+  /** The open question, when it is asking. */
+  ask?: MergeThreadAsk;
+  /** Messages in its chat, when known. */
+  messages?: number;
+}
+
+/** One History row: a merge thread (current or replaced) or a reviewer chat. `cleared`: its chat was deleted then
+    (the row keeps what it was; a run keeps its verdict and findings). */
+export interface MergeQueueChat {
+  kind: "thread" | "reviewer";
+  session: string;
+  path?: string;
+  startedAt: string;
+  endedAt?: string;
+  /** The current merge thread: never cleared. */
+  current?: true;
+  /** A reviewer still running: never cleared. */
+  running?: true;
+  memory?: string;
+  /** A thread: why it was replaced; a reviewer that gave no verdict: why. */
+  why?: string;
+  run?: string;
+  branch?: string;
+  attempt?: number;
+  verdict?: "ok" | "notes" | "blocking" | "failed";
+  cleared?: string;
+}
+
+/** A question the merge thread asked through merge.ask (§chat/merge-queue): it never waits in its own chat. Sova
+    wakes the chat that owns the entry's branch with it; that chat's agent relays the user's answer with merge.reply.
+    No chat to ask (none, archived, gone): the Merge Queue tab shows it (`onTab`) and one notification opens the tab. */
+export interface MergeThreadAsk {
+  id: string;
+  question: string;
+  at: string;
+  entry?: string;
+  branch?: string;
+  /** The chat it was sent to (the branch's owner; a worker's chat for a worker). */
+  askedIn?: { session: string; path: string };
+  /** No chat could take it: the tab is where it is answered. */
+  onTab?: true;
+  answered?: { at: string; by: "chat" | "operator"; session?: string };
 }

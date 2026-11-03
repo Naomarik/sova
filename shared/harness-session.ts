@@ -184,7 +184,7 @@ export type HarnessEvent = { frame(): HarnessFrame } & (
   | { type: "message.update"; role: "user" | "assistant" | "other"; handle: object | undefined; stream?: HarnessStreamDelta }
   /** Listeners run before the message's entry is written; one microtask later it is (persistedId). */
   | ({ type: "message.end"; reply?: HarnessReplySummary } & HarnessMessageEvent)
-  /** `nested`: a call another tool made (a codemode script's), which writes no entry of its own. */
+  /** `nested`: a call another tool made (pi's parentToolCallId), which writes no entry of its own. */
   | { type: "tool.start"; nested?: true }
   | { type: "tool.update"; nested?: true }
   | { type: "tool.end"; nested?: true }

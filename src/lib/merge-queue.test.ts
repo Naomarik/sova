@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeEntry, MergeRun, RunStep, WorktreeQueueInfo } from "../../shared/merge-queue";
-import { attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
+import { entryLandBlock, SENT_BACK_LINE, stillSentBack, rowButtons, attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
 
 const SHA = "a".repeat(40);
 const wt = (x: Partial<QueueRowInput> = {}): QueueRowInput => ({ status: "active", exists: true, branch: "feat/x", readiness: undefined, ...x });
@@ -83,8 +83,8 @@ test("review flagged: the review's words, Land Anyway and Send Back", () => {
   assert.equal(r.reason, "Leaves a TODO hack in land.ts.");
 });
 
-test("needs a fix and drafts changed both ask for a new Land", () => {
-  assert.equal(queueRow(wt({ queue: q({ state: "needs-fix", reason: "unit failed: a.test.ts", run: "mr_1" }) })).action, "land");
+test("drafts changed asks for a new Land; needs a fix offers none (al_4)", () => {
+  assert.equal(queueRow(wt({ queue: q({ state: "needs-fix", reason: "unit failed: a.test.ts", run: "mr_1" }) })).action, "none");
   const d = queueRow(wt({ queue: q({ state: "drafts-changed" }) }));
   assert.equal(d.label, "Drafts changed");
   assert.equal(d.action, "land");
@@ -142,6 +142,16 @@ test("tags, chips and the paused title", () => {
   assert.equal(pushedWords({ target: SHA, pushWhy: "held for a release" }).why, "held for a release");
   // Ahead of origin with no reason given still says so.
   assert.deepEqual(pushedWords({ target: SHA, pushed: "b".repeat(40) }), { label: "Not pushed", tone: "warn", why: "not pushed yet: goes out with the next landing" });
+});
+
+test("the strip says No remote only for a project with no origin", () => {
+  // A fresh queue record on a project whose master matches origin: the view filled `pushed` from origin.
+  assert.equal(pushedWords({ target: SHA, pushed: SHA, hasOrigin: true }).label, "Pushed");
+  assert.equal(pushedWords({ target: SHA, hasOrigin: false }).label, "No remote");
+  // An origin without the target branch: not pushed yet, never No remote.
+  assert.equal(pushedWords({ target: SHA, hasOrigin: true }).label, "Not pushed");
+  // A stray `pushed` on a project with no origin can't read Pushed.
+  assert.equal(pushedWords({ target: SHA, pushed: SHA, hasOrigin: false }).label, "No remote");
 });
 
 const step = (x: Partial<RunStep>): RunStep => ({ id: x.id ?? "s", kind: "check", label: "Unit", result: "pending", ms: 0, log: "", ...x });
@@ -213,4 +223,80 @@ test("can't tell whose failure: its words, the queue's why, Land Anyway and Send
   assert.equal(r.reason, "Build failed with this branch and on master alone.");
   assert.deepEqual(controlWords([{ key: "unattributed" }, { key: "ready" }]), { text: "1 needs you", n: 1, dot: "warn" });
   assert.equal(rowsSummary([{ key: "unattributed" }]), "1 can't tell whose failure");
+});
+
+// al_4: no Land at all while a sent-back branch is being fixed; the fixed, finished commit brings Land back.
+const NEW = "b".repeat(40);
+const sentBack = (x: Partial<QueueRowInput> = {}) =>
+  wt({ mergeServed: true, mergeProject: { id: "prj_1", root: "/r", target: "main", checks: "declared", review: true }, queue: q({ state: "needs-fix", run: "mr_1" }), ...x });
+
+test("a needs-fix row at its sent-back commit has no Land anywhere: no button, so no ▾ menu either", () => {
+  for (const readiness of [undefined, { ...ready, state: "in-progress" as const, dirtyCount: 2 }, { ...ready, landing: { state: "ready" as const, commit: SHA } }]) {
+    const r = queueRow(sentBack({ readiness }));
+    assert.equal(r.key, "needs-fix");
+    assert.equal(r.label, "Needs a fix");
+    assert.equal(r.action, "none");
+    assert.deepEqual(rowButtons(r, "prj_1"), [], "the Land split (and its menu) draws only with a Land button");
+  }
+  assert.equal(queueRow(sentBack()).reason, SENT_BACK_LINE);
+  assert.equal(queueRow(sentBack({ queue: q({ state: "needs-fix", reason: "unit failed: a.test.ts" }) })).reason, "unit failed: a.test.ts", "the queue's reason, as today");
+});
+
+test("the same branch after a new commit, finished, reads Ready with Land", () => {
+  const r = queueRow(sentBack({ readiness: { ...ready, landing: { state: "ready", commit: NEW } } }));
+  assert.equal(r.key, "ready");
+  assert.equal(r.label, "Ready");
+  assert.equal(r.action, "land");
+  assert.deepEqual(rowButtons(r, "prj_1"), ["Land"]);
+  assert.equal(r.detail, NEW.slice(0, 7), "Land pins the new commit");
+});
+
+test("the tab's Sent back list drops an entry whose branch reads ready at a newer commit", () => {
+  const e = { id: "me_1", branch: "feat/x", commit: SHA, state: "needs-fix" } as MergeEntry;
+  const at = (commit: string) => ({ needsFix: [e], ready: [{ branch: "feat/x", commit } as never] });
+  assert.deepEqual(stillSentBack({ needsFix: [e] }), [e]);
+  assert.deepEqual(stillSentBack(at(SHA)), [e], "the sent-back commit itself: still sent back");
+  assert.deepEqual(stillSentBack(at(NEW)), [], "fixed: the Ready to land row stands for it");
+});
+
+test("the Overseer's Land item (entry only, no readiness): off while sent back, off in line, on for drafts changed", () => {
+  assert.equal(entryLandBlock(undefined), undefined);
+  assert.equal(entryLandBlock({ state: "needs-fix" }), SENT_BACK_LINE);
+  for (const state of ["queued", "checking", "conflict", "behaviour-differs", "review-flagged"] as const) assert.equal(entryLandBlock({ state }), "Already in the merge queue.", state);
+  assert.equal(entryLandBlock({ state: "drafts-changed" }), undefined, "Land is how it's re-approved");
+  assert.equal(entryLandBlock({ state: "landed" }), undefined);
+  assert.equal(entryLandBlock({ state: "cancelled" }), undefined);
+});
+
+test("the tab's Sent back list shows only entries that still need a fix: settled ones leave, the cap counts current ones", () => {
+  const fix = (id: string, settled?: MergeEntry["settled"]) => ({ id, branch: `feat/${id}`, commit: SHA, state: "needs-fix", ...(settled ? { settled } : {}) }) as MergeEntry;
+  const current = fix("cur");
+  for (const settled of ["superseded", "merged", "gone"] as const) assert.deepEqual(stillSentBack({ needsFix: [fix(settled, settled), current] }), [current], settled);
+  const many = Array.from({ length: 25 }, (_, i) => fix(`c${i}`));
+  const shown = stillSentBack({ needsFix: [fix("s1", "merged"), fix("s2", "gone"), ...many] });
+  assert.equal(shown.length, 20);
+  assert.ok(shown.every((e) => !e.settled));
+});
+
+test("a merged or removed worktree wins over Needs a fix", () => {
+  const sent = q({ state: "needs-fix", commit: SHA });
+  assert.equal(queueRow(wt({ queue: sent, mergeServed: true })).key, "needs-fix", "still current");
+  assert.equal(queueRow(wt({ queue: sent, status: "merged" })).key, "merged");
+  assert.equal(queueRow(wt({ queue: sent, mergedInto: { target: "master", sha: SHA } } as never)).key, "merged");
+  assert.equal(queueRow(wt({ queue: sent, exists: false })).key, "removed");
+  assert.equal(queueRow(wt({ queue: sent, gone: "unknown" } as never)).key, "removed");
+});
+
+test("a sent-back entry superseded by a later cancelled one no longer reads Needs a fix on its worktree row", async () => {
+  const { buildView, worktreeQueueInfo } = await import("../../server/merge-queue/view");
+  const base = { project: "p", target: "master", branch: "feat/x", commit: SHA, approval: { by: "land-button", at: "t", commit: SHA }, runs: [], picks: [], notes: [] };
+  const a = { ...base, id: "mq_a", seq: 1, state: "needs-fix", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-03T00:00:00Z" };
+  const b = { ...base, id: "mq_b", seq: 2, state: "cancelled", createdAt: "2026-01-02T00:00:00Z", updatedAt: "2026-01-02T00:00:00Z" };
+  const q = { v: 1, project: "p", root: "/r", target: "master", entries: [a, b], landed: [], heads: {}, machineTries: {}, seq: 2 } as never;
+  const v = buildView({ q, root: "/r", current: null, checks: "declared", review: false, head: "h", takesMs: null, now: 0, readRun: () => null });
+  const info = worktreeQueueInfo(v, "feat/x");
+  assert.equal(info?.id, "mq_a", "the cancelled entry isn't in the view: the old one is what the row sees");
+  assert.equal(info?.settled, "superseded");
+  assert.notEqual(queueRow(wt({ queue: info, mergeServed: true })).key, "needs-fix");
+  assert.equal(queueRow(wt({ queue: { ...info!, settled: undefined }, mergeServed: true })).key, "needs-fix", "unsettled, it still would");
 });

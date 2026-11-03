@@ -115,7 +115,10 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   project has no automated tests; its landings say "No checks declared"); `install` (optional,
   `{run: argv, inputs: [checkout files], timeout?}`: run in the merge copy when a branch changes
   one of its `inputs`, as an offline install); and `review` (optional): the folder of the project's
-  review kit, relative to the checkout (§app.merge-queue/review). With no `merge` section the queue
+  review kit, relative to the checkout (§app.merge-queue/review); `land` (optional: `local`,
+  `github-pr`, `gitlab-mr` or `push-branch`; absent: `local`), the project's way of landing, which
+  this computer's own choice overrides (§app.merge-queue/strategies); and `request` (optional): the
+  folder of the project's request kit (§app.merge-queue/request-kit). With no `merge` section the queue
   uses `test` (§app.merge-queue/checks); with neither, the project's queue isn't set up
   (§app.merge-queue/setup). A check runs with `SOVA_VERB=merge`, `SOVA_STEP` (its id), `SOVA_OUT`,
   `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths).
@@ -647,23 +650,27 @@ the one result shape with its own `merge` key (§app.project-services/result).
   options without its specs and without review: §app.merge-queue/approve), `merge.cancel` (an
   entry), `merge.pause` and `merge.resume` (a project, with an optional why), and `merge.answer`
   (an entry waiting for the user: `accept` a resolution, `land-anyway` over a blocking review or a failure
-  whose owner can't be told, or `send-back`).
+  whose owner can't be told, or `send-back`), `merge.reply` (a merge thread's question by its id
+  and the user's answer: §chat.merge-queue/asks), `merge.fresh` (a project: Start Fresh,
+  §chat.merge-queue/thread-life) and `merge.clear` (a queue chat's id, or `all`: §app.merge-queue/chats).
 - **The merge thread's**: `merge.note` (an entry and at most 300 characters; empty clears it),
   `merge.extend` (an entry, the check ids it adds and why; never removes one), `merge.resolve` (an
   entry, its judgement, no behaviour change or behaviour differs, the files, both sides and the
-  proposal in plain words, and the commit of its resolution) and `merge.retry` (a project or entry
-  paused for the machine). Each takes an optional `note`, recorded on the entry.
+  proposal in plain words, and the commit of its resolution), `merge.retry` (a project or entry
+  paused for the machine) and `merge.ask` (the question for the user, and the entry it is about:
+  §chat.merge-queue/asks). Each takes an optional `note`, recorded on the entry.
 - **The review step's**: `merge.review` (a run, its verdict `ok`, `notes` or `blocking`, and the
   reviewer's text).
 
 **Callers.**
 - The operator (the routes, the CLI, the Land and Cancel controls) calls the user's verbs (add,
-  cancel, pause, resume, answer, setup) and the reads, and may write a note. Only the operator calls the
-  user's verbs.
+  cancel, pause, resume, answer, reply, fresh, clear, setup) and the reads, and may write a note.
+  Only the operator calls the user's verbs, with one exception: the chat a merge thread's question
+  was asked in may call `merge.reply` for that question only, to pass on the user's answer.
 - A typed "land it" reaches `merge.add` as the user's approval through `worktree land`
   (§chat.worktrees/tool); no session can call `merge.add` as a tool.
 - The project's merge thread (§chat.merge-queue/thread) calls the reads and its own verbs (note,
-  extend, resolve, retry), for its own project only.
+  extend, resolve, retry, ask), for its own project only.
 - A review step's reviewer calls `merge.review` for its own run only (§app.merge-queue/review).
 - Any other chat reads its own project's queue; anything else is `forbidden`.
 
@@ -675,8 +682,8 @@ nothing is recorded or loaded. For a listed project whose merge setup isn't done
 (its view says it isn't served, §app.merge-queue/view) and `merge.setup` (Initialize,
 §app.merge-queue/setup) are taken; every other verb gets that same refusal.
 
-The Land, Cancel, Pause, Resume, Accept, Send Back and Land Anyway actions are catalogue commands
-pointing at these verbs (§app/commands).
+The Land, Cancel, Pause, Resume, Accept, Send Back, Land Anyway, Start Fresh, Send Answer, Clear
+and Clear All actions are catalogue commands pointing at these verbs (§app/commands).
 
 ## §app.project-services/self-host — When the project is Sova itself
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { clearSettingsSection, closeSettings, openSettings, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, settingsTabFromHash, subagentSettingsPath } from "./settings-nav";
+import { clearSettingsSection, closeSettings, openSettings, SETTINGS_TABS, setSubagentSettingsPath, settingsOpenAt, settingsSection, settingsProjectFromHash, settingsTabFromHash, subagentSettingsPath } from "./settings-nav";
 
 test("Configure Spec opens Subagents at the Spec section, and a plain open asks for none", () => {
   openSettings("subagents", "spec");
@@ -27,7 +27,7 @@ test("Settings opens at the tab asked for, and closes", () => {
 });
 
 test("Accounts sits after Models, Subagents after Accounts, Alignment after Subagents, Profiles after Alignment, Overseer after Profiles, Notifications after Overseer and Decisions after Notifications, Public links after Mesh, Outreach after Public links, Voice after Outreach in the rail, and the dialog's rail is this list", () => {
-  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "accounts", "subagents", "alignment", "profiles", "overseer", "notifications", "decisions", "summaries", "memory", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"]);
+  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "accounts", "subagents", "alignment", "profiles", "overseer", "notifications", "decisions", "summaries", "memory", "organizations", "merge-queue", "themes", "mesh", "public-links", "outreach", "voice", "experimental"]);
   // The dialog's own TABS must be the same ids in the same order (it is `satisfies`-typed against
   // SettingsTab, which catches an unknown id but not a missing or reordered one).
   const dialog = readFileSync(new URL("../components/SettingsDialog.tsx", import.meta.url), "utf8");
@@ -62,6 +62,12 @@ test("#/settings/<tab> names a tab (a Needs you row, a notification's tap); anyt
   assert.equal(settingsTabFromHash("#/settings/public-links"), "public-links");
   assert.equal(settingsTabFromHash("#/settings/nope"), null);
   assert.equal(settingsTabFromHash("#/settings/outreach/x"), null);
+  // The Merge Queue tab alone takes a project: the All settings row opens it on that project.
+  assert.equal(settingsTabFromHash("#/settings/merge-queue"), "merge-queue");
+  assert.equal(settingsTabFromHash("#/settings/merge-queue/prj_ab12cd34"), "merge-queue");
+  assert.equal(settingsProjectFromHash("#/settings/merge-queue/prj_ab12cd34"), "prj_ab12cd34");
+  assert.equal(settingsProjectFromHash("#/settings/merge-queue"), null);
+  assert.equal(settingsTabFromHash("#/settings/memory/prj_ab12cd34"), null);
   assert.equal(settingsTabFromHash("#/settings"), null);
   assert.equal(settingsTabFromHash("#/overseer"), null);
 });

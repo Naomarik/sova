@@ -1689,7 +1689,7 @@ the top region doesn't keep every one of them forever.
 ## §app.session-list/ordinary-surfaces — Ordinary surfaces and the sessions they leave out
 
 Most of the pane is **ordinary surfaces**: they list the operator's own sessions, and every one of
-them reads the same predicate, so no surface can drift from the others. Two kinds of session are
+them reads the same predicate, so no surface can drift from the others. Three kinds of session are
 **special** and never appear on any of them:
 
 - **Overseer files** (`SessionSummary.overseer`, §app.overseer/identity-and-clear) — reached only through
@@ -1698,11 +1698,15 @@ them reads the same predicate, so no surface can drift from the others. Two kind
 - **Organization sessions** (`SessionSummary.org`, §app.organizations/org-sessions) — reached only through
   the Organizations region (§app.session-list/organizations), which is built from the same search hits as
   every other region, so they stay searchable there.
+- **The merge queue's own chats** (the merge thread and its reviewers, §app.merge-queue/chats) —
+  reached only from the project's Merge Queue tab, a run, and the branch's own Worktrees row. Like an
+  Overseer file they are in no region, no search and no group, nor in the Organizations region, the
+  Overseer page or the Agents board.
 
 Worker sessions are left out of every region too (they are reached through their owner's row), and
 for the same reason: something other than the operator runs them.
 
-**The ordinary surfaces**, each of which leaves both special kinds out:
+**The ordinary surfaces**, each of which leaves every special kind out:
 
 - the global **Needs you** region (§app.session-list/needs-you) and its spine door;
 - **Recent** (§app.session-list/recent), the spine's tiles, and the overview's `Last active` / `Resume`
@@ -1728,7 +1732,7 @@ for the same reason: something other than the operator runs them.
 
 The rule is one predicate on the client, `isOrdinarySession` in `src/lib/regions.ts` (Recent widens it with `isOperatorBuild`, and the groups read their own rule, `canJoinGroup`: every
 main thread with no `org`; neither changes it): a main thread
-(not a worker, not an Overseer file) with no `org` that no registered project owns. A project owns
+(not a worker, not an Overseer file, not one of the queue's own chats) with no `org` that no registered project owns. A project owns
 its overseer's conversations and its builds (`project.kind` `overseer` or `coding`), which its own
 region lists (§app.projects/list), until the operator archives a standalone project's build: then it
 is ordinary again and lives in the Archive (and its cleanup) like any archived session, never in the

@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
+import { chatRefOf } from "../lib/merge-chat";
 import type { ProjectSummary } from "../../shared/projects";
 import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, archiveProject, getProjectPreviews, unarchiveProject } from "../lib/api";
@@ -349,11 +350,8 @@ export function ProjectPage(props: {
               root={project().root}
               name={project().name}
               run={props.run}
-              chatOf={(id) => {
-                // The queue records a chat by its id (an older record by its path).
-                const s = props.sessions?.()?.find((x) => x.id === id || x.path === id);
-                return s ? { path: s.path, title: s.title, archived: s.archived } : undefined;
-              }}
+              // The queue records a chat by its id (an older record by its path); a worker is named as its chat's.
+              chatOf={(id) => chatRefOf(id, props.sessions?.())}
             />
           </Match>
           <Match when={tab() === "releases"}>

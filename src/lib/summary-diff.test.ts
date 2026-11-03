@@ -22,6 +22,7 @@ const full = (): Required<SessionSummary> => ({
   live: { pid: 1, status: "idle", workers: { working: 0, total: 1 } },
   workers: { working: 0, total: 1 },
   workerSession: true,
+  workerOf: { id: "p", path: "/s/p.jsonl", name: "spec writer" },
   busy: false,
   chat: { model: "zai/glm-5.3", thinking: "high", mode: "delegate", minorModes: ["align"], strict: false, applies: "now" },
   origin: "web",
@@ -50,6 +51,7 @@ const full = (): Required<SessionSummary> => ({
   turnError: { message: "overloaded" },
   tags: { topic: "feature" },
   profile: { id: "reviewer", label: "Read-only reviewer", icon: "eye", source: "sova" },
+  queueChat: { role: "reviewer" },
   readiness: { trees: [{ path: "/w/t", branch: "feat/x", state: "ready", why: "checks passed" }], badge: "ready", branch: "feat/x", since: 12 },
 });
 

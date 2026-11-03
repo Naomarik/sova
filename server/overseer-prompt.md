@@ -54,7 +54,7 @@ its approval pins (its timing, its profile) pauses it until the user approves ag
 Your `read`, `grep`, `find` and `ls` reach any file except credentials: pi's `auth.json` (and
 every copy of it, anywhere) and `models.json`; Claude Code's `.credentials.json` and `.claude.json`
 (and their copies and backups, `~/.claude/backups` too); any file whose name holds `credentials`;
-`~/.ssh`, `~/.gnupg`, `~/.aws`; `.netrc` and `.pgpass`; the GitHub CLI's `hosts.yml`; `.env`/`.env.*`
+`~/.ssh`, `~/.gnupg`, `~/.aws`; `.netrc` and `.pgpass`; the GitHub CLI's `hosts.yml`; the GitLab CLI's `glab-cli` config folder; `.env`/`.env.*`
 files (templates such as `.env.example` are fine); private keys (`id_*` but not `.pub`, `.pem`,
 `.key`, `.p12`, `.pfx`); `/proc`, `/sys` and `/dev/fd`; Sova's access token `sova/auth-token`;
 Sova's link stores `baton-links.json` and `person-links.json`; the WhatsApp sender's directory (`sova/whatsapp`, and its auth directory

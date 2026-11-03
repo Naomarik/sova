@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 90861,
+      "bytes": 90851,
       "tools": [
         {
           "name": "sova_attention",
@@ -2495,7 +2495,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "code: the minor modes on, the whole set: any of align, spec, vis, codemode; [] turns them all off. Omitted: this computer's default."
+                "description": "code: the minor modes on, the whole set: any of align, spec, vis; [] turns them all off. Omitted: this computer's default."
               },
               "subagent_profile": {
                 "type": "string",
@@ -2862,7 +2862,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 96646,
+      "bytes": 96636,
       "tools": [
         {
           "name": "sova_attention",
@@ -5448,7 +5448,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "code: the minor modes on, the whole set: any of align, spec, vis, codemode; [] turns them all off. Omitted: this computer's default."
+                "description": "code: the minor modes on, the whole set: any of align, spec, vis; [] turns them all off. Omitted: this computer's default."
               },
               "subagent_profile": {
                 "type": "string",
@@ -6008,7 +6008,7 @@
       ]
     },
     "project-overseer": {
-      "bytes": 39435,
+      "bytes": 39429,
       "tools": [
         {
           "name": "sova_project",
@@ -6691,7 +6691,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "The minor modes on, the whole set: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
+                "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
               },
               "subagent_profile": {
                 "type": "string",
@@ -6733,7 +6733,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off."
+                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
               },
               "subagent_profile": {
                 "type": "string",
@@ -6946,6 +6946,7 @@
                   "project.archive",
                   "copies",
                   "services",
+                  "merge-queue",
                   "profile",
                   "playbook",
                   "schedule",
@@ -7198,7 +7199,7 @@
       ]
     },
     "project-overseer+onboard": {
-      "bytes": 39831,
+      "bytes": 39825,
       "tools": [
         {
           "name": "sova_project",
@@ -7881,7 +7882,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "The minor modes on, the whole set: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
+                "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
               },
               "subagent_profile": {
                 "type": "string",
@@ -7923,7 +7924,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off."
+                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
               },
               "subagent_profile": {
                 "type": "string",
@@ -8136,6 +8137,7 @@
                   "project.archive",
                   "copies",
                   "services",
+                  "merge-queue",
                   "profile",
                   "playbook",
                   "schedule",
@@ -8394,7 +8396,7 @@
       ]
     },
     "project-overseer+gaps": {
-      "bytes": 39876,
+      "bytes": 39870,
       "tools": [
         {
           "name": "sova_project",
@@ -9077,7 +9079,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "The minor modes on, the whole set: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
+                "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
               },
               "subagent_profile": {
                 "type": "string",
@@ -9131,7 +9133,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off."
+                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
               },
               "subagent_profile": {
                 "type": "string",
@@ -9344,6 +9346,7 @@
                   "project.archive",
                   "copies",
                   "services",
+                  "merge-queue",
                   "profile",
                   "playbook",
                   "schedule",
@@ -9596,7 +9599,7 @@
       ]
     },
     "project-overseer+copies": {
-      "bytes": 45453,
+      "bytes": 45447,
       "tools": [
         {
           "name": "sova_project",
@@ -10363,7 +10366,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "The minor modes on, the whole set: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
+                "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
               },
               "subagent_profile": {
                 "type": "string",
@@ -10405,7 +10408,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off."
+                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
               },
               "subagent_profile": {
                 "type": "string",
@@ -10618,6 +10621,7 @@
                   "project.archive",
                   "copies",
                   "services",
+                  "merge-queue",
                   "profile",
                   "playbook",
                   "schedule",
@@ -11224,7 +11228,7 @@
       ]
     },
     "project-verbs:session": {
-      "bytes": 7912,
+      "bytes": 8230,
       "tools": [
         {
           "name": "project_verbs",
@@ -11270,6 +11274,10 @@
                   "merge.review",
                   "merge.retry",
                   "merge.setup",
+                  "merge.ask",
+                  "merge.reply",
+                  "merge.fresh",
+                  "merge.clear",
                   "release.status",
                   "release.logs",
                   "release.request",
@@ -11454,7 +11462,11 @@
               },
               "text": {
                 "type": "string",
-                "description": "merge.review: the reviewer's notes, short; release.notes: the release notes, in full."
+                "description": "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; release.notes: the release notes, in full."
+              },
+              "ask": {
+                "type": "string",
+                "description": "merge.reply: the merge thread's question you relay the user's answer to, by its id (ak_…, in the merge queue's message)."
               }
             },
             "required": [

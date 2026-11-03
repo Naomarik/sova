@@ -239,7 +239,7 @@ export function cardTool(d: CardToolDeps): Tool {
   return {
     name: CARD_TOOL,
     label: "Card",
-    // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
+    // Its card reads the recorded result (EAGER_TOOLS): never a call another tool made.
     exposure: "model-only",
     description: cardDescription(d.audience, copies),
     promptSnippet: `ask the ${d.audience} with a card (c_N; items 1..N, options a, b…), and record their answer on it`,

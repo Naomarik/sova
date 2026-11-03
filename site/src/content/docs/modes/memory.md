@@ -21,7 +21,7 @@ auto-memory, which Sova always keeps off.
 
 ## Turn it on
 
-Memory is the last row of the mode menu's minor modes, after codemode (see
+Memory is the last row of the mode menu's minor modes, after vis (see
 [How modes work](/docs/modes/)). Toggle it like the others, in either major mode and whatever the
 chat's model. The row is there only in a chat whose runtime can run memory. While memory is on, the
 row's detail line names the type, such as "UniiChat — by Victor Taelin".

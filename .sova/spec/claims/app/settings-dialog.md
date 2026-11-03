@@ -8,7 +8,9 @@ the session stays behind, closed by the scrim, Esc, or its Close button (Cancel 
 is unsaved, which discards it, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Accounts, Subagents,
-Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Memory, Organizations, Themes, Mesh, Public links, Outreach, Voice, Experimental.
+Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Memory, Organizations, Merge Queue, Themes, Mesh, Public links, Outreach, Voice, Experimental.
+Merge Queue shows one project's queue settings at a time (§app.merge-queue/settings): a project's
+**Queue Settings** opens it on that project, and its picker switches project.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Subagents directly, and nothing else about the chat changes. Which tab is open lives in
@@ -669,7 +671,7 @@ Folders box or the tab writes nothing.
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Subagents**
 (the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Memory**, **Organizations**,
 **Mesh**, **Alignment** and **Experimental**, and on General the **Updates** form (§app/updates). A change on them is staged, never written as it is made. No form has a Save or
-Discard button of its own: saving is the dialog's.
+Discard button of its own: saving is the dialog's. Merge Queue is the one tab that saves on its own (below).
 
 - **The footer.** Left to right: a status line, then **Save Changes**
   (primary; **Saving…** while it writes) and **Cancel** (ghost), while any gated form on any tab holds
@@ -722,6 +724,11 @@ Discard button of its own: saving is the dialog's.
   "Alignment" whichever of the two failed.
 - **Experimental** holds no switch now: its panel says "No experimental features right now." and nothing in it is ever unsaved. Adversarial
   review moved to Alignment; the Claude Code provider is no switch there, it is always on (§app.claude-code-provider/always-on).
+- **Merge Queue saves on its own** (§app.merge-queue/settings-save): its project-file changes are a
+  commit on the project's target with a confirm of their own, and its models save as they are
+  picked. Save Changes never writes them, but its gathered project-file changes join the close-hold
+below: the banner names "Merge Queue" with the others, and when they are the only ones held its body
+reads "Save them on their tab, or discard them and close."
 - **Not gated.** General (apart from its Updates form), Themes and Typography change only this
   browser and still apply as you pick. Actions run at once and are never part of a draft: Retry,
   Try Again, Check Again, Updates' Check Now and its upgrade button, Themes'

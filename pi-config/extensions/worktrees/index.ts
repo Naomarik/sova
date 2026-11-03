@@ -258,6 +258,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 			"Use the worktree tool, not bash, to create or track a git worktree: workers may only start in this session's cwd or inside a worktree the session tracks.",
 			"Merge a branch into main or master only as this turn's Sova landing note for that repo allows.",
 			"When the user types in this chat that its branch should land (\"land it\", \"merge it\"), commit what is left, then call worktree land at once: it lands the branch the way this turn's Sova landing note says.",
+			"When a [merge-queue] message says the merge thread needs the user, ask them its question in your reply and relay their answer in their words with the project verbs tool's merge.reply {ask, text}; never answer it yourself.",
 		],
 		parameters: Type.Object(
 			{
@@ -332,6 +333,10 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						const files = dirty.stdout.split("\n").filter(Boolean).length;
 						if (files) throw new Error(`${f.branch} has ${files} uncommitted file${files === 1 ? "" : "s"}: the go-ahead is for a commit. Commit or remove them, then call worktree land again. Nothing was recorded.`);
 						const served = await servedAt(f.path);
+						const asked = word.via === "github-pr" ? "pull request" : word.via === "gitlab-mr" ? "merge request" : null;
+						// q12: "open a PR/MR" is never blocked. Unserved, the chat opens it itself; served, the queue does.
+						if (asked && served === false)
+							return done(`Sova's merge queue doesn't serve this repo, so nothing was queued: open the request yourself, as the user asked, with gh pr create or glab mr create, whichever origin's host uses (after pushing ${f.branch}).`, { landing: null, trees: set?.trees ?? [] });
 						if (served === false) {
 							// No merge queue here: the user's word is a plain merge into the main checkout's branch.
 							const checkouts = await listWorktrees(git, f.path);
@@ -343,10 +348,10 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 							const r = await plainMerge(f, own, target, word.withoutSpecs);
 							return done(`${r.text}\nNo merge queue serves this repo, so the user's word merged it here.\n${listing()}`, { ...r.details, trees: set?.trees ?? [] });
 						}
-						recordGoAhead({ branch: f.branch, commit: f.head, ...(sessionId ? { session: sessionId } : {}), at: new Date(now()).toISOString(), by: "owner-chat", ...(word.withoutSpecs ? { withoutSpecs: true as const } : {}), ...(word.withoutReview ? { withoutReview: true as const } : {}) }, goAheadFile());
+						recordGoAhead({ branch: f.branch, commit: f.head, ...(sessionId ? { session: sessionId } : {}), at: new Date(now()).toISOString(), by: "owner-chat", ...(word.withoutSpecs ? { withoutSpecs: true as const } : {}), ...(word.withoutReview ? { withoutReview: true as const } : {}), ...(word.via ? { via: word.via } : {}) }, goAheadFile());
 						return done(
-							`Queued ${f.branch} at ${shortSha(f.head)} to land${word.withoutSpecs ? ", without its specs" : ""}${word.withoutReview ? ", without review" : ""}. Sova's merge queue merges it onto the newest master in its own copy, runs the checks and lands exactly that commit; it tells this chat when it lands or if it needs a fix. Tell the user it is queued; nothing else is needed from them. A newer commit on ${f.branch} isn't included unless they land it again.`,
-							{ landing: { branch: f.branch, commit: f.head, withoutSpecs: word.withoutSpecs, withoutReview: word.withoutReview }, trees: set?.trees ?? [] },
+							`Queued ${f.branch} at ${shortSha(f.head)} to land${asked ? " as a request on origin's host (a merge request on GitLab, a pull request on GitHub)" : ""}${word.withoutSpecs ? ", without its specs" : ""}${word.withoutReview ? ", without review" : ""}. Sova's merge queue merges it onto the newest master in its own copy, runs the checks and lands exactly that commit; it tells this chat when it lands or if it needs a fix. Tell the user it is queued; nothing else is needed from them. A newer commit on ${f.branch} isn't included unless they land it again.`,
+							{ landing: { branch: f.branch, commit: f.head, withoutSpecs: word.withoutSpecs, withoutReview: word.withoutReview, ...(word.via ? { via: word.via } : {}) }, trees: set?.trees ?? [] },
 						);
 					}
 					case "merge": {

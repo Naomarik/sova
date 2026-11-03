@@ -193,13 +193,13 @@ export function waitsOnTeam(reply: string): boolean {
  * gone. Pure.
  */
 export function quietTeam(
-  s: Pick<SessionSummary, "busy" | "activity" | "archived" | "overseer" | "projectOverseer" | "workerSession" | "baton">,
+  s: Pick<SessionSummary, "busy" | "activity" | "archived" | "overseer" | "projectOverseer" | "workerSession" | "baton"> & Partial<Pick<SessionSummary, "queueChat">>,
   workers: readonly Pick<WorkerInfo, "id" | "name" | "status" | "working" | "startedAt" | "lastActivity" | "endedAt" | "outcome">[],
   duties: ReadonlyMap<string, TeamDuty>,
   reply: { at: number; stopReason: string } | undefined,
   now: number,
 ): { since: number; names: string[] } | null {
-  if (s.overseer || s.projectOverseer || s.workerSession || s.baton || s.archived) return null;
+  if (s.overseer || s.projectOverseer || s.workerSession || s.queueChat || s.baton || s.archived) return null;
   if (s.busy || s.activity?.state === "working" || !reply || reply.stopReason !== "stop") return null;
   const members = workers.filter((w) => !duties.has(w.id));
   if (members.some((w) => w.working)) return null;
@@ -331,7 +331,7 @@ export function cardState(title: string, f: Pick<TurnFacts, "lastUser" | "assist
  * (its turns were written by a TUI or a headless pi, even if that process has since exited).
  */
 export function exclusionReason(
-  s: Pick<SessionSummary, "cwd" | "overseer" | "workerSession" | "archived" | "live" | "origin" | "baton" | "projectOverseer">,
+  s: Pick<SessionSummary, "cwd" | "overseer" | "workerSession" | "archived" | "live" | "origin" | "baton" | "projectOverseer"> & Partial<Pick<SessionSummary, "queueChat">>,
   settings: DecisionSettings,
   held: boolean,
   home?: string,
@@ -342,6 +342,7 @@ export function exclusionReason(
   // are not sent to a decision model.
   if (s.baton) return "baton session";
   if (s.workerSession) return "worker session";
+  if (s.queueChat) return "merge queue chat";
   if (s.archived) return "archived";
   const gate = maySend(settings, "attention", { cwd: s.cwd, terminal: terminalSession(s, held) }, home);
   return gate.ok ? null : gate.reason;

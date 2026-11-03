@@ -4,7 +4,7 @@ import { relativeTime } from "../lib/format";
 import { mins, notesOf, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
-import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
+import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { MergeOnboarding } from "./MergeOnboarding";
 import { MergeRunView } from "./MergeRunView";
@@ -334,6 +334,21 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
           }
         />
       </Show>
+      {/* An open release freezes the target on it (§app.release): only its own entries land until it's published or abandoned. */}
+      <Show when={v().release}>
+        {(rel) => (
+          <Banner
+            tone="info"
+            title={`${v().target} is frozen for release ${rel().version ?? "in progress"}`}
+            body="Other landings wait in line, and nothing is pushed, until the release is published or abandoned."
+            action={
+              <a class="button button-sm" href={projectTabHref(props.projectId, "releases")}>
+                Open Releases
+              </a>
+            }
+          />
+        )}
+      </Show>
       <CheckingNow projectId={props.projectId} view={v()} chatOf={props.chatOf} />
       <Waiting projectId={props.projectId} view={v()} chatOf={props.chatOf} onChanged={props.onChanged} />
       <Show when={v().needsYou.length > 0}>
@@ -521,7 +536,7 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
                   <div class="list-main">
                     <p class="list-title mq-branch text-mono">{e.branch}</p>
                     <p class="mq-facts">
-                      <QueueChip row={{ label: `In line · ${e.position ?? "?"}`, tone: "neutral" }} />
+                      <QueueChip row={e.release ? { label: "Release", tone: "accent" } : { label: `In line · ${e.position ?? "?"}`, tone: "neutral" }} />
                       <span class="text-mono text-muted">{short(e.commit)}</span>
                       <span>
                         approved {relativeTime(e.approval.at)} · {e.approval.by === "typed" ? "typed in its chat" : "Land button"}
@@ -536,6 +551,9 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
                           <Icon name="clock" small /> starts in ~{mins(t().startsInMs)} · takes ~{mins(t().takesMs)}
                         </p>
                       )}
+                    </Show>
+                    <Show when={e.release ? null : e.reason}>
+                      {(why) => <p class="list-meta">{why()}</p>}
                     </Show>
                     <Show when={e.newerCommits}>
                       <p class="list-meta">

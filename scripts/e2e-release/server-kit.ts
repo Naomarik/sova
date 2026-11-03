@@ -71,12 +71,13 @@ function lineFrom(child: ChildProcess, re: RegExp, ms: number): Promise<RegExpEx
   });
 }
 
-export async function startReleaseServer(): Promise<ReleaseServer> {
+/** `env`: the server's test knobs (SOVA_RELEASE_QUIET_MS, SOVA_RELEASE_STALL_POLL_MS, …). */
+export async function startReleaseServer(o: { env?: Record<string, string> } = {}): Promise<ReleaseServer> {
   const model = spawn("node", [join(HERE, "scripted-model.mjs"), "0"], { stdio: ["ignore", "pipe", "inherit"] });
   const port = Number((await lineFrom(model, /^listening (\d+)$/m, 10_000))[1]);
   let hs: HermeticServer;
   try {
-    hs = await startHermeticServer({ bootTimeoutMs: 90_000 });
+    hs = await startHermeticServer({ bootTimeoutMs: 90_000, env: o.env });
   } catch (e) {
     model.kill("SIGKILL");
     throw e;

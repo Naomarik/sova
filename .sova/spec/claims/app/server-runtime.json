@@ -156,7 +156,8 @@
       "scripts/test-report.mjs",
       "scripts/test-env.mjs",
       "server/test-env.test.ts",
-      "server/test-env.integration.test.ts"
+      "server/test-env.integration.test.ts",
+      "scripts/test-report.test.ts"
     ],
     "requires": [
       "§app.server-runtime/choice",
@@ -164,8 +165,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-26T22:26Z",
-      "source": "pi-session:ed430338-abe1-4918-8a4e-6842c2f9782d#16a537e8"
+      "at": "2026-11-03T11:20Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#d05bfb13"
     }
   },
   "§app/server-runtime": {

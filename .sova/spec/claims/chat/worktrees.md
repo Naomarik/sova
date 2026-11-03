@@ -265,7 +265,9 @@ moved past the approved commit. **The row's action** is the modal's, from the sa
 its menu) on Ready, Needs a fix or Drafts changed, Set Up Queue when the project isn't set up,
 Cancel on a queued row, Accept and Send Back on Behaviour differs, Land Anyway and Send Back on
 Review flagged and on Can't tell whose failure. A project whose definition doesn't parse keeps Land
-(never Set Up Queue), with the modal's line saying so (§chat.composer/worktrees-control); the row keeps Review Changes and its workers and `.agent` chips. The pane, the composer's control and the Merge Queue view read the same
+(never Set Up Queue), with the modal's line saying so (§chat.composer/worktrees-control); the row keeps Review Changes and its workers and `.agent` chips. A row's Review Changes, first among
+its actions, is the modal's own button: the branch as it is now against the branch it lands on, its
+uncommitted files included and marked as uncommitted; a merged branch shows what its landing or merge brought in (§chat.changes/entry). The pane, the composer's control and the Merge Queue view read the same
 state and stay in sync; nothing in the section shows live state or offers a restart. Under the facts, one visible
 muted line gives the reason, so a phone gets it without hover: the readiness's `reason` ("Ready to
 merge · checks passed · 19 commits ahead", "Conflicts with master · 17 files"), else the chip's

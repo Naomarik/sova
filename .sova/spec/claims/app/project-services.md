@@ -110,7 +110,8 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   `checks`: 1 to 30 checks `{id, label, run: argv, timeout?, rerun?, requires?, optional?}` in the
   order they run (`optional: true`: not required; it runs only when the merge thread picks it) (ids unique; `run` a template argv that may also read `${merge.base}`, `${merge.tip}` and
   `${merge.target}`; `rerun: true` when its failures name test files and `run` plus those files
-  reruns only them; `requires` the services started in the merge copy first), or `"none"` (the
+  reruns only them (a check that is the project's `test.run` with selection flags after it is rerun
+  as `test.run` plus the files, §app.merge-queue/blame); `requires` the services started in the merge copy first), or `"none"` (the
   project has no automated tests; its landings say "No checks declared"); `install` (optional,
   `{run: argv, inputs: [checkout files], timeout?}`: run in the merge copy when a branch changes
   one of its `inputs`, as an offline install); and `review` (optional): the folder of the project's

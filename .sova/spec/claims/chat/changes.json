@@ -33,12 +33,14 @@
       "server/index.ts",
       "server/app.ts",
       "shared/protocol.ts",
-      "server/git-diff.test.ts"
+      "server/git-diff.test.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/diff-route.integration.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-24T21:15Z",
-      "source": "pi-session:845202a8-f94d-433d-ade4-5d3b1e4d109f#0aaaaa18"
+      "at": "2026-11-03T10:05Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#61271213"
     }
   },
   "§chat.changes/entry": {
@@ -46,7 +48,9 @@
     "requires": [
       "§chat.worktrees/merge-card",
       "§chat.worktrees/pane",
-      "§chat.changes/viewer"
+      "§chat.changes/viewer",
+      "§chat.composer/worktrees-control",
+      "§app.merge-queue/view"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -58,8 +62,17 @@
       "src/components/ChangesViewer.tsx",
       "src/components/ChangesViewer.css",
       "src/components/Thread.tsx",
-      "src/app.css"
-    ]
+      "src/app.css",
+      "src/components/ReviewChanges.tsx",
+      "src/components/WorktreesModal.tsx",
+      "src/components/MergeQueueTab.tsx",
+      "server/merge-queue-ui.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T10:05Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#61271213"
+    }
   },
   "§chat.changes/show-changes-card": {
     "kind": "behavior",
@@ -165,7 +178,10 @@
       "src/components/ChangesViewer.tsx",
       "src/components/ChangesViewer.css",
       "src/lib/changes-view.ts",
-      "src/lib/changes-view.test.ts"
+      "src/lib/changes-view.test.ts",
+      "src/components/ReviewChanges.tsx",
+      "src/components/MergeQueueTab.tsx",
+      "server/merge-queue-ui.integration.test.ts"
     ],
     "requires": [
       "§chat.changes/endpoint",

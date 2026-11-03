@@ -755,7 +755,18 @@ line says so with its why, and that Land still takes the approval. Then comes on
     parses.";
   - **Cancel** on a queued row;
   - **Accept** and **Send Back** on Behaviour differs;
-  - **Land Anyway** and **Send Back** on Review flagged and on Can't tell whose failure.
+  - **Land Anyway** and **Send Back** on Review flagged and on Can't tell whose failure;
+- **Review Changes**, first among the row's actions, on every row of an active worktree whose folder
+  exists and that has commits of its own (Ready, Uncommitted with commits, queued, checking, waiting
+  for you, Needs a fix), the same button as the pane's rows (§chat.worktrees/pane). It opens the
+  changes viewer over the modal on the branch as it is now against its merge-base with the branch it
+  lands on, with the worktree's uncommitted files included and marked as uncommitted
+  (§chat.changes/endpoint). Close or Esc
+  closes the viewer alone, never the modal behind it, and focus returns to the row's Review Changes.
+
+On a phone (narrower than 600px) each row has 12px side padding, names its folder by its last name
+(the full path as its `title`), and puts its actions on a line of their own, Review Changes on the
+left and the row's queue action on the right, each at least 44px tall.
 
 The modal ends with **View Merge Queue**, which opens the project's Merge Queue view
 (§app.merge-queue/view), and **Close**.

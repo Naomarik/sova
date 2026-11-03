@@ -130,7 +130,28 @@
       "src/components/ChangesViewer.tsx",
       "server/merge-queue/attribute.ts",
       "server/merge-queue/run.ts",
-      "server/merge-queue/wake.ts"
+      "server/merge-queue/wake.ts",
+      "src/lib/merge-queue-chats.ts",
+      "src/lib/merge-queue-settings.ts"
+    ]
+  },
+  "§design.copy-deck/merge-queue-chats": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "about": [
+      "§app.merge-queue/chats",
+      "§chat.merge-queue/asks",
+      "§app.merge-queue/owner"
+    ],
+    "code": [
+      "src/lib/merge-queue-chats.ts",
+      "src/components/MergeQueueChats.tsx",
+      "src/lib/merge-chat.ts",
+      "server/merge-queue/asks.ts",
+      "server/session-guards.ts",
+      "shared/merge-queue.ts",
+      "src/components/WorktreesModal.tsx"
     ]
   },
   "§design.copy-deck/message-actions": {

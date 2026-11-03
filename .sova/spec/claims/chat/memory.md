@@ -56,7 +56,10 @@ Victor Taelin". What it changes, and why:
 Memory runs inside Sova's server, so only Sova turns it on: from an ordinary chat's mode menu
 (`POST /api/mode?path=…`, §chat.mode-menu/how-a-switch-reaches-the-chat), whatever the chat's
 model, and for the Overseer and each project overseer from that overseer's own switch
-(§chat.memory/overseer). Those switches are the only way: a project overseer's mode switch stays
+(§chat.memory/overseer). The one other chat with memory is each project's merge thread: Sova
+turns it on as UniiChat when it starts the thread, before its first message, and pins it; a
+switch from its mode menu is refused (409), as for every queue chat
+(§chat.merge-queue/thread-life). Those are the only ways: a project overseer's mode switch stays
 refused, and neither overseer has a mode-menu memory row.
 
 - The mode extension declares it web-only (`MINOR_SURFACES` in `pi-config/extensions/mode/minor.ts`,
@@ -67,7 +70,8 @@ refused, and neither overseer has a mode-menu memory row.
   never refused, and a switch sends it `/mode memory off` only in a chat where memory was on.
 - Workers never get it (`MINOR_WORKER.memory` is false, §chat.mode-menu/workers).
 - A session profile naming it is refused ("memory is for chats only: turn it on from a chat's mode
-  menu"), and so is a switch of a baton or project-overseer session (400).
+  menu"), the merge thread's system profile included (its memory is Sova's start switch, never the
+  profile), and so is a switch of a baton or project-overseer session (400).
 - The Overseer may have memory itself, but the coding sessions it starts or sets never get it: its
   `sova_create_session` and `sova_set_session` (here or on a peer) refuse a `minor_modes` list naming
   memory before anything is created or changed, and the peer route they reach (`POST

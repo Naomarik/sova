@@ -1,4 +1,38 @@
 {
+  "§chat.merge-queue/asks": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.merge-queue/thread",
+      "§chat.merge-queue/chat-turns",
+      "§app.merge-queue/owner",
+      "§app.project-services/merge-verbs",
+      "§app.merge-queue/view",
+      "§app.notifications/delivery"
+    ],
+    "code": [
+      "server/merge-queue/asks.ts",
+      "server/merge-queue/asks.test.ts",
+      "server/merge-queue/thread.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/routes.ts",
+      "shared/merge-queue.ts",
+      "shared/project-contract.ts",
+      "server/push.ts",
+      "pi-config/extensions/worktrees/index.ts",
+      "playbooks/merge-queue/PLAYBOOK.md",
+      "playbooks/merge-queue/references/names.md",
+      "src/components/MergeQueueChats.tsx",
+      "src/lib/merge-queue-client.ts",
+      "server/merge-queue-ui.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T18:31Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+    }
+  },
   "§chat.merge-queue/chat-card": {
     "kind": "behavior",
     "authority": "accepted",
@@ -52,7 +86,8 @@
     "evidence": "reviewed",
     "requires": [
       "§chat.merge-queue/chat-card",
-      "§chat.profiles/delivery"
+      "§chat.profiles/delivery",
+      "§chat.merge-queue/asks"
     ],
     "code": [
       "src/components/MessageRows.tsx",
@@ -76,12 +111,14 @@
       "server/merge-queue/wake.test.ts",
       "server/worker-sessions.ts",
       "server/worker-sessions.test.ts",
-      "server/sessions-index.ts"
+      "server/sessions-index.ts",
+      "server/merge-queue/asks.ts",
+      "server/merge-queue/asks.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:30Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-03T18:31Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
     }
   },
   "§chat.merge-queue/thread": {
@@ -94,12 +131,14 @@
       "§app.merge-queue/note",
       "§app.merge-queue/checks",
       "§app.merge-queue/conflicts",
-      "§app.merge-queue/push"
+      "§app.merge-queue/push",
+      "§chat.merge-queue/thread-life",
+      "§chat.merge-queue/asks"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:29Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-03T18:31Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
     },
     "code": [
       "server/merge-queue/thread.ts",
@@ -123,6 +162,36 @@
       "server/merge-queue/discover-names.integration.test.ts",
       "server/merge-queue/scenarios-thread-review.integration.test.ts"
     ]
+  },
+  "§chat.merge-queue/thread-life": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.merge-queue/thread",
+      "§chat.memory/types",
+      "§chat.memory/choice",
+      "§chat.merge-queue/asks",
+      "§app.merge-queue/chats",
+      "§app.merge-queue/review",
+      "§app.project-services/merge-verbs"
+    ],
+    "code": [
+      "server/merge-queue/thread.ts",
+      "server/merge-queue/thread.test.ts",
+      "server/merge-queue/thread-modes.test.ts",
+      "profiles/system/merge-thread.json",
+      "server/merge-queue/retire.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/routes.ts",
+      "playbooks/merge-queue/PLAYBOOK.md",
+      "shared/merge-queue.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T18:31Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+    }
   },
   "§chat/merge-queue": {
     "kind": "surface",

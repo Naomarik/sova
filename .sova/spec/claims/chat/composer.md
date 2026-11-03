@@ -757,6 +757,8 @@ takes the approval. With no served row, neither line shows. Then comes one row p
   - **Cancel** on a queued row;
   - **Accept** and **Send Back** on Behaviour differs;
   - **Land Anyway** and **Send Back** on Review flagged and on Can't tell whose failure;
+- its reviewer line while the branch's review runs and after it ends, with **Open Reviewer Chat**,
+  the same row as the pane's (§chat.worktrees/pane);
 - **Review Changes**, first among the row's actions, on every row of an active worktree whose folder
   exists and that has commits of its own (Ready, Uncommitted with commits, queued, checking, waiting
   for you, Needs a fix), the same button as the pane's rows (§chat.worktrees/pane). It opens the

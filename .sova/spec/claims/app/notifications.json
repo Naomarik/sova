@@ -18,7 +18,10 @@
       "server/push.test.ts",
       "server/web-push.test.ts",
       "src/lib/push.test.ts",
-      "shared/protocol.ts"
+      "shared/protocol.ts",
+      "server/attention-signals.ts",
+      "server/merge-queue/asks.ts",
+      "server/merge-queue/asks.test.ts"
     ],
     "requires": [
       "§app.overseer/attention-digest",
@@ -26,8 +29,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-24T09:23Z",
-      "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+      "at": "2026-11-03T18:31Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
     }
   },
   "§app.notifications/settings": {

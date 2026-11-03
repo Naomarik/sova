@@ -434,7 +434,8 @@ key>/names.json`, beside its queue. Sova's own repository falls back to
 one: an empty list is an answer. It scans the range from the remote
 branch to the new commit.
 
-The merge thread asks for the names (§chat.merge-queue/thread). Until a project has them, its pushes
+The merge thread asks for the names (§chat.merge-queue/thread), through the branch's chat
+(§chat.merge-queue/asks). Until a project has them, its pushes
 are held: landings still complete locally, the strip reads "{target} {sha} · push held: private names
 not set up yet", and the thread is called in once per landing. The next landing, a Resume or a
 retry pushes what was held.
@@ -474,13 +475,27 @@ and only the review step opens it. A project with no kit has no review step.
 in the merge copy, alongside the checks.
 - It runs on the shipped **Merge reviewer** profile: no edit tools, no web, no workers, no timers
   and no worktrees.
+- It runs in mode normal with no minor modes at all: no Delegate, Align, Spec or Vis, and no
+  memory. Its mode is pinned at creation, so the default modes saved on this computer never reach
+  it, now or after they change.
 - It opens on the review model the project has on this computer (§app.merge-queue/models), else
   on the new-chat default.
 - Each attempt is a new chat, titled "Review · {branch} · {sha}" (with " · attempt {n}" after the
   first).
 - It reads the kit, checks its verdict with the kit's own script, and answers with `merge.review`.
   It writes no file.
-- It is archived once the review step is done with it.
+- Each attempt's chat is recorded with its run, branch, attempt and verdict (or that it failed),
+  and is reached from the Merge Queue tab, the run page and the branch's own Worktrees row
+  (§app.merge-queue/chats, §chat.worktrees/pane).
+
+**Archived once done, reliably.** The reviewer answers while its own turn is still finishing, so
+once the review step is done with it Sova waits for that turn (and its workers) to end, at most 2
+minutes, and stops the chat if it hasn't by then; the run goes on meanwhile. Then it archives the
+chat, up to 3 tries 2 seconds apart, and logs only a final failure; a second stop does nothing,
+and a failure never fails the run. 30 seconds after Sova starts, it archives the same way every
+reviewer chat still open that no review is waiting on. An archived
+reviewer chat stays readable from its run and the tab's History until the user clears it
+(§app.merge-queue/chats); a cleared one's run keeps its verdict and findings.
 
 **Its verdict.**
 - **ok** — no findings.
@@ -634,12 +649,16 @@ shows, top to bottom:
   "Not pushed yet: goes out with the next landing." When a check is red on the target alone, a line
   says so: "Red on {target} alone: {check}". Nothing about live state, and no Restart control.
 - **The queue's head**: its state (Idle, Running, Paused, Not set up, Definition invalid), **Pause Queue** or **Resume
-  Queue**, **Queue Settings**, and **Open Merge Thread** when the project has one. One summary line
+  Queue**, **Queue Settings**, and **Open Merge Thread** when the project has one. While a review
+  runs, **Review running · {branch} · Open** sits beside it (§app.merge-queue/chats). One summary line
   is always shown under it: the checks, the review and its model, and how it lands ("11 checks ·
   review on, Opus 5.5 · pushes to origin"; "opens pull requests on GitHub"). **Queue Settings**
   opens Settings at its Merge Queue tab, on this project (§app.merge-queue/settings). The queue is described as "One branch
   at a time, in order. Each is merged onto {target} in a separate copy and checked there; {target}
   then moves to exactly that commit."
+- **The Merge thread card**, under the head: the thread's state, a question waiting on the user,
+  **Open Merge Thread** and **Start Fresh…**, or a line saying no thread runs now
+  (§app.merge-queue/chats).
 - **Paused**, when paused: the reason in plain words (by you; the target moved outside the queue;
   setup failed on the target itself, twice; the project folder has uncommitted edits; the reviewer failed twice; a landing in flight at a stop needs a look), the
   queue's own why, and Resume.
@@ -684,6 +703,9 @@ shows, top to bottom:
   and **Land** with the same menu as the modal's (Land Without Review, Land Without Its Specs…).
   Land there names no chat: the queue records the branch's owner by the same rule the row shows
   (§app.merge-queue/owner), so the chat the row shows is the one the queue records and tells.
+- **History**, at the bottom: every chat the queue has had for the project, each opening its chat,
+  with **Clear** and **Clear All…** (§app.merge-queue/chats). Each run's row in Checking now, Needs
+  you, Sent back and Recent also shows its review with **Open Reviewer Chat**.
 
 **Every row's chat.** Every row of Checking now, Waiting, Needs you, Sent back, Recent and Ready to
 land names its chat by title: a row in the line or landed names the chat its entry recorded; a
@@ -693,7 +715,11 @@ a text selection, does nothing. The chat's title is also a real link to it, so i
 tab too, and it is never wrapped around the row's buttons. The chat opens whatever form its
 recorded id takes (the link reaches the chat, never an empty "not found" view). An archived chat
 still opens, with "archived" after its title. A row with no known chat reads "No chat found for
-this worktree", opens nothing when tapped, and keeps its buttons.
+this worktree", opens nothing when tapped, and keeps its buttons. A row whose chat is a worker
+never uses the worker's first message (its instructions) as a title: it reads "Worker {name} of
+“{chat title}”" ("Worker of “…”" with no name), naming and linking the chat that runs it, up to the
+top chat when workers run workers; when no such chat is known it reads "A worker's chat" and links
+the worker. The run page names it the same way.
 
 **Review Changes on every row.** Every row of those sections has **Review Changes**, which opens
 the changes viewer (§chat.changes/viewer) over the tab: a dialog, a full-height sheet on a phone,
@@ -722,6 +748,8 @@ is offered only on hover.
   and how long it took, its chat, and how it was approved;
 - **View Logs** (every step's log, in order, from the copy's first line), **Open Merge Thread** and
   **Back to Queue**;
+- its review, when it has one: each attempt's reviewer chat, as on the rows
+  (§app.merge-queue/chats);
 - "Nothing has merged from this run. {target} moves only once every check passes." while it runs,
   waits or conflicts, except on a run whose owner can't be told, where its own banner says it once;
 - a verdict in plain words: the branch broke a check; the merge thread's resolution failed one (back
@@ -734,8 +762,8 @@ is offered only on hover.
   flaky), drawn from the reruns (§app.merge-queue/blame);
 - **Checks and why**: every step with its tag and reason, its failures, time and counts, and its log.
 
-Every action here is a catalogue command: Land, Cancel, Pause, Resume, Accept, Send Back and Land
-Anyway over the merge verbs (§app.project-services/merge-verbs), Update Local Main and Publish over
+Every action here is a catalogue command: Land, Cancel, Pause, Resume, Accept, Send Back, Land
+Anyway, Start Fresh, Send Answer, Clear and Clear All over the merge verbs (§app.project-services/merge-verbs), Update Local Main and Publish over
 the queue's own routes, which the merge thread can't call. Queue Settings and Open on GitHub only
 open a place. The view follows the queue live,
 from the session feed's merge-queue frames, at desktop and phone widths.
@@ -748,16 +776,85 @@ approval records, hears about its outcomes and shows its queue card (§chat.merg
 The owner is, the first that holds:
 1. the chat that created the worktree and still tracks it (its own record, not dropped;
    §chat/worktrees), when it isn't archived;
-2. else the newest chat not archived working in the worktree's folder or inside it, a worker
-   included;
-3. else the same two, in that order, among archived chats, so the row shows it marked "archived";
-4. else none: the row reads "No chat found for this worktree", and no chat gets a card.
+2. else the newest main chat not archived working in the worktree's folder or inside it;
+3. else the chat that runs the newest worker working there, not archived;
+4. else the same three, in that order, among archived chats, so the row shows it marked "archived";
+5. else none: the row reads "No chat found for this worktree", and no chat gets a card.
 
-So a worktree created by one chat, with a newer worker working inside it, belongs to the chat that
-created it, and Land on its row with no chat named records and tells that chat.
+The owner is never a worker: wherever one turns up (it created the worktree, or works there), the
+chat that runs it stands in for it, up to the top chat when workers run workers (at most 8 levels),
+and a worker whose chat isn't known counts for nothing. The queue's own chats
+(§app.merge-queue/chats) never own a branch. So a worktree created by one chat, with a newer worker
+working inside it, belongs to the chat that created it, and one with no tracking chat where only a
+worker works belongs to the chat that runs that worker. Land on its row with no chat named records
+and tells that chat, so its card and a Send Back reach it.
 
 Working out owners never rereads chats' transcripts each time the view is read: Sova keeps which
 chat tracks which worktree, and updates it as those chats' worktree records change.
+
+## §app.merge-queue/chats — The queue's own chats, out of your lists and kept until you clear them
+
+The merge thread (§chat.merge-queue/thread) and every reviewer chat (§app.merge-queue/review) are
+the **queue's own chats**. Sova knows them by the profile entry in the chat's own file (Sova's
+system profile `merge-thread` or `merge-reviewer`), never by title, so a renamed chat stays one and
+a chat titled "Review · …", or started on a profile of yours with the same id, never becomes one.
+The mark holds for chats started before this shipped and after a restart.
+
+**Out of every list.** No session list shows them:
+- in the session pane: Recent, the overview's counts, the project and folder blocks, Folders, the
+  groups and every way into one, the Archive with its counts and its Clean Up, Needs you, search
+  and the Agents board (§app.session-list/ordinary-surfaces);
+- on the server: Needs you and the notifications that follow it, Ready-to-merge reads, the Agents
+  board, the Overseer's and the project overseers' session lists, and naming sessions.
+
+Queue chats that already existed leave these lists too. A link still opens one: from the Merge
+Queue tab, a run's page and the branch's own Worktrees row (§chat.worktrees/pane).
+
+**Their settings are Sova's.** A mode switch (the mode menu), a settings change
+(`POST /api/sessions/configure`) or another profile pick for a queue chat is refused (409), so it
+keeps its mark and its modes: "That is one of the merge
+queue's own chats: it keeps the modes and settings Sova starts it with." A message or act on one
+from another chat or the Overseer is refused too: "That is one of the merge queue's own chats:
+only Sova writes to it. Open it from the project's Merge Queue tab.", and so is a mesh link to one.
+The user may still write in the chat itself. Clean Up never sweeps one, and refuses one named by
+path: "That is one of the merge queue's own chats: clear it from the Merge Queue tab's History."
+
+The project's Merge Queue tab (§app.merge-queue/view) is where they are found, in four places.
+
+**The Merge thread card**, under the queue's head: "Merge thread" with its state chip (**Idle**,
+**Working** while its turn runs, **Asking you** while a question is open), its memory type
+("UniiChat"; "No memory" when it runs without), when it started, and its last event ("last: Read a
+queued branch · {branch}, {when}"). It has **Open Merge Thread** and **Start Fresh…**, which asks
+first ("This thread is archived once its turn ends, and its memory of past landings goes with it.
+The next event starts a new one. The old thread stays readable in History.", **Cancel** /
+**Start Fresh**). A question it asks shows on the card (§chat.merge-queue/asks). With no thread:
+"No merge thread now: the next event starts one (it reads each branch as it is queued)."
+
+**A running review.** While a review runs, a button beside Open Merge Thread at the top of the
+tab reads "Review running · {branch} · Open" (" (attempt {n})" after the branch on a retry) and
+opens that reviewer's chat; it goes away when the review ends.
+
+**History**, at the bottom of the tab when the queue has had any chat: every one, the current
+merge thread on top, then newest first, archived ones included, with the filters **All**, **Merge
+threads** and **Reviews**. A thread's row reads "Merge thread" ("Merge thread (current)"), its
+memory type and why it ended; a reviewer's "Review · {branch}" (" · attempt {n}"), "running" or
+"Review: {verdict}" ("no verdict" when it failed or timed out) and its run; each with when it
+started and ended. Every row's title opens its chat. Each row has **Clear**, except the current
+thread, a running reviewer and a row already cleared; **Clear All…** asks first: "Deletes {n}
+chats for good. Runs keep their verdicts and findings. The current merge thread and a running
+review stay."
+
+**The review on every run.** Rows of Checking now, Needs you, Sent back and Recent, and the run
+page, show each of the run's reviewer chats, oldest attempt first: "Review: {verdict}" or "Review
+running" (with " (attempt {n})" when there are several), then **Open Reviewer Chat**.
+
+**Kept until the user clears them.** Sova never deletes a queue chat by age: archived, it stays
+readable from History and its run for good. **Clear** archives the chat and deletes it for good;
+**Clear All…** does so for every row it counted. A cleared row stays in History, marked cleared
+("chat cleared"; a reviewer's "Reviewer chat cleared") with no link, and a cleared reviewer's run
+keeps its verdict and findings, reading "· Reviewer chat cleared" in place of its link. A delete
+that is refused leaves the row as it was. Both are catalogue commands over `merge.clear`
+(§app.project-services/merge-verbs).
 
 ## §app.merge-queue/settings — The queue's settings, in Settings → Merge Queue
 
@@ -794,8 +891,9 @@ queue uses."
   with **Open Folder**), Model with **Change** (§app.merge-queue/models), and Time limit ("20 min,
   tried twice, then the queue pauses", Set by Sova) (§app.merge-queue/review).
 - **Merge thread**: Model with **Change**, Instructions ("Sova's method, then this project's own",
-  with **Open Folder**), Fresh chat ("After 24 h, or past half its context", Set by Sova)
-  (§chat.merge-queue/thread).
+  with **Open Folder**), Fresh chat ("One endless thread with memory (UniiChat). A new one only
+  when it's gone, open in a terminal, keeps refusing messages or past half of its context, or when
+  you press Start Fresh.", Set by Sova) (§chat.merge-queue/thread-life).
 - **Request**, on a project that lands by request: Instructions (the request kit, with **Open
   Folder**, §app.merge-queue/request-kit).
 - **Where it checks**: the merge copy's location (Set by Sova).

@@ -1,4 +1,4 @@
-import { type ChecksDeclared, type MergeEntry, type MergeLanded, type MergeQueueView, type MergeRun, WAITING_FOR_USER, type WorktreeQueueInfo } from "../../shared/merge-queue";
+import { type ChecksDeclared, type MergeEntry, type MergeLanded, type MergeQueueView, type MergeRun, type MergeSettled, WAITING_FOR_USER, type WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { QueueFile } from "./store";
 
 /**
@@ -29,6 +29,8 @@ export function buildView(a: {
   origin?: { has: boolean; tracking: string | null };
   /** The queue serves the project (served.ts); default true. */
   served?: boolean;
+  /** Sent-back entries git says need no fix any more, by entry id (the queue reads them: settledFacts). */
+  settled?: ReadonlyMap<string, Exclude<MergeSettled, "superseded">>;
 }): MergeQueueView {
   const takes = a.takesMs ?? DEFAULT_TAKES_MS;
   const queued = a.q.entries.filter((e) => e.state === "queued").sort((x, y) => x.seq - y.seq);
@@ -38,7 +40,7 @@ export function buildView(a: {
   const byNewest = (x: { updatedAt: string }, y: { updatedAt: string }) => y.updatedAt.localeCompare(x.updatedAt);
   const checking = a.q.entries.filter((e) => e.state === "checking").map((e) => ({ ...strip(e), eta: { startsInMs: 0, takesMs: takes } }));
   const needsYou = a.q.entries.filter((e) => WAITING_FOR_USER.includes(e.state) || e.state === "conflict").map(strip).sort(byNewest);
-  const needsFix = a.q.entries.filter((e) => e.state === "needs-fix").map(strip).sort(byNewest).slice(0, RECENT);
+  const needsFix = sentBack(a.q.entries, a.settled);
   const recent: MergeLanded[] = a.q.entries
     .filter((e) => e.state === "landed")
     .map(strip)
@@ -70,6 +72,45 @@ export function buildView(a: {
   };
 }
 
+type Stored = QueueFile["entries"][number];
+
+/** `b` came after `a`: by creation time, ties by the queue's sequence (not sequence first: putting an entry first in
+ *  line lowers its seq below older entries'). */
+const later = (b: Pick<Stored, "seq" | "createdAt">, a: Pick<Stored, "seq" | "createdAt">): boolean => {
+  const d = Date.parse(b.createdAt) - Date.parse(a.createdAt);
+  return d !== 0 ? d > 0 : typeof b.seq === "number" && typeof a.seq === "number" && b.seq > a.seq;
+};
+
+/** A sent-back entry whose branch has a later entry for the same target, in any state: that one stands for it. */
+export function superseded(entries: readonly Stored[], e: Stored): boolean {
+  return entries.some((o) => o.id !== e.id && o.branch === e.branch && o.target === e.target && later(o, e));
+}
+
+/**
+ * The view's needsFix list, newest first, each marked `settled` when it no longer needs a fix (superseded here, merged
+ * or gone from `facts`). The 20-row cap counts only entries that still need a fix, so settled ones never push a current
+ * one out; settled ones ride along only from the 20 newest overall (what the list held before), so a run or card that
+ * looks its entry up in needsFix still finds it.
+ */
+export function sentBack(entries: readonly Stored[], facts?: ReadonlyMap<string, Exclude<MergeSettled, "superseded">>): MergeEntry[] {
+  const all = entries
+    .filter((e) => e.state === "needs-fix")
+    .sort((x, y) => y.updatedAt.localeCompare(x.updatedAt))
+    .map((e): MergeEntry => {
+      const settled: MergeSettled | undefined = superseded(entries, e) ? "superseded" : facts?.get(e.id);
+      const out = strip(e);
+      delete out.settled;
+      return settled ? { ...out, settled } : out;
+    });
+  const window = new Set(all.slice(0, RECENT).map((e) => e.id));
+  let current = 0;
+  return all.filter((e) => (e.settled ? window.has(e.id) : ++current <= RECENT));
+}
+
+/** The newest of a branch's entries: by creation (a note bumps updatedAt, which must not bring an old entry back). */
+export const byCreatedNewest = (x: Pick<MergeEntry, "createdAt" | "updatedAt">, y: Pick<MergeEntry, "createdAt" | "updatedAt">): number =>
+  Date.parse(y.createdAt) - Date.parse(x.createdAt) || y.updatedAt.localeCompare(x.updatedAt);
+
 /**
  * origin's copy of the target as the strip shows it: the queue's own push when it made one, else the remote-tracking
  * ref (a project whose record started after its last push still reads Pushed); `hasOrigin` false only when the project
@@ -83,7 +124,7 @@ export function pushedOf(recorded: string | undefined, origin: { has: boolean; t
 /** The worktree row's slice of the newest entry for `branch` (SessionWorktreeInfo.queue). */
 export function worktreeQueueInfo(view: MergeQueueView, branch: string): WorktreeQueueInfo | undefined {
   const all: MergeEntry[] = [...view.checking, ...view.waiting, ...view.needsYou, ...view.needsFix, ...(view.waitingOnHost ?? []), ...view.recent.map((r) => r.entry)];
-  const mine = all.filter((e) => e.branch === branch).sort((x, y) => y.updatedAt.localeCompare(x.updatedAt));
+  const mine = all.filter((e) => e.branch === branch).sort(byCreatedNewest);
   const e = mine[0];
   if (!e) return undefined;
   return {
@@ -102,6 +143,7 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
     ...(e.unclear?.length ? { unclear: e.unclear } : {}),
     ...(e.run ? { run: e.run } : {}),
     ...(e.request ? { request: e.request } : {}),
+    ...(e.settled ? { settled: e.settled } : {}),
     ...(view.review ? { reviewKit: true } : {}),
   };
 }

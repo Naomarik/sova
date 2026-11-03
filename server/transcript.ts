@@ -48,7 +48,7 @@ import { OWNER_REQUEST_NOTE, ownerRequestCardOf } from "../shared/project-assist
 import { alignResultOf } from "../pi-config/extensions/mode/align.ts";
 // The folded tool card's own readers (src/lib/message.ts, src/lib/tool-diff-stats.ts, both DOM- and
 // import-free): a slim row's line and "+n −m" are what the card would compute from the whole entry.
-import { argsSummary, CODEMODE_TOOL, codemodeDetails, codemodeTally, contentText as cardText, isObj, SPAWN_TOOLS, spawnName } from "../src/lib/message";
+import { argsSummary, contentText as cardText, isObj, SPAWN_TOOLS, spawnName } from "../src/lib/message";
 import { summaryStats } from "../src/lib/tool-diff-stats";
 
 // The parse, the branch rule and the context rule live in the pi adapter's reader and usage modules
@@ -230,8 +230,6 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
   // shows it only on an edit or write call, as it would have counted it.
   const stats = summaryStats("edit", details);
   if (stats) tool.stats = stats;
-  const script = name === CODEMODE_TOOL ? codemodeDetails(details) : null;
-  if (script) tool.calls = codemodeTally(script.calls);
   if (TOUR_TOOLS.has(name)) {
     const card = r?.isError ? undefined : normalizeTourCardDetails(details);
     tool.lazy = true;

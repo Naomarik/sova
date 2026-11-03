@@ -65,6 +65,7 @@ import { registerUsageRoutes } from "./usage-routes";
 import { sessionFeed } from "./session-feed";
 import { LIST_VERSION_HEADER } from "../src/lib/summary-diff";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
+import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { rowsOf } from "./transcript";
 import { readBranch, unknownEntries } from "./harness/pi/reader";
@@ -163,7 +164,8 @@ import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
 import { registerUpdatesRoutes } from "./updates/routes";
 
-const DIST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+/** The built frontend; SOVA_DIST: another build (a test's scratch one), as SOVA_SHARE_DIST is for the share page. */
+const DIST_DIR = process.env.SOVA_DIST || resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 /** tokens.css and base.css, served as is at /design/* for extension UIs (server/extensions.ts). */
 const DESIGN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "src", "design");
 /** AGENTS.md for the connection agent (owned by pi-config's remote extension team; read per request). */
@@ -1301,6 +1303,8 @@ export function buildApp(deps: AppDeps) {
       if (request.patch.projectModes !== undefined) return c.json({ error: "Project modes belong to one chat: send projectModes with ?path=" }, 400);
       return c.json(await switchMode(request.patch));
     }
+    // The merge queue's own chats keep the modes Sova started them with (profiles/system, thread.ts threadMemoryOn).
+    if (queueChatRole((await getSessionSummary(path).catch(() => null))?.profile)) return c.json({ error: QUEUE_CHAT_MODE_REFUSAL }, 409);
     const got = await chatFor(path);
     if ("error" in got) return c.json({ error: got.error }, got.status);
     // A project's coding session keeps spec on (§app.project-overseer/coding-mode).
@@ -1937,7 +1941,14 @@ export function buildApp(deps: AppDeps) {
   const staticFiles = serveStatic({ root: DIST_DIR });
   const spaIndex = serveStatic({ root: DIST_DIR, path: "index.html" });
   app.use("*", (c, next) => (hasDist() ? staticFiles(c, next) : next()));
-  app.get("*", (c, next) => (hasDist() ? spaIndex(c, next) : next()));
+  // A code file this build doesn't have (one a rebuild removed, asked for by a tab of the older
+  // build) is missing, never the app's page: answered as HTML it fails as a wrong file type, and
+  // the tab couldn't tell that Sova was updated.
+  app.get("*", async (c, next) => {
+    if (!hasDist()) return next();
+    if (c.req.path.startsWith("/assets/")) return c.text("Not found", 404);
+    return spaIndex(c, next);
+  });
 
   return { app, autoTitleSweep, claudeAccounts, meshResync };
 }

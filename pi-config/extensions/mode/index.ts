@@ -85,13 +85,11 @@ import { WorkerProbe, type ClaudeModelSource } from "./discovery.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "./events.ts";
 import {
 	adoptableMinorModes,
-	CODEMODE_TOOL,
 	isMinorMode,
 	MINOR_MODES,
 	MINOR_SURFACES,
 	normalizeMinorModes,
 	parseMinorFlag,
-	SCRIPT_ONLY_EXPOSURES,
 	visToolsWanted,
 	webMinorRefusal,
 	workerMinorModes,
@@ -725,8 +723,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 			syncAlignTool();
 			syncAlignWidget(ctx);
 		}
-		// Between runs the tool follows at once; a run under way keeps its tools, and agent_settled syncs.
-		if (minor === "codemode" && !running) syncCodemodeTool();
+		// Between runs the tools follow at once; a run under way keeps its tools, and agent_settled syncs.
 		if ((minor === "vis" || minor === "align") && !running) syncVisGuideTool();
 		ctx.ui.notify(`Minor mode: ${minor} ${on ? "on" : "off"}`, "info");
 		// Spec on probes its writer's backends (and announces a writer that can't run); off, and
@@ -778,7 +775,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		publishWorkerModes();
 		syncHostSection();
 		renderStatus(ctx);
-		// Like codemode: between runs the tools follow at once; a run under way keeps its tools until it settles.
+		// Between runs the tools follow at once; a run under way keeps its tools until it settles.
 		if (!running) syncProjectTools();
 		ctx.ui.notify(`Minor mode: ${id} ${on ? "on" : "off"}`, "info");
 	}
@@ -956,7 +953,6 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		else restoreTools();
 		syncAlignTool();
 		syncVisGuideTool();
-		syncCodemodeTool();
 		syncProjectTools();
 		recomputeRoutes();
 		syncHostSection();
@@ -983,26 +979,6 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	 */
 	function syncVisGuideTool(): void {
 		syncTool(VIS_GUIDE_TOOL, visToolsWanted(active.minorModes, alignVisuals));
-	}
-
-	/**
-	 * pi's codemode tool is in the loadout exactly while codemode is on (§chat.mode-menu/codemode), synced
-	 * where vis_guide is and right after a switch made between runs. Off removes it even when something
-	 * else activated it (defaultTools, the transcript's restored tool set), except while a registered tool
-	 * is reachable only from scripts (MCP's codemode/deferred exposure). Nothing to do where the tool isn't
-	 * registered (an SDK runtime without the factory). Every chat alike, a Claude Code one included.
-	 */
-	function syncCodemodeTool(): void {
-		let tools: { name: string; exposure?: string }[];
-		try {
-			tools = pi.getAllTools() as { name: string; exposure?: string }[];
-		} catch {
-			return; // Before the session exists; session_start syncs it.
-		}
-		if (!tools.some((tool) => tool.name === CODEMODE_TOOL)) return;
-		const want = hasMinor(active, "codemode") && !workerRole;
-		if (!want && tools.some((tool) => tool.exposure !== undefined && SCRIPT_ONLY_EXPOSURES.has(tool.exposure))) return;
-		syncTool(CODEMODE_TOOL, want);
 	}
 
 	function syncTool(tool: string, want: boolean): void {
@@ -1528,7 +1504,6 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		runMarked = false;
 		nudged = false;
 		syncVisGuideTool();
-		syncCodemodeTool();
 		syncProjectTools();
 	});
 
@@ -1587,9 +1562,9 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	const specWrites = new SpecWriteGuard();
 	const specOn = () => hasMinor(active, "spec") && remoteTarget === undefined;
 	/**
-	 * Notes for calls a codemode script made, by the script's own call id: a nested result reaches only the
-	 * script, so what the census or the guard told it is told again on the script's result, the one the
-	 * model reads (§chat.mode-menu/codemode).
+	 * Notes for calls another tool made (pi's parentToolCallId: a terminal's script tool), by the caller's
+	 * call id: a nested result reaches only the caller, so what the census or the guard told it is told
+	 * again on the caller's result, the one the model reads.
 	 */
 	const hoistedNotes = new Map<string, string[]>();
 	/** The writing procedure handed over on a script's nested call, kept whole (never split into lines) for the script's result. */
@@ -1681,7 +1656,6 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		// in a hidden note beside this prompt, about minor modes switched since.
 		fixHead();
 		syncVisGuideTool();
-		syncCodemodeTool();
 		syncProjectTools();
 		const modeNote = takeNote();
 		if (modeNote) pi.sendMessage(modeNote, { deliverAs: "nextTurn" });

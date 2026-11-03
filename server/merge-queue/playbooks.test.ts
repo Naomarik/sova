@@ -152,3 +152,16 @@ test("the merge-thread profile ships with Sova, is valid, and has no web, worker
   assert.deepEqual(raw.grant, []);
   assert.equal(raw.overseerMayStart, false);
 });
+
+test("both queue profiles name their modes outright: mode normal, no minor modes, so mode.json's default never reaches them", async () => {
+  for (const id of ["merge-thread", "merge-reviewer"]) {
+    const raw = JSON.parse(readFileSync(join(REPO, "profiles", "system", `${id}.json`), "utf8"));
+    assert.equal(raw.mode, "normal", id);
+    assert.deepEqual(raw.minorModes, [], id);
+    const listed = await findProfile({ source: "sova", id }, null);
+    assert.equal(listed?.mode, "normal", `${id}: the parsed profile keeps it`);
+    assert.deepEqual(listed?.minorModes, [], `${id}: [] (none), not absent (inherit the default)`);
+    // Memory still can't be named by a profile: the thread's keeper switches it on itself.
+    assert.match(profileFileError({ ...raw, minorModes: ["memory"] }) ?? "", /memory is for chats only/);
+  }
+});

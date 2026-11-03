@@ -410,7 +410,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     const root = host.project().root;
     const all = await host.sessions();
     const mine = host.startedCoding();
-    const coding = all.filter((s) => (underRoot(root, s.cwd) || mine.has(s.id)) && !s.overseer && !s.baton && !s.projectOverseer && !s.workerSession);
+    const coding = all.filter((s) => (underRoot(root, s.cwd) || mine.has(s.id)) && !s.overseer && !s.baton && !s.projectOverseer && !s.workerSession && !s.queueChat);
     return { coding, otherIds: new Set(others().flatMap((o) => o.list().map((x) => x.id))) };
   }
 
@@ -751,7 +751,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     {
       name: "sova_create_session",
       label: "Start coding session",
-      // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
+      // Its card reads the recorded result (EAGER_TOOLS): never a call another tool made.
       exposure: "model-only",
       description:
         "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
@@ -764,7 +764,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           model: str('Model ref "provider/model".'),
           thinking: str("off | minimal | low | medium | high | xhigh"),
           mode: str("normal | delegate. Omitted: this computer's default."),
-          minor_modes: { type: "array", items: { type: "string" }, description: 'The minor modes on, the whole set: any of align, spec, vis, codemode, e.g. ["spec"]; [] turns them all off. Omitted: this computer\'s default.' },
+          minor_modes: { type: "array", items: { type: "string" }, description: 'The minor modes on, the whole set: any of align, spec, vis, e.g. ["spec"]; [] turns them all off. Omitted: this computer\'s default.' },
           subagent_profile: str("A subagent profile id or off (sova_list_subagent_profiles), for this session only. Omitted: this computer's default profile."),
           already_agreed: { type: "boolean", description: ALREADY_AGREED_PARAM },
           ...(gaps
@@ -814,7 +814,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           session: str(SESSION_PARAM),
           text: str("The message."),
           mode: str("normal | delegate: change its mode first."),
-          minor_modes: { type: "array", items: { type: "string" }, description: 'Its minor modes on, the whole set, first: any of align, spec, vis, codemode, e.g. ["spec"]; [] turns them all off.' },
+          minor_modes: { type: "array", items: { type: "string" }, description: 'Its minor modes on, the whole set, first: any of align, spec, vis, e.g. ["spec"]; [] turns them all off.' },
           subagent_profile: str("Change its subagent profile first: an id or off (sova_list_subagent_profiles)."),
         },
         ["session", "text"],

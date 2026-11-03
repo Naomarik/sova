@@ -29,6 +29,7 @@ import { estimateFromRuns } from "./estimate";
 import { deliverReview } from "./review-step";
 import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
+import { settledFacts } from "./settled";
 import { buildView } from "./view";
 import { type MergeQueueSettings, type MergeSettingsChange, type MergeSettingsSaveResult, SETTINGS_DIRTY_WORDS } from "../../shared/merge-queue-settings";
 import { effectiveModel, type ModelCheck, readModels } from "./models";
@@ -101,8 +102,10 @@ export interface QueueDeps {
   keepRuns?: number;
   /** The project's review kit is declared (and readable). Default: `def.merge.review` set. */
   hasReviewKit?: (def: ProjectDef | null, root: string) => boolean;
-  /** The project's merge thread chat (thread.ts threadOf). */
-  threadOf?: (root: string) => { session: string; startedAt: string } | null;
+  /** The project's merge thread chat (thread.ts threadInfo): the Merge thread card's facts. */
+  threadOf?: (root: string) => import("../../shared/merge-queue").MergeThreadInfo | null;
+  /** The queue's own chats (chats.ts): the reviewer running now and the History's rows. */
+  chatsOf?: (root: string) => Pick<MergeQueueView, "reviewing" | "chats">;
   /** Hand a reviewer's verdict to the review step (default review-step.ts deliverReview). */
   deliverReview?: typeof deliverReview;
   /** The mechanical sanity check of a resolution (default conflicts.ts sanityCheck). */
@@ -308,6 +311,7 @@ export class ProjectQueue {
     const thread = this.deps.threadOf?.(this.root) ?? null;
     const tryRun = this.trying?.run ?? (this.lastTry ? this.store.readRun(this.lastTry) : null);
     const origin = await this.originFacts();
+    const settled = await this.settledFacts(head);
     const v = buildView({
       q: this.q,
       root: this.root,
@@ -319,6 +323,7 @@ export class ProjectQueue {
       now: this.now(),
       readRun: (id) => this.store.readRun(id),
       origin,
+      settled,
     });
     const settings = head ? await this.settings().catch((err) => (this.log(`settings unreadable: ${err instanceof Error ? err.message : err}`), null)) : null;
     // Landing by request or push (al_3): what waits on the host, and how far local main is behind origin's.
@@ -346,7 +351,8 @@ export class ProjectQueue {
     }
     // Served by the queue (team mq-served-only, served.ts): on Sova's Projects list with its setup done.
     const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
-    return { ...v, served, ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
+    const chats = this.deps.chatsOf?.(this.root) ?? {};
+    return { ...v, served, ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
   }
 
   /** Whether the project has origin, and origin's copy of the target as last fetched (its remote-tracking ref; never a fetch). */
@@ -589,6 +595,15 @@ export class ProjectQueue {
       this.save();
       this.settingsChanged();
     }
+  }
+
+  private settledCache: { at: number; head: string; facts: Map<string, "merged" | "gone"> } | null = null;
+  /** Sent-back entries git says need no fix any more (settled.ts), re-read at most every 15 s or when the target moves. */
+  private async settledFacts(head: string): Promise<Map<string, "merged" | "gone">> {
+    if (this.settledCache && this.settledCache.head === head && this.now() - this.settledCache.at < 15_000) return this.settledCache.facts;
+    const facts = await settledFacts(this.git, this.root, head, this.q.entries);
+    this.settledCache = { at: this.now(), head, facts };
+    return facts;
   }
 
   private readyCache: { at: number; head: string; list: MergeReady[] } | null = null;

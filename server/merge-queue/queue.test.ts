@@ -1158,8 +1158,10 @@ describe("the setup commit's push", () => {
     try {
       const pushedBefore = k.repo.head();
       const q = await k.q();
-      const r = await q.setup({ none: true });
+      // The stand-in reads "the file at the target's head": declared from the save on. Flipped before the save returns,
+      // so a read the save's own publish makes (cached per head) never sees the old answer at the new head.
       saved = true;
+      const r = await q.setup({ none: true });
       let v = await q.view();
       assert.equal(v.heads.target, r.commit);
       assert.equal(v.heads.pushed, pushedBefore, "origin's sha, from its tracking ref");
@@ -1181,7 +1183,7 @@ describe("the setup commit's push", () => {
 
 describe("the view's extras", () => {
   test("ready, not approved: clean worktree branches ahead of the target, without TEMP heads or entries; the thread's chat", async () => {
-    const k = makeKit({ deps: { threadOf: () => ({ session: "t1", startedAt: "2026-11-02T00:00:00.000Z" }) } });
+    const k = makeKit({ deps: { threadOf: () => ({ session: "t1", startedAt: "2026-11-02T00:00:00.000Z", state: "idle" as const }) } });
     try {
       const q = await k.q();
       await q.pause("hold");
@@ -1193,7 +1195,7 @@ describe("the view's extras", () => {
       await q.add({ branch: "feat/queued", by: "land-button" });
       const v = await q.view();
       assert.deepEqual(v.ready!.map((r) => [r.branch, r.commit, r.ahead]), [["feat/ready", a.head, 1]]);
-      assert.deepEqual(v.thread, { session: "t1", startedAt: "2026-11-02T00:00:00.000Z" });
+      assert.deepEqual(v.thread, { session: "t1", startedAt: "2026-11-02T00:00:00.000Z", state: "idle" });
     } finally {
       await k.done();
     }

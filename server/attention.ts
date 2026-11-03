@@ -95,7 +95,8 @@ export const mergedBranch = (s: Pick<SessionSummary, "readiness">): boolean => s
 /** The items one session contributes, most urgent first. */
 export function sessionItems(row: AttentionRow, now: number, home?: string): AttentionItem[] {
   const s = row.summary;
-  if (s.overseer || s.projectOverseer || s.workerSession) return [];
+  // The merge queue's own chats are its tab's: never a Needs you row (a question of the thread's reaches the branch's chat).
+  if (s.overseer || s.projectOverseer || s.workerSession || s.queueChat) return [];
   const out: AttentionItem[] = [];
   const lastActive = Date.parse(s.lastActiveAt) || 0;
   const base = {

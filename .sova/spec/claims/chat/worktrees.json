@@ -120,7 +120,7 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:27Z",
+      "at": "2026-11-03T11:36Z",
       "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
@@ -214,12 +214,14 @@
       "server/merge-queue/wire.ts",
       "server/merge-queue/wire.integration.test.ts",
       "src/lib/worktrees-served.test.ts",
-      "src/components/ReviewChanges.tsx"
+      "src/components/ReviewChanges.tsx",
+      "src/lib/merge-queue-sent-back.test.ts",
+      "shared/merge-queue.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:27Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-03T18:31Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
     }
   },
   "§chat.worktrees/readiness": {
@@ -321,7 +323,7 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:27Z",
+      "at": "2026-11-03T11:30Z",
       "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },

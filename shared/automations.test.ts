@@ -46,6 +46,8 @@ describe("the parse is all or nothing", () => {
     assert.match(err({ ...MERGE, settings: { thinking: "hot" } }), /"settings.thinking"/);
     assert.match(err({ ...MERGE, settings: { model: "glm" } }), /"settings.model" must be a model ref/);
     assert.match(err({ ...MERGE, settings: { memory: { type: "huge" } } }), /"settings.memory"/);
+    // codemode is no minor mode: an automation naming it is refused like any unknown name.
+    assert.equal(err({ ...MERGE, settings: { minorModes: ["spec", "codemode"] } }), `"settings.minorModes" must be a list of align, spec, vis, memory.`);
     assert.match(err({ ...MERGE, permissions: { ...MERGE.permissions, grant: ["sessions.write"] } }), /"permissions.grant"/);
     assert.match(err({ ...MERGE, permissions: { ...MERGE.permissions, limits: { perDay: 0 } } }), /"permissions.limits.perDay"/);
     assert.match(err({ ...MERGE, permissions: { singleton: true } }), /"permissions" has an unknown key "singleton"/);

@@ -130,6 +130,7 @@ export function memberRefusal(s: SessionSummary): { reason: NonNullable<LinkErro
   if (s.baton) return { reason: "special", why: "it is a baton session" };
   if (s.org) return { reason: "special", why: "it is an organization's session" };
   if (s.workerSession) return { reason: "worker", why: "it is a subagent's own session" };
+  if (s.queueChat) return { reason: "special", why: "it is one of the merge queue's own chats" };
   if (s.live) return { reason: "tui-live", why: `it is open in a terminal (pid ${s.live.pid})` };
   if (s.archived) return { reason: "archived", why: "it is archived" };
   return null;

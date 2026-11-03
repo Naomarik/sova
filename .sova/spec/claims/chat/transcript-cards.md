@@ -49,6 +49,12 @@ from this feature but staged text and picks), and the reply place under a messag
   what went wrong ("This card couldn't be drawn: {why}."), with **Reload**. Every other row, card
   and the composer go on as if nothing happened. Reload tries that card again; it never reloads
   the page or the chat.
+- **A card newer than the page.** Sova keeps no previous build's files, so a page left open while
+  Sova was updated can't load card code it hadn't loaded yet. Such a card's box says so instead:
+  "This card needs the newer Sova. Reload the page to draw it.", with **Reload Page**, which
+  reloads the page; drafts are kept. The page checks for "A newer Sova is available" at that
+  moment too (§app.updates/reload-note). Any other failure keeps Reload, which draws that card
+  again and never reloads the page.
 - **The same host for every card.** Sova's own types and every declared type draw through the same
   host: the reserved height, the error box with Reload, and for every data card and view the data
   check before it draws.
@@ -273,8 +279,7 @@ A type that takes an answer declares how:
 
 - **Who gets it.** An ordinary chat Sova runs, on pi or Claude Code alike, whose snapshot
   (§chat.transcript-cards/files) holds at least one type with a `when`, gets one tool, `card`.
-  Never a worker, the Overseer, a project overseer or any other special chat, and never a codemode
-  script's call. A chat with no such type gets no tool and no instructions: its tools and prompt
+  Never a worker, the Overseer, a project overseer or any other special chat. A chat with no such type gets no tool and no instructions: its tools and prompt
   are exactly what they were before.
 - **What it takes.** `{type, data, key?}`: `type` one of the snapshot's names (an enum), `data`
   checked against that type's shape (§chat.transcript-cards/data-cards), and `key` (at most 64

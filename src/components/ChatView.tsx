@@ -119,6 +119,7 @@ import { isChangeRow, isProfileRow, isLoginNoteRow } from "../lib/change-rows";
 import { ProfilePicker } from "./ProfilePicker";
 import { handBackText, type RewindControl, type RewindResult } from "../lib/inputs";
 import type { RewindRefusal } from "../../shared/protocol";
+import type { CardInfo } from "../../shared/transcript-cards";
 import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
 import { COMPACT_STREAMING_REASON, COMPACTING_REASON, compactedAnnouncement } from "../lib/compact";
 import {
@@ -1690,11 +1691,39 @@ export function ChatView(props: {
   if (raisedCards) createEffect(on(() => live.running, (now, before) => void (before && !now && raisedCards.refresh()), { defer: true }));
   // The merge queue's cards for this chat's branches (one per branch, from Land on): Sova's own, placed like outside cards.
   const queueCards = props.overseer || props.projectOverseer ? undefined : createMergeCards(() => props.summary?.()?.id);
+  const outsideCards = createMemo(() => [...(raisedCards?.outside() ?? []), ...(queueCards?.rows() ?? [])]);
+  const outsideById = createMemo(() => new Map(outsideCards().map((c) => [c.id, c] as const)));
+  /** Each outside card's row, one object for its life: the thread keys its rows by object, so a fresh
+      one per update (a merge card's every step) drew the card anew, at its estimate for a frame, and
+      the rows above it jumped. The row reads its card as it is now, by id (as CardContext.card does). */
+  const outsideRows = new Map<string, TranscriptItem>();
+  const outsideRow = (first: CardInfo): TranscriptItem => {
+    const id = outsideCardRowId(first.id);
+    let row = outsideRows.get(id);
+    if (!row) {
+      let last = first;
+      const now = () => (last = outsideById().get(first.id) ?? last);
+      row = {
+        id,
+        kind: "card",
+        get at() {
+          return now().at;
+        },
+        get card() {
+          return now();
+        },
+      };
+      outsideRows.set(id, row);
+    }
+    return row;
+  };
   /** The thread's rows with the cards raised from outside the chat placed where they were raised (lib/transcript-placement). */
   const threadItems = createMemo(() => {
     const list = items();
-    const outside = [...(raisedCards?.outside() ?? []), ...(queueCards?.rows() ?? [])];
-    return list && outside.length ? placeOutsideCards(list, outside, (card): TranscriptItem => ({ id: outsideCardRowId(card.id), kind: "card", at: card.at, card })) : list;
+    const outside = outsideCards();
+    const ids = new Set(outside.map((c) => outsideCardRowId(c.id)));
+    for (const id of outsideRows.keys()) if (!ids.has(id)) outsideRows.delete(id);
+    return list && outside.length ? placeOutsideCards(list, outside, outsideRow) : list;
   });
   /** Show in Chat for an offer card (§chat.composer/waiting-dialog): its `offer` call's row (the
       jump's highlight included), else the card where it stands (the tray at the thread's end). */

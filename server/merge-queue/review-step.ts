@@ -26,7 +26,9 @@ export interface ReviewerStart {
 }
 export interface ReviewerHandle {
   sessionId: string;
-  /** Archive (or stop) the reviewer's chat. */
+  /** Its session file (the run's reviewer links). */
+  path?: string;
+  /** Archive the reviewer's chat once its turn is over (else stop it). The step never waits on it. */
   stop(): Promise<void>;
 }
 export type StartReviewer = (o: ReviewerStart) => Promise<ReviewerHandle>;
@@ -40,6 +42,23 @@ export interface ReviewDeps {
 }
 
 let starter: StartReviewer | null = null;
+
+/** Who keeps the run's reviewer chats (chats.ts on the server; none in tests): told as each starts and ends. */
+export interface ReviewerRecorder {
+  started(o: { root: string; run: string; branch: string; session: string; path: string; attempt: number }): void;
+  ended(o: { root: string; session: string; verdict?: ReviewVerdict["verdict"]; why?: string }): void;
+}
+let recorder: ReviewerRecorder | null = null;
+export function setReviewerRecorder(r: ReviewerRecorder | null): void {
+  recorder = r;
+}
+const record = (fn: () => void) => {
+  try {
+    fn();
+  } catch (err) {
+    console.warn(`[merge-reviewer] not recorded: ${err instanceof Error ? err.message : String(err)}`);
+  }
+};
 /** The server wires how a reviewer chat starts (merge-thread's createChat on the reviewer profile). */
 export function setReviewerStarter(fn: StartReviewer | null): void {
   starter = fn;
@@ -53,6 +72,9 @@ const waiting = new Map<string, Waiting>();
 
 /** The reviewer chat a run is waiting on, if any (merge.review's caller check: only it may answer for that run). */
 export const reviewerOf = (runId: string): string | null => waiting.get(runId)?.sessionId ?? null;
+
+/** Every reviewer chat a review is waiting on now (the startup sweep leaves these alone). */
+export const activeReviewers = (): Set<string> => new Set([...waiting.values()].map((w) => w.sessionId).filter((id): id is string => !!id));
 
 /** merge.review's verdict for `runId`. False when no review of that run is waiting (late, or a stranger's). */
 export function deliverReview(runId: string, v: { verdict: ReviewVerdict["verdict"]; text?: string }): boolean {
@@ -114,7 +136,10 @@ export async function reviewStep(
       handle = await start({ ...o, text, attempt });
       w.sessionId = handle.sessionId;
       o.log(`reviewer chat ${handle.sessionId}\n`);
+      const h = handle;
+      if (h.path) record(() => recorder?.started({ root: o.root, run: o.runId, branch: o.branch, session: h.sessionId, path: h.path!, attempt }));
       const a = await answer;
+      record(() => recorder?.ended({ root: o.root, session: h.sessionId, ...("failed" in a ? { why: a.failed } : { verdict: a.verdict }) }));
       if ("failed" in a) {
         why = a.failed;
         o.log(`reviewer ${attempt}: ${a.failed}\n`);
@@ -130,7 +155,9 @@ export async function reviewStep(
       if (timer) clearTimeout(timer);
       if (onAbort) o.signal.removeEventListener("abort", onAbort);
       if (waiting.get(o.runId) === w) waiting.delete(o.runId);
-      await handle?.stop().catch(() => undefined);
+      // Not awaited: the reviewer gave its verdict from inside its own turn, and archiving it waits for that turn
+      // to end (at most 2 min, else it is stopped). The run goes on meanwhile.
+      void handle?.stop().catch(() => undefined);
     }
   }
   return { ok: false, why: why || "the reviewer gave no verdict" };

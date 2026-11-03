@@ -340,7 +340,6 @@ function ToolRow(props: KindViewProps) {
       args={toolCallArgs(item)}
       summary={rows.tourEarlier(item) ?? item.tool?.summary}
       stats={(item.text === "edit" || item.text === "write") && item.toolCallId ? rows.result(item.toolCallId)?.tool?.stats : undefined}
-      calls={item.toolCallId ? rows.result(item.toolCallId)?.tool?.calls : undefined}
       lazy={lazy()}
       details={resultDetails()}
       status={status()}

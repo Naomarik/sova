@@ -91,21 +91,6 @@
       "site/src/styles/tokens.css"
     ]
   },
-  "§site.docs/codemode": {
-    "kind": "behavior",
-    "requires": [
-      "§chat.mode-menu/codemode",
-      "§chat.mode-menu/minor-toggle-keeps-prompt",
-      "§chat.mode-menu/workers",
-      "§tools.spec/census-note",
-      "§app.overseer/hosting"
-    ],
-    "authority": "accepted",
-    "evidence": "reviewed",
-    "code": [
-      "site/src/content/docs/modes/codemode.md"
-    ]
-  },
   "§site.docs/delegate": {
     "kind": "behavior",
     "requires": [
@@ -166,7 +151,6 @@
       "§design.copy-deck/mode-menu",
       "§chat/alignment",
       "§chat/subagent-profiles",
-      "§chat.mode-menu/codemode",
       "§chat.markdown/visuals",
       "§tools/spec",
       "§chat/memory",
@@ -256,7 +240,6 @@
       "§chat.mode-menu/states",
       "§chat.mode-menu/workers",
       "§chat.mode-menu/minor-toggle-keeps-prompt",
-      "§chat.mode-menu/codemode",
       "§chat.mode-menu/strict",
       "§chat.mode-menu/terminal",
       "§design.copy-deck/mode-menu",

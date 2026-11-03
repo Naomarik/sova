@@ -52,7 +52,7 @@ does the Overseer's own chat.
 
 The folder's name is the mode's id: lowercase letters, digits and hyphens, starting with a letter,
 at most 30 characters. It can't be the name of a built-in minor mode (`align`, `spec`, `vis`,
-`codemode`, `memory`); a folder with one of those names is listed as broken and never replaces the
+`memory`); a folder with one of those names is listed as broken and never replaces the
 built-in.
 
 ## The mode file
@@ -216,7 +216,7 @@ The instructions reach the agent the same way a built-in mode's do. A mode that 
 chat started, or at its last compaction, is part of the agent's instructions. Turning one on in the
 middle of a chat sends its instructions as a hidden note at the next run, after the built-in modes'
 instructions, instead of rewriting the instructions the agent already has. A mode with tools also adds or removes them, like align
-or codemode, and a change to the agent's tools costs the provider's prompt cache.
+or vis, and a change to the agent's tools costs the provider's prompt cache.
 
 ## Workers
 

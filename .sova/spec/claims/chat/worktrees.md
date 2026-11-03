@@ -76,14 +76,21 @@ by argument list with no shell, locally only (a remote session refuses it).
   themselves: one the Overseer, a baton or another session sent is refused
   (§chat.worktrees/land-own-word); one that also says "without specs" records the go-ahead
   without the branch's specs, and one that says "skip review" ("land it, skip review") without the
-  review step (§app.merge-queue/review). The worktree is one the session tracks, or by default the
+  review step (§app.merge-queue/review). One that asks for a pull or merge request ("open a PR",
+  "create an MR", "open a merge request", "land it as a PR") is taken the same way and lands as a
+  request on `origin`'s host (a pull request on GitHub, a merge request on GitLab, whichever word was
+  typed), whatever the project's way of landing (§app.merge-queue/strategies); its answer says
+  "Queued {branch} at {sha} to land as a request on origin's host (a merge request on GitLab, a pull
+  request on GitHub)…". The worktree is one the session tracks, or by default the
   worktree the session's own folder is in; it must be on a branch with no uncommitted files, since
   the go-ahead is for its head commit. In a repository the merge queue serves it merges nothing
   itself: the queue checks the branch and lands it, exactly as on the Land button, and the answer
   says it was queued. In a repository the queue doesn't serve it records nothing and queues
   nothing: it merges the branch into the main checkout's branch itself, exactly as `merge` would
   (spec drafts made official first; "without specs" leaves them behind), and the answer says it
-  merged. The tool's description and guidance name no merge queue and no Land: they say `merge`
+  merged; asked for a pull or merge request there, it merges nothing either: the answer tells the
+  chat to open the request itself, as the user asked, with `gh pr create` or `glab mr create`, after
+  pushing the branch. The tool's description and guidance name no merge queue and no Land: they say `merge`
   merges into the main branch only as the turn's Sova landing note allows, and that on the user's
   typed "land it" or "merge it" the agent commits what's left and calls `land`, which lands the
   branch the way that note says (§chat.worktrees/landing-note).
@@ -294,8 +301,13 @@ its entry's state instead, in the words the composer's worktrees control uses
 Conflict, Behaviour differs, Review flagged, Can't tell whose failure, Drafts changed, Needs a fix, and Landed with its commit
 and its notes (§app.merge-queue/note) under it, plus "1 newer commit not included" when the branch
 moved past the approved commit. **The row's action** is the modal's, from the same row: Land (with
-its menu) on Ready, Needs a fix or Drafts changed, Cancel on a queued row, Accept and Send Back on Behaviour differs, Land Anyway and Send Back on
-Review flagged and on Can't tell whose failure. A project whose definition doesn't parse keeps Land
+its menu) on Ready or Drafts changed (never on Needs a fix: a sent-back branch offers no Land until
+it reads ready again at a newer commit, §chat.composer/worktrees-control), Cancel on a queued row, Accept and Send Back on Behaviour differs, Land Anyway and Send Back on
+Review flagged and on Can't tell whose failure. While the branch's review runs, and after it ends,
+the row adds a line for its run's newest reviewer chat: "Review running" or "Review: {verdict}"
+("no verdict" when it failed), then **Open Reviewer Chat**, or "· Reviewer chat cleared" with no
+link once the user cleared it (§app.merge-queue/chats); the reviewer chat itself is never a row of
+any session list. A project whose definition doesn't parse keeps Land
 (never Set Up Queue), with the modal's line saying so (§chat.composer/worktrees-control); the row keeps Review Changes and its workers and `.agent` chips. A row's Review Changes, first among
 its actions, is the modal's own button: the branch as it is now against the branch it lands on, its
 uncommitted files included and marked as uncommitted; a merged branch shows what its landing or merge brought in (§chat.changes/entry).
@@ -511,8 +523,9 @@ apart from Ready to merge (§app.overseer/roundup). The row's lit count and badg
 
 Sova keeps the user's go-ahead typed in a branch's own chat in `<state root>/landing.json`,
 outside every repository. That chat's `worktree land` (§chat.worktrees/tool) records it for the
-branch at its head commit, marked as typed in the owner's chat, with or without specs and with or
-without review, as the user said; the newest 200 are kept. Each one also keeps the branch's spec
+branch at its head commit, marked as typed in the owner's chat, with or without specs, with or
+without review, and as a pull or merge request when the words asked for one
+(§app.merge-queue/strategies), as the user said; the newest 200 are kept. Each one also keeps the branch's spec
 drafts as they were: their names and one hash over the files under each draft's `spec/` (its
 `draft.json`, where notes and evidence go, apart). Every writer holds one lock while it re-reads and
 replaces the file, so two records written at once never drop each other. The file holds go-aheads

@@ -136,10 +136,10 @@ test("a card's caption parts: only what the profile sets, as glyphs, the words k
 });
 
 test("the mode glyphs: the major mode's (normal the sliders), each built-in minor's icon, a project mode's letter", () => {
-  assert.deepEqual(modeGlyphs("normal", ["spec", "codemode", "memory"], ["deploy-notes", "9lives"]), [
+  assert.deepEqual(modeGlyphs("normal", ["spec", "vis", "memory"], ["deploy-notes", "9lives"]), [
     { kind: "icon", id: "normal", icon: "sliders" },
     { kind: "icon", id: "spec", icon: "mode-spec" },
-    { kind: "icon", id: "codemode", icon: "mode-codemode" },
+    { kind: "icon", id: "vis", icon: "mode-vis" },
     { kind: "icon", id: "memory", icon: "mode-memory" },
     { kind: "letter", id: "deploy-notes", letter: "D" },
     { kind: "letter", id: "9lives", letter: "9" },

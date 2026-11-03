@@ -159,6 +159,10 @@ export interface SessionSummary {
   /** The session's profile (§chat.profiles/model), from the newest `sova-profile` entry before its
       first user message; absent for Default. */
   profile?: SessionProfileField;
+  /** One of the merge queue's own chats (§chat/merge-queue): the project's merge thread or a run's reviewer, by the
+      Sova profile it was started on (shared/merge-queue.ts queueChatRole), never by title. Every list of the session
+      pane and the server leaves it out; the project's Merge Queue tab lists it, and a link still opens it. Safe by absence. */
+  queueChat?: { role: import("./merge-queue").QueueChatRole };
   /** Activity from this session's live record (a TUI's, or this server's own runtime): the
       sessions extension's `presence.activity`. Absent when no live record reports one (closed
       sessions, older writers). `error` is set only for state "error", ≤200 chars. */

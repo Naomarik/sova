@@ -50,6 +50,7 @@ const full = (): Required<SessionSummary> => ({
   turnError: { message: "overloaded" },
   tags: { topic: "feature" },
   profile: { id: "reviewer", label: "Read-only reviewer", icon: "eye", source: "sova" },
+  queueChat: { role: "reviewer" },
   readiness: { trees: [{ path: "/w/t", branch: "feat/x", state: "ready", why: "checks passed" }], badge: "ready", branch: "feat/x", since: 12 },
 });
 

@@ -86,6 +86,7 @@ export function ingestDepsFor(a: {
   file: string;
   rule: Pick<ServedRule, "listedRoots" | "served">;
   queue: IngestDeps["queue"];
+  repoOf: IngestDeps["repoOf"];
   refused?: IngestDeps["refused"];
   log?: IngestDeps["log"];
 }): IngestDeps {
@@ -94,6 +95,7 @@ export function ingestDepsFor(a: {
     seenFile: join(a.base, "ingest.json"),
     roots: () => [...new Set([...a.rule.listedRoots(), ...recordedRoots(a.base)])],
     served: (root) => a.rule.served(root),
+    repoOf: a.repoOf,
     queue: a.queue,
     ...(a.refused ? { refused: a.refused } : {}),
     ...(a.log ? { log: a.log } : {}),
@@ -327,6 +329,13 @@ export async function startMergeQueue(
       file: join(stateRoot(), LANDING_FILE_NAME),
       rule: served,
       queue: (root) => q.get(root),
+      // The chat's repo: its cwd's main checkout.
+      repoOf: async (session) => {
+        const { listSessions } = await import("../sessions-index");
+        const s = (await listSessions().catch(() => [])).find((x) => x.id === session);
+        const p = s?.cwd ? await projectOf(s.cwd).catch(() => null) : null;
+        return p?.state === "ok" && p.git ? p.root : null;
+      },
       // A typed "land it" that couldn't be queued: the chat's model hears it at its next turn (no message is sent).
       refused: (session, text) => mc.addLine(session, `refused:${Date.now()}`, text),
     }),

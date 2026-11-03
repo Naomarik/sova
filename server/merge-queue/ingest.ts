@@ -22,12 +22,18 @@ export interface IngestDeps {
   roots: () => string[] | Promise<string[]>;
   /** The served rule (served.ts): a go-ahead in a root it doesn't serve is refused (NOT_SERVED) and never queued. */
   served: (root: string) => Promise<boolean>;
+  /** The main checkout of the repo a chat works in (its cwd's); null: unknown. When no root holds a go-ahead's
+   *  commit, this tells a served repo's moved branch (amended, rebased) from a repo the queue doesn't serve. */
+  repoOf: (session: string) => Promise<string | null>;
   queue: (root: string) => Promise<ProjectQueue>;
   git?: Git;
   /** Tell the chat a typed go-ahead couldn't be queued. */
   refused?: (session: string, text: string) => void;
   log?: (line: string) => void;
 }
+
+/** A served repo's go-ahead whose commit is no longer on its branch. */
+export const movedWords = (branch: string): string => `that commit is no longer the head of ${branch}. Type "land it" again to land its new head.`;
 
 const keyOf = (g: GoAhead) => `${g.branch}@${g.commit}@${g.at}`;
 
@@ -83,8 +89,11 @@ export async function ingestOnce(deps: IngestDeps): Promise<string[]> {
     writeSeen(deps.seenFile, seen);
     const root = await projectOfGoAhead(git, roots, g);
     if (!root) {
-      did.push(`typed go-ahead for ${g.branch} at ${g.commit.slice(0, 7)}: no project holds it`);
-      if (g.session) deps.refused?.(g.session, `${g.branch} at ${g.commit.slice(0, 7)} couldn't be queued to land: ${NOT_SERVED}.`);
+      // The chat's own repo decides what it hears: a served one's branch moved past the commit; any other merges plainly.
+      const repo = g.session ? await deps.repoOf(g.session).catch(() => null) : null;
+      const moved = !!repo && (await deps.served(repo).catch(() => false));
+      did.push(`typed go-ahead for ${g.branch} at ${g.commit.slice(0, 7)}: no project holds it${moved ? ` (${repo}: the branch moved)` : ""}`);
+      if (g.session) deps.refused?.(g.session, `${g.branch} at ${g.commit.slice(0, 7)} couldn't be queued to land: ${moved ? movedWords(g.branch) : `${NOT_SERVED}.`}`);
       continue;
     }
     if (!(await deps.served(root).catch(() => false))) {

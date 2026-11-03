@@ -64,6 +64,7 @@ describe("b2: typed go-aheads reach only repos the merge queue serves", () => {
           asked.push(root);
           return k.queues.get(root);
         },
+        repoOf: async (session) => (session === "s-stray" ? stray.root : k.repo.root),
         refused: (session, text) => void refused.push({ session, text }),
       });
       assert.deepEqual(await ingestOnce(deps), [], "the first read is a baseline");
@@ -119,6 +120,7 @@ describe("b2: typed go-aheads reach only repos the merge queue serves", () => {
           asked.push(root);
           return k.queues.get(root);
         },
+        repoOf: async (session) => (session === "s-x" ? bare.root : broken.root),
         refused: (_s, t) => void refused.push(t),
       });
       await ingestOnce(deps);
@@ -137,6 +139,50 @@ describe("b2: typed go-aheads reach only repos the merge queue serves", () => {
       bare.done();
       await k.done();
       broken.done();
+    }
+  });
+
+  test("a served repo whose branch moved past the go-ahead (amended, rebased): refused as a moved head, never NOT_SERVED; a chat whose repo can't be resolved or isn't served still hears NOT_SERVED", async () => {
+    const k = makeKit();
+    const side = makeRepo({ prefix: "mq-side-" });
+    try {
+      const base = join(k.repo.state, "merge-queue");
+      const file = join(k.repo.state, "landing.json");
+      declare(k.repo, JSON.stringify({ version: 1, merge: { checks: "none" } }));
+      const q = await k.q();
+      await q.pause("hold");
+      const refused: { session: string; text: string }[] = [];
+      const repos: Record<string, string> = { "s-amend": k.repo.root, "s-side": side.root };
+      const deps = ingestDepsFor({
+        base,
+        file,
+        rule: ruleOver(() => [{ root: k.repo.root }]),
+        queue: (root) => k.queues.get(root),
+        repoOf: async (session) => repos[session] ?? null,
+        refused: (session, text) => void refused.push({ session, text }),
+      });
+      await ingestOnce(deps);
+
+      const b = k.repo.branch("feat/amend", { "a.txt": "a\n" });
+      recordGoAhead({ branch: "feat/amend", commit: b.head, session: "s-amend", at: "2026-11-03T12:00:00Z", by: "owner-chat" }, file);
+      sh(b.path, "commit", "-q", "--amend", "-m", "amended");
+      assert.notEqual(sh(b.path, "rev-parse", "HEAD"), b.head, "the go-ahead's commit is no longer on the branch");
+      await ingestOnce(deps);
+      assert.equal(refused.length, 1);
+      assert.equal(refused[0]!.session, "s-amend");
+      assert.doesNotMatch(refused[0]!.text, /not a project the merge queue serves/, "a served repo is never told to merge it itself");
+      assert.match(refused[0]!.text, /^feat\/amend at [0-9a-f]{7} couldn't be queued to land: .*feat\/amend/);
+      assert.equal(q.entries().length, 0);
+
+      // Not served (unlisted) and unresolvable chats: the plain-merge sentence.
+      recordGoAhead({ branch: "feat/gone", commit: "b".repeat(40), session: "s-side", at: "2026-11-03T12:00:01Z", by: "owner-chat" }, file);
+      recordGoAhead({ branch: "feat/gone", commit: "c".repeat(40), session: "s-unknown", at: "2026-11-03T12:00:02Z", by: "owner-chat" }, file);
+      await ingestOnce(deps);
+      assert.equal(refused.length, 3);
+      for (const r of refused.slice(1)) assert.match(r.text, /couldn't be queued to land: not a project the merge queue serves: merge it into main from the chat\.$/, r.session);
+    } finally {
+      side.done();
+      await k.done();
     }
   });
 });

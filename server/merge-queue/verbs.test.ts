@@ -22,7 +22,7 @@ describe("the typed word (landing.json)", () => {
       const file = join(k.repo.state, "landing.json");
       const seenFile = join(k.repo.state, "merge-queue", "ingest.json");
       const refused: string[] = [];
-      const deps = { file, seenFile, roots: () => [k.repo.root], served: async () => true, queue: () => k.q(), refused: (_s: string, t: string) => void refused.push(t) };
+      const deps = { file, seenFile, roots: () => [k.repo.root], served: async () => true, repoOf: async () => null, queue: () => k.q(), refused: (_s: string, t: string) => void refused.push(t) };
       const old = k.repo.branch("feat/old", { "o.txt": "o\n" });
       recordGoAhead({ branch: "feat/old", commit: old.head, session: "s0", at: "2026-11-01T00:00:00Z", by: "owner-chat" }, file);
       assert.deepEqual(await ingestOnce(deps), [], "the first read is a baseline");

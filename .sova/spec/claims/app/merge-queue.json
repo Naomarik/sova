@@ -602,8 +602,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:29Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-03T18:08Z",
+      "source": "pi-session:f7abf7a7-3c8a-4801-a5d7-0e26b8fc21c6#33c32715"
     },
     "code": [
       "server/merge-queue/view.ts",
@@ -632,7 +632,9 @@
       "src/components/ReviewChanges.tsx",
       "src/app.css",
       "server/merge-queue/diff-route.integration.test.ts",
-      "src/lib/merge-queue-sent-back.test.ts"
+      "src/lib/merge-queue-sent-back.test.ts",
+      "server/merge-queue/settled.ts",
+      "server/merge-queue/settled.test.ts"
     ]
   },
   "§app/merge-queue": {

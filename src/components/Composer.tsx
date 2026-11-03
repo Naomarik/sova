@@ -196,6 +196,8 @@ export function Composer(props: {
   worktreesTitle?: string;
   /** A Land, Cancel or other queue action went through: reload the rows. */
   onWorktreesChanged?(): void;
+  /** The chat's folder: the Worktrees modal's Review Changes reads tool paths relative to it. */
+  worktreesCwd?: string;
   autofocus?: boolean;
   /** This session's slash commands; the "/" autocomplete is off without them. */
   commands?: SlashCommand[];
@@ -992,7 +994,7 @@ export function Composer(props: {
                     )}
                   </Match>
                   <Match when={part === "worktrees" && worktreesRow()}>
-                    {(rows) => <WorktreesControl rows={rows()} title={props.worktreesTitle ?? "This chat"} class={leadClass(part).trim() || undefined} onChanged={props.onWorktreesChanged} />}
+                    {(rows) => <WorktreesControl rows={rows()} title={props.worktreesTitle ?? "This chat"} class={leadClass(part).trim() || undefined} onChanged={props.onWorktreesChanged} sessionPath={props.path} cwd={props.worktreesCwd} />}
                   </Match>
                   <Match when={part === "inputs" && inputsRow()}>
                     {(row) => (

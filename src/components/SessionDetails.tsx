@@ -2,7 +2,7 @@ import { createEffect, createMemo, createResource, createSignal, For, Match, on,
 import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, TranscriptItem } from "../../shared/protocol";
 import { contextSentence, contextStateFor } from "../lib/context";
 import { relativeTime, thousands, tildePath } from "../lib/format";
-import { canReviewChanges, NO_WORKTREES, type WorktreeChip, worktreeChips } from "../lib/worktrees";
+import { NO_WORKTREES, type WorktreeChip, worktreeChips } from "../lib/worktrees";
 import { queueRow, rowsSummary } from "../lib/merge-queue";
 import { noteMergeChanged } from "../lib/merge-queue-client";
 import { queueHrefOf, WorktreeQueueRow, type QueueWorktree } from "./WorktreesModal";
@@ -620,15 +620,14 @@ function WorktreesSection(props: { rows: QueueWorktree[]; path: string; cwd?: st
 
 const chipTone = (c: Pick<WorktreeChip, "tone">) => (c.tone === "neutral" ? "chip" : `chip chip-${c.tone}`);
 
-/** One worktree: the queue's row, with what runs there and Review Changes. */
+/** One worktree: the queue's row, with what runs there and Review Changes (the row's own, as in the composer's modal). */
 function WorktreeRow(props: { worktree: QueueWorktree; path: string; cwd?: string }) {
   const w = () => props.worktree;
-  /** The viewer on the branch against its merge-base (§chat.changes/entry): active, existing rows. */
-  const [reviewing, setReviewing] = createSignal(false);
   return (
     <WorktreeQueueRow
       worktree={w()}
       onChanged={noteMergeChanged}
+      review={{ sessionPath: props.path, cwd: props.cwd }}
       chips={
         <>
           <For each={worktreeChips(w())}>
@@ -646,22 +645,6 @@ function WorktreeRow(props: { worktree: QueueWorktree; path: string; cwd?: strin
             )}
           </Show>
         </>
-      }
-      extra={
-        <Show when={canReviewChanges(w())}>
-          <button
-            type="button"
-            class="button button-sm button-ghost worktree-row-action"
-            aria-label={`Review Changes on ${w().branch}`}
-            title="The branch's commits against where it left its base branch, or, once merged, what its merge brought in. Nothing is changed."
-            onClick={() => setReviewing(true)}
-          >
-            Review Changes
-          </button>
-          <Show when={reviewing()}>
-            <ChangesDialog scope={{ kind: "worktree", sessionPath: props.path, worktreePath: w().path }} cwd={props.cwd} onClose={() => setReviewing(false)} />
-          </Show>
-        </Show>
       }
     />
   );

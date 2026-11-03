@@ -52,6 +52,8 @@ export interface ChangesSource {
   items?: TranscriptItem[];
   /** The session's folder, for tool paths relative to it. */
   cwd?: string;
+  /** A scope with no session (a Merge Queue row's): the session whose turns become the steps, when one is known. */
+  stepsFrom?: string;
   /** A show_changes call: its title, path filter and steps (these replace the turns). */
   agent?: { title?: string; paths?: string[]; steps?: AgentStepInput[] };
 }
@@ -218,12 +220,17 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
   const [edits, setEdits] = createSignal<ReadonlyMap<string, ToolContent>>(new Map());
   // A memo, so a new scope object for the same session (a card's details re-read on every new
   // transcript row) never refetches: on() re-fires on any read signal, not on a changed value.
-  const sessionPath = createMemo(() => props.scope.sessionPath);
+  const sessionPath = createMemo(() => props.scope.sessionPath ?? props.stepsFrom);
   createEffect(
     on(
       sessionPath,
       (path) => {
         if (agentSteps()) return;
+        // No session (a queue row whose chat isn't known): no turns, so the files alone.
+        if (!path) {
+          setTranscript([]);
+          return;
+        }
         setTranscript(null);
         // The rows, then the content of their edits, before any turn is drawn: turns drawn from
         // rows alone would show none and then all.
@@ -422,6 +429,7 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
               {props.agent?.title ? `${scopeTitle(summary()!)} · ` : ""}
               {totals()}
               <Show when={summary()!.truncated}> · the first {summary()!.files.length} of {summary()!.totals.files} files</Show>
+              <Show when={summary()!.uncommitted}>{(n) => ` · ${n()} uncommitted`}</Show>
             </Show>
           </p>
         </div>
@@ -695,6 +703,11 @@ function TreeItem(props: {
           <button type="button" class="changes-row" style={indent()} title={r().file.oldPath ? `${r().file.oldPath} → ${r().path}` : r().path} onClick={() => props.onFile(r().path)}>
             <StatusMark status={r().file.status} />
             <span class="changes-row-name text-mono">{r().name}</span>
+            <Show when={r().file.uncommitted}>
+              <span class="changes-uncommitted text-caption" title="Not committed yet: Land takes commits only">
+                uncommitted
+              </span>
+            </Show>
             <Show when={props.viewed}>
               <span class="changes-viewed-mark" title="Viewed">
                 <Icon name="check" small />

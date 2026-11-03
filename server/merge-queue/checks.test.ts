@@ -106,8 +106,8 @@ describe("what a run checks", () => {
     writeFileSync(f, JSON.stringify({ failed: 60, failures: Array.from({ length: 60 }, (_, i) => ({ name: `t${i % 55}` })) }));
     expect(readCheckOut(f)!.failingNames.length).toBe(55);
     // Kaocha's lines: one test, whatever line or verdict word, is one name.
-    writeFileSync(f, JSON.stringify({ failed: 3, failures: [{ name: "FAIL in (app.access-test/account-sign-in) (access_test.clj:74)" }, { name: "FAIL in (app.access-test/account-sign-in) (access_test.clj:75)" }, { name: "ERROR in (app.onboarding-test/practice-garage) (onboarding_test.clj:168)" }] }));
-    expect(readCheckOut(f)!.failingNames).toEqual(["app.access-test/account-sign-in", "app.onboarding-test/practice-garage"]);
+    writeFileSync(f, JSON.stringify({ failed: 3, failures: [{ name: "FAIL in (app.access-test/account-sign-in) (access_test.clj:74)" }, { name: "FAIL in (app.access-test/account-sign-in) (access_test.clj:75)" }, { name: "ERROR in (app.onboarding-test/practice-widget) (onboarding_test.clj:168)" }] }));
+    expect(readCheckOut(f)!.failingNames).toEqual(["app.access-test/account-sign-in", "app.onboarding-test/practice-widget"]);
     writeFileSync(f, "not json");
     expect(readCheckOut(f)).toBeNull();
     expect(readCheckOut(join(dir, "missing.json"))).toBeNull();

@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
+import { join } from "node:path";
 import { git, ReleaseFixture } from "../../scripts/e2e-release/fixtures";
+import { checkForUpdate } from "../updates/check";
+import { gitIn } from "../updates/git";
 import { chatDoes, ok, publishOne, step, stepOf, view, waitRecord } from "../../scripts/e2e-release/flow";
 import { startReleaseServer, type ReleaseServer } from "../../scripts/e2e-release/server-kit";
 
@@ -21,7 +24,7 @@ after(async () => {
   assert.deepEqual(changes ?? [], [], "the sentinel home is untouched");
 });
 
-test("S26: Withdraw moves stable back to the previous release, here and on origin; v0.3.0 stays", async () => {
+test("S26 + S27: Withdraw moves stable back here and on origin; v0.3.0 stays; a copy on it is told it was withdrawn", async () => {
   const fx = new ReleaseFixture({ under: k.hs.scratch, versions: ["0.1.0", "0.2.0"] });
   fixtures.push(fx);
   fx.seedLandings(1);
@@ -31,6 +34,13 @@ test("S26: Withdraw moves stable back to the previous release, here and on origi
   const { rec, sha } = await publishOne(k, fx, "0.3.0");
   assert.equal(fx.originTag("stable"), sha);
   const tagObject = fx.tagObject("v0.3.0");
+
+  // S27, before: an installed copy on v0.3.0 following Stable is up to date.
+  const copy = join(fx.root, "installed-copy");
+  git(fx.root, ["clone", "-q", fx.origin!, copy]);
+  git(copy, ["checkout", "-q", "--detach", "v0.3.0"]);
+  const check = () => checkForUpdate({ git: gitIn(copy), repo: fx.origin!, source: { kind: "stable" }, kind: "installer", head: git(copy, ["rev-parse", "HEAD"]), branch: null });
+  assert.equal((await check()).result.state, "up-to-date");
 
   const noConfirm = await k.verb("release.withdraw", { project: fx.project, release: rec.id, why: "breaks login" });
   assert.equal(noConfirm.json.error?.code, "needs-confirm", JSON.stringify(noConfirm.json));
@@ -56,6 +66,16 @@ test("S26: Withdraw moves stable back to the previous release, here and on origi
   assert.equal(item?.withdrawn?.why, "breaks login");
   assert.deepEqual(item?.channels, []);
   assert.deepEqual(v.history.find((h) => h.tag === "v0.2.0")?.channels, ["stable"]);
+
+  // S27: every copy learns it through the marker on origin; the copy on v0.3.0 is told it was withdrawn and why,
+  // with an offer to go back to v0.2.0, never "ahead".
+  assert.ok(fx.originRefs()?.["refs/tags/withdrawn/v0.3.0"], `origin carries the withdrawn marker: ${JSON.stringify(fx.originRefs())}`);
+  const told = (await check()).result as Record<string, any>;
+  assert.equal(told.state, "withdrawn", JSON.stringify(told));
+  assert.equal(told.tag, "v0.3.0");
+  assert.equal(told.why, "breaks login");
+  assert.equal(told.target?.sha, prev, "the offer goes back to v0.2.0");
+  assert.equal(told.target?.version, "v0.2.0");
 
   // The playbook's withdraw step runs after, reported by the release chat.
   assert.equal(stepOf(r, "page-withdrawn").state === "done", false);

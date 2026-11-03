@@ -57,6 +57,9 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
   );
 }
 
+/** The release holding the queue, as the Releases tab names it: its tag, else its version. */
+const holdName = (r: { version: string | null; tag?: string | null }): string => (r.tag ? `release ${r.tag}` : r.version ? `release v${r.version.replace(/^v/, "")}` : "a release");
+
 /** The queue doesn't serve this listed project: it has no merge setup (an invalid one is still a setup, said as such). */
 const notSetUp = (v: Pick<MergeQueueView, "served" | "checks" | "invalid">): boolean => !v.invalid && (v.served === false || v.checks === "unset");
 
@@ -265,7 +268,7 @@ function useAct(onChanged: () => void) {
 
 function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: ChatOf; onChanged(): void }) {
   const v = () => props.view;
-  const chip = () => queueStateChip(v());
+  const chip = () => (v().release && v().state !== "paused" && !v().invalid ? { label: "Frozen for a release", tone: "warn" as const } : queueStateChip(v()));
   const head = useAct(props.onChanged);
   const paused = () => v().state === "paused";
   return (
@@ -339,7 +342,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
         {(rel) => (
           <Banner
             tone="info"
-            title={`${v().target} is frozen for release ${rel().version ?? "in progress"}`}
+            title={`${v().target} is frozen for ${holdName(rel())}`}
             body="Other landings wait in line, and nothing is pushed, until the release is published or abandoned."
             action={
               <a class="button button-sm" href={projectTabHref(props.projectId, "releases")}>
@@ -463,7 +466,13 @@ function CheckingNow(props: { projectId: string; view: MergeQueueView; chatOf?: 
       when={cur()}
       fallback={
         <p class="mq-empty text-caption">
-          {props.view.waiting.length ? `${props.view.waiting.length} waiting. The next one starts in a moment.` : "Nothing being checked. A branch starts as soon as you press Land."}
+          {props.view.release
+            ? props.view.waiting.length
+              ? `${props.view.waiting.length} waiting for ${holdName(props.view.release)}: they start once it's published or abandoned.`
+              : `Nothing being checked. A branch you land now waits for ${holdName(props.view.release)}.`
+            : props.view.waiting.length
+              ? `${props.view.waiting.length} waiting. The next one starts in a moment.`
+              : "Nothing being checked. A branch starts as soon as you press Land."}
         </p>
       }
     >
@@ -545,7 +554,8 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
                       </span>
                     </p>
                     <ChatLine projectId={props.projectId} session={e.session} worktree={e.worktree} chatOf={props.chatOf} />
-                    <Show when={e.eta}>
+                    {/* While a release holds the queue, no estimate holds: the row's reason says what it waits for. */}
+                    <Show when={props.view.release && !e.release ? null : e.eta}>
                       {(t) => (
                         <p class="list-meta">
                           <Icon name="clock" small /> starts in ~{mins(t().startsInMs)} · takes ~{mins(t().takesMs)}

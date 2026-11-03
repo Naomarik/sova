@@ -495,7 +495,7 @@ function History(props: { projectId: string; view: ReleaseView; archived: boolea
         fallback={<p class="text-caption text-muted">No numbered release yet. Each one shows here from its tag, with its notes.</p>}
       >
         <ul class="list mq-list rel-history">
-          <For each={props.view.history}>{(h, i) => <HistoryRow projectId={props.projectId} view={props.view} item={h} newest={i() === 0} archived={props.archived} targets={props.targets} />}</For>
+          <For each={props.view.history}>{(h) => <HistoryRow projectId={props.projectId} view={props.view} item={h} newest={h.tag === props.view.latest} archived={props.archived} targets={props.targets} />}</For>
         </ul>
       </Show>
     </div>

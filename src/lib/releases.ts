@@ -89,10 +89,9 @@ export function stepActions(r: Pick<ReleaseRecord, "state">, s: Pick<ReleaseStep
 /** Why Publish isn't offered yet, as one sentence; null when it is. */
 export function publishBlocked(v: Pick<ReleaseView, "gates">, r: Pick<ReleaseRecord, "state">): string | null {
   if (r.state === "publishing") return "Publishing now.";
-  if (r.state !== "ready") {
-    const why = (v.gates?.why ?? []).filter(Boolean);
-    return why.length ? `Publish waits until ${joinWhy(why)}.` : "Publish waits until every step before it is done.";
-  }
+  const why = (v.gates?.why ?? []).filter(Boolean);
+  // A gate that still says why holds Publish even on a ready release (a push the queue can't make yet).
+  if (r.state !== "ready" || why.length) return why.length ? `Publish waits until ${joinWhy(why)}.` : "Publish waits until every step before it is done.";
   return null;
 }
 const joinWhy = (xs: readonly string[]): string => {
@@ -153,7 +152,8 @@ export function countdown(until: string, now: number): string {
 
 /** The Overview card's line: "Latest v0.9.0 · 479 landings since", or what is open. */
 export function cardLine(v: Pick<ReleaseView, "initialized" | "latest" | "landingsSince" | "open">): string {
-  if (v.open) return `${releaseName(v.open)} in progress · ${RELEASE_CHIP[v.open.state].word.toLowerCase()}`;
+  // The card's chip says the state: the line names the release only.
+  if (v.open) return `${releaseName(v.open)} in progress`;
   if (!v.latest) return v.initialized ? "No release yet." : "Releases aren't set up for this project.";
   const n = v.landingsSince;
   return `Latest ${v.latest}${n === null || n === undefined ? "" : ` · ${n === 0 ? "no" : n} ${n === 1 ? "landing" : "landings"} since`}`;

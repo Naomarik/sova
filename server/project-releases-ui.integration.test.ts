@@ -338,3 +338,16 @@ describe("the Releases tab", () => {
     }
   });
 });
+
+describe("the Releases tab's latest release", () => {
+  test("Plan Deploy of vX sits on the latest release, never on a newer withdrawn one", async () => {
+    const history = [hist("v0.3.0", { withdrawn: { at: iso(30), why: "bad build" }, sha: sha("3") }), hist("v0.2.0", { channels: ["stable"], sha: sha("2") }), hist("v0.1.0", { sha: sha("1") })];
+    const o = await open(1280, TAB, view({ history, latest: "v0.2.0" }));
+    try {
+      await o.page.locator('[data-tag="v0.2.0"]').getByRole("button", { name: "Plan Deploy of v0.2.0" }).waitFor();
+      assert.equal(await o.page.locator('[data-tag="v0.3.0"]').getByRole("button", { name: /Plan Deploy/ }).count(), 0);
+    } finally {
+      await o.ctx.close();
+    }
+  });
+});

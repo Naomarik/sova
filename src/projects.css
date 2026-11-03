@@ -652,3 +652,6 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
   .rel-step { grid-template-columns: 24px minmax(0, 1fr); }
   .rel-step .mq-step-end { grid-column: 2; justify-content: flex-start; }
 }
+
+/* The page's title takes focus on opening a project (for screen readers); it is no keyboard stop, so it shows no ring. */
+.project-page .session-head-title[tabindex="-1"]:focus { outline: none; }

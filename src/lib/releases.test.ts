@@ -86,6 +86,7 @@ test("Publish is offered only on a ready release; otherwise the gates' reasons s
   assert.equal(publishBlocked({ gates: { checksPassed: false, stepsDone: false, notes: true, why: ["the gating checks pass.", "every step is done"] } }, { state: "checking" }), "Publish waits until the gating checks pass and every step is done.");
   assert.equal(publishBlocked({ gates: null }, { state: "preparing" }), "Publish waits until every step before it is done.");
   assert.equal(publishBlocked({ gates: null }, { state: "publishing" }), "Publishing now.");
+  assert.equal(publishBlocked({ gates: { checksPassed: true, stepsDone: true, notes: true, why: ["the queue's private names are set up"] } }, { state: "ready" }), "Publish waits until the queue's private names are set up.", "a gate's reason holds a ready release too");
 });
 
 test("the Publish confirm names what goes out: pushed to origin, or tagged on this machine only", () => {
@@ -133,7 +134,7 @@ test("the Overview card: the open release first, else the latest with its landin
   const base: Pick<ReleaseView, "initialized" | "latest" | "landingsSince" | "open"> = { initialized: true, latest: "v0.9.0", landingsSince: 479, open: null };
   assert.equal(cardLine(base), "Latest v0.9.0 · 479 landings since");
   assert.equal(cardLine({ ...base, landingsSince: 0 }), "Latest v0.9.0 · no landings since");
-  assert.equal(cardLine({ ...base, open: record({ state: "checking" }) }), "v0.10.0 in progress · checking");
+  assert.equal(cardLine({ ...base, open: record({ state: "checking" }) }), "v0.10.0 in progress", "the chip beside it says the state");
   assert.equal(cardLine({ ...base, latest: null, landingsSince: null }), "No release yet.");
   assert.equal(cardLine({ initialized: false, latest: null, landingsSince: null, open: null }), "Releases aren't set up for this project.");
 });

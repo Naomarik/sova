@@ -452,7 +452,7 @@ export class Releaser {
   private mustRecord(root: string, id: string | undefined, open = true): ReleaseRecord {
     const rec = id ? this.record(root, id) : this.openRecord(root);
     if (!rec || rec.project !== root) throw new ReleaseFailure("not-found", id ? `no release ${id} in this project` : "this project has no release open");
-    if (open && !isReleaseOpen(rec.state)) throw new ReleaseFailure("release-refused", `release ${rec.version ?? rec.id} is ${rec.state}`);
+    if (open && !isReleaseOpen(rec.state)) throw new ReleaseFailure("release-refused", `${rec.tag ? `release ${rec.tag}` : "this release"} is ${rec.state}`);
     return rec;
   }
 
@@ -487,7 +487,7 @@ export class Releaser {
     if (!s.settings) throw new ReleaseFailure("release-refused", s.problem ?? NOT_INITIALIZED);
     if (!s.manifest) throw new ReleaseFailure("release-refused", s.problem ?? "the release playbook's manifest is missing");
     const open = this.openRecord(root);
-    if (open) throw new ReleaseFailure("release-refused", `release ${open.version ?? open.id} is already open (${open.state})`);
+    if (open) throw new ReleaseFailure("release-refused", `${open.tag ? `release ${open.tag}` : "a release"} is already open (${open.state})`);
     const q = await this.deps.queue(root);
     if (req.commit && s.settings.commit) throw new ReleaseFailure("invalid-request", "commit names a landed commit for a tag-only release; this project makes a release commit");
     if (req.commit) {
@@ -889,7 +889,7 @@ export class Releaser {
     const rec = req.release ? this.mustRecord(root, req.release, false) : req.tag ? (this.records(root).find((r) => r.tag === req.tag) ?? null) : null;
     const tag = rec?.tag ?? req.tag;
     if (!tag) throw new ReleaseFailure("invalid-request", "name the release (release or tag)");
-    if (rec && rec.state !== "published") throw new ReleaseFailure("release-refused", `release ${rec.tag ?? rec.id} is ${rec.state}: only a published release is withdrawn`);
+    if (rec && rec.state !== "published") throw new ReleaseFailure("release-refused", `${rec.tag ? `release ${rec.tag}` : "this release"} is ${rec.state}: only a published release is withdrawn`);
     const history = await this.history(root, settings);
     const item = history.find((h) => h.tag === tag);
     if (!item) throw new ReleaseFailure("not-found", `no numbered release ${tag}`);
@@ -1209,7 +1209,7 @@ export class Releaser {
     for (const root of this.roots()) {
       const rec = this.openRecord(root);
       if (rec) {
-        const name = rec.tag ?? rec.version ?? rec.id;
+        const name = rec.tag ?? rec.version ?? "The open release";
         const since = (iso: string | null | undefined) => Date.parse(iso ?? rec.startedAt) || 0;
         const powerHeld = !!rec.power && Date.parse(rec.power.heldUntil) > this.now();
         if (rec.state === "ready" && !powerHeld) out.push({ root, release: rec.id, kind: "release-ready", since: since(rec.steps.find((s) => s.id === "checks")?.at), detail: `Ready to publish · ${rec.tag ?? name}` });

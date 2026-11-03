@@ -1170,7 +1170,7 @@ export class ProjectQueue {
         return { run: structuredClone(run) };
       }
       // Save: one commit on the target holding the new definition, moved to like a landing.
-      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit while ${this.releaseName()} is open: save the checks after Publish or Abandon`);
+      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: save the checks after Publish or Abandon`);
       const co = await checkoutOf(this.git, this.root, this.q.target);
       if (co) {
         const why = await dirtyWhy(this.git, co);
@@ -1956,7 +1956,7 @@ export class ProjectQueue {
   updateLocalMain(): Promise<{ kind: "updated" | "current"; head: string }> {
     return this.serial(async () => {
       if (this.landing) throw new MergeFailure("busy", "a landing is moving the target now: try again in a moment");
-      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit while ${this.releaseName()} is open: update it after Publish or Abandon`);
+      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: update it after Publish or Abandon`);
       this.landing = true;
       try {
         const r = await updateMainTip(this.git, this.root, this.q.target);
@@ -2105,20 +2105,27 @@ export class ProjectQueue {
 
   private waitingWords(): string {
     const h = this.q.release;
-    return h ? `waits for ${h.tag ?? (h.version ? `release ${h.version}` : `release ${h.id}`)} to be published or abandoned` : "waiting";
+    return h ? `waits for ${h.tag ?? (h.version ? `release ${h.version}` : "the open release")} to be published or abandoned` : "waiting";
   }
   /** A reason the hold wrote (it is rewritten as the release's tag becomes known, and dropped when the hold lifts). */
   private isWaitingWords(r: string | undefined): boolean {
     return !!r && r.startsWith("waits for ") && r.endsWith(" to be published or abandoned");
   }
+  /** The holding release as the screens name it: its tag once picked, never its id ("the open release" until then). */
   private releaseName(): string {
     const h = this.q.release;
-    return h ? `release ${h.tag ?? h.version ?? h.id}` : "a release";
+    const named = h?.tag ?? h?.version;
+    return named ? `release ${named}` : "the open release";
+  }
+  /** "while release vX is open"; before a version is picked, "while a release is open". */
+  private whileOpen(): string {
+    const name = this.releaseName();
+    return `while ${name === "the open release" ? "a release" : name} is open`;
   }
 
   /** Set or cleared, this computer's how-it-lands can't change under an open release: Publish must land as it started. */
   private refuseHowChangeWhileHeld(): void {
-    if (this.q.release) throw new MergeFailure("invalid-request", `how it lands can't change while ${this.releaseName()} is open: change it after Publish or Abandon`);
+    if (this.q.release) throw new MergeFailure("invalid-request", `how it lands can't change ${this.whileOpen()}: change it after Publish or Abandon`);
   }
 
   /** Release lands its commit on the target here and pushes it itself: a project that lands by request or by pushing a
@@ -2130,7 +2137,7 @@ export class ProjectQueue {
 
   private holdWords(): string {
     const h = this.q.release;
-    return h ? `release ${h.tag ?? h.version ?? h.id} is open: nothing is pushed until it is published or abandoned` : "";
+    return h ? `${this.whileOpen().slice("while ".length)}: nothing is pushed until it is published or abandoned` : "";
   }
   private holdFile(): string {
     return join(this.store.dir, "push-hold");
@@ -2158,7 +2165,7 @@ export class ProjectQueue {
   freezeForRelease(release: { id: string; version?: string | null; state?: string; checks?: MergeCheckDecl[] }): Promise<{ base: string }> {
     return this.serial(async () => {
       const held = this.q.release;
-      if (held && held.id !== release.id) throw new MergeFailure("busy", `release ${held.version ?? held.id} already holds the queue`);
+      if (held && held.id !== release.id) throw new MergeFailure("busy", `${this.releaseName()} already holds the queue`);
       if (!held) await this.mustLandLocally();
       const head = await this.targetHead();
       if (!head) throw new MergeFailure("invalid-request", `${this.q.target} has no commit to release`);

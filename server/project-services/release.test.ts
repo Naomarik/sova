@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import type { ProjectDef, ReleaseDecl } from "../../shared/project-contract";
@@ -217,7 +217,7 @@ describe("the freeze, the release entry and Publish (q9, a5, a6)", () => {
       assert.equal(s.ok, true);
       release();
       await until(async () => (await t.k.entry(entry.id)).state === "queued", "B back in line");
-      assert.match((await t.k.entry(entry.id)).reason ?? "", /^waits for release rl_\w+ to be published or abandoned$/);
+      assert.match((await t.k.entry(entry.id)).reason ?? "", /^waits for the open release to be published or abandoned$/);
       assert.equal(t.repo.head(), base);
       assert.equal(s.release!.release!.base, base);
     } finally {
@@ -677,7 +677,7 @@ describe("master's how-it-lands, settings saves and local-main updates against t
       const base = t.repo.head();
       await t.call("release.start", {});
       const q = await t.k.q();
-      await assert.rejects(q.setup({ command: "true" }), (e: unknown) => e instanceof MergeFailure && e.code === "invalid-request" && /^master stays on the release commit while release rl_\w+ is open: save the checks after Publish or Abandon$/.test(e.message));
+      await assert.rejects(q.setup({ command: "true" }), (e: unknown) => e instanceof MergeFailure && e.code === "invalid-request" && /^master stays on the release commit while a release is open: save the checks after Publish or Abandon$/.test(e.message));
       assert.equal(t.repo.head(), base);
     } finally {
       await t.done();
@@ -691,7 +691,7 @@ describe("master's how-it-lands, settings saves and local-main updates against t
       await q.setLandHow("local", "computer");
       const dir = join(t.repo.state, "merge-queue", projectKey(t.repo.root));
       await t.call("release.start", {});
-      await assert.rejects(q.clearLandHowOverride(), (e: unknown) => e instanceof MergeFailure && e.code === "invalid-request" && /^how it lands can't change while release rl_\w+ is open: change it after Publish or Abandon$/.test(e.message));
+      await assert.rejects(q.clearLandHowOverride(), (e: unknown) => e instanceof MergeFailure && e.code === "invalid-request" && /^how it lands can't change while a release is open: change it after Publish or Abandon$/.test(e.message));
       assert.equal(readOverride(dir)?.how, "local", "the override stays");
       assert.equal((await t.call("release.abandon", { confirm: true, why: "not now" })).ok, true);
       await q.clearLandHowOverride();
@@ -730,13 +730,32 @@ describe("master's how-it-lands, settings saves and local-main updates against t
     }
   });
 
-  test("the name follows the hold: before a version is picked it reads by the release's id, then its tag", async () => {
+  test("no id reaches a screen: before a version is picked a release reads as the open release, then by its tag", async () => {
     const t = releaseKit();
     try {
       const q = await t.k.q();
-      const s = await t.call("release.start", {});
-      const id = s.release!.release!.id;
-      assert.deepEqual(await q.saveSettings({ push: false }), { state: "waiting", release: `release ${id}` });
+      await t.call("release.start", {});
+      assert.deepEqual(await q.saveSettings({ push: false }), { state: "waiting", release: "the open release" });
+      assert.equal((await q.settings()).pendingSave?.release, "the open release");
+      assert.equal(settingsWaitingWords("the open release"), "Saves once the open release is published or abandoned");
+      // Every sentence the hold says before a version is picked, with no rl_ id in any.
+      t.repo.branch("feat/b", { "b.txt": "b\n" });
+      const { entry } = await q.add({ branch: "feat/b", by: "land-button" });
+      const said: string[] = [await until(async () => (await t.k.entry(entry.id)).reason, "B's waiting words")];
+      for (const go of [() => q.updateLocalMain(), () => q.setLandHow("local", "computer"), () => q.setup({ command: "true" })]) await go().then(() => assert.fail("refused"), (e: Error) => said.push(e.message));
+      said.push(((await t.call("release.start", {})).error?.message) ?? "");
+      said.push(readFileSync(join(t.repo.state, "merge-queue", projectKey(t.repo.root), "push-hold"), "utf8").trim());
+      const open = t.r.openRecord(t.repo.root)!;
+      open.steps[0]!.state = "failed";
+      (t.r as unknown as { save(r: unknown): void }).save(open);
+      said.push(...t.r.attentionFacts().map((f) => f.detail));
+      assert.equal(said.length, 7, JSON.stringify(said));
+      for (const line of said) assert.doesNotMatch(line, /rl_/, line);
+      assert.equal(said[0], "waits for the open release to be published or abandoned");
+      assert.equal(said[1], "master stays on the release commit while a release is open: update it after Publish or Abandon");
+      assert.match(said[6]!, /^The open release: Pick the version failed/);
+      assert.equal(said[4], "a release is already open (preparing)");
+      assert.equal(said[5], "a release is open: nothing is pushed until it is published or abandoned");
       await t.call("release.step", { step: "version", state: "done", summary: "v", facts: ["version=0.2.0"] }, t.chat);
       assert.equal((await q.settings()).pendingSave?.release, "release v0.2.0");
     } finally {
@@ -811,8 +830,8 @@ describe("master's how-it-lands, settings saves and local-main updates against t
       const r = await q.saveSettings({ push: false });
       assert.equal(r.state, "waiting");
       assert.equal(t.repo.head(), base, "the save never moves the frozen target");
-      await assert.rejects(q.updateLocalMain(), /stays on the release commit while release/);
-      await assert.rejects(q.setLandHow("push-branch", "computer"), /can't change while release/);
+      await assert.rejects(q.updateLocalMain(), /stays on the release commit while a release is open/);
+      await assert.rejects(q.setLandHow("push-branch", "computer"), /can't change while a release is open/);
       // Nothing landed: Abandon lifts the hold at once, and the waiting save is made then.
       assert.equal((await t.call("release.abandon", { confirm: true, why: "not now" })).ok, true);
       await until(() => t.repo.head() !== base, "the save made after the hold lifted");

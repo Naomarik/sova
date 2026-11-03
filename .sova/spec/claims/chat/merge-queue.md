@@ -20,6 +20,13 @@ after the method, and where the two differ, the project's wins. Both are playboo
   lockfile changes, migrations or state-file changes, follow-ups the branch left.
 - A static site's might say nothing is worth noting, since it reloads itself.
 
+Both can be read, never edited, from Settings → Merge Queue, as two labelled groups, "Sova's
+method" and "This project's" (§app.merge-queue/settings).
+
+**Its model.** A new merge thread opens on the merge-thread model the project has on this computer
+(§app.merge-queue/models), else on the new-chat default. A thread already open keeps its model
+until it is replaced.
+
 **When Sova calls it in.** The queue tells the thread itself, through no schedule and with no
 approval, when:
 - **an entry was queued.** It reads the branch's diff and its chat's intent. It may write the
@@ -105,7 +112,8 @@ follow card does (§chat.transcript-cards/placement):
   estimate, "Checking · 4 of 7 steps". These updates change the card where it stands and never move
   it.
 - **A new revision at the bottom** at each outcome: Landed, Needs a fix, Behaviour differs, Review
-  flagged, Can't tell whose failure, Drafts changed, and Sent back. A conflict the merge thread is still judging stays in
+  flagged, Can't tell whose failure, Drafts changed, Sent back, and on the host Request ready,
+  Requested, Pushed and Closed. A request's host state changes in place. A conflict the merge thread is still judging stays in
   place; its outcome is Behaviour differs or a hand-back. The newest revision is the full card; each
   earlier one folds to one line ("feat/x · Queued 2nd · earlier copy") that opens to show it as it
   was, read-only and with no actions. The newest
@@ -127,6 +135,14 @@ takes ~N min" and offers **Cancel**; while checking, "Checking · 4 of 7 steps".
   Changes** opens the changes viewer on exactly what landed: from the target before the landing to
   the landed commit, in the project's repository, even once the worktree is removed
   (§chat.changes/entry).
+- **On the host** (a project that lands by request, §app.merge-queue/requests): "Review the
+  request" with **Review Request**, the request's title and description to read and edit, and
+  **Publish**; then the request open, "PR #{n} open · checks running on GitHub", with **Open on
+  GitHub** (or GitLab), whose host state changes in place in the request's words (**Send Back to
+  Chat** on host checks failed, changes requested or conflicts); then a **Landed** revision once the
+  host merged it ("Merged on GitHub. Sova checked it merged with {target}; GitHub's merge is
+  final."), or "Closed on GitHub" with **Land Again**. Push branch only ends at **Pushed**. Land
+  Again also shows on an open request or a pushed branch once the branch has newer commits.
 - **Needs a fix** gives the reason with **See Why**, and lists the failing checks ("Unit tests · 1
   failed") with their failing tests and a link to each log. When the merge thread's explanation
   arrives later, it is added to the same card ("Merge thread: …").
@@ -159,6 +175,9 @@ into the composer or the conversation for any outcome. It speaks only about repo
 message, queue card or queue line, whatever its branches look like. The one exception is a typed
 "land it" the queue turns down for that reason, said as below.
 
+- **The host's news doesn't start a turn.** A request opened, its host state changing, merged,
+  closed, or a branch pushed: each is a hidden line, as Landed is. Host checks failing starts no
+  turn either; **Send Back to Chat** on the card does, as Send Back does.
 - **Landed and Drafts changed don't start a turn.** The chat's model reads one hidden line at its
   next turn, in a block of the chat's card note (so chats started before this shipped get it too).
   The block's first line is "From Sova's merge queue (not the user's words; nothing to answer):",

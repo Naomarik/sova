@@ -53,16 +53,24 @@ export function threadCheckout(fx: ReleaseFixture, rec: Rec): string {
   throw new Error(`release ${rec.id}: no checkout on the record (${JSON.stringify(rec.thread)})`);
 }
 
-/** Wake the release chat with a prompt that makes it run `actions` (each a tool call or a closing text). */
-export async function chatDoes(k: ReleaseServer, rec: Rec, actions: ModelAction[], say = "Go on with the release."): Promise<void> {
+/** Wake the release chat with a prompt that makes it run `actions` (each a tool call or a closing text). Resolves
+ *  with each tool call's result text, in order. `expectOk` (default): throw when a result reads as a refusal. */
+export async function chatDoes(k: ReleaseServer, rec: Rec, actions: ModelAction[], say = "Go on with the release.", o: { expectOk?: boolean } = {}): Promise<string[]> {
   const before = (await k.model.log()).length;
   await k.model.script(marker(rec), [...actions, { text: "Reported." }]);
   ok(await k.http("POST", "/api/sessions/prompt", { path: threadPath(rec), text: `${marker(rec)} ${say}` }), "prompt the release chat");
   // The turn has run every action once the closing text was popped.
-  await until(`the release chat to run ${actions.length} action(s)`, async () => {
-    const log = (await k.model.log()).slice(before);
-    return log.some((e) => e.match === marker(rec) && e.action?.text === "Reported.");
+  const log = await until(`the release chat to run ${actions.length} action(s)`, async () => {
+    const l = (await k.model.log()).slice(before).filter((e) => e.match === marker(rec));
+    return l.some((e) => e.action?.text === "Reported.") ? l : null;
   }, 120_000, 100);
+  for (const e of log) if (e.missing) throw new Error(`the release chat has no tool ${e.missing} (it has: ${e.tools.join(", ")})`);
+  const results = log.slice(1).map((e) => e.toolResults.at(-1) ?? "");
+  if (o.expectOk !== false) {
+    const bad = results.map((r, i) => [r, actions[i]] as const).filter(([r]) => /Validation failed|"ok":\s*false|forbidden|refused|error/i.test(r));
+    if (bad.length) throw new Error(`the release chat's calls were refused:\n${bad.map(([r, a]) => `${JSON.stringify(a?.args)}\n  → ${r.slice(0, 800)}`).join("\n")}`);
+  }
+  return results;
 }
 
 /** One release.step through the chat's own tool; `facts` as an object, sent as the tool's `key=value` list. */

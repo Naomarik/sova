@@ -185,7 +185,7 @@ function viewOf(x: Partial<MergeQueueView> = {}): MergeQueueView {
     ],
     heads: { target: sha("1"), pushed: sha("1") },
     ready: [{ branch: "feat/ready-one", worktree: "/w/.worktrees/sova-ready-one", commit: sha("9"), ahead: 3 }],
-    thread: { session: "/w/sessions/thread.jsonl", startedAt: iso(60) },
+    thread: { session: "/w/sessions/thread.jsonl", startedAt: iso(60), state: "idle" },
     at: iso(0),
     ...x,
   };

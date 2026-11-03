@@ -497,6 +497,28 @@ export function threadOf(root: string): { session: string; startedAt: string } |
   return rec ? { session: rec.sessionId, startedAt: new Date(rec.startedAt).toISOString() } : null;
 }
 
+/** The Merge thread card's facts for `root` (null: no thread now). `busy`: its turn is running. */
+export function threadInfo(keeper: Pick<MergeThread, "record" | "openAsk"> | null, root: string, busy: (path: string) => boolean = () => false): import("../../shared/merge-queue").MergeThreadInfo | null {
+  const rec = keeper?.record(root);
+  if (!rec) return null;
+  const ask = keeper!.openAsk(root);
+  let working = false;
+  try {
+    working = busy(rec.path);
+  } catch {
+    working = false;
+  }
+  return {
+    session: rec.sessionId,
+    path: rec.path,
+    startedAt: new Date(rec.startedAt).toISOString(),
+    ...(rec.memory ? { memory: rec.memory.type } : {}),
+    state: ask ? "asking" : working ? "working" : "idle",
+    ...(rec.lastEvent ? { lastEvent: { kind: rec.lastEvent.kind, at: new Date(rec.lastEvent.at).toISOString(), ...(rec.lastEvent.branch ? { branch: rec.lastEvent.branch } : {}) } } : {}),
+    ...(ask ? { ask } : {}),
+  };
+}
+
 /** The server wired a thread keeper: the queue may wait for a conflict judgement (none: it hands back at once). */
 export function hasMergeThread(): boolean {
   return current !== null;

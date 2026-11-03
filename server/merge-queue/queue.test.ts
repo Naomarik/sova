@@ -1183,7 +1183,7 @@ describe("the setup commit's push", () => {
 
 describe("the view's extras", () => {
   test("ready, not approved: clean worktree branches ahead of the target, without TEMP heads or entries; the thread's chat", async () => {
-    const k = makeKit({ deps: { threadOf: () => ({ session: "t1", startedAt: "2026-11-02T00:00:00.000Z" }) } });
+    const k = makeKit({ deps: { threadOf: () => ({ session: "t1", startedAt: "2026-11-02T00:00:00.000Z", state: "idle" as const }) } });
     try {
       const q = await k.q();
       await q.pause("hold");

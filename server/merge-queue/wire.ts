@@ -110,9 +110,44 @@ export function setMergeQueuesForTest(q: MergeQueues | null): void {
   queues = q;
 }
 
+let chatsStore: import("./chats").QueueChats | null = null;
+/** The server's record of the queue's own chats (chats.ts), made once. */
+async function queueChats(): Promise<import("./chats").QueueChats> {
+  if (!chatsStore) {
+    const { QueueChats } = await import("./chats");
+    chatsStore = new QueueChats(join(stateRoot(), "merge-queue", "chats.json"));
+  }
+  return chatsStore;
+}
+
+/** The view's reviewer running now and the History's rows (sync: the store is made at wiring). */
+function chatsView(root: string): Pick<MergeQueueView, "reviewing" | "chats"> {
+  const c = chatsStore;
+  if (!c) return {};
+  const keeper = threadModRef?.mergeThreadKeeper() ?? null;
+  const r = c.running(root);
+  const chats = c.list(root, keeper?.record(root), keeper?.history(root) ?? []);
+  return {
+    ...(r ? { reviewing: { run: r.run, branch: r.branch, session: r.session, path: r.path, attempt: r.attempt, startedAt: r.startedAt } } : {}),
+    ...(chats.length ? { chats } : {}),
+  };
+}
+
+/** The run's newest reviewer chat, for a branch's Worktrees row. */
+export function reviewerOfRun(root: string, run: string | undefined): WorktreeQueueInfo["reviewer"] | undefined {
+  if (!run || !chatsStore) return undefined;
+  const r = [...chatsStore.reviewers(root)].reverse().find((x) => x.run === run);
+  if (!r) return undefined;
+  return { session: r.session, path: r.path, state: r.endedAt ? (r.verdict ?? "failed") : "running", ...(r.cleared ? { cleared: true as const } : {}) };
+}
+
+let threadModRef: typeof import("./thread") | null = null;
+
 /** The merge verbs the thread's questions, Start Fresh and the History's clear go through (asks.ts, thread.ts, chats.ts). */
-async function threadVerbDeps(served: { projectIdOf(root: string): string | null }): Promise<Pick<import("./routes").MergerDeps, "threadAsk" | "askOf" | "threadAnswer" | "threadFresh">> {
+async function threadVerbDeps(served: { projectIdOf(root: string): string | null }): Promise<Pick<import("./routes").MergerDeps, "threadAsk" | "askOf" | "threadAnswer" | "threadFresh" | "clearChats">> {
   const threadMod = await import("./thread");
+  threadModRef = threadMod;
+  await queueChats();
   const keeper = () => {
     const k = threadMod.mergeThreadKeeper();
     if (!k) throw new MergeFailure("unsupported", "no merge thread runs on this server");
@@ -153,6 +188,22 @@ async function threadVerbDeps(served: { projectIdOf(root: string): string | null
     },
     async threadFresh(root) {
       return keeper().startFresh(root);
+    },
+    async clearChats(root, which) {
+      const [{ clearQueueChats }, { archiveSession, cleanupSessions }] = await Promise.all([import("./chats"), import("../sessions-index")]);
+      const k = threadMod.mergeThreadKeeper();
+      return clearQueueChats(await queueChats(), root, k?.record(root), k?.history(root) ?? [], which, {
+        async archive(path) {
+          const r = await archiveSession(path, true);
+          return r.ok ? { ok: true } : { ok: false, error: r.error };
+        },
+        async remove(paths) {
+          const r = await cleanupSessions({ mode: "paths", paths, dryRun: false }, { queueChats: true });
+          const refused = new Map((r.refused ?? []).map((x) => [x.path, x.reason]));
+          // A file already gone counts as cleared; any other refusal keeps the row.
+          return paths.filter((p) => !refused.has(p) || refused.get(p) === "Session file not found.");
+        },
+      });
     },
   };
 }
@@ -284,6 +335,12 @@ export async function startMergeQueue(
       return null;
     }
   };
+  const { isSessionBusy: busyOf } = await import("../chat-handle");
+  const chatsRec = await queueChats();
+  review.setReviewerRecorder({
+    started: (o) => chatsRec.reviewerStarted(o.root, { session: o.session, path: o.path, run: o.run, branch: o.branch, attempt: o.attempt }),
+    ended: (o) => chatsRec.reviewerEnded(o.root, o.session, { ...(o.verdict ? { verdict: o.verdict } : {}), ...(o.why ? { why: o.why } : {}) }),
+  });
   if (opts.request) {
     await threadMod.startMergeThread(opts.request);
     const { startMergeReviewer } = await import("./reviewer");
@@ -373,7 +430,8 @@ export async function startMergeQueue(
     ownerOf: async (_root, _branch, worktree) => (worktree ? worktreeOwnerOf(worktree) : null),
     thread,
     draftsHash: (dir) => draftsHash(dir),
-    threadOf: (root) => (threadMod as { threadOf?: (r: string) => { session: string; startedAt: string } | null }).threadOf?.(root) ?? null,
+    threadOf: (root) => threadMod.threadInfo(threadMod.mergeThreadKeeper(), root, busyOf),
+    chatsOf: (root) => chatsView(root),
     // Landing by request (al_3): the docs commit goes into a chat's folder only while it is idle, read as the worktree
     // readiness reads it (server/merge-readiness.ts runningNow: busy, working, or a worker working); an unknown chat
     // can't be interrupted. A request's title is its chat's.
@@ -426,7 +484,10 @@ export async function startMergeQueue(
       return { mergeProject: { id, root: p.root, target: s.target, checks: s.checks, review: false, ...(s.invalid ? { invalid: s.invalid } : {}) } };
     }
     const v = await (await q.get(p.root)).cachedView();
-    const queue = worktreeQueueInfo(v, branch);
+    const info = worktreeQueueInfo(v, branch);
+    // Open Reviewer Chat on the branch's own Worktrees row: its run's newest reviewer, running or done.
+    const reviewer = info ? reviewerOfRun(p.root, info.run) : undefined;
+    const queue = info && reviewer ? { ...info, reviewer } : info;
     const stats = await statsOf(p.root, v.heads.target, branch);
     return { ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.invalid ? { invalid: v.invalid } : {}), ...(v.paused ? { paused: v.paused.why } : {}) }, ...(stats ? { mergeStats: stats } : {}), mergeServed: true };
   };

@@ -42,6 +42,23 @@ export interface ReviewDeps {
 }
 
 let starter: StartReviewer | null = null;
+
+/** Who keeps the run's reviewer chats (chats.ts on the server; none in tests): told as each starts and ends. */
+export interface ReviewerRecorder {
+  started(o: { root: string; run: string; branch: string; session: string; path: string; attempt: number }): void;
+  ended(o: { root: string; session: string; verdict?: ReviewVerdict["verdict"]; why?: string }): void;
+}
+let recorder: ReviewerRecorder | null = null;
+export function setReviewerRecorder(r: ReviewerRecorder | null): void {
+  recorder = r;
+}
+const record = (fn: () => void) => {
+  try {
+    fn();
+  } catch (err) {
+    console.warn(`[merge-reviewer] not recorded: ${err instanceof Error ? err.message : String(err)}`);
+  }
+};
 /** The server wires how a reviewer chat starts (merge-thread's createChat on the reviewer profile). */
 export function setReviewerStarter(fn: StartReviewer | null): void {
   starter = fn;
@@ -119,7 +136,10 @@ export async function reviewStep(
       handle = await start({ ...o, text, attempt });
       w.sessionId = handle.sessionId;
       o.log(`reviewer chat ${handle.sessionId}\n`);
+      const h = handle;
+      if (h.path) record(() => recorder?.started({ root: o.root, run: o.runId, branch: o.branch, session: h.sessionId, path: h.path!, attempt }));
       const a = await answer;
+      record(() => recorder?.ended({ root: o.root, session: h.sessionId, ...("failed" in a ? { why: a.failed } : { verdict: a.verdict }) }));
       if ("failed" in a) {
         why = a.failed;
         o.log(`reviewer ${attempt}: ${a.failed}\n`);

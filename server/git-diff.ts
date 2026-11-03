@@ -18,7 +18,21 @@
 //    <sha>"; a fast-forward (its sha is the branch tip) against the tracked worktree's base when
 //    that is an ancestor of the tip and not the tip (mergedReviewBase's fallback), labelled
 //    "<base> (created from)", else against its first parent;
-//  - dirty: the working tree (index included) against HEAD, untracked files as added.
+//  - dirty: the working tree (index included) against HEAD, untracked files as added;
+//  - queue: a Merge Queue row's branch with no session, both sides from the queue's own records
+//    (QueueSubject, server/merge-queue/wire.ts queueSubjectOf): a ready branch's worktree (a
+//    worktree of the project's main checkout, from its own `git worktree list`) at its tip against
+//    the merge-base with the queue's target; an entry's pinned commit against the same; a landed
+//    entry from the target before it to the landing commit. The client names only the project id
+//    and the entry id or branch name.
+//
+// Where an unpinned worktree's branch lands: the base rule's base branch is the branch the project's
+// merge queue lands into (merge.target, else its main checkout's branch), not the worktree's
+// tracked `baseBranch`; with no registered project, master, else main (reviewBase's own fallbacks).
+//
+// Uncommitted files ride along (an unpinned worktree scope with `uncommitted`, and a queue scope's
+// ready branch): when the worktree has content changes against HEAD or untracked files, the head
+// side is its working tree, and each such file is marked `uncommitted`. Their origins are not read.
 //
 // Which folders. Every folder must be one the named session already knows: its header cwd, the
 // cwds of its workers, every worktree its `worktrees` entries ever tracked and every merge card's
@@ -187,13 +201,25 @@ export function scopeFromQuery(q: (name: string) => string | undefined, all: (na
   const kind = q("kind");
   const sessionPath = q("session");
   const path = q("path");
+  if (kind === "queue") {
+    const project = q("project");
+    const entry = q("entry");
+    const branch = q("branch");
+    if (!project || project.length > 4096 || /[\x00-\x1f\x7f]/.test(project)) throw new DiffError("Invalid ?project= (a project id)");
+    if (!!entry === !!branch) throw new DiffError("Name exactly one of ?entry= (a queue entry) or ?branch=");
+    if (entry && !/^[\w-]{1,64}$/.test(entry)) throw new DiffError("Invalid ?entry= (a queue entry id)");
+    if (branch && (branch.length > 255 || branch.startsWith("-") || !/^[\w./+@-]+$/.test(branch) || branch.includes(".."))) throw new DiffError("Invalid ?branch= (a branch name)");
+    const paths = pathsFromQuery(all("paths"));
+    return { kind, project, ...(entry ? { entry } : { branch: branch! }), ...(paths ? { paths } : {}) };
+  }
   if (!sessionPath) throw new DiffError("Missing ?session= (a session path)");
   if (!path) throw new DiffError("Missing ?path=");
   const paths = pathsFromQuery(all("paths"));
   const narrowed = paths ? { paths } : {};
   if (kind === "worktree") {
     const pin = pinFromQuery(q);
-    return { kind, sessionPath, worktreePath: path, ...(pin ? { pin } : {}), ...narrowed };
+    const uncommitted = !pin && q("uncommitted") === "1" ? { uncommitted: true as const } : {};
+    return { kind, sessionPath, worktreePath: path, ...(pin ? { pin } : {}), ...uncommitted, ...narrowed };
   }
   if (kind === "dirty") return { kind, sessionPath, cwd: path, ...narrowed };
   if (kind === "commit" || kind === "merge") {
@@ -201,7 +227,7 @@ export function scopeFromQuery(q: (name: string) => string | undefined, all: (na
     if (!sha || !HEX.test(sha) || sha.length < 4 || sha.length > 64) throw new DiffError("Invalid ?sha= (hex, 4 to 64 characters)");
     return { kind, sessionPath, repoPath: path, sha: sha.toLowerCase(), ...narrowed };
   }
-  throw new DiffError("Invalid ?kind= (worktree, commit, merge or dirty)");
+  throw new DiffError("Invalid ?kind= (worktree, commit, merge, dirty or queue)");
 }
 
 /** `&paths=`: each a repository-relative file or folder as the show_changes tool checks them, at
@@ -240,7 +266,18 @@ interface Resolved {
   base: DiffSide & { treeish: string };
   /** A commit oid, or null for the working tree. */
   head: DiffSide & { treeish: string | null };
+  /** The head is a working tree beyond the branch's commits: the files changed since HEAD (untracked included). */
+  uncommitted?: ReadonlySet<string>;
 }
+
+/** What a queue scope names, as the merge queue's records say it (server/merge-queue/wire.ts queueSubjectOf). */
+export type QueueSubject =
+  /** A ready branch: checked out at `worktree`, a worktree of the project's main checkout `root`. */
+  | { kind: "ready"; root: string; target: string; branch: string; worktree: string }
+  /** An entry in or through the line, not landed: its pinned commit. */
+  | { kind: "entry"; root: string; target: string; branch: string; commit: string }
+  /** A landed entry: the target before it (`from`) to the landing commit. */
+  | { kind: "landed"; root: string; target: string; branch: string; sha: string; from: string };
 
 /** What a session file names: folders it knows, its tracked worktrees (for baseBranch) and its
     merge cards (the only merges a merge scope may name). */
@@ -308,6 +345,17 @@ export interface DiffDeps {
   queueLandings?: (sessionPath: string) => Promise<QueueLanding[]>;
   /** ORIGINS_DEADLINE_MS, smaller for tests. */
   originsDeadlineMs?: number;
+  /** A queue scope's subject, from the merge queue's records; null: no such project, entry or ready branch. */
+  queueSubject?: (project: string, sel: { entry?: string; branch?: string }) => Promise<QueueSubject | null>;
+  /** The branch the project holding repository `top` lands into (its merge queue's target); null: none known. */
+  landingTarget?: (top: string) => Promise<string | null>;
+}
+
+async function queueSubjectOf(project: string, sel: { entry?: string; branch?: string }): Promise<QueueSubject | null> {
+  return (await import("./merge-queue/wire")).queueSubjectOf(project, sel);
+}
+async function landingTargetOf(top: string): Promise<string | null> {
+  return (await import("./merge-queue/wire")).landingTargetOf(top);
 }
 
 export class GitDiffs {
@@ -318,6 +366,8 @@ export class GitDiffs {
   private readonly originsDeadlineMs: number;
   private readonly sessionKnownFn: (sessionPath: string) => Promise<Known | null>;
   private readonly queueLandingsFn: (sessionPath: string) => Promise<QueueLanding[]>;
+  private readonly queueSubjectFn: NonNullable<DiffDeps["queueSubject"]>;
+  private readonly landingTargetFn: NonNullable<DiffDeps["landingTarget"]>;
   private readonly sessions = new Map<string, { mtimeMs: number; size: number; value: Known }>();
   private readonly emptyTrees = new Map<string, string>();
   /** Commit oids are immutable, so a comparison's topological order never changes. */
@@ -333,6 +383,8 @@ export class GitDiffs {
     this.originsDeadlineMs = deps.originsDeadlineMs ?? ORIGINS_DEADLINE_MS;
     this.sessionKnownFn = deps.sessionKnown ?? ((p) => this.readKnown(p));
     this.queueLandingsFn = deps.queueLandings ?? queueLandingsOf;
+    this.queueSubjectFn = deps.queueSubject ?? queueSubjectOf;
+    this.landingTargetFn = deps.landingTarget ?? landingTargetOf;
   }
 
   private async git(cwd: string, args: readonly string[], cap = LIST_CAP): Promise<RawGitResult> {
@@ -373,7 +425,7 @@ export class GitDiffs {
   }
 
   /** The repository top level of a client-named folder the session knows, or a DiffError. */
-  private async trustedTop(scope: DiffScope): Promise<{ top: string; known: Known; card?: WorktreeMergeDetails; landing?: QueueLanding }> {
+  private async trustedTop(scope: Exclude<DiffScope, { kind: "queue" }>): Promise<{ top: string; known: Known; card?: WorktreeMergeDetails; landing?: QueueLanding }> {
     const known = await this.sessionKnownFn(scope.sessionPath);
     if (!known) throw new DiffError("Unknown session");
     const raw = scope.kind === "worktree" ? scope.worktreePath : scope.kind === "commit" || scope.kind === "merge" ? scope.repoPath : scope.cwd;
@@ -457,8 +509,83 @@ export class GitDiffs {
     return r.code === 0 && isOid(oid) ? oid : null;
   }
 
+  /** A full commit oid for `ref` in `top`, or a 404. */
+  private async commitOid(top: string, ref: string): Promise<string> {
+    const r = await this.git(top, ["rev-parse", "--verify", "-q", "--end-of-options", `${ref}^{commit}`]);
+    const oid = r.stdout.toString("utf8").trim();
+    if (r.code !== 0 || !isOid(oid)) throw new DiffError("No such commit in that repository", 404);
+    return oid;
+  }
+
+  /** `head` (a commit on `branch`) against its merge-base with `target`, by the shared base rule; once
+      merged into it, what its merge brought in. */
+  private async againstTarget(top: string, head: string, branch: string | null, target: string | null, created?: string): Promise<{ base: Resolved["base"] }> {
+    const rb = await reviewBase(this.gitLines, top, { head, branch, tracked: { ...(target ? { baseBranch: target } : {}), ...(created ? { base: created } : {}) } });
+    if (!rb.ok) {
+      if (rb.refusal === "on-base-branch" && branch) return { base: { label: `${branch} (merge-base)`, oid: head, treeish: head } };
+      throw new DiffError(
+        rb.refusal === "detached"
+          ? "HEAD is not on a branch: no base to compare it against"
+          : rb.refusal === "no-history"
+            ? "No common history with the base branch, and no commit it was created from"
+            : "No base branch (master, main or origin/HEAD) in that repository, and no commit it was created from",
+        404,
+      );
+    }
+    if (!isOid(rb.base)) throw new DiffError("could not resolve the base", 500);
+    return { base: { label: rb.how === "merge-base" ? `${rb.ref ?? rb.label} (merge-base)` : rb.label, oid: rb.base, treeish: rb.base } };
+  }
+
+  /** The files of the work tree at `top` that differ from its HEAD by content, untracked ones included. */
+  private async uncommittedOf(top: string, head: string): Promise<Set<string>> {
+    const [num, untracked] = await Promise.all([this.git(top, ["diff-index", "--numstat", "-z", "--no-ext-diff", "--no-textconv", head, "--"]), this.untracked(top)]);
+    if (num.code !== 0 && !num.cut) throw new DiffError(gitError("diff-index --numstat", num), 500);
+    return new Set([...parseNumstatZ(num.stdout.toString("utf8")).keys(), ...untracked.paths]);
+  }
+
+  /** With uncommitted files in `top`, the head side becomes its working tree, those files named. */
+  private async withWorkTree(r: Resolved): Promise<Resolved> {
+    if (!r.head.oid) return r;
+    const dirty = await this.uncommittedOf(r.top, r.head.oid);
+    if (!dirty.size) return r;
+    return { ...r, head: { label: `${r.head.label} with uncommitted files`, treeish: null }, uncommitted: dirty };
+  }
+
+  /** A queue scope: both sides from the queue's records, never a ref from the client. */
+  private async resolveQueue(scope: Extract<DiffScope, { kind: "queue" }>): Promise<Resolved> {
+    const subject = await this.queueSubjectFn(scope.project, { ...(scope.entry ? { entry: scope.entry } : {}), ...(scope.branch ? { branch: scope.branch } : {}) }).catch((err) => {
+      if (err instanceof DiffError) throw err;
+      return null;
+    });
+    if (!subject) throw new DiffError(scope.entry ? "No such entry in that project's merge queue" : "That branch is not checked out in a worktree of that project", 404);
+    if (subject.kind === "landed") {
+      const top = canonical(subject.root);
+      if (!(await isDir(top))) throw new DiffError("That folder does not exist", 404);
+      const [oid, from] = [await this.commitOid(top, subject.sha), await this.commitOid(top, subject.from)];
+      return { scope, top, base: { label: `${subject.target} before ${oid.slice(0, 7)}`, oid: from, treeish: from }, head: { label: subject.branch, oid, treeish: oid } };
+    }
+    if (subject.kind === "entry") {
+      const top = canonical(subject.root);
+      if (!(await isDir(top))) throw new DiffError("That folder does not exist", 404);
+      const oid = await this.commitOid(top, subject.commit);
+      const { base } = await this.againstTarget(top, oid, subject.branch, subject.target);
+      return { scope, top, base, head: { label: `${subject.branch} at ${oid.slice(0, 7)}`, oid, treeish: oid } };
+    }
+    const dir = canonical(subject.worktree);
+    if (!(await isDir(dir))) throw new DiffError("That folder does not exist", 404);
+    const top = await this.topOf(dir);
+    if (!top) throw new DiffError("That folder is not in a git work tree", 404);
+    const head = await this.headOid(top);
+    if (!head) throw new DiffError("No commits on HEAD", 404);
+    const symbolic = (await this.git(top, ["symbolic-ref", "-q", "HEAD"])).stdout.toString("utf8").trim();
+    if (symbolic !== `refs/heads/${subject.branch}`) throw new DiffError("That worktree is no longer on that branch", 404);
+    const { base } = await this.againstTarget(top, head, subject.branch, subject.target);
+    return this.withWorkTree({ scope, top, base, head: { label: subject.branch, oid: head, treeish: head } });
+  }
+
   /** Resolve every ref of the scope, server-side. */
   async resolve(scope: DiffScope): Promise<Resolved> {
+    if (scope.kind === "queue") return this.resolveQueue(scope);
     const { top, known, card, landing } = await this.trustedTop(scope);
     if (scope.kind === "merge" && landing) {
       // Exactly what the queue landed: the target before it to the landing commit.
@@ -544,23 +671,12 @@ export class GitDiffs {
     const symbolic = (await this.git(top, ["symbolic-ref", "-q", "HEAD"])).stdout.toString("utf8").trim();
     const branch = symbolic.startsWith("refs/heads/") ? symbolic.slice("refs/heads/".length) : null;
     const tracked = known.trees.filter((t) => canonical(t.path) === canonical(top)).at(-1);
-    // The one rule the show_changes tool shares; once merged, what the merge brought in.
-    const rb = await reviewBase(this.gitLines, top, { head, branch, tracked: tracked ? { baseBranch: tracked.baseBranch, base: tracked.base } : undefined });
-    const headSide = { label: branch ?? head.slice(0, 7), oid: head, treeish: head };
-    if (!rb.ok) {
-      if (rb.refusal === "on-base-branch" && branch) return { scope, top, base: { label: `${branch} (merge-base)`, oid: head, treeish: head }, head: headSide };
-      throw new DiffError(
-        rb.refusal === "detached"
-          ? "HEAD is not on a branch: no base to compare it against"
-          : rb.refusal === "no-history"
-            ? "No common history with the base branch, and no commit it was created from"
-            : "No base branch (master, main or origin/HEAD) in that repository, and no commit it was created from",
-        404,
-      );
-    }
-    if (!isOid(rb.base)) throw new DiffError("could not resolve the base", 500);
-    const label = rb.how === "merge-base" ? `${rb.ref ?? rb.label} (merge-base)` : rb.label;
-    return { scope, top, base: { label, oid: rb.base, treeish: rb.base }, head: headSide };
+    // The branch it lands on (the project's merge queue target), else master, else main: the one rule the
+    // show_changes tool shares, with that base branch; once merged, what the merge brought in.
+    const target = await this.landingTargetFn(top).catch(() => null);
+    const { base } = await this.againstTarget(top, head, branch, target, tracked?.base);
+    const out: Resolved = { scope, top, base, head: { label: branch ?? head.slice(0, 7), oid: head, treeish: head } };
+    return scope.kind === "worktree" && scope.uncommitted ? this.withWorkTree(out) : out;
   }
 
   /** The diff command's leading args for this comparison (before options and pathspecs). */
@@ -601,6 +717,13 @@ export class GitDiffs {
       for (const path of untracked.paths) if (!listed.has(path) && inPaths(path, paths)) files.push(await this.untrackedSummary(r.top, path, budget));
       files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
     }
+    let uncommitted = 0;
+    if (r.uncommitted)
+      for (const f of files)
+        if (r.uncommitted.has(f.path) || (f.oldPath !== undefined && r.uncommitted.has(f.oldPath)) || f.untracked) {
+          f.uncommitted = true;
+          uncommitted++;
+        }
     const totals = { files: files.length, added: 0, removed: 0 };
     for (const f of files) {
       totals.added += f.added;
@@ -616,6 +739,7 @@ export class GitDiffs {
       generatedAt: this.now(),
     };
     if (cut || files.length > this.maxFiles) out.truncated = true;
+    if (uncommitted) out.uncommitted = uncommitted;
     return out;
   }
 

@@ -238,6 +238,25 @@ export class WorkerSessions {
     return this.flagged(listed);
   }
 
+  /**
+   * The session that runs worker `path`: a live record that lists it among its workers (that record's own session),
+   * else a session file whose completion message names it. Null when none is known. Reads only what the last refresh
+   * scanned and the live records: no file is read here.
+   */
+  parentOf(path: string): string | null {
+    const listed = new Set(this.entries.keys());
+    const byId = new Map([...listed].map((p) => [this.idOf(p), p] as const));
+    let live: RawLiveRecord[] = [];
+    try {
+      live = this.live();
+    } catch {
+      // unreadable live dir: the files' own records still stand
+    }
+    for (const r of live) if (r.sessionFile && r.sessionFile !== path && liveWorkerRefs([r]).some((ref) => resolveRef(ref, listed, byId) === path)) return r.sessionFile;
+    for (const [p, e] of this.entries) if (p !== path && e.refs.some((ref) => resolveRef(ref, listed, byId) === path)) return p;
+    return null;
+  }
+
   /** One file's flag, for a single-summary read: scans just that file and resolves against the
    *  entries of the last refresh (plus this file). */
   async isWorker(path: string): Promise<boolean> {

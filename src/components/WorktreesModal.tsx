@@ -9,6 +9,8 @@ import { announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
 import type { MergeUnclear } from "../../shared/merge-queue";
 import { Icon, trapFocus } from "./ui";
+import { canReviewChanges } from "../lib/worktrees";
+import { ReviewChangesButton } from "./ReviewChanges";
 
 /** A tracked worktree with the queue's facts (SessionWorktreeInfo.queue, filled by the server). */
 export type QueueWorktree = SessionWorktreeInfo & { queue?: WorktreeQueueInfo; mergeProject?: MergeProjectInfo };
@@ -111,8 +113,11 @@ export function WorktreeQueueRow(props: {
   onChanged?(): void;
   /** More chips after the state (the pane's: workers, .agent). */
   chips?: JSX.Element;
-  /** More actions after the row's own (the pane's Review Changes). */
+  /** More actions after the row's own. */
   extra?: JSX.Element;
+  /** The chat whose worktree it is: the row gets Review Changes (an active worktree with commits of its own), the
+      branch against where it lands with its uncommitted files marked (§chat.changes/entry). */
+  review?: { sessionPath: string; cwd?: string };
 }) {
   const w = () => props.worktree;
   const row = () => queueRow(w());
@@ -156,7 +161,10 @@ export function WorktreeQueueRow(props: {
           {w().branch}
         </p>
         <Show when={props.showPath !== false}>
-          <p class="list-meta text-mono wt-queue-path">{tildePath(w().path, home())}</p>
+          <p class="list-meta text-mono wt-queue-path" title={w().path}>
+            <span class="wt-queue-path-full">{tildePath(w().path, home())}</span>
+            <span class="wt-queue-path-last">{w().path.replace(/\/+$/, "").split("/").pop() || w().path}</span>
+          </p>
         </Show>
         <div class="wt-queue-facts">
           <QueueChip row={row()} />
@@ -200,6 +208,14 @@ export function WorktreeQueueRow(props: {
         <Show when={error()}>{(m) => <p class="list-meta wt-queue-error" role="alert">{m()}</p>}</Show>
       </div>
       <div class="wt-queue-act">
+        <Show when={props.review && canReviewChanges(w())}>
+          <ReviewChangesButton
+            branch={w().branch}
+            class="wt-queue-review"
+            scope={() => ({ kind: "worktree", sessionPath: props.review!.sessionPath, worktreePath: w().path, uncommitted: true })}
+            cwd={props.review!.cwd}
+          />
+        </Show>
         <Show when={row().action === "land"}>
           <LandSplit branch={w().branch} review={review()} busy={busy()} onLand={doLand} onWithoutSpecs={() => setAskSpecs(true)} />
         </Show>
@@ -235,24 +251,25 @@ export function WorktreeQueueRow(props: {
 }
 
 /** The rows, in the order the chat tracks them. */
-export function WorktreeQueueList(props: { rows: QueueWorktree[]; showPath?: boolean; onChanged?(): void }) {
+export function WorktreeQueueList(props: { rows: QueueWorktree[]; showPath?: boolean; onChanged?(): void; review?: { sessionPath: string; cwd?: string } }) {
   return (
     <ul class="list wt-queue-list">
-      <For each={props.rows}>{(w) => <WorktreeQueueRow worktree={w} showPath={props.showPath} onChanged={props.onChanged} />}</For>
+      <For each={props.rows}>{(w) => <WorktreeQueueRow worktree={w} showPath={props.showPath} onChanged={props.onChanged} review={props.review} />}</For>
     </ul>
   );
 }
 
 /** The composer control's modal: this chat's worktrees, each with its one action, and View Merge Queue. */
-export function WorktreesModal(props: { title: string; rows: QueueWorktree[]; onClose(): void; onChanged?(): void }) {
+export function WorktreesModal(props: { title: string; rows: QueueWorktree[]; onClose(): void; onChanged?(): void; review?: { sessionPath: string; cwd?: string } }) {
   const summary = () => rowsSummary(props.rows.map((w) => queueRow(w)));
   const project = () => props.rows.find((w) => w.mergeProject)?.mergeProject;
   const target = () => project()?.target ?? "the target branch";
   const href = () => queueHrefOf(props.rows);
   // Escape closes it wherever focus is (an action's button goes busy and can drop focus to the page),
-  // unless a menu inside is open: the key is that menu's (it closes itself).
+  // unless a menu inside is open (the key is that menu's: it closes itself) or the changes viewer is open over it
+  // (the key closes the viewer, and this stays).
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector(":popover-open")) props.onClose();
+    if (e.key === "Escape" && !e.defaultPrevented && !document.querySelector(":popover-open") && !document.querySelector(".changes-dialog")) props.onClose();
   };
   document.addEventListener("keydown", onKey);
   onCleanup(() => document.removeEventListener("keydown", onKey));
@@ -286,7 +303,7 @@ export function WorktreesModal(props: { title: string; rows: QueueWorktree[]; on
           <Show when={project()?.paused}>
             {(why) => <p class="text-caption wt-queue-paused">The queue is paused: {why()}. Land still takes your approval; it's checked once the queue resumes.</p>}
           </Show>
-          <WorktreeQueueList rows={props.rows} onChanged={props.onChanged} />
+          <WorktreeQueueList rows={props.rows} onChanged={props.onChanged} review={props.review} />
         </div>
         <div class="modal-foot">
           <Show when={href()}>

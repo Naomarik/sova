@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import { scratchRoot } from "../test-scratch";
-import { checksOf, envOf, failingFilesIn, planChecks, readCheckOut, templateVarsOf, testKey } from "./checks";
+import { checksOf, envOf, failingFilesIn, planChecks, readCheckOut, rerunArgvOf, templateVarsOf, testKey } from "./checks";
 
 const svc = { web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } } };
 const def = (extra: Record<string, unknown>): ProjectDef => parseDefinition(JSON.stringify({ version: 1, services: svc, ...extra }));
@@ -123,5 +123,28 @@ describe("what a run checks", () => {
 
   test("failing files from a runner's own output, relative only", () => {
     expect(failingFilesIn("FAIL server/a.test.ts (exit 1)\nnot ok 2 - src/b.test.ts\n✖ /abs/c.test.ts\n")).toEqual(["server/a.test.ts", "src/b.test.ts"]);
+  });
+});
+
+describe("a rerun of named files", () => {
+  const def = (testRun?: string[]) => ({ test: testRun ? { run: testRun } : undefined }) as unknown as Parameters<typeof rerunArgvOf>[0];
+  test("a check that is the test command with selection flags reruns the test command alone (any wrapper kept)", () => {
+    const run = ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs", "--integration", "--landing", "--base", "${merge.base}"];
+    const rendered = run.map((a) => (a === "${merge.base}" ? "abc123" : a));
+    expect(rerunArgvOf(def(["node", "scripts/run-tests.mjs"]), { run }, rendered)).toEqual(["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs"]);
+  });
+  test("anything else keeps its own command and selectors", () => {
+    expect(rerunArgvOf(def(["node", "scripts/run-tests.mjs"]), { run: ["node", "checks/unit.mjs"], select: ["x"] }, ["node", "checks/unit.mjs"])).toEqual(["node", "checks/unit.mjs", "x"]);
+    expect(rerunArgvOf(def(), { run: ["pytest", "-m", "slow"] }, ["pytest", "-m", "slow"])).toEqual(["pytest", "-m", "slow"]);
+    // The check IS the test command (no flags after it): unchanged.
+    expect(rerunArgvOf(def(["npm", "test"]), { run: ["npm", "test"] }, ["npm", "test"])).toEqual(["npm", "test"]);
+  });
+  test("SOVA_OUT's ranFiles is read when a runner writes it, and absent when it doesn't", () => {
+    const dir = scratchRoot("mq-ran-");
+    const f = join(dir, "o.json");
+    writeFileSync(f, JSON.stringify({ passed: 1, failed: 0, ranFiles: ["a.test.ts", "a.test.ts", 3] }));
+    expect(readCheckOut(f)?.ranFiles).toEqual(["a.test.ts"]);
+    writeFileSync(f, JSON.stringify({ passed: 1, failed: 0 }));
+    expect(readCheckOut(f)?.ranFiles).toBeUndefined();
   });
 });

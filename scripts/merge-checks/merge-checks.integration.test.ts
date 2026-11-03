@@ -22,11 +22,19 @@ function repo() {
   return { root, tree, git, base };
 }
 
+/** This process's environment without what makes a check run as the queue's own (SOVA_VERB=merge, set when these tests
+ *  run as a merge check themselves): a case that wants it sets it. */
+function cleanEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.SOVA_VERB;
+  return env;
+}
+
 function runCheck(name: string, tree: string, root: string, changed: string[], base: string, extra: Record<string, string> = {}) {
   const list = join(root, `changed-${name}.txt`);
   writeFileSync(list, changed.join("\n"));
   const out = join(root, `out-${name}-${Math.random().toString(36).slice(2)}.json`);
-  const r = spawnSync(process.execPath, [script(name)], { cwd: tree, encoding: "utf8", env: { ...process.env, SOVA_MERGE_BASE: base, SOVA_MERGE_CHANGED: list, SOVA_OUT: out, ...extra } });
+  const r = spawnSync(process.execPath, [script(name)], { cwd: tree, encoding: "utf8", env: { ...cleanEnv(), SOVA_MERGE_BASE: base, SOVA_MERGE_CHANGED: list, SOVA_OUT: out, ...extra } });
   let report: Record<string, unknown> | null = null;
   try { report = JSON.parse(readFileSync(out, "utf8")); } catch { /* none */ }
   return { code: r.status, out: `${r.stdout}${r.stderr}`, report };
@@ -57,7 +65,7 @@ describe("merge checks", () => {
     const list = join(root, "c.txt");
     writeFileSync(list, "a.txt");
     const out = join(root, "e2e-out.json");
-    const r = spawnSync(process.execPath, [script("e2e"), "../evil.mjs", "scripts/e2e/missing.mjs"], { cwd: tree, encoding: "utf8", env: { ...process.env, SOVA_MERGE_BASE: base, SOVA_MERGE_CHANGED: list, SOVA_OUT: out } });
+    const r = spawnSync(process.execPath, [script("e2e"), "../evil.mjs", "scripts/e2e/missing.mjs"], { cwd: tree, encoding: "utf8", env: { ...cleanEnv(), SOVA_MERGE_BASE: base, SOVA_MERGE_CHANGED: list, SOVA_OUT: out } });
     expect(r.status).toBe(1);
     expect(r.stdout).not.toContain("pnpm run build");
     const rep = JSON.parse(readFileSync(out, "utf8"));

@@ -133,6 +133,10 @@ const cache = new Map<string, CacheEntry>();
  *  purpose: the flag depends on OTHER files (owners append refs) and on the live registry, so it
  *  is recomputed on every listing, never baked into a file's cached head facts. */
 const workerSessions = new WorkerSessions({ idOf: (p) => idOf(p) });
+/** The session that runs worker `path` (worker-sessions.ts parentOf), from the last listing's scans; null: none known. */
+export async function workerParentOf(path: string): Promise<string | null> {
+  return workerSessions.parentOf(path);
+}
 
 /** The worker-session paths among `files`; best-effort — a failure hides nothing. `changed`: only
  *  these (and files never scanned) can have changed since the last refresh. */

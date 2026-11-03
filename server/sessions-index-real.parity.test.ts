@@ -85,7 +85,7 @@ if (!all.length) {
   // Merge readiness reads Git and runs the spec tools on the trees the sessions name, in the
   // background: on copied sessions those are the user's real worktrees. Made inert here (no
   // answer ever arrives, nothing runs, nothing is sent), so both builds read the same (absent)
-  // readiness; readiness itself is compared in sessions-index.parity.test.ts with Git faked.
+  // readiness.
   const readiness = await import("./merge-readiness");
   readiness.configureReadiness({
     insights: { treeStatus: () => new Promise<never>(() => {}) },

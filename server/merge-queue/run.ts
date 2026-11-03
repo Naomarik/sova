@@ -82,6 +82,10 @@ class Step {
 }
 
 /** The slot a merge copy's processes number their ports by: above every copy's and conformance's. */
+/** A rerun's report says it ran no test at all (none listed in `ranFiles`, and no passed or failed test): its exit 0
+ *  proves nothing. No report at all says nothing either way (a build check writes none). */
+const ranNothingIn = (r: import("./checks").CheckReport | null): boolean => !!r && !(r.ranFiles?.length) && (r.passed ?? 0) + (r.failed ?? 0) === 0;
+
 export const mergeSlotOf = (def: ProjectDef): number => Math.max(...slotLayoutOf(def, null).scratch) + 1;
 
 // ---- setup ----------------------------------------------------------------------------------------
@@ -386,7 +390,14 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const r2 = await runCheck({ def, scope, check, stepId: `rerun-tip:${check.id}`, logFile: again.file, ...(files.length ? { files } : {}), signal });
       if (r2.proc.aborted || signal.aborted) return finish((again.end("failed", { detail: "aborted" }), voided("aborted")));
       if (r2.proc.timedOut) return finish((again.end("failed", { detail: "timed out" }), voided(`${check.label} timed out on its rerun`)));
-      if (r2.proc.code === 0) {
+      // Never a pass on a guess: the rerun counts for a file only when it shows it ran it (`ranFiles`, or for a runner that
+      // lists none, at least one test ran). A file it didn't run is still failing (on to the target alone), never flaky.
+      const ranTip = r2.report?.ranFiles;
+      const anyRan = !!r2.report && (r2.report.passed ?? 0) + (r2.report.failed ?? 0) > 0;
+      const unrun = files.filter((f) => (ranTip ? !ranTip.includes(f) : !anyRan));
+      // A whole or by-name rerun whose report says no test ran at all proves nothing either.
+      const ranNothing = !files.length && ranNothingIn(r2.report);
+      if (r2.proc.code === 0 && !unrun.length && !ranNothing) {
         again.end("passed", { detail: "passes on a rerun: flaky" });
         const each = files.length ? files : names;
         blames.push(each.length ? { id: check.id, label: check.label, files: each.map((file) => ({ file, blame: blameFile({ passesOnTip: true }) })) } : { id: check.id, label: check.label, whole: blameCheck({ passesOnTip: true }) });
@@ -405,10 +416,16 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
         reds.push({ check, files: [], names: [...stillN, ...extra] });
         continue;
       }
-      // With files: the ones the rerun still names (all of them when it names none).
-      const still = files.length ? (r2.failingFiles.length ? files.filter((f) => r2.failingFiles.includes(f)) : files) : [];
+      // With files: the ones the rerun still names (all of them when it names none), and every one it didn't run.
+      const still = files.length ? (r2.proc.code === 0 ? unrun : r2.failingFiles.length ? files.filter((f) => r2.failingFiles.includes(f) || unrun.includes(f)) : files) : [];
       const flaky = files.filter((f) => !still.includes(f));
-      again.end("failed", { detail: files.length ? `${still.length} still failing${flaky.length ? `, ${flaky.length} passed` : ""}` : `exit ${r2.proc.code}` });
+      again.end("failed", {
+        detail: files.length
+          ? `${still.length} still failing${unrun.length ? ` (${unrun.length} not run by the rerun)` : ""}${flaky.length ? `, ${flaky.length} passed` : ""}`
+          : r2.proc.code === 0
+            ? "the rerun ran no test"
+            : `exit ${r2.proc.code}`,
+      });
       if (files.length && !still.length) {
         blames.push({ id: check.id, label: check.label, files: files.map((file) => ({ file, blame: "flaky" as const })) });
         continue;
@@ -452,13 +469,39 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
             blames.push({ id: check.id, label: check.label, whole: "unattributed" });
             continue;
           }
+          if (r.proc.code === 0 && ranNothingIn(r.report)) {
+            // Never a pass on a guess: a run on the target that ran no test says nothing about these names.
+            st.end("passed", { detail: `the rerun on ${target} ran no test: can't tell whose failure` });
+            blames.push({ id: check.id, label: check.label, unclearFiles: names });
+            continue;
+          }
           const failing = r.proc.code === 0 ? [] : names.filter((n) => onT.includes(n));
           st.end(r.proc.code === 0 ? "passed" : "failed", { detail: r.proc.code === 0 ? `passes on ${target}: the branch's` : `${failing.length} of ${names.length} fail on ${target} too` });
           blames.push({ id: check.id, label: check.label, files: names.map((file) => ({ file, blame: blameFile({ passesOnTip: false, onTarget: failing.includes(file) ? "fails" : "passes" }) })) });
         } else if (files.length) {
           const failing = r.proc.code === 0 ? [] : r.failingFiles.length ? onBase.filter((f) => r.failingFiles.includes(f)) : onBase;
+          // Never a pass on a guess: a file counts as passing on the target only when the rerun shows it ran (it names it
+          // in `ranFiles`; a runner that names none must have run some test). Else whose failure it is can't be told.
+          const ran = r.report?.ranFiles;
+          const someRan = !!r.report && (r.report.passed ?? 0) + (r.report.failed ?? 0) > 0;
+          const unproven = onBase.filter((f) => !failing.includes(f) && (ran ? !ran.includes(f) : !someRan));
+          if (unproven.length) {
+            const proven = onBase.filter((f) => !unproven.includes(f));
+            st.end(r.proc.code === 0 ? "passed" : "failed", { detail: `${unproven.length} of ${onBase.length} didn't run on ${target} alone: can't tell whose failure` });
+            blames.push({
+              id: check.id,
+              label: check.label,
+              unclearFiles: unproven,
+              files: [...absent.map((file) => ({ file, blame: "branch" as const })), ...proven.map((file) => ({ file, blame: blameFile({ passesOnTip: false, onTarget: failing.includes(file) ? "fails" : "passes" }) }))],
+            });
+            continue;
+          }
           st.end(r.proc.code === 0 ? "passed" : "failed", { detail: r.proc.code === 0 ? `passes on ${target}: the branch's` : `${failing.length} fail on ${target} too` });
           blames.push({ id: check.id, label: check.label, files: [...absent.map((file) => ({ file, blame: "branch" as const })), ...onBase.map((file) => ({ file, blame: blameFile({ passesOnTip: false, onTarget: failing.includes(file) ? "fails" : "passes" }) }))] });
+        } else if (r.proc.code === 0 && ranNothingIn(r.report)) {
+          // Never a pass on a guess: exit 0 from a run that ran no test (an empty selection on the target) proves nothing.
+          st.end("passed", { detail: `the rerun on ${target} ran no test: can't tell whose failure` });
+          blames.push({ id: check.id, label: check.label, whole: "unattributed", why: `can't tell whose failure: ${check.label} ran no test on ${target} alone` });
         } else if (r.proc.code === 0) {
           st.end("passed", { detail: `passes on ${target}: the branch's` });
           blames.push({ id: check.id, label: check.label, whole: blameCheck({ passesOnTip: false, onTarget: "passes" }) });
@@ -572,11 +615,11 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const again = steps.start(`rerun-tip:${check.id}`, "rerun-tip", `${check.label} again`);
       const r2 = await runCheck({ def, scope, check, stepId: `rerun-tip:${check.id}`, logFile: again.file, signal });
       if (r2.proc.aborted || signal.aborted) return (again.end("failed", { detail: "aborted" }), voided("aborted"));
-      if (r2.proc.code === 0) {
+      if (r2.proc.code === 0 && !ranNothingIn(r2.report)) {
         again.end("passed", { detail: "passes on a rerun: flaky" });
         notes.push({ kind: "flaky", text: `${check.label} failed, then passed on a rerun`, at: now() });
       } else {
-        again.end("failed", { detail: `exit ${r2.proc.code}` });
+        again.end("failed", { detail: r2.proc.code === 0 ? "the rerun ran no test" : `exit ${r2.proc.code}` });
         red.push(check.label);
       }
     }

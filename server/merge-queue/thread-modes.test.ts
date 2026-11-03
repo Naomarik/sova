@@ -95,3 +95,24 @@ test("an ordinary chat in the same folder still starts on the default (the contr
   assert.equal(m.mode, "delegate");
   assert.deepEqual(m.minorModes, ["align", "spec", "vis"]);
 });
+
+test("a queue chat never takes another profile: applyProfile is refused (409) and its mark stays", async () => {
+  const { applyProfile } = await import("../session-profile-routes");
+  const { getSessionSummary } = await import("../sessions-index");
+  for (const [profile, role] of [[THREAD_PROFILE, "thread"], ["merge-reviewer", "reviewer"]] as const) {
+    // A session file on Sova's own profile ({id, source: 'sova'}), no message yet: the one state a profile could change.
+    const made = await createChat(request, cwd, profile, "", `queue chat · ${role}`);
+    assert.ok(made.ok, JSON.stringify(made));
+    if (!made.ok) return;
+    await closeChat(made.path, "test");
+    assert.deepEqual((await getSessionSummary(made.path))?.queueChat, { role });
+    for (const choice of [{ remove: [] as string[], grant: [] as string[] }, null]) {
+      const r = await applyProfile(made.path, choice);
+      assert.equal(r.ok, false, `${role}: ${JSON.stringify(choice)} refused`);
+      assert.equal(!r.ok && r.status, 409);
+      assert.match(!r.ok ? r.error : "", /merge queue's own chats/);
+      assert.deepEqual((await getSessionSummary(made.path))?.queueChat, { role }, `${role}: still the queue's`);
+    }
+    assert.deepEqual((await modesOf(made.path)).mode, "normal", "its modes unchanged");
+  }
+});

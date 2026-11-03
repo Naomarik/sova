@@ -1423,7 +1423,11 @@ export class ProjectQueue {
 
   private waitingWords(): string {
     const h = this.q.release;
-    return h ? `waiting for release ${h.version ?? h.id}` : "waiting";
+    return h ? `waits for ${h.version ? h.version : `release ${h.id}`} to be published or abandoned` : "waiting";
+  }
+  /** A reason the hold wrote (it is rewritten as the release's tag becomes known, and dropped when the hold lifts). */
+  private isWaitingWords(r: string | undefined): boolean {
+    return !!r && r.startsWith("waits for ") && r.endsWith(" to be published or abandoned");
   }
   private holdWords(): string {
     const h = this.q.release;
@@ -1489,7 +1493,7 @@ export class ProjectQueue {
       if (u.state !== undefined) h.state = u.state;
       writeFileSync(this.holdFile(), `${this.holdWords()}\n`, { mode: 0o600 });
       // Waiting rows name the release by its version once it has one.
-      for (const e of this.queued()) if (e.release !== h.id && e.reason?.startsWith("waiting for release ")) e.reason = this.waitingWords();
+      for (const e of this.queued()) if (e.release !== h.id && this.isWaitingWords(e.reason)) e.reason = this.waitingWords();
       this.save();
     });
   }
@@ -1500,7 +1504,7 @@ export class ProjectQueue {
     if (!h) return;
     delete this.q.release;
     rmSync(this.holdFile(), { force: true });
-    for (const e of this.queued()) if (e.reason?.startsWith("waiting for release ")) delete e.reason;
+    for (const e of this.queued()) if (this.isWaitingWords(e.reason)) delete e.reason;
     this.log(`hold of release ${h.id} lifted`);
     this.kickSoon();
   }

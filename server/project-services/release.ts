@@ -741,6 +741,13 @@ export class Releaser {
   /** checking → ready once every gate passes (and back while one doesn't). */
   private settle(rec: ReleaseRecord): void {
     if (rec.state !== "checking" && rec.state !== "ready") return;
+    // The Publish step says why it would be held, in the same words as the gates.
+    const pub = rec.steps.find((s) => s.id === "publish");
+    const block = this.pushBlocks.get(rec.project) ?? null;
+    if (pub && pub.state === "waiting") {
+      if (block) pub.summary = block;
+      else if (pub.summary?.startsWith("pushes are held until")) delete pub.summary;
+    }
     const ok = !this.gatesOf(rec).why.length;
     const next = ok ? "ready" : "checking";
     if (next !== rec.state) {
@@ -1025,9 +1032,9 @@ export class Releaser {
     const rec = this.openRecord(root);
     if (rec && (rec.state === "checking" || rec.state === "ready")) {
       // A gate that changed with no event (the names file written since): ready ↔ checking follows it.
-      const was = rec.state;
+      const was = JSON.stringify([rec.state, rec.steps.find((x) => x.id === "publish")?.summary]);
       this.settle(rec);
-      if (rec.state !== was) {
+      if (JSON.stringify([rec.state, rec.steps.find((x) => x.id === "publish")?.summary]) !== was) {
         this.save(rec);
         return true;
       }

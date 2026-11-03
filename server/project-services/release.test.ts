@@ -167,7 +167,7 @@ describe("the freeze, the release entry and Publish (q9, a5, a6)", () => {
       // B waits, named.
       const bNow = await t.k.entry(eb.id);
       assert.equal(bNow.state, "queued");
-      assert.equal(bNow.reason, "waiting for release v0.2.0");
+      assert.equal(bNow.reason, "waits for v0.2.0 to be published or abandoned");
       assert.equal((await q.view()).waiting.find((w) => w.id === eb.id)?.eta, undefined, "no start time while the release holds it");
       assert.equal(t.k.run.inputs.filter((i) => i.entry.id === eb.id).length, 0, "B never ran");
       const v = await q.view();
@@ -212,7 +212,7 @@ describe("the freeze, the release entry and Publish (q9, a5, a6)", () => {
       assert.equal(s.ok, true);
       release();
       await until(async () => (await t.k.entry(entry.id)).state === "queued", "B back in line");
-      assert.match((await t.k.entry(entry.id)).reason ?? "", /waiting for release/);
+      assert.match((await t.k.entry(entry.id)).reason ?? "", /^waits for release rl_\w+ to be published or abandoned$/);
       assert.equal(t.repo.head(), base);
       assert.equal(s.release!.release!.base, base);
     } finally {
@@ -318,11 +318,14 @@ describe("the screen pass (D1 D2 D6 D8)", () => {
       assert.equal(v.open!.state, "checking", "never ready while Publish would be held");
       assert.ok(v.gates!.why.some((w) => /private names are set up/.test(w)), JSON.stringify(v.gates));
       assert.equal(t.r.attentionFacts().some((f) => f.kind === "release-ready"), false);
+      assert.match(v.open!.steps.find((s) => s.id === "publish")!.summary ?? "", /private names are set up/, "the Publish step says the same");
       const p = await t.call("release.publish", { confirm: true });
       assert.match(p.error!.message, /private names are set up/);
       // Names written: ready again on the next read.
       writeFileSync(join(t.repo.state, "merge-round.json"), JSON.stringify({ v: 1, privateNames: [] }));
-      assert.equal((await t.call("release.status", {})).release!.view!.open!.state, "ready");
+      const after = (await t.call("release.status", {})).release!.view!.open!;
+      assert.equal(after.state, "ready");
+      assert.equal(after.steps.find((s) => s.id === "publish")!.summary, undefined);
     } finally {
       await t.done();
     }

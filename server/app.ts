@@ -163,7 +163,8 @@ import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
 import { registerUpdatesRoutes } from "./updates/routes";
 
-const DIST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+/** The built frontend; SOVA_DIST: another build (a test's scratch one), as SOVA_SHARE_DIST is for the share page. */
+const DIST_DIR = process.env.SOVA_DIST || resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 /** tokens.css and base.css, served as is at /design/* for extension UIs (server/extensions.ts). */
 const DESIGN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "src", "design");
 /** AGENTS.md for the connection agent (owned by pi-config's remote extension team; read per request). */
@@ -1940,7 +1941,14 @@ export function buildApp(deps: AppDeps) {
   const staticFiles = serveStatic({ root: DIST_DIR });
   const spaIndex = serveStatic({ root: DIST_DIR, path: "index.html" });
   app.use("*", (c, next) => (hasDist() ? staticFiles(c, next) : next()));
-  app.get("*", (c, next) => (hasDist() ? spaIndex(c, next) : next()));
+  // A code file this build doesn't have (one a rebuild removed, asked for by a tab of the older
+  // build) is missing, never the app's page: answered as HTML it fails as a wrong file type, and
+  // the tab couldn't tell that Sova was updated.
+  app.get("*", async (c, next) => {
+    if (!hasDist()) return next();
+    if (c.req.path.startsWith("/assets/")) return c.text("Not found", 404);
+    return spaIndex(c, next);
+  });
 
   return { app, autoTitleSweep, claudeAccounts, meshResync };
 }

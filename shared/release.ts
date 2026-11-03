@@ -199,7 +199,8 @@ export interface ReleaseRecord {
   commit: string | null;
   /** The release's merge queue entry (mq_…), once Sova added it. */
   entry: string | null;
-  thread: { session: string } | null;
+  /** The release chat: its session id, its file (`path`, to prompt it), and the release worktree it works in. */
+  thread: { session: string; path?: string; checkout?: string; branch?: string } | null;
   steps: ReleaseStep[];
   notes: string | null;
   artifacts: ReleaseArtifact[];

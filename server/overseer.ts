@@ -382,8 +382,10 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
     // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
     // A deploy target whose latest deploy failed, and an overseer's request to deploy (§app.project-services/deploy-status).
     const deploys = await deployAttentionItems().catch(() => []);
+    // A release ready to publish, held for the operator, failed, gone quiet, or asked for (server/project-services/release.ts).
+    const releases = await (await import("./project-services/release-wire")).releaseAttentionItems().catch(() => []);
     // WhatsApp sending down (§app.outreach/sender-health): from the sender's last reading, no round trip.
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...senderAttention(), ...ownerAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys]);
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...senderAttention(), ...ownerAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys, ...releases]);
   })();
   digestMemo = { at: now, value, ...(fed ? { list: fed } : {}) };
   value.catch(() => {

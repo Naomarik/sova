@@ -36,7 +36,7 @@ export const ENTRY_OPEN: readonly MergeEntryState[] = ["queued", "checking", "co
 
 /** How the user approved: the Land button (composer modal, session pane, Merge Queue view) or "land it" typed in the
  *  branch's own chat (ingested from the worktree tool's go-ahead record). */
-export type ApprovalBy = "land-button" | "typed";
+export type ApprovalBy = "land-button" | "typed" | "release";
 
 export interface MergeApproval {
   by: ApprovalBy;
@@ -81,7 +81,7 @@ export interface MergeNote {
 export const NOTE_MAX = 300;
 
 /** A check the run will run, and why it is in the list. */
-export type CheckSource = "required" | "trigger" | "picked";
+export type CheckSource = "required" | "trigger" | "picked" | "release";
 export interface CheckPick {
   /** A check id from the project's merge section (required or optional), or `test` for its test command. */
   id: string;
@@ -177,6 +177,11 @@ export interface MergeEntry {
   landed?: { sha: string; from: string; at: string; pushed: PushState; pushWhy?: string };
   /** Estimates (ms): when it should start from now, and how long its run takes. */
   eta?: { startsInMs: number; takesMs: number };
+  /** The release this entry belongs to (rl_…): its release commit, or the revert of an abandoned one. Sova adds it
+   *  (approval `by: "release"`); it alone lands while that release holds the queue. */
+  release?: string;
+  /** A release entry's kind: the release commit, or the revert of an abandoned release's landed commit. */
+  releaseKind?: "release" | "revert";
   createdAt: string;
   updatedAt: string;
 }
@@ -336,7 +341,20 @@ export interface MergeQueueView {
   ready?: MergeReady[];
   /** Try It on Main (merge.setup dryRun): the run in flight, or the last one. */
   tryRun?: MergeRun;
+  /** A release holds the queue (the freeze banner): only its entries land and nothing is pushed until it is
+   *  published or abandoned. */
+  release?: MergeReleaseHold;
   at: string;
+}
+
+/** The release holding a project's queue. `state`: the release record's (shared/release.ts ReleaseState). */
+export interface MergeReleaseHold {
+  id: string;
+  version: string | null;
+  state: string;
+  /** The target's commit at the release's start. */
+  base: string;
+  since: string;
 }
 
 /** What the session's worktree rows read (SessionWorktreeInfo.queue): the newest entry for that branch. */

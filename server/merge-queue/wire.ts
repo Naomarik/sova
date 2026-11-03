@@ -216,6 +216,7 @@ export async function startMergeQueue(
     import("./thread"),
     import("./review-step"),
   ]);
+  const releaseWire = await import("../project-services/release-wire");
   const served = new ServedRule({ listed: opts.listed ?? (() => listProjects()), definitionAt: (root, ref) => definitionAt(root, ref), checksOf: checks.checksOf });
   setServedRule(served);
   const writer = startServedWriter(served, join(stateRoot(), SERVED_FILE_NAME), {
@@ -321,8 +322,22 @@ export async function startMergeQueue(
     draftsHash: (dir) => draftsHash(dir),
     threadOf: (root) => (threadMod as { threadOf?: (r: string) => { session: string; startedAt: string } | null }).threadOf?.(root) ?? null,
     ...(legacyNames ? { legacyNames } : {}),
+    releaseEvent: (ev) => releaseWire.releaseEvent(ev),
   });
   const q = queues;
+  // Releases (server/project-services/release.ts): their verbs, the queue's hold and Publish go through these queues.
+  await releaseWire.startReleaser({
+    stateRoot: stateRoot(),
+    queues: () => q,
+    ...(opts.request ? { request: opts.request } : {}),
+    rootOf: async (path) => {
+      const p = await projectOf(path);
+      return p.state === "ok" && p.git ? p.root : null;
+    },
+    definitionAt: (root, ref) => definitionAt(root, ref),
+    projectIdOf,
+    publishFeed: (msg) => publishFeed(msg),
+  });
   const verbs = merger({
     queues: q,
     served,
@@ -395,6 +410,7 @@ export async function stopMergeQueue(): Promise<void> {
   setLandingNoteSource(null);
   ingest?.stop();
   ingest = null;
+  (await import("../project-services/release-wire")).stopReleaser();
   await queues?.stop();
   queues = null;
 }

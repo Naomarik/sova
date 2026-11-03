@@ -4,7 +4,7 @@ import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import type { HookCtx, ToolCtx, ToolSpec } from "../../shared/harness";
 import type { ClickChoice } from "../../shared/overseer-card";
-import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, MERGE_VERBS, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
+import { DEPLOY_READ_VERBS, DEPLOY_VERBS, exitOf, MERGE_VERBS, RELEASE_VERBS, VERB_PARAMS, VERBS, type VerbParam, type VerbResult } from "../../shared/project-contract";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
 import { toPiTool } from "../harness/pi/tools";
 import { WORKTREES } from "../harness/state-kinds";
@@ -75,11 +75,13 @@ const PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS], false);
     (the merger decides who may call which: any chat reads its project's queue; the recorded merge thread notes,
     extends, resolves and retries; a run's reviewer posts merge.review). */
 const SESSION_PARAMS = (() => {
-  const p = paramsOf([...VERBS, ...DEPLOY_VERBS, ...MERGE_VERBS], false);
-  const merge = VERB_PARAMS.filter((r) => r.tool && r.mergeOnly);
+  const p = paramsOf([...VERBS, ...DEPLOY_VERBS, ...MERGE_VERBS, ...RELEASE_VERBS], false);
+  const merge = VERB_PARAMS.filter((r) => r.tool && (r.mergeOnly || r.releaseOnly));
   return { ...p, properties: { ...p.properties, ...Object.fromEntries(merge.map((r) => [r.tool!.name, toolSchema(r, false)])) } };
 })();
 const MERGE_TOOL_ROWS = VERB_PARAMS.filter((p) => p.tool && p.mergeOnly);
+/** The release verbs' keys (the release chat's reports), plus the merge rows they share (`text`). */
+const RELEASE_TOOL_ROWS = VERB_PARAMS.filter((p) => p.tool && (p.releaseOnly || p.wire === "text"));
 
 /** The Overseers' parameters: the verbs, plus `onboard` (the Project verbs playbook, §app.project-runtime/onboard). */
 const OVERSEER_PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS, "onboard"], true);
@@ -159,6 +161,7 @@ function bodyOf(p: Record<string, unknown>, defaultProject: string | null): Reco
   for (const { wire, tool } of TOOL_PARAMS) if (tool!.name !== wire && p[tool!.name] !== undefined) out[wire] = p[tool!.name];
   // The merge verbs' own keys reach only a merge verb (the other verbs refuse a key they don't take).
   if (String(p.verb ?? "").startsWith("merge.")) for (const { wire, tool } of MERGE_TOOL_ROWS) if (p[tool!.name] !== undefined && p[tool!.name] !== null && p[tool!.name] !== "") out[wire] = p[tool!.name];
+  if (String(p.verb ?? "").startsWith("release.")) for (const { wire, tool } of RELEASE_TOOL_ROWS) if (p[tool!.name] !== undefined && p[tool!.name] !== null && p[tool!.name] !== "") out[wire] = p[tool!.name];
   if (!out.project && !out.instance && !out.checkout && defaultProject) out.project = defaultProject;
   return out;
 }
@@ -344,7 +347,8 @@ export function sessionVerbsTool(engine: () => ProjectEngine): Tool {
       "Run this project's services for your own worktree through Sova: never start servers by hand (no nohup/setsid loops), use up/apply/logs here. " +
       "You may create/up/down/apply/test instances of your own worktrees (never the main checkout), reset or teardown instances you created, and read status/logs/doctor or conform for your project. " +
       "Run tests with test {select: [...]} rather than by hand: it runs in your instance, against its own ports and data. " +
-      "merge.status / merge.logs read this project's merge queue; the project's merge thread and a run's reviewer use the other merge verbs their instructions name.",
+      "merge.status / merge.logs read this project's merge queue; the project's merge thread and a run's reviewer use the other merge verbs their instructions name. " +
+      "release.status / release.logs read this project's releases; only a release's own chat reports with release.step / release.notes as its instructions say. You never start, publish or ask for a release.",
     promptSnippet: "run, reload, inspect and tear down your own worktree's running copy of the project (up, apply, logs, status…)",
     engine,
     deploy: "session",

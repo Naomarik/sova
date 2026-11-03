@@ -45,6 +45,8 @@ export interface QueueFile {
   /** Machine failures in a row, per entry (retry once, then pause). */
   machineTries: Record<string, number>;
   seq: number;
+  /** A release holds the queue: only its entries land, nothing is pushed (queue.ts freezeForRelease). */
+  release?: import("../../shared/merge-queue").MergeReleaseHold & { checks?: import("../../shared/project-contract").MergeCheckDecl[] };
 }
 
 const KEEP_FINAL = 60;

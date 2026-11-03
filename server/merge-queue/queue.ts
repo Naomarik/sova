@@ -15,6 +15,7 @@ import {
   NOTE_MAX,
   type PauseInfo,
   type PauseKind,
+  type PushState,
   type ReviewVerdict,
   type RunStep,
 } from "../../shared/merge-queue";
@@ -28,6 +29,8 @@ import { estimateFromRuns } from "./estimate";
 import { deliverReview } from "./review-step";
 import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
+import { hasOrigin, publishGit, revertCommit, withdrawGit } from "./release-git";
+import type { MergeCheckDecl } from "../../shared/project-contract";
 import { buildView } from "./view";
 
 /**
@@ -97,6 +100,22 @@ export interface QueueDeps {
   legacyNames?: { root: string; file: string };
   /** Logs (default console). */
   log?: (line: string) => void;
+  /** A release entry moved (landed, handed back, waits for the user, cancelled): the releaser follows its release. */
+  releaseEvent?: (ev: ReleaseQueueEvent) => void;
+}
+
+/** What the queue tells the releaser about one of a release's entries. */
+export interface ReleaseQueueEvent {
+  /** The project's main checkout. */
+  root: string;
+  release: string;
+  kind: "release" | "revert";
+  entry: MergeEntry;
+  /** landed: on the target (not pushed); failed: handed back (`why`); waiting: needs the user (review, can't tell
+   *  whose failure); checking: its run started; cancelled. */
+  what: "checking" | "landed" | "failed" | "waiting" | "cancelled";
+  why?: string;
+  run?: string;
 }
 
 export interface AddRequest {
@@ -117,7 +136,7 @@ interface Current {
   entry: string;
   ac: AbortController;
   /** Why it was aborted, if it was. */
-  voidWhy: null | "master-moved" | "cancelled" | "superseded" | "stopping";
+  voidWhy: null | "master-moved" | "cancelled" | "superseded" | "stopping" | "release";
   watch: ReturnType<typeof setInterval> | null;
   done: Promise<void>;
 }
@@ -281,7 +300,8 @@ export class ProjectQueue {
       readRun: (id) => this.store.readRun(id),
     });
     const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
-    return { ...v, served, ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}) };
+    const hold = this.q.release ? (({ checks: _c, ...h }) => h)(this.q.release) : undefined;
+    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}) };
   }
 
   private readyCache: { at: number; head: string; list: MergeReady[] } | null = null;
@@ -463,6 +483,7 @@ export class ProjectQueue {
       e.updatedAt = this.iso();
       if (note !== undefined) this.setNote(e, note, "thread");
       this.save();
+      this.releaseEvent(e, "cancelled");
       this.kickSoon();
       return e;
     });
@@ -873,7 +894,7 @@ export class ProjectQueue {
     if (this.holdUntil > this.now()) return;
     const head = await this.targetHead();
     if (!head) return;
-    const line = this.queued();
+    const line = this.releaseLine(this.queued());
     if (this.q.knownTarget && head !== this.q.knownTarget) {
       if (line.length) {
         this.pauseNow("master-moved", `${this.q.target} moved outside the queue (${this.q.knownTarget.slice(0, 7)} → ${head.slice(0, 7)}): resume once that is intended`);
@@ -969,6 +990,7 @@ export class ProjectQueue {
     this.current = cur;
     this.save();
     this.log(`run ${runId}: ${e.branch} at ${e.commit.slice(0, 7)} onto ${this.q.target} ${base.slice(0, 7)}`);
+    this.releaseEvent(e, "checking", undefined, runId);
     const resolution = e.conflict?.commit && (e.conflict.verdict === "no-behaviour-change" || e.notes.some((n) => n.kind === "resolved")) ? e.conflict.commit : undefined;
     const input: RunInput = {
       runId,
@@ -980,6 +1002,7 @@ export class ProjectQueue {
       runDir,
       ...(draftsDir ? { draftsDir } : {}),
       picks: [...e.picks],
+      ...(e.release && e.releaseKind === "release" && this.q.release?.id === e.release && this.q.release.checks?.length ? { releaseChecks: structuredClone(this.q.release.checks) } : {}),
       ...(this.names().exists ? { namesFile: this.names().file } : {}),
       review: d.review && !e.approval.withoutReview,
       signal: ac.signal,
@@ -1076,14 +1099,15 @@ export class ProjectQueue {
     if (cur.voidWhy || e.state === "cancelled") {
       const why = cur.voidWhy ?? "cancelled";
       run.verdict = why === "cancelled" ? "cancelled" : "void";
-      run.why = why === "master-moved" ? `${this.q.target} moved outside the queue` : why === "superseded" ? "approved again at a newer commit" : why === "stopping" ? "Sova stopped" : "cancelled";
+      run.why = why === "master-moved" ? `${this.q.target} moved outside the queue` : why === "superseded" ? "approved again at a newer commit" : why === "stopping" ? "Sova stopped" : why === "release" ? "a release started: it waits for the release" : "cancelled";
       this.store.writeRun(run);
       if (why === "master-moved" && e.state === "checking") {
         this.toFront(e);
         const head = await this.targetHead();
         this.pauseNow("master-moved", `${this.q.target} moved outside the queue (${run.base.slice(0, 7)} → ${(head ?? "?").slice(0, 7)}) while ${e.branch} was checking: that run was voided; resume once that is intended`, run.id);
-      } else if (why === "stopping" && e.state === "checking") {
+      } else if ((why === "stopping" || why === "release") && e.state === "checking") {
         this.toFront(e);
+        if (why === "release") e.reason = this.waitingWords();
       }
       this.save();
       this.kickSoon();
@@ -1119,6 +1143,12 @@ export class ProjectQueue {
       case "conflict": {
         run.verdict = "conflict";
         this.store.writeRun(run);
+        if (e.release) {
+          // A release's commit was cut from the frozen target: a conflict is a fault of the release, never judged.
+          this.handBack(e, run, `the release commit conflicts with ${this.q.target}${out.conflict?.files?.length ? ` in ${out.conflict.files.slice(0, 3).join(", ")}` : ""}`);
+          this.kickSoon();
+          return;
+        }
         e.state = "conflict";
         const files = out.conflict?.files ?? [];
         delete e.conflict;
@@ -1167,6 +1197,7 @@ export class ProjectQueue {
         if (out.targetRed?.length) this.q.heads.targetRed = [...out.targetRed];
         e.updatedAt = this.iso();
         this.save();
+        this.releaseEvent(e, "waiting", e.reason, run.id);
         this.kickSoon();
         return;
       }
@@ -1179,6 +1210,7 @@ export class ProjectQueue {
         this.addNotes(e, out.notes);
         e.updatedAt = this.iso();
         this.save();
+        this.releaseEvent(e, "waiting", e.reason, run.id);
         this.kickSoon();
         return;
       }
@@ -1214,6 +1246,7 @@ export class ProjectQueue {
     e.updatedAt = this.iso();
     this.save();
     this.deps.notify?.("needs-fix", e, { ...(run ? { run, logDir: this.store.runDir(run.id) } : {}), root: this.root });
+    this.releaseEvent(e, "failed", why, run?.id);
   }
 
   private armConflictTimer(e: Entry, run: MergeRun): void {
@@ -1296,8 +1329,11 @@ export class ProjectQueue {
     if (newer) e.newerCommits = newer;
     else delete e.newerCommits;
     delete this.q.intent;
+    // The revert of an abandoned release lands: the release's hold is lifted with it (its push goes out as any).
+    if (e.release && e.releaseKind === "revert" && this.q.release?.id === e.release) this.liftNow();
     this.save();
     this.log(`landed ${e.branch} at ${tip.slice(0, 7)}`);
+    this.releaseEvent(e, "landed", undefined, run.id);
     await this.push(tip, def, e);
     this.deps.notify?.("landed", e, { run, root: this.root });
     this.wake("landed", e, run.id);
@@ -1313,8 +1349,10 @@ export class ProjectQueue {
   private async push(tip: string, def: ProjectDef | null, e?: Entry): Promise<void> {
     const names = this.names();
     let p: Awaited<ReturnType<typeof pushTip>>;
-    const hasOrigin = (await this.git(["remote"], this.root)).stdout.split("\n").includes("origin");
-    if (!names.exists && def?.merge?.push !== false && hasOrigin) {
+    const origin = (await this.git(["remote"], this.root)).stdout.split("\n").includes("origin");
+    if (this.q.release && def?.merge?.push !== false && origin) {
+      p = { state: "not-pushed", why: `held: ${this.holdWords()}` };
+    } else if (!names.exists && def?.merge?.push !== false && origin) {
       p = { state: "not-pushed", why: PUSH_HELD_NAMES };
       if (e) this.wake("names", e, undefined, { namesFile: names.file });
     } else p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold") });
@@ -1353,6 +1391,279 @@ export class ProjectQueue {
       this.log(`thread wake failed: ${err instanceof Error ? err.message : err}`);
       return false;
     }
+  }
+
+  // ---- releases (q9, a5, a6, t22, t24) ------------------------------------------------------------
+
+  /** While a release holds the queue, only its own entries run; every other one waits with the release named. */
+  private releaseLine(line: Entry[]): Entry[] {
+    const hold = this.q.release;
+    if (!hold) return line;
+    const words = this.waitingWords();
+    let changed = false;
+    for (const e of line) {
+      if (e.release === hold.id || e.reason === words) continue;
+      e.reason = words;
+      changed = true;
+    }
+    if (changed) this.save();
+    return line.filter((e) => e.release === hold.id);
+  }
+
+  private waitingWords(): string {
+    const h = this.q.release;
+    return h ? `waiting for release ${h.version ?? h.id}` : "waiting";
+  }
+  private holdWords(): string {
+    const h = this.q.release;
+    return h ? `release ${h.version ?? h.id} is open: nothing is pushed until it is published or abandoned` : "";
+  }
+  private holdFile(): string {
+    return join(this.store.dir, "push-hold");
+  }
+
+  private releaseEvent(e: Entry, what: ReleaseQueueEvent["what"], why?: string, run?: string): void {
+    if (!e.release || !this.deps.releaseEvent) return;
+    try {
+      this.deps.releaseEvent({ root: this.root, release: e.release, kind: e.releaseKind ?? "release", entry: this.withPosition(e), what, ...(why ? { why } : {}), ...(run ? { run } : {}) });
+    } catch (err) {
+      this.log(`release event failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  /** The release holding the queue, if any. */
+  releaseHold(): QueueFile["release"] | null {
+    return this.q.release ? structuredClone(this.q.release) : null;
+  }
+
+  /**
+   * Hold the queue for release `id`: from now on only its entries land, and nothing is pushed (the push-hold file is
+   * set too) until publishRelease or abandonRelease lifts it. A run of another branch in flight is voided and waits at
+   * the front of the line. Answers the target's head: the release's base. Idempotent for the same release.
+   */
+  freezeForRelease(release: { id: string; version?: string | null; state?: string; checks?: MergeCheckDecl[] }): Promise<{ base: string }> {
+    return this.serial(async () => {
+      const held = this.q.release;
+      if (held && held.id !== release.id) throw new MergeFailure("busy", `release ${held.version ?? held.id} already holds the queue`);
+      const head = await this.targetHead();
+      if (!head) throw new MergeFailure("invalid-request", `${this.q.target} has no commit to release`);
+      if (this.q.intent) throw new MergeFailure("busy", "a landing is in flight: try again in a moment");
+      if (!held) {
+        this.q.release = { id: release.id, version: release.version ?? null, state: release.state ?? "preparing", base: head, since: this.iso(), ...(release.checks?.length ? { checks: structuredClone(release.checks) } : {}) };
+        if (this.current) {
+          const cur = this.current;
+          const e = this.entry(cur.entry);
+          if (!e?.release) {
+            cur.voidWhy = "release";
+            cur.ac.abort();
+          }
+        }
+        this.q.knownTarget = head;
+      } else if (release.checks) this.q.release!.checks = structuredClone(release.checks);
+      mkdirSync(this.store.dir, { recursive: true });
+      writeFileSync(this.holdFile(), `${this.holdWords()}\n`, { mode: 0o600 });
+      this.releaseLine(this.queued());
+      this.save();
+      this.log(`held for release ${release.id} at ${head.slice(0, 7)}`);
+      return { base: this.q.release!.base };
+    });
+  }
+
+  /** The hold's banner follows the release (its version once picked, its state). */
+  updateReleaseHold(id: string, u: { version?: string | null; state?: string }): Promise<void> {
+    return this.serial(async () => {
+      const h = this.q.release;
+      if (!h || h.id !== id) return;
+      if (u.version !== undefined) h.version = u.version;
+      if (u.state !== undefined) h.state = u.state;
+      writeFileSync(this.holdFile(), `${this.holdWords()}\n`, { mode: 0o600 });
+      // Waiting rows name the release by its version once it has one.
+      for (const e of this.queued()) if (e.release !== h.id && e.reason?.startsWith("waiting for release ")) e.reason = this.waitingWords();
+      this.save();
+    });
+  }
+
+  /** Lift the hold in the serial chain's step that ends it (publish, the revert landing, abandon with nothing landed). */
+  private liftNow(): void {
+    const h = this.q.release;
+    if (!h) return;
+    delete this.q.release;
+    rmSync(this.holdFile(), { force: true });
+    for (const e of this.queued()) if (e.reason?.startsWith("waiting for release ")) delete e.reason;
+    this.log(`hold of release ${h.id} lifted`);
+    this.kickSoon();
+  }
+
+  /**
+   * A release entry, added by Sova (never a person's Land): the release commit (`kind: "release"`, it runs the merge
+   * checks plus the release's own) or an abandoned release's revert. It goes first in line and runs without a review.
+   */
+  addReleaseEntry(r: { release: string; branch: string; commit: string; kind?: "release" | "revert"; session?: string; worktree?: string }): Promise<MergeEntry> {
+    return this.serial(async () => {
+      const hold = this.q.release;
+      if (!hold || hold.id !== r.release) throw new MergeFailure("invalid-request", `release ${r.release} doesn't hold this queue`);
+      const kind = r.kind ?? "release";
+      const open = this.q.entries.find((e) => e.release === r.release && (e.releaseKind ?? "release") === kind && !isFinal(e));
+      if (open) {
+        if (open.commit === r.commit) return this.withPosition(open);
+        throw new MergeFailure("busy", `release ${r.release} already has ${kind === "revert" ? "a revert" : "a release commit"} in line (${open.id})`);
+      }
+      const sha = await revParse(this.git, this.root, r.commit);
+      if (!sha) throw new MergeFailure("invalid-request", `no commit ${r.commit}`);
+      if (kind === "release" && !(await isAncestor(this.git, this.root, hold.base, sha))) throw new MergeFailure("invalid-request", `${sha.slice(0, 7)} isn't cut from the release's base ${hold.base.slice(0, 7)}`);
+      const at = this.iso();
+      const e: Entry = {
+        id: newId("mq"),
+        project: this.id,
+        target: this.q.target,
+        branch: r.branch.replace(/^refs\/heads\//, ""),
+        ...(r.worktree ? { worktree: r.worktree } : {}),
+        ...(r.session ? { session: r.session } : {}),
+        commit: sha,
+        approval: { by: "release", at, commit: sha, withoutReview: true },
+        state: "queued",
+        runs: [],
+        picks: [],
+        notes: [],
+        release: r.release,
+        releaseKind: kind,
+        createdAt: at,
+        updatedAt: at,
+        seq: ++this.q.seq,
+      };
+      this.q.entries.push(e);
+      this.toFront(e);
+      this.save();
+      this.kickSoon();
+      return this.withPosition(e);
+    });
+  }
+
+  /** Retry a release entry handed back (Retry Step on checks): back in line at the same commit. */
+  retryReleaseEntry(release: string): Promise<MergeEntry> {
+    return this.serial(async () => {
+      const e = [...this.q.entries].reverse().find((x) => x.release === release && (x.releaseKind ?? "release") === "release");
+      if (!e) throw new MergeFailure("not-found", `release ${release} has no release commit in the queue`);
+      if (e.state === "landed") throw new MergeFailure("invalid-request", "its release commit already landed");
+      if (e.state === "checking" || e.state === "queued") return this.withPosition(e);
+      delete this.q.machineTries[e.id];
+      this.toFront(e);
+      delete e.reason;
+      this.save();
+      this.kickSoon();
+      return this.withPosition(e);
+    });
+  }
+
+  /**
+   * Publish: all or none. The numbered tag at the release commit (its message the notes), each channel moved to it,
+   * and, for a project that pushes (merge.push not false, an origin), master with both in one atomic push (channels
+   * leased on origin's old value). A local-only project tags and moves its channels on this machine. On success the
+   * hold is lifted and the waiting landings go on; on failure every local ref is as before and the hold stays.
+   */
+  publishRelease(p: { release: string; tag: string; channels: string[]; commit: string; notes: string }): Promise<{ pushed: PushState; why?: string; channelsFrom: Record<string, string | null> }> {
+    return this.serial(async () => {
+      const hold = this.q.release;
+      if (!hold || hold.id !== p.release) throw new MergeFailure("invalid-request", `release ${p.release} doesn't hold this queue`);
+      if (this.current) throw new MergeFailure("busy", "a run is checking: publish once it is done");
+      const head = await this.targetHead();
+      if (head !== p.commit) throw new MergeFailure("invalid-request", `${this.q.target} is at ${(head ?? "?").slice(0, 7)}, not the release commit ${p.commit.slice(0, 7)}`);
+      const def = (await this.declared()).def;
+      const pushes = def?.merge?.push !== false && (await hasOrigin(this.git, this.root));
+      if (pushes && !this.names().exists) throw new MergeFailure("invalid-request", PUSH_HELD_NAMES);
+      const r = await publishGit(this.git, { root: this.root, target: this.q.target, commit: p.commit, tag: p.tag, channels: p.channels, message: p.notes, push: pushes, landed: new Set(this.q.landed) });
+      if (!r.ok) {
+        this.log(`publish of ${p.tag} failed: ${r.why}`);
+        throw new MergeFailure("busy", r.why);
+      }
+      if (r.pushed === "pushed") {
+        this.q.heads.pushed = p.commit;
+        delete this.q.heads.pushWhy;
+        for (const x of this.q.entries) if (x.state === "landed" && x.landed && x.landed.pushed !== "pushed" && (x.landed.sha === p.commit || (await isAncestor(this.git, this.root, x.landed.sha, p.commit)))) x.landed = { ...x.landed, pushed: "pushed" };
+        for (const x of this.q.entries) if (x.landed?.pushed === "pushed") delete x.landed.pushWhy;
+      } else {
+        for (const x of this.q.entries) if (x.release === p.release && x.landed) x.landed = { ...x.landed, pushed: r.pushed, ...(r.why ? { pushWhy: r.why } : {}) };
+        if (r.why) this.q.heads.pushWhy = r.why;
+      }
+      this.liftNow();
+      this.save();
+      this.log(`published ${p.tag} at ${p.commit.slice(0, 7)} (${r.pushed})`);
+      return { pushed: r.pushed, ...(r.why ? { why: r.why } : {}), channelsFrom: r.channelsFrom };
+    });
+  }
+
+  /**
+   * Abandon: a release entry still in line is cancelled; one that landed is undone by a revert entry the queue lands
+   * first (never a reset of the shared checkout), and that landing lifts the hold. Nothing landed: the hold lifts now.
+   */
+  abandonRelease(r: { release: string; why?: string }): Promise<{ revert: string | null }> {
+    return this.serial(async () => {
+      const hold = this.q.release;
+      if (!hold || hold.id !== r.release) return { revert: null };
+      const mine = this.q.entries.filter((e) => e.release === r.release);
+      const revertOpen = mine.find((e) => e.releaseKind === "revert" && !isFinal(e));
+      if (revertOpen) return { revert: revertOpen.id };
+      for (const e of mine) {
+        if (isFinal(e) || (e.releaseKind ?? "release") !== "release") continue;
+        if (this.current?.entry === e.id) {
+          this.current.voidWhy = "cancelled";
+          this.current.ac.abort();
+        }
+        e.state = "cancelled";
+        e.reason = `release abandoned${r.why ? `: ${r.why.split("\n")[0]!.slice(0, 160)}` : ""}`;
+        e.updatedAt = this.iso();
+      }
+      const landed = [...mine].reverse().find((e) => (e.releaseKind ?? "release") === "release" && e.state === "landed" && e.landed);
+      const head = await this.targetHead();
+      if (!landed || !head || head === hold.base) {
+        this.liftNow();
+        this.save();
+        return { revert: null };
+      }
+      if (head !== landed.landed!.sha) throw new MergeFailure("invalid-request", `${this.q.target} is at ${head.slice(0, 7)}, not the release commit ${landed.landed!.sha.slice(0, 7)}: undo it by hand`);
+      const sha = await revertCommit(this.git, this.root, head, landed.landed!.from, `Revert release ${hold.version ?? hold.id} (abandoned)${r.why ? `\n\n${r.why}` : ""}`);
+      if (typeof sha !== "string") throw new MergeFailure("busy", sha.error);
+      const branch = `sova/release-revert-${r.release}`;
+      const u = await this.git(["update-ref", `refs/heads/${branch}`, sha], this.root);
+      if (u.code !== 0) throw new MergeFailure("busy", `couldn't name the revert: ${u.stderr.trim()}`);
+      const at = this.iso();
+      const e: Entry = {
+        id: newId("mq"),
+        project: this.id,
+        target: this.q.target,
+        branch,
+        commit: sha,
+        approval: { by: "release", at, commit: sha, withoutReview: true },
+        state: "queued",
+        runs: [],
+        picks: [],
+        notes: [],
+        release: r.release,
+        releaseKind: "revert",
+        createdAt: at,
+        updatedAt: at,
+        seq: ++this.q.seq,
+      };
+      this.q.entries.push(e);
+      this.toFront(e);
+      hold.state = "abandoned";
+      this.save();
+      this.kickSoon();
+      return { revert: e.id };
+    });
+  }
+
+  /** Withdraw: each channel back to its previous release (or removed), pushed with a lease when the project pushes.
+   *  The numbered tag never moves. */
+  withdrawRelease(w: { tag: string; sha: string; channels: Record<string, string | null>; why: string }): Promise<{ pushed: "pushed" | "not-pushed" | "no-remote"; channelsFrom: Record<string, string | null> }> {
+    return this.serial(async () => {
+      const def = (await this.declared()).def;
+      const pushes = def?.merge?.push !== false && (await hasOrigin(this.git, this.root));
+      const r = await withdrawGit(this.git, { root: this.root, channels: w.channels, tag: w.tag, sha: w.sha, why: w.why, push: pushes });
+      if (!r.ok) throw new MergeFailure("busy", r.why);
+      this.log(`withdrew ${w.tag}: ${Object.entries(w.channels).map(([c, to]) => `${c} → ${to ? to.slice(0, 7) : "none"}`).join(", ")}`);
+      return { pushed: r.pushed === "pending" ? "not-pushed" : r.pushed, channelsFrom: r.channelsFrom };
+    });
   }
 
   // ---- recovery and stop ------------------------------------------------------------------------

@@ -256,6 +256,13 @@ The harnesses:
     shows b's line done with its dest. Screenshots go to
     `~/.cache/mesh-links-transfer-lab-*.png`.
 
+- **m10-versions** (needs the `lab/al_1-*` builds of `e2e/versions-builds.mjs make`, the playwright skill's
+  node_modules and a Chromium; takes the LOCK; spends a few short glm-5.3 turns; leaves a, b and c on base,
+  paired): hosts on different builds (§mesh/compatibility), each host on its own commit through `lab swap`, each state
+  asserted on the page and against a raw send. Screenshots go to `SHOTS`. Resync uses a git history and a stand-in
+  deploy script injected into the newer host, and the update itself is a `lab swap`: it proves the offer, the job,
+  the wait on the hello and the state afterwards, never `deploy.sh` over ssh.
+
 - **m7-grants** (takes the LOCK; no LLM turns; leaves a,b,c paired with no `mesh-access.json`):
   per-peer grants (§mesh.peers/grants). With no grants file anywhere, a peer reaches everything as
   before. A grants B `none` from its own page: B's calls to A, hello included, are 403

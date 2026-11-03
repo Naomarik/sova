@@ -6,8 +6,11 @@
 //   node scripts/mesh-lab/e2e/versions-builds.mjs make [--from <rev>] [--legacy <rev>]
 //   node scripts/mesh-lab/e2e/versions-builds.mjs list | delete
 //
-//   legacy     the fork point from master: lists no areas
+//   legacy     the fork point from master: lists no areas, same protocol fingerprint as base
+//   legacy-skewed  legacy plus a comment in shared/protocol.ts: lists no areas, another fingerprint
 //   base       <from>, default HEAD
+//   base-merged  base's tree with legacy-skewed as a second parent: legacy-skewed has to be an older
+//              build of something for Resync to offer it, and it can't be an ancestor of base
 //   unrelated  base plus an unused exported type and a comment in shared/protocol.ts: the protocol
 //              fingerprint differs and no area number does
 //   composer, transcript, sessions, peer   base with that one number raised in shared/wire-areas.json
@@ -21,7 +24,7 @@ import { pathToFileURL } from "node:url";
 const ROOT = resolve(import.meta.dirname, "../../..");
 const PREFIX = "lab/al_1-";
 export const BUMPED = ["composer", "transcript", "sessions", "peer"];
-export const BUILDS = ["legacy", "base", "unrelated", ...BUMPED];
+export const BUILDS = ["legacy", "legacy-skewed", "base", "base-merged", "unrelated", ...BUMPED];
 export const refOf = (name) => `${PREFIX}${name}`;
 
 function git(args, { env, input, allowFail = false } = {}) {
@@ -33,7 +36,7 @@ function git(args, { env, input, allowFail = false } = {}) {
 export const commitOf = (name) => git(["rev-parse", "--verify", "-q", `refs/heads/${refOf(name)}^{commit}`], { allowFail: true });
 
 /** One commit on top of `parent` with `files` ({path: text}) replaced; moves the ref to it. */
-function variant(name, parent, files) {
+function variant(name, parent, files, otherParent) {
   const dir = mkdtempSync(join(tmpdir(), "al1-index-"));
   const env = { GIT_INDEX_FILE: join(dir, "index") };
   try {
@@ -43,7 +46,7 @@ function variant(name, parent, files) {
       git(["update-index", "--add", "--cacheinfo", `100644,${blob},${path}`], { env });
     }
     const tree = git(["write-tree"], { env });
-    const commit = git(["commit-tree", tree, "-p", parent, "-m", `lab: throwaway build ${name}, never merged`]);
+    const commit = git(["commit-tree", tree, "-p", parent, ...(otherParent ? ["-p", otherParent] : []), "-m", `lab: throwaway build ${name}, never merged`]);
     git(["update-ref", `refs/heads/${refOf(name)}`, commit]);
     return commit;
   } finally {
@@ -57,8 +60,11 @@ export function make({ from = "HEAD", legacy } = {}) {
   git(["update-ref", `refs/heads/${refOf("legacy")}`, fork]);
   git(["update-ref", `refs/heads/${refOf("base")}`, base]);
   const areas = JSON.parse(git(["show", `${base}:shared/wire-areas.json`]));
-  const protocol = spawnSync("git", ["-C", ROOT, "show", `${base}:shared/protocol.ts`], { encoding: "utf8", maxBuffer: 64 << 20 }).stdout;
+  const protocolAt = (rev) => spawnSync("git", ["-C", ROOT, "show", `${rev}:shared/protocol.ts`], { encoding: "utf8", maxBuffer: 64 << 20 }).stdout;
+  const protocol = protocolAt(base);
+  variant("legacy-skewed", fork, { "shared/protocol.ts": `${protocolAt(fork)}\n// lab: a legacy build on another fingerprint.\n` });
   variant("unrelated", base, { "shared/protocol.ts": `${protocol}\n// lab: an unrelated protocol change, in no area.\nexport interface LabUnrelatedChange {\n  labOnly?: string;\n}\n` });
+  variant("base-merged", base, {}, commitOf("legacy-skewed"));
   for (const area of BUMPED) {
     if (typeof areas[area]?.version !== "number") throw new Error(`shared/wire-areas.json at ${base} has no version for ${area}`);
     const next = structuredClone(areas);

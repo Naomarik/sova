@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import type { ProjectDef, ReleaseDecl } from "../../shared/project-contract";
-import { settingsWaitingWords, SETTINGS_WAITING_WORDS } from "../../shared/merge-queue-settings";
+import { settingsWaitingClause, settingsWaitingWords, SETTINGS_WAITING_WORDS } from "../../shared/merge-queue-settings";
 import { planChecks } from "../merge-queue/checks";
 import { MergeFailure } from "../merge-queue/queue";
 import { projectKey } from "../merge-queue/store";
@@ -704,6 +704,8 @@ describe("master's how-it-lands, settings saves and local-main updates against t
   test("a waiting save names the release holding it, in the result and the settings; one already waiting on a branch reads as the release too; it drops when the hold lifts", async () => {
     assert.equal(settingsWaitingWords("release v0.4.0"), "Saves once release v0.4.0 is published or abandoned");
     assert.equal(settingsWaitingWords(), SETTINGS_WAITING_WORDS);
+    assert.equal(settingsWaitingClause("release v0.4.0"), "once release v0.4.0 is published or abandoned");
+    assert.equal(settingsWaitingClause(), "when the current branch finishes");
     const t = releaseKit();
     try {
       const q = await t.k.q();

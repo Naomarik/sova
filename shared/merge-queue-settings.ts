@@ -135,4 +135,6 @@ export const SETTINGS_DIRTY_WORDS = "Commit or discard the edit in the project f
 /** The words while a save waits for the branch checking now. */
 export const SETTINGS_WAITING_WORDS = "Saves when the current branch finishes";
 /** The words for a waiting save: the release holding it when one does (`release`, as shown), else the branch's. */
-export const settingsWaitingWords = (release?: string): string => (release ? `Saves once ${release} is published or abandoned` : SETTINGS_WAITING_WORDS);
+export const settingsWaitingWords = (release?: string): string => `Saves ${settingsWaitingClause(release)}`;
+/** The same, as a clause for a sentence of its own ("{how} saves to the project file {clause}."). */
+export const settingsWaitingClause = (release?: string): string => (release ? `once ${release} is published or abandoned` : "when the current branch finishes");

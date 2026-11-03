@@ -209,7 +209,7 @@ function HostMark(props: { host: string }) {
       class="session-host"
       classList={{ "session-host-warn": state()?.tone === "warn", "session-host-error": state()?.tone === "error" }}
       title={why() ?? `On ${hostLabel(props.host)}`}
-      data-testid="session-row-host"
+      data-testid={readingOf(props.host) ? "session-row-host" : undefined}
       data-host-state={readingOf(props.host) ?? undefined}
     >
       <Show when={state()}>

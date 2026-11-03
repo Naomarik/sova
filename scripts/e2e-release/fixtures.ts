@@ -151,25 +151,30 @@ if (sub === "next") {
   if (existsSync(STATE + "/page.conf") && readFileSync(STATE + "/page.conf", "utf8").trim() === "fail") { console.log("release page: host refused"); process.exit(1); }
   writeFileSync(STATE + "/page-" + (arg ?? prev), "made\\n");
   console.log("release page made for " + (arg ?? prev));
-} else if (sub === "build") {
+} else if (sub === "build" || sub === "artifact") {
   mkdirSync("dist", { recursive: true });
   const body = "app " + (arg ?? prev) + " built from " + sh("rev-parse", "HEAD") + "\\n";
-  const file = "dist/app-" + (arg ?? prev) + ".jar";
+  const file = sub === "artifact" && arg ? arg : "dist/app-" + (arg ?? prev) + ".jar";
   writeFileSync(file, body);
   const sha256 = createHash("sha256").update(body).digest("hex");
   console.log(JSON.stringify({ artifact: process.cwd() + "/" + file, sha256, size: Buffer.byteLength(body) }));
 } else { console.log("unknown: " + sub); process.exit(2); }
 `;
 
-const PLAYBOOK = (kind: Kind) => `# Release (fixture)
+const PLAYBOOK = (kind: Kind, steps: ReleaseStep[]) => `# Release (fixture)
 
-Follow Sova's general release method. This project's additions:
+Follow Sova's general release method. This project's additions, one line per step of release.json:
 
-- Version: patch for fixes only, minor when any landing adds a feature (\`release.mjs next\`).
-- Notes: one line per landing since the previous release, for people who installed it (\`release.mjs notes\`).
-- Bump: \`release.mjs bump <version>\` writes package.json and the CHANGELOG section; commit both as "Release v<version>".
-${kind === "local" ? "- After publish: `release.mjs build <version>` builds the app into dist/ (gitignored, never committed) and prints {artifact, sha256, size}; report those facts with the build step.\n" : "- After publish: `release.mjs page <version>` makes the release page.\n"}
-Never push or tag: Sova's Publish does that.
+${steps.map((st) => `- \`${st.id}\`: ${st.label}.${
+  st.id === "version" ? " Patch for fixes only, minor when any landing adds a feature (`release.mjs next`)." :
+  st.id === "notes" ? " One line per landing since the previous release, for people who installed it (`release.mjs notes`)." :
+  st.id === "bump" ? " `release.mjs bump <version>` writes package.json and the CHANGELOG section." :
+  st.id === "commit" ? ' Commit both as "Release v<version>" and report the commit.' :
+  st.id === "artifact" ? " `release.mjs artifact dist/app.jar` builds the app into dist/ (gitignored, never committed) and prints {artifact, sha256, size}; report those facts." :
+  st.id === "page" ? " `release.mjs page <version>` makes the release page." : ""
+}`).join("\n")}
+
+Never push or tag: Sova's Publish does that.${kind === "local" ? " This project has no remote." : ""}
 `;
 
 const SHIP = `import { cpSync, mkdirSync, writeFileSync } from "node:fs";
@@ -288,7 +293,7 @@ export class ReleaseFixture {
     this.put("package.json", JSON.stringify({ name: this.name, version: first, private: true }, null, 2) + "\n");
     this.put("CHANGELOG.md", `# Changelog\n\n## v${first}\n\n- First release.\n`);
     if (this.kind !== "bare" && !this.opts.noPlaybook) {
-      this.put(".sova/playbooks/release/PLAYBOOK.md", `---\nname: Release\ndescription: How ${this.name} is released.\n---\n${PLAYBOOK(this.kind)}`);
+      this.put(".sova/playbooks/release/PLAYBOOK.md", `---\nname: Release\ndescription: How ${this.name} is released.\n---\n${PLAYBOOK(this.kind, this.manifest().steps)}`);
       this.put(".sova/playbooks/release/release.json", JSON.stringify(this.manifest(), null, 2) + "\n");
       this.put(".sova/playbooks/release/scripts/release.mjs", DRIVER(this.state));
     }

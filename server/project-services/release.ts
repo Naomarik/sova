@@ -644,7 +644,7 @@ export class Releaser {
       if (await revParse(this.git, root, `refs/tags/${tag}`)) return { ok: false, why: `${tag} already exists: a numbered version is used once` };
       if (rec.settings.channels.includes(tag)) return { ok: false, why: `${tag} is a channel's name` };
       const other = this.records(root).find((r) => r.id !== rec.id && r.tag === tag && r.state !== "abandoned");
-      if (other) return { ok: false, why: `${tag} belongs to release ${other.id}` };
+      if (other) return { ok: false, why: `${tag} belongs to another release` };
     }
     if (st.id === "commit" && rec.settings.commit) {
       const c = facts.commit;
@@ -875,7 +875,7 @@ export class Releaser {
     delete rec.power;
     for (const s of rec.steps) if (s.state === "running" || s.state === "held") s.state = "skipped";
     this.save(rec);
-    this.wake(rec, `The operator abandoned release ${rec.version ?? rec.id}: ${why}. Stop; do nothing more for it.`);
+    this.wake(rec, `The operator abandoned ${rec.tag ? `release ${rec.tag}` : "this release"}: ${why}. Stop; do nothing more for it.`);
     this.log(`${root}: abandoned ${rec.id}${r.revert ? ` (revert ${r.revert})` : ""}`);
     return { changed: true, report: { release: rec, view: await this.view(root) } };
   }

@@ -2227,12 +2227,12 @@ export class ProjectQueue {
   addReleaseEntry(r: { release: string; branch: string; commit: string; kind?: "release" | "revert"; session?: string; worktree?: string }): Promise<MergeEntry> {
     return this.serial(async () => {
       const hold = this.q.release;
-      if (!hold || hold.id !== r.release) throw new MergeFailure("invalid-request", `release ${r.release} doesn't hold this queue`);
+      if (!hold || hold.id !== r.release) throw new MergeFailure("invalid-request", "that release doesn't hold this queue");
       const kind = r.kind ?? "release";
       const open = this.q.entries.find((e) => e.release === r.release && (e.releaseKind ?? "release") === kind && !isFinal(e));
       if (open) {
         if (open.commit === r.commit) return this.withPosition(open);
-        throw new MergeFailure("busy", `release ${r.release} already has ${kind === "revert" ? "a revert" : "a release commit"} in line (${open.id})`);
+        throw new MergeFailure("busy", `this release already has ${kind === "revert" ? "a revert" : "a release commit"} in line`);
       }
       const sha = await revParse(this.git, this.root, r.commit);
       if (!sha) throw new MergeFailure("invalid-request", `no commit ${r.commit}`);
@@ -2290,7 +2290,7 @@ export class ProjectQueue {
   publishRelease(p: { release: string; tag: string; channels: string[]; commit: string; notes: string }): Promise<{ pushed: PushState; why?: string; channelsFrom: Record<string, string | null> }> {
     return this.serial(async () => {
       const hold = this.q.release;
-      if (!hold || hold.id !== p.release) throw new MergeFailure("invalid-request", `release ${p.release} doesn't hold this queue`);
+      if (!hold || hold.id !== p.release) throw new MergeFailure("invalid-request", "that release doesn't hold this queue");
       if (this.current) throw new MergeFailure("busy", "a run is checking: publish once it is done");
       const head = await this.targetHead();
       if (head !== p.commit) throw new MergeFailure("invalid-request", `${this.q.target} is at ${(head ?? "?").slice(0, 7)}, not the release commit ${p.commit.slice(0, 7)}`);
@@ -2348,7 +2348,7 @@ export class ProjectQueue {
         return { revert: null };
       }
       if (head !== landed.landed!.sha) throw new MergeFailure("invalid-request", `${this.q.target} is at ${head.slice(0, 7)}, not the release commit ${landed.landed!.sha.slice(0, 7)}: undo it by hand`);
-      const sha = await revertCommit(this.git, this.root, head, landed.landed!.from, `Revert release ${hold.version ?? hold.id} (abandoned)${r.why ? `\n\n${r.why}` : ""}`);
+      const sha = await revertCommit(this.git, this.root, head, landed.landed!.from, `Revert ${this.releaseName()} (abandoned)${r.why ? `\n\n${r.why}` : ""}`);
       if (typeof sha !== "string") throw new MergeFailure("busy", sha.error);
       const branch = `sova/release-revert-${r.release}`;
       const u = await this.git(["update-ref", `refs/heads/${branch}`, sha], this.root);

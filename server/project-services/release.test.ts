@@ -749,6 +749,8 @@ describe("master's how-it-lands, settings saves and local-main updates against t
       open.steps[0]!.state = "failed";
       (t.r as unknown as { save(r: unknown): void }).save(open);
       said.push(...t.r.attentionFacts().map((f) => f.detail));
+      await q.publishRelease({ release: "rl_someother1", tag: "v9.9.9", channels: [], commit: t.repo.head(), notes: "n" }).then(() => assert.fail("refused"), (e: Error) => said.push(e.message));
+      assert.equal(said.pop(), "that release doesn't hold this queue");
       assert.equal(said.length, 7, JSON.stringify(said));
       for (const line of said) assert.doesNotMatch(line, /rl_/, line);
       assert.equal(said[0], "waits for the open release to be published or abandoned");
@@ -760,6 +762,27 @@ describe("master's how-it-lands, settings saves and local-main updates against t
       assert.equal((await q.settings()).pendingSave?.release, "release v0.2.0");
     } finally {
       await t.done();
+    }
+  });
+
+  test("abandoning names the release by its tag, in the revert commit and to its chat, and an unnamed one with no id", async () => {
+    const t = releaseKit();
+    try {
+      const rec = await ready(t);
+      assert.equal((await t.call("release.abandon", { release: rec.id, confirm: true, why: "not now" })).ok, true);
+      assert.equal(sh(t.repo.root, "log", "-1", "--format=%s", (await t.k.entry(t.r.record(t.repo.root, rec.id)!.abandoned!.revert!)).commit), "Revert release v0.2.0 (abandoned)");
+      assert.ok(t.wakes.some((w) => /^The operator abandoned release v0\.2\.0: not now\./.test(w.text)), JSON.stringify(t.wakes.map((w) => w.text)));
+    } finally {
+      await t.done();
+    }
+    const u = releaseKit();
+    try {
+      await u.call("release.start", {});
+      await u.call("release.abandon", { confirm: true, why: "no" });
+      const w = u.wakes.find((x) => /abandoned/.test(x.text))!;
+      assert.equal(w.text, "The operator abandoned this release: no. Stop; do nothing more for it.");
+    } finally {
+      await u.done();
     }
   });
 

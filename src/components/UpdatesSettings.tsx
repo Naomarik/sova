@@ -129,7 +129,7 @@ export function UpdatesSettingsSection() {
                 <Banner
                   tone="warn"
                   title={withdrawnTitle(w())}
-                  body={`This copy runs a release that was taken back ${relativeTime(w().at)}. Nothing changes on its own; ${goBackLabel(w().target)} moves it to the release before.`}
+                  body={`This copy runs a release that was taken back ${relativeTime(w().at)}. Nothing changes on its own${offer() ? `; ${goBackLabel(w().target)} moves it to the release before.` : "."}`}
                 />
               )}
             </Show>

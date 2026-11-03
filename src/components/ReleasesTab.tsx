@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import type { ReleaseHistoryItem, ReleaseRecord, ReleaseStep, ReleaseView } from "../../shared/release";
+import type { ReleaseSetupReview } from "../../shared/project-runtime";
 import { runReleaseSetup } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
@@ -602,5 +603,54 @@ export function ReleasesCard(props: { projectId: string; poll: Poll<ReleaseView>
         )}
       </Show>
     </section>
+  );
+}
+
+/**
+ * What a Set Up Releases run proposes on its branch (§app.project-runtime/run-report): the `release` settings Sova acts on
+ * and the playbook's steps in their order, Sova's own checks and Publish between them, before you land it.
+ */
+export function ReleaseSetupSteps(props: { setup: ReleaseSetupReview }) {
+  const s = () => props.setup;
+  const PHASES = ["prepare", "check", "after", "withdraw"] as const;
+  const HEAD: Record<(typeof PHASES)[number], string> = { prepare: "Before the checks", check: "After the checks, before Publish", after: "After Publish", withdraw: "After a Withdraw" };
+  return (
+    <div class="deploy-recipe rel-setup" role="group" aria-label="Release setup">
+      <Show when={s().problem}>{(p) => <p class="orgs-line project-software-failed">The release setup on its branch doesn't read: {p()}</p>}</Show>
+      <Show when={s().settings}>
+        {(st) => (
+          <p class="project-card-note">
+            Tags <span class="text-mono">{st().tag}</span> ({st().scheme})
+            {st().channels.length ? <> · moves <span class="text-mono">{st().channels.join(", ")}</span></> : " · no channel moves"}
+            {st().commit ? " · makes a release commit" : " · tag-only"}
+            {st().checks.length ? <> · gating checks {st().checks.join(", ")}</> : " · the landing checks only"}
+            {` · quiet after ${st().quietMin} min`} · playbook <span class="text-mono">{st().playbook}</span>
+          </p>
+        )}
+      </Show>
+      <For each={PHASES.filter((ph) => s().steps.some((x) => x.phase === ph))}>
+        {(ph) => (
+          <>
+            <p class="project-card-note">{HEAD[ph]}</p>
+            <ol class="deploy-steps">
+              <For each={s().steps.filter((x) => x.phase === ph)}>
+                {(x) => (
+                  <li class="deploy-step">
+                    <span class="deploy-step-kind">{x.label}</span> <span class="text-mono text-muted">{x.id}</span>
+                    {x.held ? <> · <Chip tone="warn">Held for you</Chip></> : null}
+                    {x.artifact ? " · reports a built file" : ""}
+                  </li>
+                )}
+              </For>
+            </ol>
+          </>
+        )}
+      </For>
+      <Show when={s().files.length}>
+        <p class="project-card-note">
+          Files: <span class="text-mono">{s().files.join(", ")}</span>
+        </p>
+      </Show>
+    </div>
   );
 }

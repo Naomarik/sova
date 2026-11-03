@@ -854,7 +854,40 @@ const fileInput = (s: SessionSummary): RefreshInput => {
   }
 };
 const sameInput = (a: RefreshInput, b: RefreshInput) => a.key === b.key && a.file === b.file;
-const cache = new Map<string, Cached>();
+/** The tracked worktrees a reading carries, as one comparable string ("" for none). */
+const treesKey = (c: Cached | undefined): string => (c?.facts?.trees ?? []).map((t) => `${t.path}\0${t.status}\0${t.how}`).join("\n");
+/** The readings, with `version` moved whenever a session's tracked worktrees change (or a session with some
+    goes), so a reader of who tracks what (trackedWorktrees) rebuilds only then. */
+export class Readings extends Map<string, Cached> {
+  version = 0;
+  override set(k: string, v: Cached): this {
+    if (treesKey(super.get(k)) !== treesKey(v)) this.version++;
+    return super.set(k, v);
+  }
+  override delete(k: string): boolean {
+    if (treesKey(super.get(k))) this.version++;
+    return super.delete(k);
+  }
+  override clear(): void {
+    if (this.size) this.version++;
+    super.clear();
+  }
+}
+const cache = new Readings();
+
+/**
+ * Who tracks which worktree, from the background reads' own records (each read session's `worktrees`
+ * entries, its file scanned incrementally as it grows): nothing is read here. `version` moves only when a
+ * session's tracked set changes, so a reader keeps its own index until then (server/merge-queue/owners.ts).
+ */
+export function trackedWorktrees(): { version: number; each(): Iterable<[sessionPath: string, trees: readonly TrackedWorktree[]]> } {
+  return {
+    version: cache.version,
+    *each() {
+      for (const [path, c] of cache) if (c.facts?.trees.length) yield [path, c.facts.trees] as [string, readonly TrackedWorktree[]];
+    },
+  };
+}
 const queued = new Map<string, RefreshInput>();
 const active = new Map<string, RefreshInput>();
 /** Sessions an explicit inspection asked to re-read every tree's dirty state for. */

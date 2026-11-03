@@ -272,7 +272,7 @@ describe("a branch's card in its own chat", () => {
     }
   });
 
-  test("Land with no chat named: the branch's earlier chat, else the chat working in its worktree", async () => {
+  test("Land with no chat named: the branch's owner (owners.ts, stood in here), else its earlier chat", async () => {
     const t = cardKit({ deps: { ownerOf: async (_r, branch, wt) => (branch === "feat/w" && wt ? "s-wt" : null) } });
     try {
       const q = await t.k.q();

@@ -247,3 +247,16 @@ test("read-only: scanning leaves every file's bytes and mtime untouched", async 
   await scanner().refresh([owner.path, w.path]);
   assert.deepEqual([snap(w.path), snap(owner.path)], before);
 });
+
+test("parentOf: the session that runs a worker, from a live record listing it or a completion naming it; none: null", async () => {
+  const worker = session([marker()]);
+  const done = session([marker()]);
+  const owner = session([complete(header3(done.path))]);
+  const running = session();
+  const live = () => [{ sessionFile: running.path, pid: process.pid, rec: { presence: { workers: [{ id: "ag_02", sessionFile: worker.path }] } } }];
+  const ws = scanner(live);
+  await ws.refresh([worker.path, done.path, owner.path, running.path]);
+  assert.equal(ws.parentOf(worker.path), running.path);
+  assert.equal(ws.parentOf(done.path), owner.path);
+  assert.equal(ws.parentOf(owner.path), null);
+});

@@ -178,9 +178,10 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   (`.sova/playbooks/release/references/checks.md`): there is no other catch-up run of the groups
   landings skip.
 - **Counts for the caller.** When `SOVA_OUT` names a file, the runner writes its result there as
-  JSON when it ends: `passed`, `failed`, `errors`, `skipped`, and `failures` (`[{name, message?,
-  file?}]`), the shape the project verbs read (§app.project-services/test), so a merge check or a
-  `test` verb run has real counts and the failing files to rerun.
+  JSON when it ends: `passed`, `failed`, `errors`, `skipped`, `failures` (`[{name, message?,
+  file?}]`) and `ranFiles` (every test file it actually ran, repo-relative), the shape the project
+  verbs read (§app.project-services/test), so a merge check or a `test` verb run has real counts,
+  the failing files to rerun, and the proof of which files a rerun ran (§app.merge-queue/blame).
 - **The tier guard.** A second test preload (`scripts/test-tier-guard.mjs`) records, for each file
   in either tier, the programs it starts, the addresses it listens on or connects to, the URLs it
   fetches and whether it imports `server/index.ts`, merged into `.cache/test-audit.json`. By

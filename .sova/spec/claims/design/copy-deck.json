@@ -125,7 +125,12 @@
       "src/lib/merge-queue.ts",
       "shared/merge-queue.ts",
       "src/components/MergeQueueCard.tsx",
-      "src/lib/merge-queue-card.ts"
+      "src/lib/merge-queue-card.ts",
+      "src/components/ReviewChanges.tsx",
+      "src/components/ChangesViewer.tsx",
+      "server/merge-queue/attribute.ts",
+      "server/merge-queue/run.ts",
+      "server/merge-queue/wake.ts"
     ]
   },
   "§design.copy-deck/message-actions": {

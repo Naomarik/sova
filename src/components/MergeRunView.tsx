@@ -6,7 +6,7 @@ import type { MergeAnswer } from "../../shared/merge-queue";
 import { announce, toast } from "../lib/ui-state";
 import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { Banner, Icon } from "./ui";
-import { FromChat } from "./MergeQueueTab";
+import { type ChatOf, FromChat } from "./MergeQueueTab";
 import { QueueChip, UnclearChecks } from "./WorktreesModal";
 
 const RUN_POLL_MS = 3000;
@@ -24,7 +24,7 @@ const MARK: Record<RunStep["result"], { icon: "check" | "close" | "clock" | "che
  * tested, whose failure it was when it failed (checked against the target alone), and every step —
  * the copy and setup included — with where each check came from, why, its time and its log.
  */
-export function MergeRunView(props: { projectId: string; view: MergeQueueView; runId: string; chatTitle?(path: string): string | undefined }) {
+export function MergeRunView(props: { projectId: string; view: MergeQueueView; runId: string; chatOf?: ChatOf }) {
   const [run, { refetch }] = createResource(() => props.runId, readRun);
   // A running run moves: read it again while it runs, and on any queue change.
   createEffect(
@@ -75,7 +75,7 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
             <Show when={entry()}>
               {(e) => (
                 <p class="text-caption text-muted">
-                  <FromChat projectId={props.projectId} entry={e()} chatTitle={props.chatTitle} /> · approved {relativeTime(e().approval.at)} by {e().approval.by === "typed" ? "your message in its chat" : "your Land"}
+                  <FromChat projectId={props.projectId} entry={e()} chatOf={props.chatOf} /> · approved {relativeTime(e().approval.at)} by {e().approval.by === "typed" ? "your message in its chat" : "your Land"}
                 </p>
               )}
             </Show>

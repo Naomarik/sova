@@ -4830,7 +4830,8 @@ export type LlmFeedMessage =
 //    `context=1` adds `oldText`, the file's old side whole (for expanding folded context).
 //    `origins=1` adds the commits each hunk came from (`hunkCommits`, `commits`, or `originsUnknown`).
 // <scope> as query parameters: kind=worktree&session=<sessionPath>&path=<worktreePath>
-//                                 [&base=<oid>&head=<oid>[&baseRef=<label>][&branch=<label>]]
+//                                 [&base=<oid>&head=<oid>[&baseRef=<label>][&branch=<label>]][&uncommitted=1]
+//                            | kind=queue&project=<projectId>&(entry=<mq_…>|branch=<branch>)   (no session)
 //                            | kind=commit&session=<sessionPath>&path=<repoPath>&sha=<hex sha>
 //                            | kind=merge&session=<sessionPath>&path=<repoPath>&sha=<full sha>
 //                            | kind=dirty&session=<sessionPath>&path=<cwd>
@@ -4855,7 +4856,24 @@ export type DiffScope = (
   /** A worktree's branch (committed HEAD) against its review base, chosen by the rule the
       show_changes tool uses (pi-config/extensions/worktrees/git.ts reviewBase). With `pin`, the
       card's saved base..head instead, recomputing nothing. */
-  | { kind: "worktree"; sessionPath: string; worktreePath: string; pin?: DiffPin }
+  | {
+      kind: "worktree";
+      sessionPath: string;
+      worktreePath: string;
+      pin?: DiffPin;
+      /** Unpinned only: when the worktree has uncommitted files, the head side is its working tree
+          (the branch's commits plus them), and each file with uncommitted changes is marked
+          `uncommitted` (§chat.changes/entry). A clean worktree reads as without it. */
+      uncommitted?: true;
+    }
+  /** A Merge Queue row's branch, with no session (§chat.changes/endpoint): the server derives
+      both sides from the queue's own records for project `project` (its id). `entry`: an entry's
+      pinned commit against its merge-base with the target, or, once landed, what its landing
+      brought in (the target before it to the landing commit). `branch`: a branch checked out in a
+      worktree of that project's main checkout (never the checkout itself), its tip against its
+      merge-base with the target, its uncommitted files included and marked as the worktree
+      scope's `uncommitted` does. Exactly one of the two. */
+  | { kind: "queue"; project: string; entry?: string; branch?: string; sessionPath?: undefined }
   /** One commit against its first parent (a root commit: against the empty tree). `sha` is hex,
       4–64 chars, resolved to a commit in that repository; a merge card's sha, typically. */
   | { kind: "commit"; sessionPath: string; repoPath: string; sha: string }
@@ -4870,9 +4888,17 @@ export type DiffScope = (
 
 /** The scope's query string (no leading `?`). */
 export function diffScopeQuery(s: DiffScope): string {
+  if (s.kind === "queue") {
+    const out = new URLSearchParams({ kind: s.kind, project: s.project });
+    if (s.entry) out.set("entry", s.entry);
+    if (s.branch) out.set("branch", s.branch);
+    for (const p of s.paths ?? []) out.append("paths", p);
+    return out.toString();
+  }
   const q = new URLSearchParams({ kind: s.kind, session: s.sessionPath });
   if (s.kind === "worktree") {
     q.set("path", s.worktreePath);
+    if (s.uncommitted) q.set("uncommitted", "1");
     if (s.pin) {
       q.set("base", s.pin.base);
       q.set("head", s.pin.head);
@@ -4916,8 +4942,12 @@ export interface DiffFileSummary {
       side git has not hashed (dirty scope). */
   oldOid?: string;
   newOid?: string;
-  /** Dirty scope only: the file is not tracked (shown as added). */
+  /** Dirty scope, or a comparison that includes uncommitted files: the file is not tracked (shown as added). */
   untracked?: true;
+  /** A comparison whose head is a working tree beyond its branch's commits (a worktree scope's
+      `uncommitted`, a queue scope's branch): this file has changes not committed yet (untracked
+      files included). Never set in the dirty scope, where every file is. */
+  uncommitted?: true;
   /** Untracked only: too large to diff, or past the summary's read budget; `added` counts only the
       lines read (server/git-diff.ts MAX_UNTRACKED_READ, UNTRACKED_BUDGET), 0 when none were. */
   tooLarge?: true;
@@ -4943,6 +4973,8 @@ export interface DiffSummary {
   totals: { files: number; added: number; removed: number };
   /** The file list stopped at the cap; `totals.files` is the real count. */
   truncated?: true;
+  /** How many listed files carry `uncommitted` (absent when none, or the head is a commit). */
+  uncommitted?: number;
   generatedAt: number;
 }
 

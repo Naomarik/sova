@@ -2567,6 +2567,7 @@ export function ChatView(props: {
         worktrees={props.overseer ? undefined : props.worktrees}
         worktreesTitle={props.worktreesTitle}
         onWorktreesChanged={props.onWorktreesChanged}
+        worktreesCwd={props.summary?.()?.cwd}
         inputsPending={inputsPending(inputCount(), items(), !!props.summary?.() && knownInputs(props.summary()!))}
         waiting={{
           get aligns() {

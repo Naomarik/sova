@@ -1,10 +1,13 @@
 # §app/merge-queue — Merge queue
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-Each project Sova runs verbs for (§app/project-services) has one **merge queue**, owned by Sova
-and worked mechanically. It is the only way a branch reaches the project's target branch
-(`master`; `main` where the project's definition or repository says so). The user approves a
-branch (§app.merge-queue/approve). Sova then merges it onto the newest target in a merge copy of
+Each project the merge queue **serves** (§app.merge-queue/served: on Sova's Projects list, with its
+merge setup done) has one **merge queue**, owned by Sova and worked mechanically. It is the only way
+a branch reaches that project's target branch (`master`; `main` where the project's definition or
+repository says so). Every other repository has no queue at all: its chats merge into its main
+branch plainly, with git (§chat.worktrees/tool). The user approves a
+branch (§app.merge-queue/approve); each branch belongs to one chat, by one rule
+(§app.merge-queue/owner), which hears about it. Sova then merges it onto the newest target in a merge copy of
 its own, one branch at a time, and turns its spec drafts into docs there. It runs the project's
 checks on that commit (§app.merge-queue/run, §app.merge-queue/checks) and fast-forwards the target
 to exactly the commit it tested (§app.merge-queue/land). Then it pushes (§app.merge-queue/push).
@@ -28,7 +31,46 @@ or "not live" state anywhere and has no Restart Server control. Restarting stays
 (§app.updates/restart and the operator's Apply verb).
 
 Batching ("test up to N branches together") is a per-project setting fixed at 1 and not shown.
-There is no trial phase and no switch: a project's queue is how its branches land.
+There is no trial phase and no switch: a served project's queue is how its branches land.
+
+## §app.merge-queue/served — Which projects the queue serves
+
+One rule decides whether a repository goes through the merge queue. It is **served** when both hold:
+- its main checkout is the folder of a project on Sova's Projects list that isn't archived; a
+  repository that is only a git folder, or that carries its own `.sova/project.json`, is not
+  enough;
+- and its merge setup is done: the `.sova/project.json` at the target's head declares checks (a
+  `merge` section's checks or `"none"`, or a test command, §app.merge-queue/checks), or it is there
+  but doesn't parse, which is a broken setup said as such, never bypassed (§app.merge-queue/setup).
+
+A listed project without a merge setup, and every repository not on the list, is **not served**: it
+merges plainly, and nothing refuses it. Its chats merge a branch into its main branch with git when
+the user asks or agrees, with no prompt beyond the sandbox's usual confirm, and the user's typed
+"land it" or "merge it" makes the chat merge the branch into the main branch itself, spec drafts
+made official in the same step (§chat.worktrees/tool). For it Sova makes no queue record, go-ahead,
+queue card, merge thread, merge copy or `[merge-queue]` message, offers no Land, and reads no
+Ready to land or Landing specs (§chat.worktrees/ready-to-land).
+
+**One answer, read at the moment of a merge.** Sova's server works the rule out and keeps the
+answer in `<state root>/merge-served.json`: each served repository's main checkout and its target.
+It writes the file at every start, before it takes any typed go-ahead, and again whenever the
+answer changes (a project added to the list, removed or archived, a setup saved, a target whose
+definition changed). A chat reads it afresh at each merge or "land it", never once at its start,
+so a project listed or set up while the chat is open takes effect at its next merge. A chat Sova
+doesn't run treats every repository as not served. A chat Sova runs that finds the file missing or
+damaged treats the repository as served, so a served project never merges around its queue. When
+the server can't read its Projects list, it serves nothing until it can.
+
+**Every way in asks the same rule.** Land, a typed go-ahead the queue picks up
+(§chat.worktrees/landing-answers), the merge verbs from a chat, the Overseer or the assistant
+(§app.project-services/merge-verbs), the queue's view, the merge thread's wake and readiness's
+messages each ask it first. A request for a repository that isn't served is answered with one
+sentence, "not a project the merge queue serves: merge it into main from the chat" (a merge
+verb's error `unsupported`), and leaves no record behind: asking never creates a queue for it.
+
+**Leftover records.** A queue record on disk for a repository that isn't served (one made before
+this rule, or a project since removed from the list) is never loaded at start-up: Sova neither runs it nor feeds
+it go-aheads, and leaves the file as it is.
 
 ## §app.merge-queue/approve — Approving a branch, and taking it back
 
@@ -62,7 +104,9 @@ The entry joins the end of the line, which runs in the order approvals came, and
 - a branch with nothing ahead of the target;
 - a branch with a temporary commit subject;
 - the target branch itself;
-- a project whose queue isn't set up (§app.merge-queue/setup);
+- a repository the queue doesn't serve (not on the Projects list, or its merge setup not done),
+  with "not a project the merge queue serves: merge it into main from the chat", making no queue
+  record (§app.merge-queue/served);
 - while the target's `.sova/project.json` doesn't parse, any branch but one whose own commit carries
   a valid definition declaring checks: "The project's .sova/project.json is invalid: {path}:
   {message}. Fix it on the target, or land a branch that fixes it; nothing else lands until it
@@ -224,12 +268,31 @@ median time is summed.
 A red check is never blamed on the branch until the same check has passed on the target alone,
 in the same copy.
 
-- **Named failing test files.** The failing files are rerun alone on the merge commit.
-  - If they pass, they're **flaky**: noted on the landing, not blocking.
-  - If they fail again, they're rerun on the target alone, in the same copy.
+- **Named failing test files.** The failing files are rerun alone on the merge commit. Every rerun
+  of named files, there and on the target, asks for exactly those files: a check that is the
+  project's test command (`test.run`, after any wrapper such as `nice`) with selection flags after
+  it is rerun as that test command alone with the files, so its flags (Sova's integration check:
+  `--integration --landing --base …`) never drop one; any other check gets the files after its own
+  command.
+  - If they pass, they're **flaky**: noted on the landing, not blocking. A rerun that didn't
+    actually run them (they aren't among the files it reports it ran, or it ran no test at all)
+    never makes them flaky: they go on to the target's rerun, as if they had failed again.
+  - If they fail again, they're rerun on the target alone, in the same copy, with the target's own
+    runner as it is, so a file only the branch's change triggers still runs there.
     - Failing there too makes them the **target's**: noted on the landing ("{check}: {files} also
       fail on {target} alone (not blocking)"), not blocking.
-    - Passing there, or not existing there, makes them the **branch's**.
+    - Passing there, or not existing there, makes them the **branch's**, but only once the target's
+      rerun is known to have run them.
+  - **Never a pass on a guess.** A failed file the target's rerun didn't actually run (a check that
+    reports the test files it ran, as Sova's runner does in its `SOVA_OUT` report, and doesn't list
+    it), or a target rerun that ran no test at all, tells nothing: whose failure it is **can't be
+    told** ("can't tell whose failure: {check}'s {files} didn't run on {target} alone"), never
+    blamed on the branch. The entry waits for the user as Can't tell whose failure, as below, unless
+    another of its failures is proven the branch's, which sends it back as usual. The limit: a project whose runner doesn't report the files it ran is taken at its
+    counts. A target rerun that ran nothing (no counts, or none passed or failed) can't be told; one
+    that ran tests and passed makes the files the branch's, since nothing says whether the failed
+    files were among them, nor whether such a runner skipped some of several named files while
+    running others.
 - **Failures followed by name.** When a check names failing tests but no file (a runner such as
   Kaocha), or names a file the merge doesn't have at that path (a bare file name), its failures are
   compared test by test:
@@ -244,9 +307,14 @@ in the same copy.
     target's even when the branch moves its lines.
 - **A whole check that names no failure** (typecheck, build, a suite's exit) is first rerun whole on
   the merge commit.
-  - If it passes, it's **flaky**, as above.
+  - If it passes, it's **flaky**, as above, unless its report says the rerun ran no test at all
+    (none listed as run, none passed or failed): that proves nothing, and it goes on as if it had
+    failed again ("the rerun ran no test"). A check that writes no report, such as a build, is
+    taken at its exit. The same holds for a failure followed by name.
   - If it fails again, it's rerun on the target alone.
-    - Passing there makes it the **branch's**.
+    - Passing there makes it the **branch's**, unless its report says that run ran no test at all:
+      then whose failure it is can't be told ("can't tell whose failure: {check} ran no test on
+      {target} alone"), as below; the same holds for failures followed by name.
     - Failing there too, when both runs name their failures, they are compared test by test as
       above.
     - Failing there too when either run names nothing (the target's run included) means **whose
@@ -257,8 +325,9 @@ in the same copy.
         moved since the run, it is rerun first, and a rerun that still can't tell lands too.
       - **Send Back** hands it to its chat as **Needs a fix**.
 
-      The queue doesn't pause, and the branches after it go on. The view says the check is red on
-      the target alone ("Red on {target} alone: {check}").
+      The queue doesn't pause, and the branches after it go on. When it failed on the target, the
+      view says the check is red on the target alone ("Red on {target} alone: {check}"); one that
+      only ran no test there isn't called red.
 - **Setup fails** on the merged tree. It is first rerun once on the merge; passing then makes it
   **flaky**, as above. Failing again, setup is rerun on the target alone, with nothing reused.
   - If the target passes, it's the **branch's**, with the setup log.
@@ -444,7 +513,7 @@ landings it made.
 
 **Resume** accepts the new head, and waiting entries run on it.
 
-Nothing inside Sova merges into a target a set-up queue manages: `worktree merge` into it is refused
+Nothing inside Sova merges into the target of a project the queue serves (§app.merge-queue/served): `worktree merge` into it is refused
 in a chat Sova runs (§chat.worktrees/tool), the project page's and a proposed run's Merge Branch read
 Land (§app.project-overseer/coding-worktrees, §app.project-runtime/merge), and any other direct merge
 of a coding branch into it, whoever asks, is refused: "{target} takes branches only through the
@@ -452,8 +521,12 @@ merge queue: Land the branch instead (nothing was merged)."
 
 ## §app.merge-queue/setup — A project not set up yet
 
-A project with no checks declared and no test command shows an onboarding screen in place of its
-Merge Queue view. It offers three answers, and only the user gives them (`merge.setup`):
+A project on the Projects list with no checks declared and no test command isn't served by the
+queue yet (§app.merge-queue/served): its chats merge plainly. Its Merge Queue tab says so in place
+of the view, "No merge queue settings are set up for this project", with an **Initialize** button
+(§app.merge-queue/view).
+Initialize opens the onboarding screen. A repository that isn't on the list has no Merge Queue tab
+and no setup. The onboarding offers three answers, and only the user gives them (`merge.setup`):
 - **list its checks**, one "Label: command" per line;
 - **give one test command**, with about how long it takes (its time limit is twice that, at most
   30 minutes) and what must start first;
@@ -474,7 +547,8 @@ creates it in that same commit (its subject ending "; new .sova/project.json"). 
 a definition gets only its `merge` section changed. The commit uses the repository's
 identity, else "Sova merge queue". It counts as the queue's own: it raises no "moved outside" flag
 and is pushed with the next landing, never on its own: until then the strip reads the remote's
-commit with "not pushed yet: goes out with the next landing". From then on, the project's branches land through the queue.
+commit with "not pushed yet: goes out with the next landing". From then on the queue serves the
+project, and its branches land through it.
 
 **A definition that doesn't parse is not "not set up".** Only a missing `.sova/project.json` (or one
 declaring neither checks nor a test command) gets the onboarding. When the target's file is there but
@@ -494,7 +568,12 @@ invalid:
 ## §app.merge-queue/view — The Merge Queue view
 
 The project page has a **Merge Queue** tab between Branches and Cost (§app.organizations/project-page),
-at `#/projects/<pid>/merge-queue`. It shows, top to bottom:
+at `#/projects/<pid>/merge-queue`. While the queue doesn't serve the project (a definition that
+doesn't parse aside, which shows its error instead), the tab shows only its head, "Merge queue"
+with a **Not set up** chip, and one banner: "No merge queue settings are set up for this project",
+then "Until they are, its chats merge branches into {target} themselves when you ask.", with
+**Initialize**, which opens the onboarding (§app.merge-queue/setup). For a project it serves, it
+shows, top to bottom:
 
 - **The strip**: the target at its commit, and the commit pushed to `origin`, with **Pushed**,
   **Not pushed** or **No remote**. Not pushed always carries one sentence: the queue's why ("Push
@@ -511,8 +590,8 @@ at `#/projects/<pid>/merge-queue`. It shows, top to bottom:
 - **Checking now**: the branch, its commit and chat, "{target} {base} + this branch → testing {tip}",
   the current check ("check N of M") with a meter, when it started, how long it takes, how many
   checks the merge thread added, and **View Checks**.
-- **Waiting**, in order, with when the last one should be done. Each entry shows its place, branch
-  and commit, its chat, when it was approved and how (the Land button, or typed in its chat), its
+- **Waiting**, in order, with when the last one should be done. Each entry shows its place as its
+  state chip ("In line · 2"), its branch and commit, its chat, when it was approved and how (the Land button, or typed in its chat), its
   options (without review, without its specs), "starts in ~N min · takes ~N min", newer commits not
   included, and **Cancel Landing**.
 - **Needs you**: entries waiting for the user, in full words:
@@ -524,12 +603,46 @@ at `#/projects/<pid>/merge-queue`. It shows, top to bottom:
   - **Drafts changed since you approved**, with Land;
   - a **Conflict** while it is being judged.
 - **Sent back to its chat**: entries that need a fix, with **See Why**.
-- **Recent**: landings, "Landed as {sha} · {when} · pushed" (or "not pushed: {why}"), "No checks
+- **Recent**: landings, each with a **Landed** chip, "Landed as {sha} · {when} · pushed" (or "not pushed: {why}"), "No checks
   declared" when so, every note, and **View Checks**.
 - **Ready to land, not approved**: the project's worktree branches with commits the target hasn't, a
   clean tree, a head that isn't a temporary commit, and no entry in line or landed at that commit.
-  Each shows its branch, commit, Ready chip, worktree and "{n} commits ahead", and **Land** with the
-  same menu as the modal's (Land Without Review, Land Without Its Specs…).
+  Each shows its branch, commit, Ready chip, its chat, worktree and "{n} commits ahead · +{a} −{d}",
+  and **Land** with the same menu as the modal's (Land Without Review, Land Without Its Specs…).
+  Land there names no chat: the queue records the branch's owner by the same rule the row shows
+  (§app.merge-queue/owner), so the chat the row shows is the one the queue records and tells.
+
+**Every row's chat.** Every row of Checking now, Waiting, Needs you, Sent back, Recent and Ready to
+land names its chat by title: a row in the line or landed names the chat its entry recorded; a
+Ready row names the branch's owner (§app.merge-queue/owner). A click or tap anywhere on the row
+outside its buttons, links and menus opens that chat; a click with a modifier key, or one that ends
+a text selection, does nothing. The chat's title is also a real link to it, so it opens in a new
+tab too, and it is never wrapped around the row's buttons. The chat opens whatever form its
+recorded id takes (the link reaches the chat, never an empty "not found" view). An archived chat
+still opens, with "archived" after its title. A row with no known chat reads "No chat found for
+this worktree", opens nothing when tapped, and keeps its buttons.
+
+**Review Changes on every row.** Every row of those sections has **Review Changes**, which opens
+the changes viewer (§chat.changes/viewer) over the tab: a dialog, a full-height sheet on a phone,
+closed with Close, Esc or the scrim, focus back on the button. It needs no chat, so a row with no
+known chat has it too; when the row's chat is known, its turns become the viewer's steps, else the
+viewer shows the files alone. What it compares, read by the server from the queue's own records
+(§chat.changes/endpoint):
+- **Ready to land**: the branch as it is now against its merge-base with the target it lands on;
+  uncommitted files in its worktree, if any appeared since the row was listed, are included and
+  marked as uncommitted;
+- **Checking now, Waiting, Needs you and Sent back**: the commit that was approved, never a newer
+  one on the branch, against its merge-base with the target;
+- **Recent**: what that landing brought in, from the target before it to the landed commit.
+
+**On a phone** (a screen narrower than 600px) the sections lose their outer card frame and inner
+box: rows are split by hairlines, with 12px side padding. Each row stacks: the branch on its own
+line, wrapping anywhere; a facts line led by the state chip, then the commit and "{n} commits ahead
+· +{a} −{d}" (or the row's own facts); the chat line, where the worktree is named by its folder's
+last name, with the full path as its `title`; and an actions line, Review Changes on the left and
+Land ▾ (or the row's other actions) on the right, every control at least 44px tall. Nothing scrolls
+sideways at 390px. Wider screens keep the actions at the row's end and show the full path. Nothing
+is offered only on hover.
 
 **The run page** (`…/merge-queue/<run>`) shows:
 - the branch and its verdict, the base, the branch's commit and the tested commit, when it started
@@ -551,3 +664,22 @@ at `#/projects/<pid>/merge-queue`. It shows, top to bottom:
 Every action here (Land, Cancel, Pause, Resume, Accept, Send Back, Land Anyway) is a catalogue
 command over the merge verbs (§app.project-services/merge-verbs). The view follows the queue live,
 from the session feed's merge-queue frames, at desktop and phone widths.
+
+## §app.merge-queue/owner — Which chat owns a branch
+
+One rule says which chat owns a worktree's branch, and Sova uses it everywhere the queue needs a
+chat it wasn't told: the chat a Ready row names and opens (§app.merge-queue/view), and the chat an
+approval records, hears about its outcomes and shows its queue card (§chat.merge-queue/chat-card).
+The owner is, the first that holds:
+1. the chat that created the worktree and still tracks it (its own record, not dropped;
+   §chat/worktrees), when it isn't archived;
+2. else the newest chat not archived working in the worktree's folder or inside it, a worker
+   included;
+3. else the same two, in that order, among archived chats, so the row shows it marked "archived";
+4. else none: the row reads "No chat found for this worktree", and no chat gets a card.
+
+So a worktree created by one chat, with a newer worker working inside it, belongs to the chat that
+created it, and Land on its row with no chat named records and tells that chat.
+
+Working out owners never rereads chats' transcripts each time the view is read: Sova keeps which
+chat tracks which worktree, and updates it as those chats' worktree records change.

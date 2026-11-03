@@ -10,7 +10,8 @@
       "§chat.worktrees/merge-card",
       "§chat.composer/worktrees-control",
       "§app.project-services/merge-verbs",
-      "§chat.changes/entry"
+      "§chat.changes/entry",
+      "§app.merge-queue/owner"
     ],
     "code": [
       "src/lib/merge-queue-card.ts",
@@ -70,12 +71,16 @@
       "server/merge-queue/cards.test.ts",
       "server/merge-queue/wake.ts",
       "server/merge-readiness.ts",
-      "src/components/LiveKinds.tsx"
+      "src/components/LiveKinds.tsx",
+      "server/merge-queue/wake.test.ts",
+      "server/worker-sessions.ts",
+      "server/worker-sessions.test.ts",
+      "server/sessions-index.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T22:41Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-03T11:27Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
   "§chat.merge-queue/thread": {

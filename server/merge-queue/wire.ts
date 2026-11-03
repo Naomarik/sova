@@ -9,7 +9,10 @@ import { setLandingNoteSource, setMergeCardNoteSource } from "./card-note";
 import { MergeCards } from "./cards";
 import { MergeQueues } from "./queue";
 import { merger, recordedRoots } from "./routes";
-import { countBetween, realGit, revParse } from "./guard";
+import { countBetween, realGit, revParse, worktreesOf } from "./guard";
+import { canonical } from "../../pi-config/extensions/worktrees/state.ts";
+import type { QueueSubject } from "../git-diff";
+import { type Owner, WorktreeOwners } from "./owners";
 import { engineServices, makeRunMerge } from "./run";
 import { worktreeQueueInfo } from "./view";
 import { LandingNotes, SERVED_FILE_NAME, ServedRule, servedKey, servedRule, setServedRule, startServedWriter } from "./served";
@@ -105,6 +108,75 @@ export function ingestDepsFor(a: {
 /** Tests only: stand a set of queues in for the server's (null: none). */
 export function setMergeQueuesForTest(q: MergeQueues | null): void {
   queues = q;
+}
+
+let owners: WorktreeOwners | null = null;
+/** The chat a worktree's branch belongs to (owners.ts), the rule Ready rows and Land share. */
+export async function worktreeOwnerOf(worktree: string): Promise<Owner | null> {
+  if (!owners) {
+    const [{ listSessions }, { trackedWorktrees }] = await Promise.all([import("../sessions-index"), import("../merge-readiness")]);
+    owners = new WorktreeOwners({ sessions: () => listSessions(), tracked: trackedWorktrees, canonical });
+  }
+  return owners.ownerOf(worktree);
+}
+
+/** The root of the registered project `id`, or null. */
+async function projectRootOf(id: string): Promise<string | null> {
+  const { listProjects } = await import("../projects/spaces");
+  try {
+    return listProjects().find((p) => p.id === id)?.root ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** What a queue diff scope names (server/git-diff.ts), from this queue's records only: an entry of project `id`, or a
+ *  branch checked out in a worktree of its main checkout (its own `git worktree list`, never the checkout itself). */
+export async function queueSubjectOf(id: string, sel: { entry?: string; branch?: string }): Promise<QueueSubject | null> {
+  if (!queues) return null;
+  // A queue already read (the tab's own read loads it), else the registered project's.
+  let q = (await queues.loaded()).find((x) => x.id === id);
+  if (!q) {
+    const root = await projectRootOf(id);
+    if (!root) return null;
+    const rule = await servedRule();
+    if (!(await rule.served(root))) {
+      // Not served (no setup): no queue is made for it (a4); it has no entries, and a branch is diffed against the
+      // target the queue would have.
+      if (!sel.branch) return null;
+      const target = (await rule.setupOf(root)).target;
+      const w = (await worktreesOf(realGit, root)).find((x) => x.branch === sel.branch && canonical(x.path) !== canonical(root));
+      return w ? { kind: "ready", root, target, branch: sel.branch, worktree: w.path } : null;
+    }
+    q = await queues.get(root);
+  }
+  const root = q.root;
+  if (sel.entry) {
+    const e = q.entry(sel.entry);
+    if (!e || e.project !== q.id) return null;
+    if (e.state === "landed" && e.landed) return { kind: "landed", root, target: e.target, branch: e.branch, sha: e.landed.sha, from: e.landed.from };
+    return { kind: "entry", root, target: e.target, branch: e.branch, commit: e.commit };
+  }
+  if (!sel.branch) return null;
+  const w = (await worktreesOf(realGit, root)).find((x) => x.branch === sel.branch && canonical(x.path) !== canonical(root));
+  return w ? { kind: "ready", root, target: q.target, branch: sel.branch, worktree: w.path } : null;
+}
+
+/** The branch the registered project holding `dir` (a checkout or one of its worktrees) lands into: its merge queue's
+ *  target. Null when no registered project holds it or the queue isn't started. */
+export async function landingTargetOf(dir: string): Promise<string | null> {
+  if (!queues) return null;
+  const { projectOf } = await import("../project-root");
+  const p = await projectOf(dir);
+  if (p.state !== "ok" || !p.git) return null;
+  const { listProjects } = await import("../projects/spaces");
+  let known = false;
+  try {
+    known = listProjects().some((x) => x.root === p.root);
+  } catch {}
+  if (!known) return null;
+  // The queue's target rule, read from Git: asking never makes a queue for a project it doesn't serve (a4).
+  return (await (await servedRule()).setupOf(p.root)).target;
 }
 
 /** Tell the typed go-ahead door to look now (the worktree tool just wrote one). */
@@ -250,13 +322,8 @@ export async function startMergeQueue(
     },
     // The branch's card in its own chat: raised at the approval, a revision at each outcome (cards.ts).
     notify: (kind, e, extra) => cardsDo(kind === "approved" ? mc.approved(e, extra.root) : mc.outcome(kind, e, { ...(extra.run ? { run: extra.run } : {}), root: extra.root })),
-    ownerOf: async (_root, _branch, worktree) => {
-      // Land from the Merge Queue tab names no chat: the newest chat working in the branch's worktree.
-      if (!worktree) return null;
-      const { listSessions } = await import("../sessions-index");
-      const inside = (await listSessions()).filter((x) => !x.archived && (x.cwd === worktree || x.cwd.startsWith(`${worktree}/`)));
-      return inside.sort((a, b) => (Date.parse(b.lastActiveAt) || 0) - (Date.parse(a.lastActiveAt) || 0))[0]?.id ?? null;
-    },
+    // The branch's chat (owners.ts): the Ready rows show it, and a Land naming no chat records it.
+    ownerOf: async (_root, _branch, worktree) => (worktree ? worktreeOwnerOf(worktree) : null),
     thread,
     draftsHash: (dir) => draftsHash(dir),
     threadOf: (root) => (threadMod as { threadOf?: (r: string) => { session: string; startedAt: string } | null }).threadOf?.(root) ?? null,
@@ -344,6 +411,7 @@ export async function startMergeQueue(
 
 export async function stopMergeQueue(): Promise<void> {
   rowsOf = null;
+  owners = null;
   servedWriter?.stop();
   servedWriter = null;
   setServedRule(null);

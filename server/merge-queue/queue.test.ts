@@ -6,6 +6,8 @@ import { draftsHash } from "../spec-drafts-state";
 import { MergeFailure, PUSH_HELD_NAMES, PUSH_WAITS_NEXT_LANDING, type QueueDeps } from "./queue";
 import { writeOverride } from "./strategy";
 import { DEF, makeKit, makeRepo, sh, tryGit, until, untilAborted } from "./testing/queue-kit";
+import { WorktreeOwners } from "./owners";
+import type { SessionSummary } from "../../shared/protocol";
 
 /** Landed, and its push answered (pushed or not). */
 const landed = (k: ReturnType<typeof makeKit>, id: string) =>
@@ -1192,6 +1194,29 @@ describe("the view's extras", () => {
       const v = await q.view();
       assert.deepEqual(v.ready!.map((r) => [r.branch, r.commit, r.ahead]), [["feat/ready", a.head, 1]]);
       assert.deepEqual(v.thread, { session: "t1", startedAt: "2026-11-02T00:00:00.000Z" });
+    } finally {
+      await k.done();
+    }
+  });
+  test("one owner: the Ready row names the chat that created the worktree, and Land with no chat named records that same chat", async () => {
+    // Chat A created and tracks the worktree, working from the main checkout; worker B, newer, works inside it.
+    let wt = "";
+    const row = (id: string, cwd: string, minAgo: number, x: Partial<SessionSummary> = {}) =>
+      ({ id, path: `/s/${id}.jsonl`, cwd, archived: false, lastActiveAt: new Date(Date.now() - minAgo * 60_000).toISOString(), ...x }) as SessionSummary;
+    const owners = new WorktreeOwners({
+      sessions: async () => [row("A", "/proj", 30), row("B", wt, 1, { workerSession: true })],
+      tracked: () => ({ version: 1, each: () => [["/s/A.jsonl", [{ path: wt, status: "active", how: "created" } as never]]] }),
+      canonical: (p) => p,
+    });
+    const k = makeKit({ deps: { ownerOf: async (_r, _b, w) => (w ? owners.ownerOf(w) : null) } });
+    try {
+      const q = await k.q();
+      await q.pause("hold");
+      wt = k.repo.branch("feat/owned", { "o.txt": "o\n" }).path;
+      const v = await q.view();
+      assert.deepEqual(v.ready!.map((r) => [r.branch, r.session, r.sessionArchived, r.added, r.removed]), [["feat/owned", "A", undefined, 1, 0]]);
+      const a = await q.add({ branch: "feat/owned", by: "land-button" });
+      assert.equal(a.entry.session, "A", "Land records the row's chat, not the newer worker");
     } finally {
       await k.done();
     }

@@ -87,8 +87,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-03T11:27Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
   "§chat.worktrees/landing-answers": {
@@ -110,7 +110,9 @@
       "server/session-offers.ts",
       "server/merge-queue/ingest.ts",
       "server/landing-removal-guard.test.ts",
-      "server/merge-queue/card-note.ts"
+      "server/merge-queue/card-note.ts",
+      "server/merge-queue/served-rule.test.ts",
+      "server/merge-queue/served.test.ts"
     ],
     "requires": [
       "§chat.worktrees/tool",
@@ -118,8 +120,28 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-03T11:27Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+    }
+  },
+  "§chat.worktrees/landing-note": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/served",
+      "§chat.worktrees/tool"
+    ],
+    "code": [
+      "server/merge-queue/card-note.ts",
+      "server/merge-queue/served.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/served-rule.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T11:27Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
   "§chat.worktrees/merge-card": {
@@ -148,8 +170,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T22:41Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-03T11:30Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
   "§chat.worktrees/merged-state": {
@@ -170,7 +192,8 @@
       "§chat.worktrees/entry",
       "§chat.worktrees/inherit",
       "§chat.composer/worktrees-control",
-      "§app.merge-queue/approve"
+      "§app.merge-queue/approve",
+      "§chat.changes/entry"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -186,12 +209,17 @@
       "src/components/SessionPane.tsx",
       "src/components/WorktreesModal.tsx",
       "src/lib/merge-queue.ts",
-      "server/merge-queue-ui.integration.test.ts"
+      "server/merge-queue-ui.integration.test.ts",
+      "src/lib/merge-queue.test.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/wire.integration.test.ts",
+      "src/lib/worktrees-served.test.ts",
+      "src/components/ReviewChanges.tsx"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-03T11:27Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
   "§chat.worktrees/readiness": {
@@ -243,9 +271,9 @@
       "§app.decisions/attention-signals"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-28T15:18Z",
-      "source": "pi-session:e71bdc07-0b42-4cbc-89dd-c261c9e10dd3#0b8989b3"
+      "by": "user",
+      "at": "2026-11-03T11:27Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
   "§chat.worktrees/sandbox": {
@@ -260,8 +288,14 @@
       "pi-config/extensions/worktrees/index.ts",
       "pi-config/extensions/sandbox/index.ts",
       "pi-config/extensions/sandbox/policy.ts",
-      "pi-config/extensions/sandbox/tests/policy.unit.test.ts"
-    ]
+      "pi-config/extensions/sandbox/tests/policy.unit.test.ts",
+      "pi-config/extensions/worktrees/index.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T11:30Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+    }
   },
   "§chat.worktrees/tool": {
     "kind": "behavior",
@@ -281,12 +315,14 @@
       "pi-config/extensions/worktrees/spec-landing.test.ts",
       "pi-config/extensions/worktrees/landing.ts",
       "pi-config/extensions/worktrees/landing.test.ts",
-      "pi-config/extensions/worktrees/README.md"
+      "pi-config/extensions/worktrees/README.md",
+      "pi-config/extensions/worktrees/served.ts",
+      "pi-config/extensions/worktrees/served.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-03T11:27Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
   "§chat.worktrees/workers": {

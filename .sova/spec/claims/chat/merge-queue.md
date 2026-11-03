@@ -87,9 +87,11 @@ is missing, slow or failing:
 From the moment a branch is approved (§app.merge-queue/approve), the chat that owns it shows one
 **queue card** for that branch. The approval may come from Land in the composer's worktrees control,
 the session pane or the Merge Queue view, or from "land it" typed in that chat. The owner is the
-chat the approval names. Without one (Land on the Merge Queue view), it is the chat of the branch's
-earlier entry, else the newest chat not archived whose folder is inside the branch's worktree. A
-branch with no known chat gets no card anywhere. Approving the same branch again after a hand-back
+chat the approval names (a typed "land it", a Land in a chat's own control or pane). Without one
+(Land on the Merge Queue view), it is the branch's owner by the queue's one rule
+(§app.merge-queue/owner), the chat that row shows: the chat that created and tracks the worktree,
+else the newest chat working in it, an archived one included. A branch with no known chat gets no
+card anywhere. Approving the same branch again after a hand-back
 or a Cancel moves its same card on, as a new "approved" revision; a Landed card is never reused.
 
 **One card per branch.** A chat that owns several branches in the queue shows one card for each,
@@ -152,7 +154,10 @@ card stays for a merge a chat makes itself into a branch the queue doesn't manag
 ## §chat.merge-queue/chat-turns — What the queue tells the chat's model
 
 The queue never sends a chat a message that looks typed by the user: no "Sova: …" message is put
-into the composer or the conversation for any outcome.
+into the composer or the conversation for any outcome. It speaks only about repositories it serves
+(§app.merge-queue/served): a chat working in any other repository gets no `[merge-queue]`
+message, queue card or queue line, whatever its branches look like. The one exception is a typed
+"land it" the queue turns down for that reason, said as below.
 
 - **Landed and Drafts changed don't start a turn.** The chat's model reads one hidden line at its
   next turn, in a block of the chat's card note (so chats started before this shipped get it too).
@@ -175,11 +180,20 @@ into the composer or the conversation for any outcome.
   the conflict, or the review's findings. A chat busy with other work takes it after that turn. A
   wake the chat can't take (archived, an Overseer, a project overseer or a baton chat, or one held
   open in a terminal, which Sova never writes to) is refused and becomes the hidden line
-  instead. A worker chat that owns a branch gets the wake like any other chat.
+  instead. A worker chat that owns a branch is never woken itself (a worker's session takes no
+  wake from outside the chat that runs it): its wake goes to the chat that runs the worker, up to
+  the top chat when workers run workers (at most 8 levels), exactly once, marked as from the merge
+  queue like any other, its text naming the worker and the branch ("For your worker "{title}" …"
+  before the queue's own words). When no chat that runs it is known, or that chat can't take it,
+  the fact becomes the hidden line in the worker's own chat instead, as above, so nothing is lost
+  and nothing is sent twice.
 - **Waiting for the user starts nothing.** Behaviour differs, Review flagged and Can't tell whose
   failure ask the user on the card: no turn and no hidden line. When the user sends it back, that
   Send Back starts the turn, as above.
 - **A typed "land it" the queue refuses** is told to the model the same way, as a hidden line.
+  In a repository the queue doesn't serve (a chat still on code from before that rule records such
+  a go-ahead), the line is "{branch} at {sha} couldn't be queued to land: not a project the merge
+  queue serves: merge it into main from the chat.", so the chat, once reloaded, merges it itself.
 - A restart never repeats a revision, a hidden line or a wake: each is recorded once per entry,
   outcome and run in the chat's own queue-card record, kept whatever the chat's alignment, archive
   or worker state.

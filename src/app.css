@@ -1624,6 +1624,42 @@ html, body { overflow: clip; overscroll-behavior: none; }
 /* Destructive apart from the primary: never adjacent in a thumb arc. */
 .mq-row-act .button-destructive,
 .wt-queue-act .button-destructive { margin-left: var(--space-2); }
+/* Every row: the branch on its own line, the state chip first in its facts, the chat line, then the actions
+   (Review Changes first). The whole row opens its chat (.mq-tap); its buttons and links keep their own action. */
+.mq-branch { margin: 0; font-weight: var(--fw-medium); white-space: normal; overflow-wrap: anywhere; }
+.mq-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin: var(--space-1) 0 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.mq-chat .mq-chat-link { font-weight: var(--fw-medium); }
+.mq-folder-last { display: none; }
+.mq-tap { cursor: pointer; }
+.mq-tap:hover { background: var(--color-sunken); }
+.mq-row-act { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.mq-card .mq-row-act { flex: none; }
+/* A phone: no outer card and no inner box, rows split by hairlines with 12px sides, the folder's last name,
+   and the actions on a line of their own: Review Changes left, the row's own on the right, 44px tall. */
+@media (max-width: 599px) {
+  /* The page's own side padding (.insights-inner) is given back: the rows' hairlines reach the screen's edges. */
+  .card.mq-tab { border: 0; border-radius: 0; background: none; box-shadow: none; overflow: visible; margin-inline: calc(-1 * var(--space-4)); padding: var(--space-3) 12px; }
+  .mq-tab .mq-list,
+  .mq-tab .mq-card { margin-inline: -12px; border-inline: 0; border-radius: 0; }
+  .mq-tab .mq-card { padding: var(--space-3) 12px; }
+  .mq-tab .mq-row { flex-direction: column; align-items: stretch; padding: var(--space-3) 12px; }
+  .mq-tab .mq-row > .list-main { flex: none; }
+  .mq-tab .mq-row-act { width: 100%; }
+  .mq-tab .mq-card .spread .mq-row-act { width: auto; }
+  .mq-tab .mq-row-act .button,
+  .mq-tab .mq-row-act .button-split > .button { min-height: var(--tap-min); }
+  .mq-tab .mq-row > .mq-row-act .mq-review { margin-inline-end: auto; }
+  .mq-folder-full { display: none; }
+  .mq-folder-last { display: inline; }
+  .wt-queue-modal .wt-queue-row { padding-inline: 12px; }
+  .wt-queue-modal .wt-queue-act { flex: 1 1 100%; }
+  .wt-queue-modal .wt-queue-act .button,
+  .wt-queue-modal .wt-queue-act .button-split > .button { min-height: var(--tap-min); }
+  .wt-queue-modal .wt-queue-review { margin-inline-end: auto; }
+  .wt-queue-modal .wt-queue-path-full { display: none; }
+  .wt-queue-modal .wt-queue-path-last { display: inline; }
+}
+.wt-queue-path-last { display: none; }
 .mq-sides { display: grid; gap: var(--space-2); margin: var(--space-2) 0 0; }
 .mq-sides > div { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
 .mq-sides dt { margin: 0 0 var(--space-1); }

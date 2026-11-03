@@ -239,10 +239,12 @@ interface Opened {
   move(f: (rows: SessionWorktreeInfo[]) => SessionWorktreeInfo[]): void;
   /** Every frame the page sent on the chat's socket: a prompt or steer here would be a post into the chat. */
   frames: string[];
+  /** Each diff read's query (GET /api/diff/summary|patch), in order. */
+  diffs: { kind: "summary" | "patch"; query: URLSearchParams }[];
 }
 
 /** Sova at `width` on `hash`, every request answered: the session, its worktrees, the project, its queue. */
-async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo[]; view?: MergeQueueView; cards?: MergeCard[]; items?: unknown[] } = {}): Promise<Opened> {
+async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo[]; view?: MergeQueueView; cards?: MergeCard[]; items?: unknown[]; sessions?: SessionSummary[] } = {}): Promise<Opened> {
   const phone = width < 768;
   // Reduced motion: a screenshot shows each screen's end state, never a fade half-way.
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
@@ -256,6 +258,7 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
   const ok = (verb: string, merge: unknown) => ({ v: 1, verb, project: ROOT_DIR, instance: null, slot: null, generation: null, checkout: null, branch: null, ok: true, changed: true, state: "stopped", steps: [], services: [], data: [], links: [], defHash: null, merge });
   const frames: string[] = [];
+  const diffs: Opened["diffs"] = [];
   const items = o.items ?? [{ id: "u1", kind: "user", text: "Make drafts survive a reload.", at: iso(20) }];
   await page.routeWebSocket(/.*/, (ws) => {
     if (!new URL(ws.url()).pathname.startsWith("/ws/chat")) return;
@@ -286,7 +289,11 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
       }
       return route.fulfill(json(ok(verb, { entry: entry({}) })));
     }
-    if (p === "/api/sessions") return route.fulfill(json([SESSION, CODING, CODING_B]));
+    if (p === "/api/sessions") return route.fulfill(json(o.sessions ?? [SESSION, CODING, CODING_B]));
+    if (p === "/api/diff/summary" || p === "/api/diff/patch") {
+      diffs.push({ kind: p.endsWith("summary") ? "summary" : "patch", query: url.searchParams });
+      return route.fulfill(json(p.endsWith("summary") ? { ...DIFF_SUMMARY, scope: Object.fromEntries(url.searchParams) } : { path: url.searchParams.get("file"), status: "M", patch: DIFF_PATCH, base: DIFF_SUMMARY.base, head: DIFF_SUMMARY.head }));
+    }
     if (p === `/api/projects/${PID}/runtime`) return route.fulfill(json(RUNTIME));
     if (p === `/api/projects/${PID}/overseer/worktrees`) return route.fulfill(json(WORKTREES));
     if (p === `/api/projects/${PID}/runtime/merge` || p === `/api/projects/${PID}/overseer/worktrees/merge`) {
@@ -313,7 +320,7 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
   });
   await page.goto(`${ORIGIN}/${hash}`);
   assert.equal(await page.evaluate(() => innerWidth), width);
-  return { page, ctx, calls, frames, move: (f) => (moved = f) };
+  return { page, ctx, calls, frames, diffs, move: (f) => (moved = f) };
 }
 
 /** MQ_UI_SHOTS=<dir>: keep a screenshot of each screen (by hand, for a look). */
@@ -429,6 +436,30 @@ const UNCLEAR_RUN: MergeRun = {
   ],
 };
 const POSTS = /"type":"(prompt|steer|follow_up)"/;
+
+/** What Review Changes reads: one committed file and one uncommitted (untracked) one. */
+const DIFF_SUMMARY = {
+  repo: "/w/.worktrees/sova-ready-one",
+  base: { label: "master (merge-base)", oid: sha("1") },
+  head: { label: "feat/ready-one with uncommitted files" },
+  files: [
+    { path: "src/a.ts", status: "M", added: 3, removed: 1 },
+    { path: "src/loose.ts", status: "A", added: 2, removed: 0, untracked: true, uncommitted: true },
+  ],
+  totals: { files: 2, added: 5, removed: 1 },
+  uncommitted: 1,
+  generatedAt: T0,
+};
+const DIFF_PATCH = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n";
+/** An archived chat of the project, and the three ready rows: its chat known, none found, an archived one. */
+const ARCHIVED = { ...SESSION, id: "c3", path: "/w/sessions/c3.jsonl", title: "Old search", archived: true } as unknown as SessionSummary;
+const READY: MergeQueueView["ready"] = [
+  { branch: "feat/ready-one", worktree: "/w/.worktrees/sova-ready-one", commit: sha("9"), ahead: 3, added: 40, removed: 2, session: "c2" },
+  { branch: "feat/no-chat", worktree: "/w/.worktrees/sova-no-chat", commit: sha("8"), ahead: 1, added: 6, removed: 1 },
+  { branch: "feat/search-ab-with-a-much-longer-branch-name", worktree: "/w/.worktrees/sova-search-ab", commit: sha("7"), ahead: 12, added: 310, removed: 88, session: "c3", sessionArchived: true },
+];
+const hashOf = (page: Page) => page.evaluate(() => location.hash);
+const box = async (l: { boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> }) => (await l.boundingBox())!;
 
 for (const width of [1280, 390]) {
   describe(`${width}px`, () => {
@@ -1033,6 +1064,127 @@ for (const width of [1280, 390]) {
       await page.getByRole("button", { name: "Try the Merge Copy" }).click();
       await until("a none try", () => o.calls.some((c) => c.verb === "merge.setup" && c.body.none === true && c.body.dryRun === true));
       await noSideScroll(page);
+      await o.ctx.close();
+    });
+
+    test("Merge Queue rows: a tap opens the branch's chat; its buttons and the chat's name keep their own action; Review Changes opens over the tab", async () => {
+      const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf({ ready: READY }), sessions: [SESSION, CODING, CODING_B, ARCHIVED] });
+      const { page } = o;
+      const tab = page.locator(".mq-tab");
+      const ready = tab.locator('[data-branch="feat/ready-one"]');
+      await ready.waitFor({ timeout: 20_000 });
+      const start = await hashOf(page);
+      // The branch on its own line; the chip first in the facts, with the commit and the numbers; then the chat line.
+      assert.equal((await words(ready.locator(".mq-branch"))).trim(), "feat/ready-one");
+      const facts = ready.locator(".mq-facts");
+      assert.match(await words(facts.locator(":scope > *").first()), /Ready/);
+      assert.match(await words(facts), /9999999\s*3 commits ahead · \+40 −2/);
+      const chat = ready.getByRole("link", { name: "Fix the badge" });
+      assert.equal(await chat.getAttribute("href"), `#/s/${encodeURIComponent(CODING_B.path)}`);
+      // The folder: its full path on a wide screen, its last name on a phone (the full path in its title).
+      const folder = ready.locator(".mq-folder");
+      assert.equal(await folder.getAttribute("title"), "/w/.worktrees/sova-ready-one");
+      assert.equal((await folder.innerText()).trim(), width < 600 ? "sova-ready-one" : "/w/.worktrees/sova-ready-one");
+      // An archived chat still opens, marked; no chat found says so and isn't a target.
+      const archived = tab.locator('[data-branch="feat/search-ab-with-a-much-longer-branch-name"]');
+      assert.match(await words(archived.locator(".mq-chat")), /Chat\s*Old search · archived/);
+      const none = tab.locator('[data-branch="feat/no-chat"]');
+      assert.match(await words(none), /No chat found for this worktree/);
+      assert.equal(await none.evaluate((el) => el.classList.contains("mq-tap")), false);
+      await none.locator(".mq-facts").click();
+      assert.equal(await hashOf(page), start, "a row with no chat opens nothing");
+      // The queued rows' chat links open the chat by its route (they used to point where nothing resolved them).
+      const waitingChat = tab.locator('[data-branch="feat/pending-chip"] .mq-chat-link');
+      assert.equal(await waitingChat.getAttribute("href"), `#/s/${encodeURIComponent(PATH)}`);
+      assert.equal(await words(waitingChat), SESSION.title);
+
+      // Review Changes: the viewer over the tab, on the queue's own comparison, with no chat named; Close gives focus back.
+      const review = ready.getByRole("button", { name: "Review Changes on feat/ready-one" });
+      await review.click();
+      const viewer = page.locator(".changes-dialog");
+      await viewer.waitFor();
+      await until("the summary read", () => o.diffs.some((d) => d.kind === "summary"));
+      const q = o.diffs.find((d) => d.kind === "summary")!.query;
+      assert.deepEqual(Object.fromEntries(q), { kind: "queue", project: PID, branch: "feat/ready-one" });
+      await until("the counts", async () => /1 uncommitted/.test(await words(viewer.locator(".changes-meta"))));
+      assert.equal(await viewer.locator(".changes-uncommitted").count(), 1, "the uncommitted file is marked");
+      assert.equal(await hashOf(page), start, "Review Changes doesn't open the chat");
+      await shot(page, `${width}-queue-review`);
+      await viewer.getByRole("button", { name: "Close" }).click();
+      await until("the viewer closed", async () => (await viewer.count()) === 0);
+      await until("focus back on Review Changes", () => review.evaluate((el) => el === document.activeElement));
+      // Every row of the tab has it: checking, waiting, needs you, ready, sent back, recent.
+      for (const b of ["fix/worker-restore", "feat/pending-chip", "feat/replay-timeouts", "fix/conflict-chip", "feat/hack", "feat/ready-one", "feat/no-chat", "fix/draft-autosave-race", "feat/composer-hints"])
+        assert.equal(await tab.getByRole("button", { name: `Review Changes on ${b}` }).count(), 1, b);
+      await tab.getByRole("button", { name: "Review Changes on feat/composer-hints" }).click();
+      await until("a landed row's read", () => o.diffs.some((d) => d.kind === "summary" && d.query.get("entry") === "me_l"));
+      await page.keyboard.press("Escape");
+      await until("the viewer closed", async () => (await viewer.count()) === 0);
+
+      // Land: queued, nothing opened.
+      await ready.getByRole("button", { name: "Land feat/ready-one", exact: true }).click();
+      await until("a land", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "feat/ready-one"));
+      assert.equal(await hashOf(page), start, "Land doesn't open the chat");
+
+      // A phone: no sideways scroll; the actions on their own line, Review Changes left of Land, both 44px tall.
+      await noSideScroll(page);
+      const r = await box(review);
+      const land = await box(ready.getByRole("button", { name: "Land feat/ready-one", exact: true }));
+      const chatLine = await box(ready.locator(".mq-chat"));
+      assert.ok(r.x < land.x, "Review Changes before Land");
+      if (width < 600) {
+        assert.ok(r.height >= 44 && land.height >= 44, `44px controls (${r.height}, ${land.height})`);
+        assert.ok(r.y >= chatLine.y + chatLine.height - 1 && Math.abs(r.y - land.y) < 2, "the actions on their own line, together");
+        const row = await box(ready);
+        assert.ok(land.x + land.width > row.x + row.width - 64, "Land at the row's right");
+        assert.ok(r.x < row.x + 24, "Review Changes at the row's left");
+        // No outer card frame on a phone.
+        assert.equal(await tab.evaluate((el) => getComputedStyle(el).borderTopWidth), "0px");
+      }
+      await shot(page, `${width}-queue-rows`);
+
+      // A tap anywhere else on the row opens its chat; the chat's name is a real link to the same place.
+      await ready.locator(".mq-facts").click();
+      await until("the chat opened", async () => (await hashOf(page)) === `#/s/${encodeURIComponent(CODING_B.path)}`);
+      await o.ctx.close();
+    });
+
+    test("the Worktrees modal: Review Changes on its rows, the viewer over the modal; Escape closes only the viewer", async () => {
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`);
+      const { page } = o;
+      await page.getByRole("button", { name: /^Worktrees: / }).click({ timeout: 20_000 });
+      const modal = page.getByRole("dialog", { name: "Worktrees" });
+      await modal.waitFor();
+      // Every live row has it: ready, queued, uncommitted, needs a fix, waiting for you.
+      for (const b of ["feat/composer-drafts", "fix/paste-images", "feat/draft-sync-tabs", "fix/draft-autosave-race", "fix/conflict-chip", "feat/hack"])
+        assert.equal(await modal.getByRole("button", { name: `Review Changes on ${b}` }).count(), 1, b);
+      const row = modal.locator('[data-branch="feat/composer-drafts"]');
+      if (width < 600) assert.equal((await row.locator(".wt-queue-path").innerText()).trim(), "sova-composer-drafts");
+      const review = row.getByRole("button", { name: "Review Changes on feat/composer-drafts" });
+      if (width < 600) {
+        const r = await box(review);
+        const land = await box(row.getByRole("button", { name: "Land feat/composer-drafts", exact: true }));
+        assert.ok(r.height >= 44 && land.height >= 44, "44px controls");
+        assert.ok(r.x < land.x && Math.abs(r.y - land.y) < 2, "Review Changes left of Land on one line");
+      }
+      await shot(page, `${width}-modal-review-row`);
+      await review.click();
+      const viewer = page.locator(".changes-dialog");
+      await viewer.waitFor();
+      await until("the summary read", () => o.diffs.some((d) => d.kind === "summary"));
+      const q = o.diffs.find((d) => d.kind === "summary")!.query;
+      assert.equal(q.get("kind"), "worktree");
+      assert.equal(q.get("session"), PATH);
+      assert.equal(q.get("path"), "/w/.worktrees/sova-composer-drafts");
+      assert.equal(q.get("uncommitted"), "1", "uncommitted files ride along");
+      await shot(page, `${width}-modal-review`);
+      await page.keyboard.press("Escape");
+      await until("the viewer closed", async () => (await viewer.count()) === 0);
+      assert.equal(await page.getByRole("dialog", { name: "Worktrees" }).count(), 1, "the modal stays");
+      await until("focus back on Review Changes", () => review.evaluate((el) => el === document.activeElement));
+      await noSideScroll(page);
+      await page.keyboard.press("Escape");
+      await until("the modal closed", async () => (await page.getByRole("dialog", { name: "Worktrees" }).count()) === 0);
       await o.ctx.close();
     });
   });

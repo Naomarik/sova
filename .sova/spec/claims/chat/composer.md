@@ -728,9 +728,10 @@ its words stay in its accessible name ("Worktrees: 2 ready · 1 queued"). It is 
 and returns focus to the control (with the Land menu open, Escape closes the menu first).
 
 **The Worktrees modal** is titled "Worktrees", with the chat's title and a summary under it ("2 ready
-· 1 queued · 1 landed"). One line says what Land does: the branch is merged onto the target, checked
-there on its own, and lands as exactly the commit that was tested. While the queue is paused, a
-line says so with its why, and that Land still takes the approval. Then comes one row per worktree
+· 1 queued · 1 landed"). When a row's repository is one the merge queue serves, one line says what
+Land does: the branch is merged onto the target, checked there on its own, and lands as exactly the
+commit that was tested; while that queue is paused, a line says so with its why, and that Land still
+takes the approval. With no served row, neither line shows. Then comes one row per worktree
 (dropped ones left out):
 - the branch, in mono;
 - its state, in the one vocabulary the pane and the Merge Queue view also use: **Ready** (with its
@@ -748,17 +749,34 @@ line says so with its why, and that Land still takes the approval. Then comes on
   - **Land** on a Ready, Needs a fix or Drafts changed row, with a menu holding **Land Without
     Review** (only when the project has a review kit) and **Land Without Its Specs…**, which asks
     first: "Its spec drafts stay drafts in this worktree. Only the code lands.";
-  - **Set Up Queue** on a Ready row of a project whose queue isn't set up, which opens its Merge
-    Queue tab (§app.merge-queue/setup). A project whose definition doesn't parse keeps Land (never
+  - **Set Up Queue** on a Ready to merge row of a project on the Projects list whose merge setup
+    isn't done, which opens its Merge Queue tab (§app.merge-queue/setup). A project whose definition doesn't parse keeps Land (never
     Set Up Queue), and the row reads "This project's .sova/project.json doesn't parse: {path:
     message}. Fix it on the target, or land a branch that fixes it; nothing else lands until it
     parses.";
   - **Cancel** on a queued row;
   - **Accept** and **Send Back** on Behaviour differs;
-  - **Land Anyway** and **Send Back** on Review flagged and on Can't tell whose failure.
+  - **Land Anyway** and **Send Back** on Review flagged and on Can't tell whose failure;
+- **Review Changes**, first among the row's actions, on every row of an active worktree whose folder
+  exists and that has commits of its own (Ready, Uncommitted with commits, queued, checking, waiting
+  for you, Needs a fix), the same button as the pane's rows (§chat.worktrees/pane). It opens the
+  changes viewer over the modal on the branch as it is now against its merge-base with the branch it
+  lands on, with the worktree's uncommitted files included and marked as uncommitted
+  (§chat.changes/endpoint). Close or Esc
+  closes the viewer alone, never the modal behind it, and focus returns to the row's Review Changes.
+
+**In a repository the merge queue doesn't serve** (§app.merge-queue/served) no row reads Ready,
+Landing specs or a queue state, and none offers Land: a ready branch reads **Ready to merge**, with
+"Say “land it” in the chat to merge it into main.". Such a row counts as ready all the same:
+the control reads "1 ready" with its success dot, and the summary says so.
+
+On a phone (narrower than 600px) each row has 12px side padding, names its folder by its last name
+(the full path as its `title`), and puts its actions on a line of their own, Review Changes on the
+left and the row's queue action on the right, each at least 44px tall.
 
 The modal ends with **View Merge Queue**, which opens the project's Merge Queue view
-(§app.merge-queue/view), and **Close**.
+(§app.merge-queue/view), and **Close**. View Merge Queue shows only when a row's repository is a
+project on the Projects list, set up or not; in a repository that isn't on the list it is left out.
 
 The actions are the merge verbs (§app.project-services/merge-verbs). Land sends the commit the row
 showed, so a branch that moved meanwhile lands what the user saw (§app.merge-queue/approve). After one, the row is read again

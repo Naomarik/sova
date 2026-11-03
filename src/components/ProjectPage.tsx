@@ -344,7 +344,11 @@ export function ProjectPage(props: {
               root={project().root}
               name={project().name}
               run={props.run}
-              chatTitle={(path) => props.sessions?.()?.find((s) => s.path === path || s.id === path)?.title}
+              chatOf={(id) => {
+                // The queue records a chat by its id (an older record by its path).
+                const s = props.sessions?.()?.find((x) => x.id === id || x.path === id);
+                return s ? { path: s.path, title: s.title, archived: s.archived } : undefined;
+              }}
             />
           </Match>
           <Match when={tab() === "cost"}>

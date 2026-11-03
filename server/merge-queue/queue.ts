@@ -87,7 +87,7 @@ export interface QueueDeps {
   /** Wake the merge thread; false: none was asked. */
   thread?: WakeThread;
   /** The chat that owns a branch, when the approval named none (Land on the Merge Queue tab); null: no known chat. */
-  ownerOf?: (root: string, branch: string, worktree: string | undefined) => Promise<string | null>;
+  ownerOf?: (root: string, branch: string, worktree: string | undefined) => Promise<string | { session: string; archived?: boolean } | null>;
   /** The worktree's spec drafts hash (server/spec-drafts-state.ts draftsHash). */
   draftsHash?: (dir: string) => { hash: string; names: string[]; each?: Record<string, string> } | undefined;
   now?: () => number;
@@ -605,7 +605,10 @@ export class ProjectQueue {
       if (/^temp\b/i.test(subject)) continue;
       const st = await this.git(statusArgs("--porcelain"), w.path);
       if (st.code !== 0 || st.stdout.trim()) continue;
-      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead });
+      const owner = ownerId(await this.deps.ownerOf?.(this.root, w.branch, w.path).catch(() => null));
+      const short = await this.git(["diff", "--shortstat", `${head}...${w.head}`], this.root);
+      const lines = short.code === 0 ? { added: Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0), removed: Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0) } : {};
+      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
     }
     this.readyCache = { at: this.now(), head, list: out };
     return this.filterReady(out);
@@ -664,10 +667,10 @@ export class ProjectQueue {
         if (st.code === 0 && n) throw new MergeFailure("invalid-request", `${branch} has ${n} uncommitted file${n === 1 ? "" : "s"} in ${wt}: Land is for a commit; commit or remove them first`);
       }
       const drafts = !req.withoutSpecs && wt ? await this.branchDrafts(wt, commit) : undefined;
-      // No chat named: the branch's earlier entry's, else the chat working in its worktree; none known, no card.
+      // No chat named: the branch's owner, by the one rule the Ready rows show (owners.ts), an archived one included;
+      // none, no card.
       if (!req.session) {
-        const earlier = [...this.q.entries].reverse().find((x) => x.branch === branch && x.session)?.session;
-        const owner = earlier ?? (await this.deps.ownerOf?.(this.root, branch, wt).catch(() => null)) ?? undefined;
+        const owner = ownerId(await this.deps.ownerOf?.(this.root, branch, wt).catch(() => null))?.session;
         if (owner) req = { ...req, session: owner };
       }
       const approval: MergeApproval = {
@@ -2124,6 +2127,12 @@ export class ProjectQueue {
 }
 
 // ---- every project's queue ----------------------------------------------------------------------
+
+/** An owner as the deps answer it (a bare id, or with its archived flag). */
+function ownerId(o: string | { session: string; archived?: boolean } | null | undefined): { session: string; archived?: boolean } | null {
+  if (!o) return null;
+  return typeof o === "string" ? { session: o } : o;
+}
 
 export class MergeQueues {
   private readonly queues = new Map<string, Promise<ProjectQueue>>();

@@ -24,6 +24,13 @@ its mode changed only, or a new empty file) is listed under its header as "renam
 changes" (or "mode changed, no line changes", "empty file"). The viewer opens on the first step
 that holds something, or on the first file when there are no steps.
 
+**Uncommitted files.** In a comparison that includes a worktree's uncommitted files
+(§chat.changes/endpoint), each file whose change includes uncommitted edits is marked "uncommitted"
+on its file tree row (titled "Not committed yet: Land takes commits only"), and the viewer's
+counts add "· {n} uncommitted", so committed and uncommitted work never read alike. A comparison
+read with no session (a Merge Queue row's) takes its steps from the row's chat's turns when that
+chat is known, else shows the files alone.
+
 **Commits.** On a branch, merge or fast-forward comparison each step names the commits its hunks
 came from (§chat.changes/steps). In the steps list a step's row adds a caption: "<sha7> · 1
 commit", or "<first sha7> → <last sha7> · n commits", oldest first. The open step has a "From N
@@ -109,20 +116,33 @@ comparison has only that one.
 - The session pane's Session tab: while the folder has uncommitted changes, the Repository section
   has an **Uncommitted changes** line with how many paths changed and their lines added and
   removed, and a **Review Changes** control beside it, which opens the viewer on them against HEAD;
-  each active tracked worktree row has a **Review Changes** control at its end (below its chips
-  when the pane is narrow) that opens its branch against its merge-base with the branch it came
-  from, or, once merged, what its merge brought in.
+  each row of an active tracked worktree whose folder exists and that has commits of its own has a
+  **Review Changes** control, first among the row's actions, that opens its branch as it is now
+  against its merge-base with the branch it lands on, its uncommitted files included and marked as
+  uncommitted, or, once merged, what its merge brought in (§chat.changes/endpoint, a worktree
+  comparison).
+- The composer's Worktrees modal (§chat.composer/worktrees-control): each live row's **Review
+  Changes**, the same comparison as the pane's row.
+- The Merge Queue view (§app.merge-queue/view): every row's **Review Changes**, read with no chat (a
+  queue comparison): a Ready branch as it is now, a queued, checking, waiting or sent-back entry's
+  approved commit, or what a landing brought in, each against the target it lands on.
 - A merge card (§chat.worktrees/merge-card) has a **Review Changes** control that opens the viewer
   on what that merge brought in: the merge commit against its first parent, or, for a
   fast-forward, the branch from the tracked worktree's base (§chat.changes/endpoint).
 - An agent's `show_changes` result (§chat.changes/show-changes-card).
 
 Nothing of the viewer exists until it is shown: a Review Changes control whose viewer isn't open,
-on the session pane, a merge card or a `show_changes` card, reads nothing from the server and
+on the session pane, the Worktrees modal, the Merge Queue view, a merge card or a `show_changes`
+card, reads nothing from the server and
 parses, diffs, places and highlights nothing; closing the viewer drops it.
 
-From the session pane and from a transcript's card the viewer opens as a dialog over the page (a
-full-height sheet at folded width), closed with Close, Esc or the scrim, and focus returns to the control that opened it.
+From the session pane, the Worktrees modal, the Merge Queue view and a transcript's card the viewer
+opens as a dialog over the page (a full-height sheet at folded width), closed with Close, Esc or
+the scrim, and focus returns to the control that opened it; over the Worktrees modal, closing it
+leaves the modal open.
+
+A comparison that includes a worktree's uncommitted files marks each of them in the viewer
+(§chat.changes/viewer).
 For steps from turns the viewer reads the session's whole transcript when it opens, not only the
 rows the chat has loaded. A card in a transcript Sova can't tie to a session (a subagent's) has
 no Review Changes control.
@@ -151,8 +171,11 @@ is no diff to show, and it never shows a different change instead. They tell the
 diff first with plain `git diff` (for a branch, three dots: `git diff master...<branch>`) or
 `git show`, at default context. The tool is read-only. It takes a scope: `dirty` (the index
 and working tree, untracked files included, against HEAD), `worktree` (a branch against its
-base, chosen by the same rule and limits as the viewer's worktree comparison,
-§chat.changes/endpoint: one rule both share, so a card never opens a viewer that refuses it) or
+merge-base with the tracked worktree's base branch when that branch still exists, is not the
+branch itself and shares history with it, else master, else main, else the branch the remote's
+default names, else the commit it was created from; the limits are the viewer's,
+§chat.changes/endpoint, and its card is pinned to the two commits it resolved, so the viewer
+opens exactly that comparison and never refuses it) or
 `commit` (one commit, which it names, against its first parent).
 For `dirty` and `worktree` it reads the tracked worktree named by branch or path, else the tracked
 worktree holding the session's cwd, else (for `worktree`) the only tracked one, else the cwd. It
@@ -203,13 +226,13 @@ Sova ignores a result whose details are malformed.
 ## §chat.changes/endpoint — Reading a diff from git
 
 The server reads every diff itself, read-only: the client names a session and one of four
-comparisons, and the server resolves the rest; the only refs a client names are a pinned branch
-card's two full commit ids, below. A **worktree** comparison is the worktree's committed branch
-against its merge-base with its base branch, chosen by one rule the `show_changes` tool shares
-(§chat.changes/show-changes-tool): the tracked worktree's base branch when that branch still
-exists, is not the branch itself and shares history with it, else master, else main, else the
-branch the remote's default names, each skipped when it is the branch itself or shares no history
-with it; with none of those, the tracked base commit the worktree was created from when that is an
+comparisons, or a project and a queue comparison, and the server resolves the rest; the only
+refs a client names are a pinned branch card's two full commit ids, below. A **worktree** comparison is the worktree's committed branch
+against its merge-base with the branch it lands on: the target of the merge queue of the
+registered project holding it (its merge target, else its main checkout's branch), never the
+tracked worktree's base branch; with no registered project, master, else main, else the branch
+the remote's default names; each skipped when it is the branch itself or shares no history with
+it; with none of those, the tracked base commit the worktree was created from when that is an
 ancestor of the tip and not the tip itself, named as "<commit> (created from)"; else the
 comparison is refused with a reason. A worktree comparison may be **pinned**: it then also names a base and a head commit
 (an agent card's saved ones), each checked to be a commit in that repository before anything is
@@ -230,7 +253,30 @@ fast-forward, whose commit is the branch tip, against the tracked worktree's bas
 the branch's commits show, when that commit is an ancestor of the tip and not the tip itself
 (named as the commit it was created from), else against the tip's first parent. An
 **uncommitted** comparison is the working tree, staged changes included, against HEAD,
-with untracked files shown as added and a file whose content did not change never listed. The
+with untracked files shown as added and a file whose content did not change never listed.
+
+An unpinned worktree comparison may ask for **uncommitted files** (Sova's Worktrees rows, in the
+session pane and the composer's modal, always do): when the worktree has files whose content
+differs from HEAD, or untracked files, its head side is the working tree, named "<branch> with
+uncommitted files", each such file is marked uncommitted and the file list counts them; a clean
+worktree reads exactly as without it. The commits a hunk came from are not read for a working-tree
+head.
+
+A **queue** comparison is a Merge Queue row's (§app.merge-queue/view), and needs no session. It
+names a project and exactly one of a queue entry or a branch, and the server takes every commit
+from the queue's and git's own records, never from the client:
+- a **branch** must be checked out in a worktree of that project's main checkout, by the
+  checkout's own `git worktree list` (never the checkout itself), and still be on that branch; it
+  is that worktree as it is now against its merge-base with the queue's target, with its
+  uncommitted files included and marked as above;
+- an **entry** not landed is its approved commit against its merge-base with the target, named
+  "<branch> at <sha7>";
+- a **landed** entry is what its landing brought in: the target before it, named "<target> before
+  <sha7>", against the landing commit, read in the project's folder.
+
+An unknown project or entry, a branch no worktree of the project has checked out, a worktree no
+longer on that branch, or a branch of another repository is refused with a reason before git runs
+there. The
 folder named must be one the session already knows (its folder, its workers' folders, a
 worktree it tracked, a merged worktree's folder) or inside one, by the one rule the `show_changes`
 tool applies too; the diff covers that folder's whole repository. Anything else is refused with a

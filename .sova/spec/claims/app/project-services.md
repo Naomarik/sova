@@ -110,7 +110,8 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   `checks`: 1 to 30 checks `{id, label, run: argv, timeout?, rerun?, requires?, optional?}` in the
   order they run (`optional: true`: not required; it runs only when the merge thread picks it) (ids unique; `run` a template argv that may also read `${merge.base}`, `${merge.tip}` and
   `${merge.target}`; `rerun: true` when its failures name test files and `run` plus those files
-  reruns only them; `requires` the services started in the merge copy first), or `"none"` (the
+  reruns only them (a check that is the project's `test.run` with selection flags after it is rerun
+  as `test.run` plus the files, §app.merge-queue/blame); `requires` the services started in the merge copy first), or `"none"` (the
   project has no automated tests; its landings say "No checks declared"); `install` (optional,
   `{run: argv, inputs: [checkout files], timeout?}`: run in the merge copy when a branch changes
   one of its `inputs`, as an offline install); and `review` (optional): the folder of the project's
@@ -665,6 +666,14 @@ the one result shape with its own `merge` key (§app.project-services/result).
   extend, resolve, retry), for its own project only.
 - A review step's reviewer calls `merge.review` for its own run only (§app.merge-queue/review).
 - Any other chat reads its own project's queue; anything else is `forbidden`.
+
+**Only where the queue serves** (§app.merge-queue/served). Every verb, the operator's too, asks
+the rule first, whichever way it names the project (a project, an entry, a run, a checkout or the
+caller's folder). For a repository not on the Projects list every verb is refused with the error
+`unsupported` and "not a project the merge queue serves: merge it into main from the chat", and
+nothing is recorded or loaded. For a listed project whose merge setup isn't done only `merge.status`
+(its view says it isn't served, §app.merge-queue/view) and `merge.setup` (Initialize,
+§app.merge-queue/setup) are taken; every other verb gets that same refusal.
 
 The Land, Cancel, Pause, Resume, Accept, Send Back and Land Anyway actions are catalogue commands
 pointing at these verbs (§app/commands).

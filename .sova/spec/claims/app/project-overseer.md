@@ -947,7 +947,8 @@ judgement.
   with its estimates or reason, and while it is queued, checking or waiting for the user its Land is
   disabled: "Already in the merge queue.". The queue's refusals are shown under the row as Merge
   Branch's are. A project whose queue isn't set up keeps Merge Branch as above, and its Merge Queue
-  tab shows the onboarding screen (§app.merge-queue/setup). A project whose definition doesn't parse
+  tab shows the note "No merge queue settings are set up for this project" with Initialize
+  (§app.merge-queue/setup). A project whose definition doesn't parse
   counts as set up: its rows show Land, so a branch that fixes the file can get in.
 - **Merged is read from git.** Whether a row's branch is merged is decided from git on every branch
   read of the page, by the worktrees extension's own probe (§chat.worktrees/tool): merged when the

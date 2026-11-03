@@ -143,6 +143,7 @@
 .changes-status-T,
 .changes-status-B { color: var(--status-info); }
 .changes-viewed-mark { flex: none; display: inline-flex; color: var(--status-success); }
+.changes-uncommitted { flex: none; padding: 0 6px; border-radius: 999px; background: var(--status-warn-bg); color: var(--color-ink); font-size: 11px; line-height: 18px; }
 
 /* A step number as a control (on a file row, in "Builds on"): the badge inside a taller target. */
 button.changes-step-chip { border: 0; margin: auto 0; cursor: pointer; box-sizing: content-box; }

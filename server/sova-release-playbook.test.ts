@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -18,11 +18,11 @@ import * as sr from "../.sova/playbooks/release/scripts/sova-release.mjs";
  * Sova's own release setup: its `release` section and `site` deploy target (project-sections.json beside the playbook,
  * until a follow-up landing moves them into .sova/project.json), its project release
  * playbook (.sova/playbooks/release) and that playbook's driver, scripts/sova-release.mjs. Scratch repositories in a temp
- * dir; nothing here tags, pushes, deploys or runs a release check.
+ * dir; nothing here tags, pushes, deploys or runs a release check. The cases that run the driver as a program:
+ * sova-release-playbook.integration.test.ts.
  */
 
 const ROOT = join(import.meta.dirname, "..");
-const DRIVER = join(ROOT, ".sova/playbooks/release/scripts/sova-release.mjs");
 const FRAGMENT = ".sova/playbooks/release/project-sections.json";
 const dir = mkdtempSync(join(tmpdir(), "sova-release-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -61,9 +61,7 @@ test("every sova-release.mjs subcommand the fragment names exists, and the relea
     ...def.release.checks.map((c: { run: string[] }) => c.run),
     ...Object.values(def.deploy.targets as Record<string, { build?: { run: string[] }[]; steps: { run: string[] }[]; credentials?: { check: string[] }[] }>).flatMap((t) => [...(t.build ?? []).map((s) => s.run), ...t.steps.map((s) => s.run), ...(t.credentials ?? []).map((c) => c.check)]),
   ];
-  const usage = spawnSync(process.execPath, [DRIVER, "nope"], { encoding: "utf8" });
-  assert.equal(usage.status, 2);
-  const known = /<([a-z|-]+)>/.exec(usage.stderr)![1]!.split("|");
+  const known: string[] = sr.SUBCOMMANDS;
   const named = runs.filter((r) => r.includes(".sova/playbooks/release/scripts/sova-release.mjs")).map((r) => r[r.indexOf(".sova/playbooks/release/scripts/sova-release.mjs") + 1]!);
   assert.ok(named.length >= 7);
   for (const c of named) assert.ok(known.includes(c), `${c} is not a sova-release.mjs subcommand`);
@@ -78,14 +76,6 @@ test("every sova-release.mjs subcommand the fragment names exists, and the relea
   const out = await maker.check(r);
   assert.deepEqual(out.problems, []);
   assert.equal(out.ok, true);
-});
-
-test("env-set answers by exit code and never prints the value", () => {
-  const set = spawnSync(process.execPath, [DRIVER, "env-set", "SOVA_TEST_SITE_PROJECT"], { encoding: "utf8", env: { ...process.env, SOVA_TEST_SITE_PROJECT: "pages-project-secretish" } });
-  assert.equal(set.status, 0);
-  assert.ok(!(set.stdout + set.stderr).includes("pages-project-secretish"));
-  const unset = spawnSync(process.execPath, [DRIVER, "env-set", "SOVA_TEST_SITE_PROJECT"], { encoding: "utf8", env: { ...process.env, SOVA_TEST_SITE_PROJECT: "" } });
-  assert.equal(unset.status, 1);
 });
 
 /** A scratch tree shaped like Sova's: package.json, site.ts, a pinned example, a vNEXT page, a changelog, v0.1.0 tagged. */
@@ -158,13 +148,4 @@ test("the release checks' pure parts: the dated changelog entry, the built landi
   assert.equal(sr.sameCommit("abc1234def", "abc1234"), true);
   assert.equal(sr.sameCommit("abc", "abc"), false);
   assert.equal(sr.sameCommit("abc1234", "abc1235"), false);
-});
-
-test("site-video never fails a deploy: without SOVA_SITE_VIDEO_DIR it ships without the video and says so", () => {
-  const r = mkdtempSync(join(dir, "v-"));
-  const out = spawnSync(process.execPath, [DRIVER, "site-video", r], { encoding: "utf8", env: { ...process.env, SOVA_SITE_VIDEO_DIR: "" } });
-  assert.equal(out.status, 0);
-  assert.match(out.stdout, /without its hero video/);
-  const pages = spawnSync(process.execPath, [DRIVER, "site-pages", "abc1234"], { encoding: "utf8", env: { ...process.env, SOVA_SITE_PAGES_PROJECT: "" }, cwd: r });
-  assert.equal(pages.status, 2, "no Pages project: nothing uploaded");
 });

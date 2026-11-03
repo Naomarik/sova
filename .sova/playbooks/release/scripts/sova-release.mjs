@@ -337,6 +337,9 @@ export function sitePages(root, commit) {
 
 // ---- CLI -----------------------------------------------------------------------------------------
 
+/** Every subcommand, in the order the header lists them. */
+export const SUBCOMMANDS = ["prev", "bump", "stamp", "notes-out", "live-check", "changelog-check", "site-check", "ext-all", "spec-new", "leak-scan", "env-set", "site-video", "site-pages"];
+
 function opt(list, name) {
   const i = list.indexOf(name);
   return i >= 0 ? list[i + 1] : undefined;
@@ -401,7 +404,7 @@ async function main(argv) {
     case "site-pages":
       return sitePages(root, rest[0]);
     default:
-      console.error("usage: sova-release <prev|bump|stamp|notes-out|live-check|changelog-check|site-check|ext-all|spec-new|leak-scan|env-set|site-video|site-pages> (see this file's header)");
+      console.error(`usage: sova-release <${SUBCOMMANDS.join("|")}> (see this file's header)`);
       return 2;
   }
 }

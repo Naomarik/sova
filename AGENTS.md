@@ -58,6 +58,9 @@ also update Y" list live in its guide: read the guide of every area your task to
   One exception: applying a Project Overseer's Settings change card on Sova's own project
   (§app.project-overseer/settings) lands its settings files on master in the live tree as one commit,
   at the operator's click; Sova refuses it when it would touch anything but settings files.
+  Another: a save from Settings → Merge Queue (§app.merge-queue/settings-save) lands the changed values
+  of `.sova/project.json`'s `merge` section on master as one commit, at the operator's confirm; it
+  waits while a branch is checking and is refused while the project folder has an uncommitted edit.
 - Test from the worktree with `pnpm run dev:hermetic` by default (`scripts/hermetic-agent-dir.mjs`
   builds `<worktree>/.agent`: this tree's pi-config, own sessions and state, nothing in `~/.pi`; port
   4810, `SOVA_PORT=<n>` for another; it copies no auth, copy `auth.json` in by hand). Create, archive,
@@ -111,8 +114,11 @@ also update Y" list live in its guide: read the guide of every area your task to
   that don't fit hold the branch (Landing specs) and Sova tells the chat what to fix. If it can't,
   the user may land it without them: "land it without its specs" typed in the chat, or Land without
   its specs… in the Land menu.
-- **The one exception:** a Project Overseer's settings change card on Sova's own project lands its
-  settings files on master at your Apply (§app.project-overseer/settings).
+- **The exceptions:** a Project Overseer's settings change card on Sova's own project lands its
+  settings files on master at your Apply (§app.project-overseer/settings); Save Checks and a save from
+  Settings → Merge Queue each land one commit of the project file's `merge` section at your confirm
+  (§app.merge-queue/setup, §app.merge-queue/settings-save). The save waits while a branch is checking,
+  so it never moves master under a run.
 
 ## Live server restart
 

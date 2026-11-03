@@ -5,6 +5,8 @@ import { type AnyVerb, isMergeVerb, type MergeVerb, MERGE_READ_VERBS, ordered, t
 import type { Caller } from "../project-services/engine";
 import type { RunMerge, WakeThread } from "./contract";
 import { MergeFailure, type MergeQueues, type ProjectQueue } from "./queue";
+import { registerLiveMergeSettingsRoutes } from "./settings-routes";
+import { registerLiveMergeLandingRoutes } from "./routes-landing";
 import { NOT_SERVED } from "./served";
 
 /**
@@ -26,6 +28,8 @@ export interface MergerDeps {
   /** The served rule (served.ts): a root not on the Projects list gets no verb at all; one listed but not set up
    *  only merge.status (its bare view, served: false, made without a queue) and merge.setup (Initialize). */
   served: { isListed(root: string): boolean; served(root: string): Promise<boolean>; bareView(root: string): Promise<MergeQueueView> };
+  /** A not-yet-served project's settings, made without a queue (settings.ts bareSettings): the bare view carries them. */
+  bareSettings?: (root: string) => Promise<import("../../shared/merge-queue-settings").MergeQueueSettings | null>;
   /** The recorded merge thread of `root` is `sessionId`. */
   isThreadChat?: (root: string, sessionId: string) => boolean;
   /** The reviewer chat run `run` waits on. */
@@ -50,6 +54,7 @@ interface Req {
   note?: string;
   withoutSpecs?: boolean;
   withoutReview?: boolean;
+  via?: string;
   chat?: string;
   checks?: string[];
   select?: string[];
@@ -81,6 +86,7 @@ const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings"> = {
   note: "string",
   withoutSpecs: "boolean",
   withoutReview: "boolean",
+  via: "string",
   chat: "string",
   checks: "strings",
   select: "strings",
@@ -141,7 +147,9 @@ export function merger(deps: MergerDeps): (verb: string, body: unknown, caller: 
         // A listed project with no merge setup: its status is read from Git alone, no queue made (a4).
         root = got.bare;
         authorize(deps, verb, caller, root, req);
-        return result(verb, root, true, false, { view: await deps.served.bareView(root) }, undefined, now());
+        const bare = await deps.served.bareView(root);
+        const settings = (await deps.bareSettings?.(root)) ?? null;
+        return result(verb, root, true, false, { view: settings ? { ...bare, settings } : bare }, undefined, now());
       }
       const q = got;
       root = q.root;
@@ -270,6 +278,7 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
         ...(req.commit ? { commit: req.commit } : {}),
         ...(req.withoutSpecs ? { withoutSpecs: true } : {}),
         ...(req.withoutReview ? { withoutReview: true } : {}),
+        ...(req.via ? { via: viaOf(req.via) } : {}),
         ...(req.chat ? { chat: req.chat, session: req.chat } : {}),
         by: "land-button",
       });
@@ -379,6 +388,10 @@ export const noThread: WakeThread = () => false;
  * page draws them; {cards: []} while the queue isn't started or the chat has none.
  */
 export function registerMergeCardRoutes(app: import("hono").Hono): void {
+  // The queue's settings: read, the review and thread models, saves (settings-routes.ts).
+  registerLiveMergeSettingsRoutes(app);
+  // How a branch lands (al_3): Update Local Main, a request's Publish, How it lands (routes-landing.ts).
+  registerLiveMergeLandingRoutes(app);
   app.get("/api/merge-queue/cards", async (c) => {
     const raw = (c.req.query("path") ?? c.req.query("session"))?.trim();
     if (!raw) return c.json({ error: "name the session (its file path or id)" }, 400);
@@ -389,4 +402,10 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
     const { mergeCardsOf } = await import("./wire");
     return c.json({ cards: mergeCardsOf(id) });
   });
+}
+
+/** merge.add's `via`: a typed "open a PR" / "open an MR". */
+function viaOf(v: string): "github-pr" | "gitlab-mr" {
+  if (v !== "github-pr" && v !== "gitlab-mr") throw new MergeFailure("invalid-request", '"via" is "github-pr" or "gitlab-mr"');
+  return v;
 }

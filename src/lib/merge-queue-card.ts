@@ -5,6 +5,7 @@ import type { MergeCard, MergeCardRevision } from "../../shared/merge-queue";
 import { newerWords, ordinal } from "../../shared/merge-queue";
 import type { CardInfo } from "../../shared/transcript-cards";
 import { mins, notesOf, sentence, short } from "./merge-queue";
+import { isRequestState, requestChip } from "./merge-queue-requests";
 
 /** The built-in card type the rows carry: drawn by Sova, never a project's or an extension's. */
 export const MERGE_QUEUE_CARD = "sova.merge-queue";
@@ -20,8 +21,9 @@ export interface QueueCardRow {
 
 export type CardTone = "success" | "warn" | "error" | "info" | "accent" | "neutral";
 
-/** The pill, from a state and place in line. */
-export function cardPill(d: Pick<MergeCardRevision, "state" | "position">): { label: string; tone: CardTone; live?: boolean } {
+/** The pill, from a state and place in line; a request's from its host facts when the card has them. */
+export function cardPill(d: Pick<MergeCardRevision, "state" | "position"> & Partial<Pick<MergeCard, "request" | "reason">>): { label: string; tone: CardTone; live?: boolean } {
+  if (isRequestState(d.state)) return requestChip(d.state, d.request, d.reason);
   switch (d.state) {
     case "queued":
       return { label: d.position ? `Queued · ${ordinal(d.position)}` : "Queued", tone: "info" };
@@ -44,6 +46,7 @@ export function cardPill(d: Pick<MergeCardRevision, "state" | "position">): { la
     case "cancelled":
       return { label: "Cancelled", tone: "neutral" };
   }
+  return { label: "Unknown", tone: "neutral" };
 }
 
 /** The facts after the head: "8 commits", "+970 −45", then the estimate or "Checking · 4 of 7 steps". */
@@ -64,7 +67,8 @@ export const cardSha = (c: Pick<MergeCard, "landed" | "commit">): string => shor
 /** "Not pushed: why." on a landed card that wasn't pushed. */
 export function notPushed(c: Pick<MergeCard, "state" | "landed">): string | null {
   const l = c.landed;
-  if (c.state !== "landed" || !l || l.pushed === "pushed") return null;
+  // The host merged it: nothing of Sova's was to push.
+  if (c.state !== "landed" || !l || l.pushed === "pushed" || l.via === "host") return null;
   // The why may already say it ("not pushed: …", "push held: …"): said once, never "Not pushed: Push held: …".
   const why = (l.pushWhy ?? "").trim().replace(/^not pushed\s*[:,-]?\s*/i, "");
   if (!why) return "Not pushed: this project doesn't push from the queue.";
@@ -97,7 +101,9 @@ export function cardActions(c: Pick<MergeCard, "state" | "newerCommits">): CardA
 }
 
 /** A folded earlier copy's one line, from its own frozen state: "feat/x · Queued 2nd". */
-export const foldedLine = (branch: string, r: Pick<MergeCardRevision, "state" | "position">): string => `${branch} · ${cardPill(r).label.replace(" · ", " ")}`;
+export const foldedLine = (branch: string, r: Pick<MergeCardRevision, "state" | "position">): string => `${branch} · ${isRequestState(r.state) ? FROZEN_REQUEST[r.state] : cardPill(r).label.replace(" · ", " ")}`;
+/** A request revision's own frozen word: the host facts it was raised at aren't kept on the revision. */
+const FROZEN_REQUEST = { "request-review": "Request ready for your look", requested: "Request opened", pushed: "Pushed", closed: "Closed on the host" } as const;
 
 /** The card's accessible name. */
 export const cardLabel = (c: QueueCard): string => `${cardPill(c).label}: ${c.branch} into ${c.target} at ${cardSha(c)}`;

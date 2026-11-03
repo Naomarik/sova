@@ -270,11 +270,13 @@ export type AppRequest = (path: string, init?: RequestInit) => Response | Promis
 
 /** A new chat in `cwd` on one of Sova's shipped profiles, with its first message and its title (the
     start a profile gets from the list: POST /api/sessions). Shared by the thread and the reviewer. */
-export async function createChat(request: AppRequest, cwd: string, profile: string, text: string, title: string): Promise<Result<{ id: string; path: string }>> {
+export async function createChat(request: AppRequest, cwd: string, profile: string, text: string, title: string, model?: { model: string; thinking?: string | null } | null): Promise<Result<{ id: string; path: string }>> {
+  // The project's own pick for this chat (models.ts), else the new-chat default (nothing sent).
+  const opening = model ? { model: model.model, ...(model.thinking ? { thinking: model.thinking } : {}) } : {};
   const res = await request("/api/sessions", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ cwd, profile: { source: "sova", id: profile }, prompt: text }),
+    body: JSON.stringify({ cwd, profile: { source: "sova", id: profile }, prompt: text, ...opening }),
   });
   const json = (await res.json().catch(() => null)) as { id?: string; path?: string; error?: string } | null;
   if (res.status !== 201 || !json?.id || !json.path) return { ok: false, error: json?.error ?? `HTTP ${res.status}` };
@@ -294,7 +296,7 @@ export async function startMergeThread(request: AppRequest, file?: string): Prom
       if (!s || s.id !== id) return null;
       return { id: s.id, path, createdAt: s.createdAt, archived: !!s.archived, live: !!s.live, ...(s.context ? { context: s.context } : {}) };
     },
-    create: (root, text, title) => createChat(request, root, THREAD_PROFILE, text, title),
+    create: async (root, text, title) => createChat(request, root, THREAD_PROFILE, text, title, await (await import("./models")).startingModel(root, "thread")),
     async wake(path, text) {
       const r = await promptSession(path, text);
       return r.ok ? { ok: true } : { ok: false, error: r.error };

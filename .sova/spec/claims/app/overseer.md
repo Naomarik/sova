@@ -253,7 +253,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
     `~/.claude/.credentials.json` and `~/.claude.json`; `~/.netrc`; `~/.config/gh/hosts.yml`;
     `<stateRoot>/outreach.json` and `outreach-receipts.json` (§app.outreach/secrets); Sova's access
     token, `sova/auth-token` in `~/.pi/agent` and in the active agent dir;
-  - whole directories: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.claude/backups`, `/proc` (every
+  - whole directories: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.claude/backups`, GitLab's tool's
+    config wherever it keeps it (`~/.config/glab-cli`, `$XDG_CONFIG_HOME/glab-cli`,
+    `$GLAB_CONFIG_DIR`, macOS's `~/Library/Application Support/glab-cli`), `/proc` (every
     process's environment and command line, the server's own included), `/sys` and `/dev/fd`
     (the server's own open files; on Linux it resolves into `/proc`, on macOS it does not), and
     the WhatsApp sender's home and its auth directory wherever configured (§app.outreach/secrets);
@@ -299,7 +301,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   (`secrets/vapid.json`, §app/notifications) are among these sources. Secrets no file names are
   also recognised by their shape and replaced: PEM private-key blocks (to their END line, or the
   end of a cut text), `sk-…` keys (16+ characters with a digit), GitHub `ghp_`/`gho_`/`ghu_`/
-  `ghs_`/`ghr_` and `github_pat_` tokens, AWS `AKIA`/`ASIA` key ids, Slack `xox?-` tokens, JWTs,
+  `ghs_`/`ghr_` and `github_pat_` tokens, GitLab `glpat-`-style tokens (personal, project, group,
+  OAuth, deploy, runner, CI job, trigger, feed and other `gl…-` kinds) and its legacy runner
+  registration token (`GR1348941…`), AWS `AKIA`/`ASIA` key ids, Slack `xox?-` tokens, JWTs,
   and the token after `Bearer ` (the word stays). In `NAME=value` (env lines, flags, query
   strings) and `"name": "value"` (JSON), where the name contains key, token, secret, password,
   passwd, auth (not author…) or credential, the value is replaced and the name stays. A value

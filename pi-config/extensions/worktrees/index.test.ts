@@ -607,6 +607,47 @@ test("land records the user's go-ahead typed in this chat for the branch at its 
 	}
 });
 
+test("'open a PR/MR': on a served repo a go-ahead naming the request; unserved, nothing recorded and the chat opens it itself", async () => {
+	const r = repo();
+	try {
+		const file = join(r.root, "state", "landing.json");
+		const tree = join(r.root, "wt-pr");
+		sh(r.main, "worktree", "add", "-q", "-b", "feat/pr", tree);
+		writeFileSync(join(tree, "p.txt"), "p\n");
+		sh(tree, "add", "p.txt");
+		sh(tree, "commit", "-q", "-m", "p");
+		const recorded = () => (existsSync(file) ? JSON.parse(readFileSync(file, "utf8")).goAheads : []);
+		let served = false;
+		const asked: string[] = [];
+		const f = fakePi();
+		worktrees(f.pi, { landingFile: () => file, mergeQueue: (root) => (asked.push(root), served ? "master" : false) });
+		const c = f.ctx(tree);
+		await f.fire("session_start", c);
+		const say = (text: string) => f.entries.push({ type: "message", message: { role: "user", content: [{ type: "text", text }] } } as never);
+		say("open a PR");
+		const unserved = await f.call(c, { action: "land" });
+		assert.match(unserved.content[0].text, /doesn't serve this repo, so nothing was queued: open the request yourself, as the user asked, with gh pr create or glab mr create, whichever origin's host uses/);
+		assert.deepEqual(recorded(), []);
+		assert.equal(asked.length, 1);
+		say("open an MR");
+		assert.match((await f.call(c, { action: "land" })).content[0].text, /open the request yourself, as the user asked, with gh pr create or glab mr create/);
+		served = true;
+		say("open a PR");
+		const queued = await f.call(c, { action: "land" });
+		assert.match(queued.content[0].text, /^Queued feat\/pr at [0-9a-f]{7} to land as a request on origin's host \(a merge request on GitLab, a pull request on GitHub\)\./);
+		assert.equal(recorded().at(-1).via, "github-pr");
+		say("open an MR, skip review");
+		assert.match((await f.call(c, { action: "land" })).content[0].text, /to land as a request on origin's host \(a merge request on GitLab, a pull request on GitHub\), without review\./);
+		assert.equal(recorded().at(-1).via, "gitlab-mr");
+		// Plain "land it" on the served repo records no request.
+		say("land it");
+		await f.call(c, { action: "land" });
+		assert.equal(recorded().at(-1).via, undefined);
+	} finally {
+		r.done();
+	}
+});
+
 test("land refuses a newest message the Overseer, a baton or another session sent, whatever it says, and never looks past it", async () => {
 	const r = repo();
 	try {

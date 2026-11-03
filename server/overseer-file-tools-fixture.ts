@@ -34,6 +34,7 @@ export function secretBox() {
     "aws": join(home, ".aws", "credentials"),
     "netrc": join(home, ".netrc"),
     "gh hosts": join(home, ".config", "gh", "hosts.yml"),
+    "glab config": join(home, ".config", "glab-cli", "config.yml"),
     "sova access token": join(agentDir, "sova", "auth-token"),
     ".env": join(project, ".env"),
     ".env.local": join(project, "app", ".env.local"),

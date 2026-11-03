@@ -308,7 +308,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-15T04:52Z"
+      "at": "2026-11-03T11:32Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
   "§app.settings-dialog/summaries": {
@@ -486,7 +487,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-15T04:52Z"
+      "at": "2026-11-03T11:29Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     },
     "notOwned": [
       "§chat.voice/runtime",

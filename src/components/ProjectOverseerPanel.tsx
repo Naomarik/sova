@@ -50,7 +50,7 @@ import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGa
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
 import { land, refusal } from "../lib/merge-queue-client";
-import { queueRow } from "../lib/merge-queue";
+import { queueRow, entryLandBlock } from "../lib/merge-queue";
 import { createProjectQueue } from "../lib/project-queue";
 import { QueueChip } from "./WorktreesModal";
 import { LinksBanner, type Links } from "./LinksBanner";
@@ -1127,7 +1127,7 @@ function CodingSessions(props: {
                               description={`Queues ${row.branch}: checked on ${row.target} first, then ${row.target} moves to it.`}
                               disabled={
                                 (gestures().merge || undefined) ??
-                                (working() ? "Working" : !row.worktree ? "Its folder is gone: land it from its chat." : queue.info(row.branch) && ["queued", "checking", "conflict", "behaviour-differs", "review-flagged"].includes(queue.info(row.branch)!.state) ? "Already in the merge queue." : undefined)
+                                (working() ? "Working" : !row.worktree ? "Its folder is gone: land it from its chat." : entryLandBlock(queue.info(row.branch)))
                               }
                               onRun={() => row.worktree && void landRow({ ...row, worktree: row.worktree })}
                             />

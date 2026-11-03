@@ -1,0 +1,100 @@
+/* The read-only folder viewer (FolderViewer.tsx): the files on the left, the picked one on the right;
+   stacked under 640px. */
+.folder-viewer {
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-lg);
+  background: var(--color-surface);
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.folder-viewer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.folder-viewer-title {
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: 600;
+  margin: 0;
+}
+.folder-viewer-body {
+  display: grid;
+  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
+  gap: var(--space-3);
+  min-height: 180px;
+}
+@media (max-width: 640px) {
+  .folder-viewer-body { grid-template-columns: minmax(0, 1fr); }
+}
+.folder-viewer-files {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.folder-viewer-group-label {
+  font-size: var(--fs-micro);
+  line-height: var(--lh-micro);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  margin: 0;
+}
+.folder-viewer-group-caption {
+  font-size: var(--fs-micro);
+  color: var(--color-ink-muted);
+  margin: 2px 0 var(--space-1);
+  overflow-wrap: anywhere;
+}
+.folder-viewer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.folder-viewer-file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  border: 0;
+  background: none;
+  color: var(--color-ink);
+  text-align: left;
+  font-size: var(--fs-mono);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.folder-viewer-file:hover { background: var(--color-sunken); }
+.folder-viewer-file.is-on { background: var(--color-accent-tint); }
+.folder-viewer-file:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.folder-viewer-file-name { overflow-wrap: anywhere; }
+.folder-viewer-doc {
+  min-width: 0;
+  max-height: 420px;
+  overflow: auto;
+  background: var(--color-sunken);
+  border-radius: var(--r-sm);
+  padding: var(--space-2) var(--space-3);
+}
+.folder-viewer-doc:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.folder-viewer-path {
+  font-size: var(--fs-micro);
+  color: var(--color-ink-2);
+  margin: 0 0 var(--space-2);
+  overflow-wrap: anywhere;
+}
+.folder-viewer-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+}
+.folder-viewer-error { color: var(--status-error); }

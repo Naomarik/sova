@@ -115,7 +115,10 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   project has no automated tests; its landings say "No checks declared"); `install` (optional,
   `{run: argv, inputs: [checkout files], timeout?}`: run in the merge copy when a branch changes
   one of its `inputs`, as an offline install); and `review` (optional): the folder of the project's
-  review kit, relative to the checkout (§app.merge-queue/review). With no `merge` section the queue
+  review kit, relative to the checkout (§app.merge-queue/review); `land` (optional: `local`,
+  `github-pr`, `gitlab-mr` or `push-branch`; absent: `local`), the project's way of landing, which
+  this computer's own choice overrides (§app.merge-queue/strategies); and `request` (optional): the
+  folder of the project's request kit (§app.merge-queue/request-kit). With no `merge` section the queue
   uses `test` (§app.merge-queue/checks); with neither, the project's queue isn't set up
   (§app.merge-queue/setup). A check runs with `SOVA_VERB=merge`, `SOVA_STEP` (its id), `SOVA_OUT`,
   `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths).

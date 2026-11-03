@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { appendFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import { ReleaseFixture, until } from "../../scripts/e2e-release/fixtures";
 import { startReleaseServer, type ModelAction, type ReleaseServer } from "../../scripts/e2e-release/server-kit";
@@ -129,15 +130,21 @@ test("S13 (real path): a coding chat's script calling scripts/sova-project.mjs r
   const before = fx.facts();
   // --url always: a chat's CLI must never fall back to port 4800 (the live server).
   const cli = `node ${ROOT}scripts/sova-project.mjs release.start --project ${fx.project} --url ${k.base}`;
-  const [plain, withToken] = await codingChatDoes(fx, "s13", [
+  const [plain, withToken, stripped] = await codingChatDoes(fx, "s13", [
     // What any script a chat runs gets: no token of its own (401) or, if it read one, its caller key rides along.
     { tool: "bash", args: { command: `${cli}; echo "exit=$?"` } },
     // A script that got hold of the operator token: SOVA_CALLER_KEY (set in every chat process) still rides along.
     { tool: "bash", args: { command: `SOVA_TOKEN=${k.hs.token} ${cli}; echo "exit=$?"` } },
+    // The known gap (CONTRACT §5 t17): a script that drops its caller key and has the token reads as the operator.
+    // Recorded, not asserted; it must not leave a release open for the next tests, so it is abandoned below.
+    { tool: "bash", args: { command: `env -u SOVA_CALLER_KEY SOVA_TOKEN=${k.hs.token} ${cli}; echo "exit=$?"` } },
   ]);
   assert.match(plain ?? "", /Unauthorized|forbidden/i, plain);
   assert.match(withToken ?? "", /forbidden|never acts as the operator/i, withToken);
   assert.doesNotMatch(withToken ?? "", /exit=0/, `a refusal exits non-zero: ${withToken}`);
-  assert.equal((await k.verb("release.status", { project: fx.project })).json.release?.view?.open ?? null, null, "no release opened");
-  assert.deepEqual(fx.facts(), before);
+  const open = (await k.verb("release.status", { project: fx.project })).json.release?.view?.open ?? null;
+  const gap = `known gap (t17): a header-stripped script with the token ${open ? "STARTED a release" : "was refused"}: ${(stripped ?? "").replace(/\s+/g, " ").slice(0, 200)}`;
+  if (process.env.E2E_RELEASE_NOTES) appendFileSync(process.env.E2E_RELEASE_NOTES, `${gap}\n`);
+  if (open) await k.verb("release.abandon", { project: fx.project, release: open.id, why: "gap probe", confirm: true });
+  assert.deepEqual(fx.facts().tags, before.tags, "no tag moved");
 });

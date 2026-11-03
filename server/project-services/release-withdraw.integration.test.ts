@@ -69,7 +69,8 @@ test("S26 + S27: Withdraw moves stable back here and on origin; v0.3.0 stays; a 
 
   // S27: every copy learns it through the marker on origin; the copy on v0.3.0 is told it was withdrawn and why,
   // with an offer to go back to v0.2.0, never "ahead".
-  assert.ok(fx.originRefs()?.["refs/tags/withdrawn/v0.3.0"], `origin carries the withdrawn marker: ${JSON.stringify(fx.originRefs())}`);
+  assert.equal(fx.originTag("withdrawn/v0.3.0"), sha, `origin carries the withdrawn marker at the release: ${JSON.stringify(fx.originRefs())}`);
+  assert.equal(git(fx.project, ["cat-file", "-t", "refs/tags/withdrawn/v0.3.0"]), "tag", "annotated");
   const told = (await check()).result as Record<string, any>;
   assert.equal(told.state, "withdrawn", JSON.stringify(told));
   assert.equal(told.tag, "v0.3.0");
@@ -100,5 +101,7 @@ test("S28: Withdraw on a local-only project moves the channel locally and pushes
   await waitRecord(k, fx, "withdrawn", (x) => x.state === "withdrawn", 120_000, rec.id);
   assert.equal(fx.tagAt("stable"), prev);
   assert.equal(fx.tagAt("v0.2.0"), sha);
+  assert.equal(fx.tagAt("withdrawn/v0.2.0"), sha, "the withdrawn marker, locally");
+  assert.match(git(fx.project, ["tag", "-l", "--format=%(contents)", "withdrawn/v0.2.0"]), /bad build/);
   assert.equal(git(fx.project, ["remote"]), "");
 });

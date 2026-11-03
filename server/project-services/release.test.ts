@@ -393,6 +393,16 @@ describe("facts win (q10)", () => {
       const bad = await t.call("release.step", { step: "version", state: "done", summary: "x", facts: ["version=banana"] }, t.chat);
       assert.match(bad.error!.message, /not a semantic version/);
       assert.equal((await t.call("release.step", { step: "version", state: "done", summary: "ok", facts: ["version=0.2.0"] }, t.chat)).ok, true);
+      // The notes step still waits: the commit report is refused, and nothing is queued.
+      const co = rec.thread!.checkout!;
+      writeFileSync(join(co, "VERSION"), "0.2.0\n");
+      sh(co, "commit", "-qam", "Release v0.2.0");
+      const early = await t.call("release.step", { step: "commit", state: "done", summary: "c", facts: [`commit=${sh(co, "rev-parse", "HEAD")}`] }, t.chat);
+      assert.equal(early.error?.code, "release-refused");
+      assert.match(early.error!.message, /^report notes \(Draft the notes\) done or skipped before the release commit/);
+      assert.equal(t.r.openRecord(t.repo.root)!.entry, null, "no release entry");
+      assert.equal(t.r.openRecord(t.repo.root)!.steps.find((x) => x.id === "commit")!.state, "waiting", "the commit step is untouched");
+      await t.call("release.step", { step: "notes", state: "skipped", summary: "none" }, t.chat);
       const elsewhere = t.repo.branch("feat/x", { "x.txt": "x\n" });
       sh(t.repo.root, "commit-tree", "-m", "orphan", sh(t.repo.root, "rev-parse", "HEAD^{tree}"));
       const c = await t.call("release.step", { step: "commit", state: "done", summary: "c", facts: [`commit=${elsewhere.head}`] }, t.chat);

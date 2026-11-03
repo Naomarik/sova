@@ -597,6 +597,11 @@ export class Releaser {
               : null;
     if (phaseWhy) throw new ReleaseFailure("release-refused", phaseWhy);
     if (st.state === "done" && state !== "done") throw new ReleaseFailure("release-refused", `${st.id} is done already`);
+    // The release commit is what the gating checks test: every other prepare step comes first (done or skipped).
+    if (st.id === "commit" && state === "done" && rec.settings.commit) {
+      const before = rec.steps.filter((x) => x.phase === "prepare" && x.id !== "commit" && x.state !== "done" && x.state !== "skipped");
+      if (before.length) throw new ReleaseFailure("release-refused", `report ${before.map((x) => `${x.id} (${x.label})`).join(", ")} done or skipped before the release commit: the gating checks start with it`);
+    }
     if (st.held && st.state === "held" && state === "done") throw new ReleaseFailure("release-refused", `${st.id} is held for the operator's Continue`);
     st.summary = summary;
     if (req.detail !== undefined) st.detail = req.detail.slice(0, STEP_DETAIL_MAX);

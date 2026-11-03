@@ -1408,3 +1408,28 @@ async function poll(q: Q): Promise<void> {
   if (f) await f.call(q);
   else await q.view();
 }
+
+describe("sent back: the tab's Ready list", () => {
+  // al_4: a branch handed back to its chat (needs-fix) is never offered as Ready (and so never Land) at the commit it was
+  // sent back at; once its chat commits a fix, the branch at that newer commit is Ready again.
+  test("a needs-fix branch at its sent-back commit isn't Ready; after a new commit it is", async () => {
+    let t = Date.parse("2026-11-03T00:00:00.000Z");
+    const k = makeKit({ deps: { now: () => t } as Partial<QueueDeps> });
+    try {
+      const q = await k.q();
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
+      const b = k.repo.branch("feat/back", { "x.txt": "x\n" });
+      const { entry } = await q.add({ branch: "feat/back", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
+      let v = await q.view();
+      assert.deepEqual(v.needsFix.map((e) => e.branch), ["feat/back"]);
+      assert.deepEqual((v.ready ?? []).filter((r) => r.branch === "feat/back"), [], "not Ready at the commit it was sent back at");
+      const fix = k.repo.commitOn(b.path, { "x.txt": "fixed\n" }, "fix");
+      t += 60_000; // past the view's ready cache
+      v = await q.view();
+      assert.deepEqual((v.ready ?? []).filter((r) => r.branch === "feat/back").map((r) => r.commit), [fix], "Ready at the fix");
+    } finally {
+      await k.done();
+    }
+  });
+});

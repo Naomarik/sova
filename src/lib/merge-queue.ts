@@ -121,6 +121,30 @@ export const sizeWords = (s: { ahead: number; added: number; removed: number } |
 export const shownCommit = (w: Partial<Pick<SessionWorktreeInfo, "readiness" | "mergeStats">>): string | undefined =>
   w.mergeStats?.head ?? w.readiness?.landing?.commit;
 
+/** A sent-back row's line when the queue gave no reason. */
+export const SENT_BACK_LINE = "Sent back to its chat. Land comes back here once its chat commits a fix and finishes.";
+
+/** The branch reads finished again at a commit other than the one sent back: the fix is in. */
+export const fixedPast = (w: Pick<QueueRowInput, "readiness">, sentBack: string): boolean => {
+  const c = w.readiness?.landing?.commit;
+  return !!c && c !== sentBack;
+};
+
+/** Why a Land item that knows only the branch's queue entry (no readiness: the Overseer's coding-worktree menu) is
+ *  off, or undefined when it's on. Sent back: off, as on every row (al_4); with no readiness it can't see a fixed,
+ *  finished commit, so Land comes back on the rows that can. In line: off. Drafts changed: on (Land re-approves). */
+export function entryLandBlock(e: Pick<WorktreeQueueInfo, "state"> | undefined): string | undefined {
+  if (!e) return undefined;
+  if (e.state === "needs-fix") return SENT_BACK_LINE;
+  if ((["queued", "checking", "conflict", "behaviour-differs", "review-flagged"] as string[]).includes(e.state)) return "Already in the merge queue.";
+  return undefined;
+}
+
+/** The tab's Sent back list: an entry whose branch already reads ready at a newer commit leaves it (the Ready to
+ *  land row, with Land, stands for it). */
+export const stillSentBack = (v: Pick<MergeQueueView, "needsFix" | "ready">): MergeEntry[] =>
+  v.needsFix.filter((e) => !(v.ready ?? []).some((r) => r.branch === e.branch && r.commit !== e.commit));
+
 /** Rows past the queue (landed, merged, gone) carry no size: there's nothing left to land. */
 const SIZED: RowKey[] = ["ready", "uncommitted", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "drafts-changed", "request-review"];
 
@@ -168,7 +192,10 @@ function queueRowOf(w: QueueRowInput): QueueRow {
       case "drafts-changed":
         return { ...base, key: "drafts-changed", label: "Drafts changed", tone: "warn", reason: e.reason ?? "Its spec drafts changed since you approved. Land again to approve them.", action: "land" };
       case "needs-fix":
-        return { ...base, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? "Sent back to its chat. Commit a fix, then Land again.", action: "land" };
+        // Sent back: no Land at all while its chat fixes it. Once the branch reads finished again at a newer commit
+        // (clean, no conflicts, its chat idle: Sova's ready reading), that commit wins and the row is Ready with Land.
+        if (fixedPast(w, e.commit)) break;
+        return { ...base, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "none" };
       case "landed":
         return {
           ...base,

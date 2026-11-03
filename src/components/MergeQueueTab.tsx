@@ -1,7 +1,7 @@
 import { createEffect, createSignal, For, on, Show, type JSX } from "solid-js";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { mins, notesOf, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView } from "../lib/merge-queue";
+import { mins, notesOf, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, stillSentBack } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
@@ -373,11 +373,11 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
           </ul>
         </div>
       </Show>
-      <Show when={v().needsFix.length > 0}>
+      <Show when={stillSentBack(v()).length > 0}>
         <div class="stack-2">
           <h3 class="text-heading-s">Sent back to its chat</h3>
           <ul class="list mq-list">
-            <For each={v().needsFix}>
+            <For each={stillSentBack(v())}>
               {(e) => (
                 <li class="list-row mq-row" classList={{ "mq-tap": !!e.session }} data-branch={e.branch} data-state="needs-fix" onClick={rowOpens(() => e.session && chatHref(props.projectId, e.session, props.chatOf))}>
                   <div class="list-main">

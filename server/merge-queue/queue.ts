@@ -614,7 +614,8 @@ export class ProjectQueue {
     return this.filterReady(out);
   }
   private filterReady(list: MergeReady[]): MergeReady[] {
-    return list.filter((r) => !this.q.entries.some((e) => e.branch === r.branch && (ENTRY_OPEN.includes(e.state) || (e.state === "landed" && e.commit === r.commit))));
+    // A branch sent back (needs-fix) is Ready again only at a newer commit: never Land at the commit it was sent back at.
+    return list.filter((r) => !this.q.entries.some((e) => e.branch === r.branch && (ENTRY_OPEN.includes(e.state) || ((e.state === "landed" || e.state === "needs-fix") && e.commit === r.commit))));
   }
 
   private estimateCache: { at: number; ms: number | null } | null = null;

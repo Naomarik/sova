@@ -9,6 +9,10 @@
 //     [--keep-data] [--resources a,b] [--ref <ref>] [--select a,b] [--endpoint <service.port>] [--days <n>]
 //     [--link <pv_…>] [--confirm] [--url <http://127.0.0.1:4800>]
 //   e.g. share --instance <id> --endpoint web.http --days 3 --confirm; revoke --link <pv_…> | --instance <id> [--endpoint …]
+//   release (shared/release.ts): release.status; release.logs [--release <rl_…>] [--step <id>]; release.request --why <text>;
+//     release.start [--commit <sha>]; release.continue|retry --release <rl_…> --step <id>; release.publish --release <rl_…>
+//     --confirm; release.abandon --release <rl_…> --why <text> --confirm; release.withdraw --release <rl_…> | --tag <tag>
+//     --why <text> --confirm (refused from a chat's own scripts: the operator's word only)
 //   deploy (§app.project-services/deploy): deploy.status [--target <name>]; deploy.logs --target <name> | --deploy <dp_…>;
 //     deploy.check [--ref <ref>]; deploy.plan --target <name> [--commit <ref>] [--override-tests <reason>]
 //     [--override-dirty <reason>]; deploy.run --plan <pl_…> --confirm (answers at once: follow it with deploy.status);
@@ -23,7 +27,7 @@ import { resolve } from "node:path";
 import { exitOf } from "../shared/project-contract.ts";
 import { tokenHeaders } from "./sova-token.mjs";
 
-const VALUE = new Set(["project", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty", "entry", "run", "step", "note", "chat", "checks", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "takes-min", "requires"]);
+const VALUE = new Set(["project", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty", "entry", "run", "step", "note", "chat", "checks", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "takes-min", "requires", "release", "tag", "state", "summary", "detail", "facts"]);
 const FLAG = new Set(["restart", "keep-data", "confirm", "dismiss", "without-specs", "without-review", "none", "dry-run"]);
 const PATHS = new Set(["project", "checkout"]);
 
@@ -91,6 +95,27 @@ if (verb.startsWith("merge.")) {
     takesMin: num("takes-min"),
     requires: list(opts.requires),
     dryRun: opts["dry-run"],
+  };
+  for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];
+} else if (verb.startsWith("release.")) {
+  // The release verbs (shared/release.ts): a project's release in progress and its history. release.step and
+  // release.notes are the release chat's alone and are refused here; the operator's acts are refused from a chat.
+  path = `/api/project-services/${encodeURIComponent(verb)}`;
+  body = {
+    project: opts.project ?? resolve("."),
+    release: opts.release,
+    tag: opts.tag,
+    step: opts.step,
+    state: opts.state,
+    summary: opts.summary,
+    detail: opts.detail,
+    facts: list(opts.facts),
+    text: opts.text,
+    commit: opts.commit,
+    why: opts.why,
+    lines: num("lines"),
+    confirm: opts.confirm,
+    dismiss: opts.dismiss,
   };
   for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];
 } else if (verb.startsWith("deploy.")) {

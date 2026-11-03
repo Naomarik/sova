@@ -689,9 +689,13 @@ export async function main(argv, env = process.env) {
   throw invalid(cmd ? `no command ${cmd}` : "name a command");
 }
 
+/** Exit once everything written to stdout has gone out: on a pipe, process.exit() cuts a long answer (the list's
+    JSON past 64 KiB) short. An empty write's callback runs after every earlier one. */
+const exitFlushed = (code) => process.stdout.write("", () => process.exit(code));
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main(process.argv.slice(2)).then(
-    (code) => process.exit(code),
+    (code) => exitFlushed(code),
     (err) => {
       if (err instanceof CliError) {
         process.stderr.write(`sova: ${err.message}\n`);

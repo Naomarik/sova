@@ -85,11 +85,18 @@ export async function startMergeReviewer(request: AppRequest): Promise<void> {
       abort: live.abort,
     }),
   );
-  // Not awaited: the server's start never waits on it.
-  void listSessions()
-    .then((all) => sweepReviewers(all, activeReviewers(), (p) => retireChat(p, { ...live, log: (l) => console.warn(`[merge-reviewer] ${l}`) })))
-    .then((done) => {
-      if (done.length) console.log(`[merge-reviewer] archived ${done.length} reviewer chat${done.length === 1 ? "" : "s"} left open`);
-    })
-    .catch((err) => console.warn(`[merge-reviewer] sweep failed: ${err instanceof Error ? err.message : String(err)}`));
+  // Not awaited, and not in the start's first moments: a listing then is reused by the requests right after it
+  // (sessions-index's reuse window), so files written meanwhile would be missed. The sweep has no hurry.
+  const t = setTimeout(() => {
+    void listSessions()
+      .then((all) => sweepReviewers(all, activeReviewers(), (p) => retireChat(p, { ...live, log: (l) => console.warn(`[merge-reviewer] ${l}`) })))
+      .then((done) => {
+        if (done.length) console.log(`[merge-reviewer] archived ${done.length} reviewer chat${done.length === 1 ? "" : "s"} left open`);
+      })
+      .catch((err) => console.warn(`[merge-reviewer] sweep failed: ${err instanceof Error ? err.message : String(err)}`));
+  }, SWEEP_DELAY_MS);
+  (t as { unref?: () => void }).unref?.();
 }
+
+/** How long after the server's start the reviewer sweep runs. */
+export const SWEEP_DELAY_MS = 30_000;

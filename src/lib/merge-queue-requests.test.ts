@@ -165,13 +165,14 @@ test("Local main is N commits behind, with the target's own name; nothing when c
 
 // ---- the worktree rows (composer control, pane) read the same words --------------------------------
 
-const wtq = (queue: Partial<WorktreeQueueInfo>): QueueRowInput => ({
+const wtq = (queue: Partial<WorktreeQueueInfo>, served = true): QueueRowInput => ({
   status: "active",
   exists: true,
   branch: "feat/x",
   readiness: undefined,
   queue: { id: "me_1", state: "requested", commit: "a".repeat(40), notes: [], project: "prj_1", ...queue } as WorktreeQueueInfo,
   mergeProject: { id: "prj_1", root: "/r", target: "main", checks: "declared", review: false },
+  ...(served ? { mergeServed: true as const } : {}),
 });
 
 test("rows: an open request reads its host state; a request to review needs you; closed offers Land", () => {
@@ -184,6 +185,7 @@ test("rows: an open request reads its host state; a request to review needs you;
   const closed = queueRow(wtq({ state: "closed", request: pr({ state: "closed" }) }));
   assert.equal(closed.label, "Closed on GitHub");
   assert.equal(closed.action, "land", "Land Again");
+  assert.equal(queueRow(wtq({ state: "closed", request: pr({ state: "closed" }) }, false)).action, "none", "an unserved repo offers no Land, even on an old closed request");
   const review = queueRow(wtq({ state: "request-review", request: pr() }));
   assert.equal(review.label, "Review the request");
   assert.deepEqual(controlWords([review]), { text: "1 needs you", n: 1, dot: "warn" });

@@ -195,7 +195,8 @@ function queueRowOf(w: QueueRowInput): QueueRow {
           tone: chip.tone,
           ...(chip.live ? { live: true } : {}),
           reason: requestReason(e.state, e.request, w.mergeProject?.target ?? "the target", e.reason) ?? undefined,
-          action: e.state === "closed" ? "land" : "none",
+          // Land Again on a closed request only where the queue still serves the repo (as every other Land).
+          action: e.state === "closed" && w.mergeServed ? "land" : "none",
         };
       }
       case "cancelled":

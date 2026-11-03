@@ -23,6 +23,7 @@ import {
   type LogLine,
   type ReleaseDecl,
   RELEASE_TAG_DEFAULT,
+  releaseTagOf,
   type Step,
   type VerbResult,
   versionOfTag,
@@ -1095,9 +1096,14 @@ export async function releaseCheck(git: Git, root: string, commit: string, relea
   const all = r.code === 0 ? r.stdout.split("\n").map((l) => l.trim()).filter(Boolean) : [];
   const tags = all.filter((t) => !t.startsWith("withdrawn/") && !(release?.channels ?? []).includes(t) && versionOfTag(pattern, t) !== null);
   const live = tags.filter((t) => !all.includes(`withdrawn/${t}`));
-  if (live.length) return { id: "release", ok: true, detail: `${commit.slice(0, 12)} is release ${live.join(", ")}` };
-  if (tags.length) return { id: "release", ok: false, detail: `${tags.join(", ")} at ${commit.slice(0, 12)} was withdrawn` };
-  return { id: "release", ok: false, detail: `${commit.slice(0, 12)} is no numbered release (no ${pattern} tag at it): plan the deploy of a release` };
+  if (live.length) return { id: "release", ok: true, detail: `${commit.slice(0, 7)} is release ${live.join(", ")}` };
+  // The newest release that isn't withdrawn: the one to deploy instead.
+  const listed = await git(["tag", "--list", "--sort=-v:refname"], root);
+  const names = listed.code === 0 ? listed.stdout.split("\n").map((l) => l.trim()).filter(Boolean) : [];
+  const latest = names.find((t) => !t.startsWith("withdrawn/") && !(release?.channels ?? []).includes(t) && versionOfTag(pattern, t) !== null && !names.includes(`withdrawn/${t}`));
+  const instead = latest ? `: deploy a release instead (the latest is ${latest})` : ": deploy a release instead";
+  if (tags.length) return { id: "release", ok: false, detail: `${tags.join(", ")} at ${commit.slice(0, 7)} was withdrawn${instead}` };
+  return { id: "release", ok: false, detail: `${commit.slice(0, 7)} isn't a numbered release (no tag such as ${releaseTagOf(pattern, "1.0.0")} at it)${instead}` };
 }
 
 /** The caller tag a record keeps (`operator`, `overseer:<id>` …). */

@@ -611,11 +611,12 @@ describe("a releases-only deploy target (q2's opt-in)", () => {
       assert.equal((await releaseCheck(realGit, repo.root, c1, RELEASE)).ok, true);
       const plain = await releaseCheck(realGit, repo.root, c2, RELEASE);
       assert.equal(plain.ok, false);
-      assert.match(plain.detail, /no numbered release/);
+      assert.equal(plain.detail, `${c2.slice(0, 7)} isn't a numbered release (no tag such as v1.0.0 at it): deploy a release instead (the latest is v1.0.0)`);
+      assert.ok(!plain.detail.includes("${"), "never the raw pattern");
       sh(repo.root, "tag", "-a", "withdrawn/v1.0.0", "-m", "bad", c1);
       const w = await releaseCheck(realGit, repo.root, c1, RELEASE);
       assert.equal(w.ok, false);
-      assert.match(w.detail, /v1\.0\.0 .* was withdrawn/);
+      assert.equal(w.detail, `v1.0.0 at ${c1.slice(0, 7)} was withdrawn: deploy a release instead`);
       assert.equal((await releaseCheck(realGit, repo.root, c1, { ...RELEASE, tag: "release-${version}" })).ok, false, "the section's pattern decides");
     } finally {
       repo.done();

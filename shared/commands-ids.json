@@ -181,7 +181,8 @@
     "project.merge-queue.update-local-main",
     "project.merge-queue.request.publish",
     "project.merge-queue.land-how.set",
-    "project.merge-queue.land-how.clear"
+    "project.merge-queue.land-how.clear",
+    "session.context.view"
   ],
   "retired": [
     "settings.agents.get"

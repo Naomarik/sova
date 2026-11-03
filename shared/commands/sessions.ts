@@ -293,6 +293,17 @@ export const SESSION_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "session.context.view",
+    label: "Show Context Window",
+    summary: "What fills a chat's context window now: its instruction files, mode, rules, skills, tools and conversation, each with an estimated size, and the last reply's total.",
+    effect: "looks",
+    params: { session: session("query", "path") },
+    route: { method: "GET", path: "/api/sessions/context-view" },
+    sessionKey: "path",
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
     id: "session.group.list",
     label: "List Groups",
     summary: "The sidebar's session groups and their members.",

@@ -25,6 +25,7 @@ export type CommandId =
   | "session.workers.checks"
   | "session.context"
   | "session.context.file"
+  | "session.context.view"
   | "session.group.list"
   | "session.group.create"
   | "session.group.rename"
@@ -327,6 +328,11 @@ export interface CommandParams {
     "session"?: string;
     /** A path the session's setup lists (a context file, SKILL.md, SYSTEM.md or APPEND_SYSTEM.md) */
     "file": string;
+  };
+  /** What fills a chat's context window now: its instruction files, mode, rules, skills, tools and conversation, each with an estimated size, and the last reply's total. (only looks; needs the card's owner trusted) */
+  "session.context.view": {
+    /** The session, by id or by path */
+    "session"?: string;
   };
   /** The sidebar's session groups and their members. (only looks; needs the card's owner trusted) */
   "session.group.list": Record<string, never>;
@@ -2647,6 +2653,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.workers.checks": "looks",
   "session.context": "looks",
   "session.context.file": "looks",
+  "session.context.view": "looks",
   "session.group.list": "looks",
   "session.group.create": "changes",
   "session.group.rename": "changes",

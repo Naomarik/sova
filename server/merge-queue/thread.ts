@@ -494,6 +494,10 @@ export async function startMergeThread(request: AppRequest, file?: string): Prom
       const r = await promptSession(path, text);
       return r.ok ? { ok: true } : { ok: false, error: r.error };
     },
+    async retire(path) {
+      const { liveRetireDeps, retireChat } = await import("./retire");
+      await retireChat(path, { ...(await liveRetireDeps()), log: (l) => console.warn(`[merge-thread] ${l}`) });
+    },
   });
   setMergeThread(t);
   return t;

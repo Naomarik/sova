@@ -26,7 +26,9 @@ export interface ReviewerStart {
 }
 export interface ReviewerHandle {
   sessionId: string;
-  /** Archive (or stop) the reviewer's chat. */
+  /** Its session file (the run's reviewer links). */
+  path?: string;
+  /** Archive the reviewer's chat once its turn is over (else stop it). The step never waits on it. */
   stop(): Promise<void>;
 }
 export type StartReviewer = (o: ReviewerStart) => Promise<ReviewerHandle>;
@@ -53,6 +55,9 @@ const waiting = new Map<string, Waiting>();
 
 /** The reviewer chat a run is waiting on, if any (merge.review's caller check: only it may answer for that run). */
 export const reviewerOf = (runId: string): string | null => waiting.get(runId)?.sessionId ?? null;
+
+/** Every reviewer chat a review is waiting on now (the startup sweep leaves these alone). */
+export const activeReviewers = (): Set<string> => new Set([...waiting.values()].map((w) => w.sessionId).filter((id): id is string => !!id));
 
 /** merge.review's verdict for `runId`. False when no review of that run is waiting (late, or a stranger's). */
 export function deliverReview(runId: string, v: { verdict: ReviewVerdict["verdict"]; text?: string }): boolean {
@@ -130,7 +135,9 @@ export async function reviewStep(
       if (timer) clearTimeout(timer);
       if (onAbort) o.signal.removeEventListener("abort", onAbort);
       if (waiting.get(o.runId) === w) waiting.delete(o.runId);
-      await handle?.stop().catch(() => undefined);
+      // Not awaited: the reviewer gave its verdict from inside its own turn, and archiving it waits for that turn
+      // to end (at most 2 min, else it is stopped). The run goes on meanwhile.
+      void handle?.stop().catch(() => undefined);
     }
   }
   return { ok: false, why: why || "the reviewer gave no verdict" };

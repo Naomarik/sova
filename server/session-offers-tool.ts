@@ -18,7 +18,7 @@ export function offerToolSpec(sessionId: string, path: string, snapshot: OfferSn
   return {
     name: OFFER_TOOL,
     label: "Offer",
-    // Its card reads the recorded result: never a codemode script's call.
+    // Its card reads the recorded result: never a call another tool made.
     exposure: "model-only",
     description: offerToolDescription(snapshot),
     promptSnippet: "show one of this project's offers: a card of the project's own buttons under your reply",

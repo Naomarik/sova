@@ -59,7 +59,7 @@ export const USAGE_PURPOSES = [
 	"reconcile",
 	"explain",
 	"wrapup",
-	// A codemode script's classifier and image calls (models.classify / models.generateImages).
+	// A script tool's classifier and image calls (models.classify / models.generateImages).
 	"classify",
 	"image",
 ] as const;

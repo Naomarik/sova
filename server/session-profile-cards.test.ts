@@ -193,7 +193,7 @@ describe("a card's mode and minor modes", () => {
     const want = { mode: "delegate", minorModes: ["align", "spec", "vis"] };
     assert.deepEqual(pinned(path), want, "the branch's mode entry has them");
     assert.deepEqual(await reopened(path), want, "a reopened chat holds them");
-    writeFileSync(modeFile, JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: ["codemode"] }));
+    writeFileSync(modeFile, JSON.stringify({ version: 1, mode: "normal", strict: false, minorModes: ["vis"] }));
     try {
       assert.deepEqual(await reopened(path), want, "mode.json moved; the session didn't");
     } finally {

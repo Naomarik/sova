@@ -11,7 +11,7 @@ export function cardToolSpec(sessionId: string, path: string, snapshot: CardSnap
   return {
     name: CARD_TOOL,
     label: "Card",
-    // Its card reads the recorded result: never a codemode script's call.
+    // Its card reads the recorded result: never a call another tool made.
     exposure: "model-only",
     description: cardToolDescription(snapshot),
     promptSnippet: "raise one of this project's transcript cards (a question, a checklist, buttons…) where your call stands",

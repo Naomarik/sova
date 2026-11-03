@@ -231,6 +231,39 @@ describe("how it lands, at the queue", () => {
     }
   });
 
+  test("a request is checked at Land (a11): typed 'open an MR' on a GitHub origin opens a PR; no host or no sign-in: refused before any run", async () => {
+    const h = host();
+    let signedIn = true;
+    const deps = { ...h.deps, hostAdapter: () => ({ ...(h.deps.hostAdapter as () => object)(), auth: async () => (signedIn ? { ok: true } : { ok: false, code: "not-signed-in", why: "Sign in to GitHub on this computer first (gh auth login)" }) }) } as unknown as Partial<QueueDeps>;
+    const k = makeKit({ deps });
+    try {
+      const q = await k.q();
+      h.setOrigin(k.repo.origin);
+      k.repo.branch("feat/m", { "m.txt": "m\n" });
+      const { entry } = await q.add({ branch: "feat/m", by: "typed", via: "gitlab-mr" });
+      assert.equal(entry.approval.via, "github-pr", "the typed word opens a request on origin's own host");
+      await q.cancel(entry.id);
+      signedIn = false;
+      k.repo.branch("feat/n", { "n.txt": "n\n" });
+      await assert.rejects(q.add({ branch: "feat/n", by: "typed", via: "github-pr" }), /^Error: Sign in to GitHub on this computer first \(gh auth login\)$/);
+      writeOverride(q.store.dir, "github-pr");
+      await assert.rejects(q.add({ branch: "feat/n", by: "land-button" }), /Sign in to GitHub/);
+      assert.equal(q.entries().filter((e) => e.branch === "feat/n").length, 0, "nothing recorded, nothing run");
+    } finally {
+      await k.done();
+    }
+    // The kit's origin is a local folder: on neither host.
+    const k2 = makeKit();
+    try {
+      const q = await k2.q();
+      k2.repo.branch("feat/o", { "o.txt": "o\n" });
+      await assert.rejects(q.add({ branch: "feat/o", by: "typed", via: "github-pr" }), /origin isn't on GitHub or GitLab, so Sova can't open a pull or merge request here/);
+      assert.equal(k2.run.inputs.length, 0);
+    } finally {
+      await k2.done();
+    }
+  });
+
   test("Update Local Main refuses a dirty main folder with the reason and pauses nothing", async () => {
     const k = makeKit();
     try {

@@ -335,7 +335,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						const asked = word.via === "github-pr" ? "pull request" : word.via === "gitlab-mr" ? "merge request" : null;
 						// q12: "open a PR/MR" is never blocked. Unserved, the chat opens it itself; served, the queue does.
 						if (asked && served === false)
-							return done(`Sova's merge queue doesn't serve this repo, so nothing was queued: open the ${asked} yourself, as the user asked (${word.via === "github-pr" ? "gh pr create" : "glab mr create"}, after pushing ${f.branch}).`, { landing: null, trees: set?.trees ?? [] });
+							return done(`Sova's merge queue doesn't serve this repo, so nothing was queued: open the request yourself, as the user asked, with gh pr create or glab mr create, whichever origin's host uses (after pushing ${f.branch}).`, { landing: null, trees: set?.trees ?? [] });
 						if (served === false) {
 							// No merge queue here: the user's word is a plain merge into the main checkout's branch.
 							const checkouts = await listWorktrees(git, f.path);
@@ -349,7 +349,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						}
 						recordGoAhead({ branch: f.branch, commit: f.head, ...(sessionId ? { session: sessionId } : {}), at: new Date(now()).toISOString(), by: "owner-chat", ...(word.withoutSpecs ? { withoutSpecs: true as const } : {}), ...(word.withoutReview ? { withoutReview: true as const } : {}), ...(word.via ? { via: word.via } : {}) }, goAheadFile());
 						return done(
-							`Queued ${f.branch} at ${shortSha(f.head)} to land${asked ? ` as a ${asked}` : ""}${word.withoutSpecs ? ", without its specs" : ""}${word.withoutReview ? ", without review" : ""}. Sova's merge queue merges it onto the newest master in its own copy, runs the checks and lands exactly that commit; it tells this chat when it lands or if it needs a fix. Tell the user it is queued; nothing else is needed from them. A newer commit on ${f.branch} isn't included unless they land it again.`,
+							`Queued ${f.branch} at ${shortSha(f.head)} to land${asked ? " as a request on origin's host (a merge request on GitLab, a pull request on GitHub)" : ""}${word.withoutSpecs ? ", without its specs" : ""}${word.withoutReview ? ", without review" : ""}. Sova's merge queue merges it onto the newest master in its own copy, runs the checks and lands exactly that commit; it tells this chat when it lands or if it needs a fix. Tell the user it is queued; nothing else is needed from them. A newer commit on ${f.branch} isn't included unless they land it again.`,
 							{ landing: { branch: f.branch, commit: f.head, withoutSpecs: word.withoutSpecs, withoutReview: word.withoutReview, ...(word.via ? { via: word.via } : {}) }, trees: set?.trees ?? [] },
 						);
 					}

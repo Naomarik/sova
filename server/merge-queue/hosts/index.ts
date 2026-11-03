@@ -1,7 +1,5 @@
-import { remoteOf } from "../../workspace-git";
 import { githubAdapter } from "./github";
 import { gitlabAdapter } from "./gitlab";
-import { type LandingSuggestion, suggestLanding } from "./repo";
 import { type CliRunner, realCli } from "./run";
 import type { HostAdapter, HostKind } from "./types";
 
@@ -9,11 +7,6 @@ import type { HostAdapter, HostKind } from "./types";
 
 export function adapterFor(kind: HostKind, run: CliRunner = realCli): HostAdapter {
   return kind === "github" ? githubAdapter(run) : gitlabAdapter(run);
-}
-
-/** The way of landing the project's origin suggests (a2): a suggestion only, never applied by itself. */
-export async function suggestLandingFor(root: string, run: CliRunner = realCli): Promise<LandingSuggestion> {
-  return suggestLanding(await remoteOf(root), { run });
 }
 
 export { githubAdapter, gitlabAdapter };

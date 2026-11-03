@@ -115,3 +115,7 @@ export function installFirst(kind: HostKind): string {
 /** The longest title and description Sova sends (GitLab caps titles at 255; GitHub bodies at 65536). */
 export const TITLE_MAX = 255;
 export const BODY_MAX = 60_000;
+
+/** No request can open: origin isn't on a host Sova opens requests on, or there is no origin. */
+export const NO_HOST_WORDS = "origin isn't on GitHub or GitLab, so Sova can't open a pull or merge request here";
+export const NO_ORIGIN_WORDS = "This project has no remote named origin, so Sova can't open a pull or merge request here";

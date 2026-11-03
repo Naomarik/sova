@@ -626,18 +626,18 @@ test("'open a PR/MR': on a served repo a go-ahead naming the request; unserved, 
 		const say = (text: string) => f.entries.push({ type: "message", message: { role: "user", content: [{ type: "text", text }] } } as never);
 		say("open a PR");
 		const unserved = await f.call(c, { action: "land" });
-		assert.match(unserved.content[0].text, /doesn't serve this repo, so nothing was queued: open the pull request yourself, as the user asked \(gh pr create/);
+		assert.match(unserved.content[0].text, /doesn't serve this repo, so nothing was queued: open the request yourself, as the user asked, with gh pr create or glab mr create, whichever origin's host uses/);
 		assert.deepEqual(recorded(), []);
 		assert.equal(asked.length, 1);
 		say("open an MR");
-		assert.match((await f.call(c, { action: "land" })).content[0].text, /open the merge request yourself.*glab mr create/);
+		assert.match((await f.call(c, { action: "land" })).content[0].text, /open the request yourself, as the user asked, with gh pr create or glab mr create/);
 		served = true;
 		say("open a PR");
 		const queued = await f.call(c, { action: "land" });
-		assert.match(queued.content[0].text, /^Queued feat\/pr at [0-9a-f]{7} to land as a pull request\./);
+		assert.match(queued.content[0].text, /^Queued feat\/pr at [0-9a-f]{7} to land as a request on origin's host \(a merge request on GitLab, a pull request on GitHub\)\./);
 		assert.equal(recorded().at(-1).via, "github-pr");
 		say("open an MR, skip review");
-		assert.match((await f.call(c, { action: "land" })).content[0].text, /to land as a merge request, without review\./);
+		assert.match((await f.call(c, { action: "land" })).content[0].text, /to land as a request on origin's host \(a merge request on GitLab, a pull request on GitHub\), without review\./);
 		assert.equal(recorded().at(-1).via, "gitlab-mr");
 		// Plain "land it" on the served repo records no request.
 		say("land it");

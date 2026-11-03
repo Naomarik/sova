@@ -34,10 +34,10 @@ import { type MergeQueueSettings, type MergeSettingsChange, type MergeSettingsSa
 import { effectiveModel, type ModelCheck, readModels } from "./models";
 import { buildSettings, fixedValues, playbookDiffers } from "./settings";
 import { approvalHow, effectiveHow, landHowSetting, opensRequest, publishes, type RequestHow, writeOverride } from "./strategy";
-import { checkPublishText, draftText, type Hosting, pollRequest, publishEntry, type PublishOutcome, publishSettings as publishSettingsRequest, reconcilePublish, requestInfo } from "./strategy-run";
+import { checkPublishText, draftText, type Hosting, hostMismatch, pollRequest, publishEntry, type PublishOutcome, publishSettings as publishSettingsRequest, reconcilePublish, requestInfo } from "./strategy-run";
 import { fetchTarget, localBehind, updateLocalMain as updateMainTip } from "./publish";
 import type { Drafter } from "./hosts/request-kit";
-import type { HostAdapter, HostKind, HostRepo } from "./hosts/types";
+import { type HostAdapter, type HostKind, type HostRepo, NO_HOST_WORDS, NO_ORIGIN_WORDS } from "./hosts/types";
 import { githubAdapter } from "./hosts/github";
 import { gitlabAdapter } from "./hosts/gitlab";
 import { suggestLanding } from "./hosts/repo";
@@ -683,6 +683,18 @@ export class ProjectQueue {
       const how = effectiveHow(d.def?.merge?.land, this.store.dir).effective;
       if (how !== "local") approval.how = how;
       if (req.via) approval.via = req.via;
+      // A request is checked against origin's host when it is approved, never only after the run (a11): a typed "open
+      // a PR / an MR" opens the request on origin's own host (a PR on GitHub, an MR on GitLab), and a project, or a
+      // typed word, that can't open one there, or a computer not signed in to it, is refused now.
+      if (opensRequest(approvalHow(approval))) {
+        const host = await this.hosting();
+        if (!host) throw new MergeFailure("invalid-request", (await this.git(["remote", "get-url", "origin"], this.root)).code === 0 ? NO_HOST_WORDS : NO_ORIGIN_WORDS);
+        if (approval.via) approval.via = host.repo.kind === "github" ? "github-pr" : "gitlab-mr";
+        const mismatch = hostMismatch(approvalHow(approval) as RequestHow, host);
+        if (mismatch) throw new MergeFailure("invalid-request", mismatch);
+        const a = await host.adapter.auth(host.repo);
+        if (!a.ok) throw new MergeFailure("invalid-request", a.why);
+      }
       // Land Again on a branch whose request is published or waiting to be (al_3 b1): the same entry goes back in line,
       // its request kept, so the new work is added on top of what origin has.
       const onHost = this.q.entries.find((e) => e.branch === branch && (e.state === "requested" || e.state === "request-review" || e.state === "closed") && e.request);

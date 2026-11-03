@@ -39,8 +39,8 @@ export interface GoAhead {
 	withoutSpecs?: true;
 	/** "land it, skip review": the merge queue lands it without its review step. */
 	withoutReview?: true;
-	/** "open a PR" / "open an MR": it lands as a GitHub pull request or a GitLab merge request, whatever the project's
-	    way of landing is. */
+	/** "open a PR" / "open an MR": it lands as a request on origin's host, whatever the project's way of landing is
+	    (the queue maps the words to origin's host: "open a PR" on GitLab opens a merge request there). */
 	via?: RequestVia;
 	/** The session it was given in, when not the branch's own. */
 	in?: string;

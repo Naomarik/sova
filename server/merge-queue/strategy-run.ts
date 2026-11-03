@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { MergeRequestInfo } from "../../shared/merge-queue";
 import { type Git, isAncestor, revParse } from "./guard";
 import { checkRequestText, draftRequest, type Drafter, loadRequestKit, type RequestInput, signed } from "./hosts/request-kit";
-import { HOST_NAME, type HostAdapter, type HostKind, type HostRepo, hostOfHow, type RequestFacts, wireFacts } from "./hosts/types";
+import { HOST_NAME, type HostAdapter, NO_HOST_WORDS, NO_ORIGIN_WORDS, type HostKind, type HostRepo, hostOfHow, type RequestFacts, wireFacts } from "./hosts/types";
 import { firstParents } from "./land";
 import { fetchTarget, promoteDocs, pushBranch } from "./publish";
 import type { RequestHow } from "./strategy";

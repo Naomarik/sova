@@ -3,7 +3,7 @@ import { Portal } from "solid-js/web";
 import type { SessionWorktreeInfo } from "../../shared/protocol";
 import { modalHead, queueRow, rowButtons, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, land, refusal, type LandOptions } from "../lib/merge-queue-client";
-import { mergeRunHref, projectTabHref } from "../lib/projects-route";
+import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { tildePath } from "../lib/format";
 import { announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
@@ -187,6 +187,17 @@ export function WorktreeQueueRow(props: {
         </Show>
         <Show when={row().key === "unattributed"}>
           <UnclearChecks projectId={projectId()} unclear={w().queue?.unclear} target={w().mergeProject?.target} />
+        </Show>
+        <Show when={w().queue?.reviewer}>
+          {(rv) => (
+            <p class="list-meta wt-queue-reviewer">
+              <span class="text-muted">{rv().state === "running" ? "Review running" : `Review: ${rv().state === "failed" ? "no verdict" : rv().state}`}</span>
+              <Show when={!rv().cleared} fallback={<span class="text-muted"> · Reviewer chat cleared</span>}>
+                {" · "}
+                <a href={projectId() ? projectSessionHref(projectId()!, rv().path) : `#/s/${encodeURIComponent(rv().path)}`}>Open Reviewer Chat</a>
+              </Show>
+            </p>
+          )}
         </Show>
         <For each={row().notes}>
           {(n) => (

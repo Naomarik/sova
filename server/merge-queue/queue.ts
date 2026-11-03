@@ -102,8 +102,10 @@ export interface QueueDeps {
   keepRuns?: number;
   /** The project's review kit is declared (and readable). Default: `def.merge.review` set. */
   hasReviewKit?: (def: ProjectDef | null, root: string) => boolean;
-  /** The project's merge thread chat (thread.ts threadOf). */
-  threadOf?: (root: string) => { session: string; startedAt: string } | null;
+  /** The project's merge thread chat (thread.ts threadInfo): the Merge thread card's facts. */
+  threadOf?: (root: string) => import("../../shared/merge-queue").MergeThreadInfo | null;
+  /** The queue's own chats (chats.ts): the reviewer running now and the History's rows. */
+  chatsOf?: (root: string) => Pick<MergeQueueView, "reviewing" | "chats">;
   /** Hand a reviewer's verdict to the review step (default review-step.ts deliverReview). */
   deliverReview?: typeof deliverReview;
   /** The mechanical sanity check of a resolution (default conflicts.ts sanityCheck). */
@@ -349,7 +351,8 @@ export class ProjectQueue {
     }
     // Served by the queue (team mq-served-only, served.ts): on Sova's Projects list with its setup done.
     const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
-    return { ...v, served, ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
+    const chats = this.deps.chatsOf?.(this.root) ?? {};
+    return { ...v, served, ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
   }
 
   /** Whether the project has origin, and origin's copy of the target as last fetched (its remote-tracking ref; never a fetch). */

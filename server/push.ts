@@ -164,6 +164,26 @@ export async function notifyBlockers(act: Blocker[], count: number, now = Date.n
   }
 }
 
+/**
+ * One notification of no session (the merge thread's question with no chat to ask, §chat/merge-queue): sent once,
+ * now, to every device, when notifications are on, a contact is set and it isn't quiet hours. Redacted like every
+ * other; never throws. Resolves whether it went out.
+ */
+export async function notifyOnce(n: { title: string; body: string; hash: string; tag: string }, now = Date.now(), redactor: () => Redactor = serverRedactor): Promise<boolean> {
+  try {
+    const settings = readPushSettings();
+    const devices = readDevices();
+    if (!settings.enabled || !settings.contact || !devices.length || inQuietHours(settings.quietHours, new Date(now))) return false;
+    const r = redactor();
+    const payload: PushPayload = { v: 1, title: clip(r.redact(n.title), TITLE_MAX), body: clip(r.redact(n.body), BODY_MAX), tag: n.tag, hash: n.hash, ts: now };
+    const results = await deliver(devices, payload, settings.contact);
+    return results.some((x) => x.ok);
+  } catch (err) {
+    console.warn("[push] skipped:", err instanceof Error ? err.message : String(err));
+    return false;
+  }
+}
+
 /** Forget the told-set and the last send: the next reading is a new baseline (nothing wanted a
     notification meanwhile, so what is there then was never going to be sent). Also for the tests. */
 export function resetPushState(): void {

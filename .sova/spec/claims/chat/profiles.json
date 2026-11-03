@@ -197,14 +197,18 @@
       "server/session-profiles.test.ts",
       "server/session-profile-cards.test.ts",
       "profiles/system/merge-thread.json",
-      "profiles/system/merge-reviewer.json"
+      "profiles/system/merge-reviewer.json",
+      "server/merge-queue/playbooks.test.ts",
+      "server/session-profile-routes.ts",
+      "server/merge-queue/thread-modes.test.ts"
     ],
     "requires": [
       "§chat.profiles/model"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-11T08:41Z"
+      "by": "user",
+      "at": "2026-11-03T18:31Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
     }
   },
   "§chat.profiles/session-tools": {

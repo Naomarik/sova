@@ -307,8 +307,16 @@
       "server/project-coding-mode.ts",
       "server/project-coding-mode.test.ts",
       "shared/memory.ts",
-      "server/harness/pi/golden/session/S15-mode-command.trace"
-    ]
+      "server/harness/pi/golden/session/S15-mode-command.trace",
+      "server/app.ts",
+      "server/merge-queue/thread.ts",
+      "server/merge-queue/thread-modes.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T18:31Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+    }
   },
   "§chat.memory/zoomable": {
     "kind": "behavior",

@@ -40,6 +40,7 @@ import { reservedRoots } from "./projects/contributions";
 import { removeMemory } from "./memory/store";
 import { removeSessionTours } from "./tours/lifecycle";
 import { byActivity } from "../src/lib/summary-diff";
+import { queueChatRole } from "../shared/merge-queue";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -82,6 +83,12 @@ function keptBy(path: string): string | null {
     if (why) return why;
   }
   return projectKeeps(path);
+}
+
+/** SessionSummary.queueChat, from the file's own profile pick: the merge queue's thread or a reviewer. */
+function queueChatField(profile: SessionSummary["profile"]): Pick<SessionSummary, "queueChat"> {
+  const role = queueChatRole(profile);
+  return role ? { queueChat: { role } } : {};
 }
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
@@ -134,6 +141,16 @@ const cache = new Map<string, CacheEntry>();
  *  is recomputed on every listing, never baked into a file's cached head facts. */
 const workerSessions = new WorkerSessions({ idOf: (p) => idOf(p) });
 /** The session that runs worker `path` (worker-sessions.ts parentOf), from the last listing's scans; null: none known. */
+/** SessionSummary.workerOf for a worker's row: its parent and name, from what the worker scan already read. */
+function workerOfField(path: string): Pick<SessionSummary, "workerOf"> {
+  try {
+    const w = workerSessions.workerOf(path);
+    return w ? { workerOf: { id: idOf(w.parent), path: w.parent, ...(w.name ? { name: w.name } : {}) } } : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function workerParentOf(path: string): Promise<string | null> {
   return workerSessions.parentOf(path);
 }
@@ -793,6 +810,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(align.summary ? { align: align.summary } : {}),
       ...(profileField(head.profile) ? { profile: profileField(head.profile) } : {}),
+      ...queueChatField(profileField(head.profile)),
     };
     const entry: CacheEntry = {
       mtimeMs: st.mtimeMs,
@@ -1230,7 +1248,7 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
       workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
       origin: isWebSession(s.id) ? "web" : "external",
       archived: isArchived(s.id),
-      ...(workers.has(s.path) ? { workerSession: true as const } : {}),
+      ...(workers.has(s.path) ? { workerSession: true as const, ...workerOfField(s.path) } : {}),
       ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
       ...heldChatField(s.path),
@@ -1316,7 +1334,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
     origin: isWebSession(s.id) ? "web" : "external",
     archived: isArchived(s.id),
-    ...(worker ? { workerSession: true as const } : {}),
+    ...(worker ? { workerSession: true as const, ...workerOfField(s.path) } : {}),
     ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
     ...heldChatField(s.path),
@@ -1489,7 +1507,7 @@ export interface CleanupResult {
  * file that's gone, and a file whose header doesn't parse — never delete what can't be read as
  * a pi session. Every mode leaves an attached org's workspace sessions alone (refused, in paths mode).
  */
-export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResult> {
+export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: boolean } = {}): Promise<CleanupResult> {
   const targets = req.mode === "paths" ? req.paths : await listSessionFiles();
   const live = readLive();
   const now = Date.now();
@@ -1530,6 +1548,12 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     // Overseer files (current and history) are never swept by age or as husks: a fresh Overseer
     // is a husk by definition, and its history is pruned by /clear itself (paths mode).
     if (req.mode !== "paths" && (await summarize(path))?.overseer) continue;
+    // The merge queue's own chats are kept until the user clears them from the Merge Queue tab's History
+    // (`opts.queueChats`, that route's alone): never swept, and refused by an ordinary paths delete.
+    if (!opts.queueChats && (await summarize(path))?.queueChat) {
+      if (req.mode === "paths") refusals.push({ path, reason: "That is one of the merge queue's own chats: clear it from the Merge Queue tab's History." });
+      continue;
+    }
     if (live.has(path)) {
       skipped.live++;
       continue;

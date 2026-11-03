@@ -1,4 +1,5 @@
 import type { Hono } from "hono";
+import { QUEUE_CHAT_MODE_REFUSAL } from "../shared/merge-queue";
 import { DEFAULT_PROFILE, keyOf, parseMine, THINKING_LEVELS, type ListedProfile, type Profile, type ProfileMine, type ProfilesListing } from "../shared/profiles";
 import type { SessionSummary } from "../shared/protocol";
 import { acquireChatHandle, chatHandle, type ChatHandle, closeChat, setOpeningChoice, setSingletonCheck } from "./chat-handle";
@@ -51,6 +52,9 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   const s = await getSessionSummary(path);
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
   if (s.overseer || s.projectOverseer || s.baton || s.org || s.workerSession) return { ok: false, status: 409, error: "This session can't take a profile." };
+  // The merge queue's own chats are marked by their Sova profile (queueChatRole): another pick would unmark them,
+  // lift their mode lock and put them back in every list. The server's own start applies to a session not yet marked.
+  if (s.queueChat) return { ok: false, status: 409, error: QUEUE_CHAT_MODE_REFUSAL };
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
   const r = await resolveChoice(choice, s.cwd);
   if (!r.ok) return { ok: false, status: r.approval ? 409 : 400, error: r.error, ...(r.approval ? { approval: true as const } : {}) };

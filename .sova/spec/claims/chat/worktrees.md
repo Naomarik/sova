@@ -303,7 +303,11 @@ and its notes (§app.merge-queue/note) under it, plus "1 newer commit not includ
 moved past the approved commit. **The row's action** is the modal's, from the same row: Land (with
 its menu) on Ready or Drafts changed (never on Needs a fix: a sent-back branch offers no Land until
 it reads ready again at a newer commit, §chat.composer/worktrees-control), Cancel on a queued row, Accept and Send Back on Behaviour differs, Land Anyway and Send Back on
-Review flagged and on Can't tell whose failure. A project whose definition doesn't parse keeps Land
+Review flagged and on Can't tell whose failure. While the branch's review runs, and after it ends,
+the row adds a line for its run's newest reviewer chat: "Review running" or "Review: {verdict}"
+("no verdict" when it failed), then **Open Reviewer Chat**, or "· Reviewer chat cleared" with no
+link once the user cleared it (§app.merge-queue/chats); the reviewer chat itself is never a row of
+any session list. A project whose definition doesn't parse keeps Land
 (never Set Up Queue), with the modal's line saying so (§chat.composer/worktrees-control); the row keeps Review Changes and its workers and `.agent` chips. A row's Review Changes, first among
 its actions, is the modal's own button: the branch as it is now against the branch it lands on, its
 uncommitted files included and marked as uncommitted; a merged branch shows what its landing or merge brought in (§chat.changes/entry).

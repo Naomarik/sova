@@ -3,8 +3,12 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import type { ProjectDef, ReleaseDecl } from "../../shared/project-contract";
+import { settingsWaitingWords, SETTINGS_WAITING_WORDS } from "../../shared/merge-queue-settings";
 import { planChecks } from "../merge-queue/checks";
-import { DEF, makeKit, makeRepo, sh, tryGit, until, type Kit } from "../merge-queue/testing/queue-kit";
+import { MergeFailure } from "../merge-queue/queue";
+import { projectKey } from "../merge-queue/store";
+import { readOverride, writeOverride } from "../merge-queue/strategy";
+import { DEF, makeKit, makeRepo, sh, tryGit, until, untilAborted, type Kit } from "../merge-queue/testing/queue-kit";
 import type { Caller } from "./engine";
 import { authorizeRelease, FROM_CHAT, REPORTS_FROM_THREAD, ReleaseFailure, Releaser, SESSION_NEVER } from "./release";
 
@@ -658,6 +662,131 @@ describe("a queue event lost to a stop", () => {
 });
 
 describe("master's how-it-lands, settings saves and local-main updates against the freeze", () => {
+  /** A release ready to publish, its commit on master (nothing pushed yet). */
+  const ready = async (t: ReturnType<typeof releaseKit>) => {
+    const { rec, sha } = await prepared(t);
+    await t.call("release.step", { step: "commit", state: "done", summary: "c", facts: [`commit=${sha}`] }, t.chat);
+    await until(() => t.r.record(t.repo.root, rec.id)!.state === "ready", "ready");
+    await landedState(t.k, t.r.record(t.repo.root, rec.id)!.entry!);
+    return t.r.record(t.repo.root, rec.id)!;
+  };
+
+  test("this computer's how-it-lands can't be cleared while a release is open: the override stays; after Abandon it can", async () => {
+    const t = releaseKit();
+    try {
+      const q = await t.k.q();
+      await q.setLandHow("local", "computer");
+      const dir = join(t.repo.state, "merge-queue", projectKey(t.repo.root));
+      await t.call("release.start", {});
+      await assert.rejects(q.clearLandHowOverride(), (e: unknown) => e instanceof MergeFailure && e.code === "invalid-request" && /^how it lands can't change while release rl_\w+ is open: change it after Publish or Abandon$/.test(e.message));
+      assert.equal(readOverride(dir)?.how, "local", "the override stays");
+      assert.equal((await t.call("release.abandon", { confirm: true, why: "not now" })).ok, true);
+      await q.clearLandHowOverride();
+      assert.equal(readOverride(dir), null);
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("a waiting save names the release holding it, in the result and the settings; one already waiting on a branch reads as the release too; it drops when the hold lifts", async () => {
+    assert.equal(settingsWaitingWords("release v0.4.0"), "Saves once release v0.4.0 is published or abandoned");
+    assert.equal(settingsWaitingWords(), SETTINGS_WAITING_WORDS);
+    const t = releaseKit();
+    try {
+      const q = await t.k.q();
+      // A branch's run holds the target: the save waits on it, with no release to name.
+      t.k.run.set((input) => (input.entry.branch === "feat/b" ? untilAborted(input) : {}));
+      t.repo.branch("feat/b", { "b.txt": "b\n" });
+      await q.add({ branch: "feat/b", by: "land-button" });
+      await until(() => q.currentRun(), "B checking");
+      const first = await q.saveSettings({ push: false });
+      assert.deepEqual(first, { state: "waiting" });
+      assert.equal((await q.settings()).pendingSave?.release, undefined);
+      // The release opens: the same save now reads as the release, at once (no stale cached settings).
+      const { rec } = await prepared(t);
+      await until(() => !q.currentRun(), "B voided");
+      assert.equal((await q.settings()).pendingSave?.release, "release v0.2.0");
+      const second = await q.saveSettings({ push: false });
+      assert.deepEqual(second, { state: "waiting", release: "release v0.2.0" });
+      assert.equal((await t.call("release.abandon", { release: rec.id, confirm: true, why: "not now" })).ok, true);
+      await until(async () => !(await q.settings()).pendingSave, "the save made");
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("the name follows the hold: before a version is picked it reads by the release's id, then its tag", async () => {
+    const t = releaseKit();
+    try {
+      const q = await t.k.q();
+      const s = await t.call("release.start", {});
+      const id = s.release!.release!.id;
+      assert.deepEqual(await q.saveSettings({ push: false }), { state: "waiting", release: `release ${id}` });
+      await t.call("release.step", { step: "version", state: "done", summary: "v", facts: ["version=0.2.0"] }, t.chat);
+      assert.equal((await q.settings()).pendingSave?.release, "release v0.2.0");
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("Publish is refused for a project that lands by request or by pushing a branch: nothing tagged, nothing pushed, the hold kept", async () => {
+    for (const how of ["github-pr", "push-branch"] as const) {
+      const t = releaseKit();
+      try {
+        const rec = await ready(t);
+        const before = sh(t.repo.origin, "rev-parse", "master");
+        // The verbs can't change it now: the state a hand edit, or an older server's override, leaves.
+        writeOverride(join(t.repo.state, "merge-queue", projectKey(t.repo.root)), how);
+        const p = await t.call("release.publish", { confirm: true });
+        assert.equal(p.ok, false, how);
+        assert.match(p.error!.message, how === "push-branch" ? /this project lands by pushing a branch, and a release lands its commit on master and pushes it itself: set how it lands to local/ : /this project lands by request, and a release lands its commit on master and pushes it itself: set how it lands to local/);
+        assert.equal(tryGit(t.repo.root, "rev-parse", "--verify", "--quiet", "refs/tags/v0.2.0").code === 0, false, "no tag here");
+        assert.equal(tryGit(t.repo.origin, "rev-parse", "--verify", "--quiet", "refs/tags/v0.2.0").code === 0, false, "no tag on origin");
+        assert.equal(sh(t.repo.origin, "rev-parse", "master"), before, "nothing pushed");
+        assert.equal(sh(t.repo.root, "rev-parse", "stable^{commit}"), sh(t.repo.root, "rev-parse", "v0.1.0^{commit}"), "the channel didn't move");
+        assert.equal((await t.k.q()).releaseHold()?.id, rec.id, "the hold is kept");
+      } finally {
+        await t.done();
+      }
+    }
+  });
+
+  test("a project-file how-it-lands change waits while a release is open, and is made after Publish", async () => {
+    const t = releaseKit();
+    try {
+      const rec = await ready(t);
+      const q = await t.k.q();
+      const R = t.repo.head();
+      assert.deepEqual(await q.setLandHow("push-branch", "project"), { state: "waiting", release: "release v0.2.0" });
+      assert.equal(t.repo.head(), R, "the frozen target didn't move");
+      const p = await t.call("release.publish", { release: rec.id, confirm: true });
+      assert.equal(p.ok, true, JSON.stringify(p.error));
+      await until(() => t.repo.head() !== R, "the save made after Publish");
+      assert.match(sh(t.repo.root, "show", "master:.sova/project.json"), /"land": "push-branch"/);
+      assert.equal(sh(t.repo.root, "rev-parse", "v0.2.0^{commit}"), R, "the tag stays on the release commit");
+      assert.equal(sh(t.repo.origin, "rev-parse", "master"), R);
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("a settings save made while a release is open goes on master after Publish, past the tag", async () => {
+    const t = releaseKit();
+    try {
+      const rec = await ready(t);
+      const q = await t.k.q();
+      const R = t.repo.head();
+      assert.equal((await q.saveSettings({ push: false })).state, "waiting");
+      assert.equal((await t.call("release.publish", { release: rec.id, confirm: true })).ok, true);
+      await until(() => t.repo.head() !== R, "the save made after Publish");
+      assert.match(sh(t.repo.root, "log", "-1", "--format=%s"), /^Merge queue settings/);
+      assert.equal(sh(t.repo.root, "rev-parse", "master~1"), R);
+      assert.equal((await q.settings()).pendingSave, undefined);
+    } finally {
+      await t.done();
+    }
+  });
+
   test("a settings save waits while a release holds the queue (the target stays at the base) and is made once the hold lifts; Update Local Main and a computer's how-it-lands are refused meanwhile", async () => {
     const t = releaseKit();
     try {

@@ -391,7 +391,8 @@ export class ProjectQueue {
   async settings(): Promise<MergeQueueSettings> {
     const d = await this.declared();
     const head = d.head || "";
-    const key = `${head}|${JSON.stringify(this.q.pendingSave ?? null)}`;
+    const heldBy = this.q.release ? this.releaseName() : undefined;
+    const key = `${head}|${JSON.stringify(this.q.pendingSave ?? null)}|${heldBy ?? ""}`;
     if (this.settingsCache && this.settingsCache.key === key && this.now() - this.settingsCache.at < 10_000) return structuredClone(this.settingsCache.v);
     const at = async (path: string) => (await this.git(["cat-file", "-e", `${head}:${path}`], this.root)).code === 0;
     const kit = d.review ? d.def?.merge?.review : undefined;
@@ -423,7 +424,7 @@ export class ProjectQueue {
       models: { review: await effectiveModel(picks.review, check), thread: await effectiveModel(picks.thread, check) },
       projectFileDiffers: file.differs,
       ...(file.blocked ? { editBlocked: file.blocked } : {}),
-      ...(this.q.pendingSave ? { pendingSave: this.q.pendingSave } : {}),
+      ...(this.q.pendingSave ? { pendingSave: { ...this.q.pendingSave, ...(heldBy && !this.q.pendingSave.failed ? { release: heldBy } : {}) } } : {}),
       fixed: fixedValues(this.root, { ...(this.deps.retryDelayMs !== undefined ? { retryDelayMs: this.deps.retryDelayMs } : {}) }),
       how: await landHowSetting({ dir: this.store.dir, root: this.root, projectHow: d.def?.merge?.land, ...(this.deps.hosts ? { hosts: this.deps.hosts } : {}) }),
     });
@@ -482,7 +483,7 @@ export class ProjectQueue {
         this.q.pendingSave = { at: this.iso(), changes: joined };
         this.save();
         this.settingsChanged();
-        return { state: "waiting" as const };
+        return { state: "waiting" as const, ...(this.q.release ? { release: this.releaseName() } : {}) };
       }
       this.lastSettingsPublish = null;
       const commit = await this.publishSettings(head, changes);
@@ -1977,21 +1978,22 @@ export class ProjectQueue {
 
   /** How it lands, saved on this computer (wins over the project file) or in the project file (through the settings
    *  save path). A pinned approval keeps its own. */
-  setLandHow(how: LandHow, where: "project" | "computer"): Promise<{ state: "saved"; commit?: string } | { state: "waiting" }> {
+  setLandHow(how: LandHow, where: "project" | "computer"): Promise<{ state: "saved"; commit?: string } | { state: "waiting"; release?: string }> {
     if (where === "computer") {
       return this.serial(async () => {
-        if (this.q.release) throw new MergeFailure("invalid-request", `how it lands can't change while ${this.releaseName()} is open: change it after Publish or Abandon`);
+        this.refuseHowChangeWhileHeld();
         writeOverride(this.store.dir, how);
         this.settingsChanged();
         this.save();
         return { state: "saved" as const };
       });
     }
-    return this.saveSettings({ land: how }) as Promise<{ state: "saved"; commit?: string } | { state: "waiting" }>;
+    return this.saveSettings({ land: how }) as Promise<{ state: "saved"; commit?: string } | { state: "waiting"; release?: string }>;
   }
 
   clearLandHowOverride(): Promise<void> {
     return this.serial(async () => {
+      this.refuseHowChangeWhileHeld();
       writeOverride(this.store.dir, null);
       this.settingsChanged();
       this.save();
@@ -2113,6 +2115,11 @@ export class ProjectQueue {
     return h ? `release ${h.tag ?? h.version ?? h.id}` : "a release";
   }
 
+  /** Set or cleared, this computer's how-it-lands can't change under an open release: Publish must land as it started. */
+  private refuseHowChangeWhileHeld(): void {
+    if (this.q.release) throw new MergeFailure("invalid-request", `how it lands can't change while ${this.releaseName()} is open: change it after Publish or Abandon`);
+  }
+
   /** Release lands its commit on the target here and pushes it itself: a project that lands by request or by pushing a
    *  branch (no direct push to the target) can't release (yet). */
   private async mustLandLocally(): Promise<void> {
@@ -2171,6 +2178,7 @@ export class ProjectQueue {
       writeFileSync(this.holdFile(), `${this.holdWords()}\n`, { mode: 0o600 });
       this.releaseLine(this.queued());
       this.save();
+      if (this.q.pendingSave) this.settingsChanged();
       this.log(`held for release ${release.id} at ${head.slice(0, 7)}`);
       return { base: this.q.release!.base };
     });
@@ -2187,6 +2195,7 @@ export class ProjectQueue {
       writeFileSync(this.holdFile(), `${this.holdWords()}\n`, { mode: 0o600 });
       // Waiting rows name the release by its version once it has one.
       for (const e of this.queued()) if (e.release !== h.id && this.isWaitingWords(e.reason)) e.reason = this.waitingWords();
+      if (this.q.pendingSave) this.settingsChanged();
       this.save();
     });
   }
@@ -2198,6 +2207,7 @@ export class ProjectQueue {
     delete this.q.release;
     rmSync(this.holdFile(), { force: true });
     for (const e of this.queued()) if (this.isWaitingWords(e.reason)) delete e.reason;
+    if (this.q.pendingSave) this.settingsChanged();
     this.log(`hold of release ${h.id} lifted`);
     this.kickSoon();
   }

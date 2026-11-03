@@ -190,6 +190,9 @@ describe("New Session's Project tab: a coding session in the root, adopting the 
   test("with the project's merge queue set up, Merge Branch is Land: the branch is queued at its head, nothing merged in the root; not set up, it merges", async () => {
     const { MergeQueues } = await import("./merge-queue/queue");
     const { setMergeQueuesForTest } = await import("./merge-queue/wire");
+    const { ServedRule, setServedRule } = await import("./merge-queue/served");
+    // The project is on the list; its setup is what each case's checks say (served.ts).
+    const servedWith = (checks: "declared" | "unset") => setServedRule(new ServedRule({ listed: () => [{ root: client }], definitionAt: async () => ({ def: null, error: null }), checksOf: () => checks, ttlMs: 0 }));
     const held: string[] = [];
     const queuesWith = (checks: "declared" | "unset") =>
       new MergeQueues({
@@ -209,6 +212,7 @@ describe("New Session's Project tab: a coding session in the root, adopting the 
     const before = git(client, "rev-parse", "master");
     const setUp = queuesWith("declared");
     setMergeQueuesForTest(setUp);
+    servedWith("declared");
     try {
       // Land pins the head the page showed, even when the branch moved past it since.
       const shown = (await po.projectWorktrees(project.id)).sessions.find((x) => x.sessionId === made.sessionId)!.head!;
@@ -237,11 +241,13 @@ describe("New Session's Project tab: a coding session in the root, adopting the 
       await setUp.stop();
       // Not set up: Merge Branch merges in the root as before.
       setMergeQueuesForTest(queuesWith("unset"));
+      servedWith("unset");
       await po.mergeCodingWorktree(project.id, made.sessionId);
       assert.equal(readFileSync(join(client, "queued.txt"), "utf8"), "q\n");
     } finally {
       await (await import("./merge-queue/wire")).mergeQueues()?.stop();
       setMergeQueuesForTest(null);
+      setServedRule(null);
     }
   });
 

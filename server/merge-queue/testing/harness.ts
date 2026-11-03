@@ -182,7 +182,7 @@ export class QueueHarness {
     return this.ingest();
   }
   ingest(): Promise<string[]> {
-    return ingestOnce({ file: this.landingFile, seenFile: this.ingestSeen, roots: () => [this.fx.project], queue: (root) => this.queues.get(root), refused: (s, text) => this.notices.push({ kind: "refused", to: s, branch: "", text }) });
+    return ingestOnce({ file: this.landingFile, seenFile: this.ingestSeen, roots: () => [this.fx.project], served: async () => true, queue: (root) => this.queues.get(root), refused: (s, text) => this.notices.push({ kind: "refused", to: s, branch: "", text }) });
   }
   cancel(entry: string): Promise<MergeEntry> {
     return this.q.cancel(entry);

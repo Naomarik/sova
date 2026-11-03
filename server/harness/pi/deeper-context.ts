@@ -1,7 +1,7 @@
 // Subfolder instruction files, pi's half (the engine is server/deeper-context.ts): an inline extension
 // every chat with file tools loads. At a read, edit or write's tool_result it appends the instruction
-// files of the folders the call touched that the branch hasn't loaded yet. A codemode script's nested
-// calls (tool_call with parentToolCallId) are collected and attached at the codemode call's own result.
+// files of the folders the call touched that the branch hasn't loaded yet. Calls another tool made
+// (tool_call with parentToolCallId) are collected and attached at that tool's own result.
 import { blocksToAttach, loadedInstructions, LOADING_TOOLS } from "../../deeper-context";
 import type { PiExtensionAPI } from "./extension-types";
 import { toolCtx } from "./tools";
@@ -13,7 +13,7 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean 
     factory: (pi: PiExtensionAPI) => {
       /** Files attached this turn: two calls of one batch never both attach one. */
       const inFlight = new Set<string>();
-      /** A codemode call's nested read/edit/write paths, by the codemode call's id. */
+      /** The read/edit/write paths of calls another tool made, by that tool's call id. */
       const nested = new Map<string, string[]>();
       const pathOf = (input: unknown): string | undefined => {
         const p = (input as { path?: unknown } | undefined)?.path;

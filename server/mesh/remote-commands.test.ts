@@ -258,7 +258,7 @@ describe("the door gates the request it builds", () => {
 
   test("a remote run on a writing route is refused on another writing number; the door passes the number on (§mesh.peers/remote-commands)", async () => {
     const outer = (stated: string) =>
-      new Request("http://peer/api/commands/chat.stop", { method: "POST", headers: { "X-Sova-Composer": stated }, body: JSON.stringify({ path: "/s/x.jsonl" }) });
+      new Request("http://peer/api/commands/chat.stop", { method: "POST", headers: { "X-Sova-Composer": stated }, body: JSON.stringify({ session: "/s/x.jsonl" }) });
     const run = (stated: string) => runPeerCommand(outer(stated), "chat.stop", { id: "b" }, {}, { fetch: (req, env) => app.fetch(req, env), mayReach: () => true, allows: () => true });
     const refused = await run("99");
     assert.equal(refused.status, 409, "the command line reads 409 as exit 2");

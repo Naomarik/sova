@@ -12,7 +12,7 @@ import { DocSync, type DocManifest, type DocPeer, type DocPushReply, type DocRep
 import { ExtensionSync, type ExtensionList, type ExtensionPeer } from "./extensions";
 import { extensionsFile, readExtensions, setPeerExtensions, validateExtension } from "../extensions";
 import { answerDenied, sharesLogin, sharesWith } from "../mesh/access";
-import { peerAreaRefused } from "../wire-gate";
+import { peerAreaGate } from "../wire-gate";
 
 /**
  * Host-to-host sync, mounted on the mesh. While the mesh is OFF nothing here exists beyond the
@@ -207,14 +207,8 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
   };
   mesh.onMeshStart(start);
   mesh.onMeshStop(stop);
-  // What a peer in Update needed sends this host anyway stops here, pulls included.
-  for (const route of ["/api/peer/sync/*", "/api/peer/credentials/*"]) {
-    app.use(route, async (c, next) => {
-      const refused = peerAreaRefused(c, mesh.self().label);
-      if (refused) return refused;
-      await next();
-    });
-  }
+  // What a peer on another host-to-host number sends anyway stops at each route, pulls included.
+  const sameArea = peerAreaGate(() => mesh.self().label);
   mesh.onPeerUp((id) => {
     if (!mesh.peers().some((p) => p.id === id)) return;
     if (rt.credentials && loginPeers().some((p) => p.id === id)) void rt.credentials.syncWith(httpPeer(mesh, id));
@@ -241,18 +235,18 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
   ]);
 
   const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
-  app.get("/api/peer/credentials/manifest", (c) => {
+  app.get("/api/peer/credentials/manifest", sameArea, (c) => {
     const from = peerCaller(mesh, c);
     if (!from || !rt.credentials) return notFound(c);
     return c.json(rt.credentials.manifest(from));
   });
-  app.get("/api/peer/credentials/entry", async (c) => {
+  app.get("/api/peer/credentials/entry", sameArea, async (c) => {
     const from = peerCaller(mesh, c);
     if (!from || !rt.credentials) return notFound(c);
     const got = await rt.credentials.entry(c.req.query("key") ?? "", from);
     return got ? c.json(got) : notFound(c);
   });
-  app.post("/api/peer/credentials/push", bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {
+  app.post("/api/peer/credentials/push", sameArea, bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {
     const from = peerCaller(mesh, c);
     if (!from || !rt.credentials) return notFound(c);
     let body: unknown;
@@ -284,18 +278,18 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     if (!(await sync.claim(key))) return c.json({ error: "Nothing here to claim" }, 409);
     return c.json({ ok: true as const });
   });
-  app.get("/api/peer/sync/manifest", (c) => {
+  app.get("/api/peer/sync/manifest", sameArea, (c) => {
     const from = peerCaller(mesh, c);
     if (!from || !rt.docs) return notFound(c);
     return c.json(rt.docs.manifest(from));
   });
-  app.get("/api/peer/sync/doc", (c) => {
+  app.get("/api/peer/sync/doc", sameArea, (c) => {
     const from = peerCaller(mesh, c);
     if (!from || !rt.docs) return notFound(c);
     const got = rt.docs.doc(c.req.query("key") ?? "", from);
     return got ? c.json(got) : notFound(c);
   });
-  app.post("/api/peer/sync/push", bodyLimit({ maxSize: 4 * 1024 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {
+  app.post("/api/peer/sync/push", sameArea, bodyLimit({ maxSize: 4 * 1024 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {
     const from = peerCaller(mesh, c);
     if (!from || !rt.docs) return notFound(c);
     let body: unknown;
@@ -306,11 +300,11 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
     }
     return c.json(rt.docs.receivePush(from, body));
   });
-  app.get("/api/peer/sync/extensions", (c) => {
+  app.get("/api/peer/sync/extensions", sameArea, (c) => {
     if (!peerCaller(mesh, c) || !rt.extensions) return notFound(c);
     return c.json(rt.extensions.published());
   });
-  app.post("/api/peer/sync/extensions", bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {
+  app.post("/api/peer/sync/extensions", sameArea, bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) }), async (c) => {
     const from = peerCaller(mesh, c);
     if (!from || !rt.extensions || !sharesWith(mesh, from, "sync.extensions")) return notFound(c);
     let body: unknown;

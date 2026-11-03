@@ -32,23 +32,32 @@ export const writingRefused = (stated: string | null | undefined): string | null
 /** The answer to a refused writing request. */
 export const refusedAnswer = (c: Context, error: string): Response => c.json({ error, code: WIRE_VERSION_CODE } satisfies WritingRefused, 409);
 
+const writing = new Set<string>(WRITING_ROUTES);
+
+/** Before the routes it guards. `c.req.path` is the very string the router matches, so no spelling
+    that reaches a route gets past it. */
 const writingGate: MiddlewareHandler = async (c, next) => {
-  const why = writingRefused(c.req.header(COMPOSER_HEADER));
+  const why = c.req.method === "POST" && writing.has(c.req.path) ? writingRefused(c.req.header(COMPOSER_HEADER)) : null;
   if (why) return refusedAnswer(c, why);
   await next();
 };
 
-/** Before the routes it guards: on each route's own pattern, so no spelling that reaches the route
-    gets past it. */
 export function mountWritingGate(app: Hono): void {
-  for (const route of WRITING_ROUTES) app.post(route, writingGate);
+  app.use("/api/*", writingGate);
 }
 
-/** Why this host refuses what a peer sent under a host-to-host number, or null
+/** What a peer sent under another host-to-host number, refused; null when it passes
     (§mesh.compatibility/every-send-states-a-version). */
 export const peerAreaRefused = (c: Context, host: string): Response | null => {
   const why = peerRefusal(c.req.header(PEER_AREA_HEADER), WIRE_AREAS.peer, host);
   return why ? c.json({ error: why, reason: WIRE_VERSION_CODE }, 409) : null;
+};
+
+/** peerAreaRefused as a route's own middleware. */
+export const peerAreaGate = (host: () => string): MiddlewareHandler => async (c, next) => {
+  const refused = peerAreaRefused(c, host());
+  if (refused) return refused;
+  await next();
 };
 
 /** The app's in-process dispatch, for what this server runs itself (the Overseer's tools, offers'

@@ -102,11 +102,19 @@ export function loadedInstructions(branch: readonly HEntry[]): Set<string> {
   return out;
 }
 
+/** Whether a read with this offset and limit returned all of `text`: it starts at line 1 (offset absent or
+    at most 1) and its limit, if any, covers every line. Models often send offset 1 and a large limit. */
+export function wholeRead(text: string, r: { offset?: unknown; limit?: unknown }): boolean {
+  const startsAtTop = r.offset === undefined || r.offset === null || (typeof r.offset === "number" && r.offset <= 1);
+  const coversAll = r.limit === undefined || r.limit === null || (typeof r.limit === "number" && r.limit >= text.split("\n").length);
+  return startsAtTop && coversAll;
+}
+
 export interface AttachOptions {
   /** The paths (absolute or as the tool got them) the call touched. */
   touched: readonly string[];
-  /** The path the call read itself, when it read a whole file (a self-read of an instruction file). */
-  selfRead?: string;
+  /** A read's own path and range: when it is an instruction file read whole, only a marker is added. */
+  selfRead?: { path: string; offset?: unknown; limit?: unknown };
   /** What the branch has loaded (read only when a candidate exists). */
   loaded: () => ReadonlySet<string>;
   /** Paths attached in this turn, not yet on the branch; the call's own are added. */
@@ -126,19 +134,19 @@ export function blocksToAttach(cwd: string, o: AttachOptions): string[] {
   }
   if (!files.length) return [];
   const loaded = o.loaded();
-  const self = o.selfRead ? resolveToolPath(cwd, o.selfRead) : undefined;
+  const self = o.selfRead ? resolveToolPath(cwd, o.selfRead.path) : undefined;
   const out: string[] = [];
   for (const f of files) {
     const rel = posix(relative(resolve(cwd), f));
     if (loaded.has(rel) || o.inFlight.has(rel) || (o.allow && !o.allow(f))) continue;
     let text: string;
     try {
-      text = f === self ? "" : readFileSync(f, "utf8");
+      text = readFileSync(f, "utf8");
     } catch {
       continue;
     }
     o.inFlight.add(rel);
-    out.push(f === self ? selfReadMarker(rel) : markerBlock(rel, text));
+    out.push(f === self && wholeRead(text, o.selfRead!) ? selfReadMarker(rel) : markerBlock(rel, text));
   }
   return out;
 }

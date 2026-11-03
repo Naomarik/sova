@@ -27,7 +27,7 @@ const result = (blocks: string[], extra: Partial<HEntry> = {}): HEntry =>
   ({ kind: "tool-result", id: `e${++n}`, parentId: null, tool: "read", blocks: blocks.map((text) => ({ type: "text", text })), ...extra }) as HEntry;
 const user = (): HEntry => ({ kind: "user", id: `e${++n}`, parentId: null, blocks: [] }) as HEntry;
 
-const attach = (cwd: string, touched: string[], loaded: Set<string> = new Set(), inFlight = new Set<string>(), selfRead?: string) =>
+const attach = (cwd: string, touched: string[], loaded: Set<string> = new Set(), inFlight = new Set<string>(), selfRead?: { path: string; offset?: unknown; limit?: unknown }) =>
   blocksToAttach(cwd, { touched, loaded: () => loaded, inFlight, ...(selfRead ? { selfRead } : {}) });
 const pathsOf = (blocks: string[]) => blocks.flatMap((b) => markersIn([{ type: "text", text: "" }, { type: "text", text: b }]));
 
@@ -72,9 +72,23 @@ test("two calls of one batch never both attach a file: the second sees the first
 
 test("reading the instruction file itself attaches a one-line marker, not its text again", () => {
   const cwd = project({ "api/AGENTS.md": "the rules", "x/AGENTS.md": "x rules" });
-  const blocks = attach(cwd, ["api/AGENTS.md"], new Set(), new Set(), "api/AGENTS.md");
+  const blocks = attach(cwd, ["api/AGENTS.md"], new Set(), new Set(), { path: "api/AGENTS.md" });
   assert.deepEqual(blocks, [selfReadMarker("api/AGENTS.md")]);
   assert.ok(!blocks[0]!.includes("\n"));
+});
+
+test("a read from line 1 whose limit covers the file is whole (glm's offset:1, limit:2000): marker only", () => {
+  const cwd = project({ "api/AGENTS.md": "# API rules\nThe codeword is PELICAN-42.\n" });
+  assert.deepEqual(attach(cwd, ["api/AGENTS.md"], new Set(), new Set(), { path: "api/AGENTS.md", offset: 1, limit: 2000 }), [selfReadMarker("api/AGENTS.md")]);
+  assert.deepEqual(attach(cwd, ["api/AGENTS.md"], new Set(), new Set(), { path: "api/AGENTS.md", offset: 0 }), [selfReadMarker("api/AGENTS.md")], "offset 0, no limit");
+});
+
+test("a partial read of an instruction file still gets the full block", () => {
+  const text = "line 1\nline 2\nline 3\nline 4";
+  const cwd = project({ "api/AGENTS.md": text });
+  const full = [markerBlock("api/AGENTS.md", text)];
+  assert.deepEqual(attach(cwd, ["api/AGENTS.md"], new Set(), new Set(), { path: "api/AGENTS.md", offset: 3 }), full, "a later start");
+  assert.deepEqual(attach(cwd, ["api/AGENTS.md"], new Set(), new Set(), { path: "api/AGENTS.md", offset: 1, limit: 2 }), full, "a limit short of the file");
 });
 
 test("a marker counts only in a result's trailing blocks: a tool's own output holding the header can't fake one", () => {

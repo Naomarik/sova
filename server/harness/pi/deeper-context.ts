@@ -36,10 +36,9 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean 
         if (!touched.length || event.isError) return;
         try {
           const input = event.input as { offset?: unknown; limit?: unknown };
-          const whole = event.toolName === "read" && input.offset === undefined && input.limit === undefined;
           const blocks = blocksToAttach(ctx.cwd, {
             touched,
-            ...(whole && own ? { selfRead: own } : {}),
+            ...(event.toolName === "read" && own ? { selfRead: { path: own, offset: input.offset, limit: input.limit } } : {}),
             loaded: () => loadedInstructions(toolCtx(ctx).branch()),
             inFlight,
             ...(opts.allow ? { allow: opts.allow } : {}),

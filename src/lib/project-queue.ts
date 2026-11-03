@@ -18,11 +18,12 @@ const rootOf = (projectId: string): Promise<string> => {
   return r;
 };
 
-/** The newest entry for a branch in a view, from whichever list holds it. */
+/** The newest entry for a branch in a view, from whichever list holds it: by creation, since a note bumps an old
+ *  entry's updatedAt and must not bring back its state. */
 export function entryForBranch(v: Pick<MergeQueueView, "checking" | "waiting" | "needsYou" | "needsFix" | "recent">, branch: string | null | undefined): MergeEntry | undefined {
   if (!branch) return undefined;
   const all = [...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix, ...v.recent.map((l) => l.entry)].filter((e) => e.branch === branch);
-  return all.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0];
+  return all.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0];
 }
 
 /** An entry as a worktree row reads it (SessionWorktreeInfo.queue's shape). */
@@ -40,6 +41,7 @@ export const queueInfoOf = (e: MergeEntry): WorktreeQueueInfo => ({
   review: e.review,
   project: e.project,
   run: e.run,
+  settled: e.settled,
 });
 
 export interface ProjectQueue {

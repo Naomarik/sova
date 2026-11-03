@@ -391,8 +391,8 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
       { mode: "delegate" },
       { minor_modes: ["spec"] },
       { minor_modes: ["align", "spec"] },
-      { mode: "delegate", minor_modes: ["align", "spec", "vis", "codemode"] },
-      { minor_modes: ["spec", "vis", "codemode"] },
+      { mode: "delegate", minor_modes: ["align", "spec", "vis"] },
+      { minor_modes: ["spec", "vis"] },
       { subagent_profile: "big" },
       { subagent_profile: "off" },
     ];
@@ -408,7 +408,7 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: ["spec", "vis"], subagentProfile: "big" }]);
     assert.match((r.content[0] as { text: string }).text, /mode delegate · spec · visuals, subagent profile Big team\. Started as already agreed\.$/);
     // Spec is always on (§app.project-overseer/coding-mode): a set without it is refused before anything.
-    for (const minor_modes of [[], ["align"], ["vis", "codemode"]]) {
+    for (const minor_modes of [[], ["align"], ["align", "vis"]]) {
       const g = fake({ attended: true });
       await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", minor_modes }), /Spec is always on for coding sessions; it can't be turned off\. Name spec among minor_modes\./);
       await assert.rejects(() => g.run("sova_send", { session: "in-root", text: "p", minor_modes }), /Spec is always on for coding sessions/);
@@ -419,7 +419,7 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
   test("only unknown names are refused: nothing is created or sent, and no cap is taken", async () => {
     const asks: [Record<string, unknown>, RegExp][] = [
       [{ mode: "turbo" }, /Unknown mode turbo: use normal or delegate./],
-      [{ minor_modes: ["bogus"] }, /Unknown minor mode bogus: use align, spec, vis or codemode./],
+      [{ minor_modes: ["bogus"] }, /Unknown minor mode bogus: use align, spec or vis./],
       [{ subagent_profile: "nope" }, /Unknown subagent profile: nope. sova_list_subagent_profiles lists them./],
     ];
     for (const [ask, why] of asks) {

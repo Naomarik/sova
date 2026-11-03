@@ -147,10 +147,14 @@ export function entryLandBlock(e: Pick<WorktreeQueueInfo, "state"> | undefined):
   return undefined;
 }
 
-/** The tab's Sent back list: an entry whose branch already reads ready at a newer commit leaves it (the Ready to
- *  land row, with Land, stands for it). */
+/** The tab's Sent back list: only entries that still need a fix. One the queue marks settled (a later entry for its
+ *  branch, already in the target, its branch or folder removed) leaves it, and so does one whose branch already reads
+ *  ready at a newer commit (the Ready to land row, with Land, stands for it). Capped at 20, after leaving. */
 export const stillSentBack = (v: Pick<MergeQueueView, "needsFix" | "ready">): MergeEntry[] =>
-  v.needsFix.filter((e) => !(v.ready ?? []).some((r) => r.branch === e.branch && r.commit !== e.commit));
+  v.needsFix.filter((e) => !e.settled && !(v.ready ?? []).some((r) => r.branch === e.branch && r.commit !== e.commit)).slice(0, 20);
+
+/** The worktree is merged or removed: that wins over Needs a fix (nothing is left to fix). */
+const pastSentBack = (w: RowKeyInput): boolean => w.status === "merged" || !!w.mergedInto || !w.exists || !!w.gone || w.readiness?.state === "merged";
 
 /** Rows past the queue (landed, merged, gone) carry no size: there's nothing left to land. */
 const SIZED: RowKey[] = ["ready", "uncommitted", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "drafts-changed", "request-review"];
@@ -159,11 +163,12 @@ const SIZED: RowKey[] = ["ready", "uncommitted", "queued", "checking", "conflict
 export type RowKeyInput = Pick<QueueRowInput, "status" | "exists"> &
   Partial<Pick<QueueRowInput, "mergedInto" | "gone">> & {
     readiness?: Pick<NonNullable<QueueRowInput["readiness"]>, "state" | "dirtyCount" | "noCommits" | "landing">;
-    queue?: Pick<RowQueueFacts, "state" | "commit" | "request">;
+    queue?: Pick<RowQueueFacts, "state" | "commit" | "request" | "settled">;
   };
 
 /** The key its queue entry gives a row, or null when the entry doesn't speak for it (none, cancelled, a sent-back
-    branch whose fix reads finished at a newer commit, a state this build doesn't know): the tree's own key then. */
+    branch whose fix reads finished at a newer commit, is settled, or whose tree is merged or removed; a state this build
+    doesn't know): the tree's own key then. */
 export function entryKeyOf(w: RowKeyInput): RowKey | null {
   const e = w.queue;
   if (!e) return null;
@@ -182,7 +187,8 @@ export function entryKeyOf(w: RowKeyInput): RowKey | null {
       return e.state;
     case "needs-fix":
       // Sent back: once the branch reads finished again at a newer commit, that commit wins (Ready with Land).
-      return fixedPast(w, e.commit) ? null : "needs-fix";
+      // Settled by the queue, or the worktree merged or removed: nothing is left to fix (the tree's own key).
+      return e.settled || fixedPast(w, e.commit) || pastSentBack(w) ? null : "needs-fix";
     case "requested":
       // The host merged it while the queue hasn't moved the entry yet: it reads as landed.
       return e.request?.facts?.state === "merged" ? "landed" : "requested";
@@ -251,8 +257,9 @@ function queueRowOf(w: QueueRowInput): QueueRow {
         return { ...base, key: "drafts-changed", label: "Drafts changed", tone: "warn", reason: e.reason ?? "Its spec drafts changed since you approved. Land again to approve them.", action: "land" };
       case "needs-fix":
         // Sent back: no Land at all while its chat fixes it. Once the branch reads finished again at a newer commit
-        // (clean, no conflicts, its chat idle: Sova's ready reading), that commit wins and the row is Ready with Land
-        // (entryKeyOf gives no key then, and the row reads as the worktree itself, below).
+        // (clean, no conflicts, its chat idle: Sova's ready reading), that commit wins and the row is Ready with Land.
+        // Settled (a later entry for the branch, already in the target, its branch or folder removed): nothing to fix.
+        // entryKeyOf gives no key in either case, and the row reads as the worktree itself, below.
         return { ...base, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "none" };
       case "landed":
         return {

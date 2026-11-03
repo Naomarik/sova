@@ -116,11 +116,6 @@ svg` example is drawn in place, as its frame would show it; a `vis html` example
 source, with a line saying that in the chat it runs in a sandboxed frame. A changed kind, View or
 style reaches the page only when the generator runs again.
 
-## §site.docs/codemode — Codemode (`/docs/modes/codemode/`)
-
-The codemode minor mode: the script tool it adds, what a script can call, the script's card, when a
-switch applies, and where it is available.
-
 ## §site.docs/project-modes — Project modes (`/docs/modes/project-modes/`)
 
 Writing a project's own minor mode: the `.sova/minor-modes/<id>/` folder and its `MODE.md`, which

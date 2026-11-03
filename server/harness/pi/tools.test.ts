@@ -313,7 +313,7 @@ describe("record_decision's quote entry over the branch (baton-loadout quoteEntr
   });
 });
 
-describe("exposure (§chat.mode-menu/codemode)", () => {
+describe("exposure", () => {
   test("a model-only ToolSpec reaches pi model-only: declared to the model, never among the tools another tool may call", async () => {
     const spec: ToolSpec = { ...echoSpec(), name: "sova_card_like", exposure: "model-only" };
     assert.equal((toPiTool(spec) as any).exposure, "model-only");

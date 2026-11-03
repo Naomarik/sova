@@ -3451,7 +3451,7 @@ export function registerSubagents(
 		name: "agent_spawn",
 		label: "Spawn Subagents",
 		// Spawns are read back from this tool's recorded calls and results (the timeline, the worker cards):
-		// a codemode script's call has none.
+		// a call another tool made has none.
 		exposure: "model-only",
 		description:
 			`Start independent background agents (backend defaults to pi; claude-code runs a Claude model on Sova's tools); returns IDs without waiting for tasks. Use agent_list/agent_transcript to inspect, agent_steer to redirect or queue follow-ups, agent_kill to stop, agent_wait when results are needed. Settled workers wake you when idle (wake=true, default). Workers share the filesystem. fork=true copies conversation history; extensions loads listed Pi extensions. Limits: no per-request limit; this chat runs at most ${MAX_LIVE} workers at once, idle ones and team members (a team's coordinator and monitor included) counted, and a request that would pass that is refused before anything starts. agents is a list of agent objects; backend, model, effort, cwd, wake, tools, systemPrompt, backendOptions, extensions and useWorktreeConfig given beside agents apply to every agent that leaves them out (refused if one sets a different value); name, count, fork and agentType go inside each agent.`,

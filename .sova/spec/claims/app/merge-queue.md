@@ -664,9 +664,14 @@ shows, top to bottom:
   state in the request's words (§app.merge-queue/requests), its chat as a link, **Open on GitHub**
   (or GitLab), and **Send Back to Chat** or **Land Again** where they apply. Opening the tab checks
   them on the host.
-- **Sent back to its chat**: entries that need a fix, with **See Why** and never Land
-  (§chat.composer/worktrees-control). One whose branch reads ready again at a newer commit leaves
-  this list: its Ready to land row, with Land, stands for it.
+- **Sent back to its chat**: only entries that still need a fix, the newest 20, each with **See
+  Why** and never Land (§chat.composer/worktrees-control). An entry leaves this list, and isn't
+  shown dimmed or anywhere else here (See Why on its run still opens), once:
+  - its branch was approved again later, whatever became of that approval (in line, checking,
+    waiting for you, landed, sent back again or cancelled): the newer row stands for it;
+  - its sent-back commit, or the branch, is already in {target}, by any route;
+  - its branch was deleted, or its worktree folder removed, even when the branch remains;
+  - its branch reads ready again at a newer commit: its Ready to land row, with Land, stands for it.
 - **Recent**: landings, each with a **Landed** chip, "Landed as {sha} · {when} · pushed" (or "not pushed: {why}"), "No checks
   declared" when so, every note, and **View Checks**. A request the host merged has, in place of
   Landed, a **Merged on GitHub** (or **Merged on GitLab**) chip, then "as {sha} · {when}", and never

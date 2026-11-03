@@ -271,19 +271,6 @@ writer**).
     fields update as usual.
 
   See `../spec/README.md`.
-- **codemode** — gives the model pi's `codemode` tool (pi's `docs/codemode.md`):
-  a JavaScript script that calls the session's other tools in parallel and
-  filters their output. It has no prompt block and no mode note
-  (`MINOR_PROMPTLESS` in `minor.ts`): the tool's own description is the guide.
-  The extension keeps the tool in the loadout exactly while the mode is on
-  (`syncCodemodeTool`, where `vis_guide` syncs, and right after a switch made
-  between runs; a switch during a run applies when it settles), removing it
-  even when `defaultTools` or a restored transcript activated it, except while
-  a registered tool has `codemode` or `deferred` exposure (MCP). Where the tool
-  isn't registered (an SDK runtime without the factory) it does nothing. Every
-  chat alike, a Claude Code one included. Never reaches workers. With
-  spec on, a census or guard note for a call a script made is repeated on the
-  script's own result, the one the model reads.
 - **memory** — Sova's endless chat (its engine is Sova's, `server/memory/`):
   the model works from summaries of the whole chat and opens any part with
   `zoom`/`date`. Web-only (`MINOR_SURFACES` in `minor.ts`): the extension takes
@@ -291,7 +278,7 @@ writer**).
   session, through the `sova:web-minor` hook (`WEB_MINOR_HOOK`,
   `webMinorRefusal`); typed by hand, from `--minor`, a profile, the palette or
   a shortcut it is refused or not offered, and workers never get it. Turning
-  it off always works. Like codemode it has no prompt block and no mode note
+  it off always works. It has no prompt block and no mode note
   (`MINOR_PROMPTLESS`): its guide rides the view message Sova sends.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the

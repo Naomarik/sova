@@ -29,7 +29,7 @@ once the first message is sent, and kept by the session itself. The UI says
   session uses (§chat.subagent-profiles/file), by its id, or `"off"`. Each is optional: absent, the
   session keeps the new-session default model and effort, and follows this device's default
   subagent profile. `minorModes` is the whole set of minor modes the session starts with (`align`,
-  `spec`, `vis`, `codemode`), in any order; `[]` starts with none; absent, the session starts with
+  `spec`, `vis`), in any order; `[]` starts with none; absent, the session starts with
   mode.json's default. A file whose `thinking` is no level, whose `subagents` isn't `off` or a
   subagent profile id (lowercase letters, digits and dashes, at most 48), or whose `minorModes`
   isn't a list of those names, doesn't parse.

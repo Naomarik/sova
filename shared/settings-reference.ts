@@ -331,7 +331,7 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
       singleton: "One at a time",
       limits: "its sessions' message limits",
       mode: '"normal" or "delegate"',
-      minorModes: "exactly these minor modes (align, spec, vis, codemode)",
+      minorModes: "exactly these minor modes (align, spec, vis)",
       model: '"provider/model"',
       thinking: "a thinking level",
       subagents: 'a subagent profile id, or "off"',

@@ -226,9 +226,14 @@ export interface MergeEntry {
   request?: MergeRequestInfo;
   /** Estimates (ms): when it should start from now, and how long its run takes. */
   eta?: { startsInMs: number; takesMs: number };
+  /** needs-fix only, derived when the view is read (never stored): the entry no longer needs a fix. `superseded`: the
+   *  branch has a later entry for the same target; `merged`: its sent-back commit or the branch's tip is already in the
+   *  target; `gone`: the branch or its worktree folder was removed. A settled entry leaves the Sent back list. */
+  settled?: MergeSettled;
   createdAt: string;
   updatedAt: string;
 }
+export type MergeSettled = "superseded" | "merged" | "gone";
 
 export type PushState = "pending" | "pushed" | "not-pushed" | "no-remote";
 
@@ -379,7 +384,8 @@ export interface MergeQueueView {
   /** Entries waiting for the user (behaviour differs, review flagged, drafts changed) and conflicts the thread
    *  judges. */
   needsYou: MergeEntry[];
-  /** Handed back to their chats, newest first (last 20). */
+  /** Handed back to their chats, newest first: the 20 newest that still need a fix (no `settled`), plus the settled
+   *  ones among the 20 newest overall (kept so a run or card can still find its entry). */
   needsFix: MergeEntry[];
   /** Waiting on the host: open requests (`requested`), newest first; closed ones and pushed branches recently. */
   waitingOnHost?: MergeEntry[];
@@ -408,7 +414,7 @@ export interface MergeUnclear {
   why?: string;
 }
 
-export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request"> & {
+export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled"> & {
   project: string;
   run?: string;
   /** The project has a review kit (the Land menu shows "Land without review"). */
@@ -417,7 +423,7 @@ export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "
 
 /** A branch's entry as the session list carries it (protocol.ts SessionBranchQueue): its state, never a precomputed
  *  key, so a new state flows through, and the fields a row's words read. */
-export type BranchQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit" | "position" | "reason" | "conflict" | "review" | "request">;
+export type BranchQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit" | "position" | "reason" | "conflict" | "review" | "request" | "settled">;
 
 /** The session list's cut of a worktree row's queue entry. Pure. */
 export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
@@ -428,6 +434,7 @@ export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
   ...(q.conflict ? { conflict: q.conflict } : {}),
   ...(q.review ? { review: q.review } : {}),
   ...(q.request ? { request: q.request } : {}),
+  ...(q.settled ? { settled: q.settled } : {}),
 });
 
 export interface MergeReady {

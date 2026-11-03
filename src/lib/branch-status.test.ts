@@ -100,6 +100,18 @@ const TABLE: { name: string; branches: Branch[]; says: string; keys: RowKey[] }[
   { name: "ready beats checking", branches: [{ branch: "a", queue: { state: "checking" } }, { branch: "b", readiness: ready }], says: "1 ready", keys: ["checking", "ready"] },
   { name: "sent back", branches: [{ branch: "a", readiness: ready, queue: { state: "needs-fix", reason: "Unit tests failed" } }], says: "1 needs a fix", keys: ["needs-fix"] },
   { name: "sent back, fixed and finished at a newer commit", branches: [{ branch: "a", readiness: { state: "ready", landing: { state: "ready", commit: FIX } }, queue: { state: "needs-fix" } }], says: "1 ready", keys: ["ready"] },
+  { name: "sent back, settled by the queue: the tree itself", branches: [{ branch: "a", readiness: ready, queue: { state: "needs-fix", settled: "superseded" } }], says: "1 ready", keys: ["ready"] },
+  {
+    name: "sent back on a merged or removed tree: the tree itself",
+    branches: [
+      { branch: "a", status: "merged", queue: { state: "needs-fix" } },
+      { branch: "b", mergedInto: true, queue: { state: "needs-fix" } },
+      { branch: "c", readiness: merged, queue: { state: "needs-fix" } },
+      { branch: "d", exists: false, queue: { state: "needs-fix" } },
+    ],
+    says: "4 worktrees",
+    keys: ["merged", "merged", "merged", "removed"],
+  },
   { name: "needs a fix beats ready", branches: [{ branch: "a", queue: { state: "needs-fix" } }, { branch: "b", readiness: ready }], says: "1 needs a fix", keys: ["needs-fix", "ready"] },
   { name: "behaviour differs", branches: [{ branch: "a", queue: { state: "behaviour-differs" } }], says: "1 needs you", keys: ["behaviour-differs"] },
   { name: "review flagged", branches: [{ branch: "a", queue: { state: "review-flagged" } }], says: "1 needs you", keys: ["review-flagged"] },

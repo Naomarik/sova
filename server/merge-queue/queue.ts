@@ -1423,7 +1423,7 @@ export class ProjectQueue {
 
   private waitingWords(): string {
     const h = this.q.release;
-    return h ? `waits for ${h.version ? h.version : `release ${h.id}`} to be published or abandoned` : "waiting";
+    return h ? `waits for ${h.tag ?? (h.version ? `release ${h.version}` : `release ${h.id}`)} to be published or abandoned` : "waiting";
   }
   /** A reason the hold wrote (it is rewritten as the release's tag becomes known, and dropped when the hold lifts). */
   private isWaitingWords(r: string | undefined): boolean {
@@ -1431,7 +1431,7 @@ export class ProjectQueue {
   }
   private holdWords(): string {
     const h = this.q.release;
-    return h ? `release ${h.version ?? h.id} is open: nothing is pushed until it is published or abandoned` : "";
+    return h ? `release ${h.tag ?? h.version ?? h.id} is open: nothing is pushed until it is published or abandoned` : "";
   }
   private holdFile(): string {
     return join(this.store.dir, "push-hold");
@@ -1485,11 +1485,12 @@ export class ProjectQueue {
   }
 
   /** The hold's banner follows the release (its version once picked, its state). */
-  updateReleaseHold(id: string, u: { version?: string | null; state?: string }): Promise<void> {
+  updateReleaseHold(id: string, u: { version?: string | null; tag?: string | null; state?: string }): Promise<void> {
     return this.serial(async () => {
       const h = this.q.release;
       if (!h || h.id !== id) return;
       if (u.version !== undefined) h.version = u.version;
+      if (u.tag !== undefined) h.tag = u.tag;
       if (u.state !== undefined) h.state = u.state;
       writeFileSync(this.holdFile(), `${this.holdWords()}\n`, { mode: 0o600 });
       // Waiting rows name the release by its version once it has one.

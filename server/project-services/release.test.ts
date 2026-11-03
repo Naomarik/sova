@@ -172,7 +172,8 @@ describe("the freeze, the release entry and Publish (q9, a5, a6)", () => {
       assert.equal(t.k.run.inputs.filter((i) => i.entry.id === eb.id).length, 0, "B never ran");
       const v = await q.view();
       assert.equal(v.release?.id, rec.id);
-      assert.equal(v.release?.version, "v0.2.0");
+      assert.equal(v.release?.version, "0.2.0");
+      assert.equal(v.release?.tag, "v0.2.0");
       // Publish.
       const before = t.k.run.inputs.length;
       const p = await t.call("release.publish", { confirm: true });

@@ -687,7 +687,7 @@ export class Releaser {
       rec.version = st.facts.version;
       rec.tag = releaseTagOf(rec.settings.tag, rec.version);
       if (rec.thread?.session) this.deps.thread.retitle?.(rec.thread.session, this.titleOf(rec));
-      await q.updateReleaseHold(rec.id, { version: rec.tag });
+      await q.updateReleaseHold(rec.id, { version: rec.version, tag: rec.tag });
     }
     if (st.facts?.artifact && !rec.artifacts.some((a) => a.path === st.facts!.artifact!.path)) rec.artifacts.push(st.facts.artifact);
     if (st.phase === "prepare" && rec.settings.commit && st.id === "commit" && st.facts?.commit) {

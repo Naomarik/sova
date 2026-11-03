@@ -1195,7 +1195,7 @@ describe("the view's extras", () => {
       await q.add({ branch: "feat/queued", by: "land-button" });
       const v = await q.view();
       assert.deepEqual(v.ready!.map((r) => [r.branch, r.commit, r.ahead]), [["feat/ready", a.head, 1]]);
-      assert.deepEqual(v.thread, { session: "t1", startedAt: "2026-11-02T00:00:00.000Z" });
+      assert.deepEqual(v.thread, { session: "t1", startedAt: "2026-11-02T00:00:00.000Z", state: "idle" });
     } finally {
       await k.done();
     }

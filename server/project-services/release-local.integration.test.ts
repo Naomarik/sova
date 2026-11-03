@@ -49,12 +49,16 @@ test("S21: local-only Publish tags and moves the channel locally, pushes nothing
   const co = threadCheckout(fx, r);
   const built = JSON.parse(execFileSync("node", [".sova/playbooks/release/scripts/release.mjs", "build", "0.2.0"], { cwd: co, encoding: "utf8" })) as { artifact: string; sha256: string; size: number };
   assert.ok(existsSync(built.artifact));
-  await chatDoes(k, r, [step("artifact", "done", "app built", { facts: { artifact: { path: `${co}/README.md`, size: 1 } } })]);
-  const refused = (await lastToolResults(k, r)).at(-1) ?? "";
-  assert.match(refused, /artifact|gitignored|committed|refus/i, `an artifact path the repo tracks is refused: ${refused}`);
-  assert.notEqual(stepOf(await record(k, fx, rec.id), "artifact").state, "done");
+  // The fact wins (S11): a done report naming a file the repository tracks reads failed, with Sova's why.
+  await chatDoes(k, r, [step("artifact", "done", "app built", { facts: { artifact: `${co}/README.md`, size: 1 } })]);
+  const bad = await waitRecord(k, fx, "the tracked artifact path to fail its fact", (x) => stepOf(x, "artifact").state === "failed", 60_000, rec.id);
+  assert.equal(stepOf(bad, "artifact").fact?.ok, false, JSON.stringify(stepOf(bad, "artifact")));
+  assert.match(stepOf(bad, "artifact").fact?.why ?? "", /commit|track|ignored|repositor/i);
+  assert.equal(bad.artifacts?.length ?? 0, 0, "no artifact recorded");
+  void lastToolResults;
 
-  await chatDoes(k, r, [step("artifact", "done", `app built: ${built.artifact}`, { facts: { artifact: { path: built.artifact, sha256: built.sha256, size: built.size } } })]);
+  ok(await k.verb("release.retry", { project: fx.project, release: rec.id, step: "artifact" }), "release.retry");
+  await chatDoes(k, r, [step("artifact", "done", `app built: ${built.artifact}`, { facts: { artifact: built.artifact, sha256: built.sha256, size: built.size } })]);
   r = await waitRecord(k, fx, "artifact reported", (x) => stepOf(x, "artifact").state === "done", 60_000, rec.id);
   assert.deepEqual(r.artifacts?.map((a: { path: string }) => a.path), [built.artifact]);
   assert.equal(r.artifacts?.[0]?.sha256, built.sha256);

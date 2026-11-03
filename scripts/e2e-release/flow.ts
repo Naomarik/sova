@@ -25,7 +25,8 @@ export async function view(k: ReleaseServer, fx: ReleaseFixture): Promise<View> 
 export async function record(k: ReleaseServer, fx: ReleaseFixture, id?: string): Promise<Rec> {
   const v = await view(k, fx);
   if (v.open && (!id || v.open.id === id)) return v.open;
-  // A closed release: read its record through release.logs's report, or the history item's record id.
+  if (v.last && (!id || v.last.id === id)) return v.last as Rec;
+  // An older closed release: release.logs answers its record.
   const r = ok(await k.verb("release.logs", { project: fx.project, ...(id ? { release: id } : {}) }), "release.logs");
   return r.json.release.release as Rec;
 }
@@ -40,16 +41,15 @@ export const marker = (rec: Rec) => `[release-thread ${rec.id}]`;
 
 /** The release chat's session path (CONTRACT: record.thread.session). */
 export function threadPath(rec: Rec): string {
-  const p = rec.thread?.path ?? rec.thread?.session;
+  const p = rec.thread?.path;
   if (!p) throw new Error(`release ${rec.id} has no thread: ${JSON.stringify(rec.thread)}`);
   return String(p);
 }
 /** The release checkout the chat works in (record.thread.checkout, else the fixture's worktree for release/<id>). */
 export function threadCheckout(fx: ReleaseFixture, rec: Rec): string {
-  const c = rec.thread?.checkout ?? rec.checkout;
+  const c = rec.thread?.checkout;
   if (c && existsSync(c)) return String(c);
-  const guess = fx.worktreeOf(`release-${rec.id}`);
-  if (existsSync(guess)) return guess;
+  void fx;
   throw new Error(`release ${rec.id}: no checkout on the record (${JSON.stringify(rec.thread)})`);
 }
 
@@ -65,10 +65,17 @@ export async function chatDoes(k: ReleaseServer, rec: Rec, actions: ModelAction[
   }, 120_000, 100);
 }
 
-/** One release.step through the chat's own tool. */
-export const step = (s: string, state: string, summary: string, extra: Record<string, unknown> = {}): ModelAction => ({
+/** One release.step through the chat's own tool; `facts` as an object, sent as the tool's `key=value` list. */
+export const step = (s: string, state: string, summary: string, extra: { facts?: Record<string, string | number>; detail?: string } = {}): ModelAction => ({
   tool: "project_verbs",
-  args: { verb: "release.step", step: s, state, summary, ...extra },
+  args: {
+    verb: "release.step",
+    step: s,
+    state,
+    summary,
+    ...(extra.detail ? { detail: extra.detail } : {}),
+    ...(extra.facts ? { facts: Object.entries(extra.facts).map(([k, v]) => `${k}=${v}`) } : {}),
+  },
 });
 export const notes = (text: string): ModelAction => ({ tool: "project_verbs", args: { verb: "release.notes", text } });
 
@@ -92,7 +99,7 @@ export async function waitRecord(k: ReleaseServer, fx: ReleaseFixture, what: str
 /** Start a release as the operator; resolves once the record and its chat exist. */
 export async function start(k: ReleaseServer, fx: ReleaseFixture, body: Record<string, unknown> = {}): Promise<Rec> {
   ok(await k.verb("release.start", { project: fx.project, ...body }), "release.start");
-  return waitRecord(k, fx, "the release and its chat", (r) => !!(r.thread?.path ?? r.thread?.session));
+  return waitRecord(k, fx, "the release and its chat", (r) => !!r.thread?.path);
 }
 
 /**
@@ -110,7 +117,7 @@ export async function prepare(k: ReleaseServer, fx: ReleaseFixture, rec: Rec, ve
   if (o.gate) files["gate.conf"] = `${o.gate}\n`;
   if (o.releaseGate) files["release-gate.conf"] = `${o.releaseGate}\n`;
   const commit = fx.commitIn(co, files, `Release v${version}`);
-  await chatDoes(k, rec, [step("bump", "done", "package.json and CHANGELOG.md"), step("commit", "done", `Release v${version}`, { facts: { commit } })]);
+  await chatDoes(k, rec, [step("bump", "done", "package.json and CHANGELOG.md"), step("commit", "done", `Release v${version}`, { facts: { commit, branch: String(rec.thread?.branch ?? `release/${rec.id}`) } })]);
   return commit;
 }
 

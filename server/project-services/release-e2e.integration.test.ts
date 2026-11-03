@@ -81,7 +81,7 @@ test("S12/S32: a coding chat's project_verbs may read releases, never step, star
   const pv = (verb: string, extra: Record<string, unknown> = {}): ModelAction => ({ tool: "project_verbs", args: { verb, project: fx.project, ...extra } });
   const results = await codingChatDoes(fx, "s12", [
     pv("release.status"),
-    pv("release.step", { step: "version", state: "done", summary: "v9.9.9", facts: { version: "9.9.9" } }),
+    pv("release.step", { step: "version", state: "done", summary: "v9.9.9", facts: ["version=9.9.9"] }),
     pv("release.notes", { text: "nope" }),
     pv("release.start"),
     pv("release.request", { why: "please" }),

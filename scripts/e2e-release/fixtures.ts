@@ -54,9 +54,11 @@ export interface ReleaseFixtureOptions {
 export interface ReleaseStep {
   id: string;
   label: string;
-  phase: "prepare" | "after";
+  phase: "prepare" | "check" | "after" | "withdraw";
   /** Ends held for the operator's Continue (a live try-out). */
   held?: true;
+  /** Its done report carries an artifact's facts. */
+  artifact?: true;
 }
 
 export const DEFAULT_STEPS: ReleaseStep[] = [
@@ -64,8 +66,9 @@ export const DEFAULT_STEPS: ReleaseStep[] = [
   { id: "notes", label: "Draft the notes", phase: "prepare" },
   { id: "bump", label: "Bump the files", phase: "prepare" },
   { id: "commit", label: "Make the release commit", phase: "prepare" },
-  { id: "try-live", label: "Try it", phase: "prepare", held: true },
+  { id: "try-live", label: "Try it", phase: "check", held: true },
   { id: "page", label: "Release page", phase: "after" },
+  { id: "page-withdrawn", label: "Mark the page withdrawn", phase: "withdraw" },
 ];
 
 export const LOCAL_STEPS: ReleaseStep[] = [
@@ -73,7 +76,7 @@ export const LOCAL_STEPS: ReleaseStep[] = [
   { id: "notes", label: "Draft the notes", phase: "prepare" },
   { id: "bump", label: "Bump the files", phase: "prepare" },
   { id: "commit", label: "Make the release commit", phase: "prepare" },
-  { id: "artifact", label: "Build the app", phase: "after" },
+  { id: "artifact", label: "Build the app", phase: "after", artifact: true },
 ];
 
 /** The default `release` pointer (CONTRACT.md §1); spread it to vary one key (`{...DEFAULT_POINTER, commit: false}`). */

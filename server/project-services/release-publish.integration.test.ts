@@ -36,7 +36,7 @@ test("a release of a remote-publishing project: freeze, checks, hold, publish in
   const rec = await start(k, fx);
   assert.equal(rec.state, "preparing");
   assert.equal(rec.base, base);
-  assert.deepEqual(rec.steps.map((s) => s.id), ["version", "notes", "bump", "commit", "try-live", "checks", "publish", "page"]);
+  assert.deepEqual(rec.steps.map((s) => s.id), ["version", "notes", "bump", "commit", "checks", "try-live", "publish", "page", "page-withdrawn"]);
   assert.ok(rec.steps.every((s) => s.state === "waiting" || s.state === "running"), JSON.stringify(rec.steps));
   const mv = await mergeView(k, fx);
   assert.equal(mv.release?.id, rec.id, "the Merge Queue tab shows the freeze");

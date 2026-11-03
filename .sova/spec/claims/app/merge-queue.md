@@ -1,9 +1,11 @@
 # §app/merge-queue — Merge queue
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-Each project Sova runs verbs for (§app/project-services) has one **merge queue**, owned by Sova
-and worked mechanically. It is the only way a branch reaches the project's target branch
-(`master`; `main` where the project's definition or repository says so). The user approves a
+Each project the merge queue **serves** (§app.merge-queue/served: on Sova's Projects list, with its
+merge setup done) has one **merge queue**, owned by Sova and worked mechanically. It is the only way
+a branch reaches that project's target branch (`master`; `main` where the project's definition or
+repository says so). Every other repository has no queue at all: its chats merge into its main
+branch plainly, with git (§chat.worktrees/tool). The user approves a
 branch (§app.merge-queue/approve); each branch belongs to one chat, by one rule
 (§app.merge-queue/owner), which hears about it. Sova then merges it onto the newest target in a merge copy of
 its own, one branch at a time, and turns its spec drafts into docs there. It runs the project's
@@ -29,7 +31,46 @@ or "not live" state anywhere and has no Restart Server control. Restarting stays
 (§app.updates/restart and the operator's Apply verb).
 
 Batching ("test up to N branches together") is a per-project setting fixed at 1 and not shown.
-There is no trial phase and no switch: a project's queue is how its branches land.
+There is no trial phase and no switch: a served project's queue is how its branches land.
+
+## §app.merge-queue/served — Which projects the queue serves
+
+One rule decides whether a repository goes through the merge queue. It is **served** when both hold:
+- its main checkout is the folder of a project on Sova's Projects list that isn't archived; a
+  repository that is only a git folder, or that carries its own `.sova/project.json`, is not
+  enough;
+- and its merge setup is done: the `.sova/project.json` at the target's head declares checks (a
+  `merge` section's checks or `"none"`, or a test command, §app.merge-queue/checks), or it is there
+  but doesn't parse, which is a broken setup said as such, never bypassed (§app.merge-queue/setup).
+
+A listed project without a merge setup, and every repository not on the list, is **not served**: it
+merges plainly, and nothing refuses it. Its chats merge a branch into its main branch with git when
+the user asks or agrees, with no prompt beyond the sandbox's usual confirm, and the user's typed
+"land it" or "merge it" makes the chat merge the branch into the main branch itself, spec drafts
+made official in the same step (§chat.worktrees/tool). For it Sova makes no queue record, go-ahead,
+queue card, merge thread, merge copy or `[merge-queue]` message, offers no Land, and reads no
+Ready to land or Landing specs (§chat.worktrees/ready-to-land).
+
+**One answer, read at the moment of a merge.** Sova's server works the rule out and keeps the
+answer in `<state root>/merge-served.json`: each served repository's main checkout and its target.
+It writes the file at every start, before it takes any typed go-ahead, and again whenever the
+answer changes (a project added to the list, removed or archived, a setup saved, a target whose
+definition changed). A chat reads it afresh at each merge or "land it", never once at its start,
+so a project listed or set up while the chat is open takes effect at its next merge. A chat Sova
+doesn't run treats every repository as not served. A chat Sova runs that finds the file missing or
+damaged treats the repository as served, so a served project never merges around its queue. When
+the server can't read its Projects list, it serves nothing until it can.
+
+**Every way in asks the same rule.** Land, a typed go-ahead the queue picks up
+(§chat.worktrees/landing-answers), the merge verbs from a chat, the Overseer or the assistant
+(§app.project-services/merge-verbs), the queue's view, the merge thread's wake and readiness's
+messages each ask it first. A request for a repository that isn't served is answered with one
+sentence, "not a project the merge queue serves: merge it into main from the chat" (a merge
+verb's error `unsupported`), and leaves no record behind: asking never creates a queue for it.
+
+**Leftover records.** A queue record on disk for a repository that isn't served (one made before
+this rule, or a project since removed from the list) is never loaded at start-up: Sova neither runs it nor feeds
+it go-aheads, and leaves the file as it is.
 
 ## §app.merge-queue/approve — Approving a branch, and taking it back
 
@@ -63,7 +104,9 @@ The entry joins the end of the line, which runs in the order approvals came, and
 - a branch with nothing ahead of the target;
 - a branch with a temporary commit subject;
 - the target branch itself;
-- a project whose queue isn't set up (§app.merge-queue/setup);
+- a repository the queue doesn't serve (not on the Projects list, or its merge setup not done),
+  with "not a project the merge queue serves: merge it into main from the chat", making no queue
+  record (§app.merge-queue/served);
 - while the target's `.sova/project.json` doesn't parse, any branch but one whose own commit carries
   a valid definition declaring checks: "The project's .sova/project.json is invalid: {path}:
   {message}. Fix it on the target, or land a branch that fixes it; nothing else lands until it
@@ -470,7 +513,7 @@ landings it made.
 
 **Resume** accepts the new head, and waiting entries run on it.
 
-Nothing inside Sova merges into a target a set-up queue manages: `worktree merge` into it is refused
+Nothing inside Sova merges into the target of a project the queue serves (§app.merge-queue/served): `worktree merge` into it is refused
 in a chat Sova runs (§chat.worktrees/tool), the project page's and a proposed run's Merge Branch read
 Land (§app.project-overseer/coding-worktrees, §app.project-runtime/merge), and any other direct merge
 of a coding branch into it, whoever asks, is refused: "{target} takes branches only through the
@@ -478,8 +521,12 @@ merge queue: Land the branch instead (nothing was merged)."
 
 ## §app.merge-queue/setup — A project not set up yet
 
-A project with no checks declared and no test command shows an onboarding screen in place of its
-Merge Queue view. It offers three answers, and only the user gives them (`merge.setup`):
+A project on the Projects list with no checks declared and no test command isn't served by the
+queue yet (§app.merge-queue/served): its chats merge plainly. Its Merge Queue tab says so in place
+of the view, "No merge queue settings are set up for this project", with an **Initialize** button
+(§app.merge-queue/view).
+Initialize opens the onboarding screen. A repository that isn't on the list has no Merge Queue tab
+and no setup. The onboarding offers three answers, and only the user gives them (`merge.setup`):
 - **list its checks**, one "Label: command" per line;
 - **give one test command**, with about how long it takes (its time limit is twice that, at most
   30 minutes) and what must start first;
@@ -500,7 +547,8 @@ creates it in that same commit (its subject ending "; new .sova/project.json"). 
 a definition gets only its `merge` section changed. The commit uses the repository's
 identity, else "Sova merge queue". It counts as the queue's own: it raises no "moved outside" flag
 and is pushed with the next landing, never on its own: until then the strip reads the remote's
-commit with "not pushed yet: goes out with the next landing". From then on, the project's branches land through the queue.
+commit with "not pushed yet: goes out with the next landing". From then on the queue serves the
+project, and its branches land through it.
 
 **A definition that doesn't parse is not "not set up".** Only a missing `.sova/project.json` (or one
 declaring neither checks nor a test command) gets the onboarding. When the target's file is there but
@@ -520,7 +568,12 @@ invalid:
 ## §app.merge-queue/view — The Merge Queue view
 
 The project page has a **Merge Queue** tab between Branches and Cost (§app.organizations/project-page),
-at `#/projects/<pid>/merge-queue`. It shows, top to bottom:
+at `#/projects/<pid>/merge-queue`. While the queue doesn't serve the project (a definition that
+doesn't parse aside, which shows its error instead), the tab shows only its head, "Merge queue"
+with a **Not set up** chip, and one banner: "No merge queue settings are set up for this project",
+then "Until they are, its chats merge branches into {target} themselves when you ask.", with
+**Initialize**, which opens the onboarding (§app.merge-queue/setup). For a project it serves, it
+shows, top to bottom:
 
 - **The strip**: the target at its commit, and the commit pushed to `origin`, with **Pushed**,
   **Not pushed** or **No remote**. Not pushed always carries one sentence: the queue's why ("Push

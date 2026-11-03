@@ -102,7 +102,11 @@ export function notesOf(notes: readonly MergeNote[] | undefined): { label: strin
 }
 
 export type QueueRowInput = Pick<SessionWorktreeInfo, "status" | "exists" | "readiness" | "branch"> &
-  Partial<Pick<SessionWorktreeInfo, "merge" | "mergedInto" | "gone" | "mergeStats">> & { queue?: WorktreeQueueInfo; mergeProject?: MergeProjectInfo };
+  // mergeServed: the repo is one the merge queue serves (listed, merge setup done): only then does a row offer Land.
+  Partial<Pick<SessionWorktreeInfo, "merge" | "mergedInto" | "gone" | "mergeStats" | "mergeServed">> & { queue?: WorktreeQueueInfo; mergeProject?: MergeProjectInfo };
+
+/** A finished branch's line where the queue doesn't serve the repo: the chat merges it plainly. */
+export const PLAIN_MERGE_LINE = "Say “land it” in the chat to merge it into main.";
 
 /** "3 commits · +40 −2": the branch's side against the target's head. */
 export const sizeWords = (s: { ahead: number; added: number; removed: number } | undefined): string | undefined =>
@@ -182,8 +186,22 @@ function queueRowOf(w: QueueRowInput): QueueRow {
   const r = w.readiness;
   if (r?.state === "merged") return { ...quiet, key: "merged", label: "Merged", tone: "success", action: "none" };
   if (r?.dirtyCount)
-    return { ...quiet, key: "uncommitted", label: "Uncommitted", tone: "neutral", detail: `${r.dirtyCount} ${r.dirtyCount === 1 ? "file" : "files"} not committed`, reason: "Commit it in its chat, then Land.", action: "none" };
+    return { ...quiet, key: "uncommitted", label: "Uncommitted", tone: "neutral", detail: `${r.dirtyCount} ${r.dirtyCount === 1 ? "file" : "files"} not committed`, reason: w.mergeServed ? "Commit it in its chat, then Land." : "Commit it in its chat.", action: "none" };
   if (r?.noCommits) return { ...quiet, key: "no-commits", label: "No commits yet", tone: "neutral", action: "none" };
+  // A repo the queue doesn't serve merges plainly from its chat: no Land, never the queue's words. A listed
+  // project with no merge setup keeps Set Up Queue; a repo off the Projects list offers nothing.
+  if (!w.mergeServed) {
+    const unset = w.mergeProject?.checks === "unset" && !w.mergeProject.invalid;
+    return {
+      ...quiet,
+      key: "ready",
+      label: "Ready to merge",
+      tone: "success",
+      detail: r?.landing?.commit ? short(r.landing.commit) : undefined,
+      reason: PLAIN_MERGE_LINE,
+      action: unset ? "setup" : "none",
+    };
+  }
   // The project's .sova/project.json doesn't parse: Land stays (a branch that fixes it is taken, the queue refuses
   // the others with its reason), never Set Up; the line says why the rest wait.
   const invalid = w.mergeProject?.invalid;
@@ -198,6 +216,31 @@ function queueRowOf(w: QueueRowInput): QueueRow {
     detail: r?.landing?.commit ? short(r.landing.commit) : undefined,
     reason: unset ? "This project's merge queue isn't set up yet." : undefined,
     action: unset ? "setup" : "land",
+  };
+}
+
+/** A row's buttons, as the Worktrees modal and the session pane draw them, in order. Set Up Queue needs the
+    project to link to; Send Back follows the row's one action. */
+export type RowButton = "Land" | "Set Up Queue" | "Cancel" | "Accept" | "Land Anyway" | "Send Back";
+export function rowButtons(row: Pick<QueueRow, "action" | "sendBack">, projectId: string | undefined): RowButton[] {
+  const one: Partial<Record<RowAction, RowButton>> = { land: "Land", cancel: "Cancel", accept: "Accept", "land-anyway": "Land Anyway" };
+  const out: RowButton[] = [];
+  if (row.action === "setup") {
+    if (projectId) out.push("Set Up Queue");
+  } else if (one[row.action]) out.push(one[row.action]!);
+  if (row.sendBack) out.push("Send Back");
+  return out;
+}
+
+/** The Worktrees modal's head: the queue's intro (its target) and paused line only where some row's repo is
+    one the queue serves; elsewhere branches merge plainly from their chats and the queue isn't mentioned. */
+export function modalHead(rows: Pick<QueueRowInput, "mergeServed" | "mergeProject">[]): { intro: string | null; paused: string | null } {
+  const served = rows.find((w) => w.mergeServed);
+  if (!served) return { intro: null, paused: null };
+  const p = rows.find((w) => w.mergeServed && w.mergeProject)?.mergeProject;
+  return {
+    intro: `Land queues a branch. It's merged onto ${p?.target ?? "the target branch"}, checked there on its own, and lands as exactly the commit that was tested.`,
+    paused: p?.paused ? `The queue is paused: ${p.paused}. Land still takes your approval; it's checked once the queue resumes.` : null,
   };
 }
 

@@ -9,8 +9,8 @@ const wt = (x: Partial<QueueRowInput> = {}): QueueRowInput => ({ status: "active
 const q = (x: Partial<WorktreeQueueInfo>): WorktreeQueueInfo => ({ id: "me_1", state: "queued", commit: SHA, notes: [], project: "prj_1", ...x }) as WorktreeQueueInfo;
 const ready = { path: "/w", branch: "feat/x", state: "ready" as const };
 
-test("a clean worktree with commits reads Ready, with Land", () => {
-  const r = queueRow(wt({ readiness: ready }));
+test("a clean worktree with commits, in a repo the queue serves, reads Ready, with Land", () => {
+  const r = queueRow(wt({ readiness: ready, mergeServed: true }));
   assert.equal(r.label, "Ready");
   assert.equal(r.action, "land");
 });
@@ -22,10 +22,33 @@ test("uncommitted files: Uncommitted, no Land, says how many", () => {
   assert.match(r.detail!, /3 files not committed/);
 });
 
-test("a project not set up: Ready, but its action is Set Up Queue", () => {
+test("a listed project with no merge setup: Ready to merge, merged from the chat, and it keeps Set Up Queue", () => {
   const r = queueRow(wt({ readiness: ready, mergeProject: { id: "prj_1", root: "/r", target: "main", checks: "unset", review: false } }));
+  assert.equal(r.label, "Ready to merge");
+  assert.equal(r.reason, "Say \u201cland it\u201d in the chat to merge it into main.");
   assert.equal(r.action, "setup");
-  assert.match(r.reason!, /isn't set up/);
+});
+
+test("a repo the queue doesn't serve: Ready to merge, the plain-merge line, never Land nor the queue's words", () => {
+  // Off the Projects list: no mergeProject, no mergeServed. A listed project with checks but no mergeServed
+  // (the server's answer wins) reads the same: Land keys on mergeServed alone.
+  for (const x of [{}, { mergeProject: { id: "prj_1", root: "/r", target: "main", checks: "declared" as const, review: false } }]) {
+    const r = queueRow(wt({ readiness: { ...ready, landing: { state: "ready", commit: SHA } }, ...x }));
+    assert.equal(r.key, "ready");
+    assert.equal(r.label, "Ready to merge");
+    assert.equal(r.tone, "success");
+    assert.equal(r.reason, "Say \u201cland it\u201d in the chat to merge it into main.");
+    assert.equal(r.action, "none");
+    assert.doesNotMatch(`${r.label} ${r.reason}`, /Ready to land|Landing specs|queue|Land\b/);
+  }
+  // The other states read as before.
+  const dirty = queueRow(wt({ readiness: { ...ready, dirtyCount: 1 } }));
+  assert.equal(dirty.key, "uncommitted");
+  assert.equal(dirty.reason, "Commit it in its chat.");
+  assert.equal(queueRow(wt({ readiness: { ...ready, dirtyCount: 1 }, mergeServed: true })).reason, "Commit it in its chat, then Land.");
+  assert.equal(queueRow(wt({ readiness: { ...ready, noCommits: true } })).key, "no-commits");
+  assert.equal(queueRow(wt({ status: "merged" })).key, "merged");
+  assert.deepEqual(controlWords([queueRow(wt({ readiness: ready }))]), { text: "1 ready", n: 1, dot: "ok" });
 });
 
 test("queued: its place, its estimates, Cancel; a newer commit is said", () => {
@@ -176,7 +199,8 @@ test("a queue line as a sentence: capitalised and stopped once", async () => {
 test("an invalid definition is said as such: never Not set up; a row keeps Land (a fix can land), never Set Up", () => {
   const bad = '$.merge.checks[0].run[2]: a lone "$"';
   assert.deepEqual(queueStateChip({ state: "idle", checks: "unset", invalid: bad }), { label: "Definition invalid", tone: "error" });
-  const r = queueRow(wt({ readiness: ready, mergeProject: { id: "prj_1", root: "/r", target: "main", checks: "unset", review: false, invalid: bad } }));
+  // A broken setup is still a setup: the repo is served (mergeServed), said, never bypassed.
+  const r = queueRow(wt({ readiness: ready, mergeServed: true, mergeProject: { id: "prj_1", root: "/r", target: "main", checks: "unset", review: false, invalid: bad } }));
   assert.equal(r.action, "land");
   assert.equal(r.reason, `This project's .sova/project.json doesn't parse: ${bad}. Fix it on the target, or land a branch that fixes it; nothing else lands until it parses.`);
 });

@@ -1091,7 +1091,7 @@ function CodingSessions(props: {
                   </Show>
                   <Show when={queue.info(row.branch)}>
                     {(q) => {
-                      const qr = () => queueRow({ status: "active", exists: true, readiness: undefined, branch: row.branch ?? "", queue: q() });
+                      const qr = () => queueRow({ status: "active", exists: true, readiness: undefined, branch: row.branch ?? "", queue: q(), mergeServed: true });
                       return (
                         <span class="list-meta project-worktree-queue cluster">
                           <QueueChip row={qr()} />

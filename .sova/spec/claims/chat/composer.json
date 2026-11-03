@@ -300,8 +300,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T10:05Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#61271213"
+      "at": "2026-11-03T11:27Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     },
     "code": [
       "src/components/WorktreesControl.tsx",
@@ -318,6 +318,7 @@
       "server/merge-queue-ui.integration.test.ts",
       "server/merge-queue/wire.ts",
       "src/lib/merge-queue-types.ts",
+      "src/lib/worktrees-served.test.ts",
       "src/components/ReviewChanges.tsx",
       "src/lib/worktrees.ts"
     ]

@@ -440,8 +440,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-03T11:54Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     },
     "code": [
       "server/merge-queue/routes.ts",
@@ -452,7 +452,9 @@
       "server/merge-queue/verbs.test.ts",
       "server/project-services/engine.ts",
       "server/project-services/tools.ts",
-      "scripts/sova-project.mjs"
+      "scripts/sova-project.mjs",
+      "server/merge-queue/served.ts",
+      "server/merge-queue/served-rule.test.ts"
     ]
   },
   "§app.project-services/on-merge": {

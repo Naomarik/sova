@@ -31,7 +31,8 @@ test("a Ready branch's Review Changes with no chat: a summary against the target
   const { startMergeQueue } = await import("./wire");
   const { projectEngine } = await import("../project-services/routes");
   const { buildApp } = await import("../app");
-  await startMergeQueue();
+  // The project is on the Projects list (stood in) and declares checks: the queue serves it (al_1).
+  await startMergeQueue({ listed: () => [{ root: repo.root }] });
   const { app } = buildApp({ extensionEntriesOf: async () => [] });
   const op = { kind: "operator" } as const;
   const b = repo.branch("feat/b", { "b.txt": "b\n" });

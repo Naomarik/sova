@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -535,9 +535,10 @@ export interface ReadinessDeps {
   nudge?: (sessionPath: string, text: string) => Promise<void>;
   /** The branches the merge queue landed for a chat (its Landed cards), by session id. */
   queueLandings?: (sessionId: string) => QueueLandingFacts[];
-  /** Whether a tree's project lands through the merge queue: its `.sova/project.json` declares a `merge` section
-      (§chat.worktrees/ready-to-land, what still blocks the landing). */
-  landingOffered?: (dir: string) => Promise<boolean>;
+  /** Whether the merge queue serves a tree's repo (server/merge-queue/served.ts: on the Projects list and its merge
+      setup done). Ready to land, Landing specs, the specs nudge and the blocked note are only for those; every
+      other repo merges plainly (§chat.worktrees/ready-to-land). Absent: every repo is served (tests). */
+  served?: (dir: string) => Promise<boolean>;
 }
 
 let wireMod: typeof import("./merge-queue/wire") | null = null;
@@ -574,16 +575,11 @@ const defaultDeps = (): ReadinessDeps => ({
   // A marked wake, as the merge queue's own (server/merge-queue/wake.ts): never read as the user's word.
   nudge: async (path, text) => (await import("./merge-queue/wake")).sendQueueWake(path, text),
   queueLandings: (sessionId) => queueLandingsHere(sessionId),
-  landingOffered: async (dir) => {
-    const { projectRootOf } = await import("./project-root");
-    const root = await projectRootOf(dir).catch(() => null);
-    if (!root) return false;
-    try {
-      const def = JSON.parse(readFileSync(join(root, ".sova", "project.json"), "utf8")) as { merge?: unknown };
-      return !!def && typeof def.merge === "object" && def.merge !== null;
-    } catch {
-      return false;
-    }
+  served: async (dir) => {
+    const { projectOf } = await import("./project-root");
+    const p = await projectOf(dir).catch(() => null);
+    if (p?.state !== "ok" || !p.git) return false;
+    return (await import("./merge-queue/served")).servedByQueue(p.root);
   },
 });
 
@@ -709,10 +705,12 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
     const tf = await treeFacts(t, [s.cwd, ...own.map((o) => o.path).filter((p) => p !== t.path)]);
     if (tf.headAt) heads[t.path] = tf.headAt;
     const r = treeReadiness(tf, sf);
+    // Only where the merge queue serves the repo: elsewhere a finished branch is merged by its chat (al_1).
+    const servedHere = landingOn && (deps.served ? await deps.served(t.path).catch(() => false) : true);
     let landing: WorktreeReadiness["landing"];
     // Drafts that aren't official: a landing's, or a merged tree's that didn't make it (§chat.worktrees/readiness).
     const drafts = tf.readable && (landingOn || tf.merged) ? deps.drafts(t.path) : undefined;
-    if (landingOn) {
+    if (servedHere) {
       const held = deps.landing.held(s.id, t.path);
       const heldHere = !!held && held.commit === tf.head;
       const drafts = tf.readable && !tf.merged ? deps.drafts(t.path) : undefined;
@@ -1030,13 +1028,13 @@ function nudgeSpecs(s: SessionSummary, value: SessionReadiness): void {
     if (!deps.landing.nudge(s.id, t.path, l.commit)) continue;
     void send(s.path, docsNudgeText(t.branch, l.commit, l.docs.problems)).catch((err) => console.warn(`[readiness] docs nudge to ${s.path}: ${(err as Error).message}`));
   }
-  // A finished branch that can't be approved yet: what blocks it, once per head commit, only in a project whose
-  // merge queue is set up (§chat.worktrees/ready-to-land).
+  // A finished branch that can't be approved yet: what blocks it, once per head commit, only in a repo the merge
+  // queue serves (§chat.worktrees/ready-to-land).
   for (const b of blockedBySession.get(s.path) ?? []) {
-    const offered = deps.landingOffered;
-    if (!offered) continue;
+    const served = deps.served;
+    if (!served) continue;
     void (async () => {
-      if (!(await offered(b.path).catch(() => false))) return;
+      if (!(await served(b.path).catch(() => false))) return;
       if (!deps.landing.tell(s.id, b.path, b.commit)) return;
       await send(s.path, blockedNoteText(b.branch, b.commit, b.blockers));
     })().catch((err) => console.warn(`[readiness] landing note to ${s.path}: ${(err as Error).message}`));

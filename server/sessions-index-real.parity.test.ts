@@ -98,7 +98,7 @@ if (!all.length) {
     draftsHash: () => undefined,
     docsPreview: undefined,
     nudge: async () => {},
-    landingOffered: async () => false,
+    served: async () => false,
     followUps: undefined,
     asksUser: () => undefined,
   });

@@ -25,6 +25,8 @@ export function buildView(a: {
   takesMs: number | null;
   now: number;
   readRun: (id: string) => MergeRun | null;
+  /** The queue serves the project (served.ts); default true. */
+  served?: boolean;
 }): MergeQueueView {
   const takes = a.takesMs ?? DEFAULT_TAKES_MS;
   const queued = a.q.entries.filter((e) => e.state === "queued").sort((x, y) => x.seq - y.seq);
@@ -54,6 +56,7 @@ export function buildView(a: {
     ...(a.q.paused ? { paused: { ...a.q.paused } } : {}),
     checks: a.checks,
     review: a.review,
+    served: a.served ?? true,
     ...(a.current ? { current: structuredClone(a.current) } : {}),
     checking,
     waiting,

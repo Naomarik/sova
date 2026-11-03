@@ -483,6 +483,11 @@ export interface MergeReport {
   run?: MergeRun;
   /** merge.logs: the step's log lines (newest last). */
   lines?: string[];
+  /** merge.ask / merge.reply: the question as recorded. */
+  ask?: MergeThreadAsk;
+  /** merge.fresh: whether a thread was retired; merge.clear: the chats deleted. */
+  fresh?: boolean;
+  cleared?: number;
 }
 
 // ---- the WS feed --------------------------------------------------------------------------------
@@ -642,3 +647,19 @@ export function queueChatRole(profile: { id?: string; source?: string; builtin?:
 }
 /** Why a queue chat's modes can't be switched from a menu or a tool. */
 export const QUEUE_CHAT_MODE_REFUSAL = "That is one of the merge queue's own chats: it keeps the modes and settings Sova starts it with.";
+
+/** A question the merge thread asked through merge.ask (§chat/merge-queue): it never waits in its own chat. Sova
+    wakes the chat that owns the entry's branch with it; that chat's agent relays the user's answer with merge.reply.
+    No chat to ask (none, archived, gone): the Merge Queue tab shows it (`onTab`) and one notification opens the tab. */
+export interface MergeThreadAsk {
+  id: string;
+  question: string;
+  at: string;
+  entry?: string;
+  branch?: string;
+  /** The chat it was sent to (the branch's owner; a worker's chat for a worker). */
+  askedIn?: { session: string; path: string };
+  /** No chat could take it: the tab is where it is answered. */
+  onTab?: true;
+  answered?: { at: string; by: "chat" | "operator"; session?: string };
+}

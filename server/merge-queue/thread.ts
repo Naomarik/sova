@@ -21,7 +21,8 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { MergeEntry } from "../../shared/merge-queue";
+import { randomBytes } from "node:crypto";
+import type { MergeEntry, MergeThreadAsk } from "../../shared/merge-queue";
 
 /** A thread without memory older than this is replaced at its next event (a thread with memory never ages out). */
 export const THREAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -57,7 +58,9 @@ export type ThreadEvent =
   | { kind: "failed"; entry: ThreadEntry; run: string; summary?: string; base?: string }
   | { kind: "paused"; why: string }
   /** The project has no private-names list: pushes are held until the user answers the interview. */
-  | { kind: "names"; file: string; target: string };
+  | { kind: "names"; file: string; target: string }
+  /** The user's answer to a merge.ask, relayed by the chat it was asked in (or typed on the tab). */
+  | { kind: "answer"; ask: Pick<MergeThreadAsk, "id" | "question" | "branch">; text: string; from: string };
 
 /** A session as the thread rules read it. */
 export interface ThreadSession {
@@ -98,8 +101,14 @@ export interface ThreadRecord {
   history?: ThreadHistoryItem[];
 }
 
+/** A new question id. */
+export const newAskId = (): string => `ak_${randomBytes(6).toString("hex")}`;
+
+/** How many questions the record keeps (the open ones always). */
+export const ASKS_MAX = 50;
+
 /** What the record file holds per project: the current thread, or only the history after Start Fresh. */
-type StoredThread = ThreadRecord | { history: ThreadHistoryItem[]; sessionId?: undefined };
+type StoredThread = (ThreadRecord | { history: ThreadHistoryItem[]; sessionId?: undefined }) & { asks?: MergeThreadAsk[] };
 
 
 export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
@@ -230,7 +239,14 @@ export function eventText(ev: ThreadEvent): string {
     case "names":
       return [
         `Names: this project has no private-names list, so every push of ${ev.target} is held. Landings go on.`,
-        `Run the names interview with the user here, in your chat (references/names.md): \`node ${join(DEFAULT_PLAYBOOK_DIR, "scripts", "discover-names.mjs")} --file ${ev.file} --target ${ev.target} --repo <project root>\`, then ask them what else must never reach the public repo. Never write a name anywhere but that file.`,
+        `Run the names interview (references/names.md): \`node ${join(DEFAULT_PLAYBOOK_DIR, "scripts", "discover-names.mjs")} --file ${ev.file} --target ${ev.target} --repo <project root>\`, then ask the user what else must never reach the public repo with merge.ask {text, entry?} (the newest landed entry, so its branch's chat asks them). Never wait for them in your chat, and never put a name in a question, a note or anywhere but that file.`,
+      ].join("\n");
+    case "answer":
+      return [
+        `Answer to your question ${ev.ask.id}${ev.ask.branch ? ` (about ${ev.ask.branch})` : ""}, from ${ev.from}:`,
+        ev.text,
+        `Your question was: ${ev.ask.question}`,
+        "Go on with what it was for, through the verbs. Another question: merge.ask again.",
       ].join("\n");
   }
 }
@@ -242,7 +258,8 @@ export function firstText(root: string, playbook: string, ev: ThreadEvent): stri
   const read = own === method ? `Read ${method} now and follow it` : `Read the method, ${method}, then this project's own playbook, ${own}, which wins where they differ; follow them`;
   return [
     `You are the merge thread for the project at ${root}. ${read}, and read their references as they say. The method's scripts are in ${join(DEFAULT_PLAYBOOK_DIR, "scripts")}.`,
-    `You act only through the merge verbs (the project verbs tool). You never move ${"entry" in ev ? ev.entry.target : "target" in ev ? ev.target : "the target branch"}, never run git that writes in the main checkout, and never land anything: Sova does that.`,
+    `You act only through the merge verbs (the project verbs tool), on your own: you never wait for the user in this chat. When you need them, ask with merge.ask {text, entry?}: Sova asks in the branch's own chat and their answer comes back to you as a message. The user may still write to you here; answer them when they do.`,
+    `You never move ${"entry" in ev ? ev.entry.target : "target" in ev ? ev.target : "the target branch"}, never run git that writes in the main checkout, and never land anything: Sova does that.`,
     "",
     eventText(ev),
   ].join("\n");
@@ -317,6 +334,54 @@ export class MergeThread {
     return readStored(this.deps.file)[root]?.history ?? [];
   }
 
+  /** The project's questions, oldest first (the open ones and the last answered). */
+  asks(root: string): MergeThreadAsk[] {
+    return readStored(this.deps.file)[root]?.asks ?? [];
+  }
+
+  /** The open question, newest first, or undefined. */
+  openAsk(root: string): MergeThreadAsk | undefined {
+    return [...this.asks(root)].reverse().find((a) => !a.answered);
+  }
+
+  private writeAsks(root: string, fn: (asks: MergeThreadAsk[]) => MergeThreadAsk[]): void {
+    const all = readStored(this.deps.file);
+    const cur = all[root] ?? { history: [] };
+    const next = fn([...(cur.asks ?? [])]);
+    const open = next.filter((a) => !a.answered);
+    const done = next.filter((a) => a.answered).slice(-Math.max(0, ASKS_MAX - open.length));
+    all[root] = { ...cur, asks: next.filter((a) => open.includes(a) || done.includes(a)) };
+    writeRecords(this.deps.file, all);
+  }
+
+  /** Record a new question (merge.ask). `where`: the chat Sova asked in, or null: the tab holds it. */
+  recordAsk(root: string, q: { question: string; entry?: string; branch?: string; id?: string }, where: { session: string; path: string } | null): MergeThreadAsk {
+    const ask: MergeThreadAsk = {
+      id: q.id ?? newAskId(),
+      question: q.question,
+      at: new Date(this.deps.now()).toISOString(),
+      ...(q.entry ? { entry: q.entry } : {}),
+      ...(q.branch ? { branch: q.branch } : {}),
+      ...(where ? { askedIn: where } : { onTab: true as const }),
+    };
+    this.writeAsks(root, (asks) => [...asks, ask]);
+    return ask;
+  }
+
+  /**
+   * The user's answer (merge.reply, or typed on the tab): the question is closed and the answer goes to the
+   * thread as its next event. Refused for an unknown or answered question.
+   */
+  answer(root: string, id: string, text: string, by: { kind: "chat" | "operator"; session?: string; from: string }): Result<{ ask: MergeThreadAsk }> {
+    const ask = this.asks(root).find((a) => a.id === id);
+    if (!ask) return { ok: false, error: `no question ${id} of this project's merge thread` };
+    if (ask.answered) return { ok: false, error: `question ${id} was already answered` };
+    const answered: MergeThreadAsk = { ...ask, answered: { at: new Date(this.deps.now()).toISOString(), by: by.kind, ...(by.session ? { session: by.session } : {}) } };
+    this.writeAsks(root, (asks) => asks.map((a) => (a.id === id ? answered : a)));
+    this.notify(root, { kind: "answer", ask: { id, question: ask.question, ...(ask.branch ? { branch: ask.branch } : {}) }, text, from: by.from });
+    return { ok: true, ask: answered };
+  }
+
   /**
    * Start Fresh (the user's): the current thread goes to the history, "you started a fresh one", and is
    * archived (waiting for its turn, else stopped); the next event starts a new one. Runs on the
@@ -341,7 +406,8 @@ export class MergeThread {
     const item: ThreadHistoryItem = { sessionId: rec.sessionId, path: rec.path, startedAt: rec.startedAt, endedAt: this.deps.now(), why, ...(rec.memory ? { memory: rec.memory } : {}) };
     const history = [...(rec.history ?? []), item].slice(-THREAD_HISTORY_MAX);
     if (clear) {
-      all[root] = { history };
+      const asks = all[root]?.asks;
+      all[root] = { history, ...(asks?.length ? { asks } : {}) };
       writeRecords(this.deps.file, all);
     }
     return history;
@@ -405,6 +471,7 @@ export class MergeThread {
       ...(r.memory ? { memory: r.memory } : {}),
       ...(rec ? { previous: { sessionId: rec.sessionId, until: now + THREAD_GRACE_MS } } : {}),
       ...(history.length ? { history } : {}),
+      ...(all[root]?.asks?.length ? { asks: all[root]!.asks } : {}),
     };
     writeRecords(this.deps.file, all);
   }
@@ -413,6 +480,11 @@ export class MergeThread {
 // ---- the server's one thread keeper ---------------------------------------------------------------
 
 let current: MergeThread | null = null;
+
+/** The server's keeper itself, or null (tests, before the server wires it). */
+export function mergeThreadKeeper(): MergeThread | null {
+  return current;
+}
 
 /** The server's keeper; null in tests and before the server wires it (notify is then a no-op). */
 export function mergeThread(): Pick<MergeThread, "notify" | "isThreadChat"> {

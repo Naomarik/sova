@@ -7,7 +7,7 @@ import type { RunMerge, ThreadEvent, WakeThread } from "./contract";
 import { type IngestDeps, startIngest } from "./ingest";
 import { setLandingNoteSource, setMergeCardNoteSource } from "./card-note";
 import { MergeCards } from "./cards";
-import { MergeQueues } from "./queue";
+import { MergeFailure, MergeQueues } from "./queue";
 import { merger, recordedRoots } from "./routes";
 import { countBetween, realGit, revParse, worktreesOf } from "./guard";
 import { canonical } from "../../pi-config/extensions/worktrees/state.ts";
@@ -108,6 +108,53 @@ export function ingestDepsFor(a: {
 /** Tests only: stand a set of queues in for the server's (null: none). */
 export function setMergeQueuesForTest(q: MergeQueues | null): void {
   queues = q;
+}
+
+/** The merge verbs the thread's questions, Start Fresh and the History's clear go through (asks.ts, thread.ts, chats.ts). */
+async function threadVerbDeps(served: { projectIdOf(root: string): string | null }): Promise<Pick<import("./routes").MergerDeps, "threadAsk" | "askOf" | "threadAnswer" | "threadFresh">> {
+  const threadMod = await import("./thread");
+  const keeper = () => {
+    const k = threadMod.mergeThreadKeeper();
+    if (!k) throw new MergeFailure("unsupported", "no merge thread runs on this server");
+    return k;
+  };
+  return {
+    async threadAsk(root, q) {
+      const [{ askUser }, { listSessions }, { sendQueueWake }, { notifyOnce }, { listProjects }] = await Promise.all([import("./asks"), import("../sessions-index"), import("./wake"), import("../push"), import("../projects/spaces")]);
+      let projects: { id: string; name: string }[] = [];
+      try {
+        projects = listProjects();
+      } catch {
+        projects = [];
+      }
+      return askUser(keeper(), root, q, {
+        sessions: () => listSessions(),
+        send: (path, text) => sendQueueWake(path, text),
+        notify: async (n) => void (await notifyOnce(n)),
+        project: (r) => {
+          const id = served.projectIdOf(r);
+          const p = id ? projects.find((x) => x.id === id) : undefined;
+          return id ? { id, name: p?.name ?? r.split("/").pop() ?? r } : null;
+        },
+        log: (l) => console.warn(`[merge-thread] ${l}`),
+      });
+    },
+    askOf: (root, id) => threadMod.mergeThreadKeeper()?.asks(root).find((a) => a.id === id),
+    async threadAnswer(root, id, text, by) {
+      let from = by.kind === "operator" ? "the user, on the Merge Queue tab" : "the user, relayed by the branch's chat";
+      if (by.session) {
+        const { listSessions } = await import("../sessions-index");
+        const s = (await listSessions().catch(() => [])).find((x) => x.id === by.session);
+        if (s) from = `the user, relayed by their chat "${s.title}"`;
+      }
+      const r = keeper().answer(root, id, text, { ...by, from });
+      if (!r.ok) throw new MergeFailure(/already/.test(r.error) ? "invalid-request" : "not-found", r.error);
+      return r.ask;
+    },
+    async threadFresh(root) {
+      return keeper().startFresh(root);
+    },
+  };
 }
 
 let owners: WorktreeOwners | null = null;
@@ -359,6 +406,7 @@ export async function startMergeQueue(
     isThreadChat: (root, sid) => threadMod.mergeThread().isThreadChat(root, sid),
     reviewerOf: review.reviewerOf,
     deliverReview: review.deliverReview,
+    ...(await threadVerbDeps(served)),
   });
   // A setup run changes the answer: the chats' file follows at once.
   projectEngine().merger = async (verb, body, caller) => {

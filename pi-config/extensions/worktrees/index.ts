@@ -258,6 +258,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 			"Use the worktree tool, not bash, to create or track a git worktree: workers may only start in this session's cwd or inside a worktree the session tracks.",
 			"Merge a branch into main or master only as this turn's Sova landing note for that repo allows.",
 			"When the user types in this chat that its branch should land (\"land it\", \"merge it\"), commit what is left, then call worktree land at once: it lands the branch the way this turn's Sova landing note says.",
+			"When a [merge-queue] message says the merge thread needs the user, ask them its question in your reply and relay their answer in their words with the project verbs tool's merge.reply {ask, text}; never answer it yourself.",
 		],
 		parameters: Type.Object(
 			{

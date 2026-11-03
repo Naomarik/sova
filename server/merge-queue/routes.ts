@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { MERGE_ANSWERS, type MergeAnswer, type MergeQueueView, type MergeReport } from "../../shared/merge-queue";
+import { MERGE_ANSWERS, type MergeAnswer, type MergeEntry, type MergeQueueView, type MergeReport, type MergeThreadAsk } from "../../shared/merge-queue";
 import { type AnyVerb, isMergeVerb, type MergeVerb, MERGE_READ_VERBS, ordered, type VerbResult } from "../../shared/project-contract";
 import type { Caller } from "../project-services/engine";
 import type { RunMerge, WakeThread } from "./contract";
@@ -15,7 +15,9 @@ import { NOT_SERVED } from "./served";
  *
  * Callers:
  * - the operator (the screens' buttons, the CLI): every verb; `merge.answer` and `merge.add` are the user's alone;
- * - the project's merge thread (its recorded chat): status, logs, note, extend, resolve, retry;
+ * - the project's merge thread (its recorded chat): status, logs, note, extend, resolve, retry, ask;
+ * - the chat a thread's question was asked in: reply to that question (the user's answer, relayed);
+ * - the operator alone: fresh (Start Fresh) and clear (the History's Clear and Clear All);
  * - the run's reviewer chat: status, logs, review of that run;
  * - any other chat, overseer or assistant with the project in scope: status and logs.
  * Typed "land it" reaches `merge.add` through ingest.ts (the user's own word), never through a chat's verb call.
@@ -36,10 +38,20 @@ export interface MergerDeps {
   reviewerOf?: (run: string) => string | null;
   /** Hand a reviewer's verdict to the review step (review-step.ts deliverReview); false: none waits. */
   deliverReview?: (run: string, v: { verdict: "ok" | "notes" | "blocking"; text?: string }) => boolean;
+  /** The thread's question: asked in the owning chat of `entry`'s branch (else held on the tab, one notification). */
+  threadAsk?: (root: string, q: { question: string; entry?: MergeEntry }) => Promise<MergeThreadAsk>;
+  /** A recorded question of `root`'s thread, by id. */
+  askOf?: (root: string, id: string) => MergeThreadAsk | undefined;
+  /** The user's answer to a question: closed, and handed to the thread. */
+  threadAnswer?: (root: string, id: string, text: string, by: { kind: "chat" | "operator"; session?: string }) => Promise<MergeThreadAsk>;
+  /** Start Fresh: the thread retired; true when there was one. */
+  threadFresh?: (root: string) => Promise<boolean>;
+  /** The History's clear: one queue chat by session id, or "all" the ended ones; how many were deleted. */
+  clearChats?: (root: string, which: string) => Promise<number>;
   now?: () => number;
 }
 
-const THREAD_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.note", "merge.extend", "merge.resolve", "merge.retry"];
+const THREAD_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.note", "merge.extend", "merge.resolve", "merge.retry", "merge.ask"];
 const REVIEWER_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.review"];
 
 interface Req {
@@ -66,6 +78,7 @@ interface Req {
   proposal?: string;
   answer?: string;
   text?: string;
+  ask?: string;
   command?: string;
   commands?: string[];
   none?: boolean;
@@ -76,6 +89,7 @@ interface Req {
 
 const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings"> = {
   project: "string",
+  ask: "string",
   branch: "string",
   checkout: "string",
   commit: "string",
@@ -243,7 +257,13 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: stri
   }
   if (sid && deps.isThreadChat?.(root, sid) && THREAD_VERBS.includes(verb)) return;
   if (reads && caller.kind !== "conform") return;
-  if (verb === "merge.add" || verb === "merge.answer" || verb === "merge.cancel" || verb === "merge.pause" || verb === "merge.resume" || verb === "merge.setup")
+  // The chat a question was asked in relays the user's answer; nobody else does (the operator may, from the tab).
+  if (verb === "merge.reply") {
+    const ask = req.ask ? deps.askOf?.(root, req.ask) : undefined;
+    if (sid && ask?.askedIn?.session === sid) return;
+    throw new MergeFailure("forbidden", "only the chat the merge thread asked in relays the user's answer");
+  }
+  if (verb === "merge.add" || verb === "merge.answer" || verb === "merge.cancel" || verb === "merge.pause" || verb === "merge.resume" || verb === "merge.setup" || verb === "merge.fresh" || verb === "merge.clear")
     throw new MergeFailure("forbidden", "only the user lands, cancels, pauses, answers or sets up the checks: their Land button or their own word in the branch's chat");
   if (verb === "merge.review") throw new MergeFailure("forbidden", "only the run's reviewer posts its review");
   throw new MergeFailure("forbidden", `only the project's merge thread calls ${verb}`);
@@ -336,6 +356,32 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
     case "merge.retry":
       await q.retry(req.entry, req.note);
       return { changed: true, report: { view: await viewOf() } };
+    case "merge.ask": {
+      const question = need(req.text?.trim(), "question (text)");
+      if (question.length > 2000) throw new MergeFailure("invalid-request", "keep the question under 2000 characters");
+      if (!deps.threadAsk) throw new MergeFailure("unsupported", "nothing here can ask the user for the merge thread");
+      const e = req.entry ? q.entry(req.entry) : undefined;
+      if (req.entry && !e) throw new MergeFailure("not-found", `no queue entry ${req.entry}`);
+      const ask = await deps.threadAsk(q.root, { question, ...(e ? { entry: e } : {}) });
+      return { changed: true, report: { ask } };
+    }
+    case "merge.reply": {
+      const id = need(req.ask, "question (ask)");
+      const text = need(req.text?.trim(), "answer (text)");
+      if (!deps.threadAnswer) throw new MergeFailure("unsupported", "no merge thread here to answer");
+      const ask = await deps.threadAnswer(q.root, id, text, caller.kind === "operator" ? { kind: "operator" } : { kind: "chat", ...(sessionId(caller) ? { session: sessionId(caller)! } : {}) });
+      return { changed: true, report: { ask } };
+    }
+    case "merge.fresh": {
+      if (!deps.threadFresh) throw new MergeFailure("unsupported", "no merge thread here");
+      const fresh = await deps.threadFresh(q.root);
+      return { changed: fresh, report: { fresh, view: await viewOf() } };
+    }
+    case "merge.clear": {
+      if (!deps.clearChats) throw new MergeFailure("unsupported", "nothing here can clear the queue's chats");
+      const cleared = await deps.clearChats(q.root, need(req.chat, 'chat (a session id, or "all")'));
+      return { changed: cleared > 0, report: { cleared, view: await viewOf() } };
+    }
     case "merge.setup": {
       const r = await q.setup({
         ...(req.command ? { command: req.command } : {}),

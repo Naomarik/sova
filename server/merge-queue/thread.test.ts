@@ -379,11 +379,13 @@ test("queued: the diff and the picks read from the base the entry was queued aga
   assert.ok(without.includes(`git diff master...${"a".repeat(40)}`), "no base: the target's name");
 });
 
-test("names: the thread is told the project's names file and target, and to run the interview in its own chat", async () => {
+test("names: the thread is told the project's names file and target, and to ask through merge.ask, never waiting in its chat", async () => {
   const text = eventText({ kind: "names", file: "/state/merge-queue/p1/names.json", target: "main" });
   assert.match(text, /every push of main is held\. Landings go on\./);
   assert.ok(text.includes(`${join(DEFAULT_PLAYBOOK_DIR, "scripts", "discover-names.mjs")} --file /state/merge-queue/p1/names.json --target main`));
-  assert.match(text, /here, in your chat/);
+  assert.match(text, /merge\.ask \{text, entry\?\}/);
+  assert.match(text, /Never wait for them in your chat/);
+  assert.doesNotMatch(text, /here, in your chat/);
   const first = firstText("/p", DEFAULT_PLAYBOOK_DIR, { kind: "names", file: "/f", target: "main" });
   assert.match(first, /You never move main,/);
   const dir = scratchRoot("mq-thread-");
@@ -392,7 +394,11 @@ test("names: the thread is told the project's names file and target, and to run 
   t.notify("/p", { kind: "names", file: "/f", target: "main" });
   await t.idle("/p");
   assert.equal(f.created.length, 1, "a names event starts the thread like any other");
-  assert.ok(readFileSync(join(DEFAULT_PLAYBOOK_DIR, "references", "names.md"), "utf8").includes("the one time you talk to the user"));
+  const names = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "references", "names.md"), "utf8");
+  assert.ok(names.includes("You never wait for the user in your own chat: every question goes through `merge.ask"));
+  assert.ok(!names.includes("in your chat:"), "no step of the interview runs in the thread's own chat");
+  const method = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md"), "utf8");
+  assert.ok(method.includes("| `merge.ask {text, entry?}` |") && method.includes("## On your own"));
 });
 
 // ---- a stand-in model following the playbook ---------------------------------------------------

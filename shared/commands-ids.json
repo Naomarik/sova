@@ -181,7 +181,11 @@
     "project.merge-queue.update-local-main",
     "project.merge-queue.request.publish",
     "project.merge-queue.land-how.set",
-    "project.merge-queue.land-how.clear"
+    "project.merge-queue.land-how.clear",
+    "project.verb.merge.ask",
+    "project.verb.merge.reply",
+    "project.verb.merge.fresh",
+    "project.verb.merge.clear"
   ],
   "retired": [
     "settings.agents.get"

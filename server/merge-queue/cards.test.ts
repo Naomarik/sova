@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
+import type { SessionSummary } from "../../shared/protocol";
+import { sendQueueWake, type WakeDeps } from "./wake";
 import { type MergeCard, type MergeQueueView } from "../../shared/merge-queue";
 import { isMergeQueueText, MERGE_QUEUE_SENT_PREFIX, MERGE_QUEUE_SESSION } from "../../shared/senders";
 import { MERGE_QUEUE_SENDER } from "./wake";
@@ -18,7 +20,7 @@ const landed = (k: ReturnType<typeof makeKit>, id: string) =>
   }, `${id} landed`);
 
 /** A kit whose queue raises real cards: notify → cards, publish → sync; `last` is the chat's last transcript entry. */
-function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFails?: boolean; wakeHangs?: boolean } = {}) {
+function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFails?: boolean; wakeHangs?: boolean; wake?: (session: string, text: string) => Promise<void> } = {}) {
   const chat = { last: "e1" as string | null };
   const wakes: { session: string; text: string }[] = [];
   const published: { session: string; cards: MergeCard[] }[] = [];
@@ -44,6 +46,7 @@ function cardKit(o: { deps?: Partial<QueueDeps>; threadAnswers?: boolean; wakeFa
       dir: join(k.repo.state, "merge-queue", "cards"),
       lastEntry: async () => chat.last,
       wake: async (session, text) => {
+        if (o.wake) return o.wake(session, text);
         if (o.wakeFails) throw new Error("archived");
         if (o.wakeHangs) {
           wakes.push({ session, text });
@@ -165,6 +168,42 @@ describe("a branch's card in its own chat", () => {
           assert.equal(t.cards.noteFor("s1", null), null);
         } else {
           assert.match(t.cards.noteFor("s1", null)!, /^feat\/bad didn't land/);
+        }
+      } finally {
+        await t.k.done();
+      }
+    }
+  });
+
+  test("a worker owns the branch: its Needs a fix wakes the chat that runs it, once; one that can't take it leaves the hidden line", async () => {
+    for (const parentArchived of [false, true]) {
+      const sent: { path: string; text: string }[] = [];
+      const rows = [
+        { id: "p1", path: "/s/p1.jsonl", title: "Plan the rows", archived: parentArchived, live: null },
+        { id: "w1", path: "/s/w1.jsonl", title: "Build the rows", archived: false, live: null, workerSession: true },
+      ] as SessionSummary[];
+      const deps: WakeDeps = {
+        summary: async (p) => rows.find((r) => r.path === p) ?? null,
+        parentOf: async (p) => (p === "/s/w1.jsonl" ? "/s/p1.jsonl" : null),
+        send: async (path, text) => void sent.push({ path, text }),
+      };
+      const t = cardKit({ wake: (session, text) => sendQueueWake(`/s/${session}.jsonl`, text, deps) });
+      try {
+        const q = await t.k.q();
+        t.k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed: src/a.test.ts" }));
+        t.k.repo.branch("feat/worker", { "w.txt": "w\n" });
+        const { entry } = await q.add({ branch: "feat/worker", by: "land-button", session: "w1" });
+        await until(async () => (await t.k.entry(entry.id)).state === "needs-fix", "needs-fix");
+        await until(async () => (await t.settle(), t.cards.cardsOf("w1")[0]?.revisions.length === 2), "needs-fix revision");
+        if (!parentArchived) {
+          assert.equal(sent.length, 1, "exactly one wake");
+          assert.equal(sent[0]!.path, "/s/p1.jsonl", "the chat that runs the worker");
+          assert.ok(isMergeQueueText(sent[0]!.text), "marked as the queue's");
+          assert.match(sent[0]!.text, /your worker "Build the rows".*feat\/worker didn't land/);
+          assert.equal(t.cards.noteFor("w1", null), null, "nothing left over");
+        } else {
+          assert.deepEqual(sent, []);
+          assert.match(t.cards.noteFor("w1", null)!, /^feat\/worker didn't land/, "kept as the hidden line");
         }
       } finally {
         await t.k.done();

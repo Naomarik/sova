@@ -21,8 +21,11 @@ import {
   type DeployVerb,
   type ErrorCode,
   type LogLine,
+  type ReleaseDecl,
+  RELEASE_TAG_DEFAULT,
   type Step,
   type VerbResult,
+  versionOfTag,
 } from "../../shared/project-contract";
 import { projectOf } from "../project-root";
 import { definitionAt, mainBranchOf, resolveHost, targetStanding } from "./deploy-recipe";
@@ -375,25 +378,25 @@ export class Deployer {
   }
 
   /** Main's definition at HEAD, its deploy recipe and their hashes; refused when there is no definition. */
-  protected async mainRecipe(run: DRun): Promise<{ deploy: DeployDecl | undefined; deployHash: string | null; commit: string }> {
+  protected async mainRecipe(run: DRun): Promise<{ deploy: DeployDecl | undefined; deployHash: string | null; commit: string; release?: ReleaseDecl }> {
     const root = run.root!;
     const at = await definitionAt(root, "HEAD", this.git);
     if (!at.def || !at.commit) throw new DeployFailure(at.error?.startsWith("no ") ? "not-found" : "invalid-definition", `main's definition: ${at.error ?? "none"}`);
     run.defHash = defHashOf(at.def);
     const deployHash = at.def.deploy ? deployHashOf(at.def.deploy) : null;
-    return { deploy: at.def.deploy, deployHash, commit: at.commit };
+    return { deploy: at.def.deploy, deployHash, commit: at.commit, ...(at.def.release ? { release: at.def.release } : {}) };
   }
 
   // ---- deploy.plan (§app.project-services/deploy-plan) ---------------------------------------------------
 
   /** The target in main's recipe, or the refusal. */
-  protected async mainTarget(run: DRun): Promise<{ deploy: DeployDecl; deployHash: string; target: DeployTargetDecl; mainBranch: string }> {
+  protected async mainTarget(run: DRun): Promise<{ deploy: DeployDecl; deployHash: string; target: DeployTargetDecl; mainBranch: string; release?: ReleaseDecl }> {
     const m = await this.mainRecipe(run);
     if (!run.req.target) throw new DeployFailure("invalid-request", "name the target");
     if (!m.deploy || !m.deployHash) throw new DeployFailure("not-found", "main's definition declares no deploy");
     const target = m.deploy.targets.find((t) => t.name === run.req.target);
     if (!target) throw new DeployFailure("not-found", `no deploy target ${run.req.target} on main (${m.deploy.targets.map((t) => t.name).join(", ")})`);
-    return { deploy: m.deploy, deployHash: m.deployHash, target, mainBranch: await mainBranchOf(run.root!, this.git) };
+    return { deploy: m.deploy, deployHash: m.deployHash, target, mainBranch: await mainBranchOf(run.root!, this.git), ...(m.release ? { release: m.release } : {}) };
   }
 
   /** What a plan of `kind` runs, in order: build and steps, or the target's rollback steps. */
@@ -458,7 +461,7 @@ export class Deployer {
   protected async plan(run: DRun, kind: DeployKind, commitOverride?: string): Promise<DeployPlanView> {
     const root = run.root!;
     this.sweepPlans();
-    const { deployHash, target: t, mainBranch } = await this.mainTarget(run);
+    const { deployHash, target: t, mainBranch, release } = await this.mainTarget(run);
     if (kind === "deploy" && run.caller.kind === "operator" && clearRequest(root, t.name)) addDeployNote(root, `You opened the plan the overseer asked for: ${t.name}.`);
     const branch = t.branch ?? mainBranch;
     const checks: Check[] = [];
@@ -476,6 +479,11 @@ export class Deployer {
     if (!onBranch) refuse("deploy-refused", checks.at(-1)!.detail);
     checks.push(await this.pushed(root, branch, commit));
     if (!checks.at(-1)!.ok) refuse("deploy-refused", checks.at(-1)!.detail);
+    // A target that takes releases only (q2's opt-in): the commit is a published numbered release, not withdrawn.
+    if (t.releases === "only") {
+      checks.push(await releaseCheck(this.git, root, commit, release));
+      if (!checks.at(-1)!.ok) refuse("deploy-refused", `${t.name} takes releases only: ${checks.at(-1)!.detail}`);
+    }
     // Main's working tree can't ship (the checkout is fresh), but it can mislead: the operator's call.
     if (kind === "deploy") {
       const st = await this.git(["status", "--porcelain", "--untracked-files=no"], root);
@@ -1069,6 +1077,19 @@ export function deployAttention(): DeployAttention[] {
   }
   for (const q of readRequests()) out.push({ root: q.project, kind: "deploy-request", target: q.target, since: Date.parse(q.at) || 0, detail: `Deploy ${q.commit ? q.commit.slice(0, 7) : "the tip"} to ${q.target}? ${q.why}` });
   return out;
+}
+
+/** Whether `commit` is a numbered release (a tag of the release section's pattern, `v${version}` without one) that
+    isn't withdrawn (its `withdrawn/<tag>` marker): the check a releases-only target's plan makes. */
+export async function releaseCheck(git: Git, root: string, commit: string, release: ReleaseDecl | undefined): Promise<Check> {
+  const pattern = release?.tag ?? RELEASE_TAG_DEFAULT;
+  const r = await git(["tag", "--points-at", commit], root);
+  const all = r.code === 0 ? r.stdout.split("\n").map((l) => l.trim()).filter(Boolean) : [];
+  const tags = all.filter((t) => !t.startsWith("withdrawn/") && !(release?.channels ?? []).includes(t) && versionOfTag(pattern, t) !== null);
+  const live = tags.filter((t) => !all.includes(`withdrawn/${t}`));
+  if (live.length) return { id: "release", ok: true, detail: `${commit.slice(0, 12)} is release ${live.join(", ")}` };
+  if (tags.length) return { id: "release", ok: false, detail: `${tags.join(", ")} at ${commit.slice(0, 12)} was withdrawn` };
+  return { id: "release", ok: false, detail: `${commit.slice(0, 12)} is no numbered release (no ${pattern} tag at it): plan the deploy of a release` };
 }
 
 /** The caller tag a record keeps (`operator`, `overseer:<id>` …). */

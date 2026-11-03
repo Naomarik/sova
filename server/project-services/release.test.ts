@@ -512,3 +512,29 @@ describe("the release chat's own tool (project_verbs)", () => {
     assert.equal("confirm" in props, false, "a chat's tool never carries the operator's confirm");
   });
 });
+
+describe("a releases-only deploy target (q2's opt-in)", () => {
+  test("plans only a published numbered release's commit: not an untagged commit, not one only a channel points at, not a withdrawn release", async () => {
+    const { releaseCheck } = await import("./deploy");
+    const { realGit } = await import("./engine");
+    const repo = makeRepo({ prefix: "release-unit-" });
+    try {
+      const c1 = repo.head();
+      sh(repo.root, "tag", "-a", "v1.0.0", "-m", "one");
+      sh(repo.root, "commit", "-q", "--allow-empty", "-m", "two");
+      const c2 = repo.head();
+      sh(repo.root, "tag", "-a", "stable", "-m", "s");
+      assert.equal((await releaseCheck(realGit, repo.root, c1, RELEASE)).ok, true);
+      const plain = await releaseCheck(realGit, repo.root, c2, RELEASE);
+      assert.equal(plain.ok, false);
+      assert.match(plain.detail, /no numbered release/);
+      sh(repo.root, "tag", "-a", "withdrawn/v1.0.0", "-m", "bad", c1);
+      const w = await releaseCheck(realGit, repo.root, c1, RELEASE);
+      assert.equal(w.ok, false);
+      assert.match(w.detail, /v1\.0\.0 .* was withdrawn/);
+      assert.equal((await releaseCheck(realGit, repo.root, c1, { ...RELEASE, tag: "release-${version}" })).ok, false, "the section's pattern decides");
+    } finally {
+      repo.done();
+    }
+  });
+});

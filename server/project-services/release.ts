@@ -906,6 +906,17 @@ export class Releaser {
     return a.date < b.date;
   }
 
+  /** The release power's publish is held (its waiting period, Cancel in Needs you): kept on the record. */
+  notePowerHold(root: string, id: string, h: { heldUntil: string; act: string }): void {
+    void this.serial(root, async () => {
+      const rec = this.record(root, id);
+      if (!rec || !isReleaseOpen(rec.state)) return;
+      rec.power = h;
+      this.save(rec);
+      this.changed(root);
+    });
+  }
+
   // ---- request ------------------------------------------------------------------------------------
 
   private async request(root: string, req: Req, caller: Caller): Promise<{ changed: boolean; report: ReleaseReport }> {
@@ -1127,7 +1138,8 @@ export class Releaser {
       if (rec) {
         const name = rec.version ?? rec.id;
         const since = (iso: string | null | undefined) => Date.parse(iso ?? rec.startedAt) || 0;
-        if (rec.state === "ready" && !rec.power) out.push({ root, release: rec.id, kind: "release-ready", since: since(rec.steps.find((s) => s.id === "checks")?.at), detail: `Ready to publish · ${rec.tag ?? name}` });
+        const powerHeld = !!rec.power && Date.parse(rec.power.heldUntil) > this.now();
+        if (rec.state === "ready" && !powerHeld) out.push({ root, release: rec.id, kind: "release-ready", since: since(rec.steps.find((s) => s.id === "checks")?.at), detail: `Ready to publish · ${rec.tag ?? name}` });
         for (const s of rec.steps) if (s.state === "held") out.push({ root, release: rec.id, kind: "release-held", since: since(s.at), detail: `${name}: ${s.label} is held for you${s.summary ? `: ${s.summary}` : ""}` });
         for (const s of rec.steps) if (s.state === "failed") out.push({ root, release: rec.id, kind: "release-failed", since: since(s.at), detail: `${name}: ${s.label} failed${s.summary ? `: ${s.summary}` : ""}` });
         const quiet = this.quietOf(rec);

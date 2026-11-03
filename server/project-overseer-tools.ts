@@ -62,6 +62,9 @@ export interface PoToolHost {
   /** The project's deploy act (`deploy/run`, power deploy): held for the waiting period unattended; once it goes, the
       project's own recipe plans and runs and decides by itself whether it ships. Resolves with what to tell the model. */
   deployAct?(q: { target?: string; commit?: string; why?: string }): Promise<string>;
+  /** The project's release act (`release/run`, power release): starting a release, or publishing a ready one; held for
+      the waiting period unattended. Resolves with what to tell the model. */
+  releaseAct?(q: { verb: "start" | "publish"; release?: string; why?: string }): Promise<string>;
   /** The powers in force now (both columns after the brake, the brake). */
   effective(): { overseer: PowerMap; assistant: PowerMap; brake: Brake | null; autonomy: Autonomy; reason?: string };
   /** The run is the operator's (their message from the UI). */
@@ -198,6 +201,8 @@ export const OP_POWER: Record<string, Record<string, PowerId | "always" | "opera
     leftovers: "always", "stop-leftover": "operator",
     "deploy.status": "always", "deploy.logs": "always", "deploy.check": "always", "deploy.request": "always",
     "deploy.plan": "deploy", "deploy.run": "deploy", "deploy.rollback": "operator",
+    "release.status": "always", "release.logs": "always", "release.request": "always",
+    "release.start": "release", "release.publish": "release",
   },
 };
 
@@ -1048,8 +1053,15 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         return { content: text(said), details: { verb: "deploy/run" } };
       });
       const viaAct = (v: unknown) => host.deployAct && (v === "deploy.plan" || v === "deploy.run");
-      const reads = new Set<string>([...READ_VERBS, "leftovers"]);
-      return { ...t, execute: (id: string, params: any) => (viaAct(params?.verb) ? deployed(id, params) : reads.has(String(params?.verb)) ? exec(id, params) : acted(id, params)) } as Tool;
+      // release.start and release.publish: only as the project's own release act (power release), never by hand.
+      const released = act("sova_project_verbs", async (params) => {
+        const q = params as { verb?: unknown; release?: unknown; why?: unknown };
+        const said = await host.releaseAct!({ verb: q.verb === "release.publish" ? "publish" : "start", ...(typeof q.release === "string" ? { release: q.release } : {}), ...(typeof q.why === "string" ? { why: q.why } : {}) });
+        return { content: text(said), details: { verb: "release/run" } };
+      });
+      const viaRelease = (v: unknown) => host.releaseAct && (v === "release.start" || v === "release.publish");
+      const reads = new Set<string>([...READ_VERBS, "leftovers", "release.status", "release.logs"]);
+      return { ...t, execute: (id: string, params: any) => (viaAct(params?.verb) ? deployed(id, params) : viaRelease(params?.verb) ? released(id, params) : reads.has(String(params?.verb)) ? exec(id, params) : acted(id, params)) } as Tool;
     })(),
     // Another layer's tools (an org's roster, gatherings, decisions, owner updates), wrapped as these are.
     ...host.contributed({ act: (name, run, counts) => act(name, run, counts), read, heldText }),

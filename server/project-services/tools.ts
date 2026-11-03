@@ -80,18 +80,23 @@ const SESSION_PARAMS = (() => {
   return { ...p, properties: { ...p.properties, ...Object.fromEntries(merge.map((r) => [r.tool!.name, toolSchema(r, false)])) } };
 })();
 const MERGE_TOOL_ROWS = VERB_PARAMS.filter((p) => p.tool && p.mergeOnly);
+/** The release verbs an overseer's tool lists. */
+const OVERSEER_RELEASE_VERBS = ["release.status", "release.logs", "release.request", "release.start", "release.publish"] as const;
 /** The release verbs' keys (the release chat's reports), plus the merge rows they share (`step`, `text`); the generic
     rows (project, why, commit, lines) reach every verb already. */
 const RELEASE_TOOL_ROWS = VERB_PARAMS.filter((p) => p.tool && (p.releaseOnly || (p.mergeOnly && ["step", "text"].includes(p.wire))));
 
 /** The Overseers' parameters: the verbs, plus `onboard` (the Project verbs playbook, §app.project-runtime/onboard). */
-const OVERSEER_PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS, "onboard"], true);
+/** The release rows an overseer's tool takes (status, logs, request, start, publish: the releaser decides who may). */
+const OVERSEER_RELEASE_ROWS = VERB_PARAMS.filter((r) => r.tool && r.wire === "release");
+const withRelease = <T extends { properties: Record<string, unknown> }>(p: T): T => ({ ...p, properties: { ...p.properties, ...Object.fromEntries(OVERSEER_RELEASE_ROWS.map((r) => [r.tool!.name, toolSchema(r, true)])) } });
+const OVERSEER_PARAMS = withRelease(paramsOf([...VERBS, ...DEPLOY_VERBS, ...OVERSEER_RELEASE_VERBS, "onboard"], true));
 
 /** The Overseers' copy verbs (§app.overseer/copies): `leftovers` (a read) and `stop-leftover` (behind a card's click). */
 export const COPY_VERBS = ["leftovers", "stop-leftover"] as const;
 /** With them: their verbs in the enum, and `port`. */
 const COPIES_PARAMS = (() => {
-  const p = paramsOf([...VERBS, ...DEPLOY_VERBS, "onboard", ...COPY_VERBS], true);
+  const p = withRelease(paramsOf([...VERBS, ...DEPLOY_VERBS, ...OVERSEER_RELEASE_VERBS, "onboard", ...COPY_VERBS], true));
   return { ...p, properties: { ...p.properties, port: { type: "integer", minimum: 1, maximum: 65535, description: "stop-leftover: the copy port the leftover process holds, as leftovers lists it." } } };
 })();
 
@@ -151,6 +156,7 @@ const DEPLOY_HELP = {
     " Shipping is the operator's: deploy.run and deploy.rollback answer forbidden to this tool; deploy.plan is the operator's (yours in a turn the user started); to ask for a deploy, deploy.request {target, commit?, why} raises it for the operator.",
   session: " You never ship and never ask for a deploy: deploy.plan, deploy.run, deploy.rollback and deploy.request answer forbidden; say it in your report.",
   projectOverseer:
+    " Releases: release.status / release.logs read them; release.start {why?} starts one and release.publish {release} publishes one whose every gate passed, both through the project's release act (the release power On, held for the waiting period, which the operator may cancel; never past a failed gating check, no overrides); with the power Off, release.request {why} asks the operator. Withdraw, abandon, continue and retry are the operator's." +
     " To ship, deploy.run {target?, commit?, why} (deploy.plan is the same call) sets off the project's own deploy act: it needs the deploy power On, waits out the hold like any held act (the operator may cancel it), then the project's own recipe plans and runs it and decides whether it ships; there are no overrides (failing tests or a dirty tree refuse it). To leave it to the operator instead (or with the power Off), deploy.request {target, commit?, why} raises it for them. deploy.rollback is the operator's alone.",
 } as const;
 

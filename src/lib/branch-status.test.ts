@@ -3,6 +3,7 @@
 // (worktrees-state.ts describeWorktrees + insights.ts: the session's readiness joined by path) and the list's as the
 // session list carries them (SessionSummary.branches, its queue entry cut by branchQueueOf).
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { branchQueueOf, type WorktreeMergeProject, type WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { SessionBranchRow, SessionReadiness, SessionWorktreeInfo, WorktreeReadiness } from "../../shared/protocol";
@@ -205,4 +206,11 @@ test("a row with no branches shows nothing", () => {
   assert.equal(rowBranchStatus({ branches: [] }), null);
   // Readiness alone (an older server, no branches) draws nothing rather than guess.
   assert.equal(rowBranchStatus({ readiness: { trees: [{ path: "/w/a", branch: "a", state: "ready" }], since: 1 } }), null);
+});
+
+test("every mark is still: the row's one moving thing is its Busy dot", () => {
+  const css = readFileSync(new URL("../app.css", import.meta.url), "utf8");
+  const rules = [...css.matchAll(/([^{}]*session-branch-status[^{}]*)\{([^}]*)\}/g)];
+  assert.ok(rules.length >= 6, "the status rules are found");
+  for (const [, sel, body] of rules) assert.doesNotMatch(body!, /animation|transition/, sel!.trim());
 });

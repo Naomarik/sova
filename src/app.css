@@ -1570,7 +1570,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-dot-err { background: var(--status-error); }
 
 /* A session row's branch status (line 3, after the time): the control's headline as its own mark and its number,
-   each fact with a symbol of its own so the tone is never the only signal. The model after it is cut first. */
+   each fact with a symbol of its own so the tone is never the only signal, and every mark still: the row's one moving
+   thing is its Busy dot. The model after it is cut first. */
 .session-row .list-meta .session-branch-status { white-space: nowrap; }
 .session-branch-status > .icon { width: 12px; height: 12px; margin-right: 3px; vertical-align: -2px; }
 .session-branch-status-error { color: var(--status-error); }
@@ -1579,10 +1580,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .session-branch-status-accent { color: var(--color-accent); }
 .session-branch-status-info { color: var(--status-info); }
 .session-branch-status-muted { color: var(--color-ink-muted); }
-@media (prefers-reduced-motion: no-preference) {
-  .session-branch-status-checking > .icon { animation: session-branch-spin 1.6s linear infinite; }
-}
-@keyframes session-branch-spin { to { transform: rotate(360deg); } }
 
 /* The rows, in the modal and in the pane: branch in mono, the path, then the chip and its facts;
    the action at the row's end, wrapping under the facts on a narrow pane. */

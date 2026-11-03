@@ -64,6 +64,10 @@ decimal string on Headscale.
   `/api/health` says `chatHost.bun: false`.
 - **Home** `/root` (volume): the Claude store simulator uses `/root/.claude-lab`
   (`SOVA_SYNC_CLAUDE_DIR`), never `/root/.claude`.
+- **Page origins**: every Sova gets `SOVA_ALLOWED_ORIGINS` for its published port and the front door's. The auth
+  gate takes loopback origins on Sova's own port only, a browser's `crossorigin` scripts and every write send
+  `Origin`, so without it a page on `127.0.0.1:489x` gets 403 for its own JS and renders blank. Browser harnesses
+  unlock through `#t=<token>` (`unlockPage`), which sets the install's cookie.
 - **Listeners**: Sova's main listener stays on `127.0.0.1:4800`. The laptop reaches it through a
   socat forwarder on `:4900`, published on `127.0.0.1:489x`, so the laptop browser acts as that
   host's local user. The tailnet reaches it through `tailscale serve :8443`, which is what the front

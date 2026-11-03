@@ -109,6 +109,13 @@ setTimeout(finish, holdMs);`;
   }
 }
 
+/** Unlock a real page on `node`, as `sova open`'s link does: `#t=<token>` becomes the install's cookie. A
+    page's sockets need it, and the lab's `x-sova-token` header isn't promised to reach them. */
+export async function unlockPage(page, node) {
+  await page.goto(`${hostUrl(node)}/#t=${encodeURIComponent(labToken())}`);
+  await page.waitForFunction(() => !location.hash.startsWith("#t=") && document.querySelector("#root")?.childElementCount > 0, null, { timeout: 30000 });
+}
+
 /** LocalAPI GET inside a tailnet node (e.g. "status", "whois?addr=100.64.0.3:1"). */
 export function localapi(node, path) {
   const r = exec(node, ["curl", "-sS", "-m", "5", "--unix-socket", "/var/run/tailscale/tailscaled.sock", `http://local-tailscaled.sock/localapi/v0/${path}`]);

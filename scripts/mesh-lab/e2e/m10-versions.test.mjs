@@ -24,7 +24,7 @@ import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { provenanceOf } from "../lab.mjs";
-import { container, hostUrl, lab, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, STATE, waitFor, writeAgentFile } from "./lib.mjs";
+import { container, hostUrl, lab, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, STATE, unlockPage, waitFor, writeAgentFile } from "./lib.mjs";
 import { start as startFakeLlm, FAKE_MODEL } from "./fake-llm.mjs";
 import { link, linksFile, releaseLock, send, takeLock, unlink } from "./links-lib.mjs";
 import { commitOf, list } from "./versions-builds.mjs";
@@ -176,7 +176,9 @@ async function tab(host, hash = "#/mesh") {
   tabs.push(ctx);
   page.on("pageerror", (e) => console.log(`# page ${host}: ${e.message.slice(0, 300)}`));
   page.on("response", (r) => r.status() >= 400 && console.log(`# page ${host}: ${r.status()} ${r.url().slice(0, 120)}`));
+  await unlockPage(page, host);
   await page.goto(`${hostUrl(host)}/${hash}`);
+  await page.reload(); // a goto that only changes the hash keeps the document; a tab starts from a load
   return page;
 }
 const closeTabs = async () => {

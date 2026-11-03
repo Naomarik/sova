@@ -61,6 +61,10 @@ const DEFAULTS = { hosts: ["a", "b", "c"], plain: true, stranger: true, frontdoo
 /** The host the public front sits in front of: the first host (a public-links gateway). */
 export const publicGateway = (cfg) => (cfg.publicfront ? (cfg.hosts[0] ?? null) : null);
 const MOCK_DIR = () => join(STATE, "mock-token");
+/** The laptop's addresses for a page of this node. The auth gate takes loopback origins on its own
+    port only (4800), and a browser's `crossorigin` scripts and every write send Origin, so a page on
+    a published port answers 403 for its own JS unless the origin is listed. */
+const pageOrigins = (port) => [`http://127.0.0.1:${port}`, `http://127.0.0.1:${PORTS.frontdoor}`].join(",");
 /** The image a Sova node runs: its own commit's, else the lab's common build. */
 const imageOf = (cfg, id, kind) => (cfg.revs?.[id] ? revImages(cfg.revs[id])[kind] : IMAGES[kind]);
 
@@ -152,6 +156,7 @@ function hostService(cfg, id) {
       PORT: String(SOVA_PORT),
       HOST: "127.0.0.1",
       SOVA_TOKEN: labToken(),
+      SOVA_ALLOWED_ORIGINS: pageOrigins(PORTS.host(id)),
       NODE_EXTRA_CA_CERTS: "/run/lab/ca-bundle.pem",
       ...mock.env,
     },
@@ -208,7 +213,7 @@ export function composeFor(cfg) {
       // NET_ADMIN only for the entrypoint's egress guard; Sova runs with it dropped. No tun device.
       cap_add: ["NET_ADMIN"],
       ...DNS,
-      environment: { LAB_HOST: "plain", LAB_TAILSCALE: "0", LAB_SOVA: "1", LAB_SEED: cfg.seed ? "1" : "0", PORT: String(SOVA_PORT), HOST: "127.0.0.1", SOVA_TOKEN: labToken(), NODE_EXTRA_CA_CERTS: "/run/lab-tls/ca.pem" },
+      environment: { LAB_HOST: "plain", LAB_TAILSCALE: "0", LAB_SOVA: "1", LAB_SEED: cfg.seed ? "1" : "0", PORT: String(SOVA_PORT), HOST: "127.0.0.1", SOVA_TOKEN: labToken(), SOVA_ALLOWED_ORIGINS: pageOrigins(PORTS.plain), NODE_EXTRA_CA_CERTS: "/run/lab-tls/ca.pem" },
       volumes: ["plain-agent:/sova/.agent", "plain-home:/root", CA_MOUNT, ...(auth ? [`${AUTH_SRC}:/run/lab-secrets/auth.json:ro`] : [])],
       ports: [`127.0.0.1:${PORTS.plain}:4900`],
       networks: ["lab"],

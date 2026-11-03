@@ -122,7 +122,7 @@ export function MergeRunButton(props: {
               }
             >
               {(q) => {
-                const qr = () => queueRow({ status: "active", exists: true, readiness: undefined, branch: props.run.branch, queue: q() });
+                const qr = () => queueRow({ status: "active", exists: true, readiness: undefined, branch: props.run.branch, queue: q(), mergeServed: true });
                 return (
                   <span class="cluster playbook-review-queue">
                     <QueueChip row={qr()} />

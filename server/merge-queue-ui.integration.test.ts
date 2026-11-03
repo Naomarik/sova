@@ -61,7 +61,11 @@ const PROJECT: ProjectSummary = { id: PID, name: "sova", root: ROOT_DIR, origin:
 
 const mergeProject: WorktreeMergeProject = { id: PID, root: ROOT_DIR, target: "master", checks: "declared", review: true };
 const qi = (x: Partial<WorktreeQueueInfo>): WorktreeQueueInfo => ({ id: "me_x", state: "queued", commit: sha("c"), notes: [], project: PID, ...x }) as WorktreeQueueInfo;
+/** A row as the server sends it: `mergeServed` only where its project's merge setup is done (or is broken, still a
+ *  setup); a row may say otherwise. */
+const setUpProject = (p: WorktreeMergeProject | undefined): boolean => !!p && (p.checks !== "unset" || !!p.invalid);
 const wt = (branch: string, x: Partial<SessionWorktreeInfo> = {}): SessionWorktreeInfo => ({
+  ...(setUpProject("mergeProject" in x ? x.mergeProject : mergeProject) ? { mergeServed: true as const } : {}),
   path: `/w/.worktrees/sova-${branch.split("/")[1]}`,
   branch,
   status: "active",
@@ -156,6 +160,7 @@ function viewOf(x: Partial<MergeQueueView> = {}): MergeQueueView {
     state: "running",
     checks: "declared",
     review: true,
+    served: true,
     current: RUN,
     checking: [entry({ id: "me_c", branch: "fix/worker-restore", state: "checking" })],
     waiting: [
@@ -530,7 +535,22 @@ for (const width of [1280, 390]) {
       assert.match(await words(modal), /The queue is paused: the project folder has uncommitted edits\./);
       assert.equal(await modal.getByRole("link", { name: "Set Up Queue" }).getAttribute("href"), `#/projects/${PID}/merge-queue`);
       assert.equal(await modal.getByRole("button", { name: "Land feat/other", exact: true }).count(), 0);
+      // Listed, not set up: it merges plainly (al_1 a5).
+      assert.match(await words(modal.locator('[data-branch="feat/other"]')), /Ready to merge.*Say “land it” in the chat to merge it into main[.]/);
       await noRestartOrLive(o.page, ".wt-queue-modal");
+      await o.ctx.close();
+    });
+
+    test("a repo off the Projects list (no mergeProject, no mergeServed): no Land, no Ready to land, no Set Up Queue; it reads Ready to merge", async () => {
+      const o = await open(width, `#/s/${encodeURIComponent(PATH)}`, { rows: [wt("feat/build", { mergeProject: undefined })] });
+      await o.page.getByRole("button", { name: /^Worktrees: / }).click({ timeout: 20_000 });
+      const modal = o.page.getByRole("dialog", { name: "Worktrees" });
+      await modal.waitFor();
+      const t = await words(modal);
+      assert.match(t, /Ready to merge/);
+      assert.match(t, /Say “land it” in the chat to merge it into main[.]/);
+      assert.doesNotMatch(t, /Ready to land|Landing specs|Set Up Queue|Land queues|merge queue/i);
+      assert.equal(await modal.getByRole("button", { name: /^Land / }).count(), 0);
       await o.ctx.close();
     });
 
@@ -967,8 +987,12 @@ for (const width of [1280, 390]) {
     });
 
     test("onboarding: a project not set up says what should pass; Try It on Master, then Save Checks", async () => {
-      const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf({ checks: "unset", state: "idle", current: undefined, waiting: [], needsYou: [], needsFix: [], recent: [] }) });
+      const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf({ checks: "unset", served: false, state: "idle", current: undefined, waiting: [], needsYou: [], needsFix: [], recent: [] }) });
       const { page } = o;
+      // Listed, not set up (al_1 a11): the note and Initialize first; Initialize opens the existing onboarding.
+      await page.getByText("No merge queue settings are set up for this project").waitFor({ timeout: 20_000 });
+      assert.equal(await page.getByText("Before the queue can land anything here, tell us what should pass.").count(), 0, "the onboarding waits for Initialize");
+      await page.getByRole("button", { name: "Initialize", exact: true }).click();
       await page.getByText("Before the queue can land anything here, tell us what should pass.").waitFor({ timeout: 20_000 });
       await page.getByRole("textbox", { name: "Command" }).fill("npm test");
       assert.match(await words(page.locator(".mq-onboard")), /We run npm test there\./);

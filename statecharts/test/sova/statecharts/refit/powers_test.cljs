@@ -154,6 +154,22 @@
         (is (nil? (:held (first (:steps r)))))
         (is (= ["deploy-run"] (map :kind (:outbox r))))))))
 
+(deftest release-is-a-held-act-of-its-own-power
+  (testing "the overseer on its own: a publish is held for the waiting period, then the releaser's effect"
+    (let [eng (project-engine)
+          r   (core/send! eng "project/pr1" :release/run {:by "overseer" :project-id "pr1" :hold-ms 1000 :powers (only "release" true) :verb "publish" :release "rl_x" :version "0.2.0"} {:now t0})]
+      (is (= "Publishing release 0.2.0 (public, can't be taken back)" (:what (:held (first (:steps r))))))
+      (let [due (core/fire-due! eng (+ t0 1000))]
+        (is (= [{:kind "release-run" :by "overseer" :attended false :verb "publish" :release "rl_x"}]
+               (map #(select-keys % [:kind :by :attended :verb :release]) (mapcat :outbox (:steps due))))))))
+  (testing "Off (no level ever released): refused; the deploy power alone doesn't release; the operator's own: at once"
+    (let [eng (project-engine)]
+      (is (= "power-off" (:code (:refused (first (:steps (core/send! eng "project/pr1" :release/run {:by "overseer" :project-id "pr1" :powers (pw/carry-over "L3")} {:now t0})))))))
+      (is (= "power-off" (:code (:refused (first (:steps (core/send! eng "project/pr1" :release/run {:by "overseer" :project-id "pr1" :powers (only "deploy" true)} {:now t0})))))))
+      (let [r (core/send! eng "project/pr1" :release/run {:by "operator" :project-id "pr1" :hold-ms 1000} {:now t0})]
+        (is (nil? (:held (first (:steps r)))))
+        (is (= [{:kind "release-run" :verb "start"}] (map #(select-keys % [:kind :verb]) (:outbox r))))))))
+
 (deftest a-settings-change-with-only-a-level-sets-the-overseer-column-by-the-carry-over
   (let [eng (project-engine)]
     (core/send! eng "watch/pr1" :settings/changed {:settings {:autonomy "L3"}} {:now t0})

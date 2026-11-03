@@ -15,7 +15,7 @@
 
 (def powers
   ["gather" "whatsapp" "ownerUpdates" "roster" "promote" "bookkeeping" "codingStart" "codingPrompt"
-   "onboard" "markMerged" "copiesRun" "copiesReset" "share" "deploy"])
+   "onboard" "markMerged" "copiesRun" "copiesReset" "share" "deploy" "release"])
 
 (def info
   "Per power: its old level (the carry-over), whether the Project Assistant column can have it, its label,
@@ -33,7 +33,8 @@
    "copiesRun"    {:old "L3" :assistant true  :label "Create, start and update running copies"}
    "copiesReset"  {:old "L3" :assistant false :label "Reset or tear down running copies"}
    "share"        {:old "L1" :assistant false :label "Share a version to try"}
-   "deploy"       {:old nil  :assistant true  :label "Deploy (the project's own recipe)"}})
+   "deploy"       {:old nil  :assistant true  :label "Deploy (the project's own recipe)"}
+   "release"      {:old nil  :assistant true  :label "Release (the project's release playbook; may publish after its waiting period)"}})
 
 (def levels ["L0" "L1" "L2" "L3"])
 (def ^:private rank (zipmap levels (range)))

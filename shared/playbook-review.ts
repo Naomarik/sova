@@ -28,7 +28,9 @@ export function reviewDetail(r: PlaybookReviewWords): string {
 /** The banner: its title, and what to do. */
 export function reviewBanner(r: PlaybookReviewWords): { title: string; body: string } {
   if (!r.hash) return { title: `${r.label} proposes changes on ${r.branch}.`, body: `Its branch has ${nothingValid(r)}: read its report.` };
-  return { title: `${r.label} proposes ${hash12(r.hash)} on ${r.branch}.`, body: `Read it, then merge it into ${r.target}.` };
+  // A release setup's hash pins settings and playbook files together: no definition hash to show, so it is named.
+  const what = r.proposes === "release" ? "a release setup" : hash12(r.hash);
+  return { title: `${r.label} proposes ${what} on ${r.branch}.`, body: `Read it, then merge it into ${r.target}.` };
 }
 
 /** The one button's label: Merge Branch, none with nothing valid to merge. */

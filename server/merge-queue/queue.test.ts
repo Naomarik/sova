@@ -1158,8 +1158,10 @@ describe("the setup commit's push", () => {
     try {
       const pushedBefore = k.repo.head();
       const q = await k.q();
-      const r = await q.setup({ none: true });
+      // The stand-in reads "the file at the target's head": declared from the save on. Flipped before the save returns,
+      // so a read the save's own publish makes (cached per head) never sees the old answer at the new head.
       saved = true;
+      const r = await q.setup({ none: true });
       let v = await q.view();
       assert.equal(v.heads.target, r.commit);
       assert.equal(v.heads.pushed, pushedBefore, "origin's sha, from its tracking ref");

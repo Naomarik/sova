@@ -34,7 +34,7 @@
    "copiesReset"  {:old "L3" :assistant false :label "Reset or tear down running copies"}
    "share"        {:old "L1" :assistant false :label "Share a version to try"}
    "deploy"       {:old nil  :assistant true  :label "Deploy (the project's own recipe)"}
-   "release"      {:old nil  :assistant true  :label "Release (the project's release playbook; may publish after its waiting period)"}})
+   "release"      {:old nil  :assistant false :label "Release (the project's release playbook; may publish after its waiting period)"}})
 
 (def levels ["L0" "L1" "L2" "L3"])
 (def ^:private rank (zipmap levels (range)))

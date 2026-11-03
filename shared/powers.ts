@@ -61,7 +61,7 @@ export const POWER_INFO: Record<PowerId, PowerInfo> = {
   copiesReset: { group: "copies", oldLevel: "L3", assistant: false, label: "Reset or tear down running copies" },
   share: { group: "release", oldLevel: "L1", assistant: false, label: "Share a version to try" },
   deploy: { group: "release", oldLevel: null, assistant: true, label: "Deploy (the project's own recipe)" },
-  release: { group: "release", oldLevel: null, assistant: true, label: "Release (the project's release playbook; may publish after its waiting period)" },
+  release: { group: "release", oldLevel: null, assistant: false, label: "Release (the project's release playbook; may publish after its waiting period)" },
 };
 
 export const POWER_GROUP_LABEL: Record<PowerGroup, string> = { people: "People", spec: "Spec", code: "Code", copies: "Running copies", release: "Release" };

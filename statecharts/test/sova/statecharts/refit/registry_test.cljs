@@ -53,7 +53,7 @@
   (is (= {"L1" #{"gather" "whatsapp" "ownerUpdates" "bookkeeping" "share"} "L2" #{"roster" "promote" "markMerged"}
           "L3" #{"codingStart" "codingPrompt" "onboard" "copiesRun" "copiesReset"} nil #{"deploy" "release"}}
          (reduce (fn [acc p] (update acc (:old (pw/info p)) (fnil conj #{}) p)) {} pw/powers)))
-  (is (= #{"gather" "codingStart" "codingPrompt" "copiesRun" "deploy" "release"} (set (filter #(:assistant (pw/info %)) pw/powers)))))
+  (is (= #{"gather" "codingStart" "codingPrompt" "copiesRun" "deploy"} (set (filter #(:assistant (pw/info %)) pw/powers)))))
 
 ;; ---- r8a: every transition declares its feed class --------------------------------------------------
 

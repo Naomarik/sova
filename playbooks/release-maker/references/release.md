@@ -77,7 +77,7 @@ Every part is the project's to change. `init` never overwrites: it refuses when 
 
 ## What `check` refuses
 Sova's parsers on both files, the canonical form (`fmt`), and in every file of the playbook folder (Markdown: the code in fences and in backticks; scripts: all of it):
-- `git push`; `git tag` that creates, moves or deletes a tag; `git update-ref` on a tag or branch; `git reset --hard`;
+- `git push`; `git tag` that creates, moves or deletes a tag; `git update-ref` on a tag or branch; `git reset --hard`; the same commands in argv form (`execFileSync("git", ["push", …])`, `["tag", "-a", …]`), while reads stay allowed (`["tag", "--list"]`, `["tag", "-l"]`, `["ls-remote", …]`);
 - `gh release create` without `--verify-tag`; `gh release delete`;
 - calling Sova (`sova-project`, `/api/project-services`, a token): reports go only through the release chat's `release.step`;
 - `merge.pause` / `merge.resume`: the release freeze replaces them;
@@ -85,3 +85,5 @@ Sova's parsers on both files, the canonical form (`fmt`), and in every file of t
 - a `scripts/…` or `references/…` path the folder doesn't have; a step id `PLAYBOOK.md` never names;
 - an artifact path (`release.mjs artifact <path>`) inside the repository that git doesn't ignore, or an `artifact: true` step the playbook gives no path for;
 - `commit: true` without a prepare step `commit`, or `commit: false` with one.
+
+The scan reads text, so it has a known limit: a wrapper that builds the command (`const sh = (...a) => execFileSync("git", a); sh("push", …)`) passes it. `check` says so in its notes; keep pushes and tags out of the scripts by hand.

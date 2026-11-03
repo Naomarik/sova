@@ -150,6 +150,28 @@ test("check refuses what the parsers can't see: tagging, pushing, calling Sova, 
   assert.ok(!p.some((x) => /PLAYBOOK\.md: pushes/.test(x)), "a 'never' line is prose, not a command");
 });
 
+test("check refuses git in argv form (push, a tag that creates or moves) and lets reads through", () => {
+  const why = (code: string) => maker.textProblems("x.mjs", code) as string[];
+  for (const bad of [
+    `execFileSync("git", ["push", "origin", "main"])`,
+    `spawnSync('git', ['push', '--tags'])`,
+    `execFileSync("git", ["tag", "-a", "v1.0.0", "-m", "x"])`,
+    `execFileSync("git", ["tag", "-f", "stable"])`,
+    `execFileSync("git", ["tag", "-d", "v1.0.0"])`,
+    `execFileSync("git", ["tag", "v1.0.0"])`,
+    `execFileSync("git", ["update-ref", "refs/tags/v1", sha])`,
+  ])
+    assert.ok(why(bad).length > 0, `expected a refusal for ${bad}`);
+  for (const ok of [
+    `execFileSync("git", ["tag", "--list", "v*"])`,
+    `execFileSync("git", ["tag", "-l"])`,
+    `execFileSync("git", ["tag"])`,
+    `execFileSync("git", ["ls-remote", "origin"])`,
+    `execFileSync("git", ["describe", "--tags"])`,
+  ])
+    assert.deepEqual(why(ok), [], `expected ${ok} to pass`);
+});
+
 test("check fails on an invalid manifest and on a project without release settings", async () => {
   const r = project();
   const none = await maker.check(r);

@@ -290,6 +290,9 @@ const FORBIDDEN = [
   [/\bgit\s+push\b/, "pushes: Sova's Publish is the only push of a release"],
   [/\bgit\s+tag\s+(?!(-l|--list|-n\d*|--contains|--no-contains|--points-at|--merged|--no-merged|--sort|-v|--verify|--column|--format)\b)\S/, "creates or moves a tag: Sova's Publish makes the numbered tag and moves the channels"],
   [/\bgit\s+update-ref\s+(-d\s+)?refs\/(tags|heads)\//, "moves a ref by hand: Sova's queue and Publish own them"],
+  [/["'`]git["'`]\s*,\s*\[\s*["'`]push["'`]/, "pushes (argv form): Sova's Publish is the only push of a release"],
+  [/["'`]git["'`]\s*,\s*\[\s*["'`]tag["'`]\s*,(?!\s*["'`](-l|--list|-n\d*|--contains|--no-contains|--points-at|--merged|--no-merged|--sort|-v|--verify|--column|--format)\b)/, "creates or moves a tag (argv form): Sova's Publish makes the numbered tag and moves the channels"],
+  [/["'`]git["'`]\s*,\s*\[\s*["'`]update-ref["'`]/, "moves a ref by hand (argv form): Sova's queue and Publish own them"],
   [/\bgh\s+release\s+create\b(?![^\n]*--verify-tag)/, "creates a release page without --verify-tag, which would make the tag itself"],
   [/\bgh\s+release\s+(delete|upload\s+--clobber)\b/, "deletes or overwrites a published release's page or files"],
   [/\bgit\s+(reset\s+--hard|checkout\s+-B|branch\s+-f)\b/, "resets a branch: never in a release, abandon is Sova's"],
@@ -388,6 +391,7 @@ export async function check(root) {
   if (!r.checkIds.length) notes.push("no release-only checks: the release entry runs the merge queue's required checks only");
   const remotes = (git(root, "remote") ?? "").split("\n").filter(Boolean);
   const pushes = def.merge ? def.merge.push !== false && remotes.includes("origin") : remotes.includes("origin");
+  notes.push("the command scan reads text: it catches `git push` / `git tag -a` and the argv form (\"git\", [\"push\", …]), not a wrapper that builds the command (sh(\"push\", …)); keep pushes and tags out of the scripts by hand too");
   notes.push(pushes ? "Publish pushes the target, the tag and the channels to origin in one atomic push" : "local-only: Publish tags and moves the channels on this machine and pushes nothing");
 
   // What the parsers can't see: every file of the playbook folder.

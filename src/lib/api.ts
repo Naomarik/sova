@@ -1674,3 +1674,20 @@ export const runSessionCardCommand = (path: string, card: string, command: strin
   request<{ ok: boolean; status: number; body: unknown }>("/api/session-cards/run", { method: "POST", body: JSON.stringify({ path, card, command, params }) });
 /** A project's card folders on its main checkout, read now, and whether its cards are trusted. */
 export const getProjectCards = (projectId: string) => request<ProjectCardsAnswer>(`${projectPath(projectId)}/cards`, { cache: "no-store" });
+
+// ---- The read-only folder viewer (shared/folder-read.ts) and Settings → Merge Queue ----
+/** A folder's files: a project's at a ref, or one Sova ships. Never runs anything. */
+export const listFolder = (src: import("../../shared/folder-read").FolderSource) =>
+  request<import("../../shared/folder-read").FolderListing>(`/api/folders/list?src=${encodeURIComponent(JSON.stringify(src))}`, { cache: "no-store" });
+/** One file of that folder, as text. */
+export const readFolderFile = (src: import("../../shared/folder-read").FolderSource, path: string) =>
+  request<import("../../shared/folder-read").FolderFile>(`/api/folders/read?src=${encodeURIComponent(JSON.stringify(src))}&path=${encodeURIComponent(path)}`, { cache: "no-store" });
+type ModelChoiceWire = import("../../shared/merge-queue-settings").ModelChoice;
+/** The review's and the merge thread's models for one project, on this computer; null = Same as new chats. */
+export const putMergeModels = (projectId: string, models: { review?: ModelChoiceWire | null; thread?: ModelChoiceWire | null }) =>
+  request<unknown>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/models`, jsonInit("PUT", models));
+/** Saves the project-file settings onto the target as one commit, after the user confirmed; waits behind a run. */
+export const saveMergeSettings = (projectId: string, changes: import("../../shared/merge-queue-settings").MergeSettingsChange) =>
+  request<import("../../shared/merge-queue-settings").MergeSettingsSaveResult>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings`, jsonInit("POST", { changes, confirm: true }));
+/** Cancels a save waiting for the current branch. */
+export const cancelMergeSettings = (projectId: string) => request<unknown>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings/pending`, { method: "DELETE" });

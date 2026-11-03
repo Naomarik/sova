@@ -67,6 +67,143 @@ const changes = (id: string, label: string, summary: string, method: "POST" | "P
 const codingSession: CommandParam = { type: "string", description: "The coding session's id", in: "body", key: "sessionId", required: true };
 const previewId: CommandParam = { type: "string", description: "The preview's id", in: "path", required: true };
 
+/** The merge queue's settings (Settings → Merge Queue) and the read-only folder viewer they open. */
+const mqProject: CommandParam = { type: "string", description: "The project's id", in: "path", required: true };
+const folderSrc: CommandParam = { type: "json", description: 'The folder: {kind: "project", project, ref, dir} or {kind: "builtin", id}', in: "query", required: true };
+const MERGE_SETTINGS: CommandEntry[] = [
+  {
+    id: "project.merge-queue.settings.get",
+    label: "Show Queue Settings",
+    summary: "Every setting a project's merge queue uses: from the project's file on the target, this computer, or set by Sova.",
+    effect: "looks",
+    params: { project: mqProject },
+    route: { method: "GET", path: "/api/merge-queue/projects/:project/settings" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.merge-queue.models.set",
+    label: "Change Review Model",
+    summary: "The review's and the merge thread's model and effort for this project, on this computer; null: Same as new chats.",
+    effect: "changes",
+    params: {
+      project: mqProject,
+      review: { type: "json", description: '{model: "provider/model", thinking?} or null', in: "body", nullable: true },
+      thread: { type: "json", description: '{model: "provider/model", thinking?} or null', in: "body", nullable: true },
+    },
+    route: { method: "PUT", path: "/api/merge-queue/projects/:project/models" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.settings.save",
+    label: "Save Queue Setting",
+    summary: "Push, review on or off, and each check's time limit, rerun and optional, as one commit on the target; waits while a branch is checking.",
+    effect: "changes",
+    params: {
+      project: mqProject,
+      changes: { type: "json", description: "{push?, review?, checks?: {<id>: {timeoutSec?, rerun?, optional?}}}", in: "body", required: true },
+      confirm: { type: "boolean", description: "The commit on the target is confirmed", in: "body", required: true },
+    },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/settings" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.settings.cancel",
+    label: "Cancel Waiting Save",
+    summary: "Cancel a queue settings save that waits for the branch checking now.",
+    effect: "changes",
+    params: { project: mqProject },
+    route: { method: "DELETE", path: "/api/merge-queue/projects/:project/settings/pending" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.folder.list",
+    label: "Open Folder",
+    summary: "The files of one folder of a project at a commit, or of one of Sova's own folders; read only, never run.",
+    effect: "looks",
+    params: { src: folderSrc },
+    route: { method: "GET", path: "/api/folders/list" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
+    id: "project.folder.read",
+    label: "Read Folder File",
+    summary: "One file of such a folder, as text: documents to render, scripts shown, never run.",
+    effect: "looks",
+    params: { src: folderSrc, path: { type: "string", description: "The file, inside the folder", in: "query", required: true } },
+    route: { method: "GET", path: "/api/folders/read" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+];
+
+/** How a branch lands (al_3): Update Local Main, a request's Publish, How it lands. The operator's own page only. */
+const MERGE_LANDING: CommandEntry[] = [
+  {
+    id: "project.merge-queue.update-local-main",
+    label: "Update Local Main",
+    summary: "On a project that lands by request: fast-forward this computer's main (and its folder) to origin's; refused, with why, when the folder has uncommitted edits.",
+    effect: "changes",
+    params: { project: mqProject },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/update-local-main" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.request.publish",
+    label: "Publish Request",
+    summary: "Publish a checked branch's pull or merge request with the title and description you reviewed: the spec docs commit, the leak scan, the push, then the request.",
+    effect: "changes",
+    params: {
+      id: { type: "string", description: "The queue entry (mq_…)", in: "path", required: true },
+      title: { type: "string", description: "The request's title", in: "body", required: true },
+      body: { type: "string", description: "The request's description", in: "body", required: true },
+      draft: { type: "boolean", description: "Open it as a draft", in: "body" },
+    },
+    route: { method: "POST", path: "/api/merge-queue/entries/:id/publish" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.land-how.set",
+    label: "Change How It Lands",
+    summary: "How the project's branches land (merge locally, pull request, merge request, push branch only), on this computer or in the project's file.",
+    effect: "changes",
+    params: {
+      project: mqProject,
+      how: { type: "string", description: '"local", "github-pr", "gitlab-mr" or "push-branch"', in: "body", required: true },
+      where: { type: "string", description: '"computer" (this computer only) or "project" (the project\'s file)', in: "body", required: true },
+    },
+    route: { method: "PUT", path: "/api/merge-queue/projects/:project/land-how" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  {
+    id: "project.merge-queue.land-how.clear",
+    label: "Clear This Computer's Choice",
+    summary: "Drop this computer's How it lands choice, so the project file's (or Merge locally) applies.",
+    effect: "changes",
+    params: { project: mqProject },
+    route: { method: "DELETE", path: "/api/merge-queue/projects/:project/land-how/override" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+];
+
 /** The projects sweep (§app.project-commands/projects-sweep): each row points at the route the web app's own control uses. */
 const PROJECTS_SWEEP: CommandEntry[] = [
   looks("project.list", "List Projects", "Every registered project, in an organization or not.", "/api/projects", {}),
@@ -152,4 +289,6 @@ export const PROJECT_ENTRIES: CommandEntry[] = [
   },
   ...PROJECT_OVERSEER_ENTRIES,
   ...PROJECTS_SWEEP,
+  ...MERGE_SETTINGS,
+  ...MERGE_LANDING,
 ];

@@ -156,7 +156,12 @@
       "pi-config/extensions/sandbox/tests/unit/proxy.unit.test.ts",
       "pi-config/extensions/sandbox/session-policy.ts",
       "pi-config/extensions/sandbox/README.md"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T11:41Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+    }
   },
   "§chat.sandbox/workers": {
     "kind": "behavior",

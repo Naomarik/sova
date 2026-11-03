@@ -1,0 +1,11 @@
+/* How a branch lands, past Sova's checks: request status, the review before publishing, Local main behind
+   (MergeQueueRequests.tsx). */
+.mq-request { display: grid; gap: var(--space-1); }
+.mq-request-head { margin: 0; }
+.mq-request-actions { margin-top: var(--space-1); }
+.mq-request-review { padding: var(--space-3); border-radius: var(--r-lg); background: var(--color-sunken); }
+.mq-request-review .textarea { min-height: 160px; }
+.mq-request-checklist { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+.mq-behind { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
+.mq-behind > p { margin: 0; }
+.mq-behind-why { flex-basis: 100%; }

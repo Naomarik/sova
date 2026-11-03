@@ -5942,7 +5942,7 @@
       ]
     },
     "project-overseer": {
-      "bytes": 38242,
+      "bytes": 38256,
       "tools": [
         {
           "name": "sova_project",
@@ -6880,6 +6880,7 @@
                   "project.archive",
                   "copies",
                   "services",
+                  "merge-queue",
                   "profile",
                   "playbook",
                   "schedule",
@@ -7104,7 +7105,7 @@
       ]
     },
     "project-overseer+onboard": {
-      "bytes": 38554,
+      "bytes": 38568,
       "tools": [
         {
           "name": "sova_project",
@@ -8042,6 +8043,7 @@
                   "project.archive",
                   "copies",
                   "services",
+                  "merge-queue",
                   "profile",
                   "playbook",
                   "schedule",
@@ -8267,7 +8269,7 @@
       ]
     },
     "project-overseer+gaps": {
-      "bytes": 38683,
+      "bytes": 38697,
       "tools": [
         {
           "name": "sova_project",
@@ -9217,6 +9219,7 @@
                   "project.archive",
                   "copies",
                   "services",
+                  "merge-queue",
                   "profile",
                   "playbook",
                   "schedule",
@@ -9441,7 +9444,7 @@
       ]
     },
     "project-overseer+copies": {
-      "bytes": 44176,
+      "bytes": 44190,
       "tools": [
         {
           "name": "sova_project",
@@ -10463,6 +10466,7 @@
                   "project.archive",
                   "copies",
                   "services",
+                  "merge-queue",
                   "profile",
                   "playbook",
                   "schedule",

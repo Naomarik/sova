@@ -457,5 +457,8 @@ describe("this machine's copy limit (§app.project-services/instances): a Sova-k
     assert.deepEqual([rowInfo.label, rowInfo.state, rowInfo.detail, rowInfo.href], ["Copy limit", "9 at once", "set on this machine", `#/projects/${pid}/branches`]);
     assert.equal((await put({ cap: null })).status, 200);
     assert.deepEqual([machineCopyLimit(dir), (await settings.settingsInfo(pid)).rows.find((x) => x.setting === "copies")!.detail], [null, "from the project's file"]);
+    // The merge queue's row links to its tab in the Settings dialog, for this project.
+    const mq = (await settings.settingsInfo(pid)).rows.find((x) => x.setting === "merge-queue")!;
+    assert.deepEqual([mq.label, mq.where, mq.href, mq.hrefLabel], ["Merge queue", "file", `#/settings/merge-queue/${pid}`, "Settings → Merge Queue"]);
   });
 });

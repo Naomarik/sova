@@ -167,10 +167,30 @@ export function discardAllDrafts(): void {
   for (const f of registry) f.discard();
 }
 
-/** The dialog closed: every form forgets its draft. */
+/** The dialog closed: every form forgets its draft, and every held edit (below) goes with it. */
 export function resetAllDrafts(): void {
   for (const f of registry) f.reset();
+  for (const h of held) h.discard();
 }
+
+/**
+ * An edit a tab saves on its own, after a confirm of its own (Settings → Merge Queue's project-file
+ * changes: one commit on the target), so the footer's Save Changes never writes it. It still holds
+ * the close like a gated form: closing over it asks first, and Discard and Close drops it.
+ */
+export interface HeldEdit {
+  tab: SettingsTab;
+  label: string;
+  dirty(): boolean;
+  discard(): void;
+}
+const held: HeldEdit[] = [];
+/** Joins the close-hold; once per module, at load. */
+export function registerHeldEdit(h: HeldEdit): void {
+  held.push(h);
+}
+/** The held edits not saved yet. Tracked. */
+export const heldEdits = (): HeldEdit[] => held.filter((h) => h.dirty());
 
 /**
  * The footer's status line, first match wins: a save in flight; the first invalid dirty form's

@@ -86,7 +86,12 @@ const ALL_ROWS = [
   wt("feat/composer-shortcuts"),
   wt("fix/paste-images", { queue: qi({ id: "me_q", state: "queued", position: 2, eta: { startsInMs: 4 * 60_000, takesMs: 9 * 60_000 }, newerCommits: 1 }) }),
   wt("feat/draft-sync-tabs", { readiness: { path: "", branch: "feat/draft-sync-tabs", state: "in-progress", dirtyCount: 3 } }),
-  wt("fix/draft-autosave-race", { queue: qi({ id: "me_f", state: "needs-fix", reason: "unit failed: src/lib/drafts.test.ts", run: "mr_fail" }) }),
+  // Sent back at its commit (c), and still reading at that commit: no Land until a newer commit reads finished (al_4).
+  wt("fix/draft-autosave-race", {
+    queue: qi({ id: "me_f", state: "needs-fix", reason: "unit failed: src/lib/drafts.test.ts", run: "mr_fail" }),
+    readiness: { path: "", branch: "fix/draft-autosave-race", state: "ready", landing: { state: "ready", commit: sha("c") } },
+    mergeStats: { ahead: 3, added: 40, removed: 2, head: sha("c") } as SessionWorktreeInfo["mergeStats"],
+  }),
   wt("fix/conflict-chip", {
     queue: qi({ id: "me_b", state: "behaviour-differs", conflict: { files: ["src/a.ts"], verdict: "behaviour-differs", ours: "Master retries the save twice.", theirs: "The branch never retries.", proposal: "Keep master's retry.", at: iso(3) } }),
   }),
@@ -549,6 +554,9 @@ for (const width of [1280, 390]) {
       // An uncommitted row has no Land.
       assert.equal(await modal.getByRole("button", { name: "Land feat/draft-sync-tabs", exact: true }).count(), 0);
       assert.equal(await modal.locator('[data-branch="fix/draft-autosave-race"] a', { hasText: "See Why" }).getAttribute("href"), `#/projects/${PID}/merge-queue/mr_fail`);
+      // Sent back: no Land and no Land menu while its chat fixes it (al_4).
+      assert.equal(await modal.getByRole("button", { name: "Land fix/draft-autosave-race", exact: true }).count(), 0);
+      assert.equal(await modal.getByRole("button", { name: "More ways to land fix/draft-autosave-race" }).count(), 0);
       await noRestartOrLive(page, ".wt-queue-modal");
       await noSideScroll(page);
       await page.keyboard.press("Escape");
@@ -610,6 +618,8 @@ for (const width of [1280, 390]) {
       for (const word of ["Ready", "Queued · 2nd", "Uncommitted", "Needs a fix", "Behaviour differs", "Review flagged", "Landed"]) assert.match(text, new RegExp(word), word);
       assert.match(text, /2 ready · 1 queued · 1 behaviour differs · 1 review flagged · 1 needs a fix · 1 uncommitted · 1 landed/);
       assert.match(await words(section.locator('[data-branch="feat/composer-drafts"]')), /3 commits · \+40 −2/);
+      assert.equal(await section.getByRole("button", { name: "Land fix/draft-autosave-race", exact: true }).count(), 0, "sent back: no Land (al_4)");
+      assert.equal(await section.getByRole("button", { name: "More ways to land fix/draft-autosave-race" }).count(), 0, "sent back: no Land menu (al_4)");
       await section.getByRole("button", { name: "Cancel landing fix/paste-images" }).click();
       await called(o, "merge.cancel");
       await section.getByRole("button", { name: "Land feat/composer-drafts", exact: true }).click();

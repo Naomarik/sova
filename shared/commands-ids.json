@@ -171,7 +171,17 @@
     "project.verb.merge.review",
     "project.verb.merge.retry",
     "project.verb.merge.setup",
-    "session.merge-cards"
+    "session.merge-cards",
+    "project.merge-queue.settings.get",
+    "project.merge-queue.models.set",
+    "project.merge-queue.settings.save",
+    "project.merge-queue.settings.cancel",
+    "project.folder.list",
+    "project.folder.read",
+    "project.merge-queue.update-local-main",
+    "project.merge-queue.request.publish",
+    "project.merge-queue.land-how.set",
+    "project.merge-queue.land-how.clear"
   ],
   "retired": [
     "settings.agents.get"

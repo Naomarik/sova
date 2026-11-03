@@ -700,7 +700,8 @@ user row.
 - **The Settings tab lists every setting.** Its **All settings** section lists each project setting,
   Sova-kept and in the project's files (the **Copy limit**, its value and "set on this machine" or
   "from the project's file", linking to the Branches tab; services, profiles, playbooks and their schedules, modes,
-  offers), with its state (on, off, set, not set, broken, needs approval, approved) and a link to
+  offers; the **Merge queue**, linking to Settings → Merge Queue on this project, §app.merge-queue/settings,
+  which `sova_settings` refuses to change), with its state (on, off, set, not set, broken, needs approval, approved) and a link to
   where it is changed or approved (its section on the tab, Settings → Profiles, the Playbooks dialog,
   a chat's mode menu, the Offers list, the Branches tab; a section of the tab itself scrolls into view).
   The Offers list is one of its sections.
@@ -945,7 +946,12 @@ judgement.
   (§app.merge-queue/approve) instead of merging it in the project root; once it has an entry the row
   reads its queue state in the chips the composer's modal uses (§chat.composer/worktrees-control),
   with its estimates or reason, and while it is queued, checking or waiting for the user its Land is
-  disabled: "Already in the merge queue.". The queue's refusals are shown under the row as Merge
+  disabled: "Already in the merge queue.". While it is sent back to its chat (Needs a fix) its Land
+  is disabled too, "Sent back to its chat. Land comes back here once its chat commits a fix and
+  finishes." (§chat.composer/worktrees-control); this menu reads no readiness, so Land stays off there
+  after the fix until the branch lands another way: from the Worktrees modal, the session pane, the
+  Merge Queue tab, or "land it" typed in its chat.
+  Drafts changed keeps Land. The queue's refusals are shown under the row as Merge
   Branch's are. A project whose queue isn't set up keeps Merge Branch as above, and its Merge Queue
   tab shows the note "No merge queue settings are set up for this project" with Initialize
   (§app.merge-queue/setup). A project whose definition doesn't parse

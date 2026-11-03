@@ -34,6 +34,7 @@ export type SettingId =
   | "project.archive"
   | "copies"
   | "services"
+  | "merge-queue"
   | "profile"
   | "playbook"
   | "schedule"
@@ -68,6 +69,21 @@ const powerKeys = Object.fromEntries(
 );
 const profileLimitKeys = Object.fromEntries(LIMIT_KEYS.map((k) => [`limits.${k}`, LIMIT_LABEL[k]]));
 const serviceKeys = Object.fromEntries(DEFINITION_KEYS.service.map((k) => [`services.<name>.${k}`, `a service's ${k}`]));
+const MERGE_KEY_WORDS: Record<string, string> = {
+  target: "the branch the queue lands into (absent: the main checkout's)",
+  push: "push after each landing (absent: push when origin exists); changed in Settings → Merge Queue",
+  checks: 'the checks every landing runs, or "none"',
+  install: "the offline install the merge copy runs when its inputs change",
+  review: "the review kit's folder (absent: no review); turned on or off in Settings → Merge Queue",
+  land: "how a branch lands: local, github-pr, gitlab-mr or push-branch (absent: local)",
+  request: "the request skill folder that drafts a pull or merge request's text",
+};
+const mergeKeys = {
+  ...Object.fromEntries(DEFINITION_KEYS.merge.map((k) => [`merge.${k}`, MERGE_KEY_WORDS[k] ?? k])),
+  ...Object.fromEntries(DEFINITION_KEYS.mergeCheck.map((k) => [`merge.checks[].${k}`, k === "timeout" || k === "rerun" || k === "optional" ? `a check's ${k}; changed in Settings → Merge Queue` : `a check's ${k}`])),
+  "models.review": "the review's model and effort, kept on this computer (absent: Same as new chats)",
+  "models.thread": "the merge thread's model and effort, kept on this computer (absent: Same as new chats)",
+};
 const topKeys: Record<string, string> = {
   version: "the contract's version (1)",
   slots: "the project's default for how many copies may run at once ({cap}, 1–16); this machine's copy limit (the copies setting) overrides it",
@@ -285,6 +301,17 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
     grant: "Any change: it decides what runs on this computer.",
     keys: { ...serviceTop, ...serviceKeys },
     changedAt: "the Branches tab and the Software card",
+  },
+  "merge-queue": {
+    id: "merge-queue",
+    label: "Merge queue",
+    where: "file",
+    file: `${CONTRACT_FILE} (its merge section)`,
+    summary: "How the project's branches land: the target, push, the checks, the install, the review kit, and the review's and merge thread's models (kept on this computer). The queue uses the values on the target, never the folder's.",
+    edit: "none: refused here. Push, review on or off and each check's time limit, rerun and optional are saved in Settings → Merge Queue at the operator's confirm; everything else changes in a branch that lands through the queue (as part of services' file).",
+    grant: null,
+    keys: mergeKeys,
+    changedAt: "Settings → Merge Queue (Queue Settings on the Merge Queue tab)",
   },
   profile: {
     id: "profile",

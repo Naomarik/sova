@@ -300,7 +300,7 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:27Z",
+      "at": "2026-11-03T11:39Z",
       "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     },
     "code": [
@@ -320,7 +320,8 @@
       "src/lib/merge-queue-types.ts",
       "src/lib/worktrees-served.test.ts",
       "src/components/ReviewChanges.tsx",
-      "src/lib/worktrees.ts"
+      "src/lib/worktrees.ts",
+      "src/lib/merge-queue-sent-back.test.ts"
     ]
   },
   "§chat/composer": {

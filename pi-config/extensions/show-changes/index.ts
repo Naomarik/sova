@@ -173,7 +173,7 @@ export default function showChanges(pi: ExtensionAPI, options: ShowChangesOption
 	pi.registerTool({
 		name: SHOW_CHANGES_TOOL,
 		label: "Show changes",
-		// Its card is drawn from this tool's recorded result, which a codemode script's call never has.
+		// Its card is drawn from this tool's recorded result, which a call another tool made never has.
 		exposure: "model-only",
 		description: SHOW_CHANGES_DESCRIPTION,
 		promptSnippet: SHOW_CHANGES_PROMPT_SNIPPET,

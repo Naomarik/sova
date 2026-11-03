@@ -273,8 +273,7 @@ A type that takes an answer declares how:
 
 - **Who gets it.** An ordinary chat Sova runs, on pi or Claude Code alike, whose snapshot
   (§chat.transcript-cards/files) holds at least one type with a `when`, gets one tool, `card`.
-  Never a worker, the Overseer, a project overseer or any other special chat, and never a codemode
-  script's call. A chat with no such type gets no tool and no instructions: its tools and prompt
+  Never a worker, the Overseer, a project overseer or any other special chat. A chat with no such type gets no tool and no instructions: its tools and prompt
   are exactly what they were before.
 - **What it takes.** `{type, data, key?}`: `type` one of the snapshot's names (an enum), `data`
   checked against that type's shape (§chat.transcript-cards/data-cards), and `key` (at most 64

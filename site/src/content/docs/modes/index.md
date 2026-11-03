@@ -20,7 +20,6 @@ The **major mode** is one of two:
 | [align](/docs/modes/align/) | The agent agrees with you on what to build before building it, and records each agreement as an alignment. | No |
 | [spec](/docs/modes/spec/) | The agent works from the project's spec: it reads the claims a task touches, and proposes changes in drafts. | Yes |
 | [vis](/docs/modes/vis/) | The agent can draw small diagrams and charts in its replies. | No |
-| [codemode](/docs/modes/codemode/) | The agent can run a short script that calls its other tools, several at once, and filters their output. | No |
 | [memory](/docs/modes/memory/) | A cheap model folds the chat's messages into one-line summaries, and the model opens any of them back to the original message with its `zoom` tool, so a chat can outgrow its context. The transcript you read never changes. Only Sova's mode menu turns it on. | No |
 
 A project can also ship minor modes of its own, with instructions and its own command-line tools,
@@ -43,7 +42,7 @@ Press it to open the menu. It has these groups:
 - **Major mode**: normal and delegate, each with its one-line description. Picking one switches
   the chat and keeps the menu open. Delegate's row has a gear, **Configure Delegate**, that opens Settings → Subagents without
   switching anything, so you can set Delegate up before you turn it on.
-- **Minor modes**: align, spec, vis, codemode and memory, each with its description. Toggling one
+- **Minor modes**: align, spec, vis and memory, each with its description. Toggling one
   keeps the menu open, so you can set several. Spec's row has a gear too, **Configure Spec**, that
   opens Settings → Subagents at its spec writer section. Memory is the last row, listed only in a
   chat whose runtime can run it; its row has a chevron, **Memory type**, that opens a panel to
@@ -75,8 +74,8 @@ chat, and the chat's running workers keep running.
 Switching a minor mode in the middle of a chat doesn't rewrite the instructions the model already
 has (except align in Delegate, which changes one paragraph of Delegate's instructions). The change reaches the model as a hidden note with its next message, which you don't see in
 the transcript. This keeps the model provider's prompt cache, so a toggle doesn't re-send the whole
-conversation. Turning **align**, **vis** or **codemode** on or off does change the agent's tools:
-align adds its `align` tool, vis its drawing tools, and codemode its `codemode` tool. A project mode
+conversation. Turning **align** or **vis** on or off does change the agent's tools:
+align adds its `align` tool and vis its drawing tools. A project mode
 with tools adds or removes its own tools the same way. **memory** sends no note at all: it changes
 the history the model is sent from the next turn, and adds its `zoom` and `date` tools.
 
@@ -141,7 +140,6 @@ mode whose file says `workers: yes`. A worker gets at most 8 modes, built-in and
   promotes. See [Spec](/docs/modes/spec/).
 - **align** doesn't: aligning is a conversation with you, and a worker doesn't have one.
 - **vis** doesn't: drawings are for you, and a worker's replies are read by its parent.
-- **codemode** doesn't: it changes the chat's own tools, and a worker's tools come from its brief.
 - **memory** doesn't: it is the chat's own memory of its conversation, and a worker starts fresh
   from its brief.
 - A **project mode** does when its file says `workers: yes`: the worker gets the chat's copy of it,

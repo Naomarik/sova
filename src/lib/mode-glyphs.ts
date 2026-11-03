@@ -13,7 +13,6 @@ const MINOR_ICONS: Record<string, IconName> = {
   align: "mode-align",
   spec: "mode-spec",
   vis: "mode-vis",
-  codemode: "mode-codemode",
   memory: "mode-memory",
 };
 

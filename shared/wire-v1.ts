@@ -78,7 +78,7 @@ function partsOf(content: unknown): SovaPart[] {
 
 const toolOutput = (result: unknown) => (isObj(result) ? contentText(result.content) : typeof result === "string" ? result : "");
 const toolImages = (result: unknown) => (isObj(result) ? imagesFromContent(result.content) : []);
-/** A call another tool made (pi's `parentToolCallId`, a codemode script's call): its caller's id. */
+/** A call another tool made (pi's `parentToolCallId`): its caller's id. */
 const nestedIn = (event: Record<string, unknown>): { parentCallId?: string } => {
   const parent = str(event.parentToolCallId);
   return parent ? { parentCallId: parent } : {};

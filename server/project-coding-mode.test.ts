@@ -46,7 +46,7 @@ test("a stored codingMode is ignored and dropped at the next write; a patch nami
 
 test("spec is always on: a minor-mode set that leaves it out is refused, from an Overseer or the mode menu", () => {
   const base = { mode: "normal" as const, minorModes: ["spec"] };
-  for (const on of [[], ["align"], ["vis", "codemode"]]) {
+  for (const on of [[], ["align"], ["align", "vis"]]) {
     assert.deepEqual(codingModeChoice({ minor_modes: on }, base), { error: SPEC_ALWAYS_ON });
     assert.deepEqual(codingModeSwitch({ minor_modes: on }), { error: SPEC_ALWAYS_ON });
     assert.equal(codingSpecRefusal(on), SPEC_ALWAYS_ON_MENU);
@@ -57,9 +57,9 @@ test("spec is always on: a minor-mode set that leaves it out is refused, from an
 
 test("every mode and minor-mode combination with spec is accepted; no other ceiling", () => {
   const base = { mode: "normal" as const, minorModes: ["spec"] };
-  const minors = ["align", "spec", "vis", "codemode"];
+  const minors = ["align", "spec", "vis"];
   for (const mode of ["normal", "delegate"] as const)
-    for (let bits = 0; bits < 16; bits++) {
+    for (let bits = 0; bits < 8; bits++) {
       const on = minors.filter((_, i) => bits & (1 << i));
       if (!on.includes("spec")) continue;
       const r = codingModeChoice({ mode, minor_modes: on }, base);
@@ -75,7 +75,7 @@ test("every mode and minor-mode combination with spec is accepted; no other ceil
 test("only unknown names are refused, each with its sentence", () => {
   const base = { mode: "normal" as const, minorModes: [] };
   assert.equal((codingModeChoice({ mode: "turbo" }, base) as { error: string }).error, "Unknown mode turbo: use normal or delegate.");
-  assert.equal((codingModeChoice({ minor_modes: ["bogus", "align", "spec"] }, base) as { error: string }).error, "Unknown minor mode bogus: use align, spec, vis or codemode.");
+  assert.equal((codingModeChoice({ minor_modes: ["bogus", "align", "spec"] }, base) as { error: string }).error, "Unknown minor mode bogus: use align, spec or vis.");
   assert.match((codingModeChoice({ minor_modes: "spec" }, base) as { error: string }).error, /minor_modes must be a list/);
   assert.equal((codingModeSwitch({ mode: "turbo" }) as { error: string }).error, "Unknown mode turbo: use normal or delegate.");
   assert.deepEqual(codingModeSwitch({}), { mode: null }, "naming nothing switches nothing");
@@ -102,7 +102,7 @@ test("subagent_profile: any profile here or off; an unknown one refused with whe
 });
 
 test("mode words say vis as visuals", () => {
-  assert.equal(describeCodingMode({ mode: "delegate", minorModes: ["align", "spec", "vis", "codemode"] }), "delegate · align · spec · visuals · codemode");
+  assert.equal(describeCodingMode({ mode: "delegate", minorModes: ["align", "spec", "vis"] }), "delegate · align · spec · visuals");
 });
 
 test("the promotion commit's message names every promoted decision: area — statement, each ≤ 72, at most 10", () => {

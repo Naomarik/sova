@@ -3,10 +3,41 @@
 // estimates don't explain (total minus the parts, floored at 0); "Free" is the room left. Pure (no
 // DOM, no Solid), so it tests under tsx.
 
-import type { ContextPart } from "../../shared/protocol";
+import type { SessionContextView } from "../../shared/protocol";
 import { formatPercent, formatTokens } from "./context";
 
-/** What the lines are worked out from: the server's read, `state: "ok"`. */
+export type ContextPartGroup = "instructions" | "subfolder" | "mode" | "rules" | "skills" | "tools";
+
+/** One part of the window, flattened from the server's read. A file part opens by `path`
+    (/api/sessions/context/file); any other carries its `text`. */
+export interface ContextPart {
+  id: string;
+  group: ContextPartGroup;
+  label: string;
+  tokens: number;
+  path?: string;
+  text?: string;
+  /** Subfolder files: the folder, relative to cwd, and whether it is in the window now. */
+  folder?: string;
+  loaded?: boolean;
+}
+
+/** The server's read as one list of parts, in the order the window is built (ids prefixed by
+    group, so two groups never collide). Pure. */
+export function flatParts(v: Extract<SessionContextView, { state: "ok" }>): ContextPart[] {
+  const of = (group: ContextPartGroup, ps: readonly { id: string; label: string; tokens: number; path?: string; text?: string }[]): ContextPart[] =>
+    ps.map((p) => ({ id: `${group}:${p.id}`, group, label: p.label, tokens: p.tokens, path: p.path, text: p.text }));
+  return [
+    ...of("instructions", v.instructions),
+    ...v.nested.map((n) => ({ id: `subfolder:${n.abs}`, group: "subfolder" as const, label: n.path, tokens: n.tokens, path: n.abs, folder: n.folder, loaded: n.loaded })),
+    ...of("mode", v.mode ? [v.mode] : []),
+    ...of("rules", v.rules),
+    ...of("skills", v.skills),
+    ...of("tools", v.tools),
+  ];
+}
+
+/** What the lines are worked out from. */
 export interface ContextSizes {
   parts: readonly ContextPart[];
   /** ≈ the messages since the last compaction. */
@@ -74,5 +105,5 @@ export function contextRoom(total: number | null, window: number | null): string
   return `${formatTokens(Math.max(0, window - total))} left`;
 }
 
-/** An estimate's words: "≈1.2k tokens". Pure. */
-export const approxTokens = (n: number): string => `≈${formatTokens(n)} tokens`;
+/** An estimate's words: "≈1.2k". Pure. */
+export const approxTokens = (n: number): string => `≈${formatTokens(n)}`;

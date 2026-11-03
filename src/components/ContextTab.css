@@ -1,0 +1,9 @@
+/* The Context tab (ContextTab.tsx): the headline and the line sizes; the rows are the shared list's. */
+.context-headline { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: 600; }
+.context-line-size { flex: none; font-variant-numeric: tabular-nums; }
+.context-lines .list-main,
+.context-subfolder .list-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.context-lines .list-title,
+.context-subfolder .list-title,
+.context-subfolder .list-meta { white-space: normal; overflow-wrap: anywhere; }
+.context-subfolder .chip { flex: none; }

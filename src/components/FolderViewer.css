@@ -31,6 +31,8 @@
 }
 @container folder-viewer (max-width: 640px) {
   .folder-viewer-body { grid-template-columns: minmax(0, 1fr); }
+  /* Stacked, a long list would push the picked file out of sight: it scrolls on its own. */
+  .folder-viewer-files { max-height: 240px; overflow: auto; }
 }
 .folder-viewer-files {
   display: flex;

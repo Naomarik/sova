@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import type { ContextPart } from "../../shared/protocol";
-import { contextHeadline, contextLines, contextRoom, type ContextSizes } from "./context-parts";
+import type { SessionContextView } from "../../shared/protocol";
+import { contextHeadline, contextLines, contextRoom, flatParts, type ContextPart, type ContextSizes } from "./context-parts";
 
 const parts: ContextPart[] = [
   { id: "file:/p/AGENTS.md", group: "instructions", label: "AGENTS.md", tokens: 3_000, path: "/p/AGENTS.md" },
@@ -43,6 +43,20 @@ describe("the Context tab's lines", () => {
     assert.equal(lines.some((l) => l.kind === "other" || l.kind === "free"), false);
     assert.equal(contextHeadline(null, 200_000), "Nothing sent yet");
     assert.equal(contextRoom(null, 200_000), null);
+  });
+
+  test("the server's read flattens into parts with group-unique ids, nested files carrying their state", () => {
+    const v: Extract<SessionContextView, { state: "ok" }> = {
+      state: "ok", cwd: "/p", window: 1000, total: 10, prompt: true, conversation: 5, checkedAt: 0,
+      instructions: [{ id: "x", label: "AGENTS.md", tokens: 3, path: "/p/AGENTS.md" }],
+      mode: { id: "x", label: "Mode", tokens: 2, text: "m" },
+      rules: [], skills: [], tools: [{ id: "read", label: "read", tokens: 4, text: "{}" }],
+      nested: [{ path: "api/AGENTS.md", abs: "/p/api/AGENTS.md", folder: "api", tokens: 1, loaded: false }],
+    };
+    const ps = flatParts(v);
+    assert.deepEqual(ps.map((p) => p.group), ["instructions", "subfolder", "mode", "tools"]);
+    assert.equal(new Set(ps.map((p) => p.id)).size, ps.length);
+    assert.deepEqual(ps[1], { id: "subfolder:/p/api/AGENTS.md", group: "subfolder", label: "api/AGENTS.md", tokens: 1, path: "/p/api/AGENTS.md", folder: "api", loaded: false });
   });
 
   test("the headline and the room left", () => {

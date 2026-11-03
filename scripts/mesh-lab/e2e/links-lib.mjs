@@ -10,7 +10,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { exec, laptopFetch, readAgentFile, sh, STATE, waitFor, writeAgentFile } from "./lib.mjs";
 
-export const MODEL = "zai/glm-5.3";
+export const MODEL = process.env.LAB_MODEL ?? "zai/glm-5.3"; // LAB_MODEL=ollama/qwen3:4b: the scripted model, e2e/fake-llm.mjs
 const LINKS_FILE = "sova/mesh-links.json";
 
 /** `init` as JSON → `{ status, json }`; never throws on an HTTP status (a network error does throw). */

@@ -7,8 +7,9 @@
 //             scripts/mesh-lab/lab e2e m10-versions
 // After it:   versions-builds.mjs delete, lab destroy.
 //
-// Needs Playwright like m6-links-browser (PLAYWRIGHT_MODULE, CHROMIUM_BIN). Spends a few short
-// glm-5.3 turns. Takes the lab LOCK; leaves a, b and c on base and paired, and deletes nothing.
+// Needs Playwright like m6-links-browser (PLAYWRIGHT_MODULE, CHROMIUM_BIN). Needs no API key: turns
+// run on the scripted model (fake-llm.mjs), real in every way but the words. Takes the lab LOCK; leaves
+// a, b and c on base and paired, and deletes nothing.
 // Screenshots: SHOTS (default .sova/spec/drafts/al_1-shots), one desktop and one phone per state.
 //
 // Resync: a lab host has no .git and no deploy recipe, so armResync gives the newer host a git history
@@ -24,13 +25,15 @@ import { after, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { provenanceOf } from "../lab.mjs";
 import { container, hostUrl, lab, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, STATE, waitFor, writeAgentFile } from "./lib.mjs";
-import { link, linksFile, MODEL, releaseLock, send, takeLock, unlink } from "./links-lib.mjs";
+import { start as startFakeLlm, FAKE_MODEL } from "./fake-llm.mjs";
+import { link, linksFile, releaseLock, send, takeLock, unlink } from "./links-lib.mjs";
 import { commitOf, list } from "./versions-builds.mjs";
 
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
 const PW = process.env.PLAYWRIGHT_MODULE ?? join(REPO, ".claude/skills/playwright/scripts/node_modules/playwright/index.mjs");
 const SHOTS = process.env.SHOTS ?? join(REPO, ".sova/spec/drafts/al_1-shots");
 const COMPOSER_HEADER = "X-Sova-Composer";
+const MODEL = process.env.LAB_MODEL ?? FAKE_MODEL;
 const A = "a";
 const B = "b";
 const LABEL = { a: "Host A", b: "Host B", c: "Host C" };
@@ -88,6 +91,7 @@ async function builds(want) {
     assert.deepEqual(p?.dirty, [], `${host} is clean`);
   }
   const hosts = Object.keys(want);
+  startFakeLlm(hosts); // a swap ended the one the host had
   for (const from of hosts) for (const to of hosts) if (from !== to) await seesBuild(from, to);
 }
 
@@ -508,7 +512,7 @@ describe("3. writing differs: Read only, both ways", () => {
 
   test("the Overseer can read that host and can't send to it or create a session on it", async () => {
     const saved = okJson(await call(A, "/api/settings/overseer"), "Overseer settings").settings;
-    okJson(await call(A, "/api/settings/overseer", { method: "PUT", body: { ...saved, model: MODEL, thinking: "low", proactivity: "off" } }), "set the Overseer's model");
+    okJson(await call(A, "/api/settings/overseer", { method: "PUT", body: { ...saved, model: MODEL, proactivity: "off" } }), "set the Overseer's model");
     try {
       okJson(await call(A, "/api/overseer/clear", { method: "POST" }), "clear");
       const c = chat(A, (await call(A, "/api/overseer")).json.path);
@@ -516,7 +520,10 @@ describe("3. writing differs: Read only, both ways", () => {
       const target = await fixture(B);
       c.send({
         type: "prompt",
-        text: `Make exactly these two tool calls, in order. First sova_read_session with session "${target.id}" and host "b". Then sova_create_session with host "b", cwd "/root/work", title "m10 overseer", prompt "Reply ok". Then stop.`,
+        text: `FAKE-TOOLS ${JSON.stringify([
+          { name: "sova_read_session", args: { session: target.id, host: "b" } },
+          { name: "sova_create_session", args: { host: "b", cwd: "/root/work", title: "m10 overseer", prompt: "Reply ok" } },
+        ])}`,
         clientId: "m10-overseer",
       });
       const ended = (name) => c.frames.filter((f) => f.type === "event" && f.event?.type === "tool_execution_end" && f.event.toolName === name).pop()?.event;

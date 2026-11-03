@@ -257,8 +257,9 @@ The harnesses:
     `~/.cache/mesh-links-transfer-lab-*.png`.
 
 - **m10-versions** (needs the `lab/al_1-*` builds of `e2e/versions-builds.mjs make`, the playwright skill's
-  node_modules and a Chromium; takes the LOCK; spends a few short glm-5.3 turns; leaves a, b and c on base,
-  paired): hosts on different builds (§mesh/compatibility), each host on its own commit through `lab swap`, each state
+  node_modules and a Chromium; takes the LOCK; needs no API key: its turns run on the scripted model of
+  `e2e/fake-llm.mjs`, which answers pi's `ollama` provider on each host's loopback, real in everything but the words,
+  and `LAB_MODEL=ollama/qwen3:4b` puts other harnesses on it; leaves a, b and c on base, paired): hosts on different builds (§mesh/compatibility), each host on its own commit through `lab swap`, each state
   asserted on the page and against a raw send. Screenshots go to `SHOTS`. Resync uses a git history and a stand-in
   deploy script injected into the newer host, and the update itself is a `lab swap`: it proves the offer, the job,
   the wait on the hello and the state afterwards, never `deploy.sh` over ssh.

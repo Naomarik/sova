@@ -6,7 +6,7 @@
 // LandHowSetting is the settings block's (shared/merge-queue-settings.ts).
 import type { LandHow, MergeRequestInfo } from "../../shared/merge-queue";
 import type { HostFactsWire, HostKind } from "../../shared/merge-queue-hosts";
-import type { LandHowSetting } from "../../shared/merge-queue-settings";
+import { settingsWaitingWords, type LandHowSetting } from "../../shared/merge-queue-settings";
 export { LAND_HOWS } from "../../shared/merge-queue";
 export type { HostKind, LandHow };
 const sentence = (s: string): string => {
@@ -252,3 +252,6 @@ export function introWords(target: string, how: LandHow | undefined): string {
       return `${head}then its branch is pushed to origin. You open the request yourself.`;
   }
 }
+
+/** A project-file save of How it lands that waits: the settings save's own words after the name. Pure. */
+export const landHowWaitingWords = (how: LandHow, release?: string): string => `${HOW_SHORT[how]} saves to the project file ${settingsWaitingWords(release).replace(/^Saves /, "")}.`;

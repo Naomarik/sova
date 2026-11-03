@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, on, Show, type JSX } from "solid-js";
+import type { ChatRef } from "../lib/merge-chat";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
 import { mins, notesOf, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, stillSentBack } from "../lib/merge-queue";
@@ -123,12 +124,9 @@ export function HeadsStrip(props: { view: MergeQueueView }) {
   );
 }
 
-/** A chat the page's session list knows, by its id (a queue records ids): where it opens and what it's called. */
-export interface ChatRef {
-  path: string;
-  title?: string;
-  archived?: boolean;
-}
+/** A chat the page's session list knows, by its id (a queue records ids): where it opens and what it's called
+    (lib/merge-chat chatRefOf: a worker is named as its chat's). */
+export type { ChatRef };
 export type ChatOf = (id: string) => ChatRef | undefined;
 
 /** Where a chat recorded by its id opens: its own route when the list carries it, else the id route the app resolves. */

@@ -22,6 +22,7 @@ const full = (): Required<SessionSummary> => ({
   live: { pid: 1, status: "idle", workers: { working: 0, total: 1 } },
   workers: { working: 0, total: 1 },
   workerSession: true,
+  workerOf: { id: "p", path: "/s/p.jsonl", name: "spec writer" },
   busy: false,
   chat: { model: "zai/glm-5.3", thinking: "high", mode: "delegate", minorModes: ["align"], strict: false, applies: "now" },
   origin: "web",

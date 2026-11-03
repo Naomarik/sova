@@ -141,6 +141,16 @@ const cache = new Map<string, CacheEntry>();
  *  is recomputed on every listing, never baked into a file's cached head facts. */
 const workerSessions = new WorkerSessions({ idOf: (p) => idOf(p) });
 /** The session that runs worker `path` (worker-sessions.ts parentOf), from the last listing's scans; null: none known. */
+/** SessionSummary.workerOf for a worker's row: its parent and name, from what the worker scan already read. */
+function workerOfField(path: string): Pick<SessionSummary, "workerOf"> {
+  try {
+    const w = workerSessions.workerOf(path);
+    return w ? { workerOf: { id: idOf(w.parent), path: w.parent, ...(w.name ? { name: w.name } : {}) } } : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function workerParentOf(path: string): Promise<string | null> {
   return workerSessions.parentOf(path);
 }
@@ -1238,7 +1248,7 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
       workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
       origin: isWebSession(s.id) ? "web" : "external",
       archived: isArchived(s.id),
-      ...(workers.has(s.path) ? { workerSession: true as const } : {}),
+      ...(workers.has(s.path) ? { workerSession: true as const, ...workerOfField(s.path) } : {}),
       ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
       ...heldChatField(s.path),
@@ -1321,7 +1331,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
     origin: isWebSession(s.id) ? "web" : "external",
     archived: isArchived(s.id),
-    ...(worker ? { workerSession: true as const } : {}),
+    ...(worker ? { workerSession: true as const, ...workerOfField(s.path) } : {}),
     ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
     ...heldChatField(s.path),

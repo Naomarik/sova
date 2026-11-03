@@ -79,6 +79,10 @@ export interface SessionSummary {
       Safe by absence: absent = a main thread, and an older server that never sends it hides
       nothing. */
   workerSession?: true;
+  /** With `workerSession`: the chat that runs it (a live record listing it, or a completion naming it) and the
+      worker's name there, so a worker is shown as `Worker {name} of "{its chat's title}"`, never by its prompt.
+      Absent: no parent known. */
+  workerOf?: { id: string; path: string; name?: string };
   /** While the server holds this session's runtime AND it is mid-agent-turn (streaming): true.
       The sidebar shows a "Busy" marker. false when idle/closed or not held by this server.
       Never pulsing (design rule). */

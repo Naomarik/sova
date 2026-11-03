@@ -26,6 +26,7 @@ const FIELDS: { [K in keyof Required<SessionSummary>]: "compare" | { exempt: str
   live: "compare",
   workers: "compare",
   workerSession: "compare",
+  workerOf: "compare",
   busy: "compare",
   chat: "compare",
   origin: "compare",

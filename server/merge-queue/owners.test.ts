@@ -15,9 +15,9 @@ describe("which chat a worktree's branch belongs to", () => {
     assert.deepEqual(pickOwner([WT], sessions, [tracker("A")]), { session: "A" });
   });
 
-  test("else the newest chat working in its folder, a worker included", () => {
-    const sessions = [row("B", WT, 1, { workerSession: true }), row("C", `${WT}/src`, 5), row("E", "/elsewhere", 0)];
-    assert.deepEqual(pickOwner([WT], sessions, []), { session: "B" });
+  test("else the newest main chat working in its folder, never a newer worker there", () => {
+    const sessions = [row("B", WT, 1, { workerSession: true, workerOf: { id: "P", path: "/s/P.jsonl" } }), row("P", "/w/proj", 90), row("C", `${WT}/src`, 5), row("E", "/elsewhere", 0)];
+    assert.deepEqual(pickOwner([WT], sessions, []), { session: "C" });
     assert.deepEqual(pickOwner([WT], [row("C", `${WT}/src`, 5)], []), { session: "C" });
     // A folder that only starts with the worktree's name is not inside it.
     assert.equal(pickOwner([WT], [row("X", `${WT}-other`, 0)], []), null);
@@ -33,6 +33,39 @@ describe("which chat a worktree's branch belongs to", () => {
     assert.equal(pickOwner([WT], [row("E", "/elsewhere", 0)], []), null);
     // A tracker the session list doesn't carry (gone) counts for nothing.
     assert.equal(pickOwner([WT], [], [tracker("A")]), null);
+  });
+});
+
+describe("a worker never owns a branch: its chat does", () => {
+  const worker = (id: string, cwd: string, minAgo: number, parent: string | null, x: Partial<SessionSummary> = {}) =>
+    row(id, cwd, minAgo, { workerSession: true, ...(parent ? { workerOf: { id: parent, path: `/s/${parent}.jsonl`, name: `w-${id}` } } : {}), ...x });
+
+  test("no tracked rows, one live worker in the worktree: the owner is the chat that runs it", () => {
+    const sessions = [row("P", "/w/proj", 30), worker("W", WT, 1, "P")];
+    assert.deepEqual(pickOwner([WT], sessions, []), { session: "P" });
+  });
+
+  test("a worker of a worker: up to the top chat", () => {
+    const sessions = [row("P", "/w/proj", 30), worker("W1", "/w/proj", 10, "P"), worker("W2", WT, 1, "W1")];
+    assert.deepEqual(pickOwner([WT], sessions, []), { session: "P" });
+  });
+
+  test("the tracking main chat before a newer worker in the same worktree; a worker that created it stands for its chat", () => {
+    const sessions = [row("A", "/w/proj", 60), worker("W", WT, 1, "P"), row("P", "/w/proj", 30)];
+    assert.deepEqual(pickOwner([WT], sessions, [tracker("A")]), { session: "A" });
+    assert.deepEqual(pickOwner([WT], sessions, [tracker("W")]), { session: "P" }, "the worker's worktree is its chat's");
+  });
+
+  test("a worker with no known chat counts for nothing; neither does one of the queue's own chats", () => {
+    assert.equal(pickOwner([WT], [worker("W", WT, 1, null)], []), null);
+    assert.equal(pickOwner([WT], [row("R", WT, 1, { queueChat: { role: "reviewer" } })], []), null);
+    assert.equal(pickOwner([WT], [row("T", "/w/proj", 1, { queueChat: { role: "thread" } }), worker("W", WT, 1, "T")], []), null, "never through a worker either");
+    assert.deepEqual(pickOwner([WT], [row("R", WT, 1, { queueChat: { role: "reviewer" } }), row("C", WT, 9)], []), { session: "C" });
+  });
+
+  test("an archived parent is flagged archived, after any live candidate", () => {
+    const sessions = [row("P", "/w/proj", 30, { archived: true }), worker("W", WT, 1, "P")];
+    assert.deepEqual(pickOwner([WT], sessions, []), { session: "P", archived: true });
   });
 });
 

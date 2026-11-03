@@ -123,3 +123,31 @@ export async function holdAndContinue(k: ReleaseServer, fx: ReleaseFixture, rec:
 }
 
 export const isReady = (r: Rec) => r.state === "ready";
+
+// ------------------------------------------------------------------ the merge queue, read as the operator
+
+export type Entry = Record<string, any> & { id: string; state: string; branch: string };
+export async function mergeView(k: ReleaseServer, fx: ReleaseFixture): Promise<Record<string, any>> {
+  return ok(await k.verb("merge.status", { project: fx.project }), "merge.status").json.merge.view;
+}
+export const entriesOf = (v: Record<string, any>): Entry[] => [
+  ...(v.checking ?? []),
+  ...(v.waiting ?? []),
+  ...(v.needsYou ?? []),
+  ...(v.needsFix ?? []),
+  ...(v.recent ?? []).map((r: { entry: Entry }) => r.entry),
+];
+export async function mergeAdd(k: ReleaseServer, fx: ReleaseFixture, branch: string, extra: Record<string, unknown> = {}): Promise<Entry> {
+  return ok(await k.verb("merge.add", { project: fx.project, branch, ...extra }), `merge.add ${branch}`).json.merge.entry as Entry;
+}
+export async function waitEntry(k: ReleaseServer, fx: ReleaseFixture, what: string, pred: (e: Entry) => boolean, ms = 180_000): Promise<Entry> {
+  let last: Entry[] = [];
+  try {
+    return await until(what, async () => {
+      last = entriesOf(await mergeView(k, fx));
+      return last.find(pred) ?? null;
+    }, ms, 200);
+  } catch (e) {
+    throw new Error(`${(e as Error).message}\nentries: ${JSON.stringify(last.map((x) => ({ id: x.id, branch: x.branch, state: x.state, reason: x.reason, release: x.release })))}`);
+  }
+}

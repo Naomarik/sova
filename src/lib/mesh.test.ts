@@ -34,6 +34,8 @@ import {
   notePeerProjects,
   pathsNamed,
   peerCantOpen,
+  sendingOff,
+  updateNeededFor,
   peerUnavailable,
   resetHosts,
   routeUrl,
@@ -236,6 +238,23 @@ test("only a host that works fully can be used, and every other status says why 
   for (const p of [peer("a", "skewed"), stale]) assert.doesNotMatch(peerUnavailable(p)!, /can't be reached|other version \(|different Sova version/);
   for (const s of ["down", "skewed", "refused"] as const) assert.match(peerUnavailable(peer("a", s))!, /\w+/);
   assert.match(peerUnavailable(peer("a", "down", "timed out"))!, /timed out/);
+});
+
+test("a session's path reads its host's state: reduced hosts keep it open with sending off, Update needed closes it", () => {
+  resetHosts();
+  const own = WIRE_AREAS;
+  const up = (id: string, areas: typeof own) => ({ ...peer(id, "up"), areas });
+  setMeshState({ enabled: true, self: { id: "me", label: "", hostname: "me" }, sync: [], frontDoor: null, peers: [up("ok", own), up("ro", { ...own, composer: own.composer + 1 }), up("disp", { ...own, transcript: own.transcript + 1 }), up("upd", { ...own, peer: own.peer + 1 }), peer("old", "skewed")] });
+  for (const h of ["ok", "ro", "disp", "upd", "old"]) notePeerSessions(h, [`/s/${h}.jsonl`]);
+  const seen = (h: string) => [sendingOff(`/s/${h}.jsonl`), updateNeededFor(`/s/${h}.jsonl`)];
+  assert.deepEqual(seen("ok"), [null, false]);
+  assert.deepEqual(seen("ro"), ["read-only", false]);
+  assert.deepEqual(seen("disp"), ["display", false]);
+  assert.deepEqual(seen("upd"), [null, true]);
+  assert.deepEqual(seen("old"), [null, true]);
+  assert.deepEqual([sendingOff("/s/here.jsonl"), updateNeededFor("/s/here.jsonl")], [null, false], "this host's own session");
+  setMeshState(null);
+  resetHosts();
 });
 
 test("the host filter falls back to All when its host is gone or the filter isn't shown", () => {

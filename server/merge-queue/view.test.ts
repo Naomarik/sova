@@ -49,6 +49,10 @@ test("a sent-back entry is superseded by any later entry for the same branch and
   const a = { ...stored({ state: "needs-fix" }), seq: undefined } as unknown as Stored;
   const b = { ...stored({ state: "queued" }), seq: undefined } as unknown as Stored;
   assert.equal(sentBack([a, b])[0]?.settled, "superseded");
+  // Put first in line, a newer entry's seq drops below the old one's: creation time still decides.
+  const before = stored({ state: "needs-fix", seq: 50 });
+  const front = stored({ state: "queued", seq: 3 });
+  assert.equal(sentBack([before, front])[0]?.settled, "superseded", "a newer entry moved to the front still stands for it");
 });
 
 test("merged and gone come from the queue's git facts; a superseded one stays superseded", () => {

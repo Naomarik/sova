@@ -74,9 +74,12 @@ export function buildView(a: {
 
 type Stored = QueueFile["entries"][number];
 
-/** `b` came after `a`: by the queue's sequence when both carry one, else by creation time. */
-const later = (b: Pick<Stored, "seq" | "createdAt">, a: Pick<Stored, "seq" | "createdAt">): boolean =>
-  typeof b.seq === "number" && typeof a.seq === "number" ? b.seq > a.seq : Date.parse(b.createdAt) > Date.parse(a.createdAt);
+/** `b` came after `a`: by creation time, ties by the queue's sequence (not sequence first: putting an entry first in
+ *  line lowers its seq below older entries'). */
+const later = (b: Pick<Stored, "seq" | "createdAt">, a: Pick<Stored, "seq" | "createdAt">): boolean => {
+  const d = Date.parse(b.createdAt) - Date.parse(a.createdAt);
+  return d !== 0 ? d > 0 : typeof b.seq === "number" && typeof a.seq === "number" && b.seq > a.seq;
+};
 
 /** A sent-back entry whose branch has a later entry for the same target, in any state: that one stands for it. */
 export function superseded(entries: readonly Stored[], e: Stored): boolean {

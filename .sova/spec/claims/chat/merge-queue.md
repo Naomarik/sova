@@ -154,7 +154,10 @@ card stays for a merge a chat makes itself into a branch the queue doesn't manag
 ## §chat.merge-queue/chat-turns — What the queue tells the chat's model
 
 The queue never sends a chat a message that looks typed by the user: no "Sova: …" message is put
-into the composer or the conversation for any outcome.
+into the composer or the conversation for any outcome. It speaks only about repositories it serves
+(§app.merge-queue/served): a chat working in any other repository gets no `[merge-queue]`
+message, queue card or queue line, whatever its branches look like. The one exception is a typed
+"land it" the queue turns down for that reason, said as below.
 
 - **Landed and Drafts changed don't start a turn.** The chat's model reads one hidden line at its
   next turn, in a block of the chat's card note (so chats started before this shipped get it too).
@@ -188,6 +191,9 @@ into the composer or the conversation for any outcome.
   failure ask the user on the card: no turn and no hidden line. When the user sends it back, that
   Send Back starts the turn, as above.
 - **A typed "land it" the queue refuses** is told to the model the same way, as a hidden line.
+  In a repository the queue doesn't serve (a chat still on code from before that rule records such
+  a go-ahead), the line is "{branch} at {sha} couldn't be queued to land: not a project the merge
+  queue serves: merge it into main from the chat.", so the chat, once reloaded, merges it itself.
 - A restart never repeats a revision, a hidden line or a wake: each is recorded once per entry,
   outcome and run in the chat's own queue-card record, kept whatever the chat's alignment, archive
   or worker state.

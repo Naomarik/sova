@@ -424,7 +424,8 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   (`.tabs`, keyboard as §app.organizations/org-page; Requirements carries the warn dot while a
   conflict is open or a decision is ready to promote). The tab is in the URL:
   `#/projects/<pid>` is Overview, `…/requirements`, `…/branches`, `…/merge-queue` (the project's
-  merge queue, or its onboarding screen while not set up, §app.merge-queue/view,
+  merge queue, or, while the queue doesn't serve the project, its "No merge queue settings are
+  set up" note with Initialize, §app.merge-queue/view,
   §app.merge-queue/setup; a run's page is `…/merge-queue/<run>`), `…/cost`, `…/settings` the others
   (`…/overseer` stays the overseer's door). Picking a tab or a chip adds a history entry, so Back
   returns to the previous tab and a reload opens the same one; the page is not reloaded and its

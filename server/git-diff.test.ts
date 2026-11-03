@@ -1042,3 +1042,14 @@ describe("queue scope (a Merge Queue row, no session)", () => {
     assert.equal((q({ kind: "worktree", session: SESSION, path: "/x", uncommitted: "1" }) as { uncommitted?: true }).uncommitted, true);
   });
 });
+
+describe("show_changes cards keep their own comparison", () => {
+  it("a pinned card shows its saved base..head, whatever branch the project lands on", async () => {
+    const { wt, tip } = queueRepo();
+    const first = git(wt, "rev-list", "--max-parents=0", "HEAD");
+    const s = await diffs(() => [wt], [], undefined, [], "master").summary({ kind: "worktree", sessionPath: SESSION, worktreePath: wt, pin: { base: first, head: tip, baseRef: "card base" } });
+    assert.equal(s.base.oid, first);
+    assert.equal(s.base.label, "card base");
+    assert.equal(s.head.oid, tip);
+  });
+});

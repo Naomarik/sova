@@ -272,8 +272,8 @@ describe("a branch's card in its own chat", () => {
     }
   });
 
-  test("Land with no chat named: the branch's owner (owners.ts, stood in here), else its earlier chat", async () => {
-    const t = cardKit({ deps: { ownerOf: async (_r, branch, wt) => (branch === "feat/w" && wt ? "s-wt" : null) } });
+  test("Land with no chat named: the branch's owner by the one rule (owners.ts, stood in here), nothing else", async () => {
+    const t = cardKit({ deps: { ownerOf: async (_r, branch, wt) => (branch === "feat/w" && wt ? "s-wt" : branch === "feat/a" ? { session: "s-old", archived: true } : null) } });
     try {
       const q = await t.k.q();
       await q.pause("hold");
@@ -281,21 +281,22 @@ describe("a branch's card in its own chat", () => {
       const a = await q.add({ branch: "feat/w", by: "land-button" });
       assert.equal(a.entry.session, "s-wt");
       await q.cancel(a.entry.id);
+      // An archived owner is still the owner: the approval records it.
+      t.k.repo.branch("feat/a", { "a2.txt": "a\n" });
+      assert.equal((await q.add({ branch: "feat/a", by: "land-button" })).entry.session, "s-old");
+      // No owner: no chat, even when an earlier approval named one.
       t.k.repo.branch("feat/v", { "v.txt": "v\n" });
       const v1 = await q.add({ branch: "feat/v", by: "land-button", session: "s-v" });
       await q.cancel(v1.entry.id);
       const v2 = await q.add({ branch: "feat/v", by: "land-button" });
-      assert.equal(v2.entry.session, "s-v");
+      assert.equal(v2.entry.session, undefined);
       await t.settle();
-      // A new approval of the same branch moves the same card on (a new "approved" revision), never a second card.
-      const vs = t.cards.cardsOf("s-v");
-      assert.equal(vs.length, 1);
-      assert.equal(vs[0]!.entry, v2.entry.id);
-      assert.deepEqual(vs[0]!.revisions.map((r) => r.kind), ["approved", "approved"]);
+      assert.deepEqual(t.cards.cardsOf("s-v").map((c) => c.entry), [v1.entry.id]);
     } finally {
       await t.k.done();
     }
   });
+
 
   test("drafts changed: a revision and a hidden line, never a turn", async () => {
     let hash = "h1";

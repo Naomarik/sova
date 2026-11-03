@@ -5,10 +5,10 @@ import type { TrackedWorktree } from "../../pi-config/extensions/worktrees/state
  * Which chat a worktree's branch belongs to: the one rule the Merge Queue tab's Ready rows show and Land
  * records (who hears about it), so the two never disagree.
  *
- * 1. A chat that tracks the worktree (its `worktrees` records, created before attached), not archived;
- * 2. else the newest chat working in its folder (cwd the folder or inside it), not archived, a main chat
- *    before a worker;
- * 3. else the same two among archived chats, flagged `archived`.
+ * 1. the chat that created the worktree and still tracks it (its own `worktrees` record, not dropped), not archived;
+ * 2. else the newest chat working in its folder (cwd the folder or inside it), not archived, a worker included;
+ * 3. else the same two, in that order, among archived chats, flagged `archived`;
+ * 4. else none.
  *
  * Who tracks what comes from the merge readiness reads' own records (merge-readiness.ts trackedWorktrees):
  * the index from it is rebuilt only when its `version` moves (a session's tracked set changed), so a view
@@ -30,7 +30,6 @@ export interface OwnerDeps {
 
 interface Tracker {
   sessionPath: string;
-  created: boolean;
 }
 
 export class WorktreeOwners {
@@ -45,10 +44,11 @@ export class WorktreeOwners {
       const byTree = new Map<string, Tracker[]>();
       for (const [sessionPath, trees] of t.each())
         for (const w of trees) {
-          if (w.status === "dropped") continue;
+          // Only the chat that created it: one that attached an existing worktree doesn't own it.
+          if (w.status === "dropped" || w.how !== "created") continue;
           const key = this.deps.canonical(w.path);
           const list = byTree.get(key) ?? [];
-          if (!list.some((x) => x.sessionPath === sessionPath)) list.push({ sessionPath, created: w.how === "created" });
+          if (!list.some((x) => x.sessionPath === sessionPath)) list.push({ sessionPath });
           byTree.set(key, list);
         }
       this.index = { version: t.version, byTree };
@@ -72,17 +72,15 @@ const newest = (a: SessionSummary, b: SessionSummary) => active(b) - active(a);
 export function pickOwner(folders: readonly string[], sessions: readonly SessionSummary[], trackers: readonly Tracker[]): Owner | null {
   const byPath = new Map(sessions.map((s) => [s.path, s]));
   const tracking = trackers
-    .map((t) => ({ s: byPath.get(t.sessionPath), created: t.created }))
-    .filter((t): t is { s: SessionSummary; created: boolean } => !!t.s)
-    .sort((a, b) => Number(b.created) - Number(a.created) || newest(a.s, b.s))
-    .map((t) => t.s);
+    .map((t) => byPath.get(t.sessionPath))
+    .filter((s): s is SessionSummary => !!s)
+    .sort(newest);
   const inTree = (s: SessionSummary) => !s.target && folders.some((f) => s.cwd === f || s.cwd.startsWith(`${f}/`));
-  const inside = sessions
-    .filter(inTree)
-    .sort((a, b) => Number(!!a.workerSession) - Number(!!b.workerSession) || newest(a, b));
+  const inside = sessions.filter(inTree).sort(newest);
   const live = (s: SessionSummary) => !s.archived;
   const pick = tracking.find(live) ?? inside.find(live);
   if (pick) return { session: pick.id };
+  // Only archived ones are left: the creating chat first, then the newest in the folder.
   const old = tracking[0] ?? inside[0];
   return old ? { session: old.id, archived: true } : null;
 }

@@ -363,11 +363,10 @@ export class ProjectQueue {
         if (st.code === 0 && n) throw new MergeFailure("invalid-request", `${branch} has ${n} uncommitted file${n === 1 ? "" : "s"} in ${wt}: Land is for a commit; commit or remove them first`);
       }
       const drafts = !req.withoutSpecs && wt ? await this.branchDrafts(wt, commit) : undefined;
-      // No chat named: the branch's owner by the one rule the Ready rows show (owners.ts), else its earlier entry's;
-      // an archived owner is never woken; none known, no card.
+      // No chat named: the branch's owner, by the one rule the Ready rows show (owners.ts), an archived one included;
+      // none, no card.
       if (!req.session) {
-        const resolved = ownerId(await this.deps.ownerOf?.(this.root, branch, wt).catch(() => null));
-        const owner = (resolved && !resolved.archived ? resolved.session : undefined) ?? [...this.q.entries].reverse().find((x) => x.branch === branch && x.session)?.session;
+        const owner = ownerId(await this.deps.ownerOf?.(this.root, branch, wt).catch(() => null))?.session;
         if (owner) req = { ...req, session: owner };
       }
       const approval: MergeApproval = {

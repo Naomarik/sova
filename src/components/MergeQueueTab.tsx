@@ -637,7 +637,7 @@ function ReadyRow(props: { projectId: string; root: string; ready: MergeReady; r
   const act = useAct(props.onChanged);
   const [askSpecs, setAskSpecs] = createSignal(false);
   // Land names no chat: the server records the branch's owner by the same rule that put this row's chat here
-  // (server/merge-queue/owners.ts), an archived one never woken.
+  // (server/merge-queue/owners.ts).
   const doLand = (o: LandOptions = {}) =>
     void act.run("land", () => landBranch(props.root, r().branch, { ...o, commit: r().commit }), `Queued ${r().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
   const lines = () => (r().added !== undefined && r().removed !== undefined ? ` · +${r().added} −${r().removed}` : "");

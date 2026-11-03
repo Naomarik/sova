@@ -26,6 +26,7 @@ ports and env in declaration order.
 | `share` | `{endpoints, maxDays?, allow?}`, below: what a running copy may share as a preview link. Absent: never shared. Hashed |
 | `deploy` | `{targets}`, below: how the project ships. The Project deploy playbook writes it, never this one; keep it byte for byte as you found it. Outside this hash, under its own (`deployHash`) |
 | `merge` | `{target?, push?, checks?, install?, review?}`, below: how the merge queue lands branches. Outside this hash |
+| `release` | `{playbook, tag?, scheme?, channels?, commit?, checks?, quietMin?}`, below: how the project releases. The Release playbook maker writes it, never this one; keep it byte for byte as you found it. Absent: releases are not set up. Outside this hash |
 
 ## A step (`setup`, a service's `build`, `hooks.probe`)
 | key | value |
@@ -92,6 +93,7 @@ Written by the Project deploy playbook (`playbooks/project-deploy`) from the ope
 | `steps` | `[{id, run, timeout?}]` (`id`, `run`, `timeout`, default 600 s): argv run in order in a fresh checkout of the commit, at least one |
 | `verify` | `{http, expect?, timeout?}` (`http`, `expect`, `timeout`): a URL answered with `expect` (default 200) after the steps |
 | `rollback` | `{steps}`, `"redeploy-previous"` or `{none}` (`none`: the reason it can't be undone) |
+| `releases` | `"only"`: only a published, not withdrawn, numbered release's commit ships here; absent: any commit on its branch |
 
 Deploy templates read `${host.<NAME>}`, `${commit}`, `${target}`, `${checkout}` and `${branch}` only.
 
@@ -107,6 +109,19 @@ How the merge queue lands a branch: it merges the approved commit onto the newes
 | `review` | the review kit's folder (a relative path): a fresh read-only reviewer reads each branch with it while the checks run. Absent: no review step |
 
 A check: `id` a name, unique; `label` what the queue shows (default the id, at most 60 characters); `run` an argv (default `timeout` 600 s) that may use `${merge.base}`, `${merge.tip}` and `${merge.target}` beside the templates below; `rerun` `true` when its failures name test files that `run` followed by those files reruns alone; `requires` services brought up in the merge copy first; `optional` `true` keeps it out of the required set: it runs only when the merge thread picks it for a branch (at least one check is required). A check also gets `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP`, `SOVA_MERGE_TARGET` and `SOVA_MERGE_CHANGED` (a file listing the changed paths); one with nothing to do exits 0 and writes `{"passed": 0, "failed": 0, "skipped": "<why>"}` to `SOVA_OUT`.
+
+## `release`
+Written by the Release playbook maker (`playbooks/release-maker`) from the operator's answers; this playbook only keeps it. A pointer to the project's release playbook plus the facts Sova acts on itself:
+
+| key | value |
+|---|---|
+| `playbook` | the project's release playbook folder (a relative path), which holds its `release.json` |
+| `tag` | the numbered tag's pattern, `${version}` exactly once (default `v${version}`) |
+| `scheme` | `semver` (default), `calver` or `none`: how a reported version is checked |
+| `channels` | moving tags Publish moves to each new release (0 to 3, never shaped like a numbered tag) |
+| `commit` | `true` (default): a release commit through the merge queue; `false`: tag-only |
+| `checks` | release-only gating checks run on the release entry after the merge checks: a merge check's id, or `{id, label?, run, timeout?, rerun?, requires?}` declared here |
+| `quietMin` | minutes without a report from the release chat while master is frozen before Sova says so (5 to 1440, default 30) |
 
 ## Templates
 `${slot}`, `${instance}`, `${project}`, `${checkout}`, `${main}` (the main checkout), `${branch}`, `${data}` (the instance's data dir), `${data.<resource>}`, `${ports.<service>.<port>}`, `${host.<NAME>}`; `$$` is a literal `$`. Every process and hook also gets `SOVA_V=1`, `SOVA_PROJECT`, `SOVA_INSTANCE`, `SOVA_SLOT`, `SOVA_CHECKOUT`, `SOVA_MAIN`, `SOVA_BRANCH`, `SOVA_DATA`, `SOVA_PORT_<SERVICE>_<PORT>` for every port of the instance and `SOVA_PORT_<PORT>` for its own; a hook also `SOVA_VERB`, `SOVA_STEP`, `SOVA_OUT`; a test run also `SOVA_TEST_SELECT`. `<SERVICE>` and `<PORT>` are upper case with anything else `_`.
@@ -139,6 +154,7 @@ A conformance stamp proves exactly one hash. The hash covers the whole parsed de
 | `needs-override` | 2 | a deploy plan the operator may let through with a typed reason: required tests failed or did not run, or main's tree is dirty |
 | `deploy-failed` | 1 | a deploy step failed |
 | `verify-failed` | 1 | the deploy ran, and its `verify` did not answer as expected |
+| `release-refused` | 2 | a release verb refused because a gate isn't met: not set up, one already open, a check failed, a step not done |
 
 ## Toolchains
 - mise shims (`mise.toml`, `.mise.toml`, `.tool-versions`) refuse an untrusted checkout: give each service `"MISE_TRUSTED_CONFIG_PATHS": "${checkout}"` in `env`. Setup steps, hooks, builds and the test run take no `env`: run them through a `.sova/bin/` script that exports `MISE_TRUSTED_CONFIG_PATHS="$SOVA_CHECKOUT"` first.

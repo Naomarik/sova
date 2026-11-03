@@ -11,11 +11,11 @@ export interface PlaybookReviewWords {
   target: string;
   /** The definition its branch proposes; absent when it has none, or an invalid one. */
   hash?: string;
-  /** What the run proposes: a deploy-setup run's is its deploy recipe. */
-  proposes?: "definition" | "deploy";
+  /** What the run proposes: a deploy-setup run's is its deploy recipe, a release-setup run's its release setup. */
+  proposes?: "definition" | "deploy" | "release";
 }
 
-const nothingValid = (r: PlaybookReviewWords) => (r.proposes === "deploy" ? "no valid deploy recipe" : "no valid definition");
+const nothingValid = (r: PlaybookReviewWords) => (r.proposes === "deploy" ? "no valid deploy recipe" : r.proposes === "release" ? "no valid release setup" : "no valid definition");
 
 export const hash12 = (h: string): string => h.replace(/^sha256:/, "").slice(0, 12);
 

@@ -44,224 +44,23 @@
     "smoke": ["shared/project-contract.test.ts"]
   },
   "share": {"allow": false},
-  "deploy": {
-    "targets": {
-      "site": {
-        "about": "Sova's landing page and docs, served by Cloudflare Pages.",
-        "branch": "master",
-        "releases": "only",
-        "requires": {"tests": "none"},
-        "credentials": [
-          {
-            "name": "cloudflare",
-            "kind": "tool-login",
-            "check": ["wrangler", "whoami"]
-          },
-          {
-            "name": "SOVA_SITE_PAGES_PROJECT",
-            "kind": "env",
-            "check": [
-              "node",
-              ".sova/playbooks/release/scripts/sova-release.mjs",
-              "env-set",
-              "SOVA_SITE_PAGES_PROJECT"
-            ]
-          }
-        ],
-        "build": [
-          {
-            "id": "video",
-            "run": [
-              "node",
-              ".sova/playbooks/release/scripts/sova-release.mjs",
-              "site-video",
-              "${checkout}"
-            ]
-          },
-          {
-            "id": "install",
-            "run": ["pnpm", "--dir", "site", "install", "--frozen-lockfile"]
-          },
-          {
-            "id": "site",
-            "run": [
-              "env",
-              "SOVA_SITE_URL=https://sova.naomarik.com/",
-              "pnpm",
-              "--dir",
-              "site",
-              "run",
-              "build"
-            ],
-            "timeout": 900
-          }
-        ],
-        "steps": [
-          {
-            "id": "pages",
-            "run": [
-              "node",
-              ".sova/playbooks/release/scripts/sova-release.mjs",
-              "site-pages",
-              "${commit}"
-            ]
-          }
-        ],
-        "verify": {"http": "https://sova.naomarik.com/"},
-        "rollback": "redeploy-previous"
-      }
-    }
-  },
   "merge": {
     "target": "master",
     "push": true,
     "checks": [
-      {
-        "id": "typecheck",
-        "label": "Typecheck",
-        "run": ["pnpm", "run", "typecheck"],
-        "timeout": 600
-      },
-      {
-        "id": "unit",
-        "label": "Unit tests",
-        "run": ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs"],
-        "timeout": 1500,
-        "rerun": true
-      },
-      {
-        "id": "integration",
-        "label": "Integration",
-        "run": [
-          "node",
-          "scripts/nice.mjs",
-          "node",
-          "scripts/run-tests.mjs",
-          "--integration",
-          "--landing",
-          "--base",
-          "${merge.base}"
-        ],
-        "timeout": 1800,
-        "rerun": true
-      },
-      {
-        "id": "extensions",
-        "label": "Changed extensions",
-        "run": ["node", "scripts/merge-checks/ext-suites.mjs"],
-        "timeout": 900
-      },
-      {
-        "id": "spec-replay",
-        "label": "Spec replay",
-        "run": ["node", "scripts/merge-checks/spec-replay.mjs"],
-        "timeout": 1800
-      },
-      {
-        "id": "statecharts",
-        "label": "Statecharts",
-        "run": ["node", "scripts/merge-checks/statecharts.mjs"],
-        "timeout": 1200
-      },
-      {
-        "id": "build",
-        "label": "Build",
-        "run": ["pnpm", "run", "build"],
-        "timeout": 900
-      },
-      {
-        "id": "spec",
-        "label": "Spec check",
-        "run": ["node", "scripts/merge-checks/spec.mjs"],
-        "timeout": 300
-      },
-      {
-        "id": "leak-scan",
-        "label": "Leak scan",
-        "run": ["node", "scripts/merge-checks/leak-scan.mjs"],
-        "timeout": 300
-      },
-      {
-        "id": "e2e",
-        "label": "Walkthroughs",
-        "run": ["node", "scripts/merge-checks/e2e.mjs"],
-        "timeout": 1800,
-        "rerun": true,
-        "optional": true
-      },
-      {
-        "id": "integration-group",
-        "label": "Slow test group",
-        "run": [
-          "node",
-          "scripts/nice.mjs",
-          "node",
-          "scripts/run-tests.mjs",
-          "--integration",
-          "--groups"
-        ],
-        "timeout": 1800,
-        "rerun": true,
-        "optional": true
-      }
+      {"id": "typecheck", "label": "Typecheck", "run": ["pnpm", "run", "typecheck"], "timeout": 600},
+      {"id": "unit", "label": "Unit tests", "run": ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs"], "rerun": true, "timeout": 1500},
+      {"id": "integration", "label": "Integration", "run": ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs", "--integration", "--landing", "--base", "${merge.base}"], "rerun": true, "timeout": 1800},
+      {"id": "extensions", "label": "Changed extensions", "run": ["node", "scripts/merge-checks/ext-suites.mjs"], "timeout": 900},
+      {"id": "spec-replay", "label": "Spec replay", "run": ["node", "scripts/merge-checks/spec-replay.mjs"], "timeout": 1800},
+      {"id": "statecharts", "label": "Statecharts", "run": ["node", "scripts/merge-checks/statecharts.mjs"], "timeout": 1200},
+      {"id": "build", "label": "Build", "run": ["pnpm", "run", "build"], "timeout": 900},
+      {"id": "spec", "label": "Spec check", "run": ["node", "scripts/merge-checks/spec.mjs"], "timeout": 300},
+      {"id": "leak-scan", "label": "Leak scan", "run": ["node", "scripts/merge-checks/leak-scan.mjs"], "timeout": 300},
+      {"id": "e2e", "label": "Walkthroughs", "run": ["node", "scripts/merge-checks/e2e.mjs"], "rerun": true, "timeout": 1800, "optional": true},
+      {"id": "integration-group", "label": "Slow test group", "run": ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs", "--integration", "--groups"], "rerun": true, "timeout": 1800, "optional": true}
     ],
-    "install": {
-      "run": ["pnpm", "install", "--frozen-lockfile", "--offline"],
-      "inputs": ["pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json"],
-      "timeout": 600
-    },
+    "install": {"run": ["pnpm", "install", "--frozen-lockfile", "--offline"], "inputs": ["pnpm-lock.yaml", "pnpm-workspace.yaml", "package.json"], "timeout": 600},
     "review": ".sova/playbooks/review"
-  },
-  "release": {
-    "playbook": ".sova/playbooks/release",
-    "tag": "v${version}",
-    "scheme": "semver",
-    "channels": ["stable"],
-    "commit": true,
-    "checks": [
-      {
-        "id": "release-notes",
-        "label": "Release notes entry",
-        "run": ["node", ".sova/playbooks/release/scripts/sova-release.mjs", "changelog-check"],
-        "timeout": 60
-      },
-      {
-        "id": "release-integration",
-        "label": "Every integration group",
-        "run": ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs", "--integration"],
-        "timeout": 1800,
-        "rerun": true
-      },
-      {
-        "id": "release-extensions",
-        "label": "Every extension suite",
-        "run": ["node", ".sova/playbooks/release/scripts/sova-release.mjs", "ext-all"],
-        "timeout": 1800
-      },
-      {
-        "id": "release-spec-replay",
-        "label": "Spec replay",
-        "run": ["node", "scripts/merge-checks/spec-replay.mjs", "--picked"],
-        "timeout": 1800
-      },
-      {
-        "id": "release-site",
-        "label": "Site build",
-        "run": ["node", ".sova/playbooks/release/scripts/sova-release.mjs", "site-check"],
-        "timeout": 900
-      },
-      {
-        "id": "release-spec",
-        "label": "No new spec findings",
-        "run": ["node", ".sova/playbooks/release/scripts/sova-release.mjs", "spec-new"],
-        "timeout": 600
-      },
-      {
-        "id": "release-leaks",
-        "label": "Leak scan since the last release",
-        "run": ["node", ".sova/playbooks/release/scripts/sova-release.mjs", "leak-scan"],
-        "timeout": 600
-      }
-    ]
   }
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -10,23 +10,33 @@ import { defHashOf } from "./project-services/def-hash";
 // @ts-expect-error: a plain .mjs driver, no types
 import * as maker from "../playbooks/release-maker/scripts/release-maker.mjs";
 // @ts-expect-error: a plain .mjs driver, no types
+import { formatText } from "../playbooks/project-verbs/scripts/project-verbs.mjs";
+// @ts-expect-error: a plain .mjs driver, no types
 import * as sr from "../.sova/playbooks/release/scripts/sova-release.mjs";
 
 /**
- * Sova's own release setup: its `release` section and `site` deploy target in .sova/project.json, its project release
+ * Sova's own release setup: its `release` section and `site` deploy target (project-sections.json beside the playbook,
+ * until a follow-up landing moves them into .sova/project.json), its project release
  * playbook (.sova/playbooks/release) and that playbook's driver, scripts/sova-release.mjs. Scratch repositories in a temp
  * dir; nothing here tags, pushes, deploys or runs a release check.
  */
 
 const ROOT = join(import.meta.dirname, "..");
 const DRIVER = join(ROOT, ".sova/playbooks/release/scripts/sova-release.mjs");
+const FRAGMENT = ".sova/playbooks/release/project-sections.json";
 const dir = mkdtempSync(join(tmpdir(), "sova-release-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "init.defaultBranch=master", "-c", "tag.gpgSign=false", ...a], { cwd, stdio: "pipe", encoding: "utf8" });
 
-test("Sova's definition declares its release and the site target, and its definition hash is what it was before them", () => {
-  const text = readFileSync(join(ROOT, ".sova/project.json"), "utf8");
-  const def = parseDefinition(text);
+/** Sova's current definition with the fragment that waits beside its release playbook merged in (a follow-up landing moves it). */
+const merged = () => ({ ...JSON.parse(readFileSync(join(ROOT, ".sova/project.json"), "utf8")), ...JSON.parse(readFileSync(join(ROOT, FRAGMENT), "utf8")) });
+
+test("Sova's release settings and site target wait in a fragment; merged in, they parse and leave the definition's hash as it was", () => {
+  const current = parseDefinition(readFileSync(join(ROOT, ".sova/project.json"), "utf8"));
+  assert.equal(current.release, undefined, "not in .sova/project.json until the running Sova knows the section");
+  assert.equal(current.deploy, undefined);
+  assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(ROOT, FRAGMENT), "utf8"))), ["deploy", "release"]);
+  const def = parseDefinition(JSON.stringify(merged()));
   assert.equal(def.release?.playbook, ".sova/playbooks/release");
   assert.deepEqual(def.release?.channels, ["stable"]);
   assert.equal(def.release?.commit, true);
@@ -37,19 +47,16 @@ test("Sova's definition declares its release and the site target, and its defini
   assert.deepEqual(site.requires, { tests: "none" });
   // No host names: an unset one would fail every copy's doctor and conform, and `host` is inside the hash.
   assert.deepEqual(def.host, []);
+  assert.equal(defHashOf(def), defHashOf(current), "the release and deploy sections stay outside the definition's hash");
   let base: string | null = null;
   try {
     base = git(ROOT, "show", "5ea4b141f:.sova/project.json");
   } catch {}
-  if (base !== null) assert.equal(defHashOf(def), defHashOf(parseDefinition(base)), "the release and deploy sections stay outside the definition's hash");
-  const bare = JSON.parse(text);
-  delete bare.release;
-  delete bare.deploy;
-  assert.equal(defHashOf(def), defHashOf(parseDefinition(JSON.stringify(bare))));
+  if (base !== null) assert.equal(defHashOf(def), defHashOf(parseDefinition(base)));
 });
 
-test("every sova-release.mjs subcommand the definition names exists, and the release check passes on Sova's own setup", async () => {
-  const def = JSON.parse(readFileSync(join(ROOT, ".sova/project.json"), "utf8"));
+test("every sova-release.mjs subcommand the fragment names exists, and the release check passes on Sova's setup merged in", async () => {
+  const def = merged();
   const runs: string[][] = [
     ...def.release.checks.map((c: { run: string[] }) => c.run),
     ...Object.values(def.deploy.targets as Record<string, { build?: { run: string[] }[]; steps: { run: string[] }[]; credentials?: { check: string[] }[] }>).flatMap((t) => [...(t.build ?? []).map((s) => s.run), ...t.steps.map((s) => s.run), ...(t.credentials ?? []).map((c) => c.check)]),
@@ -63,7 +70,12 @@ test("every sova-release.mjs subcommand the definition names exists, and the rel
   const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbooks/release/release.json"), "utf8"));
   const prepare = manifest.steps.filter((s) => s.phase === "prepare").map((s) => s.id);
   assert.equal(prepare.at(-1), "commit", "the commit step is the last prepare step");
-  const out = await maker.check(ROOT);
+  // A scratch repository with Sova's playbook folder and the merged definition, in canonical form.
+  const r = mkdtempSync(join(dir, "check-"));
+  git(r, "init", "-q");
+  cpSync(join(ROOT, ".sova/playbooks/release"), join(r, ".sova/playbooks/release"), { recursive: true });
+  writeFileSync(join(r, ".sova/project.json"), formatText(JSON.stringify(def)));
+  const out = await maker.check(r);
   assert.deepEqual(out.problems, []);
   assert.equal(out.ok, true);
 });

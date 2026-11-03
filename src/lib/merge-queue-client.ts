@@ -73,6 +73,12 @@ export const cancelEntry = (e: Pick<MergeEntry, "id">) => act(null, "merge.cance
 /** The user's answer to an entry that waits for them: Accept, Send Back, Land Anyway. */
 export const answerEntry = (e: Pick<MergeEntry, "id">, answer: MergeAnswer) => act(null, "merge.answer", { entry: e.id, answer });
 export const pauseQueue = (project: string) => act(project, "merge.pause", {});
+/** Start Fresh: the merge thread is retired (archived once its turn ends); the next event starts a new one. */
+export const startFreshThread = (project: string) => act(project, "merge.fresh", {});
+/** The History's Clear (a session id) and Clear All ("all"): those chats are deleted for good. */
+export const clearQueueChats = (project: string, chat: string) => act(project, "merge.clear", { chat });
+/** The user's answer to the merge thread's question, typed on the tab. */
+export const answerThread = (project: string, ask: string, text: string) => act(project, "merge.reply", { ask, text });
 export const resumeQueue = (project: string) => act(project, "merge.resume", {});
 
 /** One run, its steps and their order (merge.logs answers the run with its lines). */

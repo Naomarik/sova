@@ -260,3 +260,24 @@ test("parentOf: the session that runs a worker, from a live record listing it or
   assert.equal(ws.parentOf(done.path), owner.path);
   assert.equal(ws.parentOf(owner.path), null);
 });
+
+test("workerOf: the chat that runs a worker and the worker's name, from a completion heading or a live record", async () => {
+  const { completionHeaderName } = await import("./worker-sessions");
+  assert.equal(completionHeaderName("### ag_01 (spec writer) — done\nSession: x\nModel: m"), "spec writer");
+  assert.equal(completionHeaderName("### ag_01 — done"), null);
+  assert.equal(completionHeaderName("not a heading (x)"), null);
+
+  const worker = session([marker()]);
+  const parent = session([complete(`### ag_01 (spec writer) — done\nSession: ${worker.path}\nModel: glm-5.3\nreport`)]);
+  const s = scanner();
+  await s.refresh([worker.path, parent.path]);
+  assert.deepEqual(s.workerOf(worker.path), { parent: parent.path, name: "spec writer" });
+  assert.equal(s.workerOf(parent.path), null, "a main chat has no parent");
+
+  const w2 = session([marker()]);
+  const p2 = session();
+  const live = () => [{ sessionFile: p2.path, rec: { presence: { workers: [{ id: "ag_02", name: "reviewer", sessionFile: w2.path }] } } }];
+  const s2 = scanner(live);
+  await s2.refresh([w2.path, p2.path]);
+  assert.deepEqual(s2.workerOf(w2.path), { parent: p2.path, name: "reviewer" });
+});

@@ -12,7 +12,7 @@ import { isHostSession, sessionWorking } from "./workers";
     one (§mesh.peers/grants) has no part at all. */
 export interface WorkPeer {
   label: string;
-  rows: readonly Pick<SessionSummary, "path" | "activity" | "live" | "busy" | "workers" | "workerSession">[] | null;
+  rows: readonly (Pick<SessionSummary, "path" | "activity" | "live" | "busy" | "workers" | "workerSession"> & Partial<Pick<SessionSummary, "queueChat">>)[] | null;
 }
 
 /** The open chat's socket values, by session path: its own run state and its working subagents.
@@ -85,8 +85,8 @@ export function workNow(agents: AgentsInsight | undefined, peers: readonly WorkP
       continue;
     }
     for (const r of p.rows) {
-      // A worker's own session is counted by its parent's workers already.
-      if (r.workerSession || seen.has(r.path)) continue;
+      // A worker's own session is counted by its parent's workers already; the merge queue's own chats are its tab's.
+      if (r.workerSession || r.queueChat || seen.has(r.path)) continue;
       add(r.path, r.activity?.state === "working" || (!r.live && r.busy), sessionWorking(r));
     }
   }

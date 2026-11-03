@@ -18,6 +18,9 @@ Write the note from this list only (`references/noting.md` has the paths behind 
 
 Never: "restart required" for `src/**` alone (the web app reloads itself), the build, tests, docs or `.sova/spec/**`.
 
+## Asking
+You decide on your own (the method's "On your own"). Ask the user, with `merge.ask` and the entry it is about, only what the branch, its commits and the logs can't settle; the private-names interview is the usual one. Never wait in this chat.
+
 ## Picks
 The map is `references/blast-radius.json` (rules → check ids of `.sova/project.json`'s merge section: optional ones, or required ones that skip themselves). The method's `scripts/blast-radius.mjs` finds it on its own from the repo root. What each pick costs and when it is worth it: `references/blast-radius.md`. Extend the map in the same branch that adds a new area with its own tests.
 

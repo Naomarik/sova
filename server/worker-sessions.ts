@@ -41,6 +41,8 @@ export interface ScanEntry {
   self: boolean;
   /** Raw refs (paths or ids) this file names as its workers, deduplicated, unresolved. */
   refs: string[];
+  /** A ref's worker name, from its completion heading (`### <id> (<name>)`), when it has one. */
+  names?: Record<string, string>;
 }
 
 const nonEmpty = (v: unknown): v is string => typeof v === "string" && v.trim().length > 0;
@@ -74,8 +76,14 @@ function contentText(content: unknown): string {
     .join("");
 }
 
-/** What one session entry says: it marks its own file, and/or names worker refs. */
-export function entryFacts(h: HEntry | null): { self: boolean; refs: string[] } {
+/** The worker's name in a subagent-complete heading, `### <id> (<name>) — <status>`, or null. */
+export function completionHeaderName(text: string): string | null {
+  const m = /^### \S+ \(([^)\n]{1,80})\)/.exec(text);
+  return m ? m[1]!.trim() || null : null;
+}
+
+/** What one session entry says: it marks its own file, and/or names worker refs (and their names). */
+export function entryFacts(h: HEntry | null): { self: boolean; refs: string[]; names?: Record<string, string> } {
   const none = { self: false, refs: [] };
   if (!h) return none;
   if (h.kind === "state") {
@@ -83,8 +91,10 @@ export function entryFacts(h: HEntry | null): { self: boolean; refs: string[] } 
     return state.has(WORKER_SESSION) ? { self: true, refs: [] } : none;
   }
   if (h.kind === "note" && !h.inMessage && h.noteType === COMPLETION_TYPE) {
-    const ref = completionHeaderRef(contentText(h.content));
-    return { self: false, refs: ref ? [ref] : [] };
+    const text = contentText(h.content);
+    const ref = completionHeaderRef(text);
+    const name = ref ? completionHeaderName(text) : null;
+    return { self: false, refs: ref ? [ref] : [], ...(ref && name ? { names: { [ref]: name } } : {}) };
   }
   return none;
 }
@@ -162,7 +172,7 @@ export class WorkerSessions {
     if (entry && size === entry.size) return entry;
     // Shrunk: rewritten or migrated, so everything parsed before may be gone. Start over.
     if (!entry || size < entry.size || size < entry.scanned) entry = { scanned: 0, size: 0, self: false, refs: [] };
-    const next: ScanEntry = { ...entry, refs: [...entry.refs] };
+    const next: ScanEntry = { ...entry, refs: [...entry.refs], ...(entry.names ? { names: { ...entry.names } } : {}) };
     try {
       await this.readFrom(path, next, size);
     } catch {
@@ -219,6 +229,7 @@ export class WorkerSessions {
     const facts = entryFacts(lineEntry(line));
     if (facts.self) entry.self = true;
     for (const r of facts.refs) seen.add(r);
+    if (facts.names) entry.names = { ...entry.names, ...facts.names };
   }
 
   /**
@@ -255,6 +266,38 @@ export class WorkerSessions {
     for (const r of live) if (r.sessionFile && r.sessionFile !== path && liveWorkerRefs([r]).some((ref) => resolveRef(ref, listed, byId) === path)) return r.sessionFile;
     for (const [p, e] of this.entries) if (p !== path && e.refs.some((ref) => resolveRef(ref, listed, byId) === path)) return p;
     return null;
+  }
+
+  /**
+   * Who runs worker `path` and the worker's name there: the parentOf rule, with the name from that live record's
+   * `presence.workers[].name` or that file's completion heading. Null when no parent is known.
+   */
+  workerOf(path: string): { parent: string; name?: string } | null {
+    const parent = this.parentOf(path);
+    if (!parent) return null;
+    const listed = new Set(this.entries.keys());
+    const byId = new Map([...listed].map((p) => [this.idOf(p), p] as const));
+    let name: string | undefined;
+    try {
+      for (const r of this.live()) {
+        if (r.sessionFile !== parent) continue;
+        const workers = r.rec?.presence?.workers;
+        if (!Array.isArray(workers)) continue;
+        for (const w of workers) {
+          if (!w || typeof w !== "object") continue;
+          const ref = nonEmpty(w.sessionFile) && isAbsolute(w.sessionFile) ? sessionPathShape(w.sessionFile) : nonEmpty(w.sessionId) ? w.sessionId.trim() : null;
+          const hit = ref && (ref.includes("/") ? listed.has(canonicalPath(ref)) && canonicalPath(ref) === path : byId.get(ref) === path);
+          if (hit && nonEmpty((w as { name?: unknown }).name)) name = String((w as { name: string }).name).trim();
+        }
+      }
+    } catch {
+      // unreadable live dir: the file's own heading may still name it
+    }
+    if (!name) {
+      const e = this.entries.get(parent);
+      for (const [ref, n] of Object.entries(e?.names ?? {})) if (resolveRef(ref, listed, byId) === path) name = n;
+    }
+    return { parent, ...(name ? { name } : {}) };
   }
 
   /** One file's flag, for a single-summary read: scans just that file and resolves against the

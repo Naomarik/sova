@@ -6,9 +6,13 @@ import type { TrackedWorktree } from "../../pi-config/extensions/worktrees/state
  * records (who hears about it), so the two never disagree.
  *
  * 1. the chat that created the worktree and still tracks it (its own `worktrees` record, not dropped), not archived;
- * 2. else the newest chat working in its folder (cwd the folder or inside it), not archived, a worker included;
- * 3. else the same two, in that order, among archived chats, flagged `archived`;
- * 4. else none.
+ * 2. else the newest main chat working in its folder (cwd the folder or inside it), not archived;
+ * 3. else the chat that runs the newest worker working there (up through workers of workers), not archived;
+ * 4. else the same three, in that order, among archived chats, flagged `archived`;
+ * 5. else none.
+ * A worker is never the owner: wherever one turns up (it created the worktree, it works there) its top chat stands in
+ * for it (SessionSummary.workerOf), and a worker with no known parent counts for nothing. The merge queue's own
+ * chats (queueChat) never own a branch.
  *
  * Who tracks what comes from the merge readiness reads' own records (merge-readiness.ts trackedWorktrees):
  * the index from it is rebuilt only when its `version` moves (a session's tracked set changed), so a view
@@ -67,20 +71,36 @@ export class WorktreeOwners {
 const active = (s: SessionSummary) => Date.parse(s.lastActiveAt) || 0;
 const newest = (a: SessionSummary, b: SessionSummary) => active(b) - active(a);
 
+/** Workers of workers this deep at most: past it the chain is taken as broken. */
+const MAX_HOPS = 8;
+
+/** The chat that runs `s`, up through workers of workers; `s` itself for a main chat; null: a worker with no known
+    parent, a broken chain, or one of the queue's own chats. */
+export function topChat(s: SessionSummary, byPath: ReadonlyMap<string, SessionSummary>): SessionSummary | null {
+  let cur: SessionSummary | undefined = s;
+  for (let hops = 0; cur?.workerSession; hops++) cur = hops < MAX_HOPS && cur.workerOf ? byPath.get(cur.workerOf.path) : undefined;
+  return cur && !cur.queueChat ? cur : null;
+}
+
 /** The rule above, over a session list and the worktree's trackers. `folders`: the worktree's path as
     git lists it and canonical (a chat's cwd is compared to both, never resolved: no file system call per chat). */
 export function pickOwner(folders: readonly string[], sessions: readonly SessionSummary[], trackers: readonly Tracker[]): Owner | null {
   const byPath = new Map(sessions.map((s) => [s.path, s]));
-  const tracking = trackers
-    .map((t) => byPath.get(t.sessionPath))
-    .filter((s): s is SessionSummary => !!s)
-    .sort(newest);
-  const inTree = (s: SessionSummary) => !s.target && folders.some((f) => s.cwd === f || s.cwd.startsWith(`${f}/`));
+  const up = (list: readonly SessionSummary[]) => list.map((s) => topChat(s, byPath)).filter((s): s is SessionSummary => !!s);
+  const tracking = up(
+    trackers
+      .map((t) => byPath.get(t.sessionPath))
+      .filter((s): s is SessionSummary => !!s)
+      .sort(newest),
+  );
+  const inTree = (s: SessionSummary) => !s.target && !s.queueChat && folders.some((f) => s.cwd === f || s.cwd.startsWith(`${f}/`));
   const inside = sessions.filter(inTree).sort(newest);
-  const live = (s: SessionSummary) => !s.archived;
-  const pick = tracking.find(live) ?? inside.find(live);
+  const mains = inside.filter((s) => !s.workerSession);
+  const workersUp = up(inside.filter((s) => s.workerSession));
+  const order = [...tracking, ...mains, ...workersUp];
+  const pick = order.find((s) => !s.archived);
   if (pick) return { session: pick.id };
-  // Only archived ones are left: the creating chat first, then the newest in the folder.
-  const old = tracking[0] ?? inside[0];
+  // Only archived ones are left: the creating chat first, then the newest main chat in the folder, then a worker's chat.
+  const old = order[0];
   return old ? { session: old.id, archived: true } : null;
 }

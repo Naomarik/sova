@@ -8,7 +8,8 @@
  * - `bare` (F-BARE): merge set up, but no `release` pointer and no release playbook (not initialized).
  *
  * Every project has: `.sova/project.json` (a `merge` section with one gating check `unit` whose pass/fail is
- * the file `gate.conf` in the commit checked: `pass` | `fail` | `hold` (waits until `<state>/open-gate` exists)),
+ * the file `gate.conf` in the commit checked: `pass` | `fail` | `hold` (waits until `<state>/open-gate.conf` exists);
+ * the release pointer adds a release-only check `full` read from `release-gate.conf` the same way),
  * `CHANGELOG.md` with one `## vX.Y.Z` section per tag, `package.json` with the version, `site/index.html`, and,
  * when `deploy` is on, a stand-in deploy target `site` that copies `site/` into `<root>/deploy-target` and writes
  * the commit to `<root>/deploy-target/version` (no host, no network).
@@ -49,34 +50,42 @@ export interface ReleaseFixtureOptions {
   files?: Record<string, string>;
 }
 
+/** A manifest step (CONTRACT.md §2): Sova adds its own `checks` and `publish` itself. */
 export interface ReleaseStep {
   id: string;
   label: string;
-  /** Who completes it: the playbook (the chat reports it) or Sova (it holds it: checks, publish). */
-  by: "playbook" | "sova";
-  /** Runs after Publish. */
-  after?: boolean;
-  /** Ends held for the operator (a live try-out). */
-  held?: boolean;
-  /** The driver subcommand a chat runs for it, if any. */
-  run?: string[];
+  phase: "prepare" | "after";
+  /** Ends held for the operator's Continue (a live try-out). */
+  held?: true;
 }
 
 export const DEFAULT_STEPS: ReleaseStep[] = [
-  { id: "version", label: "Pick the version", by: "playbook", run: ["node", ".sova/playbooks/release/scripts/release.mjs", "next"] },
-  { id: "notes", label: "Write the notes", by: "playbook", run: ["node", ".sova/playbooks/release/scripts/release.mjs", "notes"] },
-  { id: "bump", label: "Bump the version files", by: "playbook", run: ["node", ".sova/playbooks/release/scripts/release.mjs", "bump"] },
-  { id: "commit", label: "Make the release commit", by: "playbook" },
-  { id: "checks", label: "Release checks", by: "sova" },
-  { id: "tryout", label: "Try it", by: "playbook", held: true },
-  { id: "publish", label: "Publish", by: "sova" },
-  { id: "page", label: "Release page", by: "playbook", after: true, run: ["node", ".sova/playbooks/release/scripts/release.mjs", "page"] },
+  { id: "version", label: "Pick the version", phase: "prepare" },
+  { id: "notes", label: "Draft the notes", phase: "prepare" },
+  { id: "bump", label: "Bump the files", phase: "prepare" },
+  { id: "commit", label: "Make the release commit", phase: "prepare" },
+  { id: "try-live", label: "Try it", phase: "prepare", held: true },
+  { id: "page", label: "Release page", phase: "after" },
 ];
 
 export const LOCAL_STEPS: ReleaseStep[] = [
-  ...DEFAULT_STEPS.filter((s) => s.id !== "page" && s.id !== "tryout"),
-  { id: "build", label: "Build the app", by: "playbook", after: true, run: ["node", ".sova/playbooks/release/scripts/release.mjs", "build"] },
+  { id: "version", label: "Pick the version", phase: "prepare" },
+  { id: "notes", label: "Draft the notes", phase: "prepare" },
+  { id: "bump", label: "Bump the files", phase: "prepare" },
+  { id: "commit", label: "Make the release commit", phase: "prepare" },
+  { id: "artifact", label: "Build the app", phase: "after" },
 ];
+
+/** The default `release` pointer (CONTRACT.md §1); spread it to vary one key (`{...DEFAULT_POINTER, commit: false}`). */
+export const DEFAULT_POINTER: Record<string, unknown> = {
+  playbook: ".sova/playbooks/release",
+  tag: "v${version}",
+  scheme: "semver",
+  channels: ["stable"],
+  commit: true,
+  // A release-only gating check after the merge set: `release-gate.conf` in the release commit decides.
+  checks: [{ id: "full", label: "Full tests", run: ["node", "checks/unit.mjs", "release-gate.conf"], timeout: 120 }],
+};
 
 const GIT_ENV = {
   GIT_AUTHOR_NAME: "fixture",
@@ -100,9 +109,10 @@ const UNIT = (state: string) => `import { appendFileSync, existsSync, readFileSy
 import { execFileSync } from "node:child_process";
 const STATE = ${JSON.stringify(state)};
 const head = (() => { try { return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(); } catch { return ""; } })();
-const c = existsSync("gate.conf") ? readFileSync("gate.conf", "utf8").trim() : "pass";
-const log = (result) => appendFileSync(STATE + "/calls.jsonl", JSON.stringify({ script: "unit", cwd: process.cwd(), head, argv: process.argv.slice(2), at: Date.now(), result }) + "\\n");
-if (c === "hold") { writeFileSync(STATE + "/gate.waiting", head); while (!existsSync(STATE + "/open-gate")) await new Promise((r) => setTimeout(r, 50)); }
+const conf = process.argv[2] || "gate.conf";
+const c = existsSync(conf) ? readFileSync(conf, "utf8").trim() : "pass";
+const log = (result) => appendFileSync(STATE + "/calls.jsonl", JSON.stringify({ script: conf === "gate.conf" ? "unit" : "full", cwd: process.cwd(), head, argv: process.argv.slice(2), at: Date.now(), result }) + "\\n");
+if (c === "hold") { writeFileSync(STATE + "/" + conf + ".waiting", head); while (!existsSync(STATE + "/open-" + conf)) await new Promise((r) => setTimeout(r, 50)); }
 const out = (o) => { if (process.env.SOVA_OUT) writeFileSync(process.env.SOVA_OUT, JSON.stringify(o)); };
 if (c === "fail") { console.log("not ok gate"); out({ passed: 0, failed: 1, errors: 0, skipped: 0, failures: [{ name: "gate", message: "gate.conf says fail" }] }); log("fail"); process.exit(1); }
 console.log("ok gate"); out({ passed: 1, failed: 0, errors: 0, skipped: 0, failures: [] }); log("pass");
@@ -218,9 +228,9 @@ export class ReleaseFixture {
     }
   }
 
-  /** The `release` pointer written by default (CONTRACT.md shape; t18 sketch until it lands). */
+  /** The `release` pointer written by default (CONTRACT.md §1). */
   releasePointer(): Record<string, unknown> {
-    return { playbook: ".sova/playbooks/release", tag: "v${version}", scheme: "semver", channels: [{ tag: "stable" }], checks: ["unit"] };
+    return structuredClone(DEFAULT_POINTER);
   }
 
   definition(): Record<string, unknown> {
@@ -243,7 +253,7 @@ export class ReleaseFixture {
             requires: { tests: "none" },
             steps: [{ id: "ship", run: ["node", "ship.mjs", this.deployTarget, "${commit}"] }],
             rollback: "redeploy-previous",
-            ...(typeof deploy === "object" && deploy.releasesOnly ? { releasesOnly: true } : {}),
+            ...(typeof deploy === "object" && deploy.releasesOnly ? { releases: "only" } : {}),
           },
         },
       };
@@ -253,8 +263,8 @@ export class ReleaseFixture {
     return def;
   }
 
-  manifest(): { steps: ReleaseStep[] } {
-    return { steps: this.opts.steps ?? (this.kind === "local" ? LOCAL_STEPS : DEFAULT_STEPS) };
+  manifest(): { v: 1; steps: ReleaseStep[] } {
+    return { v: 1, steps: this.opts.steps ?? (this.kind === "local" ? LOCAL_STEPS : DEFAULT_STEPS) };
   }
 
   private put(rel: string, text: string, root = this.project): void {
@@ -268,6 +278,7 @@ export class ReleaseFixture {
     this.put("checks/unit.mjs", UNIT(this.state));
     this.put("ship.mjs", SHIP);
     this.put("gate.conf", "pass\n");
+    this.put("release-gate.conf", "pass\n");
     this.put("site/index.html", `<h1>${this.name}</h1>\n`);
     this.put("src/app.txt", "line 1\nline 2\nline 3\n");
     this.put("README.md", `# ${this.name}\n`);
@@ -326,16 +337,17 @@ export class ReleaseFixture {
     return out;
   }
 
-  /** The gating check's verdict for commits made after this (written in the commit, so per branch). */
-  gateOn(cwd: string, verdict: "pass" | "fail" | "hold"): string {
-    return this.commitIn(cwd, { "gate.conf": `${verdict}\n` }, `gate: ${verdict}`);
+  /** A check's verdict for commits made after this, in the commit (so per branch): `gate.conf` is the merge check
+   *  `unit` (every landing), `release-gate.conf` the release-only check `full`. */
+  gateOn(cwd: string, verdict: "pass" | "fail" | "hold", file: "gate.conf" | "release-gate.conf" = "gate.conf"): string {
+    return this.commitIn(cwd, { [file]: `${verdict}\n` }, `gate: ${file} ${verdict}`);
   }
-  /** A `hold` gate is waiting / let it go on. */
-  gateWaiting(): boolean {
-    return existsSync(join(this.state, "gate.waiting"));
+  /** A `hold` check is waiting / let it go on. */
+  gateWaiting(file: "gate.conf" | "release-gate.conf" = "gate.conf"): boolean {
+    return existsSync(join(this.state, `${file}.waiting`));
   }
-  openGate(): void {
-    writeFileSync(join(this.state, "open-gate"), "open\n");
+  openGate(file: "gate.conf" | "release-gate.conf" = "gate.conf"): void {
+    writeFileSync(join(this.state, `open-${file}`), "open\n");
   }
   /** The after-publish `page` step fails until cleared. */
   failPage(on = true): void {

@@ -3,7 +3,8 @@
 // process, server/chat-runtime/host.ts for the chat a chat process hosts, answering its socket's calls.
 import { randomUUID } from "node:crypto";
 import type { ChatCall, ChatMethod, ChatMethods, ChatRefusal, ChatReply, ChatSendReceipt, ChatTurnEnd } from "../../shared/chat-runtime";
-import type { StateKind } from "../../shared/harness";
+import type { HEntry, StateKind } from "../../shared/harness";
+import { clickContext } from "../../shared/overseer-card";
 import { acquireChat, assertNotLive, BusyError, type ChatSession, ConfigError, drainQueueThenAbort, emitChatEvent, markRunResuming, ModeRefusedError, RefusedError } from "../chat-manager";
 import { stateKindOf } from "../harness/state-kinds";
 import { mergeMode } from "../mode-state";
@@ -161,6 +162,12 @@ export const METHODS: Impl = {
   interruptKeepingQueued: (chat) => chat.interruptKeepingQueued(),
   branch: (chat) => [...chat.harness.branch()],
   entries: (chat) => [...chat.harness.entries()],
+  stateEntries: (chat, { keys }) => {
+    const wanted = new Set(keys);
+    const pick = (list: readonly HEntry[]) => list.filter((e) => e.kind === "state" && wanted.has(e.key));
+    return { branch: pick(chat.harness.branch()), all: pick(chat.harness.entries()) };
+  },
+  clickContext: (chat, { card }) => clickContext(card, chat.harness.branch()),
   fileState: (chat, { kinds }) => {
     const file = chat.state.file();
     return kinds.flatMap((kind) => file.written(kindOf(kind)).map((r) => r.data));

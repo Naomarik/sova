@@ -85,8 +85,10 @@ test("S12/S32: a coding chat's project_verbs may read releases, never step, star
     pv("release.notes", { text: "nope" }),
     pv("release.start"),
     pv("release.request", { why: "please" }),
-    pv("release.publish", { confirm: true }),
-    pv("release.withdraw", { tag: "v0.1.0", why: "x", confirm: true }),
+    // A coding chat's tool has no confirm key at all; authority is checked before the confirm, so these answer
+    // forbidden, never needs-confirm.
+    pv("release.publish"),
+    pv("release.withdraw", { tag: "v0.1.0", why: "x" }),
   ]);
   assert.equal(results.length, 7, JSON.stringify(results));
   assert.doesNotMatch(results[0]!, /forbidden/i, `status is a read: ${results[0]}`);

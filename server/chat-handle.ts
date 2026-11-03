@@ -255,6 +255,9 @@ export abstract class ChatHandle {
   promptSections() {
     return this.call("promptSections", {});
   }
+  specialLoader() {
+    return this.call("specialLoader", {});
+  }
   resources() {
     return this.call("resources", {});
   }

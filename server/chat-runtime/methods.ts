@@ -169,6 +169,7 @@ export const METHODS: Impl = {
   setActiveTools: (chat, { names }) => (chat.harness.setActiveTools(names), null),
   declaredTools: (chat) => chat.harness.declaredTools(),
   promptSections: (chat) => chat.harness.promptSections(),
+  specialLoader: (chat) => chat.specialSpec?.loader ?? null,
   resources: (chat) => {
     const loadout = chat.harness.resources();
     const base = chat.loadoutState;

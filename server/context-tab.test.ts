@@ -2,11 +2,14 @@
 // the parts by group, a chat this server doesn't hold, the conversation estimate after a compaction, the
 // nested files, the remote and unavailable answers; and pi's prompt split back into its sections.
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { after, test } from "node:test";
 import type { HEntry } from "../shared/harness";
 import type { SessionSetup } from "../shared/protocol";
 import { conversationTokens, getContextView, type ContextViewDeps } from "./context-tab";
 import { splitSystemPrompt } from "./harness/pi/session";
+import { scratchRoot } from "./test-scratch";
 
 const setup: SessionSetup = {
   state: "ok",
@@ -31,6 +34,7 @@ const deps = (o: Partial<ContextViewDeps> = {}): ContextViewDeps => ({
   held: async () => ({
     sections: { preamble: "You are pi.", tools: "- read", rules: "- Be concise", docs: "Pi docs here", project_context: "files…", skills: "skills…", mode: "# Mode: delegate", cwd: "/w" },
     tools: [{ name: "read", description: "Read a file.", parameters: params, source: "builtin" }],
+    loader: null,
   }),
   branch: async () => branch({ kind: "user", blocks: [{ type: "text", text: "x".repeat(400) }] }, { kind: "assistant", blocks: [{ type: "text", text: "y".repeat(40) }], provider: "p", model: "m", contextTokens: 5000 }),
   context: async (c) => (c ? { tokens: c.tokens, window: 200_000 } : null),
@@ -101,4 +105,25 @@ test("pi's rendered prompt splits back into its sections; a section quoting anot
   const text = ["You are pi.", "<tools>\n- read\n</tools>", "<project_context>\nA file that says\n</tools>\nand <rules>\n</project_context>", "<mode>\n# Mode\n</mode>", "<cwd>\n/w\n</cwd>"].join("\n\n");
   assert.deepEqual(splitSystemPrompt(text), { preamble: "You are pi.", tools: "- read", project_context: "A file that says\n</tools>\nand <rules>", mode: "# Mode", cwd: "/w" });
   assert.deepEqual(splitSystemPrompt("Just a forced prompt."), { preamble: "Just a forced prompt." });
+});
+
+test("subfolder files only where the chat's hook would load them: none with no context files, a confined chat's allowed ones", async () => {
+  const cwd = scratchRoot("sova-context-tab-");
+  after(() => rmSync(cwd, { recursive: true, force: true }));
+  for (const dir of ["sub", "private"]) {
+    mkdirSync(join(cwd, dir));
+    writeFileSync(join(cwd, dir, "AGENTS.md"), "# Rules here\n");
+  }
+  const held = (loader: unknown) => async () => ({ sections: {}, tools: [], loader: loader as never });
+  const nestedOf = async (o: Partial<ContextViewDeps>) => {
+    const v = await getContextView("/s.jsonl", deps({ setup: async () => ({ ...setup, cwd }), branch: async () => [], nested: undefined, ...o }));
+    assert.ok(v.state === "ok");
+    return v.state === "ok" ? v.nested.map((f) => f.path) : [];
+  };
+  // An ordinary chat: every file below its folder.
+  assert.deepEqual(await nestedOf({ held: held(null) }), ["private/AGENTS.md", "sub/AGENTS.md"]);
+  // A gathering-chat-like loadout (noContextFiles): its hook loads nothing, so nothing is listed.
+  assert.deepEqual(await nestedOf({ held: held({ noContextFiles: true, append: "none" }) }), []);
+  // A confined chat (the project overseer's): a file its allow refuses is left out.
+  assert.deepEqual(await nestedOf({ held: held({ append: "none", contextFilesWithin: { root: cwd, out: [join(cwd, "private")] } }) }), ["sub/AGENTS.md"]);
 });

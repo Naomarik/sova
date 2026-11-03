@@ -12,7 +12,9 @@
 import { relative, sep } from "node:path";
 import type { HBlock, HEntry, HarnessToolInfo } from "../shared/harness";
 import { CHARS_PER_TOKEN, type SessionContextNested, type SessionContextPart, type SessionContextView, type SessionSetup } from "../shared/protocol";
+import type { SpecialSpec } from "../shared/chat-runtime";
 import { chatHandle } from "./chat-handle";
+import { deeperContextAllow } from "./chat-special";
 import { listSubfolderInstructions } from "./deeper-context";
 import { resolveContext } from "./models";
 import { estimateTokens, getSessionSetup } from "./session-setup";
@@ -30,6 +32,8 @@ const IMAGE_CHARS = 4800;
 export interface HeldPrompt {
   sections: Record<string, string>;
   tools: HarnessToolInfo[];
+  /** A special chat's loader options (which subfolder files its hook may load); null for any other chat. */
+  loader: SpecialSpec["loader"] | null;
 }
 
 export interface ContextViewDeps {
@@ -45,8 +49,8 @@ async function heldPrompt(path: string): Promise<HeldPrompt | null> {
   const chat = chatHandle(path);
   if (!chat) return null;
   try {
-    const [sections, tools] = await Promise.all([chat.promptSections(), chat.declaredTools()]);
-    return { sections, tools };
+    const [sections, tools, loader] = await Promise.all([chat.promptSections(), chat.declaredTools(), chat.specialLoader()]);
+    return { sections, tools, loader };
   } catch {
     return null; // a chat that closed mid-read is a chat not held
   }
@@ -136,8 +140,11 @@ export async function getContextView(path: string, deps: ContextViewDeps = {}): 
     }
   }
 
-  const walk = (deps.nested ?? listSubfolderInstructions)(cwd, branch);
-  const nested: SessionContextNested[] = walk.files.map((f) => ({ path: f.path, abs: f.abs, folder: f.dir, tokens: Math.ceil(f.chars / CHARS_PER_TOKEN), loaded: f.loaded }));
+  // Only what the chat's hook would load: none for a loadout with no context files, and a special chat's
+  // files only where its file tools may read (the hook's own allow, server/chat-special.ts).
+  const allow = held?.loader ? deeperContextAllow(held.loader) : () => true;
+  const walk = allow ? (deps.nested ?? listSubfolderInstructions)(cwd, branch) : { files: [], incomplete: false };
+  const nested: SessionContextNested[] = walk.files.filter((f) => allow!(f.abs)).map((f) => ({ path: f.path, abs: f.abs, folder: f.dir, tokens: Math.ceil(f.chars / CHARS_PER_TOKEN), loaded: f.loaded }));
   const loadedNested = nested.reduce((n, f) => n + (f.loaded ? f.tokens : 0), 0);
 
   return {

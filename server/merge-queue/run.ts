@@ -469,6 +469,12 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
             blames.push({ id: check.id, label: check.label, whole: "unattributed" });
             continue;
           }
+          if (r.proc.code === 0 && ranNothingIn(r.report)) {
+            // Never a pass on a guess: a run on the target that ran no test says nothing about these names.
+            st.end("passed", { detail: `the rerun on ${target} ran no test: can't tell whose failure` });
+            blames.push({ id: check.id, label: check.label, unclearFiles: names });
+            continue;
+          }
           const failing = r.proc.code === 0 ? [] : names.filter((n) => onT.includes(n));
           st.end(r.proc.code === 0 ? "passed" : "failed", { detail: r.proc.code === 0 ? `passes on ${target}: the branch's` : `${failing.length} of ${names.length} fail on ${target} too` });
           blames.push({ id: check.id, label: check.label, files: names.map((file) => ({ file, blame: blameFile({ passesOnTip: false, onTarget: failing.includes(file) ? "fails" : "passes" }) })) });
@@ -492,6 +498,10 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
           }
           st.end(r.proc.code === 0 ? "passed" : "failed", { detail: r.proc.code === 0 ? `passes on ${target}: the branch's` : `${failing.length} fail on ${target} too` });
           blames.push({ id: check.id, label: check.label, files: [...absent.map((file) => ({ file, blame: "branch" as const })), ...onBase.map((file) => ({ file, blame: blameFile({ passesOnTip: false, onTarget: failing.includes(file) ? "fails" : "passes" }) }))] });
+        } else if (r.proc.code === 0 && ranNothingIn(r.report)) {
+          // Never a pass on a guess: exit 0 from a run that ran no test (an empty selection on the target) proves nothing.
+          st.end("passed", { detail: `the rerun on ${target} ran no test: can't tell whose failure` });
+          blames.push({ id: check.id, label: check.label, whole: "unattributed", why: `can't tell whose failure: ${check.label} ran no test on ${target} alone` });
         } else if (r.proc.code === 0) {
           st.end("passed", { detail: `passes on ${target}: the branch's` });
           blames.push({ id: check.id, label: check.label, whole: blameCheck({ passesOnTip: false, onTarget: "passes" }) });

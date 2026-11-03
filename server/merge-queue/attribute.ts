@@ -47,6 +47,8 @@ export interface CheckBlame {
   /** Failing files the target's rerun can't be shown to have run (left out by its selection, or a runner that says
    *  nothing about what it ran and ran no test): a pass there would be a guess, so whose they are can't be told. */
   unclearFiles?: string[];
+  /** An unattributed whole check's own reason, when it isn't "fails on the target too and names no tests". */
+  why?: string;
 }
 
 export interface Attribution {
@@ -85,8 +87,9 @@ export function summarize(reds: readonly CheckBlame[], o: { resolution?: boolean
       notes.push({ kind: "master-red", text: `${c.label} also fails on ${target} alone (not blocking)` });
       targetRed.push(c.label);
     } else if (c.whole === "unattributed") {
-      unclear.push({ id: c.id, label: c.label, why: `can't tell whose failure: ${c.label} fails on ${target} too and names no tests` });
-      targetRed.push(c.label);
+      unclear.push({ id: c.id, label: c.label, why: c.why ?? `can't tell whose failure: ${c.label} fails on ${target} too and names no tests` });
+      // Red on the target only when it failed there (not when it merely ran nothing).
+      if (!c.why) targetRed.push(c.label);
     } else if (c.whole === "branch") branchy.push(`${c.label} failed`);
   }
   if (!branchy.length && unclear.length) return { verdict: "unattributed", why: unclear.map((u) => u.why).join("; "), notes, targetRed, unclear };

@@ -599,4 +599,34 @@ describe("whose failure, never on a guess (a file the target's rerun never ran)"
       expect(ltCalls().length).toBe(3);
     }
   });
+
+  test("the target's rerun ran nothing (a 0/0 report, exit 0): unclear, never the branch's, by whole check and by name", async () => {
+    // wc.conf decides: "red" (the tip) fails naming no file (and, with wc.byname, one test by name only); "empty" (the
+    // target alone) runs nothing: {passed: 0, failed: 0, ranFiles: []} and exit 0, as run-tests --groups with an empty
+    // selection does.
+    const WC = `
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+const c = existsSync("wc.conf") ? readFileSync("wc.conf", "utf8").trim() : "empty";
+const out = (o) => process.env.SOVA_OUT && writeFileSync(process.env.SOVA_OUT, JSON.stringify(o));
+if (c === "red") {
+  out({ passed: 0, failed: 1, errors: 0, skipped: 0, failures: existsSync("wc.byname") ? [{ name: "app.slow-test/one" }] : [], failingFiles: [] });
+  console.log("check: red");
+  process.exit(1);
+}
+out({ passed: 0, failed: 0, errors: 0, skipped: 0, failures: [], failingFiles: [], ranFiles: [] });
+console.log("check: nothing to run");
+`;
+    for (const byName of [false, true]) {
+      const fx = fixture();
+      const def = fx.definition();
+      (def.merge as Record<string, unknown>).checks = [{ id: "slow", label: "Slow group", run: ["node", "wc.mjs"], rerun: true, timeout: 60 }];
+      fx.commitIn(fx.project, { "wc.mjs": WC, ".sova/project.json": JSON.stringify(def), ...(byName ? { "wc.byname": "1\n" } : {}) }, "a check that can run nothing");
+      const r = await run(fx, fx.branch(`wc-${byName}`, { "wc.conf": "red\n" }));
+      expect(r.out.verdict).toBe("unattributed");
+      expect(r.out.blame).toBeUndefined();
+      expect(r.out.unclear?.[0]?.check).toBe("slow");
+      expect(r.steps.get("rerun-master:slow")!.detail).toContain("ran no test");
+    }
+  });
 });
+

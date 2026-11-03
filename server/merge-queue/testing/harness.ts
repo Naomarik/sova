@@ -60,6 +60,8 @@ export interface HarnessOptions {
   names?: string[] | null;
   /** Sova's legacy names file (`<state>/merge-round.json`), for the project at `root`. */
   legacyNames?: { root: string; file: string };
+  /** More queue dependencies, over the harness's own (a stand-in host, for request projects). */
+  deps?: Partial<QueueDeps>;
 }
 
 /** The queue's dependencies for one fixture: the same in this process and in the crash child. */
@@ -113,7 +115,13 @@ export class QueueHarness {
       ...(this.o.reviewTimeoutMs ? { reviewTimeoutMs: this.o.reviewTimeoutMs } : {}),
       ...(this.o.conflictWaitMs ? { conflictWaitMs: this.o.conflictWaitMs } : {}),
       ...(this.o.legacyNames ? { legacyNames: this.o.legacyNames } : {}),
+      ...this.o.deps,
     });
+  }
+
+  /** The project's queue itself, for a verb the harness has no wrapper for yet. */
+  queue(): ProjectQueue {
+    return this.q;
   }
 
   /** The project's names file in the queue's records (store.ts namesFileOf). */

@@ -1,7 +1,7 @@
 /**
  * How the review step's reviewer chat starts and ends on the server: a fresh chat per attempt, in
  * the merge copy, on the shipped `merge-reviewer` profile (no edit tools, no workers, web, timers or
- * worktrees), with the review step's own message (review-step.ts `reviewerText`); archived when the
+ * worktrees) and the project's review model (models.ts; unset: the new-chat default), with the review step's own message (review-step.ts `reviewerText`); archived when the
  * step is done with it. The review step awaits the verdict, times out and retries; this file only
  * starts and stops chats.
  *
@@ -15,7 +15,8 @@ import { createChat, type AppRequest, type Result } from "./thread";
 export const REVIEWER_PROFILE = "merge-reviewer";
 
 export interface ReviewerDeps {
-  create(cwd: string, text: string, title: string): Promise<Result<{ id: string; path: string }>>;
+  /** `root`: the project's main checkout (whose review model it starts on). */
+  create(cwd: string, text: string, title: string, root: string): Promise<Result<{ id: string; path: string }>>;
   archive(path: string): Promise<Result>;
 }
 
@@ -27,7 +28,7 @@ export function reviewerTitle(o: Pick<ReviewerStart, "branch" | "commit" | "atte
 /** The review step's starter over `deps`. A refused start throws (the step counts it as the reviewer's failure). */
 export function reviewerStarter(deps: ReviewerDeps): StartReviewer {
   return async (o) => {
-    const r = await deps.create(o.copy, o.text, reviewerTitle(o));
+    const r = await deps.create(o.copy, o.text, reviewerTitle(o), o.root);
     if (!r.ok) throw new Error(`couldn't start the reviewer: ${r.error}`);
     let stopped = false;
     return {
@@ -47,7 +48,7 @@ export async function startMergeReviewer(request: AppRequest): Promise<void> {
   const [{ setReviewerStarter }, { archiveSession }] = await Promise.all([import("./review-step"), import("../sessions-index")]);
   setReviewerStarter(
     reviewerStarter({
-      create: (cwd, text, title) => createChat(request, cwd, REVIEWER_PROFILE, text, title),
+      create: async (cwd, text, title, root) => createChat(request, cwd, REVIEWER_PROFILE, text, title, await (await import("./models")).startingModel(root, "review")),
       async archive(path) {
         const r = await archiveSession(path, true);
         return r.ok ? { ok: true } : { ok: false, error: r.error };

@@ -3,8 +3,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, test } from "node:test";
 import { draftsHash } from "../spec-drafts-state";
-import { MergeFailure, PUSH_HELD_NAMES, PUSH_WAITS_NEXT_LANDING } from "./queue";
-import { DEF, makeKit, makeRepo, sh, until, untilAborted } from "./testing/queue-kit";
+import { MergeFailure, PUSH_HELD_NAMES, PUSH_WAITS_NEXT_LANDING, type QueueDeps } from "./queue";
+import { writeOverride } from "./strategy";
+import { DEF, makeKit, makeRepo, sh, tryGit, until, untilAborted } from "./testing/queue-kit";
 
 /** Landed, and its push answered (pushed or not). */
 const landed = (k: ReturnType<typeof makeKit>, id: string) =>
@@ -1196,3 +1197,189 @@ describe("the view's extras", () => {
     }
   });
 });
+
+describe("a settings save during a run", () => {
+  // Plan review al_2 b1: a settings save while a branch is checking never moves the target under the run. It waits
+  // (state "waiting", the view's pendingSave), the run passes and lands, then the save is applied as the queue's own
+  // move: not paused master-moved, the run not void, knownTarget is the save's commit.
+  test("start a run, save settings, let the run pass: not paused master-moved, the run not void, the save applied after", async () => {
+    const k = makeKit();
+    let released = () => {};
+    try {
+      const q = await k.q();
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      released = () => release();
+      // Passes once released; a voided run ends at once (so a failure here never hangs the teardown).
+      k.run.set(async (input) => {
+        await Promise.race([gate, untilAborted(input)]);
+        return {};
+      });
+      // The project file on master that the save edits (the kit's definition, as a file).
+      k.repo.commitOn(k.repo.root, { ".sova/project.json": `${JSON.stringify({ version: 1, services: { web: { cmd: ["true"] } }, merge: (DEF as unknown as { merge: unknown }).merge }, null, 2)}\n` }, "definition");
+      k.repo.branch("feat/a", { "b.txt": "b\n" });
+      const before = k.repo.head();
+      const { entry } = await q.add({ branch: "feat/a", by: "land-button" });
+      await until(() => k.run.inputs.length === 1, "a's run started");
+      const answer = await saveSettings(q);
+      assert.equal(answer.state, "waiting", `a save during a run waits for it, got ${JSON.stringify(answer)}`);
+      assert.ok(pendingSaveOf(await q.view()), "the view says a save waits for the current branch");
+      assert.equal(k.repo.head(), before, "the target didn't move under the checking run");
+      release();
+      await landed(k, entry.id);
+      const run = q.store.readRun(k.run.inputs[0]!.runId)!;
+      assert.equal(run.verdict, "passed", "the run is not voided by the save");
+      assert.equal(q.isPaused(), false, `not paused: ${JSON.stringify((await q.view()).paused)}`);
+      const e = await k.entry(entry.id);
+      assert.equal(e.state, "landed");
+      // Applied after the landing, on top of it, as the queue's own move.
+      // Applied once nothing waits any more (the target moves a moment before the queue records it).
+      await until(async () => pendingSaveOf(await q.view()) === undefined && k.repo.head() !== e.landed!.sha, "the waiting save applied");
+      const saved = k.repo.head();
+      assert.equal(sh(k.repo.root, "rev-parse", `${saved}^`), e.landed!.sha, "the save commit sits on the landed tip");
+      assert.equal(q.file.knownTarget, saved, "knownTarget is the save's commit");
+      assert.ok(q.file.landed.includes(saved), "the save is the queue's own move (push guard)");
+      assert.equal(pendingSaveOf(await q.view()), undefined, "nothing waits any more");
+      assert.equal(JSON.parse(sh(k.repo.root, "show", "master:.sova/project.json")).merge.push, false, "the change is in the file");
+      // A later branch runs on the newest target with no pause.
+      k.repo.branch("feat/b", { "c.txt": "c\n" });
+      const b = await q.add({ branch: "feat/b", by: "land-button" });
+      await landed(k, b.entry.id);
+      assert.equal(k.run.inputs.at(-1)!.base, saved, "the next run starts from the saved commit");
+      assert.equal(q.isPaused(), false);
+    } finally {
+      released();
+      await k.done();
+    }
+  });
+});
+
+type Q = Awaited<ReturnType<ReturnType<typeof makeKit>["q"]>>;
+
+/**
+ * The settings section's save (contracts §4), push turned off. Before it exists, today's only writer of the merge
+ * section, Save Checks (`setup`), stands in: it commits at once, which is what b1 forbids.
+ */
+async function saveSettings(q: Q): Promise<{ state: string; commit?: string }> {
+  const s = (q as unknown as { saveSettings?: (changes: unknown) => Promise<{ state: string; commit?: string }> }).saveSettings;
+  if (s) return s.call(q, { push: false });
+  const r = await q.setup({ none: true });
+  return { state: "saved", ...(r.commit ? { commit: r.commit } : {}) };
+}
+
+const pendingSaveOf = (v: unknown) => (v as { settings?: { pendingSave?: unknown } }).settings?.pendingSave;
+
+describe("a request project: the host merges", () => {
+  // Plan review al_3 b2: once the host merges request 1, a branch waiting behind it is tested against the host's main
+  // (fetched origin/<target>), never the stale local one, and the host's merge never reads as "moved outside the queue".
+  test("the stand-in host merges request 1 while a branch waits: no master-moved pause; the next run's base is the host's main", async () => {
+    const host = standInHost();
+    const k = makeKit({ deps: hostDeps(host) as Partial<QueueDeps> });
+    try {
+      const q = await k.q();
+      writeOverride(q.store.dir, "github-pr");
+      host.setOrigin(k.repo.origin);
+      const localBefore = k.repo.head();
+      k.repo.branch("feat/one", { "one.txt": "1\n" });
+      const one = await q.add({ branch: "feat/one", by: "land-button", session: "s1" });
+      // Sova's checks pass, then the request's text waits for your review (q10).
+      await until(async () => ["request-review", "landed"].includes((await k.entry(one.entry.id)).state), "feat/one checked");
+      assert.equal((await k.entry(one.entry.id)).state, "request-review", "a request project opens a request; it doesn't land locally");
+      assert.equal(k.repo.head(), localBefore, "the local target never moves on a request project");
+      await publish(q, one.entry.id);
+      await until(async () => ((await k.entry(one.entry.id)).state as string) === "requested", "request 1 open");
+      const req1 = (await k.entry(one.entry.id)) as unknown as { request?: { number?: number; publishedHead?: string } };
+      assert.ok(req1.request?.number, "the request is recorded with its number");
+      // A second branch waits while the request is open (the line is held so it can't start before the host merges).
+      await q.pause("hold");
+      k.repo.branch("feat/two", { "two.txt": "2\n" });
+      const two = await q.add({ branch: "feat/two", by: "land-button", session: "s2" });
+      // The host merges request 1: origin's master moves to the host's merge commit.
+      const hostMain = host.merge(k.repo.origin, req1.request!.number!);
+      await poll(q);
+      await until(async () => (await k.entry(one.entry.id)).state === "landed", "request 1 landed on the host's word");
+      assert.equal((await q.view()).paused?.kind, "operator", "only the operator's own hold; never master-moved");
+      await q.resume();
+      await until(() => k.run.inputs.some((i) => i.entry.id === two.entry.id), "feat/two's run");
+      const input2 = k.run.inputs.find((i) => i.entry.id === two.entry.id)!;
+      assert.equal(input2.base, hostMain, "the next run's base is the host's main, fetched");
+      await until(async () => ["request-review", "landed", "needs-fix"].includes((await k.entry(two.entry.id)).state), "feat/two checked");
+      const v = await q.view();
+      assert.equal(v.paused, undefined, `not paused: ${JSON.stringify(v.paused)}`);
+      assert.equal(k.repo.head(), localBefore, "local main is only moved by Update Local Main (q11)");
+      assert.ok(((v.heads as { behind?: number }).behind ?? 0) >= 1, "the view says local main is behind");
+      // Update Local Main is the queue's own move: local catches up to the host's main and nothing pauses.
+      await (q as unknown as { updateLocalMain: () => Promise<unknown> }).updateLocalMain();
+      assert.equal(k.repo.head(), hostMain);
+      assert.equal(q.isPaused(), false);
+    } finally {
+      await k.done();
+    }
+  });
+});
+
+/** An in-process stand-in host (a GitHub that never leaves the test): requests by number over the bare origin. */
+function standInHost() {
+  const reqs = new Map<number, { head: string; base: string; title: string; body: string; state: "open" | "merged"; mergeCommit: string | null }>();
+  let next = 1;
+  const facts = (n: number, origin?: string) => {
+    const r = reqs.get(n)!;
+    const headSha = origin ? tryGit(origin, "rev-parse", `refs/heads/${r.head}`).out || null : null;
+    return { number: n, url: `https://github.com/o/r/pull/${n}`, state: r.state, checks: "pass", review: "approved", mergeable: "mergeable", headSha, headBranch: r.head, baseBranch: r.base, mergeCommit: r.mergeCommit, mergedAt: r.mergeCommit ? "2026-11-03T00:00:00.000Z" : null };
+  };
+  let origin = "";
+  const adapter = {
+    kind: "github" as const,
+    cli: "gh" as const,
+    auth: async () => ({ ok: true as const }),
+    find: async (_repo: unknown, q: { head: string; base: string }) => {
+      for (const [n, r] of reqs) if (r.head === q.head && r.base === q.base && r.state === "open") return { ok: true as const, request: facts(n, origin) };
+      return { ok: true as const, request: null };
+    },
+    create: async (_repo: unknown, req: { head: string; base: string; title: string; body: string }) => {
+      const n = next++;
+      reqs.set(n, { ...req, state: "open", mergeCommit: null });
+      return { ok: true as const, request: facts(n, origin) };
+    },
+    update: async () => ({ ok: true as const }),
+    view: async (_repo: unknown, n: number) => (reqs.has(n) ? { ok: true as const, request: facts(n, origin) } : { ok: false as const, code: "not-found" as const, why: "no such request" }),
+  };
+  return {
+    adapter,
+    reqs,
+    setOrigin: (o: string) => void (origin = o),
+    /** The host's merge button: a merge commit of its main and the request's head, on origin. Returns the new main. */
+    merge(o: string, n: number): string {
+      origin = o;
+      const r = reqs.get(n)!;
+      const main = sh(o, "rev-parse", r.base);
+      const head = sh(o, "rev-parse", `refs/heads/${r.head}`);
+      const tree = sh(o, "merge-tree", "--write-tree", main, head).split("\n")[0]!;
+      const commit = sh(o, "commit-tree", tree, "-p", main, "-p", head, "-m", `Merge pull request #${n}`);
+      sh(o, "update-ref", `refs/heads/${r.base}`, commit, main);
+      r.state = "merged";
+      r.mergeCommit = commit;
+      return commit;
+    },
+  };
+}
+
+/** The queue's host seams (landing-core): the stand-in adapter, and the kit's local origin read as github.com/o/r. */
+const hostDeps = (host: ReturnType<typeof standInHost>) => ({
+  hostAdapter: () => host.adapter,
+  hostRepo: async () => ({ kind: "github", host: "github.com", path: "o/r", web: "https://github.com/o/r" }),
+});
+
+/** q10's Publish, with the text as drafted. */
+async function publish(q: Q, id: string): Promise<void> {
+  const f = (q as unknown as { publish?: (id: string, t: { title: string; body: string; draft: boolean }) => Promise<unknown> }).publish;
+  assert.ok(f, "ProjectQueue.publish (q10's review step) isn't built");
+  await f.call(q, id, { title: "One", body: "Opened by Sova", draft: false });
+}
+
+/** Read the host now (the view's GET does it, contracts §5). */
+async function poll(q: Q): Promise<void> {
+  const f = (q as unknown as { pollHost?: () => Promise<unknown> }).pollHost;
+  if (f) await f.call(q);
+  else await q.view();
+}

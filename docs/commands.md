@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 498 |
-| Routes a catalogue entry points at | 127 |
-| Catalogue entries | 171 |
+| Routes registered | 508 |
+| Routes a catalogue entry points at | 137 |
+| Catalogue entries | 181 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -140,6 +140,16 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.settings.propose.withdraw` | Dismiss Settings Card | changes | `POST /api/projects/:pid/settings/cards/:card/withdraw` | admin |
 | `project.overseer.settings.set` | Set Project Overseer Settings | changes | `PATCH /api/projects/:pid/overseer` | admin |
 | `project.costs` | Show Project Costs | looks | `GET /api/projects/:pid/costs` | sessions |
+| `project.merge-queue.settings.get` | Show Queue Settings | looks | `GET /api/merge-queue/projects/:project/settings` | sessions |
+| `project.merge-queue.models.set` | Change Review Model | changes | `PUT /api/merge-queue/projects/:project/models` | admin |
+| `project.merge-queue.settings.save` | Save Queue Setting | changes | `POST /api/merge-queue/projects/:project/settings` | admin |
+| `project.merge-queue.settings.cancel` | Cancel Waiting Save | changes | `DELETE /api/merge-queue/projects/:project/settings/pending` | admin |
+| `project.folder.list` | Open Folder | looks | `GET /api/folders/list` | sessions |
+| `project.folder.read` | Read Folder File | looks | `GET /api/folders/read` | sessions |
+| `project.merge-queue.update-local-main` | Update Local Main | changes | `POST /api/merge-queue/projects/:project/update-local-main` | admin |
+| `project.merge-queue.request.publish` | Publish Request | changes | `POST /api/merge-queue/entries/:id/publish` | admin |
+| `project.merge-queue.land-how.set` | Change How It Lands | changes | `PUT /api/merge-queue/projects/:project/land-how` | admin |
+| `project.merge-queue.land-how.clear` | Clear This Computer's Choice | changes | `DELETE /api/merge-queue/projects/:project/land-how/override` | admin |
 | `overseer.attention` | Show Attention | looks | `GET /api/overseer/attention` | sessions |
 | `overseer.todo.list` | List To-dos | looks | `GET /api/overseer/todos` | sessions |
 | `overseer.todo.add` | Add To-do | changes | `POST /api/overseer/todos` | admin |
@@ -674,6 +684,8 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `GET /api/extensions` | sessions | `extensions.list` |
 | `GET /api/files` | sessions | `files.list` |
 | `GET /api/folders` | sessions | `folders.list` |
+| `GET /api/folders/list` | sessions | `project.folder.list` |
+| `GET /api/folders/read` | sessions | `project.folder.read` |
 | `GET /api/health` | sessions | `sova.health` |
 | `GET /api/insights/agents` | sessions | `insights.agents` |
 | `GET /api/insights/session` | sessions | `session.insights` |
@@ -683,6 +695,14 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `GET /api/insights/usage/history` | sessions | `insights.usage.history` |
 | `GET /api/insights/worktrees` | sessions | `insights.worktrees` |
 | `GET /api/merge-queue/cards` | sessions | `session.merge-cards` |
+| `POST /api/merge-queue/entries/:id/publish` | admin | `project.merge-queue.request.publish` |
+| `PUT /api/merge-queue/projects/:project/land-how` | admin | `project.merge-queue.land-how.set` |
+| `DELETE /api/merge-queue/projects/:project/land-how/override` | admin | `project.merge-queue.land-how.clear` |
+| `PUT /api/merge-queue/projects/:project/models` | admin | `project.merge-queue.models.set` |
+| `GET /api/merge-queue/projects/:project/settings` | sessions | `project.merge-queue.settings.get` |
+| `POST /api/merge-queue/projects/:project/settings` | admin | `project.merge-queue.settings.save` |
+| `DELETE /api/merge-queue/projects/:project/settings/pending` | admin | `project.merge-queue.settings.cancel` |
+| `POST /api/merge-queue/projects/:project/update-local-main` | admin | `project.merge-queue.update-local-main` |
 | `GET /api/mode` | sessions | `session.mode.get` |
 | `POST /api/mode` | sessions | `session.mode.set` |
 | `POST /api/mode/command` | full | `chat.mode-command` |

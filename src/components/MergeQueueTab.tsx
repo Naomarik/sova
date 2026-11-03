@@ -8,6 +8,9 @@ import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { MergeOnboarding } from "./MergeOnboarding";
 import { MergeRunView } from "./MergeRunView";
+import { LocalBehind, RequestRow, WaitingOnHost, type RequestEntry } from "./MergeQueueRequests";
+import { introWords, isRequestState } from "../lib/merge-queue-requests";
+import { QueueSettingsButton, QueueSummaryLine } from "./settings/MergeQueueSummary";
 import { Banner, Icon } from "./ui";
 import { LandSpecsConfirm, LandSplit, QueueChip, UnclearChecks } from "./WorktreesModal";
 import type { MergeReady } from "../../shared/merge-queue";
@@ -130,6 +133,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatTitle?(
   return (
     <div class="stack mq-body">
       <HeadsStrip view={v()} />
+      <LocalBehind project={props.projectId} target={v().target} behind={v().heads.behind} blocked={v().heads.behindBlocked} onChanged={props.onChanged} />
       <div class="spread mq-head">
         <div class="cluster">
           <h2 class="orgs-h2" id="mq-title">
@@ -138,6 +142,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatTitle?(
           <QueueChip row={chip()} />
         </div>
         <div class="button-row">
+          <QueueSettingsButton projectId={props.projectId} />
           <Show
             when={paused()}
             fallback={
@@ -160,8 +165,9 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatTitle?(
           </Show>
         </div>
       </div>
+      <QueueSummaryLine view={v()} />
       <p class="text-caption text-muted mq-intro">
-        One branch at a time, in order. Each is merged onto {v().target} in a separate copy and checked there; {v().target} then moves to exactly that commit.
+        {introWords(v().target, v().settings?.how?.effective)}
         <Show when={v().checks === "none"}> This project declares no automated tests: landings say "No checks declared".</Show>
       </p>
       <Show when={head.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
@@ -199,10 +205,25 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatTitle?(
         <div class="stack-2">
           <h3 class="text-heading-s">Needs you</h3>
           <ul class="list mq-list">
-            <For each={v().needsYou}>{(e) => <NeedsYouRow projectId={props.projectId} root={v().root} entry={e} target={v().target} chatTitle={props.chatTitle} onChanged={props.onChanged} />}</For>
+            <For each={v().needsYou}>
+              {(e) =>
+                isRequestState(e.state) ? (
+                  <RequestRow root={v().root} target={v().target} entry={e as RequestEntry} from={<FromChat projectId={props.projectId} entry={e} chatTitle={props.chatTitle} />} onChanged={props.onChanged} />
+                ) : (
+                  <NeedsYouRow projectId={props.projectId} root={v().root} entry={e} target={v().target} chatTitle={props.chatTitle} onChanged={props.onChanged} />
+                )
+              }
+            </For>
           </ul>
         </div>
       </Show>
+      <WaitingOnHost
+        root={v().root}
+        target={v().target}
+        entries={(v().waitingOnHost ?? []) as RequestEntry[]}
+        from={(e) => <FromChat projectId={props.projectId} entry={e as unknown as MergeEntry} chatTitle={props.chatTitle} />}
+        onChanged={props.onChanged}
+      />
       <Show when={(v().ready ?? []).length > 0}>
         <div class="stack-2">
           <h3 class="text-heading-s">Ready to land, not approved</h3>
@@ -257,8 +278,17 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatTitle?(
                       <Show when={l.entry.landed}>
                         {(ld) => (
                           <>
-                            Landed as <span class="text-mono">{short(ld().sha)}</span> · {relativeTime(ld().at)}
-                            {ld().pushed === "not-pushed" ? ` · not pushed${ld().pushWhy ? `: ${ld().pushWhy}` : ""}` : ld().pushed === "pushed" ? " · pushed" : ""}
+                            <Show
+                              when={ld().via === "host"}
+                              fallback={
+                                <>
+                                  Landed as <span class="text-mono">{short(ld().sha)}</span> · {relativeTime(ld().at)}
+                                  {ld().pushed === "not-pushed" ? ` · not pushed${ld().pushWhy ? `: ${ld().pushWhy}` : ""}` : ld().pushed === "pushed" ? " · pushed" : ""}
+                                </>
+                              }
+                            >
+                              Merged on {l.entry.request?.host === "gitlab" ? "GitLab" : "GitHub"} as <span class="text-mono">{short(ld().sha)}</span> · {relativeTime(ld().at)}
+                            </Show>
                           </>
                         )}
                       </Show>

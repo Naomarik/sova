@@ -5,7 +5,7 @@ import { createSignal } from "solid-js";
  * App state so a control deep in a pane — the mode menu's "Configure Delegate" — can open Settings
  * straight at the screen it's about, without threading a callback through every pane between.
  */
-export const SETTINGS_TABS = ["general", "models", "accounts", "subagents", "alignment", "profiles", "overseer", "notifications", "decisions", "summaries", "memory", "organizations", "themes", "mesh", "public-links", "outreach", "voice", "experimental"] as const;
+export const SETTINGS_TABS = ["general", "models", "accounts", "subagents", "alignment", "profiles", "overseer", "notifications", "decisions", "summaries", "memory", "organizations", "merge-queue", "themes", "mesh", "public-links", "outreach", "voice", "experimental"] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 const [openTab, setOpenTab] = createSignal<SettingsTab | null>(null);
@@ -29,19 +29,33 @@ export const clearSettingsSection = (): void => {
 /** The tab Settings is open at, or null when it's closed. */
 export const settingsOpenAt = openTab;
 
-/** Open Settings at `tab` (General by default), optionally at one of its sections. Opening it changes nothing else — no mode switch. */
-export function openSettings(tab: SettingsTab = "general", at: SettingsSection | null = null): void {
+/** The project a project-scoped tab (Merge Queue) opens on: the one whose page opened it. Cleared
+    on close: a dialog opened from the gear or a command starts on its own picker's choice. */
+const [project, setProject] = createSignal<string | null>(null);
+export const settingsProject = project;
+
+/** Open Settings at `tab` (General by default), optionally at one of its sections, and for a
+    project-scoped tab on one project (its id). Opening it changes nothing else — no mode switch. */
+export function openSettings(tab: SettingsTab = "general", at: SettingsSection | null = null, opts: { project?: string } = {}): void {
   setSection(at);
+  setProject(opts.project ?? null);
   setOpenTab(tab);
 }
 
 /** `#/settings/<tab>` (a Needs you row of no session, a phone notification's tap): the tab it names, else null. */
 export function settingsTabFromHash(hash: string): SettingsTab | null {
   const m = /^#\/settings\/([a-z-]+)$/.exec(hash);
+  if (!m && settingsProjectFromHash(hash)) return "merge-queue";
   return SETTINGS_TABS.find((t) => t === m?.[1]) ?? null;
+}
+
+/** `#/settings/merge-queue/<project id>` (the project Settings tab's All settings row): that project, else null. */
+export function settingsProjectFromHash(hash: string): string | null {
+  return /^#\/settings\/merge-queue\/(prj_[A-Za-z0-9_-]+)$/.exec(hash)?.[1] ?? null;
 }
 
 export function closeSettings(): void {
   setSubagentPath(undefined);
+  setProject(null);
   setOpenTab(null);
 }

@@ -5,6 +5,7 @@
 import type { SessionWorktreeInfo } from "../../shared/protocol";
 import { newerWords, ordinal } from "../../shared/merge-queue";
 import type { MergeEntry, MergeNote, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo } from "./merge-queue-types";
+import { requestChip, requestReason } from "./merge-queue-requests";
 
 export type { MergeEntry, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo };
 export { ordinal };
@@ -50,6 +51,10 @@ export type RowKey =
   | "needs-fix"
   | "drafts-changed"
   | "landed"
+  | "request-review"
+  | "requested"
+  | "pushed"
+  | "closed"
   | "merged"
   | "dropped"
   | "removed";
@@ -113,7 +118,7 @@ export const shownCommit = (w: Partial<Pick<SessionWorktreeInfo, "readiness" | "
   w.mergeStats?.head ?? w.readiness?.landing?.commit;
 
 /** Rows past the queue (landed, merged, gone) carry no size: there's nothing left to land. */
-const SIZED: RowKey[] = ["ready", "uncommitted", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "drafts-changed"];
+const SIZED: RowKey[] = ["ready", "uncommitted", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "drafts-changed", "request-review"];
 
 /** The words for one worktree, from its tracked state, its readiness and its queue entry. */
 export function queueRow(w: QueueRowInput): QueueRow {
@@ -170,6 +175,25 @@ function queueRowOf(w: QueueRowInput): QueueRow {
           detail: e.landed ? `as ${short(e.landed.sha)}${e.landed.pushed === "not-pushed" ? " · not pushed" : ""}` : undefined,
           action: "none",
         };
+      case "request-review":
+      case "requested":
+      case "pushed":
+      case "closed": {
+        // Past Sova's checks on a request or push project: the host's words (merge-queue-requests.ts).
+        const chip = requestChip(e.state, e.request, e.reason);
+        // The host merged it while the queue hasn't moved the entry yet: it reads as landed.
+        const key: RowKey = e.state === "requested" && e.request?.facts?.state === "merged" ? "landed" : e.state;
+        return {
+          ...base,
+          newer: e.state === "requested" || e.state === "pushed" ? base.newer : undefined,
+          key,
+          label: chip.label,
+          tone: chip.tone,
+          ...(chip.live ? { live: true } : {}),
+          reason: requestReason(e.state, e.request, w.mergeProject?.target ?? "the target", e.reason) ?? undefined,
+          action: e.state === "closed" ? "land" : "none",
+        };
+      }
       case "cancelled":
         break; // reads as the worktree itself again, below
     }
@@ -210,7 +234,7 @@ export const unclearLine = (u: { label: string; why?: string }, target?: string)
   u.why?.trim() ? `${u.label}: ${u.why.trim().replace(/[.]$/, "")}` : `${u.label}: fails with this branch and on ${target ?? "the target"} alone, naming no tests`;
 
 /** The order the summary counts in. */
-const ORDER: RowKey[] = ["ready", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "drafts-changed", "uncommitted", "no-commits", "landed", "merged", "removed", "dropped"];
+const ORDER: RowKey[] = ["ready", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "drafts-changed", "request-review", "requested", "uncommitted", "no-commits", "landed", "pushed", "closed", "merged", "removed", "dropped"];
 const COUNT_WORD: Record<RowKey, [string, string]> = {
   ready: ["ready", "ready"],
   queued: ["queued", "queued"],
@@ -224,6 +248,10 @@ const COUNT_WORD: Record<RowKey, [string, string]> = {
   uncommitted: ["uncommitted", "uncommitted"],
   "no-commits": ["no commits yet", "no commits yet"],
   landed: ["landed", "landed"],
+  "request-review": ["request to review", "requests to review"],
+  requested: ["waiting on the host", "waiting on the host"],
+  pushed: ["pushed", "pushed"],
+  closed: ["closed on the host", "closed on the host"],
   merged: ["merged", "merged"],
   removed: ["removed", "removed"],
   dropped: ["dropped", "dropped"],
@@ -247,7 +275,7 @@ export function controlWords(rows: Pick<QueueRow, "key">[]): { text: string; n: 
 function controlWordsOf(rows: Pick<QueueRow, "key">[]): { text: string; dot: "ok" | "warn" | "err" | null } | null {
   if (rows.length === 0) return null;
   const n = (...k: RowKey[]) => rows.filter((r) => k.includes(r.key)).length;
-  const you = n("behaviour-differs", "review-flagged", "unattributed", "drafts-changed");
+  const you = n("behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "request-review");
   if (you) return { text: `${you} ${you === 1 ? "needs" : "need"} you`, dot: "warn" };
   if (n("needs-fix")) return { text: `${n("needs-fix")} ${n("needs-fix") === 1 ? "needs" : "need"} a fix`, dot: "err" };
   if (n("ready")) return { text: `${n("ready")} ready`, dot: "ok" };
@@ -328,10 +356,13 @@ export function waitingHead(entries: Pick<MergeEntry, "eta">[]): string {
   return `Waiting · ${entries.length}${end ? ` · the last one done in ~${mins(end)}` : ""}`;
 }
 
-/** The pushed cell: "Pushed", or why not. */
+/** The pushed cell: "Pushed", or why not. "No remote" only for a project that has no origin: one with an
+    origin the queue hasn't pushed to yet is read against what origin has (the view fills `pushed` from it). */
 export function pushedWords(h: MergeQueueView["heads"]): { label: string; tone: Tone; why?: string } {
   if (h.pushWhy) return { label: "Not pushed", tone: "warn", why: h.pushWhy };
-  if (!h.pushed) return { label: "No remote", tone: "neutral" };
+  if (h.hasOrigin === false) return { label: "No remote", tone: "neutral" };
+  // An older server sends no hasOrigin: its unset `pushed` still means no remote.
+  if (!h.pushed) return h.hasOrigin ? { label: "Not pushed", tone: "warn", why: "not pushed yet: goes out with the next landing" } : { label: "No remote", tone: "neutral" };
   if (h.pushed === h.target) return { label: "Pushed", tone: "success" };
   // The target is ahead of origin (Save Checks' commit, say) and the queue gave no reason: never invisible.
   return { label: "Not pushed", tone: "warn", why: "not pushed yet: goes out with the next landing" };

@@ -93,6 +93,7 @@ export async function ingestOnce(deps: IngestDeps): Promise<string[]> {
         ...(g.session ? { session: g.session, chat: g.session } : {}),
         ...(g.withoutSpecs ? { withoutSpecs: true } : {}),
         ...(g.withoutReview ? { withoutReview: true } : {}),
+        ...(g.via ? { via: g.via } : {}),
       });
       did.push(`${changed ? "queued" : "already queued"} ${g.branch} at ${g.commit.slice(0, 7)} (${entry.id}) on the user's typed word`);
     } catch (err) {

@@ -25,7 +25,7 @@ ports and env in declaration order.
 | `test` | `{run, requires?, timeout?, smoke}`, below |
 | `share` | `{endpoints, maxDays?, allow?}`, below: what a running copy may share as a preview link. Absent: never shared. Hashed |
 | `deploy` | `{targets}`, below: how the project ships. The Project deploy playbook writes it, never this one; keep it byte for byte as you found it. Outside this hash, under its own (`deployHash`) |
-| `merge` | `{target?, push?, checks?, install?, review?}`, below: how the merge queue lands branches. Outside this hash |
+| `merge` | `{target?, push?, checks?, install?, review?, land?, request?}`, below: how the merge queue lands branches. Outside this hash |
 
 ## A step (`setup`, a service's `build`, `hooks.probe`)
 | key | value |
@@ -105,6 +105,8 @@ How the merge queue lands a branch: it merges the approved commit onto the newes
 | `checks` | `[{id, label?, run, timeout?, rerun?, requires?, optional?}]` in order, 1 to 30, or `"none"` (the project has no automated tests: its landings say "No checks declared"). Absent: the `test` command, else the project isn't set up for the queue |
 | `install` | `{run, inputs, timeout?}`: run in the merge copy when a branch changes one of `inputs` (a lockfile): an offline install |
 | `review` | the review kit's folder (a relative path): a fresh read-only reviewer reads each branch with it while the checks run. Absent: no review step |
+| `land` | how a branch lands once its checks pass: `"local"` (the target fast-forwards to the tested commit, today's way), `"github-pr"` (a pull request on GitHub), `"gitlab-mr"` (a merge request on GitLab) or `"push-branch"` (the branch pushed, nothing more). Absent: `"local"`. A choice saved on this computer wins over it |
+| `request` | the request skill folder (a relative path): how a pull or merge request's title and description are written, with its own checks on that text. Absent: Sova's plain default |
 
 A check: `id` a name, unique; `label` what the queue shows (default the id, at most 60 characters); `run` an argv (default `timeout` 600 s) that may use `${merge.base}`, `${merge.tip}` and `${merge.target}` beside the templates below; `rerun` `true` when its failures name test files that `run` followed by those files reruns alone; `requires` services brought up in the merge copy first; `optional` `true` keeps it out of the required set: it runs only when the merge thread picks it for a branch (at least one check is required). A check also gets `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP`, `SOVA_MERGE_TARGET` and `SOVA_MERGE_CHANGED` (a file listing the changed paths); one with nothing to do exits 0 and writes `{"passed": 0, "failed": 0, "skipped": "<why>"}` to `SOVA_OUT`.
 

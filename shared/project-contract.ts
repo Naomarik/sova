@@ -94,6 +94,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "withoutSpecs", type: "boolean", mergeOnly: true, cli: { flag: "without-specs", description: "Land without its spec drafts" } },
   { wire: "withoutReview", type: "boolean", mergeOnly: true, cli: { flag: "without-review", description: "Land without the review step" } },
   { wire: "chat", type: "string", mergeOnly: true, cli: { flag: "chat", description: "The chat the approval was given in" } },
+  { wire: "via", type: "string", mergeOnly: true, cli: { flag: "via", description: "merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed \"open a PR\")" } },
   { wire: "checks", type: "list", mergeOnly: true, tool: { name: "checks", description: "merge.extend: check ids from the project's merge section to add to this entry's run (never removes one)." }, cli: { flag: "checks", description: "Check ids, comma-separated" } },
   { wire: "verdict", type: "string", mergeOnly: true, tool: { name: "verdict", description: "merge.resolve: no-behaviour-change | behaviour-differs; merge.review: ok | notes | blocking." }, cli: { flag: "verdict", description: "A verdict" } },
   { wire: "files", type: "list", mergeOnly: true, tool: { name: "files", description: "merge.resolve: the conflicted files the judgement covers." }, cli: { flag: "files", description: "Files, comma-separated" } },
@@ -118,7 +119,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
 export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy: readonly string[]; readonly merge: readonly string[] } = {
   instance: ["project", "instance", "checkout", "branch", "from", "slot", "services", "restart", "lines", "keep-data", "resources", "ref", "select", "endpoint", "days", "link", "confirm"],
   deploy: ["project", "target", "commit", "ref", "plan", "deploy", "why", "lines", "override-tests", "override-dirty", "confirm", "dismiss"],
-  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run"],
+  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "via", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run"],
 };
 
 export const ERROR_CODES = [
@@ -279,13 +280,17 @@ export interface MergeCheckDecl {
 /** The definition's `merge` section. `checks`: the required set, `"none"` (declared: no automated tests), or absent
  *  (the queue falls back to `test.run`, else the project isn't set up). `target`: the branch it lands on (absent: the
  *  main checkout's). `push`: absent means push when an `origin` remote exists. `install`: run in the merge copy when
- *  a merged branch changes one of its `inputs` (an offline install). `review`: the review kit's folder. */
+ *  a merged branch changes one of its `inputs` (an offline install). `review`: the review kit's folder. `land`: how a
+ *  branch lands (al_3; absent: merged locally; this computer's own choice wins over it). `request`: the request skill
+ *  folder (how a pull or merge request's title and description are written, and their checks). */
 export interface MergeDecl {
   target?: string;
   push?: boolean;
   checks?: MergeCheckDecl[] | "none";
   install?: { run: Argv; inputs: string[]; timeout: number };
   review?: string;
+  land?: import("./merge-queue").LandHow;
+  request?: string;
 }
 
 /** The endpoints a copy may share (`"<service>.<port>"`, checkout services only; none when absent), at most `maxDays` per link, and whether at all. */
@@ -426,7 +431,7 @@ export const DEFINITION_KEYS = {
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request"],
   mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
   mergeInstall: ["run", "inputs", "timeout"],
 } as const;
@@ -829,6 +834,8 @@ function* deployTemplates(d: DeployDecl): Generator<[string, string]> {
 /** Parse `.sova/project.json`'s text. Throws DefinitionError naming the first problem's path. */
 /** The variables a merge check's `run` may use beside the definition's own. */
 export const MERGE_VARS = ["merge.base", "merge.tip", "merge.target"] as const;
+/** `merge.land`'s values (shared/merge-queue.ts LandHow). */
+export const MERGE_LAND_HOWS = ["local", "github-pr", "gitlab-mr", "push-branch"] as const;
 
 function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
   const o = obj(v, "$.merge");
@@ -869,6 +876,11 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
     out.install = { run: argv(x.run, "$.merge.install.run"), inputs, timeout: timeout(x.timeout, "$.merge.install.timeout", HOOK_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX) };
   }
   if (o.review !== undefined) out.review = relPath(o.review, "$.merge.review", true);
+  if (o.land !== undefined) {
+    if (typeof o.land !== "string" || !(MERGE_LAND_HOWS as readonly string[]).includes(o.land)) throw new DefinitionError("$.merge.land", `must be one of ${MERGE_LAND_HOWS.map((h) => `"${h}"`).join(", ")}`);
+    out.land = o.land as (typeof MERGE_LAND_HOWS)[number];
+  }
+  if (o.request !== undefined) out.request = relPath(o.request, "$.merge.request", true);
   return out;
 }
 

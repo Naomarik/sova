@@ -5,6 +5,8 @@ import { type AnyVerb, isMergeVerb, type MergeVerb, MERGE_READ_VERBS, ordered, t
 import type { Caller } from "../project-services/engine";
 import type { RunMerge, WakeThread } from "./contract";
 import { MergeFailure, type MergeQueues, type ProjectQueue } from "./queue";
+import { registerLiveMergeSettingsRoutes } from "./settings-routes";
+import { registerLiveMergeLandingRoutes } from "./routes-landing";
 
 /**
  * The merge verbs (POST /api/project-services/merge.<x>, through the engine's `merger` hook; the merge thread's tool
@@ -46,6 +48,7 @@ interface Req {
   note?: string;
   withoutSpecs?: boolean;
   withoutReview?: boolean;
+  via?: string;
   chat?: string;
   checks?: string[];
   select?: string[];
@@ -77,6 +80,7 @@ const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings"> = {
   note: "string",
   withoutSpecs: "boolean",
   withoutReview: "boolean",
+  via: "string",
   chat: "string",
   checks: "strings",
   select: "strings",
@@ -244,6 +248,7 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
         ...(req.commit ? { commit: req.commit } : {}),
         ...(req.withoutSpecs ? { withoutSpecs: true } : {}),
         ...(req.withoutReview ? { withoutReview: true } : {}),
+        ...(req.via ? { via: viaOf(req.via) } : {}),
         ...(req.chat ? { chat: req.chat, session: req.chat } : {}),
         by: "land-button",
       });
@@ -353,6 +358,10 @@ export const noThread: WakeThread = () => false;
  * page draws them; {cards: []} while the queue isn't started or the chat has none.
  */
 export function registerMergeCardRoutes(app: import("hono").Hono): void {
+  // The queue's settings: read, the review and thread models, saves (settings-routes.ts).
+  registerLiveMergeSettingsRoutes(app);
+  // How a branch lands (al_3): Update Local Main, a request's Publish, How it lands (routes-landing.ts).
+  registerLiveMergeLandingRoutes(app);
   app.get("/api/merge-queue/cards", async (c) => {
     const raw = (c.req.query("path") ?? c.req.query("session"))?.trim();
     if (!raw) return c.json({ error: "name the session (its file path or id)" }, 400);
@@ -363,4 +372,10 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
     const { mergeCardsOf } = await import("./wire");
     return c.json({ cards: mergeCardsOf(id) });
   });
+}
+
+/** merge.add's `via`: a typed "open a PR" / "open an MR". */
+function viaOf(v: string): "github-pr" | "gitlab-mr" {
+  if (v !== "github-pr" && v !== "gitlab-mr") throw new MergeFailure("invalid-request", '"via" is "github-pr" or "gitlab-mr"');
+  return v;
 }

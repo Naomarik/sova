@@ -1,6 +1,6 @@
 import { lstatSync, readlinkSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { agentRoot, stateRoot } from "./state-root";
 
 /** What the Overseer's read/grep/find/ls answer for a secret file. */
@@ -67,6 +67,9 @@ export function secretRules(home = homedir(), agentDir = agentRoot(), state = st
       join(home, ".aws"),
       // Claude Code's backups (of `.claude.json`, which may hold `primaryApiKey`).
       join(home, ".claude", "backups"),
+      // The GitLab CLI's config, which holds its tokens (`config.yml`), wherever glab keeps it: XDG, macOS, or the
+      // folder GLAB_CONFIG_DIR names. The merge queue opens merge requests with it from the server; chats never.
+      ...glabConfigDirs(home),
       // Every process's environment, memory and command line (`/proc/self/environ` is the server's
       // own environment), and the kernel's: nothing the Overseer needs.
       "/proc",
@@ -99,6 +102,15 @@ export function secretRules(home = homedir(), agentDir = agentRoot(), state = st
 }
 
 export type SecretRules = ReturnType<typeof secretRules>;
+
+/** Where glab keeps its config and tokens: `$GLAB_CONFIG_DIR`, `$XDG_CONFIG_HOME/glab-cli`, `~/.config/glab-cli`, and
+    macOS's `~/Library/Application Support/glab-cli`. */
+export function glabConfigDirs(home = homedir(), env: NodeJS.ProcessEnv = process.env): string[] {
+  const dirs = [join(home, ".config", "glab-cli"), join(home, "Library", "Application Support", "glab-cli")];
+  if (env.XDG_CONFIG_HOME && isAbsolute(env.XDG_CONFIG_HOME)) dirs.push(join(env.XDG_CONFIG_HOME, "glab-cli"));
+  if (env.GLAB_CONFIG_DIR && isAbsolute(env.GLAB_CONFIG_DIR)) dirs.push(env.GLAB_CONFIG_DIR);
+  return [...new Set(dirs)];
+}
 
 /** `.env` / `.env.*`, except the documented templates. */
 export function isEnvFile(name: string): boolean {

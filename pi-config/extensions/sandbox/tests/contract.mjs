@@ -51,7 +51,7 @@ const FXreal = (p) => BE.canonicalizePath(p);
 function hiddenFor(fx) {
 	const home = process.env.HOME;
 	const raw = [
-		`${home}/.ssh`, `${home}/.gnupg`, `${home}/.aws`, `${home}/.docker`, `${home}/.config/gh`,
+		`${home}/.ssh`, `${home}/.gnupg`, `${home}/.aws`, `${home}/.docker`, `${home}/.config/gh`, `${home}/.config/glab-cli`,
 		`${home}/.netrc`, `${home}/.git-credentials`,
 		path.join(fx.agentDir, "auth.json"),
 		fx.policyFile,

@@ -107,6 +107,16 @@ export type CommandId =
   | "project.settings.propose.withdraw"
   | "project.overseer.settings.set"
   | "project.costs"
+  | "project.merge-queue.settings.get"
+  | "project.merge-queue.models.set"
+  | "project.merge-queue.settings.save"
+  | "project.merge-queue.settings.cancel"
+  | "project.folder.list"
+  | "project.folder.read"
+  | "project.merge-queue.update-local-main"
+  | "project.merge-queue.request.publish"
+  | "project.merge-queue.land-how.set"
+  | "project.merge-queue.land-how.clear"
   | "overseer.attention"
   | "overseer.todo.list"
   | "overseer.todo.add"
@@ -1144,6 +1154,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -1203,6 +1215,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -1262,6 +1276,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -1321,6 +1337,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -1380,6 +1398,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -1439,6 +1459,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -1498,6 +1520,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -1557,6 +1581,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -1616,6 +1642,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -1675,6 +1703,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -1734,6 +1764,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -1793,6 +1825,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -1852,6 +1886,8 @@ export interface CommandParams {
     "without-review"?: boolean;
     /** The chat the approval was given in */
     "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
     /** Check ids, comma-separated */
     "checks"?: string[];
     /** Test selectors, comma-separated */
@@ -2139,6 +2175,76 @@ export interface CommandParams {
     "pid": string;
     /** 1: wait for a new count */
     "fresh"?: "1";
+  };
+  /** Every setting a project's merge queue uses: from the project's file on the target, this computer, or set by Sova. (only looks; needs the card's owner trusted) */
+  "project.merge-queue.settings.get": {
+    /** The project's id */
+    "project": string;
+  };
+  /** The review's and the merge thread's model and effort for this project, on this computer; null: Same as new chats. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.models.set": {
+    /** The project's id */
+    "project": string;
+    /** {model: "provider/model", thinking?} or null */
+    "review"?: unknown | null;
+    /** {model: "provider/model", thinking?} or null */
+    "thread"?: unknown | null;
+  };
+  /** Push, review on or off, and each check's time limit, rerun and optional, as one commit on the target; waits while a branch is checking. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.settings.save": {
+    /** The project's id */
+    "project": string;
+    /** {push?, review?, checks?: {<id>: {timeoutSec?, rerun?, optional?}}} */
+    "changes": unknown;
+    /** The commit on the target is confirmed */
+    "confirm": boolean;
+  };
+  /** Cancel a queue settings save that waits for the branch checking now. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.settings.cancel": {
+    /** The project's id */
+    "project": string;
+  };
+  /** The files of one folder of a project at a commit, or of one of Sova's own folders; read only, never run. (only looks; needs the card's owner trusted) */
+  "project.folder.list": {
+    /** The folder: {kind: "project", project, ref, dir} or {kind: "builtin", id} */
+    "src": unknown;
+  };
+  /** One file of such a folder, as text: documents to render, scripts shown, never run. (only looks; needs the card's owner trusted) */
+  "project.folder.read": {
+    /** The folder: {kind: "project", project, ref, dir} or {kind: "builtin", id} */
+    "src": unknown;
+    /** The file, inside the folder */
+    "path": string;
+  };
+  /** On a project that lands by request: fast-forward this computer's main (and its folder) to origin's; refused, with why, when the folder has uncommitted edits. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.update-local-main": {
+    /** The project's id */
+    "project": string;
+  };
+  /** Publish a checked branch's pull or merge request with the title and description you reviewed: the spec docs commit, the leak scan, the push, then the request. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.request.publish": {
+    /** The queue entry (mq_…) */
+    "id": string;
+    /** The request's title */
+    "title": string;
+    /** The request's description */
+    "body": string;
+    /** Open it as a draft */
+    "draft"?: boolean;
+  };
+  /** How the project's branches land (merge locally, pull request, merge request, push branch only), on this computer or in the project's file. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.land-how.set": {
+    /** The project's id */
+    "project": string;
+    /** "local", "github-pr", "gitlab-mr" or "push-branch" */
+    "how": string;
+    /** "computer" (this computer only) or "project" (the project's file) */
+    "where": string;
+  };
+  /** Drop this computer's How it lands choice, so the project file's (or Merge locally) applies. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.land-how.clear": {
+    /** The project's id */
+    "project": string;
   };
   /** What needs the user now, as the Overseer's digest has it. (only looks; needs the card's owner trusted) */
   "overseer.attention": Record<string, never>;
@@ -2623,6 +2729,16 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.settings.propose.withdraw": "changes",
   "project.overseer.settings.set": "changes",
   "project.costs": "looks",
+  "project.merge-queue.settings.get": "looks",
+  "project.merge-queue.models.set": "changes",
+  "project.merge-queue.settings.save": "changes",
+  "project.merge-queue.settings.cancel": "changes",
+  "project.folder.list": "looks",
+  "project.folder.read": "looks",
+  "project.merge-queue.update-local-main": "changes",
+  "project.merge-queue.request.publish": "changes",
+  "project.merge-queue.land-how.set": "changes",
+  "project.merge-queue.land-how.clear": "changes",
   "overseer.attention": "looks",
   "overseer.todo.list": "looks",
   "overseer.todo.add": "changes",

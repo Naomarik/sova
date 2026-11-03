@@ -25,6 +25,8 @@ export function buildView(a: {
   takesMs: number | null;
   now: number;
   readRun: (id: string) => MergeRun | null;
+  /** Whether the project has origin, and origin's copy of the target as last fetched (refs/remotes/origin/<target>). */
+  origin?: { has: boolean; tracking: string | null };
 }): MergeQueueView {
   const takes = a.takesMs ?? DEFAULT_TAKES_MS;
   const queued = a.q.entries.filter((e) => e.state === "queued").sort((x, y) => x.seq - y.seq);
@@ -60,14 +62,24 @@ export function buildView(a: {
     needsYou,
     needsFix,
     recent,
-    heads: { target: a.head, ...(a.q.heads.pushed ? { pushed: a.q.heads.pushed } : {}), ...(a.q.heads.pushWhy ? { pushWhy: a.q.heads.pushWhy } : {}), ...(a.q.heads.targetRed?.length ? { targetRed: [...a.q.heads.targetRed] } : {}) },
+    heads: { target: a.head, ...pushedOf(a.q.heads.pushed, a.origin), ...(a.q.heads.pushWhy ? { pushWhy: a.q.heads.pushWhy } : {}), ...(a.q.heads.targetRed?.length ? { targetRed: [...a.q.heads.targetRed] } : {}) },
     at: new Date(a.now).toISOString(),
   };
 }
 
+/**
+ * origin's copy of the target as the strip shows it: the queue's own push when it made one, else the remote-tracking
+ * ref (a project whose record started after its last push still reads Pushed); `hasOrigin` false only when the project
+ * has no origin (No remote). Pure.
+ */
+export function pushedOf(recorded: string | undefined, origin: { has: boolean; tracking: string | null } | undefined): { pushed?: string; hasOrigin?: boolean } {
+  const pushed = recorded ?? (origin?.has ? (origin.tracking ?? undefined) : undefined);
+  return { ...(pushed ? { pushed } : {}), ...(origin ? { hasOrigin: origin.has } : {}) };
+}
+
 /** The worktree row's slice of the newest entry for `branch` (SessionWorktreeInfo.queue). */
 export function worktreeQueueInfo(view: MergeQueueView, branch: string): WorktreeQueueInfo | undefined {
-  const all: MergeEntry[] = [...view.checking, ...view.waiting, ...view.needsYou, ...view.needsFix, ...view.recent.map((r) => r.entry)];
+  const all: MergeEntry[] = [...view.checking, ...view.waiting, ...view.needsYou, ...view.needsFix, ...(view.waitingOnHost ?? []), ...view.recent.map((r) => r.entry)];
   const mine = all.filter((e) => e.branch === branch).sort((x, y) => y.updatedAt.localeCompare(x.updatedAt));
   const e = mine[0];
   if (!e) return undefined;
@@ -86,6 +98,7 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
     ...(e.review ? { review: e.review } : {}),
     ...(e.unclear?.length ? { unclear: e.unclear } : {}),
     ...(e.run ? { run: e.run } : {}),
+    ...(e.request ? { request: e.request } : {}),
     ...(view.review ? { reviewKit: true } : {}),
   };
 }

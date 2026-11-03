@@ -121,6 +121,16 @@ test("tags, chips and the paused title", () => {
   assert.deepEqual(pushedWords({ target: SHA, pushed: "b".repeat(40) }), { label: "Not pushed", tone: "warn", why: "not pushed yet: goes out with the next landing" });
 });
 
+test("the strip says No remote only for a project with no origin", () => {
+  // A fresh queue record on a project whose master matches origin: the view filled `pushed` from origin.
+  assert.equal(pushedWords({ target: SHA, pushed: SHA, hasOrigin: true }).label, "Pushed");
+  assert.equal(pushedWords({ target: SHA, hasOrigin: false }).label, "No remote");
+  // An origin without the target branch: not pushed yet, never No remote.
+  assert.equal(pushedWords({ target: SHA, hasOrigin: true }).label, "Not pushed");
+  // A stray `pushed` on a project with no origin can't read Pushed.
+  assert.equal(pushedWords({ target: SHA, pushed: SHA, hasOrigin: false }).label, "No remote");
+});
+
 const step = (x: Partial<RunStep>): RunStep => ({ id: x.id ?? "s", kind: "check", label: "Unit", result: "pending", ms: 0, log: "", ...x });
 
 test("progress counts checks only, and names the running one", () => {

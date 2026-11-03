@@ -69,6 +69,10 @@ export interface WorktreesOptions {
 	/** Branches land through Sova's merge queue, so `merge` into the branch the main checkout has (or master/main) is
 	    refused (default: this chat was started by Sova, `SOVA_CHAT_STATE_ROOT` set). */
 	mergeQueue?: boolean;
+	/** Whether Sova's merge queue serves the repo the folder `path` is in, for "open a PR/MR": served, it is a
+	    go-ahead the queue lands as that request; unserved, nothing is recorded and the chat opens it itself (default:
+	    `mergeQueue`; team mq-served-only's served rule replaces it). */
+	isServed?: (root: string) => Promise<boolean>;
 }
 
 export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = {}) {
@@ -79,6 +83,7 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 	const carryOf = options.carry ?? carryAgreedDrafts;
 	const goAheadFile = options.landingFile ?? (() => landingFile());
 	const mergeQueue = options.mergeQueue ?? !!process.env.SOVA_CHAT_STATE_ROOT;
+	const isServed = options.isServed ?? (async () => mergeQueue);
 	let set: WorktreesActive | undefined;
 	let sessionId = "";
 	let sandboxOn = false;
@@ -295,10 +300,14 @@ export default function worktrees(pi: ExtensionAPI, options: WorktreesOptions = 
 						if (dirty.code !== 0) throw new GitError(`git status failed in ${f.path}: ${dirty.stderr.trim()}`);
 						const files = dirty.stdout.split("\n").filter(Boolean).length;
 						if (files) throw new Error(`${f.branch} has ${files} uncommitted file${files === 1 ? "" : "s"}: the go-ahead is for a commit. Commit or remove them, then call worktree land again. Nothing was recorded.`);
-						recordGoAhead({ branch: f.branch, commit: f.head, ...(sessionId ? { session: sessionId } : {}), at: new Date(now()).toISOString(), by: "owner-chat", ...(word.withoutSpecs ? { withoutSpecs: true as const } : {}), ...(word.withoutReview ? { withoutReview: true as const } : {}) }, goAheadFile());
+						const asked = word.via === "github-pr" ? "pull request" : word.via === "gitlab-mr" ? "merge request" : null;
+						// q12: "open a PR/MR" is never blocked. Unserved, the chat opens it itself; served, the queue does.
+						if (asked && !(await isServed(f.path)))
+							return done(`Sova's merge queue doesn't serve this repo, so nothing was queued: open the ${asked} yourself, as the user asked (${word.via === "github-pr" ? "gh pr create" : "glab mr create"}, after pushing ${f.branch}).`, { landing: null, trees: set?.trees ?? [] });
+						recordGoAhead({ branch: f.branch, commit: f.head, ...(sessionId ? { session: sessionId } : {}), at: new Date(now()).toISOString(), by: "owner-chat", ...(word.withoutSpecs ? { withoutSpecs: true as const } : {}), ...(word.withoutReview ? { withoutReview: true as const } : {}), ...(word.via ? { via: word.via } : {}) }, goAheadFile());
 						return done(
-							`Queued ${f.branch} at ${shortSha(f.head)} to land${word.withoutSpecs ? ", without its specs" : ""}${word.withoutReview ? ", without review" : ""}. Sova's merge queue merges it onto the newest master in its own copy, runs the checks and lands exactly that commit; it tells this chat when it lands or if it needs a fix. Tell the user it is queued; nothing else is needed from them. A newer commit on ${f.branch} isn't included unless they land it again.`,
-							{ landing: { branch: f.branch, commit: f.head, withoutSpecs: word.withoutSpecs, withoutReview: word.withoutReview }, trees: set?.trees ?? [] },
+							`Queued ${f.branch} at ${shortSha(f.head)} to land${asked ? ` as a ${asked}` : ""}${word.withoutSpecs ? ", without its specs" : ""}${word.withoutReview ? ", without review" : ""}. Sova's merge queue merges it onto the newest master in its own copy, runs the checks and lands exactly that commit; it tells this chat when it lands or if it needs a fix. Tell the user it is queued; nothing else is needed from them. A newer commit on ${f.branch} isn't included unless they land it again.`,
+							{ landing: { branch: f.branch, commit: f.head, withoutSpecs: word.withoutSpecs, withoutReview: word.withoutReview, ...(word.via ? { via: word.via } : {}) }, trees: set?.trees ?? [] },
 						);
 					}
 					case "merge": {

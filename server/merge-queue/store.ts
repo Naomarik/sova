@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { MergeEntry, MergeRun, PauseInfo } from "../../shared/merge-queue";
+import { ENTRY_FINAL, type LandHow, type MergeEntry, type MergeRun, type PauseInfo } from "../../shared/merge-queue";
 
 /**
  * The merge queue's records, per project, under the state root (records only: the merge COPY lives beside the
@@ -27,6 +27,20 @@ export interface LandIntent {
   at: string;
 }
 
+/** Written before each act that publishes to the host (al_3, a17): the push of the chat's branch, then the request's
+ *  creation. Cleared once the act's outcome is recorded on the entry. At start, a left-behind one is reconciled with
+ *  what origin and the host have (strategy-run.ts reconcilePublish), never repeated blind. */
+export interface PublishIntent {
+  entry: string;
+  run: string;
+  how: Exclude<LandHow, "local">;
+  branch: string;
+  step: "push" | "create";
+  /** The tip being published (the chat's branch with its docs commit). */
+  head: string;
+  at: string;
+}
+
 export interface QueueFile {
   v: 1;
   /** The project's id (or its root when not registered). */
@@ -37,6 +51,12 @@ export interface QueueFile {
   entries: (MergeEntry & { seq: number })[];
   paused?: PauseInfo;
   intent?: LandIntent;
+  /** A publication in flight (request strategies). */
+  publish?: PublishIntent;
+  /** Entries whose publication the user approved (Publish, or Land Again onto an open request) and that wait to go
+   *  out (the chat busy, its folder not clean): their text, or null when the request already has one. Retried by the
+   *  poller; dropped once published or refused. */
+  awaitingPublish?: Record<string, { title: string; body: string; draft: boolean } | null>;
   /** The target's head as the queue last saw it (or moved it): a different head is a move from outside. */
   knownTarget?: string;
   /** Commits the queue moved the target to (tips, docs commits are inside them), newest last: the push rule reads them. */
@@ -44,6 +64,8 @@ export interface QueueFile {
   heads: { pushed?: string; pushWhy?: string; targetRed?: string[] };
   /** Machine failures in a row, per entry (retry once, then pause). */
   machineTries: Record<string, number>;
+  /** A settings save waiting for the branch checking now (applied at the next quiet point); `failed`: why it couldn't be. */
+  pendingSave?: { at: string; changes: import("../../shared/merge-queue-settings").MergeSettingsChange; failed?: string };
   seq: number;
 }
 
@@ -183,4 +205,4 @@ export class QueueStore {
   }
 }
 
-export const isFinal = (e: Pick<MergeEntry, "state">): boolean => e.state === "landed" || e.state === "cancelled" || e.state === "needs-fix";
+export const isFinal = (e: Pick<MergeEntry, "state">): boolean => ENTRY_FINAL.includes(e.state);

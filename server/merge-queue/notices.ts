@@ -10,7 +10,7 @@ import { type MergeEntry, type MergeRun, newerWords } from "../../shared/merge-q
  */
 
 /** `approved`: Land or a typed "land it" put the branch in line (its chat's card appears). */
-export type MergeNoticeKind = "approved" | "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained";
+export type MergeNoticeKind = "approved" | "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained" | "requested" | "pushed" | "closed";
 
 const short = (sha: string | undefined) => (sha ?? "").slice(0, 7);
 
@@ -56,6 +56,12 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
     }
     case "approved":
       return `${e.branch} at ${short(e.commit)} is in line to land on ${e.target}.`;
+    case "requested":
+      return `${e.branch} passed Sova's checks and its request is open on the host${e.request?.url ? ` (${e.request.url})` : ""}; it lands when the host merges it.`;
+    case "pushed":
+      return `${e.branch} passed Sova's checks and was pushed to origin at ${short(e.request?.publishedHead)}; open its request on the host.`;
+    case "closed":
+      return `${e.branch}'s request was closed on the host without merging; land it again to open or update it.`;
     case "drafts-changed":
       return `${e.branch}'s spec drafts changed since the user approved it at ${short(e.commit)}, so it waits: the user lands it again once the drafts are as they want them.`;
   }

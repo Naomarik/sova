@@ -34,7 +34,8 @@ import { CHARS_PER_TOKEN, SETUP_FILE_MAX_BYTES, type SessionSetup, type SessionS
 import { acquireChatHandle, assertNotLive, chatHandle, closeChat } from "./chat-handle";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
 import { leavesOut, normalizeLoadout, type LoadoutEntryData } from "./session-loadout";
-import { listSubfolderInstructions } from "./deeper-context";
+import { dirname } from "node:path";
+import { candidateDirs, instructionFileIn } from "./deeper-context";
 import { getSessionSummary } from "./sessions-index";
 import { agentRoot } from "./state-root";
 import { readBranch } from "./harness/pi/reader";
@@ -275,8 +276,8 @@ export async function readSetupFile(sessionPath: string, file: string, deps: Set
   if (setup.state === "remote") return { ok: false, status: 409, error: "This session's files are on another machine." };
   if (setup.state !== "ok") return { ok: false, status: 409, error: setup.reason };
   // An instruction file in a folder below cwd loads as the agent works there (server/deeper-context.ts): the
-  // Context tab opens those too, gated on the same walk that finds them.
-  if (!listedPaths(setup).has(file) && !listSubfolderInstructions(setup.cwd, []).files.some((f) => f.abs === file))
+  // Context tab opens those too, gated on the engine's own rule for one (its folder's first instruction file).
+  if (!listedPaths(setup).has(file) && !(instructionFileIn(dirname(file)) === file && candidateDirs(setup.cwd, file).includes(dirname(file))))
     return { ok: false, status: 404, error: "That file isn't in this session's system context." };
   try {
     if (statSync(file).size > SETUP_FILE_MAX_BYTES) return { ok: false, status: 413, error: "That file is over 1 MB, too big to show here." };

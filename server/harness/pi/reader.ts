@@ -217,6 +217,7 @@ export function toHEntry(raw: unknown): HEntry | null {
       put(h, "tokensBefore", e.tokensBefore);
       put(h, "summary", e.summary);
       put(h, "details", e.details);
+      put(h, "firstKeptEntryId", e.firstKeptEntryId);
       break;
     case "branch_summary":
       h.kind = "summary";

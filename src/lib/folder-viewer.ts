@@ -8,6 +8,11 @@ export interface FolderItem {
   path: string;
   size?: number;
   kind?: "markdown" | "text" | "binary" | "too-large";
+  /** A plain name to show instead of the path (no file icon, not monospace): an item that isn't a
+      file, such as a tool. `path` stays its key. */
+  label?: string;
+  /** Shown beside the label in place of the size ("≈1.2k tokens"). */
+  detail?: string;
 }
 
 /** A file's contents as read: always text. `truncated`: the source cut it at its size cap. */
@@ -46,10 +51,10 @@ export function sortFiles(files: readonly FolderItem[]): FolderItem[] {
   return [...files].sort((a, b) => depth(a.path) - depth(b.path) || lead(a.path) - lead(b.path) || a.path.localeCompare(b.path));
 }
 
-/** The file a viewer opens on: the first group's first file in reading order, or null when every group is empty. Pure. */
-export function firstFile(lists: readonly { group: string; files: readonly FolderItem[] }[]): { group: string; path: string } | null {
+/** The file a viewer opens on: the first group's first file in reading order (or as listed, with `keepOrder`), or null when every group is empty. Pure. */
+export function firstFile(lists: readonly { group: string; files: readonly FolderItem[] }[], keepOrder = false): { group: string; path: string } | null {
   for (const l of lists) {
-    const f = sortFiles(l.files)[0];
+    const f = (keepOrder ? l.files : sortFiles(l.files))[0];
     if (f) return { group: l.group, path: f.path };
   }
   return null;

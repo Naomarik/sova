@@ -293,6 +293,9 @@ export interface HarnessSession extends SessionRead {
   /** The tools the next request declares to the model, in its order, as declared: the active tools less
       any declaration the loadout keeps out of requests, each with the description the loadout gave it. */
   declaredTools(): HarnessToolInfo[];
+  /** The system prompt the next request sends, by section name, each section's own text (the opening part
+      before any named section is `preamble`). */
+  promptSections(): Record<string, string>;
   /** An extension's registered tool, by name, as a Sova tool (the Overseer's subagent tools). */
   registeredTool(name: string): ToolSpec | undefined;
   commands(): HarnessCommand[];

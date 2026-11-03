@@ -165,6 +165,7 @@ test("chat-special imports only what a chat process may load: shared types, the 
     "../shared/harness",
     "./author-context",
     "./chat-manager",
+    "./harness/pi/deeper-context",
     "./harness/pi/extension-types",
     "./harness/pi/state",
     "./harness/pi/tools",

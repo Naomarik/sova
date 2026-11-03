@@ -69,7 +69,7 @@ export type HEntry = HBase & (
   | { kind: "setting"; what: "thinking"; level?: string }
   | { kind: "setting"; what: "name"; name?: string }
   | { kind: "setting"; what: "label"; label?: string; targetId?: string }
-  | { kind: "compaction"; tokensBefore?: number; summary?: string; details?: unknown }
+  | { kind: "compaction"; tokensBefore?: number; summary?: string; details?: unknown; /** The first entry the compaction kept (it stays in context). */ firstKeptEntryId?: EntryId }
   /** Model usage outside the conversation (pi 0.86+, e.g. a cache warm). */
   | { kind: "usage-record"; provider?: string; model?: string; usage?: HUsage }
   /** An edit to what an earlier entry sends the model (pi 0.87+). Renders nothing; history is unchanged. */

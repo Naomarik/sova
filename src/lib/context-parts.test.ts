@@ -1,0 +1,54 @@
+import assert from "node:assert/strict";
+import { describe, test } from "node:test";
+import type { ContextPart } from "../../shared/protocol";
+import { contextHeadline, contextLines, contextRoom, type ContextSizes } from "./context-parts";
+
+const parts: ContextPart[] = [
+  { id: "file:/p/AGENTS.md", group: "instructions", label: "AGENTS.md", tokens: 3_000, path: "/p/AGENTS.md" },
+  { id: "sub:/p/api/AGENTS.md", group: "subfolder", label: "api/AGENTS.md", tokens: 800, folder: "api", loaded: true },
+  { id: "sub:/p/web/AGENTS.md", group: "subfolder", label: "web/AGENTS.md", tokens: 5_000, folder: "web", loaded: false },
+  { id: "section:rules", group: "rules", label: "Rules", tokens: 700, text: "r" },
+  { id: "section:docs", group: "rules", label: "Docs", tokens: 500, text: "d" },
+  { id: "skill:a", group: "skills", label: "a", tokens: 1_500 },
+  { id: "skill:b", group: "skills", label: "b", tokens: 500 },
+  { id: "tool:read", group: "tools", label: "read", tokens: 9_000, text: "{}" },
+];
+const base: ContextSizes = { parts, conversation: 20_000, total: 50_000, window: 200_000 };
+
+describe("the Context tab's lines", () => {
+  test("one line per instruction file in the window, the other groups summed, biggest first, Free last", () => {
+    const lines = contextLines(base);
+    assert.deepEqual(
+      lines.map((l) => l.label),
+      ["Conversation", "Other", "Tools", "AGENTS.md", "Skills offered", "Rules and docs", "api/AGENTS.md", "Free"],
+    );
+    assert.equal(lines.find((l) => l.kind === "rules")!.tokens, 1_200);
+    assert.equal(lines.find((l) => l.kind === "skills")!.opens, "skill:a");
+  });
+
+  test("a subfolder file not yet loaded costs nothing; the lines add up to the window", () => {
+    const lines = contextLines(base);
+    assert.equal(lines.some((l) => l.label === "web/AGENTS.md"), false);
+    assert.equal(lines.find((l) => l.kind === "other")!.tokens, 50_000 - (3_000 + 800 + 1_200 + 2_000 + 9_000 + 20_000));
+    assert.equal(lines.find((l) => l.kind === "free")!.tokens, 150_000);
+    assert.equal(lines.reduce((n, l) => n + l.tokens, 0), 200_000);
+  });
+
+  test("Other is floored at 0 when the estimates overshoot the reported total", () => {
+    assert.equal(contextLines({ ...base, total: 10_000 }).find((l) => l.kind === "other")!.tokens, 0);
+  });
+
+  test("before the first reply: the estimates alone, no Other and no Free", () => {
+    const lines = contextLines({ ...base, total: null });
+    assert.equal(lines.some((l) => l.kind === "other" || l.kind === "free"), false);
+    assert.equal(contextHeadline(null, 200_000), "Nothing sent yet");
+    assert.equal(contextRoom(null, 200_000), null);
+  });
+
+  test("the headline and the room left", () => {
+    assert.equal(contextHeadline(50_000, 200_000), "50,000 of 200,000 tokens · 25%");
+    assert.equal(contextRoom(50_000, 200_000), "150k left");
+    assert.equal(contextHeadline(50_000, null), "50,000 tokens · this model's limit is unknown");
+    assert.equal(contextLines({ ...base, window: null }).some((l) => l.kind === "free"), false);
+  });
+});

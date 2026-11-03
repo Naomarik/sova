@@ -34,4 +34,9 @@ describe("the folder viewer's model", () => {
     assert.equal(sizeWords(512), "512 B");
     assert.equal(sizeWords(2150), "2.1 KB");
   });
+  test("keepOrder opens on the first item as listed, not the first in reading order", () => {
+    const lists = [{ group: "g", files: [{ path: "tools/bash" }, { path: "README.md" }] }];
+    assert.deepEqual(firstFile(lists), { group: "g", path: "README.md" });
+    assert.deepEqual(firstFile(lists, true), { group: "g", path: "tools/bash" });
+  });
 });

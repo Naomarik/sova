@@ -20,15 +20,24 @@ export function FolderViewer(props: {
   subtitle?: string;
   groups: FolderGroup[];
   onClose?(): void;
+  /** List each group's items as it gave them, not in reading order. */
+  keepOrder?: boolean;
+  /** A change lists every group again and re-reads the picked item. */
+  refreshKey?: string | number;
+  /** Hide the "shown as text, never run" note (items that are not files, such as a tool's declaration). */
+  hideTextNote?: boolean;
+  /** The item it opens on, until one is picked (default: the first). */
+  initial?: { group: string; path: string };
 }) {
-  const ids = createMemo(() => props.groups.map((g) => g.id).join("\u0000"));
-  // Every group's files, listed once per set of groups: a refresh of the caller's props that keeps
-  // the same groups doesn't list them again.
+  const ids = createMemo(() => `${props.groups.map((g) => g.id).join("\u0000")}\u0001${props.refreshKey ?? ""}`);
+  // Every group's files, listed once per set of groups (and refreshKey): a refresh of the caller's
+  // props that keeps the same groups doesn't list them again.
   const [lists] = createResource(ids, async () =>
     Promise.all(
       props.groups.map(async (g) => {
         try {
-          return { group: g.id, files: sortFiles(await g.list()), error: null as string | null };
+          const files = await g.list();
+          return { group: g.id, files: props.keepOrder ? files : sortFiles(files), error: null as string | null };
         } catch (err) {
           return { group: g.id, files: [] as FolderItem[], error: err instanceof Error ? err.message : String(err) };
         }
@@ -36,17 +45,19 @@ export function FolderViewer(props: {
     ),
   );
   const [picked, setPicked] = createSignal<{ group: string; path: string } | null>(null);
-  const current = createMemo(() => picked() ?? (lists() ? firstFile(lists()!) : null));
+  const current = createMemo(() => picked() ?? props.initial ?? (lists() ? firstFile(lists()!, props.keepOrder) : null));
   const groupOf = (id: string) => props.groups.find((g) => g.id === id);
   const key = createMemo(() => {
     const c = current();
-    return c ? `${c.group}\u0000${c.path}` : null;
+    return c ? `${c.group}\u0000${c.path}\u0001${props.refreshKey ?? ""}` : null;
   });
-  /** What the source said about the picked file when it listed it. */
-  const said = () => {
+  /** The picked file as the source listed it. */
+  const item = () => {
     const c = current();
-    return c ? lists()?.find((l) => l.group === c.group)?.files.find((f) => f.path === c.path)?.kind : undefined;
+    return c ? lists()?.find((l) => l.group === c.group)?.files.find((f) => f.path === c.path) : undefined;
   };
+  /** What the source said about the picked file when it listed it. */
+  const said = () => item()?.kind;
   const [file] = createResource(key, async () => {
     const c = current()!;
     // A file the source can't show is never read.
@@ -97,18 +108,21 @@ export function FolderViewer(props: {
                             <For each={l.files}>
                               {(f) => {
                                 const on = () => current()?.group === l.group && current()?.path === f.path;
+                                const size = () => f.detail ?? sizeWords(f.size);
                                 return (
                                   <li>
                                     <button
                                       type="button"
-                                      class="folder-viewer-file text-mono"
-                                      classList={{ "is-on": on() }}
+                                      class="folder-viewer-file"
+                                      classList={{ "is-on": on(), "text-mono": !f.label }}
                                       aria-current={on() ? "true" : undefined}
-                                      title={sizeWords(f.size) ? `${f.path} · ${sizeWords(f.size)}` : f.path}
+                                      title={size() ? `${f.label ?? f.path} · ${size()}` : (f.label ?? f.path)}
                                       onClick={() => setPicked({ group: l.group, path: f.path })}
                                     >
-                                      <Icon name="file" small />
-                                      <span class="folder-viewer-file-name">{f.path}</span>
+                                      <Show when={f.label} fallback={<><Icon name="file" small /><span class="folder-viewer-file-name">{f.path}</span></>}>
+                                        <span class="folder-viewer-file-name">{f.label}</span>
+                                        <Show when={size()}>{(d) => <span class="folder-viewer-file-detail text-muted">{d()}</span>}</Show>
+                                      </Show>
                                     </button>
                                   </li>
                                 );
@@ -124,13 +138,13 @@ export function FolderViewer(props: {
             )}
           </Show>
         </nav>
-        <div class="folder-viewer-doc" role="region" aria-label={current() ? `File ${current()!.path}` : "File"} tabindex="0">
+        <div class="folder-viewer-doc" role="region" aria-label={current() ? `File ${item()?.label ?? current()!.path}` : "File"} tabindex="0">
           <Show when={current()} fallback={<p class="text-caption text-muted">{lists() ? "These folders have no files." : ""}</p>}>
             {(c) => (
               <>
-                <p class="folder-viewer-path text-mono">
-                  {c().path}
-                  <Show when={kind() === "text"}>
+                <p class="folder-viewer-path" classList={{ "text-mono": !item()?.label }}>
+                  {item()?.label ?? c().path}
+                  <Show when={kind() === "text" && !props.hideTextNote}>
                     <span class="text-muted"> · shown as text, never run</span>
                   </Show>
                 </p>

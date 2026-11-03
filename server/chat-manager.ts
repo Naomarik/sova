@@ -63,6 +63,8 @@ import { codemodeFactory } from "./harness/pi/codemode";
 import { claimSessionSlot, holdingSlot } from "./provider-limits";
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
+import { deeperContextExtension } from "./harness/pi/deeper-context";
+import { LOADING_TOOLS } from "./deeper-context";
 import { playbookExtension, type PlaybookHost } from "./harness/pi/playbook";
 import { playbookHost } from "./playbook-host";
 import { ChatMemory } from "./memory/chat";
@@ -267,6 +269,8 @@ export function alignLaunchOf(state: Pick<SessionState, "branch" | "file">): Ali
 const DEFAULT_EXTENSION_FACTORIES = [
   { name: "sova-resource-monitor", factory: monitorExtension },
   { name: "sova-fork-cache", factory: forkCacheExtension },
+  // Subfolder AGENTS.md / CLAUDE.md files, attached to the read/edit/write result that first reaches them.
+  deeperContextExtension(),
   codemodeFactory({
     allowed: (ref) => modelAllowed(readModelPolicy(), ref),
     acquire: (provider, opts) => claimSessionSlot(provider, opts),
@@ -771,9 +775,12 @@ function workerHostExtension(pi: PiExtensionAPI): void {
  * instance note, as an ordinary chat does (§app.project-services/callers), served when the server declared it, else
  * in this process.
  */
-export function workerExtensionFactories(w: Pick<WorkerSpec, "kind">, path: string) {
-  if (w.kind !== "worker") return [];
+export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null }, path: string) {
+  // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
+  const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension()] : [];
+  if (w.kind !== "worker") return files;
   return [
+    ...files,
     servedDecls
       ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
       : projectVerbsExtension(projectEngine),

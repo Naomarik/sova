@@ -23,6 +23,7 @@ import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, WakeThread } from "./contract";
 import { countBetween, type Git, isAncestor, realGit, revParse, statusArgs, worktreesOf } from "./guard";
 import { canLand, checkoutOf, dirtyWhy, firstParents, landTip, pushTip } from "./land";
+import { recordLandedDrafts } from "./landed-drafts";
 import type { MergeNoticeKind } from "./notices";
 import { sanityCheck } from "./conflicts";
 import { estimateFromRuns } from "./estimate";
@@ -1971,6 +1972,11 @@ export class ProjectQueue {
     delete this.q.intent;
     this.save();
     this.log(`landed ${e.branch} at ${tip.slice(0, 7)}`);
+    // The drafts it made official stay in the branch folder, marked landed (§chat.worktrees/readiness).
+    if (!e.approval.withoutSpecs) {
+      const marked = await recordLandedDrafts({ git: this.git, root: this.root, runDir: this.store.runDir(run.id), worktree: e.worktree, target: this.q.target, tip, run: run.id, now: this.iso(), log: (s) => this.log(s) }).catch(() => []);
+      if (marked.length) this.log(`${e.branch}: marked landed in its folder: ${marked.join(", ")}`);
+    }
     await this.push(tip, def, e);
     this.deps.notify?.("landed", e, { run, root: this.root });
     this.wake("landed", e, run.id);

@@ -35,7 +35,7 @@ export const noRecipeReason = (host: { id: string; label: string }, selfLabel: s
 export type ResyncJobState =
   /** The deploy script is running. */
   | "running"
-  /** It finished; waiting for the peer's hello to carry this host's protocol. */
+  /** It finished; waiting for the peer's hello to carry this host's boot commit. */
   | "waiting"
   | "done"
   | "failed";

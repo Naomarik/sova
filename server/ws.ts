@@ -28,6 +28,8 @@ import { CHAT_CLOSED_CLOSE_CODE, HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } 
 import { unsentRefusal } from "../shared/chat-runtime";
 import { draftTexts, HeldSends, type Unsent } from "../shared/held-sends";
 import { putBackDraft } from "./drafts";
+import { COMPOSER_PARAM } from "../shared/wire-areas";
+import { writingRefused } from "./wire-gate";
 
 /** How long a chat socket that closed stays in its chat to hear what became of the messages it
     sent (§chat.transcript/send-while-starting): taken, or refused and put back as the draft. */
@@ -68,6 +70,9 @@ export function haveOf(params: URLSearchParams, ask: TailAsk): string | undefine
     is not stamped seen and its marks are not nudged. Every other caller leaves it out. */
 interface ChatSocketOpts {
   viewer?: boolean;
+  /** This socket stated another writing number: each frame gets this sentence and does nothing,
+      while the socket stays open and live (§mesh.compatibility/refusal). */
+  refused?: string;
 }
 
 async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion, have?: string, opts: ChatSocketOpts = {}): Promise<void> {
@@ -121,6 +126,11 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
       msg = JSON.parse(data.toString());
     } catch {
       client.send({ type: "error", code: "internal", message: "Invalid JSON" });
+      return;
+    }
+    if (opts.refused) {
+      const clientId = (msg as { clientId?: unknown }).clientId;
+      client.send({ type: "error", code: "refused", message: opts.refused, ...(typeof clientId === "string" && clientId ? { clientId } : {}) });
       return;
     }
     sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh
@@ -294,6 +304,13 @@ export function postedFrames(body: unknown): ChatClientMessage[] | null {
   return frames as ChatClientMessage[];
 }
 
+/** The texts in posted frames that go back as a draft when the frames are refused unrun. */
+export function framesDraft(frames: readonly ChatClientMessage[]): string[] {
+  const held = new HeldSends();
+  for (const frame of frames) held.sent(frame);
+  return draftTexts(held.takeAll());
+}
+
 /** The refusals for messages a pane sent while its chat was opening, when it didn't open. */
 export function heldRefusals(held: readonly ChatClientMessage[]): ChatServerMessage[] {
   return held.map(unsentRefusal).filter((r): r is NonNullable<typeof r> => r !== null);
@@ -437,7 +454,8 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
       return;
     }
     if (route === "/ws/chat") {
-      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire, haveOf(url.searchParams, tail)).catch((err) => {
+      const refused = writingRefused(url.searchParams.get(COMPOSER_PARAM)) ?? undefined;
+      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire, haveOf(url.searchParams, tail), refused ? { refused } : {}).catch((err) => {
         console.error("[ws/chat]", err);
         ws.close(4500, "internal");
       });

@@ -1,4 +1,4 @@
-import manifest from "./wire-areas.json";
+import manifest from "./wire-areas.json" with { type: "json" };
 
 // Four areas, one version number each (§mesh/compatibility): what two hosts on different builds can
 // still do together depends on these numbers alone. wire-areas.json is the manifest; its `version`s
@@ -80,6 +80,8 @@ function statedNumber(stated: string | number | null | undefined): number | unde
   return stated && /^[1-9]\d{0,8}$/.test(stated) ? Number(stated) : undefined;
 }
 
+const capitalized = (name: string): string => name.charAt(0).toUpperCase() + name.slice(1);
+
 /**
  * The sentence the host holding a session refuses a writing request with
  * (§mesh.compatibility/refusal), or null when it takes it. `own` is that host's writing number and
@@ -87,9 +89,10 @@ function statedNumber(stated: string | number | null | undefined): number | unde
  */
 export function writingRefusal(stated: string | number | null | undefined, own: number, host: string): string | null {
   const n = statedNumber(stated);
-  if (n === undefined) return own > 1 ? `This page is older than ${host}. Reload the page to send here.` : null;
+  const reload = `This page is older than ${host}. Reload the page to send here.`;
+  if (n === undefined) return own > 1 ? reload : null;
   if (n === own) return null;
-  return n < own ? `This page is older than ${host}. Reload the page to send here.` : `${host} needs an update before it can take sends from this page.`;
+  return n < own ? reload : `${capitalized(host)} needs an update before it can take sends from this page.`;
 }
 
 /** The same rule for what a host sends a peer on its own (§mesh.links/delivery): a request stating
@@ -97,7 +100,27 @@ export function writingRefusal(stated: string | number | null | undefined, own: 
 export function peerRefusal(stated: string | number | null | undefined, own: number, host: string): string | null {
   const n = statedNumber(stated);
   if (n === undefined || n === own) return null;
-  return n < own ? `The sending host needs an update before ${host} can take this.` : `${host} needs an update before it can take this.`;
+  return n < own ? `The sending host needs an update before ${host} can take this.` : `${capitalized(host)} needs an update before it can take this.`;
+}
+
+/** POST /api/sessions: a new session on this host, or on a target with `remoteCwd`. */
+export interface NewSessionBody {
+  cwd?: string;
+  target?: string;
+  remoteCwd?: string;
+  profile?: string | { source: string; id: string };
+  prompt?: string;
+  subagent_profile?: string;
+  link?: boolean;
+  model?: string;
+  thinking?: string;
+}
+
+/** POST /api/sessions/prompt: one message to one session. */
+export interface SessionPromptBody {
+  path: string;
+  text: string;
+  delivery?: "followUp" | "steer";
 }
 
 /** REST: what a refused writing request answers, with status 409. On /ws/chat the same sentence is

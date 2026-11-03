@@ -247,7 +247,7 @@ describe("sova_read_session with host", () => {
     const down = harness({ peers: [{ id: "vps", label: "VPS", nodeId: "n", state: "down", error: "no answer in time" }] });
     assert.match((await down.run("sova_read_session", { host: "vps", session: "r1" })).text, /^ERROR: VPS \(vps\) is down: no answer in time/);
     const skewed = harness({ peers: [{ id: "vps", label: "VPS", nodeId: "n", state: "skewed" }] });
-    assert.match((await skewed.run("sova_read_session", { host: "vps", session: "r1" })).text, /^ERROR: VPS \(vps\) is on another protocol version \(skewed\)/);
+    assert.match((await skewed.run("sova_read_session", { host: "vps", session: "r1" })).text, /^ERROR: VPS \(vps\) runs another version of Sova/);
     assert.match((await harness().run("sova_read_session", { host: "phone", session: "r1" })).text, /^ERROR: This host has no mesh peer "phone"\. Its peers: vps\./);
     assert.match((await harness().run("sova_read_session", { host: "vps", session: "r1" })).text, /^ERROR: VPS \(vps\) runs a Sova build without peer transcript reads/);
     const gone = harness({ peerRoutes: { "GET /api/peer/links/read": [404, { error: "No session with that id" }] } });

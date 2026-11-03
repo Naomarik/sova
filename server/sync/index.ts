@@ -12,6 +12,7 @@ import { DocSync, type DocManifest, type DocPeer, type DocPushReply, type DocRep
 import { ExtensionSync, type ExtensionList, type ExtensionPeer } from "./extensions";
 import { extensionsFile, readExtensions, setPeerExtensions, validateExtension } from "../extensions";
 import { answerDenied, sharesLogin, sharesWith } from "../mesh/access";
+import { peerAreaRefused } from "../wire-gate";
 
 /**
  * Host-to-host sync, mounted on the mesh. While the mesh is OFF nothing here exists beyond the
@@ -58,6 +59,9 @@ export const DENIED_ERROR = "denied by peer";
 
 function peerCall(mesh: MeshApi, id: string, caps: MeshCap[]) {
   return async <T>(path: string, init?: RequestInit): Promise<T> => {
+    // Neither pushed to, pulled from nor merged with until the hosts match (§mesh.sync/categories).
+    const why = await mesh.updateNeeded(id);
+    if (why) throw new Error(why);
     const res = await mesh.peerFetch(id, path, { ...init, signal: AbortSignal.timeout(PEER_CALL_TIMEOUT_MS) });
     const denied = caps.map((cap) => answerDenied(mesh, id, cap, res)).some(Boolean);
     if (!res.ok) {
@@ -203,6 +207,14 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
   };
   mesh.onMeshStart(start);
   mesh.onMeshStop(stop);
+  // What a peer in Update needed sends this host anyway stops here, pulls included.
+  for (const route of ["/api/peer/sync/*", "/api/peer/credentials/*"]) {
+    app.use(route, async (c, next) => {
+      const refused = peerAreaRefused(c, mesh.self().label);
+      if (refused) return refused;
+      await next();
+    });
+  }
   mesh.onPeerUp((id) => {
     if (!mesh.peers().some((p) => p.id === id)) return;
     if (rt.credentials && loginPeers().some((p) => p.id === id)) void rt.credentials.syncWith(httpPeer(mesh, id));

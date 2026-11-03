@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LANDING_FILE_NAME } from "../../pi-config/extensions/worktrees/landing.ts";
 import { stateRoot } from "../state-root";
-import type { MergeQueueView, WorktreeMergeProject, WorktreeMergeStats, WorktreeQueueInfo } from "../../shared/merge-queue";
+import { branchQueueOf, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { RunMerge, ThreadEvent, WakeThread } from "./contract";
 import { type IngestDeps, startIngest } from "./ingest";
 import { setLandingNoteSource, setMergeCardNoteSource } from "./card-note";
@@ -15,6 +15,8 @@ import type { QueueSubject } from "../git-diff";
 import { type Owner, WorktreeOwners } from "./owners";
 import { engineServices, makeRunMerge } from "./run";
 import { worktreeQueueInfo } from "./view";
+import type { SessionBranchQueue, SessionBranchRow } from "../../shared/protocol";
+import { sessionsChanged } from "../list-generation";
 import { LandingNotes, SERVED_FILE_NAME, ServedRule, servedKey, servedRule, setServedRule, startServedWriter } from "./served";
 
 /**
@@ -28,7 +30,7 @@ type RowFields = { queue?: WorktreeQueueInfo; mergeProject?: WorktreeMergeProjec
 let servedWriter: { refresh(): Promise<void>; stop(): void } | null = null;
 /** The served roots as last computed (the writer's pass): the thread wake's synchronous check. */
 let servedNow = new Set<string>();
-let rowsOf: ((path: string, branch: string) => Promise<RowFields>) | null = null;
+let rowsOf: ((path: string, branch: string, opts?: { stats?: boolean }) => Promise<RowFields>) | null = null;
 
 /** A worktree row's queue fields (SessionWorktreeInfo.queue / mergeProject / mergeServed): mergeProject for a
  *  registered project's repo, the rest only where the queue serves it (served.ts). */
@@ -39,6 +41,59 @@ export async function worktreeQueueOf(path: string, branch: string): Promise<Row
   } catch {
     return {};
   }
+}
+
+/** A branch's row fields as the session list carries them (SessionBranchRow): the chat's own (worktreeQueueOf), with
+ *  no size read, and the project root its queue entry is joined by at listing time (root: none while unserved). */
+export async function branchQueueFields(path: string, branch: string): Promise<{ root?: string; fields: Pick<SessionBranchRow, "queue" | "mergeServed" | "mergeProject"> }> {
+  if (!rowsOf) return { fields: {} };
+  let r: RowFields;
+  try {
+    r = await rowsOf(path, branch, { stats: false });
+  } catch {
+    return { fields: {} };
+  }
+  const p = r.mergeProject;
+  return {
+    ...(r.mergeServed && p ? { root: p.root } : {}),
+    fields: {
+      ...(r.queue ? { queue: branchQueueOf(r.queue) } : {}),
+      ...(r.mergeServed ? { mergeServed: true as const } : {}),
+      ...(p ? { mergeProject: { target: p.target, checks: p.checks, ...(p.invalid ? { invalid: p.invalid } : {}) } } : {}),
+    },
+  };
+}
+
+/** Each queue's newest view, indexed by branch (the session list joins its rows' entries here, no Git read): kept from
+ *  every view the queue publishes and every one a row read. */
+const latestViews = new Map<string, { at: string; byBranch: Map<string, SessionBranchQueue>; digest: string }>();
+
+/** Keep a view's entries per branch; a change in what a row reads re-lists the sessions (their rows push). */
+export function noteQueueView(view: Pick<MergeQueueView, "root" | "at" | "project"> & Parameters<typeof worktreeQueueInfo>[0]): void {
+  const key = servedKey(view.root);
+  const prev = latestViews.get(key);
+  if (prev && prev.at > view.at) return;
+  const branches = new Set([...view.checking, ...view.waiting, ...view.needsYou, ...view.needsFix, ...(view.waitingOnHost ?? []), ...view.recent.map((r) => r.entry)].map((e) => e.branch));
+  const byBranch = new Map<string, SessionBranchQueue>();
+  for (const b of branches) {
+    const q = worktreeQueueInfo(view, b);
+    if (q) byBranch.set(b, branchQueueOf(q));
+  }
+  const digest = JSON.stringify([...byBranch].sort(([a], [b]) => a.localeCompare(b)));
+  latestViews.set(key, { at: view.at, byBranch, digest });
+  if (prev && prev.digest !== digest) sessionsChanged();
+}
+
+/** A branch's newest entry in its queue's newest view: undefined when it has none there, null when no view of that
+ *  queue has been seen yet (the caller keeps what its last read found). Synchronous, no Git. */
+export function branchQueueNow(root: string, branch: string): SessionBranchQueue | undefined | null {
+  const v = latestViews.get(servedKey(root));
+  return v ? v.byBranch.get(branch) : null;
+}
+
+/** Tests only: forget every view kept. */
+export function resetQueueViewsForTest(): void {
+  latestViews.clear();
 }
 let ingest: { poke(): void; stop(): void } | null = null;
 let cards: MergeCards | null = null;
@@ -317,6 +372,7 @@ export async function startMergeQueue(
     projectIdOf,
     listed: (root) => served.isListed(root),
     publish: (view: MergeQueueView) => {
+      noteQueueView(view);
       publishFeed({ type: "merge_queue", project: view.project, view });
       cardsDo(mc.sync(view));
     },
@@ -366,7 +422,7 @@ export async function startMergeQueue(
     if (verb === "merge.setup" && r.ok && r.changed) void writer.refresh();
     return r;
   };
-  rowsOf = async (path, branch) => {
+  rowsOf = async (path, branch, opts) => {
     const p = await projectOf(path);
     if (p.state !== "ok" || !p.git) return {};
     // Off the Projects list (or archived): a plain repo, no queue fields at all.
@@ -378,8 +434,9 @@ export async function startMergeQueue(
       return { mergeProject: { id, root: p.root, target: s.target, checks: s.checks, review: false, ...(s.invalid ? { invalid: s.invalid } : {}) } };
     }
     const v = await (await q.get(p.root)).cachedView();
+    noteQueueView(v);
     const queue = worktreeQueueInfo(v, branch);
-    const stats = await statsOf(p.root, v.heads.target, branch);
+    const stats = opts?.stats === false ? null : await statsOf(p.root, v.heads.target, branch);
     return { ...(queue ? { queue } : {}), mergeProject: { id, root: p.root, target: v.target, checks: v.checks, review: v.review, ...(v.invalid ? { invalid: v.invalid } : {}), ...(v.paused ? { paused: v.paused.why } : {}) }, ...(stats ? { mergeStats: stats } : {}), mergeServed: true };
   };
   // The chats' file is current before the typed go-ahead door opens.
@@ -411,6 +468,7 @@ export async function startMergeQueue(
 
 export async function stopMergeQueue(): Promise<void> {
   rowsOf = null;
+  latestViews.clear();
   owners = null;
   servedWriter?.stop();
   servedWriter = null;

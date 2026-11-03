@@ -31,7 +31,7 @@ import { readDecisionSettings } from "./decide-settings";
 import { readSignals, type SignalsFile, signalsOverlay, withoutRestartAsk } from "./signals-store";
 import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
-import { pruneReadiness, readinessOverlay } from "./merge-readiness";
+import { branchesOverlay, pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
 import { projectOverseerOfPath, readPoState } from "./project-overseer-store";
 import { projectOverseerUnread } from "./project-overseer-unread";
@@ -1242,7 +1242,10 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
     };
     // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
     const readiness = readinessOverlay(row);
-    out.push(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row, stores.signals), previewLabels));
+    // The branches its chat's status row counts, each queue entry as the queue has it now (no Git here either).
+    const branches = branchesOverlay(row);
+    const withMerge = readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row;
+    out.push(redactPreviewLinksDeep(withoutRestartAsk(withMerge, stores.signals), previewLabels));
   }
   pruneReadiness(out);
   for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
@@ -1322,7 +1325,8 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...r.fields(s.path, s.id, s.cwd),
   };
   const readiness = readinessOverlay(row);
-  return withUnreadReplies(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row)));
+  const branches = branchesOverlay(row);
+  return withUnreadReplies(redactPreviewLinksDeep(withoutRestartAsk(readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row)));
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();

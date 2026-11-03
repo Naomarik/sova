@@ -358,7 +358,7 @@ export function ProjectPage(props: {
           </Match>
           <Match when={tab() === "releases"}>
             {/* The release in progress, then every numbered release (§app.release). */}
-            <ReleasesTab projectId={projectId} root={project().root} name={project().name} archived={!!archived()} poll={releases} />
+            <ReleasesTab projectId={projectId} root={project().root} name={project().name} archived={!!archived()} poll={releases} runtime={runtime} />
           </Match>
           <Match when={tab() === "cost"}>
             <ProjectCostCard projectId={projectId} poll={cost} />

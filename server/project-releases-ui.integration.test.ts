@@ -104,7 +104,7 @@ interface Opened {
   set(v: ReleaseView): void;
 }
 
-async function open(width: number, hash: string, first: ReleaseView): Promise<Opened> {
+async function open(width: number, hash: string, first: ReleaseView, o: { runtime?: Record<string, unknown> } = {}): Promise<Opened> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
   const page = await ctx.newPage();
@@ -139,6 +139,8 @@ async function open(width: number, hash: string, first: ReleaseView): Promise<Op
       calls.push({ verb: "held.cancel", body: { hold: decodeURIComponent(held[1]!) } });
       return route.fulfill(json({ ok: true }));
     }
+    if (p === `/api/projects/${PID}/runtime` && o.runtime) return route.fulfill(json(o.runtime));
+    if (p === "/api/project-services/merge.status") return route.fulfill(json(ok("merge.status", { merge: { view: { served: false, checks: "unset", target: "master", root: ROOT_DIR } } })));
     if (p === "/api/sessions") return route.fulfill(json([]));
     if (p === "/api/projects") return route.fulfill(json({ projects: [PROJECT] }));
     if (p === `/api/projects/${PID}`) return route.fulfill(json(PROJECT));
@@ -346,6 +348,41 @@ describe("the Releases tab's latest release", () => {
     try {
       await o.page.locator('[data-tag="v0.2.0"]').getByRole("button", { name: "Plan Deploy of v0.2.0" }).waitFor();
       assert.equal(await o.page.locator('[data-tag="v0.3.0"]').getByRole("button", { name: /Plan Deploy/ }).count(), 0);
+    } finally {
+      await o.ctx.close();
+    }
+  });
+});
+
+const runtimeWith = (state: string, extra: Record<string, unknown> = {}) => ({
+  projectId: PID, standing: "registered", playbookState: state, def: null, commit: null, suite: null, services: [], orphans: [], data: [], sources: [], drift: null, proof: null, registered: null,
+  playbook: { sessionId: "s-maker", playbookId: "release-maker", label: "Release maker", proposes: "release", startedBy: "operator", startedAt: iso(5), path: "/w/sessions/maker.jsonl", branch: "sova/release-setup", target: "master", ...extra },
+  can: { onboard: true }, feed: [],
+});
+
+describe("Set Up Releases while its run is live or proposed", () => {
+  test("a live run: the tab says the setup chat is running, with Open Chat, and offers no second Set Up Releases", async () => {
+    const o = await open(1280, TAB, view({ initialized: false, history: [], latest: null, landingsSince: null }), { runtime: runtimeWith("running") });
+    try {
+      const run = o.page.getByRole("group", { name: "Set Up Releases run" });
+      await run.getByText("Setup chat running").waitFor();
+      await run.getByRole("link", { name: "Open Chat" }).waitFor();
+      assert.equal(await o.page.getByRole("button", { name: "Set Up Releases" }).count(), 0);
+    } finally {
+      await o.ctx.close();
+    }
+  });
+
+  test("a proposed run: the tab shows its release setup and its Land", async () => {
+    const review = { release: { hash: `sha256:${"a".repeat(64)}`, settings: { playbook: ".sova/playbooks/release", tag: "v${version}", scheme: "semver", channels: ["stable"], commit: true, checks: [], quietMin: 30 }, steps: [{ id: "version", label: "Pick the version", phase: "prepare" }, { id: "commit", label: "Make the release commit", phase: "prepare" }], files: ["PLAYBOOK.md", "release.json"] } };
+    const o = await open(1280, TAB, view({ initialized: false, history: [], latest: null, landingsSince: null }), { runtime: runtimeWith("proposed", { branchHash: `sha256:${"a".repeat(64)}`, commit: sha("e"), review }) });
+    try {
+      const pr = o.page.getByRole("group", { name: "Set Up Releases proposal" });
+      await pr.getByText(/proposes a release setup for Notes on sova\/release-setup/).waitFor();
+      await pr.getByText("Pick the version").waitFor();
+      await pr.getByRole("button", { name: /Land|Merge Branch/ }).waitFor();
+      assert.equal(await o.page.getByRole("button", { name: "Set Up Releases" }).count(), 0);
+      await shot(o.page, "setup-proposed");
     } finally {
       await o.ctx.close();
     }

@@ -20,6 +20,8 @@ import {
   sinceLine,
   startedByWord,
   PHASE_WORD,
+  setupLiveLine,
+  setupRun,
   STEP_CHIP,
   stepActions,
   visibleSteps,
@@ -29,6 +31,8 @@ import {
 import { askDeployPlan, noteReleaseChanged, readReleases, releaseChanged, releaseFeed, releaseRefusal, runReleaseVerb } from "../lib/releases-client";
 import { announce, toast } from "../lib/ui-state";
 import { CancelHeldButton } from "./HeldAct";
+import { MergeRunButton, proposedRun } from "./PlaybookReview";
+import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import { Banner, Chip, Icon } from "./ui";
 
 /** A release's steps move by the minute; the checks by the second, on the Merge Queue tab. */
@@ -89,7 +93,7 @@ function useAct() {
  * numbered release from its tags, newest first, with its notes, channel badges, where it runs and Withdraw. A
  * project whose releases aren't set up gets the note on how, with Set Up Releases.
  */
-export function ReleasesTab(props: { projectId: string; root: string; name: string; archived: boolean; poll: Poll<ReleaseView> }) {
+export function ReleasesTab(props: { projectId: string; root: string; name: string; archived: boolean; poll: Poll<ReleaseView>; /** The project's software registry: a Set Up Releases run's state. */ runtime?: Poll<ProjectRuntimeView> }) {
   const view = () => props.poll.data();
   return (
     <section class="card orgs-section rel-tab" aria-labelledby="rel-title">
@@ -97,13 +101,13 @@ export function ReleasesTab(props: { projectId: string; root: string; name: stri
         when={view()}
         fallback={<p class="orgs-empty">{props.poll.error() ? `Couldn't read this project's releases. ${props.poll.error()}` : "Reading the releases."}</p>}
       >
-        {(v) => <ReleasesBody projectId={props.projectId} name={props.name} archived={props.archived} view={v()} targets={v().deployTargets} />}
+        {(v) => <ReleasesBody projectId={props.projectId} name={props.name} archived={props.archived} view={v()} targets={v().deployTargets} runtime={props.runtime} />}
       </Show>
     </section>
   );
 }
 
-function ReleasesBody(props: { projectId: string; name: string; archived: boolean; view: ReleaseView; targets: string[] }) {
+function ReleasesBody(props: { projectId: string; name: string; archived: boolean; view: ReleaseView; targets: string[]; runtime?: Poll<ProjectRuntimeView> }) {
   const v = () => props.view;
   const head = useAct();
   const shown = () => shownRecord(v());
@@ -143,7 +147,7 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
         {(p) => <Banner tone="error" title="This project's release settings don't read." body={`${p().trim().replace(/[.]$/, "")}. Fix it on ${v().target}, or land a branch that fixes it; no release starts until it reads.`} />}
       </Show>
       <Show when={!v().initialized}>
-        <NotSetUp projectId={props.projectId} name={props.name} archived={props.archived} target={v().target} />
+        <NotSetUp projectId={props.projectId} name={props.name} archived={props.archived} target={v().target} runtime={props.runtime} />
       </Show>
       <Show when={shown()}>{(r) => <InProgress projectId={props.projectId} view={v()} record={r()} targets={props.targets} />}</Show>
       <Show when={v().initialized && !shown() && !v().problem}>
@@ -159,8 +163,10 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
 }
 
 /** Releases aren't set up: what that means, how to set them up, and Set Up Releases (the maker, a chat). */
-function NotSetUp(props: { projectId: string; name: string; archived: boolean; target: string }) {
+function NotSetUp(props: { projectId: string; name: string; archived: boolean; target: string; runtime?: Poll<ProjectRuntimeView> }) {
   const act = useAct();
+  // A Set Up Releases run already live or proposed: say so in place of Set Up Releases.
+  const run = () => setupRun(props.runtime?.data());
   const [started, setStarted] = createSignal<{ path: string; branch?: string } | null>(null);
   const setup = async () => {
     if (act.busy()) return;
@@ -186,13 +192,52 @@ function NotSetUp(props: { projectId: string; name: string; archived: boolean; t
           </>
         }
         action={
-          <Show when={!props.archived}>
+          <Show when={!props.archived && !run()}>
             <button type="button" class="button button-sm button-primary" aria-disabled={act.busy() ? "true" : undefined} onClick={() => void setup()}>
               {act.busy() === "setup" ? "Starting…" : "Set Up Releases"}
             </button>
           </Show>
         }
       />
+      <Show when={run()?.kind === "live" ? (run() as Extract<ReturnType<typeof setupRun>, { kind: "live" }>) : null}>
+        {(r) => (
+          <div class="mq-card rel-setup-run" role="group" aria-label="Set Up Releases run">
+            <p class="cluster">
+              <Chip tone={r().waiting ? "warn" : "accent"} live={!r().waiting}>
+                {r().waiting ? "Waiting on you" : "Running"}
+              </Chip>
+              <span>{setupLiveLine(r())}</span>
+              <Show when={r().path}>
+                {(p) => (
+                  <a class="button button-sm" href={projectSessionHref(props.projectId, p())}>
+                    Open Chat
+                  </a>
+                )}
+              </Show>
+            </p>
+          </div>
+        )}
+      </Show>
+      <Show when={run()?.kind === "proposed" ? proposedRun(props.runtime?.data()) : null}>
+        {(pr) => (
+          <div class="mq-card rel-setup-run" role="group" aria-label="Set Up Releases proposal">
+            <p class="orgs-line">
+              The setup chat proposes a release setup for {props.name} on <span class="text-mono">{pr().branch}</span>. Read it before it reaches {pr().target}.
+            </p>
+            <Show when={props.runtime?.data()?.playbook?.review?.release}>{(rel) => <ReleaseSetupSteps setup={rel()} />}</Show>
+            <div class="deploy-actions">
+              <MergeRunButton projectId={props.projectId} run={pr()} onDone={(view) => (view ? props.runtime?.set(view) : props.runtime?.refetch())} />
+              <Show when={pr().path}>
+                {(p) => (
+                  <a class="button button-sm button-ghost" href={projectSessionHref(props.projectId, p())}>
+                    Read Report
+                  </a>
+                )}
+              </Show>
+            </div>
+          </div>
+        )}
+      </Show>
       <Show when={started()}>
         {(s) => (
           <p class="text-caption">

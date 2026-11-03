@@ -5660,7 +5660,10 @@ export type UpdateCheckResult =
   | { state: "up-to-date" }
   | { state: "available"; target: UpdateTarget; rewritten?: boolean }
   | { state: "ahead"; message: string }
-  | { state: "diverged"; target: UpdateTarget; message: string };
+  | { state: "diverged"; target: UpdateTarget; message: string }
+  /** What runs is a withdrawn release (its channel was moved back): told so with the reason, instead of `ahead`, and
+      offered `target`, the release the channel points at now (going back). */
+  | { state: "withdrawn"; tag: string; why: string; at: string; target: UpdateTarget; message: string };
 
 export interface UpdateCheck {
   at: string;

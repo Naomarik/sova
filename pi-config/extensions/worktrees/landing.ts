@@ -73,9 +73,14 @@ function agentDirOf(env: NodeJS.ProcessEnv): string {
 	return resolve(dir);
 }
 
+/** Sova's state root as a chat sees it: the server that started this chat's (`SOVA_CHAT_STATE_ROOT`), else `<agent dir>/sova`. */
+export function chatStateRoot(env: NodeJS.ProcessEnv = process.env): string {
+	return env.SOVA_CHAT_STATE_ROOT || join(agentDirOf(env), "sova");
+}
+
 /** The file: under the state root of the server that started this chat (`SOVA_CHAT_STATE_ROOT`), else `<agent dir>/sova`. */
 export function landingFile(env: NodeJS.ProcessEnv = process.env): string {
-	return join(env.SOVA_CHAT_STATE_ROOT || join(agentDirOf(env), "sova"), LANDING_FILE_NAME);
+	return join(chatStateRoot(env), LANDING_FILE_NAME);
 }
 
 const SHA = /^[0-9a-f]{40}([0-9a-f]{24})?$/;

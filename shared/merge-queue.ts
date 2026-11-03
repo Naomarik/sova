@@ -367,6 +367,9 @@ export interface MergeQueueView {
   checks: ChecksDeclared;
   /** The project declares a review kit. */
   review: boolean;
+  /** The merge queue serves this project: it is on the Projects list and its merge setup is done (checks declared,
+      or a definition that doesn't parse). false: its chats merge plainly; the tab offers to initialize the setup. */
+  served: boolean;
   /** The run checking now. */
   current?: MergeRun;
   /** Entries in state `checking`: the one whose run is `current`, or one tested and held (a paused landing). */

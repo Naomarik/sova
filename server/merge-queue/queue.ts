@@ -27,6 +27,7 @@ import type { MergeNoticeKind } from "./notices";
 import { sanityCheck } from "./conflicts";
 import { estimateFromRuns } from "./estimate";
 import { deliverReview } from "./review-step";
+import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
 import { buildView } from "./view";
 import { type MergeQueueSettings, type MergeSettingsChange, type MergeSettingsSaveResult, SETTINGS_DIRTY_WORDS } from "../../shared/merge-queue-settings";
@@ -77,6 +78,8 @@ export interface QueueDeps {
   definitionAt: (root: string, ref: string) => Promise<{ def: ProjectDef | null; error: string | null }>;
   /** The project's id, when registered. */
   projectIdOf?: (root: string) => string | null;
+  /** The project is on Sova's Projects list (with its setup done, the queue serves it: served.ts). Default: yes. */
+  listed?: (root: string) => boolean;
   /** A queue's view changed. */
   publish?: (view: MergeQueueView) => void;
   /** Tell the branch's chat (server/merge-queue/notices.ts). */
@@ -208,15 +211,8 @@ export class ProjectQueue {
     return this.q;
   }
 
-  private async resolveTarget(): Promise<string> {
-    const head = await this.git(["symbolic-ref", "--quiet", "--short", "HEAD"], this.root);
-    const main = head.code === 0 && head.stdout.trim() ? head.stdout.trim() : null;
-    const ref = main ?? "HEAD";
-    const at = await this.deps.definitionAt(this.root, ref);
-    if (at.def?.merge?.target) return at.def.merge.target;
-    if (main) return main;
-    for (const b of ["master", "main"]) if (await revParse(this.git, this.root, `refs/heads/${b}`)) return b;
-    return "master";
+  private resolveTarget(): Promise<string> {
+    return resolveTarget(this.git, this.root, this.deps.definitionAt);
   }
 
   async targetHead(): Promise<string | null> {
@@ -273,7 +269,7 @@ export class ProjectQueue {
     const review = (this.deps.hasReviewKit ?? ((d) => !!d?.merge?.review))(at.def, this.root);
     // A definition that is there but doesn't parse is not "not set up": its error is kept and said (definitionAt's other
     // errors, "no commit …" and "no .sova/project.json at …", are a project with nothing declared).
-    const invalid = !at.def && at.error && !/^no /.test(at.error) ? at.error : undefined;
+    const invalid = invalidOf(at);
     const out = { head: head ?? "", def: at.def, checks, review, ...(invalid ? { invalid } : {}) };
     if (head) this.checksCache = out;
     return out;
@@ -348,7 +344,9 @@ export class ProjectQueue {
       this.lastPoll = this.now();
       void this.pollHost().catch((err) => this.log(`host poll failed: ${err instanceof Error ? err.message : err}`));
     }
-    return { ...v, ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
+    // Served by the queue (team mq-served-only, served.ts): on Sova's Projects list with its setup done.
+    const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
+    return { ...v, served, ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
   }
 
   /** Whether the project has origin, and origin's copy of the target as last fetched (its remote-tracking ref; never a fetch). */
@@ -2135,6 +2133,11 @@ export class MergeQueues {
       p.catch(() => this.queues.delete(root));
     }
     return p;
+  }
+
+  /** The queue of `root` when it is already loaded (never loads one). */
+  peek(root: string): Promise<ProjectQueue> | null {
+    return this.queues.get(root) ?? null;
   }
 
   loaded(): Promise<ProjectQueue[]> {

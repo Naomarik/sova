@@ -29,6 +29,7 @@ import { projectTabHref } from "../../lib/projects-route";
 import { closeSettings } from "../../lib/settings-nav";
 import { announce, home, toast } from "../../lib/ui-state";
 import { FolderViewer } from "../FolderViewer";
+import { notSetUp, requestInitialize } from "../../lib/merge-queue-initialize";
 import { ModelPickButton } from "../ModelPickButton";
 import { Banner } from "../ui";
 import { MergeQueueLandHow, MergeQueueLandSuggestion } from "./MergeQueueLandHow";
@@ -142,7 +143,7 @@ function ProjectQueueSettings(props: { projectId: string; root: string }) {
   return (
     <Show when={view()} fallback={<p class="text-caption text-muted">{view.error ? `Couldn't read this project's merge queue. ${String(view.error)}` : "Reading the merge queue."}</p>}>
       {(v) => (
-        <Show when={(v() as { served?: boolean }).served !== false} fallback={<NotServed projectId={props.projectId} settings={v().settings} />}>
+        <Show when={!notSetUp(v())} fallback={<NotServed projectId={props.projectId} target={v().target} settings={v().settings} />}>
         <Show
           when={v().settings}
           fallback={
@@ -162,17 +163,28 @@ function ProjectQueueSettings(props: { projectId: string; root: string }) {
   );
 }
 
-/** A project the queue doesn't serve: no settings to show; Initialize opens its Merge Queue tab's setup. */
-function NotServed(props: { projectId: string; settings: MergeQueueSettings | undefined }) {
+/** A project the queue doesn't serve (no merge setup): the Merge Queue tab's words; Initialize opens that tab straight on its setup. */
+function NotServed(props: { projectId: string; target: string; settings: MergeQueueSettings | undefined }) {
   return (
     <div class="mqs-body">
-      <p class="text-body">No merge queue settings are set up for this project.</p>
+      <Banner
+        tone="info"
+        title="No merge queue settings are set up for this project"
+        body={`Until they are, its chats merge branches into ${props.target} themselves when you ask.`}
+        action={
+          <a
+            class="button button-sm"
+            href={projectTabHref(props.projectId, "merge-queue")}
+            onClick={() => {
+              requestInitialize(props.projectId);
+              closeSettings();
+            }}
+          >
+            Initialize
+          </a>
+        }
+      />
       <MergeQueueLandSuggestion settings={props.settings} />
-      <div class="button-row">
-        <a class="button button-sm button-primary" href={projectTabHref(props.projectId, "merge-queue")} onClick={() => closeSettings()}>
-          Initialize
-        </a>
-      </div>
     </div>
   );
 }

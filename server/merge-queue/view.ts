@@ -27,6 +27,8 @@ export function buildView(a: {
   readRun: (id: string) => MergeRun | null;
   /** Whether the project has origin, and origin's copy of the target as last fetched (refs/remotes/origin/<target>). */
   origin?: { has: boolean; tracking: string | null };
+  /** The queue serves the project (served.ts); default true. */
+  served?: boolean;
 }): MergeQueueView {
   const takes = a.takesMs ?? DEFAULT_TAKES_MS;
   const queued = a.q.entries.filter((e) => e.state === "queued").sort((x, y) => x.seq - y.seq);
@@ -56,6 +58,7 @@ export function buildView(a: {
     ...(a.q.paused ? { paused: { ...a.q.paused } } : {}),
     checks: a.checks,
     review: a.review,
+    served: a.served ?? true,
     ...(a.current ? { current: structuredClone(a.current) } : {}),
     checking,
     waiting,

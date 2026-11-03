@@ -1,7 +1,7 @@
 import { createSignal, For, onCleanup, Show, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { SessionWorktreeInfo } from "../../shared/protocol";
-import { queueRow, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
+import { modalHead, queueRow, rowButtons, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, land, refusal, type LandOptions } from "../lib/merge-queue-client";
 import { mergeRunHref, projectTabHref } from "../lib/projects-route";
 import { tildePath } from "../lib/format";
@@ -117,6 +117,7 @@ export function WorktreeQueueRow(props: {
   const w = () => props.worktree;
   const row = () => queueRow(w());
   const projectId = () => projectIdOf(w());
+  const buttons = () => rowButtons(row(), projectId());
   const entry = () => w().queue;
   /** The menu's Land Without Review: only where the project has a review kit. */
   const review = () => w().mergeProject?.review ?? w().queue?.reviewKit ?? false;
@@ -200,30 +201,30 @@ export function WorktreeQueueRow(props: {
         <Show when={error()}>{(m) => <p class="list-meta wt-queue-error" role="alert">{m()}</p>}</Show>
       </div>
       <div class="wt-queue-act">
-        <Show when={row().action === "land"}>
+        <Show when={buttons().includes("Land")}>
           <LandSplit branch={w().branch} review={review()} busy={busy()} onLand={doLand} onWithoutSpecs={() => setAskSpecs(true)} />
         </Show>
-        <Show when={row().action === "setup" && projectId()}>
+        <Show when={buttons().includes("Set Up Queue")}>
           <a class="button button-sm" href={projectTabHref(projectId()!, "merge-queue")} title="This project's merge queue isn't set up yet.">
             Set Up Queue
           </a>
         </Show>
-        <Show when={row().action === "cancel"}>
+        <Show when={buttons().includes("Cancel")}>
           <button type="button" class="button button-sm" aria-label={`Cancel landing ${w().branch}`} disabled={busy()} onClick={() => void run("Cancel", () => cancelEntry(e()), `Cancelled landing ${w().branch}.`)}>
             Cancel
           </button>
         </Show>
-        <Show when={row().action === "accept"}>
+        <Show when={buttons().includes("Accept")}>
           <button type="button" class="button button-sm button-primary" aria-label={`Accept the resolution for ${w().branch}`} disabled={busy()} onClick={() => void run("Accept", () => answerEntry(e(), "accept"), `Accepted the resolution for ${w().branch}.`)}>
             Accept
           </button>
         </Show>
-        <Show when={row().action === "land-anyway"}>
+        <Show when={buttons().includes("Land Anyway")}>
           <button type="button" class="button button-sm button-primary" aria-label={`Land ${w().branch} anyway`} disabled={busy()} onClick={() => void run("Land Anyway", () => answerEntry(e(), "land-anyway"), `Landing ${w().branch} anyway.`)}>
             Land Anyway
           </button>
         </Show>
-        <Show when={row().sendBack}>
+        <Show when={buttons().includes("Send Back")}>
           <button type="button" class="button button-sm button-destructive" aria-label={`Send ${w().branch} back to its chat`} disabled={busy()} onClick={() => void run("Send Back", () => answerEntry(e(), "send-back"), `Sent ${w().branch} back to its chat.`)}>
             Send Back
           </button>
@@ -246,8 +247,8 @@ export function WorktreeQueueList(props: { rows: QueueWorktree[]; showPath?: boo
 /** The composer control's modal: this chat's worktrees, each with its one action, and View Merge Queue. */
 export function WorktreesModal(props: { title: string; rows: QueueWorktree[]; onClose(): void; onChanged?(): void }) {
   const summary = () => rowsSummary(props.rows.map((w) => queueRow(w)));
-  const project = () => props.rows.find((w) => w.mergeProject)?.mergeProject;
-  const target = () => project()?.target ?? "the target branch";
+  /** The queue's intro and paused line: only where some row's repo is one the queue serves. */
+  const head = () => modalHead(props.rows);
   const href = () => queueHrefOf(props.rows);
   // Escape closes it wherever focus is (an action's button goes busy and can drop focus to the page),
   // unless a menu inside is open: the key is that menu's (it closes itself).
@@ -280,12 +281,8 @@ export function WorktreesModal(props: { title: string; rows: QueueWorktree[]; on
           </button>
         </div>
         <div class="modal-body">
-          <p class="text-caption wt-queue-intro">
-            Land queues a branch. It's merged onto {target()}, checked there on its own, and lands as exactly the commit that was tested.
-          </p>
-          <Show when={project()?.paused}>
-            {(why) => <p class="text-caption wt-queue-paused">The queue is paused: {why()}. Land still takes your approval; it's checked once the queue resumes.</p>}
-          </Show>
+          <Show when={head().intro}>{(t) => <p class="text-caption wt-queue-intro">{t()}</p>}</Show>
+          <Show when={head().paused}>{(t) => <p class="text-caption wt-queue-paused">{t()}</p>}</Show>
           <WorktreeQueueList rows={props.rows} onChanged={props.onChanged} />
         </div>
         <div class="modal-foot">

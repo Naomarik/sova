@@ -11,6 +11,7 @@ import { MergeRunView } from "./MergeRunView";
 import { LocalBehind, RequestRow, WaitingOnHost, type RequestEntry } from "./MergeQueueRequests";
 import { introWords, isRequestState } from "../lib/merge-queue-requests";
 import { QueueSettingsButton, QueueSummaryLine } from "./settings/MergeQueueSummary";
+import { notSetUp, takeInitialize } from "../lib/merge-queue-initialize";
 import { Banner, Icon } from "./ui";
 import { LandSpecsConfirm, LandSplit, QueueChip, UnclearChecks } from "./WorktreesModal";
 import type { MergeReady } from "../../shared/merge-queue";
@@ -48,13 +49,48 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
             fallback={<MergeRunView projectId={props.projectId} view={v()} runId={props.run!} chatTitle={props.chatTitle} />}
           >
             {/* An invalid definition reads "unset" too: its error is said, never the onboarding. */}
-            <Show when={v().checks !== "unset" || v().invalid} fallback={<MergeOnboarding projectId={props.projectId} name={props.name} view={v()} onSaved={() => poll.refetch()} />}>
+            <Show when={!notSetUp(v())} fallback={<NotSetUp projectId={props.projectId} name={props.name} view={v()} onSaved={() => poll.refetch()} />}>
               <QueueBody projectId={props.projectId} view={v()} chatTitle={props.chatTitle} onChanged={() => poll.refetch()} />
             </Show>
           </Show>
         )}
       </Show>
     </section>
+  );
+}
+
+
+/**
+ * A listed project with no merge setup: its chats merge plainly. The tab says so, and Initialize opens the
+ * setup (the onboarding: Try It on Main, then Save Checks).
+ */
+function NotSetUp(props: { projectId: string; name: string; view: MergeQueueView; onSaved(): void }) {
+  // Initialize pressed in Settings → Merge Queue: open on the setup at once.
+  const [open, setOpen] = createSignal(takeInitialize(props.projectId));
+  return (
+    <Show
+      when={!open()}
+      fallback={<MergeOnboarding projectId={props.projectId} name={props.name} view={props.view} onSaved={props.onSaved} />}
+    >
+      <div class="stack mq-body mq-unset">
+        <div class="cluster">
+          <h2 class="orgs-h2" id="mq-title">
+            Merge queue
+          </h2>
+          <QueueChip row={{ label: "Not set up", tone: "warn" }} />
+        </div>
+        <Banner
+          tone="info"
+          title="No merge queue settings are set up for this project"
+          body={`Until they are, its chats merge branches into ${props.view.target} themselves when you ask.`}
+          action={
+            <button type="button" class="button button-sm" onClick={() => setOpen(true)}>
+              Initialize
+            </button>
+          }
+        />
+      </div>
+    </Show>
   );
 }
 

@@ -1,12 +1,13 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
-import { MERGE_ANSWERS, type MergeAnswer, type MergeReport } from "../../shared/merge-queue";
+import { MERGE_ANSWERS, type MergeAnswer, type MergeQueueView, type MergeReport } from "../../shared/merge-queue";
 import { type AnyVerb, isMergeVerb, type MergeVerb, MERGE_READ_VERBS, ordered, type VerbResult } from "../../shared/project-contract";
 import type { Caller } from "../project-services/engine";
 import type { RunMerge, WakeThread } from "./contract";
 import { MergeFailure, type MergeQueues, type ProjectQueue } from "./queue";
 import { registerLiveMergeSettingsRoutes } from "./settings-routes";
 import { registerLiveMergeLandingRoutes } from "./routes-landing";
+import { NOT_SERVED } from "./served";
 
 /**
  * The merge verbs (POST /api/project-services/merge.<x>, through the engine's `merger` hook; the merge thread's tool
@@ -24,6 +25,9 @@ export interface MergerDeps {
   queues: MergeQueues;
   /** The project root of a path (server/project-root.ts projectOf). */
   rootOf: (path: string) => Promise<string | null>;
+  /** The served rule (served.ts): a root not on the Projects list gets no verb at all; one listed but not set up
+   *  only merge.status (its bare view, served: false, made without a queue) and merge.setup (Initialize). */
+  served: { isListed(root: string): boolean; served(root: string): Promise<boolean>; bareView(root: string): Promise<MergeQueueView> };
   /** The recorded merge thread of `root` is `sessionId`. */
   isThreadChat?: (root: string, sessionId: string) => boolean;
   /** The reviewer chat run `run` waits on. */
@@ -136,9 +140,16 @@ export function merger(deps: MergerDeps): (verb: string, body: unknown, caller: 
     try {
       if (!isMergeVerb(verb)) throw new MergeFailure("invalid-request", `unknown verb "${verb}"`);
       const req = parse(body);
-      const q = await queueFor(deps, verb, req, caller);
+      const got = await queueFor(deps, verb, req, caller);
+      if ("bare" in got) {
+        // A listed project with no merge setup: its status is read from Git alone, no queue made (a4).
+        root = got.bare;
+        authorize(deps, verb, caller, root, req);
+        return result(verb, root, true, false, { view: await deps.served.bareView(root) }, undefined, now());
+      }
+      const q = got;
       root = q.root;
-      authorize(deps, verb, caller, q, req);
+      authorize(deps, verb, caller, q.root, req);
       const r = await dispatch(deps, verb, req, q, caller);
       changed = r.changed;
       report = r.report;
@@ -175,43 +186,58 @@ function result(verb: AnyVerb, root: string | null, ok: boolean, changed: boolea
   });
 }
 
+/** The verbs a project on the Projects list may call before its merge setup is done. */
+const SETUP_VERBS: readonly MergeVerb[] = ["merge.status", "merge.setup"];
+
+type Gated = ProjectQueue | { bare: string };
+
+/** The queue of `root`, when the served rule lets `verb` reach it; never creates a queue for a root it refuses. A
+ *  listed project with no setup: merge.status is answered bare (no queue) unless a setup press already loaded one. */
+async function gated(deps: MergerDeps, verb: MergeVerb, root: string): Promise<Gated> {
+  if (!deps.served.isListed(root)) throw new MergeFailure("unsupported", NOT_SERVED);
+  if (await deps.served.served(root)) return deps.queues.get(root);
+  if (!SETUP_VERBS.includes(verb)) throw new MergeFailure("unsupported", NOT_SERVED);
+  if (verb === "merge.status") return (await deps.queues.peek(root)) ?? { bare: root };
+  return deps.queues.get(root);
+}
+
 /** The queue a request is about: its project, or the one holding its entry or run. */
-async function queueFor(deps: MergerDeps, verb: MergeVerb, req: Req, caller: Caller): Promise<ProjectQueue> {
+async function queueFor(deps: MergerDeps, verb: MergeVerb, req: Req, caller: Caller): Promise<Gated> {
   if (req.project) {
     if (!isAbsolute(req.project)) throw new MergeFailure("invalid-request", "the project is an absolute path inside it");
     const root = await deps.rootOf(req.project);
     if (!root) throw new MergeFailure("not-found", `no project at ${req.project}`);
-    return deps.queues.get(root);
+    return gated(deps, verb, root);
   }
   if (req.entry) {
     const q = await deps.queues.findEntry(req.entry);
     if (!q) throw new MergeFailure("not-found", `no queue entry ${req.entry}`);
-    return q;
+    return gated(deps, verb, q.root);
   }
   if (req.run) {
     const q = await deps.queues.findRun(req.run);
     if (!q) throw new MergeFailure("not-found", `no merge run ${req.run}`);
-    return q;
+    return gated(deps, verb, q.root);
   }
   if (req.checkout && isAbsolute(req.checkout)) {
     const root = await deps.rootOf(req.checkout);
-    if (root) return deps.queues.get(root);
+    if (root) return gated(deps, verb, root);
   }
-  if (caller.kind === "session" && caller.root) return deps.queues.get(caller.root);
-  if ((caller.kind === "project-overseer" || caller.kind === "assistant") && caller.root) return deps.queues.get(caller.root);
+  if (caller.kind === "session" && caller.root) return gated(deps, verb, caller.root);
+  if ((caller.kind === "project-overseer" || caller.kind === "assistant") && caller.root) return gated(deps, verb, caller.root);
   throw new MergeFailure("invalid-request", `${verb}: name the project (an absolute path inside it)${verb === "merge.status" || verb === "merge.add" ? "" : ", the entry or the run"}`);
 }
 
-function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, q: ProjectQueue, req: Req): void {
+function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: string, req: Req): void {
   if (caller.kind === "operator") return;
   const reads = MERGE_READ_VERBS.includes(verb);
   const sid = sessionId(caller);
   // The run's reviewer works in the merge copy, whatever project its folder reads as: its run decides.
   if (sid && req.run && REVIEWER_VERBS.includes(verb) && deps.reviewerOf?.(req.run) === sid) return;
   if (caller.kind === "session" || caller.kind === "project-overseer" || caller.kind === "assistant") {
-    if (caller.root !== q.root) throw new MergeFailure("forbidden", `this caller acts only on its own project${caller.root ? ` (${caller.root})` : ""}`);
+    if (caller.root !== root) throw new MergeFailure("forbidden", `this caller acts only on its own project${caller.root ? ` (${caller.root})` : ""}`);
   }
-  if (sid && deps.isThreadChat?.(q.root, sid) && THREAD_VERBS.includes(verb)) return;
+  if (sid && deps.isThreadChat?.(root, sid) && THREAD_VERBS.includes(verb)) return;
   if (reads && caller.kind !== "conform") return;
   if (verb === "merge.add" || verb === "merge.answer" || verb === "merge.cancel" || verb === "merge.pause" || verb === "merge.resume" || verb === "merge.setup")
     throw new MergeFailure("forbidden", "only the user lands, cancels, pauses, answers or sets up the checks: their Land button or their own word in the branch's chat");

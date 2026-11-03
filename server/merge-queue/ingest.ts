@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { type GoAhead, readLanding } from "../../pi-config/extensions/worktrees/landing.ts";
 import { type Git, realGit, revParse } from "./guard";
 import { MergeFailure, type ProjectQueue } from "./queue";
+import { NOT_SERVED } from "./served";
 
 /**
  * The user's "land it" typed in a branch's own chat reaches the queue here. The `worktree` tool's `land` writes a
@@ -16,8 +17,11 @@ export interface IngestDeps {
   file: string;
   /** Where the seen keys are kept. */
   seenFile: string;
-  /** Every project main checkout the queue may serve. */
+  /** The main checkouts a go-ahead's branch is looked for in (Projects list and recorded roots alike): the one
+   *  holding it decides, and `served` says whether the queue takes it there. */
   roots: () => string[] | Promise<string[]>;
+  /** The served rule (served.ts): a go-ahead in a root it doesn't serve is refused (NOT_SERVED) and never queued. */
+  served: (root: string) => Promise<boolean>;
   queue: (root: string) => Promise<ProjectQueue>;
   git?: Git;
   /** Tell the chat a typed go-ahead couldn't be queued. */
@@ -80,7 +84,12 @@ export async function ingestOnce(deps: IngestDeps): Promise<string[]> {
     const root = await projectOfGoAhead(git, roots, g);
     if (!root) {
       did.push(`typed go-ahead for ${g.branch} at ${g.commit.slice(0, 7)}: no project holds it`);
-      if (g.session) deps.refused?.(g.session, `${g.branch} at ${g.commit.slice(0, 7)} couldn't be queued to land: no project Sova serves holds that branch at that commit.`);
+      if (g.session) deps.refused?.(g.session, `${g.branch} at ${g.commit.slice(0, 7)} couldn't be queued to land: ${NOT_SERVED}.`);
+      continue;
+    }
+    if (!(await deps.served(root).catch(() => false))) {
+      did.push(`typed go-ahead for ${g.branch} at ${g.commit.slice(0, 7)} refused: ${NOT_SERVED} (${root})`);
+      if (g.session) deps.refused?.(g.session, `${g.branch} at ${g.commit.slice(0, 7)} couldn't be queued to land: ${NOT_SERVED}.`);
       continue;
     }
     try {

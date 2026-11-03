@@ -22,7 +22,7 @@ describe("the typed word (landing.json)", () => {
       const file = join(k.repo.state, "landing.json");
       const seenFile = join(k.repo.state, "merge-queue", "ingest.json");
       const refused: string[] = [];
-      const deps = { file, seenFile, roots: () => [k.repo.root], queue: () => k.q(), refused: (_s: string, t: string) => void refused.push(t) };
+      const deps = { file, seenFile, roots: () => [k.repo.root], served: async () => true, queue: () => k.q(), refused: (_s: string, t: string) => void refused.push(t) };
       const old = k.repo.branch("feat/old", { "o.txt": "o\n" });
       recordGoAhead({ branch: "feat/old", commit: old.head, session: "s0", at: "2026-11-01T00:00:00Z", by: "owner-chat" }, file);
       assert.deepEqual(await ingestOnce(deps), [], "the first read is a baseline");
@@ -50,7 +50,7 @@ describe("the typed word (landing.json)", () => {
       // No project holds it.
       recordGoAhead({ branch: "feat/elsewhere", commit: "a".repeat(40), session: "s3", at: "2026-11-02T00:00:03Z", by: "owner-chat" }, file);
       await ingestOnce(deps);
-      assert.match(refused[1]!, /no project Sova serves holds that branch/);
+      assert.match(refused[1]!, /not a project the merge queue serves: merge it into main from the chat/);
       assert.ok(JSON.parse(readFileSync(seenFile, "utf8")).keys.length >= 4);
     } finally {
       await k.done();
@@ -65,6 +65,7 @@ describe("the verbs and who may call them", () => {
     const reviewer = "reviewer-1";
     const call = merger({
       queues: k.queues,
+      served: { isListed: () => true, served: async () => true, bareView: async () => { throw new Error("every root here is served"); } },
       rootOf: async (p) => (p.startsWith(k.repo.scratch) ? k.repo.root : null),
       isThreadChat: (root, sid) => root === k.repo.root && sid === thread,
       reviewerOf: (run) => (run === "mr_0rev" ? reviewer : null),

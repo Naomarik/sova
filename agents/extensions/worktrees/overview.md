@@ -11,7 +11,7 @@ and each merge becomes a card.
 ## What lives here
 
 - [`README.md`](../../../pi-config/extensions/worktrees/README.md).
-- Tests: `cd pi-config/extensions/worktrees && node --test state.test.ts git.test.ts spec.test.ts landing.test.ts && node tests/run.mjs`.
+- Tests: `cd pi-config/extensions/worktrees && node --test state.test.ts git.test.ts spec.test.ts landing.test.ts served.test.ts && node tests/run.mjs`.
 
 ## What Sova relies on
 
@@ -35,7 +35,11 @@ and each merge becomes a card.
   §chat.worktrees/landing-answers). `worktree land` writes it (only on the user's newest message, read by
   `typedGoAhead`, and never one a sent marker names, `newestUserMessage`, §chat.worktrees/land-own-word); Sova's
   merge queue reads each new record once and approves the branch at that commit (`server/merge-queue/ingest.ts`).
-  Older records of other kinds stay readable. `worktree merge` into a target the merge queue manages is refused.
+  Older records of other kinds stay readable. Only in a repo the merge queue serves: there `worktree merge` into the
+  queue's target is refused; in any other repo `merge` into main is plain and `land` is that same plain merge, recording nothing.
+- `served.ts` (builtins only): `<state root>/merge-served.json`, which repos the merge queue serves (`{v: 1, at, roots:
+  [{root, target}]}`), written by the server alone (`server/merge-queue/served.ts`, which imports its name and type from
+  here) and read afresh by `merge` and `land`; no `SOVA_CHAT_STATE_ROOT`: not served; file absent or damaged: served (fail closed).
 
 `create <name>` runs `git worktree add -b feat/<name>` at `<parent of the main checkout>/.worktrees/<repo>-<name>`
 (AGENTS.md's worktree rule) and tracks it, so workers may start there. The dev watcher doesn't watch this directory: an edit reaches a running server only at
@@ -48,4 +52,5 @@ its restart.
   (`cd pi-config/extensions/show-changes && node --test git.test.ts`) and `server/git-diff.test.ts`; the
   tool and the viewer must keep choosing the same base and limits.
 - `landing.ts`'s file shape: the merge queue's reader (`server/merge-queue/ingest.ts`) in the same branch.
+- `served.ts`'s file shape or name: its writer (`server/merge-queue/served.ts`) in the same branch.
 - `spec.ts`: [modes/spec](../../modes/spec/overview.md) (its MODE.md row).

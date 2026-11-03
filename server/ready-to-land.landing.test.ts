@@ -66,7 +66,7 @@ function setUp(over: Partial<Parameters<typeof r.configureReadiness>[0]> = {}, f
     docsPreview: () => FITS,
     finished: () => finished,
     nudge: async (_p, text) => void sent.push(text),
-    landingOffered: async () => true,
+    served: async () => true,
     ...over,
   });
   const row = summary(path);

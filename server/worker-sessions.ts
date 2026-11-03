@@ -134,6 +134,37 @@ export interface WorkerSessionOptions {
   live?: () => RawLiveRecord[];
 }
 
+export interface WorkerParents {
+  /**
+   * The session that runs worker `path`: a live record that lists it among its workers (that record's own session),
+   * else a session file whose completion message names it. Null when none is known.
+   */
+  parentOf(path: string): string | null;
+  /**
+   * Who runs worker `path` and the worker's name there: the parentOf rule, with the name from that live record's
+   * `presence.workers[].name` or that file's completion heading. Null when no parent is known.
+   */
+  workerOf(path: string): { parent: string; name?: string } | null;
+}
+
+const NO_PARENTS: WorkerParents = { parentOf: () => null, workerOf: () => null };
+const pairKey = (parent: string, worker: string) => `${parent}\0${worker}`;
+
+const sameNames = (a: ScanEntry["names"], b: ScanEntry["names"]): boolean => {
+  const x = Object.entries(a ?? {});
+  return x.length === Object.keys(b ?? {}).length && x.every(([ref, name]) => b?.[ref] === name);
+};
+
+/** What `parents` reads of the live records, and nothing else: their previews and clocks move all the time. */
+function liveWorkersKey(live: readonly RawLiveRecord[]): string {
+  return JSON.stringify(
+    live.map((r) => {
+      const workers = r.rec?.presence?.workers;
+      return [r.sessionFile, Array.isArray(workers) ? workers.map((w) => (w && typeof w === "object" ? [w.sessionFile, w.sessionId, (w as { name?: unknown }).name] : null)) : null];
+    }),
+  );
+}
+
 export class WorkerSessions {
   readonly entries = new Map<string, ScanEntry>();
   /** Total bytes read from disk, for tests and measurement. */
@@ -142,9 +173,13 @@ export class WorkerSessions {
   private readonly live: () => RawLiveRecord[];
   private readonly inflight = new Map<string, Promise<ScanEntry | null>>();
   /** Bumped whenever an entry is set or dropped: `flagged` reuses its last answer while this,
-      the listed paths and the live refs are what they were. */
+      the listed paths and the live refs are what they were; `parents` while this and the live
+      workers are. */
   private version = 0;
   private memo: { key: string; out: Set<string> } | null = null;
+  private parentsMemo: { key: string; out: WorkerParents } | null = null;
+  /** How many times `parents` was asked, cached or not: one per listing, however many rows. For tests and measurement. */
+  parentReadings = 0;
 
   constructor(opts: WorkerSessionOptions) {
     this.idOf = opts.idOf;
@@ -181,9 +216,9 @@ export class WorkerSessions {
     next.size = size;
     const before = this.entries.get(path);
     this.entries.set(path, next);
-    // Only what `flagged` reads (whether the file is listed, its self mark, its refs) moves the version:
-    // a file that only grew by lines with no worker facts leaves the answer as it was.
-    if (!before || before.self !== next.self || before.refs.length !== next.refs.length || before.refs.some((r, i) => r !== next.refs[i])) this.version++;
+    // Only what `flagged` and `parents` read (whether the file is listed, its self mark, its refs, their
+    // names) moves the version: a file that only grew by lines with no worker facts leaves the answer as it was.
+    if (!before || before.self !== next.self || before.refs.length !== next.refs.length || before.refs.some((r, i) => r !== next.refs[i]) || !sameNames(before.names, next.names)) this.version++;
     return next;
   }
 
@@ -250,54 +285,93 @@ export class WorkerSessions {
   }
 
   /**
-   * The session that runs worker `path`: a live record that lists it among its workers (that record's own session),
-   * else a session file whose completion message names it. Null when none is known. Reads only what the last refresh
-   * scanned and the live records: no file is read here.
+   * Who runs each worker, read once from what the last refresh scanned and the live records: no file
+   * is read here. Take one per pass and ask it for every row: reading the live records and resolving
+   * every ref per row is quadratic in the sessions, and that loop blocks the server. The answer is reused
+   * while the scans and the live workers are what they were, so a single worker's summary costs no pass
+   * of its own. It never throws: a pass that fails knows no parent, and isn't kept.
    */
-  parentOf(path: string): string | null {
-    const listed = new Set(this.entries.keys());
-    const byId = new Map([...listed].map((p) => [this.idOf(p), p] as const));
-    let live: RawLiveRecord[] = [];
+  parents(): WorkerParents {
+    this.parentReadings++;
     try {
-      live = this.live();
+      let live: RawLiveRecord[] = [];
+      try {
+        live = this.live();
+      } catch {
+        // unreadable live dir: the files' own records still stand
+      }
+      const key = `${this.version}\0${liveWorkersKey(live)}`;
+      if (this.parentsMemo?.key === key) return this.parentsMemo.out;
+      const out = this.readParents(live);
+      this.parentsMemo = { key, out };
+      return out;
     } catch {
-      // unreadable live dir: the files' own records still stand
+      return NO_PARENTS;
     }
-    for (const r of live) if (r.sessionFile && r.sessionFile !== path && liveWorkerRefs([r]).some((ref) => resolveRef(ref, listed, byId) === path)) return r.sessionFile;
-    for (const [p, e] of this.entries) if (p !== path && e.refs.some((ref) => resolveRef(ref, listed, byId) === path)) return p;
-    return null;
   }
 
-  /**
-   * Who runs worker `path` and the worker's name there: the parentOf rule, with the name from that live record's
-   * `presence.workers[].name` or that file's completion heading. Null when no parent is known.
-   */
-  workerOf(path: string): { parent: string; name?: string } | null {
-    const parent = this.parentOf(path);
-    if (!parent) return null;
+  private readParents(live: readonly RawLiveRecord[]): WorkerParents {
     const listed = new Set(this.entries.keys());
     const byId = new Map([...listed].map((p) => [this.idOf(p), p] as const));
-    let name: string | undefined;
-    try {
-      for (const r of this.live()) {
-        if (r.sessionFile !== parent) continue;
-        const workers = r.rec?.presence?.workers;
-        if (!Array.isArray(workers)) continue;
-        for (const w of workers) {
-          if (!w || typeof w !== "object") continue;
-          const ref = nonEmpty(w.sessionFile) && isAbsolute(w.sessionFile) ? sessionPathShape(w.sessionFile) : nonEmpty(w.sessionId) ? w.sessionId.trim() : null;
-          const hit = ref && (ref.includes("/") ? listed.has(canonicalPath(ref)) && canonicalPath(ref) === path : byId.get(ref) === path);
-          if (hit && nonEmpty((w as { name?: unknown }).name)) name = String((w as { name: string }).name).trim();
-        }
+    // Resolving a ref costs a roots lookup, and the same ref turns up again as a file's name for it.
+    const resolved = new Map<string, string | null>();
+    const resolveOnce = (ref: string) => {
+      let worker = resolved.get(ref);
+      if (worker === undefined) resolved.set(ref, (worker = resolveRef(ref, listed, byId)));
+      return worker;
+    };
+    // Each map keeps the first parent found: live records and files are walked in the order they come.
+    const byLive = new Map<string, string>();
+    const liveNames = new Map<string, string>();
+    for (const r of live) {
+      if (!r.sessionFile) continue;
+      for (const ref of liveWorkerRefs([r])) {
+        const worker = resolveOnce(ref);
+        if (worker && worker !== r.sessionFile && !byLive.has(worker)) byLive.set(worker, r.sessionFile);
       }
-    } catch {
-      // unreadable live dir: the file's own heading may still name it
+      const workers = r.rec?.presence?.workers;
+      if (!Array.isArray(workers)) continue;
+      for (const w of workers) {
+        if (!w || typeof w !== "object" || !nonEmpty((w as { name?: unknown }).name)) continue;
+        const ref = nonEmpty(w.sessionFile) && isAbsolute(w.sessionFile) ? sessionPathShape(w.sessionFile) : nonEmpty(w.sessionId) ? w.sessionId.trim() : null;
+        if (!ref) continue;
+        const canon = ref.includes("/") ? canonicalPath(ref) : null;
+        const worker = canon ? (listed.has(canon) ? canon : undefined) : byId.get(ref);
+        if (worker) liveNames.set(pairKey(r.sessionFile, worker), String((w as { name: string }).name).trim());
+      }
     }
-    if (!name) {
-      const e = this.entries.get(parent);
-      for (const [ref, n] of Object.entries(e?.names ?? {})) if (resolveRef(ref, listed, byId) === path) name = n;
+    const byFile = new Map<string, string>();
+    const fileNames = new Map<string, string>();
+    for (const [p, e] of this.entries) {
+      for (const ref of e.refs) {
+        const worker = resolveOnce(ref);
+        if (worker && worker !== p && !byFile.has(worker)) byFile.set(worker, p);
+      }
+      for (const [ref, name] of Object.entries(e.names ?? {})) {
+        const worker = resolveOnce(ref);
+        if (worker) fileNames.set(pairKey(p, worker), name);
+      }
     }
-    return { parent, ...(name ? { name } : {}) };
+    const parentOf = (path: string) => byLive.get(path) ?? byFile.get(path) ?? null;
+    return {
+      parentOf,
+      workerOf: (path) => {
+        const parent = parentOf(path);
+        if (!parent) return null;
+        const name = liveNames.get(pairKey(parent, path)) || fileNames.get(pairKey(parent, path));
+        return { parent, ...(name ? { name } : {}) };
+      },
+    };
+  }
+
+  /** One worker's parent. For a whole listing, `parents()` once. */
+  parentOf(path: string): string | null {
+    return this.parents().parentOf(path);
+  }
+
+  /** One worker's parent and name. For a whole listing, `parents()` once. */
+  workerOf(path: string): { parent: string; name?: string } | null {
+    return this.parents().workerOf(path);
   }
 
   /** One file's flag, for a single-summary read: scans just that file and resolves against the

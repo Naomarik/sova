@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, on, Show, type JSX } from "solid-js";
+import { MergeThreadCard, QueueHistory, ReviewerLinks, ReviewRunningButton } from "./MergeQueueChats";
 import type { ChatRef } from "../lib/merge-chat";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
@@ -238,7 +239,7 @@ function QueueReview(props: { projectId: string; branch: string; scope: DiffScop
 }
 
 /** One action button with its pending state; a refusal shows under the row and is announced. */
-function useAct(onChanged: () => void) {
+export function useAct(onChanged: () => void) {
   const [busy, setBusy] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const run = async (key: string, call: () => Promise<{ ok: boolean; error?: { message: string } }>, done: string) => {
@@ -294,9 +295,10 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
               Resume Queue
             </button>
           </Show>
+          <ReviewRunningButton projectId={props.projectId} view={v()} />
           <Show when={v().thread}>
             {(t) => (
-              <a class="button button-sm button-ghost" href={projectSessionHref(props.projectId, t().session)}>
+              <a class="button button-sm button-ghost" href={projectSessionHref(props.projectId, t().path ?? t().session)}>
                 <Icon name="chat" small />
                 Open Merge Thread
               </a>
@@ -305,6 +307,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
         </div>
       </div>
       <QueueSummaryLine view={v()} />
+      <MergeThreadCard projectId={props.projectId} view={v()} chatOf={props.chatOf} onChanged={props.onChanged} />
       <p class="text-caption text-muted mq-intro">
         {introWords(v().target, v().settings?.how?.effective)}
         <Show when={v().checks === "none"}> This project declares no automated tests: landings say "No checks declared".</Show>
@@ -349,7 +352,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
                 isRequestState(e.state) ? (
                   <RequestRow root={v().root} target={v().target} entry={e as RequestEntry} from={<FromChat projectId={props.projectId} entry={e} chatOf={props.chatOf} />} onChanged={props.onChanged} />
                 ) : (
-                  <NeedsYouRow projectId={props.projectId} root={v().root} entry={e} target={v().target} chatOf={props.chatOf} onChanged={props.onChanged} />
+                  <NeedsYouRow projectId={props.projectId} root={v().root} entry={e} target={v().target} chatOf={props.chatOf} view={v()} onChanged={props.onChanged} />
                 )
               }
             </For>
@@ -386,6 +389,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
                     </p>
                     <p class="list-meta">{e.reason ?? "It failed a check that passes on the target."}</p>
                     <ChatLine projectId={props.projectId} session={e.session} worktree={e.worktree} chatOf={props.chatOf} tail={<span class="text-muted"> · {relativeTime(e.updatedAt)}</span>} />
+                    <ReviewerLinks projectId={props.projectId} view={v()} run={e.run} />
                   </div>
                   <div class="button-row mq-row-act">
                     <QueueReview projectId={props.projectId} branch={e.branch} scope={{ kind: "queue", project: props.projectId, entry: e.id }} session={e.session} chatOf={props.chatOf} />
@@ -425,6 +429,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
                       </Show>
                     </p>
                     <ChatLine projectId={props.projectId} session={l.entry.session} worktree={l.entry.worktree} chatOf={props.chatOf} />
+                    <ReviewerLinks projectId={props.projectId} view={v()} run={l.entry.run} />
                     <For each={notesOf(l.entry.notes)}>
                       {(n) => (
                         <p class="list-meta mq-note">
@@ -449,6 +454,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
           </ul>
         </Show>
       </div>
+      <QueueHistory projectId={props.projectId} view={v()} onChanged={props.onChanged} />
     </div>
   );
 }
@@ -499,6 +505,7 @@ function CheckingNow(props: { projectId: string; view: MergeQueueView; chatOf?: 
               <span class="text-mono text-muted">{short(r().commit)}</span>
             </p>
             <ChatLine projectId={props.projectId} session={entry()?.session} worktree={entry()?.worktree} chatOf={props.chatOf} />
+            <ReviewerLinks projectId={props.projectId} view={props.view} run={r().id} />
             <p class="text-caption">
               <span class="text-mono">
                 {props.view.target} {short(r().base)}
@@ -580,7 +587,7 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
 }
 
 /** An entry that waits for you, with its two actions; or a conflict the merge thread is judging. */
-function NeedsYouRow(props: { projectId: string; root: string; target: string; entry: MergeEntry; chatOf?: ChatOf; onChanged(): void }) {
+function NeedsYouRow(props: { projectId: string; root: string; target: string; entry: MergeEntry; chatOf?: ChatOf; view?: MergeQueueView; onChanged(): void }) {
   const e = () => props.entry;
   const act = useAct(props.onChanged);
   const answer = (a: MergeAnswer, done: string) => void act.run(a, () => answerEntry(e(), a), done);
@@ -657,6 +664,7 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
             </Show>
           }
         />
+        <Show when={props.view}>{(pv) => <ReviewerLinks projectId={props.projectId} view={pv()} run={e().run} />}</Show>
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
       </div>
       <div class="button-row mq-row-act">

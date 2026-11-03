@@ -1607,6 +1607,21 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-cell-value { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: var(--space-1) 0; font-weight: var(--fw-medium); }
 .mq-red { color: var(--status-error); }
 .mq-card { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
+/* The Merge thread card, its question and confirms, the History's filters (§app.merge-queue/view). */
+.mq-thread-card { display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
+.mq-thread-card p { margin: 0; }
+.mq-thread-card .spread { flex-wrap: wrap; gap: var(--space-2); }
+.mq-thread-card[data-state="asking"] { border-color: var(--status-warn); }
+.mq-thread-card[data-state="none"] { background: var(--color-sunken); }
+.mq-thread-ask { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+.mq-thread-answer { display: grid; gap: var(--space-2); }
+.mq-confirm { display: grid; gap: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--r-md); }
+.mq-confirm p { margin: 0; }
+.mq-history .spread { flex-wrap: wrap; gap: var(--space-2); }
+.mq-history .segmented { display: inline-flex; gap: var(--space-1); }
+.mq-cleared .list-title { color: var(--color-ink-muted); }
+.mq-reviewers { margin: 0; }
+.mq-reviewing { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mq-card p,
 .mq-card h3 { margin: 0; }
 .mq-card .spread { flex-wrap: wrap; gap: var(--space-2); }

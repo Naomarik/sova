@@ -362,6 +362,14 @@ export interface MergeReady {
   commit: string;
   /** Commits ahead of the target. */
   ahead: number;
+  /** The chat the branch belongs to (its id), by the rule Land records too (server/merge-queue/owners.ts): the chat
+   *  that tracks the worktree, else the newest chat working in it. Absent: no chat found. */
+  session?: string;
+  /** That chat is archived (only an archived one was found). */
+  sessionArchived?: true;
+  /** Lines added and removed on the branch's side (target...branch), when read. */
+  added?: number;
+  removed?: number;
 }
 
 /** SessionWorktreeInfo.mergeStats: the branch against the target, for the row's "N commits · +a −r". */

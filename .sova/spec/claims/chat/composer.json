@@ -294,12 +294,14 @@
       "§app.merge-queue/approve",
       "§app.merge-queue/view",
       "§app.project-services/merge-verbs",
-      "§chat.timeline/inputs-only"
+      "§chat.timeline/inputs-only",
+      "§chat.changes/viewer",
+      "§chat.changes/endpoint"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-03T10:05Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#61271213"
     },
     "code": [
       "src/components/WorktreesControl.tsx",
@@ -315,7 +317,9 @@
       "src/lib/run-status.test.ts",
       "server/merge-queue-ui.integration.test.ts",
       "server/merge-queue/wire.ts",
-      "src/lib/merge-queue-types.ts"
+      "src/lib/merge-queue-types.ts",
+      "src/components/ReviewChanges.tsx",
+      "src/lib/worktrees.ts"
     ]
   },
   "§chat/composer": {

@@ -3,7 +3,8 @@
 /**
  * A bun run's report for SOVA_OUT from each file's result: one failure per `(fail) <name> [ms]` line,
  * its message the error lines bun printed since the test before it; a file that failed with no such
- * line is an error named by its file. `failingFiles` lists every failing file, uncapped.
+ * line is an error named by its file. `failingFiles` lists every failing file, uncapped; `ranFiles` every file it
+ * ran, so a merge run can tell a file that passed from one the selection never ran.
  */
 export function bunReport(results) {
   const failures = [];
@@ -30,6 +31,7 @@ export function bunReport(results) {
   const sum = (k) => results.reduce((n, r) => n + r[k], 0);
   // Every failing file, uncapped (failures stops at 50): what a merge run reruns to tell flaky from broken.
   const failingFiles = [...new Set(results.filter((r) => r.code !== 0).map((r) => r.file))];
-  return { passed: sum("pass"), failed: sum("fail"), errors, skipped: sum("skip"), failures, failingFiles };
+  const ranFiles = [...new Set(results.map((r) => r.file))];
+  return { passed: sum("pass"), failed: sum("fail"), errors, skipped: sum("skip"), failures, failingFiles, ranFiles };
 }
 

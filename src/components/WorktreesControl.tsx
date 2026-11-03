@@ -8,7 +8,7 @@ import { WorktreesModal, type QueueWorktree } from "./WorktreesModal";
  * something is ready, needs a fix or waits for you, and the one most useful fact ("2 ready"). It opens
  * the Worktrees modal. Hidden while the chat tracks none.
  */
-export function WorktreesControl(props: { rows: QueueWorktree[]; title: string; class?: string; onChanged?(): void }) {
+export function WorktreesControl(props: { rows: QueueWorktree[]; title: string; class?: string; onChanged?(): void; sessionPath?: string; cwd?: string }) {
   const [open, setOpen] = createSignal(false);
   // Dropped worktrees are left out of the control and its modal (the pane still lists them).
   const shown = createMemo(() => props.rows.filter((w) => w.status !== "dropped"));
@@ -37,7 +37,13 @@ export function WorktreesControl(props: { rows: QueueWorktree[]; title: string; 
             </span>
           </button>
           <Show when={open()}>
-            <WorktreesModal title={props.title} rows={shown()} onClose={() => setOpen(false)} onChanged={props.onChanged} />
+            <WorktreesModal
+              title={props.title}
+              rows={shown()}
+              onClose={() => setOpen(false)}
+              onChanged={props.onChanged}
+              review={props.sessionPath ? { sessionPath: props.sessionPath, cwd: props.cwd } : undefined}
+            />
           </Show>
         </>
       )}

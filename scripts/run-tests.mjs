@@ -59,7 +59,8 @@
 // variable of a chat process the runner was started from (scripts/test-env.mjs: SOVA_CHAT_*, the session's ids).
 // SOVA_OUT=<file> (a project verb's or a merge check's report file): the run's counts are written there
 // as JSON when it ends, `{passed, failed, errors, skipped, failures: [{name, file, message?}]}` (at most
-// 50 failures; `failingFiles` lists every failing file, uncapped): one per failing test (bun's `(fail)` lines, the error printed above each as its
+// 50 failures; `failingFiles` lists every failing file, uncapped; `ranFiles` every file it ran, after any
+// --landing/--changed/--groups selection, so a merge run tells a file that passed from one never run): one per failing test (bun's `(fail)` lines, the error printed above each as its
 // message), and a file that failed with no failing test (a crash, a load error, a kill) counts as an
 // error with the file as its name. On Node (whose output isn't read) only failing files are named.
 // --plan and an empty selection write none.
@@ -314,7 +315,7 @@ const sets = ["unit", "integration"].flatMap((tier) => {
 }).filter((s) => s.files.length);
 if (!sets.length) {
   console.log("run-tests: no test file to run.");
-  writeSovaOut({ passed: 0, failed: 0, errors: 0, skipped: 0, failures: [] });
+  writeSovaOut({ passed: 0, failed: 0, errors: 0, skipped: 0, failures: [], ranFiles: [] });
   process.exit(0);
 }
 
@@ -456,6 +457,7 @@ if (runtime === "node") {
     passed: 0, failed: failed || refused.length ? 1 : 0, errors: 0, skipped: 0,
     failures: refused.length ? refused.map((f) => ({ name: f, file: f, message: "refused by the tier guard" })) : failed ? [{ name: "node --test run (see its output)" }] : [],
     failingFiles: refused,
+    ranFiles: sets.flatMap((x) => x.files),
   });
   process.exit(failed || refused.length ? 1 : 0);
 }

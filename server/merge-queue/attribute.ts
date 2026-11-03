@@ -44,6 +44,11 @@ export interface CheckBlame {
   files?: { file: string; blame: Blame }[];
   /** A whole-check failure's blame; "unattributed": red on the merge and on the target, naming no failure. */
   whole?: Blame | "unattributed";
+  /** Failing files the target's rerun can't be shown to have run (left out by its selection, or a runner that says
+   *  nothing about what it ran and ran no test): a pass there would be a guess, so whose they are can't be told. */
+  unclearFiles?: string[];
+  /** An unattributed whole check's own reason, when it isn't "fails on the target too and names no tests". */
+  why?: string;
 }
 
 export interface Attribution {
@@ -71,6 +76,7 @@ export function summarize(reds: readonly CheckBlame[], o: { resolution?: boolean
   const branchy: string[] = [];
   const unclear: Attribution["unclear"] = [];
   for (const c of reds) {
+    if (c.unclearFiles?.length) unclear.push({ id: c.id, label: c.label, why: `can't tell whose failure: ${c.label}'s ${list(c.unclearFiles)} didn't run on ${target} alone` });
     if (c.files?.length) {
       const by = (b: Blame) => c.files!.filter((f) => f.blame === b).map((f) => f.file);
       if (by("flaky").length) notes.push({ kind: "flaky", text: `${c.label}: ${list(by("flaky"))} failed, then passed on a rerun (flaky; not blocking)` });
@@ -81,8 +87,9 @@ export function summarize(reds: readonly CheckBlame[], o: { resolution?: boolean
       notes.push({ kind: "master-red", text: `${c.label} also fails on ${target} alone (not blocking)` });
       targetRed.push(c.label);
     } else if (c.whole === "unattributed") {
-      unclear.push({ id: c.id, label: c.label, why: `can't tell whose failure: ${c.label} fails on ${target} too and names no tests` });
-      targetRed.push(c.label);
+      unclear.push({ id: c.id, label: c.label, why: c.why ?? `can't tell whose failure: ${c.label} fails on ${target} too and names no tests` });
+      // Red on the target only when it failed there (not when it merely ran nothing).
+      if (!c.why) targetRed.push(c.label);
     } else if (c.whole === "branch") branchy.push(`${c.label} failed`);
   }
   if (!branchy.length && unclear.length) return { verdict: "unattributed", why: unclear.map((u) => u.why).join("; "), notes, targetRed, unclear };

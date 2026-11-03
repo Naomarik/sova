@@ -164,7 +164,9 @@
       "server/project-services/def-hash.ts",
       "playbooks/project-verbs/references/contract.md",
       "playbooks/project-verbs/scripts/project-verbs.mjs",
-      "server/project-services/no-services.integration.test.ts"
+      "server/project-services/no-services.integration.test.ts",
+      "server/merge-queue/checks.ts",
+      "server/merge-queue/checks.test.ts"
     ],
     "agreed": {
       "by": "user",

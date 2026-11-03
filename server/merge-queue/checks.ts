@@ -167,6 +167,8 @@ export interface CheckReport {
   /** Every failing test's name (uncapped, unique, as testKey reads it), for a runner that names tests but no file
    *  (Kaocha). */
   failingNames: string[];
+  /** The test files the runner says it actually ran (`ranFiles`), when it says so; absent from a runner that doesn't. */
+  ranFiles?: string[];
   notes: string[];
 }
 
@@ -207,6 +209,7 @@ export function readCheckOut(file: string): CheckReport | null {
   const failingFiles = [...new Set(listed.length ? listed : failures.flatMap((f) => (f.file ? [f.file] : [])))];
   const failingNames = [...new Set((Array.isArray(o.failures) ? o.failures : []).flatMap((f) => (f && typeof f === "object" && typeof (f as Record<string, unknown>).name === "string" && (f as Record<string, unknown>).name ? [testKey(String((f as Record<string, unknown>).name).slice(0, 500))] : [])).filter(Boolean))];
   const skippedWhy = typeof o.skipped === "string" && o.skipped ? o.skipped.slice(0, 300) : undefined;
+  const ranFiles = Array.isArray(o.ranFiles) ? [...new Set(o.ranFiles.filter((f): f is string => typeof f === "string" && !!f))] : undefined;
   return {
     passed: n(o.passed),
     failed: n(o.failed),
@@ -215,6 +218,7 @@ export function readCheckOut(file: string): CheckReport | null {
     failures,
     failingFiles,
     failingNames,
+    ...(ranFiles ? { ranFiles } : {}),
     notes: Array.isArray(o.notes) ? o.notes.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 300)).slice(0, 10) : [],
   };
 }
@@ -236,6 +240,23 @@ export interface CheckRun {
   failingFiles: string[];
 }
 
+/**
+ * The command that reruns `check` on named test files. A check that is the project's own test command (`test.run`,
+ * found whole inside the check's command, after any wrapper such as `nice`) with selection flags after it is rerun as
+ * that command alone with the files: the flags select files (Sova's `--integration --landing --base …` drops a group
+ * file the change doesn't trigger, named or not), and a rerun asks for exactly the files that failed. Any other check
+ * gets the files appended to its own command and selectors.
+ */
+export function rerunArgvOf(def: ProjectDef, check: Pick<PlannedCheck, "run" | "select">, rendered: readonly string[]): string[] {
+  const test = def.test?.run ?? [];
+  if (test.length && test.length < check.run.length) {
+    for (let i = 0; i + test.length <= check.run.length; i++) {
+      if (test.every((a, j) => check.run[i + j] === a)) return i + test.length < check.run.length ? rendered.slice(0, i + test.length) : [...rendered, ...(check.select ?? [])];
+    }
+  }
+  return [...rendered, ...(check.select ?? [])];
+}
+
 /** Run `check` (with `files` appended, for a rerun) in the copy, its output appended to `logFile`. */
 export async function runCheck(o: {
   def: ProjectDef;
@@ -247,7 +268,8 @@ export async function runCheck(o: {
   signal?: AbortSignal;
 }): Promise<CheckRun> {
   const vars = templateVarsOf(o.def, o.scope);
-  const argv = [...o.check.run.map((a) => render(a, vars)), ...(o.check.select ?? []), ...(o.files ?? [])];
+  const rendered = o.check.run.map((a) => render(a, vars));
+  const argv = o.files?.length ? [...rerunArgvOf(o.def, o.check, rendered), ...o.files] : [...rendered, ...(o.check.select ?? [])];
   const out = `${o.logFile}.out.json`;
   rmSync(out, { force: true });
   mkdirSync(dirname(o.logFile), { recursive: true });

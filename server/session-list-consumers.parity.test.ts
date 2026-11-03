@@ -10,8 +10,7 @@
 // - An old tab or a proxied peer feed (a socket without rows=1): the very frames the baseline
 //   revision's own SessionFeed sends for the same list changes (list_changed and marks), whether a
 //   rows socket listens beside it or not.
-// The rows themselves, /ws/events and the session_list tool's listSessions are in
-// sessions-index.parity.test.ts; the rows client in session-feed-rows.parity.test.ts.
+// The rows client is in session-feed-rows.parity.test.ts.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

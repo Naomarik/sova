@@ -80,8 +80,9 @@ const SESSION_PARAMS = (() => {
   return { ...p, properties: { ...p.properties, ...Object.fromEntries(merge.map((r) => [r.tool!.name, toolSchema(r, false)])) } };
 })();
 const MERGE_TOOL_ROWS = VERB_PARAMS.filter((p) => p.tool && p.mergeOnly);
-/** The release verbs' keys (the release chat's reports), plus the merge rows they share (`text`). */
-const RELEASE_TOOL_ROWS = VERB_PARAMS.filter((p) => p.tool && (p.releaseOnly || p.wire === "text"));
+/** The release verbs' keys (the release chat's reports), plus the merge rows they share (`step`, `text`); the generic
+    rows (project, why, commit, lines) reach every verb already. */
+const RELEASE_TOOL_ROWS = VERB_PARAMS.filter((p) => p.tool && (p.releaseOnly || (p.mergeOnly && ["step", "text"].includes(p.wire))));
 
 /** The Overseers' parameters: the verbs, plus `onboard` (the Project verbs playbook, §app.project-runtime/onboard). */
 const OVERSEER_PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS, "onboard"], true);

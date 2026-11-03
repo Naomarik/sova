@@ -492,3 +492,23 @@ describe("the quiet release chat (t23) and Needs you", () => {
     }
   });
 });
+
+describe("the release chat's own tool (project_verbs)", () => {
+  test("release.step reaches the releaser with step, state, summary, facts and text; no confirm key on the tool", async () => {
+    const { projectVerbsTool } = await import("./tools");
+    const { stateView } = await import("../harness/state-view");
+    const seen: { verb: string; body: Record<string, unknown> }[] = [];
+    const engine = { run: async (verb: string, body: Record<string, unknown>) => (seen.push({ verb, body }), { v: 1, verb, project: "/p", instance: null, slot: null, generation: null, checkout: null, branch: null, ok: true, changed: false, state: "absent", steps: [], services: [], data: [], links: [], defHash: null, at: "" }) } as never;
+    const tool = projectVerbsTool({ name: "project_verbs", label: "", description: "", promptSnippet: "", engine: () => engine, deploy: "session", merge: true, caller: async () => ({ kind: "session", id: "s", root: "/p", own: [] }), defaultProject: async () => "/p" });
+    const ctx = { sessionId: "s", cwd: "/", leafId: () => null, state: () => stateView([]) } as never;
+    await tool.execute("t", { verb: "release.step", release: "rl_abcdef12", step: "version", state: "done", summary: "v0.3.0", facts: ["version=0.3.0"], detail: "d" }, undefined, undefined, ctx);
+    await tool.execute("t", { verb: "release.notes", text: "Notes" }, undefined, undefined, ctx);
+    await tool.execute("t", { verb: "release.abandon", why: "no" }, undefined, undefined, ctx);
+    assert.deepEqual(seen[0], { verb: "release.step", body: { project: "/p", release: "rl_abcdef12", step: "version", state: "done", summary: "v0.3.0", facts: ["version=0.3.0"], detail: "d" } });
+    assert.equal(seen[1]!.body.text, "Notes");
+    assert.equal(seen[2]!.body.why, "no");
+    const props = (tool.parameters as { properties: Record<string, unknown> }).properties;
+    assert.ok(props.state && props.summary && props.facts && props.step, "the release rows are on the tool");
+    assert.equal("confirm" in props, false, "a chat's tool never carries the operator's confirm");
+  });
+});

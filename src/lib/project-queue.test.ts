@@ -19,5 +19,11 @@ test("the newest entry for the branch, from any list; none for another branch or
   assert.equal(entryForBranch(v, "sova/b")!.id, "l");
   assert.equal(entryForBranch(v, "sova/c"), undefined);
   assert.equal(entryForBranch(v, null), undefined);
-  assert.deepEqual(Object.keys(queueInfoOf(v.waiting[0]!)).sort(), ["commit", "conflict", "eta", "id", "landed", "newerCommits", "notes", "position", "project", "reason", "review", "run", "state"]);
+  assert.deepEqual(Object.keys(queueInfoOf(v.waiting[0]!)).sort(), ["commit", "conflict", "eta", "id", "landed", "newerCommits", "notes", "position", "project", "reason", "review", "run", "settled", "state"]);
+});
+
+test("the newest entry is the one created last: a note on an old sent-back entry doesn't bring Needs a fix back", () => {
+  const old = { ...e("f", "sova/a", "needs-fix", "2026-11-02T09:00:00Z"), updatedAt: "2026-11-02T12:00:00Z" };
+  const v = { checking: [], waiting: [], needsYou: [], needsFix: [old], recent: [{ entry: e("l", "sova/a", "landed", "2026-11-02T10:00:00Z") }] };
+  assert.equal(entryForBranch(v, "sova/a")!.id, "l");
 });

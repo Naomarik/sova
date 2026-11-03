@@ -29,6 +29,7 @@ import { estimateFromRuns } from "./estimate";
 import { deliverReview } from "./review-step";
 import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
+import { settledFacts } from "./settled";
 import { buildView } from "./view";
 import { type MergeQueueSettings, type MergeSettingsChange, type MergeSettingsSaveResult, SETTINGS_DIRTY_WORDS } from "../../shared/merge-queue-settings";
 import { effectiveModel, type ModelCheck, readModels } from "./models";
@@ -310,6 +311,7 @@ export class ProjectQueue {
     const thread = this.deps.threadOf?.(this.root) ?? null;
     const tryRun = this.trying?.run ?? (this.lastTry ? this.store.readRun(this.lastTry) : null);
     const origin = await this.originFacts();
+    const settled = await this.settledFacts(head);
     const v = buildView({
       q: this.q,
       root: this.root,
@@ -321,6 +323,7 @@ export class ProjectQueue {
       now: this.now(),
       readRun: (id) => this.store.readRun(id),
       origin,
+      settled,
     });
     const settings = head ? await this.settings().catch((err) => (this.log(`settings unreadable: ${err instanceof Error ? err.message : err}`), null)) : null;
     // Landing by request or push (al_3): what waits on the host, and how far local main is behind origin's.
@@ -592,6 +595,15 @@ export class ProjectQueue {
       this.save();
       this.settingsChanged();
     }
+  }
+
+  private settledCache: { at: number; head: string; facts: Map<string, "merged" | "gone"> } | null = null;
+  /** Sent-back entries git says need no fix any more (settled.ts), re-read at most every 15 s or when the target moves. */
+  private async settledFacts(head: string): Promise<Map<string, "merged" | "gone">> {
+    if (this.settledCache && this.settledCache.head === head && this.now() - this.settledCache.at < 15_000) return this.settledCache.facts;
+    const facts = await settledFacts(this.git, this.root, head, this.q.entries);
+    this.settledCache = { at: this.now(), head, facts };
+    return facts;
   }
 
   private readyCache: { at: number; head: string; list: MergeReady[] } | null = null;

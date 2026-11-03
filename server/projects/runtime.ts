@@ -3,7 +3,8 @@ import type { InstanceSummary, ServiceView, VerbResult } from "../../shared/proj
 import type { ProjectRuntimeView, RuntimeOrphan, RuntimePlaybook, RuntimePlaybookState, RuntimeProof, RuntimeService, RuntimeStanding } from "../../shared/project-runtime";
 import { buildSessionPath, readBuild, probeBuild, withWorktreePath } from "../build-loadout";
 import type { Envelope } from "../org-envelope";
-import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "../org-engine";
+import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi, type SessionInfo } from "../org-engine";
+import { isArchived } from "../archived-sessions";
 import { OrgError } from "../org-error";
 import { branchFacts, observeRuntime, type BranchFacts, type ProofFact, type RuntimeFacts } from "../project-services/observe";
 import { onMergeNotes, startOnMergeTick, withOnMerge } from "../project-services/on-merge";
@@ -321,6 +322,24 @@ async function withRun(pb: RuntimePlaybook | null, state: string, root: string):
   return { ...pb, ...(live ? { live } : {}), ...(review ? { review } : {}) };
 }
 
+/**
+ * An onboard build of the project whose run is still open, whatever the runtime's playbook region says: its turn
+ * working, its turn ended on open alignment questions, or its branch holding commits not merged; never one merged,
+ * removed, retired, not started or archived. The runtime can lose a run it still has (a turn's end heard twice, the
+ * first without its questions, ends it as "no change"), and a second start would then hide this one's proposal. Pure.
+ */
+export function openOnboardRun(builds: readonly SessionInfo[], projectId: string, archived: (sessionId: string) => boolean): { sessionId: string; title: string } | null {
+  const closed = ["merged", "tree-removed", "retired", "not-started"];
+  for (const b of builds) {
+    const d = b.data;
+    if (!b.running || d.kind !== "onboard" || d.projectId !== projectId) continue;
+    if (b.configuration.some((c) => closed.includes(c)) || archived(str(d.sessionId))) continue;
+    const live = d.turn === "working" || (typeof d.questions === "number" && d.questions > 0) || b.configuration.includes("unmerged") || b.configuration.includes("new-since-merge");
+    if (live) return { sessionId: str(d.sessionId), title: str(d.title) || str(d.sessionId) };
+  }
+  return null;
+}
+
 /** The live title of a running playbook (the "already running" refusal), or null. */
 function liveRun(host: OrgHostApi, d: Record<string, unknown>): string | null {
   if (!LIVE_RUN.has(str(d.playbookState))) return null;
@@ -429,7 +448,9 @@ export async function onboardStamp(projectId: string, input: OnboardInput) {
   const start = await onboardStart(projectId, input);
   const at = runtimeOf(projectId);
   const d = at ? obj(at.host.data(at.sid)) : {};
-  const running = at ? liveRun(at.host, d) : null;
+  const engine = engineOf(projectId);
+  const builds = engine && isOrgHostOpen(engine) ? hostOf(engine).sessions("build") : [];
+  const running = (at ? liveRun(at.host, d) : null) ?? openOnboardRun(builds, projectId, isArchived)?.title ?? null;
   const standing = at ? ((["unregistered", "conforming", "registered", "stale", "failed"] as const).find((s) => (at.host.configuration(at.sid) ?? []).includes(s)) ?? null) : null;
   const invalid = start.invalid || (running ? ALREADY_RUNNING(running) : "");
   // The verb playbook the run is keyed by (§app.project-runtime/verb-playbooks).

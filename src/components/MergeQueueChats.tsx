@@ -195,7 +195,7 @@ export function QueueHistory(props: { projectId: string; view: MergeQueueView; o
             <div class="segmented" role="group" aria-label="Show">
               <For each={FILTERS}>
                 {(f) => (
-                  <button type="button" class="button button-sm" classList={{ "button-ghost": filter() !== f.id }} aria-pressed={filter() === f.id ? "true" : "false"} onClick={() => setFilter(f.id)}>
+                  <button type="button" class={`button button-sm${filter() === f.id ? "" : " button-ghost"}`} aria-pressed={filter() === f.id ? "true" : "false"} onClick={() => setFilter(f.id)}>
                     {f.label}
                   </button>
                 )}

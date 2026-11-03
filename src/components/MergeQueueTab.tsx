@@ -429,7 +429,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
                       </Show>
                     </p>
                     <ChatLine projectId={props.projectId} session={l.entry.session} worktree={l.entry.worktree} chatOf={props.chatOf} />
-                    <ReviewerLinks projectId={props.projectId} view={v()} run={l.entry.run} />
+                    <ReviewerLinks projectId={props.projectId} view={v()} run={l.entry.run ?? l.run?.id} />
                     <For each={notesOf(l.entry.notes)}>
                       {(n) => (
                         <p class="list-meta mq-note">

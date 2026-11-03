@@ -1620,8 +1620,13 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-history .spread { flex-wrap: wrap; gap: var(--space-2); }
 .mq-history .segmented { display: inline-flex; gap: var(--space-1); }
 .mq-cleared .list-title { color: var(--color-ink-muted); }
-.mq-reviewers { margin: 0; }
-.mq-reviewing { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-meta.mq-reviewers,
+.list-meta.wt-queue-reviewer,
+.mq-thread-card .list-meta,
+.mq-history .list-meta { margin: 0; white-space: normal; overflow: visible; text-overflow: clip; }
+/* A long branch wraps inside the button on a phone, never past the screen's edge. */
+.mq-reviewing { min-width: 0; max-width: 100%; height: auto; white-space: normal; overflow-wrap: anywhere; text-align: start; }
+.mq-head .button-row { flex-wrap: wrap; min-width: 0; max-width: 100%; }
 .mq-card p,
 .mq-card h3 { margin: 0; }
 .mq-card .spread { flex-wrap: wrap; gap: var(--space-2); }

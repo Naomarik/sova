@@ -285,6 +285,14 @@ export function orgProjectItems(digest: Pick<AttentionDigest, "items"> | undefin
     });
 }
 
+/** The project a held act waits in: its org's project, else the project page its row opens (a standalone project's
+    hold, such as the release power's waiting period before Publish), so every held act carries Cancel. */
+export function heldProjectId(it: Pick<AttentionItem, "org" | "href">): string | null {
+  if (it.org?.projectId) return it.org.projectId;
+  const m = /^#\/projects\/([A-Za-z0-9_-]+)/.exec(it.href ?? "");
+  return m ? m[1]! : null;
+}
+
 /** A row's place, said under the region's Needs you rows: "{org} · {project}". */
 export const orgPlaceLabel = (s: Pick<SessionSummary, "org">): string => {
   const o = s.org;

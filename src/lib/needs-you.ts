@@ -71,10 +71,15 @@ export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined,
     .sort((a, b) => Number(a.soft) - Number(b.soft) || b.since - a.since || a.session.path.localeCompare(b.session.path));
 }
 
+/** A project's release items: each opens its Releases tab. */
+export const RELEASE_KINDS: readonly AttentionItem["kind"][] = ["release-ready", "release-request", "release-held", "release-failed", "release-quiet"];
+export const isReleaseItem = (it: Pick<AttentionItem, "kind">): boolean => RELEASE_KINDS.includes(it.kind);
+
 /** The digest kinds of no session the region lists itself (a project's deploy, §app.project-services/deploy-status;
+    a project's release waiting on you, §app.release: ready to publish, asked for, a step held or failed, its chat quiet;
     WhatsApp sending down, §app.outreach/sender-health; an org owner's request, outage or ask for a new link,
     §app.project-assistant/requests). */
-const DEPLOY_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["deploy-failed", "deploy-request", "whatsapp-down", "owner-request", "owner-outage", "owner-link-request", "owner-version-request", "owner-feature-ended", "owner-request-closed"]);
+const DEPLOY_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["deploy-failed", "deploy-request", "whatsapp-down", "owner-request", "owner-outage", "owner-link-request", "owner-version-request", "owner-feature-ended", "owner-request-closed", ...RELEASE_KINDS]);
 
 /**
  * The region's items of no session: a deploy target whose latest deploy failed, an overseer's request to deploy,
@@ -107,8 +112,12 @@ export const storedNeedsYouOpen = (raw: string | null): boolean => raw !== "0";
 export const needsYouOpen = (input: { stored: boolean; searching: boolean }): boolean => input.searching || input.stored;
 
 /** The head's title: what the region is, with its count. */
-export const needsYouTitle = (n: number, deploys = 0, whatsapp = false): string => {
-  const others = [...(deploys ? [`${deploys} deploy item${deploys === 1 ? "" : "s"}`] : []), ...(whatsapp ? ["WhatsApp sending"] : [])].join(" and ");
+export const needsYouTitle = (n: number, deploys = 0, whatsapp = false, releases = 0): string => {
+  const others = [
+    ...(deploys ? [`${deploys} deploy item${deploys === 1 ? "" : "s"}`] : []),
+    ...(releases ? [`${releases} release item${releases === 1 ? "" : "s"}`] : []),
+    ...(whatsapp ? ["WhatsApp sending"] : []),
+  ].join(" and ");
   if (!n) return `${others || "Nothing"} waiting on you.`;
   const sessions = n === 1 ? "The 1 session waiting on you" : `The ${n} sessions waiting on you, newest first`;
   return others ? `${sessions}, and ${others}.` : `${sessions}.`;

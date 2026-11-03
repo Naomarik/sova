@@ -3,7 +3,7 @@ import type { UpdatesState, UpdateStep } from "../../shared/protocol";
 import { applyUpdate, checkUpdates } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { announce } from "../lib/ui-state";
-import { KIND_LABEL, refreshUpdates, resultLine, runningLine, setUpdatesState, sourceName, upgradeLabel, updatesState } from "../lib/updates";
+import { goBackLabel, KIND_LABEL, refreshUpdates, resultLine, runningLine, setUpdatesState, sourceName, upgradeLabel, updatesState, withdrawnTitle } from "../lib/updates";
 import { setUpdatesDraft, setUpdatesSaved, updatesDraft, updatesSaveError, updatesSaving, type UpdatesDraft } from "../lib/updates-draft";
 import { Banner } from "./ui";
 import { sentence } from "./WorkerSlotRow";
@@ -58,9 +58,14 @@ export function UpdatesSettingsSection() {
     const c = current();
     const st = s();
     if (!c?.ok || !c.result || !st?.available) return null;
-    return c.result.state === "available" || c.result.state === "diverged" ? c.result.target : null;
+    return c.result.state === "available" || c.result.state === "diverged" || c.result.state === "withdrawn" ? c.result.target : null;
   };
   const running = () => s()?.job?.state === "running";
+  /** What runs is a withdrawn release: the check says so instead of "ahead". */
+  const withdrawn = () => {
+    const r = current()?.result;
+    return r?.state === "withdrawn" ? r : null;
+  };
 
   const checkNow = async () => {
     setActing("check");
@@ -119,6 +124,15 @@ export function UpdatesSettingsSection() {
               </Show>
               <span class="chip">{KIND_LABEL[st().running.kind]}</span>
             </div>
+            <Show when={withdrawn()}>
+              {(w) => (
+                <Banner
+                  tone="warn"
+                  title={withdrawnTitle(w())}
+                  body={`This copy runs a release that was taken back ${relativeTime(w().at)}. Nothing changes on its own; ${goBackLabel(w().target)} moves it to the release before.`}
+                />
+              )}
+            </Show>
             <Show when={!st().running.canUpgrade && st().running.whyNot}>
               <p class="field-hint">{st().running.whyNot}</p>
             </Show>
@@ -156,7 +170,7 @@ export function UpdatesSettingsSection() {
                     when={confirming()}
                     fallback={
                       <button type="button" class="button button-primary" disabled={acting() !== null} onClick={() => setConfirming(true)}>
-                        {upgradeLabel(st().settings.source, t(), st().running)}
+                        {withdrawn() ? goBackLabel(t()) : upgradeLabel(st().settings.source, t(), st().running)}
                       </button>
                     }
                   >

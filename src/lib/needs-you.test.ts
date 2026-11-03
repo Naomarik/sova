@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AttentionItem, SessionSummary } from "../../shared/protocol";
-import { needsYouCut, needsYouItems, needsYouOpen, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "./needs-you";
+import { isReleaseItem, needsYouCut, needsYouItems, needsYouOpen, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "./needs-you";
 
 const session = (id: string): SessionSummary =>
   ({
@@ -168,4 +168,15 @@ test("the softer tier: guesses list under the blockers, newest first; a session 
   const rows = needsYouRows(digest(items), ["g1", "b1", "g2", "x"].map(session));
   assert.deepEqual(rows.map((r) => [r.session.id, r.soft]), [["b1", false], ["g2", true], ["g1", true]]);
   assert.equal(rows[0]!.detail, "Asks you: retry?", "its newest item's sentence, blocker or guess");
+});
+
+test("a project's release items list in the region and open its Releases tab; the head's title counts them apart from deploys (§app.release)", () => {
+  const item = (kind: AttentionItem["kind"], since: number, title: string) => ({ id: `${kind}:${title}`, path: "", title, where: "Projects", tier: "act" as const, kind, since, detail: `${kind} of ${title}`, href: `#/projects/prj_${title}/releases` });
+  const kinds: AttentionItem["kind"][] = ["release-ready", "release-request", "release-held", "release-failed", "release-quiet"];
+  const digest = { items: [...kinds.map((k, i) => item(k, i + 1, `p${i}`)), item("deploy-failed", 9, "site")] };
+  const listed = needsYouItems(digest);
+  assert.deepEqual(listed.map((i) => i.kind), ["deploy-failed", "release-quiet", "release-failed", "release-held", "release-request", "release-ready"]);
+  assert.ok(listed.filter(isReleaseItem).every((i) => i.href.endsWith("/releases")));
+  assert.equal(needsYouTitle(0, 1, false, 5), "1 deploy item and 5 release items waiting on you.");
+  assert.equal(needsYouTitle(1, 0, false, 1), "The 1 session waiting on you, and 1 release item.");
 });

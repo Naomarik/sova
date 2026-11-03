@@ -22,6 +22,7 @@ import {
   overseerEye,
   regionCount,
   rowLine,
+  heldProjectId,
   orgCount,
   orgNeedsYouRows,
   orgProjectItems,
@@ -44,7 +45,7 @@ import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
 import { archiveDragOf, archivedDropToast, archivedProjectOf, blockedDropSentence, unarchivedProjectOf, unarchivedToast } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
-import { NEEDS_YOU_KEY, needsYouCut, needsYouItems, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
+import { isReleaseItem, NEEDS_YOU_KEY, needsYouCut, needsYouItems, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
 import { byActivity, type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
 import {
   createGroup,
@@ -2567,7 +2568,7 @@ export function Sidebar(props: {
             <details class="sidebar-region sidebar-needs-you" aria-labelledby="r-needs-you" open={needsYouRegionOpen()} onToggle={onNeedsYouToggle}>
               {/* The Groups head's pattern: the <summary> toggles, the <h2> is what the outline reads. */}
               <summary class="sidebar-needs-you-summary">
-                <h2 class="sidebar-region-head" id="r-needs-you" title={needsYouTitle(needsYou().length, needsYouProject().filter((i) => i.kind !== "whatsapp-down").length, needsYouProject().some((i) => i.kind === "whatsapp-down"))}>
+                <h2 class="sidebar-region-head" id="r-needs-you" title={needsYouTitle(needsYou().length, needsYouProject().filter((i) => i.kind !== "whatsapp-down" && !isReleaseItem(i)).length, needsYouProject().some((i) => i.kind === "whatsapp-down"), needsYouProject().filter(isReleaseItem).length)}>
                   <Icon name="chevron-right" small class="icon-twist" />
                   Needs you <span class="sidebar-region-count">· {needsYouCount()}</span>
                 </h2>
@@ -2603,6 +2604,14 @@ export function Sidebar(props: {
                           </span>
                         </a>
                       </li>
+                      {/* A release item: its tab holds Publish, Continue, Retry Step and Abandon Release, each with its confirm. */}
+                      <Show when={isReleaseItem(it())}>
+                        <li class="needs-you-playbook">
+                          <a class="button button-sm" href={it().href}>
+                            {it().kind === "release-ready" ? "Review and Publish" : "Open Releases"}
+                          </a>
+                        </li>
+                      </Show>
                       <Show when={it().kind === "whatsapp-down"}>
                         <li class="needs-you-playbook">
                           <a class="button button-sm" href={it().href}>
@@ -2895,7 +2904,7 @@ export function Sidebar(props: {
                                 <span class="list-meta">{it().where}</span>
                               </span>
                             </a>
-                            <Show when={it().held && it().org?.projectId ? { held: it().held!, projectId: it().org!.projectId! } : null}>
+                            <Show when={it().held && heldProjectId(it()) ? { held: it().held!, projectId: heldProjectId(it())! } : null}>
                               {(h) => <CancelHeldButton projectId={h().projectId} holdId={h().held.id} what={h().held.what} class="org-needs-cancel" />}
                             </Show>
                           </li>

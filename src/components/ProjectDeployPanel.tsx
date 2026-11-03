@@ -1,10 +1,13 @@
-import { createSignal, For, type JSX, Show } from "solid-js";
+import { createEffect, createSignal, For, type JSX, Show } from "solid-js";
+import type { ReleaseHistoryItem } from "../../shared/release";
 import type { DeployPlanView, DeployReview, DeployTargetView, LogLine, VerbResult } from "../../shared/project-contract";
 import { ApiError, runDeploySetup, runDeployVerb } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
 import { checksLine, DEPLOY_STANDING_CHIP, DEPLOY_STATE_CHIP, hash12, overridesAsked, planDeadline, recordLine, rollbackWord, shipConfirmLine, short } from "../lib/project-deploy";
 import { announce, toast } from "../lib/ui-state";
+import { deployHandOff, takeDeployHandOff } from "../lib/releases-client";
+import { releaseAt, releaseOfTarget } from "../lib/releases";
 import { Chip } from "./ui";
 
 /** A deploy's record changes step by step: read often enough to follow one. */
@@ -122,7 +125,7 @@ function PlanView(props: { plan: DeployPlanView }) {
  * The project's Deploy panel (§app.project-runtime/deploy-panel): each target's standing and last deploy; per
  * target Plan Deploy, then Deploy Now after a confirm; Roll Back; the last deploy's log; an overseer's request. Only the operator sees it.
  */
-export function ProjectDeployPanel(props: { projectId: string; root: string; archived: boolean }) {
+export function ProjectDeployPanel(props: { projectId: string; root: string; archived: boolean; /** The project's numbered releases: each row says which one it runs. */ releases?: () => readonly ReleaseHistoryItem[] | undefined }) {
   const poll = createPoll(() => runDeployVerb(props.root, "deploy.status", {}), DEPLOY_POLL_MS);
   const [busy, setBusy] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
@@ -132,6 +135,17 @@ export function ProjectDeployPanel(props: { projectId: string; root: string; arc
   const [logs, setLogs] = createSignal<Record<string, LogLine[]>>({});
 
   const report = () => poll.data()?.deploy;
+  // A hand-off waits until the targets are read, then plans once and brings the card into view.
+  let card: HTMLElement | undefined;
+  createEffect(() => {
+    if (!deployHandOff() || !report()?.targets) return;
+    const h = takeDeployHandOff(props.projectId);
+    const t = h && report()!.targets!.find((x) => x.name === h.target);
+    if (!h || !t) return;
+    setPinned((p) => ({ ...p, [t.name]: { commit: h.commit, version: h.version } }));
+    requestAnimationFrame(() => card?.scrollIntoView({ block: "start" }));
+    void plan(t);
+  });
   const act = async (key: string, fn: () => Promise<string | null>) => {
     if (busy()) return;
     setBusy(key);
@@ -152,10 +166,13 @@ export function ProjectDeployPanel(props: { projectId: string; root: string; arc
   };
   const failed = (r: VerbResult): string | null => (r.error ? r.error.message : null);
 
+  // Plan Deploy of vX from the Releases tab: the target's plan at that release's commit, kept for Plan Again.
+  const [pinned, setPinned] = createSignal<Record<string, { commit: string; version: string }>>({});
   const plan = (t: DeployTargetView) =>
     act(`plan:${t.name}`, async () => {
       const why = reasons()[t.name] ?? {};
-      const r = await runDeployVerb(props.root, "deploy.plan", { target: t.name, ...(why.tests ? { overrideTests: why.tests } : {}), ...(why.dirty ? { overrideDirty: why.dirty } : {}) });
+      const pin = pinned()[t.name];
+      const r = await runDeployVerb(props.root, "deploy.plan", { target: t.name, ...(pin ? { commit: pin.commit } : {}), ...(why.tests ? { overrideTests: why.tests } : {}), ...(why.dirty ? { overrideDirty: why.dirty } : {}) });
       setPlans((p) => ({ ...p, [t.name]: r.deploy?.plan ?? { refused: r.error } }));
       return r.deploy?.plan ? `Planned ${short(r.deploy.plan.commit)} to ${t.name}.` : null;
     });
@@ -201,7 +218,7 @@ export function ProjectDeployPanel(props: { projectId: string; root: string; arc
     });
 
   return (
-    <section class="card orgs-section project-card" aria-labelledby="project-deploy">
+    <section class="card orgs-section project-card" aria-labelledby="project-deploy" ref={card}>
       <div class="orgs-head">
         <h2 class="orgs-h2" id="project-deploy">
           Deploy
@@ -229,6 +246,15 @@ export function ProjectDeployPanel(props: { projectId: string; root: string; arc
                         <span class="project-software-name">{t.name}</span>
                         <span class="deploy-fact">
                           <Chip tone={DEPLOY_STANDING_CHIP[t.standing].tone}>{DEPLOY_STANDING_CHIP[t.standing].word}</Chip> <span class="project-card-note">{t.about}</span>
+                          <Show when={releaseOfTarget(props.releases?.(), t.name) ?? releaseAt(props.releases?.(), t.verifiedCommit)}>
+                            {(rel) => (
+                              <span class="project-card-note deploy-release" title={rel().withdrawn ? `Withdrawn: ${rel().withdrawn!.why}` : undefined}>
+                                {" "}
+                                · Runs <span class="text-mono">{rel().tag}</span>
+                                {rel().withdrawn ? " (withdrawn)" : ""}
+                              </span>
+                            )}
+                          </Show>
                         </span>
                         <Show when={t.last}>
                           {(r) => (
@@ -270,6 +296,16 @@ export function ProjectDeployPanel(props: { projectId: string; root: string; arc
                                 </Show>
                               </Show>
                             </div>
+                          )}
+                        </Show>
+                        <Show when={pinned()[t.name]}>
+                          {(pin) => (
+                            <p class="project-card-note deploy-pinned">
+                              Planning release <span class="text-mono">{pin().version}</span> ({short(pin().commit)}).{" "}
+                              <button type="button" class="button button-sm button-ghost" onClick={() => setPinned((p) => { const { [t.name]: _, ...rest } = p; return rest; })}>
+                                Plan the Branch Tip Instead
+                              </button>
+                            </p>
                           )}
                         </Show>
                         <Show when={planned()}>{(pl) => <PlanView plan={pl()} />}</Show>

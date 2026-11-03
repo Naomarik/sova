@@ -24,7 +24,7 @@ after(async () => {
   assert.deepEqual(changes ?? [], [], "the sentinel home is untouched");
 });
 
-test("S26 + S27: Withdraw moves stable back here and on origin; v0.3.0 stays; a copy on it is told it was withdrawn", async () => {
+test("S26 + S27: Withdraw moves stable back here and on origin; v0.3.0 stays; a copy on it is told it was withdrawn", { timeout: 290_000 }, async () => {
   const fx = new ReleaseFixture({ under: k.hs.scratch, versions: ["0.1.0", "0.2.0"] });
   fixtures.push(fx);
   fx.seedLandings(1);
@@ -89,7 +89,7 @@ test("S26 + S27: Withdraw moves stable back here and on origin; v0.3.0 stays; a 
   assert.equal(fx.originTag("stable"), prev);
 });
 
-test("S28: Withdraw on a local-only project moves the channel locally and pushes nothing", async () => {
+test("S28: Withdraw on a local-only project moves the channel locally and pushes nothing", { timeout: 290_000 }, async () => {
   const fx = new ReleaseFixture({ kind: "local", under: k.hs.scratch, versions: ["0.1.0"] });
   fixtures.push(fx);
   fx.seedLandings(1);

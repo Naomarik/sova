@@ -233,6 +233,7 @@ export class ReleaseFixture {
       git(this.project, ["remote", "add", "origin", this.origin]);
       git(this.project, ["push", "-q", "origin", `${this.target}:refs/heads/${this.target}`, "--tags"]);
       git(this.project, ["fetch", "-q", "origin"]);
+      git(this.project, ["branch", "-q", "--set-upstream-to", `origin/${this.target}`, this.target]);
     }
   }
 

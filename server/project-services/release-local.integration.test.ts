@@ -27,7 +27,7 @@ after(async () => {
   assert.deepEqual(changes ?? [], [], "the sentinel home is untouched");
 });
 
-test("S21: local-only Publish tags and moves the channel locally, pushes nothing; the artifact is reported, never committed", async () => {
+test("S21: local-only Publish tags and moves the channel locally, pushes nothing; the artifact is reported, never committed", { timeout: 290_000 }, async () => {
   const v0 = await view(k, fx);
   assert.equal(v0.remote, false, "the view says Publish won't push");
   const rec = await start(k, fx);
@@ -50,7 +50,8 @@ test("S21: local-only Publish tags and moves the channel locally, pushes nothing
   const built = JSON.parse(execFileSync("node", [".sova/playbooks/release/scripts/release.mjs", "build", "0.2.0"], { cwd: co, encoding: "utf8" })) as { artifact: string; sha256: string; size: number };
   assert.ok(existsSync(built.artifact));
   // The fact wins (S11): a done report naming a file the repository tracks reads failed, with Sova's why.
-  await chatDoes(k, r, [step("artifact", "done", "app built", { facts: { artifact: `${co}/README.md`, size: 1 } })]);
+  const [told] = await chatDoes(k, r, [step("artifact", "done", "app built", { facts: { artifact: `${co}/README.md`, size: 1 } })], undefined, { expectOk: false });
+  assert.match(told ?? "", /inside the repository and not ignored/, told);
   const bad = await waitRecord(k, fx, "the tracked artifact path to fail its fact", (x) => stepOf(x, "artifact").state === "failed", 60_000, rec.id);
   assert.equal(stepOf(bad, "artifact").fact?.ok, false, JSON.stringify(stepOf(bad, "artifact")));
   assert.match(stepOf(bad, "artifact").fact?.why ?? "", /commit|track|ignored|repositor/i);

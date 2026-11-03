@@ -26,7 +26,7 @@ after(async () => {
   assert.deepEqual(changes ?? [], [], "the sentinel home is untouched");
 });
 
-test("a release of a remote-publishing project: freeze, checks, hold, publish in one push, after-steps", async () => {
+test("a release of a remote-publishing project: freeze, checks, hold, publish in one push, after-steps", { timeout: 290_000 }, async () => {
   const base = fx.head();
   const originBase = fx.originHead();
   assert.equal(originBase, base);

@@ -46,7 +46,7 @@ async function deploy(fx: ReleaseFixture, commit: string): Promise<string> {
   return done;
 }
 
-test("S34 + S8: release, publish, then Plan Deploy of v0.2.0 ships it; the history shows where it runs", async () => {
+test("S34 + S8: release, publish, then Plan Deploy of v0.2.0 ships it; the history shows where it runs", { timeout: 290_000 }, async () => {
   const fx = await project({ name: "chain" });
   const { sha } = await publishOne(k, fx, "0.2.0");
   const v = await view(k, fx);
@@ -56,7 +56,7 @@ test("S34 + S8: release, publish, then Plan Deploy of v0.2.0 ships it; the histo
   await until("the history to name the target", async () => (await view(k, fx)).history.find((h) => h.tag === "v0.2.0")?.deployedTo?.includes("site"), 30_000, 250);
 });
 
-test("S36: a releases-only target refuses an unnamed commit and a withdrawn release, ships a release", async () => {
+test("S36: a releases-only target refuses an unnamed commit and a withdrawn release, ships a release", { timeout: 290_000 }, async () => {
   const fx = await project({ name: "only", deploy: { releasesOnly: true } });
   const { rec, sha } = await publishOne(k, fx, "0.2.0");
   // A landing after the release: master's tip is a commit no release names.

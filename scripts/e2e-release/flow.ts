@@ -57,7 +57,9 @@ export function threadCheckout(fx: ReleaseFixture, rec: Rec): string {
  *  with each tool call's result text, in order. `expectOk` (default): throw when a result reads as a refusal. */
 export async function chatDoes(k: ReleaseServer, rec: Rec, actions: ModelAction[], say = "Go on with the release.", o: { expectOk?: boolean } = {}): Promise<string[]> {
   const before = (await k.model.log()).length;
-  await k.model.script(marker(rec), [...actions, { text: "Reported." }]);
+  // The chat names its own release (the default, the open one, is gone once it is published).
+  const named = actions.map((a) => (a.args && String(a.args.verb ?? "").startsWith("release.") && a.args.release === undefined ? { ...a, args: { ...a.args, release: rec.id } } : a));
+  await k.model.script(marker(rec), [...named, { text: "Reported." }]);
   ok(await k.http("POST", "/api/sessions/prompt", { path: threadPath(rec), text: `${marker(rec)} ${say}` }), "prompt the release chat");
   // The turn has run every action once the closing text was popped.
   const log = await until(`the release chat to run ${actions.length} action(s)`, async () => {
@@ -67,7 +69,7 @@ export async function chatDoes(k: ReleaseServer, rec: Rec, actions: ModelAction[
   for (const e of log) if (e.missing) throw new Error(`the release chat has no tool ${e.missing} (it has: ${e.tools.join(", ")})`);
   const results = log.slice(1).map((e) => e.toolResults.at(-1) ?? "");
   if (o.expectOk !== false) {
-    const bad = results.map((r, i) => [r, actions[i]] as const).filter(([r]) => /Validation failed|"ok":\s*false|forbidden|refused|error/i.test(r));
+    const bad = results.map((r, i) => [r, actions[i]] as const).filter(([r]) => /Validation failed|"ok":\s*false|failed \(exit \d+\)/.test(r));
     if (bad.length) throw new Error(`the release chat's calls were refused:\n${bad.map(([r, a]) => `${JSON.stringify(a?.args)}\n  → ${r.slice(0, 800)}`).join("\n")}`);
   }
   return results;

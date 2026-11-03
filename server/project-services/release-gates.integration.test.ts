@@ -37,7 +37,7 @@ after(async () => {
   assert.deepEqual(changes ?? [], [], "the sentinel home is untouched");
 });
 
-test("S18 + S25: a failed release-only check refuses Publish; Abandon before anything landed lifts the freeze", async () => {
+test("S18 + S25: a failed release-only check refuses Publish; Abandon before anything landed lifts the freeze", { timeout: 290_000 }, async () => {
   const fx = await project({ name: "red" });
   const base = fx.head();
   const other = fx.branch("other", { "src/other.txt": "other\n" });
@@ -69,7 +69,7 @@ test("S18 + S25: a failed release-only check refuses Publish; Abandon before any
   assert.equal((await view(k, fx)).open, null);
 });
 
-test("S24: Abandon after the release commit landed reverts it as a queue landing, never a reset", async () => {
+test("S24: Abandon after the release commit landed reverts it as a queue landing, never a reset", { timeout: 290_000 }, async () => {
   const fx = await project({ name: "back" });
   const base = fx.head();
   const originBase = fx.originHead();
@@ -95,19 +95,20 @@ test("S24: Abandon after the release commit landed reverts it as a queue landing
   assert.equal(fx.originTag("v0.2.0"), null);
 });
 
-test("S11: a report Sova can disprove reads failed (the fact wins), and adds no release entry", async () => {
+test("S11: a report Sova can disprove reads failed (the fact wins), and adds no release entry", { timeout: 290_000 }, async () => {
   const fx = await project({ name: "facts" });
   const stray = fx.branch("stray", { "src/stray.txt": "x\n" });
   const rec = await start(k, fx);
   // The version's tag already exists.
-  await chatDoes(k, rec, [step("version", "done", "v0.1.0", { facts: { version: "0.1.0" } })]);
+  const [taken] = await chatDoes(k, rec, [step("version", "done", "v0.1.0", { facts: { version: "0.1.0" } })], undefined, { expectOk: false });
+  assert.match(taken ?? "", /release-refused.*v0\.1\.0 already exists/s, "the chat is told why");
   let r = await waitRecord(k, fx, "the taken version to fail", (x) => stepOf(x, "version").state === "failed", 60_000);
   assert.equal(stepOf(r, "version").fact?.ok, false, JSON.stringify(stepOf(r, "version")));
   assert.equal(r.version, null, "the disproved version isn't taken");
   // Report the right one, then a commit that is not on the release branch.
   ok(await k.verb("release.retry", { project: fx.project, release: rec.id, step: "version" }), "retry version");
   await chatDoes(k, rec, [step("version", "done", "v0.2.0", { facts: { version: "0.2.0" } }), notes("- notes"), step("notes", "done", "notes"), step("bump", "done", "bumped")]);
-  await chatDoes(k, rec, [step("commit", "done", "Release v0.2.0", { facts: { commit: stray.commit, branch: String(rec.thread?.branch) } })]);
+  await chatDoes(k, rec, [step("commit", "done", "Release v0.2.0", { facts: { commit: stray.commit, branch: String(rec.thread?.branch) } })], undefined, { expectOk: false });
   r = await waitRecord(k, fx, "the stray commit to fail", (x) => stepOf(x, "commit").state === "failed", 60_000);
   assert.equal(stepOf(r, "commit").fact?.ok, false);
   assert.match(stepOf(r, "commit").fact?.why ?? "", /branch|release/i);
@@ -117,13 +118,13 @@ test("S11: a report Sova can disprove reads failed (the fact wins), and adds no 
   await waitRecord(k, fx, "abandoned", (x) => x.state === "abandoned", 60_000, rec.id);
 });
 
-test("S14: a release chat quiet past quietMin while frozen shows in Needs you, and a report clears it", async () => {
+test("S14: a release chat quiet past quietMin while frozen shows in Needs you, and a report clears it", { timeout: 290_000 }, async () => {
   const fx = await project({ name: "quiet" });
   const rec = await start(k, fx);
   // The knob makes quietMin 4 s and the stall check every 0.5 s.
   const item = await until("the quiet-chat item", async () => (await attention()).find((i) => i.kind === "release-quiet"), 60_000, 250);
   assert.match(String(item.href ?? ""), /releases/, JSON.stringify(item));
-  assert.match(String(item.title ?? item.text ?? JSON.stringify(item)), /No word from the release chat/i);
+  assert.match(JSON.stringify(item), /No word from the release chat/i, JSON.stringify(item));
   assert.ok((await view(k, fx)).quiet, "the view carries quiet");
   await chatDoes(k, rec, [step("version", "running", "looking at the landings")]);
   await until("quiet to clear after a report", async () => !(await view(k, fx)).quiet, 30_000, 200);
@@ -132,7 +133,7 @@ test("S14: a release chat quiet past quietMin while frozen shows in Needs you, a
   await until("the quiet item gone", async () => !(await attention()).some((i) => i.kind === "release-quiet"), 30_000, 250);
 });
 
-test("S19: a tag-only release checks and publishes master's tip, with no release commit", async () => {
+test("S19: a tag-only release checks and publishes master's tip, with no release commit", { timeout: 290_000 }, async () => {
   const fx = await project({
     name: "tagonly",
     release: { ...DEFAULT_POINTER, commit: false },

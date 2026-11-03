@@ -646,7 +646,7 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .rel-actions .rel-abandon { margin-left: auto; }
 .rel-why { margin: 0; }
 .rel-row .list-title { flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
-.deploy-release { white-space: nowrap; }
+.deploy-release { display: block; margin-top: var(--space-1); }
 @media (max-width: 767px) {
   .rel-actions .rel-abandon { margin-left: 0; flex-basis: 100%; }
   .rel-step { grid-template-columns: 24px minmax(0, 1fr); }

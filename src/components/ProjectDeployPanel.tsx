@@ -249,8 +249,7 @@ export function ProjectDeployPanel(props: { projectId: string; root: string; arc
                           <Show when={releaseOfTarget(props.releases?.(), t.name) ?? releaseAt(props.releases?.(), t.verifiedCommit)}>
                             {(rel) => (
                               <span class="project-card-note deploy-release" title={rel().withdrawn ? `Withdrawn: ${rel().withdrawn!.why}` : undefined}>
-                                {" "}
-                                · Runs <span class="text-mono">{rel().tag}</span>
+                                Runs <span class="text-mono">{rel().tag}</span>
                                 {rel().withdrawn ? " (withdrawn)" : ""}
                               </span>
                             )}

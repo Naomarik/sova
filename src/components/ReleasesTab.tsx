@@ -454,7 +454,7 @@ function PowerHold(props: { projectId: string; name: string; until: string; act:
           {countdown(props.until, now())}. Cancel stops it; you can still publish it yourself.
         </span>
       }
-      action={<CancelHeldButton projectId={props.projectId} holdId={props.act} what={`publishing ${props.name}`} onDone={noteReleaseChanged} />}
+      action={<CancelHeldButton projectId={props.projectId} holdId={props.act} what={`Publishing ${props.name}`} onDone={noteReleaseChanged} />}
     />
   );
 }
@@ -526,11 +526,9 @@ function HistoryRow(props: { projectId: string; view: ReleaseView; item: Release
         <p class="mq-facts">
           <span class="text-mono text-muted">{shortSha(h().sha)}</span>
           <span>
-            <time title={h().date}>{relativeTime(h().date)}</time>
+            · <time title={h().date}>{relativeTime(h().date)}</time>
+            <Show when={h().deployedTo.length}> · Runs on {h().deployedTo.join(", ")}</Show>
           </span>
-          <Show when={h().deployedTo.length}>
-            <span>Runs on {h().deployedTo.join(", ")}</span>
-          </Show>
         </p>
         <Show when={h().withdrawn}>
           {(w) => (

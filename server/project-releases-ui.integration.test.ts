@@ -230,7 +230,7 @@ describe("the Releases tab", () => {
   for (const width of [1280, 390]) {
     test(`a release in progress at ${width}px: its steps and states, Continue, Retry Step, Publish held by its gates, Abandon with a reason`, async () => {
       const r = record();
-      const o = await open(width, TAB, view({ open: r, gates: { checksPassed: false, stepsDone: false, notes: true, why: ["the gating checks pass", "every step before Publish is done"] } }));
+      const o = await open(width, TAB, view({ open: r, gates: { checksPassed: false, stepsDone: false, notes: true, why: ["the gating checks haven't passed yet", "steps not done: bump, commit"] } }));
       try {
         const card = o.page.getByRole("group", { name: "Release in progress" });
         await card.waitFor();
@@ -238,7 +238,7 @@ describe("the Releases tab", () => {
         assert.deepEqual(states, ["version:done", "notes:done", "bump:failed", "commit:waiting", "checks:waiting", "try-live:held", "publish:waiting", "gh-release:waiting"], "after-withdraw steps wait until a withdraw");
         await card.getByText("Step 3 of 8 · Bump the files failed · 2 done").waitFor();
         await card.getByText("Other landings wait in the queue until v0.10.0 is published or abandoned.").waitFor();
-        await card.getByText("Publish waits until the gating checks pass and every step before Publish is done.").waitFor();
+        await card.getByText("Not ready to publish: the gating checks haven't passed yet; steps not done: bump, commit.").waitFor();
         assert.equal(await card.getByRole("button", { name: /^Publish/ }).count(), 0);
         // A step's detail opens in place.
         await card.getByRole("button", { name: "Show the detail of Draft the notes" }).click();

@@ -91,13 +91,10 @@ export function publishBlocked(v: Pick<ReleaseView, "gates">, r: Pick<ReleaseRec
   if (r.state === "publishing") return "Publishing now.";
   const why = (v.gates?.why ?? []).filter(Boolean);
   // A gate that still says why holds Publish even on a ready release (a push the queue can't make yet).
-  if (r.state !== "ready" || why.length) return why.length ? `Publish waits until ${joinWhy(why)}.` : "Publish waits until every step before it is done.";
+  // The gates' reasons are sentences of their own: listed after one lead-in, never fitted into "until".
+  if (r.state !== "ready" || why.length) return why.length ? `Not ready to publish: ${why.map((x) => x.trim().replace(/[.]$/, "")).join("; ")}.` : "Not ready to publish: steps before it aren't done yet.";
   return null;
 }
-const joinWhy = (xs: readonly string[]): string => {
-  const t = xs.map((x) => x.trim().replace(/[.]$/, ""));
-  return t.length <= 1 ? (t[0] ?? "") : `${t.slice(0, -1).join(", ")} and ${t[t.length - 1]}`;
-};
 
 /** The Publish confirm: what goes out, then what can't be undone. */
 export function publishConfirmLine(r: Pick<ReleaseRecord, "tag" | "version" | "channels">, v: Pick<ReleaseView, "remote" | "target">): string {

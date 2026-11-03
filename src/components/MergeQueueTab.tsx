@@ -57,8 +57,8 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
   );
 }
 
-/** The release holding the queue, as the Releases tab names it: its tag (the hold's `version` carries the tag). */
-const holdName = (r: { version: string | null }): string => (r.version ? `release ${r.version}` : "a release");
+/** The release holding the queue, as the Releases tab names it: its tag, else its version. */
+const holdName = (r: { version: string | null; tag?: string | null }): string => (r.tag ? `release ${r.tag}` : r.version ? `release ${r.version}` : "a release");
 
 /** The queue doesn't serve this listed project: it has no merge setup (an invalid one is still a setup, said as such). */
 const notSetUp = (v: Pick<MergeQueueView, "served" | "checks" | "invalid">): boolean => !v.invalid && (v.served === false || v.checks === "unset");

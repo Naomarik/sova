@@ -83,10 +83,10 @@ test("Continue only on a held step and Retry Step only on a failed one, while th
 
 test("Publish is offered only on a ready release; otherwise the gates' reasons say why", () => {
   assert.equal(publishBlocked({ gates: { checksPassed: true, stepsDone: true, notes: true, why: [] } }, { state: "ready" }), null);
-  assert.equal(publishBlocked({ gates: { checksPassed: false, stepsDone: false, notes: true, why: ["the gating checks pass.", "every step is done"] } }, { state: "checking" }), "Publish waits until the gating checks pass and every step is done.");
-  assert.equal(publishBlocked({ gates: null }, { state: "preparing" }), "Publish waits until every step before it is done.");
+  assert.equal(publishBlocked({ gates: { checksPassed: false, stepsDone: false, notes: true, why: ["the gating checks haven't passed yet.", "no release notes yet"] } }, { state: "checking" }), "Not ready to publish: the gating checks haven't passed yet; no release notes yet.");
+  assert.equal(publishBlocked({ gates: null }, { state: "preparing" }), "Not ready to publish: steps before it aren't done yet.");
   assert.equal(publishBlocked({ gates: null }, { state: "publishing" }), "Publishing now.");
-  assert.equal(publishBlocked({ gates: { checksPassed: true, stepsDone: true, notes: true, why: ["the queue's private names are set up"] } }, { state: "ready" }), "Publish waits until the queue's private names are set up.", "a gate's reason holds a ready release too");
+  assert.equal(publishBlocked({ gates: { checksPassed: true, stepsDone: true, notes: true, why: ["pushes are held until this project's private names are set up"] } }, { state: "ready" }), "Not ready to publish: pushes are held until this project's private names are set up.", "a gate's reason holds a ready release too");
 });
 
 test("the Publish confirm names what goes out: pushed to origin, or tagged on this machine only", () => {

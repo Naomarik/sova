@@ -133,6 +133,25 @@ The server runs on Bun (`bun server/index.ts`, Bun 1.4.2, pinned in `mise.toml`)
   (`vite build --mode share`); `SOVA_SHARE_DIST=<dir>` names another build, read per request (tests
   point it at a stub page). With no built page it answers 503.
 
+### Mesh areas (§mesh/compatibility)
+
+- `shared/wire-areas.ts` and `.json` hold one version number per area. Hosts match on an area only when
+  the numbers are equal: no oldest supported version, no translating down. `hostState` is the one
+  reading of a host, for a page (its bundled numbers) and for a host's own acts (its running numbers,
+  `hostReading` in `server/mesh/hello.ts`); never re-derive it.
+- `state: "up"` no longer means usable: a host that lists areas is `up` whatever its numbers. Anything
+  that acts on a peer goes through `hostReading`, or `areasForbid` when a host that lists none must
+  stay as it was (`server/mesh/hello.ts`).
+- A writing route (`WRITING_ROUTES`, `server/wire-gate.ts`) refuses a number other than this host's.
+  Whatever the server runs states its own: `peerFetch` and the in-process `statingOwnNumber` stamp it,
+  and `scripts/sova.mjs` too. A new in-process caller of a writing route goes through those, or it is
+  refused the day writing passes version 1.
+- The ratchet (`shared/wire-areas.test.ts`, `server/testing/wire-shape.ts`) holds each area's root
+  types against its recorded shape and fails with instructions. Declare the change: a `compatible`
+  entry with its shape and a note, or a raised `version` with the old format's code removed and the
+  area's saved samples (`src/lib/wire-samples/`) replaced. A new type on an area goes in `AREA_ROOTS`.
+
+## When you change X, also update Y
 ## When you change X, also update Y
 
 | You change | Also |
@@ -142,6 +161,7 @@ The server runs on Bun (`bun server/index.ts`, Bun 1.4.2, pinned in `mise.toml`)
 | `bun` in `mise.toml` | `scripts/bun-release.txt` checksum lines; `mise trust <worktree>` |
 | `scripts/dev-server.mjs` watch set | this guide's watcher paragraph and the extensions guide's "not watched" list |
 | `shared/protocol.ts` | coordinate with the frontend first; `shared/wire-v1.ts` if v1 frames are affected |
+| a type an area covers (`AREA_ROOTS` in `server/testing/wire-shape.ts`) | declare it in `shared/wire-areas.json` as compatible or breaking; a breaking one replaces `src/lib/wire-samples/` |
 | anything in `server/**` or `shared/**` | say the live server needs a restart (AGENTS.md) |
 
 While working: `pnpm test` constantly, `pnpm test:int --changed` before asking to land, `pnpm run

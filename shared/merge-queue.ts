@@ -226,9 +226,14 @@ export interface MergeEntry {
   request?: MergeRequestInfo;
   /** Estimates (ms): when it should start from now, and how long its run takes. */
   eta?: { startsInMs: number; takesMs: number };
+  /** needs-fix only, derived when the view is read (never stored): the entry no longer needs a fix. `superseded`: the
+   *  branch has a later entry for the same target; `merged`: its sent-back commit or the branch's tip is already in the
+   *  target; `gone`: the branch or its worktree folder was removed. A settled entry leaves the Sent back list. */
+  settled?: MergeSettled;
   createdAt: string;
   updatedAt: string;
 }
+export type MergeSettled = "superseded" | "merged" | "gone";
 
 export type PushState = "pending" | "pushed" | "not-pushed" | "no-remote";
 
@@ -379,7 +384,8 @@ export interface MergeQueueView {
   /** Entries waiting for the user (behaviour differs, review flagged, drafts changed) and conflicts the thread
    *  judges. */
   needsYou: MergeEntry[];
-  /** Handed back to their chats, newest first (last 20). */
+  /** Handed back to their chats, newest first: the 20 newest that still need a fix (no `settled`), plus the settled
+   *  ones among the 20 newest overall (kept so a run or card can still find its entry). */
   needsFix: MergeEntry[];
   /** Waiting on the host: open requests (`requested`), newest first; closed ones and pushed branches recently. */
   waitingOnHost?: MergeEntry[];

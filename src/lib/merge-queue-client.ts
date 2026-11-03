@@ -19,7 +19,7 @@ export const mergeFeed = feed;
 /** Each project's entries and their states, as last pushed: a run's steps move often, the rows only when this does. */
 const rowsSeen = new Map<string, string>();
 const rowsKey = (v: MergeQueueView) =>
-  [v.current?.entry ?? "", ...[...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix].map((e) => `${e.id}:${e.state}:${e.position ?? ""}`), ...v.recent.map((l) => `${l.entry.id}:landed:${l.entry.notes.length}`)].join(",");
+  [v.current?.entry ?? "", ...[...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix].map((e) => `${e.id}:${e.state}:${e.position ?? ""}:${e.settled ?? ""}`), ...v.recent.map((l) => `${l.entry.id}:landed:${l.entry.notes.length}`)].join(",");
 /** The session feed's `merge_queue` frame: the tab adopts the view; worktree rows reload only when an entry moved. */
 export function noteMergeFeed(msg: { project: string; view: MergeQueueView }): void {
   setFeed({ project: msg.project, view: msg.view });

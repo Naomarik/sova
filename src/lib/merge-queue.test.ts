@@ -267,3 +267,22 @@ test("the Overseer's Land item (entry only, no readiness): off while sent back, 
   assert.equal(entryLandBlock({ state: "landed" }), undefined);
   assert.equal(entryLandBlock({ state: "cancelled" }), undefined);
 });
+
+test("the tab's Sent back list shows only entries that still need a fix: settled ones leave, the cap counts current ones", () => {
+  const fix = (id: string, settled?: MergeEntry["settled"]) => ({ id, branch: `feat/${id}`, commit: SHA, state: "needs-fix", ...(settled ? { settled } : {}) }) as MergeEntry;
+  const current = fix("cur");
+  for (const settled of ["superseded", "merged", "gone"] as const) assert.deepEqual(stillSentBack({ needsFix: [fix(settled, settled), current] }), [current], settled);
+  const many = Array.from({ length: 25 }, (_, i) => fix(`c${i}`));
+  const shown = stillSentBack({ needsFix: [fix("s1", "merged"), fix("s2", "gone"), ...many] });
+  assert.equal(shown.length, 20);
+  assert.ok(shown.every((e) => !e.settled));
+});
+
+test("a merged or removed worktree wins over Needs a fix", () => {
+  const sent = q({ state: "needs-fix", commit: SHA });
+  assert.equal(queueRow(wt({ queue: sent, mergeServed: true })).key, "needs-fix", "still current");
+  assert.equal(queueRow(wt({ queue: sent, status: "merged" })).key, "merged");
+  assert.equal(queueRow(wt({ queue: sent, mergedInto: { target: "master", sha: SHA } } as never)).key, "merged");
+  assert.equal(queueRow(wt({ queue: sent, exists: false })).key, "removed");
+  assert.equal(queueRow(wt({ queue: sent, gone: "unknown" } as never)).key, "removed");
+});

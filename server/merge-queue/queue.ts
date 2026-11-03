@@ -29,7 +29,7 @@ import { estimateFromRuns } from "./estimate";
 import { deliverReview } from "./review-step";
 import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
-import { buildView } from "./view";
+import { buildView, superseded } from "./view";
 import { type MergeQueueSettings, type MergeSettingsChange, type MergeSettingsSaveResult, SETTINGS_DIRTY_WORDS } from "../../shared/merge-queue-settings";
 import { effectiveModel, type ModelCheck, readModels } from "./models";
 import { buildSettings, fixedValues, playbookDiffers } from "./settings";
@@ -308,6 +308,7 @@ export class ProjectQueue {
     const thread = this.deps.threadOf?.(this.root) ?? null;
     const tryRun = this.trying?.run ?? (this.lastTry ? this.store.readRun(this.lastTry) : null);
     const origin = await this.originFacts();
+    const settled = await this.settledFacts(head);
     const v = buildView({
       q: this.q,
       root: this.root,
@@ -319,6 +320,7 @@ export class ProjectQueue {
       now: this.now(),
       readRun: (id) => this.store.readRun(id),
       origin,
+      settled,
     });
     const settings = head ? await this.settings().catch((err) => (this.log(`settings unreadable: ${err instanceof Error ? err.message : err}`), null)) : null;
     // Landing by request or push (al_3): what waits on the host, and how far local main is behind origin's.
@@ -589,6 +591,25 @@ export class ProjectQueue {
       this.save();
       this.settingsChanged();
     }
+  }
+
+  private settledCache: { at: number; head: string; facts: Map<string, "merged" | "gone"> } | null = null;
+  /**
+   * Sent-back entries git says need no fix any more (the view's `settled`): `merged` when the sent-back commit or the
+   * branch's tip is already in the target, `gone` when the branch or the worktree it was approved from was removed.
+   * Superseded ones are the view's to see and skip git here. Re-read at most every 15 s or when the target moves.
+   */
+  private async settledFacts(head: string): Promise<Map<string, "merged" | "gone">> {
+    if (this.settledCache && this.settledCache.head === head && this.now() - this.settledCache.at < 15_000) return this.settledCache.facts;
+    const facts = new Map<string, "merged" | "gone">();
+    for (const e of this.q.entries) {
+      if (e.state !== "needs-fix" || superseded(this.q.entries, e)) continue;
+      const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
+      if (head && ((await isAncestor(this.git, this.root, e.commit, head)) || (tip && (await isAncestor(this.git, this.root, tip, head))))) facts.set(e.id, "merged");
+      else if (!tip || (e.worktree && !existsSync(e.worktree))) facts.set(e.id, "gone");
+    }
+    this.settledCache = { at: this.now(), head, facts };
+    return facts;
   }
 
   private readyCache: { at: number; head: string; list: MergeReady[] } | null = null;

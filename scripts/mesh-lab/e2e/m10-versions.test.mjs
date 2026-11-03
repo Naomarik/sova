@@ -71,9 +71,11 @@ const seesBuild = (from, to) =>
     async () => {
       const p = await peerOf(from, to);
       const want = numbersOf(running[to]);
-      if (!p || (p.state !== "up" && p.state !== "skewed")) return null;
-      if (p.hello?.commit && p.hello.commit !== commitOf(running[to])) return null;
-      return want ? JSON.stringify(p.areas) === JSON.stringify(want) && p : !p.areas && p;
+      if (!p || (p.state !== "up" && p.state !== "skewed")) throw new Error(`state ${p?.state}`);
+      if (p.hello?.commit !== commitOf(running[to])) throw new Error(`commit ${p.hello?.commit}`);
+      if (!numbersOf(running[from])) return p; // a build with no areas keeps no such field on a peer
+      if (JSON.stringify(p.areas ?? null) === JSON.stringify(want)) return p;
+      throw new Error(`state ${p.state} areas ${JSON.stringify(p.areas)}, want ${JSON.stringify(want)}`);
     },
     { timeoutMs: 90000, intervalMs: 1000, what: `${from} sees ${to} on ${running[to]}` },
   );
@@ -172,6 +174,8 @@ async function tab(host, hash = "#/mesh") {
   const ctx = await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: labTokenHeaders(), viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   tabs.push(ctx);
+  page.on("pageerror", (e) => console.log(`# page ${host}: ${e.message.slice(0, 300)}`));
+  page.on("response", (r) => r.status() >= 400 && console.log(`# page ${host}: ${r.status()} ${r.url().slice(0, 120)}`));
   await page.goto(`${hostUrl(host)}/${hash}`);
   return page;
 }
@@ -526,9 +530,10 @@ describe("3. writing differs: Read only, both ways", () => {
         ])}`,
         clientId: "m10-overseer",
       });
+      const seen = () => JSON.stringify(c.frames.map((f) => (f.type === "event" ? f.event?.type : `${f.type}${f.message ? `: ${f.message}` : ""}`)).slice(-30));
       const ended = (name) => c.frames.filter((f) => f.type === "event" && f.event?.type === "tool_execution_end" && f.event.toolName === name).pop()?.event;
-      await waitFor(() => ended("sova_read_session"), { timeoutMs: 180000, what: "the Overseer's read" });
-      await waitFor(() => ended("sova_create_session"), { timeoutMs: 180000, what: "the Overseer's create" });
+      await waitFor(() => ended("sova_read_session"), { timeoutMs: 60000, what: "the Overseer's read" }).catch((e) => assert.fail(`${e.message}; frames: ${seen()}`));
+      await waitFor(() => ended("sova_create_session"), { timeoutMs: 60000, what: "the Overseer's create" }).catch((e) => assert.fail(`${e.message}; frames: ${seen()}`));
       assert.match(JSON.stringify(ended("sova_read_session")), /fixture session on lab host b/, "it reads a Read only host");
       assert.match(JSON.stringify(ended("sova_create_session")), /Host B \(b\) runs another version of Sova/, "refused, naming the host");
       c.close();

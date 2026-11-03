@@ -19,7 +19,7 @@ const liveDir = join(agentDir, "sessions", "live");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(liveDir, { recursive: true });
 
-const { archiveSession, cleanupSessions, getSessionSummary, idOf, LIST_REUSE_MS, listSessions } = await import("./sessions-index");
+const { archiveSession, cleanupSessions, getSessionSummary, idOf, LIST_REUSE_MS, listSessions, workerParentReadings } = await import("./sessions-index");
 const { sessionsChanged } = await import("./list-generation");
 const { isArchived, setArchived } = await import("./archived-sessions");
 const { addWebSession, isWebSession } = await import("./web-sessions");
@@ -411,4 +411,26 @@ test("listing reuse (§app.session-list/listing-reuse): callers share a build fo
   session(ID_T, "seen after the window");
   await new Promise((r) => setTimeout(r, LIST_REUSE_MS));
   assert.ok((await listSessions()).some((s) => s.id === ID_T), "past the window, a fresh build");
+});
+
+test("workers: a listing reads worker parents once, however many worker rows it has", async () => {
+  const parent = session("01234567-89ab-7cde-8f01-2345678901ff", "the chat that runs them");
+  const addWorkers = (from: number, to: number) => {
+    for (let i = from; i < to; i++) {
+      const id = `01234567-89ab-7cde-8f01-2345678902${i.toString(16).padStart(2, "0")}`;
+      session(id, `worker ${i}`);
+      appendFileSync(parent, `${JSON.stringify({ type: "custom_message", customType: "subagent-complete", display: true, content: `### ag_${i} (w${i}) — done\nSession: ${id}\nModel: m\nreport` })}\n`);
+    }
+  };
+  const readings = async () => {
+    sessionsChanged();
+    const before = workerParentReadings();
+    const rows = (await listSessions()).filter((s) => s.workerOf?.id === idOf(parent));
+    return { rows: rows.length, readings: workerParentReadings() - before };
+  };
+
+  addWorkers(0, 2);
+  assert.deepEqual(await readings(), { rows: 2, readings: 1 });
+  addWorkers(2, 40);
+  assert.deepEqual(await readings(), { rows: 40, readings: 1 });
 });

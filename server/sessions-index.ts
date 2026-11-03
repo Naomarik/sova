@@ -756,6 +756,8 @@ function gistChanged(path: string): void {
 /** Session-file syscalls of the listing's own reads (tests, measurement): stats of a file it may
     summarize, and opens of one it reads. The align and worker scans keep their own. */
 export const listIo = { stats: 0, opens: 0 };
+/** Readings of worker parents so far: one per listing, however many worker rows it has. */
+export const workerParentReadings = () => workerSessions.parentReadings;
 
 async function summarize(path: string, resolveWindow?: WindowResolver): Promise<BaseSummary | null> {
   let st;

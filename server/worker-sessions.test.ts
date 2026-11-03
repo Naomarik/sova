@@ -330,6 +330,69 @@ test("parents: one reading answers every row, and each new one sees the live rec
   assert.equal(ws.parentOf(workers[0]!.path), second.path, "the next reading doesn't");
 });
 
+test("parents: the reading stands until the scans or the live workers change, and a preview or a clock isn't a change", async () => {
+  const worker = session([marker()]);
+  const runner = session();
+  const record = (name: string, lastActivity: number) => [{ sessionFile: runner.path, rec: { presence: { workers: [{ id: "ag_1", name, preview: `at ${lastActivity}`, lastActivity, sessionFile: worker.path }] } } }];
+  let live = record("first", 1);
+  const ws = scanner(() => live);
+  await ws.refresh([worker.path, runner.path]);
+
+  const reading = ws.parents();
+  assert.equal(reading.workerOf(worker.path)?.name, "first");
+  live = record("first", 2);
+  assert.equal(ws.parents(), reading, "a clock or a preview moved: the same reading");
+
+  live = record("second", 2);
+  assert.notEqual(ws.parents(), reading);
+  assert.equal(ws.workerOf(worker.path)?.name, "second", "a new name in a live record");
+  live = [];
+  assert.equal(ws.workerOf(worker.path), null, "the record is gone");
+});
+
+test("parents: a scan that changes who or what a worker is called makes a new reading, one that changes neither keeps it", async () => {
+  const worker = session([marker()]);
+  const parent = session([complete(`### ag_01 (first) — done\nSession: ${worker.id}\nModel: m\nreport`)]);
+  const files = [worker.path, parent.path];
+  const ws = scanner();
+  await ws.refresh(files);
+  const reading = ws.parents();
+  assert.deepEqual(reading.workerOf(worker.path), { parent: parent.path, name: "first" });
+
+  appendFileSync(parent.path, `${user("more")}\n`);
+  await ws.refresh(files);
+  assert.equal(ws.parents(), reading, "lines with no worker facts");
+
+  appendFileSync(parent.path, `${complete(`### ag_01 (second) — done\nSession: ${worker.id}\nModel: m\nreport`)}\n`);
+  await ws.refresh(files);
+  assert.deepEqual(ws.workerOf(worker.path), { parent: parent.path, name: "second" }, "the same ref under a new name");
+
+  const later = session([complete(header3(session([marker()]).path))]);
+  await ws.refresh([...files, later.path]);
+  assert.equal(ws.parentOf(worker.path), parent.path, "a new file leaves this worker's parent as it was");
+  await ws.refresh([worker.path, later.path]);
+  assert.equal(ws.workerOf(worker.path), null, "its parent left the listing");
+});
+
+test("parents: a pass that fails knows no parent, and the next one reads again", async () => {
+  const worker = session([marker()]);
+  const parent = session([complete(header3(worker.id))]);
+  let broken = false;
+  const ws = new WorkerSessions({
+    idOf: (p) => {
+      if (broken) throw new Error("no id");
+      return idOf(p);
+    },
+    live: noLive,
+  });
+  await ws.refresh([worker.path, parent.path]);
+  broken = true;
+  assert.equal(ws.parents().workerOf(worker.path), null);
+  assert.equal(ws.parentOf(worker.path), null);
+  broken = false;
+  assert.equal(ws.parentOf(worker.path), parent.path);
+});
+
 test("workerOf: the chat that runs a worker and the worker's name, from a completion heading or a live record", async () => {
   const { completionHeaderName } = await import("./worker-sessions");
   assert.equal(completionHeaderName("### ag_01 (spec writer) — done\nSession: x\nModel: m"), "spec writer");

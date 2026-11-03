@@ -51,4 +51,12 @@ Received: 1
     expect(r.failingFiles).toHaveLength(60);
     expect(r.failures).toHaveLength(60);
   });
+
+  test("lists every file it ran, passing or not (ranFiles): a reader can tell a file that ran from one never selected", () => {
+    const r = bunReport([
+      { file: "a.test.ts", code: 0, pass: 1, fail: 0, skip: 0, out: "(pass) a\n" },
+      { file: "b.integration.test.ts", code: 1, pass: 0, fail: 1, skip: 0, out: "(fail) b\n" },
+    ]);
+    expect(r.ranFiles).toEqual(["a.test.ts", "b.integration.test.ts"]);
+  });
 });

@@ -457,6 +457,22 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
           blames.push({ id: check.id, label: check.label, files: names.map((file) => ({ file, blame: blameFile({ passesOnTip: false, onTarget: failing.includes(file) ? "fails" : "passes" }) })) });
         } else if (files.length) {
           const failing = r.proc.code === 0 ? [] : r.failingFiles.length ? onBase.filter((f) => r.failingFiles.includes(f)) : onBase;
+          // Never a pass on a guess: a file counts as passing on the target only when the rerun shows it ran (it names it
+          // in `ranFiles`; a runner that names none must have run some test). Else whose failure it is can't be told.
+          const ran = r.report?.ranFiles;
+          const someRan = !!r.report && (r.report.passed ?? 0) + (r.report.failed ?? 0) > 0;
+          const unproven = onBase.filter((f) => !failing.includes(f) && (ran ? !ran.includes(f) : !someRan));
+          if (unproven.length) {
+            const proven = onBase.filter((f) => !unproven.includes(f));
+            st.end(r.proc.code === 0 ? "passed" : "failed", { detail: `${unproven.length} of ${onBase.length} didn't run on ${target} alone: can't tell whose failure` });
+            blames.push({
+              id: check.id,
+              label: check.label,
+              unclearFiles: unproven,
+              files: [...absent.map((file) => ({ file, blame: "branch" as const })), ...proven.map((file) => ({ file, blame: blameFile({ passesOnTip: false, onTarget: failing.includes(file) ? "fails" : "passes" }) }))],
+            });
+            continue;
+          }
           st.end(r.proc.code === 0 ? "passed" : "failed", { detail: r.proc.code === 0 ? `passes on ${target}: the branch's` : `${failing.length} fail on ${target} too` });
           blames.push({ id: check.id, label: check.label, files: [...absent.map((file) => ({ file, blame: "branch" as const })), ...onBase.map((file) => ({ file, blame: blameFile({ passesOnTip: false, onTarget: failing.includes(file) ? "fails" : "passes" }) }))] });
         } else if (r.proc.code === 0) {

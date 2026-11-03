@@ -44,6 +44,9 @@ export interface CheckBlame {
   files?: { file: string; blame: Blame }[];
   /** A whole-check failure's blame; "unattributed": red on the merge and on the target, naming no failure. */
   whole?: Blame | "unattributed";
+  /** Failing files the target's rerun can't be shown to have run (left out by its selection, or a runner that says
+   *  nothing about what it ran and ran no test): a pass there would be a guess, so whose they are can't be told. */
+  unclearFiles?: string[];
 }
 
 export interface Attribution {
@@ -71,6 +74,7 @@ export function summarize(reds: readonly CheckBlame[], o: { resolution?: boolean
   const branchy: string[] = [];
   const unclear: Attribution["unclear"] = [];
   for (const c of reds) {
+    if (c.unclearFiles?.length) unclear.push({ id: c.id, label: c.label, why: `can't tell whose failure: ${c.label}'s ${list(c.unclearFiles)} didn't run on ${target} alone` });
     if (c.files?.length) {
       const by = (b: Blame) => c.files!.filter((f) => f.blame === b).map((f) => f.file);
       if (by("flaky").length) notes.push({ kind: "flaky", text: `${c.label}: ${list(by("flaky"))} failed, then passed on a rerun (flaky; not blocking)` });

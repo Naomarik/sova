@@ -63,3 +63,13 @@ describe("whose failure is it", () => {
     expect(b).toMatchObject({ verdict: "failed", blame: "branch" });
   });
 });
+
+describe("a file the target's rerun never ran", () => {
+  test("is unclear, never a pass on a guess: with nothing else the branch's, the run waits for the user", () => {
+    const a = summarize([{ id: "integration", label: "Integration", unclearFiles: ["g.integration.test.ts"], files: [{ file: "e.test.ts", blame: "master" }] }]);
+    expect(a.verdict).toBe("unattributed");
+    expect(a.unclear).toEqual([{ id: "integration", label: "Integration", why: "can't tell whose failure: Integration's g.integration.test.ts didn't run on master alone" }]);
+    // A failure proven the branch's still fails the run.
+    expect(summarize([{ id: "integration", label: "Integration", unclearFiles: ["g.ts"], files: [{ file: "e.ts", blame: "branch" }] }]).verdict).toBe("failed");
+  });
+});

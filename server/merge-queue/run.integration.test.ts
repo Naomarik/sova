@@ -519,3 +519,69 @@ describe("a merge run", () => {
     for (const s of r.steps.values()) expect(readFileSync(join(r.runDir, s.log), "utf8")).toMatch(/^== /);
   });
 });
+
+/**
+ * A stand-in for Sova's own runner (scripts/run-tests.mjs) as the target alone may carry it: tests/group-*.txt are a
+ * slow group's files, which `--landing` runs only when the change triggers them (SOVA_MERGE_CHANGED names a file),
+ * whatever files are named; everyday files always run. With `runner.reports-ran` in the tree it lists the files it ran
+ * in SOVA_OUT (`ranFiles`), as the runner does now; without it, it is the old runner, which lists none.
+ */
+const LANDING_RUNNER = (calls: string) => `
+import { appendFileSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+const args = process.argv.slice(2);
+const named = args.filter((a) => !a.startsWith("-") && a.startsWith("tests/"));
+appendFileSync(${JSON.stringify(calls)}, JSON.stringify({ argv: args, head: process.env.SOVA_MERGE_TIP }) + "\\n");
+const all = readdirSync("tests").filter((f) => f.endsWith(".txt")).sort().map((f) => "tests/" + f);
+let files = named.length ? all.filter((f) => named.includes(f)) : all;
+if (args.includes("--landing")) {
+  const changed = process.env.SOVA_MERGE_CHANGED ? readFileSync(process.env.SOVA_MERGE_CHANGED, "utf8").trim() : "";
+  if (!changed) files = files.filter((f) => !f.startsWith("tests/group-"));
+}
+const failures = files.filter((f) => readFileSync(f, "utf8").trim() === "fail").map((f) => ({ file: f, name: f }));
+const out = { passed: files.length - failures.length, failed: failures.length, errors: 0, skipped: 0, failures, failingFiles: failures.map((f) => f.file) };
+if (existsSync("runner.reports-ran")) out.ranFiles = files;
+if (process.env.SOVA_OUT) writeFileSync(process.env.SOVA_OUT, JSON.stringify(out));
+for (const f of failures) console.log("FAIL " + f.file);
+process.exit(failures.length ? 1 : 0);
+`;
+
+/** A project whose integration check is the landing selection (no `test` command unless `withTest`). */
+function landingProject(o: { newRunner: boolean; withTest?: boolean; files: Record<string, string> }) {
+  const fx = fixture({ files: o.files });
+  const calls = join(fx.state, "lt-calls.jsonl");
+  writeFileSync(calls, "");
+  const def = fx.definition();
+  (def.merge as Record<string, unknown>).checks = [{ id: "integration", label: "Integration", run: ["node", "lt.mjs", "--integration", "--landing"], rerun: true, timeout: 60 }];
+  if (o.withTest) def.test = { run: ["node", "lt.mjs"], timeout: 60, smoke: ["tests/every.txt"] };
+  fx.commitIn(fx.project, { "lt.mjs": LANDING_RUNNER(calls), ".sova/project.json": JSON.stringify(def), ...(o.newRunner ? { "runner.reports-ran": "1\n" } : {}) }, "landing runner");
+  const ltCalls = () => readFileSync(calls, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as { argv: string[] });
+  return { fx, ltCalls };
+}
+
+describe("whose failure, never on a guess (a file the target's rerun never ran)", () => {
+  test("the target's rerun ran only the everyday file (its group file filtered out): unattributed, never the branch's", async () => {
+    const { fx } = landingProject({ newRunner: true, files: { "tests/every.txt": "fail\n", "tests/group-slow.txt": "pass\n" } });
+    const r = await run(fx, fx.branch("both", { "tests/group-slow.txt": "fail\n" }));
+    expect(r.out.verdict).toBe("unattributed");
+    expect(r.out.blame).toBeUndefined();
+    expect(r.out.unclear?.[0]?.check).toBe("integration");
+    expect(r.out.unclear?.[0]?.why).toContain("tests/group-slow.txt");
+  });
+
+  test("the target carries the old runner (no ranFiles) and the tip fails a group file: unattributed, not the branch's", async () => {
+    const { fx } = landingProject({ newRunner: false, files: { "tests/every.txt": "pass\n", "tests/group-slow.txt": "pass\n" } });
+    const r = await run(fx, fx.branch("group", { "tests/group-slow.txt": "fail\n", "runner.reports-ran": "1\n" }));
+    expect(r.out.verdict).toBe("unattributed");
+    expect(r.out.blame).toBeUndefined();
+    expect(r.out.unclear?.[0]?.check).toBe("integration");
+  });
+
+  test("a check that is the project's test command with selection flags reruns exactly the failed files with the test command alone", async () => {
+    const { fx, ltCalls } = landingProject({ newRunner: false, withTest: true, files: { "tests/every.txt": "pass\n", "tests/group-slow.txt": "pass\n" } });
+    const r = await run(fx, fx.branch("group-run", { "tests/group-slow.txt": "fail\n" }));
+    // The target alone runs the group file (no landing filter), it passes there: the branch's.
+    expect(r.out).toMatchObject({ verdict: "failed", blame: "branch" });
+    expect(r.out.why).toContain("tests/group-slow.txt");
+    expect(ltCalls().map((c) => c.argv)).toEqual([["--integration", "--landing"], ["tests/group-slow.txt"], ["tests/group-slow.txt"]]);
+  });
+});

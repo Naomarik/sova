@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeEntry, MergeRun, RunStep, WorktreeQueueInfo } from "../../shared/merge-queue";
-import { attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
+import { attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, stepCounts, stepDetail, stepMark, stepTime, tildeIn, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
 
 const SHA = "a".repeat(40);
 const wt = (x: Partial<QueueRowInput> = {}): QueueRowInput => ({ status: "active", exists: true, branch: "feat/x", readiness: undefined, ...x });
@@ -213,4 +213,44 @@ test("can't tell whose failure: its words, the queue's why, Land Anyway and Send
   assert.equal(r.reason, "Build failed with this branch and on master alone.");
   assert.deepEqual(controlWords([{ key: "unattributed" }, { key: "ready" }]), { text: "1 needs you", n: 1, dot: "warn" });
   assert.equal(rowsSummary([{ key: "unattributed" }]), "1 can't tell whose failure");
+});
+
+// ---- the run page's Checks and why ----
+
+const runStep = (x: Partial<RunStep>): RunStep => ({ id: "check:unit", kind: "check", label: "Unit tests", result: "passed", ms: 75_000, log: "check-unit.log", ...x });
+
+test("a step's time: a finished one shows what it took; a running one counts up from its start; waiting and skipped show none", () => {
+  const now = Date.parse("2026-11-03T10:01:42Z");
+  assert.equal(stepTime(runStep({}), now), "1:15");
+  assert.equal(stepTime(runStep({ result: "failed", ms: 57_000 }), now), "0:57");
+  assert.equal(stepTime(runStep({ result: "running", ms: 0, startedAt: "2026-11-03T10:00:00Z" }), now), "1:42", "not 0:00");
+  assert.equal(stepTime(runStep({ result: "running", ms: 0 }), now), "", "no start known: no made-up time");
+  assert.equal(stepTime(runStep({ result: "pending", ms: 0 }), now), "");
+  assert.equal(stepTime(runStep({ result: "skipped", ms: 3 }), now), "");
+});
+
+test("a check's counts go with its description: none on a skipped check, none when every count is zero; a failed count is marked", () => {
+  assert.deepEqual(stepCounts(runStep({ counts: { passed: 11496, failed: 0, skipped: 5 } })), [{ text: "11496 passed" }, { text: "5 skipped" }]);
+  assert.deepEqual(stepCounts(runStep({ result: "failed", counts: { passed: 10, failed: 2, skipped: null } })), [{ text: "10 passed" }, { text: "2 failed", failed: true }]);
+  assert.deepEqual(stepCounts(runStep({ result: "skipped", counts: { passed: 0, failed: 0, skipped: 0 } })), [], "no stray '0 passed'");
+  assert.deepEqual(stepCounts(runStep({ counts: { passed: 0, failed: null, skipped: null } })), []);
+  assert.deepEqual(stepCounts(runStep({ counts: null })), []);
+});
+
+test("status marks: nothing that looks like it expands; skipped and unchanged setup get a dash, waiting an empty ring", () => {
+  assert.equal(stepMark(runStep({ result: "passed" })).icon, "check");
+  assert.equal(stepMark(runStep({ result: "failed" })).icon, "close");
+  assert.equal(stepMark(runStep({ result: "running" })).icon, "clock");
+  assert.equal(stepMark(runStep({ result: "skipped", kind: "setup", detail: "unchanged since the last run" })).icon, "minus");
+  assert.deepEqual(stepMark(runStep({ result: "pending" })), { icon: null, cls: "mq-wait", word: "Waiting" });
+  for (const r of ["passed", "failed", "running", "pending", "skipped"] as const) assert.notEqual(stepMark(runStep({ result: r })).icon, "chevron-right");
+});
+
+test("a step's detail: the home folder shortened, the copy's folder and commits in mono, anything else plain", () => {
+  const home = "/home/me";
+  assert.deepEqual(stepDetail(runStep({ id: "copy", kind: "copy", detail: "/home/me/webapps/.worktrees/x-merge at 0123abc" }), home), [{ text: "~/webapps/.worktrees/x-merge", mono: true }, { text: " at " }, { text: "0123abc", mono: true }]);
+  assert.deepEqual(stepDetail(runStep({ id: "merge", kind: "merge", detail: "89abcde" }), home), [{ text: "89abcde", mono: true }]);
+  assert.deepEqual(stepDetail(runStep({ result: "failed", detail: "exit 1: added /home/me/a.ts" }), home), [{ text: "exit 1: added ~/a.ts" }], "free text stays one plain part");
+  assert.deepEqual(stepDetail(runStep({ detail: undefined }), home), []);
+  assert.equal(tildeIn("/home/me2/x and /home/me/y", home), "/home/me2/x and ~/y", "only the home folder itself");
 });

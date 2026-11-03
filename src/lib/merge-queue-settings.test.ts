@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeQueueSettings } from "../../shared/merge-queue-settings";
-import { changeLines, changesOf, rebaseDraft, checksCaption, minutes, modelWords, parseMinutes, savedWords, summaryLine, toProjectDraft } from "./merge-queue-settings";
+import { changeLines, changesOf, freshChatWords, rebaseDraft, checksCaption, minutes, modelWords, parseMinutes, savedWords, summaryLine, toProjectDraft } from "./merge-queue-settings";
 
 const SHA = "97927e0c0a92041da839da63093e474719f83837";
 const check = (id: string, optional = false) => ({ id, label: id[0]!.toUpperCase() + id.slice(1), timeoutSec: 600, rerun: false, optional });
@@ -120,4 +120,11 @@ test("a save says where it went: the target, waiting, a PR or MR opened, or a br
   assert.deepEqual(saveResultWords(req, o), { text: "Opened PR #12 for the settings change. It applies once it's merged into master.", link: { href: req.url, label: "Open PR" } });
   assert.equal(saveResultWords(req, { ...o, gitlab: true }).text, "Opened MR !12 for the settings change. It applies once it's merged into master.");
   assert.equal(saveResultWords({ state: "pushed", commit: "c", branch: "sova/settings-1" }, o).text, "Pushed the settings change as sova/settings-1. It applies once it's merged into master.");
+});
+
+test("the Merge thread's Fresh chat row: one endless thread with memory, never a 24 h age; the half-context net and Start Fresh", () => {
+  const w = freshChatWords({ threadMaxContext: 0.5 });
+  assert.equal(w, "One endless thread with memory (UniiChat). A new one only when it's gone, open in a terminal, keeps refusing messages or past half of its context, or when you press Start Fresh.");
+  assert.doesNotMatch(w, /24 h|After \d/);
+  assert.match(freshChatWords({ threadMaxContext: 0.6 }), /past 60% of its context/);
 });

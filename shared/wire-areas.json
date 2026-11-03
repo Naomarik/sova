@@ -1,0 +1,6 @@
+{
+  "sessions": { "version": 1, "shape": "", "compatible": [] },
+  "transcript": { "version": 1, "shape": "", "compatible": [] },
+  "composer": { "version": 1, "shape": "", "compatible": [] },
+  "peer": { "version": 1, "shape": "", "compatible": [] }
+}

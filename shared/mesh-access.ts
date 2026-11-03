@@ -1,4 +1,5 @@
 import type { MeshInfo, MeshPeersUpdate, MeshSessions, PeerState, PeerStatus } from "./protocol";
+import type { WireAreas } from "./wire-areas";
 
 // Per-peer grants (§mesh.peers/grants): what each peer may see and do on THIS host, decided on this
 // host's own Mesh page and enforced at its peer listener. Types of this host's own /api/mesh/access
@@ -116,7 +117,12 @@ export type MeshAccessState = "hidden";
 export type PeerStateView = PeerState | MeshAccessState;
 
 /** PeerStatus as GET /api/mesh sends it to this host's page. */
-export type PeerStatusView = Omit<PeerStatus, "state"> & { state: PeerStateView };
+export type PeerStatusView = Omit<PeerStatus, "state"> & {
+  state: PeerStateView;
+  /** The area numbers it lists (§mesh.compatibility/judged-by-the-page); absent on a host that lists
+      none, and on one that doesn't answer. A host that lists them is `up` whatever they are. */
+  areas?: WireAreas;
+};
 
 /** GET /api/mesh as this host's page reads it. */
 export interface MeshInfoView extends Omit<MeshInfo, "peers"> {

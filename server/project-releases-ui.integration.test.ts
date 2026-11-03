@@ -104,7 +104,7 @@ interface Opened {
   set(v: ReleaseView): void;
 }
 
-async function open(width: number, hash: string, first: ReleaseView, o: { runtime?: Record<string, unknown> } = {}): Promise<Opened> {
+async function open(width: number, hash: string, first: ReleaseView, o: { runtime?: Record<string, unknown>; onboard409?: string } = {}): Promise<Opened> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
   const page = await ctx.newPage();
@@ -132,6 +132,7 @@ async function open(width: number, hash: string, first: ReleaseView, o: { runtim
     }
     if (p === `/api/projects/${PID}/verbs/onboard`) {
       calls.push({ verb: "onboard", body: body() });
+      if (o.onboard409) return route.fulfill(json({ error: o.onboard409 }, 409));
       return route.fulfill(json({ sessionId: "s-maker", path: "/w/sessions/maker.jsonl", worktree: { path: "/w/.worktrees/notes-release-setup", branch: "sova/release-setup" } }));
     }
     const held = new RegExp(`^/api/projects/${PID}/held/([^/]+)/cancel$`).exec(p);
@@ -387,4 +388,19 @@ describe("Set Up Releases while its run is live or proposed", () => {
       await o.ctx.close();
     }
   });
+});
+
+test("Set Up Releases refused because another setup chat is still open: its words as sent, with Open Chat", async () => {
+  const why = 'The last setup run, "Release maker", ended with no change but its chat is still open: open that chat to carry on, or archive it to start over.';
+  const idle = { ...runtimeWith("idle"), playbook: { ...runtimeWith("idle").playbook, result: "no-change" } };
+  const o = await open(1280, TAB, view({ initialized: false, history: [], latest: null, landingsSince: null }), { runtime: idle, onboard409: why });
+  try {
+    await o.page.getByRole("button", { name: "Set Up Releases" }).click();
+    await called(o, "onboard");
+    const note = o.page.locator(".rel-setup-held").filter({ hasText: why });
+    await note.waitFor();
+    assert.match((await note.getByRole("link", { name: "Open Chat" }).getAttribute("href")) ?? "", /maker\.jsonl/);
+  } finally {
+    await o.ctx.close();
+  }
 });

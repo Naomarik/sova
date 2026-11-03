@@ -1,7 +1,7 @@
 import { createEffect, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
 import type { ReleaseHistoryItem, ReleaseRecord, ReleaseStep, ReleaseView } from "../../shared/release";
 import type { ReleaseSetupReview } from "../../shared/project-runtime";
-import { runReleaseSetup } from "../lib/api";
+import { ApiError, runReleaseSetup } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { createPoll, type Poll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
@@ -168,14 +168,29 @@ function NotSetUp(props: { projectId: string; name: string; archived: boolean; t
   // A Set Up Releases run already live or proposed: say so in place of Set Up Releases.
   const run = () => setupRun(props.runtime?.data());
   const [started, setStarted] = createSignal<{ path: string; branch?: string } | null>(null);
+  // Another setup run of this project holds the start (409): its words as sent, with Open Chat on that run's chat.
+  const [held, setHeld] = createSignal<string | null>(null);
+  const heldChat = (): string | null => {
+    const pb = props.runtime?.data()?.playbook;
+    if (pb?.path) return projectSessionHref(props.projectId, pb.path);
+    return pb?.sessionId ? `#/sid/${encodeURIComponent(pb.sessionId)}` : null;
+  };
   const setup = async () => {
     if (act.busy()) return;
+    setHeld(null);
     await act.run(
       "setup",
       async () => {
-        const out = await runReleaseSetup(props.projectId);
-        setStarted({ path: out.path, branch: out.worktree?.branch });
-        return { ok: true };
+        try {
+          const out = await runReleaseSetup(props.projectId);
+          setStarted({ path: out.path, branch: out.worktree?.branch });
+          return { ok: true };
+        } catch (err) {
+          if (!(err instanceof ApiError) || err.status !== 409) throw err;
+          setHeld(err.message);
+          props.runtime?.refetch();
+          return { ok: false, error: { message: err.message } };
+        }
       },
       "Set Up Releases started a chat.",
     );
@@ -245,7 +260,23 @@ function NotSetUp(props: { projectId: string; name: string; archived: boolean; t
           </p>
         )}
       </Show>
-      <Show when={act.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
+      <Show
+        when={held()}
+        fallback={<Show when={act.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>}
+      >
+        {(m) => (
+          <p class="text-caption rel-setup-held" role="status">
+            {m()}{" "}
+            <Show when={heldChat()}>
+              {(href) => (
+                <a class="button button-sm" href={href()}>
+                  Open Chat
+                </a>
+              )}
+            </Show>
+          </p>
+        )}
+      </Show>
     </div>
   );
 }

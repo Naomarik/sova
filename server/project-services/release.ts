@@ -89,6 +89,8 @@ export interface ReleaseRequestRecord {
 export interface ReleaseThreadDeps {
   start(input: { root: string; checkout: string; text: string; title: string }): Promise<{ id: string; path: string } | { error: string }>;
   wake(path: string, text: string): Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Name the chat (Sova's own title, never over one the user set). */
+  retitle?(session: string, title: string): void;
 }
 
 export interface ReleaserDeps {
@@ -242,6 +244,8 @@ export class Releaser {
   private readonly git: Git;
   private chains = new Map<string, Promise<unknown>>();
   private quietSeen = new Set<string>();
+  /** Per project: why Publish can't push now (no private names file yet), refreshed before each verb and event. */
+  private pushBlocks = new Map<string, string | null>();
   private timer: ReturnType<typeof setInterval> | null = null;
 
   constructor(private readonly deps: ReleaserDeps) {
@@ -324,6 +328,20 @@ export class Releaser {
 
   // ---- the verbs --------------------------------------------------------------------------------
 
+  /** Why a pushing project's Publish would be held now (the queue's own push rule: no private names file yet), or null. */
+  async refreshPushBlock(root: string): Promise<string | null> {
+    let why: string | null = null;
+    try {
+      const q = await this.deps.queue(root);
+      const d = await q.declared();
+      const origin = (await this.git(["remote"], root)).stdout.split("\n").includes("origin");
+      const names = q.names();
+      if (d.def?.merge?.push !== false && origin && !names.exists) why = `pushes are held until this project's private names are set up (the merge thread asks for them in its own chat and writes ${names.file})`;
+    } catch {}
+    this.pushBlocks.set(root, why);
+    return why;
+  }
+
   /** Whether `caller` is the chat of `root`'s open release. */
   isThread(root: string, caller: Caller): boolean {
     if (caller.kind !== "session") return false;
@@ -350,6 +368,7 @@ export class Releaser {
       root = await this.rootOfReq(req, caller);
       const thread = this.isThread(root, caller);
       authorizeRelease(verb, caller, root, req, thread);
+      await this.refreshPushBlock(root);
       const r = await this.serial(root, () => this.dispatch(verb, req, root!, caller));
       changed = r.changed;
       report = r.report;
@@ -504,13 +523,19 @@ export class Releaser {
     const branch = releaseBranchOf(id);
     const wt = await this.git([...NO_BACKGROUND_CLEANUP, "worktree", "add", "-b", branch, checkout, base], root);
     if (wt.code !== 0) return this.failStart(rec, q, `couldn't make the release worktree: ${(wt.stderr || wt.stdout).trim().split("\n")[0]}`);
-    const started = await this.deps.thread.start({ root, checkout, text: this.firstMessage(rec, checkout, branch), title: `Release (${basename(root)})` });
+    const started = await this.deps.thread.start({ root, checkout, text: this.firstMessage(rec, checkout, branch), title: this.titleOf(rec) });
     if ("error" in started) return this.failStart(rec, q, `the release chat couldn't start: ${started.error}`);
     rec.thread = { session: started.id, path: started.path, checkout, branch };
+    this.deps.thread.retitle?.(started.id, this.titleOf(rec));
     rec.lastReportAt = at;
     this.save(rec);
     this.log(`${root}: started ${id} at ${short(base)} (${rec.startedBy})`);
     return { changed: true, report: { release: rec, view: await this.view(root) } };
+  }
+
+  /** The release chat's title: the same shape throughout, with the tag once known. */
+  titleOf(rec: ReleaseRecord): string {
+    return `Release ${rec.tag ?? "(version not picked yet)"} of ${basename(rec.project)}`;
   }
 
   private async failStart(rec: ReleaseRecord, q: ProjectQueue, why: string): Promise<never> {
@@ -661,7 +686,8 @@ export class Releaser {
     if (st.facts?.version && (st.id === "version" || !rec.version)) {
       rec.version = st.facts.version;
       rec.tag = releaseTagOf(rec.settings.tag, rec.version);
-      await q.updateReleaseHold(rec.id, { version: rec.version });
+      if (rec.thread?.session) this.deps.thread.retitle?.(rec.thread.session, this.titleOf(rec));
+      await q.updateReleaseHold(rec.id, { version: rec.tag });
     }
     if (st.facts?.artifact && !rec.artifacts.some((a) => a.path === st.facts!.artifact!.path)) rec.artifacts.push(st.facts.artifact);
     if (st.phase === "prepare" && rec.settings.commit && st.id === "commit" && st.facts?.commit) {
@@ -702,7 +728,9 @@ export class Releaser {
     if (!checksPassed) why.push(checks?.state === "failed" ? "a gating check failed" : "the gating checks haven't passed yet");
     const pending = rec.steps.filter((s) => (s.phase === "prepare" || s.phase === "check") && s.state !== "done" && s.state !== "skipped");
     const stepsDone = !pending.length;
-    if (!stepsDone) why.push(`steps not done: ${pending.map((s) => `${s.id} (${s.state})`).join(", ")}`);
+    if (!stepsDone) why.push(`steps not done: ${pending.map((s) => `${s.label} (${s.state})`).join(", ")}`);
+    const block = this.pushBlocks.get(rec.project);
+    if (block) why.push(block);
     const notes = !!rec.notes?.trim();
     if (!notes) why.push("no release notes yet");
     if (!rec.version || !rec.tag) why.push("no version yet");
@@ -815,7 +843,7 @@ export class Releaser {
       const why = err instanceof Error ? err.message : String(err);
       rec.state = "ready";
       pub.state = "failed";
-      pub.summary = `Publish failed: ${why}`.slice(0, STEP_SUMMARY_MAX);
+      pub.summary = why.slice(0, STEP_SUMMARY_MAX);
       pub.at = this.iso();
       rec.publish = { at: this.iso(), by, pushed: "not-pushed", channelsFrom: {}, error: why };
       this.save(rec);
@@ -947,6 +975,7 @@ export class Releaser {
 
   /** One queue event, applied (inside the project's chain). */
   private async applyQueueEvent(ev: ReleaseQueueEvent, root: string): Promise<void> {
+    await this.refreshPushBlock(root);
     {
       const rec = this.record(root, ev.release);
       if (!rec) return;
@@ -994,6 +1023,15 @@ export class Releaser {
    *  the releaser is wired) is applied from the entry itself. Answers whether the record changed. */
   async reconcile(root: string): Promise<boolean> {
     const rec = this.openRecord(root);
+    if (rec && (rec.state === "checking" || rec.state === "ready")) {
+      // A gate that changed with no event (the names file written since): ready ↔ checking follows it.
+      const was = rec.state;
+      this.settle(rec);
+      if (rec.state !== was) {
+        this.save(rec);
+        return true;
+      }
+    }
     if (!rec?.entry || rec.state === "publishing") return false;
     const q = await this.deps.queue(root);
     const e = q.entry(rec.entry);
@@ -1159,7 +1197,7 @@ export class Releaser {
     for (const root of this.roots()) {
       const rec = this.openRecord(root);
       if (rec) {
-        const name = rec.version ?? rec.id;
+        const name = rec.tag ?? rec.version ?? rec.id;
         const since = (iso: string | null | undefined) => Date.parse(iso ?? rec.startedAt) || 0;
         const powerHeld = !!rec.power && Date.parse(rec.power.heldUntil) > this.now();
         if (rec.state === "ready" && !powerHeld) out.push({ root, release: rec.id, kind: "release-ready", since: since(rec.steps.find((s) => s.id === "checks")?.at), detail: `Ready to publish · ${rec.tag ?? name}` });

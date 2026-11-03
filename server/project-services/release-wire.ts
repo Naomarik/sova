@@ -51,6 +51,9 @@ export async function startReleaser(d: ReleaseWireDeps): Promise<Releaser> {
         const out = await createChat(d.request, checkout, RELEASE_THREAD_PROFILE, text, title);
         return out.ok ? { id: out.id, path: out.path } : { error: out.error };
       },
+      retitle(session, title) {
+        void import("../session-titles").then(({ writeAutoTitle }) => writeAutoTitle(session, title, { redo: true })).catch(() => {});
+      },
       async wake(path, text) {
         const { promptSession } = await import("../session-prompt");
         const out = await promptSession(path, `[Sova · release] ${text}`);

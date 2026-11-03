@@ -42,6 +42,7 @@ function releaseKit(o: { settings?: Partial<ReleaseDecl>; manifest?: unknown; or
   const def = { ...DEF, merge: { ...(DEF as { merge: object }).merge, ...(o.push === false ? { push: false } : {}) }, release: settings } as unknown as ProjectDef;
   const k = makeKit({ repo, deps: { definitionAt: async () => ({ def, error: null }), releaseEvent: (ev) => r.onQueueEvent(ev, ev.root) } });
   const wakes: { path: string; text: string }[] = [];
+  const titles: string[] = [];
   const starts: { checkout: string; text: string }[] = [];
   let clock = Date.now();
   const r = new Releaser({
@@ -58,6 +59,7 @@ function releaseKit(o: { settings?: Partial<ReleaseDecl>; manifest?: unknown; or
         wakes.push({ path, text });
         return { ok: true };
       },
+      retitle: (_s, t) => void titles.push(t),
     },
     now: () => clock,
     log: () => {},
@@ -65,7 +67,7 @@ function releaseKit(o: { settings?: Partial<ReleaseDecl>; manifest?: unknown; or
   const op: Caller = { kind: "operator" };
   const chat: Caller = { kind: "session", id: "s-release", root: repo.root, own: [] };
   const call = (verb: string, body: Record<string, unknown>, caller: Caller = op) => r.run(verb, { project: repo.root, ...body }, caller);
-  return { repo, k, r, wakes, starts, op, chat, call, def, tick: (ms: number) => (clock += ms), done: () => k.done() };
+  return { repo, k, r, wakes, titles, starts, op, chat, call, def, tick: (ms: number) => (clock += ms), done: () => k.done() };
 }
 
 /** Start a release and report its prepare steps; the release commit bumps VERSION in the release worktree. */
@@ -160,16 +162,17 @@ describe("the freeze, the release entry and Publish (q9, a5, a6)", () => {
       assert.equal(sh(t.repo.origin, "rev-parse", "master"), pushedBefore, "nothing pushed while the release is open");
       const releaseEntry = (await t.k.entry(recNow().entry!));
       assert.equal(releaseEntry.landed?.pushed, "not-pushed");
-      assert.match(releaseEntry.landed?.pushWhy ?? "", /held: release 0\.2\.0 is open/);
+      assert.match(releaseEntry.landed?.pushWhy ?? "", /held: release v0\.2\.0 is open/);
       assert.deepEqual(t.k.run.inputs.find((i) => i.entry.release === rec.id)?.releaseChecks?.map((c) => c.id), ["full"], "the release entry ran the release's own checks");
       // B waits, named.
       const bNow = await t.k.entry(eb.id);
       assert.equal(bNow.state, "queued");
-      assert.equal(bNow.reason, "waiting for release 0.2.0");
+      assert.equal(bNow.reason, "waiting for release v0.2.0");
+      assert.equal((await q.view()).waiting.find((w) => w.id === eb.id)?.eta, undefined, "no start time while the release holds it");
       assert.equal(t.k.run.inputs.filter((i) => i.entry.id === eb.id).length, 0, "B never ran");
       const v = await q.view();
       assert.equal(v.release?.id, rec.id);
-      assert.equal(v.release?.version, "0.2.0");
+      assert.equal(v.release?.version, "v0.2.0");
       // Publish.
       const before = t.k.run.inputs.length;
       const p = await t.call("release.publish", { confirm: true });
@@ -295,6 +298,49 @@ describe("the freeze, the release entry and Publish (q9, a5, a6)", () => {
       assert.equal(sh(t.repo.root, "rev-parse", "stable"), stableLocal, "stable as before");
       assert.equal(t.r.record(t.repo.root, rec.id)!.state, "ready");
       assert.equal((await t.k.q()).releaseHold()?.id, rec.id, "the hold stays");
+    } finally {
+      await t.done();
+    }
+  });
+});
+
+describe("the screen pass (D1 D2 D6 D8)", () => {
+  test("a pushing project with no private names: the gates say so and the release isn't ready; Publish's failure reads once; steps by label; the chat's title gains the tag", async () => {
+    const { rmSync } = await import("node:fs");
+    const t = releaseKit();
+    try {
+      rmSync(join(t.repo.state, "merge-round.json"));
+      const { rec, sha } = await prepared(t);
+      assert.deepEqual(t.titles, ["Release (version not picked yet) of proj", "Release v0.2.0 of proj"]);
+      await t.call("release.step", { step: "commit", state: "done", summary: "c", facts: [`commit=${sha}`] }, t.chat);
+      await until(() => t.r.record(t.repo.root, rec.id)!.steps.find((s) => s.id === "checks")!.state === "done", "checks passed");
+      const v = (await t.call("release.status", {})).release!.view!;
+      assert.equal(v.open!.state, "checking", "never ready while Publish would be held");
+      assert.ok(v.gates!.why.some((w) => /private names are set up/.test(w)), JSON.stringify(v.gates));
+      assert.equal(t.r.attentionFacts().some((f) => f.kind === "release-ready"), false);
+      const p = await t.call("release.publish", { confirm: true });
+      assert.match(p.error!.message, /private names are set up/);
+      // Names written: ready again on the next read.
+      writeFileSync(join(t.repo.state, "merge-round.json"), JSON.stringify({ v: 1, privateNames: [] }));
+      assert.equal((await t.call("release.status", {})).release!.view!.open!.state, "ready");
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("gates name pending steps by their labels; a failed Publish's Needs-you line says Publish failed once", async () => {
+    const t = releaseKit();
+    try {
+      await t.call("release.start", {});
+      const v = (await t.call("release.status", {})).release!.view!;
+      assert.match(v.gates!.why.join("; "), /steps not done: Pick the version \(waiting\), Draft the notes \(waiting\), Make the release commit \(waiting\)/);
+      const rec = t.r.openRecord(t.repo.root)!;
+      const pub = rec.steps.find((s) => s.id === "publish")!;
+      Object.assign(pub, { state: "failed", summary: "origin refused the push: x" });
+      rec.tag = "v0.2.0";
+      (t.r as unknown as { save(r: unknown): void }).save(rec);
+      const f = t.r.attentionFacts().find((x) => x.kind === "release-failed")!;
+      assert.equal(f.detail, "v0.2.0: Publish failed: origin refused the push: x");
     } finally {
       await t.done();
     }

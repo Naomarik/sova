@@ -907,6 +907,7 @@ function toolHost(rt: Rt): PoToolHost {
       if (q.verb === "publish") {
         if (!rec) throw new OrgError("No release is open to publish.", 409);
         // Never past a failed gating check, and never held for a release that isn't ready: refused before the act.
+        await r!.refreshPushBlock(root);
         const gates = r!.gatesOf(rec);
         if (gates.why.length) throw new OrgError(`Not ready to publish: ${gates.why.join("; ")}.`, 409);
       }

@@ -350,6 +350,7 @@ export interface MergeQueueView {
 /** The release holding a project's queue. `state`: the release record's (shared/release.ts ReleaseState). */
 export interface MergeReleaseHold {
   id: string;
+  /** As shown: the release's numbered tag (v0.4.0) once its version is picked, else null. */
   version: string | null;
   state: string;
   /** The target's commit at the release's start. */

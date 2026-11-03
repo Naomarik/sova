@@ -301,6 +301,8 @@ export class ProjectQueue {
     });
     const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
     const hold = this.q.release ? (({ checks: _c, ...h }) => h)(this.q.release) : undefined;
+    // An entry the hold keeps waiting has no start time: it starts once the release is published or abandoned.
+    if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
     return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}) };
   }
 

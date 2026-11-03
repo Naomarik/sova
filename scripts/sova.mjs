@@ -689,17 +689,28 @@ export async function main(argv, env = process.env) {
   throw invalid(cmd ? `no command ${cmd}` : "name a command");
 }
 
+/** Exit once stdout and stderr have drained: a piped stdout is written asynchronously, and exiting at once cuts a long
+    answer (the list, past 64 KiB) mid-line. */
+function exitAfterFlush(code) {
+  let left = 2;
+  const done = () => {
+    if (--left === 0) process.exit(code);
+  };
+  process.stdout.write("", done);
+  process.stderr.write("", done);
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   main(process.argv.slice(2)).then(
-    (code) => process.exit(code),
+    (code) => exitAfterFlush(code),
     (err) => {
       if (err instanceof CliError) {
         process.stderr.write(`sova: ${err.message}\n`);
         if (err.usage) process.stderr.write(`${USAGE}\n`);
-        process.exit(err.code);
+        return exitAfterFlush(err.code);
       }
       process.stderr.write(`sova: ${err instanceof Error ? err.stack : err}\n`);
-      process.exit(EXIT.failed);
+      exitAfterFlush(EXIT.failed);
     },
   );
 }

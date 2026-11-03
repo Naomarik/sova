@@ -326,19 +326,24 @@ async function withRun(pb: RuntimePlaybook | null, state: string, root: string):
  * An onboard build of the project whose run is still open, whatever the runtime's playbook region says: its turn
  * working, its turn ended on open alignment questions, or its branch holding commits not merged; never one merged,
  * removed, retired, not started or archived. The runtime can lose a run it still has (a turn's end heard twice, the
- * first without its questions, ends it as "no change"), and a second start would then hide this one's proposal. Pure.
+ * first without its questions, ends it as "no change"), and a second start would then hide this one's proposal. A
+ * build that ended with no change but whose chat is still open (not archived, its worktree there, not merged) holds a
+ * new start too (`ended: true`): its interview may be asking in plain chat, and only archiving it starts over. Pure.
  */
-export function openOnboardRun(builds: readonly SessionInfo[], projectId: string, archived: (sessionId: string) => boolean): { sessionId: string; title: string } | null {
+export function openOnboardRun(builds: readonly SessionInfo[], projectId: string, archived: (sessionId: string) => boolean): { sessionId: string; title: string; ended?: true } | null {
   const closed = ["merged", "tree-removed", "retired", "not-started"];
   for (const b of builds) {
     const d = b.data;
     if (!b.running || d.kind !== "onboard" || d.projectId !== projectId) continue;
     if (b.configuration.some((c) => closed.includes(c)) || archived(str(d.sessionId))) continue;
     const live = d.turn === "working" || (typeof d.questions === "number" && d.questions > 0) || b.configuration.includes("unmerged") || b.configuration.includes("new-since-merge");
-    if (live) return { sessionId: str(d.sessionId), title: str(d.title) || str(d.sessionId) };
+    return { sessionId: str(d.sessionId), title: str(d.title) || str(d.sessionId), ...(live ? {} : { ended: true as const }) };
   }
   return null;
 }
+
+/** The refusal while an earlier run's chat is still open after it ended with no change: how to unblock it. */
+export const STILL_OPEN = (title: string) => `The last setup run, "${title}", ended with no change but its chat is still open: open that chat to carry on, or archive it to start over.`;
 
 /** The live title of a running playbook (the "already running" refusal), or null. */
 function liveRun(host: OrgHostApi, d: Record<string, unknown>): string | null {
@@ -369,8 +374,9 @@ export async function readRuntime(projectId: string, opts: { observe?: boolean }
   const { services, orphans } = joinLive(Array.isArray(d.software) ? (d.software as Record<string, unknown>[]) : [], instances, proof);
   const def = obj(d.def);
   const reg = obj(d.registered);
-  const running = liveRun(at.host, d);
-  const onboardWhy = running ? ALREADY_RUNNING(running) : projectArchived(projectId) ? `${readProject(projectId).name} is archived. Unarchive it first.` : undefined;
+  const open = openOnboardRun(at.host.sessions("build"), projectId, isArchived);
+  const running = liveRun(at.host, d) ?? (open && !open.ended ? open.title : null);
+  const onboardWhy = running ? ALREADY_RUNNING(running) : open?.ended ? STILL_OPEN(open.title) : projectArchived(projectId) ? `${readProject(projectId).name} is archived. Unarchive it first.` : undefined;
   const rows = at.host.log.rows({ session: at.sid }) as unknown as FeedRow[];
   return {
     projectId,
@@ -450,9 +456,11 @@ export async function onboardStamp(projectId: string, input: OnboardInput) {
   const d = at ? obj(at.host.data(at.sid)) : {};
   const engine = engineOf(projectId);
   const builds = engine && isOrgHostOpen(engine) ? hostOf(engine).sessions("build") : [];
-  const running = (at ? liveRun(at.host, d) : null) ?? openOnboardRun(builds, projectId, isArchived)?.title ?? null;
+  const open = openOnboardRun(builds, projectId, isArchived);
+  const running = (at ? liveRun(at.host, d) : null) ?? (open && !open.ended ? open.title : null);
+  const ended = !running && open?.ended ? open.title : null;
   const standing = at ? ((["unregistered", "conforming", "registered", "stale", "failed"] as const).find((s) => (at.host.configuration(at.sid) ?? []).includes(s)) ?? null) : null;
-  const invalid = start.invalid || (running ? ALREADY_RUNNING(running) : "");
+  const invalid = start.invalid || (running ? ALREADY_RUNNING(running) : ended ? STILL_OPEN(ended) : "");
   // The verb playbook the run is keyed by (§app.project-runtime/verb-playbooks).
   const who = { playbookId: start.playbookId, label: start.label, proposes: start.proposes };
   return { start, extra: { ...who, ...(input.why?.trim() ? { why: input.why.trim() } : {}), ...(invalid ? { invalid, invalidStatus: 409 } : {}), ...(standing ? { runtimeStanding: standing } : {}) } };

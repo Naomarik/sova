@@ -192,16 +192,20 @@ test("sova_project's Software block says what a proposed run's branch holds, by 
   assert.match(run(view("definition", "Project verbs", "sova/v"))!, /^Project verbs playbook: proposes a definition on sova\/v \(/);
 });
 
-test("an onboard build still open (working, waiting on questions, or proposing) counts as a live run even when the runtime lost it", async () => {
+test("an onboard build still open (working, waiting on questions, proposing, or ended with no change but not archived) holds a new start even when the runtime lost it", async () => {
   const { openOnboardRun } = await import("./runtime");
   const b = (data: Record<string, unknown>, configuration: string[] = ["build", "tree-open", "no-commits"], running = true) => ({ id: `build/p/${String(data.sessionId)}`, statechart: "build", configuration, running, data: { kind: "onboard", projectId: "p", ...data } });
   const none = () => false;
   // The D13 shape: the first turn's end heard without its questions ended the runtime's run; the build still waits on 11.
   assert.deepEqual(openOnboardRun([b({ sessionId: "s1", title: "Release playbook maker: acme", turn: "idle", questions: 11 })], "p", none), { sessionId: "s1", title: "Release playbook maker: acme" });
+  // Ended with no change while its chat is still open (an interview asking in plain chat): it holds a new start too,
+  // flagged ended, so the refusal says how to unblock it.
+  const { STILL_OPEN } = await import("./runtime");
+  assert.deepEqual(openOnboardRun([b({ sessionId: "s1", title: "Maker", turn: "idle", questions: 0 })], "p", none), { sessionId: "s1", title: "Maker", ended: true });
+  assert.equal(STILL_OPEN("Maker"), 'The last setup run, "Maker", ended with no change but its chat is still open: open that chat to carry on, or archive it to start over.');
   assert.equal(openOnboardRun([b({ sessionId: "s1", turn: "working" })], "p", none)?.sessionId, "s1");
   assert.equal(openOnboardRun([b({ sessionId: "s1", turn: "idle" }, ["build", "tree-open", "unmerged"])], "p", none)?.sessionId, "s1", "a proposal waits for its review");
   // Ended runs, other kinds, other projects and archived chats never hold a new start.
-  assert.equal(openOnboardRun([b({ sessionId: "s1", turn: "idle", questions: 0 })], "p", none), null, "no change: a new run may start");
   assert.equal(openOnboardRun([b({ sessionId: "s1", turn: "idle" }, ["build", "tree-open", "merged"])], "p", none), null);
   assert.equal(openOnboardRun([b({ sessionId: "s1", turn: "working" }, ["build", "tree-removed", "unmerged"])], "p", none), null);
   assert.equal(openOnboardRun([b({ sessionId: "s1", turn: "working", kind: "coding" })], "p", none), null);

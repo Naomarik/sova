@@ -39,6 +39,10 @@ export interface FeedWatchOptions {
   /** Cheap checks run with the live check (merge readiness's Git-input stamps); each announces
       what it finds through the list generation itself. */
   checks?: readonly (() => void)[];
+  /** Told which session files changed, before `changed` runs: a full path, or null when the
+      watch can't say which (an event with no name, a folder added to the watched set, a watch
+      lost), so the next listing reads every folder again (sessions-index's file tracker). */
+  files?: (path: string | null) => void;
 }
 
 /** What of the live records a row, a mark, the digest or the Overseer's state reads; a heartbeat
@@ -74,6 +78,13 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
   let stopped = false;
 
   const isSession = (name: string | Buffer | null) => name === null || String(name).endsWith(".jsonl");
+  const files = opts.files;
+  /** A session file event in `dir`: tell the tracker which file (or that it can't say). */
+  const noteFile = (dir: string, name: string | Buffer | null): void => {
+    files?.(name === null ? null : join(dir, String(name)));
+  };
+  /** Each sync after the first that adds a watch: files written before it existed went unseen. */
+  let synced = false;
 
   const add = (dir: string, on: (name: string | Buffer | null) => void): void => {
     if (watchers.has(dir)) return;
@@ -84,8 +95,11 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
       w.on("error", () => {
         w.close();
         if (watchers.get(dir) === w) watchers.delete(dir);
+        // Events may have been lost before the error: the next listing reads everything.
+        if (!stopped) files?.(null);
       });
       watchers.set(dir, w);
+      if (synced && dir !== liveDir) files?.(null);
     } catch {
       // missing or unwatchable: the next re-sync tries again
     }
@@ -128,19 +142,30 @@ export function watchFeedInputs(changed: () => void, opts: FeedWatchOptions = {}
       if (dir === liveDir || want.has(dir)) continue;
       w.close();
       watchers.delete(dir);
+      // A folder gone (or moved away) may take its files with no event for each.
+      files?.(null);
     }
     for (const dir of want) {
       if (dir === sessionsDir) {
         add(dir, (name) => {
           // A new cwd folder needs its own watch; a top-level file is a session.
           if (name === null || !String(name).endsWith(".jsonl")) syncSoon();
-          if (isSession(name)) changed();
+          if (isSession(name)) {
+            noteFile(dir, name);
+            changed();
+          }
         });
-      } else add(dir, (name) => isSession(name) && changed());
+      } else
+        add(dir, (name) => {
+          if (!isSession(name)) return;
+          noteFile(dir, name);
+          changed();
+        });
     }
     add(liveDir, (name) => {
       if (name === null || (String(name).endsWith(".json") && !String(name).startsWith("."))) liveSoon();
     });
+    synced = true;
   };
   let syncTimer: ReturnType<typeof setTimeout> | null = null;
   const syncSoon = (): void => {

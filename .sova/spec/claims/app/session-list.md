@@ -2547,6 +2547,25 @@ list was built (§app.decisions/push), a list at most two minutes old (the feed'
 renews it every minute); otherwise they list as above. So an idle
 server with windows open builds the list only for the feed's safety net.
 
+**Only what changed is read again.** The session feed's comparisons don't read every file. The
+folder watch names each session file written, added or removed, and the next comparison
+stats and reads only those files and keeps every other session as it was last read. A listing
+opens a changed file once to build its row: its head, its outline and one window of its last
+256 KB, which the row's model, context and ending all read from (a file's first read may go
+further back, to its outline); its alignment and worker marks read only what the file gained
+since their last read. The feed's
+listing looks at every folder and every file (a full build) only on its first listing, when the
+watch can't say what changed (a folder joins or leaves the watched set, a watch fails, a change
+comes with no file name), and every 5 minutes. Once a minute it also checks the size and
+modification time of every session file it already knows, without listing a folder, and reads
+again only those that moved, so a write the watch missed reaches the list within about a minute;
+a file the watch missed altogether appears with the next full build. With nothing written, a
+comparison reads no session file.
+A session with no message of the user's yet is told apart from the read its row already made,
+never by reading its file again. Every session stays in the list, however old: none is left out
+to save work. Rows with the same last activity come in path order, so two listings of the same
+sessions come in the same order. Every caller other than the feed lists as above.
+
 A change a caller makes through this server is never missed that way. Any request other than a
 read (a REST call that is not `GET` or `HEAD`, a peer's included, before it runs and again when it
 answers), any message a chat socket sends, every write this server makes to a session file, a

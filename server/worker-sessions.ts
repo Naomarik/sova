@@ -131,6 +131,10 @@ export class WorkerSessions {
   private readonly idOf: (path: string) => string;
   private readonly live: () => RawLiveRecord[];
   private readonly inflight = new Map<string, Promise<ScanEntry | null>>();
+  /** Bumped whenever an entry is set or dropped: `flagged` reuses its last answer while this,
+      the listed paths and the live refs are what they were. */
+  private version = 0;
+  private memo: { key: string; out: Set<string> } | null = null;
 
   constructor(opts: WorkerSessionOptions) {
     this.idOf = opts.idOf;
@@ -151,7 +155,7 @@ export class WorkerSessions {
     try {
       size = (await stat(path)).size;
     } catch {
-      this.entries.delete(path);
+      if (this.entries.delete(path)) this.version++;
       return null;
     }
     let entry = this.entries.get(path);
@@ -165,7 +169,11 @@ export class WorkerSessions {
       return this.entries.get(path) ?? null; // unreadable right now: keep what we had
     }
     next.size = size;
+    const before = this.entries.get(path);
     this.entries.set(path, next);
+    // Only what `flagged` reads (whether the file is listed, its self mark, its refs) moves the version:
+    // a file that only grew by lines with no worker facts leaves the answer as it was.
+    if (!before || before.self !== next.self || before.refs.length !== next.refs.length || before.refs.some((r, i) => r !== next.refs[i])) this.version++;
     return next;
   }
 
@@ -218,10 +226,15 @@ export class WorkerSessions {
    * drop entries for files no longer listed, then union self-marked files with the resolved
    * durable and live refs. Recomputed on every call; nothing is baked in.
    */
-  async refresh(files: string[]): Promise<Set<string>> {
+  async refresh(files: string[], changed?: ReadonlySet<string>): Promise<Set<string>> {
     const listed = new Set(files);
-    for (const k of this.entries.keys()) if (!listed.has(k)) this.entries.delete(k);
-    await Promise.all(files.map((f) => this.scan(f)));
+    for (const k of this.entries.keys())
+      if (!listed.has(k)) {
+        this.entries.delete(k);
+        this.version++;
+      }
+    // With `changed`, a file already scanned and not named in it is unchanged: no stat.
+    await Promise.all(files.map((f) => (!changed || changed.has(f) || !this.entries.has(f) ? this.scan(f) : undefined)));
     return this.flagged(listed);
   }
 
@@ -235,6 +248,22 @@ export class WorkerSessions {
   }
 
   private flagged(listed: Set<string>): Set<string> {
+    let live: RawLiveRecord[] = [];
+    try {
+      live = this.live();
+    } catch {
+      // unreadable live dir: durable inputs still stand
+    }
+    const liveRefs = liveWorkerRefs(live);
+    // Resolving every ref costs a roots lookup per ref: with the same inputs, the same answer.
+    const key = `${this.version}\0${[...listed].join("\n")}\0${liveRefs.join("\n")}`;
+    if (this.memo?.key === key) return new Set(this.memo.out);
+    const out = this.resolve(listed, liveRefs);
+    this.memo = { key, out };
+    return new Set(out);
+  }
+
+  private resolve(listed: Set<string>, liveRefs: readonly string[]): Set<string> {
     const byId = new Map<string, string>();
     for (const p of listed) byId.set(this.idOf(p), p);
     const out = new Set<string>();
@@ -247,13 +276,7 @@ export class WorkerSessions {
       if (e.self) out.add(path);
       for (const r of e.refs) add(r);
     }
-    let live: RawLiveRecord[] = [];
-    try {
-      live = this.live();
-    } catch {
-      // unreadable live dir: durable inputs still stand
-    }
-    for (const r of liveWorkerRefs(live)) add(r);
+    for (const r of liveRefs) add(r);
     return out;
   }
 }

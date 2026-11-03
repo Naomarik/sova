@@ -51,3 +51,4 @@ scripts/mesh-dialout/local.env
 *.avi
 site/public/video/
 .sova/marketing/assets/video/
+.tmp/

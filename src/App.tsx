@@ -25,7 +25,7 @@ import {
   getOverseer,
   getSessionSummaryById,
   getThemes,
-  listSessions,
+  listSessionsVersioned,
   setSessionArchived,
 } from "./lib/api";
 import { socketReconnects } from "./lib/socket";
@@ -38,7 +38,8 @@ import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
 import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
 import { isOverseerHash, OVERSEER_HASH, overseerHistoryId } from "./lib/overseer";
-import { onFeedPush, sessionFeedOpen } from "./lib/session-feed";
+import { followListRows, onFeedPush, requestListRead, sessionFeedOpen } from "./lib/session-feed";
+import { ListRows, ROW_STAMP_SLACK_MS } from "./lib/list-rows";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import type { CostsQuery } from "./lib/cost-history";
 import type { PerfQuery } from "./lib/perf";
@@ -201,33 +202,55 @@ export function App() {
   // so reading the resource never throws.
   const [archiveVersion, setArchiveVersion] = createSignal(0);
   const archiveChanges = new OptimisticArchive(() => setArchiveVersion((v) => v + 1));
-  const [sessions, { refetch }] = createResource<SessionSummary[] | undefined>(async (_, { value }): Promise<SessionSummary[] | undefined> => {
+  /** A list as the server gave it, landed: what a full read and a feed delta both go through. `at`:
+      what a row says is at least this fresh (lib/composer-known). */
+  const landList = (answer: SessionSummary[], value: SessionSummary[] | undefined, at: number): SessionSummary[] => {
+    const next = reuseUnchanged(answer, value);
+    stampListRows(next, at);
+    archiveChanges.observe(next, (path) => !hostOf(path));
+    setSessionIndex(next);
+    // An open never-sent session stays readable when a later list drops it: clearing its draft to
+    // empty makes it a hidden husk again, and the view must not vanish with the row. Only then —
+    // a titled session that leaves the list really is gone, and says so. Later loads don't undo
+    // this: the summary is kept until the route moves to another session.
+    const open = pathFromHash();
+    const openNow = open ? next.find((s) => s.path === open) : undefined;
+    if (openNow) setOpenKept(openNow.title === "Untitled" ? openNow : null);
+    setListError(null);
+    setListVersion((v) => v + 1);
+    const h = next[0] && homeFromSessionPath(next[0].path);
+    if (h) setHome(h);
+    return next;
+  };
+  /** The list kept current from the session feed's changed rows (lib/list-rows.ts): a full read
+      only when it can't follow them. */
+  const listRows = new ListRows({
+    refetch: () => requestListRead(() => void refetch()),
+    publish: (rows) => {
+      const value = sessions.latest;
+      const next = landList(rows, value, Date.now() - ROW_STAMP_SLACK_MS);
+      if (next !== value) mutate(next);
+    },
+  });
+  onCleanup(followListRows(listRows));
+  const [sessions, { refetch, mutate }] = createResource<SessionSummary[] | undefined>(async (_, { value }): Promise<SessionSummary[] | undefined> => {
     const revision = archiveChanges.revision;
+    const at = Date.now();
+    listRows.fetchStarted();
     try {
-      // When it was asked for: what a row says is at least this fresh (lib/composer-known).
-      const at = Date.now();
-      const answer = await listSessions();
-      if (revision !== archiveChanges.revision) return sessions.latest;
-      const next = reuseUnchanged(answer, value);
-      stampListRows(next, at);
-      archiveChanges.observe(next, (path) => !hostOf(path));
-      setSessionIndex(next);
-      // An open never-sent session stays readable when a later list drops it: clearing its draft to
-      // empty makes it a hidden husk again, and the view must not vanish with the row. Only then —
-      // a titled session that leaves the list really is gone, and says so. Later loads don't undo
-      // this: the summary is kept until the route moves to another session.
-      const open = pathFromHash();
-      const openNow = open ? next.find((s) => s.path === open) : undefined;
-      if (openNow) setOpenKept(openNow.title === "Untitled" ? openNow : null);
-      setListError(null);
-      setListVersion((v) => v + 1);
-      const h = next[0] && homeFromSessionPath(next[0].path);
-      if (h) setHome(h);
-      return next;
+      const answer = await listSessionsVersioned();
+      if (revision !== archiveChanges.revision) {
+        // Dropped, as always; what the feed sent meanwhile still lands.
+        const moved = listRows.fetchFailed();
+        return moved ? landList(moved, sessions.latest, Date.now() - ROW_STAMP_SLACK_MS) : sessions.latest;
+      }
+      return landList(listRows.snapshot(answer.rows, answer.at), value, at);
     } catch (err) {
-      if (revision !== archiveChanges.revision) return sessions.latest;
+      const moved = listRows.fetchFailed();
+      if (revision !== archiveChanges.revision) return moved ? landList(moved, sessions.latest, Date.now() - ROW_STAMP_SLACK_MS) : sessions.latest;
+      const kept = moved ? landList(moved, value, Date.now() - ROW_STAMP_SLACK_MS) : value;
       setListError((err as Error).message);
-      return value;
+      return kept;
     }
   });
   const list = createMemo<SessionSummary[] | undefined>((previous) => {

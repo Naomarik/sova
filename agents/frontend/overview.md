@@ -58,6 +58,10 @@ or Solid, and an edit to them reaches the running server only at its restart:
 - `server/transcript.ts` imports `src/lib/message.ts` (`argsSummary`, `contentText`, `spawnName`) and
   `src/lib/tool-diff-stats.ts` (with `src/lib/diff/parse.ts`), so a slim tool row's folded line and
   "+n −m" are the card's own (§chat.transcript/slim-rows).
+- `server/session-feed.ts`, `server/app.ts` and `server/sessions-index.ts` import
+  `src/lib/summary-diff.ts` (`rowKey`, `rowsDigest`, `byActivity`, the list version header), so the
+  feed's `rows` frames, their digest and the list order are the very ones a tab merges and checks
+  (`src/lib/list-rows.ts`). Change a compared field or the sort there and both sides move together.
 
 The other way, `src/` imports a few pi-config files at runtime (`src/lib/format.ts` re-exports
 `pi-config/extensions/stamp/format.ts` and imports `pi-config/extensions/claude-code/catalog.ts`;

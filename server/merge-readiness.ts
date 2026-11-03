@@ -258,7 +258,7 @@ export function readinessItems(s: SessionSummary): { tier: AttentionTier; kind: 
 
 /** The one restart item of the whole server (no session), or none. */
 export function restartItems(sessions: readonly SessionSummary[]): AttentionItem[] {
-  const pending = sessions.filter((s) => s.readiness?.restartPending && !s.workerSession);
+  const pending = sessions.filter((s) => s.readiness?.restartPending && !s.workerSession && !s.queueChat);
   if (pending.length === 0) return [];
   const newest = [...pending].sort((a, b) => (b.readiness!.since || 0) - (a.readiness!.since || 0))[0]!;
   const merges = pending.map((s) => s.readiness!.branch ?? s.title);
@@ -933,7 +933,7 @@ const runningNow = (s: SessionSummary) => s.busy || s.activity?.state === "worki
 const parked = (s: SessionSummary) => !!s.archived && !s.live && !runningNow(s);
 
 /** Sessions readiness never covers. */
-const excluded = (s: SessionSummary) => !!(s.workerSession || s.overseer || s.projectOverseer || s.baton || s.target);
+const excluded = (s: SessionSummary) => !!(s.workerSession || s.queueChat || s.overseer || s.projectOverseer || s.baton || s.target);
 
 /**
  * The session's readiness as it will read once its turn ends: its file read now, with nothing running

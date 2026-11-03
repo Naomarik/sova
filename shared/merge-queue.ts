@@ -392,8 +392,12 @@ export interface MergeQueueView {
   /** Landed, newest first (last 20), each with its notes. */
   recent: MergeLanded[];
   heads: MergeQueueHeads;
-  /** The merge thread's chat for this project, when one is recorded. */
-  thread?: { session: string; startedAt: string };
+  /** The merge thread's chat for this project, when one is recorded (the Merge thread card). */
+  thread?: MergeThreadInfo;
+  /** The reviewer chat running now, for the head's "Review running · <branch> · Open" (a retry: its current attempt). */
+  reviewing?: { run: string; branch: string; session: string; path: string; attempt: number; startedAt: string };
+  /** The queue's chats, newest first: the current thread, earlier ones, every reviewer chat (the History section). */
+  chats?: MergeQueueChat[];
   /** Ready, not approved: this project's worktree branches with commits the target hasn't, a clean tree, a head that
    *  isn't TEMP, and no entry in line or landed at that commit (the view's Land list). */
   ready?: MergeReady[];
@@ -417,6 +421,8 @@ export interface MergeUnclear {
 export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled"> & {
   project: string;
   run?: string;
+  /** The run's newest reviewer chat (Open Reviewer Chat on the branch's Worktrees row), while it runs and after. */
+  reviewer?: { session: string; path: string; state: "running" | "ok" | "notes" | "blocking" | "failed"; cleared?: true };
   /** The project has a review kit (the Land menu shows "Land without review"). */
   reviewKit?: boolean;
 };
@@ -489,6 +495,11 @@ export interface MergeReport {
   run?: MergeRun;
   /** merge.logs: the step's log lines (newest last). */
   lines?: string[];
+  /** merge.ask / merge.reply: the question as recorded. */
+  ask?: MergeThreadAsk;
+  /** merge.fresh: whether a thread was retired; merge.clear: the chats deleted. */
+  fresh?: boolean;
+  cleared?: number;
 }
 
 // ---- the WS feed --------------------------------------------------------------------------------
@@ -635,4 +646,70 @@ export function ordinal(n: number): string {
 export function newerWords(n: number | undefined): string | null {
   if (!n) return null;
   return `${n} newer commit${n === 1 ? "" : "s"} not included`;
+}
+
+/** The merge queue's own chats, by the profile Sova started them on (never by title): the project's merge
+    thread and each run's reviewer. A rename, a move or a restart keeps the mark; any other chat has none. */
+export type QueueChatRole = "thread" | "reviewer";
+export const QUEUE_CHAT_PROFILES: Readonly<Record<string, QueueChatRole>> = { "merge-thread": "thread", "merge-reviewer": "reviewer" };
+export function queueChatRole(profile: { id?: string; source?: string; builtin?: boolean } | null | undefined): QueueChatRole | undefined {
+  if (!profile || typeof profile.id !== "string") return undefined;
+  const sova = profile.source === "sova" || (profile.source === undefined && profile.builtin === true);
+  return sova ? QUEUE_CHAT_PROFILES[profile.id] : undefined;
+}
+/** Why a queue chat's modes can't be switched from a menu or a tool. */
+export const QUEUE_CHAT_MODE_REFUSAL = "That is one of the merge queue's own chats: it keeps the modes and settings Sova starts it with.";
+
+/** The Merge thread card's facts. `state`: asking (a question is open), working (its turn runs), else idle. */
+export interface MergeThreadInfo {
+  session: string;
+  path?: string;
+  startedAt: string;
+  /** Its memory type as switched on at the start (UniiChat); absent: none. */
+  memory?: string;
+  state: "idle" | "working" | "asking";
+  /** The last event Sova sent it. */
+  lastEvent?: { kind: string; at: string; branch?: string };
+  /** The open question, when it is asking. */
+  ask?: MergeThreadAsk;
+  /** Messages in its chat, when known. */
+  messages?: number;
+}
+
+/** One History row: a merge thread (current or replaced) or a reviewer chat. `cleared`: its chat was deleted then
+    (the row keeps what it was; a run keeps its verdict and findings). */
+export interface MergeQueueChat {
+  kind: "thread" | "reviewer";
+  session: string;
+  path?: string;
+  startedAt: string;
+  endedAt?: string;
+  /** The current merge thread: never cleared. */
+  current?: true;
+  /** A reviewer still running: never cleared. */
+  running?: true;
+  memory?: string;
+  /** A thread: why it was replaced; a reviewer that gave no verdict: why. */
+  why?: string;
+  run?: string;
+  branch?: string;
+  attempt?: number;
+  verdict?: "ok" | "notes" | "blocking" | "failed";
+  cleared?: string;
+}
+
+/** A question the merge thread asked through merge.ask (§chat/merge-queue): it never waits in its own chat. Sova
+    wakes the chat that owns the entry's branch with it; that chat's agent relays the user's answer with merge.reply.
+    No chat to ask (none, archived, gone): the Merge Queue tab shows it (`onTab`) and one notification opens the tab. */
+export interface MergeThreadAsk {
+  id: string;
+  question: string;
+  at: string;
+  entry?: string;
+  branch?: string;
+  /** The chat it was sent to (the branch's owner; a worker's chat for a worker). */
+  askedIn?: { session: string; path: string };
+  /** No chat could take it: the tab is where it is answered. */
+  onTab?: true;
+  answered?: { at: string; by: "chat" | "operator"; session?: string };
 }

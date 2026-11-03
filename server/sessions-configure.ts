@@ -9,6 +9,7 @@ import { modelDenial, readModelPolicy } from "./model-policy";
 import { resolveSessionPath } from "./paths";
 import { getSessionSummary } from "./sessions-index";
 import { ARCHIVED_REFUSAL } from "./archived-sessions";
+import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { requireSubagentProfile } from "./subagent-profiles";
 
 // POST /api/sessions/configure (§mesh.links/configure): a session's model, thinking, mode and minor
@@ -59,6 +60,7 @@ export function configureRefusal(s: SessionSummary, busy: boolean, subagents: nu
   if (s.projectOverseer) return "That is a project overseer's own conversation.";
   if (s.baton) return "That is a baton session: only its participants write in it.";
   if (s.workerSession) return "That is a subagent's own session; configure the session that runs it.";
+  if (queueChatRole(s.profile)) return QUEUE_CHAT_MODE_REFUSAL;
   if (s.live) return `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.`;
   if (s.archived) return ARCHIVED_REFUSAL;
   // A profile-only switch touches nothing running: it applies to later turns and team actions.

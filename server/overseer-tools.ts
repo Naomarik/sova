@@ -992,7 +992,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         const now = Date.now();
         const since = parseSince(p.since, now);
         const has = hasParam(p.has);
-        const all = (await host.sessions()).filter((s) => !s.overseer && !s.workerSession);
+        const all = (await host.sessions()).filter((s) => !s.overseer && !s.workerSession && !s.queueChat);
         const region = p.region ?? "active";
         const q = typeof p.query === "string" ? p.query.toLowerCase() : "";
         const matched = all.filter((s) => {

@@ -25,7 +25,8 @@ export interface ProjectBlock {
 }
 
 /** A standalone project's session (any kind; a placed project's folder session carries `folderOrg`): the Projects region's. */
-export const isStandaloneProjectSession = (s: Pick<SessionSummary, "project" | "org" | "folderOrg">): boolean => !!s.project && !s.org && !s.folderOrg;
+export const isStandaloneProjectSession = (s: Pick<SessionSummary, "project" | "org" | "folderOrg"> & Partial<Pick<SessionSummary, "queueChat">>): boolean =>
+  !!s.project && !s.org && !s.folderOrg && !s.queueChat;
 
 /** What the region lists: a standalone project's sessions but its cleared overseer conversations (its History has them)
     and its archived sessions (the Archive has them; the overseer's eye stays). */
@@ -58,7 +59,8 @@ export function projectBlocks(sessions: readonly SessionSummary[], projects?: re
   for (const p of projects ?? []) if (!archived.has(p.id)) block(p.id, p.name);
   for (const s of sessions) {
     const p = s.project;
-    if (!p || s.org || s.folderOrg || archived.has(p.projectId) || p.archived) continue;
+    // The merge queue's own chats are the Merge Queue tab's, never a block's row.
+    if (!p || s.org || s.folderOrg || s.queueChat || archived.has(p.projectId) || p.archived) continue;
     if (p.kind !== "overseer" && s.archived === true) continue; // the Archive's, never a block's row
     const b = block(p.projectId, blocks.get(p.projectId)?.name ?? p.projectName ?? p.projectId);
     if (p.kind === "overseer") {

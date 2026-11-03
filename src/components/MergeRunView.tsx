@@ -7,6 +7,7 @@ import { announce, toast } from "../lib/ui-state";
 import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { Banner, Icon } from "./ui";
 import { type ChatOf, FromChat } from "./MergeQueueTab";
+import { ReviewerLinks } from "./MergeQueueChats";
 import { QueueChip, UnclearChecks } from "./WorktreesModal";
 
 const RUN_POLL_MS = 3000;
@@ -79,12 +80,13 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
                 </p>
               )}
             </Show>
+            <ReviewerLinks projectId={props.projectId} view={props.view} run={r().id} />
             </div>
             <div class="button-row">
               <AllLogs run={r()} />
               <Show when={props.view.thread}>
                 {(t) => (
-                  <a class="button button-sm button-ghost" href={projectSessionHref(props.projectId, t().session)}>
+                  <a class="button button-sm button-ghost" href={projectSessionHref(props.projectId, t().path ?? t().session)}>
                     <Icon name="chat" small />
                     Open Merge Thread
                   </a>

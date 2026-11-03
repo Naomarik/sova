@@ -18,6 +18,7 @@ import {
   rebaseDraft,
   refusalWords,
   saveResultWords,
+  freshChatWords,
   SOURCE_TAG,
   threadFolderCaption,
   toProjectDraft,
@@ -515,7 +516,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
           />
         </Show>
         <Row label="Fresh chat" end={<Tag source="sova" />}>
-          After {s().fixed.threadMaxAgeH} h, or past {s().fixed.threadMaxContext === 0.5 ? "half" : `${Math.round(s().fixed.threadMaxContext * 100)}%`} of its context
+          {freshChatWords(s().fixed)}
         </Row>
       </Group>
 

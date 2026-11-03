@@ -440,8 +440,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:54Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-03T18:31Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
     },
     "code": [
       "server/merge-queue/routes.ts",
@@ -454,7 +454,11 @@
       "server/project-services/tools.ts",
       "scripts/sova-project.mjs",
       "server/merge-queue/served.ts",
-      "server/merge-queue/served-rule.test.ts"
+      "server/merge-queue/served-rule.test.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/asks.test.ts",
+      "src/card-toolkit/commands.gen.ts",
+      "docs/commands.md"
     ]
   },
   "§app.project-services/on-merge": {

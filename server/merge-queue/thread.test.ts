@@ -65,6 +65,7 @@ function fakeSova(dir: string, over: Partial<ThreadDeps> = {}) {
       return { ok: true };
     },
     log: (l) => logs.push(l),
+    retryMs: [0, 0],
     ...over,
   };
   return { deps, sessions, created, woken, logs, tick: (ms: number) => (clock += ms), set: (id: string, s: Partial<ThreadSession>) => sessions.set(id, { ...sessions.get(id)!, ...s }) };
@@ -172,6 +173,120 @@ test("isThreadChat: the recorded chat of that project, and the one it replaced f
   assert.equal(t.isThreadChat("/p", "s1"), false);
 });
 
+// ---- memory: one thread that lasts (UniiChat) ---------------------------------------------------
+
+/** A fake Sova whose new chats run with memory on, as the live keeper's threadMemoryOn makes them. */
+function memorySova(dir: string, over: Partial<ThreadDeps> = {}) {
+  const f = fakeSova(dir, over);
+  const create = f.deps.create;
+  f.deps.create = async (root, text, title) => {
+    const r = await create(root, text, title);
+    return r.ok ? { ...r, memory: { type: "uniichat" } } : r;
+  };
+  return f;
+}
+
+test("a thread with memory never ages out: days later it is still woken; past half its context it is still replaced", async () => {
+  const dir = scratchRoot("mq-thread-");
+  const f = memorySova(dir);
+  const t = new MergeThread(f.deps);
+  t.notify("/proj", queued("mq_1"));
+  await t.idle("/proj");
+  assert.deepEqual(t.record("/proj")!.memory, { type: "uniichat" });
+  f.tick(10 * THREAD_MAX_AGE_MS);
+  t.notify("/proj", queued("mq_2"));
+  await t.idle("/proj");
+  assert.equal(f.created.length, 1, "ten days on, the same chat");
+  assert.equal(f.woken.length, 1);
+  assert.equal(replaceReason(t.record("/proj"), { id: "s1", path: "/p", createdAt: new Date(T0).toISOString() }, T0 + 30 * THREAD_MAX_AGE_MS), null);
+  f.set("s1", { context: { tokens: 150_000, window: 200_000 } });
+  t.notify("/proj", queued("mq_3"));
+  await t.idle("/proj");
+  assert.equal(f.created.length, 2, "the half-context safety net still holds");
+  const h = t.history("/proj");
+  assert.equal(h.length, 1);
+  assert.equal(h[0]!.sessionId, "s1");
+  assert.equal(h[0]!.why, "it is past half its context");
+  assert.deepEqual(h[0]!.memory, { type: "uniichat" });
+});
+
+test("a refused wake is tried twice more, with the waits between, before the thread is replaced; a retry that takes keeps it", async () => {
+  const dir = scratchRoot("mq-thread-");
+  const waits: number[] = [];
+  let refusals = 0;
+  const f = memorySova(dir, { retryMs: [5_000, 20_000], sleep: async (ms) => void waits.push(ms) });
+  const wake = f.deps.wake;
+  f.deps.wake = async (p, x) => (refusals-- > 0 ? { ok: false, error: "It is running a turn" } : wake(p, x));
+  const t = new MergeThread(f.deps);
+  t.notify("/p", queued("mq_1"));
+  await t.idle("/p");
+
+  refusals = 2;
+  t.notify("/p", queued("mq_2"));
+  await t.idle("/p");
+  assert.deepEqual(waits, [5_000, 20_000]);
+  assert.equal(f.created.length, 1, "the third try took: same thread");
+  assert.equal(f.woken.length, 1);
+
+  refusals = 3;
+  waits.length = 0;
+  t.notify("/p", queued("mq_3"));
+  await t.idle("/p");
+  assert.deepEqual(waits, [5_000, 20_000]);
+  assert.equal(f.created.length, 2, "three refusals: a fresh thread");
+  assert.match(t.history("/p")[0]!.why, /^it refused messages \(It is running a turn\)$/);
+});
+
+test("the playbook changed since the thread read it: its next event starts with the reread line, once", async () => {
+  const dir = scratchRoot("mq-thread-");
+  const root = join(dir, "proj");
+  const own = join(root, PROJECT_PLAYBOOK);
+  mkdirSync(join(own, "references"), { recursive: true });
+  writeFileSync(join(own, "PLAYBOOK.md"), "# Our merge playbook\n");
+  writeFileSync(join(own, "references", "names.md"), "v1\n");
+  const f = memorySova(dir);
+  const t = new MergeThread(f.deps);
+  t.notify(root, queued("mq_1"));
+  await t.idle(root);
+  t.notify(root, queued("mq_2"));
+  await t.idle(root);
+  assert.match(f.woken[0]!.text, /^Queued: entry mq_2/, "unchanged: no reread line");
+
+  writeFileSync(join(own, "references", "names.md"), "v2\n");
+  t.notify(root, queued("mq_3"));
+  t.notify(root, queued("mq_4"));
+  await t.idle(root);
+  const [third, fourth] = [f.woken[1]!.text, f.woken[2]!.text];
+  assert.ok(third.startsWith("The playbook changed since you read it: read "), third);
+  assert.ok(third.includes(join(own, "PLAYBOOK.md")) && third.includes(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md")));
+  assert.match(third, /\n\nQueued: entry mq_3/);
+  assert.match(fourth, /^Queued: entry mq_4/, "said once, then the new hash is the one read");
+  assert.equal(f.created.length, 1, "a playbook change never replaces the thread");
+});
+
+test("Start Fresh: the current thread goes to the history and is retired; the next event starts a new one; none twice", async () => {
+  const dir = scratchRoot("mq-thread-");
+  const retired: string[] = [];
+  const f = memorySova(dir, { retire: async (p) => void retired.push(p) });
+  const t = new MergeThread(f.deps);
+  assert.equal(await t.startFresh("/p"), false, "no thread yet: nothing to do");
+  t.notify("/p", queued("mq_1"));
+  await t.idle("/p");
+  f.tick(HOUR);
+  assert.equal(await t.startFresh("/p"), true);
+  assert.deepEqual(retired, ["/sessions/s1.jsonl"]);
+  assert.equal(t.record("/p"), undefined, "no current thread until the next event");
+  assert.equal(t.isThreadChat("/p", "s1"), false, "the old thread loses its verbs");
+  assert.deepEqual(t.history("/p").map((h) => [h.sessionId, h.why, h.endedAt - h.startedAt]), [["s1", "you started a fresh one", HOUR]]);
+  assert.equal(await t.startFresh("/p"), false);
+  t.notify("/p", queued("mq_2"));
+  await t.idle("/p");
+  assert.equal(t.record("/p")!.sessionId, "s2");
+  assert.equal(t.record("/p")!.previous, undefined, "a fresh start leaves no grace to the old one");
+  assert.deepEqual(t.history("/p").map((h) => h.sessionId), ["s1"], "the history survives the new thread");
+  assert.match(f.created[1]!.text, /You are the merge thread/);
+});
+
 // ---- off the critical path ---------------------------------------------------------------------
 
 test("thread down: notify returns at once while the thread hangs or throws, and the next event still goes out", async () => {
@@ -264,11 +379,13 @@ test("queued: the diff and the picks read from the base the entry was queued aga
   assert.ok(without.includes(`git diff master...${"a".repeat(40)}`), "no base: the target's name");
 });
 
-test("names: the thread is told the project's names file and target, and to run the interview in its own chat", async () => {
+test("names: the thread is told the project's names file and target, and to ask through merge.ask, never waiting in its chat", async () => {
   const text = eventText({ kind: "names", file: "/state/merge-queue/p1/names.json", target: "main" });
   assert.match(text, /every push of main is held\. Landings go on\./);
   assert.ok(text.includes(`${join(DEFAULT_PLAYBOOK_DIR, "scripts", "discover-names.mjs")} --file /state/merge-queue/p1/names.json --target main`));
-  assert.match(text, /here, in your chat/);
+  assert.match(text, /merge\.ask \{text, entry\?\}/);
+  assert.match(text, /Never wait for them in your chat/);
+  assert.doesNotMatch(text, /here, in your chat/);
   const first = firstText("/p", DEFAULT_PLAYBOOK_DIR, { kind: "names", file: "/f", target: "main" });
   assert.match(first, /You never move main,/);
   const dir = scratchRoot("mq-thread-");
@@ -277,7 +394,11 @@ test("names: the thread is told the project's names file and target, and to run 
   t.notify("/p", { kind: "names", file: "/f", target: "main" });
   await t.idle("/p");
   assert.equal(f.created.length, 1, "a names event starts the thread like any other");
-  assert.ok(readFileSync(join(DEFAULT_PLAYBOOK_DIR, "references", "names.md"), "utf8").includes("the one time you talk to the user"));
+  const names = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "references", "names.md"), "utf8");
+  assert.ok(names.includes("You never wait for the user in your own chat: every question goes through `merge.ask"));
+  assert.ok(!names.includes("in your chat:"), "no step of the interview runs in the thread's own chat");
+  const method = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md"), "utf8");
+  assert.ok(method.includes("| `merge.ask {text, entry?}` |") && method.includes("## On your own"));
 });
 
 // ---- a stand-in model following the playbook ---------------------------------------------------

@@ -365,7 +365,12 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   session on. A bare id never finds them; only Sova's own explicit pick (`{source: "sova", id}`)
   does, when it starts the merge queue's thread or reviewer. The listed built-ins stay exactly
   Default. The merge thread has no web, workers or timers and grants no session powers. The
-  reviewer also has no edit tools and no worktrees. **Yours**:
+  reviewer also has no edit tools and no worktrees. Both name their modes outright, mode normal
+  with no minor modes, so a chat started on them is pinned to exactly that and the default modes
+  saved on this computer never reach it; Sova then turns memory on for the merge thread alone
+  (§chat.merge-queue/thread). Chats started on them are the queue's own and are left out of every
+  session list; picking another profile for one is refused (409), so it keeps that mark and its
+  modes (§app.merge-queue/chats). **Yours**:
   `<state root>/session-profiles.json` `{version: 1, profiles: [...]}`. **This project**:
   `<project root>/.sova/profiles/<id>.json`, one profile per file, whose `id` must equal the file's
   name.

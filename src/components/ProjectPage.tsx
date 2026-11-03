@@ -307,7 +307,7 @@ export function ProjectPage(props: {
               <div class="project-col">
                 {/* Its software registry on this host (§app.project-runtime/software-card). */}
                 <ProjectSoftwareCard projectId={projectId} archived={!!archived()} runtime={runtime} />
-                {/* Its numbered releases (§app.release): the latest and what landed since, or the one in progress. */}
+                {/* Its numbered releases: the latest and what landed since, or the one in progress. */}
                 <ReleasesCard projectId={projectId} poll={releases} />
                 {/* Its deploy targets on this host: the deploy panel, which reads deploy.status itself. */}
                 <ProjectDeployPanel projectId={projectId} root={project().root} archived={!!archived()} releases={() => releases.data()?.history} />
@@ -357,7 +357,7 @@ export function ProjectPage(props: {
             />
           </Match>
           <Match when={tab() === "releases"}>
-            {/* The release in progress, then every numbered release (§app.release). */}
+            {/* The release in progress, then every numbered release. */}
             <ReleasesTab projectId={projectId} root={project().root} name={project().name} archived={!!archived()} poll={releases} runtime={runtime} />
           </Match>
           <Match when={tab() === "cost"}>

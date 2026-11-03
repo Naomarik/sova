@@ -135,7 +135,7 @@ test("S13 (real path): a coding chat's script calling scripts/sova-project.mjs r
     { tool: "bash", args: { command: `${cli}; echo "exit=$?"` } },
     // A script that got hold of the operator token: SOVA_CALLER_KEY (set in every chat process) still rides along.
     { tool: "bash", args: { command: `SOVA_TOKEN=${k.hs.token} ${cli}; echo "exit=$?"` } },
-    // The known gap (CONTRACT §5 t17): a script that drops its caller key and has the token reads as the operator.
+    // The known gap: a script that drops its caller key and has the token reads as the operator.
     // Recorded, not asserted; it must not leave a release open for the next tests, so it is abandoned below.
     { tool: "bash", args: { command: `env -u SOVA_CALLER_KEY SOVA_TOKEN=${k.hs.token} ${cli}; echo "exit=$?"` } },
   ]);

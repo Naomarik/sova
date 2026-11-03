@@ -51,7 +51,7 @@ export const stateRoot = () => {
   const agent = a ? (a === "~" ? homedir() : a.startsWith("~/") ? join(homedir(), a.slice(2)) : a) : join(homedir(), ".pi", "agent");
   return join(agent, "sova");
 };
-/** Where this playbook keeps what it writes for a project (§chat.playbooks/bundles: state under the state root). */
+/** Where this playbook keeps what it writes for a project (under the state root, as every playbook's state). */
 export const stateDir = (root) => join(stateRoot(), "playbooks", "release", basename(root).replace(/[^A-Za-z0-9._-]/g, "_"));
 
 // ---- versions -------------------------------------------------------------------------------------

@@ -631,7 +631,7 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .services-limit-cost-warn { color: var(--status-warn); }
 .services-limit-places { margin: 0; }
 
-/* The Releases tab (§app.release): the merge queue's strip, card and list, with a release's own steps, notes and confirms. */
+/* The Releases tab: the merge queue's strip, card and list, with a release's own steps, notes and confirms. */
 .rel-card .deploy-confirm,
 .rel-row .deploy-confirm { margin-top: var(--space-2); }
 .rel-steps { margin: 0; }

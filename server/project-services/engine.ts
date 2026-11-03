@@ -81,7 +81,7 @@ import { defHashOf } from "./def-hash";
 
 export type Caller =
   /** `fromChat`: the operator's route called by a process a chat runs (its `x-sova-caller` key): never the operator's
-      acts on a release (§ release, t17). */
+      acts on a release: a chat's own scripts never act as the operator there. */
   | { kind: "operator"; confirm?: boolean; fromChat?: true }
   /** `approved`: whether the user's click that opened this turn approved `verb` on that copy (§app.overseer/copies).
       `word`: whether the user started this turn (typed or a click), read per call; absent: never. `working`: whether

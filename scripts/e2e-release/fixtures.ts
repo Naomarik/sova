@@ -14,7 +14,7 @@
  * when `deploy` is on, a stand-in deploy target `site` that copies `site/` into `<root>/deploy-target` and writes
  * the commit to `<root>/deploy-target/version` (no host, no network).
  *
- * The release pointer's shape follows the lead's CONTRACT.md; pass `release` to override it, `false` to omit it.
+ * The release pointer is the settings' `release` section; pass `release` to override it, `false` to omit it.
  * Every script appends a JSON line to `<state>/calls.jsonl` ({script, cwd, head, argv}), so a test asserts where a
  * check ran and on which commit. The state dir is outside the repository: nothing a script writes is committed.
  *
@@ -50,7 +50,7 @@ export interface ReleaseFixtureOptions {
   files?: Record<string, string>;
 }
 
-/** A manifest step (CONTRACT.md §2): Sova adds its own `checks` and `publish` itself. */
+/** A manifest step (release.json): Sova adds its own `checks` and `publish` itself. */
 export interface ReleaseStep {
   id: string;
   label: string;
@@ -79,7 +79,7 @@ export const LOCAL_STEPS: ReleaseStep[] = [
   { id: "artifact", label: "Build the app", phase: "after", artifact: true },
 ];
 
-/** The default `release` pointer (CONTRACT.md §1); spread it to vary one key (`{...DEFAULT_POINTER, commit: false}`). */
+/** The default `release` pointer (the settings' `release` section); spread it to vary one key (`{...DEFAULT_POINTER, commit: false}`). */
 export const DEFAULT_POINTER: Record<string, unknown> = {
   playbook: ".sova/playbooks/release",
   tag: "v${version}",
@@ -237,7 +237,7 @@ export class ReleaseFixture {
     }
   }
 
-  /** The `release` pointer written by default (CONTRACT.md §1). */
+  /** The `release` pointer written by default. */
   releasePointer(): Record<string, unknown> {
     return structuredClone(DEFAULT_POINTER);
   }

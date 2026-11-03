@@ -282,7 +282,7 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
   const bf = obj(pb.branchFacts);
   const bdef = obj(bf.def);
   const path = buildSessionPath(str(pb.sessionId));
-  // A deploy-setup run proposes its deploy recipe, a release-setup run its release setup, each with a hash of its own (§app.project-runtime/verb-playbooks).
+  // A deploy-setup run proposes its deploy recipe, a release-setup run its release setup, each with a hash of its own.
   const proposes = proposesOf(pb.proposes);
   const deploy = proposes === "deploy" ? obj(bf.deploy) : proposes === "release" ? obj(bf.release) : null;
   const build = obj(host.data(str(pb.sid)));

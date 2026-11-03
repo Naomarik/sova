@@ -1,6 +1,6 @@
 /**
  * Tests only. Drives a release on a hermetic server (server-kit.ts) the way the release chat and the operator do
- * (CONTRACT.md §5): the operator's acts through the operator route, the chat's reports through the chat's own
+ * (who may call which release verb): the operator's acts through the operator route, the chat's reports through the chat's own
  * project_verbs tool (the scripted model calls it when the test wakes the chat), and the chat's hands (the bump
  * commit) as plain git in the release checkout. Every wait polls a condition with a deadline.
  */
@@ -39,7 +39,7 @@ export const stepOf = (rec: Rec, id: string) => {
 /** The thread's marker: every wake prompt carries it, so only that chat's requests pop its script. */
 export const marker = (rec: Rec) => `[release-thread ${rec.id}]`;
 
-/** The release chat's session path (CONTRACT: record.thread.session). */
+/** The release chat's session path (record.thread.session). */
 export function threadPath(rec: Rec): string {
   const p = rec.thread?.path;
   if (!p) throw new Error(`release ${rec.id} has no thread: ${JSON.stringify(rec.thread)}`);

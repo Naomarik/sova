@@ -7,7 +7,7 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 /**
- * The release playbooks' drivers as the agent runs them (§chat.playbooks/bundles: a digest on stdout, exit 0 fine,
+ * The release playbooks' drivers as the agent runs them (the playbook bundle convention: a digest on stdout, exit 0 fine,
  * 1 something to act on, 2 couldn't tell): playbooks/release-maker/scripts/release-maker.mjs and
  * playbooks/release/scripts/release.mjs, in scratch repositories. Their logic is covered in-process by
  * release-playbooks.test.ts; this file holds only what needs the process: the exit codes and the digests.

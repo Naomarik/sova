@@ -170,7 +170,7 @@ test("the softer tier: guesses list under the blockers, newest first; a session 
   assert.equal(rows[0]!.detail, "Asks you: retry?", "its newest item's sentence, blocker or guess");
 });
 
-test("a project's release items list in the region and open its Releases tab; the head's title counts them apart from deploys (§app.release)", () => {
+test("a project's release items list in the region and open its Releases tab; the head's title counts them apart from deploys", () => {
   const item = (kind: AttentionItem["kind"], since: number, title: string) => ({ id: `${kind}:${title}`, path: "", title, where: "Projects", tier: "act" as const, kind, since, detail: `${kind} of ${title}`, href: `#/projects/prj_${title}/releases` });
   const kinds: AttentionItem["kind"][] = ["release-ready", "release-request", "release-held", "release-failed", "release-quiet"];
   const digest = { items: [...kinds.map((k, i) => item(k, i + 1, `p${i}`)), item("deploy-failed", 9, "site")] };

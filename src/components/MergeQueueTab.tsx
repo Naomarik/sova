@@ -337,7 +337,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
           }
         />
       </Show>
-      {/* An open release freezes the target on it (§app.release): only its own entries land until it's published or abandoned. */}
+      {/* An open release freezes the target on it: only its own entries land until it's published or abandoned. */}
       <Show when={v().release}>
         {(rel) => (
           <Banner

@@ -76,7 +76,7 @@ export const RELEASE_KINDS: readonly AttentionItem["kind"][] = ["release-ready",
 export const isReleaseItem = (it: Pick<AttentionItem, "kind">): boolean => RELEASE_KINDS.includes(it.kind);
 
 /** The digest kinds of no session the region lists itself (a project's deploy, §app.project-services/deploy-status;
-    a project's release waiting on you, §app.release: ready to publish, asked for, a step held or failed, its chat quiet;
+    a project's release waiting on you: ready to publish, asked for, a step held or failed, its chat quiet;
     WhatsApp sending down, §app.outreach/sender-health; an org owner's request, outage or ask for a new link,
     §app.project-assistant/requests). */
 const DEPLOY_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["deploy-failed", "deploy-request", "whatsapp-down", "owner-request", "owner-outage", "owner-link-request", "owner-version-request", "owner-feature-ended", "owner-request-closed", ...RELEASE_KINDS]);

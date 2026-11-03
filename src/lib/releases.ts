@@ -1,4 +1,4 @@
-// The Releases tab's words and rules (§app.release): pure, so the rules run under tsx --test and
+// The Releases tab's words and rules: pure, so the rules run under tsx --test and
 // the tab, the Overview card and the Deploy card read them alike. Types only from the wire.
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import type { ReleaseHistoryItem, ReleaseRecord, ReleaseState, ReleaseStep, ReleaseView, StepState } from "../../shared/release";

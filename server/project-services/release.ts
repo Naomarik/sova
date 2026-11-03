@@ -198,7 +198,7 @@ const viaAct = (c: Caller): boolean => (c.kind === "project-overseer" || c.kind 
 const fromChat = (c: Caller): boolean => c.kind === "operator" && (c as { fromChat?: true }).fromChat === true;
 
 /**
- * Who may call which release verb (CONTRACT §5, t17). `isThread`: the caller is this project's open release's chat.
+ * Who may call which release verb (a chat's own scripts never act as the operator). `isThread`: the caller is this project's open release's chat.
  */
 export function authorizeRelease(verb: ReleaseVerb, caller: Caller, root: string, req: { confirm?: boolean; dismiss?: boolean }, isThread: boolean): void {
   if (caller.kind === "conform" || caller.kind === "system") throw new ReleaseFailure("forbidden", `${caller.kind === "conform" ? "conformance" : "Sova on its own"} never releases`);
@@ -1203,7 +1203,7 @@ export class Releaser {
     }
   }
 
-  /** What needs the operator about releases (CONTRACT §8), per project root. */
+  /** What needs the operator about releases (the Needs-you items), per project root. */
   attentionFacts(): ReleaseAttention[] {
     const out: ReleaseAttention[] = [];
     for (const root of this.roots()) {

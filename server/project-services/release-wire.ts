@@ -77,7 +77,7 @@ export function stopReleaser(): void {
 
 const DETAIL_MAX = 200;
 
-/** The digest's release items (CONTRACT §8): act tier, no session (Open Chat names the release chat's file). */
+/** The digest's release items: act tier, no session (Open Chat names the release chat's file). */
 export function releaseItems(facts: readonly ReleaseAttention[], projectOf: (root: string) => { id: string; name: string } | null): AttentionItem[] {
   const out: AttentionItem[] = [];
   for (const f of facts) {

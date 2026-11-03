@@ -7,7 +7,7 @@ import { realGit } from "../project-services/engine";
 type GitRun = typeof realGit;
 
 /**
- * What a Release playbook maker run's branch proposes (`proposes: release`, §app.project-runtime/verb-playbooks):
+ * What a Release playbook maker run's branch proposes (`proposes: release`, a verb playbook):
  * the definition's `release` section and the project's release playbook folder, read at the branch's tip from git
  * (never the worktree's files). Its hash pins exactly what the operator read on the review: the section's
  * canonical JSON and the git tree of the playbook folder, so a changed setting, step, line or script is a new hash.

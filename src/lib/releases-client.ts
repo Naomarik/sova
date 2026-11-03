@@ -30,7 +30,7 @@ export async function readReleases(project: string): Promise<ReleaseView> {
 export const releaseRefusal = (r: { ok: boolean; error?: { message: string } }): string | null => (r.ok ? null : (r.error?.message ?? "It was refused."));
 
 /**
- * Plan Deploy of vX (§app.release hand-off): the Releases tab asks the Deploy card on the Overview to plan one
+ * Plan Deploy of vX (the release's hand-off to Deploy): the Releases tab asks the Deploy card on the Overview to plan one
  * target at a release's commit. The card takes it once, plans it, and clears it.
  */
 export interface DeployHandOff {

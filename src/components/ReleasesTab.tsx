@@ -89,7 +89,7 @@ function useAct() {
 }
 
 /**
- * A project's Releases tab (§app.release): the release in progress with its steps, Publish and Abandon; then every
+ * A project's Releases tab: the release in progress with its steps, Publish and Abandon; then every
  * numbered release from its tags, newest first, with its notes, channel badges, where it runs and Withdraw. A
  * project whose releases aren't set up gets the note on how, with Set Up Releases.
  */
@@ -683,7 +683,7 @@ export function ReleasesCard(props: { projectId: string; poll: Poll<ReleaseView>
 }
 
 /**
- * What a Set Up Releases run proposes on its branch (§app.project-runtime/run-report): the `release` settings Sova acts on
+ * What a Set Up Releases run proposes on its branch (its run report): the `release` settings Sova acts on
  * and the playbook's steps in their order, Sova's own checks and Publish between them, before you land it.
  */
 export function ReleaseSetupSteps(props: { setup: ReleaseSetupReview }) {

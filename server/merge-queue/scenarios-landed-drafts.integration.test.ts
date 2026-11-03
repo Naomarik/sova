@@ -115,6 +115,15 @@ describe("drafts a queue landing made official", () => {
     const early = backfillLandedDrafts({ worktree: b.checkout, commit: landed.landed!.from, target: fx.target, write: true });
     assert.equal(early.rows[0]?.state, "not-landed");
     assert.equal(draftJson(b.checkout, "doc").landed, undefined);
+    // Edited since it landed: not what the spec at that commit says, so left alone, at the very commit that landed it.
+    const claim = join(b.checkout, ".sova/spec/drafts/doc/spec/claims/b/doc.md");
+    const said = readFileSync(claim, "utf8");
+    writeFileSync(claim, "# §b/doc\n\nThe doc feature now does two things.\n");
+    const edited = backfillLandedDrafts({ worktree: b.checkout, commit: spec, target: fx.target, write: true });
+    assert.equal(edited.rows[0]?.state, "not-landed");
+    assert.equal(draftJson(b.checkout, "doc").landed, undefined, "no receipt for a draft edited since");
+    assert.deepEqual(await draftsLeft(b.checkout, ancestor), ["doc"]);
+    writeFileSync(claim, said);
     const after = fx.commitIn(b.checkout, { "src/later.txt": "later\n" }, "doc: after landing");
     assert.throws(() => backfillLandedDrafts({ worktree: b.checkout, commit: after, target: fx.target, write: true }), /is not on/);
   });

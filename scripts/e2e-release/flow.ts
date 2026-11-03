@@ -158,3 +158,19 @@ export async function waitEntry(k: ReleaseServer, fx: ReleaseFixture, what: stri
     throw new Error(`${(e as Error).message}\nentries: ${JSON.stringify(last.map((x) => ({ id: x.id, branch: x.branch, state: x.state, reason: x.reason, release: x.release })))}`);
   }
 }
+
+/** A whole release to published, as the operator would drive it: start, prepare, checks, every held check step
+ *  Continued, Publish. Resolves with the published record and the commit the numbered tag names. */
+export async function publishOne(k: ReleaseServer, fx: ReleaseFixture, version: string): Promise<{ rec: Rec; sha: string }> {
+  const rec = await start(k, fx);
+  await prepare(k, fx, rec, version);
+  let r = await waitRecord(k, fx, "checks passed", (x) => stepOf(x, "checks").state === "done", 240_000);
+  for (const s of r.steps.filter((x) => x.phase === "check" && x.held)) await holdAndContinue(k, fx, r, s.id);
+  for (const s of r.steps.filter((x) => x.phase === "check" && !x.held)) await chatDoes(k, r, [step(s.id, "done", `${s.label} done`)]);
+  r = await waitRecord(k, fx, "ready", isReady, 120_000);
+  ok(await k.verb("release.publish", { project: fx.project, release: rec.id, confirm: true }), "release.publish");
+  r = await waitRecord(k, fx, "published", (x) => x.state === "published", 120_000, rec.id);
+  const sha = fx.tagAt(`v${version}`);
+  if (!sha) throw new Error(`v${version} not tagged after Publish`);
+  return { rec: r, sha };
+}

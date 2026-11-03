@@ -17,6 +17,10 @@ export const RELEASE_MANIFEST_FILE = "release.json";
 /** The step ids Sova keeps for its own steps; a manifest never declares them. */
 export const SOVA_STEP_IDS = ["checks", "publish", "withdraw", "abandon"] as const;
 export const MANIFEST_STEPS_MAX = 30;
+/** The step whose done report carries the release commit (facts commit=, branch=); a tag-only release has none. */
+export const RELEASE_COMMIT_STEP = "commit";
+/** The step whose done report carries the version (facts version=). */
+export const RELEASE_VERSION_STEP = "version";
 export const STEP_LABEL_MAX = 60;
 
 /** Where a step runs in the plan: `prepare` before Sova's gating checks (the release commit is made here); `check` after
@@ -80,6 +84,11 @@ export function parseReleaseManifest(text: string): ReleaseManifest {
   const rank = (p: ManifestPhase) => MANIFEST_PHASES.indexOf(p);
   for (let i = 1; i < steps.length; i++)
     if (rank(steps[i]!.phase) < rank(steps[i - 1]!.phase)) throw new ManifestError(`$.steps[${i}].phase`, "list the steps in plan order: prepare, then check, then after, then withdraw");
+  // The release commit is reported by the step `commit`; its done report adds the release entry and the checks start,
+  // so no prepare step can follow it.
+  const ci = steps.findIndex((s) => s.id === RELEASE_COMMIT_STEP);
+  if (ci >= 0 && steps[ci]!.phase !== "prepare") throw new ManifestError(`$.steps[${ci}].phase`, `the "${RELEASE_COMMIT_STEP}" step makes the release commit: it is a prepare step`);
+  if (ci >= 0 && steps.slice(ci + 1).some((s) => s.phase === "prepare")) throw new ManifestError(`$.steps[${ci}]`, `the "${RELEASE_COMMIT_STEP}" step is the last prepare step: the checks start when it is done`);
   return { v: 1, steps };
 }
 

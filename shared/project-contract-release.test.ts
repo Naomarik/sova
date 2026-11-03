@@ -155,6 +155,8 @@ test("a manifest is parsed strictly", () => {
   assert.equal(manifestRefusal({ v: 1, steps: [{ id: "x", label: "X", phase: "prepare" }, { id: "x", label: "Y", phase: "after" }] }), "$.steps");
   assert.equal(manifestRefusal({ v: 1, steps: [{ id: "a", label: "A", phase: "after" }, { id: "b", label: "B", phase: "prepare" }] }), "$.steps[1].phase");
   assert.equal(manifestRefusal({ v: 1, steps: [{ id: "withdraw", label: "A", phase: "withdraw" }] }), "$.steps[0].id");
+  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "commit", label: "A", phase: "prepare" }, { id: "notes", label: "B", phase: "prepare" }] }), "$.steps[0]");
+  assert.equal(manifestRefusal({ v: 1, steps: [{ id: "commit", label: "A", phase: "after" }] }), "$.steps[0].phase");
   assert.equal(manifestRefusal({ v: 1, steps: [{ id: "a", label: "A", phase: "after", artifact: false }] }), "$.steps[0].artifact");
 });
 

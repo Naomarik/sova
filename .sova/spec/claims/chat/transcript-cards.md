@@ -49,6 +49,12 @@ from this feature but staged text and picks), and the reply place under a messag
   what went wrong ("This card couldn't be drawn: {why}."), with **Reload**. Every other row, card
   and the composer go on as if nothing happened. Reload tries that card again; it never reloads
   the page or the chat.
+- **A card newer than the page.** Sova keeps no previous build's files, so a page left open while
+  Sova was updated can't load card code it hadn't loaded yet. Such a card's box says so instead:
+  "This card needs the newer Sova. Reload the page to draw it.", with **Reload Page**, which
+  reloads the page; drafts are kept. The page checks for "A newer Sova is available" at that
+  moment too (§app.updates/reload-note). Any other failure keeps Reload, which draws that card
+  again and never reloads the page.
 - **The same host for every card.** Sova's own types and every declared type draw through the same
   host: the reserved height, the error box with Reload, and for every data card and view the data
   check before it draws.

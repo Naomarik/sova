@@ -623,7 +623,7 @@ The allowed public paths also include token-scoped reads for visible bound tour 
   the setting changes. `SOVA_SHARE_HOST` and `SOVA_SHARE_PORT` pin the address; with neither the
   setting nor both variables there is no listener. A host routed through a gateway serves the same
   paths on its ingress instead (§mesh.public/ingress). It serves only: `GET /h/<token>` (the share page), `GET /h/assets/*` (the
-  share page's own build, never the operator app's), `GET /api/h/<token>` (the filtered view and
+  share page's own build, never the operator app's; a file it doesn't have is a 404, never a page), `GET /api/h/<token>` (the filtered view and
   state), `POST /api/h/<token>/message {text, images?, files?}`, `POST /api/h/<token>/image` and
   `GET /api/h/<token>/img/<n>` (§app.baton/images), `POST /api/h/<token>/file` (§app.baton/files) and the WebSocket `/ws/h?token=`, the page's
   visit id riding along as `?v=` on the view and the socket (§app.baton/visits); and, for the owner

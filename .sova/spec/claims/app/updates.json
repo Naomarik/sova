@@ -98,11 +98,14 @@
       "src/components/MeshView.tsx",
       "src/lib/mesh.test.ts",
       "src/lib/updates.ts",
-      "src/app.css"
+      "src/app.css",
+      "server/app.ts",
+      "server/spa-assets.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-16T05:27Z"
+      "at": "2026-11-03T20:00Z",
+      "source": "pi-session:f7abf7a7-3c8a-4801-a5d7-0e26b8fc21c6#019641ba"
     }
   },
   "§app.updates/restart": {

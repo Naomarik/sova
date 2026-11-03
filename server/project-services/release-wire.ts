@@ -34,7 +34,7 @@ export interface ReleaseWireDeps {
 }
 
 export async function startReleaser(d: ReleaseWireDeps): Promise<Releaser> {
-  const [{ projectEngine }, { attentionChanged }] = await Promise.all([import("./routes"), import("../attention-memo")]);
+  const [{ projectEngine }, { attentionChanged }, { deployedAt }] = await Promise.all([import("./routes"), import("../attention-memo"), import("./deploy")]);
   const r = new Releaser({
     dir: join(d.stateRoot, "project-services", "release"),
     queue: (root) => d.queues().get(root),
@@ -43,6 +43,7 @@ export async function startReleaser(d: ReleaseWireDeps): Promise<Releaser> {
     projectIdOf: d.projectIdOf,
     publish: (view) => d.publishFeed({ type: "release", project: view.project, view }),
     attention: () => attentionChanged(),
+    deployedTo: (root, sha) => deployedAt(root, sha),
     thread: {
       async start({ checkout, text, title }) {
         if (!d.request) return { error: "this server can't start chats" };

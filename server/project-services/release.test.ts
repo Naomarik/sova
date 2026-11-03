@@ -299,6 +299,35 @@ describe("the freeze, the release entry and Publish (q9, a5, a6)", () => {
   });
 });
 
+describe("a tag-only release (q4, commit: false)", () => {
+  test("the queue still holds; the gating checks run on the frozen tip itself (nothing merged, master never moves), then ready; Publish tags that commit", async () => {
+    const manifest = { v: 1, steps: [{ id: "version", label: "V", phase: "prepare" }, { id: "notes", label: "N", phase: "prepare" }] };
+    const t = releaseKit({ manifest, settings: { commit: false } });
+    try {
+      const base = t.repo.head();
+      const s = await t.call("release.start", {});
+      const rec = s.release!.release!;
+      assert.equal(rec.commit, base, "a tag-only release is of the tip at start");
+      assert.equal((await t.k.q()).releaseHold()?.id, rec.id, "the queue holds for it too");
+      await t.call("release.step", { step: "version", state: "done", summary: "v", facts: ["version=0.2.0"] }, t.chat);
+      await t.call("release.notes", { text: "Notes." }, t.chat);
+      await t.call("release.step", { step: "notes", state: "done", summary: "n" }, t.chat);
+      await until(() => t.r.record(t.repo.root, rec.id)!.state === "ready", "ready");
+      const input = t.k.run.inputs.find((i) => i.entry.release === rec.id)!;
+      assert.equal(input.tryOnly, true, "a check-only run on the frozen tip");
+      assert.deepEqual(input.releaseChecks?.map((c) => c.id), ["full"]);
+      assert.equal(t.repo.head(), base, "master never moved");
+      assert.equal(t.r.record(t.repo.root, rec.id)!.commit, base);
+      const p = await t.call("release.publish", { confirm: true });
+      assert.equal(p.ok, true, JSON.stringify(p.error));
+      assert.equal(sh(t.repo.origin, "rev-parse", "v0.2.0^{commit}"), base);
+      assert.equal(sh(t.repo.origin, "rev-parse", "master"), base);
+    } finally {
+      await t.done();
+    }
+  });
+});
+
 describe("facts win (q10)", () => {
   test("a commit not cut from the base, a version whose tag exists, an artifact inside the repository: the step reads failed with Sova's why", async () => {
     const t = releaseKit();

@@ -1002,6 +1002,8 @@ export class ProjectQueue {
       runDir,
       ...(draftsDir ? { draftsDir } : {}),
       picks: [...e.picks],
+      // A tag-only release's entry is the frozen target itself: its checks run there, nothing is merged or moved.
+      ...(this.tagOnly(e, base) ? { tryOnly: true as const } : {}),
       ...(e.release && e.releaseKind === "release" && this.q.release?.id === e.release && this.q.release.checks?.length ? { releaseChecks: structuredClone(this.q.release.checks) } : {}),
       ...(this.names().exists ? { namesFile: this.names().file } : {}),
       review: d.review && !e.approval.withoutReview,
@@ -1221,6 +1223,8 @@ export class ProjectQueue {
         this.addNotes(e, out.notes);
         if (out.noChecks && !e.notes.some((n) => n.kind === "no-checks")) e.notes.push({ kind: "no-checks", text: "No checks declared", at: this.iso() });
         delete this.q.machineTries[e.id];
+        // A tag-only release lands nothing: what passed is the target as it stands.
+        if (this.tagOnly(e, run.base)) run.tip = run.base;
         if (!run.tip) {
           run.verdict = "machine";
           run.why = "the run passed but named no tip to land";
@@ -1408,6 +1412,11 @@ export class ProjectQueue {
     }
     if (changed) this.save();
     return line.filter((e) => e.release === hold.id);
+  }
+
+  /** A tag-only release's entry: its commit is the frozen target's own head (no release commit). */
+  private tagOnly(e: Entry, base: string): boolean {
+    return !!e.release && (e.releaseKind ?? "release") === "release" && e.commit === base && this.q.release?.id === e.release;
   }
 
   private waitingWords(): string {

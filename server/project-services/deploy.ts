@@ -233,6 +233,14 @@ export function recordsOf(root: string, target?: string): DeployRecord[] {
   return out.sort((a, b) => b.startedAt.localeCompare(a.startedAt) || b.id.localeCompare(a.id));
 }
 
+/** The targets of `root` whose newest succeeded deploy (verified, where the target declares a verify: a failed verify
+    is `verify-failed`) is at `sha`: where a release runs (the Releases tab's "deployed to", the Deploy rows' "runs vX"). */
+export function deployedAt(root: string, sha: string): string[] {
+  const newest = new Map<string, DeployRecord>();
+  for (const r of recordsOf(root)) if (r.state === "succeeded" && !newest.has(r.target)) newest.set(r.target, r);
+  return [...newest.values()].filter((r) => r.commit === sha).map((r) => r.target).sort();
+}
+
 export const viewOf = ({ v: _v, project: _p, pid: _pid, ...view }: DeployRecord): DeployRecordView => view;
 
 // ---- requests (an overseer's ask) -------------------------------------------------------------------

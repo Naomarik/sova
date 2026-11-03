@@ -585,7 +585,7 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   const list = planChecks(def, input.picks, input.releaseChecks);
   checksShown = picksOf(list);
   hooks.checks(checksShown);
-  if (declared === "none") return out({ verdict: "passed", noChecks: true, copy });
+  if (declared === "none" && !list.length) return out({ verdict: "passed", noChecks: true, copy });
   let services: { slot: number; down: () => Promise<void> } | null = null;
   try {
     const needs = [...new Set(list.flatMap((c) => c.requires))];

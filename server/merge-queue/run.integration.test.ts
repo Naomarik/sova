@@ -535,7 +535,9 @@ const all = readdirSync("tests").filter((f) => f.endsWith(".txt")).sort().map((f
 let files = named.length ? all.filter((f) => named.includes(f)) : all;
 if (args.includes("--landing")) {
   const changed = process.env.SOVA_MERGE_CHANGED ? readFileSync(process.env.SOVA_MERGE_CHANGED, "utf8").trim() : "";
-  if (!changed) files = files.filter((f) => !f.startsWith("tests/group-"));
+  // runner.named-filtered: named files are filtered too, on the merge as well (the landing selection never re-triggers
+  // a group for a named file), so a rerun of a group file runs nothing anywhere.
+  if (!changed || (named.length && existsSync("runner.named-filtered"))) files = files.filter((f) => !f.startsWith("tests/group-"));
 }
 const failures = files.filter((f) => readFileSync(f, "utf8").trim() === "fail").map((f) => ({ file: f, name: f }));
 const out = { passed: files.length - failures.length, failed: failures.length, errors: 0, skipped: 0, failures, failingFiles: failures.map((f) => f.file) };
@@ -583,5 +585,18 @@ describe("whose failure, never on a guess (a file the target's rerun never ran)"
     expect(r.out).toMatchObject({ verdict: "failed", blame: "branch" });
     expect(r.out.why).toContain("tests/group-slow.txt");
     expect(ltCalls().map((c) => c.argv)).toEqual([["--integration", "--landing"], ["tests/group-slow.txt"], ["tests/group-slow.txt"]]);
+  });
+
+  test("the rerun on the merge runs none of the failed files (filtered out): not flaky, on to the target alone; with ranFiles or by counts", async () => {
+    for (const newRunner of [true, false]) {
+      const { fx, ltCalls } = landingProject({ newRunner, files: { "tests/every.txt": "pass\n", "tests/group-slow.txt": "pass\n", "runner.named-filtered": "1\n" } });
+      const r = await run(fx, fx.branch(`tip-filter-${newRunner}`, { "tests/group-slow.txt": "fail\n" }));
+      // Never "flaky" on a rerun that never ran it: the target's rerun is asked too, and can't tell either.
+      expect(r.out.notes.some((x) => x.kind === "flaky")).toBe(false);
+      expect(r.out.verdict).toBe("unattributed");
+      expect(r.out.unclear?.[0]?.check).toBe("integration");
+      expect(r.steps.get("rerun-tip:integration")!.result).toBe("failed");
+      expect(ltCalls().length).toBe(3);
+    }
   });
 });

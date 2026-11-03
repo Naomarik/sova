@@ -66,10 +66,11 @@ test("S36: a releases-only target refuses an unnamed commit and a withdrawn rele
   const tip = landed.landed!.sha as string;
   const unnamed = await k.verb("deploy.plan", { project: fx.project, target: "site", commit: tip });
   const said = JSON.stringify(unnamed.json);
-  assert.ok(unnamed.status !== 200 || /releases?\b.*only|not a release|numbered release/i.test(said), `an unnamed commit is refused: ${said.slice(0, 500)}`);
+  assert.equal(unnamed.json.error?.code, "deploy-refused", `an unnamed commit is refused: ${said.slice(0, 500)}`);
   assert.equal(await deploy(fx, sha), "succeeded", "the release ships");
   ok(await k.verb("release.withdraw", { project: fx.project, release: rec.id, why: "bad", confirm: true }), "withdraw");
   await until("withdrawn", async () => (await view(k, fx)).history.find((h) => h.tag === "v0.2.0")?.withdrawn, 120_000, 250);
   const withdrawn = await k.verb("deploy.plan", { project: fx.project, target: "site", commit: sha });
-  assert.ok(withdrawn.status !== 200 || /withdrawn/i.test(JSON.stringify(withdrawn.json)), `a withdrawn release is refused: ${JSON.stringify(withdrawn.json).slice(0, 500)}`);
+  assert.equal(withdrawn.json.error?.code, "deploy-refused", `a withdrawn release is refused: ${JSON.stringify(withdrawn.json).slice(0, 500)}`);
+  assert.match(JSON.stringify(withdrawn.json), /withdrawn/i);
 });

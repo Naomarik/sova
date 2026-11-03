@@ -47,6 +47,7 @@ import { isLoginNoteRow } from "./change-rows";
 import { infoEstimate } from "./tail-render";
 import { CARD_TOOLS, isAlignMarkOnly } from "./hidden-rows";
 import { toolCallArgs } from "./message";
+import { loadsModule } from "./module-load";
 
 /** Where a kind draws: in the page (Sova's own), as one of Sova's data cards, or in a sealed frame. */
 export type KindHost = "page" | "data" | "frame";
@@ -335,7 +336,8 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
     host: "data",
     placement: "follow",
     key: (_it, card: CardInfo) => (card.placement === "follow" && card.key ? `${card.type}\u0000${card.key}` : undefined),
-    view: { load: () => import("../components/TranscriptCard") as unknown as Promise<{ default: Component<KindViewProps> }> },
+    // A failed load says so (lib/module-load): the box then asks for the newer Sova, not a redraw.
+    view: { load: loadsModule(() => import("../components/TranscriptCard") as unknown as Promise<{ default: Component<KindViewProps> }>) },
     // The running turn's card is drawn as soon as its call returns (§chat.transcript-cards/card-tool).
     live: { match: (input, ctx) => normalizeRaisedCard(doneCall(input, ctx, named(CARD_TOOL))), view: "card" },
   }),

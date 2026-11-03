@@ -183,10 +183,10 @@ test("Browser access: always for this host; a peer must answer on a build that r
 });
 
 test("hostMark: dot tone from the mesh state, words only in the title, null while unknown", () => {
-  assert.equal(hostMark("MacBook", undefined, null), null);
-  assert.deepEqual(hostMark("MacBook", "up", null), { tone: "up", title: "This session lives on MacBook · up" });
-  assert.deepEqual(hostMark("MacBook", "skewed", null), { tone: "skewed", title: "This session lives on MacBook · other version" });
-  assert.deepEqual(hostMark("MacBook", "down", "MacBook isn't answering."), { tone: "down", title: "This session lives on MacBook · MacBook isn't answering." });
-  assert.equal(hostMark("MacBook", "refused", null)?.tone, "down");
-  assert.equal(hostMark("MacBook", "hidden", null)?.tone, "skewed");
+  assert.equal(hostMark("Desktop", undefined, null), null);
+  assert.deepEqual(hostMark("Desktop", "up", null), { tone: "up", title: "This session lives on Desktop · up" });
+  assert.deepEqual(hostMark("Desktop", "skewed", null), { tone: "skewed", title: "This session lives on Desktop · other version" });
+  assert.deepEqual(hostMark("Desktop", "down", "Desktop isn't answering."), { tone: "down", title: "This session lives on Desktop · Desktop isn't answering." });
+  assert.equal(hostMark("Desktop", "refused", null)?.tone, "down");
+  assert.equal(hostMark("Desktop", "hidden", null)?.tone, "skewed");
 });

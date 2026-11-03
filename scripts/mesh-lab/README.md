@@ -93,7 +93,7 @@ decimal string on Headscale.
 ## Commands
 
 ```
-lifecycle   up [opts] · build · down · reset [opts] · destroy [--pulled] · status [--json]
+lifecycle   up [opts] · build · swap <node> <rev|default> [--build] · down · reset [opts] · destroy [--pulled] · status [--json]
 chaos       kill|start|stop|restart <node> · partition <node> [--reject] [--full] · restore <node>
             sova-stop|sova-start|sova-restart <node>
 access      exec <node> [cmd…] · logs <node> [-f] · ts <node> <args> · hs <args> · curl <node> <args>
@@ -105,6 +105,14 @@ mesh        pair [a,b,c] [--no-restart] · unpair [a,b,c] · frontdoor [order a,
 - `up` options: `--hosts N` (1–8) or `--hosts a,c,d`, `--auth all|none|a,b`, `--no-plain`,
   `--no-stranger`, `--no-frontdoor`, `--no-publicfront`, `--no-mock`, `--no-seed`, `--no-build`. The options persist
   in `STATE/lab.json`, and a bare `up` reuses them.
+- **Hosts on different builds**: `up --rev a=<rev> --rev b=<rev>` runs each named node (a host or
+  `plain`) on its own commit, from its own images `sovamesh-host:rev-<sha12>` and
+  `sovamesh-plain:rev-<sha12>`; nodes not named stay on the common build of `--rev <rev>`/HEAD. Node
+  revs persist in `STATE/lab.json`; `--rev a=` puts a back on the common build. Always `git archive`,
+  never `--dirty`. `swap <node> <rev|default>` updates one running node the way an update does: same
+  volumes (sessions, peers.json, tailnet identity), a new container, chats in it gone. A commit's
+  images are built once; `--build` rebuilds them after a change to `host/`. `lab status` and `lab e2e`
+  print one "built from:" group per build. On the public gateway, swap recreates the public front too.
 - `down` stops and removes the containers and keeps the volumes. `reset` wipes every lab volume,
   the Headscale DB, the pre-auth key and the CAs, then runs `up`. `destroy` also removes the
   network, the built images (`sovamesh-host:lab`, `sovamesh-plain:lab`) and the state dir.

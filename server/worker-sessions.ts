@@ -134,6 +134,19 @@ export interface WorkerSessionOptions {
   live?: () => RawLiveRecord[];
 }
 
+export interface WorkerParents {
+  /**
+   * The session that runs worker `path`: a live record that lists it among its workers (that record's own session),
+   * else a session file whose completion message names it. Null when none is known.
+   */
+  parentOf(path: string): string | null;
+  /**
+   * Who runs worker `path` and the worker's name there: the parentOf rule, with the name from that live record's
+   * `presence.workers[].name` or that file's completion heading. Null when no parent is known.
+   */
+  workerOf(path: string): { parent: string; name?: string } | null;
+}
+
 export class WorkerSessions {
   readonly entries = new Map<string, ScanEntry>();
   /** Total bytes read from disk, for tests and measurement. */
@@ -250,11 +263,11 @@ export class WorkerSessions {
   }
 
   /**
-   * The session that runs worker `path`: a live record that lists it among its workers (that record's own session),
-   * else a session file whose completion message names it. Null when none is known. Reads only what the last refresh
-   * scanned and the live records: no file is read here.
+   * Who runs each worker, read once from what the last refresh scanned and the live records: no file
+   * is read here. Take one per pass and ask it for every row: reading the live records and resolving
+   * every ref per row is quadratic in the sessions, and that loop blocks the server.
    */
-  parentOf(path: string): string | null {
+  parents(): WorkerParents {
     const listed = new Set(this.entries.keys());
     const byId = new Map([...listed].map((p) => [this.idOf(p), p] as const));
     let live: RawLiveRecord[] = [];
@@ -263,41 +276,57 @@ export class WorkerSessions {
     } catch {
       // unreadable live dir: the files' own records still stand
     }
-    for (const r of live) if (r.sessionFile && r.sessionFile !== path && liveWorkerRefs([r]).some((ref) => resolveRef(ref, listed, byId) === path)) return r.sessionFile;
-    for (const [p, e] of this.entries) if (p !== path && e.refs.some((ref) => resolveRef(ref, listed, byId) === path)) return p;
-    return null;
+    // Each map keeps the first parent found: live records and files are walked in the order they come.
+    const byLive = new Map<string, string>();
+    const liveNames = new Map<string, string>();
+    for (const r of live) {
+      if (!r.sessionFile) continue;
+      for (const ref of liveWorkerRefs([r])) {
+        const worker = resolveRef(ref, listed, byId);
+        if (worker && worker !== r.sessionFile && !byLive.has(worker)) byLive.set(worker, r.sessionFile);
+      }
+      const workers = r.rec?.presence?.workers;
+      if (!Array.isArray(workers)) continue;
+      for (const w of workers) {
+        if (!w || typeof w !== "object" || !nonEmpty((w as { name?: unknown }).name)) continue;
+        const ref = nonEmpty(w.sessionFile) && isAbsolute(w.sessionFile) ? sessionPathShape(w.sessionFile) : nonEmpty(w.sessionId) ? w.sessionId.trim() : null;
+        if (!ref) continue;
+        const canon = ref.includes("/") ? canonicalPath(ref) : null;
+        const worker = canon ? (listed.has(canon) ? canon : undefined) : byId.get(ref);
+        if (worker) liveNames.set(`${r.sessionFile}\0${worker}`, String((w as { name: string }).name).trim());
+      }
+    }
+    const byFile = new Map<string, string>();
+    for (const [p, e] of this.entries) {
+      for (const ref of e.refs) {
+        const worker = resolveRef(ref, listed, byId);
+        if (worker && worker !== p && !byFile.has(worker)) byFile.set(worker, p);
+      }
+    }
+    const parentOf = (path: string) => byLive.get(path) ?? byFile.get(path) ?? null;
+    return {
+      parentOf,
+      workerOf: (path) => {
+        const parent = parentOf(path);
+        if (!parent) return null;
+        let name = liveNames.get(`${parent}\0${path}`);
+        if (!name) {
+          const e = this.entries.get(parent);
+          for (const [ref, n] of Object.entries(e?.names ?? {})) if (resolveRef(ref, listed, byId) === path) name = n;
+        }
+        return { parent, ...(name ? { name } : {}) };
+      },
+    };
   }
 
-  /**
-   * Who runs worker `path` and the worker's name there: the parentOf rule, with the name from that live record's
-   * `presence.workers[].name` or that file's completion heading. Null when no parent is known.
-   */
+  /** One worker's parent. For a whole listing, `parents()` once. */
+  parentOf(path: string): string | null {
+    return this.parents().parentOf(path);
+  }
+
+  /** One worker's parent and name. For a whole listing, `parents()` once. */
   workerOf(path: string): { parent: string; name?: string } | null {
-    const parent = this.parentOf(path);
-    if (!parent) return null;
-    const listed = new Set(this.entries.keys());
-    const byId = new Map([...listed].map((p) => [this.idOf(p), p] as const));
-    let name: string | undefined;
-    try {
-      for (const r of this.live()) {
-        if (r.sessionFile !== parent) continue;
-        const workers = r.rec?.presence?.workers;
-        if (!Array.isArray(workers)) continue;
-        for (const w of workers) {
-          if (!w || typeof w !== "object") continue;
-          const ref = nonEmpty(w.sessionFile) && isAbsolute(w.sessionFile) ? sessionPathShape(w.sessionFile) : nonEmpty(w.sessionId) ? w.sessionId.trim() : null;
-          const hit = ref && (ref.includes("/") ? listed.has(canonicalPath(ref)) && canonicalPath(ref) === path : byId.get(ref) === path);
-          if (hit && nonEmpty((w as { name?: unknown }).name)) name = String((w as { name: string }).name).trim();
-        }
-      }
-    } catch {
-      // unreadable live dir: the file's own heading may still name it
-    }
-    if (!name) {
-      const e = this.entries.get(parent);
-      for (const [ref, n] of Object.entries(e?.names ?? {})) if (resolveRef(ref, listed, byId) === path) name = n;
-    }
-    return { parent, ...(name ? { name } : {}) };
+    return this.parents().workerOf(path);
   }
 
   /** One file's flag, for a single-summary read: scans just that file and resolves against the

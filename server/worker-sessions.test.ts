@@ -261,6 +261,75 @@ test("parentOf: the session that runs a worker, from a live record listing it or
   assert.equal(ws.parentOf(owner.path), null);
 });
 
+test("parents: a live record beats a file, the first of each wins, and no session is its own parent", async () => {
+  const worker = session([marker()]);
+  const firstFile = session([complete(header3(worker.path))]);
+  const secondFile = session([complete(header3(worker.path))]);
+  const firstLive = session();
+  const secondLive = session();
+  const lists = (sessionFile: string) => ({ sessionFile, rec: { presence: { workers: [{ id: "ag_01", sessionFile: worker.path }] } } });
+  const files = [worker.path, firstFile.path, secondFile.path, firstLive.path, secondLive.path];
+
+  const noneLive = scanner();
+  // refresh scans side by side: scanned one at a time, the order of the files is the order they end up in.
+  await noneLive.scan(firstFile.path);
+  await noneLive.scan(secondFile.path);
+  await noneLive.refresh(files);
+  assert.equal(noneLive.parents().parentOf(worker.path), firstFile.path, "no live record: the first file");
+
+  const live = scanner(() => [lists(firstLive.path), lists(secondLive.path)]);
+  await live.refresh(files);
+  assert.equal(live.parents().parentOf(worker.path), firstLive.path, "the first live record, over any file");
+
+  const self = session([marker()]);
+  const selfFile = session([complete(header3(self.path))]);
+  const skipsItself = scanner(() => [lists(self.path), { sessionFile: selfFile.path, rec: { presence: { workers: [{ id: "ag_01", sessionFile: self.path }] } } }]);
+  await skipsItself.refresh([self.path, selfFile.path, worker.path]);
+  assert.equal(skipsItself.parents().parentOf(self.path), selfFile.path, "a record listing itself is passed over for the next");
+});
+
+test("parents: the parent's live name wins, its last entry if several; else the file's heading", async () => {
+  const worker = session([marker()]);
+  const parent = session([complete(`### ag_01 (from the heading) — done\nSession: ${worker.path}\nModel: m\nreport`)]);
+  const other = session();
+  const entry = (name: string) => ({ id: "ag_01", name, sessionFile: worker.path });
+  const files = [worker.path, parent.path, other.path];
+
+  const named = scanner(() => [{ sessionFile: parent.path, rec: { presence: { workers: [entry("first"), entry("last")] } } }]);
+  await named.refresh(files);
+  assert.deepEqual(named.parents().workerOf(worker.path), { parent: parent.path, name: "last" });
+
+  // Named only by a record that isn't the parent: that name is not the parent's to give.
+  const elsewhere = scanner(() => [
+    { sessionFile: parent.path, rec: { presence: { workers: [{ id: "ag_01", sessionFile: worker.path }] } } },
+    { sessionFile: other.path, rec: { presence: { workers: [entry("another chat's name")] } } },
+  ]);
+  await elsewhere.refresh(files);
+  assert.deepEqual(elsewhere.parents().workerOf(worker.path), { parent: parent.path, name: "from the heading" });
+});
+
+test("parents: one reading answers every row, and each new one sees the live records as they are", async () => {
+  const workers = Array.from({ length: 20 }, () => session([marker()]));
+  const first = session();
+  const second = session();
+  let reads = 0;
+  let runner = first.path;
+  const ws = scanner(() => {
+    reads++;
+    return [{ sessionFile: runner, rec: { presence: { workers: workers.map((w, i) => ({ id: `ag_${i}`, sessionFile: w.path })) } } }];
+  });
+  await ws.refresh([...workers.map((w) => w.path), first.path, second.path]);
+
+  reads = 0;
+  const parents = ws.parents();
+  for (const w of workers) assert.equal(parents.workerOf(w.path)?.parent, first.path);
+  assert.equal(reads, 1);
+
+  runner = second.path;
+  assert.equal(parents.parentOf(workers[0]!.path), first.path, "a reading stands for its pass");
+  assert.equal(ws.parentOf(workers[0]!.path), second.path, "the next reading doesn't");
+});
+
 test("workerOf: the chat that runs a worker and the worker's name, from a completion heading or a live record", async () => {
   const { completionHeaderName } = await import("./worker-sessions");
   assert.equal(completionHeaderName("### ag_01 (spec writer) — done\nSession: x\nModel: m"), "spec writer");

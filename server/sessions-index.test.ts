@@ -365,6 +365,29 @@ test("workerSession: a file its owner names as a worker is flagged in the list a
   assert.equal((await listSessions()).find((s) => s.id === ID_W)?.workerSession, undefined);
 });
 
+test("workerOf: every worker row of a listing and a single summary name its parent; a live record beats a file", async () => {
+  const ID_DONE = "01234567-89ab-7cde-8f01-2345678900c1";
+  const ID_RUN = "01234567-89ab-7cde-8f01-2345678900c2";
+  const ID_FILE = "01234567-89ab-7cde-8f01-2345678900c3";
+  const ID_LIVE = "01234567-89ab-7cde-8f01-2345678900c4";
+  const done = session(ID_DONE, "finished worker");
+  const running = session(ID_RUN, "running worker");
+  const fileParent = session(ID_FILE, "the chat that names both");
+  const liveParent = session(ID_LIVE, "the chat running one");
+  const heading = (id: string) => JSON.stringify({ type: "custom_message", customType: "subagent-complete", display: true, content: `### ag_01 (from the heading) — done\nSession: ${id}\nModel: m\nreport` });
+  appendFileSync(fileParent, `${heading(ID_DONE)}\n${heading(ID_RUN)}\n`);
+  const record = join(liveDir, "p-worker-parents.json");
+  writeFileSync(record, JSON.stringify({ session: { pid: otherPid, sessionFile: liveParent }, presence: { workers: [{ id: "ag_02", name: "from the record", sessionFile: running }] } }));
+  after(() => rmSync(record, { force: true }));
+  sessionsChanged();
+
+  const byId = new Map((await listSessions()).map((s) => [s.id, s]));
+  assert.deepEqual(byId.get(ID_DONE)?.workerOf, { id: ID_FILE, path: canonicalPath(fileParent), name: "from the heading" });
+  assert.deepEqual(byId.get(ID_RUN)?.workerOf, { id: ID_LIVE, path: canonicalPath(liveParent), name: "from the record" });
+  assert.equal(byId.get(ID_FILE)?.workerOf, undefined);
+  assert.deepEqual((await getSessionSummary(canonicalPath(running)))?.workerOf, byId.get(ID_RUN)?.workerOf);
+});
+
 test("listing reuse (§app.session-list/listing-reuse): callers share a build for a second; this server's own writes are never missed", async () => {
   const ID_R = "01234567-89ab-7cde-8f01-2345678900b1";
   const ID_S = "01234567-89ab-7cde-8f01-2345678900b2";

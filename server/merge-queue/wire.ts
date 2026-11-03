@@ -81,7 +81,9 @@ export function noteQueueView(view: Pick<MergeQueueView, "root" | "at" | "projec
   }
   const digest = JSON.stringify([...byBranch].sort(([a], [b]) => a.localeCompare(b)));
   latestViews.set(key, { at: view.at, byBranch, digest });
-  if (prev && prev.digest !== digest) sessionsChanged();
+  // A change re-lists; so does a queue's first view after a start when it holds entries: the rows' background reads
+  // may be up to an idle cycle old, and the listing joins this view at once.
+  if (prev ? prev.digest !== digest : byBranch.size > 0) sessionsChanged();
 }
 
 /** A branch's newest entry in its queue's newest view: undefined when it has none there, null when no view of that

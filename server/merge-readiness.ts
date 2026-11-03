@@ -687,7 +687,7 @@ async function treeFacts(t: TrackedWorktree, dirs: readonly string[]): Promise<T
 /** Another session's file records this tree merged: that session's own record of the merge it
     made, which outlives the `git branch -d` of its clean-up (as far as readiness has read it). */
 function mergedElsewhere(t: TrackedWorktree): boolean {
-  for (const c of cache.values()) if (c.facts?.trees.some((o) => o.status === "merged" && o.path === t.path && o.branch === t.branch)) return true;
+  for (const c of cache.values()) if (!excluded(c.row) && c.facts?.trees.some((o) => o.status === "merged" && o.path === t.path && o.branch === t.branch)) return true;
   return false;
 }
 
@@ -852,7 +852,7 @@ export function joinBranches(readings: readonly BranchReading[], now: ReadinessD
  * queue's own push, not at the next read. No Git, no file read: map lookups only.
  */
 export function branchesOverlay(s: SessionSummary): SessionBranchRow[] | undefined {
-  if (excluded(s)) return undefined;
+  if (!branchesCovered(s)) return undefined;
   const b = cache.get(s.path)?.branches;
   return b?.length ? joinBranches(b, deps.queueNow) : undefined;
 }
@@ -962,7 +962,8 @@ export function trackedWorktrees(): { version: number; each(): Iterable<[session
   return {
     version: cache.version,
     *each() {
-      for (const [path, c] of cache) if (c.facts?.trees.length) yield [path, c.facts.trees] as [string, readonly TrackedWorktree[]];
+      // Only sessions readiness covers: a worker's or a baton's read (for its branches) never makes it an owner.
+      for (const [path, c] of cache) if (c.facts?.trees.length && !excluded(c.row)) yield [path, c.facts.trees] as [string, readonly TrackedWorktree[]];
     },
   };
 }
@@ -1008,6 +1009,10 @@ const parked = (s: SessionSummary) => !!s.archived && !s.live && !runningNow(s);
 
 /** Sessions readiness never covers. */
 const excluded = (s: SessionSummary) => !!(s.workerSession || s.overseer || s.projectOverseer || s.baton || s.target);
+/** Sessions whose list row carries its branches (SessionSummary.branches): every one whose chat shows the worktrees
+    control, i.e. all but the Overseers (ChatView.tsx). Readiness itself still covers fewer (`excluded`): a worker's,
+    a baton's or a target's background read computes its branches only. */
+const branchesCovered = (s: SessionSummary) => !(s.overseer || s.projectOverseer);
 
 /**
  * The session's readiness as it will read once its turn ends: its file read now, with nothing running
@@ -1053,7 +1058,8 @@ async function refresh(input: RefreshInput): Promise<void> {
   // Taken before Git is read: a commit landing during the read is never certified as seen.
   const before = facts ? stampsOf(facts.trees.filter((t) => t.status !== "dropped" && t.session === s.id).map((t) => t.path)) : undefined;
   const watch = facts ? watchStamp(facts, s.id) : undefined;
-  const value = facts ? await computeReadiness(s, facts, current, fresh) : undefined;
+  // Readiness only for the sessions it covers; the others' reads are for their branches alone.
+  const value = facts && !excluded(s) ? await computeReadiness(s, facts, current, fresh) : undefined;
   if (!current()) return;
   const branches = facts ? await computeBranches(s, facts) : undefined;
   if (!current()) return;
@@ -1198,14 +1204,16 @@ function drain(): Promise<void> {
  * its own. A file that never wrote a `worktrees` entry is searched again only when it changed.
  */
 export function readinessOverlay(s: SessionSummary): SessionReadiness | undefined {
-  if (excluded(s)) return undefined;
+  // A session readiness doesn't cover still has its branches read (branchesOverlay), never its readiness.
+  if (!branchesCovered(s)) return undefined;
+  const shown = (v: SessionReadiness | undefined) => (excluded(s) ? undefined : v);
   const hit = cache.get(s.path);
   const input = fileInput(s);
   const flight = active.get(s.path);
   if (flight) {
     if (sameInput(flight, input)) queued.delete(s.path);
     else queued.set(s.path, input);
-    return hit?.value;
+    return shown(hit?.value);
   }
   // An idle answer stands IDLE_TTL_MS while its trees' stamps stay put.
   const idleHit = !!hit?.stamps && !runningNow(s);
@@ -1217,7 +1225,7 @@ export function readinessOverlay(s: SessionSummary): SessionReadiness | undefine
     queued.set(s.path, input);
     void drain();
   }
-  return hit?.value;
+  return shown(hit?.value);
 }
 
 /** Every listed session's readiness, and the follow-up store kept to listed sessions. */

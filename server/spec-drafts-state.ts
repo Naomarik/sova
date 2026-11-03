@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto";
-import { existsSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { existsSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { draftOfficial } from "../pi-config/extensions/spec/core/official.mjs";
 
@@ -88,18 +89,41 @@ export function landedReceiptOf(draftDir: string): LandedReceipt | null {
   return { commit: l.commit, target: l.target, hash: l.hash, at: typeof l.at === "string" ? l.at : "", by: typeof l.by === "string" ? l.by : "" };
 }
 
+/** The draft tool's own writer lock (`<drafts>/.lock`, its token, taken with an exclusive create): `fn` runs holding it,
+ *  so a chat's `evidence` or `land` never interleaves with it. A lock held past `waitMs` is another writer's, or a dead
+ *  one's for `recover`: never taken over, `busy` instead. */
+export async function withDraftsLock<T>(draftsDir: string, fn: () => T, waitMs = 3000): Promise<{ busy: true; held: string } | { busy: false; value: T }> {
+  const lock = join(draftsDir, ".lock");
+  const token = `${process.pid} ${hostname()} ${randomBytes(8).toString("hex")} ${new Date().toISOString()}`;
+  const end = Date.now() + waitMs;
+  for (;;) {
+    try {
+      writeFileSync(lock, token, { flag: "wx" });
+      break;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
+      if (Date.now() >= end) return { busy: true, held: readOr(lock)?.toString("utf8").trim() ?? "?" };
+      await new Promise((done) => setTimeout(done, 100));
+    }
+  }
+  try {
+    return { busy: false, value: fn() };
+  } finally {
+    if (readOr(lock)?.toString("utf8") === token) rmSync(lock, { force: true });
+  }
+}
+
 /**
- * Write a landing receipt onto the draft in `draftDir` (atomically, a temp file renamed over `draft.json`), with the
- * spec tool's own promotion entries `promotions` appended when it doesn't hold them yet. Nothing else in the draft
- * changes. → whether `draft.json` changed (false: already so, or not a readable draft).
+ * Write what a landing leaves on the draft in `draftDir` (atomically, a temp file renamed over `draft.json`; the caller
+ * holds withDraftsLock): the spec tool's promotion entries `promotions` not there yet, and the `receipt` when given (a
+ * target landing; a landing whose docs commit is in the folder needs the promotions alone, official.mjs's own rule).
+ * Nothing else in the draft changes. → whether `draft.json` changed (false: already so, or not a readable draft).
  */
-export function writeLandedReceipt(draftDir: string, receipt: LandedReceipt, promotions: readonly unknown[] = []): boolean {
+export function writeLandedReceipt(draftDir: string, receipt: LandedReceipt | null, promotions: readonly unknown[] = []): boolean {
   const file = join(draftDir, "draft.json");
-  let raw: string;
   let d: Record<string, unknown>;
   try {
-    raw = readFileSync(file, "utf8");
-    d = JSON.parse(raw);
+    d = JSON.parse(readFileSync(file, "utf8"));
   } catch {
     return false;
   }
@@ -107,12 +131,10 @@ export function writeLandedReceipt(draftDir: string, receipt: LandedReceipt, pro
   const had = Array.isArray(d.promotions) ? (d.promotions as unknown[]) : [];
   const seen = new Set(had.map((x) => JSON.stringify(x)));
   const more = promotions.filter((x) => !seen.has(JSON.stringify(x)));
-  const same = (() => {
-    const l = landedReceiptOf(draftDir);
-    return !!l && l.commit === receipt.commit && l.target === receipt.target && l.hash === receipt.hash;
-  })();
+  const l = landedReceiptOf(draftDir);
+  const same = !receipt || (!!l && l.commit === receipt.commit && l.target === receipt.target && l.hash === receipt.hash);
   if (same && !more.length) return false;
-  const next = { ...d, ...(Array.isArray(d.promotions) || more.length ? { promotions: [...had, ...more] } : {}), landed: same ? d.landed : receipt };
+  const next = { ...d, ...(more.length ? { promotions: [...had, ...more] } : {}), ...(same ? {} : { landed: receipt }) };
   const tmp = join(draftDir, `.draft.json.${process.pid}.${Date.now()}.tmp`);
   writeFileSync(tmp, JSON.stringify(next, null, 2) + "\n");
   renameSync(tmp, file);

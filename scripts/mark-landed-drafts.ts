@@ -40,7 +40,7 @@ if (!worktree || !commit) {
   process.exit(2);
 }
 try {
-  const r = backfillLandedDrafts({ worktree, commit, target, names, write });
+  const r = await backfillLandedDrafts({ worktree, commit, target, names, write });
   for (const row of r.rows) console.log(`${row.draft}: ${row.state === "marked" && !write ? "would mark (dry run)" : row.state}${row.notOfficial?.length ? ` (not official at ${r.commit.slice(0, 9)}: ${row.notOfficial.join(", ")})` : ""}`);
   if (!r.rows.length) console.log("no drafts");
   if (!write && r.rows.some((x) => x.state === "marked")) console.log("dry run: add --write to write the receipts");

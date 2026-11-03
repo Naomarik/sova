@@ -711,7 +711,7 @@ label a person reads says "sessions pane".
 The top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
 whose branch is not merged (§chat.alignment/session-mark), a baton hand-off (the baton is with you, or a person needs
-their link, §app.baton/needs-you), a tour recording waiting for you to sign in (§app.tours/sites), and an option card waiting for your answer, such as Land It (§chat.offers/card); a roster proposal stays a decide item. Then, as a
+their link, §app.baton/needs-you), a tour recording waiting for you to sign in (§app.tours/sites), and an option card waiting for your answer (§chat.offers/card); a roster proposal stays a decide item. Then, as a
 **softer tier** under the blockers, the turn card's guesses (§app.overseer/attention-digest, soft
 items): a reply that waits on you (§app.decisions/asks-user) and a reply that says it is done
 without checking. A team gone quiet (§app.decisions/team-stall) is not here: it is a quiet mark
@@ -2541,10 +2541,10 @@ session feed's comparison, the attention scan, the Overseer, the profile, schedu
 and `GET /api/sessions` all read the same list then. A change made outside this server (a TUI writing
 a session, another server's stores) therefore reaches a listing up to 1 second later.
 
-The merge board's rebuild and the schedule's discovery, which run on timers, read the session
+The schedule's discovery, which runs on a timer, reads the session
 feed's last list instead while a feed is connected and nothing it watches has changed since that
 list was built (§app.decisions/push), a list at most two minutes old (the feed's safety net
-renews it every minute); otherwise they list as above. So an idle
+renews it every minute); otherwise it lists as above. So an idle
 server with windows open builds the list only for the feed's safety net.
 
 **Only what changed is read again.** The session feed's comparisons don't read every file. The

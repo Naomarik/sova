@@ -37,8 +37,10 @@ once the first message is sent, and kept by the session itself. The UI says
   no first message (so it sets only model, effort, subagents, mode or minor modes) is
   capability-neutral.
 - **Where profiles come from** is §chat.profiles/projects: **Default** in code (no profile, nothing
-  changed: the picker's **My settings**), the **Built in** files Sova ships (none today), **Yours**,
-  and **This project**'s files. Sova writes only Yours, and only when
+  changed: the picker's **My settings**), the **Built in** files Sova ships (none a person can pick today), **Yours**,
+  and **This project**'s files. Sova also ships two **system** profiles that only Sova itself
+  starts: **Merge thread** (§chat.merge-queue/thread) and **Merge reviewer**
+  (§app.merge-queue/review). Sova writes only Yours, and only when
   you save one (§chat.profiles/picker's Save Current As Profile).
 - **The session keeps its own copy.** A session's profile is its invisible `custom` entry
   `customType: "sova-profile"`, data `{v: 1, profile: {…the whole profile…, source, project?,
@@ -71,8 +73,8 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
   caption giving way first (its mode icons folding, then its model name cut, as **A card** says),
   the label keeping up to about two thirds of the card before it is cut. A card that can't be used keeps its whole reason, on its own line below. **My settings** comes
   first, a card under no label; then **Yours**, then **This project ({name})**, each under its own
-  label (a profile file Sova itself ships, of which there are none today, would follow under **Built
-  in**); hidden profiles are left out, and My settings can't be hidden. A last card, **Custom…**, opens the capability
+  label (a profile file Sova itself ships for people to pick, of which there are none today, would
+  follow under **Built in**); the system profiles are never listed, and hidden profiles are left out, and My settings can't be hidden. A last card, **Custom…**, opens the capability
   board. With more than 9 cards, a **Find a profile** field above the grid filters them by name.
   While a profile file here can't be read, a muted line under the grid says "{n} profile files have
   mistakes. See Manage Profiles." ("1 profile file has mistakes.") **Manage Profiles** opens
@@ -357,7 +359,13 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   filesystem call, as for playbooks (§chat.playbooks/the-project-listing).
 - **Four sources.** **Default** is in code and changes nothing (the picker's My settings). **Built
   in**: one JSON file per profile in `profiles/` at the Sova repo root; Sova ships none today, and a
-  missing folder lists none. **Yours**:
+  missing folder lists none. **System** profiles sit apart, in `profiles/system/`:
+  `merge-thread` and `merge-reviewer`. They are never listed: not in a profile picker, not in
+  Settings → Profiles, and not among the profiles a chat, the Overseer or a team may start a
+  session on. A bare id never finds them; only Sova's own explicit pick (`{source: "sova", id}`)
+  does, when it starts the merge queue's thread or reviewer. The listed built-ins stay exactly
+  Default. The merge thread has no web, workers or timers and grants no session powers. The
+  reviewer also has no edit tools and no worktrees. **Yours**:
   `<state root>/session-profiles.json` `{version: 1, profiles: [...]}`. **This project**:
   `<project root>/.sova/profiles/<id>.json`, one profile per file, whose `id` must equal the file's
   name.
@@ -423,5 +431,5 @@ from the composer (§chat/playbooks) or on a schedule (§chat/schedules).
   time) and the commit its own checkout had then (`git rev-parse HEAD` in the server's folder, read
   once at start; `null` when that fails), the runtime it runs on (§app.server-runtime/health), and
   how many session entries its pi can't read the server has met since it started, a number only
-  (§app.harness/unknown-entries). So a merge round checks that the live server runs
-  master's commit with one request.
+  (§app.harness/unknown-entries). So one request tells whether the live server runs
+  master's commit.

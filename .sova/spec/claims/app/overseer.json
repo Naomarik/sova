@@ -161,43 +161,6 @@
       "source": "pi-session:01a16fb6-1014-7539-b91a-750b94daff7d#6f6f4e53"
     }
   },
-  "§app.overseer/card-land": {
-    "kind": "behavior",
-    "authority": "accepted",
-    "evidence": "verified",
-    "code": [
-      "server/overseer-confirm.ts",
-      "shared/protocol.ts",
-      "shared/overseer-card.ts",
-      "server/overseer.ts",
-      "server/overseer-tools.ts",
-      "src/components/OverseerCards.tsx",
-      "server/overseer-prompt.md",
-      "pi-config/extensions/worktrees/landing.ts",
-      "server/schedule-routes.ts",
-      "server/schedules.ts",
-      ".sova/playbooks/merge-round/scripts/round.mjs",
-      "server/merge-round-rules.test.ts",
-      "server/overseer-land.ts",
-      "server/overseer-land.test.ts",
-      "server/overseer-land-card.test.ts",
-      "server/overseer-card-tool.ts"
-    ],
-    "requires": [
-      "§app.overseer/confirm",
-      "§app.overseer/org-people-facing",
-      "§app.overseer/caps",
-      "§chat.worktrees/ready-to-land",
-      "§chat.worktrees/landing-answers",
-      "§chat.schedules/merge-ready",
-      "§chat.merge-round/driver"
-    ],
-    "agreed": {
-      "by": "user",
-      "at": "2026-10-27T09:33Z",
-      "source": "pi-session:01a16fb6-1014-7539-b91a-750b94daff7d#6f6f4e53"
-    }
-  },
   "§app.overseer/card-partial-apply": {
     "kind": "behavior",
     "authority": "accepted",

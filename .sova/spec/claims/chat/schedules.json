@@ -33,7 +33,8 @@
       "server/app.ts",
       "shared/schedules.ts",
       "shared/wake.ts",
-      "server/schedules.test.ts"
+      "server/schedules.test.ts",
+      "shared/playbook-delivery.test.ts"
     ],
     "requires": [
       "§chat.profiles/singleton",
@@ -56,7 +57,10 @@
       "server/playbooks.ts",
       "server/schedules.ts",
       "shared/schedules.test.ts",
-      "server/playbooks.test.ts"
+      "server/playbooks.test.ts",
+      "server/schedules-carry.test.ts",
+      "shared/automations.test.ts",
+      "shared/playbook-delivery.test.ts"
     ],
     "requires": [
       "§chat.playbooks/where-playbooks-come-from",
@@ -99,29 +103,6 @@
       "at": "2026-10-10T10:39Z"
     }
   },
-  "§chat.schedules/merge-ready": {
-    "kind": "behavior",
-    "authority": "accepted",
-    "evidence": "verified",
-    "code": [
-      "shared/schedules.ts",
-      "server/schedules.ts",
-      "server/schedule-routes.ts",
-      "shared/schedules.test.ts",
-      "server/schedules.test.ts",
-      "server/schedules-carry.test.ts",
-      "pi-config/extensions/worktrees/landing.ts"
-    ],
-    "requires": [
-      "§chat.schedules/fire",
-      "§chat.schedules/limits"
-    ],
-    "agreed": {
-      "by": "user",
-      "at": "2026-10-27T09:33Z",
-      "source": "pi-session:01a16fb6-1014-7539-b91a-750b94daff7d#6f6f4e53"
-    }
-  },
   "§chat.schedules/where-shown": {
     "kind": "behavior",
     "authority": "accepted",
@@ -161,8 +142,7 @@
     "code": [
       "server/schedules.ts",
       "shared/schedules.ts",
-      "server/schedule-routes.ts",
-      ".sova/playbooks/merge-round/PLAYBOOK.md"
+      "server/schedule-routes.ts"
     ],
     "notOwned": [
       "§chat/playbooks",

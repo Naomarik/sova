@@ -246,6 +246,13 @@ refused answers 409 with "The merge was refused: {its reason}". With no run prop
 409: "No playbook run is proposed." It answers the registry, read again. The Software card shows
 **Merge Branch** while a run is proposed, beside the banner's and the Needs-you row's; each says, on
 a refusal, why under the button.
+Once the project's merge queue is set up (§app/merge-queue), each of these buttons reads **Land**
+and approves the run's branch in the queue (§app.merge-queue/approve) at the tip its proposal was
+read at, instead of merging it, and answers "queued", not "merged"; and the banner reads "Read it, then land it: it's checked on {target} first.". While the branch
+is in the queue, its queue chip takes the button's place. The queue's refusals show under the
+button the same way. A project whose queue isn't set up keeps Merge Branch as above, and "Read it,
+then merge it into {target}.", until it is onboarded (§app.merge-queue/setup). A project whose
+definition doesn't parse counts as set up and shows Land.
 
 ## §app.project-runtime/run-progress — The run as it goes
 

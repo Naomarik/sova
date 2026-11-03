@@ -7,7 +7,8 @@ from that declaration as **instances**, one per checkout of the project, each wi
 ports and data. The primary user is a coding agent: each worktree gets its own running copy of the
 project, isolated from the others and from the main checkout, without hand-rolled `nohup` loops. One
 engine in the server implements a closed set of **verbs** (create, up, down, apply, status, logs,
-reset, teardown, doctor, conform, test, share, revoke) the same way for every project, and every caller gets the same
+reset, teardown, doctor, conform, test, share, revoke, and the merge queue's `merge.*` verbs,
+§app.project-services/merge-verbs) the same way for every project, and every caller gets the same
 JSON from it: the REST routes, the `sova-project` CLI, the coding session's `project_verbs` tool and
 the Overseers' `sova_project_verbs` tool.
 
@@ -30,7 +31,10 @@ a dangling or cyclic `requires`, or an unknown template variable makes the whole
 (`invalid-definition`, with the JSON path of the first problem), and nothing runs from it. No
 shell string is accepted anywhere: every command is an argv array of non-empty strings.
 
-- **`services`** (at least one), each exactly one of:
+- **`services`** (optional: absent or empty for a project with nothing to run, such as a library or
+  a project the merge queue only checks; then `up` runs setup and starts nothing, `down` does
+  nothing, and `test` runs as usual; whatever names a service, `test.requires`, `open.endpoint` or a
+  merge check's `requires`, must still name a declared one), each exactly one of:
   - `cmd`: an argv, run with `cwd` (relative to the checkout, default the checkout) and `env`
     (names `A-Z0-9_`, never one of the variables Sova sets itself, listed below; values are templates).
   - `static`: a folder of the checkout (relative, no `..` and no dot-segment) that Sova serves itself
@@ -100,6 +104,20 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   service's); `path` starts with `/` (default `/`). It exposes nothing (a copy's entry is a port the
   copy already listens on), so it is outside the definition's hash; conformance checks that it answers
   (§app.project-services/conform), and the Branches tab opens it (§app.project-services/services-ui).
+- **`merge`** (optional): how the project's branches land through its merge queue
+  (§app/merge-queue), outside the definition's hash. `target` (a branch; default the main
+  checkout's branch), `push` (boolean; absent: push when the repository has an `origin` remote),
+  `checks`: 1 to 30 checks `{id, label, run: argv, timeout?, rerun?, requires?, optional?}` in the
+  order they run (`optional: true`: not required; it runs only when the merge thread picks it) (ids unique; `run` a template argv that may also read `${merge.base}`, `${merge.tip}` and
+  `${merge.target}`; `rerun: true` when its failures name test files and `run` plus those files
+  reruns only them; `requires` the services started in the merge copy first), or `"none"` (the
+  project has no automated tests; its landings say "No checks declared"); `install` (optional,
+  `{run: argv, inputs: [checkout files], timeout?}`: run in the merge copy when a branch changes
+  one of its `inputs`, as an offline install); and `review` (optional): the folder of the project's
+  review kit, relative to the checkout (§app.merge-queue/review). With no `merge` section the queue
+  uses `test` (§app.merge-queue/checks); with neither, the project's queue isn't set up
+  (§app.merge-queue/setup). A check runs with `SOVA_VERB=merge`, `SOVA_STEP` (its id), `SOVA_OUT`,
+  `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths).
 - **`sources`** (optional): the checkout files the definition was written from (`bb.edn`,
   `package.json`, a compose file, `.mise.toml`: relative, no `..`, dot-files allowed, at most 50),
   whose change at HEAD is the project's drift (§app.project-services/facts). Each service may also
@@ -183,7 +201,8 @@ ready|degraded|failed|external, unit, pid, ports, ready?, detail?, rssBytes?}`),
 createdBy, url?}`, §app.project-services/share: share's link, the links revoke ended, and the active
 links of the instance status reads; empty otherwise), then the verb's own key (`instances` for status of a whole
 project, `lines` for logs and test, `checks` for doctor and status (status: the supervisor's alone), `conform` for conform,
-`tests` for test, `deploy` for the deploy verbs, §app.project-services/deploy), then `error?` (`{code,
+`tests` for test, `deploy` for the deploy verbs, §app.project-services/deploy, `merge` for the
+merge verbs, §app.project-services/merge-verbs), then `error?` (`{code,
 message, step?, service?}`), `defHash` and `at`. Arrays follow declaration order.
 Running a verb again with the same inputs gives the same object apart from `at`, `ms`, pids,
 `rssBytes` and a new generation.
@@ -357,7 +376,8 @@ optional (at most 50 selectors, each as the contract's `smoke` ones; anything el
 test command") and nothing changes. Otherwise test holds the instance's lock (§app.project-services/lock),
 brings up the services `test.requires` names, with what they require, as up does
 (§app.project-services/up, on-demand ones included) and waits for their readiness, then runs `run`
-with the selectors appended as its last arguments (none: the whole suite), in the instance's
+with the selectors appended as its last arguments (none: whatever the command runs with no
+arguments, which for Sova's own runner is the unit tier), in the instance's
 checkout, as one waited-for unit `sova-hook-<state hash>-<instance>-test` with the instance's env
 plus `SOVA_VERB=test`, `SOVA_TEST_SELECT` (the selectors as a JSON array) and `SOVA_OUT`. At its
 timeout, or when the caller aborts (a cancelled tool call), the unit is killed whole. It runs
@@ -606,7 +626,48 @@ runs in a turn the user started (refused in any other run, as its every act); a 
 no act, never held and taking no lock. Sova itself, on no one's request (the `system` caller: today
 only onMerge, §app.project-services/on-merge), runs `apply` and the reads, nothing else: any other
 verb is `forbidden`, and the self-host rule refuses it like any caller but the operator. The deploy
-verbs have callers of their own (§app.project-services/deploy-callers).
+verbs have callers of their own (§app.project-services/deploy-callers), and so do the merge verbs
+(§app.project-services/merge-verbs).
+
+## §app.project-services/merge-verbs — The merge verbs
+
+The merge queue (§app/merge-queue) is worked through verbs beside the deploy verbs, the same way:
+the same route (`POST /api/project-services/<verb>`), the same CLI and the same tools, each answering
+the one result shape with its own `merge` key (§app.project-services/result).
+
+- **Reads**: `merge.status` (a project: the queue's view, its state and why it is paused, the
+  current run, the waiting line with estimates, what needs the user, what needs a fix, recent
+  landings with their runs, and the target's and pushed heads) and `merge.logs` (a run, optionally
+  one step and a line count).
+- **Setting it up**: `merge.setup` (a project's checks, one test command with its time and what
+  starts first, or no automated tests; a dry run tries them, and a save commits them:
+  §app.merge-queue/setup), the user's only.
+- **The user's**: `merge.add` (a branch or checkout, its commit by default the head, and the
+  options without its specs and without review: §app.merge-queue/approve), `merge.cancel` (an
+  entry), `merge.pause` and `merge.resume` (a project, with an optional why), and `merge.answer`
+  (an entry waiting for the user: `accept` a resolution, `land-anyway` over a blocking review or a failure
+  whose owner can't be told, or `send-back`).
+- **The merge thread's**: `merge.note` (an entry and at most 300 characters; empty clears it),
+  `merge.extend` (an entry, the check ids it adds and why; never removes one), `merge.resolve` (an
+  entry, its judgement, no behaviour change or behaviour differs, the files, both sides and the
+  proposal in plain words, and the commit of its resolution) and `merge.retry` (a project or entry
+  paused for the machine). Each takes an optional `note`, recorded on the entry.
+- **The review step's**: `merge.review` (a run, its verdict `ok`, `notes` or `blocking`, and the
+  reviewer's text).
+
+**Callers.**
+- The operator (the routes, the CLI, the Land and Cancel controls) calls the user's verbs (add,
+  cancel, pause, resume, answer, setup) and the reads, and may write a note. Only the operator calls the
+  user's verbs.
+- A typed "land it" reaches `merge.add` as the user's approval through `worktree land`
+  (§chat.worktrees/tool); no session can call `merge.add` as a tool.
+- The project's merge thread (§chat.merge-queue/thread) calls the reads and its own verbs (note,
+  extend, resolve, retry), for its own project only.
+- A review step's reviewer calls `merge.review` for its own run only (§app.merge-queue/review).
+- Any other chat reads its own project's queue; anything else is `forbidden`.
+
+The Land, Cancel, Pause, Resume, Accept, Send Back and Land Anyway actions are catalogue commands
+pointing at these verbs (§app/commands).
 
 ## §app.project-services/self-host — When the project is Sova itself
 
@@ -815,7 +876,9 @@ lives in `<state root>/project-services/deploy/`.
 ## §app.project-services/deploy-check — Proving a recipe offline
 
 `deploy.check {project, ref?}` proves the recipe at `ref` (default main's HEAD) without running any of
-it: in a fresh checkout of that commit that Sova cuts under its state and removes afterwards, the
+it: in a fresh checkout of that commit that Sova cuts beside the project
+(`<parent of the main checkout>/.worktrees/<repo>-deploy-<name>`, never under the state root) and
+removes afterwards, the
 recipe parses; each step's program (`${host.…}` resolved here) is executable in that checkout or on
 the PATH; each host variable it reads and each `env` credential is set on this host, by presence, its
 value never shown; an `ssh` or `tool-login` credential is left to its check at plan. It contacts no
@@ -830,7 +893,8 @@ answers a plan. The commit is the one named,
 else the tip of the target's branch. In this order, each a check `{id, ok, detail}`: the commit is on
 the target's branch (`branch`) and on that branch's upstream, read again from its git remote
 (`pushed`; never a deploy target); main's working tree has no uncommitted change (`dirty`); then, in a
-fresh checkout of the exact commit that Sova cuts under its state (never main's working tree): every
+fresh checkout of the exact commit that Sova cuts beside the project, as `deploy.check` does (never
+main's working tree, never under the state root): every
 host value the recipe reads is set (`host`); the required tests (`tests`: the smoke selection or the
 full suite, run as `test` runs them in an instance of that checkout, its setup first (`setup`), torn
 down afterwards); each credential check, and each plan step, as a unit of its own with the `env`

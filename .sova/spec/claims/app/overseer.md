@@ -636,7 +636,7 @@ sessions are left out, and the coverage line counts them as skipped.
   A merged worktree left with uncommitted files is not listed either, and is counted in the same
   way ("{n} merged worktrees with leftover files").
 - **Honest coverage.** The merge sections come from merge readiness's own last reading of each
-  session (the same answer `sova_session`'s Merge lines and the merge board read), joined with
+  session (the same answer `sova_session`'s Merge lines read), joined with
   the worktree cleanup's ledger, which marks a removal it recorded as merged as merged, and with
   the git reads above. A session Sova hasn't checked recently is checked fresh before the answer,
   or listed as not checked; it is never counted as fine. Before it answers, the roundup asks
@@ -742,8 +742,7 @@ jumps to it (§app.overseer/links).
 - **A hidden note every turn.** Every run a user message starts carries a hidden note (never in the
   thread, never the system prompt) listing each open card: id, title, lettered options, numbered
   items with their ids and names, each row's section and what its Go sends when it has them, each
-  row's choices (its own list on the row, the card's shared list once), a Ready to land row's
-  branch and commit, recommendation and any item already decided, and a line
+  row's choices (its own list on the row, the card's shared list once), recommendation and any item already decided, and a line
   telling the model to record answers with `answer` or `accept` and to drop or replace a card that
   no longer applies. An open card listing a session whose file changed after the card was raised
   carries a line "may be stale: <session id> active since <time>" for each such session, so the
@@ -756,8 +755,7 @@ jumps to it (§app.overseer/links).
   using the note; the server parses none.
 - **Items.** `items` is `{sessions?, ideas?, todos?, people?, projects?, orgs?, folders?}`, each a
   list whose entries are an id or `{id, note?, default?, choices?, section?, sends?}` (`section`
-  and `sends`, §app.overseer/card-sections), a session's in the global Overseer also `land?`
-  (§app.overseer/card-land); a person or a project also names
+  and `sends`, §app.overseer/card-sections); a person or a project also names
   its org, `{org, id, note?, default?, choices?}`, by id or exact name, as the org tools take them
   (§app.overseer/org-tools). The global Overseer's cards also take orgs attached here (`{id, note?}`,
   by id or exact name) and folders to add as projects (`{root, org?, name?, note?}`: an absolute
@@ -782,9 +780,7 @@ jumps to it (§app.overseer/links).
   standalone project); an org row its name; a folder row its checkout root, the folder as given when
   that differs, its org (or none: standalone) and the name it would get when one was given; every row
   carries its note when it was given one, and its section and Go-sends line when it was given them.
-  In the global Overseer, a session row the Overseer marks as a land row (`land`) also carries the
-  branch of its worktree that is Ready to land (§chat.worktrees/ready-to-land) and its head commit as
-  they were when the card was raised (§app.overseer/card-land). Never a contact or a link (§app.overseer/org-projection).
+  Never a contact or a link (§app.overseer/org-projection).
 - **Per-item choices.** The card's `choices` (2 to 4 labels, lettered) apply to every item of any
   kind that has none of its own; an item's own `choices` (2 to 4 labels, each distinct) replace them
   for that row only, so one card can offer "Clean Up & Archive / Archive Only / Keep" on one row and
@@ -827,8 +823,7 @@ jumps to it (§app.overseer/links).
     A todo row is its text.
   - Under each row, its note in body text (not muted), up to 2 lines and then clamped; then its
     Go-sends line when it has one (§app.overseer/card-sections); a row with neither has nothing
-    under it. A Ready to land row shows its branch and the commit shortened to 7 characters
-    (§app.overseer/card-land).
+    under it.
   - Ideas, todos, orgs, folders, projects, people, copies and leftover processes always show: a card's effect on them (ticking a todo,
     closing an idea, a person's links stopping) is never behind a toggle. Only sessions collapse: past 8 sessions the card shows the first 8 and a **Show
     all N sessions** toggle (Show fewer, open), so the rows it reveals are only ever sessions; a card
@@ -843,7 +838,7 @@ jumps to it (§app.overseer/links).
   op, the buttons come back and the note keeps the card in front of the model. While the card is
   open, "Or type your answer." follows the buttons. A card that may gate an act that reaches people
   or ends something, the global Overseer's card listing a person, a project, an org, a folder, a
-  gathering session or a Ready to land row, and either overseer's card listing a copy or a leftover
+  gathering session, and either overseer's card listing a copy or a leftover
   process (`clickOnly`), has no such hint: only its click approves that act (adding, archiving or
   unarchiving a project, which the user's typed word in a turn they started approves with no card
   at all, and stopping a copy, tearing down or resetting one whose conversation is finished, which
@@ -913,35 +908,6 @@ jumps to it (§app.overseer/links).
   The card reads answered once every row is decided.
 - **The Overseer says so.** Its reply names how many rows it acted on, which limit or refusal
   stopped it, and that Apply on the card sends the rest.
-
-## §app.overseer/card-land — Go on a Ready to land row lands it at the commit shown
-
-- **The row remembers the commit.** In the global Overseer, a card's session row the Overseer marks
-  as a land row (`land`) keeps the branch of the worktree that session owns which is Ready to land
-  (§chat.worktrees/ready-to-land) and its head commit as they were when the card was raised, and
-  shows them ("feat/x at abc1234"). `land: true` takes the session's one ready branch; a session with
-  more than one names it (`land: "feat/x"`). A land row whose session has no ready branch, more than
-  one unnamed, or a named branch that isn't ready refuses the card, naming the row and why. A land
-  row has choices (its own or the card's), its first one Go; a row not marked `land` never lands
-  anything, whatever its Go does.
-- **Go records the user's go-ahead for that commit.** In the turn an Apply on that card opens, the
-  Overseer's `sova_land` on a row the Apply chose Go on records the user's go-ahead to land that
-  branch at that commit (§chat.worktrees/landing-answers), as Land It would, and wakes the merge
-  captain at once (§chat.schedules/merge-ready), which checks and lands it as usual. Not Yet on the row
-  records nothing, and `sova_land` refuses a row whose pick wasn't Go.
-- **Nothing lands that the user didn't see.** If the branch's head is no longer the commit the row
-  shows, the branch is no longer Ready to land, or its session is archived or working right now,
-  nothing is recorded and the captain isn't woken;
-  the Overseer's reply names the row and why ("feat/x has a newer commit than the one you saw",
-  "feat/x is no longer ready to land: 1 uncommitted file") and leaves that row undecided.
-- **Only the click counts.** The server records it only when the turn was opened by a click on that
-  card, the card was open when the click arrived, and the click was a per-row Apply that chose
-  that row's first choice, its Go (§app.overseer/org-people-facing); a card-level option never
-  lands a row. A typed "yes", the click's text typed or pasted, a later turn,
-  a Retry of the click, or a card already answered, superseded or dropped records nothing. A card
-  with such a row is `clickOnly` (§app.overseer/confirm).
-- Every attempt, recorded or refused, is a line in `overseer-actions.jsonl` (§app.overseer/caps).
-- The merge captain names this go-ahead "Apply on the Overseer's card" (§chat.merge-round/driver).
 
 ## §app.overseer/run-note — The run note: the time, and what cleared
 
@@ -1444,10 +1410,8 @@ feed's last list while nothing has changed since it was built, and builds a list
   memory of waiting recordings, so it ends when the recording stops waiting, and with a restart, which
   interrupts it. Never a phone notification.
 - **Needs you, an option card** (§chat.offers/card): `offer-waiting` on a session, not archived, that
-  shows an open offer card (Land It is the only one Sova declares today), idle or working, "Waiting
-  on your answer: {the card's title}", dated by when the card was shown. The Merge Captain's
-  landing card is listed once while any of its rows is open, "Waiting on your answer: {n} branches
-  ready to land" (§chat.offers/landing-rows), its open rows counted. It goes when the card is
+  shows an open offer card, idle or working, "Waiting
+  on your answer: {the card's title}", dated by when the card was shown. It goes when the card is
   answered, set to Not Now, no longer offered or replaced by a newer commit. Never a phone
   notification and never a brief: it lists in Needs you and counts in "need you" only.
 - **Needs you, a transcript card** (§chat.transcript-cards/answering): `card-waiting` on a session,
@@ -1667,8 +1631,9 @@ defaults in `server/overseer-store.ts`, and Reset to Defaults puts back exactly 
   Go sends. Each row defaults to the Overseer's recommendation, and a risky one (a conflict,
   publishing, a failure unrelated to the work) to Not Yet; a row with a real choice gets its own
   choices. Sessions that wait only on their own questions are listed under the card with the
-  Overseer's recommendations, not on it. Go on a Ready to land row lands the branch at the commit
-  the card shows (§app.overseer/card-land); the Overseer never sends a session the words "land it".
+  Overseer's recommendations, not on it. Go never lands a branch: landing is the user's Land or
+  typed "land it" (§app.merge-queue/approve), and the Overseer never sends a session the words
+  "land it".
 - **Tidy Up** (id `tidy`), described as "Finished and stale sessions sorted onto one card to
   archive or keep. Nothing is archived until you apply." Its prompt asks the Overseer to check every
   session started in Sova that isn't archived (its last reply, branch and merge state, uncommitted

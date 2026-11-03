@@ -246,7 +246,7 @@ become official when the branch lands, that drafts that don't fit come back to t
 no commit (a clash: `refresh`, §tools.spec/draft-refresh), and that where nothing lands branches the
 chat runs `land` once before its last commit; PROMOTE.md keeps the manual path. For a spec conflict
 in a Git merge it sends the agent to the census note. `agree` (§tools.spec/agree-command) is only for
-a decision the user made in the chat, and Land It is never agreement.
+a decision the user made in the chat, and a Land is never agreement.
 Its step for behavior no claim covers says that when the user decided it in the chat, the
 agent runs `agree` on it right then, before the first code edit, not at the end; a worker's spec brief
 carries that step too. The exemption from drafts is decided from passages read, and the
@@ -280,7 +280,7 @@ worker's census, never a hook of its own. A foreign § (one that existed before 
 started) whose text the task's change contradicts, or where it changes what a user sees beyond
 that text, is updated in the task's draft without asking, the task's go-ahead covering it, and
 listed in the reply or report as "Also updates §X: <what>"; it is never asked about. Spec mode stands alone: its guide, notes and
-tools never rely on the merge round or a merge captain: a branch's drafts become official when it
+tools never rely on any one lander, Sova's merge queue included: a branch's drafts become official when it
 lands, by whatever lands it (the draft tool's `land`, §tools.spec/land), and before it calls that
 branch done or ready to land a session has a note on each promise it changed; with spec mode on, in
 any project, that is what ready means, and the user's go-ahead to build or merge covers it.
@@ -388,8 +388,8 @@ and a trailing newline. An area with no record has no record file. A record hold
 either layout, so evidence recorded against one stays valid in the other.
 
 Every spec tool reads and writes records through one shared module, `core/layout.mjs`: the core's
-commands, the draft tool, the review tool, Sova's own spec readers and the merge
-round. Each gives the same answers on the same spec in either layout. A promotion writes in the layout
+commands, the draft tool (which the merge queue's docs step runs), the review tool and Sova's own spec
+readers. Each gives the same answers on the same spec in either layout. A promotion writes in the layout
 of the tree it promotes into, and a draft keeps its own. A script that can't import the module runs
 `sova-spec.mjs records [--at REV] [--id §x]… --json`, which prints `{layout, meta, records}` and never
 writes. A guard test fails any new code outside the module that reads records from `manifest.json`
@@ -600,14 +600,14 @@ and as it wrote it. So:
   tree reworded and promoted;
 - a draft never promoted isn't, nor one whose claim a catch-up merge replaced with the base
   branch's text, a hand edit changed, or the draft itself changed again after its promotion;
-- a merge that changes only other claims of the same files, or other blocks of the same claim, the
-  merge round's own merge of master included, changes nothing.
+- a merge that changes only other claims of the same files, or other blocks of the same claim, a
+  merge of master into the branch included, changes nothing.
 
 A receipt written before claims were recorded counts, for each id it names, what its own draft now
 says there. The rule is one function of the draft tool, run on the drafts' and the spec's files
 alone, with no Git and no other process. The tool's `drafts` and `prune --official`
-(§tools.spec/draft-hygiene) and Sova's readiness (§chat.worktrees/readiness) call it; the merge
-round's driver reads the verdict `drafts` reports (§chat.merge-round/driver). A draft the rule can't
+(§tools.spec/draft-hygiene) and Sova's readiness (§chat.worktrees/readiness) call it, and so does
+the merge queue's docs step (§app.merge-queue/run). A draft the rule can't
 read is never official, for each of them.
 
 ## §tools.spec/declaration-cap — A claim over 6 KB is warned about, never refused
@@ -659,7 +659,7 @@ interrupted promotion refuses the whole prune, and nothing is deleted.
 
 `draft prune --official` needs no list: it deletes only drafts the tool itself confirms are already
 official, and keeps every other one. It reads each draft folder of the project's own drafts, or
-with `--from DIR` of `DIR` (copies kept outside the project, such as the ones a merge round keeps),
+with `--from DIR` of `DIR` (copies kept outside the project, such as the drafts the merge queue pins at approval),
 against the project's current spec by the same rule (§tools.spec/draft-official), with no Git; in
 the project, under the same lock and refusal of an interrupted promotion as an approved prune. One
 that changes at least one claim, every one official, is deleted; one with a claim that isn't, one that changes nothing, and one

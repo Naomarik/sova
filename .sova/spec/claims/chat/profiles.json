@@ -194,8 +194,9 @@
       "server/profiles-store.ts",
       "server/playbooks.ts",
       "server/session-profiles.test.ts",
-      ".sova/profiles/merge-captain.json",
-      "server/session-profile-cards.test.ts"
+      "server/session-profile-cards.test.ts",
+      "profiles/system/merge-thread.json",
+      "profiles/system/merge-reviewer.json"
     ],
     "requires": [
       "§chat.profiles/model"

@@ -107,6 +107,27 @@
     "authority": "migrated",
     "evidence": "unreviewed"
   },
+  "§design.copy-deck/merge-queue": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§app/merge-queue",
+      "§chat.composer/worktrees-control",
+      "§chat.merge-queue/chat-card"
+    ],
+    "code": [
+      "src/components/WorktreesControl.tsx",
+      "src/components/WorktreesModal.tsx",
+      "src/components/MergeQueueTab.tsx",
+      "src/components/MergeRunView.tsx",
+      "src/components/MergeOnboarding.tsx",
+      "src/lib/merge-queue.ts",
+      "shared/merge-queue.ts",
+      "src/components/MergeQueueCard.tsx",
+      "src/lib/merge-queue-card.ts"
+    ]
+  },
   "§design.copy-deck/message-actions": {
     "kind": "note",
     "authority": "accepted",

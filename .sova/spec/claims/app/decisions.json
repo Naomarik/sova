@@ -175,17 +175,20 @@
       "server/merge-readiness.integration.test.ts",
       "server/decide.ts",
       "server/index.ts",
-      "server/app.ts"
+      "server/app.ts",
+      "server/merge-readiness.ts",
+      "server/harness/pi/golden/expected/synthetic/align-merge/readiness-scan.json"
     ],
     "requires": [
       "§app.decisions/interface",
       "§app.decisions/privacy",
-      "§chat.worktrees/merge-card"
+      "§chat.worktrees/merge-card",
+      "§chat.merge-queue/chat-card"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "user",
+      "at": "2026-11-02T22:41Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
     }
   },
   "§app.decisions/privacy": {

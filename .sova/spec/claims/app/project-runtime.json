@@ -57,15 +57,20 @@
       "server/projects/playbook-review.integration.test.ts",
       "src/lib/api.ts",
       "src/components/PlaybookReview.tsx",
-      "src/components/ProjectSoftwareCard.tsx"
+      "src/components/ProjectSoftwareCard.tsx",
+      "src/lib/project-queue.ts",
+      "src/lib/project-queue.test.ts",
+      "server/merge-queue-ui.integration.test.ts",
+      "server/projects/playbook-review.ts"
     ],
     "requires": [
       "§app.project-runtime/review",
       "§app.project-overseer/coding-worktrees"
     ],
     "agreed": {
-      "by": "user (al_3 go-ahead)",
-      "at": "2026-10-14T16:11Z"
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
     }
   },
   "§app.project-runtime/onboard": {

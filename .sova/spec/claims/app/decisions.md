@@ -436,19 +436,21 @@ it to read the whole list on each change.
 ## §app.decisions/merge-followup — One follow-up check per merge
 
 - **What it asks.** Once per merge card (§chat.worktrees/merge-card), on the first reply that ends
-  a turn after the card: `follow_up`, a boolean — does the reply name work still to be done beyond
+  a turn after the card, and once per branch's queue card that lands, on the chat's last reply
+  that ended a turn before that branch's approval (a landing starts no turn, §chat.merge-queue/chat-turns): `follow_up`, a boolean — does the reply name work still to be done beyond
   a restart, push or cleanup (open gaps, a known regression, "I'd fix it separately", unverified
   parts)? — and `follow_up_weight`, a score over none / small / significant.
-- **The excerpt**: the branch, target, commits and lines of the card, the reply's last 1,500
+- **The excerpt**: the branch, target, commits and lines of the card (for a queue landing, of its
+  Landed queue card, §chat.merge-queue/chat-card), the reply's last 1,500
   characters with its closing spec lines cut (`Also changes:`, `Also updates`, `Deferred:`,
   `Plumbing:`, `Spec check override:`), its `Deferred:` line apart when it has one, and the
   mechanical follow-ups (§chat.worktrees/readiness) as facts so they are not judged again.
   Redacted before it leaves.
 - **When and which.** Only with **attention signals on** and through the same privacy gate
-  (§app.decisions/privacy), for the sessions readiness covers, never for a merge captain's
-  session (its reply after a merge is a round report about other branches) or an Overseer's, and only for a reply from the last
+  (§app.decisions/privacy), for the sessions readiness covers, never for a merge thread
+  (§chat.merge-queue/thread, whose replies are about other branches) or an Overseer's, and only for a reply from the last
   24 hours: switching the feature on never checks old merges. A merge is checked at most once; a
-  failed check is retried after 5 minutes, at most 3 times. The answer is stored per merge card in
+  failed check is retried after 5 minutes, at most 3 times. The answer is stored per merge card or queue landing in
   `<stateRoot>/merge-followups.json`, kept only while its session is listed.
 - **Reading it.** Follow-up work when `follow_up` P ≥ 0.5 and the weight's score is 0.5 or more:
   significant at 1.5 or more with confidence ≥ 0.5, else small. The cue shown is the reply's own

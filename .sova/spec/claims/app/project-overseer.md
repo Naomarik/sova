@@ -940,6 +940,15 @@ judgement.
   no commits beyond `target`. After it the row says "Merged into <target>" with the time, and the
   merge is a reason for the overseer to look (§app.project-overseer/watch-loop), so it learns the
   branch reached `target` without being told.
+- **Land, once the project's merge queue is set up** (§app/merge-queue). Merge Branch then reads
+  **Land** and approves the branch at the head the row showed in the project's merge queue
+  (§app.merge-queue/approve) instead of merging it in the project root; once it has an entry the row
+  reads its queue state in the chips the composer's modal uses (§chat.composer/worktrees-control),
+  with its estimates or reason, and while it is queued, checking or waiting for the user its Land is
+  disabled: "Already in the merge queue.". The queue's refusals are shown under the row as Merge
+  Branch's are. A project whose queue isn't set up keeps Merge Branch as above, and its Merge Queue
+  tab shows the onboarding screen (§app.merge-queue/setup). A project whose definition doesn't parse
+  counts as set up: its rows show Land, so a branch that fixes the file can get in.
 - **Merged is read from git.** Whether a row's branch is merged is decided from git on every branch
   read of the page, by the worktrees extension's own probe (§chat.worktrees/tool): merged when the
   branch has commits beyond its base and none that `target` lacks. The recorded merge decides only

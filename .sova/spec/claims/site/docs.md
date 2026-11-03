@@ -140,27 +140,22 @@ numbered steps.
 ## §site.docs/needs-you — Needs you (`/docs/needs-you/`)
 
 The sidebar list of sessions waiting on you, the Overseer's attention digest, and the same news as
-phone notifications, with their settings. A worktree ready to merge is a quiet mark, not a row, and
-a scheduled playbook (the Merge round) can act on it: it wakes when one turns ready, asks its owner,
-and lands it.
+phone notifications, with their settings. A worktree ready to land is a quiet mark, not a row: it lands
+once you press Land or type "land it" in its chat, through the project's merge queue.
 
 ## §site.docs/overseer — The Overseer (`/docs/overseer/`)
 
 The session that reads every other session and acts on them through Sova: what it is, what it may
 do (organizations and cross-host links included) and when it asks first, the files it writes only in
 turns you start, its memory switch, its notes, ideas and to-dos, and its settings. Its news of branches
-ready to merge links to the Merge round, which in Sova's own repository picks those up by itself,
-asking each branch's owner first. Turning a project's own mode on for you counts as your approval
+ready to land points to Land; it never lands a branch itself. Turning a project's own mode on for you counts as your approval
 of its tools.
 
 ## §site.docs/playbooks-and-schedules — Playbooks and schedules (`/docs/playbooks-and-schedules/`)
 
 Running a playbook from the composer's Playbooks dialog; a project playbook's schedule: who fires
-it, its triggers (times, intervals, `claude-limit-reset`, `merge-ready`) and their limits, how a
-`merge-ready` fire waits and collects branches, and approving or revoking it (in the Playbooks
-dialog, or in the Overseer's Approvals & Schedules). Then the Merge round
-as the worked example: its schedule, the merge board, asking the owner, what comes to the user
-(branches with no live owner, once each) and the one-line quiet round. A schedule never turns on a
+it, its triggers (times, intervals, `claude-limit-reset`) and their limits, and approving or revoking
+it (in the Playbooks dialog, or in the Overseer's Approvals & Schedules). A schedule never turns on a
 project mode.
 
 ## §site.docs/phone — Check in from your phone (`/docs/phone/`)

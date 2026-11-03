@@ -28,12 +28,14 @@
       "src/components/VoiceInput.tsx",
       "src/design/voice.css",
       "src/components/ComposerMenu.tsx",
-      "src/components/EffortRing.tsx"
+      "src/components/EffortRing.tsx",
+      "src/lib/run-status.ts",
+      "src/components/WorktreesControl.tsx"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:24Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
     }
   },
   "§chat.composer/behavior": {
@@ -281,6 +283,40 @@
       "at": "2026-10-27T12:36Z",
       "source": "pi-session:01a17a2d-9525-7412-baca-957c5a5a99a8#7f582fd6"
     }
+  },
+  "§chat.composer/worktrees-control": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat/worktrees",
+      "§chat.worktrees/pane",
+      "§app.merge-queue/approve",
+      "§app.merge-queue/view",
+      "§app.project-services/merge-verbs",
+      "§chat.timeline/inputs-only"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-02T15:04Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+    },
+    "code": [
+      "src/components/WorktreesControl.tsx",
+      "src/components/WorktreesModal.tsx",
+      "src/components/Composer.tsx",
+      "src/lib/run-status.ts",
+      "src/lib/merge-queue.ts",
+      "src/lib/merge-queue-client.ts",
+      "src/app.css",
+      "src/components/SessionView.tsx",
+      "src/components/ChatView.tsx",
+      "src/lib/merge-queue.test.ts",
+      "src/lib/run-status.test.ts",
+      "server/merge-queue-ui.integration.test.ts",
+      "server/merge-queue/wire.ts",
+      "src/lib/merge-queue-types.ts"
+    ]
   },
   "§chat/composer": {
     "kind": "surface",

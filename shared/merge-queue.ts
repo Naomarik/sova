@@ -630,3 +630,15 @@ export function newerWords(n: number | undefined): string | null {
   if (!n) return null;
   return `${n} newer commit${n === 1 ? "" : "s"} not included`;
 }
+
+/** The merge queue's own chats, by the profile Sova started them on (never by title): the project's merge
+    thread and each run's reviewer. A rename, a move or a restart keeps the mark; any other chat has none. */
+export type QueueChatRole = "thread" | "reviewer";
+export const QUEUE_CHAT_PROFILES: Readonly<Record<string, QueueChatRole>> = { "merge-thread": "thread", "merge-reviewer": "reviewer" };
+export function queueChatRole(profile: { id?: string; source?: string; builtin?: boolean } | null | undefined): QueueChatRole | undefined {
+  if (!profile || typeof profile.id !== "string") return undefined;
+  const sova = profile.source === "sova" || (profile.source === undefined && profile.builtin === true);
+  return sova ? QUEUE_CHAT_PROFILES[profile.id] : undefined;
+}
+/** Why a queue chat's modes can't be switched from a menu or a tool. */
+export const QUEUE_CHAT_MODE_REFUSAL = "That is one of the merge queue's own chats: it keeps the modes and settings Sova starts it with.";

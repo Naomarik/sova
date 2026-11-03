@@ -9,23 +9,32 @@
  * runs on a per-project chain that the queue never awaits. A thread that is missing, slow or broken
  * costs a landing its note and its picks, never its turn.
  *
- * A chat is reused while it is younger than 24 h and under half its context window; otherwise (or
- * when it was archived, is gone, or is open in a terminal) the next event starts a fresh one.
+ * The thread starts with memory on (UniiChat), so one chat per project lasts: it is replaced only when
+ * it is gone, archived, open in a terminal, refuses messages after two retries, is past half its
+ * context (a safety net), or at the user's Start Fresh. A thread whose memory switch was refused keeps
+ * the old 24 h rule as well. Each replaced thread is kept in the record's history, with why.
  *
  * Harness-neutral: sessions are reached through injected deps (the live ones go through Sova's own
  * routes and helpers), never through a harness package.
  */
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { MergeEntry } from "../../shared/merge-queue";
 
-/** A thread older than this is replaced at its next event. */
+/** A thread without memory older than this is replaced at its next event (a thread with memory never ages out). */
 export const THREAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** A thread past this share of its context window is replaced at its next event. */
 export const THREAD_MAX_CONTEXT = 0.5;
 /** A replaced thread may still finish what it was doing through the verbs for this long. */
 export const THREAD_GRACE_MS = 60 * 60 * 1000;
+/** A refused wake is tried again after each of these before the thread is replaced. */
+export const WAKE_RETRY_MS: readonly number[] = [5_000, 20_000];
+/** How many replaced threads the record keeps (newest last). */
+export const THREAD_HISTORY_MAX = 200;
+/** The memory type the thread runs with, whatever Settings → Memory's default says. */
+export const THREAD_MEMORY_TYPE = "uniichat";
 /** One delivery (create or wake) gives up after this; the chain moves on. */
 export const DELIVERY_TIMEOUT_MS = 60_000;
 
@@ -61,6 +70,17 @@ export interface ThreadSession {
   context?: { tokens: number; window: number | null };
 }
 
+/** A thread the project had before its current one. */
+export interface ThreadHistoryItem {
+  sessionId: string;
+  path: string;
+  startedAt: number;
+  endedAt: number;
+  /** Why it was replaced, in plain words ("you started a fresh one", "its chat is gone"). */
+  why: string;
+  memory?: { type: string };
+}
+
 export interface ThreadRecord {
   sessionId: string;
   path: string;
@@ -68,7 +88,19 @@ export interface ThreadRecord {
   playbook: string;
   /** The thread this one replaced, and when: it keeps its verbs for THREAD_GRACE_MS. */
   previous?: { sessionId: string; until: number };
+  /** Memory as it was switched on at the start; absent: the switch was refused (the age rule applies). */
+  memory?: { type: string };
+  /** The playbook's content hash the thread last read (playbookHash): a change adds a reread line. */
+  playbookHash?: string;
+  /** The last event it was sent. */
+  lastEvent?: { kind: ThreadEvent["kind"]; at: number; entry?: string; branch?: string };
+  /** Earlier threads, oldest first. */
+  history?: ThreadHistoryItem[];
 }
+
+/** What the record file holds per project: the current thread, or only the history after Start Fresh. */
+type StoredThread = ThreadRecord | { history: ThreadHistoryItem[]; sessionId?: undefined };
+
 
 export type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -78,8 +110,14 @@ export interface ThreadDeps {
   file: string;
   /** The session, by id, or null when it is gone. */
   session(id: string, path: string): Promise<ThreadSession | null>;
-  /** A new chat in `root` on the merge-thread profile, with its first message. */
-  create(root: string, text: string, title: string): Promise<Result<{ id: string; path: string }>>;
+  /** A new chat in `root` on the merge-thread profile, with its first message. `memory`: memory as it
+      was switched on before that message (absent: refused, or the chat runs without). */
+  create(root: string, text: string, title: string): Promise<Result<{ id: string; path: string; memory?: { type: string } }>>;
+  /** Archive a replaced thread (waits for its turn, else stops it). Optional: tests and old wiring skip it. */
+  retire?(path: string): Promise<void>;
+  /** Waits between wake retries (WAKE_RETRY_MS by default); tests pass zeros. */
+  retryMs?: readonly number[];
+  sleep?(ms: number): Promise<void>;
   /** A message to an existing chat (queued as a follow-up when it is busy). */
   wake(path: string, text: string): Promise<Result>;
   /** Defaults to existsSync; tests pin it. */
@@ -95,7 +133,8 @@ export function replaceReason(rec: ThreadRecord | undefined, s: ThreadSession | 
   if (s.archived) return "its chat was archived";
   if (s.live) return "its chat is open in a terminal";
   const started = Date.parse(s.createdAt) || rec.startedAt;
-  if (now - started > THREAD_MAX_AGE_MS) return "it is more than 24 h old";
+  // Memory keeps one chat going (UniiChat): age never replaces it. Without memory the old day rule holds.
+  if (!rec.memory && now - started > THREAD_MAX_AGE_MS) return "it is more than 24 h old";
   const c = s.context;
   if (c?.window && c.tokens / c.window > THREAD_MAX_CONTEXT) return "it is past half its context";
   return null;
@@ -105,6 +144,56 @@ export function replaceReason(rec: ThreadRecord | undefined, s: ThreadSession | 
 export function playbookDir(root: string, exists: (p: string) => boolean = existsSync): string {
   const own = join(root, PROJECT_PLAYBOOK);
   return exists(join(own, "PLAYBOOK.md")) ? own : DEFAULT_PLAYBOOK_DIR;
+}
+
+/** The files of a playbook folder that the thread reads: PLAYBOOK.md and everything under references/. */
+function playbookFiles(dir: string): string[] {
+  const out: string[] = [];
+  const top = join(dir, "PLAYBOOK.md");
+  if (existsSync(top)) out.push(top);
+  const walk = (d: string) => {
+    let names: string[];
+    try {
+      names = readdirSync(d).sort();
+    } catch {
+      return;
+    }
+    for (const n of names) {
+      const p = join(d, n);
+      try {
+        if (statSync(p).isDirectory()) walk(p);
+        else out.push(p);
+      } catch {
+        /* gone meanwhile */
+      }
+    }
+  };
+  walk(join(dir, "references"));
+  return out;
+}
+
+/** One hash over what the thread follows: the method (the shipped default) and the project's own playbook. */
+export function playbookHash(playbook: string, method: string = DEFAULT_PLAYBOOK_DIR): string {
+  const h = createHash("sha256");
+  for (const dir of [...new Set([method, playbook])]) {
+    for (const f of playbookFiles(dir)) {
+      h.update(f);
+      h.update("\0");
+      try {
+        h.update(readFileSync(f));
+      } catch {
+        /* unreadable: counts as empty */
+      }
+      h.update("\0");
+    }
+  }
+  return h.digest("hex").slice(0, 16);
+}
+
+/** The line put before an event when the playbook changed since the thread last read it. */
+export function rereadLine(playbook: string, method: string = DEFAULT_PLAYBOOK_DIR): string {
+  const files = [join(method, "PLAYBOOK.md"), ...(playbook !== method ? [join(playbook, "PLAYBOOK.md")] : [])];
+  return `The playbook changed since you read it: read ${files.join(" and ")} again first, with the references they name.`;
 }
 
 const short = (sha: string) => sha.slice(0, 7);
@@ -159,16 +248,23 @@ export function firstText(root: string, playbook: string, ev: ThreadEvent): stri
   ].join("\n");
 }
 
-function readRecords(file: string): Record<string, ThreadRecord> {
+function readStored(file: string): Record<string, StoredThread> {
   try {
-    const raw = JSON.parse(readFileSync(file, "utf8")) as { version?: number; threads?: Record<string, ThreadRecord> };
+    const raw = JSON.parse(readFileSync(file, "utf8")) as { version?: number; threads?: Record<string, StoredThread> };
     return raw?.version === 1 && raw.threads && typeof raw.threads === "object" ? raw.threads : {};
   } catch {
     return {};
   }
 }
 
-function writeRecords(file: string, threads: Record<string, ThreadRecord>): void {
+/** The current thread per project (a project whose thread was cleared by Start Fresh has none). */
+function readRecords(file: string): Record<string, ThreadRecord> {
+  const out: Record<string, ThreadRecord> = {};
+  for (const [root, r] of Object.entries(readStored(file))) if (r && typeof r.sessionId === "string") out[root] = r as ThreadRecord;
+  return out;
+}
+
+function writeRecords(file: string, threads: Record<string, StoredThread>): void {
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify({ version: 1, threads }, null, 2)}\n`);
@@ -216,6 +312,54 @@ export class MergeThread {
     return readRecords(this.deps.file)[root];
   }
 
+  /** The project's earlier threads, oldest first. */
+  history(root: string): ThreadHistoryItem[] {
+    return readStored(this.deps.file)[root]?.history ?? [];
+  }
+
+  /**
+   * Start Fresh (the user's): the current thread goes to the history, "you started a fresh one", and is
+   * archived (waiting for its turn, else stopped); the next event starts a new one. Runs on the
+   * project's chain, after what is being delivered. Resolves false when there was no thread.
+   */
+  startFresh(root: string): Promise<boolean> {
+    const prev = this.chains.get(root) ?? Promise.resolve();
+    const run = prev.then(async () => {
+      const rec = this.record(root);
+      if (!rec) return false;
+      this.retireRecord(root, rec, "you started a fresh one", true);
+      await this.deps.retire?.(rec.path).catch((err) => this.say(`${root}: the old thread wasn't archived: ${err instanceof Error ? err.message : String(err)}`));
+      return true;
+    });
+    this.chains.set(root, run.then(() => undefined, () => undefined));
+    return run;
+  }
+
+  /** Move `rec` into the history with `why`; `clear` leaves the project with no current thread. */
+  private retireRecord(root: string, rec: ThreadRecord, why: string, clear: boolean): ThreadHistoryItem[] {
+    const all = readStored(this.deps.file);
+    const item: ThreadHistoryItem = { sessionId: rec.sessionId, path: rec.path, startedAt: rec.startedAt, endedAt: this.deps.now(), why, ...(rec.memory ? { memory: rec.memory } : {}) };
+    const history = [...(rec.history ?? []), item].slice(-THREAD_HISTORY_MAX);
+    if (clear) {
+      all[root] = { history };
+      writeRecords(this.deps.file, all);
+    }
+    return history;
+  }
+
+  private async wakeWithRetries(root: string, path: string, text: string, ms: number): Promise<Result> {
+    const waits = this.deps.retryMs ?? WAKE_RETRY_MS;
+    const sleep = this.deps.sleep ?? ((t: number) => new Promise<void>((r) => setTimeout(r, t)));
+    let r: Result = { ok: false, error: "not tried" };
+    for (let i = 0; i <= waits.length; i++) {
+      if (i > 0) await sleep(waits[i - 1]!);
+      r = await withTimeout(this.deps.wake(path, text), ms, "waking the thread").catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) }));
+      if (r.ok) return r;
+      if (i < waits.length) this.say(`${root}: the thread refused a message (${r.error}); trying again`);
+    }
+    return r;
+  }
+
   private say(line: string): void {
     (this.deps.log ?? ((l: string) => console.warn(`[merge-thread] ${l}`)))(line);
   }
@@ -225,19 +369,43 @@ export class MergeThread {
     const now = this.deps.now();
     const rec = readRecords(this.deps.file)[root];
     const s = rec ? await withTimeout(this.deps.session(rec.sessionId, rec.path), ms, "reading the thread") : null;
-    const why = replaceReason(rec, s, now);
-    if (!why && rec) {
-      const r = await withTimeout(this.deps.wake(rec.path, eventText(ev)), ms, "waking the thread");
-      if (r.ok) return;
-      this.say(`${root}: the thread refused a message (${r.error}); starting a fresh one`);
-    } else if (rec) this.say(`${root}: a fresh thread, since ${why}`);
+    let why = replaceReason(rec, s, now);
     const playbook = playbookDir(root, this.deps.exists ?? existsSync);
+    const hash = playbookHash(playbook);
+    const last = { kind: ev.kind, at: now, ...("entry" in ev ? { entry: ev.entry.id, branch: ev.entry.branch } : {}) };
+    if (!why && rec) {
+      const changed = !!rec.playbookHash && rec.playbookHash !== hash;
+      const text = changed ? `${rereadLine(playbook)}\n\n${eventText(ev)}` : eventText(ev);
+      const r = await this.wakeWithRetries(root, rec.path, text, ms);
+      if (r.ok) {
+        const all = readStored(this.deps.file);
+        const cur = all[root];
+        if (cur?.sessionId === rec.sessionId) {
+          all[root] = { ...(cur as ThreadRecord), playbookHash: hash, playbook, lastEvent: last };
+          writeRecords(this.deps.file, all);
+        }
+        return;
+      }
+      why = `it refused messages (${r.error})`;
+      this.say(`${root}: the thread refused a message three times (${r.error}); starting a fresh one`);
+    } else if (rec) this.say(`${root}: a fresh thread, since ${why}`);
     const date = new Date(now).toISOString().slice(0, 10);
     const name = root.split("/").filter(Boolean).pop() ?? root;
     const r = await withTimeout(this.deps.create(root, firstText(root, playbook, ev), `Merge thread · ${name} · ${date}`), ms, "starting the thread");
     if (!r.ok) throw new Error(`couldn't start a thread: ${r.error}`);
-    const all = readRecords(this.deps.file);
-    all[root] = { sessionId: r.id, path: r.path, startedAt: now, playbook, ...(rec ? { previous: { sessionId: rec.sessionId, until: now + THREAD_GRACE_MS } } : {}) };
+    const history = rec ? this.retireRecord(root, rec, why ?? "replaced", false) : (readStored(this.deps.file)[root]?.history ?? []);
+    const all = readStored(this.deps.file);
+    all[root] = {
+      sessionId: r.id,
+      path: r.path,
+      startedAt: now,
+      playbook,
+      playbookHash: hash,
+      lastEvent: last,
+      ...(r.memory ? { memory: r.memory } : {}),
+      ...(rec ? { previous: { sessionId: rec.sessionId, until: now + THREAD_GRACE_MS } } : {}),
+      ...(history.length ? { history } : {}),
+    };
     writeRecords(this.deps.file, all);
   }
 }
@@ -285,6 +453,20 @@ export async function createChat(request: AppRequest, cwd: string, profile: stri
   return { ok: true, id: json.id, path: json.path };
 }
 
+/**
+ * The thread's one mode switch, the server's own (the mode menu is refused for queue chats): memory on,
+ * type UniiChat whatever Settings → Memory's default type is, then pinned so mode.json never reaches it.
+ * Its profile already pinned mode normal with no minor modes. Resolves the memory it runs with, or
+ * undefined when the runtime has no memory engine.
+ */
+export async function threadMemoryOn(path: string): Promise<{ type: string } | undefined> {
+  const { acquireChatHandle } = await import("../chat-handle");
+  const chat = await acquireChatHandle(path);
+  const result = await chat.switchMode({ minorModes: ["memory"], memory: { type: THREAD_MEMORY_TYPE } });
+  chat.pinMode();
+  return result.minorModes.includes("memory") ? { type: THREAD_MEMORY_TYPE } : undefined;
+}
+
 /** Wire the keeper on the server: sessions through Sova's own routes and helpers. */
 export async function startMergeThread(request: AppRequest, file?: string): Promise<MergeThread> {
   const [{ stateRoot }, { getSessionSummary }, { promptSession }] = await Promise.all([import("../state-root"), import("../sessions-index"), import("../session-prompt")]);
@@ -296,7 +478,18 @@ export async function startMergeThread(request: AppRequest, file?: string): Prom
       if (!s || s.id !== id) return null;
       return { id: s.id, path, createdAt: s.createdAt, archived: !!s.archived, live: !!s.live, ...(s.context ? { context: s.context } : {}) };
     },
-    create: async (root, text, title) => createChat(request, root, THREAD_PROFILE, text, title, await (await import("./models")).startingModel(root, "thread")),
+    async create(root, text, title) {
+      // Created without its first message: memory goes on (UniiChat, pinned) before the thread reads anything.
+      const made = await createChat(request, root, THREAD_PROFILE, "", title, await (await import("./models")).startingModel(root, "thread"));
+      if (!made.ok) return made;
+      const memory = await threadMemoryOn(made.path).catch((err) => {
+        console.warn(`[merge-thread] ${root}: memory wasn't switched on: ${err instanceof Error ? err.message : String(err)}`);
+        return undefined;
+      });
+      const sent = await promptSession(made.path, text);
+      if (!sent.ok) return { ok: false, error: `its first message was refused: ${sent.error}` };
+      return { ok: true, id: made.id, path: made.path, ...(memory ? { memory } : {}) };
+    },
     async wake(path, text) {
       const r = await promptSession(path, text);
       return r.ok ? { ok: true } : { ok: false, error: r.error };

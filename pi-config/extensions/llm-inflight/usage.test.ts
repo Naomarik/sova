@@ -237,7 +237,7 @@ test("a `claude -p` envelope: one record per model, keyed by its session; garbag
 	assert.deepEqual(read().map((r) => [r.key, r.model, r.responseModel, r.input, r.output, r.purpose, r.owner, r.stop]), [["cp:e-9:claude-haiku-4-5", "haiku", "claude-haiku-4-5", 30, 2, "outline", "sess-o", "error_max_budget_usd"]]);
 });
 
-test("a classifier or image call (a codemode script's models.*) is one counted call and one record for the session its caller names", async () => {
+test("a classifier or image call (a script tool's models.*) is one counted call and one record for the session its caller names", async () => {
 	const read = ledger();
 	const gates: (() => void)[] = [];
 	// Duck-typed like pi 1.0's ModelRuntime: stream methods, plus the two promise calls.

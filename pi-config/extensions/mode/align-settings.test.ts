@@ -292,6 +292,6 @@ test("visToolsWanted: vis on, or align on with the session's Visuals; never alig
 	assert.equal(visToolsWanted(["align"], true), true);
 	assert.equal(visToolsWanted(["align"], false), false);
 	assert.equal(visToolsWanted([], true), false);
-	assert.equal(visToolsWanted(["spec", "codemode"], true), false);
+	assert.equal(visToolsWanted(["spec", "memory"], true), false);
 	assert.equal(visToolsWanted(["align", "vis"], false), true);
 });

@@ -56,7 +56,6 @@ Paths in "Where" are under `server/`.
 | P18 warmup-shutdown | internal-API | `warmClaudeCodeProvider` (harness/pi/open.ts) | `AgentSession.bindExtensions`, `AgentSession.dispose`, `ExtensionRunner.emit`, `ExtensionRunner.hasHandlers` | dispose() emits session_shutdown (then the warm-up's own emit would double it) |
 | P19 rebuild-prompt | semantic | `PiHarnessSession.refreshSystemPrompt` (harness/pi/session.ts), `hearRuns` (chat-manager.ts) | `AgentSession.setActiveToolsByName`, `AgentSession._rebuildSystemPrompt`, `DefaultResourceLoader.appendSystemPromptOverride` | pi adds a public refreshSystemPrompt(), or re-reads the parts at each run |
 | P20 model-restore-gate | semantic | `recordedModelForEmptyBranch` (harness/pi/open.ts), `modelForSessionOpen` (harness/pi/open.ts), `legacyClaudeModelForOpen` (harness/pi/open.ts) | `createAgentSession`, `SessionManager.buildSessionContext` | pi restores a recorded model on any branch |
-| P21 codemode-definition | semantic | `captureCodemode` (harness/pi/codemode.ts), `scriptRegistry` (harness/pi/codemode.ts) | `createCodemodeExtension`, `ExtensionAPI.registerTool`, `ExtensionContext.modelRegistry`, `ExtensionToolContext.executeTool` | pi exports the codemode tool definition and a model hook for scripts |
 | P22 declared-tools | private-read | `PiHarnessSession.declaredTools` (harness/pi/session.ts), `toolSource` (harness/pi/session.ts) | `Agent.state.tools`, `AgentSession._hiddenDeclarations`, `AgentSession._applyToolLoadout`, `AgentSession.getAllTools`, `SourceInfo.path` | pi offers a public read of the declared tools as a request will send them |
 | P23 turn-end-loadout | ordering | `join` (pi-config/extensions/link/index.ts) | `agentLoop`, `AgentSession._installAgentNextTurnRefresh`, `AgentSession._preparePromptAndToolLoadout`, `ExtensionAPI.registerTool` | pi offers a documented hook for changing the tool set before a run's next request |
 | P24 own-code-discovery | monkey-patch | `patchResolve` (harness/pi/own-code.ts), `installOwnCode` (harness/pi/own-code.ts) | `DefaultPackageManager.resolve`, `DefaultResourceLoader.reload`, `DefaultResourceLoader.loadCurrentExtensionSet`, `createAgentSessionServices` | pi's loader takes a path-mapping hook for discovered extensions |
@@ -191,15 +190,9 @@ Canary: `P19 rebuild-prompt: setActiveToolsByName(getActiveToolNames()) re-reads
 
 Canary: `P20 model-restore-gate: the SDK restores a recorded model only when the branch has messages`.
 
-### P21 codemode-definition
-
-`createCodemodeExtension()`'s factory registers exactly one tool, `codemode`, with `defaultActive: false`, through the API it is handed, so Sova runs it against its own extension's API with `registerTool` caught and registers the definition itself (§chat.mode-menu/codemode). A script's `models.classify` / `models.generateImages` reach the tool context's `modelRegistry`, where Sova's wrapper applies the model policy, the provider-limits slot and the chat's usage context. Nested calls go through `ctx.executeTool`: their `tool_execution_*` events carry `parentToolCallId` and ids `<parent>/<n>`, and they write no transcript entries (the result keeps `details.calls`).
-
-Canary: `P21 codemode-definition: the factory registers one inactive codemode tool, its models.* reach ctx.modelRegistry, nested calls carry parentToolCallId`.
-
 ### P22 declared-tools
 
-`agent.state.tools` is the set the next request declares, in its order, with the descriptions a `prepareLoadout` hook gave them (codemode's "Codemode: `tools.x(args)` resolves to …" line); `getAllTools()` keeps the registry's own descriptions. The private `_hiddenDeclarations` names the declarations requests leave out (codemode's `only` mode). A tool's `sourceInfo.path` is `builtin:<name>` for pi's own tools, `<inline:<name>>` for an extension factory (`<sdk:<name>>` for a custom tool), else the extension's file. The driving session's `declaredTools()` reads the three for the setup card's Tools group (§chat.transcript/setup-card-tools).
+`agent.state.tools` is the set the next request declares, in its order, with the descriptions a `prepareLoadout` hook gave them (a tool that orchestrates others rewords their declarations); `getAllTools()` keeps the registry's own descriptions. The private `_hiddenDeclarations` names the declarations requests leave out (a `prepareLoadout` hook's `hiddenDeclarations`). A tool's `sourceInfo.path` is `builtin:<name>` for pi's own tools, `<inline:<name>>` for an extension factory (`<sdk:<name>>` for a custom tool), else the extension's file. The driving session's `declaredTools()` reads the three for the setup card's Tools group (§chat.transcript/setup-card-tools).
 
 Canary: `P22 declared-tools: agent.state.tools is the declared set with the loadout's descriptions, _hiddenDeclarations what requests leave out, sourceInfo.path names the source`.
 

@@ -247,12 +247,9 @@ found so far (pi 1.0.3).
 - pi 1.0's built-in extensions (`builtin:codemode`, `builtin:tool-search`, `builtin:mcp`,
   `builtin:llama.cpp`, `<pi>/dist/extensions/index.js`) load only in the CLI (`<pi>/dist/main.js` adds them); SDK
   runtimes such as Sova's do not get them (`<pi>/docs/sdk.md` "codemode-mcp"), so no MCP, tool_search or
-  llama.cpp provider in webapp-owned sessions unless Sova adds the factories. Sova adds one: codemode
-  (`server/harness/pi/codemode.ts`, in `DEFAULT_EXTENSION_FACTORIES`, quirk P21), registered inactive
-  and switched by the mode extension's `codemode` minor mode (§chat.mode-menu/codemode), the same in
-  Claude Code chats (off: nowhere in the loadout; a toggle restarts the CLI). Its scripts run in a
-  `node:worker_threads` Worker with QuickJS; nested calls carry `parentToolCallId` (`HarnessEvent`
-  `nested`, `SovaEvent` `parentCallId`) and are no rows or live tools.
+  llama.cpp provider in webapp-owned sessions unless Sova adds the factories; Sova adds none. A call
+  another tool makes carries `parentToolCallId` (`HarnessEvent` `nested`, `SovaEvent` `parentCallId`)
+  and is no row or live tool.
 - **pi reads the host's context files into a recording.** A session reads every `AGENTS.md`/`CLAUDE.md`
   from its cwd up to `/` and skills from `~/.agents/skills`, so a golden recorded under a scratch dir
   inside `$HOME` (or with the real `HOME`) captures the operator's private files. Record goldens from a

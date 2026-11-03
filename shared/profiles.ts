@@ -63,7 +63,7 @@ export const isSubagentsRef = (v: unknown): v is string => typeof v === "string"
 /** The minor modes a profile's `minorModes` may name, in the mode extension's order: a copy of
     pi-config's MINOR_MODES less its web-only ones (memory, which only a chat's own mode menu turns on;
     this file imports nothing), pinned equal by session-profiles.test.ts. */
-export const PROFILE_MINOR_MODES = ["align", "spec", "vis", "codemode"] as const;
+export const PROFILE_MINOR_MODES = ["align", "spec", "vis"] as const;
 export type ProfileMinorMode = (typeof PROFILE_MINOR_MODES)[number];
 
 export const PROFILE_ICONS = ["grid", "eye", "network", "branch", "wrench", "shield", "search", "terminal", "bulb", "building"] as const;

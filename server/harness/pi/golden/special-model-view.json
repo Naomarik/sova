@@ -2474,7 +2474,7 @@
        "items": {
         "type": "string"
        },
-       "description": "code: the minor modes on, the whole set: any of align, spec, vis, codemode; [] turns them all off. Omitted: this computer's default."
+       "description": "code: the minor modes on, the whole set: any of align, spec, vis; [] turns them all off. Omitted: this computer's default."
       },
       "subagent_profile": {
        "type": "string",
@@ -3737,7 +3737,7 @@
        "items": {
         "type": "string"
        },
-       "description": "The minor modes on, the whole set: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
+       "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
       },
       "subagent_profile": {
        "type": "string",
@@ -3789,7 +3789,7 @@
        "items": {
         "type": "string"
        },
-       "description": "Its minor modes on, the whole set, first: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off."
+       "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
       },
       "subagent_profile": {
        "type": "string",

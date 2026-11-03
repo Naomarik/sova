@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 90046,
+      "bytes": 90036,
       "tools": [
         {
           "name": "sova_attention",
@@ -2462,7 +2462,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "code: the minor modes on, the whole set: any of align, spec, vis, codemode; [] turns them all off. Omitted: this computer's default."
+                "description": "code: the minor modes on, the whole set: any of align, spec, vis; [] turns them all off. Omitted: this computer's default."
               },
               "subagent_profile": {
                 "type": "string",
@@ -2829,7 +2829,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 95831,
+      "bytes": 95821,
       "tools": [
         {
           "name": "sova_attention",
@@ -5382,7 +5382,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "code: the minor modes on, the whole set: any of align, spec, vis, codemode; [] turns them all off. Omitted: this computer's default."
+                "description": "code: the minor modes on, the whole set: any of align, spec, vis; [] turns them all off. Omitted: this computer's default."
               },
               "subagent_profile": {
                 "type": "string",
@@ -5942,7 +5942,7 @@
       ]
     },
     "project-overseer": {
-      "bytes": 38262,
+      "bytes": 38242,
       "tools": [
         {
           "name": "sova_project",
@@ -6625,7 +6625,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "The minor modes on, the whole set: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
+                "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
               },
               "subagent_profile": {
                 "type": "string",
@@ -6667,7 +6667,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off."
+                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
               },
               "subagent_profile": {
                 "type": "string",
@@ -7104,7 +7104,7 @@
       ]
     },
     "project-overseer+onboard": {
-      "bytes": 38574,
+      "bytes": 38554,
       "tools": [
         {
           "name": "sova_project",
@@ -7787,7 +7787,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "The minor modes on, the whole set: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
+                "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
               },
               "subagent_profile": {
                 "type": "string",
@@ -7829,7 +7829,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off."
+                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
               },
               "subagent_profile": {
                 "type": "string",
@@ -8267,7 +8267,7 @@
       ]
     },
     "project-overseer+gaps": {
-      "bytes": 38703,
+      "bytes": 38683,
       "tools": [
         {
           "name": "sova_project",
@@ -8950,7 +8950,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "The minor modes on, the whole set: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
+                "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
               },
               "subagent_profile": {
                 "type": "string",
@@ -9004,7 +9004,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off."
+                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
               },
               "subagent_profile": {
                 "type": "string",
@@ -9441,7 +9441,7 @@
       ]
     },
     "project-overseer+copies": {
-      "bytes": 44196,
+      "bytes": 44176,
       "tools": [
         {
           "name": "sova_project",
@@ -10208,7 +10208,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "The minor modes on, the whole set: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
+                "description": "The minor modes on, the whole set: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off. Omitted: this computer's default."
               },
               "subagent_profile": {
                 "type": "string",
@@ -10250,7 +10250,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, codemode, e.g. [\"spec\"]; [] turns them all off."
+                "description": "Its minor modes on, the whole set, first: any of align, spec, vis, e.g. [\"spec\"]; [] turns them all off."
               },
               "subagent_profile": {
                 "type": "string",

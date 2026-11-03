@@ -195,7 +195,7 @@ function minorBlock(minor: MinorMode, writer: SlotRoute | null, worker = false, 
  * turned off gets a line saying its instructions no longer apply. Undefined when nothing changed.
  * `guides` in the result: the modes whose whole block this note carries. `worker`: a block goes in
  * its worker form (composeWorkerPrompt), and the caller passes only worker-scope modes. A promptless mode
- * (MINOR_PROMPTLESS: codemode) is never told: its tool is the whole switch. `align`: the style and Visuals
+ * (MINOR_PROMPTLESS) is never told. `align`: the style and Visuals
  * an align block this note carries is built with (the ones in effect now).
  */
 export function buildModeNote(

@@ -146,7 +146,7 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     assert.ok(end.type === "message.end" && end.role === "user" && end.text === "a\nb" && end.handle === user);
     const asst = harnessEventOf({ type: "message_start", message: { role: "assistant", content: [] } });
     assert.ok(asst.type === "message.start" && asst.role === "assistant" && asst.text === undefined);
-    // A codemode script's own call is nested; a direct call isn't.
+    // A call another tool made is nested; a direct call isn't.
     for (const type of ["tool_execution_start", "tool_execution_update", "tool_execution_end"]) {
       assert.equal((harnessEventOf({ type, toolCallId: "c1/1", parentToolCallId: "c1" }) as { nested?: true }).nested, true, type);
       assert.equal("nested" in harnessEventOf({ type, toolCallId: "c1" }), false, type);
@@ -290,7 +290,7 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     const params = { type: "object", properties: {} };
     s.agent.state.tools = [
       { name: "read", description: "Read a file.", parameters: params },
-      { name: "echo", description: "Echo.\n\nCodemode: `tools.echo(args)` resolves to a string.", parameters: params },
+      { name: "echo", description: "Echo.\n\nOrch: `orch` calls it too.", parameters: params },
       { name: "hidden", description: "Hidden.", parameters: params },
     ];
     s._hiddenDeclarations = new Set(["hidden"]);
@@ -301,7 +301,7 @@ describe("PiHarnessSession (§app.harness/session)", () => {
     ];
     assert.deepEqual(chat.harness.declaredTools(), [
       { name: "read", description: "Read a file.", parameters: params, source: "builtin" },
-      { name: "echo", description: "Echo.\n\nCodemode: `tools.echo(args)` resolves to a string.", parameters: params, source: "extension", origin: "echo" },
+      { name: "echo", description: "Echo.\n\nOrch: `orch` calls it too.", parameters: params, source: "extension", origin: "echo" },
     ]);
   });
 });

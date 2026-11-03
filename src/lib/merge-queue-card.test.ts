@@ -66,3 +66,19 @@ test("one row per revision, keyed by the entry; only the newest is the card, the
   assert.equal(foldedLine(c.branch, first!.revision), "feat/x · Queued 2nd");
   assert.equal(queueRowOf({ type: "project.other", data: {} }), null);
 });
+
+test("a request project's card: the pill follows the host's facts, the folded line its frozen state (al_3)", () => {
+  const request = { how: "github-pr" as const, host: "github" as const, branch: "feat/x", base: "master", number: 123, url: "https://github.com/o/r/pull/123" };
+  const facts = { state: "open" as const, checks: "pending" as const, review: "none" as const, mergeable: "mergeable" as const };
+  assert.equal(cardPill(card({ state: "requested", request: { ...request, facts } })).label, "PR #123 open · checks running on GitHub");
+  assert.equal(cardPill(card({ state: "requested", request: { ...request, facts: { ...facts, checks: "fail" } } })).label, "Host checks failed");
+  assert.equal(cardPill(card({ state: "closed", request })).label, "Closed on GitHub");
+  assert.equal(cardPill(card({ state: "pushed", request: { how: "push-branch", branch: "feat/x", base: "master" } })).label, "Pushed");
+  assert.equal(cardPill(card({ state: "request-review", request })).label, "Review the request");
+  assert.equal(foldedLine("feat/x", { state: "requested" }), "feat/x · Request opened");
+  assert.deepEqual(cardActions(card({ state: "requested" })), [], "the request's own actions draw from its facts (MergeQueueRequests), not the card's list");
+});
+
+test("a host merge is never 'not pushed': nothing of Sova's was to push", () => {
+  assert.equal(notPushed(card({ state: "landed", landed: { sha: SHA, from: SHA, at: "2026-11-02T10:00:00Z", pushed: "pending", via: "host" } })), null);
+});

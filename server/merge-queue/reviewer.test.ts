@@ -26,11 +26,11 @@ test("titles name the branch, the commit and a retry's attempt", () => {
 });
 
 test("a reviewer chat starts in the merge copy with the step's message; stop archives it once", async () => {
-  const created: { cwd: string; text: string; title: string }[] = [];
+  const created: { cwd: string; text: string; title: string; root: string }[] = [];
   const archived: string[] = [];
   const deps: ReviewerDeps = {
-    async create(cwd, text, title) {
-      created.push({ cwd, text, title });
+    async create(cwd, text, title, root) {
+      created.push({ cwd, text, title, root });
       return { ok: true, id: "r1", path: "/sessions/r1.jsonl" };
     },
     async archive(path) {
@@ -39,7 +39,8 @@ test("a reviewer chat starts in the merge copy with the step's message; stop arc
     },
   };
   const h = await reviewerStarter(deps)(o);
-  assert.deepEqual(created, [{ cwd: o.copy, text: o.text, title: "Review · feat/x · ccccccc" }]);
+  // The project's root rides along: its review model is the project's (models.ts), not the copy's.
+  assert.deepEqual(created, [{ cwd: o.copy, text: o.text, title: "Review · feat/x · ccccccc", root: o.root }]);
   assert.equal(h.sessionId, "r1");
   await h.stop();
   await h.stop();

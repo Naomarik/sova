@@ -142,6 +142,11 @@ const SECRET_PATTERNS: [RegExp, string][] = [
   // GitHub tokens.
   [/\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{20,}/g, REDACTED],
   [/\bgithub_pat_[A-Za-z0-9_]{20,}/g, REDACTED],
+  // GitLab tokens: personal/project/group access, OAuth secrets, deploy, runner, CI job, trigger, feed, incoming
+  // mail, agent, SCIM, feature-flag and workspace tokens (the newer routable ones carry dots), and the legacy runner
+  // registration token.
+  [/\bgl(?:pat|oas|dt|rt|rtr|cbt|ptt|ft|imt|agent|soat|ffct|wt)-[A-Za-z0-9_.-]{20,}/g, REDACTED],
+  [/\bGR1348941[A-Za-z0-9_-]{20,}/g, REDACTED],
   // AWS access key ids.
   [/\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g, REDACTED],
   // Slack tokens.

@@ -42,6 +42,13 @@ export async function worktreeQueueOf(path: string, branch: string): Promise<Row
 }
 let ingest: { poke(): void; stop(): void } | null = null;
 let cards: MergeCards | null = null;
+let bareSettingsOf: ((root: string) => Promise<import("../../shared/merge-queue-settings").MergeQueueSettings | null>) | null = null;
+
+/** A listed project's settings while the queue doesn't serve it, made without a queue (settings.ts bareSettings);
+ *  null while the queue isn't started or its target has no commit. */
+export function mergeBareSettings(root: string): Promise<import("../../shared/merge-queue-settings").MergeQueueSettings | null> {
+  return bareSettingsOf ? bareSettingsOf(root) : Promise.resolve(null);
+}
 
 /** A chat's merge queue cards (server/merge-queue/cards.ts); [] while the queue isn't started. */
 export function mergeCardsOf(session: string): import("../../shared/merge-queue").MergeCard[] {
@@ -320,12 +327,31 @@ export async function startMergeQueue(
     thread,
     draftsHash: (dir) => draftsHash(dir),
     threadOf: (root) => (threadMod as { threadOf?: (r: string) => { session: string; startedAt: string } | null }).threadOf?.(root) ?? null,
+    // Landing by request (al_3): the docs commit goes into a chat's folder only while it is idle, read as the worktree
+    // readiness reads it (server/merge-readiness.ts runningNow: busy, working, or a worker working); an unknown chat
+    // can't be interrupted. A request's title is its chat's.
+    chatIdle: async (session) => {
+      const { listSessions } = await import("../sessions-index");
+      const x = (await listSessions()).find((y) => y.id === session);
+      return !x || !(x.busy || x.activity?.state === "working" || (x.workers?.working ?? x.live?.workers?.working ?? 0) > 0);
+    },
+    chatTitle: async (session) => {
+      const { listSessions } = await import("../sessions-index");
+      const t = (await listSessions()).find((y) => y.id === session)?.title;
+      return t && t !== "Untitled" ? t : null;
+    },
     ...(legacyNames ? { legacyNames } : {}),
+    // The review and thread models: the new-chat default and Settings → Models' policy (models.ts).
+    modelCheck: (await import("./models")).liveModelCheck(),
   });
   const q = queues;
+  const bareDeps = { base, git: realGit, setupOf: (root: string) => served.setupOf(root), definitionAt: (root: string, ref: string) => definitionAt(root, ref), projectIdOf, modelCheck: (await import("./models")).liveModelCheck(), ...(legacyNames ? { legacyNames } : {}) };
+  const { bareSettings } = await import("./settings");
+  bareSettingsOf = (root) => bareSettings(root, bareDeps).catch((err) => (console.warn(`[merge-queue] ${root}: settings unreadable: ${err instanceof Error ? err.message : err}`), null));
   const verbs = merger({
     queues: q,
     served,
+    bareSettings: (root) => mergeBareSettings(root),
     rootOf: async (path) => {
       const p = await projectOf(path);
       return p.state === "ok" && p.git ? p.root : null;
@@ -391,6 +417,7 @@ export async function stopMergeQueue(): Promise<void> {
   setServedRule(null);
   servedNow = new Set();
   cards = null;
+  bareSettingsOf = null;
   setMergeCardNoteSource(null);
   setLandingNoteSource(null);
   ingest?.stop();

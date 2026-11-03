@@ -1,13 +1,17 @@
 import { createEffect, createSignal, For, on, Show, type JSX } from "solid-js";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { mins, notesOf, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView } from "../lib/merge-queue";
+import { mins, notesOf, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, stillSentBack } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { MergeOnboarding } from "./MergeOnboarding";
 import { MergeRunView } from "./MergeRunView";
+import { LocalBehind, RequestRow, WaitingOnHost, type RequestEntry } from "./MergeQueueRequests";
+import { introWords, isRequestState } from "../lib/merge-queue-requests";
+import { QueueSettingsButton, QueueSummaryLine } from "./settings/MergeQueueSummary";
+import { notSetUp, takeInitialize } from "../lib/merge-queue-initialize";
 import { Banner, Icon } from "./ui";
 import { LandSpecsConfirm, LandSplit, QueueChip, UnclearChecks } from "./WorktreesModal";
 import type { MergeReady } from "../../shared/merge-queue";
@@ -57,15 +61,14 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
   );
 }
 
-/** The queue doesn't serve this listed project: it has no merge setup (an invalid one is still a setup, said as such). */
-const notSetUp = (v: Pick<MergeQueueView, "served" | "checks" | "invalid">): boolean => !v.invalid && (v.served === false || v.checks === "unset");
 
 /**
  * A listed project with no merge setup: its chats merge plainly. The tab says so, and Initialize opens the
  * setup (the onboarding: Try It on Main, then Save Checks).
  */
 function NotSetUp(props: { projectId: string; name: string; view: MergeQueueView; onSaved(): void }) {
-  const [open, setOpen] = createSignal(false);
+  // Initialize pressed in Settings → Merge Queue: open on the setup at once.
+  const [open, setOpen] = createSignal(takeInitialize(props.projectId));
   return (
     <Show
       when={!open()}
@@ -271,6 +274,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
   return (
     <div class="stack mq-body">
       <HeadsStrip view={v()} />
+      <LocalBehind project={props.projectId} target={v().target} behind={v().heads.behind} blocked={v().heads.behindBlocked} onChanged={props.onChanged} />
       <div class="spread mq-head">
         <div class="cluster">
           <h2 class="orgs-h2" id="mq-title">
@@ -279,6 +283,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
           <QueueChip row={chip()} />
         </div>
         <div class="button-row">
+          <QueueSettingsButton projectId={props.projectId} />
           <Show
             when={paused()}
             fallback={
@@ -301,8 +306,9 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
           </Show>
         </div>
       </div>
+      <QueueSummaryLine view={v()} />
       <p class="text-caption text-muted mq-intro">
-        One branch at a time, in order. Each is merged onto {v().target} in a separate copy and checked there; {v().target} then moves to exactly that commit.
+        {introWords(v().target, v().settings?.how?.effective)}
         <Show when={v().checks === "none"}> This project declares no automated tests: landings say "No checks declared".</Show>
       </p>
       <Show when={head.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
@@ -340,10 +346,25 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
         <div class="stack-2">
           <h3 class="text-heading-s">Needs you</h3>
           <ul class="list mq-list">
-            <For each={v().needsYou}>{(e) => <NeedsYouRow projectId={props.projectId} root={v().root} entry={e} target={v().target} chatOf={props.chatOf} onChanged={props.onChanged} />}</For>
+            <For each={v().needsYou}>
+              {(e) =>
+                isRequestState(e.state) ? (
+                  <RequestRow root={v().root} target={v().target} entry={e as RequestEntry} from={<FromChat projectId={props.projectId} entry={e} chatOf={props.chatOf} />} onChanged={props.onChanged} />
+                ) : (
+                  <NeedsYouRow projectId={props.projectId} root={v().root} entry={e} target={v().target} chatOf={props.chatOf} onChanged={props.onChanged} />
+                )
+              }
+            </For>
           </ul>
         </div>
       </Show>
+      <WaitingOnHost
+        root={v().root}
+        target={v().target}
+        entries={(v().waitingOnHost ?? []) as RequestEntry[]}
+        from={(e) => <FromChat projectId={props.projectId} entry={e as unknown as MergeEntry} chatOf={props.chatOf} />}
+        onChanged={props.onChanged}
+      />
       <Show when={(v().ready ?? []).length > 0}>
         <div class="stack-2">
           <h3 class="text-heading-s">Ready to land, not approved</h3>
@@ -352,11 +373,11 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
           </ul>
         </div>
       </Show>
-      <Show when={v().needsFix.length > 0}>
+      <Show when={stillSentBack(v()).length > 0}>
         <div class="stack-2">
           <h3 class="text-heading-s">Sent back to its chat</h3>
           <ul class="list mq-list">
-            <For each={v().needsFix}>
+            <For each={stillSentBack(v())}>
               {(e) => (
                 <li class="list-row mq-row" classList={{ "mq-tap": !!e.session }} data-branch={e.branch} data-state="needs-fix" onClick={rowOpens(() => e.session && chatHref(props.projectId, e.session, props.chatOf))}>
                   <div class="list-main">
@@ -394,12 +415,12 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
                   <div class="list-main">
                     <p class="list-title mq-branch text-mono">{l.entry.branch}</p>
                     <p class="mq-facts">
-                      <QueueChip row={{ label: "Landed", tone: "success" }} />
+                      <QueueChip row={{ label: l.entry.landed?.via === "host" ? `Merged on ${l.entry.request?.host === "gitlab" ? "GitLab" : "GitHub"}` : "Landed", tone: "success" }} />
                       <Show when={l.entry.landed}>
                         {(ld) => (
                           <span>
                             as <span class="text-mono">{short(ld().sha)}</span> · {relativeTime(ld().at)}
-                            {ld().pushed === "not-pushed" ? ` · not pushed${ld().pushWhy ? `: ${ld().pushWhy}` : ""}` : ld().pushed === "pushed" ? " · pushed" : ""}
+                            <Show when={ld().via !== "host"}>{ld().pushed === "not-pushed" ? ` · not pushed${ld().pushWhy ? `: ${ld().pushWhy}` : ""}` : ld().pushed === "pushed" ? " · pushed" : ""}</Show>
                             <Show when={l.run?.noChecks}> · No checks declared</Show>
                           </span>
                         )}

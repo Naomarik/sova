@@ -82,6 +82,42 @@ test("typedGoAhead: the user's word to land now, never a question, a condition, 
 		assert.equal(typedGoAhead(t), null, t);
 });
 
+test("typedGoAhead: asking for a pull or merge request is a go-ahead that names it (via)", () => {
+	for (const t of ["open a PR", "Open a pull request.", "ok, create a PR", "please open a new PR for this", "raise a PR", "put up a PR", "land it as a PR", "merge it as a pull request", "open PR"])
+		assert.deepEqual(typedGoAhead(t), { withoutSpecs: false, withoutReview: false, via: "github-pr" }, t);
+	for (const t of ["open an MR", "open a merge request", "create an MR", "yes, submit a merge request", "land it as an MR"])
+		assert.deepEqual(typedGoAhead(t), { withoutSpecs: false, withoutReview: false, via: "gitlab-mr" }, t);
+	assert.deepEqual(typedGoAhead("open a PR, skip review"), { withoutSpecs: false, withoutReview: true, via: "github-pr" });
+	assert.deepEqual(typedGoAhead("open an MR without its specs"), { withoutSpecs: true, withoutReview: false, via: "gitlab-mr" });
+	for (const t of [
+		"don't open a PR",
+		"do not open an MR yet",
+		"should we open a PR?",
+		"how do I open a PR",
+		"when it's green, open a PR",
+		"open the PR in the browser",
+		"the PR looks fine",
+		"what's in the merge request?",
+		"open a PR? not yet",
+		"[merge-queue] PR #3 open · checks running on GitHub",
+		"I read the whole description again and it reads fine, so open a PR",
+	])
+		assert.equal(typedGoAhead(t), null, t);
+});
+
+test("a go-ahead keeps the request it asked for; an unknown via is dropped", () => {
+	const dir = mkdtempSync(join(tmpdir(), "landing-"));
+	const file = join(dir, "landing.json");
+	try {
+		recordGoAhead({ branch: "feat/x", commit: A, at: "2026-10-23T00:00:00Z", by: "owner-chat", via: "gitlab-mr" }, file);
+		assert.equal(readLanding(file).goAheads[0]!.via, "gitlab-mr");
+		recordGoAhead({ branch: "feat/y", commit: A, at: "2026-10-23T00:00:00Z", by: "owner-chat", via: "bitbucket-pr" as never }, file);
+		assert.equal(readLanding(file).goAheads.find((g) => g.branch === "feat/y")!.via, undefined);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
 test("a go-ahead typed in the owner's chat is kept, and a newer one at the same commit replaces it", () => {
 	const dir = mkdtempSync(join(tmpdir(), "landing-"));
 	const file = join(dir, "landing.json");

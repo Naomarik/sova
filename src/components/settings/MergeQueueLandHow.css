@@ -1,0 +1,11 @@
+/* How it lands: the first row of the Merge Queue settings' Landing group (MergeQueueLandHow.tsx). Its head is one of
+   the tab's .mqs-row rows; the choices and the save sit under it. */
+.mq-landhow { display: grid; gap: var(--space-2); padding-bottom: var(--space-2); }
+.mq-landhow-choices,
+.mq-landhow-where { display: grid; gap: var(--space-2); }
+@container (min-width: 768px) {
+  .mq-landhow-choices { grid-template-columns: 1fr 1fr; }
+}
+.mq-landhow-save { display: grid; gap: var(--space-2); padding: var(--space-3); border-radius: var(--r-lg); background: var(--color-sunken); }
+.mq-landhow-warn { color: var(--status-warn); }
+.mq-landhow > p { margin: 0; }

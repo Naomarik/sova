@@ -398,6 +398,23 @@ test("merge: target, push, checks (a list or \"none\"), install and review, pars
   for (const k of ["target", "push", "checks", "install", "review"]) assert.ok(DEFINITION_KEYS.merge.includes(k as never));
 });
 
+test("merge.land (how a branch lands) and merge.request (the request skill folder): optional, strict, outside the hash", async () => {
+  const { defHashOf } = await import("../server/project-services/def-hash");
+  const services = { web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } } };
+  const plain = parse({ version: 1, services, merge: { checks: "none" } });
+  assert.equal(plain.merge?.land, undefined, "absent: merged locally, as every project before");
+  for (const land of ["local", "github-pr", "gitlab-mr", "push-branch"]) {
+    const d = parse({ version: 1, services, merge: { checks: "none", land, request: ".sova/playbooks/request" } });
+    assert.deepEqual(d.merge, { checks: "none", land, request: ".sova/playbooks/request" });
+    assert.equal(defHashOf(d), defHashOf(plain));
+  }
+  const m = (merge: unknown) => refusedAt({ version: 1, services, merge });
+  assert.equal(m({ land: "pr" }), "$.merge.land");
+  assert.equal(m({ land: true }), "$.merge.land");
+  assert.equal(m({ request: "/abs" }), "$.merge.request");
+  assert.equal(m({ request: "../out" }), "$.merge.request");
+});
+
 test("Sova's own definition declares its merge checks", async () => {
   const { readFileSync } = await import("node:fs");
   const def = parseDefinition(readFileSync(new URL("../.sova/project.json", import.meta.url), "utf8"));

@@ -1170,6 +1170,7 @@ export class ProjectQueue {
         return { run: structuredClone(run) };
       }
       // Save: one commit on the target holding the new definition, moved to like a landing.
+      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit while ${this.releaseName()} is open: save the checks after Publish or Abandon`);
       const co = await checkoutOf(this.git, this.root, this.q.target);
       if (co) {
         const why = await dirtyWhy(this.git, co);

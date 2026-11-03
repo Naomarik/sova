@@ -671,6 +671,19 @@ describe("master's how-it-lands, settings saves and local-main updates against t
     return t.r.record(t.repo.root, rec.id)!;
   };
 
+  test("Save Checks (merge.setup) never moves the frozen target: refused while a release is open", async () => {
+    const t = releaseKit();
+    try {
+      const base = t.repo.head();
+      await t.call("release.start", {});
+      const q = await t.k.q();
+      await assert.rejects(q.setup({ command: "true" }), (e: unknown) => e instanceof MergeFailure && e.code === "invalid-request" && /^master stays on the release commit while release rl_\w+ is open: save the checks after Publish or Abandon$/.test(e.message));
+      assert.equal(t.repo.head(), base);
+    } finally {
+      await t.done();
+    }
+  });
+
   test("this computer's how-it-lands can't be cleared while a release is open: the override stays; after Abandon it can", async () => {
     const t = releaseKit();
     try {

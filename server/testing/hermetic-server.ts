@@ -28,6 +28,8 @@ export interface HermeticServerOptions {
   bootTimeoutMs?: number;
   /** Keep the scratch root after stop() (default: removed, unless the home changed). */
   keep?: boolean;
+  /** Extra variables for the server (a test's time knobs, e.g. SOVA_RELEASE_QUIET_MS), set over the hermetic ones. */
+  env?: Record<string, string>;
 }
 
 export interface HermeticServer {
@@ -312,6 +314,7 @@ export async function startHermeticServer(opts: HermeticServerOptions = {}): Pro
       // Bun's transpiler cache stays the caller's (warm, and outside the sentinel home): Bun keeps it
       // in $HOME/.bun/install/cache/@t@ by default.
       BUN_RUNTIME_TRANSPILER_CACHE_PATH: process.env.BUN_RUNTIME_TRANSPILER_CACHE_PATH || join(homedir(), ".bun", "install", "cache", "@t@"),
+      ...(opts.env ?? {}),
     };
     const bootTimeout = opts.bootTimeoutMs ?? 30_000;
     /** Spawn the server on `port` (0: a free one) and wait for its first healthy answer. */

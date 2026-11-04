@@ -1,0 +1,15 @@
+{
+  "v": 1,
+  "steps": [
+    {"id": "version", "label": "Pick the version", "phase": "prepare"},
+    {"id": "notes", "label": "Write the changelog entry and notes", "phase": "prepare"},
+    {"id": "bump", "label": "Bump the version in its places", "phase": "prepare"},
+    {"id": "stamps", "label": "Re-check the landing page and stamp it", "phase": "prepare"},
+    {"id": "docs", "label": "Update the affected Docs pages", "phase": "prepare", "held": true},
+    {"id": "commit", "label": "Make the release commit", "phase": "prepare"},
+    {"id": "try-live", "label": "Try it on the live server", "phase": "check", "held": true},
+    {"id": "release-page", "label": "Publish the GitHub release page", "phase": "after"},
+    {"id": "outside-checks", "label": "Outside checks the operator picks", "phase": "after", "held": true},
+    {"id": "release-page-withdrawn", "label": "Mark the release page withdrawn", "phase": "withdraw"}
+  ]
+}

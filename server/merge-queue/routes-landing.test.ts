@@ -5,7 +5,7 @@ import type { LandHow, MergeEntry } from "../../shared/merge-queue";
 import { MergeFailure } from "./queue";
 import { type LandingQueue, registerMergeLandingRoutes } from "./routes-landing";
 
-function setup(o: { notPage?: string | null; dirty?: boolean } = {}) {
+function setup(o: { notPage?: string | null; dirty?: boolean; held?: boolean } = {}) {
   const calls: string[] = [];
   const q: LandingQueue = {
     async updateLocalMain() {
@@ -22,6 +22,7 @@ function setup(o: { notPage?: string | null; dirty?: boolean } = {}) {
       return { state: "saved" };
     },
     async clearLandHowOverride() {
+      if (o.held) throw new MergeFailure("invalid-request", "how it lands can't change while release v0.4.0 is open: change it after Publish or Abandon");
       calls.push("clear");
     },
     view: async () => ({ project: "prj_1" }) as never,
@@ -36,6 +37,14 @@ function setup(o: { notPage?: string | null; dirty?: boolean } = {}) {
 }
 
 describe("the routes of how a branch lands", () => {
+  test("clearing the override while a release is open is a refusal with its words, never a server error", async () => {
+    const t = setup({ held: true });
+    const r = await t.call("DELETE", "/api/merge-queue/projects/prj_1/land-how/override");
+    assert.equal(r.status, 400);
+    assert.deepEqual(r.body, { error: { code: "invalid-request", message: "how it lands can't change while release v0.4.0 is open: change it after Publish or Abandon" } });
+    assert.deepEqual(t.calls, []);
+  });
+
   test("each reaches its queue act; bad values, unknown projects and entries are refused before anything runs", async () => {
     const t = setup();
     assert.equal((await t.call("POST", "/api/merge-queue/projects/prj_1/update-local-main")).status, 200);

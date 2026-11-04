@@ -334,7 +334,7 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
     const powers = await (await app.request(`/api/projects/${pa.id}/overseer`)).text();
     const op = powers + everyFile();
     assert.ok(op.includes("codingStart") && op.includes("copiesRun"), "control: the power ids are in the operator's records");
-    const banned = [...POWERS.filter((p) => p !== "deploy" && p !== "share" && p !== "gather" && p !== "promote" && p !== "roster"), ...POWERS.map((p) => POWER_INFO[p].label), PAUSED_BRAKE_REASON, EMPTY_ROSTER_BRAKE_REASON, "L0", "L1", "L2", "L3"];
+    const banned = [...POWERS.filter((p) => p !== "deploy" && p !== "release" && p !== "share" && p !== "gather" && p !== "promote" && p !== "roster"), ...POWERS.map((p) => POWER_INFO[p].label), PAUSED_BRAKE_REASON, EMPTY_ROSTER_BRAKE_REASON, "L0", "L1", "L2", "L3"];
     for (const [label, body] of answers) {
       if (label.includes(" GET /i/")) continue; // the static shell (the share build's own code)
       for (const w of banned) assert.ok(!body.includes(w), `${w} in ${label}`);

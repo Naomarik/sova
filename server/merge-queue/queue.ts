@@ -288,7 +288,9 @@ export class ProjectQueue {
     return v;
   }
 
-  async view(): Promise<MergeQueueView> {
+  /** `fresh`: nothing timed is kept (a caller that keeps this view until its refs move again). */
+  async view(opts?: { fresh?: boolean }): Promise<MergeQueueView> {
+    if (opts?.fresh) this.settledCache = null;
     const d = await this.declared();
     const head = d.head || (await this.targetHead()) || "";
     // How far each open entry's branch moved past its pinned commit.

@@ -87,16 +87,17 @@ async function treeProject(d: QueueListDeps, path: string): Promise<ProjectOf> {
   return p;
 }
 
-/** Each root's merge setup while its refs stay put. The stamp is taken before Git is read: a move during it is never
- *  certified. A target not yet known is stamped on the next read (one extra read per root). */
-const rootSetups = new Map<string, { stamp: string; target?: string; v: Promise<SetupOf> }>();
+/** Each root's merge setup while its refs stay put, VIEW_BACKSTOP_MS at most. The stamp is taken before Git is read: a
+ *  move during it is never certified. A target not yet known is stamped on the next read (one extra read per root). An
+ *  answer with no head is a read that failed, or a target with no commit: never kept. */
+const rootSetups = new Map<string, { stamp: string; at: number; target?: string; v: Promise<SetupOf> }>();
 async function setupByStamp(d: QueueListDeps, root: string): Promise<SetupOf> {
   const key = servedKey(root);
   const hit = rootSetups.get(key);
   const stamp = d.stamp(root, targetRefs(hit?.target));
-  if (stamp !== null && hit?.stamp === stamp) return hit.v;
+  if (stamp !== null && hit?.stamp === stamp && d.now() - hit.at < VIEW_BACKSTOP_MS) return hit.v;
   const v = d.setupOf(root);
-  const entry = { stamp: stamp ?? "", ...(hit?.target ? { target: hit.target } : {}), v };
+  const entry = { stamp: stamp ?? "", at: d.now(), ...(hit?.target ? { target: hit.target } : {}), v };
   if (stamp === null) rootSetups.delete(key);
   else rootSetups.set(key, entry);
   const s = await v.catch((err) => {
@@ -104,6 +105,7 @@ async function setupByStamp(d: QueueListDeps, root: string): Promise<SetupOf> {
     throw err;
   });
   entry.target = s.target;
+  if (!s.head && rootSetups.get(key) === entry) rootSetups.delete(key);
   return s;
 }
 const targetRefs = (target: string | undefined): string[] => ["refs/heads/master", "refs/heads/main", ...(target ? [`refs/heads/${target}`] : [])];
@@ -122,7 +124,8 @@ export async function branchQueueFields(path: string, branch: string): Promise<{
     const setup = await setupByStamp(d, p.root);
     // Listed, setup not done: Set Up, never Land; no queue is made for it.
     if (!setup.setUp) return { fields: { mergeProject: projectCut(setup) } };
-    const v = latestViews.get(servedKey(p.root)) ?? (await readView(d, servedKey(p.root)));
+    const key = servedKey(p.root);
+    const v = latestViews.get(key) ?? (await readView(d, key, lookAt(d, key, targetRefs(setup.target), [])));
     if (!v) return { fields: {} };
     const q = v.byBranch.get(branch);
     return { root: p.root, fields: { ...(q ? { queue: q } : {}), mergeServed: true, mergeProject: v.project } };
@@ -140,7 +143,7 @@ interface KeptView {
   /** What a change no `save()` tells of would move (checkQueueViews): the target and the sent-back branches. */
   refs: string[];
   worktrees: string[];
-  /** The newest look: at those refs, its stamp, and when a view was last read for it. */
+  /** The look taken before the newest view read for the list: at those refs, its stamp, and when. */
   seen?: { refs: string; stamp: string | null; at: number };
 }
 
@@ -150,15 +153,30 @@ const latestViews = new Map<string, KeptView>();
 /** The views being read for the list, one per queue. */
 const viewing = new Map<string, Promise<KeptView | undefined>>();
 
-function readView(d: QueueListDeps, key: string): Promise<KeptView | undefined> {
+/** What a queue's view rests on, as of now. */
+function lookAt(d: QueueListDeps, key: string, refs: readonly string[], worktrees: readonly string[]): NonNullable<KeptView["seen"]> {
+  const raw = d.stamp(key, refs);
+  return { refs: refs.join("\n"), stamp: raw === null ? null : `${raw}\0${worktrees.map((w) => d.exists(w)).join()}`, at: d.now() };
+}
+
+/** Read a queue's view for the list. `seen` is the look taken before it: a move during the read is never certified,
+ *  and a read that failed spends no look. A queue gone from service loses its view, and its rows their queue facts. */
+function readView(d: QueueListDeps, key: string, seen: NonNullable<KeptView["seen"]>): Promise<KeptView | undefined> {
   const flight = viewing.get(key);
   if (flight) return flight;
   const p = d
     .view(key)
     .then((v) => {
       if (v) noteQueueView(v);
-      else if (latestViews.delete(key)) sessionsChanged();
-      return latestViews.get(key);
+      else if (latestViews.delete(key)) void import("../merge-readiness").then((m) => m.rereadBranches(key));
+      const kept = latestViews.get(key);
+      if (kept) kept.seen = seen;
+      return kept;
+    })
+    .catch((err) => {
+      const kept = latestViews.get(key);
+      if (kept) delete kept.seen;
+      throw err;
     })
     .finally(() => viewing.delete(key));
   viewing.set(key, p);
@@ -195,9 +213,9 @@ export function noteQueueView(view: Pick<MergeQueueView, "root" | "at" | "projec
 /**
  * The session feed's queue watch, every few seconds while the feed runs: stats only. Every change the queue makes
  * reaches the list by its publish; this catches what moves with no `save()`, which is the target's head (its checks,
- * its invalid definition, what the sent-back entries settled into) and a sent-back branch or its worktree going. A
- * queue whose stamp moved has its view read once; VIEW_BACKSTOP_MS bounds what no stamp sees (the hosts' polls are
- * saves, and a row never needs one). Returns how many views it started.
+ * its invalid definition, what the sent-back entries settled into), a sent-back branch or its worktree going, and a
+ * project leaving the list. A queue with a move, or with a look not taken yet (a view published or a send-back since
+ * the last look), has its view read once; VIEW_BACKSTOP_MS bounds what no stamp sees. Returns how many views it started.
  */
 export function checkQueueViews(): number {
   const d = listDeps;
@@ -205,19 +223,11 @@ export function checkQueueViews(): number {
   let n = 0;
   for (const [key, v] of latestViews) {
     if (viewing.has(key)) continue;
-    const refs = v.refs.join("\n");
-    const raw = d.stamp(key, v.refs);
-    const stamp = raw === null ? null : `${raw}\0${v.worktrees.map((w) => d.exists(w)).join()}`;
-    const now = d.now();
+    const look = lookAt(d, key, v.refs, v.worktrees);
     const seen = v.seen;
-    // A new list of refs is a new baseline, not a move: the view that named them has just been read.
-    if (!seen || seen.refs !== refs) {
-      v.seen = { refs, stamp, at: seen?.at ?? now };
-      continue;
-    }
-    if (stamp === null ? now - seen.at < VIEW_UNPINNED_MS : stamp === seen.stamp && now - seen.at < VIEW_BACKSTOP_MS) continue;
-    v.seen = { refs, stamp, at: now };
-    void readView(d, key).catch((err) => console.warn(`[merge-queue] ${key}: view failed: ${err instanceof Error ? err.message : err}`));
+    const unmoved = seen?.refs === look.refs && d.projectIdOf(key) !== null && (look.stamp === null ? look.at - seen.at < VIEW_UNPINNED_MS : look.stamp === seen.stamp && look.at - seen.at < VIEW_BACKSTOP_MS);
+    if (unmoved) continue;
+    void readView(d, key, look).catch((err) => console.warn(`[merge-queue] ${key}: view failed: ${err instanceof Error ? err.message : err}`));
     n++;
   }
   return n;
@@ -717,10 +727,15 @@ export async function startMergeQueue(
     },
     stamp: gitRefsStamp,
     // Uncached: a view from before a move must not be kept as the view after it.
-    view: async (root) => ((await served.served(root)) ? (await q.get(root)).view() : null),
+    view: async (root) => {
+      served.forget(root);
+      return (await served.served(root)) ? (await q.get(root)).view({ fresh: true }) : null;
+    },
     exists: existsSync,
     now: Date.now,
   };
+  // Rows read before this line have no queue fields, and nothing else re-reads an archived one.
+  void import("../merge-readiness").then((m) => m.rereadBranches()).catch((err) => console.warn(`[merge-queue] rows: ${err instanceof Error ? err.message : err}`));
   // The chats' file is current before the typed go-ahead door opens.
   await writer.first;
   // Leftover records of a repo the queue doesn't serve stay on disk, never loaded.

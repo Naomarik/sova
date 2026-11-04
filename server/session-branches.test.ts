@@ -284,8 +284,7 @@ test("the queue watch reads a view only when what it rests on moved, and the cha
   wire.setQueueListForTest(deps);
   try {
     await wire.branchQueueFields("/repo/.wt/a", "feat/a");
-    assert.equal(wire.checkQueueViews(), 0, "the first look is a baseline");
-    for (let i = 0; i < 5; i++) assert.equal(wire.checkQueueViews(), 0);
+    for (let i = 0; i < 5; i++) assert.equal(wire.checkQueueViews(), 0, "the first read's look was taken before it");
     assert.equal(asked.view, 1);
 
     // The target moved with no save(): its checks changed, and a sent-back entry appears in the view.
@@ -294,13 +293,78 @@ test("the queue watch reads a view only when what it rests on moved, and the cha
     const before = listGeneration();
     assert.equal(wire.checkQueueViews(), 1);
     assert.equal(wire.checkQueueViews(), 0, "one read per move");
-    await viewsSettled(() => asked.view === 2 && listGeneration() > before);
+    await viewsSettled(() => asked.view === 2 && listGeneration() > before && wire.checkQueueViews() === 0);
     assert.equal(wire.branchProjectNow("/repo")?.checks, "none", "the project facts join at listing time");
     assert.equal(wire.checkQueueViews(), 0);
 
     state.clock += wire.VIEW_BACKSTOP_MS;
     assert.equal(wire.checkQueueViews(), 1, "the backstop bounds what no stamp sees");
     await viewsSettled(() => asked.view === 3);
+  } finally {
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+  }
+});
+
+test("a view no look covers is read once: a move before the feed starts is never swallowed as a baseline", async () => {
+  wire.resetQueueViewsForTest();
+  const { asked, deps } = listDeps();
+  wire.setQueueListForTest(deps);
+  try {
+    wire.noteQueueView({ ...view("2026-10-01T00:00:00.000Z", {}), target: "master", checks: "declared" } as unknown as MergeQueueView);
+    assert.equal(wire.checkQueueViews(), 1);
+    await viewsSettled(() => asked.view === 1 && !wire.checkQueueViews());
+  } finally {
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+  }
+});
+
+test("a read that failed spends no look; a read during which the refs moved is read again", async () => {
+  wire.resetQueueViewsForTest();
+  const { asked, state, deps } = listDeps();
+  let fail = false;
+  const inner = deps.view;
+  const after: (() => void)[] = [];
+  wire.setQueueListForTest({ ...deps, view: async (root) => {
+    if (fail) { asked.view++; throw new Error("no"); }
+    const v = await inner(root);
+    for (const f of after.splice(0)) f();
+    return v;
+  } });
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    state.refs = "r2";
+    fail = true;
+    assert.equal(wire.checkQueueViews(), 1);
+    await viewsSettled(() => asked.view === 2);
+    fail = false;
+    after.push(() => (state.refs = "r3"));
+    await viewsSettled(() => wire.checkQueueViews() === 1);
+    await viewsSettled(() => asked.view === 3);
+    await viewsSettled(() => wire.checkQueueViews() === 1);
+    await viewsSettled(() => asked.view === 4);
+  } finally {
+    console.warn = warn;
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+  }
+});
+
+test("a project leaving the list loses its view at the next look, with no ref moved", async () => {
+  wire.resetQueueViewsForTest();
+  let listed = true;
+  const { deps } = listDeps({ projectIdOf: () => (listed ? "prj_1" : null) });
+  const view0 = deps.view;
+  wire.setQueueListForTest({ ...deps, view: (root) => (listed ? view0(root) : Promise.resolve(null)) });
+  try {
+    await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    assert.equal(wire.checkQueueViews(), 0);
+    listed = false;
+    assert.equal(wire.checkQueueViews(), 1);
+    await viewsSettled(() => wire.branchProjectNow("/repo") === null);
   } finally {
     wire.setQueueListForTest(null);
     wire.resetQueueViewsForTest();
@@ -315,16 +379,18 @@ test("the queue watch sees a sent-back branch's worktree go, and a repo nothing 
   wire.setQueueListForTest(deps);
   try {
     await wire.branchQueueFields("/repo/.wt/a", "feat/a");
-    wire.checkQueueViews();
+    assert.equal(wire.checkQueueViews(), 1, "the view named a ref the first look couldn't");
+    await viewsSettled(() => asked.view === 2);
+    await new Promise<void>((go) => setImmediate(go)); // its flight has closed
     assert.equal(wire.checkQueueViews(), 0);
     there = false;
     assert.equal(wire.checkQueueViews(), 1);
-    await viewsSettled(() => asked.view === 2);
+    await viewsSettled(() => asked.view === 3);
 
     wire.resetQueueViewsForTest();
+    state.needsFix = [];
     wire.setQueueListForTest({ ...deps, stamp: () => null });
     await wire.branchQueueFields("/repo/.wt/a", "feat/a");
-    wire.checkQueueViews();
     assert.equal(wire.checkQueueViews(), 0);
     state.clock += 20_000;
     assert.equal(wire.checkQueueViews(), 1);
@@ -334,7 +400,7 @@ test("the queue watch sees a sent-back branch's worktree go, and a repo nothing 
   }
 });
 
-test("a served queue going away drops its view; a row keeps nothing of it", async () => {
+test("a served queue going away drops its view", async () => {
   wire.resetQueueViewsForTest();
   const { state, deps } = listDeps();
   let served = true;
@@ -342,14 +408,63 @@ test("a served queue going away drops its view; a row keeps nothing of it", asyn
   wire.setQueueListForTest({ ...deps, view: (root) => (served ? view0(root) : Promise.resolve(null)) });
   try {
     await wire.branchQueueFields("/repo/.wt/a", "feat/a");
-    wire.checkQueueViews();
     served = false;
     state.refs = "r2";
-    wire.checkQueueViews();
+    assert.equal(wire.checkQueueViews(), 1);
     await viewsSettled(() => wire.branchProjectNow("/repo") === null);
   } finally {
     wire.setQueueListForTest(null);
     wire.resetQueueViewsForTest();
+  }
+});
+
+test("a root's setup: a failed read is never kept, and any answer has a backstop", async () => {
+  wire.resetQueueViewsForTest();
+  const { asked, state, deps } = listDeps();
+  let head = "";
+  const setupOf = deps.setupOf;
+  wire.setQueueListForTest({ ...deps, setupOf: async (root) => ({ ...(await setupOf(root)), head, setUp: !!head }) });
+  try {
+    assert.equal((await wire.branchQueueFields("/repo/.wt/a", "feat/a")).fields.mergeServed, undefined);
+    head = "h";
+    assert.equal((await wire.branchQueueFields("/repo/.wt/a", "feat/a")).fields.mergeServed, true, "no head: the next read asks, refs unmoved");
+    await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    const before = asked.setup;
+    await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    assert.equal(asked.setup, before, "kept while nothing moved");
+    state.clock += wire.VIEW_BACKSTOP_MS;
+    await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    assert.equal(asked.setup, before + 1);
+  } finally {
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+  }
+});
+
+test("rows read before the queue started gain their queue fields, archived ones too; a queue gone from service leaves its rows", async () => {
+  r.resetReadiness();
+  let fields: Awaited<ReturnType<NonNullable<Parameters<typeof r.configureReadiness>[0]["branchFields"]>>> = { fields: {} };
+  r.configureReadiness({ served: async () => true, asksUser: () => undefined, insights: { treeStatus: async (p: string) => status(p) }, branchFields: async () => fields, queueNow: () => null, projectNow: () => null });
+  try {
+    const row = { ...summary(sessionFile([tree(own, "feat/own")])), archived: true };
+    r.readinessOverlay(row);
+    await r.readinessIdle();
+    assert.equal(r.branchesOverlay(row)![0]!.mergeServed, undefined);
+    assert.equal(r.readinessParked(row), true, "nothing else would ever re-read it");
+    const before = listGeneration();
+    fields = { root: "/repo", fields: { mergeServed: true, queue: { state: "needs-fix", commit: "a" } } };
+    await r.rereadBranches();
+    assert.equal(r.branchesOverlay(row)![0]!.queue?.state, "needs-fix");
+    assert.ok(listGeneration() > before, "the row pushes");
+
+    fields = { fields: {} };
+    await r.rereadBranches("/elsewhere");
+    assert.equal(r.branchesOverlay(row)![0]!.mergeServed, true, "another queue's rows stay");
+    await r.rereadBranches("/repo");
+    assert.equal(r.branchesOverlay(row)![0]!.mergeServed, undefined);
+    assert.equal(r.branchesOverlay(row)![0]!.queue, undefined);
+  } finally {
+    r.resetReadiness();
   }
 });
 

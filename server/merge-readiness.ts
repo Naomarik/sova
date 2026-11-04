@@ -889,6 +889,25 @@ export function branchesOverlay(s: SessionSummary): SessionBranchRow[] | undefin
   return b?.length ? joinBranches(b, deps.queueNow, deps.projectNow) : undefined;
 }
 
+/**
+ * Read the queue fields again of every row they went wrong for, parked ones too, without its readiness: with no root
+ * the rows the queue's start found unjoined (no join would ever reach them), with `root` the rows of a queue gone from
+ * service (the join keeps a read's fields while no view is known). After the reads under way, which may be such rows.
+ */
+export async function rereadBranches(root?: string): Promise<void> {
+  await readinessIdle();
+  let moved = false;
+  for (const [path, hit] of [...cache]) {
+    const wrong = hit.branches?.some((b) => (root === undefined ? !b.root && b.row.exists : b.root === root));
+    if (!wrong || !hit.facts) continue;
+    const branches = await computeBranches(hit.row, hit.facts);
+    if (cache.get(path) !== hit || JSON.stringify(branches ?? null) === JSON.stringify(hit.branches)) continue;
+    cache.set(path, { ...hit, ...(branches ? { branches } : {}) });
+    moved = true;
+  }
+  if (moved) sessionsChanged();
+}
+
 /** Ask the follow-up check for every merge card with a reply it hasn't answered. */
 export async function checkFollowUps(s: SessionSummary, facts: FileFacts, r: SessionReadiness | undefined): Promise<boolean> {
   const f = deps.followUps;

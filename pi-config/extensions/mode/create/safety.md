@@ -25,8 +25,8 @@ Be exact about what it is: containment for an agent's mistakes on a single-user 
 
 - Change: what On means on this computer: `level`, `defaultOn`, `writable`, `hidden`, `shadowed`, `readOnlyWithinWritable`, `proxy`, `env`, `acceptPartial`.
 - Lives: this computer, in `<agent dir>/sandbox-policy/<platform>/policy.json`, where the platform is `linux` or `darwin`.
-- Approves: the person, with Apply. It loosens every chat, so say which keys widen and for whom.
-- By: Card. Propose `sandbox.policy`; `sova_settings` reference gives its shape.
+- Approves: the person, with Apply and Approve on the card, in their own page. Every change to it is a grant. It reaches every chat, so say which keys widen and for whom.
+- By: Card. Propose `{setting: "sova", id: "sandbox.policy", value: <the whole policy.json>}`; `sova_settings` reference gives its shape. You only prepare it: this is no way around lowering a sandbox.
 - Live: next tool call, in every chat.
 - Check: `/sandbox` in a chat reports the state; try the path or host that changed.
 

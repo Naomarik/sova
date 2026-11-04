@@ -45,7 +45,7 @@ test("the ask on a large branch: newest bodies in full until the budget, then su
   const big = facts(260, 150, "x".repeat(2000));
   const p = branchSummaryPrompt(big);
   // Subjects capped, the cut said.
-  assert.match(p, new RegExp(`the newest ${SUBJECTS_MAX} of 260`));
+  assert.match(p, new RegExp(`the newest ${SUBJECTS_MAX} of 260 commits`));
   assert.equal((p.match(/^- Change number /gm) ?? []).length, SUBJECTS_MAX);
   assert.ok(p.includes("Change number 260"), "the newest is in");
   assert.ok(!p.includes("Change number 60\n"), "the oldest beyond the cap are out");
@@ -253,4 +253,25 @@ test("the facts from git: messages newest first with bodies, parts with +/− (b
   assert.deepEqual(f.files.find((x) => x.path === "a.txt"), { path: "a.txt", added: 1, removed: 0 });
   assert.deepEqual(f.files.find((x) => x.path === "b.bin"), { path: "b.bin", added: null, removed: null });
   assert.ok(!readFileSync(join(repo, "a.txt"), "utf8").includes("x"));
+});
+
+test("a branch past 200 commits: the ask says how many were left out, from git's real count", async () => {
+  const repo = join(root, "repo-205");
+  mkdirSync(repo, { recursive: true });
+  const git = (...a: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...a], { cwd: repo, encoding: "utf8" }).trim();
+  git("init", "-q", "-b", "master");
+  git("commit", "-q", "--allow-empty", "-m", "base");
+  const base = git("rev-parse", "HEAD");
+  git("checkout", "-qb", "feat/long");
+  for (let i = 1; i <= 205; i++) git("commit", "-q", "--allow-empty", "-m", `Step ${i}`);
+  const head = git("rev-parse", "HEAD");
+  const f = await readBranchFacts(realGit, repo, { branch: "feat/long", commit: head, target: "master", targetHead: base });
+  assert.ok(f);
+  assert.equal(f.messages.length, SUBJECTS_MAX);
+  assert.equal(f.commits, 205);
+  const p = branchSummaryPrompt(f);
+  assert.match(p, /the newest 200 of 205 commits/);
+  assert.ok(p.includes("Step 205") && !p.includes("Step 5\n"));
+  // Under the cap: no note.
+  assert.doesNotMatch(branchSummaryPrompt({ ...f, messages: f.messages.slice(0, 3), commits: 3 }), /the newest/);
 });

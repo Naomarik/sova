@@ -48,6 +48,8 @@ export interface BranchFacts {
   commit: string;
   target: string;
   messages: CommitMessage[];
+  /** How many commits the branch has (no merges); more than `messages` holds when the log was capped. */
+  commits?: number;
   files: ChangedPart[];
 }
 
@@ -58,6 +60,7 @@ const US = "\u001f";
 export async function readBranchFacts(git: Git, root: string, a: { branch: string; commit: string; target: string; targetHead: string }): Promise<BranchFacts | null> {
   const log = await git(["log", "--no-merges", `--format=%s${US}%b${RS}`, "-n", String(SUBJECTS_MAX), `${a.targetHead}..${a.commit}`], root);
   const diff = await git(["diff", "--numstat", "--no-renames", `${a.targetHead}...${a.commit}`], root);
+  const count = await git(["rev-list", "--count", "--no-merges", `${a.targetHead}..${a.commit}`], root);
   if (log.code !== 0 || diff.code !== 0) return null;
   const messages = log.stdout
     .split(RS)
@@ -77,7 +80,8 @@ export async function readBranchFacts(git: Git, root: string, a: { branch: strin
       return { path, added: ad === "-" ? null : Number(ad) || 0, removed: rm === "-" ? null : Number(rm) || 0 };
     })
     .filter((f): f is ChangedPart => !!f);
-  return { branch: a.branch, commit: a.commit, target: a.target, messages, files };
+  const commits = count.code === 0 ? Number(count.stdout.trim()) : NaN;
+  return { branch: a.branch, commit: a.commit, target: a.target, messages, files, ...(Number.isFinite(commits) && commits > 0 ? { commits } : {}) };
 }
 
 // ---- the ask -------------------------------------------------------------------------------------------------------
@@ -114,7 +118,8 @@ export function branchSummaryPrompt(f: BranchFacts): string {
   if (more > 0) shown.push(`and ${more} more`);
   const all = [...lines, ...shown].join("\n");
   const fence = all.includes("```") ? "~~~~" : "```";
-  const older = f.messages.length > SUBJECTS_MAX ? ` (the newest ${SUBJECTS_MAX} of ${f.messages.length})` : "";
+  const total = Math.max(f.commits ?? 0, f.messages.length);
+  const older = total > msgs.length ? ` (the newest ${msgs.length} of ${total} commits)` : "";
   return [
     `The branch's commit messages, newest first${older}:`,
     fence,

@@ -5,7 +5,7 @@ import { allBatons, batonSummaryField, isRetiredBaton } from "./baton";
 import { contributeSessions } from "./sessions-index";
 import { buildMerged } from "./build-merged";
 import { orgOfSessionPath, readIndex, readOrg, readProjects } from "./orgs";
-import { readEngineBuilds, type BuildKind, type BuildRow } from "./build-loadout";
+import { readEngineBuilds, type BuildKind, type StatechartBuildRow } from "./build-loadout";
 import { projectOverseerPaths, readPoMarker, readPoState } from "./project-overseer-store";
 
 /**
@@ -96,7 +96,7 @@ export function orgLookup(): OrgLookup {
     return currents.get(k) ?? null;
   };
 
-  let coding: Map<string, { orgId: string; dir: string; projectId: string; row: BuildRow }> | null = null;
+  let coding: Map<string, { orgId: string; dir: string; projectId: string; row: StatechartBuildRow }> | null = null;
   const codingOf = (id: string) => (coding ??= codingSessions(orgs)).get(id);
 
   const placings = new Map<string, SessionOrgRef | undefined>();
@@ -145,8 +145,8 @@ export function orgCodingIds(): Set<string> {
 
 /** Session id → project, for every build of the attached orgs (a project removed from the org's
     list keeps its builds, so its sessions stay organizational). */
-function codingSessions(orgs: readonly { id: string; dir: string }[]): Map<string, { orgId: string; dir: string; projectId: string; row: BuildRow }> {
-  const out = new Map<string, { orgId: string; dir: string; projectId: string; row: BuildRow }>();
+function codingSessions(orgs: readonly { id: string; dir: string }[]): Map<string, { orgId: string; dir: string; projectId: string; row: StatechartBuildRow }> {
+  const out = new Map<string, { orgId: string; dir: string; projectId: string; row: StatechartBuildRow }>();
   for (const o of orgs) {
     for (const r of readEngineBuilds(o.id)) if (ORG_CODING_KINDS.has(r.kind) && !out.has(r.sessionId)) out.set(r.sessionId, { orgId: o.id, dir: o.dir, projectId: r.projectId, row: r });
   }

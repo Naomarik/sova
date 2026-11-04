@@ -37,7 +37,7 @@ export interface BatchDeps {
   members(groupId: string): string[] | null;
   /** Session id → path. `ids` is what the caller needs resolved, so an implementation can answer
       from a cache and only touch the disk when one of them is missing from it. */
-  paths(ids: readonly string[]): Promise<Map<string, string>>;
+  paths(ids: readonly string[]): Promise<ReadonlyMap<string, string>>;
   /** Open in a TUI (or any other pi process). */
   live(path: string): boolean;
   archived(id: string): boolean;

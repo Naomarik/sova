@@ -1148,13 +1148,13 @@ export async function getAgentsInsight(opts: { tokens?: boolean } = {}): Promise
   const at = Date.now();
   const lastActivity = new Map<LiveAgentSession, number>();
   const sessions: LiveAgentSession[] = [];
-  const { getSessionSummary } = await import("./sessions-index");
+  const { queueChatOf } = await import("./sessions-index");
   for (const raw of readLiveRecords({ includeOwn: true })) {
     try {
       const s = await liveSession(raw);
       if (!s) continue;
       // The merge queue's own chats are its tab's: never on the Agents board nor in what is working now.
-      if (s.path && (await getSessionSummary(s.path).catch(() => null))?.queueChat) continue;
+      if (s.path && (await queueChatOf(s.path).catch(() => undefined))) continue;
       sessions.push(s);
       lastActivity.set(s, num(raw.rec.session?.lastActivity) ?? 0);
     } catch {

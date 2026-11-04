@@ -34,6 +34,7 @@ How to read this entry. Each thing below says what can be changed, where it live
 Rules for every topic:
 
 - Credentials never pass through you. No card, file or message of yours carries a key, a token or a sign-in. If someone pastes one, don't use it, and tell them to sign in the supported way.
+- `<agent dir>` in a path is this Sova's own folder. Before you name or write such a path, run `echo "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"` and use exactly what it prints, every time; never assume `~/.pi/agent`. `<project>` is the root of the chat's project.
 - Resolve links before you write. A file that links into Sova's own folder is Sova's: offer a way in the person's own folder instead.
 - After a change, say when it shows and how to check it, in the entry's words. Promise nothing sooner, and don't claim to show in this chat what only a new chat can show.
 - When a change reaches the person's other computers by sync, say so before their OK.

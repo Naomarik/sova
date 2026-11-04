@@ -97,6 +97,12 @@ test("the lookup returns the shared rules, then the entry, with owner notes out"
 	assert.ok(!got.includes("<!--"));
 });
 
+test("the shared rules define <agent dir>, so an entry that uses it can't be read as ~/.pi/agent", () => {
+	const shared = stripOwnerNotes(CREATE_FILES.shared!);
+	assert.ok(shared.includes('"${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"'));
+	assert.ok(CREATE_TOPICS.some((topic) => CREATE_FILES[topic]!.includes("<agent dir>")), "entries use the name the rule defines");
+});
+
 test("a topic that isn't listed is refused, and the answer lists the topics", () => {
 	assert.throws(() => createGuide("nope"), (err: Error) => err.message === `No topic nope. Topics: ${CREATE_TOPICS.join(", ")}.`);
 	assert.throws(() => createGuide("shared"), /^Error: No topic shared\./);

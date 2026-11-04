@@ -200,7 +200,8 @@
     "insights.usage.refresh",
     "schedule.list",
     "playbook.list",
-    "draft-spec.list"
+    "draft-spec.list",
+    "session.context.view"
   ],
   "retired": [
     "settings.agents.get",

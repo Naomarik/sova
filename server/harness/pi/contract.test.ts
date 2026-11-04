@@ -251,6 +251,21 @@ describe("pi contract", () => {
     session.dispose();
   });
 
+  test("C6: a tool_result handler's replacement content is what the toolResult entry stores and the next request sends", async () => {
+    const ext = (api: any) => {
+      api.registerTool({ name: "echo", label: "echo", description: "echo", parameters: Type.Object({ word: Type.String() }), execute: async (_id: string, p: { word: string }) => ({ content: [{ type: "text", text: p.word }], details: {} }) });
+      api.on("tool_result", (event: any) => ({ content: [...event.content, { type: "text", text: "<appended>" }] }));
+    };
+    const { session, model, sm } = await quirkSession({ extensions: [ext] });
+    model.reply({ toolCall: { name: "echo", arguments: { word: "hi" } } }, { text: "done" });
+    await session.prompt("go");
+    const stored = sm.getEntries().filter((e: any) => e.type === "message" && e.message.role === "toolResult");
+    assert.deepEqual(stored.map((e: any) => e.message.content.map((b: any) => b.text)), [["hi", "<appended>"]], "the stored entry holds the replacement");
+    const sent = (model.calls[1]!.context as any).messages.filter((m: any) => m.role === "toolResult");
+    assert.deepEqual(sent.map((m: any) => m.content.map((b: any) => b.text)), [["hi", "<appended>"]], "and the next request sends it");
+    session.dispose();
+  });
+
   test("C5: prompt and steer take image content {type, data, mimeType} and store it as such", async () => {
     const { session, faux } = await scriptedSession();
     let steered = false;

@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 508 |
-| Routes a catalogue entry points at | 152 |
-| Catalogue entries | 200 |
+| Routes registered | 509 |
+| Routes a catalogue entry points at | 153 |
+| Catalogue entries | 201 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -63,6 +63,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.workers.checks` | Show Worker Report Checks | looks | `GET /api/sessions/worker-checks` | sessions |
 | `session.context` | Show Session Context | looks | `GET /api/sessions/context` | sessions |
 | `session.context.file` | Read Context File | looks | `GET /api/sessions/context/file` | sessions |
+| `session.context.view` | Show Context Window | looks | `GET /api/sessions/context-view` | sessions |
 | `session.group.list` | List Groups | looks | `GET /api/session-groups` | sessions |
 | `session.group.create` | New Group | changes | `POST /api/session-groups` | sessions |
 | `session.group.rename` | Rename Group | changes | `PATCH /api/session-groups/:id` | sessions |
@@ -837,6 +838,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `POST /api/sessions/cleanup` | sessions | `session.cleanup` |
 | `POST /api/sessions/configure` | sessions | `session.configure` |
 | `GET /api/sessions/context` | sessions | `session.context` |
+| `GET /api/sessions/context-view` | sessions | `session.context.view` |
 | `GET /api/sessions/context/file` | sessions | `session.context.file` |
 | `GET /api/sessions/draft` | sessions | `session.draft.get` |
 | `PUT /api/sessions/draft` | sessions | `session.draft.set` |

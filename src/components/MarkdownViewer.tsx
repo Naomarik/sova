@@ -1,15 +1,20 @@
-import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
-import { closeMarkdown, markdownViewer, type MarkdownView } from "../lib/markdown-viewer";
+import { createEffect, createMemo, createSignal, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { closeMarkdown, markdownViewer, type FileShape, type MarkdownView } from "../lib/markdown-viewer";
+import { highlight } from "../lib/markdown";
 import { copyText } from "../lib/ui-state";
 import { Markdown } from "./Markdown";
 import { Icon } from "./ui";
 import "../design/markdown-viewer.css";
 
+/** The shape, when it is that kind. */
+const shaped = <K extends FileShape["kind"]>(s: FileShape, kind: K) => (s.kind === kind ? (s as Extract<FileShape, { kind: K }>) : undefined);
+
 /**
- * The one markdown viewer (§app/markdown-viewer): a native <dialog> opened with showModal(), like
- * the Lightbox, so it sits in the top layer over any dialog already open. Mounted once; what it
- * shows comes from openMarkdown. Esc closes only this dialog: it never reaches the document, where
- * Settings and the changes viewer listen. The document is only rendered while it is open.
+ * The one reader (§app/markdown-viewer): a native <dialog> opened with showModal(), like the
+ * Lightbox, so it sits in the top layer over any dialog already open. Mounted once; what it shows
+ * comes from openMarkdown: markdown, or a file in the shape its type calls for. Esc closes only this
+ * dialog: it never reaches the document, where Settings and the changes viewer listen. The document
+ * is only rendered while it is open.
  */
 export function MarkdownViewer() {
   let dialog!: HTMLDialogElement;
@@ -87,14 +92,18 @@ export function MarkdownViewer() {
                 </Show>
               </div>
               <div class="md-viewer-actions">
-                <button class="button button-sm button-ghost" type="button" aria-pressed={view() === "source"} onClick={() => setView(view() === "source" ? "rendered" : "source")}>
-                  <Icon name="terminal" small />
-                  Source
-                </button>
-                <button class="button button-sm button-ghost" type="button" onClick={() => void copyText(s().markdown, "Copied markdown.")}>
-                  <Icon name="copy" small />
-                  Copy
-                </button>
+                <Show when={s().shape.kind === "markdown"}>
+                  <button class="button button-sm button-ghost" type="button" aria-pressed={view() === "source"} onClick={() => setView(view() === "source" ? "rendered" : "source")}>
+                    <Icon name="terminal" small />
+                    Source
+                  </button>
+                </Show>
+                <Show when={s().shape.kind !== "note"}>
+                  <button class="button button-sm button-ghost" type="button" onClick={() => void copyText(s().markdown, s().shape.kind === "markdown" ? "Copied markdown." : "Copied the file.")}>
+                    <Icon name="copy" small />
+                    Copy
+                  </button>
+                </Show>
                 <button ref={closeButton} type="button" class="button button-icon button-ghost" aria-label="Close" title="Close" onClick={() => closeMarkdown()}>
                   <Icon name="close" />
                 </button>
@@ -102,9 +111,20 @@ export function MarkdownViewer() {
             </div>
             <div class="md-viewer-scroll" ref={scroller} tabindex="0" aria-labelledby="md-viewer-title">
               <div class="md-viewer-doc">
-                <Show when={view() === "source"} fallback={<Markdown text={s().markdown} />}>
-                  <pre class="md-viewer-source">{s().markdown}</pre>
+                <Show when={s().truncated}>
+                  <p class="md-viewer-note">The file is longer; this is its start.</p>
                 </Show>
+                <Switch fallback={<pre class="md-viewer-source">{s().markdown}</pre>}>
+                  <Match when={shaped(s().shape, "note")}>{(n) => <p class="md-viewer-note">{n().note}</p>}</Match>
+                  <Match when={shaped(s().shape, "code")}>
+                    {(c) => (
+                      <pre class="md-viewer-source">
+                        <code class="hljs" innerHTML={highlight(c().body, c().lang)} />
+                      </pre>
+                    )}
+                  </Match>
+                  <Match when={view() === "rendered" && shaped(s().shape, "markdown")}>{(m) => <Markdown text={m().body} />}</Match>
+                </Switch>
               </div>
             </div>
           </div>

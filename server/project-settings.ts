@@ -17,7 +17,7 @@ import type { MergeQueueSettings, MergeSettingsChange, ModelChoice } from "../sh
 import { queueCardPort } from "./merge-queue/card-port";
 import { parseChoice } from "./merge-queue/models";
 import { parseChange, SettingsEditError } from "./merge-queue/settings-edit";
-import { credentialProblem, credentialRefusal } from "./settings-credentials";
+import { credentialProblem, credentialRefusal } from "./card-refusals";
 import { checkoutRootOf, discoverProjectModes, readProjectMode } from "../pi-config/extensions/mode/project-discovery.ts";
 import { OrgError } from "./org-error";
 import { isPlaybookId, listProjectPlaybooks, parseFrontmatter, PROJECT_PLAYBOOK_DIRS, readProjectPlaybook } from "./playbooks";

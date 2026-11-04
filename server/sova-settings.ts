@@ -12,7 +12,7 @@ import { memoryFile, memorySettingsInfo, parseMemorySettings, putMemorySettings 
 import { parseModelPolicy, readModelPolicy, writeModelPolicy } from "./model-policy";
 import { saveProviderLimits } from "./provider-limits";
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsFile, writeSessionTitleSettings } from "./session-titles-settings";
-import { credentialProblem, credentialRefusal } from "./settings-credentials";
+import { credentialProblem, credentialRefusal } from "./card-refusals";
 import { agentRoot, stateRoot } from "./state-root";
 import { saveSubagentProfileDefault, saveSubagentProfiles, subagentProfilesInfo } from "./subagent-profiles";
 import { settingsSpreadNow } from "./sync/spreads";

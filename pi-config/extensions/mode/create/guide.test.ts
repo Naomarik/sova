@@ -118,6 +118,12 @@ test("an alignment's go-ahead is never the OK, in the block and in the shared ru
 	assert.ok(stripOwnerNotes(CREATE_FILES.shared!).includes("An alignment's go-ahead or a decided question is not one"));
 });
 
+test("the block holds what real chats got wrong", () => {
+	for (const words of ["don't mention the check or limits at all", "never another chat, another mode or a project as a way to change Sova's code", "is about Sova unless this folder plainly holds that thing"]) assert.ok(CREATE_INSTRUCTIONS.includes(words), words);
+	const shared = stripOwnerNotes(CREATE_FILES.shared!);
+	for (const words of ["Before you name, read or write such a path", "open the `models` entry before you say where to sign in"]) assert.ok(shared.includes(words), words);
+});
+
 test("a topic that isn't listed is refused, and the answer lists the topics", () => {
 	assert.throws(() => createGuide("nope"), (err: Error) => err.message === `No topic nope. Topics: ${CREATE_TOPICS.join(", ")}.`);
 	assert.throws(() => createGuide("shared"), /^Error: No topic shared\./);

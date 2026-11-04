@@ -29,7 +29,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { homedir, tmpdir } from "node:os";
-import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import type { SessionWorktrees, WorktreeStatus, WorktreesInsight } from "../shared/protocol";
 import { headerOf } from "./harness/pi/reader";
@@ -472,6 +472,18 @@ function plainLayout(dir: string): Layout | "gone" | null {
       commonDir = existsSync(join(gitDir, "commondir")) ? resolve(gitDir, readFileSync(join(gitDir, "commondir"), "utf8").trim()) : gitDir;
     }
     return { top: dir, linked: gitDir !== commonDir, gitDir, commonDir };
+  } catch {
+    return null;
+  }
+}
+
+/** The main checkout of a linked worktree's top folder, read from its `.git` without Git (the
+ * answer `project-root.ts` gets from `rev-parse`); null for anything else, which that reads. */
+export function linkedCheckoutOf(dir: string): string | null {
+  const layout = plainLayout(dir);
+  if (!layout || layout === "gone" || !layout.linked || basename(layout.commonDir) !== ".git") return null;
+  try {
+    return statSync(join(layout.commonDir, "HEAD")) && statSync(layout.gitDir) && realpathSync(dirname(layout.commonDir));
   } catch {
     return null;
   }

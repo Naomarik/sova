@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash, type Hash } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -17,7 +18,7 @@ import { blockedNoteText, type DocsPreview, docsNudgeText, type Finished, fileLa
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
-import { DIRTY_TTL_MS, execGit, gitInputsStamp, type GitRunner, worktreeInsights, type WorktreeInsights } from "./worktrees";
+import { DIRTY_TTL_MS, execGit, gitInputsStamp, type GitRunner, linkedCheckoutOf, worktreeInsights, type WorktreeInsights } from "./worktrees";
 import { goneTreeState, type GoneState } from "./removed-worktrees";
 import { sessionsChanged } from "./list-generation";
 
@@ -440,6 +441,8 @@ export interface ReadinessScan {
   found: boolean;
   entries?: ScanEntry[];
   checkIds?: Set<string>;
+  /** A hash of the file's first `size` bytes: what lets a grown file carry on from here. */
+  digest?: string;
 }
 
 const MARKER = lineNeedle({ state: WORKTREES_ENTRY_TYPE });
@@ -465,29 +468,59 @@ async function hasMarker(path: string, from: number, size: number): Promise<bool
   }
 }
 
+/** Feed the file's bytes from `from` up to `to` into `hash`; false when the file ended before `to`. */
+async function hashBytes(hash: Hash, path: string, from: number, to: number): Promise<boolean> {
+  const fh = await open(path, "r");
+  try {
+    const buf = Buffer.alloc(CHUNK);
+    let pos = from;
+    while (pos < to) {
+      const { bytesRead } = await fh.read(buf, 0, Math.min(CHUNK, to - pos), pos);
+      if (bytesRead <= 0) return false;
+      hash.update(buf.subarray(0, bytesRead));
+      pos += bytesRead;
+    }
+    return true;
+  } finally {
+    await fh.close();
+  }
+}
+
+/** Tests: lines scanned. */
+export const readinessScanWork = { lines: 0 };
+
 /**
  * A session file's readiness facts, read incrementally like the align read (server/align-state.ts):
  * a file that never wrote a `worktrees` entry is only searched for the marker; once one is seen,
- * its entries are kept compact and only lines appended since are parsed. Never throws.
+ * its entries are kept compact and only lines appended since are parsed, when a hash of the bytes
+ * already read proves them the same (`unchanged`: the caller knows the file hasn't moved). A rewrite
+ * in place reads the file again from its start, however it grew. Never throws.
  */
-export async function readReadinessScan(path: string, size: number, prev: ReadinessScan | null): Promise<{ scan: ReadinessScan; facts: FileFacts | null }> {
+export async function readReadinessScan(path: string, size: number, prev: ReadinessScan | null, unchanged = false): Promise<{ scan: ReadinessScan; facts: FileFacts | null }> {
   try {
     const grown = prev !== null && size >= prev.size;
     if (!(grown && prev.found)) {
       const found = await hasMarker(path, grown ? prev.size : 0, size);
       if (!found) return { scan: { size, found: false }, facts: null };
     }
-    // Carried on from a copy of the last read while it still ends at a line start; else read again
-    // from the beginning, with no check ids carried.
-    const resume = grown && prev.found && prev.entries && prev.checkIds && (await atLineStart(path, prev.size));
+    // Carried on from a copy of the last read while it still ends at a line start and its bytes are the
+    // same; else read again from the beginning, with no check ids carried.
+    let hash = createHash("sha256");
+    const same = async (p: ReadinessScan) => unchanged || (p.digest !== undefined && (await hashBytes(hash, path, 0, p.size)) && hash.copy().digest("hex") === p.digest);
+    const resume = grown && prev.found && prev.entries && prev.checkIds && (await atLineStart(path, prev.size)) && (await same(prev));
+    if (!resume) hash = createHash("sha256");
     const checkIds = new Set(resume ? prev.checkIds : []);
-    const scan = new BranchScan<ScanEntry>((line) => scanLine(line, checkIds));
+    const scan = new BranchScan<ScanEntry>((line) => {
+      readinessScanWork.lines++;
+      return scanLine(line, checkIds);
+    });
     if (resume) {
       scan.size = prev.size;
       scan.items = [...prev.entries!];
     }
     await scan.grow(path, size);
-    return { scan: { size: scan.size, found: true, entries: scan.items, checkIds }, facts: factsOf(scan.branch()) };
+    const kept = resume && scan.size === prev.size && unchanged ? prev.digest : (await hashBytes(hash, path, resume && !unchanged ? prev.size : 0, scan.size)) ? hash.digest("hex") : undefined;
+    return { scan: { size: scan.size, found: true, entries: scan.items, checkIds, ...(kept ? { digest: kept } : {}) }, facts: factsOf(scan.branch()) };
   } catch {
     return { scan: { size, found: false }, facts: null };
   }
@@ -575,13 +608,37 @@ const defaultDeps = (): ReadinessDeps => ({
   // A marked wake, as the merge queue's own (server/merge-queue/wake.ts): never read as the user's word.
   nudge: async (path, text) => (await import("./merge-queue/wake")).sendQueueWake(path, text),
   queueLandings: (sessionId) => queueLandingsHere(sessionId),
-  served: async (dir) => {
-    const { projectOf } = await import("./project-root");
-    const p = await projectOf(dir).catch(() => null);
-    if (p?.state !== "ok" || !p.git) return false;
-    return (await import("./merge-queue/served")).servedByQueue(p.root);
-  },
+  served: servedReader(
+    async (dir) => {
+      const linked = linkedCheckoutOf(dir);
+      if (linked) return linked;
+      const { projectOf } = await import("./project-root");
+      const p = await projectOf(dir).catch(() => null);
+      return p?.state === "ok" && p.git ? p.root : null;
+    },
+    async (root) => (await import("./merge-queue/served")).servedByQueue(root),
+  ),
 });
+
+/** How long one repository's served answer stands: the served rule keeps its merge setup this long, and Ready to land
+    reads at most every READINESS_TTL_MS whatever this says. */
+export const SERVED_TTL_MS = 2000;
+
+/** The merge queue's served rule, asked once per repository however many of its trees a readiness pass reads, and
+    never twice at once: the rule walks the Projects list on every call. A rejection isn't kept. */
+export function servedReader(rootOf: (dir: string) => Promise<string | null>, servedAt: (root: string) => Promise<boolean>, now: () => number = Date.now): (dir: string) => Promise<boolean> {
+  const kept = new Map<string, { at: number; value: Promise<boolean> }>();
+  return async (dir) => {
+    const root = await rootOf(dir);
+    if (!root) return false;
+    const hit = kept.get(root);
+    if (hit && now() - hit.at < SERVED_TTL_MS) return hit.value;
+    const value = servedAt(root);
+    kept.set(root, { at: now(), value });
+    value.catch(() => kept.delete(root));
+    return value;
+  };
+}
 
 /** Per session file, what blocks each finished tree's landing, from the last published reading (nudgeSpecs). */
 const blockedBySession = new Map<string, { path: string; branch: string; commit: string; blockers: LandingBlocker[] }[]>();
@@ -711,11 +768,11 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
     const servedHere = landingOn && (deps.served ? await deps.served(t.path).catch(() => false) : true);
     let landing: WorktreeReadiness["landing"];
     // Drafts that aren't official: a landing's, or a merged tree's that didn't make it (§chat.worktrees/readiness).
-    const drafts = tf.readable && (landingOn || tf.merged) ? deps.drafts(t.path) : undefined;
+    const unofficial = tf.readable && (landingOn || tf.merged) ? deps.drafts(t.path) : undefined;
     if (servedHere) {
       const held = deps.landing.held(s.id, t.path);
       const heldHere = !!held && held.commit === tf.head;
-      const drafts = tf.readable && !tf.merged ? deps.drafts(t.path) : undefined;
+      const drafts = tf.merged ? undefined : unofficial;
       // Drafts land with the branch (§chat.worktrees/ready-to-land): Sova tries them once per head and set of drafts.
       let docs: LandingDocs | undefined;
       if (drafts?.length && tf.head && landingLive(tf, r.state)) {
@@ -741,7 +798,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
       ...((tf.readable ? tf.merged : tf.gone !== "unmerged" && (tf.tracked === "merged" || tf.gone === "merged")) ? { merged: true as const } : {}),
       ...(r.why ? { why: r.why } : {}),
       // One word wherever the reason is written (§chat.worktrees/ready-to-land).
-      reason: landing ? landingReason(landing, tf.ahead) : r.state === "merged" && drafts?.length ? lostDraftsReason(drafts.length) : r.reason,
+      reason: landing ? landingReason(landing, tf.ahead) : r.state === "merged" && unofficial?.length ? lostDraftsReason(unofficial.length) : r.reason,
       ...(tf.dirty && tf.dirtyCount ? { dirtyCount: tf.dirtyCount, dirtyFiles: tf.dirtyFiles ?? [] } : {}),
       ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
       ...(hasNoCommits(tf) ? { noCommits: true as const } : {}),
@@ -854,6 +911,11 @@ const fileInput = (s: SessionSummary): RefreshInput => {
   }
 };
 const sameInput = (a: RefreshInput, b: RefreshInput) => a.key === b.key && a.file === b.file;
+const sameInode = (a: string, b: string): boolean => {
+  if (a === "missing" || b === "missing") return false;
+  const [x, y] = [JSON.parse(a) as number[], JSON.parse(b) as number[]];
+  return x[0] === y[0] && x[1] === y[1];
+};
 /** The tracked worktrees a reading carries, as one comparable string ("" for none). */
 const treesKey = (c: Cached | undefined): string => (c?.facts?.trees ?? []).map((t) => `${t.path}\0${t.status}\0${t.how}`).join("\n");
 /** The readings, with `version` moved whenever a session's tracked worktrees change (or a session with some
@@ -966,9 +1028,11 @@ async function refresh(input: RefreshInput): Promise<void> {
     return;
   }
   const prev = cache.get(s.path);
-  // A rewrite/replacement must not reuse compact entries just because the byte count grew.
-  const previousScan = prev?.file === input.file ? prev.scan : null;
-  const { scan, facts } = await readReadinessScan(s.path, input.size, previousScan);
+  // A rewrite/replacement must not reuse compact entries just because the byte count grew: the same
+  // file may carry on only past bytes its scan's hash proves (readReadinessScan), a new inode never.
+  const unchanged = prev?.file === input.file;
+  const previousScan = unchanged || (prev?.scan?.found && sameInode(prev.file, input.file)) ? prev!.scan : null;
+  const { scan, facts } = await readReadinessScan(s.path, input.size, previousScan, unchanged);
   if (!current()) return;
   const fresh = forced.delete(s.path) || !prev || prev.key !== input.key || prev.file !== input.file;
   const longDirty = !fresh && !!facts?.trees.some((t) => dirtyTtlFor(s, t.path, false) > DIRTY_TTL_MS);

@@ -1730,6 +1730,9 @@ export interface ModeInfo {
   /** Only in Create: the mode Save as Default saves, the chat's last normal or Delegate choice (§chat.create-mode/per-chat-only). */
   saveMode?: string;
   modes: { id: string; description: string }[];
+  /** Only in GET /api/mode with no path: modes a default can't hold but a chat here can pick (Create). A peer's chat
+      has no ?path= read, so its menu adds these to `modes`; a gathering chat has no menu at all. Absent: an older host. */
+  chatModes?: { id: string; description: string }[];
   minors: { id: string; description: string }[];
   /** The memory minor mode's choice (§chat/memory): in GET /api/mode the saved default new chats
       start from (Settings' memory file), in a ChatModeResult that chat's own. Absent from older servers. */

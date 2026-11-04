@@ -37,6 +37,9 @@ export { MINOR_MODES };
 export const MODE_FILE_NAME = "mode.json";
 export const modeFile = () => join(agentRoot(), MODE_FILE_NAME);
 
+/** The modes only a chat can pick, for a page that reads a peer's chat through that host's GET /api/mode. */
+export const chatOnlyModes = (): ModeInfo["chatModes"] => MODES.filter((id) => id === "create").map((id) => ({ id, description: MODE_DESCRIPTIONS[id] }));
+
 /** The memory choice with what can be chosen (ModeInfo.memory). */
 export function memoryModeInfo(choice: ChatMemoryChoice): MemoryModeInfo {
   return { type: choice.type, size: choice.size, types: [...MEMORY_TYPE_INFO], sizes: [...MEMORY_SIZES] };

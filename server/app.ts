@@ -110,7 +110,7 @@ import { setSummaryWriter, summaryFromChain } from "./version-summaries";
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsInfo, writeSessionTitleSettings } from "./session-titles-settings";
 import type { LlmRuntime } from "./decide-llm";
 import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
-import { modeInfo, parseModeRequest, readMode } from "./mode-state";
+import { chatOnlyModes, modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { defaultMemoryChoice } from "./memory/settings";
 import { registerMemoryRoutes } from "./memory/routes";
 import { parseSandboxBody } from "./sandbox-state";
@@ -1199,7 +1199,7 @@ export function buildApp(deps: AppDeps) {
   // With ?path=: that held chat's own mode, its project modes read now (§chat.mode-menu/project-modes).
   app.get("/api/mode", async (c) => {
     const rawPath = c.req.query("path");
-    if (rawPath === undefined) return c.json(modeInfo(readMode(), defaultMemoryChoice()));
+    if (rawPath === undefined) return c.json({ ...modeInfo(readMode(), defaultMemoryChoice()), chatModes: chatOnlyModes() });
     const path = resolveSessionPath(rawPath);
     if (!path) return c.json({ error: "Invalid ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     const chat = chatHandle(path);

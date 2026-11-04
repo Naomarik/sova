@@ -79,6 +79,7 @@ test("no path: the default refuses Create, and lists it nowhere", async () => {
   assert.equal(readFileSync(join(dir, "mode.json"), "utf8"), before);
   const info = (await (await app.request("/api/mode")).json()) as ChatModeResult;
   assert.ok(!info.modes.some((m) => m.id === "create"));
+  assert.deepEqual(info.chatModes?.map((m) => m.id), ["create"], "a peer's chat reads this list, so its menu still has the row");
 });
 
 test("the Overseer can't switch a chat to Create", async () => {

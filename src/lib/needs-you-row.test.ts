@@ -40,7 +40,7 @@ test("a chat's row: its project or folder, its title, the digest's sentence, Ope
 
 test("a project's item: the project's name, what it is, its sentence, what opens; the folder leaves the row", () => {
   const r = itemRow(item({}), { home: HOME, now: 0 });
-  assert.deepEqual({ name: r.name, place: r.place, title: r.title, detail: r.detail, action: r.action, word: r.chip.word }, { name: "Notes", place: "~/w/notes", title: "Release step failed", detail: "v0.4.0: Publish failed: origin refused", action: "Open Release", word: "Failed" });
+  assert.deepEqual({ name: r.name, place: r.place, title: r.title, detail: r.detail, action: r.action, word: r.chip.word }, { name: "Notes", place: "~/w/notes", title: "Publish failed", detail: "v0.4.0: origin refused", action: "Open Release", word: "Failed" });
   const ready = itemRow(item({ kind: "release-ready", detail: "Ready to publish · v0.4.0" }), { home: HOME, now: 0 });
   assert.deepEqual({ title: ready.title, detail: ready.detail, action: ready.action }, { title: "Ready to publish", detail: "v0.4.0", action: "Review and Publish" });
   assert.equal(itemRow(item({ kind: "whatsapp-down", title: "WhatsApp sending", where: "Settings → Outreach" }), { home: HOME, now: 0 }).place, null, "not a folder");
@@ -74,4 +74,12 @@ test("two listed projects of one name show just enough of the path to tell them 
 test("two items of one project are one project: no path; a row with no folder keeps its name", () => {
   const l = rowLabels([{ key: "a", name: "Notes", place: "~/w/notes" }, { key: "b", name: "Notes", place: "~/w/notes/" }, { key: "c", name: "Notes", place: null }]);
   assert.deepEqual([l.get("a"), l.get("b"), l.get("c")], ["Notes", "Notes", "Notes"]);
+});
+
+test("a failed Publish is titled as the tab says it; any other failed step keeps the kind's title and its sentence", () => {
+  const publish = itemRow(item({}), { home: HOME, now: 0 });
+  assert.equal(publish.detailTip, "v0.4.0: Publish failed: origin refused", "the tooltip keeps the whole sentence");
+  assert.deepEqual({ title: itemRow(item({ detail: "The open release: Publish failed" }), { home: HOME, now: 0 }).title, detail: itemRow(item({ detail: "The open release: Publish failed" }), { home: HOME, now: 0 }).detail }, { title: "Publish failed", detail: "The open release" });
+  const step = itemRow(item({ detail: "v0.4.0: Smoke test failed: 500 on /search" }), { home: HOME, now: 0 });
+  assert.deepEqual({ title: step.title, detail: step.detail }, { title: "Release step failed", detail: "v0.4.0: Smoke test failed: 500 on /search" });
 });

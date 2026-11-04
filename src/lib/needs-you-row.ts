@@ -118,6 +118,12 @@ function afterTitle(detail: string, title: string): string {
   return detail.startsWith(`${title} · `) ? detail.slice(title.length + 3) : detail;
 }
 
+/** A failed Publish is titled as the Releases tab says it, and its reason keeps the line: "v0.4.0: origin refused". */
+function failedPublish(it: AttentionItem): { title: string; detail: string } | null {
+  const m = it.kind === "release-failed" ? /^(.+?): Publish failed(?:: (.*))?$/s.exec(it.detail ?? "") : null;
+  return m ? { title: "Publish failed", detail: m[2] ? `${m[1]}: ${m[2]}` : m[1]! } : null;
+}
+
 /** A row of no session. An owner's item has the request as its title and lives under its org and project; any other's
     title is the project's name, and the kind says what it is. A held act names what waits and recounts its minutes. */
 export function itemRow(it: AttentionItem, o: { home: string | null; now: number }): NeedsRow {
@@ -125,10 +131,11 @@ export function itemRow(it: AttentionItem, o: { home: string | null; now: number
   const held = it.held;
   const place = isFolder(it.where) ? tildePath(it.where, o.home) : null;
   const inOrg = it.org?.projectName ? `${it.org.orgName} · ${it.org.projectName}` : null;
-  const title = held ? held.what.replace(/[.]$/, "") : (k.title ?? it.title);
+  const publish = failedPublish(it);
+  const title = held ? held.what.replace(/[.]$/, "") : (publish?.title ?? k.title ?? it.title);
   const name = k.title ? (inOrg ?? it.title) : (inOrg ?? it.where);
   const sentence = held ? heldWaitLine(held, o.now) : (it.detail ?? "");
-  const detail = afterTitle(sentence, title);
+  const detail = publish?.detail ?? afterTitle(sentence, title);
   return { key: it.id, name, place, chip: { word: k.word, tone: k.tone }, title, detail, detailTip: sentence, action: k.action ?? OPEN_PROJECT, href: it.href };
 }
 

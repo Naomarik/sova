@@ -133,9 +133,9 @@ describe("Needs you rows", () => {
         assert.doesNotMatch(text, /\/w\/shop|\/w\/docs|\/w\/work|\/w\/play/, "no full folder path in a row");
         // No nesting: nothing interactive inside a link, and the separate buttons under rows are gone.
         assert.equal(await o.page.locator(".ny-link a, .ny-link button").count(), 0);
-        const failed = row(o.page, "Release step failed");
+        const failed = row(o.page, "Publish failed");
         assert.equal((await failed.locator(".chip").textContent())?.trim(), "Failed");
-        assert.equal(await failed.locator(".ny-detail").textContent(), "v0.4.0: Publish failed: origin refused the push");
+        assert.equal(await failed.locator(".ny-detail").textContent(), "v0.4.0: origin refused the push");
         assert.match((await failed.locator(".ny-action").textContent()) ?? "", /^Open Release/);
         assert.equal((await row(o.page, "Ready to publish").locator(".ny-action").textContent())?.trim(), "Review and Publish");
         assert.equal(await row(o.page, "Ready to publish").locator(".ny-detail").textContent(), "v0.2.0");
@@ -154,7 +154,7 @@ describe("Needs you rows", () => {
   test("two same-named projects show just enough of their paths, and the folder's full path is the tooltip", async () => {
     const o = await open(1280, "light");
     try {
-      const failed = row(o.page, "Release step failed").locator(".ny-name");
+      const failed = row(o.page, "Publish failed").locator(".ny-name");
       const ready = row(o.page, "Ready to publish").locator(".ny-name");
       assert.equal(await failed.textContent(), "Notes · work/notes");
       assert.equal(await ready.textContent(), "Notes · play/notes");
@@ -168,10 +168,10 @@ describe("Needs you rows", () => {
   test("the whole row is the target; a screen reader gets it once; the link is one tab stop", async () => {
     const o = await open(1280, "light");
     try {
-      const failed = row(o.page, "Release step failed");
+      const failed = row(o.page, "Publish failed");
       assert.equal(await failed.locator("a, button").count(), 1);
       const name = await failed.getByRole("link").evaluate((el) => el.textContent);
-      assert.equal(name, "Notes · work/notesFailedRelease step failedv0.4.0: Publish failed: origin refused the pushOpen Release");
+      assert.equal(name, "Notes · work/notesFailedPublish failedv0.4.0: origin refused the pushOpen Release");
       assert.equal(await failed.getByRole("link").getAttribute("title"), null, "the words aren't said a second time as a description");
       // The name line, far from the link's text box edges: the stretch reaches the row's corner.
       const box = (await failed.boundingBox())!;

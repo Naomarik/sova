@@ -69,7 +69,7 @@ const DOORS = {
   runButtons: "Only the user approves a project's run buttons. Ask them to press Approve Run Buttons on the project page's Offers list. Nothing was approved.",
   profile: "Only the user approves a profile's powers. Ask them to press Approve in Settings → Profiles or on the profile picker. Nothing was approved.",
   schedule: "Only the user approves a schedule. Ask them to press Approve in the Playbooks dialog or the Overseer's Approvals & Schedules. Nothing was approved.",
-  power: "Only the user turns on a Project Overseer power. Ask them to turn it on in the project page's Settings tab. Nothing was changed.",
+  power: "Turning on a Project Overseer power needs the user's own click. Ask them to turn it on in the project page's Settings tab. Nothing was changed.",
   sandbox: SANDBOX_LOWER_REFUSAL,
 } as const;
 export type YourClickDoor = keyof typeof DOORS | { projectTool: string };
@@ -77,7 +77,7 @@ export type YourClickDoor = keyof typeof DOORS | { projectTool: string };
 const THROUGH_A_PEER = "Only the user approves this, on the page of the computer it belongs to. Open Sova on that computer. Nothing changed.";
 
 const doorWords = (door: YourClickDoor): string =>
-  typeof door === "object" ? `Only the user approves a project mode's tools. Ask them to turn ${door.projectTool} on in that chat's mode menu. Nothing was turned on.` : DOORS[door];
+  typeof door === "object" ? `Approving a project mode's tools needs the user's own click. Ask them to turn ${door.projectTool} on in that chat's mode menu. Nothing was turned on.` : DOORS[door];
 
 /** A refusal's words and body, for whoever isn't the page. */
 export function yourClickBody(door: YourClickDoor, who: NotPage): { error: string; yourClick: true; peer?: true } {

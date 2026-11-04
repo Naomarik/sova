@@ -116,12 +116,13 @@ refusal says where to click.
 | Turning on a Project Overseer power | The power's switch on the project page's Settings tab |
 | Lowering a chat's sandbox | The Sandbox rows in that chat's composer. A `/sandbox` sent as a message is refused too |
 | Approving a project tool | **Approve and Turn On** in that chat's mode menu |
+| Trusting a project's or an extension's cards | **Trust {name}'s Cards** on the card |
 
-Only the widening closes. Turning a power off, raising a sandbox, turning a mode off and turning on a
-mode at a version already approved stay open to scripts.
+Only the widening closes. Turning a power off, raising a sandbox, turning a mode off, turning on a mode at
+a version already approved and turning a card owner's trust off stay open to scripts.
 
-**Apply and Approve** on a Settings change card is your click too, and the same goes for Apply itself,
-trusting a project's or an extension's cards, and approving a project mode's hooks.
+**Apply and Approve** on a Settings change card is your click too, and the same goes for Apply itself and
+for approving a project mode's hooks.
 
 Project tool approval has one other road: when the Overseer turns a project mode on, that still approves
 the mode's tools and commands, never its hooks. In a turn you started, it can also turn a Project Overseer

@@ -51,7 +51,7 @@ The project ones need a project: in a folder that isn't one, offer Add as Projec
 
 ## Approvals the Overseer holds
 
-- Change: an approval for later, or a standing rule, that lets its unattended runs act on named sessions. Separately, when the Overseer turns on a project mode, that counts as the approval of the mode's tools and commands, and nothing waits for the person. Every other caller needs the person's click in the page. Tell them this before they let the Overseer run a project's modes.
+- Change: an approval for later, or a standing rule, that lets its unattended runs act on named sessions. Separately, when the Overseer turns on a project mode, that counts as the approval of the mode's tools and commands, never its hooks, and nothing waits for the person. Every other caller needs the person's click in the page. Tell them this before they let the Overseer run a project's modes.
 - Lives: the Overseer's own conversation.
 - Approves: the person, by a click on the card option the Overseer proposes. Words typed in chat never make an approval.
 - By: Screen. They're made on the Overseer's cards and ended under Approvals & Schedules on its page. You can't make or end one.

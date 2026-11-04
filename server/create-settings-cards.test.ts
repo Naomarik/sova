@@ -332,6 +332,21 @@ describe("a Sova-wide card", () => {
     sova.withdrawSovaCard(back.card.id);
   });
 
+  test("the scan judges what a whole-file card changes; a dummy already there is no new key, a real-looking one is", async () => {
+    const file = join(agentDir, "models.json");
+    const ollama = { baseUrl: "http://127.0.0.1:11434/v1", api: "openai-completions", apiKey: "ollama", models: [{ id: "m" }] };
+    writeFileSync(file, JSON.stringify({ providers: { ollama } }));
+    const mine = { ...ollama, baseUrl: "http://127.0.0.1:18777/v1", apiKey: "$LOGNAME" };
+    const ok = await propose("models.providers", { providers: { ollama, mine } });
+    sova.withdrawSovaCard(ok.card.id);
+    await assert.rejects(propose("models.providers", { providers: { ollama, mine: { ...mine, apiKey: ["plainlower", "casekey"].join("") } } }), /Create doesn't handle sign-ins or keys/);
+    await assert.rejects(propose("models.providers", { providers: { ollama: { ...ollama, apiKey: "changed" } } }), /Create doesn't handle sign-ins or keys/);
+    const real = { ...ollama, apiKey: ["sk", "abcdefghijklmnopqrstuvwx"].join("-") };
+    writeFileSync(file, JSON.stringify({ providers: { real } }));
+    await assert.rejects(propose("models.providers", { providers: { real, mine } }), /Create doesn't handle sign-ins or keys/);
+    rmSync(file);
+  });
+
   test("rows read as words, never raw JSON", async () => {
     const d = await propose("models.limits", { limits: { zai: 3 } });
     const row = (d.card.kept as { label: string; fromText: string; toText: string }[]);

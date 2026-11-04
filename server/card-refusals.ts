@@ -22,6 +22,24 @@ const SECRET_SHAPES: readonly RegExp[] = [
 
 const envReference = (v: string): boolean => /^(\$[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Z][A-Z0-9_]*)$/.test(v.trim());
 
+/** What `value` adds or changes over `before`, the rest left out: a whole-file value holds much it isn't changing. */
+export function changedPart(value: unknown, before: unknown): unknown {
+  if (JSON.stringify(value) === JSON.stringify(before)) return undefined;
+  if (Array.isArray(value)) {
+    const was = Array.isArray(before) ? before : [];
+    return value.filter((x) => !was.some((y) => JSON.stringify(x) === JSON.stringify(y))).map((x, i) => changedPart(x, was[i]));
+  }
+  if (!value || typeof value !== "object" || !before || typeof before !== "object" || Array.isArray(before)) return value;
+  const was = before as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).flatMap(([k, v]) => (k in was && JSON.stringify(v) === JSON.stringify(was[k]) ? [] : [[k, changedPart(v, was[k])]])));
+}
+
+/**
+ * A card's check: what it changes is judged by names and shapes. What it only keeps is judged by shape alone: a
+ * local server's dummy `apiKey: "ollama"` already in the file is no new credential, a real-looking key still is.
+ */
+export const cardCredential = (value: unknown, before: unknown): string | null => credentialProblem(changedPart(value, before)) ?? (SECRET_SHAPES.some((re) => re.test(JSON.stringify(value) ?? "")) ? "the value" : null);
+
 /** A command-line argument that hands over a credential: `--token=…`, or `--token` with its value in the next one. */
 export const credentialArg = (arg: string): boolean => arg.startsWith("-") && CREDENTIAL_KEY.test(arg.split("=")[0]!);
 

@@ -19,7 +19,7 @@ import { outreachFile, parseOutreach, readOutreach, readOutreachState } from "./
 import { saveProviderLimits } from "./provider-limits";
 import { parsePushSettings, pushSettingsFile, readPushSettings, writePushSettings } from "./push-store";
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsFile, writeSessionTitleSettings } from "./session-titles-settings";
-import { credentialProblem, credentialRefusal } from "./card-refusals";
+import { cardCredential, credentialRefusal } from "./card-refusals";
 import { agentRoot, stateRoot } from "./state-root";
 import { saveSubagentProfileDefault, saveSubagentProfiles, subagentProfilesInfo } from "./subagent-profiles";
 import { settingsSpreadNow } from "./sync/spreads";
@@ -490,6 +490,15 @@ function writeStore(s: Store): void {
   renameSync(tmp, file);
 }
 
+/** What the setting holds now, or nothing to compare with when the value's shape can't even name it. */
+function readBefore(id: SovaSettingId, value: unknown): unknown {
+  try {
+    return SOVA_ADAPTERS[id].read(value);
+  } catch {
+    return undefined;
+  }
+}
+
 /** A pin's shape anywhere in a value: 32 hex digits, however grouped. */
 const input32 = (v: unknown): boolean => /(?:[0-9a-f][\s:-]?){32}/i.test(JSON.stringify(v ?? null));
 
@@ -642,7 +651,7 @@ export async function proposeSova(input: { edits: unknown[]; why: unknown }, by:
     if (!isSovaSettingId(raw.id)) return refuse(`No Sova-wide setting "${String(raw.id)}" (sova_settings get lists them).`);
     const id = raw.id;
     if (!("value" in raw)) return refuse(`${id} names its value: ${SOVA_SETTINGS[id].value}.`);
-    if (credentialProblem(raw.value)) refuse(credentialRefusal(SOVA_SETTINGS[id].screen ?? `the file ${SOVA_SETTINGS[id].file}`, id === "decisions" ? "Its key stays on Settings → Decisions." : undefined));
+    if (cardCredential(raw.value, readBefore(id, raw.value))) refuse(credentialRefusal(SOVA_SETTINGS[id].screen ?? `the file ${SOVA_SETTINGS[id].file}`, id === "decisions" ? "Its key stays on Settings → Decisions." : undefined));
     if (input32(raw.value)) refuse("A fingerprint never goes through a chat: the person types it into the card's own field.");
     if (SOVA_ADAPTERS[id].input && input.edits.length > 1) refuse(`${SOVA_SETTINGS[id].label} goes on a card of its own.`);
     const link = linkProblem(id);

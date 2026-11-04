@@ -466,7 +466,7 @@ export function seedLive(set: SetStoreFunction<LiveState>, snapshot: HelloLive |
   }
   for (const t of snapshot.tools ?? []) {
     const parent = t.parentCallId ? { parentCallId: t.parentCallId } : {};
-    applyEvent(set, { type: "tool.start", callId: t.callId, name: t.name, args: t.args, ...parent });
+    applyEvent(set, { type: "tool.start", callId: t.callId, name: t.name, args: t.args, ...(t.mcp ? { mcp: t.mcp } : {}), ...parent });
     applyEvent(set, { type: "tool.update", callId: t.callId, output: t.output, images: t.images, ...parent });
   }
 }

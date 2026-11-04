@@ -2228,12 +2228,6 @@ class ChatSession {
     }));
   }
 
-  /** A client's send, as `turn`: any `/mode …` that isn't a major switch is the extension's own (strict, a minor mode),
-      so what it did is read back and the menu never lags. The page's composer sends as a steer, even idle (send-frame.ts). */
-  private readingModeBack(text: string, turn: Promise<void>): Promise<void> {
-    return isModeText(text) ? turn.then(() => this.readModeBack()) : turn;
-  }
-
   /** This chat's mode as its branch says, after the extension's own handler changed it (a typed `/mode strict on`). */
   private readModeBack(): void {
     if (this.disposed) return;
@@ -2996,6 +2990,8 @@ class ChatSession {
     const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
     const turn = this.sendKeys.run(key, () => this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm, !!opts?.sentByOverseer));
     this.noteStarting(turn);
+    // Whoever sent it: a `/mode …` that reaches the extension (strict, a minor mode) is read back, so the menu never lags.
+    if (isModeText(text)) turn.then(() => this.readModeBack(), () => {});
     if (key !== undefined) turn.then(() => this.sendKeys.done(key), (err) => this.keyedTurnFailed(key, err));
     if (send)
       turn.catch(() => {
@@ -3469,7 +3465,7 @@ class ChatSession {
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
           this.ackSend(client, clientId, queued);
-          this.readingModeBack(text, turn).catch(fail);
+          turn.catch(fail);
           return;
         }
         case "abort":
@@ -3626,7 +3622,7 @@ class ChatSession {
     const text = String(msg.text ?? "");
     const { queued, turn } = this.acceptPrompt(text, parseImages(msg.images), "client", clientId, { delivery: "steer" });
     this.ackSend(client, clientId, queued);
-    this.readingModeBack(text, turn).catch(fail);
+    turn.catch(fail);
   }
 
   /**

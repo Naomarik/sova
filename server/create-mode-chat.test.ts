@@ -124,6 +124,25 @@ test("other typed /mode arguments are the extension's, and the server reads them
   assert.ok(chat.harness.activeTools().includes("edit"));
 });
 
+test("sent by a script, /mode strict on and /mode delegate reach the server too", async () => {
+  const path = await newChat();
+  await acquireChat(path);
+  const send = (text: string) => app.request("/api/sessions/prompt", { method: "POST", headers: json, body: JSON.stringify({ path, text }) });
+  const until = async (ok: (m: ChatModeResult) => boolean) => {
+    const end = Date.now() + 5_000;
+    while (!ok(await get(path))) {
+      if (Date.now() > end) throw new Error(`stale: ${JSON.stringify(await get(path))}`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+  assert.equal((await send("/mode strict on")).status, 200);
+  await until((m) => m.strict === true);
+  assert.equal((await send("/mode normal")).status, 200);
+  await until((m) => m.mode === "normal");
+  assert.equal((await send("/mode strict off")).status, 200);
+  await until((m) => m.strict === false);
+});
+
 test("a chat that doesn't take the typed switch says why, as the route does", async () => {
   const chat = await acquireChat(await newChat());
   const real = chat.switchMode.bind(chat);

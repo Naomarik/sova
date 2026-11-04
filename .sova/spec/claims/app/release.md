@@ -463,4 +463,7 @@ versions, the one channel `stable`, a release commit and the seven checks) and a
 (the landing page and docs on Cloudflare Pages, shipped only from a published release's commit) are in
 `.sova/project.json`, in the canonical form `release-maker fmt` writes, and `release-maker check`
 passes on them. Both sections sit outside the definition's hash, so adding them left every recorded
-conformance proof of Sova's copies standing.
+conformance proof of Sova's copies standing. The `site` target's `video` step copies the hero videos from the folder in this
+host's `SOVA_SITE_VIDEO_DIR` value, an env credential of the target; a deploy never ships the site
+without its hero video: with that value unset the plan fails its credential check, and a folder that
+misses a video fails the step.

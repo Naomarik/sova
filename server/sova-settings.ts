@@ -497,6 +497,8 @@ const fingerprintOf = (edits: StoredEdit[]): string =>
 /** Each value that differs, by its path: what a card says row by row. */
 function leaves(path: string, v: unknown, out: Map<string, unknown>): void {
   if (isObj(v) && Object.keys(v).length) for (const [k, x] of Object.entries(v)) leaves(path ? `${path}.${k}` : k, x, out);
+  // A list of records goes by each one's id, so one changed field reads as that field, not as the whole list.
+  else if (Array.isArray(v) && v.length && v.every(isObj)) v.forEach((x, i) => leaves(`${path}[${String(x.id ?? x.name ?? i)}]`, x, out));
   else out.set(path, v);
 }
 const words = (v: unknown): string => {

@@ -305,6 +305,15 @@ describe("a Sova-wide card", () => {
     sova.withdrawSovaCard(back.card.id);
   });
 
+  test("a change deep in a long list reads as that field, not as the list", async () => {
+    const list = (model: string) => [...Array(30).keys()].map((n) => ({ name: `target-${n}`, kind: "docker", docker: { container: n === 7 ? model : `c${n}` } }));
+    writeFileSync(join(agentDir, "targets.json"), JSON.stringify({ version: 1, targets: list("old") }));
+    const d = await propose("remote.targets", list("new"));
+    assert.deepEqual(d.card.kept.map((k) => k.label), ["Remote targets: [target-7].docker.container"]);
+    sova.withdrawSovaCard(d.card.id);
+    rmSync(join(agentDir, "targets.json"));
+  });
+
   test("a key never goes on a card; a variable's name isn't a key", async () => {
     const provider = (apiKey: string) => ({ providers: { mine: { baseUrl: "http://localhost:1", api: "openai", apiKey, models: [] } } });
     await assert.rejects(propose("models.providers", provider("abc123literalkey")), /Create doesn't handle sign-ins or keys/);

@@ -175,6 +175,8 @@ export type CommandId =
   | "insights.usage.refresh"
   | "schedule.list"
   | "playbook.list"
+  | "mcp.servers.list"
+  | "mcp.server.status"
   | "draft-spec.list"
   | "insights.agents"
   | "insights.worktrees"
@@ -3133,6 +3135,13 @@ export interface CommandParams {
     /** A folder whose project playbooks to list */
     "cwd"?: string;
   };
+  /** This computer's MCP servers: each one's name, where it comes from, its state, tool count, tool names and last Check. Never a secret's value. (only looks; needs the card's owner trusted) */
+  "mcp.servers.list": Record<string, never>;
+  /** One MCP server's status, by its row id from the list. Never a secret's value. (only looks; needs the card's owner trusted) */
+  "mcp.server.status": {
+    /** The server's row id */
+    "id": string;
+  };
   /** The draft specs conversations proposed, in every project or one, waiting for review. (only looks; needs the card's owner trusted) */
   "draft-spec.list": {
     /** Only this project's (its id) */
@@ -3539,6 +3548,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "insights.usage.refresh": "changes",
   "schedule.list": "looks",
   "playbook.list": "looks",
+  "mcp.servers.list": "looks",
+  "mcp.server.status": "looks",
   "draft-spec.list": "looks",
   "insights.agents": "looks",
   "insights.worktrees": "looks",

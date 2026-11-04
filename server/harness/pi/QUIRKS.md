@@ -49,7 +49,7 @@ Paths in "Where" are under `server/`.
 | P11 create-defers / open-flushed | semantic | `createSessionFile` (harness/pi/state.ts), `appendToClosedFile` (harness/pi/state.ts) | `SessionManager.create`, `SessionManager.open`, `SessionManager.appendCustomEntry` | never: the two creation paths depend on it; keep the canary |
 | P12 message-end-before-persist | ordering | `PiHarnessSession.subscribe` (harness/pi/session.ts), `PiHarnessSession.persistedId` (harness/pi/session.ts), `ChatSession.markSend` (chat-manager.ts), `ChatSession.markTopic` (chat-manager.ts), `ChatSession.holdForEntryId` (chat-manager.ts) | `AgentSession.subscribe`, `AgentSession._handleAgentEvent`, `SessionManager.appendMessage` | pi emits after persisting, or gives the entry id with message_end |
 | P13 no-entry-appended | semantic | `ChatSession.setThinking` (chat-manager.ts), `ChatSession.refreshAfterCompaction` (chat-manager.ts) | `AgentSession.setThinkingLevel`, `AgentSession.compact`, `ExtensionAPI.appendEntry` | pi emits entry_appended for them (then drop the synthesized row) |
-| P14 command-direct-call | internal-API | `ownedCommand` (harness/pi/commands.ts), `commandContextOf` (harness/pi/commands.ts), `PiHarnessSession.command` (harness/pi/session.ts), `PiHarnessSession.commandContext` (harness/pi/session.ts), `ChatSession.applyMode` (chat-manager.ts), `ChatSession.syncModePrompt` (chat-manager.ts), `ChatSession.applyLoginPick` (chat-manager.ts), `ChatSession.sandboxHost` (chat-manager.ts), `ChatSession.resumeWorker` (chat-manager.ts) | `ExtensionRunner.getCommand`, `ExtensionRunner.createCommandContext`, `ResolvedCommand.sourceInfo` | pi offers a public run-command API for embedders |
+| P14 command-direct-call | internal-API | `ownedCommand` (harness/pi/commands.ts), `commandContextOf` (harness/pi/commands.ts), `PiHarnessSession.command` (harness/pi/session.ts), `PiHarnessSession.commandContext` (harness/pi/session.ts), `ChatSession.applyMode` (chat-manager.ts), `ChatSession.syncModePrompt` (chat-manager.ts), `ChatSession.applyLoginPick` (chat-manager.ts), `ChatSession.sandboxHost` (chat-manager.ts), `ChatSession.resumeWorker` (chat-manager.ts), `open` (harness/pi/mcp-check.ts) | `ExtensionRunner.getCommand`, `ExtensionRunner.createCommandContext`, `ResolvedCommand.sourceInfo` | pi offers a public run-command API for embedders |
 | P15 accept-vs-complete | semantic | `PiHarnessSession.send` (harness/pi/session.ts), `ChatSession.linkToSdk` (chat-manager.ts) | `AgentSession.prompt`, `PromptOptions.preflightResult` | never: HarnessSession.send and its onAccepted mirror it; keep the canary |
 | P16 custom-message-idle | semantic | `PiHarnessSession.appendNote` (harness/pi/session.ts), `ChatSession.appendNote` (chat-manager.ts) | `AgentSession.sendCustomMessage` | never: a contract worth keeping a canary for |
 | P17 theme-global | private-read | `currentTheme` (harness/pi/ui-bridge.ts) | `initTheme`, `Symbol.for("@earendil-works/pi-coding-agent:theme")` | pi exports the theme instance |
@@ -64,6 +64,13 @@ Paths in "Where" are under `server/`.
 | P27 headless-standins | monkey-patch | `installHeadless` (harness/pi/headless.ts), `standInSource` (harness/pi/headless.ts) | pi-tui `dist/` modules, `dist/modes/interactive/`, `dist/utils/syntax-highlight.js` | pi ships an entry point without its terminal drawing code |
 | P28 steer-all | monkey-patch | `steerAllAtOnce` (harness/pi/queue-modes.ts), `servicesForCwd` (harness/pi/open.ts), `WebQueue.pumpOnce` (queue.ts) | `SettingsManager.getSteeringMode`, `AgentSession.reload`, `AgentSession.syncQueueModesFromSettings`, `createAgentSession`, `PendingMessageQueue.peek` | pi takes a steering mode per session that no settings reload resets |
 | P29 steer-remove | monkey-patch | `tapSteers` (harness/pi/steer-ticket.ts), `laneOf` (harness/pi/steer-ticket.ts), `mirrorOf` (harness/pi/steer-ticket.ts), `takeSteerOut` (harness/pi/steer-ticket.ts), `PiHarnessSession.queue` (harness/pi/session.ts), `WebQueue.removeHanded` (queue.ts) | `Agent.steer`, `Agent.steeringQueue`, `PendingMessageQueue.messages`, `PendingMessageQueue.drain`, `AgentSession._steeringMessages`, `AgentSession._queueSteer`, `AgentSession._emitQueueUpdate`, `AgentSession.clearQueue`, `Agent.peekQueuedMessages` | pi offers removing one queued message by identity |
+| P30 mcp-snapshot-transport | semantic | `mcpExtension` (harness/pi/mcp.ts), `SnapshotTransport.send` (harness/pi/mcp.ts) | `createMcpExtension`, `McpExtensionOptions.loadConfig`, `McpExtensionOptions.createTransport`, `McpTransportFactory`, `McpServerConnection.connectOnce`, `McpClient.connect` | pi lets a host declare a server's tools from a stored list and connect on first use |
+| P31 mcp-command-through-api | semantic | `tapped` (harness/pi/mcp.ts) | `createMcpExtension`, `ExtensionAPI.registerCommand` | pi's MCP extension takes an option to leave `/mcp` out |
+| P32 mcp-status-text | error-text | `readStatus` (harness/pi/mcp-check.ts), `recordOf` (harness/pi/mcp-check.ts) | `createMcpExtension`, `ToolDefinition.label` | pi exports a status read and the tool's raw name |
+| P33 mcp-auth-keys | private-read | `forgetSignIn` (mcp/forget-sign-in.ts) | `McpOAuthCredentialStore.remove` | pi exports its credential store |
+| P34 mcp-registered-list | ordering | `mcpExtension` (harness/pi/mcp.ts) | `ExtensionAPI.registerMcpServer`, `ExtensionAPI.unregisterMcpServer`, `createMcpExtension` | pi lets a host hand it a chat's list at each prompt |
+| P35 mcp-tool-name | semantic | `piToolNames` (mcp/tool-names.ts) | `createMcpToolDefinition` | pi records the raw names in every result, or exports its naming |
+| P36 mcp-http-transport | semantic | `AddressServer` (harness/pi/mcp-http.ts), `mcpConfigOf` (harness/pi/mcp.ts), `piLiteral` (harness/pi/mcp.ts) | `StreamableHttpTransport`, `McpSessionExpiredError`, `McpAuthRequiredError`, `McpOAuthAuthorizationRequiredError`, `McpTransportFactory`, `McpExtensionOptions.createTransport` | pi lets a host hand a server its own token source and literal values |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -225,6 +232,48 @@ Canary: `P28 steer-all: with the getter replaced, every queued steer lands in on
 pi can only clear its queues whole, so a handed steer is taken back by reaching in (§chat.transcript/a-queued-message). `_queueSteer` pushes the steer's text onto the session's mirror `_steeringMessages`, emits `queue_update` and hands the message object to `this.agent.steer`, all in one synchronous block; the agent keeps that object in `steeringQueue.messages` (a `PendingMessageQueue`, whose `drain()` reassigns the array) until the loop drains it, and `message_start` splices the mirror by text. `tapSteers` wraps `agent.steer` once per agent, after the call, so the ticket (`steerTicket`, `server/harness/pi/steer-ticket.ts`) whose async context the hand-off runs in claims the first object queued (a second one in that context makes it `unknown`: refused, never guessed; another sender's steer runs in its own context). `takeSteerOut` splices that object out of the lane and one entry of its text out of the mirror, in one synchronous step, then calls `_emitQueueUpdate`: either the lane still holds it and it goes (the agent never gets it, `peekQueuedMessages()` and `clearQueue()` no longer list it, its twins stay), or the loop took it and it is a sent message. Splicing only the lane would leave the mirror longer by one, and Stop's `clearQueue()` would hand the removed text back. A removal asked for while the hand-off is still in its input handlers (an image being described) waits for the hand-off to settle: only then are its pushes all known, and the take-out happens only if the hand-off queued exactly one message (an input handler's own steer pushed in the same context makes it `unknown`, and nothing is spliced).
 
 Canary: `P29 steer-remove: the object agent.steer is handed sits in steeringQueue.messages, and splicing it and its text out of both copies takes exactly that steer back`.
+
+### P30 mcp-snapshot-transport
+
+pi's MCP extension connects every enabled server at `session_start` and declares what it lists, so on its own a slow server changes a chat's tools after the first request. Sova keeps the extension and gives it a transport (`SnapshotTransport`, §app/mcp) that answers `initialize` and `tools/list` from the server's Check record and starts the real server at the first other request. That leans on what pi's client does on connect: `createTransport` is called for each enabled server, and a client asks `initialize`, then sends `notifications/initialized`, then `tools/list` when the answer names the tools capability and no more; a `direct` tool turns on when it registers, and the first prompt waits for that. With `loadConfig` and `createTransport` given, pi reads no `mcp.json` and expands no env or `!command` value of its own. The stderr tail in a failed connection's state is lost (pi only reads it from its own `StdioTransport`); Sova's reply carries it instead.
+
+Canary: `P30 mcp-snapshot-transport: a transport answering initialize and tools/list connects at session_start; pi declares its tools in the first request, reads no mcp.json and sends a call to send`.
+
+### P31 mcp-command-through-api
+
+`createMcpExtension`'s factory registers `/mcp` on the API object it is handed. A chat's sign-in and reconnect stay on the page (§app.mcp/sign-in), so `tapped` hands it a Proxy that drops that one registration and passes everything else to the real object.
+
+Canary: `P31 mcp-command-through-api: the factory registers mcp on the API it is handed, so a proxy that drops it leaves no /mcp and the extension's events running`.
+
+### P32 mcp-status-text
+
+pi has no status read for a server, and `needs sign-in` lives only in the text `/mcp` prints, so a Check of an address server reads that text (`readStatus`). The tool's raw name comes from its label, `server/tool`: `getAllTools` has no label, and a hashed name has lost it.
+
+Canary: `P32 mcp-status-text: /mcp's status lines read as readStatus matches them, and a tool's label holds its server and raw name`.
+
+### P33 mcp-auth-keys
+
+Remove takes a server's sign-in with it, and an Edit that moves it takes the old address's (§app.mcp/rows). pi's `McpOAuthCredentialStore` isn't exported from its entry, so `forgetSignIn` deletes the one key from `mcp-auth.json`, and `hasSignIn` reads it, by pi's own key format.
+
+Canary: `P33 mcp-auth-keys: pi's oauth store keys a server by its namespace and URL as forgetSignIn deletes it`.
+
+### P34 mcp-registered-list
+
+A chat's list reaches pi as registered servers, not as config: a handler ahead of pi's `session_start` registers them, and a list that changed before the first message swaps through `unregisterMcpServer`/`registerMcpServer`, which pi applies in its `mcp_servers_change` handler. Both have to land in the first request (§app.mcp/tool-list).
+
+Canary: `P34 mcp-registered-list: a server registered ahead of pi's session_start connects, and one swapped in before the first prompt is declared in it`.
+
+### P35 mcp-tool-name
+
+A saved tool row reads its server and tool from the result's details, and a call that failed before the server has none, so the chat's kept list answers by pi's own naming rule (`piToolNames`): the name sanitized, and shortened with a hash of server and tool past 64 characters or when taken.
+
+Canary: `P35 mcp-tool-name: a plain, a sanitized and a shortened tool register under the names piToolNames gives`.
+
+### P36 mcp-http-transport
+
+A chat's address server (§app.mcp/in-a-chat) runs on `StreamableHttpTransport` from `@earendil-works/pi-mcp`, a direct dependency pinned to pi's version, behind `SnapshotTransport` as a command server's process is, so it starts at the first call and holds one session across turns. Sova builds the transport itself rather than take pi's `createDefaultTransport`, which expands `!command` and `${VAR}` in headers; given headers go out as written. The one part only pi has is the auth provider (its `createMcpAuthProvider` isn't exported, and refreshing tokens with the store's lock is what it's for): pi builds it for a config with a `url` and no Authorization header, and passes it to `createTransport`. So `mcpConfigOf` gives such a server its URL and oauth block, and its `clientSecret` is escaped with `$$` and `$!`, since pi resolves that field at every refresh. A provider belongs to the URL the chat opened with: `addressLaunch` drops it if the server has moved. `McpSessionExpiredError` and the sign-in errors are read by class, so a second copy of pi-mcp in the tree would turn them into plain failures. pi's own reconnect on a dropped session never sees these errors, as they cross `SnapshotTransport` as JSON-RPC replies, so `AddressServer` reopens the session itself.
+
+Canary: `P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given and reports a dropped session`.
 
 ### T1 scripted-model (test-only)
 

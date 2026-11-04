@@ -153,6 +153,7 @@ export const METHODS: Impl = {
   appendNote: (chat, { noteType, text, details }) => chat.appendNote(noteType, text, details),
   writeProfile: (chat, { data }) => (chat.writeProfile(data), null),
   writeLoadout: (chat, { data }) => (chat.writeLoadout(data), null),
+  noteMcp: (chat, { note }) => (chat.noteMcp(note), null),
   flushDeferredAppends: (chat) => (chat.flushDeferredAppends(), null),
   checkWrites: (chat) => chat.hasForeignWrites(),
   assertNoForeignWrites: (chat) => (chat.assertNoForeignWrites(), null),

@@ -1640,7 +1640,7 @@ export function buildApp(deps: AppDeps) {
       return c.json({ error: "Expected JSON body { text }" }, 400);
     }
     if (typeof body?.text !== "string") return c.json({ error: "text must be a string" }, 400);
-    if (body.text.length > NOTES_MAX) return c.json({ error: `Notes must be at most ${NOTES_MAX} characters` }, 400);
+    if (body.text.length > NOTES_MAX) return c.json({ error: `Standing notes can be at most ${NOTES_MAX.toLocaleString("en-US")} characters` }, 400);
     if (body.base !== undefined && typeof body.base !== "string") return c.json({ error: "base must be a string" }, 400);
     const current = readNotes();
     if (typeof body.base === "string" && body.base !== current)

@@ -6,9 +6,18 @@ import { loadModelPolicy, usableModels } from "../lib/model-policy";
 import { loadModels, modelList, thinkingLevelsFor } from "../lib/models";
 import { PROACTIVITY, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
 import {
+  atDefaults,
   CAP_LABEL,
+  canAddQuickAction,
+  type CapEntry,
   capsChangedFromDefault,
   capValid,
+  completeInfo,
+  EXTRA_PROMPT_MAX,
+  lengthCount,
+  NOTES_MAX,
+  QUICK_ACTIONS_MAX,
+  quickActionTooLong,
   explorerOptions,
   moveQuickAction,
   newQuickAction,
@@ -58,7 +67,11 @@ export function OverseerSettingsSection() {
   const autonomyTimer = setInterval(readAutonomy, 15_000);
   onCleanup(() => clearInterval(autonomyTimer));
 
-  const loaded = () => (info.error ? undefined : info());
+  // A limit the server didn't send (an older server) is filled from the defaults, never left blank and red.
+  const loaded = createMemo(() => {
+    const i = info.error ? undefined : info();
+    return i ? completeInfo(i) : undefined;
+  });
   const loadedNotes = () => (notes.error ? undefined : notes());
   // Both are fetched afresh each time the section mounts (each open of the dialog, each return to
   // this tab); a kept draft is rebased onto them, never left on an older copy.
@@ -120,7 +133,7 @@ export function OverseerSettingsSection() {
     }),
   );
 
-  const edit = (patch: Partial<OverseerSettings>) => {
+  const edit = (patch: Partial<Omit<OverseerSettings, "caps">> & { caps?: Record<keyof OverseerCaps, CapEntry> }) => {
     const cur = d();
     if (!cur) return;
     setOverseerDraft({ ...cur, settings: { ...cur.settings, ...patch } });
@@ -130,7 +143,7 @@ export function OverseerSettingsSection() {
     if (!cur) return;
     edit({ quickActions: cur.settings.quickActions.map((a, j) => (j === i ? { ...a, ...patch } : a)) });
   };
-  const editCap = (k: keyof OverseerCaps, v: number) => {
+  const editCap = (k: keyof OverseerCaps, v: string) => {
     const cur = d();
     if (cur) edit({ caps: { ...cur.settings.caps, [k]: v } });
   };
@@ -146,11 +159,10 @@ export function OverseerSettingsSection() {
   const listed = (ref: string | null) => !ref || groups().some(([, refs]) => refs.includes(ref));
   const levels = () => thinkingLevelsFor(d()?.settings.model);
 
-  const numberOf = (v: string) => (v.trim() === "" ? Number.NaN : Number(v));
-
-  /** A group's Reset to Defaults: in the group's head row, every one worded the same; it fills the draft only. */
-  const ResetButton = (p: { onClick: () => void }) => (
-    <button type="button" class="button button-sm button-ghost overseer-reset" disabled={saving()} onClick={() => p.onClick()}>
+  /** A group's Reset to Defaults: in the group's head row, every one worded the same; it fills the
+      draft only, and is greyed out while the group already holds its defaults. */
+  const ResetButton = (p: { onClick: () => void; atDefault: boolean }) => (
+    <button type="button" class="button button-sm button-ghost overseer-reset" disabled={saving() || p.atDefault} onClick={() => p.onClick()}>
       Reset to Defaults
     </button>
   );
@@ -164,19 +176,19 @@ export function OverseerSettingsSection() {
           {CAP_LABEL[p.k].label}
         </label>
         <div class="overseer-cap-row">
+          {/* Text, not type=number: the box keeps exactly what was typed (blank, half-typed, a
+              letter), shows it red, and Save waits; a number box would hand back "" and lose it. */}
           <input
             class="input text-num overseer-cap-input"
             id={`overseer-cap-${p.k}`}
-            type="number"
+            type="text"
             inputmode="numeric"
-            min="0"
-            max="1000"
-            step="1"
-            value={Number.isNaN(v()) ? "" : v()}
+            autocomplete="off"
+            value={String(v() ?? "")}
             aria-invalid={!capValid(v()) ? "true" : undefined}
             aria-describedby={`${p.now ? `overseer-cap-${p.k}-now ` : ""}overseer-cap-${p.k}-hint`}
             disabled={saving()}
-            onInput={(e) => editCap(p.k, numberOf(e.currentTarget.value))}
+            onInput={(e) => editCap(p.k, e.currentTarget.value)}
           />
           <Show when={p.now}>
             {(line) => (
@@ -226,6 +238,7 @@ export function OverseerSettingsSection() {
           const cur = () => d()!;
           const defaults = () => loaded()!.defaults;
           const changed = () => capsChangedFromDefault(cur().settings.caps, defaults().caps);
+          const atDefault = () => atDefaults(cur(), defaults());
           const now = () => {
             const a = autonomy();
             return a ? runningNowLine(a.running, cur().settings.caps.concurrentSessions, a.cap) : null;
@@ -335,7 +348,7 @@ export function OverseerSettingsSection() {
 
               <fieldset class="settings-delegate-profile overseer-group" ref={limits}>
                 <legend class="settings-delegate-legend">Limits</legend>
-                <ResetButton onClick={() => edit({ caps: { ...defaults().caps } })} />
+                <ResetButton atDefault={atDefault().limits} onClick={() => edit({ caps: { ...defaults().caps } })} />
                 <p class="field-hint settings-delegate-desc">
                   Before acting, the Overseer checks these. When one is reached it stops and asks you instead. "Per message" counts
                   restart each time you message it.
@@ -355,7 +368,7 @@ export function OverseerSettingsSection() {
 
               <fieldset class="settings-delegate-profile overseer-group">
                 <legend class="settings-delegate-legend">Quick actions</legend>
-                <ResetButton onClick={() => edit({ quickActions: defaults().quickActions.map((q) => ({ ...q })) })} />
+                <ResetButton atDefault={atDefault().quickActions} onClick={() => edit({ quickActions: defaults().quickActions.map((q) => ({ ...q })) })} />
                 <p class="field-hint settings-delegate-desc">
                   The Quick Actions button in the Overseer's composer foot lists these. Picking one sends its prompt.
                 </p>
@@ -364,6 +377,7 @@ export function OverseerSettingsSection() {
                     {(a, i) => {
                       const name = () => a().label.trim() || "Untitled action";
                       const open = () => actionOpen(a().id);
+                      const long = () => quickActionTooLong(a());
                       return (
                         <li class="overseer-action-row" classList={{ "overseer-action-row-open": open() }}>
                           <div class="overseer-action-line">
@@ -394,7 +408,7 @@ export function OverseerSettingsSection() {
                                     id={`overseer-qa-label-${i}`}
                                     value={a().label}
                                     disabled={saving()}
-                                    aria-invalid={!a().label.trim() ? "true" : undefined}
+                                    aria-invalid={!a().label.trim() || long().label ? "true" : undefined}
                                     onInput={(e) => editAction(i, { label: e.currentTarget.value })}
                                   />
                                 </div>
@@ -407,6 +421,7 @@ export function OverseerSettingsSection() {
                                     id={`overseer-qa-desc-${i}`}
                                     value={a().description}
                                     disabled={saving()}
+                                    aria-invalid={long().description ? "true" : undefined}
                                     onInput={(e) => editAction(i, { description: e.currentTarget.value })}
                                   />
                                 </div>
@@ -421,7 +436,7 @@ export function OverseerSettingsSection() {
                                   rows={2}
                                   value={a().prompt}
                                   disabled={saving()}
-                                  aria-invalid={!a().prompt.trim() ? "true" : undefined}
+                                  aria-invalid={!a().prompt.trim() || long().prompt ? "true" : undefined}
                                   onInput={(e) => editAction(i, { prompt: e.currentTarget.value })}
                                 />
                               </div>
@@ -465,8 +480,10 @@ export function OverseerSettingsSection() {
                   <button
                     type="button"
                     class="button button-sm"
-                    disabled={saving()}
+                    disabled={saving() || !canAddQuickAction(cur().settings.quickActions)}
+                    aria-describedby="overseer-qa-max"
                     onClick={() => {
+                      if (!canAddQuickAction(cur().settings.quickActions)) return;
                       const added = newQuickAction(cur().settings.quickActions);
                       setActionOpen(added.id, true);
                       edit({ quickActions: [...cur().settings.quickActions, added] });
@@ -476,6 +493,9 @@ export function OverseerSettingsSection() {
                     <Icon name="plus" small />
                     Add Quick Action
                   </button>
+                  <span class="field-hint" id="overseer-qa-max">
+                    {cur().settings.quickActions.length} of at most {QUICK_ACTIONS_MAX}.
+                  </span>
                 </div>
               </fieldset>
 
@@ -491,11 +511,15 @@ export function OverseerSettingsSection() {
                     rows={3}
                     value={cur().notes}
                     disabled={saving()}
-                    aria-describedby="overseer-notes-hint"
+                    aria-invalid={cur().notes.length > NOTES_MAX ? "true" : undefined}
+                    aria-describedby="overseer-notes-hint overseer-notes-count"
                     onInput={(e) => setOverseerDraft({ ...cur(), notes: e.currentTarget.value })}
                   />
                   <span class="field-hint" id="overseer-notes-hint">
                     The Overseer reads these every turn and can add to them. They survive /clear.
+                  </span>
+                  <span class={`${cur().notes.length > NOTES_MAX ? "field-error" : "field-hint"} text-num`} id="overseer-notes-count">
+                    {lengthCount(cur().notes, NOTES_MAX)}
                   </span>
                 </div>
               </fieldset>
@@ -509,7 +533,7 @@ export function OverseerSettingsSection() {
                 <div class="overseer-fold-body">
                   <fieldset class="settings-delegate-profile overseer-group">
                     <legend class="settings-delegate-legend">Idea explorer</legend>
-                    <ResetButton onClick={() => edit({ explorer: { ...defaults().explorer } })} />
+                    <ResetButton atDefault={atDefault().explorer} onClick={() => edit({ explorer: { ...defaults().explorer } })} />
                     <p class="field-hint settings-delegate-desc">
                       When you keep working on an idea, the Overseer can launch an agent to plan it with you. It reads, never edits a
                       repository, and reports back to the Overseer.
@@ -562,11 +586,18 @@ export function OverseerSettingsSection() {
                         rows={4}
                         value={cur().settings.extraSystemPrompt}
                         disabled={saving()}
-                        aria-describedby="overseer-extra-prompt-hint"
+                        aria-invalid={cur().settings.extraSystemPrompt.length > EXTRA_PROMPT_MAX ? "true" : undefined}
+                        aria-describedby="overseer-extra-prompt-hint overseer-extra-prompt-count"
                         onInput={(e) => edit({ extraSystemPrompt: e.currentTarget.value })}
                       />
                       <span class="field-hint" id="overseer-extra-prompt-hint">
                         Added after the Overseer's own prompt. Applies from its next run.
+                      </span>
+                      <span
+                        class={`${cur().settings.extraSystemPrompt.length > EXTRA_PROMPT_MAX ? "field-error" : "field-hint"} text-num`}
+                        id="overseer-extra-prompt-count"
+                      >
+                        {lengthCount(cur().settings.extraSystemPrompt, EXTRA_PROMPT_MAX)}
                       </span>
                     </div>
                   </fieldset>

@@ -25,6 +25,23 @@ import {
   setOverseerDraft,
   setOverseerSaved,
   explorerOptions,
+  CAP_MAX,
+  CAP_DEFAULTS,
+  QUICK_ACTIONS_MAX,
+  QA_LABEL_MAX,
+  QA_DESC_MAX,
+  QA_PROMPT_MAX,
+  NOTES_MAX,
+  EXTRA_PROMPT_MAX,
+  atDefaults,
+  canAddQuickAction,
+  capOf,
+  completeCaps,
+  formToDraft,
+  lengthCount,
+  overseerProblem,
+  saveOverseer,
+  toOverseerForm,
 } from "./overseer-draft";
 
 const settings = (): OverseerSettings => ({
@@ -197,7 +214,7 @@ test("the exploratory agent: an edit is dirty, deep-cloned, rebased as one choic
   fresh.caps.explorePerTurn = 4;
   const out = rebaseOverseer(d, { settings: settings(), notes: "" }, { settings: fresh, notes: "" });
   assert.deepEqual(out.settings.explorer, { backend: "claude-code", model: "opus[1m]", effort: "high" });
-  assert.equal(out.settings.caps.explorePerTurn, 4);
+  assert.equal(out.settings.caps.explorePerTurn, "4", "the form's limits are text: the file's new value shows as typed");
 
   const blank = cloneOverseer({ settings: settings(), notes: "" });
   blank.settings.explorer = { backend: "pi", model: "", effort: "" };
@@ -265,4 +282,132 @@ test("Running at once's live line pairs the count now with the number in the fie
   assert.equal(runningNowLine(3, 20, 10), "Now: 3 of 20 running.", "an unsaved edit shows what it would allow");
   assert.equal(runningNowLine(0, Number.NaN, 10), "Now: 0 of 10 running.");
   assert.equal(runningNowLine(2, -4, 5), "Now: 2 of 5 running.");
+});
+
+// ---- Settings QA (feat/settings-forms-qa): the form checks the server's limits before Save -----
+
+test("a limit goes up to 1000, the same as the server: 1000 saves, 1001 waits", () => {
+  const at = (v: number | string) => overseerDraftProblem({ settings: { ...settings(), caps: { ...settings().caps, createPerTurn: v } }, notes: "" });
+  assert.equal(CAP_MAX, 1000);
+  assert.equal(at(1000), null);
+  assert.equal(at("1000"), null);
+  assert.equal(at(0), null);
+  assert.equal(at(1001), "Sessions created must be a whole number from 0 to 1000.");
+  assert.equal(at("1001"), "Sessions created must be a whole number from 0 to 1000.");
+});
+
+test("a limit box holds the text typed: blank, half-typed or a letter stays as typed, red, and Save waits", () => {
+  resetOverseerDraft();
+  setOverseerSaved({ settings: settings(), notes: "" });
+  for (const typed of ["", "1e", "a5", "5a", "-", "1.5", " "]) {
+    const d = cloneOverseer(overseerDraft()!);
+    d.settings.caps.createPerTurn = typed;
+    setOverseerDraft(d);
+    assert.equal(overseerDraft()!.settings.caps.createPerTurn, typed, `${JSON.stringify(typed)} stays as typed`);
+    assert.equal(overseerDirty(), true, `${JSON.stringify(typed)} is an unsaved change`);
+    assert.match(overseerDraftProblem(overseerDraft()!)!, /Sessions created must be a whole number/, JSON.stringify(typed));
+    assert.equal(capOf(typed), null);
+  }
+  // Typing on from an invalid box makes it valid again (it never freezes red).
+  const d = cloneOverseer(overseerDraft()!);
+  d.settings.caps.createPerTurn = "7";
+  setOverseerDraft(d);
+  assert.equal(overseerDraftProblem(overseerDraft()!), null);
+  assert.equal(overseerDirty(), true);
+  // The saved number typed back is no change.
+  d.settings.caps.createPerTurn = "5";
+  setOverseerDraft(cloneOverseer(d));
+  assert.equal(overseerDirty(), false);
+  resetOverseerDraft();
+});
+
+test("a fresh draft shows each limit as text, and a save sends numbers", async () => {
+  resetOverseerDraft();
+  setOverseerSaved({ settings: settings(), notes: "" });
+  assert.equal(overseerDraft()!.settings.caps.createPerTurn, "5");
+  const d = cloneOverseer(overseerDraft()!);
+  d.settings.caps.archivesPerTurn = "1000";
+  const sent: OverseerSettings[] = [];
+  await saveOverseerDraft(formToDraft(d), { settings: settings(), notes: "" }, {
+    getSettings: async () => ({ settings: settings(), file: "/x", defaults: { quickActions: [], caps: settings().caps, explorer: settings().explorer } }),
+    getNotes: async () => "",
+    putSettings: async (s) => {
+      sent.push(s);
+      return { settings: s, file: "/x", defaults: { quickActions: [], caps: s.caps, explorer: s.explorer }, warnings: [] };
+    },
+    putNotes: async (t) => t,
+  });
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]!.caps.archivesPerTurn, 1000);
+  assert.equal(sent[0]!.caps.createPerTurn, 5);
+  for (const k of CAP_KEYS) assert.equal(typeof sent[0]!.caps[k], "number", k);
+  resetOverseerDraft();
+});
+
+test("a limit missing from what the server sent is filled from the defaults, never left blank and red", () => {
+  const partial = settings();
+  delete (partial.caps as Partial<OverseerSettings["caps"]>).extRunsPerTurn;
+  const filled = completeCaps(partial, { ...settings().caps, extRunsPerTurn: 7 });
+  assert.equal(filled.caps.extRunsPerTurn, 7);
+  // The defaults lack it too (an older server): the form's own default.
+  const both = completeCaps(partial, partial.caps);
+  assert.equal(both.caps.extRunsPerTurn, CAP_DEFAULTS.extRunsPerTurn);
+  resetOverseerDraft();
+  setOverseerSaved({ settings: completeCaps(partial, partial.caps), notes: "" });
+  assert.equal(overseerDraftProblem(overseerDraft()!), null);
+  assert.equal(overseerDirty(), false);
+  resetOverseerDraft();
+});
+
+test("the form checks every server limit on quick actions, notes and extra instructions before anything is sent", () => {
+  const ok = settings();
+  const qa = (patch: Partial<OverseerSettings["quickActions"][number]>) => ({ settings: { ...ok, quickActions: [ok.quickActions[0]!, { ...ok.quickActions[0]!, id: "b", ...patch }] }, notes: "" });
+  assert.equal(overseerDraftProblem(qa({ label: "x".repeat(QA_LABEL_MAX) })), null);
+  assert.equal(overseerDraftProblem(qa({ label: "x".repeat(QA_LABEL_MAX + 1) })), "Quick action 2's label can be at most 40 characters.");
+  assert.equal(overseerDraftProblem(qa({ label: ` ${"x".repeat(QA_LABEL_MAX)} ` })), null, "the server trims before it counts");
+  assert.equal(overseerDraftProblem(qa({ description: "x".repeat(QA_DESC_MAX) })), null);
+  assert.equal(overseerDraftProblem(qa({ description: "x".repeat(QA_DESC_MAX + 1) })), "Quick action 2's description can be at most 120 characters.");
+  assert.equal(overseerDraftProblem(qa({ prompt: "x".repeat(QA_PROMPT_MAX) })), null);
+  assert.equal(overseerDraftProblem(qa({ prompt: "x".repeat(QA_PROMPT_MAX + 1) })), "Quick action 2's prompt can be at most 2,000 characters.");
+  assert.deepEqual(overseerDraftIssue(qa({ prompt: "x".repeat(QA_PROMPT_MAX + 1) }))?.at, { group: "quick-action", index: 1 });
+
+  const many = (n: number) => ({ settings: { ...ok, quickActions: Array.from({ length: n }, (_, i) => ({ id: `q${i}`, label: `Q${i}`, description: "", prompt: "p" })) }, notes: "" });
+  assert.equal(overseerDraftProblem(many(QUICK_ACTIONS_MAX)), null);
+  assert.equal(overseerDraftProblem(many(QUICK_ACTIONS_MAX + 1)), "There can be at most 12 quick actions.");
+  assert.equal(canAddQuickAction(many(QUICK_ACTIONS_MAX - 1).settings.quickActions), true);
+  assert.equal(canAddQuickAction(many(QUICK_ACTIONS_MAX).settings.quickActions), false, "Add Quick Action stops at 12");
+
+  assert.equal(overseerDraftProblem({ settings: ok, notes: "x".repeat(NOTES_MAX) }), null);
+  assert.equal(overseerDraftProblem({ settings: ok, notes: "x".repeat(NOTES_MAX + 1) }), "Standing notes can be at most 8,000 characters.");
+  assert.deepEqual(overseerDraftIssue({ settings: ok, notes: "x".repeat(NOTES_MAX + 1) })?.at, { group: "notes" });
+
+  assert.equal(overseerDraftProblem({ settings: { ...ok, extraSystemPrompt: "x".repeat(EXTRA_PROMPT_MAX) }, notes: "" }), null);
+  assert.equal(overseerDraftProblem({ settings: { ...ok, extraSystemPrompt: "x".repeat(EXTRA_PROMPT_MAX + 1) }, notes: "" }), "Extra instructions can be at most 8,000 characters.");
+  assert.deepEqual(overseerDraftIssue({ settings: { ...ok, extraSystemPrompt: "x".repeat(EXTRA_PROMPT_MAX + 1) }, notes: "" })?.at, { group: "advanced" });
+  assert.equal(lengthCount("x".repeat(8001), 8000), "8,001 / 8,000");
+});
+
+test("over-long notes never half-save: the dialog's save is skipped before any settings are written", async () => {
+  resetOverseerDraft();
+  setOverseerSaved({ settings: settings(), notes: "" });
+  const d = cloneOverseer(overseerDraft()!);
+  d.settings.proactivity = "brief";
+  d.notes = "x".repeat(NOTES_MAX + 1);
+  setOverseerDraft(d);
+  assert.equal(overseerDirty(), true);
+  assert.match(overseerProblem()!, /^Overseer: Standing notes can be at most 8,000 characters\.$/);
+  assert.equal(await saveOverseer(), "skipped", "nothing is sent while the form has a problem");
+  resetOverseerDraft();
+});
+
+test("each Reset to Defaults is greyed out when its group already holds the defaults", () => {
+  const defaults = { quickActions: settings().quickActions, caps: settings().caps, explorer: settings().explorer };
+  const form = toOverseerForm({ settings: settings(), notes: "" });
+  assert.deepEqual(atDefaults(form, defaults), { limits: true, quickActions: true, explorer: true });
+  form.settings.caps.linksPerTurn = "";
+  form.settings.quickActions = [];
+  form.settings.explorer = { ...form.settings.explorer, effort: "high" };
+  assert.deepEqual(atDefaults(form, defaults), { limits: false, quickActions: false, explorer: false });
+  form.settings.caps.linksPerTurn = "3";
+  assert.equal(atDefaults(form, defaults).limits, true, "the default typed back counts");
 });

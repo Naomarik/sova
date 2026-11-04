@@ -35,11 +35,29 @@ export const HISTORY_MAX = 20;
 /** Standing notes: what the prompt carries is capped, and so is what a save accepts. */
 export const NOTES_MAX = 8000;
 export const EXTRA_PROMPT_MAX = 8000;
-const QUICK_ACTIONS_MAX = 12;
-const CAP_MAX = 500;
+export const QUICK_ACTIONS_MAX = 12;
+export const QA_LABEL_MAX = 40;
+export const QA_DESC_MAX = 120;
+export const QA_PROMPT_MAX = 2000;
+/** A limit's most: the same as Settings → Overseer's boxes (src/lib/overseer-draft.ts CAP_MAX). */
+export const CAP_MAX = 1000;
+const count = (n: number) => n.toLocaleString("en-US");
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const PROACTIVITY: readonly OverseerProactivity[] = ["off", "badge", "brief"];
+
+/** Each limit as Settings names it (src/lib/overseer-draft.ts CAP_LABEL), so a refusal reads like the form. */
+export const CAP_LABELS: Record<keyof OverseerCaps, string> = {
+  createPerTurn: "Sessions created",
+  promptsPerTurn: "Prompts to other sessions",
+  archivesPerTurn: "Sessions archived",
+  concurrentSessions: "Running at once",
+  explorePerTurn: "Ideas explored",
+  linksPerTurn: "Links made",
+  orgWritesPerTurn: "Organization changes",
+  gatherPerTurn: "Gathering sessions started",
+  extRunsPerTurn: "Extension commands run",
+};
 
 export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 10, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3, extRunsPerTurn: 5 };
 
@@ -118,13 +136,14 @@ const isCap = (v: unknown): v is number => typeof v === "number" && Number.isInt
 
 /** A quick action as stored, or an error sentence. `strict` refuses what `tolerant` would drop. */
 function parseQuickAction(raw: unknown, i: number): OverseerQuickAction | string {
-  if (!isObj(raw)) return `quickActions[${i}] must be an object`;
+  const n = `Quick action ${i + 1}`;
+  if (!isObj(raw)) return `${n} must be an object`;
   const label = typeof raw.label === "string" ? raw.label.trim() : "";
   const prompt = typeof raw.prompt === "string" ? raw.prompt.trim() : "";
   const description = typeof raw.description === "string" ? raw.description.trim() : "";
-  if (!label || label.length > 40) return `quickActions[${i}].label must be 1–40 characters`;
-  if (!prompt || prompt.length > 2000) return `quickActions[${i}].prompt must be 1–2000 characters`;
-  if (description.length > 120) return `quickActions[${i}].description must be at most 120 characters`;
+  if (!label || label.length > QA_LABEL_MAX) return `${n}'s label must be 1–${count(QA_LABEL_MAX)} characters`;
+  if (!prompt || prompt.length > QA_PROMPT_MAX) return `${n}'s prompt must be 1–${count(QA_PROMPT_MAX)} characters`;
+  if (description.length > QA_DESC_MAX) return `${n}'s description can be at most ${count(QA_DESC_MAX)} characters`;
   const id = typeof raw.id === "string" && /^[\w-]{1,40}$/.test(raw.id) ? raw.id : `qa-${i}`;
   return { id, label, description, prompt };
 }
@@ -156,7 +175,7 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
   if (raw.extraSystemPrompt !== undefined) {
     if (typeof raw.extraSystemPrompt === "string" && raw.extraSystemPrompt.length <= EXTRA_PROMPT_MAX) out.extraSystemPrompt = raw.extraSystemPrompt;
     else {
-      const e = fail(`extraSystemPrompt must be a string of at most ${EXTRA_PROMPT_MAX} characters`);
+      const e = fail(`Extra instructions can be at most ${count(EXTRA_PROMPT_MAX)} characters`);
       if (e) return e;
     }
   }
@@ -169,7 +188,7 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
   }
   if (raw.quickActions !== undefined) {
     if (!Array.isArray(raw.quickActions) || raw.quickActions.length > QUICK_ACTIONS_MAX) {
-      const e = fail(`quickActions must be a list of at most ${QUICK_ACTIONS_MAX}`);
+      const e = fail(`There can be at most ${QUICK_ACTIONS_MAX} quick actions`);
       if (e) return e;
     } else {
       const list: OverseerQuickAction[] = [];
@@ -196,7 +215,7 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
         const v = raw.caps[key];
         if (v === undefined) continue;
         if (isCap(v)) out.caps[key] = v;
-        else if (strict) return { error: `caps.${key} must be a whole number from 0 to ${CAP_MAX}` };
+        else if (strict) return { error: `${CAP_LABELS[key]} must be a whole number from 0 to ${CAP_MAX}` };
       }
     }
   }

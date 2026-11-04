@@ -41,7 +41,10 @@ export function projectDeployer(): Deployer {
 export function registerProjectServiceRoutes(app: Hono<any>): void {
   app.post("/api/project-services/:verb", async (c) => {
     const body = await c.req.json().catch(() => undefined);
-    const r = await projectEngine().run(c.req.param("verb"), body, { kind: "operator" });
+    // A process a chat runs carries its chat's key (`x-sova-caller`, scripts/sova-token.mjs): the route still runs as the
+    // operator, but never the operator's acts on a release (t17).
+    const fromChat = !!c.req.header("x-sova-caller")?.trim();
+    const r = await projectEngine().run(c.req.param("verb"), body, fromChat ? { kind: "operator", fromChat: true } : { kind: "operator" });
     return c.json(r, httpStatusOf(r) as 200);
   });
 }

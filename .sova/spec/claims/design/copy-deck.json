@@ -442,7 +442,9 @@
       "src/lib/needs-you.ts",
       "src/lib/signals.ts",
       "src/lib/overseer-menu.ts",
-      "src/lib/regions.ts"
+      "src/lib/regions.ts",
+      "src/lib/needs-you-row.ts",
+      "src/components/NeedsYouRow.tsx"
     ]
   },
   "§design.copy-deck/slash-commands": {

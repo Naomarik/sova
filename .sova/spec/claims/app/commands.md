@@ -69,7 +69,11 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `session.title.auto`, `session.title.shorten`, `session.worktree.summary`,
   `session.worktree.cleanup`, `session.diff.summary`, `overseer.get`, `overseer.memory.get`,
   `project.overseer.get`, `project.overseer.actions`, `project.overseer.memory.get`,
-  `insights.usage.refresh`, `schedule.list`, `playbook.list`, `draft-spec.list`.
+  `insights.usage.refresh`, `schedule.list`, `playbook.list`, `draft-spec.list`,
+  `project.verb.release.status`, `project.verb.release.logs`, `project.verb.release.request`,
+  `project.verb.release.start`, `project.verb.release.step`, `project.verb.release.notes`,
+  `project.verb.release.continue`, `project.verb.release.retry`, `project.verb.release.publish`,
+  `project.verb.release.abandon`, `project.verb.release.withdraw`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).

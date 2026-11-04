@@ -741,7 +741,7 @@ thing it waits on being done.
       Needs you <span class="sidebar-region-count">· 2</span>
     </h2>
   </summary>
-  <ul class="list">…session rows, with line 2 replaced by the digest's sentence…</ul>
+  <ul class="list">…one row each: name and state word, title, detail, what it opens…</ul>
   <!-- only when the digest's 30-item cap dropped act items -->
   <p class="sidebar-region-note">Some sessions may not be listed: this list stops at the 30 most urgent items.</p>
 </details>
@@ -759,32 +759,46 @@ thing it waits on being done.
   count, so the two agree but for the organization sessions the Overseer also counts.
 - **A project's deploy items** (`deploy-failed`, `deploy-request`, §app.project-services/deploy-status) belong
   to no session, so they list under the session rows as rows of their own, newest first, narrowed by the
-  search (project, folder or sentence): the project's name, the digest's sentence and the folder, each
-  opening the project page (its Deploy panel). The head's count and the spine's door count them too, and
-  the head's title says how many are deploy items ("The 2 sessions waiting on you, newest first, and 1
-  deploy item." / "1 deploy item waiting on you.").
+  search (project, folder or sentence), each opening the project page (its Deploy panel). The head's
+  count and the spine's door count them too, and the head's title says how many are deploy items ("The
+  2 sessions waiting on you, newest first, and 1 deploy item." / "1 deploy item waiting on you.").
+- **A project's release items** (`release-ready`, `release-request`, `release-held`, `release-failed`,
+  `release-quiet`, §app.release/quiet) list the same way, each opening the project's Releases tab. The
+  head's title counts them ("… and 2 release items.").
 - **WhatsApp sending down** (`whatsapp-down`, §app.outreach/sender-health), of no session too, lists
-  the same way, one row per sender: "WhatsApp sending", the digest's sentence and "Settings →
-  Outreach", opening Settings → Outreach, with an **Open Outreach Settings** button under it. The
-  head's count includes it, and its title names it ("… and 1 deploy item and WhatsApp sending." /
-  "WhatsApp sending waiting on you.").
+  the same way, one row per sender, opening Settings → Outreach. The head's count includes it, and its
+  title names it ("… and 1 deploy item and WhatsApp sending." / "WhatsApp sending waiting on you.").
 - **Not here: a project's own items.** A held act, a conflict to settle, a project whose
   stakeholder left and a WhatsApp message that wasn't sent belong to a project, not a session: they
   list in the Organizations region's own Needs you (§app.session-list/organizations), after its
-  session rows, held acts first and soonest on top, each with **Cancel** (§app.project-overseer/holds).
-- **Rows** are the same `SessionRow` as everywhere else — rail, marks, meta line, accessible name —
-  with one difference: **line 2 is the digest's sentence** for the session's newest act item
-  ("3 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited", "1 subagent ended in an error."), in place of the gist
-  or the draft preview, and shown even with summaries hidden in Settings › General. Its `title` is
-  every act sentence the session has, newest first. An act item with no sentence leaves line 2 as
-  the row draws it elsewhere. The rules live in `src/lib/needs-you.ts`.
-- **No row menu, no put-away.** A Needs you row carries no button of its own and no menu, except
-  a session whose act item is a proposed playbook run (`playbook-review`,
-  §app.project-runtime/review): under its row, **Merge Branch**, which acts
-  at once and says a refusal's reason under it; and WhatsApp sending down's **Open Outreach
-  Settings**. Otherwise: a press
-  held on it lifts it and, moved, opens the drop overlay (§app.session-list/drop-overlay), a lifted
-  row let go in place does nothing, and a right-click is the browser's, as on every other row.
+  session rows, held acts first and soonest on top, each with **Cancel** (§app.project-overseer/holds),
+  a standalone project's held act (one with no organization, such as the release power's waiting
+  period, §app.release/power) included.
+- **Every row reads the same**, here and in the Organizations region's Needs you
+  (§app.session-list/organizations), whatever it is about (words: §design.copy-deck/sidebar):
+  - the **name**, muted: the project, "{org} · {project}" for an organization's, else the folder's last
+    name ("{name} · {host}" for a session on another host), with a **state chip that always has a word**;
+  - the **title**, semibold: the session's title; on a row of no session what it is, by kind ("Deploy
+    failed"), an owner's item its own request, a held act what waits;
+  - one line of **detail**: the digest's sentence for the session's newest item ("3 open questions in
+    al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited"), shown even with summaries
+    hidden in Settings › General, and dropping the title where it would repeat it ("Ready to publish ·
+    v0.4.0" reads "v0.4.0"). Its `title` is the whole text: every act sentence the session has, newest
+    first. An item with no sentence has no detail line;
+  - **what it opens**, with an arrow ("Open Chat", "Read Report", "Open Deploy", "Review and Publish").
+
+  The rules live in `src/lib/needs-you.ts` and `src/lib/needs-you-row.ts`.
+- **Folder paths leave the row** and go to the name's `title`. Two listed projects of one name in
+  different folders read "Notes · work/notes", with only as many path segments as tell them apart; two
+  items of one project stay plain.
+- **The whole row is one link.** It is stretched over the row, one tab stop, and what it opens is words
+  inside it, never a second control. Two things act and are real buttons, each its own tab stop beside
+  the link in the row's last line, and pressing one doesn't navigate: **Merge Branch** on a proposed
+  playbook run (`playbook-review`, §app.project-runtime/review), which acts at once and says a refusal's
+  reason, and **Cancel** on a held act (§app.project-overseer/holds).
+- **Not a session row, no put-away.** A row here has none of a session row's marks or gestures: no rail,
+  unread dot, time, model, context ring or merge badge, no press-and-hold, lift or drag, and no menu; a
+  right-click is the browser's. The session's own row elsewhere keeps them all.
 - **The open session stays listed**, drawn with the current tint like any row: the count is the
   digest's, and a number must match its list.
 - **Open by default, collapsible.** The head is a twist (`<details>`, the Groups head's
@@ -1795,7 +1809,7 @@ projects (§app.projects/list).
   <section class="org-needs-you" aria-labelledby="r-orgs-needs">
     <h3 class="list-group-label" id="r-orgs-needs"
         title="The 2 organization sessions waiting on you, newest first."><span class="org-needs-dot" aria-hidden="true"></span>Needs you <span class="text-num">2</span></h3>
-    <ul class="list">…session rows: line 2 = what it waits on, line 3 = "{time} · {org} · {project}"…</ul>
+    <ul class="list">…Needs you rows, §app.session-list/needs-you: "{org} · {project}", state word, title, what it waits on, what it opens…</ul>
   </section>
 
   <!-- 2. One per org, by name A→Z, ties on id. Open by default, memory only. -->
@@ -1881,23 +1895,23 @@ projects (§app.projects/list).
   carries `needsYou` (a person's question, a limit reached), `sendLink` (a link to send) or at least
   one of `proposals` (a referral to approve) — read from the session list, so it holds whatever
   Overseer proactivity is — or when the attention digest has an **act** item for it (a dialog open, an
-  errored turn, a worker error; §app.overseer/attention-digest). **Line 2** is the sentence of its newest
-  waiting item: the digest's, verbatim, else the same words built from the baton — "{from} → you:
+  errored turn, a worker error; §app.overseer/attention-digest). Its row is a Needs you row
+  (§app.session-list/needs-you). Its **detail** is the sentence of its newest waiting item: the digest's, verbatim, else the same words built from the baton — "{from} → you:
   {question}", "Send {to} their link: {question}", "Approve {name} ({role}) proposed by {by}?" — with
-  every sentence, newest first, in its `title`. **Line 3** reads "{time} · {org} · {project}" in place of
-  the model (no project: "{time} · {org}"). Order: newest waiting item first (`since`), ties on path.
+  every sentence, newest first, in its `title`. Its **name** reads "{org} · {project}" (no project:
+  "{org}"). Order: newest waiting item first (`since`), ties on path.
   Like the global Needs you, it is a **shortcut, not a place a session lives**: each row is still under
   its project. Not collapsible (the region's own twist collapses it); omitted when it has no rows. The
   global Needs you never lists these sessions (§app.session-list/needs-you). Like a global Needs you
-  row, a row here has no button or menu of its own: it leaves when what it waits on is answered.
+  row, a row here has no menu of its own: it leaves when what it waits on is answered.
 - **A project's items, too.** The same block lists the digest's items that belong to a project
   rather than a session, each a row opening the project page with the digest's sentence: first each
   held act (§app.project-overseer/holds), the one going ahead soonest on top, its sentence recounted
-  on the list's clock and **Cancel** beside the row; then, newest first, each conflict for the
+  on the list's clock and **Cancel** beside the row's link; then, newest first, each conflict for the
   operator to settle (`conflict-to-operator`, §app.requirements/routing) and each project whose main
   stakeholder left (§app.organizations/stakeholder), and each overseer's WhatsApp message that was
-  not sent (`outreach-not-sent`, §app.outreach/send), which opens the person's page instead. Line 3
-  names the org. The block, and the
+  not sent (`outreach-not-sent`, §app.outreach/send), which opens the person's page instead. Their
+  name reads "{org} · {project}". The block, and the
   region, show while only such items wait.
 - **Organization → project → rows, always.** The org level is drawn even with one org, so the shape
   doesn't change when a second is attached. There are no `cwd` folder heads: every gathering session

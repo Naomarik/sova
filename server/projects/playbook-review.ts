@@ -9,6 +9,8 @@ import { softwareOf } from "../project-services/observe";
 import { defHashOf } from "../project-services/def-hash";
 import { getSessionSummary } from "../sessions-index";
 import { deployReviewAt } from "../project-services/deploy-recipe";
+import type { PlaybookProposes } from "../../shared/protocol";
+import { releaseSetupAt } from "./release-proposal";
 
 /**
  * A proposed verb playbook run waits on the operator (§app.project-runtime/review): the facts its
@@ -25,12 +27,15 @@ export interface PlaybookReviewFact extends PlaybookReviewWords {
   /** ms epoch: its last turn's end (when it became proposed). */
   since: number;
   /** What it proposes (§app.project-runtime/verb-playbooks). */
-  proposes: "definition" | "deploy";
+  proposes: PlaybookProposes;
   /** The branch tip the proposal (its hash) was read at. */
   commit?: string;
 }
 
 export const DEFAULT_PLAYBOOK_LABEL = "Project verbs";
+
+/** What a run proposes, as its registry recorded it: anything unknown reads as a definition (the v1 runs). */
+export const proposesOf = (v: unknown): PlaybookProposes => (v === "deploy" || v === "release" ? v : "definition");
 
 const obj = (v: unknown): Record<string, unknown> => (v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -48,10 +53,9 @@ export function playbookReviewOf(projectId: string): PlaybookReviewFact | null {
   const build = obj(host.data(str(pb.sid)));
   const bf = obj(pb.branchFacts);
   const def = obj(bf.def);
-  const proposes = pb.proposes === "deploy" ? "deploy" : "definition";
-  // A deploy-setup run proposes its deploy recipe, with a hash of its own.
-  const dep = obj(bf.deploy);
-  const hash = proposes === "deploy" ? str(dep.hash) : def.state === "present" ? str(def.hash) : "";
+  const proposes = proposesOf(pb.proposes);
+  // A deploy-setup run proposes its deploy recipe, a release-setup run its release setup, each with a hash of its own.
+  const hash = proposes === "deploy" ? str(obj(bf.deploy).hash) : proposes === "release" ? str(obj(bf.release).hash) : def.state === "present" ? str(def.hash) : "";
   return {
     projectId,
     sessionId,
@@ -103,7 +107,7 @@ export function reviewOf(def: ProjectDef | null, fact: RuntimeRunReview["def"], 
 }
 
 /** What a proposed run's branch proposes, read at its tip from git (never the worktree's files). */
-export async function branchReview(root: string, branch: string, proof: RuntimeProof | null, deploy = false, git: typeof realGit = realGit): Promise<RuntimeRunReview> {
+export async function branchReview(root: string, branch: string, proof: RuntimeProof | null, deploy = false, git: typeof realGit = realGit, release = false): Promise<RuntimeRunReview> {
   const shown = await git(["show", `${branch}:${CONTRACT_FILE}`], root);
   if (shown.code !== 0) return reviewOf(null, { state: "absent" }, proof);
   let review: RuntimeRunReview;
@@ -112,6 +116,11 @@ export async function branchReview(root: string, branch: string, proof: RuntimeP
     review = reviewOf(def, { state: "present", hash: defHashOf(def) }, proof);
   } catch (err) {
     return reviewOf(null, { state: "invalid", error: err instanceof DefinitionError ? err.message : String(err) }, proof);
+  }
+  // A release-setup run: its settings and steps at the tip (server/projects/release-proposal.ts).
+  if (release) {
+    const r = await releaseSetupAt(root, branch, git);
+    return r ? { ...review, release: r } : review;
   }
   // A deploy-setup run: the recipe as Sova renders it (§app.project-runtime/run-report).
   if (!deploy) return review;

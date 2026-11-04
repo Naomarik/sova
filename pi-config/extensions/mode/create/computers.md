@@ -17,7 +17,7 @@ To link computers, read where things stand with `sova_settings` get: each comput
 
 When it's stuck: `down`: that computer's off or unreachable. `skewed`: they run different builds; for one that's behind, offer `mesh.resync`. `hidden`: that computer grants this one nothing, so change the grant there. Half connected: one side of a pairing isn't up yet. An error instead of a state: this computer's peers file is invalid and the mesh is off, so fix that first.
 
-These have no card, so name the place: links between computers are on the session pane's Agents tab, claiming a login on the Mesh page under Sync, and an internet relay on the Mesh page under Dial-out pairings. A resync's recipe is a file, `<agent dir>/sova/mesh-resync.json`, or comes from a deploy script's `local.env`. Use `sova_settings` reference for each id's exact value. Report only what `get` reads: never say a link works until it reads `up` on this computer.
+These have no card, so name the place: links between computers are on the session pane's Agents tab, claiming a login on the Mesh page under Sync, and an internet relay on the Mesh page under Dial-out pairings. A resync's recipe, how to bring one computer up to this build, is the card `mesh.resync-recipe`, one computer per card; a dial-out pairing has none. A recipe on a card wins over one derived from a deploy script's `local.env`, which a card neither reads nor changes. Use `sova_settings` reference for each id's exact value. Report only what `get` reads: never say a link works until it reads `up` on this computer.
 
 ## Your other computers
 

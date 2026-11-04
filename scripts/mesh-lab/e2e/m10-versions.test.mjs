@@ -198,10 +198,15 @@ async function refusedFrame(c, msg, sentence, what) {
 
 // ---- the page ----------------------------------------------------------------------------------
 
+/** What each page really sent: its socket frames and posted frames. */
+const left = new WeakMap();
 async function tab(host, hash = "#/mesh") {
   const ctx = await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: labTokenHeaders(), viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   tabs.push(ctx);
+  left.set(page, []);
+  page.on("websocket", (ws) => ws.on("framesent", (f) => left.get(page).push(String(f.payload))));
+  page.on("request", (r) => r.url().includes("/api/chat/frames") && left.get(page).push(r.postData() ?? ""));
   page.on("pageerror", (e) => console.log(`# page ${host}: ${e.message.slice(0, 300)}`));
   page.on("response", (r) => r.status() >= 400 && console.log(`# page ${host}: ${r.status()} ${r.url().slice(0, 120)}`));
   await unlockPage(page, host);
@@ -299,10 +304,14 @@ async function pickerSays(page, id, state, { canPick }) {
 }
 const composerOn = (page) => page.locator("form.composer-inner").count();
 const stopOn = (page) => page.getByRole("button", { name: "Stop", exact: true }).count();
+/** Type, wait until sending is really on (a visible composer can still be waiting for its hello, and
+    Enter then sends nothing), press Enter, and see the words leave: only then can a refusal mean anything. */
 async function typeAndSend(page, text) {
   const box = page.locator("textarea.composer-input").first();
   await box.fill(text);
+  await page.locator('form.composer-inner button[type="submit"]:not([aria-disabled="true"])').first().waitFor({ timeout: 30000 });
   await box.press("Enter");
+  await waitFor(() => (left.get(page) ?? []).some((f) => f.includes(text)), { timeoutMs: 15000, intervalMs: 100, what: `the send left the page: ${text}` });
 }
 
 // ---- Resync ------------------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import { parseChange, SettingsEditError } from "./settings-edit";
 import { effectiveModel, liveModelCheck, type ModelCheck, parseChoice, writeModels } from "./models";
 import { pageOnlyRefusal } from "../page-only";
 import { NOT_SERVED } from "./served";
+import { setQueueCardPort } from "./card-port";
 
 /**
  * The merge queue's settings (the Settings dialog's Merge Queue tab), beside the merge verbs (routes.ts): REST, not
@@ -152,20 +153,42 @@ export async function settingsQueueOf(root: string | null, d: { served: (root: s
 
 /** The live wiring: the server's queues by project id, Settings → Models, the page-only rule. */
 export function registerLiveMergeSettingsRoutes(app: Hono<any>): void {
+  const queueOf = async (id: string) => {
+    const [{ mergeQueues }, { listProjects }, { servedRule }] = await Promise.all([import("./wire"), import("../projects/spaces"), import("./served")]);
+    const qs = mergeQueues();
+    if (!qs) return null;
+    let root: string | null = null;
+    try {
+      root = listProjects().find((p) => p.id === id && !p.archived)?.root ?? null;
+    } catch {}
+    return settingsQueueOf(root, { served: async (r) => (await servedRule()).served(r), queues: qs });
+  };
+  const modelCheck = liveModelCheck();
   registerMergeSettingsRoutes(app, {
-    async queueOf(id) {
-      const [{ mergeQueues }, { listProjects }, { servedRule }] = await Promise.all([import("./wire"), import("../projects/spaces"), import("./served")]);
-      const qs = mergeQueues();
-      if (!qs) return null;
-      let root: string | null = null;
-      try {
-        root = listProjects().find((p) => p.id === id && !p.archived)?.root ?? null;
-      } catch {}
-      return settingsQueueOf(root, { served: async (r) => (await servedRule()).served(r), queues: qs });
-    },
+    queueOf,
     bareSettings: async (root) => (await import("./wire")).mergeBareSettings(root),
-    modelCheck: liveModelCheck(),
+    modelCheck,
     notPage: (c) => pageOnlyRefusal(c, WRITE_WORDS),
+  });
+  // A merge queue card's Apply (§chat.create-mode/settings-cards): this same save, past the card's own page-only guard.
+  const served = async (id: string): Promise<SettingsQueue | null> => {
+    const q = await queueOf(id);
+    return q && !("unserved" in q) ? q : null;
+  };
+  const servedOrThrow = async (id: string): Promise<SettingsQueue> => {
+    const q = await served(id);
+    if (!q) throw Object.assign(new Error(NOT_SERVED), { code: "unsupported" });
+    return q;
+  };
+  setQueueCardPort({
+    settings: async (id) => (await (await served(id))?.settings()) ?? null,
+    save: async (id, changes) => (await servedOrThrow(id)).saveSettings(changes),
+    async models(id, patch) {
+      const q = await servedOrThrow(id);
+      writeModels(q.store.dir, patch);
+      q.settingsChanged();
+    },
+    modelDenial: async (ref) => modelCheck.denial(ref),
   });
 }
 

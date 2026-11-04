@@ -438,9 +438,13 @@ export function settingsIndex(placed = true): string {
   }).join("\n");
 }
 
-/** One entry in full, for sova_settings reference. */
-export function referenceText(id: SettingId): string {
-  const e = SETTINGS_REFERENCE[id];
+/** What a Create chat's card holds of the merge queue (§chat.create-mode/settings-cards), in place of the overseer's refusal. */
+export const MERGE_QUEUE_CARD_EDIT =
+  '{setting: "merge-queue", changes?: {push?, review?, checks?: {<id>: {timeoutSec?, rerun?, optional?}}}, models?: {review?: {model, thinking?} | null, thread?: …}} on a card of its own. Check commands, the install step, the target and the kits go by Land; first setup stays the person\'s, on the Merge Queue tab.';
+
+/** One entry in full, for sova_settings reference (`create`: as a Create chat proposes it). */
+export function referenceText(id: SettingId, opts: { create?: boolean } = {}): string {
+  const e = opts.create && id === "merge-queue" ? { ...SETTINGS_REFERENCE[id], edit: MERGE_QUEUE_CARD_EDIT } : SETTINGS_REFERENCE[id];
   return [
     `${e.label} (${id}): ${e.summary}`,
     `Where: ${e.where === "sova" ? "kept by Sova" : `the file ${e.file} (lands as a commit when the operator applies the card)`}. Changed at: ${e.changedAt}.`,

@@ -13,6 +13,11 @@ import { SETTINGS_REFERENCE, type SettingId } from "../shared/settings-reference
 import { COPIES_EDIT_KEYS, COPIES_FIELD, PROJECT_EDIT_KEYS } from "../shared/project-settings";
 import { copyLimitOf } from "../shared/project-slots";
 import { copyLimitProblem, machineCopyLimit, setMachineCopyLimit } from "./project-services/copy-limit";
+import type { MergeQueueSettings, MergeSettingsChange, ModelChoice } from "../shared/merge-queue-settings";
+import { queueCardPort } from "./merge-queue/card-port";
+import { parseChoice } from "./merge-queue/models";
+import { parseChange, SettingsEditError } from "./merge-queue/settings-edit";
+import { credentialProblem, credentialRefusal } from "./settings-credentials";
 import { checkoutRootOf, discoverProjectModes, readProjectMode } from "../pi-config/extensions/mode/project-discovery.ts";
 import { OrgError } from "./org-error";
 import { isPlaybookId, listProjectPlaybooks, parseFrontmatter, PROJECT_PLAYBOOK_DIRS, readProjectPlaybook } from "./playbooks";
@@ -312,10 +317,22 @@ interface StoredCard {
   ref: string | null;
   grants: StoredGrant[];
   fingerprint: string;
+  /** A merge queue card: what it saves, in Save's terms, the models kept on this computer, and its rows in words. */
+  queue?: QueueCardPart;
   appliedNow?: SettingsHistoryRow[];
   appliedAt?: string;
   appliedCommit?: string;
   dismissedAt?: string;
+}
+
+interface QueueCardPart {
+  changes: MergeSettingsChange;
+  models?: { review?: ModelChoice | null; thread?: ModelChoice | null };
+  rows: KeptChange[];
+  /** Applied while a branch checks: the save waits with the queue. */
+  waiting?: boolean;
+  /** It failed when its turn came (the queue keeps it, not retried). */
+  failed?: string;
 }
 
 interface Store {
@@ -349,9 +366,9 @@ function writeStore(projectId: string, s: Store): void {
   renameSync(tmp, file);
 }
 
-const fingerprintOf = (c: { kept: KeptChange[]; memory?: unknown; name?: string; files: { rel: string; after: string | null }[]; grants: SettingsGrant[] }): string =>
+const fingerprintOf = (c: { kept: KeptChange[]; memory?: unknown; name?: string; files: { rel: string; after: string | null }[]; grants: SettingsGrant[]; queue?: QueueCardPart }): string =>
   createHash("sha256")
-    .update(JSON.stringify({ kept: c.kept.map((k) => [k.field, k.to]), memory: c.memory ?? null, name: c.name ?? null, files: c.files.map((f) => [f.rel, f.after]), grants: c.grants.map((g) => [g.key, g.what]) }))
+    .update(JSON.stringify({ kept: c.kept.map((k) => [k.field, k.to]), memory: c.memory ?? null, name: c.name ?? null, files: c.files.map((f) => [f.rel, f.after]), grants: c.grants.map((g) => [g.key, g.what]), ...(c.queue ? { queue: [c.queue.changes, c.queue.models ?? null] } : {}) }))
     .digest("hex")
     .slice(0, 32);
 
@@ -396,7 +413,8 @@ export type SettingsEdit =
   | { setting: "mode"; id: string; text: string | null }
   | { setting: "offers"; file: Record<string, unknown> | null }
   | { setting: "services"; file: Record<string, unknown> | null }
-  | { setting: "copies"; limit: number | null };
+  | { setting: "copies"; limit: number | null }
+  | { setting: "merge-queue"; changes?: unknown; models?: unknown };
 
 const PATCH_REFUSED: Record<string, string> = {
   autonomy: "Levels are gone: set the powers (patch.powers) instead.",
@@ -407,7 +425,7 @@ const PATCH_REFUSED: Record<string, string> = {
 const PATCH_KNOWN = new Set(["model", "thinking", "codingModel", "codingThinking", "gatheringModel", "gatheringThinking", "gatheringAbilities", "watchGapMin", "soonLookSec", "watch", "holdMin", "extraSystemPrompt", "powers", "resume", "assistantModels", "caps"]);
 
 /** A file edit: its path, setting and new text (null: removed). Throws the parser's refusal. */
-async function fileEdit(root: string, e: Exclude<SettingsEdit, { setting: "overseer" | "memory" | "project" | "copies" }>): Promise<{ rel: string; setting: SettingId; id?: string; text: string | null }> {
+async function fileEdit(root: string, e: Exclude<SettingsEdit, { setting: "overseer" | "memory" | "project" | "copies" | "merge-queue" }>): Promise<{ rel: string; setting: SettingId; id?: string; text: string | null }> {
   const json = (v: Record<string, unknown>) => `${JSON.stringify(v, null, 2)}\n`;
   const sized = (t: string) => (Buffer.byteLength(t) > FILE_MAX ? refuse(`That file would be over ${FILE_MAX / 1024} KB.`) : t);
   switch (e.setting) {
@@ -542,12 +560,13 @@ async function cardView(projectId: string, c: StoredCard, repo: Repo | null): Pr
   ];
   return {
     id: c.id,
+    ...(c.queue ? { kind: "queue" as const, ...(c.queue.waiting && c.state === "waiting" ? { saveWaits: true } : {}), ...(c.queue.failed && c.state === "waiting" ? { saveFailed: c.queue.failed } : {}) } : {}),
     state: c.state,
     title: titleOf(c),
     why: c.why,
     by: c.by,
     createdAt: c.createdAt,
-    kept: [...c.kept, ...extra],
+    kept: [...c.kept, ...extra, ...(c.queue?.rows ?? [])],
     files,
     grants: c.grants.map(({ key, setting, what }) => ({ key, setting, what })),
     lands: c.files.length ? `${repo?.branch ?? "the branch"} in ${project.root}` : null,
@@ -560,8 +579,8 @@ async function cardView(projectId: string, c: StoredCard, repo: Repo | null): Pr
   };
 }
 
-const titleOf = (c: Pick<StoredCard, "kept" | "files" | "memory" | "name">): string => {
-  const parts = [...c.kept.map((k) => k.label), ...(c.memory ? ["Its memory"] : []), ...(c.name ? ["The project's name"] : []), ...c.files.map((f) => f.summary.split(":")[0]!)];
+const titleOf = (c: Pick<StoredCard, "kept" | "files" | "memory" | "name"> & { queue?: QueueCardPart }): string => {
+  const parts = [...c.kept.map((k) => k.label), ...(c.memory ? ["Its memory"] : []), ...(c.name ? ["The project's name"] : []), ...(c.queue?.rows.map((k) => k.label) ?? []), ...c.files.map((f) => f.summary.split(":")[0]!)];
   const head = parts.slice(0, 3).join(", ");
   return parts.length > 3 ? `${head} and ${parts.length - 3} more` : head || "No change";
 };
@@ -569,6 +588,7 @@ const titleOf = (c: Pick<StoredCard, "kept" | "files" | "memory" | "name">): str
 /** One card's view (the chat's card reads it live). */
 export async function settingsCard(projectId: string, cardId: string): Promise<SettingsCardView | null> {
   if (cardId === "local") return localCard(projectId);
+  await settleQueueCards(projectId);
   const c = readStore(projectId).cards.find((x) => x.id === cardId);
   if (!c) return null;
   return cardView(projectId, c, await repoOf(projectOf(projectId).root).catch(() => null));
@@ -661,9 +681,13 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   let name: string | undefined;
   const placementTo: Partial<Record<PlacementField, unknown>> = {};
   let copiesTo: { to: number | null } | undefined;
+  let queue: QueueCardPart | undefined;
+  const create = ctx.by.kind === "create";
   const fileEdits: { rel: string; setting: SettingId; id?: string; text: string | null }[] = [];
   for (const raw of edits) {
     if (!isObj(raw) || typeof raw.setting !== "string") refuse('Each edit is an object naming its setting: {setting: "overseer" | "memory" | "project" | "copies" | "profile" | "playbook" | "mode" | "offers" | "services", …}.');
+    // Credentials never pass through Create (§chat.create-mode/settings-cards), in any setting it can name.
+    if (create && credentialProblem(raw)) refuse(credentialRefusal());
     const e = raw as SettingsEdit;
     if (e.setting === "overseer") {
       if (!isObj(e.patch)) refuse("An overseer edit carries patch: the fields to change.");
@@ -710,8 +734,11 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
       const f = await fileEdit(project.root, e as never);
       if (fileEdits.some((x) => x.rel === f.rel)) refuse(`Two edits change ${f.rel}: make it one.`);
       fileEdits.push(f);
-    } else if ((e.setting as string) === "merge-queue") refuse("The merge queue's settings aren't proposed here: the operator changes push, review and the checks' limits in Settings → Merge Queue; anything else changes in a branch that lands through the queue.");
-    else refuse(`Unknown setting "${String((raw as { setting: unknown }).setting)}".`);
+    } else if (e.setting === "merge-queue") {
+      // Only Create's card path; the project overseer's stays refused by name (§chat.create-mode/settings-cards).
+      if (!create) refuse("The merge queue's settings aren't proposed here: the operator changes push, review and the checks' limits in Settings → Merge Queue; anything else changes in a branch that lands through the queue.");
+      queue = await queuePart(projectId, e);
+    } else refuse(`Unknown setting "${String((raw as { setting: unknown }).setting)}".`);
   }
   let next: ProjectOverseerSettings = current;
   try {
@@ -729,6 +756,9 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   }
   if (body.resume === true) kept.push({ field: "resume", label: fieldLabel("resume"), from: "braked", to: "resumed", fromText: "on", toText: "lifted", grant: grantOf("resume", null, null)! });
   if (name === project.name) name = undefined;
+
+  // A merge queue card is a Save and nothing else: what else it held couldn't wait with it.
+  if (queue && (kept.length || memory || name || fileEdits.length)) refuse("A merge queue change goes on a card of its own: propose it alone.");
 
   // Files: blobs, then one commit on a Sova-owned ref, cut from the folder's HEAD.
   const repo = fileEdits.length ? await repoOf(project.root) : null;
@@ -756,7 +786,7 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   for (const k of onCard) if (k.grant) grants.unshift({ key: `overseer:${project.root}#${k.field}`, setting: settingOfField(k.field), what: k.grant });
 
   const store = readStore(projectId);
-  if ((onCard.length || files.length || cardMemory || cardName) && store.cards.filter((c) => c.state === "waiting").length >= MAX_WAITING)
+  if ((onCard.length || files.length || cardMemory || cardName || queue) && store.cards.filter((c) => c.state === "waiting").length >= MAX_WAITING)
     refuse(`${MAX_WAITING} settings cards already wait: withdraw one (sova_settings withdraw) or ask the operator to apply or dismiss them.`);
 
   const d = depsOrThrow();
@@ -765,14 +795,14 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   if (memoryNow) appliedNow.push(...(await d.memory(projectId, memoryNow, ctx.by)));
   if (nameNow) appliedNow.push(...(await d.rename(projectId, nameNow, ctx.by)));
 
-  if (!onCard.length && !files.length && !cardMemory && !cardName) return { card: null, appliedNow };
+  if (!onCard.length && !files.length && !cardMemory && !cardName && !queue) return { card: null, appliedNow };
 
   const n = store.next;
   const id = `sc_${n}`;
   let commit: string | null = null;
   let ref: string | null = null;
   if (files.length && repo) {
-    commit = await commitOnto(repo, repo.head, files.map((f) => ({ rel: f.rel, blob: f.after })), `Settings: ${titleOf({ kept: [], files, ...(cardMemory ? { memory: cardMemory } : {}), ...(cardName ? { name: cardName } : {}) })}\n\n${why}\n\nProposed by the project overseer as ${id}.`);
+    commit = await commitOnto(repo, repo.head, files.map((f) => ({ rel: f.rel, blob: f.after })), `Settings: ${titleOf({ kept: [], files, ...(cardMemory ? { memory: cardMemory } : {}), ...(cardName ? { name: cardName } : {}) })}\n\n${why}\n\nProposed by ${byWords(ctx.by)} as ${id}.`);
     ref = `refs/sova/settings/${projectId}/${n}`;
     await setRef(repo, ref, commit);
   }
@@ -792,6 +822,7 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
     ref,
     grants,
     fingerprint: "",
+    ...(queue ? { queue } : {}),
     ...(appliedNow.length ? { appliedNow } : {}),
   };
   card.fingerprint = fingerprintOf(card);
@@ -799,6 +830,111 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   store.next = n + 1;
   writeStore(projectId, store);
   return { card: await cardView(projectId, card, repo), appliedNow };
+}
+
+/** A card's proposer in a commit's words. */
+const byWords = (by: SettingsBy): string => (by.kind === "create" ? "a Create chat" : "the project overseer");
+
+/** A merge queue card's rows, from what the queue uses now. Each change is one line, its label Save's own words. */
+function queueRow(field: string, label: string, from: unknown, to: unknown, words: (v: unknown) => string): KeptChange {
+  return { field, label, from, to, fromText: words(from), toText: words(to) };
+}
+const onOff = (v: unknown): string => (v === true ? "on" : v === false ? "off" : "not set");
+const secs = (v: unknown): string => `${Math.round(Number(v) / 60)} min`;
+const choiceText = (v: unknown): string => (v && typeof v === "object" ? String((v as ModelChoice).model) : "Same as new chats");
+
+/** One `{setting: "merge-queue"}` edit, checked as Save checks it; First setup stays the person's own. */
+async function queuePart(projectId: string, e: Extract<SettingsEdit, { setting: "merge-queue" }>): Promise<QueueCardPart> {
+  const port = queueCardPort();
+  const now = port ? await port.settings(projectId) : null;
+  if (!now) return refuse("This project has no merge queue yet: setting it up is the person's own, on the Merge Queue tab.");
+  let changes: MergeSettingsChange = {};
+  try {
+    if (e.changes !== undefined) changes = parseChange(e.changes);
+  } catch (err) {
+    if (err instanceof SettingsEditError) refuse(err.message);
+    throw err;
+  }
+  if (changes.land !== undefined) refuse("How a branch lands, the target, check commands, the install step and the kits go by Land, not on a card.");
+  const rows: KeptChange[] = [];
+  if (changes.push !== undefined && changes.push !== now.landing.push) rows.push(queueRow("merge.push", "Push after landing", now.landing.push, changes.push, onOff));
+  if (changes.review !== undefined && changes.review !== now.review.on) {
+    if (changes.review && !now.review.canTurnOn) refuse("Review can't turn on: its kit's folder isn't on the target. The kit goes by Land.");
+    rows.push(queueRow("merge.review", "Review", now.review.on, changes.review, onOff));
+  }
+  for (const [id, c] of Object.entries(changes.checks ?? {})) {
+    const check = now.checks.list.find((x) => x.id === id);
+    if (!check) refuse(`The queue has no check "${id}": ${now.checks.list.map((x) => x.id).join(", ") || "none declared"}.`);
+    if (c.timeoutSec !== undefined && c.timeoutSec !== check!.timeoutSec) rows.push(queueRow(`merge.checks.${id}.timeoutSec`, `${check!.label}: time limit`, check!.timeoutSec, c.timeoutSec, secs));
+    if (c.rerun !== undefined && c.rerun !== check!.rerun) rows.push(queueRow(`merge.checks.${id}.rerun`, `${check!.label}: rerun`, check!.rerun, c.rerun, onOff));
+    if (c.optional !== undefined && c.optional !== check!.optional) rows.push(queueRow(`merge.checks.${id}.optional`, `${check!.label}: only when picked`, check!.optional, c.optional, onOff));
+  }
+  const models: NonNullable<QueueCardPart["models"]> = {};
+  if (e.models !== undefined) {
+    if (!isObj(e.models)) refuse("models is {review?: {model, thinking?} | null, thread?: …}.");
+    const given = e.models as Record<string, unknown>;
+    for (const k of Object.keys(given)) if (k !== "review" && k !== "thread") refuse(`models has no "${k}": review or thread.`);
+    for (const role of ["review", "thread"] as const) {
+      if (!(role in given)) continue;
+      let pick: ModelChoice | null = null;
+      try {
+        pick = parseChoice(given[role], role);
+      } catch (err) {
+        refuse(err instanceof Error ? err.message : String(err));
+      }
+      const why = pick ? await port!.modelDenial(pick.model) : null;
+      if (why && /turned off/.test(why)) refuse(why);
+      models[role] = pick;
+      const from = role === "review" ? now.review.model.picked : now.thread.model.picked;
+      rows.push(queueRow(`merge.models.${role}`, role === "review" ? "Review's model" : "Merge thread's model", from, pick, choiceText));
+    }
+  }
+  if (!rows.length) return refuse("Nothing changed: every edit is already as asked.");
+  return { changes, ...(Object.keys(models).length ? { models } : {}), rows };
+}
+
+/** Whether the queue's file values now read as this save asked. */
+function queueSaved(now: MergeQueueSettings, c: MergeSettingsChange): boolean {
+  if (c.push !== undefined && now.landing.push !== c.push) return false;
+  if (c.review !== undefined && now.review.on !== c.review) return false;
+  for (const [id, x] of Object.entries(c.checks ?? {})) {
+    const check = now.checks.list.find((k) => k.id === id);
+    if (!check) return false;
+    if ((x.timeoutSec !== undefined && x.timeoutSec !== check.timeoutSec) || (x.rerun !== undefined && x.rerun !== check.rerun) || (x.optional !== undefined && x.optional !== check.optional)) return false;
+  }
+  return true;
+}
+
+/**
+ * Settle the merge queue cards whose save was waiting: the queue has made it (applied), or the person cancelled it
+ * (dismissed, wherever they did). A failed save stays, as the queue keeps it, saying why. Each read's first step.
+ */
+async function settleQueueCards(projectId: string): Promise<void> {
+  const store = readStore(projectId);
+  const waiting = store.cards.filter((c) => c.state === "waiting" && c.queue?.waiting);
+  if (!waiting.length) return;
+  const now = await queueCardPort()?.settings(projectId).catch(() => null);
+  if (!now) return;
+  for (const c of waiting) {
+    const part = c.queue!;
+    if (now.pendingSave) {
+      part.failed = now.pendingSave.failed;
+      if (!part.failed) delete part.failed;
+      continue;
+    }
+    delete part.failed;
+    const at = new Date().toISOString();
+    if (queueSaved(now, part.changes)) {
+      c.state = "applied";
+      c.appliedAt = at;
+      if (part.models) await queueCardPort()?.models(projectId, part.models);
+      appendHistory(projectId, part.rows.map((r) => ({ field: r.field, from: r.from, to: r.to, by: { ...c.by, via: "card" as const }, card: c.id })));
+    } else {
+      c.state = "dismissed";
+      c.dismissedAt = at;
+    }
+  }
+  writeStore(projectId, store);
 }
 
 /** Apply Sova-kept changes: the overseer's own as one PATCH, then the placement's one by one; their history rows. */
@@ -833,7 +969,7 @@ function mergeBodies(a: Record<string, any>, b: Record<string, any>): Record<str
 // ---- withdraw ---------------------------------------------------------------------------------------------
 
 /** Withdraw a waiting card (the overseer's withdraw, the operator's Dismiss). `local` is Discard: the operator's only. */
-export async function withdrawCard(projectId: string, cardId: string, opts: { operator: boolean; fingerprint?: unknown }): Promise<void> {
+export async function withdrawCard(projectId: string, cardId: string, opts: { operator: boolean; fingerprint?: unknown; chat?: string }): Promise<void> {
   if (cardId === "local") {
     if (!opts.operator) refuse("Discarding the folder's uncommitted edits is the operator's own, on the waiting card.");
     return discardLocal(projectId, opts.fingerprint);
@@ -842,6 +978,9 @@ export async function withdrawCard(projectId: string, cardId: string, opts: { op
   const c = store.cards.find((x) => x.id === cardId);
   if (!c) throw new OrgError(`No settings card ${cardId} in this project.`, 404);
   if (c.state !== "waiting") throw new OrgError(`${cardId} is already ${c.state}.`, 409);
+  // A Create chat drops only what it prepared, and a save already with the queue is cancelled as a save.
+  if (opts.chat !== undefined && c.by.chat !== opts.chat) refuse(`${cardId} isn't this chat's: only the person dismisses it.`);
+  if (c.queue?.waiting) throw new OrgError(`${cardId} is waiting with the queue: use Cancel Save on the card.`, 409);
   c.state = "dismissed";
   c.dismissedAt = new Date().toISOString();
   writeStore(projectId, store);
@@ -901,6 +1040,9 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
   if (c.state !== "waiting") throw new OrgError(`${cardId} is already ${c.state}.`, 409);
   if (fingerprint !== c.fingerprint) throw new OrgError(`${cardId} changed since you looked: look at it again.`, 409);
   if (project.archived) throw new OrgError("The project is archived: unarchive it first.", 409);
+  if (c.queue) return applyQueueCard(projectId, store, c);
+  // Who changed it (§chat.create-mode/settings-cards): a Create card's rows name the chat, as their own kind.
+  const cardBy: SettingsBy = c.by.kind === "create" ? { ...c.by, via: "card" } : by;
 
   // The kept part as it reads now: the grant set must be the card's.
   const current = readPoSettings(projectOverseerPaths(projectId));
@@ -925,7 +1067,7 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
   if (c.kept.some((k) => k.field === "resume")) now.push({ ...c.kept.find((k) => k.field === "resume")! });
   const grantsNow = now.filter((k) => k.grant).map((k) => `${k.field}:${k.grant}`).sort().join("|");
   const grantsShown = c.kept.filter((k) => k.grant).map((k) => `${k.field}:${k.grant}`).sort().join("|");
-  if (grantsNow !== grantsShown) throw new OrgError("The project's settings changed since the card was made, so it no longer grants what it showed. Dismiss it and ask the overseer for a new one.", 409);
+  if (grantsNow !== grantsShown) throw new OrgError("The project's settings changed since the card was made, so it no longer grants what it showed. Dismiss it and ask for a new one.", 409);
 
   let commit: string | undefined;
   const repo = c.files.length ? await repoOf(root) : null;
@@ -935,16 +1077,16 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
       const head = await blobAt(repo, repo.head, f.rel);
       if (head !== f.before) throw new OrgError(`${f.rel} changed on ${repo.branch ?? "the branch"} since ${cardId} was made: dismiss it and ask for a new card.`, 409);
     }
-    commit = await landFiles(projectId, repo, c.files, `Settings: ${titleOf({ kept: [], files: c.files })}\n\n${c.why}\n\nApplied from the project overseer's ${cardId}.`, { prepared: c.parent === repo.head ? c.commit : null });
+    commit = await landFiles(projectId, repo, c.files, `Settings: ${titleOf({ kept: [], files: c.files })}\n\n${c.why}\n\nApplied from ${c.by.kind === "create" ? "a Create chat's" : "the project overseer's"} ${cardId}.`, { prepared: c.parent === repo.head ? c.commit : null });
   }
   const d = depsOrThrow();
   const meta = { card: cardId };
   const rows: SettingsHistoryRow[] = [];
-  if (now.length) rows.push(...(await applyKept(projectId, now, by, meta)));
-  if (c.memory) rows.push(...(await d.memory(projectId, c.memory, by, meta)));
-  if (c.name) rows.push(...(await d.rename(projectId, c.name, by, meta)));
+  if (now.length) rows.push(...(await applyKept(projectId, now, cardBy, meta)));
+  if (c.memory) rows.push(...(await d.memory(projectId, c.memory, cardBy, meta)));
+  if (c.name) rows.push(...(await d.rename(projectId, c.name, cardBy, meta)));
   const approved = [...c.grants.filter((g) => g.key.startsWith("overseer:")).map((g) => g.key), ...(await recordApprovals(root, c.grants.filter((g) => !g.key.startsWith("overseer:"))))];
-  if (c.files.length) appendHistory(projectId, c.files.map((f) => ({ field: `file:${f.rel}`, from: f.before, to: f.after, by, commit, card: cardId })));
+  if (c.files.length) appendHistory(projectId, c.files.map((f) => ({ field: `file:${f.rel}`, from: f.before, to: f.after, by: cardBy, commit, card: cardId })));
 
   const after = readStore(projectId);
   const mine = after.cards.find((x) => x.id === cardId)!;
@@ -953,6 +1095,33 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
   if (commit) mine.appliedCommit = commit;
   writeStore(projectId, after);
   return { card: await cardView(projectId, mine, repo), approved, ...(commit ? { commit } : {}) };
+}
+
+/**
+ * A merge queue card's Apply: the Settings tab's Save with its commit, refusals and waits (§app.merge-queue/settings-save).
+ * A refusal leaves the card waiting. While a branch checks the save waits with the queue and so does the card, read
+ * until the queue has made it (settleQueueCards). Models are kept on this computer: they apply with the save.
+ */
+async function applyQueueCard(projectId: string, store: Store, c: StoredCard): Promise<{ card: SettingsCardView; approved: string[]; commit?: string }> {
+  const part = c.queue!;
+  if (part.waiting) throw new OrgError(`${c.id} is already waiting with the queue.`, 409);
+  const port = queueCardPort();
+  if (!port) throw new OrgError("The merge queue isn't running here.", 409);
+  const saving = Object.keys(part.changes).length > 0;
+  const saved = saving ? await port.save(projectId, part.changes) : null;
+  if (saved?.state === "waiting") {
+    part.waiting = true;
+    writeStore(projectId, store);
+    return { card: await cardView(projectId, c, null), approved: [] };
+  }
+  if (part.models) await port.models(projectId, part.models);
+  const commit = saved && "commit" in saved ? saved.commit : undefined;
+  c.state = "applied";
+  c.appliedAt = new Date().toISOString();
+  if (commit) c.appliedCommit = commit;
+  writeStore(projectId, store);
+  appendHistory(projectId, part.rows.map((r) => ({ field: r.field, from: r.from, to: r.to, by: { ...c.by, via: "card" as const }, ...(commit ? { commit } : {}), card: c.id })));
+  return { card: await cardView(projectId, c, null), approved: [], ...(commit ? { commit } : {}) };
 }
 
 /**
@@ -1114,6 +1283,7 @@ export async function undoRow(projectId: string, rowId: unknown, opts: { notPage
 
 /** Every setting of the project with its state and where it is changed (the Settings tab's All Settings; sova_settings get). */
 export async function settingsInfo(projectId: string): Promise<ProjectSettingsInfo> {
+  await settleQueueCards(projectId);
   const project = projectOf(projectId);
   const root = project.root;
   const s = readPoSettings(projectOverseerPaths(projectId));

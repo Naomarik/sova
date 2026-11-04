@@ -277,6 +277,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.preview.off": "needs a minted preview, and minting connects to the port it shows",
   "project.worktree.merge": "a valid call needs a coding session of the project (its build row and git worktree), which only starting a coding session makes, and that starts its chat process",
   "project.worktree.remove": "a valid call needs a coding session of the project (its build row and git worktree), which only starting a coding session makes, and that starts its chat process",
+  "settings.cards.withdraw": "a valid call needs a Sova-wide card, which only a Create chat's sova_settings propose makes",
   "project.settings.propose.withdraw": "a valid call needs a settings card, which only the project overseer's sova_settings propose makes, in its chat",
   "usage.prices.refresh": "fetches the price list over the network; the in-process ledger here has prices off, so a valid call changes nothing",
   "push.test": "sends a real notification to every registered device",
@@ -333,6 +334,7 @@ function anchors(c: CommandEntry): Anchor[] {
     pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
     return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }, { anchor: v, refuse: false, kind: "real" }];
   }
+  if (c.id === "settings.cards.withdraw") return [{ anchor: { card: "sw_0" }, refuse: true, kind: "refused" }];
   if (c.id === "project.settings.undo" || c.id === "project.settings.propose.withdraw" || c.id === "project.overseer.settings.set") return [{ anchor: { pid: "no-such-project", card: "sc_1" }, refuse: true, kind: "refused" }, { anchor: withProject({ card: "sc_1" }), refuse: false, kind: "real", onlyWrongTypes: true }];
   // A folder that is no folder is refused whatever else the body says; one already registered (in the set-up) is the
   // route's own 409 after its checks of the body, so each case meets them and none registers a project.
@@ -747,6 +749,7 @@ const FIXTURES: Record<string, Fixture> = {
     oracle: async (_b, v) => assert.equal(((await read("GET", `/api/session-cards?path=${encodeURIComponent(String(v.session))}`)).cards as { state: string }[])[0]?.state, "answered"),
   },
   "project.settings.get": { values: () => withProject(), status: 200 },
+  "settings.cards.get": { values: () => ({}), status: 200 },
   "project.settings.history": { values: () => withProject(), status: 200 },
   "project.overseer.settings.set": {
     values: () => withProject({ watch: false }),

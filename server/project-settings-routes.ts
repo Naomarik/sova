@@ -21,6 +21,8 @@ const handle =
       if (err instanceof OrgError) return c.json({ error: err.message }, err.status);
       if (err instanceof SettingsRefusal) return c.json({ error: err.message }, 400);
       if (err instanceof SettingsGitError) return c.json({ error: `Git: ${err.message}` }, 409);
+      // A merge queue card's Apply is a Save: its refusals (dirty, busy, not served) in the queue's own words.
+      if (err instanceof Error && typeof (err as { code?: unknown }).code === "string") return c.json({ error: err.message, code: (err as unknown as { code: string }).code }, 409);
       throw err;
     }
   };

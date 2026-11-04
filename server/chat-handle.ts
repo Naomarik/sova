@@ -5,6 +5,7 @@
 // lifecycle events numbered per runtime; browser frames passed through. Today the chat runs in this
 // process: a call runs the chat's method at once (its guards run at the moment of the call, exactly
 // as a direct call did) and its answer comes back as a reply.
+import { createSettingsTool } from "./create-settings-tool";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -666,6 +667,8 @@ export async function fileSnapshot(path: string, w: Partial<ServerToolCtxWire> &
     (its pi session name, often none), used only when the session's display title can't be read. */
 export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => string | undefined, powers = false): ServerToolDecl[] {
   const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) }), ...tourTools(sessionId, chatId)];
+  // Declared for a plain chat only; its extension keeps it active only in Create (§chat.create-mode/settings-cards).
+  if (!powers) specs.push(createSettingsTool({ sessionId, mode: () => chatHandle(chatId)?.mirror.mode.mode, cwd: () => chatHandle(chatId)?.mirror.cwd ?? "" }));
   if (process.env.SOVA_CHAT_TEST_SERVED === "1") specs.push(trialServedSleep());
   // A powers profile's queue_open (its own extension registers it, from this declaration) and its
   // sends, a server action (§app.chat-processes/server-actions).

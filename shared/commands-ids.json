@@ -185,7 +185,9 @@
     "project.verb.merge.ask",
     "project.verb.merge.reply",
     "project.verb.merge.fresh",
-    "project.verb.merge.clear"
+    "project.verb.merge.clear",
+    "settings.cards.get",
+    "settings.cards.withdraw"
   ],
   "retired": [
     "settings.agents.get"

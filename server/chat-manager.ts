@@ -1,3 +1,4 @@
+import { CREATE_SETTINGS_TOOL, createSettingsTool } from "./create-settings-tool";
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
@@ -4462,9 +4463,11 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
                 : projectVerbsExtension(projectEngine),
               // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
               servedDecls
-                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && !TOUR_TOOLS.has(n)))
+                ? servedToolsExtension("sova-topics", servedSpecs(path, (n) => n !== "project_verbs" && n !== QUEUE_OPEN_TOOL && n !== OFFER_TOOL && n !== CARD_TOOL && n !== CREATE_SETTINGS_TOOL && !TOUR_TOOLS.has(n)))
                 : queuePushExtension({ sessionId: () => read.id, title: () => titleOf(read.branch()) }),
               servedVisToolsExtension("sova-tours", servedDecls ? servedSpecs(path, n => TOUR_TOOLS.has(n)) : tourTools(read.id, path), () => visHost.chat ? visHost.chat.modeState.minorModes.includes("vis") : undefined),
+              // sova_settings: a Create chat's settings cards (§chat.create-mode/settings-cards), active only in Create.
+              servedVisToolsExtension("sova-create-settings", servedDecls ? servedSpecs(path, (n) => n === CREATE_SETTINGS_TOOL) : [createSettingsTool({ sessionId: read.id, mode: () => visHost.chat?.modeState.mode, cwd: () => cwd })], () => visHost.chat?.modeState.mode === "create"),
               // offer: this project's offers, from the session's snapshot (§chat.offers/tool). Most chats have none: no extension.
               ...(offerSpecs.length ? [servedToolsExtension("sova-session-offers", offerSpecs, (ctx) => (chatHosts.offerNote ?? offerNoteHere)(ctx.sessionId), OFFER_NOTE_MESSAGE)] : []),
               // card: this project's transcript cards (§chat/transcript-cards). Every ordinary chat hears an

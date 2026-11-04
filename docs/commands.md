@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 508 |
-| Routes a catalogue entry points at | 137 |
-| Catalogue entries | 185 |
+| Routes registered | 511 |
+| Routes a catalogue entry points at | 139 |
+| Catalogue entries | 187 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -24,13 +24,13 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: The catalogue itself | 1 |
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
-| Class: Trust grants | 5 |
+| Class: Trust grants | 6 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
 | Pending (not yet a command) | 304 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 9 |
-| Hand-written tool specs | 127 |
+| Hand-written tool specs | 128 |
 
 ## Catalogue entries
 
@@ -200,6 +200,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `settings.memory.get` | Memory Settings | looks | `GET /api/settings/memory` | sessions |
 | `settings.subagents.get` | Subagent Profiles | looks | `GET /api/settings/subagents` | sessions |
 | `settings.align.set` | Save Alignment Settings | changes | `PUT /api/settings/align` | admin |
+| `settings.cards.get` | Sova-wide Settings Cards | looks | `GET /api/settings/cards` | sessions |
+| `settings.cards.withdraw` | Dismiss Sova-wide Settings Card | changes | `POST /api/settings/cards/:card/withdraw` | admin |
 | `settings.assistant-default.set` | Set the Project Assistant's Default Model | changes | `PUT /api/settings/project-assistant` | admin |
 | `push.test` | Send Test Notification | changes | `POST /api/push/test` | admin |
 | `audit.list` | List Who Ran What | looks | `GET /api/audit` | full |
@@ -646,7 +648,7 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `ALL /explain/*` | full |
 | `GET /explain/:id` | full |
 
-### Trust grants (5)
+### Trust grants (6)
 
 Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
 
@@ -657,6 +659,7 @@ Approving what a project's files may make Sova do (an offers file's run buttons,
 | `POST /api/projects/:pid/settings/apply` | admin |
 | `GET /api/session-cards/trust` | sessions |
 | `POST /api/session-cards/trust` | admin |
+| `POST /api/settings/apply` | admin |
 
 ### A card view's own calls (4)
 
@@ -798,6 +801,8 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `GET /api/settings` | sessions | `settings.sova.get` |
 | `GET /api/settings/align` | sessions | `settings.align.get` |
 | `PUT /api/settings/align` | admin | `settings.align.set` |
+| `GET /api/settings/cards` | sessions | `settings.cards.get` |
+| `POST /api/settings/cards/:card/withdraw` | admin | `settings.cards.withdraw` |
 | `GET /api/settings/delegate` | sessions | `settings.delegate.get` |
 | `GET /api/settings/memory` | sessions | `settings.memory.get` |
 | `GET /api/settings/models` | sessions | `settings.models.get` |
@@ -857,6 +862,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/chat-handle.ts` | 4 | `<computed: shorthand name>`, `<computed: spec.name>`, `@powers.send`, `trial_served_sleep` |
 | `server/conversation-draft-routes.ts` | 3 | `sova_draft_specs`, `sova_draft_approve`, `sova_draft_build` |
 | `server/conversation-draft-tools.ts` | 3 | `requirement_drop`, `requirements_summary`, `requirements_confirm` |
+| `server/create-settings-tool.ts` | 1 | `sova_settings` |
 | `server/feature-chat-align.ts` | 1 | `align` |
 | `server/harness/pi/session.ts` | 1 | `<computed: t.name>` |
 | `server/memory/tools.ts` | 2 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>` |

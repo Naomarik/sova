@@ -159,6 +159,8 @@ import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER
 import { localRequest } from "./mesh/proxy";
 import { pageOnlyRefusal } from "./page-only";
 import { registerProjectSettingsRoutes } from "./project-settings-routes";
+import { registerSovaSettingsRoutes } from "./sova-settings-routes";
+import { setSovaSettingsDeps } from "./sova-settings";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
 import { registerUpdatesRoutes } from "./updates/routes";
@@ -438,6 +440,7 @@ export function buildApp(deps: AppDeps) {
   registerWrapupRoutes(app);
   registerProjectOverseerRoutes(app);
   registerProjectSettingsRoutes(app);
+  registerSovaSettingsRoutes(app);
   registerProjectCostRoutes(app);
   registerProjectFileRoutes(app);
   // Session offers: a session's offer cards and clicks, another chat's show, the project page's list (§chat/offers).
@@ -1028,6 +1031,7 @@ export function buildApp(deps: AppDeps) {
     claudeModels: () => cachedClaudeModels(),
     policy: () => readModelPolicy(),
   };
+  setSovaSettingsDeps({ sources: delegateSources, titlesChanged: () => autoTitleSweep.reschedule() });
   app.get("/api/settings/delegate", (c) => c.json(delegateInfo()));
   app.get("/api/settings/delegate/options", async (c) => c.json(await delegateOptions(delegateSources)));
   app.get("/api/settings/subagents", async (c) => {

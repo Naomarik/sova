@@ -7104,6 +7104,122 @@
         }
       ]
     },
+    "create-settings": {
+      "bytes": 2518,
+      "tools": [
+        {
+          "name": "sova_settings",
+          "label": "Settings",
+          "description": "Every setting Sova has: this project's, its merge queue's and the Sova-wide ones. You only prepare a card; the person applies it with a click on Sova's own page, and you can neither apply nor undo one. Even a change that narrows waits for them. get: every setting with its state, the cards waiting. reference {setting}: one setting's keys and what needs the person's approval. propose {why, edits}: prepare a card. A project edit is as the reference says; a merge queue edit is {setting: \"merge-queue\", changes?, models?}, on a card of its own; a Sova-wide edit is {setting: \"sova\", id, value}, on a card of its own. withdraw {card}: drop a card you prepared (sc_… or sw_…). Keys, tokens and sign-ins never go on a card: a card that carries one is refused, and the person signs in the supported way.",
+          "promptSnippet": "every setting: get, reference, propose a card the person applies, withdraw",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "op": {
+                "type": "string",
+                "enum": [
+                  "get",
+                  "reference",
+                  "propose",
+                  "withdraw"
+                ],
+                "description": "get | reference | propose | withdraw"
+              },
+              "setting": {
+                "type": "string",
+                "enum": [
+                  "overseer.watch",
+                  "overseer.powers",
+                  "overseer.brake",
+                  "overseer.models",
+                  "overseer.assistant-models",
+                  "overseer.abilities",
+                  "overseer.extra",
+                  "overseer.limits",
+                  "overseer.pace",
+                  "overseer.hold",
+                  "overseer.memory",
+                  "project.name",
+                  "project.stakeholder",
+                  "project.ownerHidden",
+                  "project.frozen",
+                  "project.archive",
+                  "copies",
+                  "services",
+                  "merge-queue",
+                  "profile",
+                  "playbook",
+                  "schedule",
+                  "mode",
+                  "offers",
+                  "models.policy",
+                  "models.limits",
+                  "models.default",
+                  "models.providers",
+                  "models.image-fallback",
+                  "models.pi-defaults",
+                  "remote.targets",
+                  "sandbox.policy",
+                  "workers.priority",
+                  "workers.profiles",
+                  "workers.default-profile",
+                  "alignment.style",
+                  "alignment.review",
+                  "memory",
+                  "summaries.model",
+                  "summaries.limits",
+                  "summaries.titles",
+                  "decisions",
+                  "overseer.global",
+                  "assistant.default"
+                ],
+                "description": "reference: the setting."
+              },
+              "why": {
+                "type": "string",
+                "description": "propose: one or two sentences for the person, shown on the card."
+              },
+              "edits": {
+                "type": "array",
+                "description": "propose: the changes, each an object naming its setting (see the description).",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "setting": {
+                      "type": "string",
+                      "enum": [
+                        "overseer",
+                        "memory",
+                        "project",
+                        "copies",
+                        "profile",
+                        "playbook",
+                        "mode",
+                        "offers",
+                        "services",
+                        "merge-queue",
+                        "sova"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "setting"
+                  ]
+                }
+              },
+              "card": {
+                "type": "string",
+                "description": "withdraw: the card's id (sc_… or sw_…)."
+              }
+            },
+            "required": [
+              "op"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
     "project-overseer+onboard": {
       "bytes": 38568,
       "tools": [

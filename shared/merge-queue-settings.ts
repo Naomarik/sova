@@ -74,7 +74,7 @@ export interface MergeQueueSettings {
   /** Why saves are refused now ("Commit or discard the edit in the project folder first"). */
   editBlocked?: string;
   /** A save waiting for the branch checking now. */
-  pendingSave?: { at: string; changes: MergeSettingsChange };
+  pendingSave?: { at: string; changes: MergeSettingsChange; failed?: string };
   landing: {
     target: string;
     /** null: absent, so it pushes when origin exists. */

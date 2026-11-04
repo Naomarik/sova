@@ -1,6 +1,6 @@
 # project: how your project runs, tests, shares and ships
 
-Everything here needs a project. In a folder that isn't one, say what's missing and offer Add as Project first (see Adding a project). In a project with no merge queue, the change goes in a worktree and the branch is the person's to merge, by "merge it" in their own message; say so, and offer Initialize (the `landing` topic). In a folder that isn't in Git, say project changes are made by hand: no card and no branch can carry them.
+Everything here needs a project. In a folder that isn't one, say what's missing and offer Add as Project first (see Adding a project). In a project with no merge queue, the change goes in a worktree and the branch is the person's to merge, by their own word; say so, and offer Initialize (the `landing` topic). In a folder that isn't in Git, say project changes are made by hand: no card and no branch can carry them.
 
 Choosing between a card and a branch: `.sova/project.json` is one file, but it decides how the project runs. When the project has checks, it goes by Land, because a card lands with no checks. With no checks, a card is fine.
 

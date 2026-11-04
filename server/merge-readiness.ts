@@ -812,19 +812,20 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
 
 /** An "already merged" answer stands this long at most with its refs unmoved: all a failed read's "not merged" can last. */
 export const MERGED_BACKSTOP_MS = 30 * 60_000;
+/** With nothing to stamp (a folder with no `.git` left, a reftable repo), an "already merged" answer stands this long. */
+export const MERGED_UNPINNED_MS = 5 * 60_000;
 /** Each tree's "already merged" answer, while the refs it rests on stay put: sessions sharing a tree share it, and no
     idle row asks git again. Taken before git is read, so refs moving during the read are never certified. */
 const mergedSeen = new Map<string, { stamp: string; at: number; v: Promise<SessionBranchRow["mergedInto"] | undefined> }>();
 function mergedByStamp(t: TrackedWorktree): Promise<SessionBranchRow["mergedInto"] | undefined> {
   const ask = deps.mergedInto!;
   const stamp = deps.refsStamp?.(t.path, ["master", "main", ...(t.baseBranch ? [t.baseBranch] : []), t.branch].map((b) => `refs/heads/${b}`)) ?? null;
-  if (stamp === null) return ask(t);
   const key = `${t.path}\0${t.branch}\0${t.base}\0${t.baseBranch ?? ""}`;
   const hit = mergedSeen.get(key);
-  if (hit && hit.stamp === stamp && deps.now() - hit.at < MERGED_BACKSTOP_MS) return hit.v;
+  if (hit && hit.stamp === (stamp ?? "") && deps.now() - hit.at < (stamp === null ? MERGED_UNPINNED_MS : MERGED_BACKSTOP_MS)) return hit.v;
   const v = ask(t);
   mergedSeen.delete(key);
-  mergedSeen.set(key, { stamp, at: deps.now(), v });
+  mergedSeen.set(key, { stamp: stamp ?? "", at: deps.now(), v });
   if (mergedSeen.size > 5000) mergedSeen.delete(mergedSeen.keys().next().value!);
   return v;
 }

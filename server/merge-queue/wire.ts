@@ -75,14 +75,16 @@ const VIEW_UNPINNED_MS = 20_000;
 type BranchProject = NonNullable<SessionBranchRow["mergeProject"]>;
 const projectCut = (p: Pick<WorktreeMergeProject, "target" | "checks" | "invalid">): BranchProject => ({ target: p.target, checks: p.checks, ...(p.invalid ? { invalid: p.invalid } : {}) });
 
-/** Each tree's project while its `.git` stays put: a worktree doesn't change repo, and sessions share a tree. */
-const treeProjects = new Map<string, { stamp: string; p: ProjectOf }>();
+/** Each tree's project while its `.git` stays put: a worktree doesn't change repo, and sessions share a tree. A folder
+ *  with no `.git` left has nothing to stat: its answer stands TREE_UNPINNED_MS. */
+const TREE_UNPINNED_MS = 5 * 60_000;
+const treeProjects = new Map<string, { stamp: string | null; at: number; p: ProjectOf }>();
 async function treeProject(d: QueueListDeps, path: string): Promise<ProjectOf> {
   const stamp = d.treeStamp(path);
   const hit = treeProjects.get(path);
-  if (stamp !== null && hit?.stamp === stamp) return hit.p;
+  if (hit && hit.stamp === stamp && (stamp !== null || d.now() - hit.at < TREE_UNPINNED_MS)) return hit.p;
   const p = await d.projectOf(path);
-  if (stamp !== null && p.state === "ok" && p.git) treeProjects.set(path, { stamp, p });
+  if (stamp === null || (p.state === "ok" && p.git)) treeProjects.set(path, { stamp, at: d.now(), p });
   if (treeProjects.size > 5000) treeProjects.delete(treeProjects.keys().next().value!);
   return p;
 }

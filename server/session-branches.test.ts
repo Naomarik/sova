@@ -280,6 +280,23 @@ test("a tree whose .git moved has its project read again; one that isn't a repo 
   }
 });
 
+test("a folder with no .git left: its project is kept on a clock, not asked at each row read", async () => {
+  wire.resetQueueViewsForTest();
+  const { asked, state, deps } = listDeps({ treeStamp: () => null });
+  wire.setQueueListForTest(deps);
+  try {
+    await wire.branchQueueFields("/gone-repo", "b");
+    await wire.branchQueueFields("/gone-repo", "b");
+    assert.equal(asked.project, 1);
+    state.clock += 5 * 60_000;
+    await wire.branchQueueFields("/gone-repo", "b");
+    assert.equal(asked.project, 2);
+  } finally {
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+  }
+});
+
 test("the queue watch reads a view only when what it rests on moved, and the change reaches the list", async () => {
   wire.resetQueueViewsForTest();
   const { asked, state, deps } = listDeps();
@@ -529,10 +546,15 @@ test("a tree's merged answer: one read for every session on it, never kept past 
     await r.computeBranches({ id: SID }, facts);
     assert.equal(asked.length, 3, "a failed read's answer can't stand forever");
 
+    // A folder with no `.git` left, a reftable repo: nothing pins it, and a row re-read every 20 s doesn't ask each time.
     r.configureReadiness({ refsStamp: () => null });
     await r.computeBranches({ id: SID }, facts);
+    assert.equal(asked.length, 4);
     await r.computeBranches({ id: SID }, facts);
-    assert.equal(asked.length, 5, "nothing pins it: git each time");
+    assert.equal(asked.length, 4);
+    clock += r.MERGED_UNPINNED_MS;
+    await r.computeBranches({ id: SID }, facts);
+    assert.equal(asked.length, 5, "the clock bounds it");
   } finally {
     r.resetReadiness();
   }

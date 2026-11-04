@@ -953,10 +953,17 @@ judgement.
   reads its queue state in the chips the composer's modal uses (§chat.composer/worktrees-control),
   with its estimates or reason, and while it is queued, checking or waiting for the user its Land is
   disabled: "Already in the merge queue.". While it is sent back to its chat (Needs a fix) its Land
-  is disabled too, "Sent back to its chat. Land comes back here once its chat commits a fix and
-  finishes." (§chat.composer/worktrees-control); this menu reads no readiness, so Land stays off there
-  after the fix until the branch lands another way: from the Worktrees modal, the session pane, the
-  Merge Queue tab, or "land it" typed in its chat.
+  is disabled too, "Sent back to its chat. Land comes back once its chat fixes it, or use Land This
+  Commit Again." (§chat.composer/worktrees-control), and beside it the menu offers **Land This
+  Commit Again** ("Approves {sha} again: every check runs from the start."), a new approval of the
+  sent-back commit (§app.merge-queue/approve), disabled while the session is working. A branch sent
+  back for its spec drafts gets Land back here at the same commit once its drafts changed and fit, as
+  on the other screens, and Land This Commit Again leaves the menu. An entry that no longer needs a
+  fix (approved again later, already in the target, or its branch or folder gone) blocks neither:
+  Land This Commit Again leaves and Land reads as for any branch. After a fix that needed a commit
+  this menu, which reads no readiness, keeps Land off; the branch lands by Land This Commit Again
+  here, or from the Worktrees modal, the session pane, the Merge Queue tab, or "land it" typed in its
+  chat. Remove from Queue isn't in this menu.
   Drafts changed keeps Land. The queue's refusals are shown under the row as Merge
   Branch's are. A project whose queue isn't set up keeps Merge Branch as above, and its Merge Queue
   tab shows the note "No merge queue settings are set up for this project" with Initialize

@@ -165,7 +165,8 @@
       "server/merge-queue/run.ts",
       "server/merge-queue/wake.ts",
       "src/lib/merge-queue-chats.ts",
-      "src/lib/merge-queue-settings.ts"
+      "src/lib/merge-queue-settings.ts",
+      "server/merge-queue/notices.ts"
     ]
   },
   "§design.copy-deck/merge-queue-chats": {

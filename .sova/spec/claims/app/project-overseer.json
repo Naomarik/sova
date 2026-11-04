@@ -134,12 +134,14 @@
       "server/merge-queue-ui.integration.test.ts",
       "server/merge-queue/wire.ts",
       "src/lib/merge-queue.ts",
-      "src/lib/merge-queue.test.ts"
+      "src/lib/merge-queue.test.ts",
+      "src/lib/merge-queue-sent-back.test.ts",
+      "server/merge-queue/view.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T14:28Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     }
   },
   "§app.project-overseer/confirm-brief": {

@@ -197,7 +197,7 @@
       "§chat.changes/entry"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/insights.ts",
       "server/worktrees-state.ts",
@@ -217,12 +217,13 @@
       "src/lib/worktrees-served.test.ts",
       "src/components/ReviewChanges.tsx",
       "src/lib/merge-queue-sent-back.test.ts",
-      "shared/merge-queue.ts"
+      "shared/merge-queue.ts",
+      "server/merge-queue/view.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T21:43Z",
-      "source": "pi-session:01a1a1b7-c99c-75b6-8a92-b66649ed6742#43572b80"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     }
   },
   "§chat.worktrees/readiness": {
@@ -278,16 +279,24 @@
       "src/lib/worktrees.test.ts",
       "server/ready-to-land.landing.test.ts",
       "server/ready-to-land.test.ts",
-      "server/merge-queue/wake.ts"
+      "server/merge-queue/wake.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/scenarios-approval.integration.test.ts",
+      "server/docs-preview.ts",
+      "server/merge-queue/queue.test.ts",
+      "server/merge-queue/testing/harness.ts",
+      "server/session-branches.test.ts"
     ],
     "requires": [
       "§chat.worktrees/readiness",
-      "§app.decisions/attention-signals"
+      "§app.decisions/attention-signals",
+      "§chat.composer/worktrees-control"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:27Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     }
   },
   "§chat.worktrees/sandbox": {

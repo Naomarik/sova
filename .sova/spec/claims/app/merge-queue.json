@@ -12,8 +12,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -31,7 +31,11 @@
       "server/merge-queue/served.ts",
       "server/merge-queue/served-rule.test.ts",
       "server/merge-queue/request-host-check.integration.test.ts",
-      "server/merge-queue/hosts/types.ts"
+      "server/merge-queue/hosts/types.ts",
+      "server/merge-queue/cards.ts",
+      "src/components/MergeQueueCard.tsx",
+      "src/components/MergeQueueTab.tsx",
+      "src/components/WorktreesModal.tsx"
     ]
   },
   "§app.merge-queue/blame": {
@@ -469,12 +473,13 @@
     "requires": [
       "§app.project-services/instances",
       "§app.project-services/contract",
-      "§tools.spec/land"
+      "§tools.spec/land",
+      "§chat.composer/worktrees-control"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     },
     "code": [
       "server/merge-queue/run.ts",
@@ -492,7 +497,8 @@
       "server/merge-queue/testing/repo.ts",
       "server/merge-queue/testing/scenario-kit.ts",
       "server/merge-queue/checks.ts",
-      "server/project-services/release.test.ts"
+      "server/project-services/release.test.ts",
+      "shared/merge-queue.ts"
     ]
   },
   "§app.merge-queue/served": {
@@ -677,8 +683,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     },
     "code": [
       "server/merge-queue/view.ts",

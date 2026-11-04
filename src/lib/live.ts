@@ -33,6 +33,8 @@ export type LiveBlock =
       type: "toolCall";
       id: string;
       name: string;
+      /** A server's tool (§app.mcp/in-a-chat): the row reads these from the part's start. */
+      mcp?: McpToolName;
       argsText: string;
       args?: unknown;
       /** Joined mid-arguments (a hello's `live`): the JSON so far wasn't sent, so the deltas after it
@@ -204,7 +206,7 @@ export function blockStreams(entry: { blocks: LiveBlock[]; done: boolean }, i: n
 }
 
 function blocksOf(parts: readonly SovaPart[]): LiveBlock[] {
-  return parts.map((p): LiveBlock => (p.kind === "toolCall" ? { type: "toolCall", id: p.id, name: p.name, argsText: "", args: p.args } : { type: p.kind, text: p.text }));
+  return parts.map((p): LiveBlock => (p.kind === "toolCall" ? { type: "toolCall", id: p.id, name: p.name, ...(p.mcp ? { mcp: p.mcp } : {}), argsText: "", args: p.args } : { type: p.kind, text: p.text }));
 }
 
 /** The reply still streaming, if any. Not only the last entry: a message sent while the reply
@@ -480,7 +482,7 @@ function applyPart(s: LiveState, event: Extract<SovaEvent, { type: "part.start" 
   const i = event.index ?? entry.blocks.length;
   const cur = entry.blocks[i];
   if (event.type === "part.start") {
-    if (event.kind === "toolCall") entry.blocks[i] = { type: "toolCall", id: event.id ?? "", name: event.name ?? "tool", argsText: "" };
+    if (event.kind === "toolCall") entry.blocks[i] = { type: "toolCall", id: event.id ?? "", name: event.name ?? "tool", ...(event.mcp ? { mcp: event.mcp } : {}), argsText: "" };
     else entry.blocks[i] = { type: event.kind, text: "" };
   } else if (event.type === "part.delta") {
     if (event.kind === "toolCall") {
@@ -488,10 +490,12 @@ function applyPart(s: LiveState, event: Extract<SovaEvent, { type: "part.start" 
     } else if (cur?.type === event.kind) cur.text += event.delta;
     else entry.blocks[i] = { type: event.kind, text: event.delta };
   } else if (event.kind === "toolCall") {
+    const mcp = event.mcp ?? (cur?.type === "toolCall" ? cur.mcp : undefined);
     entry.blocks[i] = {
       type: "toolCall",
       id: event.id ?? (cur?.type === "toolCall" ? cur.id : ""),
       name: event.name ?? (cur?.type === "toolCall" ? cur.name : "tool"),
+      ...(mcp ? { mcp } : {}),
       argsText: cur?.type === "toolCall" ? cur.argsText : "",
       args: event.args,
     };

@@ -263,6 +263,16 @@ test("a step's detail: the home folder shortened, the copy's folder and commits 
   assert.deepEqual(stepDetail(runStep({ result: "failed", detail: "exit 1: added /home/me/a.ts" }), home), [{ text: "exit 1: added ~/a.ts" }], "free text stays one plain part");
   assert.deepEqual(stepDetail(runStep({ detail: undefined }), home), []);
   assert.equal(tildeIn("/home/me2/x and /home/me/y", home), "/home/me2/x and ~/y", "only the home folder itself");
+  assert.equal(tildeIn("/mnt/home/me/x", home), "/mnt/home/me/x", "a home path inside another path stays");
+  assert.equal(tildeIn("copy /mnt/home/me/x to /home/me/x", home), "copy /mnt/home/me/x to ~/x");
+  assert.equal(tildeIn("/home/me", home), "~", "the bare home folder, alone");
+  assert.equal(tildeIn("cd /home/me && ls", home), "cd ~ && ls", "the bare home folder before a space");
+  assert.equal(tildeIn("/home/me.bak/x", home), "/home/me.bak/x", "a sibling folder stays");
+  assert.equal(tildeIn(`at "/home/me/a" (/home/me/b) cwd=/home/me/c PATH=/bin:/home/me/d, /home/me/e`, home), `at "~/a" (~/b) cwd=~/c PATH=/bin:~/d, ~/e`, "after a quote, bracket, =, : or comma");
+  assert.equal(tildeIn("/home/me/x/home/me/y", home), "~/x/home/me/y", "only where a path starts");
+  assert.equal(tildeIn("/home/me/x", "/home/me/"), "~/x", "a trailing slash on home is ignored");
+  assert.equal(tildeIn("/a+b/x", "/a+b"), "~/x", "regex characters in home are literal");
+  assert.equal(tildeIn("/aab/x", "/a+b"), "/aab/x");
 });
 
 // al_4: no Land at all while a sent-back branch is being fixed; the fixed, finished commit brings Land back.

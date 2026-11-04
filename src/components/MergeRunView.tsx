@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type 
 import { relativeTime } from "../lib/format";
 import { attribution, clock, sentence, short, sourceTag, stepCounts, stepDetail, stepMark, stepTime, unattributedWhy, verdictChip, type MergeEntry, type MergeQueueView, type MergeRun, type RunStep } from "../lib/merge-queue";
 import { answerEntry, mergeChanged, readLog, readRun, refusal } from "../lib/merge-queue-client";
-import { createFollowedRead, createRunRead } from "../lib/merge-run";
+import { createFollowedRead, createRunRead, logFollow } from "../lib/merge-run";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { announce, home, toast } from "../lib/ui-state";
 import { projectSessionHref, projectTabHref } from "../lib/projects-route";
@@ -139,7 +139,7 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
               <Show when={r().noChecks}>
                 <p class="text-caption">This project declares no automated tests: it lands after a clean merge.</p>
               </Show>
-              <ol class="mq-steps">
+              <ol class="mq-steps mq-run-steps">
                 <For each={r().steps}>{(s) => <StepRow run={r()} step={s} now={now} />}</For>
               </ol>
             </div>
@@ -246,19 +246,22 @@ function Verdict(props: { run: MergeRun; target: string; /** Its own banner says
   );
 }
 
-/** Keeps an open log at its bottom while it grows, only when it was already there (or opened following a running step). */
-function followScroll(text: Accessor<string | undefined>, startAtBottom: boolean) {
+/** Keeps an open log at its end while it grows (lib/merge-run's logFollow); it decides when the panel mounts, that is when it opens. */
+function followScroll(text: Accessor<string | undefined>, running: () => boolean) {
   let pre: HTMLPreElement | undefined;
-  let stuck = startAtBottom;
+  const follow = logFollow(running);
   createEffect(
     on(text, () => {
-      if (pre && stuck) pre.scrollTop = pre.scrollHeight;
+      if (pre) follow.grew(pre);
     }),
   );
   return {
-    ref: (el: HTMLPreElement) => (pre = el),
+    ref: (el: HTMLPreElement) => {
+      pre = el;
+      follow.opened();
+    },
     onScroll: () => {
-      if (pre) stuck = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4;
+      if (pre) follow.scrolled(pre);
     },
   };
 }
@@ -281,7 +284,7 @@ function StepRow(props: { run: MergeRun; step: RunStep; now: Accessor<number> })
   const detail = () => stepDetail(s(), home());
   const counts = () => stepCounts(s());
   const line = () => [s().why, detail().map((d) => d.text).join(""), counts().map((c) => c.text).join(" · ")].filter(Boolean).join(" · ");
-  const scroll = followScroll(log.text, s().result === "running");
+  const scroll = followScroll(log.text, () => s().result === "running");
   return (
     <li class={`mq-step mq-step-${s().result}`} data-step={s().id}>
       <span class={`mq-mark ${mark().cls}`} title={mark().word}>
@@ -350,7 +353,7 @@ function AllLogs(props: { run: MergeRun }) {
     () => props.run.verdict === "running",
     LOG_FOLLOW_MS,
   );
-  const scroll = followScroll(log.text, props.run.verdict === "running");
+  const scroll = followScroll(log.text, () => props.run.verdict === "running");
   return (
     <pre id="mq-run-all-logs" class="mq-log mq-log-all text-mono" aria-label="Every step's log" ref={scroll.ref} onScroll={scroll.onScroll}>
       {log.text() === undefined ? (log.error() ? `Couldn't read the logs. ${log.error()}` : "Reading the logs.") : log.text() || "Nothing logged yet."}

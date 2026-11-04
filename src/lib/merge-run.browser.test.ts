@@ -8,7 +8,7 @@ import { test } from "node:test";
 if (!import.meta.resolve("solid-js").endsWith("/dist/solid.js")) throw new Error("run with --conditions=browser (the *.browser.test.ts invocation)");
 
 const solid = await import("solid-js");
-const { createFollowedRead, createRunRead } = await import("./merge-run");
+const { createFollowedRead, createRunRead, logFollow } = await import("./merge-run");
 type MergeRun = import("../../shared/merge-queue").MergeRun;
 type RunStep = import("../../shared/merge-queue").RunStep;
 
@@ -113,4 +113,89 @@ test("an open log of a running step is read again while it runs, keeps its text 
       }
     });
   });
+});
+
+/** A log panel 100px tall showing `lines` lines of 20px; `scrollTop` clamps as the DOM's does. */
+function panel(lines: number) {
+  let top = 0;
+  const box = {
+    lines,
+    clientHeight: 100,
+    get scrollHeight() {
+      return Math.max(box.lines * 20, box.clientHeight);
+    },
+    get scrollTop() {
+      return top;
+    },
+    set scrollTop(v: number) {
+      top = Math.max(0, Math.min(v, box.scrollHeight - box.clientHeight));
+    },
+    atEnd: () => top + box.clientHeight >= box.scrollHeight,
+  };
+  return box;
+}
+
+test("logFollow: a step waiting when its row was built, then running, follows once its log is opened", () => {
+  let result: RunStep["result"] = "pending";
+  const follow = logFollow(() => result === "running");
+  result = "running";
+  const box = panel(30);
+  follow.opened();
+  follow.grew(box);
+  assert.ok(box.atEnd(), "opened while running: starts at its end");
+  box.lines = 40;
+  follow.grew(box);
+  assert.ok(box.atEnd(), "and follows as it grows");
+});
+
+test("logFollow: a short log that fits its panel (no scroll event ever) keeps following as it grows past it", () => {
+  const box = panel(2);
+  const follow = logFollow(() => true);
+  follow.opened();
+  follow.grew(box);
+  assert.equal(box.scrollTop, 0, "it fits: nothing to scroll");
+  for (const n of [4, 8, 20, 35]) {
+    box.lines = n;
+    follow.grew(box);
+    assert.ok(box.atEnd(), `at ${n} lines it is still at its end`);
+  }
+});
+
+test("logFollow: a log that fitted counts as at its end even when it opened before the step ran", () => {
+  let running = false;
+  const follow = logFollow(() => running);
+  const box = panel(1);
+  follow.opened();
+  follow.grew(box);
+  running = true;
+  box.lines = 30;
+  follow.grew(box);
+  assert.ok(box.atEnd(), "it fitted, and the step runs: it follows");
+});
+
+test("logFollow: scrolled up, the user isn't pulled down; back at the end, it follows again", () => {
+  const box = panel(30);
+  const follow = logFollow(() => true);
+  follow.opened();
+  follow.grew(box);
+  box.scrollTop = 40;
+  follow.scrolled(box);
+  box.lines = 50;
+  follow.grew(box);
+  assert.equal(box.scrollTop, 40, "it stays where the user put it");
+  box.scrollTop = box.scrollHeight;
+  follow.scrolled(box);
+  box.lines = 60;
+  follow.grew(box);
+  assert.ok(box.atEnd(), "back at the end: it follows");
+});
+
+test("logFollow: a finished step's log opens at its top and stays there", () => {
+  const follow = logFollow(() => false);
+  const box = panel(1);
+  follow.opened();
+  follow.grew(box);
+  box.lines = 50;
+  follow.grew(box);
+  assert.equal(box.scrollTop, 0);
 });

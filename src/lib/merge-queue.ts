@@ -419,11 +419,15 @@ export function stepCounts(s: Pick<RunStep, "result" | "counts">): { text: strin
   ];
 }
 
-/** Shows every `<home>/…` path inside a line as `~/…`. */
+/** Shows every `<home>/…` path inside a line as `~/…`, and the home folder alone as `~`. Only a path that starts
+    there counts: at the line's start or after a space, a quote, a bracket, `=`, `:` or `,` (never inside
+    `/mnt<home>/…`), and only the folder itself (followed by `/`, a space or the end, never `<home>2/…`). */
 export function tildeIn(text: string, home: string | null): string {
   if (!home) return text;
   const h = home.replace(/\/+$/, "");
-  return h ? text.split(`${h}/`).join("~/") : text;
+  if (!h) return text;
+  const esc = h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(`(^|[\\s"'\`([{<=:,])${esc}(?=/|\\s|$)`, "g"), "$1~");
 }
 
 const SHA_RE = /^[0-9a-f]{7,40}$/;

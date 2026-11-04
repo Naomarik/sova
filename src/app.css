@@ -1603,6 +1603,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 @media (pointer: coarse) {
   .wt-queue-act .button,
   .mq-row .button,
+  .mq-step-end .button,
   .mq-step-log .button { min-height: var(--tap-min); }
 }
 .wt-queue-modal .modal-body { display: grid; gap: var(--space-3); }
@@ -1710,18 +1711,34 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-run-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
 .mq-card-head { display: grid; gap: var(--space-1); }
 .mq-legend { margin: 0; }
-/* Checks and why: one grid for every row (mark | check | time | Log), so each time and each Log sit in the same
-   place on every row, those with no time or no Log included. The mark, time and Log sit on the name's line. */
-.mq-steps { --mq-line: calc(var(--fs-body) * var(--lh-body)); list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; column-gap: var(--space-3); }
-.mq-step { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; row-gap: var(--space-1); align-items: start; padding: var(--space-2) 0; border-top: 1px solid var(--color-border); }
+/* A list of steps, shared with the Releases tab: mark | step | its time and actions, which wrap under the name at
+   phone width. */
+.mq-steps { list-style: none; margin: 0; padding: 0; }
+.mq-step { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); align-items: start; padding: var(--space-2) 0; border-top: 1px solid var(--color-border); }
 .mq-step:first-child { border-top: 0; }
 .mq-step-skipped .mq-step-name { color: var(--color-ink-muted); }
-.mq-mark { display: grid; place-items: center; height: var(--mq-line); }
-/* Waiting: an empty muted ring, nothing that looks like it expands. */
-.mq-ring { width: 12px; height: 12px; border: var(--stroke-icon) solid currentColor; border-radius: var(--r-full); }
+.mq-mark { display: grid; place-items: center; height: 24px; }
 .mq-step-main { min-width: 0; }
 .mq-step-main p { margin: 0; }
-.mq-step-name { flex-wrap: wrap; font-weight: var(--fw-medium); min-height: var(--mq-line); }
+.mq-step-name { flex-wrap: wrap; font-weight: var(--fw-medium); }
+.mq-step-end { display: flex; align-items: center; gap: var(--space-2); justify-content: flex-end; flex-wrap: wrap; }
+@container (max-width: 520px) {
+  .mq-step { grid-template-columns: 24px minmax(0, 1fr); }
+  .mq-step-end { grid-column: 2; justify-content: flex-start; }
+}
+@media (max-width: 767px) {
+  .mq-step { grid-template-columns: 24px minmax(0, 1fr); }
+  .mq-step-end { grid-column: 2; justify-content: flex-start; }
+}
+/* The run's checks and why: one grid for every row (mark | check | time | Log), so each time and each Log sit in the
+   same place on every row, those with no time or no Log included. The mark, time and Log sit on the name's line. */
+.mq-run-steps { --mq-line: calc(var(--fs-body) * var(--lh-body)); display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; column-gap: var(--space-3); }
+/* Its rows take the list's columns and gaps (column-gap: normal, so the shared rule's gap gives way). */
+.mq-run-steps > .mq-step { grid-column: 1 / -1; grid-template-columns: subgrid; row-gap: var(--space-1); column-gap: normal; }
+.mq-run-steps .mq-mark { height: var(--mq-line); }
+.mq-run-steps .mq-step-name { min-height: var(--mq-line); }
+/* Waiting: an empty muted ring, nothing that looks like it expands. */
+.mq-ring { width: 12px; height: 12px; border: var(--stroke-icon) solid currentColor; border-radius: var(--r-full); }
 /* A description shows at most two lines; the rest is in the step's log (and its title). */
 .mq-step-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
 .mq-step-time { min-width: 5ch; line-height: var(--mq-line); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
@@ -1737,10 +1754,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-whose-ok { color: var(--status-success); }
 /* A 44px Log button overflows the name's line: give the row the room. */
 @media (pointer: coarse) {
-  .mq-step { padding-block: var(--space-3); }
+  .mq-run-steps > .mq-step { padding-block: var(--space-3); }
 }
 @media (max-width: 599px) {
-  .mq-steps { column-gap: var(--space-2); }
+  .mq-run-steps { column-gap: var(--space-2); }
 }
 
 /* Onboarding. */

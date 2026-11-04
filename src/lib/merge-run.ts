@@ -77,8 +77,6 @@ export function createRunRead(id: Accessor<string>, read: (id: string) => Promis
 export interface FollowedRead {
   /** The text as last read; kept through later reads (no flicker), cleared when `key` goes null. */
   text: Accessor<string | undefined>;
-  /** True while a read is out. */
-  reading: Accessor<boolean>;
   /** The latest read's failure, cleared by the next success. */
   error: Accessor<string | null>;
 }
@@ -91,7 +89,6 @@ export interface FollowedRead {
 export function createFollowedRead(key: Accessor<string | null>, read: (key: string) => Promise<string>, follow: Accessor<boolean>, everyMs: number): FollowedRead {
   const k = createMemo(key);
   const [text, setText] = createSignal<string | undefined>(undefined);
-  const [reading, setReading] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   let timer: ReturnType<typeof setTimeout> | undefined;
   let seq = 0;
@@ -102,7 +99,6 @@ export function createFollowedRead(key: Accessor<string | null>, read: (key: str
     const want = untrack(k);
     if (want == null || stopped) return;
     const mine = ++seq;
-    setReading(true);
     try {
       const t = await read(want);
       if (mine !== seq || stopped) return;
@@ -112,7 +108,6 @@ export function createFollowedRead(key: Accessor<string | null>, read: (key: str
       if (mine !== seq || stopped) return;
       setError(err instanceof Error ? err.message : String(err));
     }
-    setReading(false);
     if (untrack(follow) && untrack(k) === want && !stopped) timer = setTimeout(go, everyMs);
   };
 
@@ -123,7 +118,6 @@ export function createFollowedRead(key: Accessor<string | null>, read: (key: str
       if (v == null) {
         setText(undefined);
         setError(null);
-        setReading(false);
         return;
       }
       void go();
@@ -133,5 +127,53 @@ export function createFollowedRead(key: Accessor<string | null>, read: (key: str
     stopped = true;
     clearTimeout(timer);
   });
-  return { text, reading, error };
+  return { text, error };
+}
+
+/** What a log panel exposes to its follower: the DOM's own scroll fields (a `<pre>`, or a stand-in in tests). */
+export interface LogBox {
+  scrollTop: number;
+  readonly scrollHeight: number;
+  readonly clientHeight: number;
+}
+
+/** At its end (within a few pixels); a log that doesn't overflow its panel is at its end. */
+export const atLogEnd = (b: LogBox) => b.scrollTop + b.clientHeight >= b.scrollHeight - 4;
+const overflows = (b: LogBox) => b.scrollHeight > b.clientHeight;
+
+export interface LogFollow {
+  /** The log just opened: it follows when what it shows runs at that moment. */
+  opened(): void;
+  /** The user (or the follower itself) scrolled the panel. */
+  scrolled(box: LogBox): void;
+  /** New text was drawn in the panel: scrolls to its end when it follows. */
+  grew(box: LogBox): void;
+}
+
+/**
+ * Keeps an open log at its end while it grows, only while it was there. Whether it follows is decided when it
+ * opens (`running()` then), not when its row was built; scrolling up stops it, scrolling back to the end resumes
+ * it. A log that still fits its panel fires no scroll event, so one that fitted counts as at its end while
+ * `running()` holds.
+ */
+export function logFollow(running: () => boolean): LogFollow {
+  let stuck = false;
+  let fitted = true;
+  return {
+    opened() {
+      stuck = running();
+      fitted = true;
+    },
+    scrolled(box) {
+      stuck = atLogEnd(box);
+      fitted = !overflows(box);
+    },
+    grew(box) {
+      if (stuck || (fitted && running())) {
+        stuck = true;
+        box.scrollTop = box.scrollHeight;
+      }
+      fitted = !overflows(box);
+    },
+  };
 }

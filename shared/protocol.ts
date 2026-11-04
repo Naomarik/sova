@@ -1525,6 +1525,32 @@ export interface SessionContextPart {
   tokens: number;
   path?: string;
   text?: string;
+  /** Skills only: the agent loaded the skill (read its SKILL.md, or it was invoked) since the latest
+      compaction, so its text is in the window now. */
+  read?: boolean;
+}
+
+/** One kind of message in the conversation since the latest compaction: how many, and ≈ their tokens. */
+export interface SessionContextTally {
+  count: number;
+  tokens: number;
+}
+
+/** What the conversation holds, by who sent it. The tallies add up to `conversation`, give or take rounding. */
+export interface SessionContextTalk {
+  /** Your messages (shell commands you ran included). */
+  user: SessionContextTally;
+  /** The model's replies, their tool calls and thinking included. */
+  replies: SessionContextTally;
+  /** Tool results, less the loaded subfolder files they carry (those are `nested`). */
+  toolResults: SessionContextTally;
+  /** Extension messages and branch summaries. */
+  other: SessionContextTally;
+  /** The latest compaction's summary, which stands in for what it dropped; absent before a compaction. */
+  summary?: { text: string; tokens: number; at?: string };
+  /** The entry where what the model sees starts in the transcript: the latest compaction, else the first
+      message. Absent when there is none. */
+  start?: string;
 }
 
 /** An instruction file in a folder below the chat's own, loaded when the agent reads, edits or writes a
@@ -1558,6 +1584,8 @@ export type SessionContextView =
       tools: SessionContextPart[];
       /** ≈ the messages in context, loaded nested files left out (they are `nested`). */
       conversation: number;
+      /** `conversation` by kind of message. Absent from an older server. */
+      talk?: SessionContextTalk;
       nested: SessionContextNested[];
       /** The walk below cwd stopped at its cap: the list may be incomplete. */
       nestedIncomplete?: true;

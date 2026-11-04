@@ -2,7 +2,8 @@
 // The Context tab's read on a whole hermetic server with the stand-in model (server/testing/hermetic-server.ts):
 // GET /api/sessions/context-view's 400 and 404; an open chat before its first reply (nothing sent, its
 // instruction file, its prompt's sections and tools, a subfolder file not yet loaded) and after it (a total and
-// a window); and /api/sessions/context/file opening that subfolder file, while a file nothing lists stays a 404.
+// a window, and the conversation by kind); and /api/sessions/context/file opening that subfolder file, while a
+// file nothing lists stays a 404.
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -74,6 +75,13 @@ test("an open chat: its files, prompt and tools before the first reply; the tota
   assert.ok(afterReply.total > 0);
   assert.ok(typeof afterReply.window === "number" && afterReply.window > 0, "the model's window");
   assert.ok(afterReply.conversation > 0);
+  // The conversation by kind: the message sent and the reply, and where the transcript starts.
+  assert.equal(afterReply.talk.user.count, 1);
+  assert.ok(afterReply.talk.user.tokens > 0);
+  assert.ok(afterReply.talk.replies.count >= 1);
+  assert.equal(afterReply.talk.summary, undefined, "no compaction yet");
+  const rows = (await api("GET", `/api/transcript?path=${encodeURIComponent(ses.path)}`)).body.items as any[];
+  assert.ok(rows.some((i) => i.id === afterReply.talk.start || String(i.id).startsWith(`${afterReply.talk.start}:`)), "the transcript has a row where the window starts");
   assert.equal(afterReply.prompt, true);
   assert.ok(afterReply.rules.some((p: any) => p.label === "Rules" && p.text.length > 0));
   assert.ok(afterReply.tools.some((p: any) => p.label === "read" && JSON.parse(p.text).name === "read"));

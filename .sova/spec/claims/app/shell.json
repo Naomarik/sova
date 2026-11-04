@@ -14,8 +14,9 @@
       "index.html"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-11T11:27Z"
+      "by": "user",
+      "at": "2026-11-03T20:41Z",
+      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#42b7b210"
     }
   },
   "§app.shell/missing-folder-home": {
@@ -131,6 +132,27 @@
       "by": "naomarik",
       "at": "2026-10-22T00:49Z",
       "source": "pi-session:aaa55e42-efea-4624-8d25-f08fbba7fb25#e92e5471"
+    }
+  },
+  "§app.shell/window-controls-overlay": {
+    "kind": "behavior",
+    "requires": [
+      "§app.shell/installable",
+      "§app.shell/viewport",
+      "§design.ground-rules/theme"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/window-controls.css",
+      "index.html",
+      "src/main.tsx",
+      "src/lib/push.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:41Z",
+      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#42b7b210"
     }
   },
   "§app/shell": {

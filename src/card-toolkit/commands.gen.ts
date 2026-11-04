@@ -143,6 +143,7 @@ export type CommandId =
   | "project.merge-queue.land-how.set"
   | "project.merge-queue.land-how.clear"
   | "overseer.attention"
+  | "overseer.abilities"
   | "overseer.todo.list"
   | "overseer.todo.add"
   | "overseer.todo.update"
@@ -2972,6 +2973,8 @@ export interface CommandParams {
   };
   /** What needs the user now, as the Overseer's digest has it. (only looks; needs the card's owner trusted) */
   "overseer.attention": Record<string, never>;
+  /** What the Overseer can do: its built-in abilities, its limits and the commands its extensions offer it. (only looks; needs the card's owner trusted) */
+  "overseer.abilities": Record<string, never>;
   /** The Overseer's to-do list. (only looks; needs the card's owner trusted) */
   "overseer.todo.list": Record<string, never>;
   /** Add a to-do to the Overseer's list. (changes something; needs the card's owner trusted) */
@@ -3516,6 +3519,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.merge-queue.land-how.set": "changes",
   "project.merge-queue.land-how.clear": "changes",
   "overseer.attention": "looks",
+  "overseer.abilities": "looks",
   "overseer.todo.list": "looks",
   "overseer.todo.add": "changes",
   "overseer.todo.update": "changes",

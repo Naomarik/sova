@@ -355,9 +355,12 @@ opens in its own window with no browser bar. On a Mac or Linux desktop where Sov
 with the installer, its app-launcher entry already opens Sova that way, unlocked, with no step in
 the browser (§app.installer/app-entry).
 
-- **The manifest** (`public/manifest.webmanifest`, linked from `index.html`) names it `sova`, starts
-  at `/` with the whole origin in scope, asks for `display: standalone`, and carries 192px and 512px
-  icons, each also in a maskable form. `index.html` adds the iOS Home Screen tags (capable, a black
+- **The manifest** (`public/manifest.webmanifest`, linked from `index.html`) names it `sova`, gives
+  it the id `/` (so its identity is the origin, not where it starts), starts at `/` with the whole
+  origin in scope, asks for `display: standalone`, offers `window-controls-overlay` first
+  (`display_override`), so a desktop window may hide its title bar
+  (§app.shell/window-controls-overlay) while `standalone` stays the fallback, and carries 192px and
+  512px icons, each also in a maskable form. `index.html` adds the iOS Home Screen tags (capable, a black
   status bar, the title `sova`, an apple-touch icon) and a theme colour.
 - **The service worker** (`public/sw.js`), registered in production builds only (never under the
   Vite dev server), keeps the shell working offline: it seeds `/` and the hashed bundles it names on
@@ -368,3 +371,34 @@ the browser (§app.installer/app-entry).
   Screen.
 - **Being installed changes nothing else.** The installed app is the same page at the same
   address, behind the same gate (§app/access).
+
+## §app.shell/window-controls-overlay — The installed window without a title bar
+
+When the installed app's window hides its title bar (`display-mode: window-controls-overlay`: how
+the installer leaves it on macOS, §app.installer/app-entry, or the browser's own toggle anywhere),
+Sova draws a title band of its own in its place.
+
+- **One band, the window's width.** A band runs across the whole top of the window, as tall as the
+  title-bar area the browser reports (`env(titlebar-area-height)`, never a fixed number), in the
+  surface colour (`--color-surface`) with a hairline under it. The window's buttons (the traffic
+  lights) sit in it on the left and the browser's own cluster (its title-bar toggle and ⋮ menu) on
+  the right. It holds nothing of Sova's.
+- **It matches the browser's cluster.** The browser paints that cluster in the page's theme colour,
+  which is always the worn theme's surface (§design.ground-rules/theme), dark or light, and changes
+  with it the moment the theme changes; band and cluster read as one strip.
+- **It moves the window.** The whole band is the window's drag region (`app-region: drag`):
+  dragging it moves the window as a title bar does.
+- **Everything else starts below it.** The shell begins under the band, so no page (the overview
+  included), head or pane runs under the window's controls, and every head keeps its ordinary
+  padding; the sessions pane keeps its usual width and floor
+  (§app.shell/resizing-the-sessions-pane). Overlays that cover the window (the dialog scrim, the
+  lightbox, a guided tour, a maximized extension, the drop overlay) and the stale-tab notice start
+  below it too, and a centred dialog centres in the space under it. A dialog that still reaches into
+  the band stays clickable there (`app-region: no-drag`).
+- **Showing the title bar again** (the browser's toggle) gives back the ordinary layout at once:
+  the band goes and the shell starts at the window's top edge; hiding it brings the band back. An
+  app installed before the band existed gets it the next time it loads Sova: the band is the page's
+  own styling, and nothing in the browser's record of the app changes.
+- **Still the installed app.** A window without a title bar counts as the installed app wherever
+  Sova asks, as a standalone window does: the Home Screen check before phone notifications
+  (§app/notifications) and the voice device's "(app)" label (§chat.voice/decoding).

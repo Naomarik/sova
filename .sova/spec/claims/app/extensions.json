@@ -133,7 +133,8 @@
       "server/extension-offers.test.ts",
       "server/extension-offers.integration.test.ts",
       "docs/customization.md",
-      "server/extension-views.ts"
+      "server/extension-views.ts",
+      "server/extension-offers-overseer.test.ts"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -213,7 +214,12 @@
       "server/extensions.test.ts",
       "server/extensions.integration.test.ts",
       "server/extension-keys.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-27T21:10Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
+    }
   },
   "§app.extensions/session-menu": {
     "kind": "behavior",

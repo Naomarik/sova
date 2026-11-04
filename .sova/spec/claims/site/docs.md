@@ -166,10 +166,12 @@ running turn, and switching models mid-session (favorites and the saved default)
 ## §site.docs/install — Install (`/docs/install/`)
 
 Installing Sova on a Mac or Linux machine with one command and its options, starting it and
-opening it unlocked, the app-launcher entry that opens it in its own window, the access token,
+opening it unlocked, the app-launcher entry that opens it in its own window (on macOS, an app of its own with its own
+Dock icon and no title bar), the access token,
 the login service, running the installer again and the self-update from Settings it points to
 (§site.docs/updates), removing it (the service, the extension links,
-the install, the launcher, the app entry and its browser profile, and optionally pnpm's store and
+the install, the launcher, the app entry and its browser profile, with on macOS the browser's
+launcher for the app, and optionally pnpm's store and
 cache), and the Claude Code models.
 
 ## §site.docs/memory — Memory (`/docs/modes/memory/`)

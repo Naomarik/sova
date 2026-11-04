@@ -38,6 +38,26 @@ you close the window; its output is in `~/.pi/agent/sova/app-server.log`. If it 
 within 20 seconds, you get a notification naming that log, and nothing opens. A browser installed
 only as a Flatpak isn't found.
 
+On macOS the installer also installs Sova in that browser profile as an app of its own, so its
+window has Sova's icon and name in the Dock and the app switcher, and no browser title bar: Sova
+draws a slim band of its own across the top, in its own colours, which holds the window buttons at
+the top left and the browser's title-bar toggle and ⋮ menu at the top right, and moves the window
+when you drag it (the toggle brings the browser's title bar back). The browser opens and closes once for this.
+If Sova's window is open, the installer closes it first when you run it in a terminal; an upgrade
+from Settings leaves it open, and `sova open` finishes the job the next time it opens Sova. The
+browser keeps its own launcher for the app, `~/Applications/Chrome Apps.localized/sova.app` with
+Chrome, which is what the Dock shows; pinned there, it opens Sova without starting the server, so
+pin it if you run the login service, and use **Sova** otherwise. If the install fails, Sova opens in
+the bare window above, and `sova app --install` tries again.
+
+`--no-app-entry` leaves the app out as well: `sova open` keeps opening the bare window. `sova app
+--install` still installs it if you ask.
+
+Only the install command, or an upgrade of this install from Settings, updates the launcher. An
+upgrade of a developer checkout from Settings and a `git pull` leave it as it is, so a launcher from
+before this feature keeps opening the bare window. That launcher also ignores `sova app --install`:
+it opens the bare window and says nothing. Run the install command again to update it.
+
 To run the server in a terminal yourself instead:
 
 ```sh
@@ -189,8 +209,10 @@ rm -rf ~/.config/sova-browser
 On macOS:
 
 ```sh
-rm -rf ~/Applications/Sova.app ~/Library/Application\ Support/sova-browser
+rm -rf ~/Applications/Sova.app ~/Applications/Chrome\ Apps.localized/sova.app ~/Library/Application\ Support/sova-browser
 ```
+
+(With another browser, its launcher for the app is in the `… Apps.localized` folder named after it.)
 
 This leaves your pi sessions and credentials, and Sova's state under `~/.pi/agent/sova/`, intact.
 pnpm's package store and cache stay too, since other projects may share them. If nothing else

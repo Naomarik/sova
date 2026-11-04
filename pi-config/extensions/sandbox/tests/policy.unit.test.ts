@@ -9,6 +9,7 @@ import {
 	canonicalize,
 	loadPolicyFile,
 	narrowScope,
+	parentBrowser,
 	parentScopeOf,
 	parseParentScope,
 	type PolicyFile,
@@ -453,5 +454,104 @@ test("write-only scope: writes only in the root; reads, network and env untouche
 	const out = resolvePolicy({ agentDir, cwd: ws, tmpDir: join(ws, "t"), platform: "linux", parent: scope });
 	assert.ok(out.ok);
 	assert.equal(out.value.outsideParent, true);
+	rmSync(ws, { recursive: true, force: true });
+});
+
+test("browser: \"none\" and \"headless-shell\" load, absent means none, anything else fails closed", () => {
+	const t = template();
+	assert.equal(t.browser, "none", "the template names it, off");
+	for (const p of ["linux", "darwin"]) assert.equal(template(p).browser, "none", p);
+	const { browser: _b, ...absent } = t;
+	const a = validatePolicyFile(absent);
+	assert.ok(a.ok, "the key is optional");
+	assert.equal(a.value.browser, undefined);
+	const on = validatePolicyFile({ ...t, browser: "headless-shell" });
+	assert.ok(on.ok);
+	assert.equal(on.value.browser, "headless-shell");
+	for (const bad of [true, "chrome", 1, "", null, "Headless-Shell"]) {
+		const r = validatePolicyFile({ ...t, browser: bad });
+		assert.equal(r.ok, false, JSON.stringify(bad));
+		assert.match(String((r as { error: string }).error), /browser must be "none" or "headless-shell"/);
+	}
+});
+
+test("browser in a project file: \"none\" tightens, \"headless-shell\" is ignored with a notice unless the global file already says so", () => {
+	const on = { ...template(), browser: "headless-shell" as const };
+	const off = template();
+	assert.deepEqual(applyProjectTightening(on, { browser: "none" }), { policy: { ...on, browser: "none" }, ignored: [] });
+	assert.deepEqual(applyProjectTightening(off, { browser: "headless-shell" }), { policy: off, ignored: ["browser"] });
+	const { browser: _b, ...absent } = off;
+	assert.deepEqual(applyProjectTightening(absent, { browser: "headless-shell" }).ignored, ["browser"], "absent is none: no loosening");
+	assert.equal(applyProjectTightening(absent, { browser: "headless-shell" }).policy.browser, undefined);
+	assert.deepEqual(applyProjectTightening(on, { browser: "headless-shell" }), { policy: on, ignored: [] }, "the global value again changes nothing");
+	assert.deepEqual(applyProjectTightening(on, { browser: true }).ignored, ["browser"]);
+	assert.equal(applyProjectTightening(on, { browser: true }).policy.browser, "headless-shell");
+});
+
+test("browser resolves from the file and the project file; a worker takes its parent's, never its own file's", () => {
+	const ws = tmp();
+	const agentDir = join(ws, "agent");
+	const file = join(agentDir, "sandbox-policy", "linux", "policy.json");
+	mkdirSync(dirname(file), { recursive: true });
+	mkdirSync(join(ws, "a"));
+	const write = (browser?: string) => {
+		const { browser: _b, ...rest } = template();
+		writeFileSync(file, JSON.stringify(browser === undefined ? rest : { ...rest, browser }));
+		utimesSync(file, new Date(), new Date(Date.now() + Math.random() * 1e6));
+	};
+	const resolve = (parent?: Parameters<typeof resolvePolicy>[0]["parent"]) => {
+		const r = resolvePolicy({ agentDir, cwd: join(ws, "a"), tmpDir: join(ws, "t"), platform: "linux", ...(parent ? { parent } : {}) });
+		assert.ok(r.ok, r.ok ? "" : r.error);
+		return r.value;
+	};
+	write();
+	assert.equal(resolve().browser, false, "absent");
+	write("none");
+	assert.equal(resolve().browser, false);
+	write("headless-shell");
+	assert.equal(resolve().browser, true);
+	mkdirSync(join(ws, "a", ".sova"));
+	writeFileSync(join(ws, "a", ".sova", "sandbox.json"), JSON.stringify({ browser: "none" }));
+	assert.equal(resolve().browser, false, "the project file turns it off");
+	rmSync(join(ws, "a", ".sova"), { recursive: true });
+	// Handed down: parentScopeOf carries it, narrowScope keeps it, parse accepts only a literal true.
+	const scope = parentScopeOf({ ...resolve(), tmpDir: join(ws, "t") });
+	assert.equal(scope.browser, true);
+	assert.equal(narrowScope(scope, join(ws, "a")).browser, true);
+	assert.deepEqual(parseParentScope(JSON.stringify(scope)), { ok: true, value: scope });
+	for (const bad of [false, "true", 1, "headless-shell", null]) assert.equal(parseParentScope(JSON.stringify({ ...scope, browser: bad })).ok, false, JSON.stringify(bad));
+	const { browser: _x, ...noBrowser } = scope;
+	assert.equal(parentScopeOf({ ...resolve(noBrowser), tmpDir: join(ws, "t") }).browser, undefined);
+	// A worker's own file says headless-shell; its parent's scope has none: none.
+	assert.equal(resolve(noBrowser).browser, false, "a worker ignores its own file's browser");
+	write("none");
+	assert.equal(resolve(scope).browser, true, "and takes its parent's even when its own file says none");
+	// Write-only: from the scope only (no policy file is read).
+	assert.equal(resolve(writeOnlyScope(join(ws, "a"))).browser, false);
+	assert.equal(resolve(writeOnlyScope(join(ws, "a"), { browser: true })).browser, true);
+	assert.deepEqual(writeOnlyScope(join(ws, "a"), { browser: false }), writeOnlyScope(join(ws, "a")), "off adds no key");
+	assert.deepEqual(parseParentScope(JSON.stringify(writeOnlyScope(join(ws, "a"), { browser: true }))), { ok: true, value: writeOnlyScope(join(ws, "a"), { browser: true }) });
+	rmSync(ws, { recursive: true, force: true });
+});
+
+test("parentBrowser: the parent's file after its cwd's project file; any failure means no browser", () => {
+	const ws = tmp();
+	const agentDir = join(ws, "agent");
+	const file = join(agentDir, "sandbox-policy", "linux", "policy.json");
+	const cwd = join(ws, "cwd");
+	mkdirSync(cwd);
+	assert.equal(parentBrowser(agentDir, cwd, "linux"), false, "no file");
+	mkdirSync(dirname(file), { recursive: true });
+	writeFileSync(file, "{ not json");
+	assert.equal(parentBrowser(agentDir, cwd, "linux"), false, "unreadable");
+	writeFileSync(file, JSON.stringify({ ...template(), browser: true }));
+	utimesSync(file, new Date(), new Date(Date.now() + 10_000));
+	assert.equal(parentBrowser(agentDir, cwd, "linux"), false, "malformed");
+	writeFileSync(file, JSON.stringify({ ...template(), browser: "headless-shell" }));
+	utimesSync(file, new Date(), new Date(Date.now() + 20_000));
+	assert.equal(parentBrowser(agentDir, cwd, "linux"), true);
+	mkdirSync(join(cwd, ".sova"));
+	writeFileSync(join(cwd, ".sova", "sandbox.json"), JSON.stringify({ browser: "none" }));
+	assert.equal(parentBrowser(agentDir, cwd, "linux"), false, "the parent's project file tightens");
 	rmSync(ws, { recursive: true, force: true });
 });

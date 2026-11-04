@@ -1,4 +1,35 @@
 {
+  "§app.overseer/about": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/OverseerAbout.tsx",
+      "src/overseer-about.css",
+      "src/components/OverseerView.tsx",
+      "src/lib/overseer-about.ts",
+      "src/lib/overseer-about.test.ts",
+      "src/lib/api.ts",
+      "server/overseer-abilities.ts",
+      "server/overseer-abilities.test.ts",
+      "server/overseer.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "shared/commands/overseer.ts",
+      "shared/commands-ids.json",
+      "server/commands-inventory/baseline.json",
+      "docs/commands.md"
+    ],
+    "requires": [
+      "§app.overseer/extension-commands",
+      "§app.overseer/caps"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T17:10Z",
+      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#42b7b210"
+    }
+  },
   "§app.overseer/alignment-read": {
     "kind": "behavior",
     "authority": "accepted",
@@ -158,8 +189,8 @@
     "requires": [],
     "agreed": {
       "by": "user",
-      "at": "2026-10-27T09:33Z",
-      "source": "pi-session:01a16fb6-1014-7539-b91a-750b94daff7d#6f6f4e53"
+      "at": "2026-10-27T21:10Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
     }
   },
   "§app.overseer/card-partial-apply": {
@@ -436,6 +467,48 @@
       "§app.overseer/caps"
     ]
   },
+  "§app.overseer/extension-commands": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/overseer-ext-tools.ts",
+      "server/overseer-ext-jobs.ts",
+      "server/overseer-tools.ts",
+      "server/overseer.ts",
+      "server/overseer-store.ts",
+      "server/overseer-run-note.ts",
+      "server/overseer-prompt.md",
+      "server/extensions.ts",
+      "shared/commands-ext.ts",
+      "shared/wake.ts",
+      "shared/protocol.ts",
+      "server/overseer-ext-tools.test.ts",
+      "server/overseer-ext-jobs.test.ts",
+      "server/agent-loadouts.snapshot.json",
+      "server/harness/pi/golden/special-model-view.json",
+      "server/overseer-abilities.ts",
+      "server/overseer-abilities.test.ts",
+      "server/overseer-store.test.ts"
+    ],
+    "requires": [
+      "§app.overseer/tools",
+      "§app.overseer/caps",
+      "§app.overseer/hosting",
+      "§app.commands/extension-commands",
+      "§app.extensions/serving",
+      "§app.overseer/session-names",
+      "§app.overseer/sessions-in-play",
+      "§app.overseer/run-note",
+      "§chat.transcript/transcript-items",
+      "§app.extensions/list"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T17:10Z",
+      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#42b7b210"
+    }
+  },
   "§app.overseer/file-writes": {
     "kind": "behavior",
     "requires": [
@@ -504,7 +577,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-10T10:06Z"
+      "at": "2026-10-27T22:52Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
     }
   },
   "§app.overseer/id-check": {
@@ -1101,7 +1175,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-10T10:06Z"
+      "at": "2026-10-27T21:10Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
     }
   },
   "§app.overseer/seen": {
@@ -1245,8 +1320,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-25T21:42Z",
-      "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+      "at": "2026-10-27T21:10Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
     }
   },
   "§app.overseer/standing-notes": {

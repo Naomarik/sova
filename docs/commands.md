@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 524 |
-| Routes a catalogue entry points at | 155 |
-| Catalogue entries | 214 |
+| Routes registered | 525 |
+| Routes a catalogue entry points at | 156 |
+| Catalogue entries | 215 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -35,7 +35,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Pending (not yet a command) | 24 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 9 |
-| Hand-written tool specs | 127 |
+| Hand-written tool specs | 128 |
 
 ## Catalogue entries
 
@@ -181,6 +181,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.merge-queue.land-how.set` | Change How It Lands | changes | `PUT /api/merge-queue/projects/:project/land-how` | admin |
 | `project.merge-queue.land-how.clear` | Clear This Computer's Choice | changes | `DELETE /api/merge-queue/projects/:project/land-how/override` | admin |
 | `overseer.attention` | Show Attention | looks | `GET /api/overseer/attention` | sessions |
+| `overseer.abilities` | Show Overseer Abilities | looks | `GET /api/overseer/abilities` | sessions |
 | `overseer.todo.list` | List To-dos | looks | `GET /api/overseer/todos` | sessions |
 | `overseer.todo.add` | Add To-do | changes | `POST /api/overseer/todos` | admin |
 | `overseer.todo.update` | Update To-do | changes | `PATCH /api/overseer/todo` | admin |
@@ -791,6 +792,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/orgs/:id/projects/:pid/versions` | sessions | `org.project.versions` |
 | `PUT /api/orgs/:id/projects/:pid/versions/:instance` | admin | `org.project.version.automatic`, `org.project.version.hide`, `org.project.version.rewrite`, `org.project.version.show` |
 | `GET /api/overseer` | sessions | `overseer.get` |
+| `GET /api/overseer/abilities` | sessions | `overseer.abilities` |
 | `GET /api/overseer/attention` | sessions | `overseer.attention` |
 | `GET /api/overseer/idea` | sessions | `overseer.idea.get` |
 | `PATCH /api/overseer/idea` | admin | `overseer.idea.update` |
@@ -948,6 +950,7 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/org-history-tools.ts` | 2 | `sova_history`, `sova_decide` |
 | `server/overseer-card-tool.ts` | 1 | `<computed: CARD_TOOL>` |
 | `server/overseer-code-history.ts` | 2 | `sova_project_git`, `sova_server_log` |
+| `server/overseer-ext-tools.ts` | 1 | `sova_ext` |
 | `server/overseer-idea-tools.ts` | 2 | `sova_ideas`, `sova_idea` |
 | `server/overseer-link-tools.ts` | 3 | `sova_link`, `sova_unlink`, `sova_links` |
 | `server/overseer-org-part.ts` | 10 | `sova_decisions`, `sova_roster`, `sova_start_gathering`, `sova_offer`, `sova_close_gathering`, `sova_owner_update`, `sova_send_to_person`, `sova_send_status`, `sova_reconcile`, `sova_promote` |

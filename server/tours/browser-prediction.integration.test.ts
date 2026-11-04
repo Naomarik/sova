@@ -22,8 +22,8 @@ import type { TourRecordingContext } from "./sandbox";
 // One hint per page. A case whose plain-launch control makes no contact on this build cannot
 // discriminate: the recorder still runs and any contact of its fails, then the case reports a skip,
 // never a pass (seen so far for preconnect, dns-prefetch with its IP-literal origin, prerender and
-// the anchor). Their switches stay on as a precaution; with the sandbox off the attempt's own proxy
-// is the guarantee for every connection.
+// the anchor; on macOS's headless shell, the icon as well). Their switches stay on as a precaution;
+// with the sandbox off the attempt's own proxy is the guarantee for every connection.
 type Hint = "prefetch" | "header-rules" | "injected-rules" | "anchor" | "preconnect" | "dns-prefetch" | "prerender" | "icon";
 async function fixture(kind: Hint) {
   // Each connection to the other port, with what it was: an HTTP request line (a fetched prefetch,
@@ -139,19 +139,24 @@ test("G5: the recorder's browser keeps Playwright's disabled features and adds i
   } finally { await browser.close(); }
 });
 
-test("G5: a page's icon on another origin is never fetched by the recorder; a plain launch fetches it", { timeout: 120_000 }, async () => {
+test("G5: a page's icon on another origin is never fetched by the recorder; a plain launch fetches it", { timeout: 120_000 }, async t => {
   const f = await fixture("icon");
   const root = mkdtempSync(join(tmpdir(), "tour-prediction-icon-"));
   try {
     // Positive control: an ordinary headless Chromium fetches the page's icon from the other origin.
     // If it never does, this browser build fetches no icons and the check below cannot discriminate.
+    // macOS's chrome-headless-shell is such a build (tests there never start the Chrome app): the case
+    // then reports a skip after every recorder assertion held, as the hints above do. Elsewhere the
+    // control must hold.
     const plain = await chromium.launch({ executablePath: discoverTourBrowser(), headless: true });
     try {
       const page = await (await plain.newContext()).newPage();
       await page.goto(`${f.origin}/drafts`);
       for (let i = 0; i < 40 && f.other() === 0; i++) await new Promise(ok => setTimeout(ok, 100));
     } finally { await plain.close(); }
-    assert.ok(f.other() > 0, "positive control: a plain browser fetches the cross-origin icon");
+    const control = f.contacts();
+    const discriminates = f.other() > 0;
+    if (process.platform !== "darwin") assert.ok(discriminates, "positive control: a plain browser fetches the cross-origin icon");
     f.reset();
     const context: TourRecordingContext = { sessionId: "prediction-icon", sessionFile: join(root, "chat.jsonl"), cwd: root, agentDir: join(root, "agent"), sandbox: { on: false } };
     const script = tourScriptFixture();
@@ -164,6 +169,9 @@ test("G5: a page's icon on another origin is never fetched by the recorder; a pl
     if (outcome !== "ok") assert.ok(outcome instanceof TourCaptureFailure && outcome.failure.blockedOrigin === f.otherOrigin, `the attempt succeeds or refuses the icon origin: ${String((outcome as Error)?.message)}`);
     assert.ok(f.pages() >= 1, "the recorder loaded the page");
     await new Promise(ok => setTimeout(ok, 1000));
+    console.log(`[G5] icon: plain launch ${JSON.stringify(control)} (${discriminates ? "fetched" : "no contact"}); recorder ${JSON.stringify(f.contacts())}; pages ${f.pages()}; outcome ${outcome === "ok" ? "ok" : String((outcome as Error)?.message)}`);
     assert.equal(f.other(), 0, "the unapproved icon origin was never contacted");
+    // Only the positive control turns into a skip, after every recorder assertion held.
+    if (!discriminates) { const why = "[G5] icon: cannot discriminate on this build (plain launch made no contact)"; console.log(why); t.skip(why); }
   } finally { await f.close(); rmSync(root, { recursive: true, force: true }); }
 });

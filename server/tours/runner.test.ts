@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, test } from "node:test";
 import { tourScriptFixture } from "../../shared/tour-fixtures";
 import { freshCheck, runTourAttempt } from "./runner";
 import type { RunnerProxyOptions } from "./runner-proxy";
@@ -17,6 +20,19 @@ import type { ChildProcess } from "node:child_process";
 const PUBLIC = "1.1.1.1"; // never contacted: nothing is launched here
 const context = (on: boolean): TourRecordingContext => ({ sessionId: "runner-seam", sessionFile: "/server/chat.jsonl", cwd: "/server/checkout", agentDir: "/server/agent", sandbox: { on } });
 const OWN = "http://127.0.0.1:1";
+// macOS: the server chooses the browser before the launch, so this seam must not depend on what the
+// Mac has installed (with only the Chrome app, sandbox on is refused). A stand-in, never executed.
+if (process.platform === "darwin") {
+  const dir = mkdtempSync(join(tmpdir(), "tour-standin-"));
+  const standIn = join(dir, "chrome-headless-shell");
+  writeFileSync(standIn, "fixture, never executed"); chmodSync(standIn, 0o700);
+  const previous = process.env.SOVA_TOUR_BROWSER;
+  process.env.SOVA_TOUR_BROWSER = standIn;
+  after(() => {
+    if (previous === undefined) delete process.env.SOVA_TOUR_BROWSER; else process.env.SOVA_TOUR_BROWSER = previous;
+    rmSync(dir, { recursive: true, force: true });
+  });
+}
 async function captured(on: boolean, source: "project" | "site", assertCurrent: () => Promise<void> = async () => {}, consent: (origin: string) => Promise<void> = async () => {}) {
   const script = tourScriptFixture();
   script.source = source === "project"
@@ -216,4 +232,32 @@ test("freshCheck: a failed check is not reused by the next caller", async () => 
   pass = true;
   await assert.doesNotReject(failing());
   assert.equal(starts, 2, "the start count goes up: the rejection was not cached");
+});
+
+// macOS only: with the chat's sandbox on, an app-bundle Chrome is refused before the attempt's proxy
+// or its confined child starts (it would only crash under Seatbelt); sandbox off, it still launches.
+test("macOS, sandbox on: an app-bundle Chrome is refused before anything starts; sandbox off launches it", { skip: process.platform !== "darwin" ? "macOS only" : false }, async () => {
+  const { TOUR_APP_BROWSER_REFUSAL } = await import("./browser");
+  const root = mkdtempSync(join(tmpdir(), "tour-app-runner-"));
+  const app = join(root, "Google Chrome.app", "Contents", "MacOS", "Google Chrome");
+  mkdirSync(join(app, ".."), { recursive: true }); writeFileSync(app, "fixture, never executed"); chmodSync(app, 0o700);
+  const previous = process.env.SOVA_TOUR_BROWSER; process.env.SOVA_TOUR_BROWSER = app;
+  try {
+    for (const on of [true, false]) {
+      let spawned = 0, proxies = 0;
+      const script = tourScriptFixture(); script.source = { kind: "site", origin: "https://public.example" };
+      await assert.rejects(runTourAttempt({
+        context: context(on), script, tourId: "seam-tour", editionId: "seam-edition", dryRun: true, beforeContact: async () => {},
+        target: async () => ({ origin: "https://public.example", generation: 1, assertCurrent: async () => {} }),
+        startProxy: async () => { proxies++; return { url: OWN, closed: new Promise<void>(() => {}), close: async () => {} }; },
+        spawn: async () => { spawned++; throw new Error("launch captured"); },
+      }), (error: unknown) => on
+        ? error instanceof TourCaptureFailure && error.message === TOUR_APP_BROWSER_REFUSAL && !error.message.includes(root)
+        : error instanceof Error && error.message === "launch captured");
+      assert.deepEqual({ spawned, proxies }, on ? { spawned: 0, proxies: 0 } : { spawned: 1, proxies: 1 }, `sandbox ${on ? "on" : "off"}`);
+    }
+  } finally {
+    if (previous === undefined) delete process.env.SOVA_TOUR_BROWSER; else process.env.SOVA_TOUR_BROWSER = previous;
+    rmSync(root, { recursive: true, force: true });
+  }
 });

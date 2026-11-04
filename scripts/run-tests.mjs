@@ -64,6 +64,11 @@
 // message), and a file that failed with no failing test (a crash, a load error, a kill) counts as an
 // error with the file as its name. On Node (whose output isn't read) only failing files are named.
 // --plan and an empty selection write none.
+// macOS only (Linux is unchanged): a test file's throwaway root (also its TMPDIR) goes under /tmp when
+// the default /var/folders/…/T/ would make Chromium's socket path too long (scripts/test-temp-root.mjs),
+// and those roots are removed when their file ends or at the runner's exit; macBrowserEnv points
+// PLAYWRIGHT_BROWSERS_PATH at the Playwright cache and, with no chrome-headless-shell there, sets
+// SOVA_TOUR_BROWSER to a missing path, so browser tests fail or skip instead of starting the Chrome app.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";
@@ -72,6 +77,7 @@ import path from "node:path";
 import { chosenRuntime, resolveBun } from "../server/runtime-choice.ts";
 import { affected, changedSince } from "./test-changed.mjs";
 import { GROUPS, groupOf, selectFiles } from "./test-groups.mjs";
+import { makeTestRoot, testRootBase } from "./test-temp-root.mjs";
 import { bunReport } from "./test-report.mjs";
 import { dropChatEnv } from "./test-env.mjs";
 
@@ -429,6 +435,7 @@ if (runtime === "node") {
   refuseTmpInRepo("/tmp");
   const tmp = fs.realpathSync(fs.mkdtempSync("/tmp/sova-t-"));
   process.env.TMPDIR = process.env.TMP = process.env.TEMP = tmp;
+  Object.assign(process.env, macBrowserEnv(process.env));
   process.env.PATH = [fakeClaudeDir(tmp), process.env.PATH ?? ""].filter(Boolean).join(path.delimiter);
   process.on("exit", () => {
     sweepDetachedChats(tmp);
@@ -523,14 +530,53 @@ try {
   /* no mise: the inherited PATH */
 }
 
+/**
+ * macOS only: what a file's environment needs so a test takes Chrome's headless shell and never starts
+ * the Google Chrome app. The throwaway HOME hides Playwright's cache, so its real place is named. With
+ * no shell installed, SOVA_TOUR_BROWSER names a path that isn't there: browser tests then fail saying
+ * so (or skip, where a case says it does), instead of falling through to /Applications.
+ */
+function macBrowserEnv(from) {
+  if (process.platform !== "darwin") return {};
+  const cache = from.PLAYWRIGHT_BROWSERS_PATH || path.join(os.homedir(), "Library", "Caches", "ms-playwright");
+  const set = { PLAYWRIGHT_BROWSERS_PATH: cache };
+  if (!from.SOVA_TOUR_BROWSER && !fs.globSync("chromium_headless_shell-*/chrome-headless-shell-mac-*/chrome-headless-shell", { cwd: cache }).length) {
+    set.SOVA_TOUR_BROWSER = path.join(cache, "no-chrome-headless-shell-installed");
+    if (!macBrowserEnv.warned) { macBrowserEnv.warned = true; console.warn("run-tests: macOS: no chrome-headless-shell (npx playwright install chromium-headless-shell): tests that drive a real browser fail or skip; the Chrome app is never started."); }
+  }
+  return set;
+}
+
+// macOS: the roots made under /tmp in place of a too-long temp dir, removed when their file ends; any
+// still here when this runner stops (a signal, its exit, its parent gone) go at its exit. A runner killed
+// by SIGKILL can't: its roots stay until macOS clears /tmp (a reboot, or three days unused).
+const shortRoots = new Set();
+let shortRootsGuarded = false;
+function testRoot() {
+  const base = testRootBase(os.tmpdir());
+  if (base !== os.tmpdir()) {
+    try {
+      refuseTmpInRepo(base);
+      const root = makeTestRoot(base);
+      shortRoots.add(root);
+      if (!shortRootsGuarded) {
+        shortRootsGuarded = true;
+        process.on("exit", () => { for (const r of shortRoots) { sweepDetachedChats(r); removeTree(r); } });
+      }
+      return root;
+    } catch { /* /tmp is closed here: the long temp dir, whose browser tests are then refused, saying why */ }
+  }
+  return makeTestRoot(os.tmpdir());
+}
+
 /** A fresh throwaway home and the environment bun starts with. */
 function hermeticEnv() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "sova-test-home-"));
+  const root = testRoot();
   const home = path.join(root, "home");
   fs.mkdirSync(path.join(home, ".claude"), { recursive: true, mode: 0o700 });
   fs.mkdirSync(path.join(home, ".pi", "agent"), { recursive: true, mode: 0o700 });
   // TMPDIR is the root itself, so the file's temp dirs go when it does; not a subdir of it, since
-  // tests check the home is inside tmpdir(). Short, for socket path limits.
+  // tests check the home is inside tmpdir(). Short, for socket path limits (macOS: testRoot).
   const tmp = root;
   const env = {
     ...process.env,
@@ -556,6 +602,7 @@ function hermeticEnv() {
     "SOVA_DEVICE_ID", "SOVA_MESH_IDENTITY", "SOVA_CLAUDE_ACCOUNTS_DEV",
     ...GIT_LOCATION_VARS,
   ]) delete env[name];
+  Object.assign(env, macBrowserEnv(env));
   return { root, env };
 }
 
@@ -608,6 +655,7 @@ function runFile(file, extra) {
       const ms = Date.now() - started;
       sweepDetachedChats(root);
       removeTree(root);
+      shortRoots.delete(root);
       const count = (what) => Number(out.match(new RegExp(`^\\s*(\\d+) ${what}$`, "m"))?.[1] ?? 0);
       // Enforced, a unit file that did what its tier refuses fails, even when its test caught the refusal.
       let refused = [];

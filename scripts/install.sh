@@ -30,7 +30,12 @@
 #                          ${XDG_DATA_HOME:-~/.local/share}/applications/sova.desktop and its icon
 #                          .../icons/hicolor/512x512/apps/sova.png, on macOS ~/Applications/Sova.app.
 #                          `sova app` keeps its browser profile in ~/.config/sova-browser (Linux) or
-#                          ~/Library/Application Support/sova-browser (macOS).
+#                          ~/Library/Application Support/sova-browser (macOS). On macOS it also
+#                          installs Sova in that profile as an app of its own, its title bar hidden
+#                          (scripts/mac-app.ts, through `sova app --install`; it records the result
+#                          in the profile's sova-app.json), and the browser writes its own launcher
+#                          for the app in ~/Applications/<browser> Apps.localized/ (--no-app-entry
+#                          skips this too).
 #   <agent dir>/extensions/<name>
 #                          one symlink per extension in <install dir>/pi-config/extensions, where
 #                          <agent dir> is $PI_CODING_AGENT_DIR, else ~/.pi/agent (--no-extensions
@@ -93,6 +98,13 @@ entry_marker="X-Sova-Launcher=v1"
 label=io.github.naomarik.sova
 
 die() { printf 'sova install: %s\n' "$1" >&2; exit 1; }
+# A terminal to talk to: $tty opens, and when it is a device, it is a terminal. /dev/null opens too,
+# and an upgrade from Settings hands it over (SOVA_TTY, server/updates/runner.ts): that run has no
+# one at a terminal. (A plain file stands in for a terminal in scripts/install.test.sh.)
+has_terminal() {
+	(: <"$tty") 2>/dev/null || return 1
+	[ ! -c "$tty" ] || (exec <"$tty" && [ -t 0 ]) 2>/dev/null
+}
 say() { printf '%s\n' "$1"; }
 
 while [ $# -gt 0 ]; do
@@ -245,7 +257,7 @@ if [ "$service" = ask ]; then
 		service=yes        # installed by this script before: keep it, and keep it current
 	elif [ "$service_kind" = none ]; then
 		service=no
-	elif (: <"$tty") 2>/dev/null; then
+	elif has_terminal; then
 		if [ "$service_kind" = launchd ]; then what="a launchd agent"; else what="a systemd user service"; fi
 		printf 'Run Sova as %s that starts at login, on port %s? [y/N] ' "$what" "$port" >>"$tty"
 		answer=
@@ -447,11 +459,15 @@ $marker
 #                Chromium-family browser with a profile of its own (a tab of the default browser
 #                when there is none), starting the server first when nothing answers on the port.
 #                What the app-launcher entry runs. \`sova app --print-browser\` names the browser.
+#                On macOS it opens Sova's installed app instead when there is one (scripts/mac-app.ts).
+#   sova app --install   macOS: install Sova as an app of its own in that browser's Sova profile,
+#                even when the install passed --no-app-entry (which only stops it happening unasked)
 #   sova open    the same as sova app
 set -euo pipefail
 dir=$(printf '%q' "$dir")
 self=$(printf '%q' "$launcher")
 install_port=$port
+app_auto=$app_entry
 tool_path=$(printf '%q' "$service_path")
 agent=\${PI_CODING_AGENT_DIR:-$(printf '%q' "$agent")}
 LAUNCHER
@@ -539,7 +555,8 @@ pick_browser() {       # a Chromium-family browser's executable, or nothing
 			net.imput.helium) want=Helium ;;
 		esac
 		for name in ${want:+"$want"} "Google Chrome" Chromium "Brave Browser" "Microsoft Edge" Vivaldi Helium; do
-			for d in /Applications "$HOME/Applications"; do
+			# SOVA_APP_SYSTEM_APPS: install.test.sh only, so a test never finds (or starts) the Mac's own apps.
+			for d in "${SOVA_APP_SYSTEM_APPS:-/Applications}" "$HOME/Applications"; do
 				app="$d/$name.app"
 				[ -d "$app" ] || continue
 				exe=$(defaults read "$app/Contents/Info" CFBundleExecutable 2>/dev/null || true)
@@ -568,8 +585,37 @@ pick_browser() {       # a Chromium-family browser's executable, or nothing
 	done
 	return 1
 }
+mac_app() {            # the install's macOS app helper, on the install's Bun
+	"${SOVA_BUN:-$dir/.bun/bin/bun}" "$dir/scripts/mac-app.ts" "$@"
+}
+mac_profile="$HOME/Library/Application Support/sova-browser"
+install_app() {        # sova app --install [--auto] [--close-running]: macOS only
+	local browser started= rc
+	[ "$os" = Darwin ] || { echo "sova: sova app --install is for macOS" >&2; exit 2; }
+	[ -f "$dir/scripts/mac-app.ts" ] || { echo "sova: this install has no scripts/mac-app.ts" >&2; exit 1; }
+	browser=$(pick_browser) || { echo "sova: no Chrome, Chromium, Brave, Edge, Vivaldi or Helium to install Sova in" >&2; exit 1; }
+	mkdir -p "$mac_profile"
+	chmod 700 "$mac_profile"
+	# Already installed, or nothing to do this run: said, and nothing started.
+	set +e
+	mac_app check --browser "$browser" --profile "$mac_profile" --port "$port" "$@"
+	rc=$?
+	set -e
+	case "$rc" in 0 | 3) exit "$rc" ;; esac
+	if ! healthy; then
+		start_server
+		wait_up
+		started=$pid       # a server started in the background for this alone stops again below
+	fi
+	set +e
+	mac_app install --browser "$browser" --profile "$mac_profile" --port "$port" --token-file "$agent/sova/auth-token" "$@"
+	rc=$?
+	set -e
+	[ -z "$started" ] || kill "$started" 2>/dev/null || true
+	exit "$rc"
+}
 open_app() {
-	local tok url browser profile
+	local tok url browser profile no_install=
 	if ! healthy; then
 		start_server
 		wait_up
@@ -578,8 +624,18 @@ open_app() {
 	url="http://127.0.0.1:$port/#t=$tok"
 	if browser=$(pick_browser); then
 		if [ "$os" = Darwin ]; then
-			profile="$HOME/Library/Application Support/sova-browser"
+			profile=$mac_profile
 			mkdir -p "$profile"
+			chmod 700 "$profile"
+			# Sova's installed app when there is one (installed now if nothing was ever tried and
+			# the browser is closed, unless the install opted out with --no-app-entry); else, status
+			# 10 or any failure, the bare window below.
+			"$app_auto" || no_install=--no-install
+			if [ -f "$dir/scripts/mac-app.ts" ] &&
+				mac_app open --browser "$browser" --profile "$profile" --port "$port" --url "$url" \
+					--token-file "$agent/sova/auth-token" $no_install >/dev/null 2>&1 </dev/null; then
+				exit 0
+			fi
 		else
 			profile="${XDG_CONFIG_HOME:-$HOME/.config}/sova-browser"
 			mkdir -p "$profile"
@@ -603,7 +659,10 @@ open_app() {
 case "${1:-}" in
 	token) token; exit 0 ;;
 	app | open)
-		if [ "${2:-}" = --print-browser ]; then pick_browser; exit 0; fi
+		case "${2:-}" in
+			--print-browser) pick_browser; exit 0 ;;
+			--install) shift 2; install_app "$@" ;;
+		esac
 		open_app ;;
 esac
 export SOVA_BUN=${SOVA_BUN:-$dir/.bun/bin/bun}
@@ -882,6 +941,29 @@ UNIT
 	fi
 fi
 
+# ---- macOS: Sova as an app of its own, in the app entry's browser (scripts/mac-app.ts) ----
+
+# After the service: the install needs the server answering on the port (`sova app --install`
+# starts one in the background for itself when nothing answers, and stops it again). The browser
+# on Sova's profile has to be closed for it: a run with a terminal closes Sova's window, one
+# without (an upgrade from Settings, which runs in that window) skips it, and `sova app` finishes
+# it later. Any failure leaves the bare --app window as it was.
+app_install_note=
+if [ "$entry_kind" = bundle ] && [ -n "$app_browser" ] && [ -f "$dir/scripts/mac-app.ts" ]; then
+	close_flag=
+	if has_terminal; then close_flag=--close-running; fi
+	set +e
+	app_install_out=$("$launcher" app --install --auto $close_flag 2>&1 </dev/null)
+	app_install_status=$?
+	set -e
+	[ -z "$app_install_out" ] || say "$app_install_out"
+	case "$app_install_status" in
+		0) app_install_note="Sova is an app of its own, with its own icon in the Dock and the app switcher" ;;
+		3) app_install_note="not installed as an app this run (see above)" ;;
+		*) app_install_note="couldn't install Sova as an app; 'Sova' opens it in a bare browser window instead (sova app --install tries again)" ;;
+	esac
+fi
+
 say ""
 if $rebuild; then
 	say "installed $ref ($commit) in $dir"
@@ -892,6 +974,7 @@ say "launcher: $launcher"
 if [ -n "$entry_note" ]; then
 	say "app entry: $entry_note — 'Sova' in your app launcher opens it in its own window (sova app)"
 fi
+[ -z "$app_install_note" ] || say "app: $app_install_note"
 if [ -z "$app_browser" ] && { [ "$os" = Linux ] || [ "$os" = Darwin ]; }; then
 	say "an app window needs Chrome, Chromium, Brave, Edge or Vivaldi; until one is installed, the app"
 	say "entry and 'sova open' open Sova in a tab of your default browser"

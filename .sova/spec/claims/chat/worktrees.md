@@ -142,8 +142,8 @@ the merge queue doesn't serve, §chat.worktrees/tool); a declined or unanswerabl
 nothing. Every active worktree of the set is a writable root of the session and of its workers
 while the sandbox is on (one under a shadowed cache stays a real root, like the session's cwd),
 and its `.agent` directory stays read-only inside it, like the session's own agent dir. A
-worker's sandbox scope also carries the parent's hidden list and proxy and environment
-allowlists, so a worker on a worktree's own agent dir (§chat.worktrees/worktree-config) is never
+worker's sandbox scope also carries the parent's hidden list, proxy and environment
+allowlists and `browser` setting (§chat.sandbox/policy-file), so a worker on a worktree's own agent dir (§chat.worktrees/worktree-config) is never
 looser than its parent because of that dir's policy file.
 
 ## §chat.worktrees/workers — Where workers may start
@@ -162,7 +162,10 @@ only it starts under the sandbox in **write-only** confinement: its writes go on
 worktree, its git dirs and a private scratch tmp (and the sandbox's private copies of the host
 caches). Its reads are the host's, no secret is hidden, the network is the host's (its resolver
 included) and the environment is passed as it is, but for `TMPDIR` (below) and the
-sandbox's own git config, `GIT_CONFIG_SYSTEM` (§chat.sandbox/git-cleanup). No policy file is read for it.
+sandbox's own git config, `GIT_CONFIG_SYSTEM` (§chat.sandbox/git-cleanup). No policy file is read
+for it, except that it gets the parent's `browser` setting (§chat.sandbox/policy-file): the parent
+reads its own policy file and its cwd's project file when the worker starts, and a file it cannot
+read means no browser, never a refused start.
 
 - **`/tmp`.** On Linux it sees the host's `/tmp` read-only, so a file another session wrote
   there (a brief) is readable, and every Unix socket found there as its command or its process

@@ -41,7 +41,7 @@ const CAP_MAX = 500;
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const PROACTIVITY: readonly OverseerProactivity[] = ["off", "badge", "brief"];
 
-export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 10, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3 };
+export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 10, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3, extRunsPerTurn: 5 };
 
 /** Claude Opus 5 by any spelling (its catalog id, a 1M variant, a pi ref), never Opus 5.5 (`claude-opus-5-5`). */
 const isOpus5 = (model: string): boolean => resolveClaude(model)?.id === "claude-opus-5";
@@ -226,6 +226,8 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
       if (e) return e;
     }
   }
+  // `extCommands` (a list of switched-on commands, before §app.overseer/extension-commands made every
+  // marked command the Overseer's) is ignored, stored or sent: the next save leaves it out.
   return out;
 }
 

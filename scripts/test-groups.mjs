@@ -14,6 +14,7 @@ const TEST_SETUP = [
   "scripts/test-tier-guard.mjs",
   "scripts/test-changed.mjs",
   "scripts/test-sentinel.mjs",
+  "scripts/test-temp-root.mjs",
   "scripts/hermetic-agent-dir.mjs",
   "pi-config/extensions/claude-code/tests/hermetic-env.mjs",
   "server/test-scratch.ts",

@@ -214,7 +214,8 @@
     "project.verb.release.abandon",
     "project.verb.release.withdraw",
     "mcp.servers.list",
-    "mcp.server.status"
+    "mcp.server.status",
+    "overseer.abilities"
   ],
   "retired": [
     "settings.agents.get",

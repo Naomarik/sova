@@ -109,7 +109,8 @@ project registered there is that folder, not the checkout around it.
 
 - **The runner refuses a temp dir inside a repository.** `pnpm test`, `pnpm test:int` and
   `pnpm test:all` (`scripts/run-tests.mjs`, on either runtime, either tier) exit 2 before running anything when the folder its temp roots go in (`TMPDIR`
-  on Bun, `/tmp` on Node) is inside a Git work tree or Git directory, with one line naming that
+  on Bun, `/tmp` on Node, and on macOS on Bun both, when `TMPDIR` is too long for Chromium's sockets
+  and the roots go under `/tmp` instead) is inside a Git work tree or Git directory, with one line naming that
   repository and the fix: a `TMPDIR` outside every repository.
 - **Discovery stops at the temp root.** Every test process (`pnpm test`'s and each extension
   runner's, through the shared preload) has `GIT_CEILING_DIRECTORIES` set to its temp dir and the

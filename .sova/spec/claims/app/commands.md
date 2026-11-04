@@ -168,6 +168,13 @@ with `effect: changes`. Its optional `menu` key puts it in a menu of Sova's too
   object of `{type, description?, required?}` with `type` one of `string`, `number`, `integer`,
   `boolean`, `array` or `object`. A command that isn't valid is left out alone, and so is a second
   one with the same name; the rest of the extension stays.
+- Since ext-contract-v1.18 a command may also carry, for the Overseer
+  (§app.overseer/extension-commands): `overseer: true` (the Overseer may be given it), `description`
+  (text for a model, 1–1,000 characters, line breaks allowed, no other control characters) and
+  `job: true` (running it starts a job the extension reports on later). A bad value for any of
+  them leaves out only that key, never the command. Nothing else changes for a command that
+  carries them: the command line lists and runs it as before, and a command without them reads
+  exactly as before.
 - Its id is always under `ext.<extension id>.`, so an extension can never name, replace or shadow
   one of Sova's own entries.
 - Running one is `POST /ext/<id>/api/commands/<name>` with the params as a JSON object, through

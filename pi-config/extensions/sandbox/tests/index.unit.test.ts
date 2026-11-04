@@ -241,6 +241,38 @@ test("workerLaunch off: none outside a tracked worktree; inside one, a write-onl
 	await s.stop();
 });
 
+test("workerLaunch Subagents only: a write-only worker gets browser from the parent's policy file; a malformed one means none, and it still starts", async () => {
+	const { a } = dirs();
+	const file = join(agentDir, "sandbox-policy", process.platform, "policy.json");
+	const original = readFileSync(file, "utf8");
+	let bump = 0;
+	const put = (text: string) => {
+		writeFileSync(file, text);
+		utimesSync(file, new Date(), new Date(Date.now() + ++bump * 10_000));
+	};
+	try {
+		const s = await start(a, {});
+		const scopeOf = () => JSON.parse(piFlags(s.last(), { cwd: a, root: a })["sandbox-parent"]!);
+		assert.equal(scopeOf().browser, undefined, "the template says none");
+		put(JSON.stringify({ ...JSON.parse(original), browser: "headless-shell" }));
+		assert.deepEqual(scopeOf(), writeOnlyScope(a, { browser: true }));
+		const cc = s.last().workerLaunch!({ cwd: a, root: a, backend: "claude-code", owner: "w1" });
+		assert.ok(cc.kind === "confine" && decodeLaunchScope(cc.scope).ok && (decodeLaunchScope(cc.scope) as { value: { parent: { browser?: true } } }).value.parent.browser === true, "a confined launch carries it too");
+		// The parent's cwd's project file tightens it.
+		mkdirSync(join(a, ".sova"), { recursive: true });
+		writeFileSync(join(a, ".sova", "sandbox.json"), JSON.stringify({ browser: "none" }));
+		assert.equal(scopeOf().browser, undefined);
+		rmSync(join(a, ".sova"), { recursive: true });
+		put(JSON.stringify({ ...JSON.parse(original), browser: true }));
+		assert.deepEqual(scopeOf(), writeOnlyScope(a), "malformed: no browser, still write-only");
+		put("{ not json");
+		assert.deepEqual(scopeOf(), writeOnlyScope(a), "unreadable: no browser, still write-only");
+		await s.stop();
+	} finally {
+		put(original);
+	}
+});
+
 test("three states (§chat.sandbox/states): Off lifts every worker, Subagents only confines a worktree's, and the entry says which", async () => {
 	const { a } = dirs();
 	const s = await start(a, {});

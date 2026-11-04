@@ -138,6 +138,7 @@ import {
   overseerSettingsInfo,
   renderPeerRead,
   saveOverseerSettings,
+  overseerAbilities,
   overseerAutonomy,
   revokePermit,
 } from "./overseer";
@@ -1616,6 +1617,8 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/overseer", async (c) => c.json(await overseerInfo(), 200, { "Cache-Control": "no-store" }));
   app.post("/api/overseer/clear", async (c) => c.json(await clearOverseer()));
   app.get("/api/overseer/attention", async (c) => c.json(await attentionForWire(), 200, { "Cache-Control": "no-store" }));
+  // What it can do, for its About panel (§app.overseer/about): the same reading of extension commands as sova_ext.
+  app.get("/api/overseer/abilities", async (c) => c.json(await overseerAbilities(), 200, { "Cache-Control": "no-store" }));
   // Approvals for later, standing rules and the running count (§app.overseer/approvals, §app.overseer/caps).
   // There is no route that makes one: only a card click does, in the Overseer's own runtime.
   app.get("/api/overseer/autonomy", async (c) => c.json(await overseerAutonomy(), 200, { "Cache-Control": "no-store" }));

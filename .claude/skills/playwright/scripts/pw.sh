@@ -72,8 +72,9 @@ if [ -z "$PROJECT_NM" ]; then
     fi
 fi
 
-# Created atomically (temp symlink + mv -T): concurrent agents would otherwise
-# race between rm and ln, leaving a window where the import fails.
+# Created atomically (temp symlink, then rename(2) over the old link): concurrent agents would
+# otherwise race between rm and ln, leaving a window where the import fails. The rename goes through
+# node, not `mv -T` (GNU only; macOS's mv would move the temp link INTO the linked directory).
 SCRIPT_NM="$SCRIPT_DIR/node_modules"
 if [ "$PROJECT_NM" = "$SCRIPT_NM" ]; then
     : # already this skill's own install: nothing to link
@@ -82,7 +83,7 @@ elif [ -e "$SCRIPT_NM" ] && [ ! -L "$SCRIPT_NM" ]; then
 elif [ "$(readlink "$SCRIPT_NM" 2>/dev/null)" != "$PROJECT_NM" ]; then
     TMP_NM="$SCRIPT_DIR/.node_modules.$$"
     ln -s "$PROJECT_NM" "$TMP_NM"
-    mv -T "$TMP_NM" "$SCRIPT_NM" 2>/dev/null || rm -f "$TMP_NM"
+    node -e 'require("node:fs").renameSync(process.argv[1], process.argv[2])' "$TMP_NM" "$SCRIPT_NM" 2>/dev/null || rm -f "$TMP_NM"
 fi
 
 # Pass all arguments to the Node.js CDP client

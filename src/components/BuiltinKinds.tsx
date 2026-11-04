@@ -16,6 +16,9 @@ import type { TourCardDetails } from "../../shared/tour";
 import { OwnerRequestNote } from "./OwnerRequestNote";
 import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
+import type { McpNote } from "../../shared/mcp";
+import { chatNoteText, NOTE_LINK } from "../lib/mcp";
+import { openMcpRow } from "../lib/mcp-link";
 import { AssistantText, Thinking, UserTurn } from "./MessageRows";
 import { modelLabel, modelMismatch } from "../lib/format";
 import { resultDetails as detailsOf, toolCallArgs, toolResultView } from "../lib/message";
@@ -46,6 +49,7 @@ export const BUILTIN_VIEWS = {
   // An owner request a Start Chat put at the top (§app.project-assistant/request-chat).
   "owner-request": (props: KindViewProps<NonNullable<TranscriptItem["ownerRequest"]>>) => <OwnerRequestNote card={props.value} />,
   "handoff-run": (props: KindViewProps<HandoffRunInfo>) => <HandoffRunRow run={props.value} text={props.item.text ?? ""} />,
+  "mcp-note": (props: KindViewProps<McpNote>) => <McpNoteRow note={props.value} />,
   "overseer-answer": (props: KindViewProps<Extract<NonNullable<TranscriptItem["overseerMark"]>, { kind: "dialog-answer" }>>) => <OverseerChoiceRow title={props.value.title} answer={props.value.answer} />,
   "profile-mark": ProfileMarkRow,
   brief: (props: KindViewProps) => <BriefRow text={props.item.text ?? ""} time={props.item.at} />,
@@ -86,6 +90,26 @@ function HandoffRunRow(props: { run: HandoffRunInfo; text: string }) {
           <Chip tone="warn">Interrupted</Chip>
         </Show>
         <span>{props.text}</span>
+      </span>
+    </div>
+  );
+}
+
+/** A server failed in this chat (§app.mcp/in-a-chat): the note names it and links to its row. */
+function McpNoteRow(props: { note: McpNote }) {
+  const link = () => props.note.link;
+  return (
+    <div class="info-row" role="note">
+      <span class="info-row-text">
+        <Icon name="info" small />
+        <span>{chatNoteText(props.note)}</span>
+        <Show when={link()}>
+          {(l) => (
+            <button type="button" class="button button-sm button-ghost" onClick={() => openMcpRow(l())}>
+              {NOTE_LINK}
+            </button>
+          )}
+        </Show>
       </span>
     </div>
   );
@@ -337,6 +361,7 @@ function ToolRow(props: KindViewProps) {
       fallback={
     <ToolCard
       name={item.text ?? "tool"}
+      mcp={item.mcp}
       args={toolCallArgs(item)}
       summary={rows.tourEarlier(item) ?? item.tool?.summary}
       stats={(item.text === "edit" || item.text === "write") && item.toolCallId ? rows.result(item.toolCallId)?.tool?.stats : undefined}

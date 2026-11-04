@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch } from "solid-js";
 import type { GitSummary, SessionSetup } from "../../shared/protocol";
 import { fetchSessionSetup, fetchSessionTools, fetchSetupFile, setSessionLoadout } from "../lib/api";
+import { mcpFlips, NOT_PROJECT, setupLine, setupOffLine, setupShows, setupSwitchLabel, setupTokens, SETUP_LABEL } from "../lib/mcp";
 import { openMarkdown } from "../lib/markdown-viewer";
 import { loadGitSummary, UPSTREAM_TITLE } from "../lib/git-summary";
 import {
@@ -16,6 +17,7 @@ import {
   isOff,
   isSumEmpty,
   loadoutView,
+  offSets,
   OPEN_FILE_FAILED,
   openFileLabel,
   skillsHeading,
@@ -33,6 +35,7 @@ import { createToolsReads } from "../lib/tools-reads";
 import { setSetupContextOpen, setupContextOpen } from "../lib/setup-fold";
 import { home, toast } from "../lib/ui-state";
 import { Icon } from "./ui";
+import type { SetupMcp } from "../../shared/mcp";
 
 type Answer<T> = { ok: T } | { error: string };
 
@@ -124,9 +127,20 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     const s = setup();
     if (!s || !("ok" in s) || s.ok.state !== "ok" || applying()) return;
     const set = flipped(s.ok, kind, key, on);
+    send(set.offContext, set.offSkills, mcpFlips(s.ok.mcp), input, on, kind === "context" ? "file" : "skill");
+  };
+  /** A server's switch (§chat.transcript/setup-card-toggles): the same window, and the same whole set. */
+  const flipMcp = (name: string, input: HTMLInputElement) => {
+    const on = input.checked;
+    const s = setup();
+    if (!s || !("ok" in s) || s.ok.state !== "ok" || applying()) return;
+    const set = offSets(s.ok);
+    send(set.offContext, set.offSkills, mcpFlips(s.ok.mcp, { name, on }), input, on, "server");
+  };
+  const send = (offContext: string[], offSkills: string[], mcp: { offMcp: string[]; onMcp: string[] }, input: HTMLInputElement, on: boolean, what: string) => {
     const mine = run;
     setApplying(true);
-    setSessionLoadout(path(), set.offContext, set.offSkills)
+    setSessionLoadout(path(), offContext, offSkills, mcp)
       .then((next) => {
         if (mine !== run) return;
         rev++;
@@ -135,7 +149,7 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
       .catch((err: Error) => {
         // Nothing was written: the switch goes back to what the server has.
         input.checked = !on;
-        toast(`Couldn't switch that ${kind === "context" ? "file" : "skill"}. ${err.message}`);
+        toast(`Couldn't switch that ${what}. ${err.message}`);
       })
       .finally(() => setApplying(false));
   };
@@ -147,6 +161,11 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
   const view = () => {
     const s = setup();
     return s && "ok" in s ? loadoutView(s.ok) : null;
+  };
+  const mcp = () => {
+    const s = setup();
+    const m = s && "ok" in s ? s.ok.mcp : undefined;
+    return setupShows(m) ? m : null;
   };
   const groups = () => {
     const v = view();
@@ -292,6 +311,13 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
               </div>
             )}
           </Show>
+          <Show when={mcp()}>
+            {(m) => (
+              <div class="setup-group">
+                <McpGroup mcp={m()} switchable={switchable()} applying={applying()} onFlip={flipMcp} />
+              </div>
+            )}
+          </Show>
         </details>
         <div class="setup-group">
           <h2 class="text-eyebrow setup-label">Repository</h2>
@@ -356,6 +382,48 @@ function ToolsGroup(props: {
         </details>
       )}
     </Show>
+  );
+}
+
+/** The MCP Servers group (§chat.transcript/setup-card-toggles): one row per server this chat could
+    list, or one line. It adds nothing to the System context figures. */
+function McpGroup(props: { mcp: SetupMcp; switchable: boolean; applying: boolean; onFlip: (name: string, input: HTMLInputElement) => void }) {
+  return (
+    <>
+      <h2 class="text-eyebrow setup-label">{SETUP_LABEL}</h2>
+      <Show
+        when={setupLine(props.mcp)}
+        fallback={
+          <>
+            <Show when={props.mcp.notProject}>
+              <p class="setup-note">{NOT_PROJECT}</p>
+            </Show>
+            <ul class="setup-list">
+              <For each={props.mcp.rows}>
+                {(r) => (
+                  <li class="setup-row" classList={{ "setup-row-off": !!r.off || !r.on }}>
+                    <span class="setup-name">
+                      <span class="setup-path">{r.name}</span>
+                    </span>
+                    <Show when={setupOffLine(r)} fallback={<span class="setup-facts">{setupTokens(r.tokens)}</span>}>
+                      {(why) => <span class="setup-role">{why()}</span>}
+                    </Show>
+                    <Show when={props.switchable && !r.off}>
+                      <label class="toggle toggle-switch setup-toggle">
+                        <input type="checkbox" aria-label={setupSwitchLabel(r.name)} checked={r.on} disabled={props.applying} onChange={(e) => props.onFlip(r.name, e.currentTarget)} />
+                        <span class="toggle-box" />
+                      </label>
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </>
+        }
+      >
+        {(line) => <p class="setup-note">{line()}</p>}
+      </Show>
+    </>
   );
 }
 

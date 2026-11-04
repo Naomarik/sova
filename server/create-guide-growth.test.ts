@@ -32,7 +32,13 @@ const MAP = JSON.parse(readFileSync(new URL("./create-guide-growth.json", import
 const definitionKeys = (): string[] =>
   Object.entries(DEFINITION_KEYS).flatMap(([section, keys]) => [...new Set((keys as readonly (string | readonly string[])[]).flat())].map((key) => `${section}.${key}`));
 
-/** The SOVA_* names Sova's own code reads, tests and their fixtures left out. */
+/**
+ * The SOVA_* names Sova's code reads from the environment, tests and their fixtures left out: `env.SOVA_X`,
+ * a name as a string (some are read through a constant, `JEV_KEY_ENV = "SOVA_JEV_KEY"`), or a shell's
+ * `$SOVA_X`, `${SOVA_X}` and `SOVA_X=`. A bare SOVA_X is a variable of the code (`SOVA_ADAPTERS`), not a setting.
+ */
+const ENV_SHAPED = /(?:env\.|["'`$]|\$\{|^\s*(?:export\s+)?(?=SOVA_[A-Z0-9_]*=))(SOVA_[A-Z0-9]+(?:_[A-Z0-9]+)*)\b/gm;
+
 function scanEnv(): string[] {
   const found = new Set<string>();
   const walk = (dir: string) => {
@@ -40,8 +46,8 @@ function scanEnv(): string[] {
       if (e.name === "node_modules" || e.name === "tests" || e.name === "dist") continue;
       const p = join(dir, e.name);
       if (e.isDirectory()) walk(p);
-      else if (/\.(ts|tsx|mjs|sh)$/.test(e.name) && !/\.(test|fixture)\.|\.test\.|\.integration\./.test(e.name))
-        for (const m of readFileSync(p, "utf8").matchAll(/\bSOVA_[A-Z0-9]+(?:_[A-Z0-9]+)*\b/g)) found.add(m[0]);
+      else if (/\.(ts|tsx|mjs|sh)$/.test(e.name) && !/\.test\.|\.fixture\./.test(e.name))
+        for (const m of readFileSync(p, "utf8").matchAll(ENV_SHAPED)) found.add(m[1]!);
     }
   };
   for (const dir of ["server", "shared", "src", "scripts", "pi-config"]) walk(join(ROOT, dir));
@@ -106,7 +112,8 @@ test("every item of Sova's own lists has a topic, and every mapped item still ex
 });
 
 test("a topic's entry names each item it owns", () => {
-  assert.deepEqual(unsaid(MAP.items, (topic) => stripOwnerNotes(CREATE_FILES[topic] ?? "")), []);
+  // Joined, so a failure prints the whole worklist, not a truncated diff.
+  assert.equal(unsaid(MAP.items, (topic) => stripOwnerNotes(CREATE_FILES[topic] ?? "")).join("\n"), "");
 });
 
 test("every SOVA_* name is either a user's, under a topic, or on the not-for-users list, never both", () => {

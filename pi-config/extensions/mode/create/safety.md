@@ -85,6 +85,6 @@ It raises the bar; it isn't a wall. Sova tells its page from a program by how a 
 - Change: how far below other work on this computer workers and tool commands run.
 - Lives: this computer, as `workerNice` in `<agent dir>/sova/settings.json`: a niceness from 0 to 19, 10 by default, and 0 turns the lowering off. `SOVA_WORKER_NICE` in the server's environment wins over it.
 - Approves: the person, with Apply.
-- By: Card. Propose `workers.priority`; `sova_settings` reference gives its shape.
+- By: Card. Propose `workers.priority`; `sova_settings` reference gives its shape. It reaches the person's other computers when sync is on, so say so before Apply.
 - Live: next worker start.
 - Check: `sova_settings` get shows the value, and a new worker's process runs at that niceness.

@@ -4,7 +4,7 @@ Nothing here changes Sova, so there's nothing to approve or apply. Help the pers
 
 Scripts can't give the person's approvals: Sova refuses them and says where to click (`safety`).
 
-A chat never runs `server.restart` or anything else that restarts or updates Sova, whoever asks. Name the control instead: Settings → General, where the person does it.
+Restarting and updating Sova pass only on the person's click, so `server.restart` refuses a program. A chat never tries it or anything else that restarts or updates Sova, whoever asks. Name the control instead: Restart Sova or the update controls in Settings → General.
 
 ## Named commands
 

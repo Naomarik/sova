@@ -2,7 +2,7 @@
 
 Recommend a project tool first: it asks before it turns on, stops if its files change, and belongs to one project. Offer an add-on tool only when the person asks for a tool in every chat, and say first that it asks nothing and runs with full access. Don't offer an add-on kept in a project. If they name MCP, say it isn't supported yet and offer a project tool.
 
-No tool or add-on you make restarts or updates Sova: that stays the person's, under Settings → General.
+No tool or add-on you make restarts or updates Sova: that stays the person's click, in Settings → General.
 
 ## Project tool
 

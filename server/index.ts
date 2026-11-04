@@ -1,10 +1,11 @@
 // The server's startup: builds the app (server/app.ts), listens, and boots everything that runs
 // in the background (mesh, share listener, loops, the usage helper child). `bun server/index.ts`.
+import "./stall-recorder-boot"; // first, so it sees the rest load
 import { rmSync } from "node:fs";
 import type { Server } from "node:http";
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
-import { buildApp, SERVER_RUNTIME } from "./app";
+import { buildApp, SERVER_HEAD, SERVER_RUNTIME } from "./app";
 import { readBranch } from "./harness/pi/reader";
 import { extensionEntries } from "./harness/pi/state";
 import { markShutdown } from "./wrapup-recovery";
@@ -12,7 +13,7 @@ import { startBudgetRecount } from "./baton-recount";
 import { listProjects, openRegisteredProjects } from "./projects/spaces";
 import { startGitMaintenance } from "./git-maintenance";
 import { reconcileProjectServices } from "./project-services/routes";
-import { startMergeQueue, stopMergeQueue } from "./merge-queue/wire";
+import { checkQueueViews, startMergeQueue, stopMergeQueue } from "./merge-queue/wire";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
 import { finishImports, rollForwardCopies } from "./project-import";
@@ -29,6 +30,7 @@ import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, onAgentSet
 import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { stateRoot } from "./state-root";
+import { noteStallHead, noteStallShutdown, stallGauge } from "./stall-recorder";
 import { cappedWebSocket } from "./runtime-quirks";
 import { decodeWorkers, teamDuties, invalidateUsageMemo, recordUsage, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
@@ -211,6 +213,8 @@ setCardsDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
 startProjectOverseerLoop();
 startScheduleKeeper((path, init) => app.request(path, init));
+noteStallHead(SERVER_HEAD);
+stallGauge("chat processes", () => chatHandles().length);
 // Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
 startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
@@ -248,7 +252,7 @@ configureSessionFeed({
   watch: (changed) => {
     feedChanged = changed;
     const tracked = trackSessionFiles();
-    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs], files: tracked.note });
+    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs, checkQueueViews], files: tracked.note });
     const offAttention = onAttentionNotified(changed);
     return () => {
       feedChanged = null;
@@ -317,6 +321,7 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) process.exit(1);
   shuttingDown = true;
+  noteStallShutdown();
   // Whatever a step below waits on, the process ends.
   setTimeout(() => {
     console.error("[server] shutdown took over 20 s; exiting");

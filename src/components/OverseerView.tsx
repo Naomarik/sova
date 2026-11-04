@@ -12,6 +12,7 @@ import { ActionMenu, type ActionMenuApi } from "./ActionMenu";
 import { type OverseerApprovals, OverseerApprovalsBody } from "./OverseerApprovalsPanel";
 import type { OverseerChat, OverseerSender } from "./ChatView";
 import { ContextGauge } from "./ContextGauge";
+import { OverseerAbout } from "./OverseerAbout";
 import { OverseerIdeas } from "./OverseerIdeas";
 import { OverseerTodos } from "./OverseerTodos";
 import type { PaneWiring } from "./GroupView";
@@ -104,12 +105,21 @@ export function OverseerView(props: {
   readTodosCount();
   const [todosVersion, setTodosVersion] = createSignal(0);
   createEffect(on(() => !!props.info?.busy, (busy, was) => was && !busy && (todosOpen() ? setTodosVersion((v) => v + 1) : readTodosCount()), { defer: true }));
-  createEffect(on(ideasOpen, (open) => open && setTodosOpen(false), { defer: true }));
-  createEffect(on(todosOpen, (open) => open && setIdeasOpen(false), { defer: true }));
+  createEffect(on(ideasOpen, (open) => open && (setTodosOpen(false), setAboutOpen(false)), { defer: true }));
+  createEffect(on(todosOpen, (open) => open && (setIdeasOpen(false), setAboutOpen(false)), { defer: true }));
   let todosButton: HTMLButtonElement | undefined;
   const closeTodos = () => {
     setTodosOpen(false);
     queueMicrotask(() => todosButton?.focus());
+  };
+
+  // ---- About: what the Overseer can do (§app.overseer/about), in the same place as Ideas and Todos --
+  const [aboutOpen, setAboutOpen] = createSignal(false);
+  createEffect(on(aboutOpen, (open) => open && (setIdeasOpen(false), setTodosOpen(false)), { defer: true }));
+  let aboutButton: HTMLButtonElement | undefined;
+  const closeAbout = () => {
+    setAboutOpen(false);
+    queueMicrotask(() => aboutButton?.focus());
   };
 
   const [clearing, setClearing] = createSignal(false);
@@ -360,6 +370,18 @@ export function OverseerView(props: {
             <span class="chip chip-count">{openTodos()}</span>
           </Show>
         </button>
+        <button
+          type="button"
+          class="button button-icon button-ghost overseer-about-toggle"
+          ref={aboutButton}
+          aria-expanded={aboutOpen()}
+          aria-controls="overseer-about"
+          aria-label="About the Overseer"
+          title="What the Overseer can do: built in, its limits, and what your extensions give it."
+          onClick={() => (aboutOpen() ? closeAbout() : setAboutOpen(true))}
+        >
+          <Icon name="info" small />
+        </button>
       </Show>
       <Show when={!p.earlier && approvals()}>
         {(a) => (
@@ -524,6 +546,9 @@ export function OverseerView(props: {
             </Show>
             <Show when={todosOpen()}>
               <OverseerTodos version={todosVersion()} onCount={setOpenTodos} onClose={closeTodos} />
+            </Show>
+            <Show when={aboutOpen()}>
+              <OverseerAbout onClose={closeAbout} />
             </Show>
             </>
           );

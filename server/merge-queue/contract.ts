@@ -93,6 +93,8 @@ export interface RunOutcome {
   blame?: Blame;
   /** One line for the row ("unit failed: src/a.test.ts", "setup fails with your branch and passes on master"). */
   why?: string;
+  /** failed, blamed on the branch: its spec drafts didn't fit (the docs step), fixable with no commit. Absent: a check. */
+  cause?: "drafts";
   /** The merge commit. */
   mergeSha?: string;
   /** The commit that lands (the merge, plus the docs commit when drafts landed). passed / review-flagged / unattributed. */

@@ -14,12 +14,12 @@ worker uses it today. Spec: `§chat/sandbox`, `§chat.sandbox/workers`.
 
 | Surface | Shape |
 |---|---|
-| Command | `/sandbox on`, `/sandbox subagents`, `/sandbox off`, bare `/sandbox` (shows the state). Sova calls the same handler through `extensionRunner.getCommand("sandbox")`. |
+| Command | `/sandbox on`, `/sandbox subagents`, `/sandbox off`, bare `/sandbox` (shows the state, then a second line about the cache copies), `/sandbox clean [all]` (cleans the cache copies now, changes no state); anything else answers `usage: /sandbox on \| subagents \| off \| clean [all]`. Sova calls the same handler through `extensionRunner.getCommand("sandbox")`, only ever with a state. |
 | Flag | `--sandbox on\|subagents\|off`: the initial state of a new runtime. Workers get it from their parent. A session started with `--sandbox on` cannot lower it (a parent's agent could otherwise send `/sandbox off` to its worker). |
 | Entry | `custom` entry `sandbox`: `{version: 1, on, level, backend, enforcement, reasons?, workers?}` (`state.ts` `SandboxActive`; `workers: "off"` only with `on: false` is Off, an entry without it Subagents only, and `on: true` with it reads as On), appended on every change; `restoreActive(branch)` reads the newest. Opening a session writes nothing, except when it comes up **on** without an entry saying so (the flag or `defaultOn`): then the state is pinned so a later default change cannot loosen it. Turning On when the newest entry isn't already On first appends a provisional entry `{on: true, enforcement: "unavailable", reasons: ["starting"]}` (`SANDBOX_STARTING`, `isStarting`) before the confined tools are registered, then the real state after the probe, also when the probe fails or throws: whenever the tools are confined, the newest entry says On. A provisional entry left newest by an interrupted start is not a record, so the next start records the real state. Changes run one at a time. `describeActive` reads it as "Sandbox turning on…". |
 | Workers | Every worker start goes through ONE call, the event's `workerLaunch({cwd, root?, backend, owner})` (`state.ts` `WorkerLaunch`). It returns `{kind: "pi", extensionPath, flags}` for a pi worker (`{sandbox: "on", "sandbox-parent": <ParentScope JSON>}`: the parent's level, writable roots without its session tmp, and its read-only paths inside them, each tracked worktree's `.agent` included), `{kind: "confine", scope}` for any other backend (the opaque serializable scope its whole process would run under, `launch.ts`; the subagents extension refuses such a start), `{kind: "refused", reason}` (the cwd outside the parent's roots, the sandbox unavailable, or partial without `acceptPartial`), or `{kind: "none"}` (Subagents only and no tracked worktree, or Off for every worker; the event then carries `workers: "off"`, and the subagents gate accepts `none` for a worktree's worker only with it). A worker started with `--sandbox-parent` is on, writes exactly where its parent may (its own cwd is never added), and refuses every tool with `Sandbox: worker cwd <x> is outside the parent's sandbox` when its cwd is outside them. A malformed flag fails closed. Grandchildren inherit the same roots. |
 | Worktrees | The worktrees extension's `worktrees:state` (`{version: 1, active: string[]}`) lists the session's active tracked worktrees. While on, each is a writable root of the session (and of its workers' scope), and each `<worktree>/.agent` stays read-only inside it (`ResolveInput.extraWritable` / `extraReadOnly`). `workerLaunch` with `root` set confines a worker started inside one of them, so it writes only there (its `.agent` read-only): on, the parent's scope narrowed to `root`; **off**, a write-only scope (`writeOnly: true`: no policy file is read, nothing is hidden, the network is the host's (`network.mode: "host"`, no `--unshare-net`) and the environment is passed as is; only writes are confined, to `root`, its git dirs and the session tmp; on Linux the host's `/tmp` stays visible read-only with every Unix socket in it masked (`Policy.hostTmp`, `tmpSockets`: the pathnames in `/proc/net/unix` under `/tmp`, canonicalised and still a socket by `lstat`, plus a walk of `/tmp` and the folders directly in it of at most `TMP_WALK_BUDGET` entries, for sockets bound from another namespace), `TMPDIR` names the worker's own tmp, and a list that cannot be read unambiguously (a malformed line, a relative path, a name with a line break) falls back to the private one); **Off**, `none`. Absent in a remote session. §chat.worktrees/workers. |
-| Parent scope | `--sandbox-parent` also carries the parent's resolved `hidden`, `proxyAllow` and `envAllow`: a worker's hidden list is its own plus the parent's, and the two allowlists are the parent's, never the worker's own file's (a worktree's `.agent` may hold a looser one). |
+| Parent scope | `--sandbox-parent` also carries the parent's resolved `hidden`, `proxyAllow` and `envAllow`: a worker's hidden list is its own plus the parent's, and the two allowlists are the parent's, never the worker's own file's (a worktree's `.agent` may hold a looser one). `browser: true` (only a literal `true` parses) is the parent's policy `browser`, the same way: a worker's is its parent's. A write-only scope gets it from the parent's own policy file and its cwd's project file (`parentBrowser`), read when the worker starts; a file that cannot be read means no browser, and the worker still starts write-only. |
 | Stand-in cwd | `--sandbox-cwd-not-writable` (boolean, Sova sets it on a session that runs in the home folder because its own folder is gone): the cwd is not a writable root; the session writes only in its tmp, the policy's `writable` roots and its tracked worktrees, and its workers' scope carries the same roots. `resolveSessionPolicy({cwdWritable: false})` is the same rule for a caller outside the extension. |
 | Presence | `extensionRunner.getCommand("sandbox") !== undefined`. |
 | Event bus | `sandbox:state` (`SandboxStateEvent`: `on`, `extensionPath`, `enforcement`, `workerLaunch?`) on `session_start`, every change, and in answer to `sandbox:discover`. `on` is false under a remote target, and `workerLaunch` is absent there. |
@@ -36,11 +36,13 @@ refuse a linked-session file transfer the session's own tools could not make.
 `prepareSessionCommand(input, argv, {env?})` is the runtime-free whole-command seam for a
 server-hosted recording tool. Trusted session input includes the worker's parent tightening and
 tracked worktrees. It resolves the same policy, owns a fresh attempt tmp and allowlisting proxy,
-probes the exact backend profile, and returns confined argv/env/inherited-fd payloads plus
-`dispose()`. An unavailable or unaccepted partial backend refuses; a failed proxy tightens to no
+probes the exact backend profile (the policy's `browser` included, as `snapshot()` passes it), and
+returns confined argv/env/inherited-fd payloads plus `dispose()`. An unavailable or unaccepted partial backend refuses; a failed proxy tightens to no
 network. The caller runs the whole recording controller and its browser under that argv, writes
 fd payloads, reaps them before disposal, and never substitutes an unconfined command on failure.
-It does not call an extension command handler or change the session's sandbox state.
+It does not call an extension command handler or change the session's sandbox state. A caller's own
+`tmpDir` (a macOS recording's short one) replaces that attempt tmp, and the proxy socket goes beside
+it, since a socket under a long `TMPDIR` would mean no network.
 
 `{proxy?}` passes attempt-only options to that attempt's own proxy (`proxy.ts`), all off by
 default; the session's own proxy never gets them and nothing changes without them. `forbid(address)`
@@ -85,6 +87,13 @@ remote extension owns the seven tools; the sandbox registers nothing and records
 `<cwd>/.sova/sandbox.json` may only tighten (`policy.ts` `applyProjectTightening`); loosening keys
 are ignored with a notice.
 
+`browser` is the one optional key: `"none"` (the template's, and the meaning when absent) or
+`"headless-shell"`; anything else fails closed. It becomes `ResolvedPolicy.browser` and
+`Policy.browser` (part of `policyKey`, so the probe re-runs), and the Seatbelt profile adds
+`BROWSER_RULES` for Playwright's `chrome-headless-shell` run with `--no-sandbox`
+(`pi-config/sandbox-policy/darwin/CLAUDE.md` has the tradeoff). A project file may set `"none"`;
+its `"headless-shell"` is ignored with the notice.
+
 Always protected, whatever the file says: every `policy.json` under `<agentDir>/sandbox-policy` is
 hidden, the directory itself (with the `CLAUDE.md` notes, which are written for an agent to read)
 is read-only, and so is the whole agent dir (sessions, settings and extensions there run later
@@ -116,7 +125,7 @@ commits work, so a sandboxed session can move other branches' refs there. Its ho
 | Backend | `bash` runs under | Differences |
 |---|---|---|
 | `linux-bwrap` | `bwrap`: every namespace unshared, read-only binds, hidden paths masked, session tmp at `/tmp`, a relay to the proxy inside the empty network namespace | the reference; `localPorts` not implemented |
-| `darwin-seatbelt` | `/usr/bin/sandbox-exec -f <profile>`, a Seatbelt profile generated per policy (a 0600 file named by its hash beside the session tmp; never inline `-p`) | no remapping: hidden paths are refused (EPERM) rather than emptied, no `/tmp` mapping (bash uses `$TMPDIR`), shadowed caches are read-only with the tool variables (`XDG_CACHE_HOME`, `npm_config_cache`, `MAVEN_OPTS`) pointed at the private copy; SBPL is last-match-wins, so the write rules go shallow to deep (`writeLayers`); mach services denied except a short allowlist, Keychain always denied; the proxy is reached through a host TCP relay on one loopback port, and `localPorts` are allowed; setuid programs cannot run |
+| `darwin-seatbelt` | `/usr/bin/sandbox-exec -f <profile>`, a Seatbelt profile generated per policy (a 0600 file named by its hash beside the session tmp; never inline `-p`) | no remapping: hidden paths are refused (EPERM) rather than emptied, no `/tmp` mapping (bash uses `$TMPDIR`), shadowed caches are read-only with the tool variables (`XDG_CACHE_HOME`, `npm_config_cache`, `MAVEN_OPTS`) pointed at the private copy; SBPL is last-match-wins, so the write rules go shallow to deep (`writeLayers`); mach services denied except a short allowlist, Keychain always denied; the proxy is reached through a host TCP relay on one loopback port, and `localPorts` are allowed; setuid programs cannot run; the policy's `browser` adds `BROWSER_RULES` (the `RootDomainUserClient` IOKit client, the `org.chromium.Chromium.MachPortRendezvousServer.` names) right after the mach allowlist, before the hidden paths and the Keychain deny; linux-bwrap ignores `browser` with a note |
 | `unsupported` | nothing: every sandboxed tool refuses | Windows and the rest |
 
 **Git's background cleanup.** Every process a sandboxed command starts ends with it, so a
@@ -132,6 +141,50 @@ file holds no `[include]` of its own (a machine config with includes is included
 Sova's server gives its chat processes the same file through `writeGitCleanupConfig`.
 
 User-facing notes for macOS: `pi-config/sandbox-policy/darwin/CLAUDE.md`.
+
+## Cache cleanup
+
+The shadowed caches' private copies (`<agentDir>/sova/sandbox/shadow/<name>`, `backend.ts`
+`shadowSource`) are cleaned by `shadow-prune.ts` (builtins only, imports nothing, not even its
+siblings). Spec: §chat.sandbox/cache-cleanup.
+
+- **When.** `session_start` of a chat that comes up On (not remote) calls `startAutoPrune`: at most
+  once per 24 h per agent dir (the stamp's `lastRun`/`lastAttempt`), never awaited, never throws.
+  `/sandbox clean` (mode `clean`) ignores the throttle; `/sandbox clean all` (mode `all`) removes
+  every entry not used in the last hour, tool caches included. Both wait for the result line and are
+  refused (`BUSY_TEXT`) while the lock is held.
+- **Where it runs.** A detached child (`shadow-prune-run.ts`, the runtime that runs the extension:
+  bun, or node with type stripping) under `nice -n 19` and, on Linux, `ionice -c3`, where found, plus
+  `os.setPriority(19)` in the child. The walk never runs in the chat's process.
+- **Units.** Each top-level entry of each shadow dir (`home-.cache/pnpm`, `home-.npm/_cacache`, an
+  older layout's entries). A shadow dir itself is a live bind source and is never removed. Tool
+  caches: every entry of `home-.npm` and `home-.m2`, and the `toolCaches` names in `home-.cache`.
+- **Measure.** `lstat` only, never following a link, never leaving the shadow dir's `st_dev`. Size is
+  `st_blocks * 512`, a hard-linked file counted once (by dev and inode) over the whole scan. Recency
+  is the newest regular file's mtime (protected 24 h) and atime (protected 48 h); directory atimes
+  never count (the walk moves them), and directory and link mtimes count only for an entry holding no
+  regular file.
+- **Plan** (`planPrune`, pure). By age: scratch after `scratchDays` unused, tool caches after
+  `toolCacheDays`. Then by size: while over the cap, least recently used first, every scratch entry
+  before any tool cache. The cap is `max(2 GiB, min(maxSizeGB GiB, 5% of statfs total, 5% of statfs
+  free))`, with the bound that set it (`setting`, `disk`, `free`, `floor`). Protected entries are
+  never removed; `overCap` records that the copies stayed over the cap.
+- **Delete.** Each chosen entry is renamed into `<agentDir>/sova/sandbox/shadow-trash/<ts>-<i>-<name>`
+  (skipped if its own mtime moved since the scan), the stamp is written, the result reported, and
+  only then is the trash deleted. Each run first empties what an earlier one left there.
+- **Lock.** `<agentDir>/sova/sandbox/shadow-prune.lock`, created `O_EXCL`, holding the pid; touched
+  as a heartbeat during the walk and the delete. It stops blocking once older than 2 h or once its pid
+  is gone.
+- **Stamp.** `<agentDir>/sova/sandbox/shadow-prune.json`: `{version: 1, lastRun, lastAttempt, mode,
+  freed, sizeBefore, size, cap, capReason, overCap, removed, errors?}`. Bare `/sandbox` reads its
+  caches line from it (`cachesLine`), never walking the caches.
+- **Settings.** `<agentDir>/sandbox-policy/<platform>/caches.json` (template beside `policy.json` in
+  `pi-config/sandbox-policy/`): `on`, `maxSizeGB`, `scratchDays`, `toolCacheDays`, `toolCaches`.
+  Missing: the defaults. Invalid (not JSON, an unknown key, a wrong value): cleanup off, with the
+  notice `Sandbox: \`caches.json\` is invalid ({error}); cache cleanup is off. The sandbox is
+  unaffected.`; the sandbox never fails closed on it. `policy.json` and its strict validator do not
+  know these keys, and a project's `.sova/sandbox.json` cannot set them (ignored with the usual
+  notice).
 
 ## Session resources
 
@@ -149,8 +202,9 @@ tmp, and a host TCP relay to the proxy socket lives until that socket is gone.
 | `policy.ts` | extension | load/validate, tighten-only project file, canonical paths, read/write verdicts |
 | `tools.ts` | extension | `stockDefinitions`, `confinedDefinitions` |
 | `launch.ts` | extension | `encodeLaunchScope`, `decodeLaunchScope`: the `confine` answer's scope |
+| `shadow-prune.ts`, `shadow-prune-run.ts` | extension | the cache copies' cleanup: settings, scan, plan, lock, stamp, the low-priority child and its entry point, the `/sandbox` lines |
 | `backend.ts`, `backends/*`, `env.ts`, `proxy.ts` | backend | the seam, bwrap, Seatbelt, env allowlist and the git cleanup config, proxy |
-| `tests/unit/*.test.ts` | backend | unit tests of the backend files |
+| `tests/unit/*.test.ts` | backend | unit tests of the backend files, and of `shadow-prune.ts` (`shadow-prune.unit.test.ts`, in-process, temp dirs only; its real child process in `shadow-prune.integration.test.ts`) |
 | `tests/*.unit.test.ts` | extension | unit tests of the four files above (`index.unit.test.ts` drives the factory on a fake `pi`) |
 | `tests/*` (other) | red-team | contract and escape suite |
 
@@ -162,4 +216,10 @@ cd pi-config/extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*
 
 No model requests. `tools.unit.test.ts` includes one run through the real bwrap backend when
 `/usr/bin/bwrap` exists; `tests/unit/darwin-seatbelt.unit.test.ts` runs real `sandbox-exec` on
-macOS (writes, git paths including a linked worktree, hidden paths, Keychain, loopback, probe).
+macOS (writes, git paths including a linked worktree, hidden paths, Keychain with and without the
+browser rules, loopback, probe). `tests/unit/darwin-seatbelt-browser.integration.test.ts` runs the
+real `chrome-headless-shell` under the real profile (a write-only worker's and an On session's):
+a screenshot lands with `browser: "headless-shell"`, and the shell crashes without it. It takes
+the binary from `SANDBOX_TEST_HEADLESS_SHELL`, else the newest Playwright revision installed, never
+an app-bundle Chrome, and skips with the reason off macOS, without the shell, or inside a sandbox
+(Seatbelt cannot nest).

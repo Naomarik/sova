@@ -77,14 +77,14 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:00Z",
-      "source": "pi-session:f7abf7a7-3c8a-4801-a5d7-0e26b8fc21c6#019641ba"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     }
   },
   "§chat.merge-queue/chat-turns": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.merge-queue/chat-card",
       "§chat.profiles/delivery",
@@ -118,8 +118,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     }
   },
   "§chat.merge-queue/thread": {
@@ -138,8 +138,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "at": "2026-11-04T02:27Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
     },
     "code": [
       "server/merge-queue/thread.ts",

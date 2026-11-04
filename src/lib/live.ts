@@ -4,6 +4,8 @@
 // run.settled the chat view refetches the normalized transcript and resets this.
 
 import { produce, type SetStoreFunction } from "solid-js/store";
+import type { McpToolName } from "../../shared/mcp";
+import { mcpToolWords } from "./mcp";
 import type { SovaEvent, SovaPart } from "../../shared/harness-wire";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import { isLinkMessage } from "../../shared/link-message";
@@ -32,6 +34,8 @@ export type LiveBlock =
       type: "toolCall";
       id: string;
       name: string;
+      /** A server's tool (§app.mcp/in-a-chat): the row reads these from the part's start. */
+      mcp?: McpToolName;
       argsText: string;
       args?: unknown;
       /** Joined mid-arguments (a hello's `live`): the JSON so far wasn't sent, so the deltas after it
@@ -149,6 +153,8 @@ export type LiveEntry =
 
 export interface LiveTool {
   name: string;
+  /** A server's tool (§app.mcp/in-a-chat): the row reads these, never the name. */
+  mcp?: McpToolName;
   args?: unknown;
   status: "running" | "done" | "error";
   output: string;
@@ -182,13 +188,13 @@ export interface RunDetail {
 
 export function runDetail(s: LiveState): RunDetail | null {
   const running = Object.values(s.tools).find((t) => t.status === "running");
-  if (running) return { step: "tool", text: `running ${running.name}` };
+  if (running) return { step: "tool", text: `running ${running.mcp ? mcpToolWords(running.mcp) : running.name}` };
   const last = streamingAssistant(s);
   if (!last) return null;
   const block = [...last.blocks].reverse().find(Boolean);
   if (block?.type === "thinking") return { step: "thinking", text: "thinking" };
   if (block?.type === "text") return { step: "writing", text: "writing" };
-  if (block?.type === "toolCall") return { step: "tool", text: `running ${block.name}` };
+  if (block?.type === "toolCall") return { step: "tool", text: `running ${block.mcp ? mcpToolWords(block.mcp) : block.name}` };
   return null;
 }
 
@@ -201,7 +207,7 @@ export function blockStreams(entry: { blocks: LiveBlock[]; done: boolean }, i: n
 }
 
 function blocksOf(parts: readonly SovaPart[]): LiveBlock[] {
-  return parts.map((p): LiveBlock => (p.kind === "toolCall" ? { type: "toolCall", id: p.id, name: p.name, argsText: "", args: p.args } : { type: p.kind, text: p.text }));
+  return parts.map((p): LiveBlock => (p.kind === "toolCall" ? { type: "toolCall", id: p.id, name: p.name, ...(p.mcp ? { mcp: p.mcp } : {}), argsText: "", args: p.args } : { type: p.kind, text: p.text }));
 }
 
 /** The reply still streaming, if any. Not only the last entry: a message sent while the reply
@@ -463,7 +469,7 @@ export function seedLive(set: SetStoreFunction<LiveState>, snapshot: HelloLive |
   }
   for (const t of snapshot.tools ?? []) {
     const parent = t.parentCallId ? { parentCallId: t.parentCallId } : {};
-    applyEvent(set, { type: "tool.start", callId: t.callId, name: t.name, args: t.args, ...parent });
+    applyEvent(set, { type: "tool.start", callId: t.callId, name: t.name, args: t.args, ...(t.mcp ? { mcp: t.mcp } : {}), ...parent });
     applyEvent(set, { type: "tool.update", callId: t.callId, output: t.output, images: t.images, ...parent });
   }
 }
@@ -477,7 +483,7 @@ function applyPart(s: LiveState, event: Extract<SovaEvent, { type: "part.start" 
   const i = event.index ?? entry.blocks.length;
   const cur = entry.blocks[i];
   if (event.type === "part.start") {
-    if (event.kind === "toolCall") entry.blocks[i] = { type: "toolCall", id: event.id ?? "", name: event.name ?? "tool", argsText: "" };
+    if (event.kind === "toolCall") entry.blocks[i] = { type: "toolCall", id: event.id ?? "", name: event.name ?? "tool", ...(event.mcp ? { mcp: event.mcp } : {}), argsText: "" };
     else entry.blocks[i] = { type: event.kind, text: "" };
   } else if (event.type === "part.delta") {
     if (event.kind === "toolCall") {
@@ -485,10 +491,12 @@ function applyPart(s: LiveState, event: Extract<SovaEvent, { type: "part.start" 
     } else if (cur?.type === event.kind) cur.text += event.delta;
     else entry.blocks[i] = { type: event.kind, text: event.delta };
   } else if (event.kind === "toolCall") {
+    const mcp = event.mcp ?? (cur?.type === "toolCall" ? cur.mcp : undefined);
     entry.blocks[i] = {
       type: "toolCall",
       id: event.id ?? (cur?.type === "toolCall" ? cur.id : ""),
       name: event.name ?? (cur?.type === "toolCall" ? cur.name : "tool"),
+      ...(mcp ? { mcp } : {}),
       argsText: cur?.type === "toolCall" ? cur.argsText : "",
       args: event.args,
     };
@@ -588,7 +596,9 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
             entry.reply = event.reply;
             entry.endedAt = new Date().toISOString();
           }
-          const blocks = blocksOf(event.parts);
+          // Authoritative for what was said, not for what a block already knows: a part with no server keeps its own.
+          const known = new Map(entry.blocks.flatMap((b) => (b?.type === "toolCall" && b.mcp ? [[b.id, b.mcp] as const] : [])));
+          const blocks = blocksOf(event.parts).map((b) => (b.type === "toolCall" && !b.mcp && known.has(b.id) ? { ...b, mcp: known.get(b.id)! } : b));
           if (blocks.length) entry.blocks = blocks;
           entry.done = true;
           if (event.stop === "error") entry.error = event.error ?? "The model returned an error";
@@ -599,7 +609,7 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
         // caller's updates and result record it.
         case "tool.start":
           if (event.parentCallId) break;
-          if (event.callId) s.tools[event.callId] = { name: event.name, args: event.args, status: "running", output: "", images: [] };
+          if (event.callId) s.tools[event.callId] = { name: event.name, ...(event.mcp ? { mcp: event.mcp } : {}), args: event.args, status: "running", output: "", images: [] };
           break;
         case "tool.update": {
           if (event.parentCallId) break;
@@ -619,6 +629,7 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
           const prev = s.tools[id];
           s.tools[id] = {
             name: event.name ?? prev?.name ?? "tool",
+            ...(prev?.mcp ? { mcp: prev.mcp } : {}),
             args: prev?.args ?? event.args,
             status: event.isError ? "error" : "done",
             output: event.output,

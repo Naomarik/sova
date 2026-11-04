@@ -18,12 +18,27 @@
 #   ./start-browser.sh --headless              # isolated (recommended)
 #   ./start-browser.sh                         # isolated, GUI
 #   ./start-browser.sh --shared --headless     # legacy shared browser
-#   ./stop-browser.sh --all                    # reap every browser this skill started
+#   ./stop-browser.sh --list                   # list every browser this skill started
+#
+# Pid files and profiles live in ${TMPDIR:-/tmp}. Inside a macOS Seatbelt sandbox
+# (Sova's), where a literal /tmp is not writable, --headless runs Playwright's
+# chrome-headless-shell with --no-sandbox; nothing else can run there.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT_FILE="$PWD/.playwright-port"
+# Pid files and profiles: the caller's TMPDIR (a sandbox's own tmp), else /tmp as before.
+PW_TMP="${TMPDIR:-/tmp}"
+PW_TMP="${PW_TMP%/}"
+
+# Confined in a macOS Seatbelt sandbox? Seatbelt cannot nest, so there even an
+# allow-everything sandbox-exec fails (sandbox_apply: Operation not permitted).
+SANDBOXED=""
+if [ "$(uname -s)" = "Darwin" ] && [ -x /usr/bin/sandbox-exec ] \
+    && ! /usr/bin/sandbox-exec -p '(version 1)(allow default)' /usr/bin/true 2>/dev/null; then
+    SANDBOXED="yes"
+fi
 
 # Parse arguments
 HEADLESS=""
@@ -42,6 +57,16 @@ ISOLATED="yes"
 [ -n "$SHARED" ] && ISOLATED=""
 [ -n "$PW_PORT" ] && ISOLATED=""
 
+# Alive? A browser started by an earlier sandboxed bash call cannot be signalled
+# from this one (Seatbelt allows signals only within the same sandbox): EPERM, yet alive.
+pid_alive() {
+    [ -n "$1" ] || return 1
+    local err
+    err=$(kill -0 "$1" 2>&1) && return 0
+    case "$err" in *"not permitted"*) return 0 ;; esac
+    return 1
+}
+
 # Is something already listening on this port?
 port_in_use() {
     (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && exec 3<&- && return 0
@@ -51,11 +76,11 @@ port_in_use() {
 # Claim a port by atomically creating its pid file. Returns 1 if another live
 # browser already owns it, so concurrent callers can never pick the same port.
 claim_port() {
-    local port="$1" pid_file="/tmp/pw-browser-$1.pid"
+    local port="$1" pid_file="$PW_TMP/pw-browser-$1.pid"
     if [ -f "$pid_file" ]; then
         local old
         old=$(cat "$pid_file" 2>/dev/null)
-        if [ -n "$old" ] && kill -0 "$old" 2>/dev/null; then
+        if pid_alive "$old"; then
             return 1
         fi
     fi
@@ -64,6 +89,31 @@ claim_port() {
     ( set -o noclobber; echo "claiming-$$" > "$pid_file" ) 2>/dev/null || return 1
     return 0
 }
+
+if [ -n "$SANDBOXED" ] && [ -z "$HEADLESS" ]; then
+    echo "Error: inside a sandbox only the headless shell can run; use --headless."
+    exit 1
+fi
+
+# With --headless on macOS or inside a sandbox, prefer Playwright's
+# chrome-headless-shell (no app bundle, so no GUI-session services): the newest
+# numeric revision installed. Unsandboxed Linux keeps Chrome for Testing with
+# --headless=new.
+HEADLESS_SHELL=""
+if [ -z "$CHROMIUM_BIN" ] && [ -n "$HEADLESS" ] && { [ -n "$SANDBOXED" ] || [ "$(uname)" = "Darwin" ]; }; then
+    CHROMIUM_BIN=$(
+        ls -d "$HOME/Library/Caches/ms-playwright/chromium_headless_shell-"*/chrome-headless-shell-mac-*/chrome-headless-shell \
+              "$HOME/.cache/ms-playwright/chromium_headless_shell-"*/chrome-headless-shell-linux64/chrome-headless-shell \
+              "$HOME/.cache/ms-playwright/chromium_headless_shell-"*/chrome-linux/headless_shell \
+              2>/dev/null | sed -E 's#^(.*/chromium_headless_shell-([0-9]+)/.*)$#\2 \1#' | sort -rn | cut -d' ' -f2- |
+        while IFS= read -r candidate; do
+            [ -x "$candidate" ] && { echo "$candidate"; break; }
+        done
+    ) || true
+fi
+case "$CHROMIUM_BIN" in
+    */chrome-headless-shell|*/headless_shell) HEADLESS_SHELL="yes" ;;
+esac
 
 # Find chromium binary. Prefer an explicit CHROMIUM_BIN, then Playwright's
 # bundled Chrome for Testing (so we don't hijack the user's main Chrome),
@@ -106,6 +156,14 @@ if [ -z "$CHROMIUM_BIN" ]; then
     exit 1
 fi
 
+# An app-bundle Chrome needs the GUI session's services: inside a sandbox it
+# crashes and raises a macOS "quit unexpectedly" dialog. Never start one there.
+if [ -n "$SANDBOXED" ] && case "$CHROMIUM_BIN" in *.app/*) true ;; *) false ;; esac; then
+    echo "Error: inside a sandbox only Playwright's chrome-headless-shell can run, not $CHROMIUM_BIN."
+    echo "  Fix (outside the sandbox): npx playwright install chromium-headless-shell"
+    exit 1
+fi
+
 # ---------------------------------------------------------------- port choice
 
 if [ -n "$SHARED" ] && [ -n "$PW_PORT" ]; then
@@ -125,7 +183,7 @@ if [ -n "$ISOLATED" ]; then
     done
     if [ -z "$PW_PORT" ]; then
         echo "Error: could not find a free CDP port in 9300-9999 after 40 tries."
-        echo "  Too many browsers running? List them: ls /tmp/pw-browser-*.pid"
+        echo "  Too many browsers running? List them: ls $PW_TMP/pw-browser-*.pid"
         exit 1
     fi
 elif [ -n "$PW_PORT" ]; then
@@ -152,8 +210,8 @@ else
     echo "         other. Drop --shared to get your own browser instead."
 fi
 
-PID_FILE="/tmp/pw-browser-$PW_PORT.pid"
-USER_DATA_DIR="/tmp/pw-profile-$PW_PORT"
+PID_FILE="$PW_TMP/pw-browser-$PW_PORT.pid"
+USER_DATA_DIR="$PW_TMP/pw-profile-$PW_PORT"
 
 # Already running on this port? (Only reachable in shared / explicit-PW_PORT
 # mode — an isolated port was just claimed and is by definition free.)
@@ -162,7 +220,7 @@ if [ -z "$ISOLATED" ] && [ -f "$PID_FILE" ]; then
     case "$OLD_PID" in
         claiming-*) ;;
         *)
-            if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
+            if pid_alive "$OLD_PID"; then
                 echo "Browser already running on port $PW_PORT (PID: $OLD_PID)"
                 echo "  Reuse it with: PW_PORT=$PW_PORT $SCRIPT_DIR/pw.sh <command>"
                 exit 0
@@ -180,6 +238,7 @@ fi
 echo "  Port: $PW_PORT"
 echo "  Profile: $USER_DATA_DIR"
 echo "  Binary: $CHROMIUM_BIN"
+[ -n "$SANDBOXED" ] && echo "  Sandboxed: yes (--no-sandbox)"
 
 CHROME_FLAGS=(
     --remote-debugging-port="$PW_PORT"
@@ -188,9 +247,13 @@ CHROME_FLAGS=(
     --no-default-browser-check
 )
 
-if [ -n "$HEADLESS" ]; then
+if [ -n "$HEADLESS_SHELL" ]; then
+    CHROME_FLAGS+=(--disable-gpu)  # always headless; it takes no --headless=new
+elif [ -n "$HEADLESS" ]; then
     CHROME_FLAGS+=(--headless=new --disable-gpu)
 fi
+# Seatbelt cannot nest Chrome's own sandbox; Playwright passes the same flag by default.
+[ -n "$SANDBOXED" ] && CHROME_FLAGS+=(--no-sandbox)
 
 "$CHROMIUM_BIN" "${CHROME_FLAGS[@]}" &>/dev/null &
 
@@ -229,12 +292,17 @@ for i in {1..30}; do
         fi
         exit 0
     fi
+    pid_alive "$BROWSER_PID" || break
     echo -n "."
     sleep 0.5
 done
 
-echo " timeout!"
+if pid_alive "$BROWSER_PID"; then echo " timeout!"; else echo " the browser exited."; fi
 echo "Error: CDP endpoint not responding at http://localhost:$PW_PORT/json/version"
+if [ -n "$SANDBOXED" ]; then
+    echo "  In Sova's macOS sandbox this needs the policy's \"browser\": \"headless-shell\" (ask the user),"
+    echo "  and under On no TCP port can be opened: launch Playwright yourself within one bash call."
+fi
 kill "$BROWSER_PID" 2>/dev/null || true
 rm -f "$PID_FILE"
 exit 1

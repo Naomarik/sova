@@ -144,12 +144,14 @@
                 <p class="list-summary" title="…">Wiring /ws/watch to the session tailer</p>
                 <span class="session-topics text-num" title="7 topics in this session">7</span>
               </div>
-              <!-- line 3: time, then the worktrees the session tracks, "2 of 3" merged of the ones
-                   it owns (§chat.worktrees/readiness) — a 12px branch glyph and the bare figure in
-                   the meta's own muted voice, both in success while one of them is ready to merge,
-                   never wrapped and never grown, the digits aria-hidden with the words beside them
-                   for AT:
-                   <span class="session-worktrees session-worktrees-ready" title="feat/x: ready to merge, checks passed"><span class="icon icon-sm" style="--icon:url(/icons/branch.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2 of 3</span><span class="visually-hidden">2 of 3 worktrees merged, one is ready to merge</span></span>
+              <!-- line 3: time, then the session's branch status, the chat's own headline
+                   (§chat.composer/worktrees-control; §app.session-list/content-rules "Row line 3")
+                   as a 12px symbol and the bare figure, no words: exclamation circle (needs you,
+                   warn), warning triangle (needs a fix, error), check circle (ready, success),
+                   progress mark (checking, accent, still), clock (queued, info), branch glyph
+                   ({n} worktrees, muted); never wrapped and never grown, the figure aria-hidden
+                   with the words beside it for AT:
+                   <span class="session-branch-status session-branch-status-success session-branch-status-ready" title="2 ready …"><span class="icon icon-sm" style="--icon:url(/icons/check-circle.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2</span><span class="visually-hidden">2 ready. …</span></span>
                    — then the muted readiness badge when there is one ("restart pending", "2
                    follow-ups" — lowercase, the meta's own muted voice, no tone, never wrapped; its
                    `title` the per-worktree lines; the place's built-in, §app.extensions/row-chips),
@@ -159,7 +161,7 @@
                    own mark (§app/session-list "Remote sessions"): one 6px muted dot before the time. Local rows
                    open with the time, as here. -->
               <div class="list-line list-meta-row">
-                <p class="list-meta">2h ago · <span class="session-worktrees session-worktrees-ready" title="feat/x: ready to merge, checks passed"><span class="icon icon-sm" style="--icon:url(/icons/branch.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2 of 3</span><span class="visually-hidden">2 of 3 worktrees merged, one is ready to merge</span></span> · <span class="session-readiness" title="feat/c: merged, 19 commits ahead">2 follow-ups</span> · <span class="text-mono" title="anthropic/claude-opus-5">Opus 5</span></p>
+                <p class="list-meta">2h ago · <span class="session-branch-status session-branch-status-success session-branch-status-ready" title="2 ready …"><span class="icon icon-sm" style="--icon:url(/icons/check-circle.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2</span><span class="visually-hidden">2 ready. …</span></span> · <span class="session-readiness" title="feat/c: merged, 19 commits ahead">2 follow-ups</span> · <span class="text-mono" title="anthropic/claude-opus-5">Opus 5</span></p>
                 <span class="context-ring {context-warn|context-error}" title="{the head's exact sentence}">
                   <svg viewBox="0 0 12 12" aria-hidden="true">
                     <circle class="context-ring-track" cx="6" cy="6" r="5" fill="none"/>
@@ -186,7 +188,7 @@ Below 768px the button is not rendered, because the pane there is the whole scre
 nothing to collapse into.
 
 The row does not display spec assessment observations or append them to readiness titles.
-Its ordinary worktree count, readiness badge, and three-line anatomy remain as above.
+Its ordinary branch status, readiness badge, and three-line anatomy remain as above.
 
 ## §app.session-list/spine — The spine
 
@@ -504,23 +506,76 @@ label a person reads says "sessions pane".
   beside (`readTailOutline` returns gist, "now" and count from the accepted entry), so the sentence
   and the figure can never disagree. No count, no chip — and no chip without a summary line either,
   since the line is what it rides on: a hidden line hides its count.
-- **Row line 3.** The worktrees the session tracks **lead the facts after the time**, when the
-  server has read at least one (§chat.worktrees/readiness): a 12px `branch` glyph and a bare figure,
-  "{merged} of {total}" — "0 of 1", "2 of 3" — over the session's own, non-dropped worktrees, in
-  the meta's own muted voice, {merged} counting each one git finds merged into its base, clean or
-  not (a merged tree with uncommitted changes counts though its state reads stale or in progress,
-  §chat.worktrees/readiness "The row's count"), `white-space: nowrap`, its `title` each worktree's state and reason.
-  Both the glyph and the figure take `--status-success` while **one or more** of those worktrees is
-  ready to merge, which includes one waiting for your OK: the light is the row's whole word for it,
-  so the row that can be merged is the row that glows — no check, no phrase. No worktrees, or none
-  the server has read yet, means no count at all, never "0 of 0". The digits are `aria-hidden` and
-  the row's accessible name carries the words ("2 of 3 worktrees merged, one is ready to merge").
-  The muted readiness badge follows it when there is one: "restart pending", or the follow-up count
-  ("1 follow-up", "2 follow-ups") — never the word "merged", which the count already says — and a
-  leftover worktree is only in the `title`, never counted. The chips extensions add come after the
+- **Row line 3.** The session's **branch status leads the facts after the time**: the same status
+  its chat shows in the composer's run-status row (§chat.composer/worktrees-control), worked out by
+  the same rule from the rows the list last read. A row says what its chat says once it has caught
+  up, and it can lag its chat only as far as "How far a row can lag its chat" below says. A sent-back
+  branch counts as needing a fix only while its chat's row reads Needs a fix: never once the queue
+  has settled that entry, once the branch reads ready again at a newer commit (or, sent back for its
+  drafts, at the same commit once they changed and fit), once it is removed from the queue, or once
+  it is merged or its worktree folder removed (§chat.composer/worktrees-control "Land comes back
+  once its chat fixes it"). It is the
+  control's headline, the first that holds: needs you, needs a fix, ready, checking, queued, else
+  the fallback, "{n} worktrees". Ready means exactly what it means there (a served branch Ready to
+  land, an unserved one Ready to merge), and the branches are counted as the chat counts them:
+  every worktree the session tracks that isn't dropped, a forked chat's inherited ones included.
+  Every row whose chat shows the worktrees control carries it: a worker's, a baton's and a target
+  session's rows too, so every session but an Overseer or a project Overseer. The chat itself, its
+  Worktrees window and the session pane's Worktrees section are unchanged.
+
+  **No words on the row**: a 12px symbol and the headline's bare figure, `white-space: nowrap`, in
+  the meta's line box (no row grows). Each status has a symbol of its own, so its tone is never the
+  only signal:
+  - needs you: an exclamation circle (`alert-circle`), warn;
+  - needs a fix: a warning triangle (`alert-triangle`), error;
+  - ready: a check in a circle (`check-circle`), success;
+  - checking: a progress mark (`progress`), accent, still: it never spins, since the row's one
+    moving thing is its Busy dot;
+  - queued: a clock (`clock`), info;
+  - {n} worktrees: the `branch` glyph, the meta's muted ink.
+
+  The figure is the headline's own number: 2 for "2 ready", 1 for "1 checking", the count of
+  branches for the fallback. The symbol and figure are `aria-hidden`. The status's `title`, and the
+  row link's accessible name, carry it in words: the chat's words first ("2 ready", "1 needs a
+  fix"), then each branch in the Worktrees window's words, its branch, state and detail or reason
+  ("feat/x: Queued · 2nd", "feat/y: Needs a fix · {reason}"), then the after-merge lines
+  the row carried before: the branch status line and each routine follow-up in words
+  (§chat.worktrees/readiness). The status replaces the "{merged} of {total}" count rows used to
+  show; nothing on the row counts merged worktrees any more. A session with no such worktree shows
+  nothing here, never "0", and so does a row before its branches are first read. Archived rows show
+  it the same way as every other row. Pressing it does nothing of its own: it is part of the row
+  link, which opens the session. It follows the merge queue: a change the queue makes reaches the
+  list within seconds, as the queue publishes it, a queue's first view after a server start
+  included. Reading a row runs no queue view unless the list has none of that queue yet, and the
+  git facts under a row are kept while the repo's refs don't change (§chat.worktrees/readiness).
+
+  **How far a row can lag its chat.** A chat reads its worktrees for itself; a row shows what the
+  list last read and catches up on its own. These are the known bounds:
+  - **Git's facts** reach the row at its next read, on the session's own cadence
+    (§app/idle-git-cache): at once when its worktree's or base's refs move, five minutes at most
+    while it is idle. The times below say how long an answer is kept; the row shows the new one at
+    the read after that.
+  - **A request landed or closed on the host** (§app.merge-queue/requests): up to 180 seconds while
+    nothing reads the queue's view and the host can be read, which is how often the queue asks it.
+  - **A read that failed.** A failed "already merged" check reads as not merged, and a setup read
+    that reached the target's commit but not its definition reads as not set up: each stands until
+    the refs it rests on move, 30 minutes at most. A setup read that found no commit is never kept.
+  - **A tree nothing can stamp** (its folder has no `.git` left, or its refs are in a reftable):
+    its "already merged" answer stands up to five minutes, and with no `.git` left its project too.
+  - **Anything else no stamp sees**: the "already merged" answer, the merge setup and the queue's
+    view stand 30 minutes at most.
+  - **An archived row** with nothing running keeps its last read (§app/idle-git-cache) while its
+    queue entry still follows the queue. One whose queue view failed has no queue to follow, so it
+    stays without its queue entry until its chat opens, its file or row changes, or a queue starts
+    or gains its repo.
+
+  The muted readiness badge follows the status when there is one: "restart pending", or the
+  follow-up count ("1 follow-up", "2 follow-ups") — never the word "merged" and never the ready or
+  waiting phrases, which the status and its words carry — and a leftover worktree is only in the
+  `title`, never counted. The chips extensions add come after the
   badge (§app.extensions/row-chips), and a row has none without such an extension. The line
   truncates from its end, so the model's name gives way first, then those chips, then the badge,
-  then the count, the time last — at a 280px desktop
+  then the status, the time last — at a 280px desktop
   sidebar and on a 390px phone alike. Then relative `lastActiveAt` ("just now", "4m ago", "2h
   ago", "yesterday", "Mar 4"), then ` · `, then the model in mono. Show only the part after the first
   `/` and put the full
@@ -716,7 +771,7 @@ their link, §app.baton/needs-you), a tour recording waiting for you to sign in 
 items): a reply that waits on you (§app.decisions/asks-user) and a reply that says it is done
 without checking. A team gone quiet (§app.decisions/team-stall) is not here: it is a quiet mark
 on its row. Neither is a worktree ready to merge or waiting for your OK: that is the row's
-worktree count, lit (§chat.worktrees/readiness). The blockers are the attention digest's **act** tier (§app.overseer/attention-digest), read
+branch status (§app.session-list/content-rules "Row line 3"). The blockers are the attention digest's **act** tier (§app.overseer/attention-digest), read
 from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts — less the
 organization sessions (§app.session-list/ordinary-surfaces), which wait in the Organizations
 region's own Needs you (§app.session-list/organizations). **The Overseer's count still includes

@@ -95,12 +95,13 @@
       "server/extensions.ts",
       "server/extensions.test.ts",
       "server/extensions.integration.test.ts",
-      "server/extension-views.ts"
+      "server/extension-views.ts",
+      "docs/customization.md"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:24Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "Omar",
+      "at": "2026-11-04T12:24Z",
+      "source": "pi-session:01a1a628-48c2-7136-a762-464d5bf0599f#d0ac6d72"
     }
   },
   "§app.extensions/maximize": {
@@ -133,7 +134,8 @@
       "server/extension-offers.test.ts",
       "server/extension-offers.integration.test.ts",
       "docs/customization.md",
-      "server/extension-views.ts"
+      "server/extension-views.ts",
+      "server/extension-offers-overseer.test.ts"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -171,7 +173,7 @@
       "§chat.worktrees/readiness"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "shared/extension-offers.ts",
       "shared/protocol.ts",
@@ -189,7 +191,12 @@
       "src/lib/session-row.snapshot.json",
       "server/extension-offers-row.test.ts",
       "scenarios/row-place.json"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T16:05Z",
+      "source": "pi-session:01a1a1b7-c99c-75b6-8a92-b66649ed6742#43572b80"
+    }
   },
   "§app.extensions/serving": {
     "kind": "behavior",
@@ -208,7 +215,12 @@
       "server/extensions.test.ts",
       "server/extensions.integration.test.ts",
       "server/extension-keys.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-10-27T21:10Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
+    }
   },
   "§app.extensions/session-menu": {
     "kind": "behavior",

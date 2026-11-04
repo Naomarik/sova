@@ -140,6 +140,8 @@ export interface SpawnOptions {
 	flags?: Record<string, string | true>;
 	/** Parent session file to fork: the child starts with the parent's full message history. */
 	forkSession?: string;
+	/** Its MCP servers: the list its parent's chat answered for `mcpServers`, opaque here. */
+	mcp?: unknown;
 	/** Extra environment for the child, merged over the parent's (team member identity for member.ts). */
 	env?: Record<string, string>;
 	/** Where the worker's session file goes (a worker on another agent dir keeps it in the parent's). */

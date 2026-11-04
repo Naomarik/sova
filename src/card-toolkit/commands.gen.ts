@@ -143,6 +143,7 @@ export type CommandId =
   | "project.merge-queue.land-how.set"
   | "project.merge-queue.land-how.clear"
   | "overseer.attention"
+  | "overseer.abilities"
   | "overseer.todo.list"
   | "overseer.todo.add"
   | "overseer.todo.update"
@@ -175,6 +176,8 @@ export type CommandId =
   | "insights.usage.refresh"
   | "schedule.list"
   | "playbook.list"
+  | "mcp.servers.list"
+  | "mcp.server.status"
   | "draft-spec.list"
   | "insights.agents"
   | "insights.worktrees"
@@ -194,6 +197,8 @@ export type CommandId =
   | "settings.memory.get"
   | "settings.subagents.get"
   | "settings.align.set"
+  | "settings.cards.get"
+  | "settings.cards.withdraw"
   | "settings.assistant-default.set"
   | "push.test"
   | "audit.list"
@@ -2853,6 +2858,8 @@ export interface CommandParams {
     "card": string;
     /** local only: the fingerprint the card showed */
     "fingerprint"?: string;
+    /** local only: cancel a held Land and keep the edits */
+    "cancel-save"?: boolean;
   };
   /** Change a project overseer's settings: Watch, powers, models, limits, pace, the hold, extra instructions. (changes something; needs the card's owner trusted) */
   "project.overseer.settings.set": {
@@ -2970,6 +2977,8 @@ export interface CommandParams {
   };
   /** What needs the user now, as the Overseer's digest has it. (only looks; needs the card's owner trusted) */
   "overseer.attention": Record<string, never>;
+  /** What the Overseer can do: its built-in abilities, its limits and the commands its extensions offer it. (only looks; needs the card's owner trusted) */
+  "overseer.abilities": Record<string, never>;
   /** The Overseer's to-do list. (only looks; needs the card's owner trusted) */
   "overseer.todo.list": Record<string, never>;
   /** Add a to-do to the Overseer's list. (changes something; needs the card's owner trusted) */
@@ -3133,6 +3142,13 @@ export interface CommandParams {
     /** A folder whose project playbooks to list */
     "cwd"?: string;
   };
+  /** This computer's MCP servers: each one's name, where it comes from, its state, tool count, tool names and last Check. Never a secret's value. (only looks; needs the card's owner trusted) */
+  "mcp.servers.list": Record<string, never>;
+  /** One MCP server's status, by its row id from the list. Never a secret's value. (only looks; needs the card's owner trusted) */
+  "mcp.server.status": {
+    /** The server's row id */
+    "id": string;
+  };
   /** The draft specs conversations proposed, in every project or one, waiting for review. (only looks; needs the card's owner trusted) */
   "draft-spec.list": {
     /** Only this project's (its id) */
@@ -3200,6 +3216,13 @@ export interface CommandParams {
     "visuals"?: unknown;
     /** The Eagerness: "careful", or omitted for Eager */
     "eagerness"?: unknown;
+  };
+  /** The Sova-wide settings cards a Create chat prepared: waiting, and recently applied or dismissed. (only looks; needs the card's owner trusted) */
+  "settings.cards.get": Record<string, never>;
+  /** Dismiss a Sova-wide settings card a Create chat prepared. Nothing changes. (changes something; needs the card's owner trusted) */
+  "settings.cards.withdraw": {
+    /** The card's id (sw_…) */
+    "card": string;
   };
   /** Set or clear the model and thinking every organization's Project Assistant uses unless it picks its own. (changes something; needs the card's owner trusted) */
   "settings.assistant-default.set": {
@@ -3507,6 +3530,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.merge-queue.land-how.set": "changes",
   "project.merge-queue.land-how.clear": "changes",
   "overseer.attention": "looks",
+  "overseer.abilities": "looks",
   "overseer.todo.list": "looks",
   "overseer.todo.add": "changes",
   "overseer.todo.update": "changes",
@@ -3539,6 +3563,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "insights.usage.refresh": "changes",
   "schedule.list": "looks",
   "playbook.list": "looks",
+  "mcp.servers.list": "looks",
+  "mcp.server.status": "looks",
   "draft-spec.list": "looks",
   "insights.agents": "looks",
   "insights.worktrees": "looks",
@@ -3558,6 +3584,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "settings.memory.get": "looks",
   "settings.subagents.get": "looks",
   "settings.align.set": "changes",
+  "settings.cards.get": "looks",
+  "settings.cards.withdraw": "changes",
   "settings.assistant-default.set": "changes",
   "push.test": "changes",
   "audit.list": "looks",

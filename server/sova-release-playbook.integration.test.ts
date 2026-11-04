@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -31,10 +31,20 @@ test("env-set answers by exit code and never prints the value", () => {
   assert.equal(run(["env-set", "SOVA_TEST_SITE_PROJECT"], { SOVA_TEST_SITE_PROJECT: "" }).status, 1);
 });
 
-test("site-video never fails a deploy: without SOVA_SITE_VIDEO_DIR it ships without the video and says so; site-pages without a Pages project uploads nothing", () => {
+test("site-video stops a deploy without its hero video: SOVA_SITE_VIDEO_DIR unset, or a folder missing a video; site-pages without a Pages project uploads nothing", () => {
   const r = mkdtempSync(join(dir, "v-"));
-  const out = run(["site-video", r], { SOVA_SITE_VIDEO_DIR: "" });
-  assert.equal(out.status, 0);
-  assert.match(out.stdout, /without its hero video/);
+  const unset = run(["site-video", r], { SOVA_SITE_VIDEO_DIR: "" });
+  assert.equal(unset.status, 1);
+  assert.match(unset.stderr, /SOVA_SITE_VIDEO_DIR is not set/);
+  // A checkout whose manifest names a video the folder doesn't hold.
+  const tree = mkdtempSync(join(dir, "t-"));
+  mkdirSync(join(tree, "site", "src", "assets", "screens"), { recursive: true });
+  mkdirSync(join(tree, "site", "scripts", "screens"), { recursive: true });
+  copyFileSync(join(import.meta.dirname, "..", "site", "scripts", "screens", "add-video.mjs"), join(tree, "site", "scripts", "screens", "add-video.mjs"));
+  writeFileSync(join(tree, "site", "src", "assets", "screens", "manifest.json"), readFileSync(join(import.meta.dirname, "..", "site", "src", "assets", "screens", "manifest.json")));
+  const empty = mkdtempSync(join(dir, "e-"));
+  const missing = run(["site-video", tree], { SOVA_SITE_VIDEO_DIR: empty });
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /missing hero video/);
   assert.equal(run(["site-pages", "abc1234"], { SOVA_SITE_PAGES_PROJECT: "" }, r).status, 2);
 });

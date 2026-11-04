@@ -28,8 +28,10 @@ import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact"
 import { trialActWait } from "./chat-handle";
 import { logAction, readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
 import { parseModePatch } from "./mode-state";
+import { createNotNamed } from "../shared/profiles";
 import { ideaTools, type IdeaToolHost, type ToolCall } from "./overseer-idea-tools";
 import { todoTools } from "./overseer-todo-tools";
+import { extTools, type ExtToolDeps } from "./overseer-ext-tools";
 import { readTodos } from "./overseer-todos";
 import { readManifest, resolveIdeaId } from "./overseer-ideas";
 import { cardTool, type CardLinkInput } from "./overseer-card-tool";
@@ -52,7 +54,7 @@ import { orgLinkRows } from "./shares-overview";
 import { linkUrl, shareState } from "./share/listener";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { cut, type ReadFrom, Refusal, renderTranscript, sessionRef, text, writableRefusal } from "./session-guards";
-import { findProfile } from "./profile-sources";
+import { findProfile, profileRefusedWhy } from "./profile-sources";
 import { approvalRefusal } from "./profile-trust";
 import { singletonHolder } from "./session-profile";
 import { keyOf, singletonRunningText, titleCase } from "../shared/profiles";
@@ -214,7 +216,18 @@ export interface OverseerToolHost extends IdeaToolHost {
   ledger?(): RemovedWorktree[];
   /** This host's registered projects, for the `project` filter. Absent: listProjects(). */
   projects?(): ProjectSummary[];
+  /** The extension commands its installed extensions offer it, and their jobs (§app.overseer/extension-commands).
+      Absent: no extension offers it a command (sova_ext still exists, and lists none). */
+  ext?: ExtHost;
 }
+
+/** What sova_ext needs from the server (overseer.ts): what is offered, health, and the job watch. */
+export type ExtHost = Pick<ExtToolDeps, "offered" | "health" | "watch" | "watched"> & {
+  /** Sessions a command or job reported (by id): this host's count toward the running-at-once cap
+      from now on, while they run, and all stay among the sessions in play. */
+  noteReported(ids: readonly string[]): Promise<void> | void;
+};
+const NO_EXT: ExtHost = { offered: () => [], health: async () => null, watch: () => null, watched: () => [], noteReported: () => {} };
 
 /** A mesh peer as the host-taking tools see it. */
 export interface PeerRef {
@@ -270,9 +283,9 @@ export function actTargets(tool: string, params: any): string[] | null {
 
 // ---- per-turn limits ---------------------------------------------------------------------------
 
-export type LimitKind = "create" | "prompt" | "archive" | "explore" | "link" | "org" | "gather";
+export type LimitKind = "create" | "prompt" | "archive" | "explore" | "link" | "org" | "gather" | "ext";
 
-const fresh = (): Record<LimitKind, number> => ({ create: 0, prompt: 0, archive: 0, explore: 0, link: 0, org: 0, gather: 0 });
+const fresh = (): Record<LimitKind, number> => ({ create: 0, prompt: 0, archive: 0, explore: 0, link: 0, org: 0, gather: 0, ext: 0 });
 const CAP_OF: Record<LimitKind, keyof OverseerCaps> = {
   create: "createPerTurn",
   prompt: "promptsPerTurn",
@@ -281,6 +294,7 @@ const CAP_OF: Record<LimitKind, keyof OverseerCaps> = {
   link: "linksPerTurn",
   org: "orgWritesPerTurn",
   gather: "gatherPerTurn",
+  ext: "extRunsPerTurn",
 };
 const WHAT: Record<LimitKind, string> = {
   create: "new sessions",
@@ -290,11 +304,12 @@ const WHAT: Record<LimitKind, string> = {
   link: "links made",
   org: "organization writes",
   gather: "gathering sessions or offers started",
+  ext: "extension commands run",
 };
 
 /**
  * The per-turn caps: sessions created, prompts sent, archive operations, explorers launched, links made,
- * organization writes, gathering sessions or offers started. "Turn" means the USER's
+ * organization writes, gathering sessions or offers started, extension commands run. "Turn" means the USER's
  * turn: the counters reset only when a message the user sent from the UI (typed, a quick action, a
  * confirm-card click, a regenerate) enters the context (UserTurns), or on /clear. A brief, a wake-up or any other
  * server-started run continues the budget of the user message before it, so the model can never
@@ -1430,6 +1445,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         // unknown one creates no session and takes no cap.
         // Memory is never given to a coding session (§chat.memory/where), here or on a peer.
         if (Array.isArray(p.minor_modes) && p.minor_modes.includes("memory")) throw new Refusal(`${MEMORY_CODING_REFUSAL}. No session was created.`);
+        if (p.mode === "create") throw new Refusal(createNotNamed("the Overseer"));
         if (p.mode || p.minor_modes !== undefined || p.project_modes !== undefined) {
           const bad = parseModePatch({ ...(p.mode ? { mode: p.mode } : {}), ...(p.minor_modes !== undefined ? { minorModes: p.minor_modes } : {}), ...(p.project_modes !== undefined ? { projectModes: p.project_modes } : {}) });
           if ("error" in bad) throw new Refusal(`${bad.error.replace("minorModes", "minor_modes").replace("projectModes", "project_modes")}. No session was created.`);
@@ -1453,7 +1469,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
           // Resolved in the new session's own project (§chat.profiles/projects); a target's cwd has none.
           const where = typeof p.cwd === "string" && p.cwd ? p.cwd : null;
           const prof = await findProfile(p.profile, where);
-          if (!prof) throw new Refusal(`No profile "${p.profile}" for that folder. No session was created.`);
+          if (!prof) throw new Refusal(`${(await profileRefusedWhy(p.profile, where)) ?? `No profile "${p.profile}" for that folder.`} No session was created.`);
           if (!prof.overseerMayStart)
             throw new Refusal(`The ${prof.label} profile isn't marked "The Overseer may start it" (in its file), so you can't start it. No session was created; ask the user to start it or to allow it.`);
           if (prof.approval === "needed") throw new Refusal(`${approvalRefusal(prof)} No session was created.`);
@@ -1563,6 +1579,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         ["session"],
       ),
       execute: act("sova_set_session", async (p) => {
+        if (p.mode === "create") throw new Refusal(createNotNamed("the Overseer"));
         if (Array.isArray(p.minor_modes) && p.minor_modes.includes("memory")) throw new Refusal(`${MEMORY_CODING_REFUSAL}. Nothing was changed.`);
         const s = await resolveWritable(p.session);
         // A session waiting on the user's alignment answers keeps align on (§app.project-overseer/coding-mode): checked first.
@@ -1858,6 +1875,34 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
       int,
     }),
     ...todoTools({ act, read, resolve, refusal: (m) => new Refusal(m), obj, str }),
+    // Extension commands its extensions offer it (§app.overseer/extension-commands): one fixed tool.
+    ...((): Tool[] => {
+      const ext = host.ext ?? NO_EXT;
+      return extTools({
+        act,
+        read,
+        request: (path, init) => host.request(path, init),
+        offered: () => ext.offered(),
+        health: (id) => ext.health(id),
+        take: () => limits.take("ext", host.caps()),
+        async links(ids) {
+          const out: string[] = [];
+          for (const id of ids) {
+            const s = await host.session(id).catch(() => null);
+            out.push(s ? link(s) : `${id} (no session here)`);
+          }
+          return out;
+        },
+        // Each one here counts toward the running cap from now on (while it runs), and stays in play.
+        reported: (ids) => ext.noteReported(ids),
+        watch: (job) => ext.watch(job),
+        watched: () => ext.watched(),
+        overseerId: () => host.overseerId(),
+        refusal: (m) => new Refusal(m),
+        obj,
+        str,
+      });
+    })(),
     ...linkTools({ act, read, links: host.links, take: () => limits.take("link", host.caps()), refusal: (m) => new Refusal(m), obj, str }),
     // Project instances (§app.project-services/callers): reads free, acts through `act` (turns the user started).
     overseerVerbsTool(

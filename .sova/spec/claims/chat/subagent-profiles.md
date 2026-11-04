@@ -102,11 +102,11 @@ edited, renamed or deleted. It configures nothing, so the agent picks every mode
   profile is shown; an absent default simply shows Off. A malformed or unreadable library falls
   through to the legacy files.
 - **Where it is read.** The mode extension resolves it for Delegate's routing and the spec writer
-  at each turn boundary, in either major mode. The subagents extension resolves it, from the
+  at each turn boundary, in every major mode. The subagents extension resolves it, from the
   parent session's branch, at every `team_create` and `team_add`, at `team_succeed` (the retire
   timeout), at every roster answer to a coordinator or monitor (the monitor's thresholds), and for
   `/team defaults` and `/team <objective>` planning. Normal mode reads teams and the spec writer
-  through it too; only the Delegate prompt is Delegate's own. The align mode's Eagerness, writing
+  through it too; only the Delegate prompt is Delegate's and Create's own (§chat.create-mode/delegate-parity). The align mode's Eagerness, writing
   style and Visuals resolve through it as well: the chat's profile's `alignment` override, field by
   field, else the host's `mode-align.json`. A profile's Eagerness and style reach its open chats at
   their next run like a host change (§chat.alignment/eagerness, §chat.alignment/style); its Visuals count only at a chat's first start
@@ -154,8 +154,9 @@ Delegate's row detail line reads "Profile: <name>".
 - **The default.** The footer's save-as-default button also covers the profile: it reads
   "Already the default" only when this chat's mode, strict flag, minor modes **and** subagent
   profile all match what new sessions start from, and pressing it saves both.
-- **Configure Delegate**, the gear on Delegate's row, opens Settings → Subagents; so does the
-  gear on spec's row.
+- **Configure Delegate**, the gear on Delegate's row, opens Settings → Subagents; so do **Configure
+  Create**, the gear on Create's row (Create shares Delegate's settings,
+  §chat.create-mode/delegate-parity), and the gear on spec's row.
 
 ## §chat.subagent-profiles/settings — Settings → Subagents
 

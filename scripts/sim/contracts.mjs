@@ -1,8 +1,9 @@
 // The simulation's hooks into the contracts of .chat-powers-brief/ARCH.md (§4.4 per-conversation
 // drafts, §4.5 Project Assistant, §3 powers PATCH). Each hook answers {pending: why} while its piece
 // hasn't landed (a 404 route, a missing file): the run reports PENDING, never a pass.
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import WebSocket from "ws";
 import { readJsonl } from "./lib/checks.mjs";
 import { sleep } from "./lib/api.mjs";
@@ -145,10 +146,13 @@ export async function projectCodingSessions(ctx) {
   return info.coding ?? info.codingSessions ?? [];
 }
 
+/** The install's cookie (server/auth.ts authCookieName): a socket showing the token in a header is a script's, and no turn it opens is the user's. */
+const pageCookie = (ctx) => `sova_token_${createHash("sha256").update(resolve(ctx.agentDir)).digest("hex").slice(0, 8)}=${ctx.token}`;
+
 /** One message on a session's WS chat, as the operator's composer sends it (the project overseer's own
     conversation takes only this), or {type: "abort"}. Errors the server sends back are returned. */
 export async function wsChat(ctx, path, msg) {
-  const ws = new WebSocket(`ws://127.0.0.1:${ctx.port}/ws/chat?path=${encodeURIComponent(path)}&tail=rest`, { headers: { "x-sova-token": ctx.token } });
+  const ws = new WebSocket(`ws://127.0.0.1:${ctx.port}/ws/chat?path=${encodeURIComponent(path)}&tail=rest`, { headers: { cookie: pageCookie(ctx) } });
   const errors = [];
   ws.on("message", (d) => {
     try {

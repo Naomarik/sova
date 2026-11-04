@@ -10,9 +10,12 @@ with its policy templates in `pi-config/sandbox-policy/`. Sova imports its sessi
 ## What lives here
 
 - [`README.md`](../../../pi-config/extensions/sandbox/README.md). Requirements: §chat/sandbox.
-- `pi-config/sandbox-policy/<platform>/` holds the templates (`policy.json` and a `CLAUDE.md`), copied, never
-  linked, into the agent dir by `install.sh`.
-- Tests: `cd pi-config/extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts && node tests/run.mjs`.
+- `pi-config/sandbox-policy/<platform>/` holds the templates (`policy.json`, a `CLAUDE.md` and the cache
+  cleanup's optional `caches.json`), copied, never linked, into the agent dir by `install.sh` when absent.
+- `shadow-prune.ts` (builtins only, imports nothing) cleans the shadowed caches' private copies in a detached
+  low-priority child (`shadow-prune-run.ts`); its settings are `caches.json`, never `policy.json`, whose strict
+  validator must not learn its keys (README, "Cache cleanup").
+- Tests: `cd pi-config/extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts tests/unit/darwin-seatbelt-browser.integration.test.ts && node tests/run.mjs`.
   `naive.mjs` writes its run record to `tests/out/NAIVE-RUN.txt`, gitignored. `tests/FIRST-RUN.txt` is a committed
   record of the first run; nothing rewrites it.
 
@@ -33,7 +36,9 @@ with its policy templates in `pi-config/sandbox-policy/`. Sova imports its sessi
   the private attempt tmp/proxy. Setup failures never fall back to an unconfined browser. Its `proxy`
   option (`forbid`, `local` in `proxy.ts`, off by default, never on the session's own proxy) is how a
   sandbox-on recording refuses non-public DNS answers and reaches its one verified running copy; a
-  change to either is a contract change (README).
+  change to either is a contract change (README). `ResolvedPolicy` carries `browser` (the policy's
+  optional `browser` key, macOS only): it governs no path, so the transfer's refusals ignore it, and
+  `prepareSessionCommand` hands it to the backend as the extension does.
 - The provisional `starting` entry (`SANDBOX_STARTING`, `isStarting` in `state.ts`) is read by
   `server/sandbox-state.ts` (`SandboxInfo.starting`, the shield's "Turning on…") and by the tour
   recorder (`server/tours/context.ts`, which refuses while it is newest). Keep all three on the constant.
@@ -53,3 +58,6 @@ The dev watcher doesn't watch this directory: an edit reaches a running server o
   and its tests).
 - A policy template: its `CLAUDE.md` beside it, and `install.sh` if the file set changes
   ([extensions overview](../overview.md)).
+- `BROWSER_RULES` or the `browser` key: `pi-config/sandbox-policy/darwin/CLAUDE.md`, the Playwright skill's
+  `start-browser.sh` (it picks the headless shell and `--no-sandbox` inside a sandbox), and
+  `tests/unit/darwin-seatbelt-browser.integration.test.ts`.

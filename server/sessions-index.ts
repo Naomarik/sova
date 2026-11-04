@@ -31,7 +31,7 @@ import { readDecisionSettings } from "./decide-settings";
 import { readSignals, type SignalsFile, signalsOverlay, withoutRestartAsk } from "./signals-store";
 import { withOpenOffer } from "./session-offers";
 import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
-import { pruneReadiness, readinessOverlay } from "./merge-readiness";
+import { branchesOverlay, pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
 import { projectOverseerOfPath, readPoState } from "./project-overseer-store";
 import { projectOverseerUnread } from "./project-overseer-unread";
@@ -42,6 +42,7 @@ import { removeMemory } from "./memory/store";
 import { removeSessionTours } from "./tours/lifecycle";
 import { byActivity } from "../src/lib/summary-diff";
 import { queueChatRole } from "../shared/merge-queue";
+import { opTrack } from "./stall-recorder";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -1257,7 +1258,11 @@ async function zeroInputOf(path: string): Promise<boolean> {
 /** Every row. `track`: the file set to list and the files that may have changed since the cached
     summaries were read (only those are stat'ed and read); without it every folder is read and
     every file stat'ed. Returns the rows and the file set they came from. */
-async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
+function buildSessions(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
+  return opTrack("buildSessions", () => buildSessionsNow(track), (b) => b.rows.length);
+}
+
+async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
   const files = track ? track.files : await listSessionFiles();
   const live = readLive();
   const own = readOwnLiveRecords();
@@ -1332,7 +1337,10 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
     };
     // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
     const readiness = readinessOverlay(row);
-    out.push(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row, stores.signals), previewLabels));
+    // The branches its chat's status row counts, each queue entry as the queue has it now (no Git here either).
+    const branches = branchesOverlay(row);
+    const withMerge = readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row;
+    out.push(redactPreviewLinksDeep(withoutRestartAsk(withMerge, stores.signals), previewLabels));
   }
   pruneReadiness(out);
   for (let i = 0; i < out.length; i++) out[i] = await withUnreadReplies(out[i]!);
@@ -1413,7 +1421,8 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...r.fields(s.path, s.id, s.cwd),
   };
   const readiness = readinessOverlay(row);
-  return withUnreadReplies(redactPreviewLinksDeep(withoutRestartAsk(readiness ? { ...row, readiness } : row)));
+  const branches = branchesOverlay(row);
+  return withUnreadReplies(redactPreviewLinksDeep(withoutRestartAsk(readiness || branches ? { ...row, ...(readiness ? { readiness } : {}), ...(branches ? { branches } : {}) } : row)));
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();

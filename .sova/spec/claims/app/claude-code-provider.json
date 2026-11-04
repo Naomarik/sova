@@ -324,8 +324,9 @@
       "pi-config/extensions/claude-code/provider/DESIGN-bridge.md"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-12T13:59Z"
+      "by": "user",
+      "at": "2026-11-04T02:27Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
     },
     "notOwned": [
       "§app/claude-logins",

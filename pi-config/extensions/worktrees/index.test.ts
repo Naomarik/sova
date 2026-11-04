@@ -8,6 +8,10 @@ import test from "node:test";
 import worktrees, { queueServes } from "./index.ts";
 import { restoreActive, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE, WORKTREES_STATE_EVENT } from "./state.ts";
 
+// A run from inside a chat inherits these; each test says for itself which kind of chat it is.
+delete process.env.SOVA_CHAT_STATE_ROOT;
+delete process.env.SOVA_CHAT_SOCK;
+
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
 
 function repo() {
@@ -366,6 +370,21 @@ test("outside Sova's merge queue, merge brings a branch into master at once, wit
 		assert.equal(sh(r.main, "rev-parse", "master"), head, "master is the branch's head");
 	} finally {
 		r.done();
+	}
+});
+
+test("queueServes: a terminal chat merges plainly; a chat Sova started and missing its state root fails closed", () => {
+	const root = mkdtempSync(join(tmpdir(), "served-"));
+	try {
+		assert.equal(queueServes("/repo", {}), false, "neither variable: a chat Sova didn't start");
+		assert.equal(queueServes("/repo", { SOVA_CHAT_SOCK: "/s/c.sock" }), true, "Sova's socket and no state root: served, whatever the repo");
+		assert.equal(queueServes("/repo", { SOVA_CHAT_STATE_ROOT: root, SOVA_CHAT_SOCK: "/s/c.sock" }), true, "no file yet: served");
+		writeFileSync(join(root, "merge-served.json"), JSON.stringify({ v: 1, at: "2026-01-01T00:00:00Z", roots: [{ root: "/repo", target: "master" }] }));
+		const env = { SOVA_CHAT_STATE_ROOT: root, SOVA_CHAT_SOCK: "/s/c.sock" };
+		assert.equal(queueServes("/repo", env), "master");
+		assert.equal(queueServes("/other", env), false, "the file's answer holds for a repo it doesn't serve");
+	} finally {
+		rmSync(root, { recursive: true, force: true });
 	}
 });
 

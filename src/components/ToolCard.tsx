@@ -1,4 +1,6 @@
 import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
+import type { McpToolName } from "../../shared/mcp";
+import { mcpToolWords } from "../lib/mcp";
 import { argsSummary, isObj, str } from "../lib/message";
 import { prettyJson } from "../lib/format";
 import { highlightByPath } from "../lib/markdown";
@@ -97,6 +99,8 @@ const codeClass = (lang: string) => (lang ? `hljs language-${lang}` : undefined)
 
 interface ToolCardProps {
   name: string;
+  /** A server's tool (§app.mcp/in-a-chat): the row reads its server and tool, not the name the model calls. */
+  mcp?: McpToolName;
   args: unknown;
   /** The result's `details`: an edit's recorded patch (pi `patch`, Claude Code `structuredPatch`). */
   details?: unknown;
@@ -225,7 +229,7 @@ export function ToolCard(props: ToolCardProps) {
           <Icon name="chevron-right" small class="icon-twist" />
           <Icon name={toolIcon(props.name)} small />
           <Show when={!recall()}>
-            <span class="toolcard-name">{props.name}</span>
+            <span class="toolcard-name">{props.mcp ? mcpToolWords(props.mcp) : props.name}</span>
           </Show>
           <span class="toolcard-arg" title={summary()}>
             {summary()}

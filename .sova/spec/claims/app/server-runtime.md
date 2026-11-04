@@ -88,6 +88,10 @@ fixes the bug.
   runaway-stream guard's stop (§chat.transcript/runaway-stream) costs about the same on Bun as on
   Node. Google adapters, which refuse a custom fetch, read as their runtime does.
 - **The event-loop delay reads the same on both.** See §app.resource-monitor/lightness-budget.
+- **A feature only one runtime has is tried, never gated on a name or version.** The stall
+  recorder's JS sampler imports that runtime's own module where it loads, outside
+  `server/runtime-quirks.ts` because it works around nothing, and the record goes without stacks
+  where it doesn't (§app.resource-monitor/stall-recorder).
 - **A refused connection is named "connection refused" on both.** The error is classified by its
   code (its own or its cause's), never by its message.
 - **Imports are unambiguous.** No two module files or directories in one folder of `src/`,
@@ -105,7 +109,8 @@ project registered there is that folder, not the checkout around it.
 
 - **The runner refuses a temp dir inside a repository.** `pnpm test`, `pnpm test:int` and
   `pnpm test:all` (`scripts/run-tests.mjs`, on either runtime, either tier) exit 2 before running anything when the folder its temp roots go in (`TMPDIR`
-  on Bun, `/tmp` on Node) is inside a Git work tree or Git directory, with one line naming that
+  on Bun, `/tmp` on Node, and on macOS on Bun both, when `TMPDIR` is too long for Chromium's sockets
+  and the roots go under `/tmp` instead) is inside a Git work tree or Git directory, with one line naming that
   repository and the fix: a `TMPDIR` outside every repository.
 - **Discovery stops at the temp root.** Every test process (`pnpm test`'s and each extension
   runner's, through the shared preload) has `GIT_CEILING_DIRECTORIES` set to its temp dir and the
@@ -133,7 +138,8 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   quarter of the cores (`TEST_INT_JOBS=<n>` sets the width; the unit tier's is `TEST_BUN_JOBS`),
   longest first by its own recorded times (`.cache/test-durations-integration.json`, beside the
   unit tier's `.cache/test-durations.json`). `pnpm test:all` runs both tiers, unit first, each at
-  its own width. Files named on the command line run whatever their tier.
+  its own width. Files named on the command line run whatever their tier; a folder named there is refused (exit 2),
+  and nothing runs: name its test files, or use `--changed`.
 - **Slow groups.** One builtins-only module, `scripts/test-groups.mjs`, names the integration
   files that belong to a slow group, and what triggers each group: the paths whose change can
   break it. **Chat processes** (`trial`) is `server/chat-runtime/trial-*.integration.test.ts`,

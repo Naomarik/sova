@@ -58,6 +58,7 @@ const MOVED: Record<string, string[]> = {
   tour: ["TourCard"],
   "owner-request": ["OwnerRequestNote"],
   "handoff-run": ["HandoffRunRow"],
+  "mcp-note": ["McpNoteRow"],
   "overseer-answer": ["OverseerChoiceRow"],
   "profile-mark": [],
   brief: ["BriefRow"],

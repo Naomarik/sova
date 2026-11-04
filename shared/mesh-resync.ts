@@ -91,6 +91,16 @@ export interface MeshResync {
   hosts: ResyncHost[];
 }
 
+/** Why a host that isn't behind isn't resynced. */
+export function relationRefusal(relation: Exclude<ResyncRelation, "behind">, name: string, selfName: string): string {
+  return {
+    ahead: `${name} runs a newer build than ${selfName}; update ${selfName} instead`,
+    same: `${name} runs the same commit`,
+    diverged: `${name} runs a build on another branch`,
+    unknown: `${name}'s commit isn't known in this checkout`,
+  }[relation];
+}
+
 /** POST /api/mesh/resync/:id: the commit the confirm sheet showed; refused unless it is still
     this host's boot commit. */
 export interface ResyncStart {

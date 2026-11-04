@@ -25,8 +25,9 @@ mode: Sova's settings, `mode.json`, profiles and automations never name one, and
 none.
 
 A project mode **never turns itself on**. It is on only when someone turned it on in that chat: you,
-from its mode menu or `/mode`, or [the Overseer](/docs/overseer/), a script, a chat's agent or an
-extension, whose approval covers its tools and commands but not its hooks. A mode file has no way to say
+from its mode menu or `/mode`, or [the Overseer](/docs/overseer/), whose approval covers its tools and
+commands but not its hooks, or a script, a chat's agent or an extension, which turn on only a version already
+approved. A mode file has no way to say
 "on by default". Save as default never saves a project mode, and neither a profile, an automation,
 a project's coding session nor `pi --minor` can turn one on.
 
@@ -125,14 +126,14 @@ chat's own tools, so the agent is told to ask you to turn the sandbox off.
 ## Declaring a command
 
 A command is a program of the mode that runs by name, without asking the agent: from a terminal or
-a script with `sova run mode.<id>.<name> --session <chat>`, or by the chat's agent from its own
-terminal the same way. `sova list --session <chat>` lists the commands of that chat's modes that are
+a script with `node scripts/sova.mjs run mode.<id>.<name> --session <chat>` from a Sova checkout (see [Scripting Sova](/docs/extending/scripting/#which-sova); the installed `sova` launcher starts the server and runs no commands), or by the chat's agent from its own
+terminal the same way. `node scripts/sova.mjs list --session <chat>` lists the commands of that chat's modes that are
 on. Each entry in `commands` has a `name` (the tool-name rule), a `description`, optional `params`
 (a JSON schema of an object), `run` (the command line, under exactly the rules of a tool's
 `command`) and an optional `timeoutS` (1 to 600, 60 by default). A mode declares at most 16.
 
 A command runs exactly as a tool does: in the chat's folder, with its arguments as JSON on standard
-input (`sova run … --args '{"version": "1.4.0"}'`; unlike a tool call's, they aren't checked
+input (`node scripts/sova.mjs run … --args '{"version": "1.4.0"}'`; unlike a tool call's, they aren't checked
 against `params`, so the program checks its own), `SOVA_TOOL_NAME` set to the command's name, the
 chat's own environment, and its exit code, output and errors in the answer. It runs only while the
 mode is on in that chat, from the version the chat turned on, with the chat's sandbox off, while
@@ -186,9 +187,10 @@ or your agent wrote too.
 
 Approvals are kept in Sova's own state, outside every repository. Sova remembers the last 8 approved versions of
 each mode in each checkout, so switching back to a branch whose tools you already approved doesn't
-ask again. When someone else turns a mode on (the Overseer, a chat's agent, a script or an
-extension), their approval covers its tools and commands but never its hooks: they stay inactive,
-and the row says **Hooks need your approval.** Its **Approve Hooks** control shows the hooks and
+ask again. Approving a mode's tools is your own click in the mode menu; a chat's agent, a script, an
+extension or another computer is refused. The Overseer can still turn a mode on, and its approval covers
+the tools and commands but never the hooks. An approval one of the others gave before this rule stands the
+same way. Either way the hooks stay inactive, and the row says **Hooks need your approval.** Its **Approve Hooks** control shows the hooks and
 approves that exact version. Only you approve hooks, from Sova's page on this machine: an approval
 of hooks from any of those, or through a mesh peer, is refused.
 
@@ -325,7 +327,7 @@ project**. Sova shows the `status` tool, the `status` command and the hook with 
 approve them. Then ask the agent to get version 1.4.0 ready. It calls `release_check__status` with
 `{"version": "1.4.0"}` and gets back the script's exit code and output. After its reply the hook
 appends the event to `.release-replies.log`. From a terminal,
-`sova run mode.release-check.status --session <the chat> --args '{"version": "1.4.0"}'` runs the
+`node scripts/sova.mjs run mode.release-check.status --session <the chat> --args '{"version": "1.4.0"}'` runs the
 same script and prints its answer.
 
 Change the instructions in `MODE.md` and nothing is asked again: the chat picks them up the next

@@ -217,12 +217,13 @@
       "src/lib/worktrees-served.test.ts",
       "src/components/ReviewChanges.tsx",
       "src/lib/merge-queue-sent-back.test.ts",
-      "shared/merge-queue.ts"
+      "shared/merge-queue.ts",
+      "server/merge-queue/view.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     }
   },
   "§chat.worktrees/readiness": {
@@ -239,7 +240,18 @@
       "src/lib/readiness.ts",
       "src/lib/readiness.test.ts",
       "src/components/Sidebar.tsx",
-      "server/removed-worktrees.ts"
+      "server/removed-worktrees.ts",
+      "server/session-branches.test.ts",
+      "server/merge-queue/wire.ts",
+      "server/sessions-index.ts",
+      "server/worktrees-state.ts",
+      "shared/merge-queue.ts",
+      "src/lib/summary-diff.ts",
+      "src/lib/summary-diff.test.ts",
+      "server/index.ts",
+      "server/worktrees.ts",
+      "server/worktrees-refs-stamp.test.ts",
+      "server/merge-queue/wire-unserved.integration.test.ts"
     ],
     "requires": [
       "§chat.worktrees/entry",
@@ -249,8 +261,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-25T22:33Z",
-      "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+      "at": "2026-11-03T16:04Z",
+      "source": "pi-session:01a1a1b7-c99c-75b6-8a92-b66649ed6742#43572b80"
     }
   },
   "§chat.worktrees/ready-to-land": {
@@ -267,16 +279,24 @@
       "src/lib/worktrees.test.ts",
       "server/ready-to-land.landing.test.ts",
       "server/ready-to-land.test.ts",
-      "server/merge-queue/wake.ts"
+      "server/merge-queue/wake.ts",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/scenarios-approval.integration.test.ts",
+      "server/docs-preview.ts",
+      "server/merge-queue/queue.test.ts",
+      "server/merge-queue/testing/harness.ts",
+      "server/session-branches.test.ts"
     ],
     "requires": [
       "§chat.worktrees/readiness",
-      "§app.decisions/attention-signals"
+      "§app.decisions/attention-signals",
+      "§chat.composer/worktrees-control"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:27Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     }
   },
   "§chat.worktrees/sandbox": {

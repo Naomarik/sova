@@ -47,6 +47,8 @@ import {
   type UseEntry,
 } from "../../shared/overseer-grants";
 import { LINK_MEMBER_ENTRY, type LinkMemberData } from "../../shared/mesh-links";
+import { normalizeChatList, type McpChatList } from "../mcp/list-shape";
+import type { McpNote } from "../../shared/mcp";
 import { PROFILE_ENTRY, RETIRED_REMOVABLE, SESSION_SENT_ENTRY, type ProfileEntryData, type SessionSentData } from "../../shared/profiles";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerMarkerData } from "../../shared/project-overseer";
 import { PROJECT_ASSISTANT_ENTRY, type ProjectAssistantMarkerData } from "../../shared/project-assistant";
@@ -127,6 +129,12 @@ export const ALIGN_LAUNCH = kind<AlignLaunchData>("sova-align-launch", "marker",
 /** The session's context files and skills left out (newest on the branch wins), `normalizeLoadout`. */
 // Called through, not referenced: session-loadout folds through this registry, so the two modules form a cycle.
 export const LOADOUT = kind<LoadoutEntryData>("sova-loadout", "newest-on-branch", (d) => normalizeLoadout(d));
+
+/** A chat's MCP servers, fixed at its first message (§app.mcp/tool-list), `normalizeChatList`. */
+export const MCP_LIST = kind<McpChatList>("sova-mcp-list", "newest-on-branch", (d) => normalizeChatList(d));
+
+/** A server's failure in this chat (§app.mcp/in-a-chat). */
+export const MCP_NOTE = kind<McpNote>("sova-mcp-note", "branch-list", (d) => (isRecord(d) && filled(d.server) && filled(d.how) ? (d as unknown as McpNote) : null));
 
 /** Beside a user message another session sent, as the transcript's row reads it. */
 export const SESSION_SENT = kind<SessionSentData>(SESSION_SENT_ENTRY, "branch-list", (d) =>
@@ -270,7 +278,7 @@ export const MEMORY = kind<MemoryChoiceData>("sova-memory", "newest-on-branch", 
 /** Every registered kind, by type. */
 export const STATE_KINDS: ReadonlyMap<string, StateKind<unknown>> = new Map(
   [
-    REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
+    REWIND, TOPIC_DELIVERED, FANOUT_MEMBER, PROFILE, LOADOUT, MCP_LIST, MCP_NOTE, SESSION_SENT, OVERSEER, OVERSEER_SENT, OVERSEER_DIALOG_ANSWER,
     GRANT, RULE, REVOKE, GRANT_USE, PROJECT_OVERSEER, PROJECT_ASSISTANT, LINK_MEMBER, ALIGN_LAUNCH,
     BATON, BATON_SENT, BATON_HANDOFF, BATON_OFFER, BATON_LEASE, BATON_DECISION, BATON_DONE, BATON_PROPOSAL, BATON_WRAPUP, TOUR_ATTACHMENT, TOUR_DETACHMENT,
     MODE, SUBAGENT_PROFILE, FORK_CACHE, WORKER_SESSION, SANDBOX, WORKTREES, CLAUDE_LOGIN, ALIGN_DOC, MEMORY,

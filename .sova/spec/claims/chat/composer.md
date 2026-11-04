@@ -746,7 +746,7 @@ takes the approval. With no served row, neither line shows. Then comes one row p
   head and lines added and removed: "3 commits · +40 −2"; landed, merged and removed rows show none;
 - "1 newer commit not included" when the branch moved past the approved commit;
 - its action, where one applies:
-  - **Land** on a Ready or Drafts changed row (never on Needs a fix, below), with a menu holding **Land Without
+  - **Land** on a Ready or Drafts changed row (on Needs a fix only as below), with a menu holding **Land Without
     Review** (only when the project has a review kit) and **Land Without Its Specs…**, which asks
     first: "Its spec drafts stay drafts in this worktree. Only the code lands.";
   - **Set Up Queue** on a Ready to merge row of a project on the Projects list whose merge setup
@@ -757,6 +757,7 @@ takes the approval. With no served row, neither line shows. Then comes one row p
   - **Cancel** on a queued row;
   - **Accept** and **Send Back** on Behaviour differs;
   - **Land Anyway** and **Send Back** on Review flagged and on Can't tell whose failure;
+  - **Land This Commit Again** and **Remove from Queue** on every Needs a fix row (below);
 - its reviewer line while the branch's review runs and after it ends, with **Open Reviewer Chat**,
   the same row as the pane's (§chat.worktrees/pane);
 - **Review Changes**, first among the row's actions, on every row of an active worktree whose folder
@@ -767,15 +768,38 @@ takes the approval. With no served row, neither line shows. Then comes one row p
   (§chat.changes/endpoint). Close or Esc
   closes the viewer alone, never the modal behind it, and focus returns to the row's Review Changes.
 
-**Nothing to land while it's sent back.** A branch the queue sent back to its chat (Needs a fix,
+**Land comes back once its chat fixes it.** A branch the queue sent back to its chat (Needs a fix,
 after Send Back or a failed check) offers no Land and no Land menu, here, in the session pane and on
-the Merge Queue tab, while its chat fixes it. Its line is the queue's reason, else "Sent back to its
-chat. Land comes back here once its chat commits a fix and finishes." It stays so at the sent-back
-commit, whatever that commit reads, until the branch is merged into the target (the row reads
-**Merged**) or its worktree folder is removed (**Removed**); after that, a later note on the old
-sent-back entry never brings Needs a fix back. Once the branch reads ready again at a newer commit (clean, no
-conflicts, its chat idle, §chat.worktrees/ready-to-land), that commit wins: the row reads Ready, with
-Land, at the new commit. No row says whether its chat is working on the fix meanwhile.
+the Merge Queue tab, until its chat has fixed it. Its line is the queue's reason, else "Sent back to
+its chat. Land comes back once its chat fixes it, or use Land This Commit Again." What counts as
+fixed depends on why it was sent back:
+- **Sent back for its spec drafts** (the docs step found drafts that don't fit,
+  §app.merge-queue/run): fixing them needs no commit. Once its drafts have changed since it was sent
+  back (a verification note added is a change) and Sova's try of them finds nothing left that doesn't fit
+  (§chat.worktrees/ready-to-land), the row reads Ready again at the same commit, with Land and its
+  menu. Until then it keeps the queue's reason. The rows change by themselves when the drafts are
+  edited, with no reload.
+- **Sent back for anything else** (a check it broke, a conflict, Send Back): Land never comes back
+  at the sent-back commit, whatever that commit reads. Once the branch reads ready again at a newer
+  commit (clean, no conflicts, its chat idle, §chat.worktrees/ready-to-land), that commit wins: the
+  row reads Ready, with Land, at the new commit. A new commit does the same for a drafts send-back.
+
+It stays Needs a fix until one of those, or until the branch is merged into the target (the row
+reads **Merged**) or its worktree folder is removed (**Removed**); after that, a later note on the
+old sent-back entry never brings Needs a fix back. No row says whether its chat is working on the
+fix meanwhile.
+
+**Land This Commit Again and Remove from Queue.** Every Needs a fix row, here, in the session pane,
+on the Merge Queue tab and on the chat's queue card (§chat.merge-queue/chat-card), offers both,
+whatever it was sent back for:
+- **Land This Commit Again** is a new approval of the sent-back commit, with the branch's drafts as
+  they are now (§app.merge-queue/approve): the entry joins the end of the line and runs every check
+  from the start.
+- **Remove from Queue** takes the entry off the queue at once, with no confirm. It deletes nothing:
+  the branch, its folder, its commits, its drafts and its run's logs all stay. The entry ends as
+  cancelled, "removed by you", the chat's queue card gets a final **Removed** revision, and the row
+  then reads as the branch itself does (Ready with Land when it is ready to land, else its
+  readiness).
 
 **In a repository the merge queue doesn't serve** (§app.merge-queue/served) no row reads Ready,
 Landing specs or a queue state, and none offers Land: a ready branch reads **Ready to merge**, with
@@ -794,4 +818,6 @@ The actions are the merge verbs (§app.project-services/merge-verbs). Land sends
 showed, so a branch that moved meanwhile lands what the user saw (§app.merge-queue/approve). After one, the row is read again
 at once and then follows the queue's feed. A refusal shows its reason under the row and leaves the
 row as it was. The modal, the control and the pane's Worktrees rows (§chat.worktrees/pane) read the
-same state, so they always agree. Nothing here shows live state or offers a restart.
+same state, so they always agree. The chat's row in the session list shows the control's headline
+too, by the same rule from the rows the list last read, as a symbol and its figure with these
+words in its hover; how far it can lag is §app.session-list/content-rules "Row line 3". Nothing here shows live state or offers a restart.

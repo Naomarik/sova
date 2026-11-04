@@ -20,7 +20,7 @@ writer. A profile names the model for each of them:
   none, when the session writes the spec itself.
 - **Reviewer**: the worker that reviews alignments, only while
   [adversarial review](/docs/modes/align/review/) is switched on.
-- **Alignment**: optionally, the [align](/docs/modes/align/) writing style and Visuals for chats on
+- **Alignment**: optionally, the [align](/docs/modes/align/) eagerness, writing style and Visuals for chats on
   this profile, in place of this computer's own align settings.
 
 The chat's own model is not part of a profile, and neither is a project's own
@@ -91,7 +91,7 @@ use. A chat picks a profile in its mode menu; new chats start on the default."
   whose profile you delete follows the default.
 - **The editor** has a section per part of the profile, each showing a one-line summary while
   closed: **Delegate routing** (open first), **Teams**, **Spec writer**, **Reviewer** while
-  adversarial review is on, and **Alignment** last, whose Writing style and Visuals each start on
+  adversarial review is on, and **Alignment** last, whose Eagerness, Writing style and Visuals each start on
   **Use host default**. The spec gear in a chat's mode menu opens that chat's profile at Spec
   writer. Every worker is a row of Backend, Model and Effort, with **Add
   Fallback** and **Remove Fallback** on its head line.

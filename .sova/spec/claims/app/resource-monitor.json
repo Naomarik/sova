@@ -55,7 +55,9 @@
       "server/resource-monitor.ts",
       "server/resource-monitor-proc.ts",
       "server/resource-monitor.test.ts",
-      "server/runtime-quirks.ts"
+      "server/runtime-quirks.ts",
+      "server/stall-recorder.ts",
+      "server/stall-recorder-worker.ts"
     ],
     "agreed": {
       "by": "naomarik",
@@ -125,6 +127,34 @@
       "by": "naomarik",
       "at": "2026-10-14T08:11Z"
     }
+  },
+  "§app.resource-monitor/stall-recorder": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.resource-monitor/sampling-and-history",
+      "§app.resource-monitor/lightness-budget"
+    ],
+    "code": [
+      "server/stall-recorder-boot.ts",
+      "server/stall-recorder-core.ts",
+      "server/stall-recorder-route.ts",
+      "server/stall-recorder-worker.ts",
+      "server/stall-recorder.ts",
+      "server/stall-recorder.test.ts",
+      "server/stall-recorder.integration.test.ts",
+      "server/stall-recorder.integration.fixture.ts",
+      "server/stall-recorder-fault.integration.fixture.ts",
+      "server/resource-monitor.ts",
+      "server/app.ts",
+      "server/index.ts",
+      "server/insights.ts",
+      "server/merge-readiness.ts",
+      "server/sessions-index.ts",
+      "server/ws.ts",
+      "shared/protocol.ts"
+    ]
   },
   "§app/resource-monitor": {
     "kind": "surface",

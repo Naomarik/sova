@@ -12,8 +12,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -31,7 +31,11 @@
       "server/merge-queue/served.ts",
       "server/merge-queue/served-rule.test.ts",
       "server/merge-queue/request-host-check.integration.test.ts",
-      "server/merge-queue/hosts/types.ts"
+      "server/merge-queue/hosts/types.ts",
+      "server/merge-queue/cards.ts",
+      "src/components/MergeQueueCard.tsx",
+      "src/components/MergeQueueTab.tsx",
+      "src/components/WorktreesModal.tsx"
     ]
   },
   "§app.merge-queue/blame": {
@@ -231,8 +235,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -241,7 +245,8 @@
       "server/merge-queue/queue.test.ts",
       "server/build-loadout.ts",
       "server/merge-queue/wire.ts",
-      "server/project-overseer.ts"
+      "server/project-overseer.ts",
+      "server/merge-queue/queue-held-card.test.ts"
     ]
   },
   "§app.merge-queue/models": {
@@ -443,8 +448,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "at": "2026-11-04T02:26Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
     },
     "code": [
       ".sova/playbooks/review/PLAYBOOK.md",
@@ -469,12 +474,13 @@
     "requires": [
       "§app.project-services/instances",
       "§app.project-services/contract",
-      "§tools.spec/land"
+      "§tools.spec/land",
+      "§chat.composer/worktrees-control"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     },
     "code": [
       "server/merge-queue/run.ts",
@@ -492,7 +498,8 @@
       "server/merge-queue/testing/repo.ts",
       "server/merge-queue/testing/scenario-kit.ts",
       "server/merge-queue/checks.ts",
-      "server/project-services/release.test.ts"
+      "server/project-services/release.test.ts",
+      "shared/merge-queue.ts"
     ]
   },
   "§app.merge-queue/served": {
@@ -517,12 +524,16 @@
       "server/merge-readiness.ts",
       "server/merge-queue/served.test.ts",
       "server/merge-queue/wire.integration.test.ts",
-      "server/merge-queue/wire-unserved.integration.test.ts"
+      "server/merge-queue/wire-unserved.integration.test.ts",
+      "server/worktree-queue.integration.test.ts",
+      "pi-config/extensions/worktrees/index.test.ts",
+      "server/chat-host.ts",
+      "server/state-root.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:27Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§app.merge-queue/settings": {
@@ -573,7 +584,8 @@
       "§app.merge-queue/setup",
       "§app.merge-queue/master-moved",
       "§app.merge-queue/run",
-      "§app.merge-queue/strategies"
+      "§app.merge-queue/strategies",
+      "§chat.create-mode/settings-cards"
     ],
     "code": [
       "server/merge-queue/settings-edit.ts",
@@ -587,13 +599,12 @@
       "server/merge-queue/strategy-run.test.ts",
       "server/merge-queue/store.ts",
       "server/merge-queue/queue-settings.test.ts",
-      "server/merge-queue/settings-routes.ts",
-      "server/project-services/release.test.ts"
+      "server/merge-queue/settings-routes.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T23:11Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§app.merge-queue/setup": {
@@ -677,8 +688,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     },
     "code": [
       "server/merge-queue/view.ts",

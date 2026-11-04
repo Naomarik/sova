@@ -5,7 +5,8 @@ alsoUpdate: ["pi-config/extensions/mode/README.md"]
 # Delegate
 
 The major mode in which the session orchestrates workers by four profiles (planning, investigation, routine and
-complex implementation), each a backend, model and effort with an optional fallback.
+complex implementation), each a backend, model and effort with an optional fallback. [Create](../create/overview.md) is built on it and
+shares all of this: its block follows Delegate's and changes nothing in it.
 
 ## What lives here
 
@@ -27,3 +28,5 @@ complex implementation), each a backend, model and effort with an optional fallb
 ## When you change it, also update
 
 - The routing shape or resolution: the README's "Delegate routing", `subagent-profiles.ts`'s seeding, and the site page.
+- Delegate's prompt, or a new test of `mode === "delegate"`: Create gets it too. Orchestration goes through
+  `orchestrates(mode)`, so read [Create's guide](../create/overview.md) and its site page.

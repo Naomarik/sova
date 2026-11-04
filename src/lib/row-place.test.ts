@@ -23,6 +23,7 @@ import {
 } from "./row-place";
 import { createSlotPolicy, MUTE_AFTER, OFF_KEY } from "./reply-slot";
 import { readinessBadge, readinessTitle } from "./readiness";
+import { HEADLINE_WORDS, type HeadlineKind } from "./merge-queue";
 type ExtensionInfo = import("../../shared/protocol").ExtensionInfo;
 type SessionReadiness = import("../../shared/protocol").SessionReadiness;
 
@@ -90,6 +91,20 @@ describe("a chip", () => {
     }
     assert.equal(isRowSovaWord("CI green"), false);
     assert.equal(isRowSovaWord("2 of 3 checks"), false, "only the bare count is Sova's");
+  });
+
+  test("every branch status the row says is Sova's, from the headline's own table, at any count", () => {
+    // The words the chat's control says, read off the same table the row reads: a new fact is protected with no edit here.
+    for (const kind of Object.keys(HEADLINE_WORDS) as HeadlineKind[])
+      for (const n of [1, 2, 7, 12]) {
+        const w = HEADLINE_WORDS[kind](n);
+        assert.equal(isRowSovaWord(w), true, w);
+        assert.equal(isRowSovaWord(w.toUpperCase()), true, `${w}, any case`);
+        assert.equal(validRowChip({ label: w, tone: "ok" }, ext), null, w);
+      }
+    // And the words as the chat says them today, spelled out, so the table can't drift from them unseen.
+    for (const w of ["1 needs a fix", "2 need a fix", "1 needs you", "3 need you", "2 ready", "1 checking", "2 queued", "1 worktree", "3 worktrees"]) assert.equal(isRowSovaWord(w), true, w);
+    for (const w of ["needs a fix", "ready", "queued", "2 ready soon", "worktrees", "a1 queued"]) assert.equal(isRowSovaWord(w), false, w);
   });
 
   test("its tooltip names its extension", () => {

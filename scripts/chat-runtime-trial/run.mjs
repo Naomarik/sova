@@ -137,6 +137,7 @@ import {
   chat,
   chatProcLog,
   client,
+  pageCookie,
   freePort,
   healthy,
   mockLog,
@@ -159,7 +160,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "hermetic"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "hermetic", "tyourclick"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -307,7 +308,7 @@ async function booted(o, s, url, sharePort) {
     const want = darwin ? "detached" : driver;
     R.check(h?.chatHost?.driver === want && h?.chatHost?.bun !== false, `live-like: with no switch set, chats run in processes of their own on the ${want} driver (health chatHost ${JSON.stringify(h?.chatHost)?.slice(0, 120)})`);
   }
-  const cl = client(url, tokenOf(o.agent ?? agent));
+  const cl = client(url, tokenOf(o.agent ?? agent), o.agent ?? agent);
   if (!o.agent) {
     shareBase = `http://127.0.0.1:${sharePort}`;
     srv = s;
@@ -1122,6 +1123,112 @@ async function t6() {
 
 // T10: the Overseer in its own process: a served read tool, a served file tool, an acting tool and an
 // explorer (stage 4: a worker chat of the Overseer's, a process of its own); the run note is in the file.
+/**
+ * §app.access/your-click over real sockets, on a real chat process: going back past a raise lowers the sandbox, so only
+ * the page does it; `/sandbox` that lowers is refused on POST /api/chat/frames and a script's socket, and the forms the
+ * extension doesn't take as the command lower nothing. Each page-side step is the control: it shows the read can see a lowering.
+ */
+async function tyourclick() {
+  const token = tokenOf(agent);
+  const T = { "x-sova-token": token };
+  const send = (path, body, headers) => fetch(`${base}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  const q = (path) => encodeURIComponent(path);
+  const action = async (path, body, headers) => (await send(`/api/chat/action?path=${q(path)}&wait=20000`, body, headers)).json();
+  const frames = (path, list, headers) => send(`/api/chat/frames?path=${q(path)}`, { frames: list }, headers);
+  const lastSaid = (x) => x.s.got.findLast((m) => m.type === "sandbox")?.state;
+  const raised = async (x) => {
+    await send(`/api/sandbox?path=${q(x.path)}`, { state: "on" }, T);
+    await waitFor(() => lastSaid(x) === "on", 30000);
+  };
+  const said = async (x) => {
+    const one = await chat(c, x.path);
+    const m = await one.until((f) => f.type === "sandbox", 10000, "the sandbox message");
+    one.close();
+    return m.state;
+  };
+  const users = (x) => entries(x.path).filter((e) => e.type === "message" && e.message?.role === "user");
+  const offEntries = (x) => entries(x.path).filter((e) => e.type === "custom" && e.customType === "sandbox" && e.data?.on === false).length;
+  const rewinds = (x) => entries(x.path).filter((e) => e.type === "custom" && e.customType === "sova-rewind").length;
+  const WORDS = "Only the user lowers a chat's sandbox. Ask them to rewind this chat in the page. Nothing was changed.";
+  const asks = async () => {
+    const x = await newChat();
+    await turn(x, "say ok");
+    await raised(x);
+    return x;
+  };
+
+  const a = await asks();
+  // What On does to a tool here: it stops the write, enforcing or refusing to run; the page's rewind below lets it land.
+  const outside = join(scratch, `outside-${Date.now()}`);
+  mkdirSync(outside, { recursive: true });
+  const writesOut = async (x, name) => {
+    const r = await turn(x, `[call bash ${JSON.stringify({ command: `touch ${join(outside, name)} && echo WROTE` })}]`);
+    return { wrote: existsSync(join(outside, name)), said: textOfMsg(r[0]?.message).slice(0, 160) };
+  };
+  const onWrite = await writesOut(a, "on");
+  R.check(!onWrite.wrote, `tyourclick: On, a write outside the project doesn't land (${onWrite.said})`);
+  const first = users(a)[0].id;
+  // The reply before the raise: regenerating a later one goes back past nothing.
+  const reply = entries(a.path).find((e) => e.message?.role === "assistant").id;
+  const usersBefore = users(a).length;
+  for (const [who, headers] of [["a script", T], ["a chat", { ...T, "x-sova-caller": "k" }]]) {
+    const back = await action(a.path, { type: "rewind", entryId: first }, headers);
+    R.check(back.reply?.type === "rewind_refused" && back.reply?.message === WORDS, `tyourclick: ${who}'s rewind past the raise is refused with where to click`, JSON.stringify(back).slice(0, 200));
+    const again = await action(a.path, { type: "regenerate", entryId: reply }, headers);
+    R.check(again.reply?.type === "regenerate_refused" && again.reply?.message === WORDS, `tyourclick: ${who}'s regenerate past the raise is refused`, JSON.stringify(again).slice(0, 200));
+  }
+  const script = client(base, token).socket(`/ws/chat?path=${q(a.path)}&wire=2`);
+  await script.opened;
+  await script.until((m) => m.type === "hello", 15000, "the script's hello");
+  script.send({ type: "rewind", id: "w1", entryId: first });
+  const heard = await script.until((m) => m.type === "rewind_refused", 15000, "the socket's refusal");
+  R.check(heard.message === WORDS, "tyourclick: a script's socket gets the same refusal");
+  script.close();
+  R.check((await said(a)) === "on" && rewinds(a) === 0 && users(a).length === usersBefore, `tyourclick: the sandbox stayed On and the chat didn't move (${rewinds(a)} rewinds)`);
+  // Past no raise, nothing is lowered: a script's rewind still runs.
+  await turn(a, "say ok again");
+  const second = users(a).at(-1).id;
+  const keeps = await action(a.path, { type: "rewind", entryId: second }, T);
+  R.check(keeps.reply?.type === "rewound" && (await said(a)) === "on", "tyourclick: a script's rewind that lowers nothing still runs", JSON.stringify(keeps).slice(0, 200));
+  // The page's own: it lowers, and every open pane hears the state.
+  const before = a.s.got.length;
+  a.s.send({ type: "rewind", id: "p1", entryId: first });
+  await a.s.until((m) => m.type === "rewound", 15000, "the page's rewind", before);
+  await a.s.until((m) => m.type === "sandbox" && m.state === "subagents", 15000, "the page hears the state after it", before);
+  R.check((await said(a)) === "subagents", "tyourclick: the page's rewind passes, lowers, and the page is told");
+  const offWrite = await writesOut(a, "after");
+  R.check(offWrite.wrote, `tyourclick: the lowering is real: the write On stopped lands (${offWrite.said})`);
+
+  const b = await asks();
+  const reply2 = entries(b.path).findLast((e) => e.message?.role === "assistant").id;
+  const from = b.s.got.length;
+  b.s.send({ type: "regenerate", id: "p2", entryId: reply2 });
+  await b.s.until((m) => m.type === "regenerated", 15000, "the page's regenerate", from);
+  await settled(b.s, from, 60000);
+  R.check((await said(b)) === "subagents", "tyourclick: the page's regenerate passes and lowers");
+
+  // /sandbox as a message, by each road, on a chat that is On.
+  const d = await asks();
+  for (const text of ["/SANDBOX off", "/sandbox off\nand then this"]) {
+    const n = d.s.got.length;
+    const r = await send("/api/sessions/prompt", { path: d.path, text }, T);
+    R.check(r.status === 200, `tyourclick: ${JSON.stringify(text)} isn't the command that lowers, so it isn't refused`);
+    await sleep(1500);
+    R.check(lastSaid(d) === "on" && (await said(d)) === "on" && offEntries(d) === 0, `tyourclick: ${JSON.stringify(text)} lowered nothing`, `heard ${d.s.got.length - n} frames`);
+  }
+  const refused = await send("/api/sessions/prompt", { path: d.path, text: "/sandbox off" }, T);
+  R.check(refused.status === 403, `tyourclick: /sandbox off by session.send is refused (${refused.status})`);
+  for (const [i, text] of ["/sandbox off", "/sandbox subagents"].entries()) {
+    R.check((await frames(d.path, [{ type: "prompt", text, clientId: `f${i}` }], T)).status === 202, `tyourclick: frames taken: ${text}`);
+    await sleep(1500);
+    R.check((await said(d)) === "on" && offEntries(d) === 0, `tyourclick: ${text} by POST /api/chat/frames lowered nothing`);
+  }
+  const cookie = { cookie: pageCookie(agent, token) };
+  await frames(d.path, [{ type: "prompt", text: "/sandbox off", clientId: "fp" }], cookie);
+  await waitFor(() => lastSaid(d) === "off", 15000);
+  R.check((await said(d)) === "off" && offEntries(d) > 0, "tyourclick: the page's own frame lowers it: the reads above can see a lowering");
+}
+
 async function t10() {
   writeFileSync(join(proj, "trial-read.txt"), "READ-ME-TRIAL\n");
   const ov = await openOn(await overseer());
@@ -3240,7 +3347,7 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

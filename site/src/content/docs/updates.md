@@ -21,7 +21,7 @@ moved back. The script installs the same `stable` default from any tag or branch
 
 To pin a version, set `SOVA_REF`:
 
-- `| SOVA_REF=v0.9.0 bash` installs that release, and a re-run with it stays there.
+- `| SOVA_REF=v0.10.0 bash` installs that release, and a re-run with it stays there.
 - `| SOVA_REF=master bash`, or any other branch, updates to that branch's latest commit on each run.
 - A commit works too, as seven or more hex digits.
 
@@ -72,6 +72,10 @@ no branch, tag or file of your copy. It finds one of:
   copy offers to install the source as it is now; a developer copy refuses.
 - **Another branch**: a developer copy follows a source only from the branch that source names, and
   says so ("You're on topic; switch to master to follow it.").
+- **Withdrawn**: the release this copy runs was taken back. A warning says which release, why, and
+  when, and that Stable is back on the release before. An installed copy is offered **Go Back to**
+  that release, with the upgrade's own confirm; a developer copy is told the same and offered
+  nothing. Nothing moves on its own.
 
 While an update is waiting, the Settings gear at the foot of the sidebar carries a small dot, and
 its label reads "Settings · update available". Nothing else announces it.
@@ -98,8 +102,12 @@ replaced install until the new one answers. A developer copy moves only by fast-
 the branch its source names; with uncommitted changes it refuses and changes nothing ("Your copy has
 uncommitted changes in 3 files. Commit or stash them, then upgrade.").
 
-Only one upgrade runs at a time. Its outcome stays in the section for a day, with the path of its
-log.
+Only one upgrade runs at a time, and none starts while a restart is scheduled. Its outcome stays in
+the section for a day, with the path of its log. A developer copy's upgrade runs no installer, so its
+launcher and app entry stay as they are.
+
+**From v0.9.0 or v0.10.0:** Upgrade in Settings fails on these two releases ("Cannot find module"),
+and nothing changes. Run the install command once instead; from v0.10.1 on, Upgrade works again.
 
 ### Upgrade automatically
 
@@ -107,16 +115,19 @@ log.
 install starts the same upgrade, with the same refusals and the same put-back, without asking. A
 refusal, such as uncommitted changes, shows in the section and is tried again at the next check. A
 version that was put back is never installed again automatically; the button still offers it.
+Going back from a withdrawn release is never automatic.
 
 ### After an upgrade
 
 A Sova page that was open across the upgrade shows a banner at its top, "A newer Sova is available.
 Reload when you're ready.", with **Reload Tab** and **Dismiss**. It shows when the page itself changed, and
 whether or not you use a mesh.
+A card in a chat that can't load because Sova changed under the page asks for a page reload too.
 Each chat moves to the new code at its next quiet moment.
 
 ## Who can update
 
-Only you, at a signed-in browser, can check, change the update settings or upgrade. The Overseer,
+Only you, at a signed-in browser, can check, change the update settings or upgrade. Restarting is
+the one Updates action a script on this machine may also take (`sova run server.restart`). The Overseer,
 agents and schedules can't, and another Sova machine in your mesh needs its full grant even to read
 what the section shows. To stop every check on a server, start it with `SOVA_UPDATES_CHECK=off`.

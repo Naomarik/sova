@@ -62,8 +62,9 @@ answer in `<state root>/merge-served.json`: each served repository's main checko
 It writes the file at every start, before it takes any typed go-ahead, and again whenever the
 answer changes (a project added to the list, removed or archived, a setup saved, a target whose
 definition changed). A chat reads it afresh at each merge or "land it", never once at its start,
-so a project listed or set up while the chat is open takes effect at its next merge. A chat Sova
-doesn't run treats every repository as not served. A chat Sova runs that finds the file missing or
+so a project listed or set up while the chat is open takes effect at its next merge. Every chat Sova
+starts is told its server's state root. A chat Sova doesn't run treats every repository as not served. A
+chat Sova runs with no state root reads as served, and one that finds the file missing or
 damaged treats the repository as served, so a served project never merges around its queue. When
 the server can't read its Projects list, it serves nothing until it can.
 
@@ -149,13 +150,25 @@ never blocked: on a project the queue serves they record a go-ahead that lands a
 - **Drafts edited after approval** (the branch's own drafts no longer match the pinned hash; an edit
   to any other draft in its worktree doesn't count) stop the entry before
   its run starts, or void a run already started. It waits as "Drafts changed since you approved",
-  and the branch's queue card moves down as Drafts changed; the chat's model reads it as a hidden
+  and the branch's queue card moves down as Drafts changed, with Land; the chat's model reads it as a hidden
   line at its next turn, with no turn started (§chat.merge-queue/chat-turns). A new Land makes a new entry for the drafts as they are now,
   and the old one is cancelled as "approved again".
 
+**After a send-back.** A sent-back entry (Needs a fix) is final: nothing moves it on by itself.
+- **Land This Commit Again**, on every Needs a fix row and card, is an ordinary new approval of the
+  sent-back commit (`merge.add` at that commit): it pins the branch's drafts as they are now and
+  runs every check from the start, whatever it was sent back for.
+- **Land**, once it comes back on a branch sent back for its drafts whose drafts now fit
+  (§chat.composer/worktrees-control), approves the same commit the same way.
+- **"land it" typed in its chat** at the sent-back commit is that same approval too.
+- **Remove from Queue**, on every Needs a fix row and card, takes the entry off the queue with no
+  confirm and deletes nothing (branch, folder, commits, drafts and run logs stay): it ends cancelled,
+  "removed by you", its card gets a final Removed revision, and the branch reads as itself again.
+
 **Taking it back.** **Cancel** on a queued entry takes it out of the line; nothing lands, and the
-branch is Ready again. The screens offer Cancel only on queued entries. `merge.cancel` of a checking
-entry stops the run, resets the merge copy and leaves the target where it was.
+branch is Ready again. The screens offer Cancel on queued entries, and on the Merge Queue tab on a
+Drafts changed entry too. `merge.cancel` of a checking entry stops the run, resets the merge copy
+and leaves the target where it was; `merge.cancel` of a Needs a fix entry is Remove from Queue.
 
 ## §app.merge-queue/run — One branch at a time, in a merge copy
 
@@ -189,7 +202,9 @@ run's own folder, so a failure at any step, the first included, has its log.
    branch's own drafts are the untracked ones, plus the tracked ones it added or changed since its
    merge base with the target. Tracked drafts already on the target are never landed, changed or
    deleted. A draft of the branch's own that doesn't fit hands the entry back to its chat ("your spec
-   drafts don't fit…", with what to fix). The step is skipped, with its reason, for a project with
+   drafts don't fit…", with what to fix, then "Fix them in your drafts (no commit needed); Land comes
+  back here, or type "land it" in this chat."), recorded as a send-back for its drafts, so Land can
+  come back at the same commit once they fit (§chat.composer/worktrees-control). The step is skipped, with its reason, for a project with
    no spec, an approval without its specs, or a branch with no drafts of its own ("no spec drafts
    of the branch's own").
 6. **Checks.** The checks run on that commit, in order (§app.merge-queue/checks), with the review
@@ -484,8 +499,8 @@ and only the review step opens it. A project with no kit has no review step.
 
 **How it runs.** For each run, a fresh, read-only chat reviews exactly the commit being checked,
 in the merge copy, alongside the checks.
-- It runs on the shipped **Merge reviewer** profile: no edit tools, no web, no workers, no timers
-  and no worktrees.
+- It runs on the shipped **Merge reviewer** profile: no edit tools, no web, no workers, no timers,
+  no worktrees and no MCP servers (§app.mcp/who-gets).
 - It runs in mode normal with no minor modes at all: no Delegate, Align, Spec or Vis, and no
   memory. Its mode is pinned at creation, so the default modes saved on this computer never reach
   it, now or after they change.
@@ -584,6 +599,9 @@ recorded, and a host merge never pauses the line.
 - **During a run**, the run is voided and the queue pauses: "master moved outside the queue ({old} →
   {new}) while {branch} was checking: that run was voided; resume once that is intended".
 - **While Sova was stopped**, with entries in line, the queue starts paused the same way.
+- **A settings card doesn't do this.** Its commit waits (§app.project-overseer/settings' held Apply) and
+  applies at the queue's next quiet point as the queue's own move, so no run voids and the queue doesn't
+  pause.
 
 **Resume** accepts the new head, and waiting entries run on it.
 
@@ -696,7 +714,7 @@ shows, top to bottom:
   - **Review flagged · waiting for you**, with Land Anyway and Send Back;
   - **Can't tell whose failure · waiting for you**, with the check that failed on both sides, its
     log, and Land Anyway and Send Back (§app.merge-queue/blame);
-  - **Drafts changed since you approved**, with Land;
+  - **Drafts changed since you approved**, with Land and Cancel;
   - **Review the request**, a request's words waiting for you before it goes to the host, with
     Review Request (§app.merge-queue/requests);
   - a **Conflict** while it is being judged.
@@ -705,20 +723,27 @@ shows, top to bottom:
   (or GitLab), and **Send Back to Chat** or **Land Again** where they apply. Opening the tab checks
   them on the host.
 - **Sent back to its chat**: only entries that still need a fix, the newest 20, each with **See
-  Why** and never Land (§chat.composer/worktrees-control). An entry leaves this list, and isn't
+  Why**, **Land This Commit Again** and **Remove from Queue**, and never Land
+  (§chat.composer/worktrees-control). An entry leaves this list, and isn't
   shown dimmed or anywhere else here (See Why on its run still opens), once:
   - its branch was approved again later, whatever became of that approval (in line, checking,
     waiting for you, landed, sent back again or cancelled): the newer row stands for it;
   - its sent-back commit, or the branch, is already in {target}, by any route;
   - its branch was deleted, or its worktree folder removed, even when the branch remains;
-  - its branch reads ready again at a newer commit: its Ready to land row, with Land, stands for it.
+  - its branch reads ready again at a newer commit: its Ready to land row, with Land, stands for it;
+  - it was sent back for its spec drafts, and its drafts have changed since it was sent back and now
+    fit: its Ready to land row at the same commit, with Land, stands for it, with no reload;
+  - it was removed with Remove from Queue (the branch then shows as itself, in Ready to land when it
+    is ready).
 - **Recent**: landings, each with a **Landed** chip, "Landed as {sha} · {when} · pushed" (or "not pushed: {why}"), "No checks
   declared" when so, every note, and **View Checks**. A request the host merged has, in place of
   Landed, a **Merged on GitHub** (or **Merged on GitLab**) chip, then "as {sha} · {when}", and never
   says pushed or not pushed; a pushed branch reads "Pushed {branch} at {sha}".
 - **Ready to land, not approved**: the project's worktree branches with commits the target hasn't, a
   clean tree, a head that isn't a temporary commit, and no entry in line, landed or sent back at
-  that commit (a sent-back branch shows here only at a newer commit, §chat.composer/worktrees-control;
+  that commit (a sent-back branch shows here only at a newer commit, or, sent back for its drafts,
+  at the same commit once they changed and fit, or once removed from the queue,
+  §chat.composer/worktrees-control;
   the list is read at most every 15 seconds, so that row may take that long to appear).
   Each shows its branch, commit, Ready chip, its chat, worktree and "{n} commits ahead · +{a} −{d}",
   and **Land** with the same menu as the modal's (Land Without Review, Land Without Its Specs…).
@@ -783,8 +808,8 @@ is offered only on hover.
   flaky), drawn from the reruns (§app.merge-queue/blame);
 - **Checks and why**: every step with its tag and reason, its failures, time and counts, and its log.
 
-Every action here is a catalogue command: Land, Cancel, Pause, Resume, Accept, Send Back, Land
-Anyway, Start Fresh, Send Answer, Clear and Clear All over the merge verbs (§app.project-services/merge-verbs), Update Local Main and Publish over
+Every action here is a catalogue command: Land, Land This Commit Again, Cancel, Remove from Queue,
+Pause, Resume, Accept, Send Back, Land Anyway, Start Fresh, Send Answer, Clear and Clear All over the merge verbs (§app.project-services/merge-verbs), Update Local Main and Publish over
 the queue's own routes, which the merge thread can't call. Queue Settings and Open on GitHub only
 open a place. The view follows the queue live,
 from the session feed's merge-queue frames, at desktop and phone widths.
@@ -1026,6 +1051,11 @@ a branch pushed to origin") and "It applies once it's merged into {target}.", wi
 at once, even while a branch is checking; after it, "Opened PR #{n} for the settings
 change. It applies once it's merged into {target}." with **Open PR** (GitLab: "MR !{n}", **Open
 MR**), or "Pushed the settings change as {branch}. It applies once it's merged into {target}."
+
+**From a Create card.** A chat in Create can prepare these same changes on a Settings change card
+(§chat.create-mode/settings-cards). The card's Apply stands for the confirm and goes this same way,
+with the same commit, refusals and waits: while a branch is checking the card reads "Saves when the
+current branch finishes." and has **Cancel Save**, and a chat never applies one.
 
 ## §app.merge-queue/models — The review and merge-thread models, per project
 

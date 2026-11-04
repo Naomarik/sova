@@ -63,6 +63,7 @@ import { WorkerRestorer, workersFromRecords } from "./worker-restore";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { handoverSuccessor, retireReason, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
 import { sessionTokens } from "./session-tokens";
+import { opNote } from "./stall-recorder";
 import { readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
@@ -1008,6 +1009,8 @@ async function refreshFacts(path: string): Promise<SessionFacts> {
     if (hit && hit.stat.mtimeMs === st.mtimeMs && hit.stat.size === st.size && hit.stat.ino === st.ino && hit.stat.dev === st.dev) return hit.facts;
     const fold = hit?.fold ?? new PiFileFold(factDigest);
     const view = await fold.read(path);
+    // What it read: what the file grew by, or all of it when it was new or replaced.
+    opNote("sessionFacts read", hit && hit.stat.ino === view.stat.ino && view.stat.size >= hit.stat.size ? view.stat.size - hit.stat.size : view.stat.size);
     const branch = entriesOf(view.branch);
     const records = entriesOf(view.all).filter(isRecord);
     const facts = foldFacts({

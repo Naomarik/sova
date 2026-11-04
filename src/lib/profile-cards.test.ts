@@ -145,6 +145,7 @@ test("the mode glyphs: the major mode's (normal the sliders), each built-in mino
     { kind: "letter", id: "9lives", letter: "9" },
   ]);
   assert.deepEqual(modeGlyphs("delegate"), [{ kind: "icon", id: "delegate", icon: "mode-delegate" }]);
+  assert.deepEqual(modeGlyphs("create"), [{ kind: "icon", id: "create", icon: "mode-create" }]);
   assert.deepEqual(modeGlyphs(null, ["align"]), [{ kind: "icon", id: "align", icon: "mode-align" }]);
 });
 

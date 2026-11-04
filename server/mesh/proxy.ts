@@ -167,6 +167,9 @@ export const PROXIED_HEADER = "X-Forwarded-Host";
  */
 export const RELAYED_HEADER = "X-Sova-Relayed";
 
+/** What a relayed click carries, read and set only by server/mesh/click-proof.ts and proxyPeer. */
+export const CLICK_PROOF_HEADER = "X-Sova-Click-Proof";
+
 /** This host's own browser: not on the peer listener (`meshPeer`) and not relayed by a peer's
     /peer/<id>/ proxy. The operator's local routes answer anything else with their 404. */
 export const localRequest = (c: Context): boolean => !(c.env as { meshPeer?: unknown } | undefined)?.meshPeer && !c.req.header(RELAYED_HEADER);
@@ -234,7 +237,7 @@ async function proxyPairing(c: Context, peer: PeerEntry, tail: string, headers: 
 
 /** `scrub`: this host restricts the peer (§mesh.peers/grants), so the request carries nothing of
     this host's name or the browser beyond what the route needs. */
-export async function proxyPeer(c: Context, peer: PeerEntry, tail: string, scrub = false): Promise<Response> {
+export async function proxyPeer(c: Context, peer: PeerEntry, tail: string, scrub = false, clickProof?: string): Promise<Response> {
   const incoming = new URL(c.req.url);
   const headers = new Headers(c.req.raw.headers);
   const host = headers.get("host");
@@ -242,6 +245,9 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string, scrub
   for (const h of HOP_BY_HOP) headers.delete(h);
   headers.delete(OVERSEER_HEADER);
   for (const h of CREDENTIAL_HEADERS) headers.delete(h);
+  // Only this host mints it, for its own page (server/mesh/click-proof.ts): never one a browser or script sent.
+  headers.delete(CLICK_PROOF_HEADER);
+  if (clickProof) headers.set(CLICK_PROOF_HEADER, clickProof);
   if (scrub) {
     for (const h of IDENTITY_HEADERS) headers.delete(h);
     headers.set("user-agent", SCRUBBED_HOST); // else the runtime's fetch names itself

@@ -178,7 +178,7 @@ export const overseerWarnings = store.warnings;
 /** The dialog closed: drop the draft, so the next open reads the saved file afresh. */
 export const resetOverseerDraft = store.reset;
 
-export const CAP_KEYS = ["createPerTurn", "promptsPerTurn", "archivesPerTurn", "concurrentSessions", "explorePerTurn", "linksPerTurn", "orgWritesPerTurn", "gatherPerTurn"] as const satisfies readonly (keyof OverseerCaps)[];
+export const CAP_KEYS = ["createPerTurn", "promptsPerTurn", "archivesPerTurn", "concurrentSessions", "explorePerTurn", "linksPerTurn", "orgWritesPerTurn", "gatherPerTurn", "extRunsPerTurn"] as const satisfies readonly (keyof OverseerCaps)[];
 
 export const CAP_LABEL: Record<keyof OverseerCaps, { label: string; hint: string }> = {
   createPerTurn: { label: "Sessions created", hint: "New sessions it may create, per message you send." },
@@ -195,9 +195,10 @@ export const CAP_LABEL: Record<keyof OverseerCaps, { label: string; hint: string
   linksPerTurn: { label: "Links made", hint: "Sessions it may link across hosts, per message you send." },
   orgWritesPerTurn: { label: "Organization changes", hint: "Changes it may make to organizations, projects, rosters and project overseers, per message you send." },
   gatherPerTurn: { label: "Gathering sessions started", hint: "Gathering sessions and offers it may start, per message you send." },
+  extRunsPerTurn: { label: "Extension commands run", hint: "Extension commands it may run, per message you send." },
 };
 
-/** The seven limits counted per message: the folded group under Running at once. */
+/** The eight limits counted per message: the folded group under Running at once. */
 export const PER_MESSAGE_CAP_KEYS = CAP_KEYS.filter((k) => k !== "concurrentSessions");
 
 /** A limit the form can take: a whole number from 0 to 1000. */

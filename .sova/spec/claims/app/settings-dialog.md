@@ -7,7 +7,7 @@ each other (§design/ground-rules and §design/deviations record the deviation).
 the session stays behind, closed by the scrim, Esc, or its Close button (Cancel while anything
 is unsaved, which discards it, §app.settings-dialog/save-bar).
 
-The rail is the structure: each settings screen is one tab — General, Models, Accounts, Subagents,
+The rail is the structure: each settings screen is one tab — General, Models, Accounts, MCP Servers, Subagents,
 Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Memory, Organizations, Merge Queue, Themes, Mesh, Public links, Outreach, Voice, Experimental.
 Merge Queue shows one project's queue settings at a time (§app.merge-queue/settings): a project's
 **Queue Settings** opens it on that project, and its picker switches project.
@@ -534,7 +534,7 @@ the draft. Switch labels are in sentence case, like every other Settings switch.
 - **Model and thinking**: **Model** (provider/model) and **Thinking**, clamped to the model's
   ladder. A save applies them at once when the Overseer is idle, otherwise at the end of its turn.
   They never become the default for new sessions.
-- **Limits** (§app.overseer/caps), all eight: its lede reads "Before acting, the Overseer checks
+- **Limits** (§app.overseer/caps), all nine: its lede reads "Before acting, the Overseer checks
   these. When one is reached it stops and asks you instead. "Per message" counts restart each time
   you message it." First, full width, **Running at once**, with its hint: "How many sessions the
   Overseer started or messaged may be working at the same time. Starting a session, or messaging
@@ -543,11 +543,11 @@ the draft. Switch labels are in sentence case, like every other Settings switch.
   line beside the field, "Now: 3 of 10 running.": the Overseer's running count (§app.overseer/caps), read when the
   tab mounts and every 15 s while it is open, of the number in the field (of the saved limit while
   the field doesn't hold a whole number); no line while the count can't be read. Then the other
-  seven, folded as **Per-message limits**, whose head says how many differ from their defaults
+  eight, folded as **Per-message limits**, whose head says how many differ from their defaults
   ("All at default", "2 changed from default"): **Sessions created**, **Prompts to other
-  sessions**, **Sessions archived**, **Ideas explored**, **Links made**, **Organization changes**
-  and **Gathering sessions started**, each hint saying what it counts, "per message you send".
-  **Reset to Defaults** puts all eight back. The Overseer composer's "3 of 10 running" opens
+  sessions**, **Sessions archived**, **Ideas explored**, **Links made**, **Organization changes**,
+  **Gathering sessions started** and **Extension commands run**, each hint saying what it counts,
+  "per message you send". **Reset to Defaults** puts all nine back. The Overseer composer's "3 of 10 running" opens
   Settings here, the panel scrolled so Limits is at its top (the dialog's title stays in view).
 - **Quick actions**: the hint reads "The Quick Actions button in the Overseer's composer foot lists
   these. Picking one sends its prompt." One line per action: its label, its description, and
@@ -671,7 +671,7 @@ Folders box or the tab writes nothing.
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Subagents**
 (the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Memory**, **Organizations**,
 **Mesh**, **Alignment** and **Experimental**, and on General the **Updates** form (§app/updates). A change on them is staged, never written as it is made. No form has a Save or
-Discard button of its own: saving is the dialog's. Merge Queue is the one tab that saves on its own (below).
+Discard button of its own: saving is the dialog's. Merge Queue (below) and MCP Servers (§app.mcp/settings-tab) are the tabs that save on their own.
 
 - **The footer.** Left to right: a status line, then **Save Changes**
   (primary; **Saving…** while it writes) and **Cancel** (ghost), while any gated form on any tab holds

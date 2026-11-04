@@ -321,7 +321,7 @@
   "§app.release/sova": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§app.release/playbook",
       "§app.release/settings"
@@ -329,8 +329,8 @@
     "code": [
       ".sova/playbooks/release/PLAYBOOK.md",
       ".sova/playbooks/release/release.json",
-      ".sova/playbooks/release/project-sections.json",
       ".sova/playbooks/release/scripts/sova-release.mjs",
+      ".sova/project.json",
       ".sova/playbooks/release/references/checks.md",
       ".sova/playbooks/release/references/docs.md",
       "server/sova-release-playbook.test.ts",
@@ -339,8 +339,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-04T19:06Z",
+      "source": "pi-session:01a1a7b1-62c9-754f-a095-5fcceffc995c#8cdd33e4"
     }
   },
   "§app.release/start": {

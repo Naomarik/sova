@@ -75,9 +75,13 @@ export async function deviceIdOf(endpoint: string): Promise<string> {
 
 export type PushSupport = "ok" | "insecure" | "unsupported" | "ios-home-screen" | "no-worker";
 
-/** This page is the installed (home-screen) app, not a browser tab. */
+/** This page is the installed (home-screen) app, not a browser tab: standalone, or an installed
+    desktop window with its title bar hidden (window-controls-overlay, §app.shell/window-controls-overlay),
+    where only that display mode matches. */
 export const isInstalledApp = (): boolean =>
-  (navigator as Navigator & { standalone?: boolean }).standalone === true || window.matchMedia?.("(display-mode: standalone)").matches === true;
+  (navigator as Navigator & { standalone?: boolean }).standalone === true ||
+  window.matchMedia?.("(display-mode: standalone)").matches === true ||
+  window.matchMedia?.("(display-mode: window-controls-overlay)").matches === true;
 
 /** Whether this browser can subscribe, and if not, the one reason to say. */
 export function pushSupport(): PushSupport {

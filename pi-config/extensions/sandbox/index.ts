@@ -24,10 +24,11 @@ import { type ExtensionAPI, type ExtensionContext, getAgentDir, SettingsManager 
 import { Text } from "@earendil-works/pi-tui";
 import { backendFor, type Policy } from "./backend.ts";
 import { hostEnv, scrubEnv } from "./env.ts";
-import { canonicalize, loadPolicyFile, narrowScope, type ParentScope, parentScopeOf, parseParentScope, policyFilePath, type ResolvedPolicy, workerCwdRefusal, writeOnlyScope } from "./policy.ts";
+import { canonicalize, loadPolicyFile, narrowScope, type ParentScope, parentBrowser, parentScopeOf, parseParentScope, policyFilePath, type ResolvedPolicy, workerCwdRefusal, writeOnlyScope } from "./policy.ts";
 import { encodeLaunchScope, OWNER_ID } from "./launch.ts";
 import { type ProxyHandle, proxySocketPath, startProxy } from "./proxy.ts";
 import { ensureSessionTmpDir, resolveSessionPolicy } from "./session-policy.ts";
+import { BUSY_TEXT, cachesLine, cleanResultText, invalidNotice, isDue, loadCacheSettings, lockHeld, lockPath, pruneRunner, readStamp } from "./shadow-prune.ts";
 import {
 	describeActive,
 	isStarting,
@@ -210,6 +211,8 @@ export default function sandbox(pi: ExtensionAPI) {
 			sessionId,
 			// Write-only: the host's /tmp stays visible, read-only (§chat.worktrees/workers).
 			...(policy.writeOnly ? { hostTmp: true } : {}),
+			// The policy's `browser` (a worker: its parent's): the Seatbelt profile's Chromium rules.
+			...(policy.browser ? { browser: true } : {}),
 		};
 		const probe = await backend.probe(backendPolicy);
 		if (!probe.ok) return { ok: false, reason: probe.reason };
@@ -236,6 +239,7 @@ export default function sandbox(pi: ExtensionAPI) {
 		const event: SandboxStateEvent = { version: 1, on, ...(workersOff ? { workers: "off" as const } : {}), extensionPath: SELF_DIR, enforcement: on ? active.enforcement : "none" };
 		// Every worker start asks this (§chat.sandbox/workers, §chat.worktrees/workers); a remote session has none.
 		if (!remote) event.workerLaunch = (req) => workerLaunch(on, workersOff, req);
+		if (!remote) event.scope = { worktreeRoots: [...worktreeRoots], ...(parentScope && typeof parentScope === "object" ? { parent: parentScope } : {}) };
 		pi.events?.emit(SANDBOX_STATE_EVENT, event);
 	}
 
@@ -261,7 +265,9 @@ export default function sandbox(pi: ExtensionAPI) {
 			scope = root ? narrowScope(parent, root) : parent;
 		} else {
 			if (!root) return { kind: "none" };
-			scope = writeOnlyScope(root);
+			// No policy file is read for the worker itself; the browser setting is the parent's (its
+			// file and its cwd's project file). Unreadable: no browser, and the worker still starts.
+			scope = writeOnlyScope(root, { browser: parentBrowser(agentDir(), cwd) });
 		}
 		if (req.backend === "pi") return { kind: "pi", extensionPath: SELF_DIR, flags: { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(scope) } };
 		if (!OWNER_ID.test(req.owner) || req.owner === "." || req.owner === "..") return { kind: "refused", reason: `Sandbox: invalid worker id ${JSON.stringify(req.owner)}; a worker cannot start sandboxed.` };
@@ -428,6 +434,51 @@ export default function sandbox(pi: ExtensionAPI) {
 	});
 	pi.events?.emit(WORKTREES_DISCOVER_EVENT, { version: 1 });
 
+	/**
+	 * The cache copies' automatic cleanup (shadow-prune.ts): when a sandboxed chat starts, at most
+	 * once a day per agent dir, in a detached low-priority child. Never awaited, never throws: the
+	 * chat is ready whatever it does, and the sandbox never depends on it.
+	 */
+	function startAutoPrune(dir: string): void {
+		try {
+			const settings = loadCacheSettings(dir);
+			if (!settings.ok) {
+				notify(invalidNotice(settings.error), "warning");
+				return;
+			}
+			if (!settings.value.on) return;
+			const now = Date.now();
+			if (!isDue(readStamp(dir), now) || lockHeld(lockPath(dir), now)) return;
+			void pruneRunner.start({ agentDir: dir, mode: "auto", settings: settings.value }).catch(() => {});
+		} catch {
+			// Best-effort: the next sandboxed chat tries again.
+		}
+	}
+
+	/** `/sandbox clean [all]`: the same cleanup now, ignoring the daily throttle, and what it freed. */
+	async function cleanNow(all: boolean): Promise<void> {
+		const mode = all ? "all" : "clean";
+		let r: Awaited<ReturnType<typeof pruneRunner.start>>;
+		try {
+			const dir = agentDir();
+			const settings = loadCacheSettings(dir);
+			if (!settings.ok) {
+				notify(invalidNotice(settings.error), "warning");
+				return;
+			}
+			if (lockHeld(lockPath(dir))) {
+				notify(BUSY_TEXT, "warning");
+				return;
+			}
+			r = await pruneRunner.start({ agentDir: dir, mode, settings: settings.value, wait: true });
+		} catch (e) {
+			r = { kind: "error", error: (e as Error).message };
+		}
+		if (r.kind === "busy") notify(BUSY_TEXT, "warning");
+		else if (r.kind === "done") notify(cleanResultText(r.stamp, mode));
+		else notify(`Caches: the cleanup failed (${r.kind === "error" ? r.error : "it did not run"}). Nothing more was removed.`, "error");
+	}
+
 	pi.on("session_start", async (_event, ctx) => {
 		ui = ctx.hasUI ? ctx.ui : undefined;
 		cwd = ctx.cwd;
@@ -435,6 +486,11 @@ export default function sandbox(pi: ExtensionAPI) {
 		// A remote target announces itself on request; it answers synchronously if it already started.
 		pi.events?.emit(REMOTE_DISCOVER_EVENT, { version: 1 });
 		await restore(ctx, true);
+		// After this handler returns: the chat is ready before even the spawn happens.
+		if (active.on && !remote) {
+			const dir = agentDir();
+			setImmediate(() => !remote && startAutoPrune(dir));
+		}
 	});
 
 	// Branch navigation (/tree, /fork) changes which entry is current.
@@ -458,18 +514,29 @@ export default function sandbox(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("sandbox", {
-		description: "Sandbox this session: /sandbox on (its tools and subagents) | subagents (subagents only) | off (nothing) (bare: show the state)",
-		getArgumentCompletions: (prefix) => ["on", "subagents", "off"].filter((c) => c.startsWith(prefix.trim())).map((c) => ({ value: c, label: c })),
+		description: "Sandbox this session: /sandbox on (its tools and subagents) | subagents (subagents only) | off (nothing) | clean [all] (clean the cache copies) (bare: show the state)",
+		getArgumentCompletions: (prefix) => ["on", "subagents", "off", "clean", "clean all"].filter((c) => c.startsWith(prefix.trim())).map((c) => ({ value: c, label: c })),
 		handler: async (args, ctx) => {
 			ui = ctx.hasUI ? ctx.ui : undefined;
 			const arg = args.trim();
 			if (!arg || arg === "status") {
-				notify(describeActive(active));
+				let caches: string;
+				try {
+					caches = cachesLine(loadCacheSettings(agentDir()), readStamp(agentDir()));
+				} catch {
+					caches = "Caches: not cleaned yet";
+				}
+				notify(`${describeActive(active)}\n${caches}`);
+				return;
+			}
+			const words = arg.split(/\s+/);
+			if (words[0] === "clean" && (words.length === 1 || (words.length === 2 && words[1] === "all"))) {
+				await cleanNow(words.length === 2);
 				return;
 			}
 			const want = parseState(arg);
 			if (want === undefined) {
-				notify("usage: /sandbox on | subagents | off", "error");
+				notify("usage: /sandbox on | subagents | off | clean [all]", "error");
 				return;
 			}
 			if (want !== "on" && launchedOn) {

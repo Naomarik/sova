@@ -24,6 +24,7 @@ import { registerWrapupRoutes } from "./wrapup-routes";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
 import { registerProjectFileRoutes } from "./project-files-routes";
+import { registerMcpRoutes } from "./mcp/routes";
 import { registerSessionOfferRoutes } from "./session-offers-routes";
 import { registerTranscriptCardRoutes } from "./transcript-cards-routes";
 import { setFileCopyGuards } from "./project-files-tool";
@@ -93,7 +94,7 @@ import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
-import { singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
+import { CREATE_NO_DEFAULT, createNotNamed, singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { subagentProfilesInfo, requireSubagentProfile, restoreReplacedProfiles, saveSubagentProfileDefault, saveSubagentProfiles } from "./subagent-profiles";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
@@ -111,10 +112,10 @@ import { setSummaryWriter, summaryFromChain } from "./version-summaries";
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsInfo, writeSessionTitleSettings } from "./session-titles-settings";
 import type { LlmRuntime } from "./decide-llm";
 import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
-import { modeInfo, parseModeRequest, readMode } from "./mode-state";
+import { chatOnlyModes, CREATE_NOT_TAKEN, modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { defaultMemoryChoice } from "./memory/settings";
 import { registerMemoryRoutes } from "./memory/routes";
-import { parseSandboxBody } from "./sandbox-state";
+import { parseSandboxBody, sandboxCommand, sandboxLowers } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
 import { meshApi, meshRoutes } from "./mesh";
 import { registerCommandsRoutes } from "./commands-routes";
@@ -137,6 +138,7 @@ import {
   overseerSettingsInfo,
   renderPeerRead,
   saveOverseerSettings,
+  overseerAbilities,
   overseerAutonomy,
   revokePermit,
 } from "./overseer";
@@ -156,10 +158,16 @@ import { pushRoutes } from "./push-routes";
 import { chatTrialRoutes } from "./chat-trial-routes";
 import { sessionsChanged } from "./list-generation";
 import { resourceMonitor } from "./resource-monitor";
+import { routeOpName } from "./stall-recorder-route";
+import { opEnd, opStart, stallRecording } from "./stall-recorder";
 import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
 import { localRequest } from "./mesh/proxy";
-import { pageOnlyRefusal } from "./page-only";
+import { notPage, pageOnlyRefusal, yourClickBody, yourClickRefusal } from "./page-only";
 import { registerProjectSettingsRoutes } from "./project-settings-routes";
+import { registerSovaSettingsRoutes } from "./sova-settings-routes";
+import { setSovaSettingsDeps } from "./sova-settings";
+import { setCreateSettingsRun } from "./create-settings-tool";
+import { runCreateSettings } from "./create-settings-run";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
 import { registerUpdatesRoutes } from "./updates/routes";
@@ -175,7 +183,7 @@ const CONNECT_TEMPLATE = fileURLToPath(new URL("./connect-agent-template.md", im
     One source with serverStart(): POST /api/updates/restart answers the same startedAt, which the
     Settings block waits to see change. */
 const SERVER_STARTED_AT = serverStart().startedAt;
-const SERVER_HEAD: string | null = (() => {
+export const SERVER_HEAD: string | null = (() => {
   try {
     return execFileSync("git", ["rev-parse", "HEAD"], { cwd: dirname(fileURLToPath(import.meta.url)), timeout: 5_000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
   } catch {
@@ -217,6 +225,17 @@ export function buildApp(deps: AppDeps) {
   // proxy refuses to pass on. In-process calls and the peer listener are never asked. An installed
   // extension's own key is checked by server/extension-keys.ts (§app.extensions/backend-key).
   setExtensionKeyCheck(extensionKeys);
+  // Every request is a named operation on the stall recorder's board, by its route pattern: never
+  // its URL (server/stall-recorder.ts).
+  app.use("*", async (c, next) => {
+    if (!stallRecording()) return next();
+    const op = opStart(routeOpName(c));
+    try {
+      await next();
+    } finally {
+      opEnd(op);
+    }
+  });
   app.use("*", async (c, next) => {
     const refused = authGate(c);
     if (refused) return refused;
@@ -439,10 +458,14 @@ export function buildApp(deps: AppDeps) {
   registerWrapupRoutes(app);
   registerProjectOverseerRoutes(app);
   registerProjectSettingsRoutes(app);
+  registerSovaSettingsRoutes(app);
+  setCreateSettingsRun(runCreateSettings);
   registerProjectCostRoutes(app);
   registerProjectFileRoutes(app);
   // Session offers: a session's offer cards and clicks, another chat's show, the project page's list (§chat/offers).
   registerSessionOfferRoutes(app);
+  // MCP servers: the Settings tab, the project page's section, Check, approval and sign-in (§app/mcp).
+  registerMcpRoutes(app);
   registerTranscriptCardRoutes(app);
   // The usage ledger: every figure of spend, answered by the usage helper (§app.insights/usage-ledger).
   registerUsageRoutes(app);
@@ -1048,6 +1071,7 @@ export function buildApp(deps: AppDeps) {
     claudeModels: () => cachedClaudeModels(),
     policy: () => readModelPolicy(),
   };
+  setSovaSettingsDeps({ sources: delegateSources, titlesChanged: () => autoTitleSweep.reschedule() });
   app.get("/api/settings/delegate", (c) => c.json(delegateInfo()));
   app.get("/api/settings/delegate/options", async (c) => c.json(await delegateOptions(delegateSources)));
   app.get("/api/settings/subagents", async (c) => {
@@ -1215,7 +1239,7 @@ export function buildApp(deps: AppDeps) {
   // With ?path=: that held chat's own mode, its project modes read now (§chat.mode-menu/project-modes).
   app.get("/api/mode", async (c) => {
     const rawPath = c.req.query("path");
-    if (rawPath === undefined) return c.json(modeInfo(readMode(), defaultMemoryChoice()));
+    if (rawPath === undefined) return c.json({ ...modeInfo(readMode(), defaultMemoryChoice()), chatModes: chatOnlyModes() });
     const path = resolveSessionPath(rawPath);
     if (!path) return c.json({ error: "Invalid ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
     const chat = chatHandle(path);
@@ -1311,7 +1335,15 @@ export function buildApp(deps: AppDeps) {
     if (path === null) {
       // The default never stores project modes (§chat.mode-menu/project-modes): they belong to one chat's checkout.
       if (request.patch.projectModes !== undefined) return c.json({ error: "Project modes belong to one chat: send projectModes with ?path=" }, 400);
+      if (request.patch.mode === "create") return c.json({ error: CREATE_NO_DEFAULT }, 400);
       return c.json(await switchMode(request.patch));
+    }
+    // Only a chat picks Create for itself (§chat.create-mode/per-chat-only); nothing was switched.
+    if (request.patch.mode === "create" && overseerSender(c.req.header(OVERSEER_SENDER_HEADER))) return c.json({ error: createNotNamed("the Overseer") }, 409);
+    // Approving a project tool is your click, or the Overseer's own turn-on (§app.access/your-click): nothing switches.
+    if (request.patch.approve?.length) {
+      const notYou = yourClickRefusal(c, { projectTool: request.patch.approve[0]!.id }, { overseerKeeps: true });
+      if (notYou) return notYou;
     }
     // The merge queue's own chats keep the modes Sova started them with (profiles/system, thread.ts threadMemoryOn).
     if (queueChatRole((await getSessionSummary(path).catch(() => null))?.profile)) return c.json({ error: QUEUE_CHAT_MODE_REFUSAL }, 409);
@@ -1328,6 +1360,8 @@ export function buildApp(deps: AppDeps) {
     try {
       const result = await got.chat.switchMode(patch);
       if (result.needsApproval) return c.json({ error: result.error ?? "Approval needed", needsApproval: result.needsApproval } satisfies ProjectModeApprovalNeeded, 409);
+      // A chat on code older than Create keeps its mode, and one open elsewhere takes no switch.
+      if (patch.mode === "create" && result.mode !== "create") return c.json({ error: CREATE_NOT_TAKEN }, 409);
       return c.json(result);
     } catch (err) {
       if (err instanceof ModeRefusedError) return c.json({ error: err.message }, 409);
@@ -1346,7 +1380,7 @@ export function buildApp(deps: AppDeps) {
     const frames = postedFrames(await c.req.json().catch(() => null));
     if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
     sessionsChanged();
-    deliverFrames(path, frames);
+    deliverFrames(path, frames, notPage(c));
     return c.json({ accepted: frames.length }, 202);
   });
 
@@ -1368,6 +1402,11 @@ export function buildApp(deps: AppDeps) {
     if ("error" in parsed) return c.json({ error: parsed.error }, 400);
     const got = await chatFor(path);
     if ("error" in got) return c.json({ error: got.error }, got.status);
+    // Lowering it is your click; the Overseer's runs only in a turn your click on a card opened (§app.access/your-click).
+    if (sandboxLowers((await got.chat.sandboxInfo())?.state, parsed.state)) {
+      const notYou = yourClickRefusal(c, "sandbox", { overseerKeeps: true });
+      if (notYou) return notYou;
+    }
     return c.json(await got.chat.applySandbox(parsed.state));
   });
 
@@ -1600,6 +1639,8 @@ export function buildApp(deps: AppDeps) {
   app.get("/api/overseer", async (c) => c.json(await overseerInfo(), 200, { "Cache-Control": "no-store" }));
   app.post("/api/overseer/clear", async (c) => c.json(await clearOverseer()));
   app.get("/api/overseer/attention", async (c) => c.json(await attentionForWire(), 200, { "Cache-Control": "no-store" }));
+  // What it can do, for its About panel (§app.overseer/about): the same reading of extension commands as sova_ext.
+  app.get("/api/overseer/abilities", async (c) => c.json(await overseerAbilities(), 200, { "Cache-Control": "no-store" }));
   // Approvals for later, standing rules and the running count (§app.overseer/approvals, §app.overseer/caps).
   // There is no route that makes one: only a card click does, in the Overseer's own runtime.
   app.get("/api/overseer/autonomy", async (c) => c.json(await overseerAutonomy(), 200, { "Cache-Control": "no-store" }));
@@ -1804,6 +1845,14 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    // A `/sandbox` that lowers isn't sent by this road, whoever asks: the page's own is typed in its composer
+    // (§app.access/your-click). The chat refuses it too, for every other way a server-side send reaches it.
+    const asked = sandboxCommand(body.text);
+    if (asked) {
+      const got = await chatFor(path);
+      if ("error" in got) return c.json({ error: got.error }, got.status);
+      if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
+    }
     const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery);
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);
   });

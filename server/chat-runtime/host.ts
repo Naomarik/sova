@@ -138,7 +138,7 @@ export const REPLY_TEXT_EVERY_MS = 100;
 const SPECIAL_PROTO = 2;
 
 /** The asks that read as nothing without a server (ASK_POLICY "nothing"). */
-type NothingAsk = "project.note" | "playbook.bundleFor" | "playbook.reprime" | "links" | "singleton" | "reply.timings" | "offers.note" | "cards.note";
+type NothingAsk = "project.note" | "playbook.bundleFor" | "playbook.reprime" | "links" | "singleton" | "reply.timings" | "offers.note" | "cards.note" | "mcp.list" | "mcp.tell";
 const NOTHING: { [M in NothingAsk]: ChatAsks[M]["result"] } = {
   "project.note": null,
   "playbook.bundleFor": null,
@@ -147,6 +147,8 @@ const NOTHING: { [M in NothingAsk]: ChatAsks[M]["result"] } = {
   singleton: null,
   "reply.timings": null,
   "offers.note": null,
+  "mcp.list": null,
+  "mcp.tell": null,
   "cards.note": null,
 };
 
@@ -486,6 +488,8 @@ export class ChatRuntimeHost {
       },
       instanceNote: (ctx) => this.ask("project.note", { cwd: ctx.cwd, sessionId: ctx.sessionId, leafId: this.chat?.leafId() ?? null }),
       offerNote: (sessionId) => this.ask("offers.note", { sessionId }),
+      mcpList: (ask) => this.ask("mcp.list", ask) as never,
+      mcpTell: (parent, note) => void this.ask("mcp.tell", { parent, note }).catch(() => {}),
       cardNote: (sessionId, since) => this.ask("cards.note", { sessionId, since }),
     });
     setSingletonCheck((key, path) => this.ask("singleton", { key, path }));
@@ -697,6 +701,7 @@ export class ChatRuntimeHost {
     const client: ChatClient = {
       send: (msg) => out(JSON.stringify(msg)),
       sendRaw: out,
+      ...(f.client.notUser ? { notUser: true as const } : {}),
       ...(f.client.wire ? { wire: f.client.wire } : {}),
       ...(f.client.tail ? { tail: f.client.tail } : {}),
       ...(f.client.pull ? { pull: f.client.pull } : {}),

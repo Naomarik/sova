@@ -62,7 +62,7 @@ import {
 import { announce, hasLocalDraft, home, localRunning, localWorking, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
 import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTooltip, signalWords, stalledPaths, tagSearchText, turnErrorTitle } from "../lib/signals";
-import { readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
+import { rowBranchStatus } from "../lib/branch-status";
 import { ROW_BUILT_INS, RowPlaceContext, useRowAdditions } from "../lib/row-place";
 import { RowPlaceView } from "./RowPlace";
 import { orgHref } from "../lib/orgs-route";
@@ -303,8 +303,8 @@ export function SessionRow(props: {
   const needsYou = createMemo(() => rowNeedsYou(s(), { selected: props.selected, busy: isBusy(), stalled: stalled().has(s().path) }));
   /** Line 1's leading state mark (src/lib/signals.ts): the turn-error mark, else the unread dot. */
   const leadMark = () => rowLeadMark(s(), props.selected);
-  /** Line 3's worktree count, "2 of 3", after the time: muted, lit while one is ready to merge. */
-  const trees = () => readinessCount(s().readiness);
+  /** Line 3's branch status, after the time: the headline its chat's composer status row says, as a mark and a number. */
+  const branchStatus = createMemo(() => rowBranchStatus(s()));
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
   const working = () => sessionWorking(s());
   /** The row's context fill: the open session's live value wins over the list's tail value, and a
@@ -612,23 +612,20 @@ export function SessionRow(props: {
             </Show>
             <p class="list-meta">
               {relativeTime(s().lastActiveAt, props.now)}
-              {/* The worktrees this session tracks: "2 of 3" merged, after the time, before the
-                  badge and the model. Muted, and lit while one of them is ready to merge. The
-                  digits are aria-hidden: the words after them are what the row's name says. */}
-              <Show when={trees()}>
-                {(c) => (
+              {/* The branches this session's chat tracks: the very headline its composer status row says
+                  ("1 needs a fix"), as the fact's own mark and its number, after the time, before the
+                  badge and the model (cut first when the row is narrow). The words are in the title and
+                  the row's name: the chat's words, then each branch, then what follows a merge. */}
+              <Show when={branchStatus()}>
+                {(b) => (
                   <>
                     {" · "}
-                    <span
-                      class="session-worktrees"
-                      classList={{ "session-worktrees-ready": c().ready }}
-                      title={readinessTitle(s().readiness) ?? undefined}
-                    >
-                      <Icon name="branch" small />
+                    <span class={`session-branch-status session-branch-status-${b().tone} session-branch-status-${b().kind}`} title={b().lines.join("\n")}>
+                      <Icon name={b().icon} small />
                       <span class="text-num" aria-hidden="true">
-                        {c().merged} of {c().total}
+                        {b().n}
                       </span>
-                      <span class="visually-hidden">{readinessCountWords(c())}</span>
+                      <span class="visually-hidden">{b().lines.join(". ")}</span>
                     </span>
                   </>
                 )}

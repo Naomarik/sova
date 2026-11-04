@@ -71,6 +71,7 @@ const DOORS = {
   schedule: "Only the user approves a schedule. Ask them to press Approve in the Playbooks dialog or the Overseer's Approvals & Schedules. Nothing was approved.",
   power: "Turning on a Project Overseer power needs the user's own click. Ask them to turn it on in the project page's Settings tab. Nothing was changed.",
   sandbox: SANDBOX_LOWER_REFUSAL,
+  cards: "Only the user trusts a project's or an extension's cards. Ask them to press the Trust button on one of its cards. Nothing was trusted.",
 } as const;
 export type YourClickDoor = keyof typeof DOORS | { projectTool: string };
 

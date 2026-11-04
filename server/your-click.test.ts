@@ -30,6 +30,9 @@ const { clickProofFor, peerClickProven, takeClick } = await import("./mesh/click
 const { trustFile } = await import("./profile-trust");
 const { pageHeaders } = await import("./testing/page");
 const { notPage } = await import("./page-only");
+const { cardsTrusted, projectOwner, setCardsTrusted } = await import("./transcript-cards");
+const { setExtensionKeyCheck } = await import("./auth");
+const { extensionKeys } = await import("./extension-keys");
 after(() => disposeAllChats());
 
 const json = { "content-type": "application/json" };
@@ -185,6 +188,69 @@ describe("a Project Overseer power", async () => {
     assert.equal(powers().assistant.codingStart, false);
     assert.equal((await call("PATCH", url, on, { [OVERSEER_SENDER_HEADER]: senderSecret() })).status, 200);
     assert.equal(powers().assistant.codingStart, true);
+  });
+});
+
+describe("trusting cards to act", async () => {
+  const p = await project("cards");
+  const owner = projectOwner(p.dir);
+  const url = "/api/session-cards/trust";
+  const words = /press the Trust button on one of its cards\. Nothing was trusted\./;
+  const token = () => pageHeaders().cookie!.split("=")[1]!;
+  /** A real extension's key, as the gate knows them: only for these calls. */
+  const keyCheck = { isKey: (v: string) => v === "ext-key", idOf: (v: string) => (v === "ext-key" ? "notes" : null), socket() {} } as never;
+  const extensions = (): [string, Record<string, string>][] => [
+    ["an extension's key in the token header", { [TOKEN]: "ext-key" }],
+    ["an extension's key as a bearer", { authorization: "Bearer ext-key" }],
+    ["an extension's key as a bearer beside the page's cookie", { authorization: "Bearer ext-key", ...pageHeaders() }],
+  ];
+
+  test("turning it on is refused to everyone but the page, and nothing is trusted", async () => {
+    setExtensionKeyCheck(keyCheck);
+    try {
+      const others = [...notTheUser(), ["the Overseer", { [OVERSEER_SENDER_HEADER]: senderSecret() }, undefined] as ReturnType<typeof notTheUser>[number]];
+      for (const [who, headers, env] of others) await refuses(() => call("POST", url, { owner, on: true }, headers, env), words, who);
+      for (const [who, headers] of extensions()) await refuses(() => call("POST", url, { owner, on: true }, headers), words, who);
+      for (const [who, headers, env] of peers()) await refuses(() => call("POST", url, { owner, on: true }, headers, env), /./, who, true);
+      assert.equal(cardsTrusted(owner), false, "nothing was trusted");
+    } finally {
+      setExtensionKeyCheck(extensionKeys);
+    }
+  });
+
+  test("a page-shaped call trusts them", async () => {
+    assert.equal(cardsTrusted(owner), false);
+    const r = await call("POST", url, { owner, on: true }, pageHeaders());
+    assert.equal(r.status, 200, await r.clone().text());
+    assert.equal(cardsTrusted(owner), true);
+  });
+
+  test("turning it off stays open to whoever could reach it", async () => {
+    setExtensionKeyCheck(keyCheck);
+    try {
+      const anyone: [string, Record<string, string>, Record<string, unknown> | undefined][] = [
+        ["the page", pageHeaders(), undefined],
+        ["the token in a header", { [TOKEN]: token() }, undefined],
+        ["a chat's key", { "x-sova-caller": "a-chat-key" }, undefined],
+        ["the Overseer", { [OVERSEER_SENDER_HEADER]: senderSecret() }, undefined],
+        ["an in-process dispatch", {}, undefined],
+        ...extensions().map(([who, headers]) => [who, headers, undefined] as [string, Record<string, string>, undefined]),
+        ...peers(),
+      ];
+      for (const [who, headers, env] of anyone) {
+        setCardsTrusted(owner, true);
+        const r = await call("POST", url, { owner, on: false }, headers, env);
+        assert.equal(r.status, 200, `${who}: ${await r.clone().text()}`);
+        assert.equal(cardsTrusted(owner), false, who);
+      }
+    } finally {
+      setExtensionKeyCheck(extensionKeys);
+    }
+  });
+
+  test("a bad body is refused for what it is, and trusts nothing", async () => {
+    assert.equal((await call("POST", url, { owner, on: "yes" }, pageHeaders())).status, 400);
+    assert.equal(cardsTrusted(owner), false);
   });
 });
 

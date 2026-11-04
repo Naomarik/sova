@@ -4,6 +4,7 @@ import type { CardRaiser, ProjectCardsAnswer, SessionCardsAnswer } from "../shar
 import { extensionCaller, showsToken, TOKEN_HEADER } from "./auth";
 import { callerKeys, CALLER_HEADER } from "./caller-keys";
 import { OrgError } from "./org-error";
+import { yourClickRefusal } from "./page-only";
 import { resolveSessionPath } from "./paths";
 import { readProject } from "./projects/spaces";
 import { answerCard, CardRefusal, extensionCardsTrust, projectCards, sessionDrawingKind, raiseCard, runCardCommand, sessionCardsAt, sessionCardType, setCardState, setCardsTrusted } from "./transcript-cards";
@@ -227,8 +228,12 @@ export function registerTranscriptCardRoutes(app: Hono<any>): void {
     "/api/session-cards/trust",
     handle(async (c) => {
       const b = await body(c);
-      if (c.req.header(TOKEN_HEADER) !== undefined) throw new CardRefusal("Only the user trusts cards, in the page.", 403);
       if (typeof b.owner !== "string" || typeof b.on !== "boolean") throw new CardRefusal("owner names whose cards, and on is true or false", 400);
+      // Only the widening closes (§app.access/your-click): stopping trusting stays open.
+      if (b.on) {
+        const notYou = yourClickRefusal(c, "cards");
+        if (notYou) return notYou;
+      }
       setCardsTrusted(b.owner, b.on);
       return c.json({ owner: b.owner, trusted: b.on }, 200, NO_STORE);
     }),

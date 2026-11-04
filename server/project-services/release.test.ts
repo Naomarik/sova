@@ -90,6 +90,15 @@ async function prepared(t: ReturnType<typeof releaseKit>, version = "0.2.0") {
   return { rec, checkout, sha };
 }
 
+/** A release ready to publish, its commit on master (nothing pushed yet). */
+async function ready(t: ReturnType<typeof releaseKit>) {
+  const { rec, sha } = await prepared(t);
+  await t.call("release.step", { step: "commit", state: "done", summary: "c", facts: [`commit=${sha}`] }, t.chat);
+  await until(() => t.r.record(t.repo.root, rec.id)!.state === "ready", "ready");
+  await landedState(t.k, t.r.record(t.repo.root, rec.id)!.entry!);
+  return t.r.record(t.repo.root, rec.id)!;
+}
+
 describe("who may call which release verb (t17, q3, q12)", () => {
   const root = "/p";
   const thread = true;
@@ -349,6 +358,71 @@ describe("the screen pass (D1 D2 D6 D8)", () => {
       (t.r as unknown as { save(r: unknown): void }).save(rec);
       const f = t.r.attentionFacts().find((x) => x.kind === "release-failed")!;
       assert.equal(f.detail, "v0.2.0: Publish failed: origin refused the push: x");
+    } finally {
+      await t.done();
+    }
+  });
+});
+
+describe("a failed Publish in Needs you", () => {
+  /** origin's stable moved elsewhere: the lease refuses the whole push, a real failure through the queue. */
+  const breakOrigin = (t: ReturnType<typeof releaseKit>) => sh(t.repo.root, "push", "-q", "-f", "origin", `${sh(t.repo.root, "commit-tree", "HEAD^{tree}", "-m", "elsewhere")}:refs/tags/stable`);
+  const mendOrigin = (t: ReturnType<typeof releaseKit>) => sh(t.repo.root, "push", "-q", "-f", "origin", "refs/tags/stable:refs/tags/stable");
+  const count = (text: string, what: string) => text.split(what).length - 1;
+
+  test("one item, release-failed, with the real error and Publish failed said once; a failed retry stays one; Publish stays offered, to the operator and the power; a successful retry leaves none", async () => {
+    const t = releaseKit();
+    try {
+      const rec = await ready(t);
+      const items = () => t.r.attentionFacts().filter((f) => f.release === rec.id);
+      assert.deepEqual(items().map((f) => f.kind), ["release-ready"]);
+      breakOrigin(t);
+      const first = await t.call("release.publish", { confirm: true });
+      assert.equal(first.ok, false);
+      assert.equal(count(first.error!.message, "Publish failed"), 1, first.error!.message);
+      assert.match(first.error!.message, /^Publish failed, nothing changed: origin refused the push: /);
+
+      // Read back through release.status, as a screen reads it.
+      const v = (await t.call("release.status", {})).release!.view!;
+      const step = v.open!.steps.find((s) => s.id === "publish")!;
+      assert.equal(step.state, "failed");
+      assert.match(step.summary ?? "", /^origin refused the push: /, "the step holds the cause alone");
+      assert.equal(count(step.summary!, "Publish failed"), 0);
+      assert.equal(v.open!.state, "ready");
+      assert.deepEqual(v.gates!.why, [], "gates decide Publish: it stays offered");
+      assert.deepEqual(items().map((f) => [f.kind, f.detail]), [["release-failed", `v0.2.0: Publish failed: ${step.summary}`]]);
+      assert.equal(count(items()[0]!.detail, "Publish failed"), 1);
+
+      // The power's path is the gates too: its retry reaches the push, and fails on it, not on a refusal.
+      const again = await t.r.run("release.publish", { project: t.repo.root }, { kind: "project-overseer", id: "po", root: t.repo.root, act: async () => {}, releaseAct: true });
+      assert.match(again.error?.message ?? "", /^Publish failed, nothing changed: origin refused the push: /);
+      assert.deepEqual(items().map((f) => f.kind), ["release-failed"], "a retry that fails still gives one");
+      assert.equal(count(items()[0]!.detail, "Publish failed"), 1);
+
+      mendOrigin(t);
+      const done = await t.call("release.publish", { confirm: true });
+      assert.equal(done.ok, true, JSON.stringify(done.error));
+      assert.deepEqual(items(), [], "published: nothing left to act on");
+      assert.equal(sh(t.repo.origin, "rev-parse", "v0.2.0^{commit}"), rec.commit ?? t.repo.head());
+    } finally {
+      await t.done();
+    }
+  });
+
+  test("Retry Step on Publish clears the failure: ready again, one release-ready item; every other failed or held step still shows beside ready", async () => {
+    const t = releaseKit();
+    try {
+      const rec = await ready(t);
+      const items = () => t.r.attentionFacts().filter((f) => f.release === rec.id).map((f) => f.kind);
+      breakOrigin(t);
+      await t.call("release.publish", { confirm: true });
+      assert.deepEqual(items(), ["release-failed"]);
+      assert.equal((await t.call("release.retry", { step: "publish" })).ok, true);
+      assert.deepEqual(items(), ["release-ready"]);
+      const open = t.r.openRecord(t.repo.root)!;
+      open.steps.find((s) => s.id === "page")!.state = "failed";
+      (t.r as unknown as { save(r: unknown): void }).save(open);
+      assert.deepEqual(items().sort(), ["release-failed", "release-ready"], "only a failed Publish replaces ready");
     } finally {
       await t.done();
     }
@@ -662,15 +736,6 @@ describe("a queue event lost to a stop", () => {
 });
 
 describe("master's how-it-lands, settings saves and local-main updates against the freeze", () => {
-  /** A release ready to publish, its commit on master (nothing pushed yet). */
-  const ready = async (t: ReturnType<typeof releaseKit>) => {
-    const { rec, sha } = await prepared(t);
-    await t.call("release.step", { step: "commit", state: "done", summary: "c", facts: [`commit=${sha}`] }, t.chat);
-    await until(() => t.r.record(t.repo.root, rec.id)!.state === "ready", "ready");
-    await landedState(t.k, t.r.record(t.repo.root, rec.id)!.entry!);
-    return t.r.record(t.repo.root, rec.id)!;
-  };
-
   test("Save Checks (merge.setup) never moves the frozen target: refused while a release is open", async () => {
     const t = releaseKit();
     try {

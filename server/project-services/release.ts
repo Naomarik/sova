@@ -1212,7 +1212,9 @@ export class Releaser {
         const name = rec.tag ?? rec.version ?? "The open release";
         const since = (iso: string | null | undefined) => Date.parse(iso ?? rec.startedAt) || 0;
         const powerHeld = !!rec.power && Date.parse(rec.power.heldUntil) > this.now();
-        if (rec.state === "ready" && !powerHeld) out.push({ root, release: rec.id, kind: "release-ready", since: since(rec.steps.find((s) => s.id === "checks")?.at), detail: `Ready to publish · ${rec.tag ?? name}` });
+        // A failed Publish is release-failed's alone: one item for the one thing to act on (gates still offer Publish).
+        const publishFailed = rec.steps.find((s) => s.id === "publish")?.state === "failed";
+        if (rec.state === "ready" && !powerHeld && !publishFailed) out.push({ root, release: rec.id, kind: "release-ready", since: since(rec.steps.find((s) => s.id === "checks")?.at), detail: `Ready to publish · ${rec.tag ?? name}` });
         for (const s of rec.steps) if (s.state === "held") out.push({ root, release: rec.id, kind: "release-held", since: since(s.at), detail: `${name}: ${s.label} is held for you${s.summary ? `: ${s.summary}` : ""}` });
         for (const s of rec.steps) if (s.state === "failed") out.push({ root, release: rec.id, kind: "release-failed", since: since(s.at), detail: `${name}: ${s.label} failed${s.summary ? `: ${s.summary}` : ""}` });
         const quiet = this.quietOf(rec);

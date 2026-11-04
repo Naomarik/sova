@@ -174,6 +174,11 @@ export const NOT_PROJECT = "This folder isn't a project, so its .mcp.json won't 
 /** A folder and computer with no servers shows no group. */
 export const setupShows = (m: SetupMcp | undefined): m is SetupMcp => !!m && (!!m.line || !!m.notProject || m.rows.length > 0);
 
+/** What the group's reading rests on in the chat's profile, as one string: a pick that changes it re-reads the card. */
+export function setupProfileKey(p: { label?: string; remove?: readonly string[] } | null | undefined): string {
+  return JSON.stringify([p?.remove?.includes("mcp") ?? false, p?.label ?? null]);
+}
+
 /** The chat's set as the card sends it: only what differs from a server's New Chats switch. */
 export function mcpFlips(m: SetupMcp | undefined, flip?: { name: string; on: boolean }): { offMcp: string[]; onMcp: string[] } {
   const offMcp: string[] = [];

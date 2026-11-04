@@ -21,6 +21,7 @@ import {
   rowFacts,
   setupLine,
   setupOffLine,
+  setupProfileKey,
   setupShows,
   stateTone,
   stateWord,
@@ -115,6 +116,14 @@ test("a setup row with no switch says why, naming where to approve it", () => {
   assert.equal(setupOffLine(row({ off: "no-check" })), NO_CHECK);
   assert.equal(setupOffLine(row({ off: "sandbox" })), "Address servers stay off while the sandbox is On.");
   assert.equal(setupOffLine(row({ off: "address-in-chat" })), "Address servers don't run in chats yet.");
+});
+
+test("a profile that takes MCP Servers away, or gives them back, changes the card's key; another capability doesn't", () => {
+  const custom = (remove: string[]) => setupProfileKey({ label: "Custom", remove });
+  assert.notEqual(custom(["mcp"]), custom([]));
+  assert.equal(custom(["web"]), custom([]));
+  assert.notEqual(setupProfileKey({ label: "Reader", remove: ["mcp"] }), custom(["mcp"]), "the line names the profile");
+  assert.equal(setupProfileKey(null), setupProfileKey(undefined));
 });
 
 test("the group: one line for remote and a profile, none at all with no servers", () => {

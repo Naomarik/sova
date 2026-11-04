@@ -539,7 +539,8 @@ function rowsOf(e: StoredEdit): KeptChange[] {
   leaves("", e.before, a);
   leaves("", e.value, b);
   const changed = [...new Set([...a.keys(), ...b.keys()])].filter((k) => !same(a.get(k), b.get(k)));
-  const rows: KeptChange[] = changed.slice(0, MAX_ROWS).map((k) => ({ field: `${e.id}${k ? `.${k}` : ""}`, label: k ? `${label}: ${k}` : label, from: a.get(k) ?? null, to: b.get(k) ?? null, fromText: words(a.get(k)), toText: words(b.get(k)), ...(grant ? { grant } : {}) }));
+  // One change allows one thing: its grant is said once, on its first row.
+  const rows: KeptChange[] = changed.slice(0, MAX_ROWS).map((k, i) => ({ field: `${e.id}${k ? `.${k}` : ""}`, label: k ? `${label}: ${k}` : label, from: a.get(k) ?? null, to: b.get(k) ?? null, fromText: words(a.get(k)), toText: words(b.get(k)), ...(grant && i === 0 ? { grant } : {}) }));
   if (changed.length > MAX_ROWS) rows.push({ field: `${e.id}.more`, label, from: null, to: null, fromText: "", toText: `${changed.length - MAX_ROWS} more changes (Show File Changes)`, ...(grant ? { grant } : {}) });
   return rows;
 }

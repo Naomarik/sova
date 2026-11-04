@@ -176,6 +176,7 @@ describe("a resync recipe", () => {
     const { card } = await propose({ peer: "b", recipe });
     assert.equal(card.grants.length, 1);
     assert.match(card.notes[0]!, /kind termux; ssh me@phone; port 8022; arguments --branch-name x\./);
+    assert.equal((card as unknown as { kept: { grant?: string }[] }).kept.filter((k) => k.grant).length, 1, "several rows, one approval said once");
     assert.equal(onDisk().hosts.b, undefined, "nothing until Apply");
     for (const headers of [{ "x-sova-token": "x" }, { "x-sova-caller": "k" }] as Record<string, string>[])
       assert.equal((await app.request("/api/settings/apply", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ card: card.id, fingerprint: card.fingerprint }) })).status, 403);

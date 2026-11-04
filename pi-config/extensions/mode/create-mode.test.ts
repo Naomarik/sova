@@ -191,7 +191,7 @@ test("a terminal has no Create: /mode create is refused and changes nothing", as
 	await p.mode("create");
 	assert.equal(entries.filter((e) => e.customType === "mode").length, 0, "no entry");
 	assert.ok(!p.activeTools().includes("create_guide"));
-	assert.ok(p.notes.some((n) => n.level === "warning" && n.text.includes("mode menu")), JSON.stringify(p.notes));
+	assert.ok(p.notes.some((n) => n.level === "warning" && n.text === "Mode not changed: Create is chosen in a Sova chat"), JSON.stringify(p.notes));
 });
 
 test("a terminal's `--major create` doesn't start in Create, and `--major delegate` still does", async () => {

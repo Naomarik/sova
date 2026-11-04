@@ -26,6 +26,7 @@ const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { OVERSEER_SENDER_HEADER, senderSecret } = await import("./overseer-sender");
 const { ensureOverseer } = await import("./overseer");
 const { pageHeaders } = await import("./testing/page");
+const { CREATE_NOT_TAKEN } = await import("./mode-state");
 after(async () => {
   await disposeAllChats();
 });
@@ -96,6 +97,29 @@ test("typed /mode delegate and /mode normal reach the server too: the menu never
   await typed(chat, "/mode create", "n2");
   await typed(chat, "/mode delegate", "n3");
   assert.equal((await get(path)).mode, "delegate");
+  assert.ok(!chat.harness.activeTools().includes("create_guide"));
+});
+
+test("a chat that doesn't take the typed switch says why, as the route does", async () => {
+  const chat = await acquireChat(await newChat());
+  const real = chat.switchMode.bind(chat);
+  // What a chat open elsewhere answers: its mode, unchanged. (A chat on older code has no typed road: its extension refuses.)
+  chat.switchMode = (async () => ({ ...(await real({ mode: "normal" })) })) as never;
+  try {
+    const sent = await typed(chat, "/mode create", "o1");
+    assert.equal(sent.find((m) => m.type === "error")?.message, CREATE_NOT_TAKEN);
+  } finally {
+    chat.switchMode = real;
+  }
+});
+
+test("sent by anything but a composer the text names nothing: an Overseer's sova_send or session.send takes the extension's road and is refused", async () => {
+  const path = await newChat();
+  const chat = await acquireChat(path);
+  // chat.prompt is what those sends call; only a client's composer send reaches the typed switch.
+  await chat.prompt("/mode create", undefined, "server");
+  assert.notEqual((await get(path)).mode, "create");
+  assert.notEqual(chat.harness.state.branch().latest(MODE)?.data.active.mode, "create", "the extension took nothing either");
   assert.ok(!chat.harness.activeTools().includes("create_guide"));
 });
 

@@ -109,7 +109,7 @@ export function webModeRefusal(mode: Mode, sessionId: string | undefined): strin
 			// A failing hook permits nothing.
 		}
 	}
-	return "Create is chosen in a Sova chat's mode menu";
+	return "Create is chosen in a Sova chat";
 }
 
 /** What Save as Default saves as the mode: Create's last normal or Delegate choice, or the mode itself. */

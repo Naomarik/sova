@@ -11,7 +11,7 @@ A project mode lives in the checkout, so a chat in a worktree sees its own branc
 
 ## What new chats start in
 
-- Change: the major mode (normal or Delegate), strict and the minor modes new chats start with. Save as default also saves the subagent profile.
+- Change: the major mode (normal or Delegate), strict and the minor modes new chats start with. Save as default also saves the subagent profile. Strict takes `edit` and `write` from the chat, so its file changes go through workers. It keeps `bash`, so strict isn't a wall: never promise a strict chat can't change files.
 - Lives: `<agent dir>/mode.json`. There's no default per project: coding sessions use this one too.
 - Approves: the person, by Apply or by pressing it.
 - By: Card or Screen. Card `modes.default`, with all three of `{mode, strict, minorModes}`; `mode` is `normal` or `delegate`, and Create is refused because no default holds it. It doesn't set the subagent profile: that's `workers`. Screen: set a chat up as wanted, then press Save as default in its mode menu. In Create that saves the chat's last normal or Delegate choice, so the person should do it from a normal or Delegate chat.

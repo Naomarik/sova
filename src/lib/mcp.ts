@@ -27,6 +27,8 @@ export const SIGN_IN_BODY = "The sign-in page opens in a new tab. If it ends on 
 
 export const PROJECT_INTRO = "From this project's .mcp.json. Each checkout approves its own copy.";
 export const PROJECT_NONE = "No servers yet. Add a .mcp.json to this project to declare one.";
+/** A checkout group's heading: its folder's own name, whichever way the server writes the folder. */
+export const folderName = (folder: string): string => folder.replace(/\/+$/, "").split("/").pop() || folder;
 export const projectBroken = (reason: string) => `This project's .mcp.json can't be read: ${reason}.`;
 
 const STATE_WORD: Record<McpRowState, string> = {
@@ -57,7 +59,9 @@ export function rowFacts(row: Pick<McpServerRow, "kind" | "toolCount">): string 
 /** What the row says about an entry that can't run. A missing secret says so at its own field. */
 export function refusedLines(refused: McpServerRow["refused"]): string[] {
   if (!refused) return [];
-  return refused.why === "reserved" ? [RESERVED_ROW] : refused.names.map((n) => `${n} isn't a saved secret, so this server won't start.`);
+  if (refused.why === "reserved") return [RESERVED_ROW];
+  if (refused.why === "unusable") return refused.names.map((n) => `${n} can't be used, so this server won't start.`);
+  return refused.names.map((n) => `${n} isn't a saved secret, so this server won't start.`);
 }
 
 export const replacedLine = (r: { project: string }, name: string): string => `Replaced in ${r.project} by that project's ${name}.`;

@@ -1,7 +1,7 @@
 import { For, Show } from "solid-js";
 import type { McpProjectServers, McpServerRow } from "../../shared/mcp";
 import { getProjectMcp } from "../lib/api";
-import { PROJECT_INTRO, PROJECT_NONE, projectBroken, projectGroups } from "../lib/mcp";
+import { folderName, PROJECT_INTRO, PROJECT_NONE, projectBroken, projectGroups } from "../lib/mcp";
 import { createPoll } from "../lib/poll";
 import { McpRow } from "./McpServerRow";
 
@@ -32,7 +32,7 @@ export function ProjectMcpCard(props: { projectId: string }) {
             <For each={projectGroups(d())}>
               {(c) => (
                 <div class="mcp-checkout">
-                  <h3 class="mcp-heading">{c.folder}</h3>
+                  <h3 class="mcp-heading">{folderName(c.folder)}</h3>
                   <Show when={c.file === "broken"}>
                     <p class="field-error">{projectBroken((c.error ?? "").replace(/\.$/, ""))}</p>
                   </Show>

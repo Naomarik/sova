@@ -7,6 +7,7 @@ import {
   chatNoteText,
   editedServer,
   errorLineText,
+  folderName,
   isReservedName,
   mcpFlips,
   mcpToolWords,
@@ -52,6 +53,7 @@ test("a refused entry says why, and a missing secret is left to its own field", 
   assert.deepEqual(refusedLines(undefined), []);
   assert.deepEqual(refusedLines({ why: "reserved" }), [RESERVED_ROW]);
   assert.deepEqual(refusedLines({ why: "bad-value", names: ["HOME"] }), ["HOME isn't a saved secret, so this server won't start."]);
+  assert.deepEqual(refusedLines({ why: "unusable", names: ["headers", "url"] }), ["headers can't be used, so this server won't start.", "url can't be used, so this server won't start."]);
 });
 
 test("an error line says which chat, and how it ran", () => {
@@ -73,6 +75,11 @@ test("Add and Check: a command's secret needs its name, an address's doesn't, an
   assert.deepEqual(newServer("command", "a", fields({ command: "npx x", secretName: "KEY" })), { way: "command", name: "a", command: "npx x" }, "no secret, no name for one");
   assert.deepEqual(newServer("paste", "a", fields({ paste: "{}", secret: "stale" })), { way: "paste", name: "a", text: "{}" }, "a Secret typed on another tab never leaves with a paste");
   assert.deepEqual(editedServer("address", fields({ address: "https://x" })), { address: "https://x" });
+});
+
+test("a checkout's heading is its folder's name, from a path or a bare name", () => {
+  assert.equal(folderName("/home/me/work/shop/"), "shop");
+  assert.equal(folderName("shop"), "shop");
 });
 
 test("a project's groups: a checkout with no file drops out, and a broken one stays", () => {

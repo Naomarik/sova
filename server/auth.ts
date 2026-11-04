@@ -250,6 +250,16 @@ export function setAuthPort(port: number): void {
 /** The port this process's main listener is bound to (setAuthPort). */
 export const authListenPort = (): number => listenPort;
 
+/**
+ * Where a chat on this server reaches it, handed over as SOVA_URL, or undefined when no loopback address does (a bind
+ * to one other address: scripts/sova.mjs takes only this machine's). A chat never gets PORT (chatEnv), so without this
+ * its scripts would fall back to port 4800, whichever Sova that is. Never SOVA_PORT: it also picks a hermetic server's port.
+ */
+export function chatServerUrl(host = process.env.HOST || "127.0.0.1", port = authListenPort()): string | undefined {
+  if (host === "::1") return `http://[::1]:${port}`;
+  return host === "0.0.0.0" || host === "::" || host === "localhost" || host.startsWith("127.") ? `http://${host === "localhost" ? host : "127.0.0.1"}:${port}` : undefined;
+}
+
 /** `name`, `name:port`, `[v6]:port` or a URL → the bare lower-case host name, or null. */
 function hostnameOf(value: string): string | null {
   const v = value.trim();

@@ -54,8 +54,8 @@ Sign-ins never pass through you: name the screen or the command, and the person 
 
 - Change: which login a project's chats, or an organization's, are billed to.
 - Lives: this computer's Sova state. It doesn't spread.
-- Approves: the person, by choosing.
-- By: Screen. The Settings tab of the project's page, or of the organization.
+- Approves: the person, by Apply or by choosing.
+- By: Card or Screen. A project: card `{setting: "claude-login", login}`, where `login` is an existing login's id, `none` for this computer's order, or `org` to follow its organization; `reference` with `project.claude-login` gives the words. The card picks a login and never signs one in. An organization: Screen only, its Settings tab. A project by hand: its page's Claude login.
 - Live: new chat. Open chats keep their login.
 - Check: the tab shows the login after the change.
 

@@ -207,6 +207,7 @@
     "code": [
       "server/updates/runner.ts",
       "server/updates/runner.test.ts",
+      "server/updates/runner.integration.test.ts",
       "server/updates/manager.ts",
       "server/updates/manager.test.ts",
       "src/components/UpdatesSettings.tsx",

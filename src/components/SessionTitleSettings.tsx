@@ -243,11 +243,9 @@ function MinutesField(props: { id: string; label: string; hint: string; value: s
       <input
         class="input text-num"
         id={props.id}
-        type="number"
+        type="text"
+        autocomplete="off"
         inputmode="numeric"
-        min={props.range.min}
-        max={props.range.max}
-        step="1"
         value={props.value}
         disabled={props.disabled}
         aria-invalid={issue() ? "true" : undefined}

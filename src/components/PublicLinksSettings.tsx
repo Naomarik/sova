@@ -357,9 +357,8 @@ export function PublicLinksSettingsSection() {
               <input
                 id="public-links-port"
                 class="input input-mono"
-                type="number"
-                min="1"
-                max="65535"
+                type="text"
+                inputmode="numeric"
                 autocomplete="off"
                 value={draft()?.sharePort ?? ""}
                 disabled={off()}
@@ -538,9 +537,8 @@ export function PublicLinksSettingsSection() {
             <input
               id="public-links-ingress"
               class="input input-mono"
-              type="number"
-              min="1"
-              max="65535"
+              type="text"
+              inputmode="numeric"
               autocomplete="off"
               value={draft()?.ingressPort ?? ""}
               disabled={off()}

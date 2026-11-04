@@ -297,6 +297,14 @@ export function SubagentProfilesSettings() {
   const number = (field: TeamNumberField, value: () => number, update: (n: number) => void) => {
     const id = `subagents-${editing()}-${field}`;
     const issue = () => numberIssue(field, value());
+    // The box shows what was typed ("", "-", "1e"), red, while it reads as the draft's number; the
+    // draft's own number otherwise (a load, a discard). A number box would hand back "" and wipe it.
+    const [typed, setTyped] = createSignal<string | null>(null);
+    const shown = () => {
+      const t = typed();
+      if (t !== null && Object.is(numberOf(t), value())) return t;
+      return Number.isNaN(value()) ? "" : String(value());
+    };
     return (
       <div class="field subagent-editor-number">
         <label class="field-label" for={id}>
@@ -306,16 +314,17 @@ export function SubagentProfilesSettings() {
           <input
             class="input text-num"
             id={id}
-            type="number"
+            type="text"
+            autocomplete="off"
             inputmode="numeric"
-            min={TEAM_NUMBER_BOUNDS[field].min}
-            max={TEAM_NUMBER_BOUNDS[field].max}
-            step="1"
-            value={Number.isNaN(value()) ? "" : value()}
+            value={shown()}
             aria-invalid={issue() ? "true" : undefined}
             aria-describedby={`${id}-hint`}
             disabled={store.saving()}
-            onInput={(e) => update(numberOf(e.currentTarget.value))}
+            onInput={(e) => {
+              setTyped(e.currentTarget.value);
+              update(numberOf(e.currentTarget.value));
+            }}
           />
           <span class={issue() ? "field-error" : "field-hint"} id={`${id}-hint`}>
             {issue() ?? NUMBER_HINTS[field]}

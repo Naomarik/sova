@@ -56,10 +56,9 @@ export function BatonSettingsSection() {
       <span class="field-label">{label}</span>
       <input
         class="input"
-        type="number"
-        min={bounds.min}
-        max={bounds.max}
-        step="1"
+        type="text"
+        inputmode="numeric"
+        autocomplete="off"
         value={batonDraft()?.[key] ?? ""}
         disabled={saving() || !batonDraft()?.photosOn}
         aria-invalid={batonDraft() ? photoFields[key](batonDraft()!) === null : false}
@@ -89,10 +88,9 @@ export function BatonSettingsSection() {
           <span class="field-label">Message limit</span>
           <input
             class="input"
-            type="number"
-            min={MESSAGES_MIN}
-            max={MESSAGES_CAP}
-            step="1"
+            type="text"
+            inputmode="numeric"
+            autocomplete="off"
             value={batonDraft()?.messagesMax ?? ""}
             disabled={saving()}
             aria-invalid={!valid()}
@@ -124,10 +122,9 @@ export function BatonSettingsSection() {
             <span class="field-label">Largest file, MB</span>
             <input
               class="input"
-              type="number"
-              min={FILE_MB.min}
-              max={FILE_MB.max}
-              step="1"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
               value={batonDraft()?.fileMb ?? ""}
               disabled={saving()}
               aria-invalid={batonDraft() ? parseFileMb(batonDraft()!) === null : false}

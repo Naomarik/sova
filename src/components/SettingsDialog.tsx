@@ -491,11 +491,9 @@ function GeneralPanel() {
           class="input input-num"
           classList={{ "input-invalid": invalid() }}
           id="recent-count"
-          type="number"
+          type="text"
+          autocomplete="off"
           inputmode="numeric"
-          min={MIN_RECENT_COUNT}
-          max={MAX_RECENT_COUNT}
-          step={1}
           value={draft()}
           aria-invalid={invalid() ? "true" : undefined}
           aria-describedby={invalid() ? "recent-count-error" : "recent-count-hint"}

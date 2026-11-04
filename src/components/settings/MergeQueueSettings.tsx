@@ -391,10 +391,9 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
                     <label class="mqs-minutes">
                       <input
                         class="input text-num"
-                        type="number"
-                        min="1"
-                        max={capMin()}
-                        step="1"
+                        type="text"
+                        inputmode="numeric"
+                        autocomplete="off"
                         value={text()}
                         disabled={locked()}
                         aria-invalid={bad()}

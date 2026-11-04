@@ -58,7 +58,7 @@ Only the person's own click passes these. Sova refuses a chat, a script, an exte
 - A profile's powers: Approve in Settings → Profiles or on the profile picker.
 - A schedule: Approve in the Playbooks dialog or the Overseer's Approvals & Schedules. A schedule on another of the person's computers can be approved from this page too.
 - Turning on a Project Overseer power: its switch on the project page's Settings tab.
-- Lowering a chat's sandbox: the Sandbox rows in that chat's composer. A `/sandbox` that lowers passes only typed in the page's composer, never sent by a program.
+- Lowering a chat's sandbox: the Sandbox rows in that chat's composer. A `/sandbox` that lowers passes only typed in the page's composer, never sent by a program. Going back in a chat can lower it too, because the chat returns to the state it had at that point: a rewind or regenerate in the page does this and the page shows the new state, so say so before the person goes back. From a script or a chat, one that would lower the sandbox is refused, and the refusal says to rewind in the page; one that lowers nothing still runs.
 - A project tool: Approve and Turn On in that chat's mode menu.
 - A project mode's hooks: Approve Hooks in that chat's mode menu.
 - A Settings change card: Apply or Apply and Approve on the card, and its undo.

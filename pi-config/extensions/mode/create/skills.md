@@ -27,7 +27,7 @@ List the commits since the last tag, group them by what a user notices, and leav
 ## A project's skills
 
 - Change: a recipe for chats in one project.
-- Lives: `.pi/skills/<name>/SKILL.md` or `.agents/skills/<name>/SKILL.md` in the project.
+- Lives: `<project>/.pi/skills/<name>/SKILL.md` or `<project>/.agents/skills/<name>/SKILL.md`.
 - Approves: the person, by Land.
 - By: Land.
 - Live: new chat, after landing.
@@ -55,7 +55,7 @@ Arguments: `$1`, `$2`, `$@`, `${1:-default}`.
 ## A project's slash-command templates
 
 - Change: a `/command` for chats in one project.
-- Lives: `.pi/prompts/<name>.md` in the project.
+- Lives: `<project>/.pi/prompts/<name>.md`.
 - Approves: the person, by Land.
 - By: Land.
 - Live: new chat, after landing.

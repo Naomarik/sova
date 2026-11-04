@@ -18,7 +18,7 @@ Removing tools is a guardrail, not a boundary, while the chat keeps `shell`. Rem
 ## A project's profiles
 
 - Change: a profile every chat in a project can pick.
-- Lives: `.sova/profiles/<id>.json` in the project's main checkout, one file per profile, named after its `id`. A chat in a worktree reads the main checkout's, so a branch's edit counts only once it's on the main branch.
+- Lives: `<project>/.sova/profiles/<id>.json`, always in the main checkout, one file per profile, named after its `id`. A chat in a worktree reads the main checkout's, so a branch's edit counts only once it's on the main branch.
 - Approves: the person. A profile that only removes needs nothing more. One that grants a power or sets `overseerMayStart` also needs their Approve; widening it asks again.
 - By: Card or Land. Card for one profile, which Apply and Approve can approve with it.
 - Live: new chat, once it's on the main branch.

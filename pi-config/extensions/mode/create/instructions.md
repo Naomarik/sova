@@ -7,7 +7,7 @@ A rule reaches new chats only: it can't show in this chat. A Project Overseer re
 ## Rules for a folder
 
 - Change: rules for every chat in a folder and anything below it.
-- Lives: `AGENTS.md` or `CLAUDE.md` in the folder. A chat reads the one in its own folder and each parent's. `AGENTS.override.md` replaces those two, in that folder only.
+- Lives: `<folder>/AGENTS.md` or `<folder>/CLAUDE.md`. A chat reads the one in its own folder and each parent's. `AGENTS.override.md` replaces those two, in that folder only.
 - Approves: the person, by Land.
 - By: Land. In a folder that isn't in Git, say the change is made by hand.
 - Live: new chat, after landing.
@@ -31,7 +31,7 @@ A rule reaches new chats only: it can't show in this chat. A Project Overseer re
 ## Additions to the base prompt
 
 - Change: text added to the system prompt itself, for this computer or one project.
-- Lives: `<agent dir>/APPEND_SYSTEM.md`, or `.pi/APPEND_SYSTEM.md` in a project. A project's file wins over the agent dir's; the two aren't combined.
+- Lives: `<agent dir>/APPEND_SYSTEM.md`, or `<project>/.pi/APPEND_SYSTEM.md`. A project's file wins over the agent dir's; the two aren't combined.
 - Approves: the person, by their OK, or by Land for a project's.
 - By: OK or Land. OK for this computer, Land for a project. Say that the setup card doesn't show or switch this file.
 - Live: new chat.
@@ -40,7 +40,7 @@ A rule reaches new chats only: it can't show in this chat. A Project Overseer re
 ## Replacing the base prompt
 
 - Change: the whole system prompt, with `SYSTEM.md` in the same two places. Offer it only if asked, and say it drops pi's default prompt entirely.
-- Lives: `<agent dir>/SYSTEM.md`, or `.pi/SYSTEM.md` in a project.
+- Lives: `<agent dir>/SYSTEM.md`, or `<project>/.pi/SYSTEM.md`.
 - Approves: the person, by their OK, or by Land for a project's.
 - By: OK or Land. OK for this computer, Land for a project.
 - Live: new chat.

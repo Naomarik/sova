@@ -44,7 +44,7 @@ A project mode lives in the checkout, so a chat in a worktree sees its own branc
 ## A project mode with instructions only
 
 - Change: instructions and reference files a project ships, switched on per chat.
-- Lives: `.sova/minor-modes/<id>/MODE.md` at the top of the project, with reference files beside it. The id takes lowercase letters, digits and hyphens, starts with a letter, runs to 30 characters at most, and can't be `align`, `spec`, `vis` or `memory`.
+- Lives: `<project>/.sova/minor-modes/<id>/MODE.md`, with reference files beside it. The id takes lowercase letters, digits and hyphens, starts with a letter, runs to 30 characters at most, and can't be `align`, `spec`, `vis` or `memory`.
 - Approves: nobody: a mode with no tools, commands or hooks needs no approval. Someone still has to turn it on in each chat.
 - By: Land or Card. Card for `MODE.md` alone; Land when it has reference files.
 - Live: after landing, or at once in the worktree of its branch: the mode menu reads the files each time it opens. Once on, the next reply.
@@ -64,7 +64,7 @@ The frontmatter is `key: value` lines, not YAML, and takes only `description` (r
 ## A project mode with tools or commands
 
 - Change: a mode that gives the agent a project's own programs. See `tools` for how to declare one.
-- Lives: `.sova/minor-modes/<id>/`, the `tools` and `commands` keys of `MODE.md`, and helper programs beside it.
+- Lives: `<project>/.sova/minor-modes/<id>/`, the `tools` and `commands` keys of `MODE.md`, and helper programs beside it.
 - Approves: the person, in the mode menu: Approve and Turn On.
 - By: Land. A card can't carry helper files.
 - Live: after landing and approval, from the chat's next run. A change to any file but `MODE.md`'s body stops the tools until it's turned off and on and approved again. They don't run in a chat with its sandbox On.
@@ -73,7 +73,7 @@ The frontmatter is `key: value` lines, not YAML, and takes only `description` (r
 ## Reply hooks
 
 - Change: a program of a project mode that runs after a reply starts or finishes, in a chat with the mode on. It only reports: it never blocks, delays or changes a reply.
-- Lives: the `hooks` key of `MODE.md`, and the program beside it.
+- Lives: the `hooks` key of `<project>/.sova/minor-modes/<id>/MODE.md`, and the program beside it.
 - Approves: the person, by their click in the mode menu.
 - By: Land.
 - Live: after landing and approval, from the next reply.

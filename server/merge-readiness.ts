@@ -829,8 +829,8 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
         if (blockers?.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers });
       }
       if (writes) {
-        if (landing) deps.landing.hold(s.id, t.path, { branch: tf.branch, commit: landing.commit, at: deps.now() });
         if (landing?.state === "ready") deps.readyToLand?.({ path: t.path, branch: tf.branch, commit: landing.commit });
+        if (landing) deps.landing.hold(s.id, t.path, { branch: tf.branch, commit: landing.commit, at: deps.now() });
         else if (held && (tf.merged || (tf.readable && tf.head !== held.commit))) deps.landing.drop(s.id, t.path);
       }
     }

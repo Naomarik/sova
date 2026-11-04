@@ -1318,6 +1318,53 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
   }
 });
 
+test("a held head, then a reading at a new commit: Landing specs keeps it held and tells the queue nothing; Ready to land holds it and tells the queue once", async () => {
+  const { fileLandingStore } = await import("./ready-to-land");
+  const store = join(agentDir, "rtl-hold-order.json");
+  const landing = fileLandingStore(() => store);
+  const lines = chain([worktrees([tracked()], "2026-10-25T10:00:00.000Z"), assistant([{ type: "text", text: "Done." }], "stop", "2026-10-25T10:05:00.000Z")]);
+  const path = sessionFile(lines);
+  const fs = await import("node:fs");
+  const facts = { ...(await r.readReadinessScan(path, fs.statSync(path).size, null)).facts!, lastCheck: { at: 1, ok: true } };
+  const WT = "/wt/agents-row-dropdown";
+  const [A, B, C] = ["1".repeat(40), "2".repeat(40), "3".repeat(40)];
+  let status: WorktreeStatus & { head?: string } = { path: WT, source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 1, behind: 0, dirty: false, head: B };
+  let problems: string[] = ["§x/a (draft d): §x/a has no verification note from its chat"];
+  const told: string[] = [];
+  r.configureReadiness({
+    insights: { treeStatus: async () => status },
+    git: fakeGit({}),
+    asksUser: () => undefined,
+    now: () => 0,
+    processStart: 0,
+    landing,
+    drafts: () => ["d"],
+    draftsHash: () => undefined,
+    docsPreview: () => ({ drafts: ["d"], added: [], changed: [], problems }),
+    finished: () => "off",
+    nudge: undefined,
+    readyToLand: (t) => void told.push(t.commit),
+  });
+  try {
+    landing.hold(SID, WT, { branch: "feat/agents-row-dropdown", commit: A, at: 0 });
+    // Landing specs at a new commit B: held at B, never dropped; the queue isn't told.
+    const specs = await r.computeReadiness(summary(path), facts);
+    assert.equal(specs?.trees[0]?.landing?.state, "specs");
+    assert.equal(landing.held(SID, WT)?.commit, B, "a Landing specs reading keeps its head held");
+    assert.deepEqual(told, []);
+    // Ready to land at a new commit C: held at C, the queue told once.
+    status = { ...status, head: C };
+    problems = [];
+    const ready = await r.computeReadiness(summary(path), facts);
+    assert.equal(ready?.trees[0]?.landing?.state, "ready");
+    assert.equal(landing.held(SID, WT)?.commit, C);
+    assert.deepEqual(told, [C]);
+  } finally {
+    r.configureReadiness({ readyToLand: undefined, docsPreview: undefined, draftsHash: undefined });
+    servedReset();
+  }
+});
+
 test("a finished branch that can't be queued to land: Sova names what blocks it once per commit, never naming a card, and only where the project's merge queue is set up", async () => {
   const { fileLandingStore, landingBlockers, blockedNoteText } = await import("./ready-to-land");
   const live = { running: false, openQuestions: 0 };

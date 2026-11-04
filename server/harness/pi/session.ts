@@ -423,6 +423,10 @@ export class PiHarnessSession implements HarnessSession {
       .filter((t) => !hidden?.has(t.name))
       .map((t) => ({ name: t.name, description: t.description, parameters: t.parameters as JsonSchema, ...toolSource(paths.get(t.name)) }));
   }
+  /** pi's public `systemPrompt` (the run's prompt options, else the base ones), split back into its sections. */
+  promptSections(): Record<string, string> {
+    return splitSystemPrompt(this.s.systemPrompt);
+  }
   registeredTool(name: string): ToolSpec | undefined {
     const def = this.s.extensionRunner?.getToolDefinition(name);
     return def ? fromPiTool(def) : undefined;
@@ -482,4 +486,29 @@ export class PiHarnessSession implements HarnessSession {
       offRequests();
     };
   }
+}
+
+/** pi's rendered system prompt back into its sections: the opening `preamble`, then each section framed
+    `<name>\n…\n</name>`, joined by blank lines (pi-coding-agent system-prompt.js buildSystemPromptSections,
+    pi-ai getSystemMessageText). A forced prompt has no sections: it is all `preamble`. A section ends at the
+    first `\n</name>` that the next section or the end follows, so a file quoting another tag can't cut it. */
+export function splitSystemPrompt(text: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  let pos = -1;
+  for (const m of text.matchAll(/\n\n<([a-z][a-z0-9_-]*)>\n/g)) {
+    if (m.index < pos) continue;
+    if (pos !== -1 && m.index !== pos) break;
+    const name = m[1]!;
+    const start = m.index + m[0].length;
+    const close = `\n</${name}>`;
+    let end = text.indexOf(close, start - 1);
+    while (end !== -1 && end + close.length !== text.length && !text.startsWith("\n\n<", end + close.length)) end = text.indexOf(close, end + 1);
+    if (end === -1) continue;
+    if (pos === -1) out.preamble = text.slice(0, m.index);
+    out[name] = text.slice(start, Math.max(start, end));
+    pos = end + close.length;
+  }
+  if (pos === -1) out.preamble = text;
+  else if (pos < text.length) out.rest = text.slice(pos).replace(/^\n+/, "");
+  return out;
 }

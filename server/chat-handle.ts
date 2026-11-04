@@ -259,6 +259,12 @@ export abstract class ChatHandle {
   declaredTools() {
     return this.call("declaredTools", {});
   }
+  promptSections() {
+    return this.call("promptSections", {});
+  }
+  specialLoader() {
+    return this.call("specialLoader", {});
+  }
   resources() {
     return this.call("resources", {});
   }

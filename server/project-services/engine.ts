@@ -11,6 +11,7 @@ import {
   envPart,
   isDeployVerb,
   isMergeVerb,
+  isReleaseVerb,
   isVerb,
   ordered,
   parseDefinition,
@@ -79,21 +80,23 @@ import { defHashOf } from "./def-hash";
 // ---- callers and requests -------------------------------------------------------------------------
 
 export type Caller =
-  /** `notPage`: a route's caller that isn't the user's own page (a script, a chat's terminal): it never restarts this server. */
-  | { kind: "operator"; confirm?: boolean; notPage?: boolean }
+  /** `notPage`: a route's caller that isn't the user's own page (a script, a chat's terminal): it never restarts this server.
+      `fromChat`: the operator's route called by a process a chat runs (its `x-sova-caller` key): never the operator's
+      acts on a release: a chat's own scripts never act as the operator there. */
+  | { kind: "operator"; confirm?: boolean; notPage?: boolean; fromChat?: true }
   /** `approved`: whether the user's click that opened this turn approved `verb` on that copy (§app.overseer/copies).
       `word`: whether the user started this turn (typed or a click), read per call; absent: never. `working`: whether
       the conversation (session id) that started a copy is working now; absent: always (a click is needed). */
   | { kind: "overseer"; id: string; approved?: CopyApproval; word?: () => boolean; working?: CreatorWorking }
   /** `act`: its project statechart's act for a verb that is not a read (§app.project-overseer/tools), which holds the
       level; the engine checks none. `approved`, `word`, `working`: as the Overseer's, for its own project's copies. */
-  | { kind: "project-overseer"; id: string; root: string; act: VerbAct; deployAct?: true; approved?: CopyApproval; word?: () => boolean; working?: CreatorWorking }
+  | { kind: "project-overseer"; id: string; root: string; act: VerbAct; deployAct?: true; releaseAct?: true; approved?: CopyApproval; word?: () => boolean; working?: CreatorWorking }
   /** The client's Project Assistant (al_1, al_3): deploy.request any time; deploy.plan and deploy.run only from inside its
       project's released `deploy/run` act (`deployAct`), checked against its column of powers. `up`: only `up` of that one
       instance (a copy the owner's versions list holds, which its start_version checked); `upMain`: only a bare `up` of
       the main checkout while it has no copy (the Current version's, made then); either only once `act` (its project
       statechart's `services/run`) is taken. */
-  | { kind: "assistant"; id: string; root: string; deployAct?: true; up?: string; upMain?: true; act?: VerbAct }
+  | { kind: "assistant"; id: string; root: string; deployAct?: true; releaseAct?: true; up?: string; upMain?: true; act?: VerbAct }
   | { kind: "session"; id: string; root: string | null; own: string[] }
   | { kind: "conform"; id: string }
   /** Sova itself, on no one's request: `on-merge` reloads the main checkout's copy when main moves (§app.project-services/on-merge). Apply only. */
@@ -424,6 +427,8 @@ export class ProjectEngine {
   deployer: ((verb: string, body: unknown, caller: Caller, opts: { signal?: AbortSignal }) => Promise<VerbResult>) | null = null;
   /** The merge queue's verbs (server/merge-queue/routes.ts), wired at startup. */
   merger: ((verb: string, body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
+  /** The release verbs (server/project-services/release.ts), wired at startup. */
+  releaser: ((verb: string, body: unknown, caller: Caller) => Promise<VerbResult>) | null = null;
 
   constructor(deps: EngineDeps) {
     this.driver = deps.driver;
@@ -479,11 +484,13 @@ export class ProjectEngine {
     if (verb === "conform" && this.conformer) return this.conformer(body, caller);
     if (isDeployVerb(verb) && this.deployer) return this.deployer(verb, body, caller, opts);
     if (isMergeVerb(verb) && this.merger) return this.merger(verb, body, caller);
+    if (isReleaseVerb(verb) && this.releaser) return this.releaser(verb, body, caller);
     try {
       if (!isVerb(verb)) throw new VerbFailure("invalid-request", `unknown verb "${verb}"`);
       run.req = parseRequest(body);
       if (isDeployVerb(verb)) throw new VerbFailure("unsupported", `${verb} runs through the deployer, which this engine has not got`);
       if (isMergeVerb(verb)) throw new VerbFailure("unsupported", `${verb} runs through the merge queue, which this engine has not got`);
+      if (isReleaseVerb(verb)) throw new VerbFailure("unsupported", `${verb} runs through the releaser, which this engine has not got`);
       await this.resolveTarget(run);
       if (run.verb === "teardown" && !run.rec) return await this.result(run);
       this.authorize(run, await this.starterWorking(run));

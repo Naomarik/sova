@@ -94,8 +94,9 @@ describe("the model", () => {
     assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default"]);
     assert.equal(src.builtins[0]!.label, "My settings");
     assert.deepEqual(src.problems, [], "a profiles/ folder with no profile files lists none, and is no problem");
-    // The merge queue's thread and reviewer: found only by an explicit Sova pick, never by a bare id, never in a list.
-    const system = ["merge-reviewer", "merge-thread"];
+    // The merge queue's thread and reviewer, and the release chat: found only by an explicit Sova pick, never by a bare
+    // id, never in a list.
+    const system = ["merge-reviewer", "merge-thread", "release-thread"];
     for (const id of system) {
       assert.equal((await findProfile({ source: "sova", id }, null))?.key, `sova:${id}`, id);
       assert.equal(await findProfile(id, null), null, `${id} by a bare id`);
@@ -105,7 +106,7 @@ describe("the model", () => {
     for (const id of system) assert.ok(!listed.includes(id), `${id} listed for a picker`);
     const { readdirSync } = await import("node:fs");
     const dir = join(import.meta.dirname, "..", "profiles", "system");
-    assert.deepEqual(readdirSync(dir).sort(), system.map((id) => `${id}.json`), "exactly these two system profiles");
+    assert.deepEqual(readdirSync(dir).sort(), system.map((id) => `${id}.json`), "exactly these system profiles");
   });
 
   test("a shipped profile file is listed after Default, in its normal form", async () => {

@@ -3,6 +3,7 @@ import { CONTRACT_FILE, DefinitionError, parseDefinition, portsFor, type Isolati
 import { readStamp, SUITE_VERSION, type Stamp } from "./conform";
 import { realGit } from "./engine";
 import { defHashOf, deployHashOf } from "./def-hash";
+import { releaseSetupAt } from "../projects/release-proposal";
 
 /**
  * What a project's software registry reads (§app.project-services/facts): main's definition at
@@ -75,6 +76,8 @@ export interface BranchFacts {
   proof: ProofFact | null;
   /** Its deploy recipe's own hash; null when it declares none. */
   deploy: { hash: string } | null;
+  /** Its release setup's own hash (server/projects/release-proposal.ts); null when it declares none or it is invalid. */
+  release: { hash: string } | null;
 }
 
 const kindOf = (s: ServiceDecl): SoftwareFact["kind"] => (s.static !== undefined ? "static" : s.container ? "container" : "process");
@@ -151,12 +154,14 @@ export async function branchFacts(root: string, ref: string, git: Git = realGit)
   const { commit, def, fact } = await defAt(root, ref, git);
   const hash = fact.state === "present" ? fact.hash : null;
   const dh = def?.deploy ? deployHashOf(def.deploy) : null;
+  const rs = def?.release && commit ? await releaseSetupAt(root, commit, git) : null;
   return {
     ref,
     commit,
     def: fact,
     proof: hash ? proofOf(root, hash) : null,
     deploy: dh ? { hash: dh } : null,
+    release: rs?.hash ? { hash: rs.hash } : null,
   };
 }
 

@@ -78,6 +78,7 @@ import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
 import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
 import { applyLoadout, getSessionSetup, readSetupFile } from "./session-setup";
+import { getContextView } from "./context-tab";
 import { getSessionTools } from "./session-tools";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
@@ -742,13 +743,20 @@ export function buildApp(deps: AppDeps) {
     } catch {
       return c.json({ error: "Expected JSON body { mode, dryRun }" }, 400);
     }
+    if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Expected JSON body { mode, dryRun }" }, 400);
+    // Every field that is present is checked before anything runs: a dryRun that isn't a boolean is
+    // refused, never read as a real run.
+    if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") return c.json({ error: "dryRun must be true or false" }, 400);
+    if (body.mode !== "age" && body.mode !== "husks" && body.mode !== "paths") return c.json({ error: 'mode must be "husks", "paths", or "age"' }, 400);
+    if (body.minAgeDays !== undefined && body.minAgeDays !== 7 && body.minAgeDays !== 30) return c.json({ error: "minAgeDays must be 7 or 30" }, 400);
+    const validPaths = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.length <= 100 && v.every((p) => typeof p === "string");
+    if (body.paths !== undefined && !validPaths(body.paths)) return c.json({ error: "paths must be 1–100 session paths" }, 400);
     const dryRun = body.dryRun === true;
     if (body.mode === "age" && (body.minAgeDays === 7 || body.minAgeDays === 30))
       return c.json(await cleanupSessions({ mode: "age", minAgeDays: body.minAgeDays, dryRun }));
     if (body.mode === "husks") return c.json(await cleanupSessions({ mode: "husks", dryRun }));
     if (body.mode === "paths") {
-      if (!Array.isArray(body.paths) || body.paths.length === 0 || body.paths.length > 100 || !body.paths.every((p) => typeof p === "string"))
-        return c.json({ error: "paths must be 1–100 session paths" }, 400);
+      if (!validPaths(body.paths)) return c.json({ error: "paths must be 1–100 session paths" }, 400);
       // Each path validated exactly like the archive route's, so nothing outside the sessions dir
       // reaches the delete loop.
       const paths: string[] = [];
@@ -844,8 +852,11 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-    const dryRun = body?.dryRun === true;
+    if (body?.dryRun !== undefined && typeof body.dryRun !== "boolean") return c.json({ error: "dryRun must be true or false" }, 400);
     const expect = body?.expect;
+    if (expect !== undefined && !(Array.isArray(expect) && expect.every((p) => typeof p === "string" && p.startsWith("/"))))
+      return c.json({ error: "expect must be a list of absolute paths" }, 400);
+    const dryRun = body?.dryRun === true;
     if (dryRun === Array.isArray(expect) || (Array.isArray(expect) && !expect.every((p) => typeof p === "string" && p.startsWith("/"))))
       return c.json({ error: "Send either dryRun: true or expect: [absolute paths]" }, 400);
     if (dryRun) {
@@ -879,6 +890,15 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     const r = await readSetupFile(path, file);
     return r.ok ? c.json(r.file, 200, { "Cache-Control": "no-store" }) : c.json({ error: r.error }, r.status);
+  });
+
+  // What fills one chat's context window now, for the session pane's Context tab (server/context-tab.ts):
+  // a worker is read by its own session file. Same 400/404 as above. Never cached.
+  app.get("/api/sessions/context-view", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    return c.json(await getContextView(path), 200, { "Cache-Control": "no-store" });
   });
 
   // Triage on a session's open alignment cards (§app.decisions/align-triage): a stakes chip per open

@@ -955,15 +955,20 @@ export interface ThemeList {
 export const PLAYBOOK_ENTRIES = ["PLAYBOOK.md", "SKILL.md"] as const;
 export type PlaybookEntry = (typeof PLAYBOOK_ENTRIES)[number];
 
+/** What a verb playbook's branch proposes: the project's settings, its deploy section, or its releases (the release
+    section plus the project's release playbook). */
+export const PLAYBOOK_PROPOSES = ["definition", "deploy", "release"] as const;
+export type PlaybookProposes = (typeof PLAYBOOK_PROPOSES)[number];
+
 /** One entry in the Sova playbook catalog. */
 export interface PlaybookInfo {
   id: string;                 // directory name; validate against /^[a-z0-9][a-z0-9-]*$/ (no traversal)
   title: string;              // frontmatter title, else name, else the id
   description: string;        // frontmatter description, else ""
   promptHint?: string;        // frontmatter promptHint: what the reader may want to specify for the first turn
-  /** Frontmatter `proposes: definition | deploy`: a verb playbook, whose branch the operator merges
+  /** Frontmatter `proposes: definition | deploy | release`: a verb playbook, whose branch the operator merges
       (§app.project-runtime/verb-playbooks). Absent (or any other value): not a verb playbook. */
-  proposes?: "definition" | "deploy";
+  proposes?: PlaybookProposes;
   source: "sova" | "user" | "project";
   dir: string;                // ABSOLUTE directory holding the playbook: its entry file, scripts/, references/…; every relative path in it resolves here
   entry: PlaybookEntry;       // the file read as the playbook: PLAYBOOK.md when the folder has one, else SKILL.md
@@ -1493,6 +1498,66 @@ export interface SessionSetupFileText {
   path: string;
   text: string;
 }
+
+// GET /api/sessions/context-view?path=<session file> -> SessionContextView   (server/context-tab.ts:
+//                                  what fills one chat's context window now, for the session pane's
+//                                  Context tab. A worker is read by its own session file. The files
+//                                  and skills are /api/sessions/context's read; the mode, rules and
+//                                  tools are the HELD chat's prompt and declarations (`prompt: false`
+//                                  when this server doesn't hold it: they are unknown, not empty).
+//                                  Every size is an estimate (CHARS_PER_TOKEN). 400 a bad path, 404 a
+//                                  missing session file. Never cached; read-only.)
+// ---------------------------------------------------------------------------
+/** One part of the prompt. A file's text opens through /api/sessions/context/file with `path`; any other
+    part carries its `text`. */
+export interface SessionContextPart {
+  id: string;
+  label: string;
+  detail?: string;
+  /** ≈ tokens it costs in the prompt. */
+  tokens: number;
+  path?: string;
+  text?: string;
+}
+
+/** An instruction file in a folder below the chat's own, loaded when the agent reads, edits or writes a
+    file there. */
+export interface SessionContextNested {
+  /** Relative to cwd, e.g. "api/AGENTS.md". */
+  path: string;
+  /** Absolute: what /api/sessions/context/file reads. */
+  abs: string;
+  /** Its folder, relative to cwd. */
+  folder: string;
+  tokens: number;
+  /** Its text is in the context now (counts toward the total); else it shows only what it would cost. */
+  loaded: boolean;
+}
+
+export type SessionContextView =
+  | {
+      state: "ok";
+      cwd: string;
+      /** The model's context window; null unknown. */
+      window: number | null;
+      /** The last reply's input + cacheRead + cacheWrite; null before the first reply (or since a compaction). */
+      total: number | null;
+      /** The chat is held here, so mode, rules and tools were read; false: they are unknown. */
+      prompt: boolean;
+      instructions: SessionContextPart[];
+      mode: SessionContextPart | null;
+      rules: SessionContextPart[];
+      skills: SessionContextPart[];
+      tools: SessionContextPart[];
+      /** ≈ the messages in context, loaded nested files left out (they are `nested`). */
+      conversation: number;
+      nested: SessionContextNested[];
+      /** The walk below cwd stopped at its cap: the list may be incomplete. */
+      nestedIncomplete?: true;
+      checkedAt: number;
+    }
+  | { state: "remote"; cwd: string; checkedAt: number }
+  | { state: "unavailable"; cwd: string; reason: string; checkedAt: number };
 
 // GET /api/sessions/tools?path=<session file> -> SessionTools   (server/session-tools.ts,
 //                                  §chat.transcript/setup-card-tools: the tools the HELD chat declares
@@ -3566,6 +3631,11 @@ export type AttentionKind =
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
   | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project page)
+  | "release-ready"       // act tier, never pushed: a project's open release passed every gate and waits for Publish (shared/release.ts; no session: `path` "", `href` the project's Releases tab)
+  | "release-request"     // act tier, never pushed: an overseer or the Project Assistant asks the operator to release (release.request; no session: `path` "", `href` the Releases tab)
+  | "release-quiet"       // act tier, never pushed: the release chat sent no report for the project's quietMin while the queue is frozen (Open Chat, Abandon Release; `href` the Releases tab)
+  | "release-held"        // act tier, never pushed: a release step is held for the operator's Continue (`href` the Releases tab)
+  | "release-failed"      // act tier, never pushed: a release step or its gating checks failed (Retry Step, Abandon; `href` the Releases tab)
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "whatsapp-down"       // act tier, pushed (kind `whatsapp-down`): WhatsApp sending is down, logged out, replaced, blocked, unpaired, or unreachable 5 min (§app.outreach/sender-health; no session: `path` "", `href` "#/settings/outreach")
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
@@ -3630,7 +3700,7 @@ export interface AttentionItem {
   };
   /** kind `playbook-review` only: what Merge Branch needs (§app.project-runtime/merge). `hash`
       absent: the branch has no valid definition, so there is nothing to merge. */
-  playbook?: { projectId: string; label: string; hash?: string; branch: string; target: string; proposes?: "definition" | "deploy" };
+  playbook?: { projectId: string; label: string; hash?: string; branch: string; target: string; proposes?: PlaybookProposes };
 }
 
 /** Which org (and project) an organizational session belongs to; names as they read now. `projectId`
@@ -4779,6 +4849,8 @@ export type SessionFeedMessage =
   | import("./merge-queue").MergeQueueFeed
   /** One chat's merge queue cards changed (shared/merge-queue.ts MergeCard): all of that chat's cards. Additive. */
   | import("./merge-queue").MergeCardsFeed
+  /** A project's release view changed (shared/release.ts ReleaseView, as release.status answers it). Never on connect. Additive. */
+  | import("./release").ReleaseFeed
   | { type: "error"; message: string };
 
 /** Why an LlmInflight count is only a floor. `host` is the peer's id; absent = this host. */
@@ -5661,7 +5733,10 @@ export type UpdateCheckResult =
   | { state: "up-to-date" }
   | { state: "available"; target: UpdateTarget; rewritten?: boolean }
   | { state: "ahead"; message: string }
-  | { state: "diverged"; target: UpdateTarget; message: string };
+  | { state: "diverged"; target: UpdateTarget; message: string }
+  /** What runs is a withdrawn release (its channel was moved back): told so with the reason, instead of `ahead`, and
+      offered `target`, the release the channel points at now (going back). */
+  | { state: "withdrawn"; tag: string; why: string; at: string; target: UpdateTarget; message: string };
 
 export interface UpdateCheck {
   at: string;

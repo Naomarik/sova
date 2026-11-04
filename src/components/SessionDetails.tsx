@@ -32,7 +32,7 @@ import {
   upstreamLabel,
   visiblePath,
 } from "../lib/git-summary";
-import { announce, copyText, home, toast } from "../lib/ui-state";
+import { announce, copyText, home, setActiveTab, toast } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { sessionHref } from "./Sidebar";
@@ -149,7 +149,12 @@ export function SessionDetails(props: {
             <h3 class="text-eyebrow" id={id("context")}>
               Context
             </h3>
-            <p class="usage-note">{contextSentence(state())}</p>
+            <p class="usage-note">
+              {contextSentence(state())}{" "}
+              <button type="button" class="button-link" onClick={() => setActiveTab(props.path, "context")}>
+                See what fills it
+              </button>
+            </p>
           </section>
         )}
       </Show>

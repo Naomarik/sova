@@ -52,8 +52,12 @@ export function registerProjectServiceRoutes(app: Hono<any>): void {
     const raw = await c.req.text().catch(() => "");
     const verb = c.req.param("verb");
     const body = jsonOf(raw);
+    // A process a chat runs carries its chat's key (`x-sova-caller`, scripts/sova-token.mjs): the route still runs as the
+    // operator, but never the operator's acts on a release (t17).
+    const fromChat = !!c.req.header("x-sova-caller")?.trim();
     // Your page, here or on another of your computers with its proof (server/mesh/click-proof.ts).
-    const r = await projectEngine().run(verb, body, { kind: "operator", ...(verb === "apply" && (await notPageNorProven(c, raw)) ? { notPage: true } : {}) });
+    const notPage = verb === "apply" && (await notPageNorProven(c, raw));
+    const r = await projectEngine().run(verb, body, { kind: "operator", ...(fromChat ? { fromChat: true as const } : {}), ...(notPage ? { notPage: true } : {}) });
     return c.json(r, httpStatusOf(r) as 200);
   });
 }

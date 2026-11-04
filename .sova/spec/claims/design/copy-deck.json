@@ -37,6 +37,19 @@
       "src/components/ChatView.tsx"
     ]
   },
+  "§design.copy-deck/context-tab": {
+    "kind": "note",
+    "requires": [
+      "§app.subagents-pane/context-tab"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/ContextTab.tsx",
+      "src/lib/context-parts.ts",
+      "src/components/SessionDetails.tsx"
+    ]
+  },
   "§design.copy-deck/context-window": {
     "kind": "note",
     "authority": "accepted",
@@ -427,7 +440,9 @@
       "src/lib/needs-you.ts",
       "src/lib/signals.ts",
       "src/lib/overseer-menu.ts",
-      "src/lib/regions.ts"
+      "src/lib/regions.ts",
+      "src/lib/needs-you-row.ts",
+      "src/components/NeedsYouRow.tsx"
     ]
   },
   "§design.copy-deck/slash-commands": {

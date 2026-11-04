@@ -71,6 +71,10 @@ test("the playbook's run in words", () => {
     runWord({ ...base, playbookState: "proposed", playbook: { ...pb, playbookId: "project-deploy", label: "Project deploy", proposes: "deploy" as const, branch: "sova/d" } }),
     "The Project deploy playbook proposes a deploy recipe on sova/d",
   );
+  assert.equal(
+    runWord({ ...base, playbookState: "proposed", playbook: { ...pb, playbookId: "release-maker", label: "Release playbook maker", proposes: "release" as const, branch: "sova/r" } }),
+    "The Release playbook maker playbook proposes a release setup on sova/r",
+  );
   assert.equal(runWord({ ...base, playbook: { ...pb, result: "no-change" } }), "The last Project verbs run finished with no change");
 });
 

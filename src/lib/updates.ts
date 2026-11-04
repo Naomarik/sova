@@ -82,6 +82,9 @@ export function resultLine(result: UpdateCheckResult, source: UpdatesState["sett
       return result.message;
     case "diverged":
       return result.message;
+    // A withdrawn release isn't "ahead": the banner says what happened and why; the line says where it goes back to.
+    case "withdrawn":
+      return `${sourceName(source)} is back on ${result.target.label}.`;
     case "available": {
       const t = result.target;
       if (t.version) return `Update available: ${t.version}`;
@@ -90,3 +93,9 @@ export function resultLine(result: UpdateCheckResult, source: UpdatesState["sett
     }
   }
 }
+
+/** The banner's title on a withdrawn release: "v0.10.0 was withdrawn: <why>." */
+export const withdrawnTitle = (r: { tag: string; why: string }): string => `${r.tag} was withdrawn: ${r.why.trim().replace(/[.]$/, "")}.`;
+
+/** The go-back button on a withdrawn release: "Go Back to v0.9.0". */
+export const goBackLabel = (target: UpdateTarget): string => `Go Back to ${target.label}`;

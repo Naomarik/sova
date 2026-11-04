@@ -222,7 +222,8 @@ export class UpdatesManager {
     this.write(fresh);
     this.deps.log(`[updates] ${auto ? "daily " : ""}check of ${sourceLabel(f.source)}: ${check.ok ? check.result?.state : `failed: ${check.error}`}`);
     // Upgrade automatically: the same path as the button, the same refusals.
-    if (auto && fresh.autoUpgrade && check.ok && offersUpgrade(check.result, info.kind) && info.kind !== "check-only") {
+    // Going back from a withdrawn release is never automatic: Sova never moves to older code on its own.
+    if (auto && fresh.autoUpgrade && check.ok && check.result?.state !== "withdrawn" && offersUpgrade(check.result, info.kind) && info.kind !== "check-only") {
       const target = check.result.target;
       // A version that was put back because it didn't start isn't installed again unattended: each
       // try costs a minute of Sova not answering. The button still offers it.

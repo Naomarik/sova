@@ -19,7 +19,7 @@ import { isLandHow } from "./strategy";
 export interface LandingQueue {
   updateLocalMain(): Promise<{ kind: "updated" | "current"; head: string }>;
   publish(entryId: string, text: { title: string; body: string; draft: boolean }): Promise<MergeEntry>;
-  setLandHow(how: LandHow, where: "project" | "computer"): Promise<{ state: "saved"; commit?: string } | { state: "waiting" } | { state: "requested"; url: string } | { state: "pushed"; branch: string }>;
+  setLandHow(how: LandHow, where: "project" | "computer"): Promise<{ state: "saved"; commit?: string } | { state: "waiting"; release?: string } | { state: "requested"; url: string } | { state: "pushed"; branch: string }>;
   clearLandHowOverride(): Promise<void>;
   view(): Promise<MergeQueueView>;
 }

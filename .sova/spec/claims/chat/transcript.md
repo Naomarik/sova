@@ -1787,7 +1787,8 @@ skills it is offered, for this one session only.
 
 Each row's name in Context and Skills (/setup-card-context, /setup-card-skills), the
 `SYSTEM.md` and `APPEND_SYSTEM.md` rows included, is a button that opens that file in the
-markdown viewer (§app/markdown-viewer), on Rendered: the whole text as it is on disk now.
+markdown viewer (§app/markdown-viewer) by its type, a markdown file on Rendered: the whole text as
+it is on disk now, its front matter left out.
 
 ```html
 <span class="setup-name">
@@ -1806,7 +1807,10 @@ markdown viewer (§app/markdown-viewer), on Rendered: the whole text as it is on
 - **The read.** Pressing the name asks the server for that file's text,
   `GET /api/sessions/context/file?path=<session file>&file=<listed path>`, then opens the viewer.
   The server serves only a path that this session's own setup read lists (context, skills,
-  `SYSTEM.md`, `APPEND_SYSTEM.md`), so the request reads no other file on disk; any other path is a
+  `SYSTEM.md`, `APPEND_SYSTEM.md`), or a subfolder instruction file the session could load as it
+  works: its folder's own instruction file, in a folder below the session's folder that the loading
+  doesn't skip (§chat.subfolder-instructions/loading; the Context tab opens these,
+  §app.subagents-pane/context-tab). So the request reads no other file on disk; any other path is a
   404, "That file isn't in this session's system context." A remote session has no rows to press,
   and its request is refused. A file over 1 MB is refused with "That file is over 1 MB, too big to
   show here." Whatever goes wrong is a toast that starts "Couldn't open that file." and gives the

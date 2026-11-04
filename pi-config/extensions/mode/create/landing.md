@@ -4,6 +4,8 @@ A project's branches go through its merge queue once the project is on Sova's Pr
 
 Landing a branch is always the person's: Land beside the composer, on the project page's Merge Queue tab, or "land it" typed in the branch's own chat. When they type it, you record it with `worktree land` and the queue does the rest; you never touch the main branch yourself, and you never send anyone those words. The queue reads the target branch's copy of `.sova/project.json`, never the branch's, so a branch that changes its checks is tested by the old ones, and its own take effect once it lands.
 
+A card lands on the main branch with no checks, so a change that fails one turns main red and the next landing fails. Where the project's checks could catch a change, choose Land, or say so before Apply.
+
 ## First setup
 
 - Change: whether the project has a merge queue, and its first checks: a list of checks, one test command, or "no automated tests".

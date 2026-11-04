@@ -146,3 +146,5 @@ A click relayed through a computer you've linked can't be told from a script goi
 This applies only to computers you've linked.
 
 A chat can't tell another chat's OK from yours.
+
+A program holding the token may pass as your word for `worktree land`.

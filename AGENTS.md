@@ -97,8 +97,8 @@ also update Y" list live in its guide: read the guide of every area your task to
   alone). It holds for that commit until the branch changes or lands. Land is offered on it.
 - **The user's typed word.** When the user types "land it" or "merge it" in the chat that owns the
   branch, commit what is left and record it with `worktree land` (it refuses anything but their own
-  newest message, and a message the Overseer, a baton or another session sent is never theirs,
-  whatever it says); the queue takes it as an approval of that commit. "land it without its specs"
+  newest message; one the Overseer, a baton or another session sent is refused, whatever it says, though a
+  program holding the token may still pass as their word); the queue takes it as an approval of that commit. "land it without its specs"
   and "land it, skip review" are recorded as said. Never send a session "land it" on the user's
   behalf. When the work is done, say what still blocks landing (Sova's note names it), or that they
   can press Land or type "land it" here.

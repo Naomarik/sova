@@ -41,7 +41,7 @@ All of this is about this computer and works in any folder. None of it spreads t
 ## The summary line
 
 - Change: which model writes the line under each session's title. Whether a browser draws that line is the browser's own, under Settings → General.
-- Lives: this computer, in the agent folder's summary settings.
+- Lives: `<agent dir>/topic-outline.json`, on this computer.
 - Approves: the person, by Apply, or on the tab.
 - By: Card or Screen. The Sova-wide setting `summaries.model`, or Settings → Summaries. A model turned off in Settings → Models won't summarize. A summary timeout and budget have no screen: `summaries.limits` is the card for those.
 - Live: sessions started afterwards.

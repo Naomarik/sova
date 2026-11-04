@@ -95,7 +95,7 @@ All of this works in any folder. It's about this computer and how it reaches oth
 ## Remote targets
 
 - Change: a machine or container a chat's tools can run on, reached by ssh, Docker or an Incus cell.
-- Lives: `targets.json` in the person's agent folder. It holds key paths and profile names only, never a key. It doesn't spread.
+- Lives: `<agent dir>/targets.json`. It holds key paths and profile names only, never a key. It doesn't spread.
 - Approves: the person, by Apply.
 - By: Card. The Sova-wide setting `remote.targets`, with `sova_settings` reference for its value.
 - Live: new chats, from New Session → Remote.

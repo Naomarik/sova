@@ -7,7 +7,7 @@ A project's playbooks, schedules and automation files need a project in Git. In 
 ## Your own playbooks
 
 - Change: a recipe available in all the person's chats on this computer, optionally replacing a shipped one with the same id.
-- Lives: `playbooks/<id>/PLAYBOOK.md` in the person's Sova state folder. The id is lowercase letters, digits and dashes. Files the entry names sit beside it, and relative paths in it resolve against its own folder.
+- Lives: `<agent dir>/sova/playbooks/<id>/PLAYBOOK.md`. The id is lowercase letters, digits and dashes. Files the entry names sit beside it, and relative paths in it resolve against its own folder.
 - Approves: the person, by their OK on the whole file.
 - By: OK. Show the path and the whole file first.
 - Live: now: the Playbooks dialog reads the folder each time it opens. It doesn't spread to other computers.

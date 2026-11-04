@@ -5683,3 +5683,13 @@ test("mcpServers: a chat with no answer has none to give", async () => {
 	await h.start();
 	await assert.rejects(h.call("agent_spawn", { prompt: "x", mcpServers: ["a"], wake: false }), /servers are none, so a worker can't have a\./);
 });
+
+test("mcpServers: a worker on its worktree's own config is refused at the start, by name, and asks the chat nothing", async () => {
+	const h = harness();
+	await h.start();
+	let asked = 0;
+	h.bus.on("sova:mcp-list", () => asked++);
+	await assert.rejects(h.call("agent_spawn", { prompt: "x", name: "fixer", mcpServers: ["a"], useWorktreeConfig: true, wake: false }), /^Error: fixer uses its worktree's own config, so it can't have MCP servers\.$/);
+	assert.equal(h.workers.length, 0);
+	assert.equal(asked, 0);
+});

@@ -23,6 +23,7 @@ const NO_STORE = { "Cache-Control": "no-store" };
 const words = (what: string): PageOnlyWords => ({ overseer: what, local: what, chat: what, script: what, extension: what });
 const APPROVE_ONLY = words("Only you can approve a server, on the page.");
 const SIGN_IN_ONLY = words("Only you can sign in to a server, on the page.");
+const CHANGE_ONLY = words("Only you can change a server, on the page.");
 export const RESERVED = "The name sova is Sova's own. Pick another.";
 export const CHANGED = "This server changed since you looked. Check what it runs, then approve it again.";
 
@@ -180,7 +181,7 @@ export function registerMcpRoutes(app: Hono<any>): void {
 
   app.delete(
     "/api/mcp/rows/:id",
-    page(APPROVE_ONLY, async (c) => {
+    page(CHANGE_ONLY, async (c) => {
       const ref = refOf(c);
       if (ref.owner.kind !== "computer") throw new Refusal("A project's server changes through its file.", 409, "invalid");
       const e = currentEntry(ref.owner, ref.name);
@@ -197,7 +198,7 @@ export function registerMcpRoutes(app: Hono<any>): void {
 
   app.patch(
     "/api/mcp/rows/:id",
-    page(APPROVE_ONLY, async (c) => {
+    page(CHANGE_ONLY, async (c) => {
       const ref = refOf(c);
       await liveRow(ref);
       const b = await body(c);
@@ -235,7 +236,7 @@ export function registerMcpRoutes(app: Hono<any>): void {
 
   app.post(
     "/api/mcp/rows/:id/check",
-    page(APPROVE_ONLY, async (c) => {
+    page(CHANGE_ONLY, async (c) => {
       const ref = refOf(c);
       await liveRow(ref);
       await checkServer(ref.owner, ref.name);
@@ -245,7 +246,7 @@ export function registerMcpRoutes(app: Hono<any>): void {
 
   app.put(
     "/api/mcp/rows/:id/secrets/:name",
-    page(APPROVE_ONLY, async (c) => {
+    page(CHANGE_ONLY, async (c) => {
       const ref = refOf(c);
       await liveRow(ref);
       const name = c.req.param("name") ?? "";
@@ -258,7 +259,7 @@ export function registerMcpRoutes(app: Hono<any>): void {
 
   app.delete(
     "/api/mcp/rows/:id/secrets/:name",
-    page(APPROVE_ONLY, async (c) => {
+    page(CHANGE_ONLY, async (c) => {
       const ref = refOf(c);
       await liveRow(ref);
       const name = c.req.param("name") ?? "";

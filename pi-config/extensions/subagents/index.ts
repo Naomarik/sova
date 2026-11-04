@@ -1496,6 +1496,8 @@ export function registerSubagents(
 			if (!spec.prompt.trim()) throw new Error("Task must not be blank.");
 			// A team's monitor has no tools to follow them with; a worker on its worktree's own agent dir
 			// gets them from that tree's mode extension (below), never twice.
+			// Its agent dir is its worktree's, where the chat's servers, approvals and secrets aren't.
+			if (spec.useWorktreeConfig && spec.mcpServers?.length) throw new Error(`${spec.name ?? spec.agentType ?? "This worker"} uses its worktree's own config, so it can't have MCP servers.`);
 			const mcp = workerMcp(spec.mcpServers);
 			const modes = request.team?.members[index]?.duty === "monitor" || spec.useWorktreeConfig ? undefined : modesNow;
 			const modePrompt = modes?.prompt;

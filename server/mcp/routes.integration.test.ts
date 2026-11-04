@@ -159,29 +159,31 @@ describe("only the page changes a server", () => {
     ["a script holding the token", { "x-sova-token": "t" }],
     ["a chat", { "x-sova-caller": "c" }],
   ];
-  const writes = async (id: string): Promise<[string, string, unknown?][]> => [
-    ["POST", "/api/mcp/servers", { way: "command", name: "x", command: "x" }],
-    ["PUT", `/api/mcp/rows/${id}`, { command: "x" }],
-    ["DELETE", `/api/mcp/rows/${id}`],
-    ["PATCH", `/api/mcp/rows/${id}`, { newChats: false }],
-    ["POST", `/api/mcp/rows/${id}/approve`, { version: "v" }],
-    ["POST", `/api/mcp/rows/${id}/check`],
-    ["PUT", `/api/mcp/rows/${id}/secrets/K`, { value: "v" }],
-    ["DELETE", `/api/mcp/rows/${id}/secrets/K`],
-    ["POST", `/api/mcp/rows/${id}/sign-in`],
-    ["GET", `/api/mcp/rows/${id}/sign-in`],
-    ["POST", `/api/mcp/rows/${id}/sign-in/address`, { address: "x" }],
-    ["DELETE", `/api/mcp/rows/${id}/sign-in`],
+  const APPROVE = "Only you can approve a server, on the page.";
+  const SIGN_IN = "Only you can sign in to a server, on the page.";
+  const CHANGE = "Only you can change a server, on the page.";
+  const writes = (id: string): [string, string, string, unknown?][] => [
+    [APPROVE, "POST", "/api/mcp/servers", { way: "command", name: "x", command: "x" }],
+    [APPROVE, "PUT", `/api/mcp/rows/${id}`, { command: "x" }],
+    [APPROVE, "POST", `/api/mcp/rows/${id}/approve`, { version: "v" }],
+    [CHANGE, "DELETE", `/api/mcp/rows/${id}`],
+    [CHANGE, "PATCH", `/api/mcp/rows/${id}`, { newChats: false }],
+    [CHANGE, "POST", `/api/mcp/rows/${id}/check`],
+    [CHANGE, "PUT", `/api/mcp/rows/${id}/secrets/K`, { value: "v" }],
+    [CHANGE, "DELETE", `/api/mcp/rows/${id}/secrets/K`],
+    [SIGN_IN, "POST", `/api/mcp/rows/${id}/sign-in`],
+    [SIGN_IN, "GET", `/api/mcp/rows/${id}/sign-in`],
+    [SIGN_IN, "POST", `/api/mcp/rows/${id}/sign-in/address`, { address: "x" }],
+    [SIGN_IN, "DELETE", `/api/mcp/rows/${id}/sign-in`],
   ];
 
   test("every write is refused to everyone else, with code page-only", async () => {
     const r = await addStub("guarded");
     for (const [who, headers] of callers)
-      for (const [method, path, body] of await writes(r.id)) {
+      for (const [sentence, method, path, body] of writes(r.id)) {
         const { status, json } = await ask(method, path, body, headers);
         assert.equal(status, 403, `${who}: ${method} ${path}`);
-        assert.equal((json as { code: string }).code, "page-only");
-        assert.match((json as { error: string }).error, /^Only you can (approve|sign in to) a server, on the page\.$/);
+        assert.deepEqual(json, { error: sentence, code: "page-only" }, `${who}: ${method} ${path}`);
       }
     assert.equal((await row("guarded")).state, "connected");
   });

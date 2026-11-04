@@ -286,8 +286,24 @@ describe("the watchdog", () => {
       r.io.rss = rss;
       r.step(true);
     }
-    assert.deepEqual(r.of("memory").map((m) => m.rungBytes), [1000, 2000, 4000]);
-    assert.deepEqual(r.sent.filter((m: any) => m.k === "memory").map((m: any) => m.rungBytes), [1000, 2000, 4000]);
+    assert.deepEqual(r.of("memory").map((m) => m.rungBytes), [1000, 2000, 16_000]);
+    assert.deepEqual(r.sent.filter((m: any) => m.k === "memory").map((m: any) => m.rungBytes), [1000, 2000, 16_000]);
+  });
+
+  test("a jump past several rungs at once names the highest, which is what tells the main thread to stop its sampler", () => {
+    const first = 1000;
+    const r = rig({ memoryFirstBytes: first });
+    r.io.rss = first - 1;
+    r.step(true);
+    r.io.rss = first * 2.5;
+    r.step(true);
+    assert.deepEqual(r.of("memory").map((m) => m.rungBytes), [first * 2]);
+    const asked = r.sent.filter((m: any) => m.k === "memory").map((m: any) => m.rungBytes);
+    assert.deepEqual(asked, [first * 2]);
+    assert.ok(asked[0]! >= first * 2, "the main thread's test for the second rung");
+    r.io.rss = first * 3.9;
+    r.step(true);
+    assert.equal(r.of("memory").length, 1, "the rungs a jump passed aren't crossed again");
   });
 
   test("a ladder comes back only once memory has fallen and stayed quiet", () => {

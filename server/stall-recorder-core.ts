@@ -745,8 +745,12 @@ export class StallWatch {
   private memory(now: number, rss: number): void {
     const first = this.cfg.memoryFirstBytes;
     if (rss >= this.nextRung) {
-      const rungBytes = this.nextRung;
-      while (this.nextRung <= rss) this.nextRung *= 2;
+      // The highest rung crossed: a jump past several is one record, and the main thread acts on the rung it names.
+      let rungBytes = this.nextRung;
+      while (this.nextRung <= rss) {
+        rungBytes = this.nextRung;
+        this.nextRung *= 2;
+      }
       this.lastCrossMono = now;
       const detail = this.io.detail();
       this.emit({

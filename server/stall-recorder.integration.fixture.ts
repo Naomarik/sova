@@ -44,11 +44,12 @@ if (mode === "memory") {
   const keep: Buffer[] = [];
   say({ allocating: true });
   function allocateForTest() {
-    for (let i = 0; i < 16; i++) keep.push(Buffer.alloc(16 * 1024 * 1024, 1));
+    keep.push(Buffer.alloc(16 * 1024 * 1024, 1));
   }
+  // A climb the watchdog can follow a rung at a time: a tick is 100 ms, the two rungs at least 96 MB apart.
   while (!existsSync(release)) {
     allocateForTest();
-    await new Promise((r) => setTimeout(r, 200));
+    await new Promise((r) => setTimeout(r, 30));
     keep.length = Math.min(keep.length, 48);
   }
   process.exit(0);

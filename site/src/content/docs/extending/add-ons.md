@@ -37,7 +37,7 @@ These do nothing in a Sova chat, and raise no error:
 **Custom overlays** answer at once with no result. A command that needs one shows
 "`/name` needs the terminal UI. Run it in pi in a terminal."
 
-**MCP servers** an add-on or pi registers don't load in Sova chats. MCP isn't supported yet.
+**MCP servers** an add-on registers don't run: a chat runs only the [servers on its own list](/docs/mcp-servers/).
 
 ## What reaches workers
 

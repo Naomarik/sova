@@ -176,7 +176,9 @@ When you ask for a tool in every chat, it offers an [add-on](/docs/extending/add
 folder, and says plainly that an add-on asks nothing and runs with full access. It doesn't offer
 add-ons kept in a project's folder, which run in every chat in that folder with no approval.
 
-MCP isn't supported in Sova chats yet, so Create says so and offers a project tool.
+An [MCP server](/docs/mcp-servers/) comes after a project tool: a project's server goes in its `.mcp.json`
+by Land, and this computer's in Settings → MCP Servers or in its `mcp.json` on your OK. Only you approve
+one, on the page, and it reaches new chats once approved.
 
 Before you agree to a Sova extension, Create says you must keep its backend running, because Sova never
 starts it, and that it has full access inside the page. It offers a theme, a card or a project tool

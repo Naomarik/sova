@@ -29,7 +29,7 @@ you need, and it finds the way. These are its topics, in its order.
 
 | You want | Where |
 |---|---|
-| A new tool for the agent to call, and how it gets approved | [Project modes](/docs/modes/project-modes/) first, or an [add-on](/docs/extending/add-ons/) for all your chats |
+| A new tool for the agent to call, and how it gets approved | [Project modes](/docs/modes/project-modes/) first, an [MCP server](/docs/mcp-servers/), or an [add-on](/docs/extending/add-ons/) for all your chats |
 | Your own page, buttons and cards inside Sova | A Sova extension: see [Make Sova yours](https://github.com/Naomarik/sova/blob/master/docs/customization.md#sova-extensions) in the repository |
 | Add-ons that change what a chat can do, from a file or a package | [Add-ons in a Sova chat](/docs/extending/add-ons/) |
 | Drive Sova from your own program, and follow what happens | [Scripting Sova](/docs/extending/scripting/) |
@@ -63,7 +63,6 @@ you need, and it finds the way. These are its topics, in its order.
 - **Changing Sova's own code.** Create won't. The nearest ways are everything on this page.
 - **A new major mode.** Sova has three. The nearest way is a [project mode](/docs/modes/project-modes/),
   which adds instructions, tools, commands and hooks on top of them.
-- **MCP servers.** Not supported in Sova chats yet. The nearest way is a project tool.
 - **Webhooks.** Sova never calls you. The nearest way is the [event stream](/docs/extending/scripting/#follow-what-happens),
   which a program of yours stays connected to.
 - **Changing one of Sova's own screens.** The nearest way is a Sova extension, which has its own page

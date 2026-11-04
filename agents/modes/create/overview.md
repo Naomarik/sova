@@ -65,7 +65,8 @@ reviewer of such a branch asks for the entry.
   place that names a mode has to refuse too (§chat.create-mode/per-chat-only).
 - **Sova only.** The terminal offers no Create and has no shortcut for it. It only must not break on a
   chat whose saved mode is `create`.
-- **MCP.** Create says MCP isn't supported yet. The branch that adds MCP adds its entry.
+- **MCP.** An MCP server is part of the `tools` entry, offered after a project tool. Only the page
+  approves one, so the entry has the chat name the click.
 
 ## When you change it, also update
 

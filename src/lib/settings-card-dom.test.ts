@@ -99,10 +99,18 @@ test("a card's field: Apply waits for it, nothing fills it in, and it shows only
   assert.match(html, /The other computer(&#39;|')s fingerprint/);
   assert.match(html, /autocomplete="off"/);
   assert.match(html, /<button[^>]*button-primary[^>]*disabled[^>]*>/, "Apply is held back while it's empty");
-  assert.match(html, /Open Mesh Settings/);
+  assert.match(html, /Open Mesh Page/);
+  assert.match(html, /href="#\/mesh"/);
   assert.doesNotMatch(draw(pairing, null, false), /<input/, "no field where nobody may apply");
   assert.doesNotMatch(draw({ ...pairing, state: "applied" }, null), /<input/, "no field once it has ended");
   assert.doesNotMatch(draw(card({ kind: "sova" }), null), /<input|<button[^>]*button-primary[^>]*disabled/, "a card without one: Apply stands ready");
+});
+
+test("a card's notes stand before Apply, as given, and go when it ends", () => {
+  const notes = ["Resync copies this computer's settings to Laptop."];
+  const html = draw(card({ kind: "sova", notes }), null);
+  assert.ok(html.indexOf(notes[0]!.replace("'", "&#39;")) >= 0 || html.includes(notes[0]!));
+  assert.doesNotMatch(draw(card({ kind: "sova", state: "applied", notes }), null), /Resync copies/);
 });
 
 test("a save that failed when its turn came says why on the card", () => {

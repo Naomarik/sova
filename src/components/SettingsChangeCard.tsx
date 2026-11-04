@@ -2,7 +2,7 @@ import { createContext, createEffect, createSignal, For, Show, useContext } from
 import type { SettingsCardView, SettingsHistoryRow, SettingsToolDetails } from "../../shared/project-settings";
 import { applySettingsCard, applySovaSettingsCard, cancelLocalSettingsSave, cancelMergeSettings, getProjectSettings, getSovaSettingsCards, undoSettingsRow, withdrawSettingsCard, withdrawSovaSettingsCard } from "../lib/api";
 import { applyToast, cancelHeldSave, cardCanAct, createCardLive, QUEUE_CARD_WAITS, typedInput, type CardTimer, type SettingsCardScope } from "../lib/settings-card-live";
-import { openSettings } from "../lib/settings-nav";
+import { MESH_HREF } from "../lib/mesh";
 import { toast } from "../lib/ui-state";
 
 /**
@@ -228,11 +228,18 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
                 onInput={(e) => setTyped(e.currentTarget.value)}
               />
               <p class="field-hint">
-                This computer's own fingerprint is in Settings → Mesh, Pairings.{" "}
-                <button type="button" class="button button-sm button-ghost" onClick={() => openSettings("mesh")}>
-                  Open Mesh Settings
-                </button>
+                This computer's own fingerprint is on the Mesh page, under Dial-out pairings.{" "}
+                <a class="button button-sm button-ghost" href={MESH_HREF}>
+                  Open Mesh Page
+                </a>
               </p>
+            </div>
+          )}
+        </Show>
+        <Show when={c().notes?.length && waiting() ? c().notes : null}>
+          {(notes) => (
+            <div class="settings-card-group">
+              <For each={notes()}>{(line) => <p class="settings-card-why">{line}</p>}</For>
             </div>
           )}
         </Show>
@@ -299,9 +306,11 @@ export function SettingsToolCard(props: { details: SettingsToolDetails }) {
   const scope = useContext(SettingsCardContext);
   const canAct = () => cardCanAct(scope, props.details);
   const { live, load } = createCardLive({ details: props.details, canAct, reads: { project: getProjectSettings, sova: getSovaSettingsCards }, everyMs: POLL_MS, timer: whileVisible });
+  /** Before a read, the transcript's copy, less its notes: they can change while a card waits, so only a live read says them. */
+  const transcriptCopy = () => (props.details.card ? { ...props.details.card, notes: undefined } : null);
   return (
     <Show
-      when={live() ?? props.details.card}
+      when={live() ?? transcriptCopy()}
       fallback={
         <Show when={props.details.appliedNow.length}>
           <SettingsCard

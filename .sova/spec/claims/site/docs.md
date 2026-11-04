@@ -191,3 +191,12 @@ runs and the kind of copy, the source (stable, master or a branch), checking and
 the dot on Settings, upgrading with the previous version kept until the new one answers and put back
 when it doesn't, Upgrade automatically, the banner a page open across an upgrade
 shows ("A newer Sova is available.", mesh or not), and that only the operator can update.
+
+## §site.docs/mcp-servers — MCP servers (`/docs/mcp-servers/`)
+
+What an MCP server gives a chat; adding one in Settings by address, command or a pasted entry; what
+each row's state means, and Check Again and Sign In, from a phone too; why a server you didn't add on
+the page waits for you, and that any change asks again; saving a secret; a project's `.mcp.json`, and
+that each worktree's copy is approved on its own; what a server costs in tokens and the switches that
+trim it; workers and profiles; and what the sandbox and remote chats change. It says a server stays
+on its computer, and that chats don't ask before a tool runs.

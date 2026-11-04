@@ -1,0 +1,421 @@
+{
+  "§app.mcp/add-server": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/McpAddServer.tsx",
+      "src/lib/mcp.ts",
+      "src/lib/mcp.test.ts",
+      "server/mcp/routes.ts",
+      "server/mcp/config.ts",
+      "shared/mcp.ts",
+      "server/mcp/mcp.test.ts"
+    ],
+    "requires": [
+      "§app.mcp/approval",
+      "§app.mcp/check",
+      "§app.mcp/secrets",
+      "§app/claude-code-provider"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
+  },
+  "§app.mcp/approval": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/mcp/trust.ts",
+      "server/mcp/fingerprint.ts",
+      "server/mcp/resolve.ts",
+      "server/mcp/routes.ts",
+      "server/mcp/guards.test.ts",
+      "server/mcp/routes.integration.test.ts",
+      "server/commands-inventory/scan.ts",
+      "server/commands-inventory/baseline.json"
+    ],
+    "requires": [
+      "§chat.offers/approval",
+      "§app.project-overseer/settings",
+      "§chat.profiles/enforcement",
+      "§mesh/sync"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
+  },
+  "§app.mcp/check": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/mcp/check.ts",
+      "server/mcp/check-child.ts",
+      "server/harness/pi/mcp-check.ts",
+      "server/mcp/store.ts",
+      "server/mcp/routes.ts",
+      "server/mcp/routes.integration.test.ts"
+    ],
+    "requires": [
+      "§app.mcp/approval",
+      "§app.mcp/environment"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
+  },
+  "§app.mcp/environment": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/mcp/transport.ts",
+      "server/mcp/values.ts",
+      "server/mcp/resolve.ts",
+      "server/harness/pi/mcp.ts",
+      "server/harness/pi/mcp-check.ts"
+    ],
+    "requires": [
+      "§app.mcp/secrets",
+      "§chat.sandbox/what-on-enforces",
+      "§chat.sandbox/git-cleanup"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
+  },
+  "§app.mcp/in-a-chat": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/harness/pi/mcp.ts",
+      "server/mcp/transport.ts",
+      "server/mcp/chat.ts",
+      "server/harness/pi/QUIRKS.md",
+      "server/harness/pi/quirks.ts",
+      "server/transcript.ts",
+      "server/chat-manager.ts",
+      "server/chat-handle.ts",
+      "server/chat-runtime/host.ts",
+      "server/chat-runtime/methods.ts",
+      "shared/chat-runtime.ts",
+      "shared/chat-runtime-wire.ts",
+      "shared/wire-v1.ts",
+      "shared/harness-wire.ts",
+      "shared/protocol.ts",
+      "src/components/ToolCard.tsx",
+      "src/components/BuiltinKinds.tsx",
+      "src/components/LiveKinds.tsx",
+      "src/lib/live.ts",
+      "src/lib/mcp-link.ts",
+      "src/lib/transcript-kinds.ts",
+      "server/mcp/tool-names.ts",
+      "server/chat-runtime/live-tail.ts",
+      "server/chat-runtime/live-tail.test.ts",
+      "server/harness/pi/mcp-http.ts",
+      "server/harness/pi/testing/mcp-http-stub.fixture.ts"
+    ],
+    "requires": [
+      "§app/claude-code-provider",
+      "§app.mcp/tool-list",
+      "§app.mcp/approval"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
+  },
+  "§app.mcp/project-servers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/mcp/config.ts",
+      "server/mcp/folder.ts",
+      "server/mcp/places.ts",
+      "server/mcp/view.ts",
+      "server/mcp/routes.ts",
+      "src/components/ProjectMcpCard.tsx",
+      "src/components/ProjectPage.tsx"
+    ],
+    "requires": [
+      "§app.mcp/approval",
+      "§app.mcp/rows",
+      "§chat.offers/project-list"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T02:26Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+    }
+  },
+  "§app.mcp/reads": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/mcp/routes.ts",
+      "shared/commands/other.ts",
+      "shared/commands-ids.json",
+      "src/card-toolkit/commands.gen.ts",
+      "docs/commands.md"
+    ],
+    "requires": [
+      "§app.commands/catalogue",
+      "§app.mcp/approval"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T02:26Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+    }
+  },
+  "§app.mcp/rows": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/McpServerRow.tsx",
+      "src/lib/mcp.ts",
+      "server/mcp/rows.ts",
+      "server/mcp/view.ts",
+      "server/mcp/ids.ts",
+      "server/mcp/store.ts",
+      "server/mcp/resolve.ts",
+      "shared/mcp.ts",
+      "server/mcp/forget-sign-in.ts"
+    ],
+    "requires": [
+      "§app.mcp/check",
+      "§app.mcp/approval",
+      "§app.mcp/tool-list",
+      "§app.mcp/sign-in",
+      "§app.mcp/in-a-chat",
+      "§design.copy-deck/mcp-servers"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
+  },
+  "§app.mcp/sandbox": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/harness/pi/mcp.ts",
+      "server/mcp/transport.ts",
+      "server/mcp/chat.ts",
+      "pi-config/extensions/sandbox/state.ts",
+      "pi-config/extensions/sandbox/index.ts"
+    ],
+    "requires": [
+      "§chat.sandbox/states",
+      "§chat.sandbox/workers",
+      "§chat.sandbox/what-on-enforces",
+      "§chat.worktrees/workers"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
+  },
+  "§app.mcp/secrets": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/mcp/saved-values.ts",
+      "server/mcp/values.ts",
+      "server/mcp/resolve.ts",
+      "server/mcp/routes.ts",
+      "server/overseer-redact.ts",
+      "src/components/McpServerRow.tsx",
+      "pi-config/sandbox-policy/linux/policy.json",
+      "pi-config/sandbox-policy/darwin/policy.json",
+      "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+      "server/harness/pi/mcp.ts",
+      "server/mcp/transport.ts",
+      "server/mcp/check.ts",
+      "server/mcp/sign-in.ts",
+      "server/harness/pi/mcp.test.ts",
+      "server/harness/pi/mcp-http.ts"
+    ],
+    "requires": [
+      "§app.mcp/this-computer",
+      "§chat.sandbox/policy-file"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
+  },
+  "§app.mcp/settings-tab": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/McpSettings.tsx",
+      "src/components/McpServers.css",
+      "src/components/SettingsDialog.tsx",
+      "src/lib/settings-nav.ts",
+      "src/lib/settings-nav.test.ts",
+      "src/lib/api.ts",
+      "server/mcp/routes.ts"
+    ],
+    "requires": [
+      "§app/settings-dialog",
+      "§app.settings-dialog/save-bar",
+      "§design.copy-deck/mcp-servers"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T02:26Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+    }
+  },
+  "§app.mcp/sign-in": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/mcp/sign-in.ts",
+      "server/mcp/forget-sign-in.ts",
+      "server/mcp/check-child.ts",
+      "server/harness/pi/mcp-check.ts",
+      "server/mcp/routes.ts",
+      "src/components/McpServerRow.tsx",
+      "pi-config/sandbox-policy/linux/policy.json",
+      "pi-config/sandbox-policy/darwin/policy.json",
+      "server/mcp/testing/oauth-stub.fixture.ts",
+      "server/harness/pi/mcp.ts",
+      "server/harness/pi/mcp-http.ts"
+    ],
+    "requires": [
+      "§app.mcp/approval",
+      "§app.mcp/check",
+      "§app.mcp/this-computer"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
+  },
+  "§app.mcp/this-computer": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/mcp/routes.ts",
+      "server/mesh/access.ts",
+      "src/lib/mcp.ts"
+    ],
+    "requires": [
+      "§mesh/sync",
+      "§mesh/remote-sessions"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T02:26Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+    }
+  },
+  "§app.mcp/tool-list": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/mcp/list.ts",
+      "server/mcp/list-shape.ts",
+      "server/mcp/chat.ts",
+      "server/harness/pi/mcp.ts",
+      "server/session-loadout.ts",
+      "server/session-setup.ts",
+      "server/chat-manager.ts",
+      "server/harness/state-kinds.ts"
+    ],
+    "requires": [
+      "§app.mcp/check",
+      "§chat.transcript/setup-card-toggles",
+      "§app.claude-code-provider/continuity"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T02:26Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+    }
+  },
+  "§app.mcp/who-gets": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/mcp/list.ts",
+      "server/chat-manager.ts",
+      "pi-config/extensions/subagents/index.ts",
+      "pi-config/extensions/subagents/index.test.ts",
+      "pi-config/extensions/subagents/runner.ts",
+      "pi-config/extensions/subagents/registry.ts",
+      "pi-config/extensions/subagents/worker-host.ts",
+      "pi-config/extensions/subagents/chat-worker.ts",
+      "shared/profiles.ts",
+      "profiles/system/merge-thread.json",
+      "profiles/system/merge-reviewer.json",
+      "src/components/ProfilePicker.tsx"
+    ],
+    "requires": [
+      "§chat.merge-queue/thread",
+      "§app.merge-queue/review",
+      "§app.chat-processes/workers",
+      "§app.subagents-pane/claude-code-workers",
+      "§chat.profiles/model",
+      "§chat.transcript/setup-card-toggles"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
+  },
+  "§app/mcp": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/harness/pi/mcp.ts",
+      "server/harness/pi/mcp-tools.ts",
+      "shared/mcp.ts",
+      "server/chat-manager.ts",
+      "server/harness/pi/mcp.test.ts",
+      "server/harness/pi/mcp.integration.test.ts",
+      "server/harness/pi/testing/mcp-stub.fixture.mjs"
+    ],
+    "notOwned": [
+      "§app/claude-code-provider",
+      "§chat/sandbox",
+      "§chat/profiles"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T02:27Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+    }
+  }
+}

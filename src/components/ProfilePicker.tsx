@@ -17,7 +17,7 @@ import {
 } from "../../shared/profiles";
 import type { ChatProfileInfo } from "../../shared/protocol";
 import { approveProfile, fetchProfiles, pickProfile, saveCurrentProfile, type ProfilePickRef } from "../lib/api";
-import { allProfiles, cardUnusable, changeRows, defaultTools, guardrailNote, isMySettings, mySettingsCaptionParts, pickerProfiles, pickRef, profileSettingsLine, type MySettingsState } from "../lib/profiles";
+import { allProfiles, cardUnusable, changeRows, defaultTools, flippedRemove, guardrailNote, isMySettings, mySettingsCaptionParts, pickerProfiles, pickRef, profileSettingsLine, type MySettingsState } from "../lib/profiles";
 import { openSettings } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
 import { PROFILE_GRID_CUSTOM, ProfileGrid } from "./ProfileGrid";
@@ -42,6 +42,8 @@ export function ProfilePicker(props: {
   race?: { label: string; running: { id: string; path: string; title: string } } | null;
   /** Put a profile's first message in an empty composer. */
   onFirstMessage?: (text: string) => void;
+  /** A pick went through: what reads the chat's setup can read again, ahead of its socket. */
+  onApplied?: () => void;
 }) {
   const [listing, { refetch, mutate }] = createResource(() => fetchProfiles(props.cwd).catch(() => undefined));
   // Save Current As Profile's form.
@@ -92,6 +94,7 @@ export function ProfilePicker(props: {
     try {
       await pickProfile(props.path, choice);
       if (profile?.firstMessage) props.onFirstMessage?.(profile.firstMessage);
+      props.onApplied?.();
       void refetch();
     } catch (err) {
       const body = (err as { body?: { running?: { id: string; path: string; title: string } } }).body;
@@ -164,12 +167,7 @@ export function ProfilePicker(props: {
     let remove = [...c.remove] as string[];
     let grant = [...c.grant] as string[];
     if (isGrant) grant = on ? [...grant, cap] : grant.filter((g) => g !== cap && !(cap === "sessions.read" && (g === "sessions.message" || g === "sessions.all")));
-    else if (!on) remove = [...remove, cap];
-    else {
-      remove = remove.filter((r) => r !== cap);
-      // Workers went with the last other removal (§chat.profiles/enforcement), so they come back with it.
-      if (cap !== "workers" && remove.length === 1 && remove[0] === "workers") remove = [];
-    }
+    else remove = flippedRemove(remove, cap as Removable, on);
     const next = normalizeCaps(remove, grant);
     setEdited(next);
     const o = origin();

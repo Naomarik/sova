@@ -47,7 +47,7 @@ import { contextOfBranch } from "./harness/pi/usage";
 import { extensionEntries } from "./harness/pi/state";
 import { isAlreadyProcessing } from "./harness/pi/session";
 import { isCompactionInProgress } from "./harness/pi/history-ops";
-import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
+import { ALIGN_LAUNCH, type AlignLaunchData, BATON_SENT, FANOUT_MEMBER, LINK_MEMBER, LOADOUT, MCP_NOTE, MEMORY, MODE, OVERSEER, OVERSEER_DIALOG_ANSWER, OVERSEER_SENT, PROFILE, SESSION_SENT, SUBAGENT_PROFILE, TOPIC_DELIVERED, stateKindOf } from "./harness/state-kinds";
 import { piPrepare, toolCtx, toPiTool } from "./harness/pi/tools";
 import { forgetSpecial, specialLoadout, specialWriter } from "./chat-special";
 import { cutTail, helloAfterHave, type HistoryPart, pullFields } from "./tail-hello";
@@ -63,6 +63,11 @@ import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
 import { deeperContextExtension } from "./harness/pi/deeper-context";
+import { mcpExtension } from "./harness/pi/mcp";
+import { nothingDeclared } from "./mcp/folder";
+import { NO_MCP, normalizeChatList, type McpChatList } from "./mcp/list";
+import type { McpListAsk } from "./mcp/chat";
+import type { McpNote } from "../shared/mcp";
 import { LOADING_TOOLS } from "./deeper-context";
 import { playbookExtension, type PlaybookHost } from "./harness/pi/playbook";
 import { playbookHost } from "./playbook-host";
@@ -178,6 +183,10 @@ export interface ChatHosts {
   instanceNote?: (ctx: HookCtx) => Promise<string | null>;
   /** The offer tool's note of a run button's outcome (§chat.offers/card). */
   offerNote?: (sessionId: string) => Promise<string | null>;
+  /** The list a chat takes now (§app.mcp/tool-list): projects live in the server's engines. */
+  mcpList?: (ask: McpListAsk) => Promise<McpChatList | null>;
+  /** A worker's server failed under its confinement: the chat that started it hears (§app.mcp/sandbox). */
+  mcpTell?: (parent: string, note: McpNote) => void;
   /** The transcript cards' note of answers given at once since `since` (§chat.transcript-cards/answering). */
   cardNote?: (sessionId: string, since: string | null) => Promise<string | null>;
 }
@@ -270,6 +279,9 @@ export const DEFAULT_EXTENSION_FACTORIES = [
   // Subfolder AGENTS.md / CLAUDE.md files, attached to the read/edit/write result that first reaches them.
   deeperContextExtension(),
 ];
+
+const mcpListHere: NonNullable<ChatHosts["mcpList"]> = async (ask) => (await import("./mcp/chat")).chatListFor(ask);
+const mcpTellHere: NonNullable<ChatHosts["mcpTell"]> = (parent, note) => void import("./mcp/chat").then((m) => m.tellParent(parent, note));
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway
     session with the default extensions and the provider flag alone (server/harness/pi/open.ts).
@@ -769,13 +781,18 @@ function workerHostExtension(pi: PiExtensionAPI): void {
  * instance note, as an ordinary chat does (§app.project-services/callers), served when the server declared it, else
  * in this process.
  */
-export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null }, path: string) {
+export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent">>, path: string) {
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
   const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension()] : [];
   if (w.kind !== "worker") return [SHELL_GUARD_FACTORY, ...files];
+  // Only what the chat named: a worker's list is fixed at its start and kept when it resumes (§app.mcp/who-gets).
+  const mcp = w.mcp ? normalizeChatList(w.mcp) : null;
   return [
     SHELL_GUARD_FACTORY,
     ...files,
+    ...(mcp?.servers.length
+      ? [mcpExtension({ list: async () => mcp, label: () => w.parent?.workerId ?? "A worker", tellParent: (note) => (chatHosts.mcpTell ?? mcpTellHere)(w.parent?.path ?? "", note) })]
+      : []),
     servedDecls
       ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
       : projectVerbsExtension(projectEngine),
@@ -2183,11 +2200,17 @@ class ChatSession {
     if (this.special) throw new RefusedError("This session's context files and skills can't be switched.");
     assertNotLive(this.path);
     this.assertNoForeignWrites();
-    if (!this.isPristine()) throw new RefusedError("Context files and skills are fixed once a message is sent.");
+    if (!this.isPristine()) throw new RefusedError("Context files, skills and MCP servers are fixed once a message is sent.");
     if (this.harness.isRunning() || this.isCompacting() || this.starting) throw new BusyError("Wait for the reply to finish first.", "busy");
     this.flushDeferredAppends(); // open-time entries go first, as in writeProfile
     this.state.append(LOADOUT, data);
     markOwned(this.path);
+  }
+
+  /** A worker of this chat failed under its confinement (§app.mcp/sandbox): its note, here. */
+  noteMcp(note: McpNote): void {
+    const id = this.state.append(MCP_NOTE, note);
+    this.broadcast({ type: "append", items: [{ id, kind: "info", text: `${note.server}: ${note.how}`, mcpNote: note }] });
   }
 
   /** Whether the setup card may offer its switches now: what writeLoadout would accept, short of
@@ -4459,6 +4482,12 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
         : {
             extensionFactories: [
               ...DEFAULT_EXTENSION_FACTORIES,
+              // Its MCP servers (§app/mcp); a profile may remove them (§chat.profiles/capabilities).
+              mcpExtension({
+                label: () => titleOf(read.branch()),
+                list: async (cwd, sandboxOn) =>
+                  snap?.remove.includes("mcp") || nothingDeclared(cwd) ? NO_MCP : (chatHosts.mcpList ?? mcpListHere)({ path, cwd, sandboxOn, offMcp: loadout.data?.offMcp ?? [], onMcp: loadout.data?.onMcp ?? [] }),
+              }),
               // Its workers' and hidden chats' host (§app.chat-processes/workers).
               { name: "sova-worker-host", factory: workerHostExtension },
               visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),

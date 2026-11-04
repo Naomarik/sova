@@ -384,11 +384,11 @@ unreachable; a chat whose process ended starts a new one at the next open.
 Every worker a chat starts runs as a chat process of its own: an `agent_spawn` worker (Delegate's
 included), a team member, coordinator, monitor or successor, and a resumed worker. So does every
 hidden chat: `/explain`'s fork, a compaction's hand-off fork and `/btw`'s side thread. The server
-starts each from the loadout its parent computed (model, effort, tools, extensions, flags, system
-prompt, sandbox, remote target, modes, team identity, agent dir), with nothing of an ordinary chat
+starts each from the loadout its parent computed (model, effort, tools, MCP servers, extensions, flags,
+system prompt, sandbox, remote target, modes, team identity, agent dir), with nothing of an ordinary chat
 added (no profile, mode menu, memory, topics, links or session powers, and of the Sova-served tools
 only `project_verbs` with its instance note, which a worker or team member gets and a hidden chat
-doesn't, §app.project-services/callers; each, hidden or not, gets the kill guard, §chat/kill-guard), and
+doesn't, §app.project-services/callers), and
 opens it the way it opens any chat. The parent never starts a worker's process and never talks to
 it directly: the server passes it the parent's task, steers, follow-ups, aborts and stops, and
 passes its events back. A worker never runs inside the server's process.
@@ -431,6 +431,8 @@ passes its events back. A worker never runs inside the server's process.
   this session." A worker whose task is not accepted when it starts is stopped, and the start fails
   with the reason.
 - **Trust.** A worker trusts its project's local files as every Sova chat does.
+- **MCP servers.** A worker or team member gets only the servers its parent named, and a hidden
+  chat gets none (§app.mcp/who-gets).
 - **Archiving or deleting the parent** stops its workers.
 - **Idle workers.** A waiting worker's process stops after the idle-stop time like any chat's
   (§app.chat-processes/idle-stop). It is still listed waiting and still takes a live slot, and its

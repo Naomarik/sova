@@ -42,6 +42,7 @@ test("first match wins, in the old chain's order", () => {
   assert.equal(idOf(row({ overseerMark: { kind: "sent", targetId: "x" } } as never)), "overseer-sent");
   assert.equal(idOf(row({ ownerRequest: { id: "x" } } as never)), "owner-request");
   assert.equal(idOf(row({ handoffRun: { status: "running" } } as never)), "handoff-run");
+  assert.equal(idOf(row({ mcpNote: { server: "docs", how: "failed" } } as never)), "mcp-note");
   assert.equal(idOf(row({ facts: { compaction: { summary: "s" } } })), "compaction");
   assert.equal(idOf(row({ handoffRun: { status: "running" }, facts: { compaction: {} } } as never)), "handoff-run", "a handoff run before a compaction");
   assert.equal(idOf(row({ loginNote: true } as never), ctx({ hasUserRow: () => false })), "login-note-waiting");

@@ -913,3 +913,24 @@ nodeTest("seedLive with tools only, or nothing, draws no reply", () => {
   assert.equal(s.entries.length, 0, "a tool between messages draws no empty reply");
   assert.equal(s.tools.b1?.status, "running");
 });
+
+nodeTest("a server's tool keeps its server and tool from the part's start to its end, and a rejoining tab reads them", () => {
+  const mcp = { server: "slow", tool: "wait" };
+  const [s, set] = store();
+  applyEvent(set, { type: "message.start", role: "assistant", parts: [] });
+  applyEvent(set, { type: "part.start", index: 0, kind: "toolCall", id: "c1", name: "mcp__slow__wait", mcp });
+  const block = () => (s.entries.at(-1) as unknown as { blocks: { mcp?: unknown }[] }).blocks[0]!;
+  assert.deepEqual(block().mcp, mcp, "from the first event, before tool.start");
+  assert.deepEqual(runDetail(s), { step: "tool", text: "running slow · wait" }, "the status line says it too");
+  applyEvent(set, { type: "part.end", index: 0, kind: "toolCall", id: "c1", args: {} });
+  assert.deepEqual(block().mcp, mcp, "an end that names none keeps it");
+  applyEvent(set, { type: "tool.start", callId: "c1", name: "mcp__slow__wait", mcp });
+  applyEvent(set, { type: "tool.end", callId: "c1", isError: false, output: "ok", images: [] });
+  assert.deepEqual(s.tools.c1?.mcp, mcp, "a finished tool keeps it");
+  applyEvent(set, { type: "message.end", role: "assistant", stop: "ok", parts: [{ kind: "toolCall", id: "c1", name: "mcp__slow__wait", args: {} }] });
+  assert.deepEqual(block().mcp, mcp, "the message's end keeps it");
+  const [j, setJ] = store();
+  seedLive(setJ, { message: { role: "assistant", parts: [{ kind: "toolCall", id: "c2", name: "mcp__slow__wait", mcp }] }, tools: [{ callId: "c2", name: "mcp__slow__wait", mcp, output: "", images: [] }] } as never);
+  assert.deepEqual(j.tools.c2?.mcp, mcp);
+  assert.deepEqual(runDetail(j), { step: "tool", text: "running slow · wait" });
+});

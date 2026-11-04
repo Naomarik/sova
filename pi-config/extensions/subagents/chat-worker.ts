@@ -50,6 +50,7 @@ export function workerStartOf(o: SpawnOptions, parent: WorkerParent, key: string
 			appendSystemPrompt: o.systemPrompt?.trim() ? o.systemPrompt : null,
 			env,
 			agentDir,
+			...(o.mcp ? { mcp: o.mcp } : {}),
 			lowered: true,
 		},
 		session,

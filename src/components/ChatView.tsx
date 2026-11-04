@@ -39,7 +39,7 @@ import { CardJumpContext } from "../lib/card-refs";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
-import { sandboxOffMissing, type SandboxState } from "../lib/sandbox";
+import { sandboxOffMissing, sandboxStateOf, type SandboxState } from "../lib/sandbox";
 import { approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { MemoryStatus, OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
@@ -149,6 +149,7 @@ import { type LoginControl, type SandboxControl, type ThinkingControl, type Undo
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
 import { toolsKeyOf } from "../lib/session-tools";
+import { setupServersKey } from "../lib/mcp";
 import { EmptyWorktrees } from "./EmptyWorktrees";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
@@ -524,6 +525,8 @@ export function ChatView(props: {
   });
   /** The socket's `profile` message (§chat.profiles/applying); null until one arrives. */
   const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
+  /** Picks applied here: the setup card reads again at once, ahead of a chat socket still in its reconnect wait. */
+  const [profilePicks, setProfilePicks] = createSignal(0);
   /** A One at a time race at Send (§chat.profiles/singleton): the session that has it. */
   const [profileRace, setProfileRace] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
   const [sandboxPending, setSandboxPending] = createSignal<SandboxState | null>(null);
@@ -2504,6 +2507,7 @@ export function ChatView(props: {
                       <Show when={profileInfo()?.pickable && !profileInfo()?.locked && profileInfo()}>
                         {(info) => (
                           <ProfilePicker
+                            onApplied={() => setProfilePicks((n) => n + 1)}
                             path={props.path}
                             cwd={props.summary?.()?.cwd ?? null}
                             info={info()}
@@ -2515,7 +2519,7 @@ export function ChatView(props: {
                           />
                         )}
                       </Show>
-                      <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} toolsKey={toolsKey()} />
+                      <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} toolsKey={toolsKey()} serversKey={`${setupServersKey(profileInfo()?.profile, sandbox() ? sandboxStateOf(sandbox()!) : undefined)}:${profilePicks()}`} />
                       <p class="empty-body">Your first message becomes its title.</p>
                       <EmptyWorktrees path={props.path} />
                     </div>

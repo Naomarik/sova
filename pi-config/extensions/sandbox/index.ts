@@ -238,6 +238,7 @@ export default function sandbox(pi: ExtensionAPI) {
 		const event: SandboxStateEvent = { version: 1, on, ...(workersOff ? { workers: "off" as const } : {}), extensionPath: SELF_DIR, enforcement: on ? active.enforcement : "none" };
 		// Every worker start asks this (§chat.sandbox/workers, §chat.worktrees/workers); a remote session has none.
 		if (!remote) event.workerLaunch = (req) => workerLaunch(on, workersOff, req);
+		if (!remote) event.scope = { worktreeRoots: [...worktreeRoots], ...(parentScope && typeof parentScope === "object" ? { parent: parentScope } : {}) };
 		pi.events?.emit(SANDBOX_STATE_EVENT, event);
 	}
 

@@ -127,7 +127,7 @@ test("refused once a message is on the branch: 409, nothing written, no switches
   const path = makeSession(true);
   await acquireChat(path);
   const r = await applyLoadout(path, { offContext: [GLOBAL], offSkills: [] });
-  assert.deepEqual(r, { ok: false, status: 409, error: "Context files and skills are fixed once a message is sent." });
+  assert.deepEqual(r, { ok: false, status: 409, error: "Context files, skills and MCP servers are fixed once a message is sent." });
   assert.equal(loadoutEntries(path).length, 0);
   assert.equal(ok(await getSessionSetup(path, { fresh: true })).toggleable, false);
 });

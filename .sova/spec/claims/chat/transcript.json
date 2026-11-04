@@ -499,11 +499,14 @@
       "src/design/base.css",
       "src/lib/profile-cards.test.ts",
       "server/session-tools.ts",
-      "server/session-tools.test.ts"
+      "server/session-tools.test.ts",
+      "src/components/ChatView.tsx",
+      "src/lib/mcp.ts"
     ],
     "agreed": {
-      "by": "user (al_3 go-ahead)",
-      "at": "2026-10-14T16:11Z"
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
     }
   },
   "§chat.transcript/setup-card-context": {
@@ -625,14 +628,22 @@
       "server/session-loadout.test.ts",
       "server/session-loadout-runtime.test.ts",
       "server/session-setup.test.ts",
-      "src/lib/session-setup.test.ts"
+      "src/lib/session-setup.test.ts",
+      "server/mcp/chat.ts",
+      "src/lib/mcp.ts"
     ],
     "requires": [
       "§chat.transcript/setup-card",
       "§chat.transcript/setup-card-context",
       "§chat.transcript/setup-card-skills",
-      "§chat.profiles/applying"
-    ]
+      "§chat.profiles/applying",
+      "§app.mcp/tool-list"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
   },
   "§chat.transcript/slim-rows": {
     "kind": "behavior",

@@ -406,7 +406,7 @@ export class DarwinSeatbeltBackend implements Backend {
 				h("Library/Application Support/Google/Chrome"), h("Library/Application Support/BraveSoftware"),
 				h("Library/Application Support/Firefox"), h("Library/Application Support/Microsoft Edge"),
 				h("Library/Application Support/Arc"),
-				...uniq([ctx.agentDir, h(".pi/agent")]).flatMap((a) => [join(a, "auth.json"), join(a, "sova", "api-token"), join(a, "claude-accounts"), join(a, "sova", "topics")]),
+				...uniq([ctx.agentDir, h(".pi/agent")]).flatMap((a) => [join(a, "auth.json"), join(a, "mcp-auth.json"), join(a, "sova", "api-token"), join(a, "sova", "secrets", "mcp"), join(a, "claude-accounts"), join(a, "sova", "topics")]),
 			],
 			writable: [h(".local/state/mise")],
 			shadowed: [h(".cache"), h(".npm"), h(".m2")],

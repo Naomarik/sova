@@ -3,6 +3,7 @@
 // at the call, and every pi method by property at the call: nothing is bound or cached, so a session the
 // runtime swapped in, or a method a test replaced after open, is the one used. Events pass through pi's own
 // subscribe, one pi listener per Sova listener, mapped inside it: same order, same tick.
+import { mcpToolOf } from "./mcp-tools";
 import type { AgentSession, AgentSessionRuntime } from "@earendil-works/pi-coding-agent";
 import type {
   CommandOwner,
@@ -240,7 +241,12 @@ export function harnessEventOf(event: { type: string; [k: string]: any }): Harne
       return { type, frame, wrote: typeof event.result === "object" && event.result !== null, willRetry: event.willRetry === true };
     case "entry.appended":
       return event.entry ? { type, frame, entry: toHEntry(event.entry) } : { type: "other", frame };
-    case "tool.start":
+    case "tool.start": {
+      // A server's tool: its row reads the server and the tool (§app.mcp/in-a-chat).
+      const mcp = typeof event.toolName === "string" ? mcpToolOf(event.toolName) : undefined;
+      if (mcp) event.mcp = mcp;
+      return typeof event.parentToolCallId === "string" ? { type, frame, nested: true } : { type, frame };
+    }
     case "tool.update":
     case "tool.end":
       return typeof event.parentToolCallId === "string" ? { type, frame, nested: true } : { type, frame };

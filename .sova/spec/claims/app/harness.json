@@ -230,13 +230,20 @@
       "server/harness/pi/quirks.ts",
       "server/harness/pi/QUIRKS.md",
       "server/chat-model.test.ts",
-      "server/chat-joins.test.ts"
+      "server/chat-joins.test.ts",
+      "server/harness/pi/mcp.ts",
+      "server/harness/pi/session.ts"
     ],
     "requires": [
       "§app.harness/boundary",
       "§app.harness/reader",
       "§app.harness/state"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T02:26Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+    }
   },
   "§app.harness/session-special": {
     "kind": "behavior",

@@ -3,6 +3,7 @@
  * Do not change a shape without telling the other side (team_msg).
  */
 
+import type { McpNote, McpToolName, SetupMcp } from "./mcp";
 import type { WakeInfo } from "./wake";
 import type { BatonMark, BatonSummaryField } from "./baton";
 import type { LinkMessageInfo } from "./link-message";
@@ -410,6 +411,8 @@ export interface TranscriptItem {
       entry of a switch; `text` is its notice. Like the profile row it never counts toward the empty
       state, and the thread draws it where it sits once a message is sent. */
   loginNote?: true;
+  /** kind "info" only: a server's failure in this chat (§app.mcp/in-a-chat), the `sova-mcp-note` entry. */
+  mcpNote?: McpNote;
   /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
   teamEvent?: TeamEvent;
   /** kind "info" only: a /compact-handoff run's `compact-handoff-run` entry
@@ -440,6 +443,8 @@ export interface TranscriptItem {
   facts?: RowFacts;
   /** tool-call and tool-result rows. A lazy tool-result row carries no `text`. */
   tool?: ToolRowInfo;
+  /** tool-call and tool-result rows of a server's tool (§app.mcp/in-a-chat): the row reads these, never the name. */
+  mcp?: McpToolName;
   /** kind "unknown" only: the whole entry, for the card that shows it as JSON (signatures removed). */
   entry?: unknown;
 }
@@ -1476,12 +1481,14 @@ export type SessionSetup =
           server holds the chat, it is local, ordinary, not TUI-live and before its first message.
           Worked out per session on every read, never cached with the folder's lists. */
       toggleable?: boolean;
+      /** The card's MCP Servers group (§chat.transcript/setup-card-toggles); absent: no group. */
+      mcp?: SetupMcp;
       checkedAt: number;
     }
   /** A target session: its cwd is a local placeholder, so its loadout can't be read here. */
-  | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; checkedAt: number }
+  | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; mcp?: SetupMcp; checkedAt: number }
   /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
-  | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
+  | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; mcp?: SetupMcp; checkedAt: number };
 
 // GET /api/sessions/context/file?path=<session file>&file=<listed path> -> SessionSetupFileText
 //                                  (server/session-setup.ts, §chat.transcript/setup-card-open-file:
@@ -1593,7 +1600,7 @@ export type SessionTools =
   /** Not listed: `reason` is the sentence to show. */
   | { state: "unavailable"; reason: string; checkedAt: number };
 
-// POST /api/sessions/loadout {path, offContext, offSkills} -> SessionSetup
+// POST /api/sessions/loadout {path, offContext, offSkills, offMcp, onMcp} -> SessionSetup
 //                                  (§chat.transcript/setup-card-toggles: the session's whole off set
 //                                  — context files by absolute path, skills by name — written as its
 //                                  hidden `sova-loadout` entry; the runtime is rebuilt, open tabs get
@@ -2491,7 +2498,7 @@ export interface HelloLive {
   /** The assistant message still streaming (not yet written): its parts so far, by index. */
   message?: { model?: string; parts: SovaPart[] };
   /** Tool calls of this run started and not ended, each with its latest output. */
-  tools?: { callId: string; name: string; args?: unknown; output: string; images: string[]; parentCallId?: string }[];
+  tools?: { callId: string; name: string; args?: unknown; mcp?: McpToolName; output: string; images: string[]; parentCallId?: string }[];
 }
 
 /**

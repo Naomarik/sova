@@ -21,6 +21,7 @@ import { ProjectDeployPanel } from "./ProjectDeployPanel";
 import { createRuntimePoll, ProjectSoftwareCard } from "./ProjectSoftwareCard";
 import { ProjectFilesCard } from "./ProjectFilesCard";
 import { ProjectCardsCard } from "./ProjectCardsCard";
+import { ProjectMcpCard } from "./ProjectMcpCard";
 import { ProjectOffersCard } from "./ProjectOffersCard";
 import { createProjectSettings, ProjectAllSettings, ProjectSettingsChanges, ProjectSettingsHistory } from "./ProjectSettingsCards";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
@@ -372,6 +373,8 @@ export function ProjectPage(props: {
                   {org?.settings()}
                   {/* The project's offers file, read now (§chat.offers/project-list). */}
                   <ProjectOffersCard projectId={projectId} />
+                  {/* Its .mcp.json servers, per checkout (§app.mcp/project-servers). */}
+                  <ProjectMcpCard projectId={projectId} />
                   {/* Its card folders, broken ones with what is wrong, and its cards' trust. */}
                   <ProjectCardsCard projectId={projectId} />
                   <ProjectAllSettings data={settings} />

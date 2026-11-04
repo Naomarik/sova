@@ -42,6 +42,8 @@ export function ProfilePicker(props: {
   race?: { label: string; running: { id: string; path: string; title: string } } | null;
   /** Put a profile's first message in an empty composer. */
   onFirstMessage?: (text: string) => void;
+  /** A pick went through: what reads the chat's setup can read again, ahead of its socket. */
+  onApplied?: () => void;
 }) {
   const [listing, { refetch, mutate }] = createResource(() => fetchProfiles(props.cwd).catch(() => undefined));
   // Save Current As Profile's form.
@@ -92,6 +94,7 @@ export function ProfilePicker(props: {
     try {
       await pickProfile(props.path, choice);
       if (profile?.firstMessage) props.onFirstMessage?.(profile.firstMessage);
+      props.onApplied?.();
       void refetch();
     } catch (err) {
       const body = (err as { body?: { running?: { id: string; path: string; title: string } } }).body;

@@ -28,6 +28,7 @@ import {
   parseRecentCount,
   recentCount,
   recentCountValid,
+  repairRecentCount,
   setRecentCount,
 } from "../lib/recent";
 import { setShowSummaries, showSummaries } from "../lib/summary-line";
@@ -471,7 +472,7 @@ function GeneralPanel() {
   /** Leaving the field is where an unusable draft gets repaired: it becomes the nearest count
       that works, and the field says so rather than sitting on red. */
   const onCommit = () => {
-    const n = setRecentCount(draft());
+    const n = setRecentCount(repairRecentCount(draft()));
     const repaired = invalid();
     setDraft(String(n));
     if (repaired) announce(`Recent shows ${n} ${n === 1 ? "session" : "sessions"}.`);

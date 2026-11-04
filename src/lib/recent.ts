@@ -57,6 +57,18 @@ export function normalizeRecentCount(raw: unknown): number {
 }
 
 /**
+ * What leaving Sessions in Recent makes of what was typed: the nearest count that works. A number
+ * rounds (7.5 → 8) and clamps to the range (0 → the fewest, 999 → the most); only text with no
+ * number at all (blank, letters) means the default. Pure.
+ */
+export function repairRecentCount(text: string): number {
+  const t = text.trim();
+  const n = t === "" ? Number.NaN : Number(t);
+  if (Number.isNaN(n)) return DEFAULT_RECENT_COUNT;
+  return Math.min(MAX_RECENT_COUNT, Math.max(MIN_RECENT_COUNT, Math.round(n)));
+}
+
+/**
  * Whether a count the user is typing is one we'd accept as typed — i.e. `normalizeRecentCount`
  * would hand it straight back. The field uses this to say what's wrong BEFORE clamping, so
  * "2" gets an answer ("3 is the fewest") rather than silently becoming 3 under the caret.

@@ -167,6 +167,12 @@ describe("a recorder that fails", () => {
     assert.equal(h.lines[0]!.state, "failed");
   });
 
+  test("a watchdog that can't even be constructed leaves the host running", async () => {
+    const h = host("failing", { FIXTURE_WORKER: "http://127.0.0.1:9/not-a-file.ts", FIXTURE_WANT_STATE: "failed" });
+    assert.equal(await h.exited, 0);
+    assert.equal(h.lines[0]!.state, "failed");
+  });
+
   test("a missing watchdog module leaves the host running", async () => {
     const h = host("failing", { FIXTURE_WORKER: "./no-such-module.ts", FIXTURE_WANT_STATE: "failed" });
     assert.equal(await h.exited, 0);

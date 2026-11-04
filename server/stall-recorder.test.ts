@@ -60,6 +60,7 @@ describe("the board", () => {
     for (let i = 0; i < NAME_SLOTS + 50; i++) b.nameId(`name ${i}`);
     const op = b.enter("one more name", 1);
     assert.equal(b.ops(2).list[0]!.name, OTHER_NAME);
+    assert.equal(b.nameId("a new name"), b.nameId("another new name"), "the writer's own table stops growing too");
     b.exit(op, 2);
     const c = ActivityBoard.create();
     c.enter("x".repeat(500), 1);

@@ -1,6 +1,6 @@
 # models: which models you can use, what new chats start on, and the sign-ins behind them
 
-<!-- Screen items become "Card or Screen" when cards' Sova-wide list arrives. Custom providers' Live: lab-yours ran it at 89393237c; the restart step itself is pending. -->
+<!-- Screen items become "Card or Screen" when cards' Sova-wide list arrives. Live lines for custom providers and sign-ins: lab-yours ran them at 89393237c. -->
 Which models a worker runs on is `workers`. Here is what may be used at all, and what signs in.
 
 Sign-ins never pass through you: name the screen or the command, and the person does it.
@@ -65,16 +65,16 @@ Sign-ins never pass through you: name the screen or the command, and the person 
 - Lives: pi's own credential store, which you never read.
 - Approves: the person, who signs in.
 - By: Terminal. They open pi, type `/login` and choose the provider. Sova has no screen for this. With no `pi` on their PATH, it's `node_modules/.bin/pi` in Sova's install folder, by default `~/.local/share/sova`.
-- Live: new chat.
-- Check: the provider's models show in the picker of a new chat.
+- Live: now, in the picker of any chat, open chats included.
+- Check: the provider's models show in the picker.
 
 ## Custom providers and models
 
 - Change: a local server such as Ollama or LM Studio, or any endpoint speaking an API pi knows.
-- Lives: `<agent dir>/models.json`. On some installs this is a link into Sova's own folder: resolve it before anything else. If it is, don't touch it: offer a provider add-on in the person's own folder instead (`pi-extensions`).
+- Lives: `<agent dir>/models.json`. On some installs this is a link into Sova's own folder: resolve it before anything else. If it is, don't touch it: offer a provider add-on in the person's own folder instead (`pi-extensions`), which also needs a restart.
 - Approves: the person, by Apply.
 - By: Card. Never carries a key: use a `$NAME` value naming an environment variable, and a dummy value for a local server that ignores it.
-- Live: restart. Sova's model picker reads this file only when Sova starts, so the person can't pick the model until then, in any chat, and an open chat refuses it. A chat's `/reload` does nothing here. Say this before their Apply.
+- Live: restart. Promise the model only after Sova restarts: until then the person may not be able to pick it, and an open chat refuses it. A chat's `/reload` does nothing here. Say this before their Apply.
 - Check: after the restart, find the model in a new chat's picker.
 
 ```json

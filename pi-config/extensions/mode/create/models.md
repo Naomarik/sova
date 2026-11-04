@@ -1,6 +1,6 @@
 # models: which models you can use, what new chats start on, and the sign-ins behind them
 
-<!-- Screen items become "Card or Screen" when cards' Sova-wide list arrives. models.json timing awaits lab-yours. -->
+<!-- Screen items become "Card or Screen" when cards' Sova-wide list arrives. Custom providers' Live: lab-yours ran it at 89393237c; the restart step itself is pending. -->
 Which models a worker runs on is `workers`. Here is what may be used at all, and what signs in.
 
 Sign-ins never pass through you: name the screen or the command, and the person does it.
@@ -74,8 +74,8 @@ Sign-ins never pass through you: name the screen or the command, and the person 
 - Lives: `<agent dir>/models.json`. On some installs this is a link into Sova's own folder: resolve it before anything else. If it is, don't touch it: offer a provider add-on in the person's own folder instead (`pi-extensions`).
 - Approves: the person, by Apply.
 - By: Card. Never carries a key: use a `$NAME` value naming an environment variable, and a dummy value for a local server that ignores it.
-- Live: new chat.
-- Check: start a new chat and find the model in its picker.
+- Live: restart. Sova's model picker reads this file only when Sova starts, so the person can't pick the model until then, in any chat, and an open chat refuses it. A chat's `/reload` does nothing here. Say this before their Apply.
+- Check: after the restart, find the model in a new chat's picker.
 
 ```json
 {

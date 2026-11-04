@@ -28,7 +28,7 @@ List this project's worktrees. For each finished one, say what's left in it.
 - Change: a recipe for everyone on the project.
 - Lives: `.sova/playbooks/<id>/PLAYBOOK.md` in the project, the same grammar. A folder written as a skill, with `SKILL.md`, works too. Sova never runs a playbook's scripts: the agent runs them under the chat's own permissions.
 - Approves: the person, by Land or Apply.
-- By: Land or Card. Land when it has more than its one `PLAYBOOK.md`. The card is the `playbook` setting, with its id and the file's text. A card lands with no checks: where the project's checks could catch this change, choose Land, or say so before Apply.
+- By: Land or Card. Land when it has more than its one `PLAYBOOK.md`. The card is the `playbook` setting, with its id and the file's text. A card lands with no checks. When the project has checks, tell the person that before they Apply, every time; if a check could catch this change, choose Land instead.
 - Live: after landing, or once the card is applied, the next time the Playbooks dialog opens.
 - Check: the Playbooks dialog lists it under This project.
 

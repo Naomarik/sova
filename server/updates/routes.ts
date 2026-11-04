@@ -36,7 +36,7 @@ export function operatorRefusal(c: Context): string | null {
   return null;
 }
 
-export const RESTART_REFUSED = "Restart Sova is the operator's: open Settings → General, or run `sova run server.restart` on this machine.";
+export const RESTART_REFUSED = "Restart Sova is the operator's: open Settings → General, or run `node scripts/sova.mjs run server.restart` from a Sova checkout on this machine.";
 
 /**
  * Who may restart Sova (POST /api/updates/restart): the operator's browser, as operatorRefusal says,
@@ -219,7 +219,7 @@ export function registerUpdatesRoutes(app: Hono): void {
     return c.json(await updates().state());
   });
 
-  // Restart Sova (Settings → General, `sova run server.restart`): 202 first, the service restarts a few seconds later.
+  // Restart Sova (Settings → General, `node scripts/sova.mjs run server.restart`): 202 first, the service restarts a few seconds later.
   app.post("/api/updates/restart", async (c) => {
     const who = restartCaller(c);
     if ("refusal" in who) {

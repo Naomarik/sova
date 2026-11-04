@@ -3,7 +3,7 @@ import type { SubagentProfile, SubagentProfilesInfo, TeamsSetting } from "../../
 import type { WorkerChoice } from "../../shared/protocol";
 import { getDelegateOptions, getDelegateSettings, getSubagentProfiles, getTeamDefaults, restoreSubagentProfiles } from "../lib/api";
 import { replacedNotice } from "../lib/subagent-replaced";
-import { cloneProfiles, profilesDraft as store, savedOf } from "../lib/subagent-profiles-draft";
+import { cloneProfiles, PROFILE_NAME_RULE, profileNameBad, profilesDraft as store, savedOf } from "../lib/subagent-profiles-draft";
 import { claudeDriftNotes, fallbackFor } from "../lib/delegate-form";
 import { filterProfiles, nextSetup } from "../lib/mode-menu";
 import { numberIssue, numberOf, TEAM_NUMBER_BOUNDS, type TeamNumberField } from "../lib/team-form";
@@ -535,10 +535,16 @@ export function SubagentProfilesSettings() {
                   id="subagents-name"
                   maxlength={48}
                   value={p().name}
-                  aria-describedby="subagents-name-footprint"
+                  aria-invalid={profileNameBad(store.draft()!, p().id) ? "true" : undefined}
+                  aria-describedby={profileNameBad(store.draft()!, p().id) ? "subagents-name-error subagents-name-footprint" : "subagents-name-footprint"}
                   disabled={store.saving()}
                   onInput={(e) => change((x) => (x.name = e.currentTarget.value))}
                 />
+                <Show when={profileNameBad(store.draft()!, p().id)}>
+                  <span class="field-error" id="subagents-name-error">
+                    {PROFILE_NAME_RULE}
+                  </span>
+                </Show>
                 <span class="field-hint text-mono" id="subagents-name-footprint">
                   {footprintOf(p().id) ?? "Not saved yet"}
                 </span>

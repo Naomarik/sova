@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { profilesProblem, type LibraryDraft } from "./subagent-profiles-draft";
+import { profileNameBad, profilesProblem, type LibraryDraft } from "./subagent-profiles-draft";
 import type { SubagentProfile, TeamsSetting } from "../../shared/subagent-profiles";
 import type { WorkerChoice } from "../../shared/protocol";
 
@@ -109,4 +109,14 @@ test("the editor's worker rows are wired live, never as a mount-time snapshot", 
   assert.match(src, /\(w\) => \([^()]*?<>[\s\S]{0,400}?pair\("spec", w,/, "spec writer hands over the Show's accessor");
   assert.match(src, /\(f\) => \(\s*<>[\s\S]{0,120}?\{tuple\(role, f,/, "pair's fallback row hands over the Show's accessor");
   assert.doesNotMatch(src, /\((\w)\) => (?:tuple|pair)\([^)]*?\1\(\)/, "no callback reads its accessor at mount time");
+});
+
+test("the name box itself says when its name holds Save (Settings QA D11): the edited profile's name only", () => {
+  const two = file([validProfile(), validProfile({ id: "other", name: "Other" })]);
+  assert.equal(profileNameBad(two, "my-setup"), false);
+  for (const name of ["", "   ", "  padded", "off", "x".repeat(49), "two\nlines", "other"]) {
+    const d = file([validProfile({ name }), validProfile({ id: "other", name: "Other" })]);
+    assert.equal(profileNameBad(d, "my-setup"), true, JSON.stringify(name));
+    assert.equal(profileNameBad(d, "other"), name === "other", `the other profile's box only for a clash: ${JSON.stringify(name)}`);
+  }
 });

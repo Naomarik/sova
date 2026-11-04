@@ -52,11 +52,24 @@ function teamsNumberError(p: SubagentProfile): string | null {
   return null;
 }
 
+/** A name no profile may have, whatever the others are called: blank, padded, over 48, multi-line, "Off". */
+const nameBadAlone = (name: string): boolean => !name.trim() || name.trim() !== name || name.length > 48 || /[\r\n\x00-\x1f]/.test(name) || name.toLowerCase() === "off";
+
+/** What the name box says under itself while it is red. */
+export const PROFILE_NAME_RULE = 'A unique name on one line, at most 48 characters, never "Off".';
+
+/** Whether profile `id`'s name box is red: its name can't be saved, alone or because another profile has it too. */
+export function profileNameBad(d: LibraryDraft, id: string): boolean {
+  const p = d.profiles.find((x) => x.id === id);
+  if (!p) return false;
+  return nameBadAlone(p.name) || d.profiles.some((x) => x.id !== id && x.name.toLowerCase() === p.name.toLowerCase());
+}
+
 /** The first way the draft can't be saved, as one footer sentence that names the form. */
 export function profilesProblem(d: LibraryDraft): string | null {
   const names = new Set<string>();
   for (const p of d.profiles) {
-    if (!p.name.trim() || p.name.trim() !== p.name || p.name.length > 48 || /[\r\n\x00-\x1f]/.test(p.name) || p.name.toLowerCase() === "off" || names.has(p.name.toLowerCase()))
+    if (nameBadAlone(p.name) || names.has(p.name.toLowerCase()))
       return `Subagents needs unique, single-line names of at most 48 characters (never "Off").`;
     names.add(p.name.toLowerCase());
     const rows: [string, Tuple, Tuple | null][] = [

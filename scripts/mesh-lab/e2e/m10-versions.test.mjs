@@ -26,7 +26,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { provenanceOf } from "../lab.mjs";
 import { container, hostUrl, lab, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, STATE, unlockPage, waitFor, writeAgentFile } from "./lib.mjs";
 import { start as startFakeLlm, FAKE_MODEL } from "./fake-llm.mjs";
-import { link, linksFile, releaseLock, send, takeLock, unlink } from "./links-lib.mjs";
+import { link, linksFile, releaseLock, send, takeLock, unlink, waitIdle } from "./links-lib.mjs";
 import { commitOf, list } from "./versions-builds.mjs";
 
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
@@ -91,6 +91,10 @@ async function builds(want) {
     assert.equal(p?.commit, commit, `${host} runs ${name}`);
     assert.equal(p?.source, "git archive", `${host} is from git archive`);
     assert.deepEqual(p?.dirty, [], `${host} is clean`);
+    // Its files, not only its label: the numbers it serves are this commit's.
+    const served = sh(host, "cat /sova/shared/wire-areas.json").out;
+    const wanted = spawnSync("git", ["-C", REPO, "show", `${commit}:shared/wire-areas.json`], { encoding: "utf8" });
+    if (wanted.status === 0) assert.equal(served.trim(), wanted.stdout.trim(), `${host}'s wire-areas.json is ${name}'s`);
   }
   const hosts = Object.keys(want);
   startFakeLlm(hosts); // a swap ended the one the host had
@@ -126,6 +130,16 @@ async function session(host, stated) {
   okJson(await call(host, "/api/sessions/configure", { method: "POST", body: { path: s.path, model: MODEL }, stated, timeoutMs: 60000 }), `${host}: configure`);
   return s;
 }
+/** A session that opens by URL: it has a message, its reply has ended, and its file reads as old, so
+    a page opens it as a chat and never as a just-written file (a file written in the last 2 minutes by no one known refuses a chat). */
+async function spoken(host, stated) {
+  const s = await session(host, stated);
+  okJson(await call(host, "/api/sessions/prompt", { method: "POST", body: { path: s.path, text: "Reply with the single word: ok" }, stated }), `${host}: first message`);
+  await waitIdle(host, s.id);
+  age(host, s);
+  return s;
+}
+const age = (host, s) => assert.equal(sh(host, `touch -d '1 hour ago' '${s.path}'`).code, 0, `age ${s.path}`);
 const fixture = async (host) => {
   const rows = okJson(await call(host, "/api/sessions"), `${host}: list`);
   const s = (Array.isArray(rows) ? rows : rows.sessions).find((r) => JSON.stringify(r).includes("fixture session on lab host"));
@@ -435,7 +449,7 @@ describe("3. writing differs: Read only, both ways", () => {
     await builds({ a: "base", b: "base" });
     // A session with history on each side, made while both can still make one.
     await builds({ a: "base", b: "composer" });
-    s = await session(B); // stated: b's own number
+    s = await spoken(B); // stated: b's own number
   });
   after(closeTabs);
 
@@ -446,7 +460,6 @@ describe("3. writing differs: Read only, both ways", () => {
     await rowSays(page, B, "read-only");
     await pickerSays(page, B, "read-only", { canPick: false });
 
-    // A session lists once it has a message: b's own page sends it, with b's number.
     const marker = `m10-live-${Date.now().toString(36)}`;
     turn = chat(B, s.path);
     await turn.hello;
@@ -654,10 +667,11 @@ describe("6. a tab left open across an update", () => {
 
   test("judged by what it runs: the stale tab and a fresh tab disagree, and each is right", async () => {
     await builds({ a: "base", b: "base" });
-    const s = await session(A);
+    const s = await spoken(A);
     const stale = await tab(A, sessionHash(s, null));
     await stale.locator("form.composer-inner").waitFor({ timeout: 30000 });
     await builds({ a: "composer", b: "base" });
+    age(A, s);
     const fresh = await tab(A);
     await meshSays(fresh, B, "read-only");
     await shots(fresh, "6-fresh-tab");
@@ -673,10 +687,11 @@ describe("6. a tab left open across an update", () => {
 
   test("a sender ahead of its own host, after a downgrade, is told the host needs an update", async () => {
     await builds({ a: "composer", b: "base" });
-    const s = await session(A);
+    const s = await spoken(A);
     const stale = await tab(A, sessionHash(s, null));
     await stale.locator("form.composer-inner").waitFor({ timeout: 30000 });
     await builds({ a: "base", b: "base" });
+    age(A, s);
     await typeAndSend(stale, "From a tab ahead of its host");
     await stale.getByText(/Host A needs an update before it can take sends from this page/).first().waitFor({ timeout: 30000 });
   });
@@ -685,11 +700,13 @@ describe("6. a tab left open across an update", () => {
     await builds({ a: "base" });
     lab("unpair", "a,b,c");
     try {
-      const s = await session(A);
+      const s = await spoken(A);
       const stale = await tab(A, sessionHash(s, null));
       await stale.locator("form.composer-inner").waitFor({ timeout: 30000 });
       lab("swap", A, commitOf("composer"));
       running[A] = "composer";
+      startFakeLlm([A]);
+      age(A, s);
       await typeAndSend(stale, "Mesh off, stale tab");
       await stale.getByText(/older than this host\. Reload the page to send here/).first().waitFor({ timeout: 30000 });
       await shots(stale, "6-stale-tab-mesh-off");

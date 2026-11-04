@@ -557,6 +557,10 @@ function build({ rev = "HEAD", dirty = false, images = IMAGES } = {}) {
     mkdirSync(ctx, { recursive: true });
     const tar = spawnSync("sh", ["-c", `git -C "$1" archive "$2" | tar -x -C "$3"`, "-", ROOT, commit, ctx], { stdio: "inherit" });
     if (tar.status !== 0) throw new Error(`git archive ${commit} failed`);
+    // git archive stamps every file with the commit's time, and BuildKit sends a context file only when
+    // its size or mtime changed: two commits of one second with a same-size edit would share the file,
+    // the second image carrying the first's bytes under its own commit. Layers key on content, not mtime.
+    run("find", [ctx, "-exec", "touch", "-h", "{}", "+"]);
     // the lab's build files from the working tree (a commit from before the lab has none)
     for (const f of ["Dockerfile", "Dockerfile.dockerignore", "host"]) {
       rmSync(join(ctx, "scripts/mesh-lab", f), { recursive: true, force: true });

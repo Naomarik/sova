@@ -5,7 +5,8 @@
 //
 //   node scripts/mesh-lab/e2e/fake-llm.mjs start a,b,c      copy it into those hosts and serve there
 //
-// What it does, from the last user message:
+// What it does, from the last user message that asks for one of these (a chat may add its own user
+// messages after the one typed):
 //   FAKE-TOOLS [{"name":…,"args":{…}},…]    those tool calls in order, one per step
 //   run exactly `<cmd>`                     one bash call
 //   link_send tool, text exactly: <word>    one link_send call
@@ -24,21 +25,23 @@ const textOf = (m) => (typeof m?.content === "string" ? m.content : Array.isArra
 
 /** What this step does, from the conversation so far. */
 export function nextStep(messages) {
-  let lastUser = -1;
-  messages.forEach((m, i) => {
-    if (m.role === "user") lastUser = i;
-  });
-  const said = textOf(messages[lastUser]);
-  const done = messages.slice(lastUser + 1).filter((m) => m.role === "tool").length;
-  let tools = [];
-  const scripted = /FAKE-TOOLS (\[.*\])/s.exec(said);
-  const cmd = /run exactly `([^`]+)`/.exec(said);
-  const linkWord = /link_send tool, text exactly: ([\w-]+)/.exec(said);
-  if (scripted) tools = JSON.parse(scripted[1]);
-  else if (cmd) tools = [{ name: "bash", args: { command: cmd[1] } }];
-  else if (linkWord) tools = [{ name: "link_send", args: { text: linkWord[1] } }];
-  if (done < tools.length) return { tool: tools[done], id: `call_${lastUser}_${done}` };
-  return { text: /single word:? ([\w-]+)/.exec(said)?.[1] ?? "ok" };
+  const toolsIn = (said) => {
+    const scripted = /FAKE-TOOLS (\[.*\])/s.exec(said);
+    if (scripted) return JSON.parse(scripted[1]);
+    const cmd = /run exactly `([^`]+)`/.exec(said);
+    if (cmd) return [{ name: "bash", args: { command: cmd[1] } }];
+    const linkWord = /link_send tool, text exactly: ([\w-]+)/.exec(said);
+    return linkWord ? [{ name: "link_send", args: { text: linkWord[1] } }] : [];
+  };
+  const users = messages.flatMap((m, i) => (m.role === "user" ? [i] : []));
+  const asked = users.findLast((i) => toolsIn(textOf(messages[i])).length > 0);
+  if (asked !== undefined) {
+    const tools = toolsIn(textOf(messages[asked]));
+    const done = messages.slice(asked + 1).filter((m) => m.role === "tool").length;
+    if (done < tools.length) return { tool: tools[done], id: `call_${asked}_${done}` };
+  }
+  const word = users.map((i) => /single word:? ([\w-]+)/.exec(textOf(messages[i]))?.[1]).findLast(Boolean);
+  return { text: word ?? "ok" };
 }
 
 function chunk(res, delta, finish = null) {
@@ -83,7 +86,7 @@ export function start(hosts) {
     if (cp.status !== 0) throw new Error(`fake-llm: copy to ${h}: ${cp.stderr}`);
     const run = spawnSync("docker", ["exec", "-d", c, "node", IN_HOST, "serve"], { encoding: "utf8" });
     if (run.status !== 0) throw new Error(`fake-llm: start on ${h}: ${run.stderr}`);
-    const up = spawnSync("docker", ["exec", c, "sh", "-c", `for i in $(seq 1 100); do curl -sf -m 1 http://127.0.0.1:${PORT}/ >/dev/null && exit 0; done; exit 1`]);
+    const up = spawnSync("docker", ["exec", c, "sh", "-c", `for i in $(seq 1 100); do curl -sf -m 1 http://127.0.0.1:${PORT}/ >/dev/null && exit 0; sleep 0.1; done; exit 1`]);
     if (up.status !== 0) throw new Error(`fake-llm: not answering on ${h}`);
   }
 }

@@ -104,6 +104,12 @@ test("the shared rules define <agent dir>, so an entry that uses it can't be rea
 	assert.ok(/Resolve `<agent dir>` first[^\n]*real path in the brief/.test(CREATE_INSTRUCTIONS), "a worker never gets the rule, so the block must have the chat resolve it for the brief");
 });
 
+test("Land starts with a worktree, in the words every turn carries, and every lookup says to find out where the chat is first", () => {
+	assert.ok(/never change on the main branch[^\n]*`worktree` tool/.test(CREATE_INSTRUCTIONS));
+	const shared = stripOwnerNotes(CREATE_FILES.shared!);
+	for (const words of ["`sova_settings` get", "A project with a merge queue", "A project with no merge queue", "offer Initialize", "A folder that isn't a project", "offer Add as Project", "A folder that isn't in Git", "made by hand"]) assert.ok(shared.includes(words), words);
+});
+
 test("a topic that isn't listed is refused, and the answer lists the topics", () => {
 	assert.throws(() => createGuide("nope"), (err: Error) => err.message === `No topic nope. Topics: ${CREATE_TOPICS.join(", ")}.`);
 	assert.throws(() => createGuide("shared"), /^Error: No topic shared\./);

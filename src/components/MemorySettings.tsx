@@ -15,6 +15,8 @@ import {
   memorySaveResult,
   memorySaveWarnings,
   memorySaving as saving,
+  resetMemorySizes,
+  resetMemorySummarizer,
   sameSizes,
   sameSummarizer,
   setMemoryDraft as setDraft,
@@ -65,7 +67,7 @@ export function MemorySettingsSection() {
               type="button"
               class="button button-sm button-ghost"
               disabled={saving() || sameSummarizer(draft()!, loaded()!.defaults)}
-              onClick={() => setDraft({ ...toMemoryDraft(loaded()!.defaults), sizes: draft()!.sizes })}
+              onClick={() => setDraft(resetMemorySummarizer(draft()!, loaded()!.defaults))}
             >
               Reset to Defaults
             </button>
@@ -198,7 +200,7 @@ function SummarySizes(props: { defaults: MemorySettings; types: readonly MemoryT
             type="button"
             class="button button-sm button-ghost"
             disabled={saving() || sameSizes(d(), props.defaults)}
-            onClick={() => setDraft({ ...d(), sizes: toMemoryDraft(props.defaults).sizes })}
+            onClick={() => setDraft(resetMemorySizes(d(), props.defaults))}
           >
             Reset to Defaults
           </button>

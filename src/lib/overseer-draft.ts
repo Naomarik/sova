@@ -362,6 +362,23 @@ export function capsChangedFromDefault(caps: FormCaps | OverseerCaps, defaults: 
   return PER_MESSAGE_CAP_KEYS.filter((k) => !capSame(caps[k], defaults[k])).length;
 }
 
+/** Limits' Reset to Defaults: every box shows its default, as text like every limit box. Pure. */
+export function resetLimits(d: OverseerForm, defaults: { caps: OverseerCaps }): OverseerForm {
+  const caps = {} as FormCaps;
+  for (const k of CAP_KEYS) caps[k] = String(defaults.caps[k] ?? CAP_DEFAULTS[k]);
+  return { ...cloneOverseer(d), settings: { ...cloneOverseer(d).settings, caps } };
+}
+/** Quick actions' Reset to Defaults: the shipped list, copied. Pure. */
+export const resetQuickActions = (d: OverseerForm, defaults: { quickActions: OverseerQuickAction[] }): OverseerForm => {
+  const c = cloneOverseer(d);
+  return { ...c, settings: { ...c.settings, quickActions: defaults.quickActions.map((q) => ({ ...q })) } };
+};
+/** The idea explorer's Reset to Defaults. Pure. */
+export const resetExplorer = (d: OverseerForm, defaults: { explorer: WorkerChoice }): OverseerForm => {
+  const c = cloneOverseer(d);
+  return { ...c, settings: { ...c.settings, explorer: { ...defaults.explorer } } };
+};
+
 /** Which groups already hold their defaults: their Reset to Defaults is greyed out. */
 export function atDefaults(d: AnyDraft, defaults: { caps: OverseerCaps; quickActions: OverseerQuickAction[]; explorer: WorkerChoice }): { limits: boolean; quickActions: boolean; explorer: boolean } {
   return {

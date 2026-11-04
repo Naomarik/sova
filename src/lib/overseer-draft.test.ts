@@ -42,6 +42,9 @@ import {
   overseerProblem,
   saveOverseer,
   toOverseerForm,
+  resetLimits,
+  resetQuickActions,
+  resetExplorer,
 } from "./overseer-draft";
 
 const settings = (): OverseerSettings => ({
@@ -410,4 +413,25 @@ test("each Reset to Defaults is greyed out when its group already holds the defa
   assert.deepEqual(atDefaults(form, defaults), { limits: false, quickActions: false, explorer: false });
   form.settings.caps.linksPerTurn = "3";
   assert.equal(atDefaults(form, defaults).limits, true, "the default typed back counts");
+});
+
+test("each Overseer Reset to Defaults puts back its group alone, limits as box text", () => {
+  const defaults = { quickActions: settings().quickActions, caps: settings().caps, explorer: settings().explorer };
+  const form = toOverseerForm({ settings: settings(), notes: "keep" });
+  form.settings.caps.createPerTurn = "1e";
+  form.settings.quickActions = [];
+  form.settings.explorer = { backend: "pi", model: "", effort: "" };
+  form.settings.proactivity = "brief";
+  const limits = resetLimits(form, defaults);
+  assert.deepEqual(limits.settings.caps, toOverseerForm({ settings: settings(), notes: "" }).settings.caps);
+  assert.deepEqual(limits.settings.quickActions, [], "only its own group");
+  assert.equal(limits.settings.proactivity, "brief");
+  assert.equal(limits.notes, "keep");
+  assert.deepEqual(resetQuickActions(form, defaults).settings.quickActions, defaults.quickActions);
+  assert.notEqual(resetQuickActions(form, defaults).settings.quickActions[0], defaults.quickActions[0], "a copy");
+  assert.deepEqual(resetExplorer(form, defaults).settings.explorer, defaults.explorer);
+  assert.equal(resetExplorer(form, defaults).settings.caps.createPerTurn, "1e");
+  const all = resetExplorer(resetQuickActions(resetLimits(form, defaults), defaults), defaults);
+  assert.deepEqual(atDefaults(all, defaults), { limits: true, quickActions: true, explorer: true });
+  assert.equal(overseerDraftProblem(all), null);
 });

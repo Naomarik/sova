@@ -18,6 +18,9 @@ import {
   NOTES_MAX,
   QUICK_ACTIONS_MAX,
   quickActionTooLong,
+  resetExplorer,
+  resetLimits,
+  resetQuickActions,
   explorerOptions,
   moveQuickAction,
   newQuickAction,
@@ -348,7 +351,7 @@ export function OverseerSettingsSection() {
 
               <fieldset class="settings-delegate-profile overseer-group" ref={limits}>
                 <legend class="settings-delegate-legend">Limits</legend>
-                <ResetButton atDefault={atDefault().limits} onClick={() => edit({ caps: { ...defaults().caps } })} />
+                <ResetButton atDefault={atDefault().limits} onClick={() => setOverseerDraft(resetLimits(cur(), defaults()))} />
                 <p class="field-hint settings-delegate-desc">
                   Before acting, the Overseer checks these. When one is reached it stops and asks you instead. "Per message" counts
                   restart each time you message it.
@@ -368,7 +371,7 @@ export function OverseerSettingsSection() {
 
               <fieldset class="settings-delegate-profile overseer-group">
                 <legend class="settings-delegate-legend">Quick actions</legend>
-                <ResetButton atDefault={atDefault().quickActions} onClick={() => edit({ quickActions: defaults().quickActions.map((q) => ({ ...q })) })} />
+                <ResetButton atDefault={atDefault().quickActions} onClick={() => setOverseerDraft(resetQuickActions(cur(), defaults()))} />
                 <p class="field-hint settings-delegate-desc">
                   The Quick Actions button in the Overseer's composer foot lists these. Picking one sends its prompt.
                 </p>
@@ -533,7 +536,7 @@ export function OverseerSettingsSection() {
                 <div class="overseer-fold-body">
                   <fieldset class="settings-delegate-profile overseer-group">
                     <legend class="settings-delegate-legend">Idea explorer</legend>
-                    <ResetButton atDefault={atDefault().explorer} onClick={() => edit({ explorer: { ...defaults().explorer } })} />
+                    <ResetButton atDefault={atDefault().explorer} onClick={() => setOverseerDraft(resetExplorer(cur(), defaults()))} />
                     <p class="field-hint settings-delegate-desc">
                       When you keep working on an idea, the Overseer can launch an agent to plan it with you. It reads, never edits a
                       repository, and reports back to the Overseer.

@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
  * letter): it goes red and Save waits, it never snaps back or wipes (Settings QA decision q2).
  * A `type="number"` input can't: the browser hands back "" for "1e" or "-", and the form then
  * writes "" over the text on the screen. So a Settings box is a text box with inputmode numeric.
+ * Only number boxes in forms that wait for Save Changes; General → Sessions in Recent is outside.
  */
 const components = join(dirname(fileURLToPath(import.meta.url)), "..", "components");
 
@@ -27,6 +28,9 @@ function settingsFiles(): string[] {
 test("no Settings tab uses a type=number box: each keeps the typed text", () => {
   const files = settingsFiles();
   assert.ok(files.some((f) => f.endsWith("OverseerSettings.tsx")) && files.some((f) => f.endsWith("BatonSettings.tsx")), "the scan reaches the tabs");
-  const found = files.filter((f) => /type=["{]?"?number"/.test(readFileSync(f, "utf8"))).map((f) => f.slice(components.length + 1));
+  // General → Sessions in Recent is the one exception (operator's call): it saves as you type and
+  // repairs itself when you leave it, outside Save Changes, so it keeps its number box.
+  const exempt = (src: string) => src.replace(/<input(?:(?!<input)[\s\S])*?id="recent-count"[\s\S]*?\/>/, "");
+  const found = files.filter((f) => /type=["{]?"?number"/.test(exempt(readFileSync(f, "utf8")))).map((f) => f.slice(components.length + 1));
   assert.deepEqual(found, [], "use type=\"text\" inputmode=\"numeric\" and hold the text in the draft");
 });

@@ -1,4 +1,4 @@
-import { withWorktreePath, type BuildRow } from "./build-loadout";
+import { withWorktreePath, type StatechartBuildRow } from "./build-loadout";
 import { readWorktree, type WorktreeRecord } from "./project-worktrees";
 
 /**
@@ -11,15 +11,15 @@ import { readWorktree, type WorktreeRecord } from "./project-worktrees";
 export const BUILD_TTL_MS = 30_000;
 
 type Reading = { merged: boolean; branch: boolean; error?: string };
-type Reader = (row: BuildRow & { worktree: WorktreeRecord }, root: string) => Promise<Reading>;
+type Reader = (row: StatechartBuildRow & { worktree: WorktreeRecord }, root: string) => Promise<Reading>;
 
 let reader: Reader = (row, root) => readWorktree(row.worktree, root);
 const known = new Map<string, { merged: boolean; at: number }>();
 const reading = new Set<string>();
 
-const recorded = (row: BuildRow): boolean => !!row.merged || !!row.branchDeleted;
+const recorded = (row: StatechartBuildRow): boolean => !!row.merged || !!row.branchDeleted;
 
-export function buildMerged(row: BuildRow, root: string | null, now = Date.now()): boolean {
+export function buildMerged(row: StatechartBuildRow, root: string | null, now = Date.now()): boolean {
   const w = row.worktree;
   if (!w) return false; // it runs in the project root: nothing to merge
   const had = known.get(row.sessionId);

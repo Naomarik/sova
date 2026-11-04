@@ -21,6 +21,7 @@ const { DEFAULT_CAPS } = await import("./overseer-store");
 const { applyCardCall, optionClick } = await import("../shared/overseer-card");
 const { coveringPermit, foldPermits, GRANT_ENTRY, REVOKE_ENTRY, RULE_ENTRY, USE_ENTRY } = await import("../shared/overseer-grants");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { chatHandle, specialHostOf } = await import("./chat-handle");
 const { historyOf } = await import("./harness/pi/reader");
 
 after(async () => {
@@ -153,5 +154,60 @@ describe("/clear carries live rules; approvals lapse", () => {
     ]);
     const written = readFileSync(info.path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     assert.deepEqual(written.filter((e) => e.type === "custom").map((e) => e.customType), ["sova-overseer", RULE_ENTRY], "server-written custom entries, after the marker");
+  });
+});
+
+describe("reading approvals never carries the conversation", () => {
+  /** The chat's commands while `fn` runs. */
+  async function commands(path: string, fn: () => Promise<unknown>, fail?: string): Promise<string[]> {
+    const handle = chatHandle(path) as unknown as { call(m: string, a: unknown): Promise<unknown> };
+    const real = handle.call;
+    const seen: string[] = [];
+    handle.call = async function (this: unknown, m: string, a: unknown) {
+      seen.push(m);
+      if (m === fail) throw new Error("not a method of a chat on older code");
+      return real.call(this, m, a);
+    };
+    try {
+      await fn();
+    } finally {
+      handle.call = real;
+    }
+    return seen;
+  }
+
+  test("a click writes its approval from the click's facts alone, once, and the conversation's length doesn't matter", async () => {
+    const { path } = await ensureOverseer();
+    const sm = piSession(await acquireChat(path)).sessionManager;
+    sm.appendMessage({ role: "toolResult", toolCallId: "k1", toolName: "sova_card", details: card, content: [], isError: false, timestamp: Date.now() } as never);
+    sm.appendMessage({ role: "user", content: [{ type: "text", text: click }], timestamp: Date.now() } as never);
+    const ran = specialHostOf("overseer")!;
+    const grants = async () => (await overseerAutonomy()).permits.filter((p) => p.kind === "grant").map((p) => [p.id, p.card, p.option]);
+    const clicked = (n: number) => commands(path, async () => {
+      ran.runEvent!(path, { type: "user.end", card: card.card!.id }, n);
+      for (let i = 0; i < 200 && (await grants()).length === 0; i++) await new Promise((r) => setTimeout(r, 5));
+      await new Promise((r) => setTimeout(r, 30));
+    });
+
+    const seen = await clicked(1);
+    assert.equal(seen.includes("branch") || seen.includes("entries"), false, seen.join());
+    assert.ok(seen.includes("clickContext"));
+    assert.deepEqual(await grants(), [["g_1", card.card!.id, "b"]]);
+
+    await clicked(2);
+    assert.equal((await grants()).length, 1, "a click told again writes nothing more");
+  });
+
+  test("the panel's read asks for the approval entries alone; a chat on older code answers with everything, the same", async () => {
+    const { path } = await ensureOverseer();
+    await acquireChat(path);
+    const narrow = await commands(path, () => overseerAutonomy());
+    assert.deepEqual(narrow, ["stateEntries"]);
+
+    const before = (await overseerAutonomy()).permits;
+    let after: unknown;
+    const old = await commands(path, async () => (after = (await overseerAutonomy()).permits), "stateEntries");
+    assert.deepEqual(old, ["stateEntries", "branch", "entries"]);
+    assert.deepEqual(after, before);
   });
 });

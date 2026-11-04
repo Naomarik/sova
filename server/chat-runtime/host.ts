@@ -679,7 +679,8 @@ export class ChatRuntimeHost {
     }
     // A read of the mirror after `await call()` is current: the state goes first.
     if (this.chat) this.sendState(false);
-    link.send({ t: "reply", reply });
+    // Above the frame limit nothing goes out, and a call has no timeout: its caller would wait forever.
+    if (!link.send({ t: "reply", reply }) && link.isOpen) link.send({ t: "reply", reply: { id: call.id, ok: false, error: { message: `The answer to ${call.method} is too large to send.` } } });
   }
 
   // ---- browsers -----------------------------------------------------------------------------------

@@ -1165,6 +1165,9 @@ time. Both kinds of approval come only from the user's click on a card option th
   a hidden custom entry to the Overseer's file (`overseer-grant` or `overseer-rule`: id, the card and
   option it came from, the sessions, the deadline or the rule's text and acts). Typed text, however
   it reads, writes nothing. Grants and rules are numbered per conversation and never reused.
+- **Read without the conversation.** Reading the approvals (the panel's read every 15 s, a revoke, a
+  `/clear`) carries their own entries over the chat's socket, and a click's approval only those and
+  what the click needs of the branch, so neither grows with the conversation.
 - **`/clear` carries live rules, never approvals.** When `/clear` starts a new conversation
   (§app.overseer/identity-and-clear), the server copies each rule still live in the old one into
   the new file as an `overseer-rule` entry of its own: the same id, text, acts and sessions, the same

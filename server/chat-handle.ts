@@ -240,6 +240,12 @@ export abstract class ChatHandle {
   entries() {
     return this.call("entries", {});
   }
+  stateEntries(keys: readonly string[]) {
+    return this.call("stateEntries", { keys: [...keys] });
+  }
+  clickContext(card: string) {
+    return this.call("clickContext", { card });
+  }
   fileState(kinds: readonly StateKind<unknown>[]): Promise<unknown[]> {
     return this.call("fileState", { kinds: kinds.map((k) => k.type) });
   }

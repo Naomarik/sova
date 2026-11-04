@@ -11,6 +11,7 @@ import type { ModeState } from "../pi-config/extensions/mode/state";
 import type { SandboxState } from "../pi-config/extensions/sandbox/state";
 import type { HEntry } from "./harness-history";
 import type { HarnessResources, HarnessToolInfo, ImageInput } from "./harness-session";
+import type { ClickContext } from "./overseer-card";
 import type { PrepareRule } from "./harness-tools";
 import type { ProfileEntryData } from "./profiles";
 import type {
@@ -343,6 +344,11 @@ export interface ChatMethods {
   interruptKeepingQueued: { args: Record<string, never>; result: number };
   branch: { args: Record<string, never>; result: HEntry[] };
   entries: { args: Record<string, never>; result: HEntry[] };
+  /** Only the state entries under these keys, of the branch and of the whole file: a read that stays
+      small however long the conversation is, where `branch` and `entries` carry all of it. */
+  stateEntries: { args: { keys: string[] }; result: { branch: HEntry[]; all: HEntry[] } };
+  /** What a click on `card` needs of the branch (shared/overseer-card.ts clickContext): null when the card isn't open. */
+  clickContext: { args: { card: string }; result: ClickContext | null };
   /** The data of every record of these registered kinds the file holds (any branch), kind by kind,
       each oldest first. */
   fileState: { args: { kinds: string[] }; result: unknown[] };

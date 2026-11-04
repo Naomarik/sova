@@ -244,7 +244,9 @@ function copiesChange(projectId: string, to: number | null): KeptChange | null {
   const from = machineCopyLimit(projectOf(projectId).root);
   if (same(from, to)) return null;
   const grant = copiesGrant(projectId, from, to);
-  return { field: COPIES_FIELD, label: fieldLabel(COPIES_FIELD), from, to, fromText: valueText(COPIES_FIELD, from), toText: valueText(COPIES_FIELD, to), ...(grant ? { grant } : {}) };
+  // Null is the project's file's value: the card says what that is.
+  const words = (v: number | null) => (v === null ? `${fileCopyLimit(projectId)} at once, the project's file's value` : valueText(COPIES_FIELD, v));
+  return { field: COPIES_FIELD, label: fieldLabel(COPIES_FIELD), from, to, fromText: words(from), toText: words(to), ...(grant ? { grant } : {}) };
 }
 
 /**

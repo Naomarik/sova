@@ -38,6 +38,7 @@ const { queueCardPort, setQueueCardPort } = await import("./merge-queue/card-por
 const { readModelPolicy } = await import("./model-policy");
 const { readWebSettings } = await import("./web-settings");
 const { settled } = await import("./workspace-git");
+const { copyLimitOf } = await import("../shared/project-slots");
 
 sova.setSovaSettingsDeps({ sources: { piModels: () => [], claudeModels: () => [], policy: () => readModelPolicy() } as never });
 
@@ -132,6 +133,12 @@ describe("a project's card", async () => {
     assert.equal(await noQueueOf({ settings: async () => ({}) }, notSetUp), false, "a served queue");
     assert.equal(await noQueueOf({ unserved: "/p" }, async () => true), false, "set up, served read failed");
     assert.equal(await noQueueOf({ unserved: "/p" }, async () => { throw new Error("git"); }), false, "a setup it can't read");
+  });
+
+  test("a copy limit's card says what the file's value is", async () => {
+    const d = (await runCreateSettingsTool(chat(pid), { op: "propose", why: "Fewer.", edits: [{ setting: "copies", limit: 1 }] })).details as { card: { id: string; kept: { fromText: string; toText: string }[] } };
+    assert.deepEqual([d.card.kept[0]!.fromText, d.card.kept[0]!.toText], [`${copyLimitOf(join(root, "narrow")).cap} at once, the project's file's value`, "1 at once"]);
+    await runCreateSettingsTool(chat(pid), { op: "withdraw", card: d.card.id });
   });
 
   test("a chat withdraws only what it prepared", async () => {

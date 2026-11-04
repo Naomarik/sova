@@ -1,5 +1,6 @@
 /**
- * Mode switcher: normal ↔ delegate, plus independently toggleable minor modes.
+ * Mode switcher: normal, delegate and create (delegate plus Sova's guide, taken only from Sova's menu),
+ * plus independently toggleable minor modes.
  *
  * delegate re-instructs
  * the main agent (per turn, in before_agent_start) to act as a pure orchestrator that routes work

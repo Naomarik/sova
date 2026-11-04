@@ -40,7 +40,7 @@ const GAP = { min: Number(opt("min-gap", "0.5")) * 1000, max: Number(opt("max-ga
 const S = (m: string) => join(SRC, "server", m);
 
 const indexSrc = readFileSync(S("index.ts"), "utf8");
-const TRACKED = /list:\s*\(\)\s*=>\s*listSessionsTracked\(\)/.test(indexSrc);
+const TRACKED = /list:\s*\([^)]*\)\s*=>\s*listSessionsTracked\(/.test(indexSrc);
 const idx: any = await import(S("sessions-index.ts"));
 const feedMod: any = await import(S("session-feed.ts"));
 const watchMod: any = await import(S("session-feed-watch.ts"));
@@ -60,10 +60,11 @@ const seeList = <T,>(l: T) => l;
 const listFn = TRACKED ? idx.listSessionsTracked : idx.listSessions;
 let feedChanged: (() => void) | null = null;
 const feed = feedMod.configureSessionFeed({
-  list: async () => {
+  stamps: idx.listStamps,
+  list: async (opts: unknown) => {
     st.listCalls++;
     const c0 = cpuMs();
-    const l = seeList(await listFn());
+    const l = seeList(await listFn(opts));
     st.listCpuMs += cpuMs() - c0;
     return l;
   },

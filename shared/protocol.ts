@@ -4661,7 +4661,37 @@ export interface SessionSummary {
       gains it a moment after it first lists. Absent when the session tracks no worktree of its
       own, before git was first read, and from older servers. */
   readiness?: SessionReadiness;
+  /** The branches its chat's composer status row counts (WorktreesControl): every non-dropped worktree the chat
+      tracks, its own and those inherited from the chat it was forked from, with what that row reads besides
+      `readiness` (joined by path, as the chat joins it). The session list says the chat's headline from them.
+      Read in the background with readiness; each entry's queue state is joined at listing time from the merge
+      queue's newest view. Absent when it tracks none, before the first read, for sessions readiness never covers,
+      and from older servers. Additive. */
+  branches?: SessionBranchRow[];
 }
+
+/** One branch as the chat's worktree row reads it (SessionWorktreeInfo), cut to what its words need. */
+export interface SessionBranchRow {
+  /** Canonical top level (SessionWorktreeInfo.path; readiness trees join on it). */
+  path: string;
+  branch: string;
+  status: "active" | "merged";
+  exists: boolean;
+  /** Inherited from that session (a fork copied the entry): no readiness of this chat's speaks for it. */
+  sharedWith?: string;
+  /** status "active": git finds its branch already merged (SessionWorktreeInfo.mergedInto). */
+  mergedInto?: { target: string; sha: string };
+  /** Its newest merge queue entry, the fields a row's words read. */
+  queue?: SessionBranchQueue;
+  /** Its repo is one the merge queue serves (SessionWorktreeInfo.mergeServed). */
+  mergeServed?: true;
+  /** Its project's merge setup as the ready row words it (SessionWorktreeInfo.mergeProject, cut). */
+  mergeProject?: Pick<import("./merge-queue").WorktreeMergeProject, "target" | "checks" | "invalid">;
+}
+
+/** A branch's merge queue entry as the session list carries it: its state (never a precomputed key, so a new state
+    flows through) and what the row's words read. */
+export type SessionBranchQueue = import("./merge-queue").BranchQueueFacts;
 
 /** One worktree's merge readiness (§chat.worktrees/readiness). */
 /** A chat running in the home folder because its stored local working directory is gone
@@ -5244,8 +5274,31 @@ export interface MonitorSampler {
   startedAt: number;
 }
 
+/** The stall recorder's latest records, one line each; `<stateRoot>/stalls/stalls.jsonl` holds them in full. */
+export interface MonitorStallRecord {
+  kind: "stall" | "stall-open" | "memory";
+  at: number;
+  pid: number;
+  /** A stall: the most it can have lasted. */
+  ms?: number;
+  rssBytes?: number;
+  /** The commonest innermost frame while it lasted. */
+  top?: string;
+  /** The oldest operations in flight. */
+  ops?: string[];
+  /** A stall its process never reported the end of: it died or was killed inside it. */
+  unfinished?: boolean;
+}
+
+export interface MonitorStalls {
+  state: "on" | "off" | "failed";
+  recent: MonitorStallRecord[];
+}
+
 export interface MonitorSnapshot {
   at: number;
+  /** The stall recorder, absent from a snapshot built by a server without it. */
+  stalls?: MonitorStalls;
   platform: string;
   scope: MonitorScope;
   /** `unit` only: the unit name, e.g. "sova-runtime.service". */

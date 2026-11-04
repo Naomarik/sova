@@ -57,6 +57,7 @@ const FIELDS: { [K in keyof Required<SessionSummary>]: "compare" | { exempt: str
   workerSignals: "compare",
   tags: "compare",
   readiness: "compare",
+  branches: "compare",
 };
 
 export const COMPARED_FIELDS = (Object.keys(FIELDS) as (keyof SessionSummary)[]).filter((k) => FIELDS[k] === "compare");

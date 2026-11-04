@@ -156,6 +156,8 @@ import { pushRoutes } from "./push-routes";
 import { chatTrialRoutes } from "./chat-trial-routes";
 import { sessionsChanged } from "./list-generation";
 import { resourceMonitor } from "./resource-monitor";
+import { routeOpName } from "./stall-recorder-route";
+import { opEnd, opStart, stallRecording } from "./stall-recorder";
 import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
 import { localRequest } from "./mesh/proxy";
 import { pageOnlyRefusal } from "./page-only";
@@ -175,7 +177,7 @@ const CONNECT_TEMPLATE = fileURLToPath(new URL("./connect-agent-template.md", im
     One source with serverStart(): POST /api/updates/restart answers the same startedAt, which the
     Settings block waits to see change. */
 const SERVER_STARTED_AT = serverStart().startedAt;
-const SERVER_HEAD: string | null = (() => {
+export const SERVER_HEAD: string | null = (() => {
   try {
     return execFileSync("git", ["rev-parse", "HEAD"], { cwd: dirname(fileURLToPath(import.meta.url)), timeout: 5_000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
   } catch {
@@ -217,6 +219,17 @@ export function buildApp(deps: AppDeps) {
   // proxy refuses to pass on. In-process calls and the peer listener are never asked. An installed
   // extension's own key is checked by server/extension-keys.ts (§app.extensions/backend-key).
   setExtensionKeyCheck(extensionKeys);
+  // Every request is a named operation on the stall recorder's board, by its route pattern: never
+  // its URL (server/stall-recorder.ts).
+  app.use("*", async (c, next) => {
+    if (!stallRecording()) return next();
+    const op = opStart(routeOpName(c));
+    try {
+      await next();
+    } finally {
+      opEnd(op);
+    }
+  });
   app.use("*", async (c, next) => {
     const refused = authGate(c);
     if (refused) return refused;

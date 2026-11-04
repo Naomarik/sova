@@ -5,7 +5,7 @@
  * The state root is a temp agent dir; both repos are real.
  */
 import assert from "node:assert/strict";
-import { mkdirSync, readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 import type { MergeThread } from "./thread";
@@ -21,6 +21,7 @@ const listedRows: { root: string }[] = [{ root: served.root }];
 const woke: { root: string; kind: string }[] = [];
 let strayFile = "";
 let strayBytes = "";
+let strayTree = "";
 
 before(async () => {
   mkdirSync(join(agentDir, "sova"), { recursive: true });
@@ -35,6 +36,7 @@ before(async () => {
     await q.pause("held for the test");
     const b = r.branch("feat/old", { "old.txt": "o\n" });
     await q.add({ branch: "feat/old", commit: b.head, by: "land-button" });
+    if (r === stray) strayTree = b.path;
     await k.queues.stop();
   }
   const { recordedRoots } = await import("./routes");
@@ -44,7 +46,7 @@ before(async () => {
   strayBytes = readFileSync(strayFile, "utf8");
   // A stand-in merge thread: records each wake.
   const { setMergeThread } = await import("./thread");
-  setMergeThread({ notify: (root: string, ev: { kind: string }) => void woke.push({ root, kind: ev.kind }), isThreadChat: () => false, record: () => undefined } as unknown as MergeThread);
+  setMergeThread({ notify: (root: string, ev: { kind: string }) => void woke.push({ root, kind: ev.kind }), isThreadChat: () => false, record: () => undefined, history: () => [] } as unknown as MergeThread);
 });
 
 after(async () => {
@@ -90,4 +92,42 @@ test("a4/t8: the merge thread is woken for a served root, and no more once that 
   assert.equal(added.changed, true, "the event was raised");
   assert.equal(woke.length, before, "no wake for a root the queue no longer serves");
   assert.equal(woke.some((w) => w.root === stray.root), false, "never a wake for the stray root");
+});
+
+test("a repo gaining service: an archived row of its branch gains its queue entry, with no read of that row coming", async () => {
+  const { refreshServed } = await import("./wire");
+  const r = await import("../merge-readiness");
+  const { listSessions } = await import("../sessions-index");
+  const id = "0199aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee";
+  const dir = join((await import("../paths")).SESSIONS_DIR, "--wire-unserved--");
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, `2026-09-29T15-34-48-453Z_${id}.jsonl`);
+  const trees = [{ path: strayTree, branch: "feat/old", base: "b0", baseBranch: "main", status: "active", session: id, how: "created", at: 1 }];
+  const lines = [{ type: "session", version: 3, id, timestamp: "2026-09-29T15:34:48.453Z", cwd: strayTree }, { type: "custom", customType: "worktrees", data: { version: 1, trees }, timestamp: "2026-09-29T15:36:00.000Z", id: "e1", parentId: null }, { type: "message", id: "e2", parentId: "e1", timestamp: "2026-09-29T15:37:00.000Z", message: { role: "user", content: "hello" } }];
+  writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
+  (await import("../archived-sessions")).setArchived(id, true);
+  // The row as the listing has it, read: the same row at the next listing, so no listing re-reads it.
+  const listed = async () => (await listSessions()).find((s) => s.path === path);
+  await until(async () => {
+    const s = await listed();
+    await r.readinessIdle();
+    return !!s && !!r.branchesOverlay(s);
+  }, "the row read");
+  const row = (await listed())!;
+  assert.equal(row.archived, true);
+  const branch = () => r.branchesOverlay(row)?.[0];
+  assert.equal(branch()?.branch, "feat/old");
+  assert.equal(branch()?.mergeServed, undefined, "off the list: a plain repo");
+  assert.equal(r.readinessParked(row), true);
+  listedRows.push({ root: stray.root });
+  await refreshServed();
+  await until(() => branch()?.mergeServed === true && !!branch()?.queue, "the row carries its queue entry");
+  // A row read before the queue has started (a server's restart): nothing joins it, and the start reads it again.
+  const { servedKey } = await import("./served");
+  const { startMergeQueue, stopMergeQueue } = await import("./wire");
+  await stopMergeQueue();
+  await r.rereadBranches(servedKey(stray.root));
+  assert.equal(branch()?.mergeServed, undefined, "the queue isn't started");
+  await startMergeQueue({ listed: () => listedRows });
+  await until(() => branch()?.mergeServed === true && !!branch()?.queue, "the row carries its queue entry after the start");
 });

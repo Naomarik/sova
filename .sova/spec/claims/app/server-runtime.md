@@ -88,6 +88,10 @@ fixes the bug.
   runaway-stream guard's stop (§chat.transcript/runaway-stream) costs about the same on Bun as on
   Node. Google adapters, which refuse a custom fetch, read as their runtime does.
 - **The event-loop delay reads the same on both.** See §app.resource-monitor/lightness-budget.
+- **A feature only one runtime has is tried, never gated on a name or version.** The stall
+  recorder's JS sampler imports that runtime's own module where it loads, outside
+  `server/runtime-quirks.ts` because it works around nothing, and the record goes without stacks
+  where it doesn't (§app.resource-monitor/stall-recorder).
 - **A refused connection is named "connection refused" on both.** The error is classified by its
   code (its own or its cause's), never by its message.
 - **Imports are unambiguous.** No two module files or directories in one folder of `src/`,

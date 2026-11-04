@@ -62,6 +62,7 @@ import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
 import { deeperContextExtension } from "./harness/pi/deeper-context";
+import { mcpExtension } from "./harness/pi/mcp";
 import { LOADING_TOOLS } from "./deeper-context";
 import { playbookExtension, type PlaybookHost } from "./harness/pi/playbook";
 import { playbookHost } from "./playbook-host";
@@ -260,13 +261,16 @@ export function alignLaunchOf(state: Pick<SessionState, "branch" | "file">): Ali
 }
 
 /** The extensions every ordinary session loads beyond pi-config's: resource monitoring and inherited
-    fork-cache affinity. None changes prompt sections or tool declarations by loading. A caller that passes its own list for an ordinary session
+    fork-cache affinity, and its MCP servers. None changes prompt sections or tool declarations by loading,
+    but for mcpExtension's approved servers, which declare their Check records' tools. A caller that passes its own list for an ordinary session
     starts from this one; the special loadouts keep exactly their own. */
 const DEFAULT_EXTENSION_FACTORIES = [
   { name: "sova-resource-monitor", factory: monitorExtension },
   { name: "sova-fork-cache", factory: forkCacheExtension },
   // Subfolder AGENTS.md / CLAUDE.md files, attached to the read/edit/write result that first reaches them.
   deeperContextExtension(),
+  // A chat's MCP servers (§app/mcp): nothing without an approved set.
+  mcpExtension(),
 ];
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway

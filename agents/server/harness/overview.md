@@ -246,8 +246,10 @@ found so far (pi 1.0.3).
   `agent-session.js:1680`); `PiHarnessSession.steer` drops it and stays `Promise<void>`.
 - pi 1.0's built-in extensions (`builtin:codemode`, `builtin:tool-search`, `builtin:mcp`,
   `builtin:llama.cpp`, `<pi>/dist/extensions/index.js`) load only in the CLI (`<pi>/dist/main.js` adds them); SDK
-  runtimes such as Sova's do not get them (`<pi>/docs/sdk.md` "codemode-mcp"), so no MCP, tool_search or
-  llama.cpp provider in webapp-owned sessions unless Sova adds the factories; Sova adds none. A call
+  runtimes such as Sova's do not get them (`<pi>/docs/sdk.md` "codemode-mcp"), so no tool_search or
+  llama.cpp provider in webapp-owned sessions unless Sova adds the factories. Sova adds one:
+  `createMcpExtension`, for ordinary chats only, through `server/harness/pi/mcp.ts`, which supplies the
+  config and every transport itself (quirks P30, P31, §app/mcp). A call
   another tool makes carries `parentToolCallId` (`HarnessEvent` `nested`, `SovaEvent` `parentCallId`)
   and is no row or live tool.
 - **pi reads the host's context files into a recording.** A session reads every `AGENTS.md`/`CLAUDE.md`

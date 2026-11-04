@@ -436,6 +436,30 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi offers removing one queued message by identity",
   },
   {
+    id: "P30",
+    name: "mcp-snapshot-transport",
+    kind: "semantic",
+    relies:
+      "createMcpExtension calls createTransport for every enabled server once session_start has run, and a client on that transport asks only initialize, then tools/list when the answer names a tools capability; whatever else it needs goes through send later. So a transport that answers those two itself connects at once with no process behind it: pi declares a direct server's tools in the very first request and pi's own config reading, env and header expansion and stdio transport never run. It needs no StdioTransport (the stderr tail is the only thing it gives up), and `direct` tools turn on when they register.",
+    pi: ["createMcpExtension", "McpExtensionOptions.loadConfig", "McpExtensionOptions.createTransport", "McpTransportFactory", "McpServerConnection.connectOnce", "McpClient.connect"],
+    where: [
+      { file: "server/harness/pi/mcp.ts", symbol: "mcpExtension" },
+      { file: "server/harness/pi/mcp.ts", symbol: "SnapshotTransport.send" },
+    ],
+    canary: "P30 mcp-snapshot-transport: a transport answering initialize and tools/list connects at session_start; pi declares its tools in the first request, reads no mcp.json and sends a call to send",
+    retireWhen: "pi lets a host declare a server's tools from a stored list and connect on first use",
+  },
+  {
+    id: "P31",
+    name: "mcp-command-through-api",
+    kind: "semantic",
+    relies: "createMcpExtension registers `/mcp` through the ExtensionAPI object its factory is handed, so a Proxy over that object keeps the command out of a chat while every event and tool still reaches pi.",
+    pi: ["createMcpExtension", "ExtensionAPI.registerCommand"],
+    where: [{ file: "server/harness/pi/mcp.ts", symbol: "hideMcpCommand" }],
+    canary: "P31 mcp-command-through-api: the factory registers mcp on the API it is handed, so a proxy that drops it leaves no /mcp and the extension's events running",
+    retireWhen: "pi's MCP extension takes an option to leave `/mcp` out",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

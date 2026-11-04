@@ -992,6 +992,65 @@ describe("pi contract", () => {
     session.dispose();
   });
 
+  /** A server that lives in `sent`: the answers a client needs to connect, nothing behind them. */
+  const answeringTransport = (tools: { name: string; inputSchema: object }[], sent: { method?: string }[]) => {
+    const heard = new Set<(message: unknown) => void>();
+    const reply = (id: unknown, result: unknown) => queueMicrotask(() => { for (const h of heard) h({ jsonrpc: "2.0", id, result }); });
+    return {
+      start: async () => {},
+      close: async () => {},
+      onMessage: (l: (message: unknown) => void) => (heard.add(l), () => void heard.delete(l)),
+      onError: () => () => {},
+      onClose: () => () => {},
+      send: async (m: { id?: unknown; method?: string }) => {
+        sent.push(m);
+        if (m.method === "initialize") reply(m.id, { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "s", version: "1" } });
+        else if (m.method === "tools/list") reply(m.id, { tools });
+        else if (m.method === "tools/call") reply(m.id, { content: [{ type: "text", text: "called" }] });
+      },
+    };
+  };
+  const onlyConfig = { errors: [], autoEnableCodemode: false, servers: [{ name: "s", source: "sova", scope: "global", config: { command: "no-such-program", exposure: "direct" } }] };
+
+  test("P30 mcp-snapshot-transport: a transport answering initialize and tools/list connects at session_start; pi declares its tools in the first request, reads no mcp.json and sends a call to send", async () => {
+    const sent: { method?: string }[] = [];
+    let built = 0;
+    const factory = pi.agent.createMcpExtension({
+      loadConfig: () => onlyConfig as never,
+      createTransport: () => (built++, answeringTransport([{ name: "t", inputSchema: { type: "object" } }], sent) as never),
+    });
+    const { session, model } = await quirkSession({ extensions: [factory as never] });
+    let declared: string[] = [];
+    model.reply(() => {
+      declared = session.agent.state.tools.map((t: { name: string }) => t.name);
+      return { toolCall: { name: "mcp__s__t", arguments: {} } };
+    }, { text: "done" });
+    await session.prompt("go");
+    assert.equal(built, 1, "createTransport builds each enabled server's transport");
+    assert.ok(declared.includes("mcp__s__t"), "the first request declares the tool: the first prompt waits for a direct server");
+    const methods = sent.map((m) => m.method);
+    assert.deepEqual(methods.slice(0, 3), ["initialize", "notifications/initialized", "tools/list"], "what a connect asks, in order");
+    assert.deepEqual(methods.slice(3), ["tools/call"], "a call is the only other thing it sends");
+    await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+    session.dispose();
+  });
+
+  test("P31 mcp-command-through-api: the factory registers mcp on the API it is handed, so a proxy that drops it leaves no /mcp and the extension's events running", async () => {
+    const factory = pi.agent.createMcpExtension({ loadConfig: () => ({ servers: [], errors: [] }) as never });
+    const wrapped = (api: any) => factory(new Proxy(api, {
+      get(target, key) {
+        if (key === "registerCommand") return (name: string, options: unknown) => (name === "mcp" ? undefined : target.registerCommand(name, options));
+        const value = target[key];
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    }));
+    const hidden = await quirkSession({ extensions: [wrapped] });
+    const plain = await quirkSession({ extensions: [factory as never] });
+    assert.ok(plain.session.extensionRunner.getCommand("mcp"), "the plain factory registers /mcp");
+    assert.equal(hidden.session.extensionRunner.getCommand("mcp"), undefined);
+    assert.ok(hidden.session.extensionRunner.hasHandlers("session_start"), "its events still reach pi");
+  });
+
   test("P29 steer-remove: the object agent.steer is handed sits in steeringQueue.messages, and splicing it and its text out of both copies takes exactly that steer back", async () => {
     // An input handler held open on "slow …" texts: the window a described image keeps a hand-off in.
     let openGate: () => void = () => {};

@@ -52,8 +52,8 @@ shows an error box with **Reload**.
 ## How a chat learns one
 
 While [vis](/docs/modes/vis/) is on, the agent's `vis_guide` tool lists the chat's own kinds, one line
-each, and for one kind returns how its fence is written and your `GUIDE.md`. With vis off, the agent
-isn't taught the kind.
+each, and for one kind returns how its fence is written and your `GUIDE.md`. With vis off a kind still
+draws, but the chat isn't told about it.
 
 ## When a kind reaches a chat
 

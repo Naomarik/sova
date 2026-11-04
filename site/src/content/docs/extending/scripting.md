@@ -150,5 +150,8 @@ A chat can't tell another chat's OK from yours.
 
 The server can refuse a restart it's asked for, but it can't stop raw `systemctl`, `launchctl` or `kill`.
 
+A chat's release refusal stops a chat calling Sova in its normal way, not a program deliberately posing as
+your terminal.
+
 A program holding the token may pass as your word for `worktree land`, so a landing recorded from a typed
 word doesn't prove you typed it.

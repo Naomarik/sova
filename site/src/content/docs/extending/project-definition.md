@@ -56,7 +56,7 @@ The `merge` section says how the project's branches land through its merge queue
 - `target`: the branch that receives work. By default, the main checkout's branch.
 - `push`: whether to push after landing. By default, when the repository has an `origin` remote.
 - `install`: run in the merge copy when a branch changes one of its `inputs`.
-- `review`: the folder of the project's review kit.
+- `review`: the folder of the project's review kit. Adding it turns review on when it lands.
 - `land`: how a branch lands: `local` (the default), `github-pr`, `gitlab-mr` or `push-branch`. This
   computer's own choice overrides it.
 - `request`: the folder of the project's request kit.

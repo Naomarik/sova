@@ -15,7 +15,7 @@ Choosing between a card and a branch: `.sova/project.json` is one file, but it d
 
 ## How the project runs
 
-- Change: the services a copy runs, their ports, what must be ready, setup steps, data, the entry point people open, the copy default, and the checkout files the definition was written from. Keys: `services`, `setup`, `data`, `open`, `slots`, `host`, `hooks`, `sources`.
+- Change: the services a copy runs, their ports, what must be ready, setup steps, data, the entry point people open, the copy default, and the checkout files the definition was written from. Keys: `services`, `setup`, `data`, `open`, `slots`, `host`, `hooks`, `sources`. The `merge` key is the `landing` topic's, and `release` the `releases` topic's.
 - Lives: `.sova/project.json` at the root of the project. Each branch carries its own. Parsed strictly: one unknown key or wrong value voids the whole file. Commands are lists of arguments, never a shell string.
 - Approves: the person, by Land, or by Apply and Approve on a card: any change to this file counts as a grant, because it decides what runs on this computer.
 - By: Land or Card. Land when the project has checks. The card is the `services` setting and holds the whole file.

@@ -18,7 +18,7 @@ export const CREATE_GROUPS: readonly { title: string; topics: readonly string[] 
 	{ title: "Teach your chats.", topics: ["instructions", "skills", "modes", "profiles"] },
 	{ title: "Give them new abilities.", topics: ["tools", "extensions", "pi-extensions", "scripts"] },
 	{ title: "Keep it safe.", topics: ["safety"] },
-	{ title: "Run your project.", topics: ["project", "landing", "automation", "cards", "overseers"] },
+	{ title: "Run your project.", topics: ["project", "landing", "releases", "automation", "cards", "overseers"] },
 	{ title: "Reach you and others.", topics: ["attention", "computers"] },
 ];
 

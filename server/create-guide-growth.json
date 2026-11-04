@@ -1,6 +1,8 @@
 {
  "_": "Which Create topic owns each item of Sova's own lists, by exact name, and the SOVA_* names a user never sets. Held by create-guide-growth.test.ts.",
  "notForUsers": [
+  "SOVA_RELEASE_QUIET_MS",
+  "SOVA_RELEASE_STALL_POLL_MS",
   "SOVA_ACCEPT_BUILD",
   "SOVA_ACCEPT_HANDOFF",
   "SOVA_ACCEPT_STATE",
@@ -148,6 +150,21 @@
    "experimental": "computers"
   },
   "definition": {
+   "top.release": "releases",
+   "release.playbook": "releases",
+   "release.tag": "releases",
+   "release.scheme": "releases",
+   "release.channels": "releases",
+   "release.commit": "releases",
+   "release.checks": "releases",
+   "release.quietMin": "releases",
+   "releaseCheck.id": "releases",
+   "releaseCheck.label": "releases",
+   "releaseCheck.run": "releases",
+   "releaseCheck.timeout": "releases",
+   "releaseCheck.rerun": "releases",
+   "releaseCheck.requires": "releases",
+   "target.releases": "releases",
    "top.version": "project",
    "top.slots": "project",
    "top.host": "project",
@@ -287,6 +304,7 @@
    "offers": "cards"
   },
   "power": {
+   "release": "overseers",
    "gather": "overseers",
    "whatsapp": "overseers",
    "ownerUpdates": "overseers",
@@ -332,6 +350,17 @@
    "settings:mode-align.json": "modes"
   },
   "command": {
+   "project.verb.release.status": "releases",
+   "project.verb.release.logs": "releases",
+   "project.verb.release.request": "releases",
+   "project.verb.release.start": "releases",
+   "project.verb.release.step": "releases",
+   "project.verb.release.notes": "releases",
+   "project.verb.release.continue": "releases",
+   "project.verb.release.retry": "releases",
+   "project.verb.release.publish": "releases",
+   "project.verb.release.abandon": "releases",
+   "project.verb.release.withdraw": "releases",
    "session.list": "scripts",
    "session.get": "scripts",
    "session.read": "scripts",

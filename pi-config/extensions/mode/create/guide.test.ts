@@ -22,6 +22,7 @@ const PROMISED = `- **Make it yours.**
 - **Run your project.**
   - \`project\`: how your project runs, tests, shares and ships
   - \`landing\`: what must pass before a branch reaches your project, and how it lands
+  - \`releases\`: numbered versions of your project, and how they're cut and published
   - \`automation\`: recipes you run by hand, or that run by themselves
   - \`cards\`: buttons, cards and drawings that are your project's own
   - \`overseers\`: how the Overseers and the Project Assistant watch, act and hold back
@@ -63,7 +64,7 @@ const NOT_STANDALONE: [RegExp, string][] = [
 test("the table of contents is the promised list, generated from each file's own header line", () => {
 	assert.equal(createContents(), PROMISED);
 	assert.equal(CREATE_GROUPS.length, 6);
-	assert.equal(CREATE_TOPICS.length, 19);
+	assert.equal(CREATE_TOPICS.length, 20);
 	assert.deepEqual(CREATE_GUIDE_NAMES, CREATE_TOPICS);
 	assert.deepEqual(CREATE_TOPICS.filter((topic, i) => CREATE_TOPICS.indexOf(topic) !== i), []);
 });

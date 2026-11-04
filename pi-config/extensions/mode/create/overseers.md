@@ -6,7 +6,7 @@ The project ones need a project: in a folder that isn't one, offer Add as Projec
 
 ## What a Project Overseer may do without you
 
-- Change: its switches, each On or Off, in two columns: the overseer on its own, and the Project Assistant from a client. Powers: `gather`, `whatsapp`, `ownerUpdates`, `roster`, `promote`, `bookkeeping`, `codingStart`, `codingPrompt`, `onboard`, `markMerged`, `copiesRun`, `copiesReset`, `share`, `deploy`. The Assistant's column has only `gather`, `codingStart`, `codingPrompt`, `copiesRun` and `deploy`.
+- Change: its switches, each On or Off, in two columns: the overseer on its own, and the Project Assistant from a client. Powers: `gather`, `whatsapp`, `ownerUpdates`, `roster`, `promote`, `bookkeeping`, `codingStart`, `codingPrompt`, `onboard`, `markMerged`, `copiesRun`, `copiesReset`, `share`, `deploy`, `release`. The Assistant's column has only `gather`, `codingStart`, `codingPrompt`, `copiesRun` and `deploy`.
 - Lives: Sova's own settings for the project.
 - Approves: the person's own click in the page: Apply on the card, or the switch on the Settings tab. The Overseer can also turn one On, in a turn the person started. Every other caller needs that click. Each power turned On is marked on the card with what it allows.
 - By: Card or Screen. `overseer.powers`, proposed as the `overseer` setting with `powers`. The project page's Settings tab has the same switches.

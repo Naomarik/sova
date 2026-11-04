@@ -78,6 +78,8 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   const id = idOf(path);
   const viewer = opts.viewer !== false;
   const who: NotPage | null = opts.notPage === undefined ? "local" : opts.notPage;
+  /** Rewinds this socket sent that are still being checked (toChat). */
+  let checking = 0;
   /** One frame into the chat. `/sandbox` typed in the page's composer runs; from anything else a lowering is refused
       (§app.access/your-click), the send's refusal reaching this socket like any other. */
   const toChat = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
@@ -89,6 +91,8 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     }
     // Going back past a raise lowers the sandbox: the extension restores the state of the branch it lands on.
     if (who !== null && (msg.type === "rewind" || msg.type === "regenerate")) {
+      // The socket may close meanwhile (`wait=0`): it stays in the chat until the frame went over.
+      checking++;
       Promise.all([open.sandboxInfo(), open.branch()]).then(
         ([info, branch]) => {
           const after = sandboxAfterRewind(branch, String(msg.entryId ?? ""));
@@ -97,7 +101,10 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
           client.send({ type, id: msg.id, entryId: msg.entryId, reason: "cancelled", message: yourClickBody("rewind", who).error });
         },
         (err) => client.send({ type: "error", code: "internal", message: err instanceof Error ? err.message : String(err) }),
-      );
+      ).finally(() => {
+        checking--;
+        if (gone && held.size === 0 && checking === 0) leave();
+      });
       return;
     }
     const asked = who !== null && (msg.type === "prompt" || msg.type === "steer") ? sandboxCommand(String(msg.text ?? "")) : null;
@@ -116,7 +123,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   let gone = false;
   const heard = (back: Unsent[]) => {
     if (gone && back.length) putBackDraft(id, draftTexts(back));
-    if (gone && held.size === 0) leave();
+    if (gone && held.size === 0 && checking === 0) leave();
   };
   const client: ChatClient = {
     send: (msg) => {
@@ -150,6 +157,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   };
   /** The socket closed with sends unanswered: stay to hear them, for a while. */
   const stayToHear = () => {
+    if (checking > 0) return;
     if (held.size === 0) return leave();
     listen = setTimeout(leave, GONE_LISTEN_MS);
     listen.unref?.();

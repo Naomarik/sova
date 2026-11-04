@@ -70,7 +70,7 @@ export function saveCheck(owner: McpOwner, name: string, version: string, record
   });
 }
 
-/** A Check that failed: the record the same version had stays (§app.mcp/check). */
+/** A Check that failed: the record the same version had stays. */
 export function saveFailedCheck(owner: McpOwner, name: string, version: string, errors: string[], needsSignIn = false, at = Date.now()): RowFile {
   return changeRow(owner, name, (row) => {
     row.last = { at, ok: false, version, errors, ...(needsSignIn ? { needsSignIn } : {}) };

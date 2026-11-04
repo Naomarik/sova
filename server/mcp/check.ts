@@ -1,5 +1,5 @@
-// A Check (§app.mcp/check): in a short-lived process of its own, in the clean environment, of an approved server
-// only. Its record is what chats list. Sign In (§app.mcp/sign-in) is the same child, kept open while the person
+// A Check: in a short-lived process of its own, in the clean environment, of an approved server
+// only. Its record is what chats list. Sign In is the same child, kept open while the person
 // signs in.
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";

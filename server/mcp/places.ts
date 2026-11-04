@@ -1,4 +1,4 @@
-// Which projects and checkouts exist, for the rows and for a chat's folder (§app.mcp/project-servers). The server's
+// Which projects and checkouts exist, for the rows and for a chat's folder. The server's
 // side only: projects live in the org engines, which a chat's process doesn't open.
 import { execFile } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";

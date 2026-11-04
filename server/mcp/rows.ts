@@ -1,4 +1,4 @@
-// A server's row as the page, the setup card and the catalogue read it (§app.mcp/rows). Reads files; runs nothing.
+// A server's row as the page, the setup card and the catalogue read it. Reads files; runs nothing.
 import type { McpRowState, McpServerRow, McpErrorLine } from "../../shared/mcp";
 import { CHARS_PER_TOKEN } from "../../shared/protocol";
 import type { McpEntry } from "./config";
@@ -15,7 +15,7 @@ export const toolTokens = (t: McpRecordTool): number => Math.ceil(JSON.stringify
 
 const authorized = (e: McpEntry) => Object.keys(e.headers ?? {}).some((h) => h.toLowerCase() === "authorization");
 
-/** The first state that applies (§app.mcp/rows). */
+/** The first state that applies. */
 export function rowState(approved: boolean, row: RowFile, version: string): McpRowState {
   if (!approved) return "waiting";
   if (!row.settings.newChats) return "off";
@@ -36,7 +36,7 @@ export function rowOfEntry(owner: McpOwner, e: McpEntry, extras: RowExtras = {})
   const approved = isApproved(owner, e.name, version);
   const refused = refusalOf(e);
   const state = refused ? "waiting" : rowState(approved, row, version);
-  // A changed entry has no record until a Check of the new version succeeds (§app.mcp/check).
+  // A changed entry has no record until a Check of the new version succeeds.
   const record = recordOf(row, version);
   const off = new Set(row.settings.offTools);
   const values = secretValues(owner, e.name);

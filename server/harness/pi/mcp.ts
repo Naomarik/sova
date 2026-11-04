@@ -1,4 +1,4 @@
-// MCP servers in Sova chats (§app/mcp, §app.mcp/in-a-chat). pi's own MCP extension (createMcpExtension) carries the
+// MCP servers in Sova chats. pi's own MCP extension (createMcpExtension) carries the
 // tools through pi's pipeline; Sova holds its seams:
 // - `loadConfig` answers nothing, so pi's own reading of mcp.json and a repository's .pi/mcp.json never happens, and
 //   the chat's list reaches pi as registered servers, every one `direct`;
@@ -44,7 +44,7 @@ export interface McpServerStatus {
 
 /**
  * `sova`, in any case, is Sova's own: its tools reach a Claude Code chat under the MCP server `sova`, so a server of
- * that name would give a chat two tools that read alike (§app.mcp/add-server). The rule is `reservedName`; a list is
+ * that name would give a chat two tools that read alike. The rule is `reservedName`; a list is
  * held to it again here, the last door.
  */
 export const reservedMcpServerName = reservedName;
@@ -77,7 +77,7 @@ export class SnapshotTransport extends Events {
   constructor(
     private readonly record: McpCheckRecord,
     private readonly start_: () => StdioServer,
-    private readonly status: (patch: Partial<McpServerStatus>, how?: "changed" | "failed") => void,
+    private readonly status: (patch: Partial<McpServerStatus>, how?: "changed" | "failed" | "address-under-on") => void,
     private readonly requestTimeoutMs: number,
   ) {
     super();
@@ -210,7 +210,7 @@ interface SandboxState {
 export interface McpExtensionHooks {
   /** The list a chat with no list yet takes now; null: none, ever (a remote chat, a profile without servers). */
   list(cwd: string, sandboxOn: boolean): Promise<McpChatList | null>;
-  /** A worker's failure, for the chat that started it (§app.mcp/sandbox). Absent in an ordinary chat. */
+  /** A worker's failure, for the chat that started it. Absent in an ordinary chat. */
   tellParent?(note: McpNote): void;
   /** Each copy's status as it changes. */
   onStatus?(status: McpServerStatus): void;
@@ -258,7 +258,7 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
         // Write-only: the chat that started the worker reads it; a worker's own transcript has nobody reading.
         if (how === "write-only") hooks.tellParent?.({ ...note, worker: chatName || "a worker" });
         else pi.appendEntry(MCP_NOTE_ENTRY, note);
-        if (how === "changed") return;
+        if (how === "changed" || how === "address-under-on") return;
         const where: McpErrorLine["where"] = how === "sandbox" || how === "write-only" ? how : undefined;
         for (const line of clean.split("\n").filter(Boolean).slice(0, 6)) {
           try {
@@ -270,9 +270,9 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
       };
 
       const launchOf = (server: McpChatServer, cwd: string) => async (): Promise<Launch> => {
-        // Every start checks the approval again, as the files stand now (§app.mcp/approval).
+        // Every start checks the approval again, as the files stand now.
         // The seam for address servers: pi's HTTP transport isn't reachable without @earendil-works/pi-mcp.
-        if (server.kind === "address") throw new McpStartRefused("failed", "Address servers don't run in chats yet.");
+        if (server.kind === "address") throw new McpStartRefused(sandbox.on ? "address-under-on" : "failed", sandbox.on ? "address servers stay off while the sandbox is On" : "Address servers don't run in chats yet.");
         const ready = readyToRun(server.owner, server.name);
         if (!ready.ok) throw new McpStartRefused(ready.how, ready.reason);
         const argv = [ready.entry.command!, ...(ready.entry.args ?? [])];
@@ -315,6 +315,9 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
         logPath: join(stateRoot(), "mcp.log"),
       });
 
+      const toolsOf = new Map<string, Set<string>>();
+      const listedTools = () => list.servers.flatMap((s) => [...(toolsOf.get(s.name) ?? [])]);
+
       const reach = (next: McpChatList) => {
         for (const s of list.servers) pi.unregisterMcpServer(s.name);
         list = next;
@@ -334,8 +337,12 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
         reach(next);
       });
 
-      // Settled when the first message is sent (§app.mcp/tool-list): a server added since the chat opened counts.
+      // Settled when the first message is sent: a server added since the chat opened counts.
       pi.on("before_agent_start", async (_event, ctx) => {
+        // Another extension's setActiveTools from before a tool registered (strict mode's restore) doesn't drop it.
+        const active = pi.getActiveTools();
+        const lost = listedTools().filter((name) => !active.includes(name));
+        if (lost.length) pi.setActiveTools([...active, ...lost]);
         if (settled) return;
         settled = true;
         const next = (await hooks.list(ctx.cwd, sandbox.on).catch(() => null)) ?? list;
@@ -365,6 +372,7 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
 
       inner(tapped(pi, (name, tool) => {
         noteMcpTool(name, tool);
+        toolsOf.set(tool.server, (toolsOf.get(tool.server) ?? new Set()).add(name));
       }, () => {
         for (const step of toolWaiters) step();
       }));
@@ -373,7 +381,7 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
 }
 
 class McpStartRefused extends Error {
-  constructor(readonly how: "changed" | "failed", reason: string) {
+  constructor(readonly how: "changed" | "failed" | "address-under-on", reason: string) {
     super(reason);
   }
 }

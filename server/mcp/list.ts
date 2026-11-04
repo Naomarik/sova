@@ -1,4 +1,4 @@
-// Which servers a chat lists (§app.mcp/tool-list) and what its setup card draws. A chat's list is data: it keeps a
+// Which servers a chat lists and what its setup card draws. A chat's list is data: it keeps a
 // copy in its session state from its first message on, so nothing that happens to a record later changes it.
 import type { SetupMcp } from "../../shared/mcp";
 import type { McpEntry } from "./config";
@@ -87,7 +87,7 @@ export function setupOf(folder: McpFolder, choice: McpChoice, sandboxOn: boolean
 }
 
 /**
- * What a worker gets (§app.mcp/who-gets): the named servers, with their tools as trimmed in this chat. A name the
+ * What a worker gets: the named servers, with their tools as trimmed in this chat. A name the
  * chat doesn't have is refused with the deck's sentence.
  */
 export function workerListOf(list: McpChatList, names: readonly string[], chat: string): { list: McpChatList } | { refused: string } {

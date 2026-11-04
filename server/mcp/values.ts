@@ -1,4 +1,4 @@
-// What an entry's values may name (§app.mcp/environment, §app.mcp/secrets). `${NAME}` is the one form: a saved
+// What an entry's values may name. `${NAME}` is the one form: a saved
 // secret, and in a computer entry an environment variable of that name too. A project's file can name nothing but
 // a saved secret. Nothing is ever run: `!command` is a literal string here, wherever it stands.
 import type { McpEntry } from "./config";

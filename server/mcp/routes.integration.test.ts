@@ -1,5 +1,5 @@
 // Run: node scripts/run-tests.mjs --integration server/mcp/routes.integration.test.ts. The MCP routes against the real
-// app (§app/mcp): real Check child processes, a real stub server, a stub OAuth service. Only the page writes.
+// app: real Check child processes, a real stub server, a stub OAuth service. Only the page writes.
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

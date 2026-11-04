@@ -29,7 +29,7 @@ writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ defaultProvider:
 
 cpSync(join(import.meta.dirname, "..", "..", "..", "pi-config", "sandbox-policy"), join(agentDir, "sandbox-policy"), { recursive: true });
 
-const { acquireChat, disposeAllChats } = await import("../../chat-manager");
+const { acquireChat, disposeAllChats, setChatHosts, setWorkerSpec } = await import("../../chat-manager");
 const { canonicalPath } = await import("../../paths");
 const { markOwned } = await import("../../write-guard");
 const { addWebSession } = await import("../../web-sessions");
@@ -82,12 +82,25 @@ function project(name: string): string {
   return cwd;
 }
 
-async function open(cwd: string) {
+/** A chat's file, with these custom entries already in it. */
+function chatFile(cwd: string, entries: { type: string; data: unknown }[] = []) {
   const id = `0199eeee-0000-7000-8000-${String(++n).padStart(12, "0")}`;
-  const path = canonicalPath(join(sessionsDir, `2026-11-04T00-00-${String(n).padStart(2, "0")}-000Z_${id}.jsonl`));
-  writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-11-04T00:00:00.000Z", cwd })}\n`);
+  const path = canonicalPath(join(sessionsDir, `2026-11-04T00-00-${String(n % 60).padStart(2, "0")}-000Z_${id}.jsonl`));
+  const lines = [{ type: "session", version: 3, id, timestamp: "2026-11-04T00:00:00.000Z", cwd }];
+  let parentId: string | null = null;
+  for (const [i, e] of entries.entries()) {
+    const entryId = `e${String(i).padStart(7, "0")}`;
+    lines.push({ type: "custom", customType: e.type, data: e.data, id: entryId, parentId, timestamp: "2026-11-04T00:00:01.000Z" } as never);
+    parentId = entryId;
+  }
+  writeFileSync(path, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
   markOwned(path);
   addWebSession(id);
+  return path;
+}
+
+async function open(cwd: string, entries: { type: string; data: unknown }[] = [], existing?: string) {
+  const path = existing ?? chatFile(cwd, entries);
   const chat = await acquireChat(path, true);
   const session = piSession(chat);
   const model = new ScriptedModel().attach(session);
@@ -296,5 +309,198 @@ describe("Sandbox On", () => {
     await until(() => lines(log).some((e) => e.event === "stdin-closed"), "the unconfined copy to stop");
     await say("second", call("mcp__sw__echo"), { text: "done" });
     assert.equal(starts(log).length, 2);
+  });
+});
+
+const { chatLines } = await import("../../mcp/store");
+const { MCP_LIST_ENTRY, MCP_NOTE_ENTRY } = await import("./mcp");
+const entriesOf = (path: string): any[] => readFileSync(path, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
+const custom = (path: string, type: string) => entriesOf(path).filter((e) => e.type === "custom" && e.customType === type).map((e) => e.data);
+
+describe("what a chat lists", () => {
+  test("settled at the first message: a server added since the chat opened counts, one added after doesn't", async () => {
+    approve([server("early", join(root, "early.log"))]);
+    const { say, declared, path } = await open(project("settle"));
+    assert.deepEqual(declared(), []);
+    const late = server("late", join(root, "late.log"));
+    approve([server("early", join(root, "early.log")), late]);
+    await say("first", call("mcp__late__echo"), { text: "done" });
+    assert.deepEqual(declared().sort(), ["mcp__early__echo", "mcp__late__echo"]);
+    assert.equal(custom(path, MCP_LIST_ENTRY).length, 1, "kept once, in the session");
+    approve([server("early", join(root, "early.log")), late, server("later", join(root, "later.log"))]);
+    await say("second", { text: "done" });
+    assert.ok(!declared().includes("mcp__later__echo"), "a running chat's tools never change");
+  });
+
+  test("the list holds across a reopen, whatever happens to the record, and a server gone fails its call with the note", async () => {
+    const log = join(root, "kept.log");
+    approve([server("kept", log, [], ["a", "b"])]);
+    const cwd = project("kept");
+    const first = await open(cwd);
+    await first.say("first", { text: "done" });
+    const path = first.path;
+    assert.deepEqual(first.declared().sort(), ["mcp__kept__a", "mcp__kept__b"]);
+    await first.chat.dispose();
+    writeFileSync(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: {} }));
+    const second = await open(cwd, [], path);
+    await until(() => second.declared().length === 2, "the kept tools");
+    await second.say("again", call("mcp__kept__a"), { text: "done" });
+    const [failed] = second.results();
+    assert.equal(failed!.isError, true);
+    assert.match(failed!.text, /removed/);
+    assert.equal(starts(log).length, 0);
+    assert.deepEqual(custom(path, MCP_NOTE_ENTRY).map((d) => [d.server, d.how]), [["kept", "failed"]]);
+  });
+
+  test("a chat that began before this feature has none, whatever the computer lists", async () => {
+    approve([server("old", join(root, "old.log"))]);
+    const cwd = project("old");
+    const first = await open(cwd);
+    writeFileSync(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: {} }));
+    await first.say("first", { text: "done" });
+    assert.equal(custom(first.path, MCP_LIST_ENTRY).length, 0, "an empty list writes nothing");
+    await first.chat.dispose();
+    approve([server("old", join(root, "old.log"))]);
+    const again = await open(cwd, [], first.path);
+    await again.say("second", { text: "done" });
+    assert.deepEqual(again.declared(), []);
+  });
+
+  test("a chat's own flips: off for one server, on for one off by default, as its entry says", async () => {
+    approve([server("a", join(root, "fa.log")), server("b", join(root, "fb.log"))]);
+    const { changeRow } = await import("../../mcp/store");
+    changeRow(computer, "b", (r) => void (r.settings.newChats = false));
+    const { say, declared } = await open(project("flips"), [{ type: "sova-loadout", data: { v: 1, offContext: [], offSkills: [], offMcp: ["a"], onMcp: ["b"] } }]);
+    await say("first", { text: "done" });
+    assert.deepEqual(declared(), ["mcp__b__echo"]);
+    changeRow(computer, "b", (r) => void (r.settings.newChats = true));
+  });
+
+  test("a profile that removes MCP Servers lists none", async () => {
+    approve([server("gated", join(root, "gated.log"))]);
+    const { say, declared } = await open(project("profile"), [{ type: "sova-profile", data: { v: 1, profile: { id: "p", label: "No MCP", remove: ["mcp"], grant: [] } } }]);
+    await say("first", { text: "done" });
+    assert.deepEqual(declared(), []);
+  });
+});
+
+describe("when a server fails in a chat", () => {
+  test("an entry changed since the list starts nothing: the call fails, the note says it changed, the chat carries on", async () => {
+    const log = join(root, "drift.log");
+    const entry = server("drift", log);
+    approve([entry]);
+    const { say, results, path } = await open(project("drift"));
+    await say("first", { text: "done" });
+    writeFileSync(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: { drift: { command: entry.command, args: [...entry.args, "--extra"] } } }));
+    await say("second", call("mcp__drift__echo"), { text: "done" });
+    assert.equal(results()[0]!.isError, true);
+    assert.match(results()[0]!.text, /waiting for your approval/);
+    assert.equal(starts(log).length, 0);
+    assert.deepEqual(custom(path, MCP_NOTE_ENTRY).map((d) => d.how), ["changed"]);
+    assert.deepEqual(chatLines(computer, "drift"), [], "a change isn't an error line");
+    await say("third", call("mcp__drift__echo"), { text: "done" });
+    assert.equal(custom(path, MCP_NOTE_ENTRY).length, 1, "one note until it works again");
+  });
+
+  test("a failure reaches the row's error lines with the chat's name, and the note links to the row", async () => {
+    approve([{ ...server("lined", join(root, "lined.log")), command: join(root, "no-such-program") }]);
+    const { say, path } = await open(project("lined"));
+    await say("first", call("mcp__lined__echo"), { text: "done" });
+    const [note] = custom(path, MCP_NOTE_ENTRY);
+    assert.equal(note.how, "failed");
+    assert.deepEqual(note.link.to, "settings");
+    const lines_ = chatLines(computer, "lined");
+    assert.ok(lines_.length > 0);
+    assert.ok(lines_[0]!.chat);
+  });
+
+  test("a tool row reads its server and tool, hashed names too, saved and live", async () => {
+    const long = "x".repeat(100);
+    approve([server("named-one", join(root, "named.log"), [], [long])]);
+    const { say, declared, notes, path } = await open(project("named"));
+    await say("first", { text: "done" });
+    const name = declared()[0]!;
+    assert.ok(!name.includes(long), "pi shortened it");
+    await say("second", call(name), { text: "done" });
+    const live = notes.map((m) => JSON.parse(m)).find((m) => m.event?.type === "tool_execution_start");
+    assert.deepEqual(live?.event?.mcp, { server: "named-one", tool: long });
+    assert.deepEqual((await import("../../../shared/wire-v1")).fromV1(live)[0], { type: "tool.start", callId: live.event.toolCallId, name, args: { text: "hi" }, mcp: { server: "named-one", tool: long } });
+    const { normalizeEntries, slimRows } = await import("../../transcript");
+    const rows = slimRows(normalizeEntries(entriesOf(path).filter((e) => e.type !== "session")));
+    const mcp = rows.filter((r) => r.kind === "tool-call" || r.kind === "tool-result").map((r) => r.mcp);
+    assert.deepEqual(mcp, [{ server: "named-one", tool: long }, { server: "named-one", tool: long }]);
+  });
+});
+
+describe("workers", () => {
+  const list = (name: string, log: string) => ({
+    v: 1,
+    servers: [{ id: "row", name, owner: computer, kind: "command", version: "v", record: record(name) }],
+  });
+  const spec = (cwd: string, mcp: unknown, over: object = {}) => ({
+    kind: "worker", parent: { sessionId: "p", path: join(root, "parent.jsonl"), workerId: "ag_01" }, cwd, model: null, thinking: null, builtins: [], extensions: [], flags: {},
+    appendSystemPrompt: null, env: {}, agentDir: null, lowered: true, ...(mcp ? { mcp } : {}), ...over,
+  });
+
+  test("a worker has what it was named and no more, and keeps it when it resumes", async () => {
+    const log = join(root, "w.log");
+    approve([server("named", log), server("other", join(root, "wo.log"))]);
+    const cwd = project("worker");
+    const path = chatFile(cwd);
+    setWorkerSpec(path, spec(cwd, list("named", log)) as never);
+    const w = await open(cwd, [], path);
+    await w.say("go", call("mcp__named__echo"), { text: "done" });
+    assert.deepEqual(w.declared(), ["mcp__named__echo"]);
+    assert.equal(w.results()[0]!.isError, false, w.results()[0]!.text);
+    assert.equal(custom(path, MCP_LIST_ENTRY).length, 1);
+    await w.chat.dispose();
+    setWorkerSpec(path, spec(cwd, list("other", log)) as never);
+    const back = await open(cwd, [], path);
+    await until(() => back.declared().length === 1, "its tools");
+    assert.deepEqual(back.declared(), ["mcp__named__echo"], "the list it started with");
+    await back.chat.dispose();
+    setWorkerSpec(path, null);
+  });
+
+  test("none named: none, whatever the computer lists", async () => {
+    approve([server("unnamed", join(root, "u.log"))]);
+    const cwd = project("worker-none");
+    const path = chatFile(cwd);
+    setWorkerSpec(path, spec(cwd, null) as never);
+    const w = await open(cwd, [], path);
+    await w.say("go", { text: "done" });
+    assert.deepEqual(w.declared(), []);
+    await w.chat.dispose();
+    setWorkerSpec(path, null);
+  });
+
+  test("under write-only confinement a command server runs confined, and a failure reaches the chat that started it", async () => {
+    const cwd = project("write-only");
+    const outside = join(root, "outside-write-only");
+    const log = join(cwd, "wo.log");
+    approve([server("fine", log, ["--write", outside], ["echo"], { STUB_NONCE: "CONFINED" }), server("stuck", join(cwd, "s.log"), ["--write", outside, "--need-write"])]);
+    const told: unknown[] = [];
+    setChatHosts({ mcpTell: (parent, note) => void told.push([parent, note]) });
+    const path = chatFile(cwd);
+    const scope = { version: 1, level: "workspace-write", workspaceRoot: cwd, writable: [cwd], readOnly: [join(cwd, ".agent")], writeOnly: true };
+    const twoServers = { v: 1, servers: [...list("fine", log).servers, ...list("stuck", log).servers] };
+    setWorkerSpec(path, spec(cwd, twoServers, { extensions: [join(agentDir, "extensions", "sandbox", "index.ts")], flags: { sandbox: "on", "sandbox-parent": JSON.stringify(scope) } }) as never);
+    const w = await open(cwd, [], path);
+    await w.say("go", call("mcp__fine__echo"), call("mcp__stuck__echo"), { text: "done" });
+    const [fine, stuck] = w.results();
+    assert.match(fine!.text, /^CONFINED/, fine!.text);
+    assert.equal(existsSync(outside), false, "a write outside its worktree landed");
+    assert.ok(lines(log).some((e) => e.event === "write-failed"));
+    assert.equal(starts(log)[0].canary, null, "the clean environment holds under the confinement");
+    assert.equal(stuck!.isError, true);
+    await until(() => told.length > 0, "the parent's note");
+    const [parent, note] = told[0] as [string, { server: string; how: string; worker?: string }];
+    assert.equal(parent, join(root, "parent.jsonl"));
+    assert.equal(note.how, "write-only");
+    assert.equal(note.server, "stuck");
+    assert.equal(chatLines(computer, "stuck")[0]!.where, "write-only");
+    await w.chat.dispose();
+    setWorkerSpec(path, null);
+    setChatHosts({});
   });
 });

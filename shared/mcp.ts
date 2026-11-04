@@ -1,11 +1,11 @@
 /**
- * MCP servers on the wire (§app/mcp): what the Settings tab, the project page, the setup card and a chat's
- * note read. Rows carry codes and names; the page draws the words (§design.copy-deck/mcp-servers). A
+ * MCP servers on the wire: what the Settings tab, the project page, the setup card and a chat's
+ * note read. Rows carry codes and names; the page draws the words. A
  * refusal is a non-2xx `{error, code?}` whose `error` is the deck's own sentence. No answer ever carries a
  * secret's value. Imports nothing.
  */
 
-/** The first that applies, §app.mcp/rows. `no-check`: approved, nothing recorded (a Check was cut off). */
+/** The first that applies. `no-check`: approved, nothing recorded (a Check was cut off). */
 export type McpRowState = "waiting" | "off" | "needs-sign-in" | "failed" | "connected" | "no-check";
 
 export interface McpServerRow {

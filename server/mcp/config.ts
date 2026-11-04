@@ -1,4 +1,4 @@
-// The two places a server is declared (§app/mcp): this computer's list, `<agent dir>/mcp.json`, in pi's shape,
+// The two places a server is declared: this computer's list, `<agent dir>/mcp.json`, in pi's shape,
 // so a server added from a terminal shows up too; and a project's shared `.mcp.json` at a checkout's root.
 // Both read into one normalized entry. Nothing here runs or expands anything.
 import { readFileSync, renameSync, mkdirSync, writeFileSync } from "node:fs";
@@ -110,5 +110,5 @@ export function entryJson(e: McpEntry): Record<string, unknown> {
 export const putComputerEntry = (e: McpEntry) => writeComputerList((servers) => void (servers[e.name] = entryJson(e)));
 export const removeComputerEntry = (name: string) => writeComputerList((servers) => void delete servers[name]);
 
-/** `sova`, in any case, is Sova's own (§app.mcp/add-server). */
+/** `sova`, in any case, is Sova's own. */
 export const reservedName = (name: string): boolean => name.toLowerCase() === "sova";

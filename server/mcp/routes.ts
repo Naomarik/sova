@@ -1,6 +1,6 @@
-// The page's MCP routes (§app/mcp). Reads are open to every caller; every write is the page's own
+// The page's MCP routes. Reads are open to every caller; every write is the page's own
 // (`pageOnlyRefusal`): adding and editing count as approving, and everything that changes a server stays on the page
-// (§app.mcp/reads). A refusal's `error` is the deck's sentence (§design.copy-deck/mcp-servers).
+//. A refusal's `error` is the deck's sentence.
 import type { Context, Hono } from "hono";
 import type { McpErrorCode, McpNewServer, McpServerRow, McpSignIn } from "../../shared/mcp";
 import { pageOnlyRefusal, type PageOnlyWords } from "../page-only";
@@ -132,7 +132,7 @@ function entryOfNew(b: Partial<McpNewServer> & Record<string, unknown>): { entry
 
 const computer: McpOwner = { kind: "computer" };
 
-/** Save, approve that exact entry and Check it: what Add and Edit are (§app.mcp/add-server). */
+/** Save, approve that exact entry and Check it: what Add and Edit are. */
 async function saveApproved(entry: McpEntry, secret?: { name: string; value: string }): Promise<McpServerRow> {
   putComputerEntry(entry);
   if (secret) saveSecret(computer, entry.name, secret.name, secret.value);

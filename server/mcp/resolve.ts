@@ -1,5 +1,5 @@
 // A server as it stands on disk now: its entry, version, approval and values. Files only, so a chat's process
-// checks a start with no server to ask (§app.mcp/approval: "Every start checks the approval again").
+// checks a start with no server to ask.
 import { isAbsolute, resolve } from "node:path";
 import { agentRoot } from "../state-root";
 import { readComputerList, readProjectList, reservedName, type McpEntry } from "./config";

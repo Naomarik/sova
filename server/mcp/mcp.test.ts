@@ -1,4 +1,4 @@
-// Run: pnpm test -- server/mcp/mcp.test.ts. The rules of MCP servers that need no process (§app/mcp): reading an
+// Run: pnpm test -- server/mcp/mcp.test.ts. The rules of MCP servers that need no process: reading an
 // entry, what a value may name, the version approved, trust, secrets, a row's state and a chat's list.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";

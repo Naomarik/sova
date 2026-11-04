@@ -1,4 +1,4 @@
-// Approvals (§app.mcp/approval): `<state root>/mcp-trust.json`, per computer and per checkout, outside every
+// Approvals: `<state root>/mcp-trust.json`, per computer and per checkout, outside every
 // repository. The newest 8 versions of each server stay approved. Only the page's route writes here.
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

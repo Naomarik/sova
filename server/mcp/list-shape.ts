@@ -1,4 +1,4 @@
-// A chat's list as session state (§app.mcp/tool-list): the shape alone, read by the state registry.
+// A chat's list as session state: the shape alone, read by the state registry.
 import type { McpCheckRecord } from "./store";
 import type { McpOwner } from "./trust";
 

@@ -1,4 +1,4 @@
-// Sign In (§app.mcp/sign-in): pi's `/mcp login` in the short-lived process, which opens the page's dialog on the
+// Sign In: pi's `/mcp login` in the short-lived process, which opens the page's dialog on the
 // service's address and finishes on its own callback or on an address the person pastes. A Check follows.
 import type { McpServerRow, McpSignIn } from "../../shared/mcp";
 import { agentRoot } from "../state-root";

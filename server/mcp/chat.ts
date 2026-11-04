@@ -18,7 +18,7 @@ export interface McpListAsk {
   onMcp: string[];
 }
 
-/** A chat's list now; null for a remote chat, whose files aren't here (§app.mcp/sandbox). */
+/** A chat's list now; null for a remote chat, whose files aren't here. */
 export async function chatListFor(ask: McpListAsk): Promise<McpChatList | null> {
   const stored = await readStoredCwd(ask.path).catch(() => null);
   if (stored !== null && plan(stored).kind === "remote") return null;

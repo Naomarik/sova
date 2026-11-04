@@ -1,4 +1,4 @@
-// Remove takes a server's sign-in with it (§app.mcp/rows): its keys in pi's `mcp-auth.json` (`<namespace>|<url>`,
+// Remove takes a server's sign-in with it: its keys in pi's `mcp-auth.json` (`<namespace>|<url>`,
 // quirk P33). The file stays the owner's alone.
 import { readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

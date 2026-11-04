@@ -1,4 +1,4 @@
-// The version a person approves (§app.mcp/approval): the exact entry, and every file in the folder of any `./`
+// The version a person approves: the exact entry, and every file in the folder of any `./`
 // path it names. Any change makes a new version. Sync, and read per call: what is on disk now is what counts.
 import { createHash } from "node:crypto";
 import { lstatSync, readdirSync, readFileSync, readlinkSync } from "node:fs";

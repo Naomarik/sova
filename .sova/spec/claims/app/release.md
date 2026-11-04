@@ -458,8 +458,9 @@ release-page (the notes out, `gh release create --verify-tag`) and outside-check
 and release-page-withdrawn after a Withdraw. Its driver `scripts/sova-release.mjs` carries the steps'
 mechanics and the seven release-only checks (`references/checks.md`). Pausing and resuming the queue,
 the hand tag and push, and the hand fast-forward of the live tree are gone: the freeze, the release
-entry and Publish replace them. Its own `release` section and a `site` deploy target (the landing page
-and docs, shipped as a deploy after a release) wait in `.sova/playbooks/release/project-sections.json`,
-not yet in `.sova/project.json`, because a running Sova that predates the `release` key reads the file
-invalid: they move in with a later landing, once Sova runs this code. Until then Sova's own Releases
-tab reads Not set up.
+entry and Publish replace them. Its own `release` section (this playbook, tag `v${version}`, semantic
+versions, the one channel `stable`, a release commit and the seven checks) and a `site` deploy target
+(the landing page and docs on Cloudflare Pages, shipped only from a published release's commit) are in
+`.sova/project.json`, in the canonical form `release-maker fmt` writes, and `release-maker check`
+passes on them. Both sections sit outside the definition's hash, so adding them left every recorded
+conformance proof of Sova's copies standing.

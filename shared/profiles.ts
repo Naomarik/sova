@@ -69,6 +69,8 @@ export const PROFILE_MINOR_MODES = ["align", "spec", "vis"] as const;
 export type CreateNamer = "a profile" | "an automation" | "the Overseer" | "a project overseer";
 /** The refusal when a starter names Create, which only a chat picks for itself (§chat.create-mode/per-chat-only). */
 export const createNotNamed = (who: CreateNamer): string => `Create is chosen in a chat's own mode menu, so ${who} can't name it. Nothing was changed.`;
+/** The refusal when a message sent to a chat by anything but its own composer is `/mode create`. */
+export const CREATE_NOT_SENT = "Create is chosen in the chat itself, so a message sent to it can't switch it. Nothing was sent.";
 /** The refusal when a default names Create. */
 export const CREATE_NO_DEFAULT = "Create is chosen in each chat, so no default holds it.";
 export type ProfileMinorMode = (typeof PROFILE_MINOR_MODES)[number];

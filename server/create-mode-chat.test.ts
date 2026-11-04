@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
-import { CREATE_NO_DEFAULT, createNotNamed } from "../shared/profiles";
+import { CREATE_NO_DEFAULT, CREATE_NOT_SENT, createNotNamed } from "../shared/profiles";
 import type { ChatModeResult } from "../shared/protocol";
 import { MODE } from "./harness/state-kinds";
 
@@ -26,6 +26,7 @@ const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { OVERSEER_SENDER_HEADER, senderSecret } = await import("./overseer-sender");
 const { ensureOverseer } = await import("./overseer");
 const { pageHeaders } = await import("./testing/page");
+const { promptSession } = await import("./session-prompt");
 const { CREATE_NOT_TAKEN } = await import("./mode-state");
 after(async () => {
   await disposeAllChats();
@@ -144,6 +145,22 @@ test("sent by anything but a composer the text names nothing: an Overseer's sova
   assert.notEqual((await get(path)).mode, "create");
   assert.notEqual(chat.harness.state.branch().latest(MODE)?.data.active.mode, "create", "the extension took nothing either");
   assert.ok(!chat.harness.activeTools().includes("create_guide"));
+});
+
+test("/mode create sent by a script or the Overseer is refused to the sender, and nothing goes", async () => {
+  await ensureOverseer();
+  const path = await newChat();
+  const size = readFileSync(path, "utf8").length;
+  const send = (headers: Record<string, string>) => app.request("/api/sessions/prompt", { method: "POST", headers: { ...json, ...headers }, body: JSON.stringify({ path, text: "/mode create" }) });
+  let res = await send({});
+  assert.equal(res.status, 409);
+  assert.equal(((await res.json()) as { error: string }).error, CREATE_NOT_SENT);
+  res = await send({ [OVERSEER_SENDER_HEADER]: senderSecret() });
+  assert.equal(res.status, 409);
+  assert.equal(((await res.json()) as { error: string }).error, createNotNamed("the Overseer"));
+  assert.equal(((await promptSession(path, "/mode create", undefined, "followUp", { projectOverseer: "po" })) as { error: string }).error, createNotNamed("a project overseer"));
+  assert.notEqual((await get(path)).mode, "create");
+  assert.equal(readFileSync(path, "utf8").length, size, "no row");
 });
 
 test("a strict chat in Create, in a real runtime, has lost edit and write, and they come back in normal", async () => {

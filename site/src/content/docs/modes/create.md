@@ -114,7 +114,8 @@ A card can hold:
 - **Project settings**, when the change is one settings file.
 - **Sova-wide settings**: everything Sova keeps for itself or for this computer, those with no screen
   included, such as a custom provider, the image fallback, a remote target, the sandbox policy, worker
-  priority or a summary timeout.
+  priority or a summary timeout. Mesh, public links, voice and updates aren't on cards: they stay on their
+  own screens.
 - **Merge queue settings**: what Settings → Merge Queue saves, such as pushing, review and each check's
   limits. Apply there is a save, with its commit and its waits: while a branch is checking, the card
   reads "Saves when the current branch finishes." Check commands, the install step, the target and the

@@ -133,7 +133,7 @@ computer's own page.
 
 A deploy takes your confirm: from the project's Deploy panel, or `--confirm` on `sova-project deploy.run`.
 
-**How strong this is.** It raises the bar; it isn't a wall. Sova tells its page from a program by how the
-token is sent. A chat without the sandbox runs as you, so it can read the token from disk, and a program
-that imitates the page is taken for it. A chat with its sandbox on can't reach Sova at all. The refusal
-stops the ordinary road and gives a chat the words to send you to the page.
+**How strong this is.** These approvals stop a chat following its instructions. They don't stop a program
+on this computer deliberately posing as your browser. One local route passes every door, and a chat whose
+own tools aren't sandboxed, the default state, can reach it. Whether a fully sandboxed chat can reach it
+isn't tested yet. The refusal stops the ordinary road and gives a chat the words to send you to the page.

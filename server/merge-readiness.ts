@@ -17,7 +17,7 @@ import { blockedNoteText, type DocsPreview, docsNudgeText, type Finished, fileLa
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
-import { DIRTY_TTL_MS, execGit, gitInputsStamp, type GitRunner, worktreeInsights, type WorktreeInsights } from "./worktrees";
+import { DIRTY_TTL_MS, execGit, gitInputsStamp, gitRefsStamp, type GitRunner, worktreeInsights, type WorktreeInsights } from "./worktrees";
 import { goneTreeState, type GoneState } from "./removed-worktrees";
 import { sessionsChanged } from "./list-generation";
 
@@ -541,12 +541,18 @@ export interface ReadinessDeps {
   served?: (dir: string) => Promise<boolean>;
   /** Git's "already merged" answer for an active tree (worktrees-state.ts mergedInto, the Session tab's own). */
   mergedInto?: (t: TrackedWorktree) => Promise<SessionBranchRow["mergedInto"] | undefined>;
+  /** The refs a tree's "already merged" answer rests on, as stat stamps (worktrees.ts gitRefsStamp); absent or null:
+      nothing pins it, git is asked each time. */
+  refsStamp?: (dir: string, refs: readonly string[]) => string | null;
   /** A branch's queue fields as the Session tab reads them, cut for the list, with the root its entry joins by
       (merge-queue/wire.ts branchQueueFields). Absent: none. */
   branchFields?: (path: string, branch: string) => Promise<{ root?: string; fields: Pick<SessionBranchRow, "queue" | "mergeServed" | "mergeProject"> }>;
   /** A branch's entry in its queue's newest view, read at listing time (wire.ts branchQueueNow): null when no view
       of that queue is known yet. Absent: the background read's answer stands. */
   queueNow?: (root: string, branch: string) => SessionBranchQueue | undefined | null;
+  /** A queue's project facts in its newest view, read at listing time (wire.ts branchProjectNow): null when no view
+      of that queue is known yet. Absent: the background read's answer stands. */
+  projectNow?: (root: string) => SessionBranchRow["mergeProject"] | null;
 }
 
 let wireMod: typeof import("./merge-queue/wire") | null = null;
@@ -598,9 +604,14 @@ const defaultDeps = (): ReadinessDeps => ({
     if (p?.state !== "ok" || !p.git) return false;
     return (await import("./merge-queue/served")).servedByQueue(p.root);
   },
-  mergedInto: async (t) => (await import("./worktrees-state")).mergedInto(t),
+  mergedInto: async (t) => (await import("./worktrees-state")).mergedInto(t, Date.now(), true),
+  refsStamp: gitRefsStamp,
   branchFields: async (path, branch) => (await import("./merge-queue/wire")).branchQueueFields(path, branch),
-  queueNow: (root, branch) => loadWire()?.branchQueueNow(root, branch) ?? null,
+  queueNow: (root, branch) => {
+    const w = loadWire();
+    return w ? w.branchQueueNow(root, branch) : null;
+  },
+  projectNow: (root) => loadWire()?.branchProjectNow(root) ?? null,
 });
 
 /** Per session file, what blocks each finished tree's landing, from the last published reading (nudgeSpecs). */
@@ -799,6 +810,25 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts, publ
   return { ...r, status };
 }
 
+/** An "already merged" answer stands this long at most with its refs unmoved: all a failed read's "not merged" can last. */
+export const MERGED_BACKSTOP_MS = 30 * 60_000;
+/** Each tree's "already merged" answer, while the refs it rests on stay put: sessions sharing a tree share it, and no
+    idle row asks git again. Taken before git is read, so refs moving during the read are never certified. */
+const mergedSeen = new Map<string, { stamp: string; at: number; v: Promise<SessionBranchRow["mergedInto"] | undefined> }>();
+function mergedByStamp(t: TrackedWorktree): Promise<SessionBranchRow["mergedInto"] | undefined> {
+  const ask = deps.mergedInto!;
+  const stamp = deps.refsStamp?.(t.path, ["master", "main", ...(t.baseBranch ? [t.baseBranch] : []), t.branch].map((b) => `refs/heads/${b}`)) ?? null;
+  if (stamp === null) return ask(t);
+  const key = `${t.path}\0${t.branch}\0${t.base}\0${t.baseBranch ?? ""}`;
+  const hit = mergedSeen.get(key);
+  if (hit && hit.stamp === stamp && deps.now() - hit.at < MERGED_BACKSTOP_MS) return hit.v;
+  const v = ask(t);
+  mergedSeen.delete(key);
+  mergedSeen.set(key, { stamp, at: deps.now(), v });
+  if (mergedSeen.size > 5000) mergedSeen.delete(mergedSeen.keys().next().value!);
+  return v;
+}
+
 /** One branch the chat counts, with the project root its queue entry is joined by at listing time. */
 export interface BranchReading {
   row: SessionBranchRow;
@@ -819,7 +849,7 @@ export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick
     trees.map(async (t): Promise<BranchReading> => {
       const exists = existsSync(t.path);
       const shared = sharedWith(t, s.id);
-      const merged = t.status === "active" && exists && deps.mergedInto ? await deps.mergedInto(t).catch(() => undefined) : undefined;
+      const merged = t.status === "active" && exists && deps.mergedInto ? await mergedByStamp(t).catch(() => undefined) : undefined;
       const q = exists && deps.branchFields ? await deps.branchFields(t.path, t.branch).catch(() => null) : null;
       const row: SessionBranchRow = {
         path: t.path,
@@ -836,12 +866,14 @@ export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick
 }
 
 /** A reading's branches with each served one's queue entry as its queue's newest view has it now. */
-export function joinBranches(readings: readonly BranchReading[], now: ReadinessDeps["queueNow"]): SessionBranchRow[] {
+export function joinBranches(readings: readonly BranchReading[], now: ReadinessDeps["queueNow"], project?: ReadinessDeps["projectNow"]): SessionBranchRow[] {
   return readings.map(({ row, root }) => {
-    if (!root || !now) return row;
-    const q = now(root, row.branch);
-    if (q === null) return row;
-    const { queue: _old, ...rest } = row;
+    if (!root) return row;
+    const p = project?.(root) ?? null;
+    const base = p ? { ...row, mergeProject: p } : row;
+    const q = now ? now(root, row.branch) : null;
+    if (q === null) return base;
+    const { queue: _old, ...rest } = base;
     return q ? { ...rest, queue: q } : rest;
   });
 }
@@ -854,7 +886,7 @@ export function joinBranches(readings: readonly BranchReading[], now: ReadinessD
 export function branchesOverlay(s: SessionSummary): SessionBranchRow[] | undefined {
   if (!branchesCovered(s)) return undefined;
   const b = cache.get(s.path)?.branches;
-  return b?.length ? joinBranches(b, deps.queueNow) : undefined;
+  return b?.length ? joinBranches(b, deps.queueNow, deps.projectNow) : undefined;
 }
 
 /** Ask the follow-up check for every merge card with a reply it hasn't answered. */
@@ -1051,8 +1083,9 @@ async function refresh(input: RefreshInput): Promise<void> {
   }
   const prev = cache.get(s.path);
   // A rewrite/replacement must not reuse compact entries just because the byte count grew.
-  const previousScan = prev?.file === input.file ? prev.scan : null;
-  const { scan, facts } = await readReadinessScan(s.path, input.size, previousScan);
+  const sameFile = prev?.file === input.file;
+  // The same bytes: their facts stand, and an aged read costs no file read (it is here for Git's sake).
+  const { scan, facts } = sameFile && prev.scan?.found && prev.facts ? { scan: prev.scan, facts: prev.facts } : await readReadinessScan(s.path, input.size, sameFile ? prev.scan : null);
   if (!current()) return;
   const fresh = forced.delete(s.path) || !prev || prev.key !== input.key || prev.file !== input.file;
   const longDirty = !fresh && !!facts?.trees.some((t) => dirtyTtlFor(s, t.path, false) > DIRTY_TTL_MS);
@@ -1354,6 +1387,7 @@ export function resetReadiness(): void {
   checksBySession.clear();
   blockedBySession.clear();
   restartBySha.clear();
+  mergedSeen.clear();
   serverCheckout = null;
   deps = defaultDeps();
 }

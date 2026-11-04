@@ -46,11 +46,12 @@ const MERGE_TTL_MS = 10_000;
 const mergeCache = new Map<string, { at: number; value: SessionWorktreeInfo["mergedInto"] | null }>();
 
 /** Whether git finds an active tree's branch already merged (SessionWorktreeInfo.mergedInto), cached MERGE_TTL_MS: the
-    Session tab's rows and the session list's branches (merge-readiness.ts) ask the one cache. */
-export async function mergedInto(t: TrackedWorktree, now = Date.now()): Promise<SessionWorktreeInfo["mergedInto"] | undefined> {
+    Session tab's rows and the session list's branches (merge-readiness.ts) ask the one cache. `fresh` asks git past
+    the cache: a caller that keeps the answer until the refs move must not keep one read before they moved. */
+export async function mergedInto(t: TrackedWorktree, now = Date.now(), fresh = false): Promise<SessionWorktreeInfo["mergedInto"] | undefined> {
   const key = `${t.path}\0${t.branch}\0${t.base}\0${t.baseBranch ?? ""}`;
   const hit = mergeCache.get(key);
-  if (hit && now - hit.at < MERGE_TTL_MS) return hit.value ?? undefined;
+  if (!fresh && hit && now - hit.at < MERGE_TTL_MS) return hit.value ?? undefined;
   let value: SessionWorktreeInfo["mergedInto"] | null = null;
   try {
     const p = await probeMerge(runGit, t);

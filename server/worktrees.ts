@@ -455,6 +455,35 @@ export function gitInputsStamp(dir: string, baseBranch?: string): string | null 
   return [tree, ...[...refs].map((r) => `${r}=${stat(join(layout.commonDir, r))}`)].join("\0");
 }
 
+/** A ref file's change stamp ("absent" for none). */
+function refStat(path: string): string {
+  try {
+    const st = statSync(path, { bigint: true });
+    return `${st.ino}:${st.size}:${st.mtimeNs}`;
+  } catch {
+    return "absent";
+  }
+}
+
+/** What an answer about refs alone rests on, as stat stamps read without Git: `refs` (paths under the common dir,
+ * such as refs/heads/master), packed-refs, and HEAD with the ref it names. Unlike gitInputsStamp it holds no index,
+ * which `git status` rewrites with nothing committed. null when the answer can't be pinned that way: a folder gone or
+ * unnamed, a reftable repository (no ref file moves), a ref name that isn't a plain path. */
+export function gitRefsStamp(dir: string, refs: readonly string[]): string | null {
+  const layout = plainLayout(dir);
+  if (layout === null || layout === "gone") return null;
+  try {
+    if (existsSync(join(layout.commonDir, "reftable"))) return null;
+    const head = readFileSync(join(layout.gitDir, "HEAD"), "utf8");
+    const named = /^ref: (refs\/[^\r\n]+)/.exec(head)?.[1];
+    const all = new Set(["packed-refs", ...(named ? [named] : []), ...refs]);
+    for (const r of all) if (r.startsWith("/") || r.includes("..")) return null;
+    return [head, ...[...all].sort().map((r) => `${r}=${refStat(join(layout.commonDir, r))}`)].join("\0");
+  } catch {
+    return null;
+  }
+}
+
 const CONTEXT_MOVED = Symbol("Git configuration context moved");
 
 function contextScope(layout: Layout): string {

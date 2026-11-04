@@ -183,3 +183,241 @@ test("a worker's and a baton's rows carry their branches, saying what their chat
   assert.equal([...r.trackedWorktrees().each()].length, 0);
   r.resetReadiness();
 });
+
+/** A stand-in for the server's queues: every Git-reading call is counted. */
+function listDeps(over: Partial<import("./merge-queue/wire").QueueListDeps> = {}) {
+  const asked = { project: 0, setup: 0, view: 0 };
+  const state = { refs: "r1", clock: 1_000, setUp: true, checks: "declared" as string, viewAt: 0, needsFix: [] as MergeEntry[] };
+  const deps: import("./merge-queue/wire").QueueListDeps = {
+    projectOf: async () => (asked.project++, { state: "ok", root: "/repo", name: "repo", git: true }),
+    treeStamp: () => "dotgit",
+    projectIdOf: () => "prj_1",
+    setupOf: async () => (asked.setup++, { target: "master", head: "h", checks: state.checks as never, setUp: state.setUp }),
+    stamp: () => state.refs,
+    view: async () => {
+      asked.view++;
+      return { ...view(new Date(Date.UTC(2026, 9, 1, 0, 0, ++state.viewAt)).toISOString(), { needsFix: state.needsFix }), target: "master", checks: state.checks } as unknown as MergeQueueView;
+    },
+    exists: () => true,
+    now: () => state.clock,
+    ...over,
+  };
+  return { asked, state, deps };
+}
+/** A view read by checkQueueViews (or a row) has answered. */
+const viewsSettled = async (read: () => boolean) => {
+  while (!read()) await new Promise<void>((go) => setImmediate(go));
+};
+
+test("a row read builds its queue's view once, then answers from what the queue said; a publish reaches it with no read", async () => {
+  wire.resetQueueViewsForTest();
+  const { asked, deps } = listDeps();
+  wire.setQueueListForTest(deps);
+  try {
+    const first = await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    assert.deepEqual(first, { root: "/repo", fields: { mergeServed: true, mergeProject: { target: "master", checks: "declared" } } });
+    for (let i = 0; i < 5; i++) await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    await wire.branchQueueFields("/repo/.wt/b", "feat/b");
+    assert.deepEqual([asked.view, asked.setup], [1, 1], "no view and no setup read while nothing moved");
+    assert.equal(asked.project, 2, "one project read per tree");
+
+    wire.noteQueueView({ ...view("2026-12-01T00:00:00.000Z", { waiting: [entry("feat/a", "queued", { position: 1 })] }), target: "master", checks: "declared" } as unknown as MergeQueueView);
+    assert.equal((await wire.branchQueueFields("/repo/.wt/a", "feat/a")).fields.queue?.state, "queued");
+    assert.equal(asked.view, 1);
+  } finally {
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+  }
+});
+
+test("a root's setup never stands past a move of its refs; a repo nothing pins asks each time", async () => {
+  wire.resetQueueViewsForTest();
+  const { asked, state, deps } = listDeps();
+  state.setUp = false;
+  wire.setQueueListForTest(deps);
+  try {
+    assert.equal((await wire.branchQueueFields("/repo/.wt/a", "feat/a")).fields.mergeProject?.checks, "declared");
+    state.refs = "r2";
+    state.checks = "none";
+    state.setUp = true;
+    const served = await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    assert.equal(served.fields.mergeServed, true, "the setup landed on the target: served at the next read");
+    assert.equal(served.fields.mergeProject?.checks, "none");
+
+    wire.resetQueueViewsForTest();
+    wire.setQueueListForTest({ ...deps, stamp: () => null });
+    const before = asked.setup;
+    await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    assert.equal(asked.setup, before + 2);
+  } finally {
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+  }
+});
+
+test("a tree whose .git moved has its project read again; one that isn't a repo is never kept", async () => {
+  wire.resetQueueViewsForTest();
+  let dot = "d1";
+  let git = true;
+  const { asked, deps } = listDeps();
+  wire.setQueueListForTest({ ...deps, treeStamp: () => dot, projectOf: async () => (asked.project++, { state: "ok", root: "/repo", name: "repo", git }) });
+  try {
+    await wire.branchQueueFields("/t", "b");
+    await wire.branchQueueFields("/t", "b");
+    assert.equal(asked.project, 1);
+    dot = "d2";
+    git = false;
+    assert.deepEqual(await wire.branchQueueFields("/t", "b"), { fields: {} });
+    assert.equal(asked.project, 2);
+    assert.deepEqual(await wire.branchQueueFields("/t", "b"), { fields: {} });
+    assert.equal(asked.project, 3, "a plain folder may become a repo");
+  } finally {
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+  }
+});
+
+test("the queue watch reads a view only when what it rests on moved, and the change reaches the list", async () => {
+  wire.resetQueueViewsForTest();
+  const { asked, state, deps } = listDeps();
+  wire.setQueueListForTest(deps);
+  try {
+    await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    assert.equal(wire.checkQueueViews(), 0, "the first look is a baseline");
+    for (let i = 0; i < 5; i++) assert.equal(wire.checkQueueViews(), 0);
+    assert.equal(asked.view, 1);
+
+    // The target moved with no save(): its checks changed, and a sent-back entry appears in the view.
+    state.refs = "r2";
+    state.checks = "none";
+    const before = listGeneration();
+    assert.equal(wire.checkQueueViews(), 1);
+    assert.equal(wire.checkQueueViews(), 0, "one read per move");
+    await viewsSettled(() => asked.view === 2 && listGeneration() > before);
+    assert.equal(wire.branchProjectNow("/repo")?.checks, "none", "the project facts join at listing time");
+    assert.equal(wire.checkQueueViews(), 0);
+
+    state.clock += wire.VIEW_BACKSTOP_MS;
+    assert.equal(wire.checkQueueViews(), 1, "the backstop bounds what no stamp sees");
+    await viewsSettled(() => asked.view === 3);
+  } finally {
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+  }
+});
+
+test("the queue watch sees a sent-back branch's worktree go, and a repo nothing pins is re-read on a clock", async () => {
+  wire.resetQueueViewsForTest();
+  let there = true;
+  const { asked, state, deps } = listDeps({ exists: () => there });
+  state.needsFix = [entry("feat/a", "needs-fix", { worktree: "/repo/.wt/a" })];
+  wire.setQueueListForTest(deps);
+  try {
+    await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    wire.checkQueueViews();
+    assert.equal(wire.checkQueueViews(), 0);
+    there = false;
+    assert.equal(wire.checkQueueViews(), 1);
+    await viewsSettled(() => asked.view === 2);
+
+    wire.resetQueueViewsForTest();
+    wire.setQueueListForTest({ ...deps, stamp: () => null });
+    await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    wire.checkQueueViews();
+    assert.equal(wire.checkQueueViews(), 0);
+    state.clock += 20_000;
+    assert.equal(wire.checkQueueViews(), 1);
+  } finally {
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+  }
+});
+
+test("a served queue going away drops its view; a row keeps nothing of it", async () => {
+  wire.resetQueueViewsForTest();
+  const { state, deps } = listDeps();
+  let served = true;
+  const view0 = deps.view;
+  wire.setQueueListForTest({ ...deps, view: (root) => (served ? view0(root) : Promise.resolve(null)) });
+  try {
+    await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    wire.checkQueueViews();
+    served = false;
+    state.refs = "r2";
+    wire.checkQueueViews();
+    await viewsSettled(() => wire.branchProjectNow("/repo") === null);
+  } finally {
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+  }
+});
+
+test("a tree's merged answer: one read for every session on it, never kept past a move of its refs", async () => {
+  r.resetReadiness();
+  let refs = "r1";
+  let clock = 1_000;
+  let merged: { target: string; sha: string } | undefined;
+  const asked: string[] = [];
+  const stamped: (readonly string[])[] = [];
+  r.configureReadiness({
+    now: () => clock,
+    mergedInto: async (t) => (asked.push(t.path), merged),
+    refsStamp: (_d, list) => (stamped.push(list), refs),
+    branchFields: async () => ({ fields: {} }),
+  });
+  try {
+    const t = tree(own, "feat/own") as never;
+    const facts = { trees: [t] };
+    await r.computeBranches({ id: SID }, facts);
+    await r.computeBranches({ id: PARENT }, facts);
+    assert.equal(asked.length, 1, "sessions on one tree share the answer");
+    assert.deepEqual([...new Set(stamped[0]!)].sort(), ["refs/heads/feat/own", "refs/heads/main", "refs/heads/master"], "the branch, its base and master/main");
+
+    refs = "r2";
+    merged = { target: "master", sha: "m" };
+    const b = await r.computeBranches({ id: SID }, facts);
+    assert.deepEqual(b![0]!.row.mergedInto, merged, "the base moved: the row says merged at once");
+    assert.equal(asked.length, 2);
+
+    clock += r.MERGED_BACKSTOP_MS;
+    await r.computeBranches({ id: SID }, facts);
+    assert.equal(asked.length, 3, "a failed read's answer can't stand forever");
+
+    r.configureReadiness({ refsStamp: () => null });
+    await r.computeBranches({ id: SID }, facts);
+    await r.computeBranches({ id: SID }, facts);
+    assert.equal(asked.length, 5, "nothing pins it: git each time");
+  } finally {
+    r.resetReadiness();
+  }
+});
+
+test("a re-read keeps an unchanged file's facts, never a changed file's: its new trees show", async () => {
+  r.resetReadiness();
+  r.configureReadiness({ served: async () => true, asksUser: () => undefined, insights: { treeStatus: async (p: string) => status(p) }, branchFields: async () => ({ fields: {} }) });
+  try {
+    const path = sessionFile([tree(own, "feat/own")]);
+    const row = summary(path);
+    r.readinessOverlay(row);
+    await r.readinessIdle();
+    assert.equal(r.branchesOverlay(row)!.length, 1);
+    const more = { type: "custom", customType: "worktrees", data: { version: 1, trees: [tree(own, "feat/own"), tree(inherited, "feat/two")] }, timestamp: "2026-09-29T15:37:00.000Z", id: `e${++n}`, parentId: `e${n - 1}` };
+    writeFileSync(path, `${readFileSync(path, "utf8")}${JSON.stringify(more)}\n`);
+    r.readinessOverlay(row);
+    await r.readinessIdle();
+    assert.equal(r.branchesOverlay(row)!.length, 2);
+  } finally {
+    r.resetReadiness();
+  }
+});
+
+test("joinBranches: a served branch's project facts come from its queue's newest view; an unserved one's never do", () => {
+  const rows = [
+    { row: { path: "/a", branch: "a", status: "active" as const, exists: true, mergeProject: { target: "master", checks: "declared" as never } }, root: "/r" },
+    { row: { path: "/b", branch: "b", status: "active" as const, exists: true, mergeProject: { target: "master", checks: "declared" as never } } },
+  ];
+  const out = r.joinBranches(rows, () => null, () => ({ target: "trunk", checks: "none" as never }));
+  assert.equal(out[0]!.mergeProject?.target, "trunk");
+  assert.equal(out[1]!.mergeProject?.target, "master");
+});

@@ -1499,6 +1499,66 @@ export interface SessionSetupFileText {
   text: string;
 }
 
+// GET /api/sessions/context-view?path=<session file> -> SessionContextView   (server/context-tab.ts:
+//                                  what fills one chat's context window now, for the session pane's
+//                                  Context tab. A worker is read by its own session file. The files
+//                                  and skills are /api/sessions/context's read; the mode, rules and
+//                                  tools are the HELD chat's prompt and declarations (`prompt: false`
+//                                  when this server doesn't hold it: they are unknown, not empty).
+//                                  Every size is an estimate (CHARS_PER_TOKEN). 400 a bad path, 404 a
+//                                  missing session file. Never cached; read-only.)
+// ---------------------------------------------------------------------------
+/** One part of the prompt. A file's text opens through /api/sessions/context/file with `path`; any other
+    part carries its `text`. */
+export interface SessionContextPart {
+  id: string;
+  label: string;
+  detail?: string;
+  /** ≈ tokens it costs in the prompt. */
+  tokens: number;
+  path?: string;
+  text?: string;
+}
+
+/** An instruction file in a folder below the chat's own, loaded when the agent reads, edits or writes a
+    file there. */
+export interface SessionContextNested {
+  /** Relative to cwd, e.g. "api/AGENTS.md". */
+  path: string;
+  /** Absolute: what /api/sessions/context/file reads. */
+  abs: string;
+  /** Its folder, relative to cwd. */
+  folder: string;
+  tokens: number;
+  /** Its text is in the context now (counts toward the total); else it shows only what it would cost. */
+  loaded: boolean;
+}
+
+export type SessionContextView =
+  | {
+      state: "ok";
+      cwd: string;
+      /** The model's context window; null unknown. */
+      window: number | null;
+      /** The last reply's input + cacheRead + cacheWrite; null before the first reply (or since a compaction). */
+      total: number | null;
+      /** The chat is held here, so mode, rules and tools were read; false: they are unknown. */
+      prompt: boolean;
+      instructions: SessionContextPart[];
+      mode: SessionContextPart | null;
+      rules: SessionContextPart[];
+      skills: SessionContextPart[];
+      tools: SessionContextPart[];
+      /** ≈ the messages in context, loaded nested files left out (they are `nested`). */
+      conversation: number;
+      nested: SessionContextNested[];
+      /** The walk below cwd stopped at its cap: the list may be incomplete. */
+      nestedIncomplete?: true;
+      checkedAt: number;
+    }
+  | { state: "remote"; cwd: string; checkedAt: number }
+  | { state: "unavailable"; cwd: string; reason: string; checkedAt: number };
+
 // GET /api/sessions/tools?path=<session file> -> SessionTools   (server/session-tools.ts,
 //                                  §chat.transcript/setup-card-tools: the tools the HELD chat declares
 //                                  to its model now, in its order, with the descriptions as declared.

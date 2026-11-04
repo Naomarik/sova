@@ -201,6 +201,7 @@
     "schedule.list",
     "playbook.list",
     "draft-spec.list",
+    "session.context.view",
     "project.verb.release.status",
     "project.verb.release.logs",
     "project.verb.release.request",

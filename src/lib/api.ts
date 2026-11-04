@@ -68,6 +68,7 @@ import type {
   SessionInsight,
   SessionSetup,
   SessionSetupFileText,
+  SessionContextView,
   SessionTools,
   SessionSummary,
   ThemeList,
@@ -1005,6 +1006,8 @@ export const fetchSessionSetup = (path: string, fresh = false) =>
 /** One file the session's setup lists, as text (§chat.transcript/setup-card-open-file). Never cached. */
 export const fetchSetupFile = (path: string, file: string) =>
   request<SessionSetupFileText>(`/api/sessions/context/file?path=${encodeURIComponent(path)}&file=${encodeURIComponent(file)}`);
+/** What fills a chat's context window now, for the Context tab; a worker by its own session file. Never cached. */
+export const fetchSessionContextView = (path: string) => request<SessionContextView>(`/api/sessions/context-view?path=${encodeURIComponent(path)}`);
 /** The tools a held chat declares to its model now (§chat.transcript/setup-card-tools). Never cached. */
 export const fetchSessionTools = (path: string) => request<SessionTools>(`/api/sessions/tools?path=${encodeURIComponent(path)}`);
 /** Switch a new session's context files and skills (§chat.transcript/setup-card-toggles): the

@@ -197,7 +197,7 @@ the Usage tab stays one tap away in the strip.
 
 The pane is Session detail: a head, the remote controls row (§app.shell/remote-session-chips), a
 tab strip, and one tab's panel, which scrolls on its own. The tabs, in this order: **Session ·
-Timeline · Agents · Usage · Sharing · Skills · Explain** (`.tabs.session-tabs`, `role="tablist"`, one
+Timeline · Agents · Usage · Context · Sharing · Skills · Explain** (`.tabs.session-tabs`, `role="tablist"`, one
 `role="tabpanel"`; roving `tabindex`, Left/Right wrapping, Home/End). Every tab is always in the
 strip, empty or not: a tab that came and went would move the strip under the reader.
 
@@ -207,12 +207,13 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   §chat.timeline/opening-it; the head's token chip: Usage). The pane keeps the chosen tab per
   session path, in memory only. With none kept, it opens on Agents when a worker is working at
   open, else on Session, settled once at open so the tab never moves when the last worker
-  finishes. Usage and Sharing are never the default.
+  finishes. Usage, Context and Sharing are never the default.
 - **The strip never wraps.** In a narrow pane the tabs tighten, then the strip scrolls sideways,
   and the selected tab is scrolled into view (to the nearest edge) when the pane opens and whenever
   the tab changes, so a tab a door opened is never off-screen at 375px.
 - **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
-  Command), Context, Repository, Worktrees (§chat.worktrees/pane), Identity, Compactions, Changes, and Memory
+  Command), Context (its sentence followed by a **See what fills it** link that opens the Context
+  tab), Repository, Worktrees (§chat.worktrees/pane), Identity, Compactions, Changes, and Memory
   (§app.subagents-pane/memory-outline).
   The session's actions sit at the right end of the Path heading row, so they add no row of their
   own and the path wraps below them at full width: Move into group (a small square folder icon,
@@ -254,6 +255,7 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   until a session's first read lands. While a recipient of a live share is viewing now (a background
   tab, "Open in a tab", never counts), the tab carries a count chip, and its accessible name is
   "Sharing, {n} viewing now"; at zero there is no chip and the name is "Sharing".
+- **Context** is what fills this chat's context window (§app.subagents-pane/context-tab).
 - **Timeline** is §chat/timeline, **Agents** the list and transcript below; **Skills** says which
   skills loaded and when, and **Explain** lists the session's /explain pages.
 
@@ -287,6 +289,61 @@ and memory is on. Nothing in it changes memory.
 - **Jump.** Each line has a "Show in transcript" button that lands on its first message's row
   (the transcript's jump, §chat.timeline/jumping); in the drawer band the pane closes on the jump.
   A message the transcript doesn't hold says "That message isn't in the transcript on screen."
+
+## §app.subagents-pane/context-tab — The Context tab: what fills this chat's window
+
+The Context tab shows what is inside this chat's own context window, and what each part costs. It
+is read-only: nothing in it changes the chat, switches a file off or keeps a record of what was
+sent. Each part is read as the chat's folder and the chat hold it now (`GET
+/api/sessions/context-view`, the catalogue's `session.context.view`).
+
+- **Whose window.** When the chat has workers with a session file, a **Whose context** picker
+  leads the tab: This chat, then each worker by its name. A worker's window reads the same way,
+  from that worker's own session. A picked worker that leaves the list falls back to this chat.
+- **The top line**, under **Context window**, is the fill as of the last reply, counted as the
+  context readout counts it (§chat.context-window/last-reply): `{n} of {window} tokens · {p}%`,
+  then the room left (`· {free} left`). With no known window it reads `{n} tokens · this model's
+  limit is unknown`. Before the chat (or the picked worker) has a reply that measured it, it reads
+  "Nothing sent yet". A note under it says the sizes are estimates and what Other is; for a chat
+  this server isn't running, it adds that its mode, rules and tools are unknown and fall under Other.
+- **The lines**, biggest first: one per instruction file in the window, named by its path, relative
+  inside the chat's folder, `~/...` under the home folder and whole elsewhere, the reading window's
+  title too (a file
+  switched off for this chat, §chat.transcript/setup-card-toggles, isn't in it; a subfolder file is,
+  once it has loaded), then **Mode**, **Rules and docs** (the rest of the system prompt), **Skills
+  offered** and **Tools**, each summed, and **Conversation** (the messages since the latest
+  compaction, its kept part included, less the loaded subfolder files, which have their own lines).
+  Once a reply has given a total, **Other** joins them: the total minus every other line, never
+  below 0, what the estimates don't explain (Claude Code's own prompt, for example). A line at 0 is
+  left out. **Free** comes last, the window minus the total, once both are known. Every size but
+  Free is an estimate, shown with ≈: text at 4 characters a token, a skill as the model is offered
+  it (name, description, location), a tool as its declaration. So the lines add up to the total
+  whenever the estimates don't overshoot it.
+- **Reading a part.** A line of one part (each instruction file's line, and a summed line holding
+  only one) opens it in the reading window (§app/markdown-viewer) directly. A line grouping several
+  (Mode, Rules and docs, Skills offered or Tools, when it holds several) opens the explorer list
+  first: the folder viewer (§app/folder-viewer) under the lines, titled with the line's name and
+  holding that line's parts alone, each a plain name with its ≈ size. The line reads as expanded
+  while its list is open, and pressing another replaces the list. Conversation, Other and Free open
+  nothing. Picking a part opens it in the reading window, which shows it by its type (a tool's
+  declaration as JSON, a file by its name, a part Sova composed as markdown), and closing that
+  returns to the list as it was. A file is read through the setup card's file read
+  (§chat.transcript/setup-card-open-file), as it is on disk now, at every open. A fresh read of the
+  tab lists the parts again and never reads an open file again. The list's **Close** puts it away;
+  picking another chat does too.
+- **Subfolder instructions.** When the chat's folder has instruction files in folders below it
+  (§chat/subfolder-instructions), a section lists each: its path, its folder and its ≈ size, and a
+  **Loaded** or **Not yet loaded** chip. A loaded file is already in the total; one not yet loaded
+  shows only what it would cost. Pressing one opens it in the reading window. The folder walk follows the
+  loading's skip rule and stops after 5,000 folders; then the section says "This list may be
+  incomplete."
+- **Fresh, without a timer.** It reads once when it opens, and again each time this chat's
+  session file has changed and settled (a reply or a tool result written), never on a timer.
+- **When it can't read.** While the first read is out: "Reading this chat's context." A chat on
+  another machine: "This chat runs on another machine, so its context can't be read here." A
+  failed read: "Couldn't read this chat's context." and the reason.
+- **Where it is.** Every Session detail pane has it, an overseer's included; nothing is added to
+  the overseer screens. A share page never shows it.
 
 ## §app.subagents-pane/body-list-transcript — Body: list | transcript
 

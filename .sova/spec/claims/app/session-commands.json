@@ -12,12 +12,14 @@
       "server/commands-sessions.test.ts",
       "server/commands-fuzz.test.ts",
       "server/commands-fuzz/known-500.json",
-      "server/commands-inventory/baseline.json"
+      "server/commands-inventory/baseline.json",
+      "docs/commands.md",
+      "src/card-toolkit/commands.gen.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-11-03T23:49Z",
-      "source": "pi-session:4441e428-24f6-4250-885d-3456497e0d92#e164e6ea"
+      "at": "2026-11-04T01:37Z",
+      "source": "pi-session:7a7258e9-bad0-4fcd-9d36-2acd1d3e9527#1e870985"
     }
   },
   "§app/session-commands": {

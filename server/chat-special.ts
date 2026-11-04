@@ -13,7 +13,8 @@ import { authorNotes, batonContextPhrases, labelAuthors, redactContext } from ".
 import type { PiExtensionAPI, PiExtensionFactory, PiLoaderOptions, PiToolDefinition } from "./harness/pi/extension-types";
 import { toolStateWriter } from "./harness/pi/state";
 import { toolCtx } from "./harness/pi/tools";
-import { RootConfinement } from "./overseer-deny";
+import { deeperContextExtension } from "./harness/pi/deeper-context";
+import { RootConfinement, SecretGuard } from "./overseer-deny";
 import { assistantText } from "./overseer-id-check";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 
@@ -57,6 +58,15 @@ export interface SpecialBuild {
 }
 
 /** The loadout of one build of a special chat. */
+/** Which subfolder instruction files a special loadout's chat may load: none with no context files, else
+    only what its file tools may read (never a secret; a confined chat's root alone). The hook and the
+    Context tab's list both apply this. */
+export function deeperContextAllow(l: SpecialSpec["loader"]): ((abs: string) => boolean) | null {
+  if (l.noContextFiles) return null;
+  const within = l.contextFilesWithin;
+  return (p) => !new SecretGuard().isSecret(p) && (!within || new RootConfinement(within.root, within.out).problem(p) === null);
+}
+
 export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialPort, deps: SpecialDeps): SpecialBuild {
   // A build starts from the spec's own answer (the prompt as the loadout opens), until a run asks.
   lastAnswer.set(chatId, spec.start);
@@ -134,6 +144,7 @@ export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialP
 
   const l = spec.loader;
   const within = l.contextFilesWithin;
+  const deeperAllow = deeperContextAllow(l);
   const loader: PiLoaderOptions = {
     // The project overseer's: the context files pi found inside its root and outside what its file
     // tools never read (the project's own AGENTS.md, never the host's).
@@ -150,7 +161,14 @@ export function specialLoadout(chatId: string, spec: SpecialSpec, port: SpecialP
     ...(l.noPromptTemplates ? { noPromptTemplates: true } : {}),
     ...(l.noThemes ? { noThemes: true } : {}),
     ...(l.noContextFiles ? { noContextFiles: true } : {}),
-    extensionFactories: [factory, ...(spec.memory && deps.memory ? [deps.memory()] : []), ...(spec.visRetry && deps.visRetry ? [deps.visRetry()] : [])],
+    extensionFactories: [
+      factory,
+      ...(spec.memory && deps.memory ? [deps.memory()] : []),
+      ...(spec.visRetry && deps.visRetry ? [deps.visRetry()] : []),
+      // Subfolder instruction files, never outside what its file tools may read (a loadout with no
+      // context files gets none).
+      ...(deeperAllow ? [deeperContextExtension({ allow: deeperAllow })] : []),
+    ],
     // The OVERRIDE, not appendSystemPrompt: passing appendSystemPrompt suppresses discovery of the
     // user's own APPEND_SYSTEM.md, and the override keeps it (resource-loader.js:386-396).
     appendSystemPromptOverride:

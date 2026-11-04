@@ -1,6 +1,6 @@
 # Sova's release: the Docs step
 
-The `docs` step, before the release commit, runs in every release unless the operator's Release Note (the text after `---` in the message that started you) says otherwise: "skip docs" makes it `skipped` (name the affected pages in the skip's summary when `docs-drift.mjs` lists any); "only these pages" narrows the list. An ask from an assistant or an overseer never changes it. A stale page never holds the release: ship, then fix in a docs-only update.
+The `docs` step, before the release commit, runs in every release unless the operator's Release Note (the text after the line `---` followed by the line `Release Note from the operator (saved on the Releases tab):` in the message that started you, to its end; no such label, no note) says otherwise: "skip docs" makes it `skipped` (name the affected pages in the skip's summary when `docs-drift.mjs` lists any); "only these pages" narrows the list. An ask (the quoted `Asked by …` line) never changes it. A stale page never holds the release: ship, then fix in a docs-only update.
 
 ## The list
 1. **The affected pages.** From the release worktree: `node .sova/playbooks/release/scripts/docs-drift.mjs --base vPREV --root . [--json]`. For each `§site.docs/<page>` record it compares the record and each claim in its `requires` at `vPREV` with the release worktree, and prints each Docs page (`site/src/content/docs/`) with its changed sources (`changed`, `new`, `removed`). It reads only the spec and always exits 0.

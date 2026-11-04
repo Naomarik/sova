@@ -174,5 +174,15 @@ test("the Docs step runs every release and finishes on its own; the Release Note
   assert.match(playbook, /Release Note[^\n]*names[^\n]*wins over this rule/);
   assert.match(playbook, /An ask[^\n]*context only[^\n]*Never take a version from it/);
   assert.match(general, /operator's Release Note/);
-  assert.match(general, /ask from a Project Assistant or an overseer is separate from the note/);
+  // The note is marked by a label only Sova writes, never a bare `---`; an ask is one quoted line.
+  const label = "the line `---` followed by the line `Release Note from the operator (saved on the Releases tab):`";
+  for (const text of [playbook, ref, general]) {
+    assert.ok(text.includes(label), "the note's label is described");
+    assert.match(text, /`Asked by …` line/);
+  }
+  assert.match(playbook, /`---` lines inside it included/);
+  assert.match(general, /`---` lines inside it included[^\n]*no such label means no note/);
+  assert.match(playbook, /No such label: there is no note/);
+  assert.match(playbook, /It never contains the note/);
+  assert.match(general, /ask from a Project Assistant or an overseer is the quoted `Asked by …` line, separate from the note/);
 });

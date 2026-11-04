@@ -25,6 +25,7 @@ export interface SettingsQueue {
   cancelPendingSave(): Promise<boolean>;
   settingsChanged(): void;
   readonly store: { readonly dir: string };
+  runWhenQuiet?(branch: string, fn: () => Promise<void>): Promise<boolean>;
 }
 
 export interface SettingsRouteDeps {
@@ -189,6 +190,11 @@ export function registerLiveMergeSettingsRoutes(app: Hono<any>): void {
       q.settingsChanged();
     },
     modelDenial: async (ref) => modelCheck.denial(ref),
+    async whenQuiet(id, branch, fn) {
+      if (!(await import("./wire")).mergeQueues()) return false; // Still starting: asked again at the next read.
+      const q = await served(id);
+      return q?.runWhenQuiet ? q.runWhenQuiet(branch, fn) : null;
+    },
   });
 }
 

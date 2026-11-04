@@ -11,8 +11,19 @@ export interface QueueCardPort {
   models(projectId: string, patch: { review?: ModelChoice | null; thread?: ModelChoice | null }): Promise<void>;
   /** Why this model can't be picked, or null. */
   modelDenial(ref: string): Promise<string | null>;
+  /**
+   * Run `fn`, a commit on `branch`, at a moment no branch holds the target: true when it ran (the queue takes the
+   * commit as its own), false while a branch checks or the target waits for a resume (nothing ran), null when the
+   * queue doesn't serve the project.
+   */
+  whenQuiet?(projectId: string, branch: string, fn: () => Promise<void>): Promise<boolean | null>;
 }
 
 let port: QueueCardPort | null = null;
 export const setQueueCardPort = (p: QueueCardPort | null): void => void (port = p);
 export const queueCardPort = (): QueueCardPort | null => port;
+
+/** What waits for the queue's next quiet point: held cards' Apply (server/project-settings.ts), by the queue's root. */
+let quietWork: ((root: string) => Promise<void>) | null = null;
+export const setQueueQuietWork = (w: ((root: string) => Promise<void>) | null): void => void (quietWork = w);
+export const queueQuietWork = (): ((root: string) => Promise<void>) | null => quietWork;

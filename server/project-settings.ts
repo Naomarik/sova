@@ -14,7 +14,8 @@ import { COPIES_EDIT_KEYS, COPIES_FIELD, PROJECT_EDIT_KEYS } from "../shared/pro
 import { copyLimitOf } from "../shared/project-slots";
 import { copyLimitProblem, machineCopyLimit, setMachineCopyLimit } from "./project-services/copy-limit";
 import type { MergeQueueSettings, MergeSettingsChange, ModelChoice } from "../shared/merge-queue-settings";
-import { queueCardPort } from "./merge-queue/card-port";
+import { queueCardPort, setQueueQuietWork } from "./merge-queue/card-port";
+import { listProjects } from "./projects/spaces";
 import { parseChoice } from "./merge-queue/models";
 import { parseChange, SettingsEditError } from "./merge-queue/settings-edit";
 import { credentialProblem, credentialRefusal } from "./card-refusals";
@@ -318,6 +319,12 @@ interface StoredGrant extends SettingsGrant {
   pin?: unknown;
 }
 
+interface Held {
+  at: string;
+  fingerprint: string;
+  failed?: string;
+}
+
 interface StoredCard {
   id: string;
   n: number;
@@ -337,6 +344,11 @@ interface StoredCard {
   ref: string | null;
   grants: StoredGrant[];
   fingerprint: string;
+  /**
+   * The person's Apply, held while a branch checks (§app.project-overseer/settings): set only by that click, which the
+   * route proved was the page's, for this fingerprint. Spent when the card settles; a failure stays here with why.
+   */
+  held?: Held;
   /** A merge queue card: what it saves, in Save's terms, the models kept on this computer, and its rows in words. */
   queue?: QueueCardPart;
   appliedNow?: SettingsHistoryRow[];
@@ -361,6 +373,8 @@ interface Store {
   version: 1;
   next: number;
   cards: StoredCard[];
+  /** Land on the folder's uncommitted edits, held while a branch checks: for exactly the edits that click saw. */
+  localHold?: Held;
 }
 
 export const MAX_WAITING = 10;
@@ -583,6 +597,7 @@ async function cardView(projectId: string, c: StoredCard, repo: Repo | null): Pr
   ];
   return {
     id: c.id,
+    ...(c.held && c.state === "waiting" ? { saveWaits: true, ...(c.held.failed ? { saveFailed: c.held.failed } : {}) } : {}),
     ...(c.queue ? { kind: "queue" as const, place: queuePlace(c.queue), ...(c.queue.waiting && c.state === "waiting" ? { saveWaits: true } : {}), ...(c.queue.failed && c.state === "waiting" ? { saveFailed: c.queue.failed } : {}) } : {}),
     state: c.state,
     title: titleOf(c),
@@ -673,6 +688,10 @@ export async function localCard(projectId: string): Promise<SettingsCardView | n
     lands: `${repo.branch ?? "the branch"} in ${project.root}`,
     diff,
     fingerprint: fingerprintOf(card),
+    ...(() => {
+      const hold = readStore(projectId).localHold;
+      return hold ? { saveWaits: true, ...(hold.failed ? { saveFailed: hold.failed } : {}) } : {};
+    })(),
   };
 }
 
@@ -955,6 +974,7 @@ function queueSaved(now: MergeQueueSettings, c: MergeSettingsChange): boolean {
  * (dismissed, wherever they did). A failed save stays, as the queue keeps it, saying why. Each read's first step.
  */
 async function settleQueueCards(projectId: string): Promise<void> {
+  await settleHeldCards(projectId);
   const store = readStore(projectId);
   const waiting = store.cards.filter((c) => c.state === "waiting" && c.queue?.waiting);
   if (!waiting.length) return;
@@ -981,6 +1001,70 @@ async function settleQueueCards(projectId: string): Promise<void> {
   }
   writeStore(projectId, store);
 }
+
+const heldCards = (projectId: string): StoredCard[] => readStore(projectId).cards.filter((c) => c.state === "waiting" && c.held && !c.held.failed);
+
+/** Mark a held card failed: it stays, saying why, until the person cancels it. Never retried. */
+function holdFailed(projectId: string, cardId: string, why: string): void {
+  const store = readStore(projectId);
+  const held = cardId === "local" ? store.localHold : store.cards.find((x) => x.id === cardId)?.held;
+  if (!held) return;
+  held.failed = `${why} Nothing was saved.`;
+  writeStore(projectId, store);
+}
+
+/** The folder's edits, held by a Land: landed only as that click saw them. Gone: nothing is left to land. */
+async function landHeldLocal(projectId: string): Promise<void> {
+  const hold = readStore(projectId).localHold;
+  if (!hold || hold.failed) return;
+  const view = await localCard(projectId);
+  const clear = () => {
+    const s = readStore(projectId);
+    delete s.localHold;
+    writeStore(projectId, s);
+  };
+  if (!view) return clear();
+  if (view.fingerprint !== hold.fingerprint) return holdFailed(projectId, "local", "The folder's edits changed since you pressed Land.");
+  try {
+    await landLocal(projectId, view);
+    clear();
+  } catch (err) {
+    holdFailed(projectId, "local", err instanceof Error ? err.message : String(err));
+  }
+}
+
+/** Apply each held card, at a quiet point. Only what a click held, for what that click saw; each once. */
+async function applyHeldCards(projectId: string): Promise<void> {
+  await landHeldLocal(projectId);
+  for (const c of heldCards(projectId)) {
+    try {
+      if (c.held!.fingerprint !== c.fingerprint) throw new OrgError(`${c.id} changed since you pressed Apply.`, 409);
+      await applyNow(projectId, c);
+    } catch (err) {
+      holdFailed(projectId, c.id, err instanceof Error ? err.message : String(err));
+    }
+  }
+}
+
+/**
+ * Held cards at a read (a restart lands here): applied if the queue is quiet, failing with a reason if nothing serves
+ * the project any more, and otherwise left waiting. The queue's own quiet point does the same.
+ */
+async function settleHeldCards(projectId: string): Promise<void> {
+  const held = heldCards(projectId);
+  const local = readStore(projectId).localHold;
+  const localWaits = !!local && !local.failed;
+  const port = queueCardPort();
+  if ((!held.length && !localWaits) || !port?.whenQuiet) return;
+  const repo = await repoOf(projectOf(projectId).root).catch(() => null);
+  const ran = repo?.branch ? await port.whenQuiet(projectId, repo.branch, () => applyHeldCards(projectId)) : null;
+  if (ran === null) for (const id of [...held.map((c) => c.id), ...(localWaits ? ["local"] : [])]) holdFailed(projectId, id, "The merge queue no longer serves this project, so this wasn't applied.");
+}
+
+setQueueQuietWork(async (root) => {
+  const project = listProjects().find((p) => p.root === root);
+  if (project) await applyHeldCards(project.id);
+});
 
 /** Apply Sova-kept changes: the overseer's own as one PATCH, then the placement's one by one; their history rows. */
 async function applyKept(projectId: string, changes: Pick<KeptChange, "field" | "to">[], by: SettingsBy, meta: { card?: string; revertOf?: string } = {}): Promise<SettingsHistoryRow[]> {
@@ -1020,8 +1104,16 @@ function mergeBodies(a: Record<string, any>, b: Record<string, any>): Record<str
 // ---- withdraw ---------------------------------------------------------------------------------------------
 
 /** Withdraw a waiting card (the overseer's withdraw, the operator's Dismiss). `local` is Discard: the operator's only. */
-export async function withdrawCard(projectId: string, cardId: string, opts: { operator: boolean; fingerprint?: unknown; chat?: string }): Promise<void> {
+export async function withdrawCard(projectId: string, cardId: string, opts: { operator: boolean; fingerprint?: unknown; chat?: string; cancelSave?: boolean }): Promise<void> {
   if (cardId === "local") {
+    // Cancel Save leaves the edits in the folder: only Discard takes them away.
+    if (opts.cancelSave) {
+      if (!opts.operator) refuse("Cancel Save is the person's own, on the card.");
+      const store = readStore(projectId);
+      delete store.localHold;
+      return writeStore(projectId, store);
+    }
+    if (readStore(projectId).localHold && !opts.operator) refuse("These edits are waiting with the queue.");
     if (!opts.operator) refuse("Discarding the folder's uncommitted edits is the operator's own, on the waiting card.");
     return discardLocal(projectId, opts.fingerprint);
   }
@@ -1031,9 +1123,10 @@ export async function withdrawCard(projectId: string, cardId: string, opts: { op
   if (c.state !== "waiting") throw new OrgError(`${cardId} is already ${c.state}.`, 409);
   // A Create chat drops only what it prepared, and a save already with the queue is cancelled as a save.
   if (opts.chat !== undefined && c.by.chat !== opts.chat) refuse(`${cardId} isn't this chat's: only the person dismisses it.`);
-  if (c.queue?.waiting) throw new OrgError(`${cardId} is waiting with the queue: use Cancel Save on the card.`, 409);
+  if (c.queue?.waiting || (c.held && !opts.operator)) throw new OrgError(`${cardId} is waiting with the queue: use Cancel Save on the card.`, 409);
   c.state = "dismissed";
   c.dismissedAt = new Date().toISOString();
+  delete c.held;
   writeStore(projectId, store);
   if (c.ref) {
     const repo = await repoOf(projectOf(projectId).root).catch(() => null);
@@ -1071,18 +1164,19 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
     const view = await localCard(projectId);
     if (!view) throw new OrgError("The project folder has no uncommitted settings edits.", 404);
     if (fingerprint !== view.fingerprint) throw new OrgError("The folder's uncommitted edits changed since you looked: look at them again.", 409);
+    const held = readStore(projectId).localHold;
+    if (held && !held.failed) throw new OrgError("These edits are already waiting with the queue.", 409);
     const repo = (await repoOf(root))!;
-    const files = await localFiles(root, repo);
-    const grants: StoredGrant[] = [];
-    for (const f of files) {
-      const g = await fileGrant(root, f, f.before ? await readBlob(repo, f.before) : null, f.text);
-      if (g && !grants.some((x) => x.key === g.key)) grants.push(g);
+    let out: Awaited<ReturnType<typeof landLocal>> | undefined;
+    const ran = repo.branch ? await queueCardPort()?.whenQuiet?.(projectId, repo.branch, async () => void (out = await landLocal(projectId, view))) : null;
+    if (ran && out) return out;
+    if (ran === false) {
+      const after = readStore(projectId);
+      after.localHold = { at: new Date().toISOString(), fingerprint: view.fingerprint };
+      writeStore(projectId, after);
+      return { card: { ...view, saveWaits: true }, approved: [] };
     }
-    for (const f of files) if (f.text !== null) f.after = await writeBlob(repo, f.text);
-    const commit = await landFiles(projectId, repo, files, `Settings: ${titleOf({ kept: [], files })}\n\nLanded from the project folder's uncommitted edits.`, { fromLocal: true });
-    const approved = await recordApprovals(root, grants);
-    appendHistory(projectId, files.map((f) => ({ field: `file:${f.rel}`, from: f.before, to: f.after, by, commit, card: "local" })));
-    return { card: { ...view, state: "applied", appliedAt: new Date().toISOString(), commit }, approved, commit };
+    return landLocal(projectId, view);
   }
 
   const store = readStore(projectId);
@@ -1092,9 +1186,51 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
   if (fingerprint !== c.fingerprint) throw new OrgError(`${cardId} changed since you looked: look at it again.`, 409);
   if (project.archived) throw new OrgError("The project is archived: unarchive it first.", 409);
   if (c.queue) return applyQueueCard(projectId, store, c);
-  // Who changed it (§chat.create-mode/settings-cards): a Create card's rows name the chat, as their own kind.
-  const cardBy: SettingsBy = c.by.kind === "create" ? { ...c.by, via: "card" } : by;
+  if (c.held) throw new OrgError(`${cardId} is already waiting with the queue.`, 409);
+  if (c.files.length) {
+    // A commit on the target never cuts into a run: the click holds, and the queue applies it when it finishes.
+    const port = queueCardPort();
+    const repo = await repoOf(root);
+    if (port?.whenQuiet && repo?.branch) {
+      await checkCard(projectId, c);
+      await landRefusal(repo, c.files, {});
+      let out: Awaited<ReturnType<typeof applyNow>> | undefined;
+      const ran = await port.whenQuiet(projectId, repo.branch, async () => void (out = await applyNow(projectId, c)));
+      if (ran && out) return out;
+      if (ran === false) {
+        const after = readStore(projectId);
+        const mine = after.cards.find((x) => x.id === cardId)!;
+        mine.held = { at: new Date().toISOString(), fingerprint: c.fingerprint };
+        writeStore(projectId, after);
+        return { card: await cardView(projectId, mine, repo), approved: [] };
+      }
+    }
+  }
+  return applyNow(projectId, c);
+}
 
+/** Land the folder's uncommitted edits as `view` showed them. */
+async function landLocal(projectId: string, view: SettingsCardView): Promise<{ card: SettingsCardView; approved: string[]; commit?: string }> {
+  const root = projectOf(projectId).root;
+  const by: SettingsBy = { kind: "operator", via: "card" };
+  const repo = (await repoOf(root))!;
+  const files = await localFiles(root, repo);
+  const grants: StoredGrant[] = [];
+  for (const f of files) {
+    const g = await fileGrant(root, f, f.before ? await readBlob(repo, f.before) : null, f.text);
+    if (g && !grants.some((x) => x.key === g.key)) grants.push(g);
+  }
+  for (const f of files) if (f.text !== null) f.after = await writeBlob(repo, f.text);
+  const commit = await landFiles(projectId, repo, files, `Settings: ${titleOf({ kept: [], files })}\n\nLanded from the project folder's uncommitted edits.`, { fromLocal: true });
+  const approved = await recordApprovals(root, grants);
+  appendHistory(projectId, files.map((f) => ({ field: `file:${f.rel}`, from: f.before, to: f.after, by, commit, card: "local" })));
+  return { card: { ...view, state: "applied", appliedAt: new Date().toISOString(), commit }, approved, commit };
+}
+
+/** What a card would change now, or the refusal: the grant set must be the card's, and its files as the card knew them. */
+async function checkCard(projectId: string, c: StoredCard): Promise<{ now: KeptChange[]; repo: Repo | null }> {
+  const root = projectOf(projectId).root;
+  const cardId = c.id;
   // The kept part as it reads now: the grant set must be the card's.
   const current = readPoSettings(projectOverseerPaths(projectId));
   const body = patchOf(c.kept.filter((k) => isOwnField(k.field)));
@@ -1125,14 +1261,32 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
   const grantsShown = c.kept.filter((k) => k.grant).map((k) => `${k.field}:${k.grant}`).sort().join("|");
   if (grantsNow !== grantsShown) throw new OrgError("The project's settings changed since the card was made, so it no longer grants what it showed. Dismiss it and ask for a new one.", 409);
 
-  let commit: string | undefined;
   const repo = c.files.length ? await repoOf(root) : null;
   if (c.files.length) {
     if (!repo) throw new OrgError("The project folder isn't a Git repository any more.", 409);
+    const fileGrants: string[] = [];
     for (const f of c.files) {
       const head = await blobAt(repo, repo.head, f.rel);
       if (head !== f.before) throw new OrgError(`${f.rel} changed on ${repo.branch ?? "the branch"} since ${cardId} was made: dismiss it and ask for a new card.`, 409);
+      const g = await fileGrant(root, f, f.before ? await readBlob(repo, f.before) : null, f.after ? await readBlob(repo, f.after) : null);
+      if (g && !fileGrants.includes(`${g.key}:${g.what}`)) fileGrants.push(`${g.key}:${g.what}`);
     }
+    // Wider or narrower, what the person saw is what they approve (§app.project-overseer/settings).
+    const shown = c.grants.filter((g) => !g.key.startsWith("overseer:")).map((g) => `${g.key}:${g.what}`).sort().join("|");
+    if (fileGrants.sort().join("|") !== shown) throw new OrgError(`What ${cardId} would approve changed since it was made, so it no longer grants what it showed. Dismiss it and ask for a new one.`, 409);
+  }
+  return { now, repo };
+}
+
+/** Apply a checked card: the person's click, at once or at the queue's quiet point. */
+async function applyNow(projectId: string, c: StoredCard): Promise<{ card: SettingsCardView; approved: string[]; commit?: string }> {
+  const root = projectOf(projectId).root;
+  const cardId = c.id;
+  const { now, repo } = await checkCard(projectId, c);
+  // Who changed it (§chat.create-mode/settings-cards): a Create card's rows name the chat, as their own kind.
+  const cardBy: SettingsBy = c.by.kind === "create" ? { ...c.by, via: "card" } : { kind: "operator", via: "card" };
+  let commit: string | undefined;
+  if (c.files.length && repo) {
     commit = await landFiles(projectId, repo, c.files, `Settings: ${titleOf({ kept: [], files: c.files })}\n\n${c.why}\n\nApplied from ${c.by.kind === "create" ? "a Create chat's" : "the project overseer's"} ${cardId}.`, { prepared: c.parent === repo.head ? c.commit : null });
   }
   const d = depsOrThrow();
@@ -1148,6 +1302,7 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
   const mine = after.cards.find((x) => x.id === cardId)!;
   mine.state = "applied";
   mine.appliedAt = new Date().toISOString();
+  delete mine.held;
   if (commit) mine.appliedCommit = commit;
   writeStore(projectId, after);
   return { card: await cardView(projectId, mine, repo), approved, ...(commit ? { commit } : {}) };
@@ -1180,13 +1335,8 @@ async function applyQueueCard(projectId: string, store: Store, c: StoredCard): P
   return { card: await cardView(projectId, c, null), approved: [], ...(commit ? { commit } : {}) };
 }
 
-/**
- * Land settings files on the project folder's branch as one commit: only settings files, never in the
- * middle of a merge or on a detached HEAD, never over uncommitted edits (unless they are what lands, `fromLocal`);
- * then the folder's files and index, so profiles, playbooks, modes and offers read them at once.
- */
-async function landFiles(projectId: string, repo: Repo, files: StoredFile[], message: string, opts: { fromLocal?: boolean; prepared?: string | null }): Promise<string> {
-  const root = projectOf(projectId).root;
+/** Why these files can't land on the folder's branch now; a held Apply is told at once, as a plain one is. */
+async function landRefusal(repo: Repo, files: StoredFile[], opts: { fromLocal?: boolean }): Promise<void> {
   const outside = files.find((f) => !isSettingsPath(f.rel));
   if (outside) throw new OrgError(`${outside.rel} isn't a settings file: Apply commits settings files only.`, 409);
   const busy = await busyWith(repo);
@@ -1196,10 +1346,20 @@ async function landFiles(projectId: string, repo: Repo, files: StoredFile[], mes
     const dirty = await dirtyPaths(repo, files.map((f) => f.rel));
     if (dirty.length) throw new OrgError(`${dirty[0]} has uncommitted edits in the project folder: land or discard them on the waiting card first.`, 409);
   }
+}
+
+/**
+ * Land settings files on the project folder's branch as one commit: only settings files, never in the
+ * middle of a merge or on a detached HEAD, never over uncommitted edits (unless they are what lands, `fromLocal`);
+ * then the folder's files and index, so profiles, playbooks, modes and offers read them at once.
+ */
+async function landFiles(projectId: string, repo: Repo, files: StoredFile[], message: string, opts: { fromLocal?: boolean; prepared?: string | null }): Promise<string> {
+  const root = projectOf(projectId).root;
+  await landRefusal(repo, files, opts);
   const changes = files.map((f) => ({ rel: f.rel, blob: f.after }));
   try {
-    const commit = opts.prepared ?? (await commitOnto(repo, repo.head, changes, message));
-    await advanceBranch(repo, repo.head, commit, changes);
+    const commit = opts.prepared ?? (await commitOnto(repo, repo.head!, changes, message));
+    await advanceBranch(repo, repo.head!, commit, changes);
     for (const f of files) {
       const abs = join(root, f.rel);
       if (f.after === null) rmSync(abs, { force: true });

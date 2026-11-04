@@ -249,6 +249,7 @@ const PROJECTS_SWEEP: CommandEntry[] = [
     pid,
     card: { type: "string", description: "The card's id (sc_…), or local", in: "path", required: true },
     fingerprint: { type: "string", description: "local only: the fingerprint the card showed", in: "body" },
+    "cancel-save": { type: "boolean", description: "local only: cancel a held Land and keep the edits", in: "body", key: "cancelSave" },
   }),
   changes("project.overseer.settings.set", "Set Project Overseer Settings", "Change a project overseer's settings: Watch, powers, models, limits, pace, the hold, extra instructions.", "PATCH", "/api/projects/:pid/overseer", {
     pid,

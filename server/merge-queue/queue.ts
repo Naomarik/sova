@@ -1,3 +1,4 @@
+import { queueQuietWork } from "./card-port";
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -469,6 +470,54 @@ export class ProjectQueue {
       if (pub?.state === "pushed") return { state: "pushed" as const, commit, branch: pub.branch };
       return { state: "saved" as const, commit, pushed: false as const };
     });
+  }
+
+  /** Busy for a commit on the target: a branch holds it, or it moved from outside and waits for the resume. */
+  private async targetHeld(): Promise<boolean> {
+    if (this.current || this.trying || this.landing) return true;
+    const head = await this.targetHead();
+    return !!this.q.knownTarget && head !== null && head !== this.q.knownTarget;
+  }
+
+  /** After a commit made at a quiet point: it is the queue's own, so it raises no "moved outside the queue". */
+  private async ownTargetMove(): Promise<void> {
+    const head = await this.targetHead();
+    if (!head || head === this.q.knownTarget) return;
+    this.q.knownTarget = head;
+    this.save();
+    this.settingsChanged();
+  }
+
+  /**
+   * Run `fn`, a commit a settings card makes on `branch`, at a moment nothing holds the target (in the queue's own
+   * order, so no run starts under it). False: a branch checks, or the target waits for a resume; nothing ran.
+   */
+  runWhenQuiet(branch: string, fn: () => Promise<void>): Promise<boolean> {
+    return this.serial(async () => {
+      if (branch !== this.q.target) {
+        await fn();
+        return true;
+      }
+      if (await this.targetHeld()) return false;
+      try {
+        await fn();
+      } finally {
+        await this.ownTargetMove();
+      }
+      return true;
+    });
+  }
+
+  /** The cards held for this quiet point (§app.merge-queue/master-moved): each settles itself, a failure stays on its card. */
+  private async quietCards(): Promise<void> {
+    const work = queueQuietWork();
+    if (!work || (await this.targetHeld())) return;
+    try {
+      await work(this.root);
+    } catch (err) {
+      this.log(`a held settings card failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    await this.ownTargetMove();
   }
 
   /** Cancel a save waiting for the current branch; false: none waits. */
@@ -1229,7 +1278,8 @@ export class ProjectQueue {
 
   private async startNext(): Promise<void> {
     if (this.stopped || this.current || this.trying || this.landing) return;
-    // A settings save that waited for the branch just checked goes first, before the next branch starts on the target.
+    // A settings card held for the branch just checked, then a settings save, go before the next branch starts on the target.
+    await this.quietCards();
     if (this.q.pendingSave) await this.applyPendingSave();
     if (this.q.paused) return;
     if (this.holdUntil > this.now()) return;

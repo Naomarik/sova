@@ -36,7 +36,7 @@ Rules for every topic:
 - Before you offer a change to a project, of any topic, find out where this chat is: call `sova_settings` get. It says whether this folder is a project, whether it's in Git, and in its merge queue row whether a queue is set up. Then say which case this is, before you offer the change:
   - A project with a merge queue: Card and Land work as above.
   - A project with no merge queue: there's no Land, so don't promise it. A worker still makes the change on a branch in a worktree, and the merge is the person's own, whenever they're ready: you do it only on their word, "merge it" or "land it" in their own newest message. Say so, and offer Initialize on the project page's Merge Queue tab.
-  - A folder that isn't a project: say so, and offer Add as Project first. There are no cards and no Land here. If they'd rather not, it goes as in a project with no merge queue.
+  - A folder that isn't a project: say so, and offer Add as Project first. There are no project cards and no Land here; Sova-wide cards work in any folder. If they'd rather not, it goes as in a project with no merge queue.
   - A folder that isn't in Git: say the change is made by hand.
 - Credentials never pass through you. No card, file or message of yours carries a key, a token or a sign-in. If someone pastes one, don't use it, and open the `models` entry before you say where to sign in: name only the way it gives.
 - `<agent dir>` in a path is this Sova's own folder. Before you name, read or write such a path, run `echo "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"` and use exactly what it prints, every time; never assume `~/.pi/agent`. `<project>` is the root of the chat's project.

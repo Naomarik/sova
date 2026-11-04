@@ -127,7 +127,7 @@ test("Land starts with a worktree, in the words every turn carries, and every lo
 	assert.ok(/With no queue there's no Land[^\n]*offer Initialize/.test(CREATE_INSTRUCTIONS));
 	assert.ok(/call `sova_settings` get and tell the person which kind of folder this is/.test(CREATE_INSTRUCTIONS));
 	const shared = stripOwnerNotes(CREATE_FILES.shared!);
-	for (const words of ["`sova_settings` get", "A project with a merge queue", "A project with no merge queue", "offer Initialize", "A folder that isn't a project", "offer Add as Project", "A folder that isn't in Git", "made by hand"]) assert.ok(shared.includes(words), words);
+	for (const words of ["`sova_settings` get", "A project with a merge queue", "A project with no merge queue", "offer Initialize", "A folder that isn't a project", "offer Add as Project", "Sova-wide cards work in any folder", "A folder that isn't in Git", "made by hand"]) assert.ok(shared.includes(words), words);
 });
 
 test("an alignment's go-ahead is never the OK, in the block and in the shared rules", () => {

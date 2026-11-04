@@ -195,7 +195,7 @@ describe("trusting cards to act", async () => {
   const p = await project("cards");
   const owner = projectOwner(p.dir);
   const url = "/api/session-cards/trust";
-  const words = /press the Trust button on one of its cards\. Nothing was trusted\./;
+  const words = /^Only the user trusts a project's or an extension's cards\. Ask them to press Trust cards's Cards on the card\. Nothing was trusted\.$/;
   const token = () => pageHeaders().cookie!.split("=")[1]!;
   /** A real extension's key, as the gate knows them: only for these calls. */
   const keyCheck = { isKey: (v: string) => v === "ext-key", idOf: (v: string) => (v === "ext-key" ? "notes" : null), socket() {} } as never;

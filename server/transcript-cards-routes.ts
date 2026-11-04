@@ -7,7 +7,7 @@ import { OrgError } from "./org-error";
 import { yourClickRefusal } from "./page-only";
 import { resolveSessionPath } from "./paths";
 import { readProject } from "./projects/spaces";
-import { answerCard, CardRefusal, extensionCardsTrust, projectCards, sessionDrawingKind, raiseCard, runCardCommand, sessionCardsAt, sessionCardType, setCardState, setCardsTrusted } from "./transcript-cards";
+import { answerCard, CardRefusal, extensionCardsTrust, ownerName, projectCards, sessionDrawingKind, raiseCard, runCardCommand, sessionCardsAt, sessionCardType, setCardState, setCardsTrusted } from "./transcript-cards";
 import { viewCodeAt, type Source } from "./card-views";
 import { EXTENSION_ID_RE, findExtension, isKeyFile } from "./extensions";
 import { DRAWING_VIEW_FILE, DRAWINGS_DIR, PROJECT_OWNER } from "../shared/drawing-kinds";
@@ -231,7 +231,7 @@ export function registerTranscriptCardRoutes(app: Hono<any>): void {
       if (typeof b.owner !== "string" || typeof b.on !== "boolean") throw new CardRefusal("owner names whose cards, and on is true or false", 400);
       // Only the widening closes (§app.access/your-click): stopping trusting stays open.
       if (b.on) {
-        const notYou = yourClickRefusal(c, "cards");
+        const notYou = yourClickRefusal(c, { cardsOf: ownerName(b.owner) });
         if (notYou) return notYou;
       }
       setCardsTrusted(b.owner, b.on);

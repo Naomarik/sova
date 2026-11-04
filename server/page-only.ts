@@ -71,16 +71,17 @@ const DOORS = {
   schedule: "Only the user approves a schedule. Ask them to press Approve in the Playbooks dialog or the Overseer's Approvals & Schedules. Nothing was approved.",
   power: "Turning on a Project Overseer power needs the user's own click. Ask them to turn it on in the project page's Settings tab. Nothing was changed.",
   sandbox: SANDBOX_LOWER_REFUSAL,
-  cards: "Only the user trusts a project's or an extension's cards. Ask them to press the Trust button on one of its cards. Nothing was trusted.",
 } as const;
-export type YourClickDoor = keyof typeof DOORS | { projectTool: string };
+export type YourClickDoor = keyof typeof DOORS | { projectTool: string } | { cardsOf: string };
 
 const THROUGH_A_PEER = "Only the user approves this, on the page of the computer it belongs to. Open Sova on that computer. Nothing changed.";
 
 const SCHEDULE_THROUGH_A_PEER = "This computer couldn't confirm your click with the one the schedule is on. Try Approve again, or approve it on that computer's page. Nothing was approved.";
 
 const doorWords = (door: YourClickDoor): string =>
-  typeof door === "object" ? `Approving a project mode's tools needs the user's own click. Ask them to turn ${door.projectTool} on in that chat's mode menu. Nothing was turned on.` : DOORS[door];
+  typeof door === "object" && "cardsOf" in door
+    ? `Only the user trusts a project's or an extension's cards. Ask them to press Trust ${door.cardsOf}'s Cards on the card. Nothing was trusted.`
+    : typeof door === "object" ? `Approving a project mode's tools needs the user's own click. Ask them to turn ${door.projectTool} on in that chat's mode menu. Nothing was turned on.` : DOORS[door];
 
 /** A refusal's words and body, for whoever isn't the page. */
 export function yourClickBody(door: YourClickDoor, who: NotPage): { error: string; yourClick: true; peer?: true } {

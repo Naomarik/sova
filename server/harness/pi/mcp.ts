@@ -255,18 +255,19 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
         const clean = withoutSecrets(reason, secretValues(server.owner, server.name));
         const short = firstLines(clean);
         const note: McpNote = { server: server.name, how, ...(how === "failed" ? { reason: short } : {}), link };
+        if (how !== "changed" && how !== "address-under-on") {
+          const where: McpErrorLine["where"] = how === "sandbox" || how === "write-only" ? how : undefined;
+          for (const line of clean.split("\n").filter(Boolean).slice(0, 6)) {
+            try {
+              addChatLine(server.owner, server.name, { line, ...(chatName ? { chat: chatName } : { chat: "a chat" }), ...(where ? { where } : {}) });
+            } catch {
+              // a line that can't be kept never fails the chat
+            }
+          }
+        }
         // Write-only: the chat that started the worker reads it; a worker's own transcript has nobody reading.
         if (how === "write-only") hooks.tellParent?.({ ...note, worker: chatName || "a worker" });
         else pi.appendEntry(MCP_NOTE_ENTRY, note);
-        if (how === "changed" || how === "address-under-on") return;
-        const where: McpErrorLine["where"] = how === "sandbox" || how === "write-only" ? how : undefined;
-        for (const line of clean.split("\n").filter(Boolean).slice(0, 6)) {
-          try {
-            addChatLine(server.owner, server.name, { line, ...(chatName ? { chat: chatName } : { chat: "a chat" }), ...(where ? { where } : {}) });
-          } catch {
-            // a line that can't be kept never fails the chat
-          }
-        }
       };
 
       const launchOf = (server: McpChatServer, cwd: string) => async (): Promise<Launch> => {

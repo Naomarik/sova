@@ -48,7 +48,7 @@ edit" is a prompt-level rule the orchestrator checks.
 | `ctrl+p` → **Mode**, or bare `/mode` | Open the mode selector (see below) |
 | `alt+m` | Toggle normal ↔ delegate |
 | `/mode normal` · `/mode delegate` | Set explicitly |
-| Sova's mode menu | Picks **create**, per chat; the terminal offers no Create (see **Create**) |
+| Sova's mode menu, or `/mode create` typed in a Sova chat | Picks **create**, per chat; a terminal refuses it (see **Create**) |
 | `/mode status` | Show this session's mode, the default for new sessions, the Delegate routing (and, in delegate, what each profile is actually using), the spec writer (and, with spec on, what it is actually using), strict flag, minor modes, state file |
 | `/mode default` | Save this session's mode, strict flag and minor modes as the default for new sessions (the only command here that writes `mode.json`) |
 | `/mode sync` | Change nothing and say nothing: keep this session's mode block in the prompt whoever starts the turn (see below). Sova runs it at every chat open |
@@ -527,7 +527,7 @@ existed load with no minor modes on.
 
 ## Create
 
-Sova's third major mode, chosen per chat in Sova's mode menu. It does everything delegate does, with
+Sova's third major mode, chosen per chat in Sova's mode menu or with `/mode create` typed in a Sova chat. It does everything delegate does, with
 delegate's prompt, routing, teams and strict, and adds what it knows about configuring and extending
 Sova. Its own block follows delegate's and changes nothing in it.
 

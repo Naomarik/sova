@@ -146,7 +146,7 @@ that chat counts. Then the chat writes the file, or under strict a worker outsid
 
 ## Choosing it
 
-Create is chosen per chat, from that chat's mode menu. Switching to Create turns [align](/docs/modes/align/)
+Create is chosen per chat, from that chat's mode menu or by typing `/mode create` in it. Switching to Create turns [align](/docs/modes/align/)
 on and moves no other minor mode. Align is an ordinary minor mode from then on: you can turn it
 off in Create, and leaving Create leaves it as it is.
 

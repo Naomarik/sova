@@ -10,7 +10,7 @@ Choosing between a card and a branch: `.sova/project.json` is one file, but it d
 - Lives: this computer's list of projects. A folder inside a Git checkout is added as that checkout's root.
 - Approves: the person, by adding it.
 - By: Screen. Add as Project on the chat's Session tab, or Add Project on the Projects page. Clone from GitHub is there too. Nothing registers on its own.
-- Live: now. A chat open in the folder finds it at its next merge.
+- Live: now.
 - Check: the Session tab's Project row links to the project's page. It doesn't spread to other computers.
 
 ## How the project runs

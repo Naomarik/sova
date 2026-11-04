@@ -635,7 +635,7 @@ describe("Subagents: every team number inside a profile", () => {
     assert.deepEqual(Object.values(TEAM_BOXES).sort(), Object.keys(teamForm.TEAM_NUMBER_BOUNDS).sort());
   });
   for (const [path, field] of Object.entries(TEAM_BOXES)) {
-    test(`profiles[0].${path}: "1." (half-typed) is a problem, as in every other number box`, { todo: "D14" }, async () => {
+    test(`profiles[0].${path}: "1." (half-typed) is a problem, as in every other number box (D14)`, async () => {
       await load();
       const d = await withTeams();
       put(d.profiles[0], path, teamForm.numberOf("1."));
@@ -653,8 +653,7 @@ describe("Subagents: every team number inside a profile", () => {
         put(d.profiles[0], path, v);
         return d;
       };
-      // "1." is D14 (its own todo case below): Number("1.") is 1, so the box saves what wasn't a whole number typed.
-      for (const raw of [...RAW.filter((r) => r !== "1."), String(max + 1), String(min - 1)]) {
+      for (const raw of [...RAW, String(max + 1), String(min - 1)]) {
         profiles.profilesDraft.setDraft(at0(teamForm.numberOf(raw)));
         assert.notEqual(f.problem(), null, `${path}: "${raw}" is no problem`);
         assert.equal(await f.save(), "skipped", `${path}: Save wrote "${raw}"`);

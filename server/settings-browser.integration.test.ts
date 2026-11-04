@@ -200,7 +200,7 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     assert.equal(await box("#subagents-name").inputValue(), "P".repeat(48));
   });
 
-  test("Subagents → Teams: a cleared or 'abc' Wrap-up context % stays as typed and red; Save waits (D14)", { todo: "D14" }, async () => {
+  test("Subagents → Teams: a cleared or 'abc' Wrap-up context % stays as typed and red; Save waits (D14)", async () => {
     const edit = () => box("#subagents-edit-my-setup");
     await open("subagents", edit);
     await edit().click();

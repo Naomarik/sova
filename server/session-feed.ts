@@ -148,7 +148,11 @@ export function listChanged(prev: ReadonlyMap<string, string>, next: ReadonlyMap
 }
 
 export interface SessionFeedOptions {
-  list: () => Promise<SessionSummary[]>;
+  /** `join`: another caller's build, a moment old, may do: `stamps` says whether it came too early. */
+  list: (opts: { join: boolean }) => Promise<SessionSummary[]>;
+  /** Tells a list that started after a signal from one that didn't (sessions-index listStamps).
+      Without it `list` never hands back a list older than the re-diff asking. */
+  stamps?: { now(): number; listed(): number };
   /** The safety-net re-diff period while a client listens: for a change no source tells of. */
   intervalMs?: number;
   /** Debounce of nudges. */
@@ -198,6 +202,8 @@ export class SessionFeed {
   diffs = 0;
   /** Change signals heard, and the count as of the last finished re-diff's start, with its list. */
   private heard = 0;
+  /** `stamps.now()` at the last signal: a list stamped no higher started before that signal. */
+  private signal = 0;
   private last: { heard: number; at: number; list: SessionSummary[] } | null = null;
   constructor(private readonly opts: SessionFeedOptions) {}
 
@@ -256,6 +262,7 @@ export class SessionFeed {
   nudge(delayMs = this.opts.debounceMs ?? 250): void {
     if (this.clients.size === 0 || this.announcing) return;
     this.heard++;
+    this.signal = this.opts.stamps?.now() ?? 0;
     if (this.pending) return;
     const gap = this.lastStart + (this.opts.minGapMs ?? 1000) - Date.now();
     this.pending = setTimeout(() => {
@@ -359,8 +366,14 @@ export class SessionFeed {
     this.lastStart = Date.now();
     this.diffs++;
     const heard = this.heard;
-    const list = await this.opts.list();
+    const signal = this.signal;
+    // A listener's snapshot is read fresh: no re-diff would follow it (nudge needs a client).
+    const list = await this.opts.list({ join: !force });
+    // A shared list that started before the last signal hasn't told that change: compare again (a
+    // nudge, so it isn't clean either). The next list is a newer one, so this ends, at the latest at
+    // a build of the feed's own.
     this.last = { heard, at: this.lastStart, list };
+    if (this.opts.stamps && this.opts.stamps.listed() <= signal) this.nudge(0);
     const { changes, next } = diffMarks(this.sent, list);
     this.sent = next;
     if (changes.length) this.publish({ type: "marks", sessions: changes });

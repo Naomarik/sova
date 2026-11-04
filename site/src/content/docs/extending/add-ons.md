@@ -50,9 +50,9 @@ way doesn't reach them.
 
 ## When one reaches a chat
 
-An add-on loads when a chat's process starts. A new chat gets it, and an open chat gets it at its next
-reload. A chat keeps what it started with until then, so adding one changes nothing in a running chat.
-A package added with `pi install` reaches chats the same way.
+An add-on loads when a chat's process starts, so a new chat gets it. An open chat keeps what it started
+with until it next reloads, which Sova does when its own code changes. A Sova chat has no `/reload`, so
+to try an add-on, start a new chat. A package added with `pi install` reaches chats the same way.
 
 ## Turning one on or off
 

@@ -15,7 +15,7 @@ extend Sova. It is built on Delegate, never a copy of it: one `orchestrates(mode
   beside itself, so a chat carries the guide of the code it runs and needs no checkout, project or spec.
   `create-guide-tool.ts` is the `create_guide` tool.
 - Tests: `cd pi-config/extensions/mode && node --test create/guide.test.ts` (the file format, the list, the
-  lookup). The growth test beside the server's tests holds Sova's own lists to the entries.
+  lookup). `server/create-guide-growth.test.ts` holds Sova's own lists to the entries.
 - The site pages: `site/src/content/docs/modes/create.md` and `site/src/content/docs/extending/`.
 - The promises: §chat/create-mode, §design.copy-deck/create-mode.
 
@@ -45,7 +45,7 @@ topic's file.
 
 ## What the growth test can't see
 
-It fails the build when an item in one of Sova's own lists has no entry: Settings tabs, project settings,
+The growth test fails the build when an item in one of Sova's own lists has no entry: Settings tabs, project settings,
 powers, modes, screen places, commands, and each `SOVA_*` a user may set (the others are on a not-for-users
 list beside the test). Its failure message is the worklist.
 

@@ -43,7 +43,6 @@ skipped and shown in Settings → Profiles with the exact error. The others stil
   "grant": ["sessions.read", "sessions.message"],
   "singleton": true,
   "limits": { "targetsPerRun": 10, "perDay": 80 },
-  "playbook": "release-check",
   "overseerMayStart": false
 }
 ```
@@ -58,19 +57,18 @@ skipped and shown in Settings → Profiles with the exact error. The others stil
 | `grant` | no | Session powers it gains (below). `sessions.message` and `sessions.all` also grant `sessions.read` |
 | `singleton` | no | `true`: **One at a time**, at most 1 live session per profile (per project for a project's profile). While one runs, its card reads **Active** and opens that session instead |
 | `limits` | no | Any of `hops` (3), `perMessage` (10), `perDay` (40), `targetsPerRun` (5), `perPair` (6): whole numbers from 1 |
-| `mode` | no | `normal` or `delegate`: the mode it starts in |
+| `mode` | no | `normal` or `delegate`: the mode it starts in. `create` is an error: Create is chosen in a chat |
 | `minorModes` | no | The whole set of minor modes it starts with, any of `align`, `spec` and `vis`, in any order. `[]` starts with none. Absent: the default in `mode.json`. Picking a profile without it after one that had it puts the default back |
 | `model` | no | `"provider/model"`: the model the main thread starts on |
 | `thinking` | no | The main thread's effort: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` or `max` |
 | `subagents` | no | A subagent profile's id (Settings → Subagents), or `"off"`: what its workers, teams and spec writer use. Absent: this device's default |
 | `firstMessage` | no | Text put in an empty message box |
-| `playbook` | no | A playbook's id. The empty screen offers **Run Playbook** for it, and the Overseer sends it as the first message |
 | `overseerMayStart` | no | `true`: the Overseer may start a session with it |
 
 Any other field is an error, and so is an unknown capability name.
 
 **Removable** (`remove`): `shell` (bash), `edit` (edit, write), `workers` (subagents and teams),
-`web` (search and fetch), `worktrees`, `links` (mesh links), `timers` (wake-ups).
+`web` (search and fetch), `worktrees`, `timers` (wake-ups).
 
 **Grantable** (`grant`): `sessions.read` (list and read other sessions), `sessions.message` (send
 them messages), `sessions.all` (see every session on this host, not just this project's).

@@ -35,7 +35,7 @@ In the Playbooks dialog a schedule reads in words, for example "Every 6 hours ·
 
 ### Approving a schedule
 
-Nothing fires until you approve it. A new schedule reads **Needs approval** in the Playbooks dialog and in the Overseer's **Approvals & Schedules** (the **Schedules** menu in its header, or the first item of its **⋯** menu on a narrower screen, marked with a dot while a schedule waits), and only your click approves it. The Overseer can't.
+Nothing fires until you approve it. A new schedule reads **Needs approval** in the Playbooks dialog and in the Overseer's **Approvals & Schedules** (the **Schedules** menu in its header, or the first item of its **⋯** menu on a narrower screen, marked with a dot while a schedule waits), and only your click in Sova's page approves it: no chat, script, extension or the Overseer can. A schedule on another of your computers can be approved from this page too.
 
 Your approval covers exactly what you saw: the triggers, the time zone and the profile with its powers. Change any of those, including adding or removing a trigger, and the schedule pauses until you approve it again. Edits to the playbook's instructions don't ask again: the profile, which the approval covers, decides what a run may do.
 

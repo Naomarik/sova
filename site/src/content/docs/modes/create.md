@@ -135,6 +135,8 @@ that chat counts. Then the chat writes the file, or under strict a worker outsid
 
 - **Apply** is your own click, on Sova's page. No message to a chat stands for it.
 - **Land** is yours, as for every branch.
+- **Approvals** that let something act later without asking pass only on your own click, as in every
+  chat. See [what no script can do](/docs/extending/scripting/#what-no-script-can-do).
 - **Sign-ins and keys** never pass through Create. No card, file or message of Create's carries one.
   Provider sign-ins stay in a terminal: Create names the command and you run it. A key you paste into
   a Create chat isn't used, and Create says how to sign in instead.

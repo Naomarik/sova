@@ -61,7 +61,7 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
   "repeat": "once-per-commit",
   "title": "Merge {branch} into {base}?",
   "buttons": [
-    { "label": "Merge", "about": "Sova merges this branch into main now.", "run": "project.worktree.merge" },
+    { "label": "Merge", "about": "Lands this branch.", "run": "project.worktree.merge" },
     { "label": "Not yet", "about": "Keep working on this branch.", "send": "Not yet, keep going." } ] } } }
 ```
 
@@ -71,7 +71,8 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
   project whose file has an offer the agent may show; every other chat's tools are unchanged.
 - **Buttons** either `send` a message as you (`{branch}`, `{base}`, `{commit}`, `{project}` are
   filled in) or `run` one of Sova's own actions on the session's branch (today only
-  `project.worktree.merge`, for a coding session a project's overseer tracks). A file with any run
+  `project.worktree.merge`, for a coding session a project's overseer tracks; with a merge queue set up
+  it approves the branch's head in the queue, like **Land**, and otherwise merges it). A file with any run
   button needs your approval on the project page (Settings tab, **Offers**): **Approve Run Buttons**.
   Changing a run button asks again.
 - **Limits**: at most 8 offers and 4 buttons each; `onlyIf` takes `branch-ready`,

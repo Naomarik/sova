@@ -104,12 +104,35 @@ and `--limit` takes up to 1,000.
 
 ## What no script can do
 
-The commands reach what the token reaches, with limits:
+Each of these lets something act later without asking, so it passes only on your own click in Sova's
+page. A script, a chat's terminal, an extension or another computer is refused, and the refusal says where
+to click.
 
-- **Apply a Settings change card.** Apply is your click, on Sova's page.
-- **Trust a project's or an extension's cards.** Only you grant it, on the page.
-- **Approve a project mode's hooks.** Only you do, from the page on this machine.
-- **Ship.** Plans and deploys are yours.
-- **Reach another machine directly.** Commands go through this machine, to your own computers.
+| Approval | Where you click |
+|---|---|
+| A project's run buttons | **Approve Run Buttons** on the project page's Offers list |
+| A profile's powers | **Approve** in Settings → Profiles or on the profile picker |
+| A schedule | **Approve** in the Playbooks dialog or the Overseer's Approvals & Schedules |
+| Turning on a Project Overseer power | The power's switch on the project page's Settings tab |
+| Lowering a chat's sandbox | The Sandbox rows in that chat's composer. A `/sandbox` sent as a message is refused too |
+| Approving a project tool | **Approve and Turn On** in that chat's mode menu |
 
-Don't take being able to run a command as a sign it's wise: a script holding the token acts as you.
+Only the widening closes. Turning a power off, raising a sandbox, turning a mode off and turning on a
+mode at a version already approved stay open to scripts.
+
+**Apply and Approve** on a Settings change card is your click too, and the same goes for Apply itself,
+trusting a project's or an extension's cards, and approving a project mode's hooks.
+
+The Overseer keeps what it could already do: when it turns a project mode on, that still approves the
+mode's tools and commands, never its hooks. See [The Overseer](/docs/overseer/#what-it-can-do).
+
+A schedule on another of your computers can be approved from this page, with proof of your click carried
+across the link between the computers. Anything else that belongs to another computer is approved on that
+computer's own page.
+
+Shipping is yours too: no script plans, runs or rolls back a deploy.
+
+**How strong this is.** It raises the bar; it isn't a wall. Sova tells its page from a program by how the
+token is sent. A chat without the sandbox runs as you, so it can read the token from disk, and a program
+that imitates the page is taken for it. A chat with its sandbox on can't reach Sova at all. The refusal
+stops the ordinary road and gives a chat the words to send you to the page.

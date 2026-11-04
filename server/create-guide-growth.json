@@ -517,7 +517,9 @@
    "chat.regenerate": "scripts",
    "chat.queue.remove": "scripts",
    "chat.reload-code": "scripts",
-   "chat.mode-command": "scripts"
+   "chat.mode-command": "scripts",
+   "settings.cards.get": "scripts",
+   "settings.cards.withdraw": "scripts"
   },
   "env": {
    "SOVA_PORT": "computers",

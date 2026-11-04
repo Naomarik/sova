@@ -147,4 +147,5 @@ This applies only to computers you've linked.
 
 A chat can't tell another chat's OK from yours.
 
-A program holding the token may pass as your word for `worktree land`.
+A program holding the token may pass as your word for `worktree land`, so a landing recorded from a typed
+word doesn't prove you typed it.

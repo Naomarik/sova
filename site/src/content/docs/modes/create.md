@@ -85,7 +85,7 @@ on where the chat is.
 | Where the chat is | Topics about this computer | Topics about the project |
 |---|---|---|
 | A project with a merge queue | Work | Work, by card and Land |
-| A project with no merge queue | Work | A worker works in a worktree and you merge when ready. Create says what's missing and offers **Initialize** |
+| A project with no merge queue | Work | The chat or a worker works on a branch in a worktree, and the chat merges it on your word. Create says what's missing and offers **Initialize** |
 | A folder that isn't a project | Work | Create says what's missing and offers **Add as Project** |
 | A folder that isn't in Git | Work | Create says project changes are made by hand |
 
@@ -128,7 +128,7 @@ A card can hold:
 **Land** carries everything else in a project: anything spanning several files, and what a card can't
 carry (a mode's helper files, card types, drawing kinds, automation files, skills, rules, add-ons). A
 change to how the project runs goes by Land too when the project has checks, even as one file, because
-a card lands with no checks and Land runs them. A worker makes the change on a branch in a worktree,
+a card lands with no checks and Land runs them. The chat or a worker makes the change on a branch in a worktree,
 and the branch lands when you press Land, like any other. Create never lands one. With no merge queue the
 branch is yours to merge, and with no Git the change is made by hand.
 

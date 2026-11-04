@@ -66,6 +66,16 @@
               "env-set",
               "SOVA_SITE_PAGES_PROJECT"
             ]
+          },
+          {
+            "name": "SOVA_SITE_VIDEO_DIR",
+            "kind": "env",
+            "check": [
+              "node",
+              ".sova/playbooks/release/scripts/sova-release.mjs",
+              "env-set",
+              "SOVA_SITE_VIDEO_DIR"
+            ]
           }
         ],
         "build": [

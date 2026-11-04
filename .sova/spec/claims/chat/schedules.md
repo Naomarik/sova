@@ -65,6 +65,49 @@ new session, and needs no model to re-arm it.
   removes the approval at once: the next tick fires nothing, and the schedule reads Needs approval
   again for as long as the file still declares it.
 
+## §chat.schedules/automation-file — An automation file
+
+A schedule can be declared in a file of its own, `<project root>/.sova/automations/<id>.json`, instead
+of a playbook's `when:` line (§chat.schedules/header). The file holds one automation: its triggers, the
+playbook it runs, and its session's own settings and permissions. It names no profile. Sova reads the
+files fresh each time. `sova_settings` and its cards don't reach them: an automation file changes as a
+file, in the project.
+
+| Key | Holds |
+|---|---|
+| `id` | Required, and equal to the file's name: lowercase letters, digits and dashes, at most 63 characters |
+| `label` | Required, at most 60 characters |
+| `when` | Required, in the grammar of the `when:` line |
+| `tz` | An IANA zone; optional |
+| `task` | What each fire says to do; optional |
+| `playbook` | Required: the id of the playbook it runs |
+| `session` | Required, and `long-running` is the only kind |
+| `settings` | Optional: `model` (`provider/id`), `thinking`, `mode` (`normal` or `delegate`), `minorModes` (align, spec, vis, memory), `memory` (`{type, size?}`) |
+| `permissions` | Optional: `remove`, `grant`, `oneAtATime`, `limits` (whole numbers, 1 to 10000), `overseerMayStart`. Left out: nothing removed or granted, not One at a time, the default limits, and the Overseer can't start it |
+
+- **All or nothing.** An unknown key, a wrong type or a bad value makes the whole file invalid: it is
+  shown with its exact error and never fires.
+- **Approval.** A new file reads Needs approval, and nothing fires until you approve it, by
+  `POST /api/schedules/approve` with `{cwd, automation, pin}` (§chat.schedules/approval). The approval
+  covers its triggers, zone, playbook id, session kind and every permission. A change to any of those
+  pauses it, Changed since you approved it, until you approve again. Its settings, label, task and the
+  playbook's text aren't covered, so changing them asks nothing.
+- **One session.** The first fire makes a new session in the project's root, with the file's permissions
+  and settings, titled `{label} (automation)`. Every later fire wakes that same session, and first sets
+  its model, effort, mode and minor modes to the file's where they differ; what the file leaves out stays
+  as the session has it. A memory size in the file is ignored (§chat.memory/choice). Settings that can't
+  be applied don't stop the fire. If the session was archived or is gone, the next fire makes a new one;
+  while it is open in a terminal, a fire is skipped.
+- **It wins over `when:`.** A file naming a playbook whose header also has `when:` takes that schedule's
+  row: same `sN`, fires and next fire. Its approval carries over only when it still holds and says what
+  the file says; otherwise the row waits for your approval. Approving the playbook itself is refused with
+  "An automation file runs {playbook}: approve the automation instead."
+- **Gone.** With its file removed, an approved automation pauses, saying "The automation file {id}.json
+  is gone from {project}.", and an unapproved one is forgotten. With its playbook gone, an approved one
+  pauses and an unapproved one is invalid.
+- **Shown** like any schedule (§chat.schedules/where-shown), with `{label}'s own settings` where a header
+  schedule names its profile, and in the sidebar's Automations region once it has a session.
+
 ## §chat.schedules/fire — What a fire does
 
 - **The keeper** ticks every 30 seconds. At each tick it re-reads each approved schedule's header,

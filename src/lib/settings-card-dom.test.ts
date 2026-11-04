@@ -33,6 +33,14 @@ test("a Sova-wide card names its place, and the sync note when it spreads, as gi
   assert.doesNotMatch(draw(card({}), "p1"), /Where it lands/, "a project's card has no place line");
 });
 
+test("a queue card heads its rows as the merge queue and says where it lands", () => {
+  const queue = draw(card({ id: "sc_4", kind: "queue", place: ".sova/project.json on main" }), "p1");
+  assert.match(queue, /Merge queue/);
+  assert.doesNotMatch(queue, /Sova(&#39;|')s settings/);
+  assert.match(queue, /Where it lands[\s\S]*\.sova\/project\.json on main/);
+  assert.match(draw(card({}), "p1"), /Sova(&#39;|')s settings/, "a project's own card keeps its heading");
+});
+
 test("a card nobody here may act on points at where it can be applied, and never offers Apply", () => {
   const sova = draw(card({ kind: "sova", place: "Sova-wide" }), null, false);
   assert.doesNotMatch(sova, /<button[^>]*>\s*(<!--[^>]*-->)?\s*Apply/);

@@ -111,7 +111,7 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
         </Show>
         <Show when={c().kept.length}>
           <div class="settings-card-group">
-            <span class="text-eyebrow">Sova's settings</span>
+            <span class="text-eyebrow">{c().kind === "queue" ? "Merge queue" : "Sova's settings"}</span>
             <ul class="settings-card-list">
               <For each={c().kept}>
                 {(k) => (

@@ -1,17 +1,23 @@
 import { createContext, createSignal, For, onCleanup, Show, useContext } from "solid-js";
 import type { SettingsCardView, SettingsHistoryRow, SettingsToolDetails } from "../../shared/project-settings";
-import { applySettingsCard, getProjectSettings, undoSettingsRow, withdrawSettingsCard } from "../lib/api";
+import { applySettingsCard, applySovaSettingsCard, cancelMergeSettings, getProjectSettings, getSovaSettingsCards, undoSettingsRow, withdrawSettingsCard, withdrawSovaSettingsCard } from "../lib/api";
 import { toast } from "../lib/ui-state";
 
 /**
- * The Settings change card (§app.project-overseer/settings): what the project overseer proposed, each setting
- * in plain words with its before and after and where it lands, its grants marked with what they allow, the
- * exact file changes, and the operator's Apply and Approve (or Apply) and Dismiss. In the overseer's chat it
- * stands at its sova_settings call; on the project page's Settings tab while it waits. Only a view that may
- * act provides SettingsCardContext (the overseer's own chat page); without it the card shows its state only.
+ * The Settings change card (§app.project-overseer/settings, §chat.create-mode/settings-cards): what the
+ * project overseer or a Create chat proposed, each setting in plain words with its before and after and where
+ * it lands, its grants marked with what they allow, the exact file changes, and the operator's Apply and
+ * Approve (or Apply) and Dismiss. In the chat it stands at its sova_settings call; a project's card also on
+ * the project page's Settings tab while it waits. Only a view that may act provides SettingsCardContext;
+ * without it the card shows its state only.
  */
 
-export const SettingsCardContext = createContext<boolean>(false);
+/** `overseer`: this view may act on any card it draws (the overseer's own chat page). `create`: it may
+    act on a card a Create chat prepared, kept after the chat leaves Create so no card is stranded. */
+export const SettingsCardContext = createContext<{ overseer: boolean; create: boolean }>({ overseer: false, create: false });
+
+/** A queue card applied while a branch is checking (§app.merge-queue/settings-save). */
+export const QUEUE_CARD_WAITS = "Saves when the current branch finishes.";
 
 /** How often a waiting card reads its state again (an Apply on the project page shows here this way). */
 const POLL_MS = 15_000;
@@ -20,7 +26,7 @@ const stateWords: Record<SettingsCardView["state"], string> = { waiting: "Waitin
 const stateChip: Record<SettingsCardView["state"], string> = { waiting: "chip chip-warn", applied: "chip chip-success", dismissed: "chip" };
 
 /** One card. `onChanged`: after an Apply, Dismiss or Undo (the project page reads again). */
-export function SettingsCard(props: { projectId: string; card: SettingsCardView; canAct: boolean; onChanged?: () => void; appliedNow?: SettingsHistoryRow[] }) {
+export function SettingsCard(props: { projectId: string | null; card: SettingsCardView; canAct: boolean; onChanged?: () => void; appliedNow?: SettingsHistoryRow[] }) {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [showDiff, setShowDiff] = createSignal(false);
@@ -28,24 +34,28 @@ export function SettingsCard(props: { projectId: string; card: SettingsCardView;
   const c = () => props.card;
   const local = () => c().id === "local";
   const waiting = () => c().state === "waiting";
-  const act = (run: () => Promise<unknown>, done: string) => {
+  /** A queue card whose Save is held: Apply was pressed, and it lands when the branch finishes. */
+  const held = () => waiting() && !!c().saveWaits;
+  const project = props.projectId;
+  const act = <T,>(run: () => Promise<T>, done: string | ((out: T) => string)) => {
     if (!props.canAct || busy()) return;
     setBusy(true);
     setError(null);
     run()
-      .then(() => {
-        toast(done);
+      .then((out) => {
+        toast(typeof done === "string" ? done : done(out));
         props.onChanged?.();
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusy(false));
   };
-  const apply = () => act(() => applySettingsCard(props.projectId, c().id, c().fingerprint), local() ? "Landed the folder's settings edits." : c().grants.length ? `Applied and approved ${c().id}.` : `Applied ${c().id}.`);
-  const dismiss = () => act(() => withdrawSettingsCard(props.projectId, c().id, local() ? c().fingerprint : undefined), local() ? "Discarded the folder's settings edits." : `Dismissed ${c().id}.`);
+  const apply = () => act(() => (project === null ? applySovaSettingsCard(c().id, c().fingerprint) : applySettingsCard(project, c().id, c().fingerprint)), (out) => (out.card.saveWaits ? QUEUE_CARD_WAITS : local() ? "Landed the folder's settings edits." : c().grants.length ? `Applied and approved ${c().id}.` : `Applied ${c().id}.`));
+  const dismiss = () => act(() => (project === null ? withdrawSovaSettingsCard(c().id) : withdrawSettingsCard(project, c().id, local() ? c().fingerprint : undefined)), local() ? "Discarded the folder's settings edits." : `Dismissed ${c().id}.`);
+  const cancelSave = () => project !== null && act(() => cancelMergeSettings(project), `Cancelled the save of ${c().id}.`);
   const undo = (row: SettingsHistoryRow) => {
-    if (!props.canAct || busy()) return;
+    if (!props.canAct || busy() || project === null) return;
     setBusy(true);
-    undoSettingsRow(props.projectId, row.id)
+    undoSettingsRow(project, row.id)
       .then((r) => {
         setUndone((s) => new Set([...s, row.id]));
         toast(r.card ? `Made ${r.card.id} to put it back.` : `Put back ${row.field}.`);
@@ -64,12 +74,20 @@ export function SettingsCard(props: { projectId: string; card: SettingsCardView;
         </h3>
         <span class={stateChip[c().state]}>
           <span class="chip-dot" aria-hidden="true" />
-          {stateWords[c().state]}
+          {held() ? "Waiting for a branch" : stateWords[c().state]}
         </span>
       </div>
       <div class="card-body settings-card-body">
         <Show when={c().why}>
           <p class="settings-card-why">{c().why}</p>
+        </Show>
+        <Show when={c().place}>
+          {(place) => (
+            <div class="settings-card-group">
+              <span class="text-eyebrow">Where it lands</span>
+              <span class="settings-card-place">{place()}</span>
+            </div>
+          )}
         </Show>
         <Show when={props.appliedNow?.length}>
           <div class="settings-card-group">
@@ -146,6 +164,13 @@ export function SettingsCard(props: { projectId: string; card: SettingsCardView;
             <pre class="settings-card-diff text-mono">{c().diff}</pre>
           </Show>
         </Show>
+        <Show when={c().saveFailed}>
+          {(why) => (
+            <div class="banner banner-error" role="alert">
+              <div class="banner-body">{why()}</div>
+            </div>
+          )}
+        </Show>
         <Show when={error()}>
           <div class="banner banner-error" role="alert">
             <div class="banner-body">{error()}</div>
@@ -154,15 +179,27 @@ export function SettingsCard(props: { projectId: string; card: SettingsCardView;
       </div>
       <div class="card-foot overseer-card-foot">
         <Show when={waiting()} fallback={<span class="overseer-confirm-hint">{c().state === "applied" ? `Applied${c().commit ? ` as ${c().commit!.slice(0, 10)}` : ""}.` : "Dismissed: nothing changed."}</span>}>
-          <Show when={props.canAct} fallback={<span class="overseer-confirm-hint">Waiting for the operator: apply it on the project's Settings tab.</span>}>
-            <div class="overseer-card-buttons">
-              <button type="button" class="button button-sm button-primary" disabled={busy()} onClick={apply}>
-                {applyLabel()}
-              </button>
-              <button type="button" class={`button button-sm ${local() ? "button-destructive" : "button-ghost"}`} disabled={busy()} onClick={dismiss}>
-                {local() ? "Discard Edits" : "Dismiss"}
-              </button>
-            </div>
+          <Show when={props.canAct} fallback={<span class="overseer-confirm-hint">{held() ? QUEUE_CARD_WAITS : project === null ? "Waiting for you: apply it in the chat that prepared it." : "Waiting for the operator: apply it on the project's Settings tab."}</span>}>
+            <Show
+              when={!held()}
+              fallback={
+                <div class="overseer-card-buttons">
+                  <span class="overseer-confirm-hint">{QUEUE_CARD_WAITS}</span>
+                  <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={cancelSave}>
+                    Cancel Save
+                  </button>
+                </div>
+              }
+            >
+              <div class="overseer-card-buttons">
+                <button type="button" class="button button-sm button-primary" disabled={busy()} onClick={apply}>
+                  {applyLabel()}
+                </button>
+                <button type="button" class={`button button-sm ${local() ? "button-destructive" : "button-ghost"}`} disabled={busy()} onClick={dismiss}>
+                  {local() ? "Discard Edits" : "Dismiss"}
+                </button>
+              </div>
+            </Show>
           </Show>
         </Show>
       </div>
@@ -172,14 +209,16 @@ export function SettingsCard(props: { projectId: string; card: SettingsCardView;
 
 /** The card at a sova_settings call in the overseer's chat: its state read live from the project's settings. */
 export function SettingsToolCard(props: { details: SettingsToolDetails }) {
-  const canAct = useContext(SettingsCardContext);
+  const scope = useContext(SettingsCardContext);
   const [live, setLive] = createSignal<SettingsCardView | null>(null);
+  const canAct = () => scope.overseer || (scope.create && !!props.details.create);
   let timer: ReturnType<typeof setInterval> | undefined;
   const load = async () => {
     const id = props.details.card?.id;
-    if (!id || !canAct) return;
+    if (!id || !canAct()) return;
     try {
-      const info = await getProjectSettings(props.details.projectId);
+      const projectId = props.details.projectId;
+      const info = projectId === null ? await getSovaSettingsCards() : await getProjectSettings(projectId);
       const found = [...info.cards, ...info.recent].find((x) => x.id === id);
       if (found) setLive(found);
       if (found && found.state !== "waiting" && timer) {
@@ -191,7 +230,7 @@ export function SettingsToolCard(props: { details: SettingsToolDetails }) {
     }
   };
   void load();
-  if (canAct && props.details.card?.state === "waiting") timer = setInterval(() => document.visibilityState === "visible" && void load(), POLL_MS);
+  if (canAct() && props.details.card?.state === "waiting") timer = setInterval(() => document.visibilityState === "visible" && void load(), POLL_MS);
   onCleanup(() => timer && clearInterval(timer));
   return (
     <Show
@@ -200,14 +239,14 @@ export function SettingsToolCard(props: { details: SettingsToolDetails }) {
         <Show when={props.details.appliedNow.length}>
           <SettingsCard
             projectId={props.details.projectId}
-            canAct={canAct}
+            canAct={canAct()}
             appliedNow={props.details.appliedNow}
             card={{ id: "now", state: "applied", title: "Applied at once", why: "", by: { kind: "project-overseer" }, createdAt: "", kept: [], files: [], grants: [], lands: null, diff: "", fingerprint: "" }}
           />
         </Show>
       }
     >
-      {(card) => <SettingsCard projectId={props.details.projectId} card={card()} canAct={canAct} appliedNow={props.details.appliedNow} onChanged={() => void load()} />}
+      {(card) => <SettingsCard projectId={props.details.projectId} card={card()} canAct={canAct()} appliedNow={props.details.appliedNow} onChanged={() => void load()} />}
     </Show>
   );
 }

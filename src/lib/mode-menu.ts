@@ -15,11 +15,39 @@ export interface ShownMode {
   /** This chat's project minor modes. Never part of the default: no save writes them, so nothing
       here compares or names them. */
   projectModes?: string[];
+  /** The mode a save writes, when it isn't `mode`: in Create, this chat's last normal or Delegate
+      choice (§chat.create-mode/per-chat-only). */
+  saveMode?: string;
 }
 
 /** The footer's sentence, after the `strict:` chip: a switch is this chat's own — nothing else
     follows it — and new sessions start from the default, which the button below it sets. */
 export const FOOT_NOTE = "A switch here is this chat's own. New sessions start from the default.";
+
+/** The foot's sentence in Create: no default holds it, so the button saves the chat's last other
+    mode, and says which. */
+export const CREATE_FOOT_NOTE = "Create is chosen in each chat, so no default holds it.";
+
+/** What a save writes for this chat: its own mode, except that Create is never a default. A chat
+    in Create that has been in no other mode saves normal. */
+export function savableMode(m: ShownMode): ShownMode {
+  return { ...m, mode: m.saveMode ?? (m.mode === "create" ? "normal" : m.mode) };
+}
+
+/** The footer's sentence, after the `strict:` chip. */
+export function footNote(m: ShownMode | null): string {
+  return m?.mode === "create" ? `${CREATE_FOOT_NOTE} Save as default saves ${modeSummary(savableMode(m))}.` : FOOT_NOTE;
+}
+
+/** What a chat that can do less can't do in Create (§chat.create-mode/where-offered), or null when
+    it can do everything: one sentence per reason, shown beside the Create row and on the setup card. */
+export function createLimits(facts: { sandboxOn: boolean; remote: boolean }): string | null {
+  const lines = [
+    ...(facts.sandboxOn ? ["With its sandbox On, this chat can't write files on this computer, reach Sova's commands, or run project tools."] : []),
+    ...(facts.remote ? ["On a remote machine, this chat can't use project modes or cards."] : []),
+  ];
+  return lines.length ? lines.join(" ") : null;
+}
 
 /** The button, in each of its three states: it can be pressed, it was already done, or it is
     working. */

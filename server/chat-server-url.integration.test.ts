@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { startHermeticServer } from "./testing/hermetic-server";
 
@@ -40,6 +40,7 @@ test("a chat's env names its own server, and the command line finds it there", {
       await new Promise((r) => setTimeout(r, 50));
     }
     assert.equal(env.get("SOVA_URL"), server.base.replace("localhost", "127.0.0.1"));
+    assert.equal(env.get("SOVA_CHAT_STATE_ROOT"), join(server.agentDir, "sova"), "the worktree tool's merge queue check reads it");
     assert.equal(env.get("PORT"), undefined);
     assert.equal(env.get("SOVA_PORT"), undefined, "it would also pick a hermetic server's port");
     const r = spawnSync("node", [CLI, "list", "--json"], { env: { PATH: process.env.PATH ?? "", HOME: server.home, SOVA_URL: env.get("SOVA_URL")!, SOVA_TOKEN: server.token, PI_CODING_AGENT_DIR: server.agentDir }, encoding: "utf8", timeout: 30_000 });

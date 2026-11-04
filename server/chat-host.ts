@@ -225,7 +225,7 @@ export class ChatHostRouter {
           agentDir: w?.spec.agentDir ?? agentRoot(),
           extra: {
             ...withoutLoginContext(w?.spec.env),
-            ...(w?.spec.agentDir ? { SOVA_CHAT_STATE_ROOT: stateRoot() } : {}),
+            SOVA_CHAT_STATE_ROOT: stateRoot(),
             SOVA_CHAT_SOCK: c.sock,
             SOVA_CHAT_PATH: c.sessionPath,
             SOVA_CHAT_ID: c.chatId,

@@ -1796,10 +1796,15 @@ export interface BatchPromptResult {
     new sessions** (~/.pi/agent/mode.json), never one chat's state. `strict` is shown, never
     changed here. `modes`/`minors` list what exists. */
 export interface ModeInfo {
-  mode: string; // "normal" | "delegate"
+  mode: string; // "normal" | "delegate" | "create"
   minorModes: string[]; // canonical order
   strict: boolean;
+  /** Only in Create: the mode Save as Default saves, the chat's last normal or Delegate choice (§chat.create-mode/per-chat-only). */
+  saveMode?: string;
   modes: { id: string; description: string }[];
+  /** Only in GET /api/mode with no path: modes a default can't hold but a chat here can pick (Create). A peer's chat
+      has no ?path= read, so its menu adds these to `modes`; a gathering chat has no menu at all. Absent: an older host. */
+  chatModes?: { id: string; description: string }[];
   minors: { id: string; description: string }[];
   /** The memory minor mode's choice (§chat/memory): in GET /api/mode the saved default new chats
       start from (Settings' memory file), in a ChatModeResult that chat's own. Absent from older servers. */
@@ -1930,6 +1935,9 @@ export interface HeldChatState {
     The same values reach every client of that chat as a "mode" server message. */
 export interface ChatModeResult extends ModeInfo, ChatProjectModes {
   applies: ModeApplies;
+  /** The mode Save as default writes, while it isn't `mode`: in Create, this chat's last normal or
+      Delegate choice (§chat.create-mode/per-chat-only). */
+  saveMode?: string;
 }
 
 // ---- Project minor modes (§chat.mode-menu/project-modes) ----------------------------------------
@@ -2563,7 +2571,7 @@ export type ChatServerMessage =
   | { type: "append"; items: TranscriptItem[] }
   /** THIS chat's own mode, and how the last switch applies to it. Sent after hello and after
       every switch of this chat. No other chat's switch, and no write of the default, sends one. */
-  | ({ type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice } & ChatProjectModes)
+  | ({ type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice; saveMode?: string } & ChatProjectModes)
   /** THIS chat's memory (§chat/memory): sent after hello while memory is on, and on every change once
       it was on; never from a runtime without the memory engine. None received: memory is off. */
   | { type: "memory_status"; status: MemoryStatus }
@@ -3549,6 +3557,7 @@ export interface OverseerCaps {
   linksPerTurn: number;       // default 3: links made (sova_link, §app.overseer/links-tools); absent on read → default
   orgWritesPerTurn: number;   // default 20: organization writes (§app.overseer/org-tools); absent on read → default
   gatherPerTurn: number;      // default 3: gathering sessions or offers started (sova_gather start/offer); absent on read → default
+  extRunsPerTurn: number;     // default 5: extension commands run (sova_ext run, §app.overseer/extension-commands); absent on read → default
 }
 
 /** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */
@@ -3574,6 +3583,25 @@ export interface OverseerSettings {
       UniiChat. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. `size`: an older
       file's, kept but ignored (the size is Settings → Memory's for the type). */
   memory?: { on: boolean; type: MemoryType; size?: number };
+}
+
+/** GET /api/overseer/abilities: what the global Overseer can do, for its About panel (§app.overseer/about).
+    `extensions` is the same reading sova_ext uses (server/overseer-abilities.ts): each installed
+    extension that marks commands for it, with whether it is running now. */
+export interface OverseerAbilitiesInfo {
+  /** Its built-in abilities, one short line per area of its own tools. */
+  builtIn: { name: string; text: string }[];
+  /** Its limits now. */
+  caps: OverseerCaps;
+  extensions: {
+    id: string;
+    title: string;
+    /** Its backend answers its health check: the Overseer can run these now. */
+    running: boolean;
+    /** Why it isn't running, when it isn't. */
+    error?: string;
+    commands: { id: string; label: string; summary?: string; description?: string; job: boolean }[];
+  }[];
 }
 
 export interface OverseerSettingsInfo {
@@ -4185,6 +4213,11 @@ export interface ExtensionCommandInfo {
   /** It is an entry of this menu too: "session", the Agents board row's ⋯ menu
       (src/lib/menu-place.ts). Absent: in no menu. */
   menu?: "session";
+  /** ext-contract-v1.18: the extension offers it to the Overseer, which may run it while the
+      extension is running; nothing to switch on (§app.overseer/extension-commands). Absent: not offered. */
+  overseer?: true;
+  /** ext-contract-v1.18: running it starts a job the extension reports on later. */
+  job?: true;
 }
 /** A place on Sova's screens that Sova's own features and extensions both add to: "reply", under a
     delivered message; "row", line 3 of a session row in the sessions pane (src/lib/row-place.ts);

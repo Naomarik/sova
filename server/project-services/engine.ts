@@ -51,7 +51,7 @@ import { copyContentsArgv } from "./copy-tree";
 import { adoptedLogs, adoptedPids, adoptedStatus, DriverError, rssOf, type AdoptedStatus, type Driver, type OnceSpec, type UnitSpec } from "./drivers";
 import { hostPortOwner } from "./proctable";
 import type { NoteFacts } from "./note";
-import { RESTART_DELAY_SEC, scheduleRestart, serverCheckout, serverStart } from "./self-host";
+import { RESTART_DELAY_SEC, scheduleRestart, SELF_APPLY_REFUSAL, serverCheckout, serverStart } from "./self-host";
 import { checkShare, instanceOfLink, linksOf, revokeLinks, ShareFailure, shareInstance, shareRefusal } from "./share";
 import { publishedPorts, publisherOf, type ContainerQuery } from "./container-ports";
 import {
@@ -80,9 +80,10 @@ import { defHashOf } from "./def-hash";
 // ---- callers and requests -------------------------------------------------------------------------
 
 export type Caller =
-  /** `fromChat`: the operator's route called by a process a chat runs (its `x-sova-caller` key): never the operator's
+  /** `notPage`: a route's caller that isn't the user's own page (a script, a chat's terminal): it never restarts this server.
+      `fromChat`: the operator's route called by a process a chat runs (its `x-sova-caller` key): never the operator's
       acts on a release: a chat's own scripts never act as the operator there. */
-  | { kind: "operator"; confirm?: boolean; fromChat?: true }
+  | { kind: "operator"; confirm?: boolean; notPage?: boolean; fromChat?: true }
   /** `approved`: whether the user's click that opened this turn approved `verb` on that copy (§app.overseer/copies).
       `word`: whether the user started this turn (typed or a click), read per call; absent: never. `working`: whether
       the conversation (session id) that started a copy is working now; absent: always (a click is needed). */
@@ -665,6 +666,7 @@ export class ProjectEngine {
     if (!self || self !== run.project || this.adoptedIn(run)) return;
     const what = `${run.verb} of the main checkout stops or restarts the Sova server's own checkout (${self})`;
     if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project ${run.verb} … --confirm)`);
+    if (run.verb === "apply" && run.caller.notPage) throw new VerbFailure("forbidden", SELF_APPLY_REFUSAL);
     if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project ${run.verb} … --confirm)`);
   }
 
@@ -690,6 +692,7 @@ export class ProjectEngine {
     if (run.verb !== "apply") return;
     const what = `apply of slot 0 restarts the adopted unit ${unit}`;
     if (run.caller.kind !== "operator") throw new VerbFailure("needs-confirm", `${what}: the operator does it, confirmed (sova-project apply … --confirm, or Apply on the project's Branches tab)`);
+    if (run.caller.notPage && this.selfCheckout() === run.project) throw new VerbFailure("forbidden", SELF_APPLY_REFUSAL);
     if (!run.req.confirm) throw new VerbFailure("needs-confirm", `${what}: confirm it (sova-project apply … --confirm)`);
   }
 

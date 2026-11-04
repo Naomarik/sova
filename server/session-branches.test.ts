@@ -325,6 +325,42 @@ test("the queue watch reads a view only when what it rests on moved, and the cha
   }
 });
 
+test("a branch sent back for its drafts: an edit of its drafts alone (no commit, no ref moved) reads its queue's view again", async () => {
+  wire.resetQueueViewsForTest();
+  const drafts: Record<string, string> = { "/repo/.wt/a": "d1", "/repo/.wt/b": "d1" };
+  const { asked, state, deps } = listDeps({ draftsStamp: (w) => drafts[w] ?? "" });
+  state.needsFix = [entry("feat/a", "needs-fix", { worktree: "/repo/.wt/a", sentBackFor: "drafts" }), entry("feat/b", "needs-fix", { worktree: "/repo/.wt/b", sentBackFor: "checks" })];
+  wire.setQueueListForTest(deps);
+  try {
+    await wire.branchQueueFields("/repo/.wt/a", "feat/a");
+    await viewsSettled(() => wire.checkQueueViews() === 0);
+    const n = asked.view;
+    // A check's send-back: its drafts aren't watched.
+    drafts["/repo/.wt/b"] = "d2";
+    assert.equal(wire.checkQueueViews(), 0, "a branch sent back for a check: a drafts edit moves nothing");
+    drafts["/repo/.wt/a"] = "d2";
+    assert.equal(wire.checkQueueViews(), 1, "the drafts' own send-back: read again");
+    await viewsSettled(() => asked.view === n + 1 && wire.checkQueueViews() === 0);
+  } finally {
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+  }
+});
+
+test("a sent-back entry's redrafted fact reaches the session list's rows", () => {
+  wire.resetQueueViewsForTest();
+  try {
+    wire.noteQueueView(view("2026-10-01T00:00:01.000Z", { needsFix: [entry("feat/a", "needs-fix", { sentBackFor: "drafts" })] }));
+    assert.equal(wire.branchQueueNow("/repo", "feat/a")?.redrafted, undefined);
+    const before = listGeneration();
+    wire.noteQueueView(view("2026-10-01T00:00:02.000Z", { needsFix: [entry("feat/a", "needs-fix", { sentBackFor: "drafts", redrafted: true })] }));
+    assert.equal(wire.branchQueueNow("/repo", "feat/a")?.redrafted, true);
+    assert.ok(listGeneration() > before, "the change re-lists the sessions");
+  } finally {
+    wire.resetQueueViewsForTest();
+  }
+});
+
 test("a view no look covers is read once: a move before the feed starts is never swallowed as a baseline", async () => {
   wire.resetQueueViewsForTest();
   const { asked, deps } = listDeps();

@@ -215,6 +215,10 @@
     "project.verb.release.withdraw",
     "mcp.servers.list",
     "mcp.server.status",
+    "overseer.abilities",
+    "settings.cards.get",
+    "settings.cards.withdraw",
+    "project.verb.release.note",
     "project.merge-queue.branch-summary.retry"
   ],
   "retired": [

@@ -45,5 +45,6 @@
     ]
   },
   "env": { "allow": [] },
-  "acceptPartial": false
+  "acceptPartial": false,
+  "browser": "none"
 }

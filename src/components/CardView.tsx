@@ -5,6 +5,7 @@ import { cardDataErrorText } from "../../shared/view-cards";
 import { ApiError, getCardView, runSessionCardCommand, setCardTrust } from "../lib/api";
 import { boxFocusGuard, CARD_BOX_MESSAGE, CARD_BOX_UNSUPPORTED, CARD_SHELL_ATTRS, cardBoxSupported, cardShellDoc, cardViewDoc, fromCardBox } from "../lib/card-box";
 import { CARD_VIEW_BASE_CSS } from "../lib/card-box-css";
+import "../data-cards.css";
 import type { CardControls } from "../lib/card-controls";
 import { answerViewCall, boxHeight } from "../lib/card-view-host";
 import { CardErrorBox } from "./TranscriptKind";

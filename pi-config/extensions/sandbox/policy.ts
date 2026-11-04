@@ -36,7 +36,16 @@ export interface PolicyFile {
 	proxy: { allow: string[] };
 	env: { allow: string[] };
 	acceptPartial: boolean;
+	/**
+	 * Optional; absent means "none". "headless-shell" lets Playwright's chrome-headless-shell run
+	 * inside every confined macOS profile (two Chromium rules, darwin-seatbelt.ts BROWSER_RULES).
+	 */
+	browser?: BrowserSetting;
 }
+
+/** The `browser` key's values. Anything else fails closed. */
+export type BrowserSetting = "none" | "headless-shell";
+export const BROWSER_VALUES: readonly BrowserSetting[] = ["none", "headless-shell"];
 
 /** The policy one tool call runs under: every path absolute and canonical. */
 export interface ResolvedPolicy {
@@ -64,11 +73,15 @@ export interface ResolvedPolicy {
 	outsideParent?: boolean;
 	/** A write-only worker (`ParentScope.writeOnly`): host network, unscrubbed environment, nothing hidden. */
 	writeOnly?: boolean;
+	/** The policy's `browser` is "headless-shell" (a worker: its parent's). macOS only; ignored on Linux. */
+	browser: boolean;
 }
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
 const KEYS = ["version", "level", "defaultOn", "writable", "shadowed", "hidden", "readOnlyWithinWritable", "proxy", "env", "acceptPartial"] as const;
+/** Keys a policy file may omit. */
+const OPTIONAL_KEYS = ["browser"] as const;
 const HOST = /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/;
 const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*\*?$/;
 
@@ -95,10 +108,10 @@ function stringList(v: unknown, what: string, check?: (s: string) => boolean): R
 	return { ok: true, value: out };
 }
 
-/** Validate a parsed policy file. Every key is required and no other key is allowed. */
+/** Validate a parsed policy file. Every key but the optional `browser` is required, and no other key is allowed. */
 export function validatePolicyFile(raw: unknown): Result<PolicyFile> {
 	if (!isRecord(raw)) return { ok: false, error: "policy must be a JSON object" };
-	for (const key of Object.keys(raw)) if (!(KEYS as readonly string[]).includes(key)) return { ok: false, error: `unknown key ${JSON.stringify(key)}` };
+	for (const key of Object.keys(raw)) if (![...KEYS, ...OPTIONAL_KEYS].includes(key as never)) return { ok: false, error: `unknown key ${JSON.stringify(key)}` };
 	for (const key of KEYS) if (!(key in raw)) return { ok: false, error: `missing key ${JSON.stringify(key)}` };
 	if (raw.version !== 1) return { ok: false, error: "version must be 1" };
 	if (!isLevel(raw.level)) return { ok: false, error: `level must be "workspace-write" or "read-only"` };
@@ -124,6 +137,7 @@ export function validatePolicyFile(raw: unknown): Result<PolicyFile> {
 	if (!isRecord(raw.env) || Object.keys(raw.env).some((k) => k !== "allow")) return { ok: false, error: "env must be { allow: [...] }" };
 	const envAllow = stringList(raw.env.allow, "env.allow", (n) => ENV_NAME.test(n));
 	if (!envAllow.ok) return envAllow;
+	if (raw.browser !== undefined && !BROWSER_VALUES.includes(raw.browser as BrowserSetting)) return { ok: false, error: `browser must be "none" or "headless-shell"` };
 	return {
 		ok: true,
 		value: {
@@ -137,8 +151,14 @@ export function validatePolicyFile(raw: unknown): Result<PolicyFile> {
 			proxy: { allow: allow.value.map((h) => h.toLowerCase()) },
 			env: { allow: envAllow.value },
 			acceptPartial: raw.acceptPartial,
+			...(raw.browser !== undefined ? { browser: raw.browser as BrowserSetting } : {}),
 		},
 	};
+}
+
+/** True when the policy file turns the headless-shell rules on. Absent means "none". */
+export function browserOn(policy: Pick<PolicyFile, "browser">): boolean {
+	return policy.browser === "headless-shell";
 }
 
 const fileCache = new Map<string, { mtimeMs: number; size: number; result: Result<PolicyFile> }>();
@@ -166,8 +186,9 @@ export function loadPolicyFile(path: string): Result<PolicyFile> {
 
 /**
  * Apply a project's `.sova/sandbox.json`. It may only tighten: `level: "read-only"` lowers,
- * `hidden` and `readOnlyWithinWritable` add, `writable` and `proxy.allow` intersect. Anything else
- * (defaultOn, env, acceptPartial, unknown keys, a malformed value) is ignored with a notice.
+ * `hidden` and `readOnlyWithinWritable` add, `writable` and `proxy.allow` intersect, `browser: "none"`
+ * turns the browser rules off. Anything else (defaultOn, env, acceptPartial, `browser:
+ * "headless-shell"`, unknown keys, a malformed value) is ignored with a notice.
  * The file sits in the writable tree, so it can never be a boundary: tighten-only is what makes
  * reading it safe.
  */
@@ -178,6 +199,10 @@ export function applyProjectTightening(base: PolicyFile, raw: unknown): { policy
 	for (const [key, value] of Object.entries(raw)) {
 		switch (key) {
 			case "version":
+				break;
+			case "browser":
+				if (value === "none") policy.browser = "none";
+				else if (!(value === "headless-shell" && browserOn(base))) ignored.push("browser");
 				break;
 			case "level":
 				if (value === "read-only") policy.level = "read-only";
@@ -324,6 +349,10 @@ export function isWithin(child: string, parent: string): boolean {
  * `writeOnly` (§chat.worktrees/workers): the worker's parent is NOT sandboxed and confines it to
  * writing inside `writable` only. No policy file is read; nothing is hidden, the network and the
  * environment stay as they are.
+ *
+ * `browser`: the parent's policy turns the headless-shell rules on (its file's `browser`, after its
+ * cwd's project file). Like the allowlists it is the parent's, never the worker's own file's; a
+ * write-only worker gets it only this way. Only a literal `true` parses.
  */
 export interface ParentScope {
 	version: 1;
@@ -335,10 +364,11 @@ export interface ParentScope {
 	proxyAllow?: string[];
 	envAllow?: string[];
 	writeOnly?: true;
+	browser?: true;
 }
 
 export function parentScopeOf(
-	policy: Pick<ResolvedPolicy, "level" | "workspaceRoot" | "writable" | "tmpDir"> & Partial<Pick<ResolvedPolicy, "readOnlyWithinWritable" | "hidden" | "proxyAllow" | "envAllow">>,
+	policy: Pick<ResolvedPolicy, "level" | "workspaceRoot" | "writable" | "tmpDir"> & Partial<Pick<ResolvedPolicy, "readOnlyWithinWritable" | "hidden" | "proxyAllow" | "envAllow" | "browser">>,
 ): ParentScope {
 	const writable = policy.level === "read-only" ? [] : policy.writable.filter((w) => w !== policy.tmpDir);
 	// Only what lies inside a root handed down matters: anything else is not writable for the worker anyway.
@@ -352,6 +382,7 @@ export function parentScopeOf(
 		...(policy.hidden ? { hidden: [...policy.hidden] } : {}),
 		...(policy.proxyAllow ? { proxyAllow: [...policy.proxyAllow] } : {}),
 		...(policy.envAllow ? { envAllow: [...policy.envAllow] } : {}),
+		...(policy.browser ? { browser: true as const } : {}),
 	};
 }
 
@@ -365,9 +396,28 @@ export function narrowScope(scope: ParentScope, root: string): ParentScope {
 	return { ...rest, writable: [root], ...(readOnly.length ? { readOnly } : {}) };
 }
 
-/** The scope an unsandboxed parent gives a worker it confines to `root`: writes there only (its `.agent` read-only), nothing else changed. */
-export function writeOnlyScope(root: string): ParentScope {
-	return { version: 1, level: "workspace-write", workspaceRoot: root, writable: [root], readOnly: [join(root, ".agent")], writeOnly: true };
+/**
+ * The scope an unsandboxed parent gives a worker it confines to `root`: writes there only (its
+ * `.agent` read-only), nothing else changed. `browser`: the parent's policy turns the browser rules
+ * on (`parentBrowser`).
+ */
+export function writeOnlyScope(root: string, opts: { browser?: boolean } = {}): ParentScope {
+	return { version: 1, level: "workspace-write", workspaceRoot: root, writable: [root], readOnly: [join(root, ".agent")], writeOnly: true, ...(opts.browser ? { browser: true as const } : {}) };
+}
+
+/**
+ * Whether a parent that is not on hands its write-only workers the browser rules: its own policy
+ * file's `browser`, after its cwd's project file. Any load failure means no browser; the worker
+ * still starts write-only.
+ */
+export function parentBrowser(agentDir: string, cwd: string, platform: string = process.platform): boolean {
+	try {
+		const loaded = loadPolicyFile(policyFilePath(agentDir, platform));
+		if (!loaded.ok) return false;
+		return browserOn(loadProjectTightening(canonicalize(cwd), loaded.value).policy);
+	} catch {
+		return false;
+	}
 }
 
 /** Parse the `--sandbox-parent` flag. Anything malformed is an error: the worker then refuses every tool. */
@@ -405,6 +455,10 @@ export function parseParentScope(value: unknown): Result<ParentScope> {
 	if (raw.writeOnly !== undefined) {
 		if (raw.writeOnly !== true || raw.level !== "workspace-write") return { ok: false, error: "--sandbox-parent writeOnly is malformed" };
 		scope.writeOnly = true;
+	}
+	if (raw.browser !== undefined) {
+		if (raw.browser !== true) return { ok: false, error: "--sandbox-parent browser is malformed" };
+		scope.browser = true;
 	}
 	return { ok: true, value: scope };
 }
@@ -500,6 +554,7 @@ function resolveWriteOnly(input: ResolveInput, parent: ParentScope): Result<Reso
 			shadowed: input.shadowSource ? shadowCanon.map((p) => ({ path: p, source: canonicalize(input.shadowSource!(input.agentDir, p)) })) : [],
 			notices: [],
 			writeOnly: true,
+			browser: parent.browser === true,
 			...(outsideParent ? { outsideParent: true } : {}),
 		},
 	};
@@ -577,6 +632,8 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 			// A worker of a sandboxed parent is held to the parent's allowlists, never its own file's.
 			proxyAllow: [...(input.parent?.proxyAllow ?? policy.proxy.allow)],
 			envAllow: [...(input.parent?.envAllow ?? policy.env.allow)],
+			// The parent's too: a worker's own (worktree) file could turn it on.
+			browser: input.parent ? input.parent.browser === true : browserOn(policy),
 			acceptPartial: policy.acceptPartial,
 			policyDir: pDir,
 			agentDir,

@@ -5,7 +5,7 @@
 // in-process (links-transfer-test-fixtures.ts). State lives in a throwaway dir, removed after.
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -1034,10 +1034,13 @@ describe("file offers (§mesh.links/offers, §mesh.links/transfer)", () => {
     const work = join(A.root, "work");
     // Offer 1 leaves proj/l -> B's state root: a symlink travels as a link, whatever its target.
     mkdirSync(join(work, "e1", "proj"), { recursive: true });
-    symlinkSync(state, join(work, "e1", "proj", "l"));
+    // Relative, so its length isn't the temp dir's: the test's ustar writer holds 100 bytes of link target.
+    const toState = "../../../state";
+    symlinkSync(toState, join(work, "e1", "proj", "l"));
     const r1 = await offer({ paths: ["e1/proj"], dest: "in" });
     await until(() => rowFor(offerOf(A, r1.json.offer.id), B)?.state === "done", 15_000, "offer 1 done");
-    assert.equal(readlinkSync(join(B.root, "work", "in", "proj", "l")), state);
+    assert.equal(readlinkSync(join(B.root, "work", "in", "proj", "l")), toState);
+    assert.equal(realpathSync(join(B.root, "work", "in", "proj", "l")), realpathSync(state), "the link reaches B's state root");
     // Offer 2 comes from a sender whose tar leaves the directories out: proj/l/mesh-access.json alone.
     makeTreeAt(join(work, "e2", "proj", "l"), { "mesh-access.json": '{"grant":"full"}' });
     A.dirless = true;

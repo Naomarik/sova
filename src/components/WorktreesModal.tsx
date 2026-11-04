@@ -187,7 +187,8 @@ export const queueHrefOf = (rows: QueueWorktree[]): string | null => {
  * One worktree in the queue's words, with its one action (§ the composer modal and the session pane
  * draw the same rows from the same state, so they always agree): Land on a ready one, which asks first (its ▾
  * holds Land Without Review and Land Without Its Specs…), Cancel on a queued one, Accept or Land Anyway
- * beside Send Back where it waits for you, Set Up Queue where the project has none.
+ * beside Send Back where it waits for you, Land This Commit Again and Remove from Queue where it was
+ * sent back, Set Up Queue where the project has none.
  */
 export function WorktreeQueueRow(props: {
   worktree: QueueWorktree;
@@ -343,6 +344,30 @@ export function WorktreeQueueRow(props: {
         <Show when={buttons().includes("Send Back")}>
           <button type="button" class="button button-sm button-destructive" aria-label={`Send ${w().branch} back to its chat`} disabled={busy()} onClick={() => void run("Send Back", () => answerEntry(e(), "send-back"), `Sent ${w().branch} back to its chat.`)}>
             Send Back
+          </button>
+        </Show>
+        <Show when={buttons().includes("Land This Commit Again")}>
+          <button
+            type="button"
+            class="button button-sm"
+            aria-label={`Land ${w().branch} at this commit again`}
+            title="Approve the same commit again: every check runs from the start."
+            disabled={busy()}
+            onClick={() => void run("Land This Commit Again", () => land(w().path, { commit: e().commit }), `Queued ${w().branch} at ${e().commit.slice(0, 7)} again.`)}
+          >
+            Land This Commit Again
+          </button>
+        </Show>
+        <Show when={buttons().includes("Remove from Queue")}>
+          <button
+            type="button"
+            class="button button-sm"
+            aria-label={`Remove ${w().branch} from the merge queue`}
+            title="Takes it off the queue. Its branch, folder, commits and drafts stay."
+            disabled={busy()}
+            onClick={() => void run("Remove from Queue", () => cancelEntry(e()), `Removed ${w().branch} from the merge queue.`)}
+          >
+            Remove from Queue
           </button>
         </Show>
         {props.extra}

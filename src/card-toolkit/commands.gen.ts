@@ -97,6 +97,7 @@ export type CommandId =
   | "project.verb.release.publish"
   | "project.verb.release.abandon"
   | "project.verb.release.withdraw"
+  | "project.verb.release.note"
   | "project.services.view"
   | "project.overseer.idea.list"
   | "project.overseer.idea.get"
@@ -144,6 +145,7 @@ export type CommandId =
   | "project.merge-queue.land-how.clear"
   | "project.merge-queue.branch-summary.retry"
   | "overseer.attention"
+  | "overseer.abilities"
   | "overseer.todo.list"
   | "overseer.todo.add"
   | "overseer.todo.update"
@@ -197,6 +199,8 @@ export type CommandId =
   | "settings.memory.get"
   | "settings.subagents.get"
   | "settings.align.set"
+  | "settings.cards.get"
+  | "settings.cards.withdraw"
   | "settings.assistant-default.set"
   | "push.test"
   | "audit.list"
@@ -2629,6 +2633,37 @@ export interface CommandParams {
     /** Dismiss the request */
     "dismiss"?: boolean;
   };
+  /** The project verb release.note, as the operator (sova-project release.note). (changes something; needs the card's owner trusted) */
+  "project.verb.release.note": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
   /** A project's Branches tab: its copies, their services and the supervisor. (only looks; needs the card's owner trusted) */
   "project.services.view": {
     /** The project's id */
@@ -2856,6 +2891,8 @@ export interface CommandParams {
     "card": string;
     /** local only: the fingerprint the card showed */
     "fingerprint"?: string;
+    /** local only: cancel a held Land and keep the edits */
+    "cancel-save"?: boolean;
   };
   /** Change a project overseer's settings: Watch, powers, models, limits, pace, the hold, extra instructions. (changes something; needs the card's owner trusted) */
   "project.overseer.settings.set": {
@@ -2982,6 +3019,8 @@ export interface CommandParams {
   };
   /** What needs the user now, as the Overseer's digest has it. (only looks; needs the card's owner trusted) */
   "overseer.attention": Record<string, never>;
+  /** What the Overseer can do: its built-in abilities, its limits and the commands its extensions offer it. (only looks; needs the card's owner trusted) */
+  "overseer.abilities": Record<string, never>;
   /** The Overseer's to-do list. (only looks; needs the card's owner trusted) */
   "overseer.todo.list": Record<string, never>;
   /** Add a to-do to the Overseer's list. (changes something; needs the card's owner trusted) */
@@ -3219,6 +3258,13 @@ export interface CommandParams {
     "visuals"?: unknown;
     /** The Eagerness: "careful", or omitted for Eager */
     "eagerness"?: unknown;
+  };
+  /** The Sova-wide settings cards a Create chat prepared: waiting, and recently applied or dismissed. (only looks; needs the card's owner trusted) */
+  "settings.cards.get": Record<string, never>;
+  /** Dismiss a Sova-wide settings card a Create chat prepared. Nothing changes. (changes something; needs the card's owner trusted) */
+  "settings.cards.withdraw": {
+    /** The card's id (sw_…) */
+    "card": string;
   };
   /** Set or clear the model and thinking every organization's Project Assistant uses unless it picks its own. (changes something; needs the card's owner trusted) */
   "settings.assistant-default.set": {
@@ -3480,6 +3526,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.verb.release.publish": "changes",
   "project.verb.release.abandon": "changes",
   "project.verb.release.withdraw": "changes",
+  "project.verb.release.note": "changes",
   "project.services.view": "looks",
   "project.overseer.idea.list": "looks",
   "project.overseer.idea.get": "looks",
@@ -3527,6 +3574,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.merge-queue.land-how.clear": "changes",
   "project.merge-queue.branch-summary.retry": "changes",
   "overseer.attention": "looks",
+  "overseer.abilities": "looks",
   "overseer.todo.list": "looks",
   "overseer.todo.add": "changes",
   "overseer.todo.update": "changes",
@@ -3580,6 +3628,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "settings.memory.get": "looks",
   "settings.subagents.get": "looks",
   "settings.align.set": "changes",
+  "settings.cards.get": "looks",
+  "settings.cards.withdraw": "changes",
   "settings.assistant-default.set": "changes",
   "push.test": "changes",
   "audit.list": "looks",

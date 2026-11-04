@@ -1,4 +1,23 @@
 {
+  "§site.docs/add-ons": {
+    "kind": "behavior",
+    "requires": [
+      "§chat/slash-commands",
+      "§app.chat-processes/code-pickup",
+      "§chat.mode-menu/workers",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/extending/add-ons.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T00:57Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
+    }
+  },
   "§site.docs/align": {
     "kind": "behavior",
     "requires": [
@@ -50,6 +69,43 @@
       "site/src/content/docs/modes/align/review.md"
     ]
   },
+  "§site.docs/automation-files": {
+    "kind": "behavior",
+    "requires": [
+      "§chat/schedules",
+      "§chat.create-mode/per-chat-only",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/extending/automation-files.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T00:57Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
+    }
+  },
+  "§site.docs/card-types": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.transcript-cards/files",
+      "§chat.transcript-cards/view-api",
+      "§chat.transcript-cards/trust",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "site/src/content/docs/extending/card-types.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T00:57Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
+    }
+  },
   "§site.docs/change-direction": {
     "kind": "behavior",
     "requires": [
@@ -91,6 +147,34 @@
       "site/src/styles/tokens.css"
     ]
   },
+  "§site.docs/create": {
+    "kind": "behavior",
+    "requires": [
+      "§chat/create-mode",
+      "§chat.create-mode/delegate-parity",
+      "§chat.create-mode/boundary",
+      "§chat.create-mode/contents",
+      "§chat.create-mode/where-offered",
+      "§chat.create-mode/settings-cards",
+      "§chat.create-mode/card-or-land",
+      "§chat.create-mode/computer-files",
+      "§chat.create-mode/per-chat-only",
+      "§chat.create-mode/new-tools",
+      "§chat.create-mode/after-a-change",
+      "§chat.create-mode/growth-rule",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/modes/create.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T00:57Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
+    }
+  },
   "§site.docs/delegate": {
     "kind": "behavior",
     "requires": [
@@ -113,13 +197,53 @@
       "§app.project-overseer/coding-mode",
       "§app.overseer/hosting",
       "§app.chat-processes/workers",
-      "§app.chat-processes/survives-restart"
+      "§app.chat-processes/survives-restart",
+      "§site.docs/create"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
     "code": [
       "site/src/content/docs/modes/delegate.md"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§site.docs/drawing-kinds": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.transcript-cards/drawing-kinds",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "site/src/content/docs/extending/drawing-kinds.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T00:57Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
+    }
+  },
+  "§site.docs/extending": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.create-mode/contents",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/extending/index.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T00:57Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
+    }
   },
   "§site.docs/frame": {
     "kind": "behavior",
@@ -139,8 +263,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-27T08:45Z",
-      "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#a0c6ea0d"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§site.docs/index": {
@@ -154,7 +278,9 @@
       "§chat.markdown/visuals",
       "§tools/spec",
       "§chat/memory",
-      "§chat.memory/where"
+      "§chat.memory/where",
+      "§chat/create-mode",
+      "§site.docs/extending"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -163,7 +289,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-14T12:38Z"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§site.docs/install": {
@@ -259,6 +386,39 @@
       "site/src/content/docs/modes/memory.md"
     ]
   },
+  "§site.docs/merge-queue": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/merge-queue.md",
+      "site/src/data/docs.ts"
+    ],
+    "requires": [
+      "§app/merge-queue",
+      "§app.merge-queue/served",
+      "§app.merge-queue/approve",
+      "§app.merge-queue/run",
+      "§app.merge-queue/checks",
+      "§app.merge-queue/blame",
+      "§app.merge-queue/land",
+      "§app.merge-queue/push",
+      "§app.merge-queue/review",
+      "§app.merge-queue/conflicts",
+      "§app.merge-queue/setup",
+      "§app.merge-queue/view",
+      "§app.merge-queue/chats",
+      "§app.merge-queue/settings",
+      "§app.merge-queue/strategies",
+      "§chat.worktrees/tool",
+      "§chat.composer/worktrees-control"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T20:20Z",
+      "source": "pi-session:01a1a7b1-62c9-754f-a095-5fcceffc995c#7c5470f2"
+    }
+  },
   "§site.docs/modes": {
     "kind": "behavior",
     "requires": [
@@ -288,7 +448,8 @@
       "§chat.memory/settings",
       "§chat.memory/overseer",
       "§app.project-overseer/memory-switch",
-      "§app.overseer/memory-switch"
+      "§app.overseer/memory-switch",
+      "§chat/create-mode"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -297,7 +458,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-14T12:38Z"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§site.docs/needs-you": {
@@ -377,7 +539,8 @@
       "§chat.mode-menu/project-modes",
       "§app.overseer/links-tools",
       "§app.overseer/org-writes",
-      "§app.overseer/file-writes"
+      "§app.overseer/file-writes",
+      "§app.access/your-click"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -386,7 +549,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-14T12:38Z"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§site.docs/phone": {
@@ -440,6 +604,24 @@
       "source": "pi-session:01a15538-3d82-74c0-b458-b5235540d614#203f4764"
     }
   },
+  "§site.docs/project-definition": {
+    "kind": "behavior",
+    "requires": [
+      "§app/project-services",
+      "§app/merge-queue",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "site/src/content/docs/extending/project-definition.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
   "§site.docs/project-modes": {
     "kind": "behavior",
     "requires": [
@@ -448,17 +630,70 @@
       "§chat.mode-menu/states",
       "§chat.mode-menu/workers",
       "§chat.mode-menu/terminal",
-      "§app.overseer/tools"
+      "§app.overseer/tools",
+      "§app.access/your-click",
+      "§app.commands/cli"
     ],
     "authority": "accepted",
     "code": [
-      "site/src/content/docs/modes/project-modes.md"
+      "site/src/content/docs/modes/project-modes.md",
+      "docs/customization.md"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-19T02:40Z"
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     },
     "evidence": "reviewed"
+  },
+  "§site.docs/releases": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/releases.md",
+      "site/src/data/docs.ts"
+    ],
+    "requires": [
+      "§app/release",
+      "§app.release/maker",
+      "§app.release/start",
+      "§app.release/steps",
+      "§app.release/checks",
+      "§app.release/publish",
+      "§app.release/abandon",
+      "§app.release/withdraw",
+      "§app.release/quiet",
+      "§app.release/power",
+      "§app.release/tab",
+      "§app.release/deploy"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T20:20Z",
+      "source": "pi-session:01a1a7b1-62c9-754f-a095-5fcceffc995c#7c5470f2"
+    }
+  },
+  "§site.docs/scripting": {
+    "kind": "behavior",
+    "requires": [
+      "§app/commands",
+      "§app.commands/cli",
+      "§app/events",
+      "§app/command-audit",
+      "§app.access/your-click",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/extending/scripting.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
   },
   "§site.docs/spec-mode": {
     "kind": "behavior",

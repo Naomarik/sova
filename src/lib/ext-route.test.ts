@@ -4,13 +4,13 @@ import type { SessionSummary } from "../../shared/protocol";
 import { extFrameSrc, extHref, extRouteFromHash, MAXIMIZE, OPEN_SESSION, parseExtMessage, RESTORE, ROUTE, subFromExtHash } from "./ext-route";
 
 test("extRouteFromHash reads #/ext/<id>, with or without a trailing slash, as the extension's home", () => {
-  assert.deepEqual(extRouteFromHash("#/ext/dataico"), { id: "dataico", sub: null });
+  assert.deepEqual(extRouteFromHash("#/ext/acme"), { id: "acme", sub: null });
   assert.deepEqual(extRouteFromHash("#/ext/my.ext_2-b/"), { id: "my.ext_2-b", sub: null });
 });
 
 test("extRouteFromHash reads a sub-route after the id", () => {
-  assert.deepEqual(extRouteFromHash("#/ext/dataico/row/dataico:dataico-wt1"), { id: "dataico", sub: "row/dataico:dataico-wt1" });
-  assert.deepEqual(extRouteFromHash("#/ext/a/row/dataico%3Awt1/"), { id: "a", sub: "row/dataico%3Awt1/" });
+  assert.deepEqual(extRouteFromHash("#/ext/acme/row/acme:acme-wt1"), { id: "acme", sub: "row/acme:acme-wt1" });
+  assert.deepEqual(extRouteFromHash("#/ext/a/row/acme%3Awt1/"), { id: "a", sub: "row/acme%3Awt1/" });
 });
 
 test("a sub-route an extension hash can't carry is dropped, and the extension opens at home", () => {
@@ -27,18 +27,18 @@ test("extRouteFromHash refuses other routes and ids the manifest can't hold", ()
 });
 
 test("extHref and extFrameSrc carry the sub-route, and round-trip through the route", () => {
-  for (const id of ["dataico", "a.b", "x_y-z"]) {
+  for (const id of ["acme", "a.b", "x_y-z"]) {
     assert.deepEqual(extRouteFromHash(extHref(id)), { id, sub: null });
     assert.equal(extFrameSrc(id), `/ext/${id}/`);
     assert.equal(extFrameSrc(id, null), `/ext/${id}/`);
   }
-  assert.equal(extHref("dataico", "row/dataico:wt1"), "#/ext/dataico/row/dataico:wt1");
-  assert.deepEqual(extRouteFromHash(extHref("dataico", "row/dataico:wt1")), { id: "dataico", sub: "row/dataico:wt1" });
-  assert.equal(extFrameSrc("dataico", "row/dataico:wt1"), "/ext/dataico/#/row/dataico:wt1");
+  assert.equal(extHref("acme", "row/acme:wt1"), "#/ext/acme/row/acme:wt1");
+  assert.deepEqual(extRouteFromHash(extHref("acme", "row/acme:wt1")), { id: "acme", sub: "row/acme:wt1" });
+  assert.equal(extFrameSrc("acme", "row/acme:wt1"), "/ext/acme/#/row/acme:wt1");
 });
 
 test("subFromExtHash: an extension hash to its sub-route, #/ to the home", () => {
-  assert.equal(subFromExtHash("#/row/dataico:wt1"), "row/dataico:wt1");
+  assert.equal(subFromExtHash("#/row/acme:wt1"), "row/acme:wt1");
   assert.equal(subFromExtHash("#/"), null);
 });
 
@@ -116,7 +116,7 @@ describe("parseExtMessage", () => {
   test("maximize, restore and route are accepted from the extension's own frame and this origin", () => {
     assert.deepEqual(parse({ data: { type: MAXIMIZE } }), { kind: "maximize" });
     assert.deepEqual(parse({ data: { type: RESTORE } }), { kind: "restore" });
-    assert.deepEqual(parse({ data: { type: ROUTE, hash: "#/row/dataico:dataico-wt1" } }), { kind: "route", hash: "#/row/dataico:dataico-wt1" });
+    assert.deepEqual(parse({ data: { type: ROUTE, hash: "#/row/acme:acme-wt1" } }), { kind: "route", hash: "#/row/acme:acme-wt1" });
     assert.deepEqual(parse({ data: { type: ROUTE, hash: "#/" } }), { kind: "route", hash: "#/" });
   });
 

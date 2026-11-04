@@ -3,7 +3,8 @@
     "kind": "behavior",
     "requires": [
       "§mesh.peers/grants",
-      "§app.project-services/result"
+      "§app.project-services/result",
+      "§app.access/your-click"
     ],
     "code": [
       "shared/commands-catalog.ts",
@@ -17,13 +18,15 @@
       "shared/commands/sessions.ts",
       "shared/commands/projects.ts",
       "docs/commands.md",
-      "shared/commands/other.ts"
+      "shared/commands/other.ts",
+      "server/commands-inventory/scan.ts",
+      "server/commands-inventory/baseline.json"
     ],
     "authority": "accepted",
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T06:51Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+      "at": "2026-11-04T12:30Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#78234ec6"
     },
     "evidence": "verified"
   },
@@ -41,9 +44,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-20T09:31Z",
-      "source": "pi-session:4441e428-24f6-4250-885d-3456497e0d92#2db8e784"
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     },
     "evidence": "verified"
   },
@@ -59,12 +62,14 @@
       "shared/commands-ext.test.ts",
       "scripts/sova.mjs",
       "server/sova-cli.integration.test.ts",
-      "docs/customization.md"
+      "docs/customization.md",
+      "server/extension-offers-overseer.test.ts"
     ],
     "authority": "accepted",
     "agreed": {
       "by": "user",
-      "at": "2026-10-17T17:59Z"
+      "at": "2026-10-27T21:10Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
     },
     "evidence": "verified"
   },
@@ -158,7 +163,8 @@
     "authority": "accepted",
     "agreed": {
       "by": "user",
-      "at": "2026-10-17T17:59Z"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     },
     "evidence": "verified"
   }

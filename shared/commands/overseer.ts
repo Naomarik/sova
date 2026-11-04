@@ -44,6 +44,17 @@ export const OVERSEER_ENTRIES: CommandEntry[] = [
     meshNeed: "sessions",
   },
   {
+    id: "overseer.abilities",
+    label: "Show Overseer Abilities",
+    summary: "What the Overseer can do: its built-in abilities, its limits and the commands its extensions offer it.",
+    effect: "looks",
+    params: {},
+    route: { method: "GET", path: "/api/overseer/abilities" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "sessions",
+  },
+  {
     id: "overseer.todo.list",
     label: "List To-dos",
     summary: "The Overseer's to-do list.",

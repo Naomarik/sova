@@ -5,6 +5,7 @@ import { MEMORY_CODING_REFUSAL } from "../shared/memory";
 import { acquireChatHandle, isSessionBusy } from "./chat-handle";
 import { workingSubagents } from "./live";
 import { parseModePatch, type ModePatch } from "./mode-state";
+import { createNotNamed } from "../shared/profiles";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import { resolveSessionPath } from "./paths";
 import { getSessionSummary } from "./sessions-index";
@@ -32,6 +33,7 @@ export function parseConfigure(body: unknown): { req: SessionConfigure; patch: M
   if (b.thinking !== undefined && (typeof b.thinking !== "string" || !THINKING_LEVELS.includes(b.thinking)))
     return { error: `thinking must be one of: ${THINKING_LEVELS.join(", ")}` };
   let patch: ModePatch | null = null;
+  if (b.mode === "create") return { error: createNotNamed("the Overseer") };
   // The Overseer's route to a peer's session: memory is never given to a coding session (§chat.memory/where).
   if (Array.isArray(b.minorModes) && b.minorModes.includes("memory")) return { error: MEMORY_CODING_REFUSAL };
   if (b.mode !== undefined || b.minorModes !== undefined) {

@@ -2,7 +2,7 @@
 // on another version, whether it offers Resync, and the words of the confirm sheet. Pure, so node
 // tests run it without a DOM. Types: shared/mesh-resync.ts.
 
-import { noRecipeReason, type ResyncHost, type ResyncJob, type ResyncSelf } from "../../shared/mesh-resync";
+import { type MeshResync, noRecipeReason, relationRefusal, type ResyncHost, type ResyncJob, type ResyncSelf } from "../../shared/mesh-resync";
 
 export type { MeshResync, ResyncHost, ResyncJob, ResyncSelf } from "../../shared/mesh-resync";
 
@@ -71,6 +71,23 @@ export function sheetText(h: ResyncHost, self: ResyncSelf): { title: string; wha
     job: `The job runs from ${self.label}: restarting ${self.label}'s server stops it.${phone}`,
     action: `Resync ${h.label}`,
   };
+}
+
+/** What a Create card shows before Apply: the confirm sheet's own sentences, for the commit it pins, or why not. */
+export type CardSheet = { commit: string; lines: string[] } | { problem: string };
+
+export function cardSheet(info: MeshResync, peer: string): CardSheet {
+  const h = info.hosts.find((x) => x.id === peer);
+  if (!h) return { problem: `No computer ${peer} here.` };
+  if (!h.recipe) return { problem: noRecipeReason({ id: h.id, label: h.label }, info.self.label) };
+  if (h.recipeProblem) return { problem: `The recipe for ${h.label} can't run: ${h.recipeProblem}` };
+  if (info.self.blocked) return { problem: info.self.blocked };
+  if (h.state === "up") return { problem: `${h.label} already runs ${info.self.label}'s version` };
+  if (h.state !== "skewed") return { problem: `${h.label} isn't answering (${h.state}), so its build can't be compared` };
+  if (h.relation !== "behind") return { problem: relationRefusal(h.relation, h.label, info.self.label) };
+  if (!info.self.commit) return { problem: `${info.self.label}'s build can't be named` };
+  const s = sheetText(h, info.self);
+  return { commit: info.self.commit, lines: [s.what, s.running, s.job] };
 }
 
 /** The sheet once a job exists: one sentence for where it is. */

@@ -229,6 +229,153 @@ describe("approval", () => {
   });
 });
 
+describe("sent back for its drafts", () => {
+  /** A kit whose drafts and docs check the test moves by hand. */
+  const draftsKit = () => {
+    const d = { hash: "h1", print: "p1", check: { problems: [] as string[] } as { problems: string[] } | "pending", checked: [] as string[] };
+    const k = makeKit({
+      deps: {
+        draftsHash: () => ({ hash: d.hash, names: ["x"] }),
+        draftsFingerprint: () => d.print,
+        docsCheck: (_dir, commit) => (d.checked.push(commit), d.check),
+      },
+    });
+    return { d, k };
+  };
+  const readyAt = (v: { ready?: { branch: string; commit: string }[] }, branch: string, commit: string) => (v.ready ?? []).some((r) => r.branch === branch && r.commit === commit);
+
+  test("Land comes back at the same commit once its drafts changed and the docs check reads clean; a problem or a check still running keeps it sent back", async () => {
+    const { d, k } = draftsKit();
+    try {
+      k.run.set(() => ({ verdict: "failed", blame: "branch", cause: "drafts", why: "your spec drafts don't fit" }));
+      const q = await k.q();
+      const b = k.repo.branch("feat/doc", { "b.txt": "b\n" });
+      const { entry } = await q.add({ branch: "feat/doc", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
+      const e = await k.entry(entry.id);
+      assert.equal(e.sentBackFor, "drafts");
+      assert.equal(e.sentBackDrafts, "p1", "the drafts folder as it was at the hand-back");
+      let v = await q.view({ fresh: true });
+      assert.ok(!readyAt(v, "feat/doc", b.head), "unchanged drafts: no Land at the sent-back commit");
+      assert.equal(v.needsFix[0]?.redrafted, undefined);
+      assert.equal(v.needsFix[0]?.sentBackFor, "drafts");
+
+      // Only a note recorded (draft.json): the drafts' hash is the same, the folder isn't.
+      d.print = "p2";
+      d.check = { problems: ["§b/x: no verification note"] };
+      v = await q.view({ fresh: true });
+      assert.ok(!readyAt(v, "feat/doc", b.head) && !v.needsFix[0]?.redrafted, "the docs check still finds a problem: still sent back");
+      d.check = "pending";
+      v = await q.view({ fresh: true });
+      assert.ok(!readyAt(v, "feat/doc", b.head) && !v.needsFix[0]?.redrafted, "the check still running: not yet");
+      assert.ok(d.checked.every((c) => c === b.head), "checked at the sent-back commit");
+
+      d.check = { problems: [] };
+      const published = k.views.length;
+      v = await q.view({ fresh: true });
+      assert.ok(readyAt(v, "feat/doc", b.head), "Ready to land again at the same commit");
+      assert.equal(v.needsFix[0]?.redrafted, true);
+      await until(() => k.views.slice(published).some((x) => x.needsFix.some((n) => n.id === entry.id && n.redrafted)), "the change is published with no save");
+
+      // Land This Commit Again: a new approval of the same commit with the drafts as they are now, run from the start.
+      k.run.set(null);
+      d.hash = "h1";
+      const again = await q.add({ branch: "feat/doc", commit: b.head, by: "land-button" });
+      assert.notEqual(again.entry.id, entry.id);
+      assert.equal(again.entry.commit, b.head);
+      await landed(k, again.entry.id);
+      assert.equal(k.run.inputs.length, 2, "every check ran again");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("sent back for a failing check: no Land at the same commit, even with its drafts changed and clean", async () => {
+    const { d, k } = draftsKit();
+    try {
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed" }));
+      const q = await k.q();
+      const b = k.repo.branch("feat/bad", { "b.txt": "b\n" });
+      const { entry } = await q.add({ branch: "feat/bad", by: "land-button" });
+      await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
+      assert.equal((await k.entry(entry.id)).sentBackFor, "checks");
+      d.hash = "h2";
+      d.print = "p2";
+      const v = await q.view({ fresh: true });
+      assert.ok(!readyAt(v, "feat/bad", b.head));
+      assert.equal(v.needsFix[0]?.redrafted, undefined);
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("an entry sent back before its cause was kept loads; its cause is inferred once from a failed docs step, else it isn't the drafts'", async () => {
+    const { d, k } = draftsKit();
+    try {
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "your spec drafts don't fit" }));
+      const q = await k.q();
+      const b = k.repo.branch("feat/old", { "b.txt": "b\n" });
+      const { entry } = await q.add({ branch: "feat/old", by: "land-button" });
+      await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
+      await q.idle();
+      const qf = join(q.store.dir, "queue.json");
+      await k.queues.stop();
+      // As an older Sova wrote it: no cause, no fingerprint; its run's docs step failed.
+      const raw = JSON.parse(readFileSync(qf, "utf8"));
+      for (const x of raw.entries) {
+        delete x.sentBackFor;
+        delete x.sentBackDrafts;
+      }
+      writeFileSync(qf, JSON.stringify(raw));
+      const k2 = makeKit({ repo: k.repo, deps: { draftsHash: () => ({ hash: d.hash, names: ["x"] }), docsCheck: () => ({ problems: [] }) } });
+      try {
+        const q2 = await k2.q();
+        const e = q2.entry(entry.id)!;
+        assert.equal(e.state, "needs-fix");
+        assert.equal(e.sentBackFor, undefined);
+        const run = q2.store.readRun(e.run!)!;
+        run.steps.push({ id: "docs", kind: "docs", label: "Docs", result: "failed", ms: 1, log: "logs/02-docs.log" });
+        run.verdict = "failed";
+        q2.store.writeRun(run);
+        let v = await q2.view({ fresh: true });
+        assert.equal(v.needsFix[0]?.sentBackFor, "drafts", "inferred from the run");
+        assert.ok(!readyAt(v, "feat/old", b.head), "its drafts unchanged since the approval");
+        d.hash = "h2";
+        v = await q2.view({ fresh: true });
+        assert.ok(readyAt(v, "feat/old", b.head), "changed since the approval pinned them, and clean");
+      } finally {
+        await k2.done();
+      }
+    } finally {
+      await k.done().catch(() => {});
+    }
+  });
+
+  test("Remove from Queue: a sent-back entry is cancelled ('removed by you'), its chat told; nothing of the branch is deleted", async () => {
+    const k = makeKit();
+    try {
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed" }));
+      const q = await k.q();
+      const b = k.repo.branch("feat/gone", { "b.txt": "b\n" });
+      const { entry } = await q.add({ branch: "feat/gone", by: "land-button", session: "s1" });
+      await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
+      const out = await q.cancel(entry.id);
+      assert.equal(out.state, "cancelled");
+      assert.equal(out.reason, "removed by you");
+      assert.ok(k.notices.some((n) => n.kind === "removed" && n.session === "s1"), "its chat's card is told");
+      assert.ok(existsSync(b.path));
+      assert.equal(sh(k.repo.root, "rev-parse", "refs/heads/feat/gone"), b.head);
+      assert.ok(existsSync(q.store.runDir(out.run!)));
+      const v = await q.view({ fresh: true });
+      assert.ok(!v.needsFix.some((e) => e.id === entry.id));
+      assert.ok((v.ready ?? []).some((r) => r.branch === "feat/gone" && r.commit === b.head), "the branch reads as itself again");
+      await assert.rejects(q.cancel(entry.id), /already cancelled/);
+    } finally {
+      await k.done();
+    }
+  });
+});
+
 describe("one at a time, in order", () => {
   test("two branches land one after the other, each onto the newest master", async () => {
     const k = makeKit();

@@ -17,7 +17,8 @@ how an upgrade from Settings keeps it until the new version answers, §app.updat
 which prints the install's access token, and `sova app` (or `sova open`), which opens the app
 already unlocked in a window of its own, starting the server first when it is not running
 (§app.access/callers); its closing message says both. Beside the launcher it writes an entry in
-the desktop's app launcher that runs `sova app` (§app.installer/app-entry). An install directory
+the desktop's app launcher that runs `sova app`, and on macOS installs Sova in that window's
+browser as an app of its own, with its own Dock icon and no browser title bar (§app.installer/mac-app). An install directory
 that is not a clean clone of Sova, or a launcher or app entry this script did not write, is
 refused and left alone.
 
@@ -112,11 +113,15 @@ as it is.
   `gtk-update-icon-cache` run after a change only when they are installed.
 - **macOS.** `~/Applications/Sova.app`, a bundle (`io.github.naomarik.sova.app`) whose executable
   runs `<bin dir>/sova app`, with an icon built from the same PNG by `sips` and `iconutil` (no icon
-  when either is missing). It shows no Dock icon of its own: the window is the browser's. Its
+  when either is missing). It shows no Dock icon of its own: the window it opens is the installed
+  app's (below), or the browser's when that isn't installed. Its
   executable is a script, which macOS would start under Rosetta, and the browser with it; the
   bundle puts Apple silicon (`arm64`) first (`LSArchitecturePriority`), so both run natively. Sova
   supports Apple silicon Macs only: Intel Macs are not supported. Nothing refuses one, though: the
   installer runs there and fetches Bun's x64 build (§app.installer/bun), untested.
+- **macOS: Sova as an app of its own.** On macOS the installer also installs Sova in that
+  browser's Sova profile as an installed web app with its own Dock icon and no browser title bar,
+  and `sova app` opens it when it is there (§app.installer/mac-app). `--no-app-entry` skips it too.
 - **Ours, or refused.** The `.desktop` file and the bundle's `Info.plist` carry a marker. A file
   at either path that this script did not write, or any file at the icon's path while no
   `.desktop` of ours is there, is refused before anything is installed, named, and left alone, with a
@@ -130,7 +135,8 @@ as it is.
   Brave Browser, Microsoft Edge, Vivaldi or Helium, else the first of those found in
   `/Applications` or `~/Applications`, and runs the bundle's executable itself. It opens
   `--app=http://127.0.0.1:<port>/#t=<token>` with `--no-first-run --no-default-browser-check`
-  and no debugging port, and returns while the window stays open.
+  and no debugging port, and returns while the window stays open. On macOS it opens Sova's installed app
+  instead when there is one for that port (§app.installer/mac-app).
 - **A profile of its own.** The browser runs with `--user-data-dir` set to a folder reserved for
   Sova — `${XDG_CONFIG_HOME:-~/.config}/sova-browser` on Linux, `~/Library/Application
   Support/sova-browser` on macOS — so it never shares the person's browsing profile, and the
@@ -152,7 +158,66 @@ as it is.
   a desktop notification (`notify-send` on Linux, `osascript` on macOS) as well as on stderr — and
   exits nonzero, opening nothing.
 - **Removing it.** Deleting the entry (`sova.desktop` and the icon, or `Sova.app`) and the
-  profile folder removes everything it added; the uninstall steps in the docs list them.
+  profile folder removes everything it added, with, on macOS, the browser's launcher for the app
+  (`~/Applications/Chrome Apps.localized/sova.app` for Chrome); the uninstall steps in the docs
+  list them.
+
+## §app.installer/mac-app — Sova as an app of its own on macOS
+
+When `sova app` has a browser (§app.installer/app-entry), the installer also
+installs Sova in that browser's Sova profile as an installed web app, from the page's manifest
+(§app.shell/installable), with no step for the person. Its window has Sova's own icon and name in
+the Dock and the app switcher, and no browser title bar: Sova's own title band runs across the
+top, holding the window's buttons (the traffic lights) at the top left and the browser's small
+cluster at the top right, its title-bar toggle and ⋮ menu (§app.shell/window-controls-overlay). The installer runs
+`sova app --install --auto` (by hand, `sova app --install`), which:
+- makes sure the server answers on the port first, as `sova app` does, and stops again a server
+  it started in the background for this alone;
+- starts the browser on the Sova profile with a DevTools pipe (`--remote-debugging-pipe`, never a
+  debugging port), opens the unlock link once in that profile so the app starts unlocked
+  (§app.access/unlock), installs the app whose manifest id is `http://127.0.0.1:<port>/`, sets it
+  to open in a window of its own (an install over DevTools would open it as a tab), and closes
+  the browser, waiting for it to exit;
+- with the browser closed, turns the app's "hide title bar" setting on in the profile's web-app
+  store (one record appended to the store's log), after copying the store aside; if reading the
+  store back doesn't show the setting, the copy is put back. A store not in the shape it knows is
+  left as it is: the window then has the browser's title bar and its one-click toggle, and the
+  installer says so;
+- records the result in `<profile>/sova-app.json`.
+
+The app's identity follows the port: an install on another port is another app. **The
+browser on that profile has to be closed for this.** When it is running (a Sova window is
+open), a run that has a terminal closes it first and says so; one that doesn't (an upgrade from
+Settings, which runs inside that window and hands the installer `/dev/null` as its terminal, which
+doesn't count as one) leaves it open, skips the step and says so, and `sova
+app` completes it the next time it opens Sova while that browser is closed. **Re-running** finds
+it installed for the port and does nothing: the browser isn't started or closed. **A failure**
+changes nothing else: the installer says which step failed, `sova app` keeps opening the bare
+window (§app.installer/app-entry), and it doesn't try again on its own (re-running the installer does). **An app the
+person removes** from the browser stays removed: `sova app` then opens the bare window,
+and neither it nor a later installer run puts the app back; `sova app --install` does.
+
+**`--no-app-entry` opts out of the app.** The installer's step doesn't run, and `sova app` never
+installs it either: with nothing installed it opens the bare window. `sova app --install`, asked for
+by name, still installs it, as it puts back a removed app, and an app installed that way is what
+`sova app` then opens.
+
+**Only a run of the installer replaces the launcher.** That is a run by hand, or an upgrade from
+Settings of an installed copy (§app.updates/upgrade). An upgrade of a developer copy and a `git pull`
+run no installer, so a launcher written before this step keeps opening the bare window; such a
+launcher doesn't know `sova app --install` either: it opens the bare window and exits 0, without
+saying so.
+
+**Opening it.** When Sova is installed as an app for the port in the profile, `sova app` opens
+that app instead of the bare window: the same
+executable and profile with `--app-id=<the app's id>` and the unlock link as the app's launch
+URL (`--app-launch-url-for-shortcuts-menu-item`), still with no debugging port. The browser keeps
+its own launcher for the app, `~/Applications/<browser> Apps.localized/sova.app` (Chrome: "Chrome
+Apps"), which is what the Dock shows while it runs; pinned and opened from the Dock, it opens
+the app without starting the server, which `Sova.app` does. Opened either way, the window is
+unlocked even when the profile has lost its cookie (expired after its year, or cleared): its
+navigation comes from this machine, so the server lets it in and gives it the cookie again
+(§app.access/gate).
 
 ## §app.installer/idempotent — Re-running changes nothing
 
@@ -166,6 +231,9 @@ Running the installer again with the same inputs leaves the machine as it was.
 - **The service reloads only on a change.** A service whose definition is unchanged and running
   is left running; a changed definition is updated in place and reloaded; a code update restarts
   it. A second instance is never started.
+- **The macOS app, once.** An app already installed for the port is found and left alone: the
+  browser isn't started or closed. A run whose app install was skipped or failed tries it again
+  (§app.installer/mac-app).
 
 ## §app.installer/ref — The ref it installs
 

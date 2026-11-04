@@ -118,7 +118,8 @@ and no name or Browser access tell. While this host's grant to a peer is anythin
 browser request it relays to that peer carries no name of this host and none of the browser's
 Origin, Referer, User-Agent, Accept-Language or forwarding headers.
 
-Grants are edited only from this host's own browser, at `/api/mesh/access`. No peer and no browser
+Grants are edited only from this host's own browser: at `/api/mesh/access`, or by Apply on a Create chat's
+card (§chat.create-mode/settings-cards). No peer and no browser
 relayed through another host reaches it, so a peer can never raise its own grant. A browser holding
 this host's own token is the user operating this host, not a peer, and grants don't apply to it
 (§app.access/gate).
@@ -206,7 +207,11 @@ host, kept or derived (the reason says what to set), or the recipe's own setting
 when this host's build can't be named (it booted with uncommitted changes, its protocol doesn't match
 its commit, or it has no commit).
 
-The button opens a confirm sheet that names both commits and how far apart they are, says that the
+A Create chat's card can start a recipe already kept, by Apply (§chat.create-mode/settings-cards): it shows
+the confirm sheet's own sentences, read again whenever the page reads the card, it pins this host's commit
+when it is prepared, so a chat can't name the commit, and it is refused where the menu wouldn't offer the
+action. The
+button opens a confirm sheet that names both commits and how far apart they are, says that the
 host restarts onto this host's build and, when its details say so, how many turns are running and
 workers working there that the restart stops (a warning; it never refuses), and that the job runs
 from this host, so restarting this host's server stops it. Confirming deploys exactly the commit
@@ -217,7 +222,8 @@ running, then waiting until the host's `hello` carries this host's fingerprint, 
 with the reason and the last lines of the script's output, which are also kept in
 `<agent dir>/sova/mesh-resync/<host id>.log`.
 
-Explicit recipes live in `<agent dir>/sova/mesh-resync.json`, on this host only (sync never copies it), keyed
+Explicit recipes live in `<agent dir>/sova/mesh-resync.json`, on this host only (sync never copies it; a
+Create chat's card can set one, §chat.create-mode/settings-cards), keyed
 by peer id: `{"hosts": {"<id>": {"kind": "vps"}}}` runs `scripts/mesh-vps/deploy.sh --rev <commit>`
 (with its own `local.env`); `{"kind": "termux", "ssh"?: "<user@host>", "sshPort"?: <n>, "args"?:
 […]}` runs `scripts/mesh-termux/deploy.sh`, which streams `git archive` of the commit over ssh into

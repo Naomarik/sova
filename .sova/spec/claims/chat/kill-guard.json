@@ -1,0 +1,76 @@
+{
+  "§chat.kill-guard/broad-names": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/shell-guard.ts",
+      "server/shell-guard.test.ts"
+    ],
+    "requires": [
+      "§chat.kill-guard/refusal"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:37Z",
+      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#dfa41b22"
+    }
+  },
+  "§chat.kill-guard/limits": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/shell-guard.ts"
+    ],
+    "requires": [
+      "§chat.kill-guard/refusal",
+      "§chat/sandbox"
+    ]
+  },
+  "§chat.kill-guard/refusal": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/shell-guard.ts",
+      "server/shell-guard.test.ts",
+      "server/shell-guard-extension.ts",
+      "server/chat-manager.ts",
+      "server/project-services/worker-verbs.test.ts",
+      "server/harness/pi/shell-guard-session.integration.test.ts",
+      "server/chat-manager-defaults.test.ts"
+    ],
+    "requires": [
+      "§app/claude-code-provider",
+      "§app.chat-processes/workers"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:37Z",
+      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#dfa41b22"
+    }
+  },
+  "§chat/kill-guard": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "server/shell-guard.ts",
+      "server/shell-guard-extension.ts",
+      "server/chat-manager.ts"
+    ],
+    "requires": [
+      "§app/claude-code-provider",
+      "§app.chat-processes/workers"
+    ],
+    "notOwned": [
+      "§chat/sandbox"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:37Z",
+      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#dfa41b22"
+    }
+  }
+}

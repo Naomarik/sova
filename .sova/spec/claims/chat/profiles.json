@@ -132,11 +132,13 @@
       "server/harness/state-kinds.ts",
       "docs/profiles.md"
     ],
-    "requires": [],
+    "requires": [
+      "§chat.create-mode/per-chat-only"
+    ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T02:27Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+      "at": "2026-11-04T12:30Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#78234ec6"
     }
   },
   "§chat.profiles/picker": {
@@ -273,8 +275,14 @@
       "src/lib/api.ts"
     ],
     "requires": [
-      "§chat.profiles/projects"
-    ]
+      "§chat.profiles/projects",
+      "§app.access/your-click"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
   },
   "§chat/profiles": {
     "kind": "surface",

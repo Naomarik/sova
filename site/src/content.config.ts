@@ -9,7 +9,7 @@ const docs = defineCollection({
   schema: z.object({
     title: z.string(),
     description: z.string(),
-    group: z.enum(["Start", "Modes", "Features", "Setup"]),
+    group: z.enum(["Start", "Modes", "Features", "Extending", "Setup"]),
     subgroup: z.enum(["Major", "Minor"]).optional(),
     order: z.number(),
   }),

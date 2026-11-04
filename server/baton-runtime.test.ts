@@ -98,6 +98,20 @@ describe("a baton session's runtime", async () => {
     assert.equal(err?.clientId, "c1", "the composer gets its draft back");
   });
 
+  test("/ws/chat: a typed /mode is refused in a baton chat, in its own words, and switches nothing", async () => {
+    const chat = await acquireChat(c.path);
+    for (const name of ["create", "delegate"]) {
+      const got: { type: string; code?: string; message?: string; clientId?: string }[] = [];
+      chat.handle({ send: (m: never) => got.push(m) } as never, { type: "prompt", text: `/mode ${name}`, clientId: `typed-${name}` } as never);
+      await waitUntil(() => got.some((m) => m.type === "error"));
+      const err = got.find((m) => m.type === "error");
+      assert.equal(err?.code, "refused");
+      assert.match(err?.message ?? "", /A baton session has no mode/);
+      assert.equal(err?.clientId, `typed-${name}`);
+      assert.equal(chat.modeState.mode, "normal");
+    }
+  });
+
   test("a composer pick in an empty baton stays that session's; it never becomes the host's default", async () => {
     const defaultsFile = join(agentDir, "sova", "defaults.json");
     rmSync(defaultsFile, { force: true });

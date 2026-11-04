@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -7,8 +7,9 @@ import { fileURLToPath } from "node:url";
 import { backendFor, gitProtectedPaths, shadowSource } from "../backend.ts";
 import { canonicalize, readDenial, resolvePolicy, writeDenial } from "../policy.ts";
 import { mountPlan } from "../backends/linux-bwrap.ts";
+import { BROWSER_RULES, DarwinSeatbeltBackend } from "../backends/darwin-seatbelt.ts";
 import { spawnSync } from "node:child_process";
-import { ensureSessionTmpDir, resolveSessionPolicy, sessionTmpBase, sessionTmpDir } from "../session-policy.ts";
+import { ensureSessionTmpDir, prepareSessionCommand, resolveSessionPolicy, sessionTmpBase, sessionTmpDir } from "../session-policy.ts";
 
 const TEMPLATE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "sandbox-policy");
 
@@ -109,4 +110,82 @@ test("the session tmp path: sanitised id, pid fallback, made 0700 on demand", (t
 	assert.equal(made, sessionTmpDir("s4"));
 	assert.equal(statSync(made).mode & 0o777, 0o700);
 	assert.equal(statSync(sessionTmpBase()).mode & 0o777, 0o700);
+});
+
+test("prepareSessionCommand hands the policy's browser to the backend, as the extension's snapshot does", async (t) => {
+	const { home, agentDir, ws } = rig(t);
+	// read-only: no proxy to start. The real darwin profile is rendered; only the probe (sandbox-exec) is stubbed.
+	const file = join(agentDir, "sandbox-policy", "darwin", "policy.json");
+	const setBrowser = (browser: string) => writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), level: "read-only", browser }));
+	const profileOf = async (parent?: Parameters<typeof prepareSessionCommand>[0]["parent"]) => {
+		const backend = new DarwinSeatbeltBackend({ sandboxExec: process.execPath });
+		const seen: boolean[] = [];
+		backend.probe = async (policy) => {
+			seen.push(policy.browser === true);
+			return { ok: true, enforcement: "full" };
+		};
+		const r = await prepareSessionCommand({ agentDir, cwd: ws, sessionId: "s-browser", home, platform: "darwin", ...(parent ? { parent } : {}) }, ["/bin/true"], { backend });
+		assert.ok(r.ok, r.ok ? "" : r.error);
+		const profile = readFileSync(r.value.argv[r.value.argv.indexOf("-f") + 1]!, "utf8");
+		await r.value.dispose();
+		return { probed: seen[0], rules: BROWSER_RULES.every((rule) => profile.includes(rule)), any: BROWSER_RULES.some((rule) => profile.includes(rule)) };
+	};
+	setBrowser("headless-shell");
+	assert.deepEqual(await profileOf(), { probed: true, rules: true, any: true });
+	setBrowser("none");
+	assert.deepEqual(await profileOf(), { probed: false, rules: false, any: false });
+	// A worker's is its parent's, never its own file's.
+	const scope = { version: 1 as const, level: "read-only" as const, workspaceRoot: ws, writable: [] };
+	assert.deepEqual(await profileOf({ ...scope, browser: true }), { probed: true, rules: true, any: true });
+	setBrowser("headless-shell");
+	assert.deepEqual(await profileOf(scope), { probed: false, rules: false, any: false });
+});
+
+test("prepareSessionCommand: a caller's own tmp is the attempt's, and goes with its parent; without one, the default", async (t) => {
+	const { home, agentDir, ws } = rig(t);
+	const file = join(agentDir, "sandbox-policy", "darwin", "policy.json");
+	writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), level: "read-only" }));
+	const run = async (tmpDir?: string) => {
+		const backend = new DarwinSeatbeltBackend({ sandboxExec: process.execPath });
+		backend.probe = async () => ({ ok: true, enforcement: "full" });
+		const r = await prepareSessionCommand({ agentDir, cwd: ws, sessionId: "s-own-tmp", home, platform: "darwin", ...(tmpDir ? { tmpDir } : {}) }, ["/bin/true"], { backend });
+		assert.ok(r.ok, r.ok ? "" : r.error);
+		return r.value;
+	};
+	const parent = realpathSync(mkdtempSync(join(tmpdir(), "own-")));
+	t.after(() => rmSync(parent, { recursive: true, force: true }));
+	const own = await run(join(parent, "t"));
+	assert.equal(own.env.TMPDIR, `${join(parent, "t")}/`);
+	assert.equal(statSync(join(parent, "t")).mode & 0o777, 0o700);
+	await own.dispose();
+	assert.ok(!existsSync(parent), "the caller's folder goes with the attempt");
+	const dflt = await run();
+	assert.ok(canonicalize(dflt.env.TMPDIR!).startsWith(canonicalize(sessionTmpBase())), "no tmp asked for: the session tmp base");
+	const made = dflt.env.TMPDIR!;
+	await dflt.dispose();
+	assert.ok(!existsSync(made));
+});
+
+test("prepareSessionCommand: a caller's own tmp keeps the attempt's proxy socket beside it, whatever TMPDIR is", async (t) => {
+	const { home, agentDir, ws } = rig(t);
+	let parent: string;
+	// A socket path needs to be short: /tmp, which a sandboxed chat running this test can't write. On
+	// Linux /dev/shm instead, as proxy.unit.test.ts does: linux-bwrap's hostTmp test, running beside
+	// this one, masks every socket in /tmp, and one removed between its scan and bwrap's start fails it.
+	const shortRoot = process.platform === "linux" && existsSync("/dev/shm") ? "/dev/shm" : "/tmp";
+	try { parent = realpathSync(mkdtempSync(join(shortRoot, "own-"))); } catch { t.skip(`${shortRoot} is closed here`); return; }
+	t.after(() => rmSync(parent, { recursive: true, force: true }));
+	const backend = new DarwinSeatbeltBackend({ sandboxExec: process.execPath });
+	let socket: string | undefined;
+	backend.probe = async (policy) => { socket = policy.network.proxy?.socket; return { ok: true, enforcement: "full" }; };
+	const before = process.env.TMPDIR;
+	process.env.TMPDIR = join(parent, "x".repeat(120));
+	try {
+		const r = await prepareSessionCommand({ agentDir, cwd: ws, sessionId: "s-own-socket", home, platform: "darwin", tmpDir: join(parent, "t") }, ["/bin/true"], { backend });
+		assert.ok(r.ok, r.ok ? "" : r.error);
+		assert.equal(socket, join(parent, "p.sock"), "beside the tmp, so a long TMPDIR can't take the network away");
+		assert.ok(existsSync(socket!));
+		await r.value.dispose();
+		assert.ok(!existsSync(parent));
+	} finally { if (before === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = before; }
 });

@@ -16,7 +16,7 @@ export const stateRoot = () => join(agentRoot(), "sova");
 
 /**
  * Where a chat process keeps its server's bookkeeping (its run's in-flight marker, the session's
- * writer lock): the state root of the server that started it, `SOVA_CHAT_STATE_ROOT`, when its own
- * agent dir is another (a worker on its worktree's agent dir); else the state root.
+ * writer lock): the state root of the server that started it, `SOVA_CHAT_STATE_ROOT`, which every chat
+ * process gets, and which differs from its own only for a worker on its worktree's agent dir; else the state root.
  */
 export const chatStateRoot = () => process.env.SOVA_CHAT_STATE_ROOT || stateRoot();

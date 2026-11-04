@@ -142,8 +142,8 @@ the merge queue doesn't serve, §chat.worktrees/tool); a declined or unanswerabl
 nothing. Every active worktree of the set is a writable root of the session and of its workers
 while the sandbox is on (one under a shadowed cache stays a real root, like the session's cwd),
 and its `.agent` directory stays read-only inside it, like the session's own agent dir. A
-worker's sandbox scope also carries the parent's hidden list and proxy and environment
-allowlists, so a worker on a worktree's own agent dir (§chat.worktrees/worktree-config) is never
+worker's sandbox scope also carries the parent's hidden list, proxy and environment
+allowlists and `browser` setting (§chat.sandbox/policy-file), so a worker on a worktree's own agent dir (§chat.worktrees/worktree-config) is never
 looser than its parent because of that dir's policy file.
 
 ## §chat.worktrees/workers — Where workers may start
@@ -162,7 +162,10 @@ only it starts under the sandbox in **write-only** confinement: its writes go on
 worktree, its git dirs and a private scratch tmp (and the sandbox's private copies of the host
 caches). Its reads are the host's, no secret is hidden, the network is the host's (its resolver
 included) and the environment is passed as it is, but for `TMPDIR` (below) and the
-sandbox's own git config, `GIT_CONFIG_SYSTEM` (§chat.sandbox/git-cleanup). No policy file is read for it.
+sandbox's own git config, `GIT_CONFIG_SYSTEM` (§chat.sandbox/git-cleanup). No policy file is read
+for it, except that it gets the parent's `browser` setting (§chat.sandbox/policy-file): the parent
+reads its own policy file and its cwd's project file when the worker starts, and a file it cannot
+read means no browser, never a refused start.
 
 - **`/tmp`.** On Linux it sees the host's `/tmp` read-only, so a file another session wrote
   there (a brief) is readable, and every Unix socket found there as its command or its process
@@ -301,8 +304,10 @@ its entry's state instead, in the words the composer's worktrees control uses
 Conflict, Behaviour differs, Review flagged, Can't tell whose failure, Drafts changed, Needs a fix, and Landed with its commit
 and its notes (§app.merge-queue/note) under it, plus "1 newer commit not included" when the branch
 moved past the approved commit. **The row's action** is the modal's, from the same row: Land (with
-its menu) on Ready or Drafts changed (never on Needs a fix: a sent-back branch offers no Land until
-it reads ready again at a newer commit, §chat.composer/worktrees-control), Cancel on a queued row, Accept and Send Back on Behaviour differs, Land Anyway and Send Back on
+its menu) on Ready or Drafts changed (on Needs a fix only once its chat has fixed it: at the same
+commit for a branch sent back for its drafts once they fit, else at a newer commit,
+§chat.composer/worktrees-control), Land This Commit Again and Remove from Queue on every Needs a fix
+row, Cancel on a queued row, Accept and Send Back on Behaviour differs, Land Anyway and Send Back on
 Review flagged and on Can't tell whose failure. While the branch's review runs, and after it ends,
 the row adds a line for its run's newest reviewer chat: "Review running" or "Review: {verdict}"
 ("no verdict" when it failed), then **Open Reviewer Chat**, or "· Reviewer chat cleared" with no
@@ -514,7 +519,8 @@ stops holding (a new uncommitted file, a failing check, an open question, a turn
 merge queue makes them official in its merge copy before the checks run (§app.merge-queue/run;
 whether a draft is official is §tools.spec/draft-official). Each promise in them still needs its chat's
 own short verification note (the draft tool's `evidence --note`, §tools.spec/land) before the head
-counts as Ready to land. Once per head commit and set of drafts, Sova tries the drafts the way the
+counts as Ready to land. Once per head commit and set of drafts (their files and verification notes
+alike, so a note added later is tried again), Sova tries the drafts the way the
 landing will (the draft tool's `land` without writing, in a process of its own for at most a
 minute, never holding up readiness) and keeps the answer per worktree, head and drafts; until it
 has answered, the head isn't Ready to land yet. When they would land, the landing is Ready to land
@@ -528,6 +534,17 @@ when it can't, to answer with one line `Can't land specs: <why>`; the user is ne
 session's newest reply with that line gives the why, shown on the chip. Drafts whose files change
 after the user approved the branch are the queue's to catch: the entry waits as "Drafts changed
 since you approved" until a new Land (§app.merge-queue/approve).
+
+**After a send-back for its drafts.** When the queue's docs step sent the branch back because its
+drafts don't fit (§app.merge-queue/run), the sent-back commit can be Ready to land again with no new
+commit: once its drafts have changed since it was sent back (adding a verification note counts),
+the branch's head is still that commit, its worktree is still there, and Sova's try of the drafts as
+they are now finds nothing that doesn't fit, the head reads Ready to land at that same
+commit and Land is offered on it (§chat.composer/worktrees-control). An edit that leaves something
+unfit keeps it sent back. A branch sent back for any other reason is never Ready to land at the
+sent-back commit; a newer commit is. Either way, "land it" typed in its chat at the sent-back commit
+is still the user's approval of that commit, with its drafts as they are then
+(§app.merge-queue/approve).
 
 **What still blocks landing.** When the session's latest turn outcome says its work is finished
 but a worktree it tracks isn't Ready to land at its head for reasons the session can fix itself

@@ -75,7 +75,7 @@ export interface MergeQueueSettings {
   editBlocked?: string;
   /** A save waiting for the branch checking now, or for the release holding the queue. `release`: that release, as
    *  shown ("release v0.4.0"), read from the hold now, so it goes when the hold lifts (settingsWaitingWords). */
-  pendingSave?: { at: string; changes: MergeSettingsChange; release?: string };
+  pendingSave?: { at: string; changes: MergeSettingsChange; failed?: string; release?: string };
   landing: {
     target: string;
     /** null: absent, so it pushes when origin exists. */

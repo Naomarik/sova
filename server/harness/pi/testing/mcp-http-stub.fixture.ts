@@ -1,10 +1,10 @@
 // A stub streamable-HTTP MCP server for tests: one session per initialize, optional bearer with a refresh, and a 500
-// that repeats what it was sent, as a careless server's error page does.
+// that repeats what it was sent, the credential alone included, as a careless server's error page does.
 import { createServer } from "node:http";
 
 export interface AddressStub {
   url: string;
-  /** Every MCP request, with its headers. */
+  /** Every MCP request, with its headers, refused or not. */
   seen: { rpc: { id?: unknown; method?: string; params?: { name?: string } }; headers: Record<string, string | string[] | undefined>; session?: string }[];
   /** What each token request carried. */
   refreshes: { clientSecret?: string; refreshToken?: string }[];
@@ -47,17 +47,17 @@ export async function startAddressStub(list: string[] = ["echo"]): Promise<Addre
         res.writeHead(404);
         return res.end();
       }
+      const rpc = (req.method === "POST" ? JSON.parse(raw) : {}) as AddressStub["seen"][number]["rpc"];
+      const session = req.headers["mcp-session-id"] as string | undefined;
+      if (req.method === "POST") stub.seen.push({ rpc, headers: req.headers, ...(session ? { session } : {}) });
       if (stub.bearer && req.headers.authorization !== `Bearer ${stub.bearer}`)
         return json(401, { error: "unauthorized" }, { "www-authenticate": `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource/mcp"` });
       if (req.method !== "POST") {
         res.writeHead(405);
         return res.end();
       }
-      const rpc = JSON.parse(raw) as AddressStub["seen"][number]["rpc"];
-      const session = req.headers["mcp-session-id"] as string | undefined;
-      stub.seen.push({ rpc, headers: req.headers, ...(session ? { session } : {}) });
       const refused = stub.fail === "all" || (stub.fail === "calls" && rpc.method === "tools/call");
-      if (refused) return json(500, { error: "stub refused", sent: req.headers });
+      if (refused) return json(500, { error: "stub refused", token: req.headers.authorization?.split(" ").pop(), sent: Object.values(req.headers).filter((v) => !String(v).includes(" ")) });
       if (session && !sessions.has(session)) return json(404, { error: "no such session" });
       if (rpc.id === undefined) {
         res.writeHead(202);

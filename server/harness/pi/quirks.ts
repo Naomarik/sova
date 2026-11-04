@@ -504,6 +504,16 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi records the raw names in every result, or exports its naming",
   },
   {
+    id: "P36",
+    name: "mcp-http-transport",
+    kind: "semantic",
+    relies: "A chat's address server reaches pi-mcp's `StreamableHttpTransport` directly: it takes headers as given, expands nothing, emits a JSON reply before `send` resolves, and rejects a request on a dropped session with `McpSessionExpiredError`. pi builds an auth provider only for a config with a `url` and no Authorization header, and hands it to `createTransport` as its third argument; its `clientSecret` goes through pi's expansion at each refresh, where `$$` and `$!` are literal.",
+    pi: ["StreamableHttpTransport", "McpSessionExpiredError", "McpAuthRequiredError", "McpOAuthAuthorizationRequiredError", "McpTransportFactory", "McpExtensionOptions.createTransport"],
+    where: [{ file: "server/harness/pi/mcp-http.ts", symbol: "AddressServer" }, { file: "server/harness/pi/mcp.ts", symbol: "mcpConfigOf" }, { file: "server/harness/pi/mcp.ts", symbol: "piLiteral" }],
+    canary: "P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given and reports a dropped session",
+    retireWhen: "pi lets a host hand a server its own token source and literal values",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

@@ -724,6 +724,7 @@ describe("an address server in a chat", () => {
     approveAddress("moved", { url: moved.url });
     await say("go", call("mcp__moved__echo"), { text: "done" });
     assert.equal(results()[0]!.isError, true);
+    assert.ok(moved.seen.length > 0, "the call reached the new address");
     assert.ok(!JSON.stringify(moved.seen).includes("stub-other-address-token"));
   });
 

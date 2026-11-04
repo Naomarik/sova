@@ -5,6 +5,7 @@
 // - `createTransport`: pi connects every server at session_start and declares what it lists. Sova hands it a
 //   transport that answers the handshake and `tools/list` from the chat's list and starts the real server at the
 //   first call, so a late connect can't change the declared tools and a chat that never calls a server runs nothing.
+//   A command runs as a process (server/mcp/transport.ts), an address on pi-mcp's HTTP client (./mcp-http.ts).
 // The list itself is data: made by the server (server/mcp/list.ts), kept in the session from the first message on.
 import { join } from "node:path";
 import { createMcpExtension, type McpServerConfig, type McpTransportFactory } from "@earendil-works/pi-coding-agent";
@@ -92,6 +93,7 @@ export class SnapshotTransport extends Events {
   private pending = new Set<string | number>();
   private closed = false;
   private stopping = false;
+  private stopped: Promise<void> | undefined;
   /** The run in hand: what it was filled with stays out of everything said about it. */
   private run: Pick<StdioServer, "values"> | undefined;
 
@@ -167,6 +169,8 @@ export class SnapshotTransport extends Events {
   }
 
   private running(): Promise<McpUpstream> {
+    // A call that comes while a copy stops waits for the next one: the old copy is under the old state.
+    if (this.stopped) return this.stopped.then(() => this.running());
     if (this.upstream) return Promise.resolve(this.upstream);
     this.starting ??= this.open().finally(() => {
       this.starting = undefined;
@@ -235,7 +239,15 @@ export class SnapshotTransport extends Events {
   }
 
   /** Stops the running copy; the next call starts another (a sandbox change does this). */
-  async stopCopy(): Promise<void> {
+  stopCopy(): Promise<void> {
+    const stop: Promise<void> = this.stop().finally(() => {
+      if (this.stopped === stop) this.stopped = undefined;
+    });
+    this.stopped = stop;
+    return stop;
+  }
+
+  private async stop(): Promise<void> {
     await this.starting?.catch(() => {});
     this.stopping = true;
     await this.upstream?.close();

@@ -70,6 +70,7 @@ Paths in "Where" are under `server/`.
 | P33 mcp-auth-keys | private-read | `forgetSignIn` (mcp/forget-sign-in.ts) | `McpOAuthCredentialStore.remove` | pi exports its credential store |
 | P34 mcp-registered-list | ordering | `mcpExtension` (harness/pi/mcp.ts) | `ExtensionAPI.registerMcpServer`, `ExtensionAPI.unregisterMcpServer`, `createMcpExtension` | pi lets a host hand it a chat's list at each prompt |
 | P35 mcp-tool-name | semantic | `piToolNames` (mcp/tool-names.ts) | `createMcpToolDefinition` | pi records the raw names in every result, or exports its naming |
+| P36 mcp-http-transport | semantic | `AddressServer` (harness/pi/mcp-http.ts), `mcpConfigOf` (harness/pi/mcp.ts), `piLiteral` (harness/pi/mcp.ts) | `StreamableHttpTransport`, `McpSessionExpiredError`, `McpAuthRequiredError`, `McpOAuthAuthorizationRequiredError`, `McpTransportFactory`, `McpExtensionOptions.createTransport` | pi lets a host hand a server its own token source and literal values |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -267,6 +268,12 @@ Canary: `P34 mcp-registered-list: a server registered ahead of pi's session_star
 A saved tool row reads its server and tool from the result's details, and a call that failed before the server has none, so the chat's kept list answers by pi's own naming rule (`piToolNames`): the name sanitized, and shortened with a hash of server and tool past 64 characters or when taken.
 
 Canary: `P35 mcp-tool-name: a plain, a sanitized and a shortened tool register under the names piToolNames gives`.
+
+### P36 mcp-http-transport
+
+A chat's address server (§app.mcp/in-a-chat) runs on `StreamableHttpTransport` from `@earendil-works/pi-mcp`, a direct dependency pinned to pi's version, behind `SnapshotTransport` as a command server's process is, so it starts at the first call and holds one session across turns. Sova builds the transport itself rather than take pi's `createDefaultTransport`, which expands `!command` and `${VAR}` in headers; given headers go out as written. The one part only pi has is the auth provider (its `createMcpAuthProvider` isn't exported, and refreshing tokens with the store's lock is what it's for): pi builds it for a config with a `url` and no Authorization header, and passes it to `createTransport`. So `mcpConfigOf` gives such a server its URL and oauth block, and its `clientSecret` is escaped with `$$` and `$!`, since pi resolves that field at every refresh. A provider belongs to the URL the chat opened with: `addressLaunch` drops it if the server has moved. `McpSessionExpiredError` and the sign-in errors are read by class, so a second copy of pi-mcp in the tree would turn them into plain failures. pi's own reconnect on a dropped session never sees these errors, as they cross `SnapshotTransport` as JSON-RPC replies, so `AddressServer` reopens the session itself.
+
+Canary: `P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given and reports a dropped session`.
 
 ### T1 scripted-model (test-only)
 

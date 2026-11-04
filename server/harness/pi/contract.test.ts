@@ -1105,6 +1105,59 @@ describe("pi contract", () => {
     session.dispose();
   });
 
+  test("P36 mcp-http-transport: a url server's transport gets pi's auth provider, which reads the store and refreshes with an escaped secret literally; pi-mcp's HTTP client sends headers as given and reports a dropped session", async () => {
+    const { McpSessionExpiredError, StreamableHttpTransport } = await import("@earendil-works/pi-mcp");
+    const { piLiteral } = await import("./mcp");
+    const url = "http://127.0.0.1:9/mcp";
+    const literal = "!no-such-command $HOME ${HOME}";
+    const state: Record<string, unknown> = { serverUrl: url, tokens: { access_token: "stored", refresh_token: "r", token_type: "Bearer" } };
+    const store = { load: () => state, save: (next: Record<string, unknown>) => void Object.assign(state, next), withRefreshLock: <T,>(run: () => Promise<T>) => run() };
+    const config = { url, exposure: "direct", oauth: { clientId: "c", clientSecret: piLiteral(literal) } };
+    let auth: { token(): Promise<string | undefined>; onUnauthorized?(context: unknown): Promise<void> } | undefined;
+    const factory = pi.agent.createMcpExtension({
+      loadConfig: () => ({ ...onlyConfig, servers: [{ name: "s", source: "sova", scope: "global", config }] }) as never,
+      credentials: { forServer: () => store, tokens: () => state.tokens } as never,
+      createTransport: (_entry: unknown, _cwd: unknown, provider: never) => ((auth = provider), answeringTransport([], []) as never),
+    } as never);
+    const { session, model } = await quirkSession({ extensions: [factory as never] });
+    model.reply({ text: "done" });
+    await session.prompt("go");
+    assert.ok(auth, "createTransport's third argument");
+    assert.equal(await auth.token(), "stored");
+    const json = (body: unknown) => new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
+    const sent: string[] = [];
+    const refreshFetch = async (input: string | URL, init?: RequestInit) => {
+      const path = new URL(input).pathname;
+      if (path.includes("oauth-protected-resource")) return json({ resource: url, authorization_servers: ["http://127.0.0.1:9"] });
+      if (path.includes("oauth-authorization-server")) return json({ issuer: "http://127.0.0.1:9", authorization_endpoint: "http://127.0.0.1:9/a", token_endpoint: "http://127.0.0.1:9/token", response_types_supported: ["code"], token_endpoint_auth_methods_supported: ["client_secret_post"] });
+      sent.push(new URLSearchParams(String(init?.body)).get("client_secret") ?? "");
+      return json({ access_token: "fresh", token_type: "Bearer", refresh_token: "r2" });
+    };
+    await auth.onUnauthorized!({ response: new Response(null, { status: 401 }), serverUrl: new URL(url), fetch: refreshFetch, token: "stored" });
+    assert.deepEqual(sent, [literal], "pi's expansion leaves the escaped form as the string it was");
+    assert.equal(await auth.token(), "fresh");
+    await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+    session.dispose();
+
+    const asked: Headers[] = [];
+    const http = new StreamableHttpTransport({
+      url,
+      headers: { "x-value": "!no-such-command ${HOME}" },
+      fetch: async (_input, init) => {
+        asked.push(new Headers(init?.headers));
+        if (asked.length > 1) return new Response("gone", { status: 404 });
+        return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), { headers: { "content-type": "application/json", "mcp-session-id": "one" } });
+      },
+    });
+    const heard: unknown[] = [];
+    http.onMessage((message) => void heard.push(message));
+    await http.start();
+    await http.send({ jsonrpc: "2.0", id: 1, method: "initialize" });
+    assert.equal(heard.length, 1, "the reply came before send resolved");
+    assert.equal(asked[0]!.get("x-value"), "!no-such-command ${HOME}");
+    await assert.rejects(http.send({ jsonrpc: "2.0", id: 2, method: "tools/call" }), McpSessionExpiredError);
+  });
+
   test("P31 mcp-command-through-api: the factory registers mcp on the API it is handed, so a proxy that drops it leaves no /mcp and the extension's events running", async () => {
     const factory = pi.agent.createMcpExtension({ loadConfig: () => ({ servers: [], errors: [] }) as never });
     const wrapped = (api: any) => factory(new Proxy(api, {

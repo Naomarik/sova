@@ -81,6 +81,8 @@ a Tailscale identity, and its calls never touch the tailnet listener.
 
 ## §mesh.lan/pairing — Pairing on the Mesh page
 
+- A Create chat can prepare a pairing on a card; the person types the fingerprint into the card itself
+  (§chat.create-mode/settings-cards).
 - The Mesh page's Dial-out pairings card shows this host's fingerprint (with Copy Fingerprint), this
   host as a relay (its address and port, where it is reached from, and whether it listens now and for
   how many dial-out hosts), and each pairing: what it is (relay

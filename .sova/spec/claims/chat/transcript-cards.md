@@ -243,8 +243,9 @@ that card only. Its types ship with the toolkit (`import { card, mount } from "s
   project's trust never covers an extension's cards, nor the reverse.
 - **Only the user grants it, in the page.** Trust is kept in Sova's own state
   (`<state root>/card-trust.json`), outside every repository, so no branch, clone, chat or card can
-  trust itself. It is a trust grant: no catalogue command and no agent tool reaches it, and a
-  caller with the token is refused. The project page's Cards section says whether its cards are
+  trust itself. It is a trust grant: no catalogue command and no agent tool reaches it, and
+  turning trust on is refused to anything but your own page (§app.access/your-click). Turning it off
+  stays open to any caller, the token included. The project page's Cards section says whether its cards are
   trusted, and the extension's page says so while they are, each with **Stop Trusting Cards**
   while they are, which takes effect on the next command.
 - Sova's own card types never ask.

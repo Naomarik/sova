@@ -9,15 +9,15 @@ starters and minor toggles, and which minor modes reach workers. Not here: the p
 routing (§chat/subagent-profiles, §app/settings-dialog), what align does (§chat/alignment), and the
 Overseer's Quick Actions in this slot (§app.overseer/quick-actions).
 
-pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal` or
-`delegate`, and any set of **minor modes** (today `align`, `spec`, `vis`, which teaches the inline
+pi's mode extension (`pi-config/extensions/mode`) has one **major mode**, `normal`, `delegate` or
+`create` (§chat/create-mode), and any set of **minor modes** (today `align`, `spec`, `vis`, which teaches the inline
 visuals of §chat.markdown/visuals, and `memory`, §chat/memory).
 Every chat with the extension offers all of them, in that order, except that only Sova's own mode menu
 turns `memory` on (§chat.memory/where). A chat in a project's checkout also offers that project's
 own minor modes, from its `.sova/minor-modes/` folder (§chat.mode-menu/project-modes); none is ever on
 until someone turns it on in that chat. What Delegate routes where is
 Settings → Subagents (§app/settings-dialog), through this chat's subagent profile
-(§chat/subagent-profiles). The menu always offers its Subagents picker, in either major mode.
+(§chat/subagent-profiles). The menu always offers its Subagents picker, in every major mode.
 
 Both are **per session**: each chat keeps its own, persisted in that session's own `mode`
 entries. The menu switches them from the chat's composer, and the switch reaches **that chat
@@ -30,7 +30,8 @@ mode of its own (a project's coding session, §app.project-overseer/coding-mode,
 Overseer creates with a mode, §app.overseer/tools) is pinned from its start: Sova writes its
 `mode` entry before the first prompt, even when it equals the default. `GET /api/mode` reads it and
 `POST /api/mode` without `?path=` writes it (one naming `projectModes` is a 400: no default holds
-them); neither touches an open chat. From a terminal,
+them; so is one naming `create`, which no default holds either, §chat.create-mode/per-chat-only);
+neither touches an open chat. From a terminal,
 `/mode default` saves the current session's mode as the default.
 
 **A switch never writes the default** — not even in a session that has sent no message yet. The
@@ -138,6 +139,7 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
           <span class="icon icon-sm" style="--icon: url(/icons/settings.svg)" aria-hidden="true"></span>
         </button>
       </div>
+      <div class="mode-menu-row" role="none">…create, with its gear, Configure Create…</div>  <!-- only where it is offered -->
     </div>
     <div class="model-menu-group" role="group" aria-labelledby="mode-group-minor">
       <div class="list-group-label" id="mode-group-minor">Minor modes</div>
@@ -165,6 +167,9 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   major modes theirs (normal the sliders icon), each built-in minor mode its own, and each project
   mode its letter in a rounded square. The menu doubles as the trigger's legend. The Subagents row
   leads with the subagents icon, branching nodes.
+- **Create** is the third major mode's row, below Delegate: its own icon, `create`, its description
+  (§design.copy-deck/mode-menu) and a gear. A chat that doesn't offer Create
+  (§chat.create-mode/where-offered) has no such row.
 - **This project's modes.** A chat whose checkout has project modes (§chat.mode-menu/project-modes)
   shows them after the minor modes and before Subagents, in their own group labelled "This
   project · {name}" (the checkout's name; "This project" when there is none), one
@@ -194,7 +199,9 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   project modes has no such group.
 - **`Save as default`** is the menu's one write of the default. Pressing it makes **this chat's**
   major mode, strict flag, built-in minor modes and effective subagent profile what new sessions start from
-  (`POST /api/mode?path=… { saveDefault: true }`). `/mode default` in a terminal still saves only
+  (`POST /api/mode?path=… { saveDefault: true }`). In a chat in Create the mode it saves is the
+  chat's last normal or Delegate choice, never Create (§chat.create-mode/per-chat-only).
+  `/mode default` in a terminal still saves only
   the three mode fields; the web button also writes this device's subagent profile default. The request
   carries no mode or profile of its own — the server takes this chat's current state. The write re-reads the file first,
   so `mode.json`'s shortcuts and anything else in it are kept, and the mode extension reads it at
@@ -205,7 +212,8 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   on its branch) follows it too from its next start or reopen. "Unchanged" is true now, not
   forever. It stays pressable in a chat that can't switch (`This chat can't switch.`): it saves
   the very state the menu is showing.
-- **The button states.** `Save as default` when this chat's mode, strict flag, minors or subagent
+- **The button states.** `Save as default` when this chat's mode (in Create, its last normal or
+  Delegate choice), strict flag, minors or subagent
   profile differ from what new sessions start from (its project modes never count, on or off, since
   no default holds them); `Already the default` with a check,
   `aria-disabled`, when all four match — a button offering to save what is already saved is the thing this wording exists to rule
@@ -224,7 +232,7 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   minor mode keeps the menu open too, with focus on the toggled row, so you can set several. Once
   a pick or toggle settles, saved or failed, focus is on that row even if the rows re-rendered. While the switch is saving, the rows
   are `aria-disabled`. A switch that fails shows its error banner in place, in the open menu, and
-  the mode is unchanged. The menu closes on Configure Delegate or the spec gear, an outside click,
+  the mode is unchanged. The menu closes on Configure Delegate, Configure Create or the spec gear, an outside click,
   `Esc`, or `Tab` out of it.
 - **Configure Delegate** is an icon-only gear at the right end of Delegate's row: a real
   `button` with `role="menuitem"`, a sibling of the `menuitemradio` (never nested in it) inside a
@@ -234,6 +242,9 @@ popover (§chat.subagent-profiles/menu), with Off first and the current profile 
   Delegate's detail line reads "Profile: <name>". It switches nothing: this chat's mode stays what it was, and it's there in either mode,
   so you can set Delegate up before turning it on. Clicking the rest of the row still picks
   Delegate.
+- **Configure Create** is the same gear on Create's row, and opens the same tab: Create shares
+  Delegate's settings and has none of its own (§chat.create-mode/delegate-parity). Create's row keeps
+  its description, with no "Profile:" line.
 - **Checked.** A checked row gets `--color-accent-tint` and the check. The words carry the state
   too, since `aria-checked` is announced.
 - **strict** is shown read-only in the foot, for this chat. Change it in a terminal with
@@ -259,6 +270,10 @@ A switch of a project's coding session whose minor modes leave `spec` out is ref
 anything switches (409, "Spec is always on for coding sessions; it can't be turned off.",
 §app.project-overseer/coding-mode). The chat then:
 
+- **Typed is the same switch.** `/mode normal`, `/mode delegate` or `/mode create` as a client's
+  composer send, without images, is the menu's switch, with its refusals, and nothing reaches the model.
+  Any other `/mode` argument runs in the extension, and the server reads the mode back, so the menu stays
+  right.
 - **Calls the extension's own `/mode` handler** directly. That's the same code the terminal runs,
   so it leaves the same **marker** ("Mode → delegate", "Minor mode: align on", "Strict mode
   on/off") plus the snapshot the extension restores from. The marker renders nothing in the
@@ -269,6 +284,9 @@ anything switches (409, "Spec is always on for coding sessions; it can't be turn
 - **Mid-turn.** The running turn keeps the old mode, and so do messages queued during it
   (follow-ups and steers join that turn). The chat's menu shows an info banner, "Applies after
   this turn.", until the turn settles.
+- **Create.** A switch to Create also turns align on (§chat.create-mode/minor-modes), in the same
+  step. A chat that doesn't offer Create refuses it (409), and a chat still on code older than
+  Create can't take it: the switch fails with its reason, and the mode is unchanged.
 - **Can't switch.** If the mode extension isn't loaded in that chat, or another program wrote the
   session, the chat isn't touched. Its menu shows a warn banner, "This chat can't switch." Only
   the default applies then.
@@ -276,7 +294,8 @@ anything switches (409, "Spec is always on for coding sessions; it can't be turn
   whole set to have on, with `approve: [{id, hash}]` for the approval the user just gave. Turning
   on a mode whose tools aren't approved, with no `approve` entry carrying its current fingerprint,
   is a 409 carrying the mode's fresh row (`needsApproval`), and nothing switches; an unknown or
-  broken id is a 409 too. Turning one off is always allowed, a removed one included, and modes
+  broken id is a 409 too. An `approve` entry from anything but the user's own page or the Overseer is refused
+  (403, §app.access/your-click), and nothing switches. Turning one off is always allowed, a removed one included, and modes
   that stay on are never checked again. The approval is recorded before the chat's `/mode
   project:<id> on` runs. `GET /api/mode?path=<session>` returns that chat's mode with its project
   rows read now; the chat's `mode` message carries the same rows, an on mode's from the copy it
@@ -416,7 +435,8 @@ Of its parent chat's modes, a worker gets only the minor modes that declare they
 resumes.
 
 A worker is not a chat: it has no mode menu, and its parent's major mode never reaches it
-(workers spawn no workers, so Delegate has nothing to route there). Each **minor mode declares
+(workers spawn no workers, so neither Delegate nor Create has anything to route there, and Create's
+table of contents, lookup and card tool stay with the chat, §chat.create-mode/delegate-parity). Each **minor mode declares
 whether it reaches workers** (`MINOR_WORKER` in `pi-config/extensions/mode/minor.ts`, a record
 over every minor mode, so a new one cannot be added without deciding): `spec` does; `align`
 does not (aligning is a conversation with the user, which a worker doesn't have), nor does `vis`
@@ -496,8 +516,9 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   broken folder never hides the others.
 - **Never on by themselves.** A project mode is on only when someone turned it on in that chat:
   the user, from the chat's mode menu or `/mode` (§chat.mode-menu/terminal), the Overseer
-  (§app.overseer/tools), or a script, a chat's agent or an extension through the mode request, whose
-  approval is kept as theirs (§chat.mode-menu/project-mode-hooks). A mode file has no way to say "on by default". `Save as default` never
+  (§app.overseer/tools), or a script, a chat's agent or an extension through the mode request. Those
+  last three turn on only a version already approved; approving one is the user's own click, or the
+  Overseer's turn-on (§app.access/your-click). A mode file has no way to say "on by default". `Save as default` never
   stores one and `mode.json` never holds one. A profile, an automation, a project's coding session
   (§app.project-overseer/coding-mode) and `pi --minor` can't name one. Settings shows none.
 - **The chat keeps the version it turned on.** Turning a mode on saves a copy of its `MODE.md`
@@ -556,7 +577,8 @@ files configure it: Sova's settings, `mode.json`, profiles and automations never
   - When the Overseer turns a mode on, that counts as the approval of its tools and commands:
     nothing waits for you, and the approval is recorded as the Overseer's. It never approves the
     mode's hooks: they stay inactive until you approve them yourself
-    (§chat.mode-menu/project-mode-hooks).
+    (§chat.mode-menu/project-mode-hooks). An approval a script, a chat's agent or an extension gave
+    before only your click could stands as it was, and that mode's hooks wait for yours the same way.
   - If any file in the folder changes on disk after its approval while the mode is on, the next
     call of any of its tools runs nothing: it is refused, telling the model the mode's files changed
     and need re-approval, and the row says its tools changed since you approved them. Turning the mode off
@@ -589,8 +611,9 @@ can run by name while the mode is on in a chat, without asking the model.
   `run` (an argv under exactly the rules of a tool's command, §chat.mode-menu/project-modes) and an
   optional time limit (1–600 seconds, 60 by default). A bad one makes the mode broken. Its id is
   `mode.<mode id>.<name>` (the `release` mode's `release_check` is `mode.release.release_check`).
-- **Running one.** `sova run mode.<id>.<name> --session <chat> [--<param> <value>]…` from a terminal
-  or a script, or the chat's agent from its own terminal the same way. It is `POST
+- **Running one.** `node scripts/sova.mjs run mode.<id>.<name> --session <chat> [--<param> <value>]…`
+  from a checkout, in a terminal or a script (§app.commands/cli: the installed `sova` launcher runs no
+  commands), or the chat's agent from its own terminal the same way. It is `POST
   /api/mode/command?path=<chat>` with `{ mode, name, args }` (the catalogue entry `chat.mode-command`).
   It runs exactly as the mode's tools run: in the chat's folder, with the arguments as JSON on its
   standard input (any JSON object, at most 1 MB: unlike a tool call's, they are not checked against
@@ -598,7 +621,7 @@ can run by name while the mode is on in a chat, without asking the model.
   command's name) set, in a process group of its own killed whole at its time limit, with the
   chat's own environment, which is the reach an approved tool has. The answer is its exit code, its
   output and its errors, each cut at 256 KB with the cut marked; a program that ran answers even
-  when it failed. `sova list --session <chat>` lists the commands of that chat's modes that are on,
+  when it failed. `node scripts/sova.mjs list --session <chat>` lists the commands of that chat's modes that are on,
   and Sova's record of who ran what names each run by its `mode.<id>.<name>` id.
 - **When it runs nothing.** It runs from the version of the mode the chat turned on, never from the
   folder's `MODE.md`, and only while all of these hold, each checked at every run: the mode is on in
@@ -636,16 +659,19 @@ answer anything, and they never send a message into a chat.
   can still read Sova's operator token file from disk under `HOME`, and a program that sends that
   token as Sova's cookie is taken for your own page, so it could approve hooks.
 - **Approval.** Hooks are part of what you approve (§chat.mode-menu/project-modes), and they need
-  your own approval: when it was turned on with an approval that isn't yours (the Overseer's, a script's, a chat
-  agent's or an extension's), its tools and commands work but its hooks
+  your own approval: when it was turned on with an approval that isn't yours (the Overseer's, or one a
+  script, a chat's agent or an extension gave before only your click could approve a project tool,
+  §app.access/your-click), its tools and commands work but its hooks
   stay inactive, and the mode's row says "Hooks need your approval" with **Approve Hooks**, which
   approves that exact version (refused, like a stale approval, when it changed since the row was
   drawn). **Apply and Approve** on a project overseer's Settings change card that grants a mode records your
   own approval of the version it lands (§app.project-overseer/settings), under the same page-only rule.
   Only you approve hooks, from Sova's own page on this machine: an approval of hooks sent by
   the Overseer, by a chat's agent with its chat's key, by a script or extension sending Sova's token,
-  or through a mesh peer is refused. An approval those callers give when turning a mode on is kept
-  as theirs: its tools and commands run, its hooks wait for yours. Telling your page from a script is a heuristic (the
+  or through a mesh peer is refused. The Overseer's turn-on still approves a mode's tools and commands;
+  the others can give no approval when turning a mode on (§app.access/your-click), and one they gave
+  earlier is kept as theirs. Either way its tools and commands run, its
+  hooks wait for yours. Telling your page from a script is a heuristic (the
   page sends Sova's token as its cookie, a script as a header): a program holding the token can
   present it as the cookie, which is the token-on-disk limit above. Each run
   checks, as a command does, that the chat isn't a worker (a worker's hook is skipped for being
@@ -686,16 +712,17 @@ line names the type ("UniiChat — by Victor Taelin", "Zoomable compaction — S
   "Already the default" only while it also matches the saved default type (`GET /api/mode`'s
   `memory`).
 
-## §chat.mode-menu/strict — strict: Delegate without edit and write
+## §chat.mode-menu/strict — strict: Delegate or Create without edit and write
 
-`strict` is a per-session flag that, while the chat is in Delegate, takes the `edit` and `write`
-tools away from the orchestrator.
+`strict` is a per-session flag that, while the chat is in Delegate or Create, takes the `edit` and
+`write` tools away from the orchestrator.
 
 - **Only those two.** `bash` and every other tool stay, and the Delegate instructions read the same
   with strict on or off: the prompt never mentions it. The tools the chat had before are kept and
-  come back when strict goes off or the chat leaves Delegate.
-- **In the normal mode** the flag is kept and does nothing; switching to Delegate applies it, and a
-  session restored in Delegate with strict on applies it on open.
+  come back when strict goes off or the chat leaves both. Moving between Delegate and Create keeps
+  them away.
+- **In the normal mode** the flag is kept and does nothing; switching to Delegate or Create applies
+  it, and a session restored in either with strict on applies it on open.
 - **Setting it.** `/mode strict on|off`, per session like the rest of the mode, with a transcript
   marker ("Strict mode on" / "Strict mode off") and a notice that adds "(edit/write removed from the
   orchestrator)" or "(edit/write restored to the orchestrator)" when it applied at once. It is off
@@ -710,7 +737,7 @@ tools away from the orchestrator.
 
 ## §chat.mode-menu/delegate-teams — Delegate: a team, or separate workers
 
-In Delegate, the instructions tell the orchestrator how to choose between a team (`team_create`)
+In Delegate and Create, the instructions tell the orchestrator how to choose between a team (`team_create`)
 and separate workers (`agent_spawn`):
 
 - **Asked for a team.** When the user asks for a team, the orchestrator always starts a real team
@@ -721,7 +748,7 @@ and separate workers (`agent_spawn`):
 - **Otherwise, separate workers.** Independent parts and single jobs go to separate workers with
   `agent_spawn`. The align planning worker (§chat.alignment/model), the align reviewer
   (§chat.alignment-review/route) and the spec writer stay single separate workers, as before.
-- **The tool says the same.** `team_create`'s guideline, which a chat's model has in either major
+- **The tool says the same.** `team_create`'s guideline, which a chat's model has in every major
   mode, says to use a team when the user asks for one or when the parts of the work depend on each
   other mid-task, and `agent_spawn` for independent parts and single jobs.
 - **Teams themselves don't change.** A team still gets the standing coordinator and monitor its
@@ -734,6 +761,10 @@ In a pi terminal session the same per-session mode is switched with `/mode`, a p
 shortcuts and launch flags. Sova's menu runs the same `/mode` handler
 (§chat.mode-menu/how-a-switch-reaches-the-chat), so a switch either way leaves the same marker.
 
+- **Create is Sova's.** A terminal offers no Create (§chat.create-mode/per-chat-only): the palette and
+  `/mode` completions don't list it, `/mode create` is refused, the shortcut doesn't reach it (from
+  Create it goes to normal) and `pi --major create` is ignored. A chat whose saved mode is `create` still
+  opens in a terminal without breaking: it runs as Delegate, and opening writes nothing.
 - **Bare `/mode`** opens the command palette (`ctrl+p`) at its **Mode** category: `normal` and
   `delegate` (the current one checked; Enter switches and closes), one row per minor mode with its
   description and an on/off marker (Enter toggles it and the palette stays open; `memory`, which only
@@ -758,8 +789,8 @@ Sova's menu turns on, has no row), then one row per project mode of this checkou
   project modes as "project modes ({name}): {id} ({state})", the state being on, removed, changed
   since turned on, needs approval, or broken with its path and error, the
   toggle shortcut, the alignments and the state file.
-- **`/mode default`** saves this session's mode, strict flag and built-in minor modes (never a
-  project mode) as the default, the
+- **`/mode default`** saves this session's mode (in Create, its last normal or Delegate choice),
+  strict flag and built-in minor modes (never a project mode) as the default, the
   only command that writes `mode.json`; **`/mode strict on|off`** (§chat.mode-menu/strict);
   **`/mode subagents <id|off>`** pins this chat's subagent profile, by id or name; `/mode sync`
   changes nothing visible (§chat.mode-menu/prompt-holds-across-turn-starters). Any other argument

@@ -158,10 +158,11 @@ nothing but the server ever starts a chat again.
   directory of the Claude program the server resolved, then the server's `PATH`. It also gets
   `HOME`, `PI_CODING_AGENT_DIR` and the chat's own `SOVA_CHAT_*` (among them the checkout's and the
   copies' places, `SOVA_CHAT_LIVE_ROOT` and `SOVA_CHAT_COPIES_ROOT`), and its own key,
-  `SOVA_CALLER_KEY` (§app.command-audit/keys), and `GIT_CONFIG_SYSTEM` naming Sova's git system
+  `SOVA_CALLER_KEY` (§app.command-audit/keys), `SOVA_URL`, its own server's address on the port it is
+  really bound to, left out when the server is bound to one address loopback can't reach, and `GIT_CONFIG_SYSTEM` naming Sova's git system
   config, so nothing it runs starts git's background cleanup (§app.git-cleanup/no-background). A chat process's own
   variables (`SOVA_CHAT_SOCK`, `_PATH`, `_ID`, `_UNIT`, `_BUILD`, `_STATE_ROOT`, `_LIVE_ROOT`,
-  `_COPIES_ROOT`, and `SOVA_CALLER_KEY`) are never passed on from the server's environment, and a server deletes them from
+  `_COPIES_ROOT`, `SOVA_CALLER_KEY`, and `SOVA_URL`) are never passed on from the server's environment, and a server deletes them from
   its own at start, so a server started from a chat's tools never acts as that chat or its server. All of it is passed in a file only
   the user can read, never on a command line. A variable that file can't carry (a name that is no
   variable name, or a value on more than one line) is left out, and the server logs its name once.

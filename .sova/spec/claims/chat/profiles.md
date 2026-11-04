@@ -32,8 +32,9 @@ once the first message is sent, and kept by the session itself. The UI says
   subagent profile. `minorModes` is the whole set of minor modes the session starts with (`align`,
   `spec`, `vis`), in any order; `[]` starts with none; absent, the session starts with
   mode.json's default. A file whose `thinking` is no level, whose `subagents` isn't `off` or a
-  subagent profile id (lowercase letters, digits and dashes, at most 48), or whose `minorModes`
-  isn't a list of those names, doesn't parse.
+  subagent profile id (lowercase letters, digits and dashes, at most 48), whose `minorModes`
+  isn't a list of those names, or whose `mode` isn't `normal` or `delegate`, doesn't parse. Naming
+  `create` says why: it is chosen in a chat (§chat.create-mode/per-chat-only).
 - **Capability-neutral.** A profile that removes and grants nothing, isn't One at a time, and has
   no first message (so it sets only model, effort, subagents, mode or minor modes) is
   capability-neutral.
@@ -411,7 +412,8 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   `{version: 1, approved: {<identity>: {grant: [...], overseerMayStart, at}}}`, outside every repo.
   Approving records the powers the file has at that moment. `POST /api/profiles/approve {cwd, id,
   grant, overseerMayStart}` is refused when those aren't the powers the file has now (it changed
-  since you looked), so what you approve is what you saw. **Apply and Approve** on a project overseer's
+  since you looked), so what you approve is what you saw, and from anything but your own page
+  (§app.access/your-click), so no chat or script approves one. **Apply and Approve** on a project overseer's
   Settings change card (§app.project-overseer/settings) records the same approval, of the powers the card
   showed, for each profile the card grants; the overseer itself never approves one.
 - **Where.** In the picker, an unapproved project profile reads **Needs approval**. Picking it

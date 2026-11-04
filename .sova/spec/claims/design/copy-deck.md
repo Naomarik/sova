@@ -352,11 +352,14 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Mode rows | each row's name follows its icon, the same icon the trigger uses (the menu is the trigger's legend) |
 | Subagents row / Delegate detail | subagents icon (branching nodes) · Subagents · {name} / Profile: {name} |
 | Subagent picker | Back · Subagent profiles · Search subagent profiles · Manage Profiles… · Save Current as Profile |
-| Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · minors, from pi-config `MINOR_DESCRIPTIONS` (minor.ts): align: Align with the user on what to build (architecture, UX, scope) before building · spec: Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented · vis: Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose · memory (§chat.mode-menu/memory-panel): the chosen type's row description, from `MEMORY_TYPE_INFO` (shared/memory.ts), not `MINOR_DESCRIPTIONS`: UniiChat: Endless chat: the model works from a summary of the whole chat and opens any part of it word for word · Zoomable compaction: Compaction the model can undo: when the chat compacts, older turns become summary lines it can open word for word; while memory is on, the detail line under it: UniiChat — by Victor Taelin · Zoomable compaction — Sova |
+| Descriptions | from pi-config `MODE_DESCRIPTIONS` (state.ts): normal: Pi as usual · delegate: Orchestrate: route planning, investigation and implementation to workers by profile · create: Configure and extend Sova: everything Delegate does, plus every way to make Sova yours. · minors, from pi-config `MINOR_DESCRIPTIONS` (minor.ts): align: Align with the user on what to build (architecture, UX, scope) before building · spec: Scope work from the project's .sova/spec documentation, propose changes in drafts, and promote them once implemented · vis: Draw small inline visuals (vis fences: flow, sequence, tree, timeline, chart, …) when a picture explains faster than prose · memory (§chat.mode-menu/memory-panel): the chosen type's row description, from `MEMORY_TYPE_INFO` (shared/memory.ts), not `MINOR_DESCRIPTIONS`: UniiChat: Endless chat: the model works from a summary of the whole chat and opens any part of it word for word · Zoomable compaction: Compaction the model can undo: when the chat compacts, older turns become summary lines it can open word for word; while memory is on, the detail line under it: UniiChat — by Victor Taelin · Zoomable compaction — Sova |
 | Delegate gear | icon only; `aria-label`/`title`: Configure Delegate (opens Settings → Subagents; switches nothing) |
+| Create gear | icon only; `aria-label`/`title`: Configure Create (opens Settings → Subagents; switches nothing) |
 | Spec gear | icon only; `aria-label`/`title`: Configure Spec (opens Settings → Subagents at its spec-writer section; switches nothing) |
 | Memory type chevron | icon only; `aria-label`/`title`: Memory type (opens the Memory type panel: Back · title: Memory type · Type: {type} · {by} / its description (no design link and no size: Settings → Memory holds each type's Summary size) · foot: This chat only. Kept while memory is off. · refused pick: **Couldn't change memory.** {reason}. Your memory choice is unchanged.) |
 | Foot | strict: {on\|off} · A switch here is this chat's own. New sessions start from the default. |
+| Foot in Create | strict: {on\|off} · Create is chosen in each chat, so no default holds it. Save as default saves {mode · strict · minors}. |
+| Create row, a chat that can do less (also under the setup card while the chat is in Create; both when both apply) | With its sandbox On, this chat can't write files on this computer, reach Sova's commands, or run project tools. · On a remote machine, this chat can't use project modes or cards. |
 | Save button | `Save as default` · while the save is in flight: `Saving…` · when this chat's mode, strict flag, minors, subagent profile and (where the chat has one) memory type match the saved defaults: ✓ `Already the default` (`aria-disabled`). The visible label is the accessible name |
 | Save button `title` | New sessions will start from {mode · strict · minors}. · already: New sessions already start from {mode · strict · minors}. · this chat's mode not arrived: Make this chat's mode the default for new sessions. (already: New sessions already start from the default mode.) — `strict` named only when on |
 | Save failed | **Couldn't save the default.** {reason}. The server reason states which default was written on a partial failure; no blanket "Nothing was saved" suffix contradicts it |
@@ -367,6 +370,58 @@ words, in the composer, the session pane, the chat's queue cards and the project
 | Load failed | **Couldn't load the modes.** Your mode is unchanged. Close this and try again. |
 | Transcript marker | Mode → {mode} · Minor mode: {minor} on\|off (a project mode by its id, the same way) · Strict mode on\|off (shown as recorded) |
 | Toast (from the extension) | Mode: {mode} · Minor mode: {minor} on\|off (a project mode by its id) |
+
+## §design.copy-deck/your-click — What only your own click passes (§app.access/your-click)
+
+Each refusal is the route's answer to a chat, a script, an extension or the Overseer, and says where
+the person clicks.
+
+| Approval | Refusal |
+|---|---|
+| A project's run buttons | Only the user approves a project's run buttons. Ask them to press Approve Run Buttons on the project page's Offers list. Nothing was approved. |
+| A profile's powers | Only the user approves a profile's powers. Ask them to press Approve in Settings → Profiles or on the profile picker. Nothing was approved. |
+| A schedule | Only the user approves a schedule. Ask them to press Approve in the Playbooks dialog or the Overseer's Approvals & Schedules. Nothing was approved. |
+| A Project Overseer power | Turning on a Project Overseer power needs the user's own click. Ask them to turn it on in the project page's Settings tab. Nothing was changed. |
+| Lowering a sandbox | Only the user lowers a chat's sandbox. Ask them to pick it from the Sandbox rows in that chat's composer. Nothing was changed. |
+| Going back past a sandbox raise, not from the page | Only the user lowers a chat's sandbox. Ask them to rewind this chat in the page. Nothing was changed. |
+| A project tool | Approving a project mode's tools needs the user's own click. Ask them to turn {id} on in that chat's mode menu. Nothing was turned on. |
+| A schedule through a mesh peer, its proof failed or missing | This computer couldn't confirm your click with the one the schedule is on. Try Approve again, or approve it on that computer's page. Nothing was approved. |
+| Restarting Sova | Only the user restarts Sova. Ask them to press Restart Sova in Settings → General. Nothing was restarted. |
+| Updating Sova | Only the user updates Sova. Ask them to do it in Settings → General. Nothing was changed. |
+| Apply of Sova's own checkout | Only the user restarts Sova. Ask them to press Apply on the Branches tab of Sova's project page. Nothing was restarted. |
+| A card's click, not from the page | Only the user answers a card. Ask them to click it in that chat. Nothing was sent. |
+| A card owner's trust | Only the user trusts a project's or an extension's cards. Ask them to press Trust {name}'s Cards on the card. Nothing was trusted. |
+| Through a mesh peer, any of the others | Only the user approves this, on the page of the computer it belongs to. Open Sova on that computer. Nothing changed. |
+
+## §design.copy-deck/create-mode — Create (§chat/create-mode)
+
+| Where | Copy |
+|---|---|
+| Asked to change Sova's own code | Create doesn't change Sova's own code. It can change this project's settings, as it can on any project. |
+| Nothing supported can do it | Sova can't {what they asked} today. The nearest ways are {ways}. |
+| Naming Create where it can't be named | Create is chosen in a chat's own mode menu, so {a profile \| an automation \| the Overseer \| a project overseer} can't name it. Nothing was changed. |
+| Saving it as the default | Create is chosen in each chat, so no default holds it. |
+| `/mode create` in a terminal, or sent as text to a chat | Mode not changed: Create is chosen in a Sova chat. |
+| `/mode create` sent to a chat from anywhere else | Create is chosen in the chat itself, so a message sent to it can't switch it. Nothing was sent. (the Overseer and a project overseer get the deck's refusal, naming them) |
+| A chat that can't take the switch yet | This chat can't switch to Create: it runs older code or is open somewhere else. Reload it, then try again. |
+| A topic that isn't listed | No topic {topic}. Topics: {topics}. |
+| A setting no card holds (each names where to make the change) | Public links stay on their own screen, so no card holds them. Name it for the person: Settings → Public Links, Where links open. · Voice stays on its own screen, so no card holds it. Name it for the person: Settings → Voice, Set Up Voice. · Updates stay on their own screen, so no card holds them. Name it for the person: Settings → General, Update from. · Links between computers stay on their own screen: they are conversations and file offers, not settings. Name it for the person: the session pane's Agents tab, Remotely linked agents. · Claiming a login stays on its own screen: Create doesn't handle sign-ins or keys. Name it for the person: the Mesh page, Sync, Logins. · An internet relay stays on its own screen: it needs an accept process installed by hand. Name it for the person: the Mesh page, Dial-out pairings. |
+| A setting that is a credential | Create doesn't handle sign-ins or keys. {where the person signs in} If this isn't a key, name the place for the person, who can make the change themselves: {the screen or file}. |
+| Undo of a merge queue change | Change it back in Settings → Merge Queue: a save there is its own commit. |
+| A card's place, eyebrow | Where it lands |
+| A Sova-wide card, a check failing at Apply | {label}: {why} Nothing changed. |
+| A Sova-wide card, part of it took effect | warning chip: Partly applied · banner: Partly applied: {labels} took effect. {label} didn't: {why}. Nothing else was saved. · foot: Partly applied: see above. · toast: Partly applied {id}: the card says what took effect. |
+| A Sova-wide card's place | Sova-wide (on a card, where it lands) · Sova-wide, and your other computers by sync, when it spreads |
+| A card waiting (a merge queue card, or any card that commits files) | chip: Waiting to save · Saves when the current branch finishes. · Saves once release {version} is published or abandoned. (the same words are Apply's toast) · button: Cancel Save |
+| Apply, a grant not recorded | a warning banner, one line per approval still needed (the server's words, e.g. The schedule of {id} still needs approving, in the Playbooks dialog.) · toast: Applied {id}. 1 approval still needs you: the card says where. · {n} approvals still need you · on the folder's edits it starts Landed the folder's settings edits. · never Applied and approved |
+| Cancel Save on the folder's edits, toast | Cancelled the save. The folder's edits stay. |
+| A queue card's rows, heading | Merge queue |
+| A mesh card's access | eyebrow: Every computer's access after this · changed: {label}: {before} → {after}, chip Changes · unchanged: {label}: {after} · shell row adds: Shell-level: it can run anything here. |
+| A pairing card's field | labelled by the server · hint: This computer's own fingerprint is on the Mesh page, under Dial-out pairings. · link: Open Mesh Page |
+| A card's notes, while it waits | drawn as given, above the buttons, from a live read only |
+| A held Save that failed | chip: Save failed · {reason, ending "Nothing was saved."} · button: Cancel Save on a queue card and the folder's edits, Dismiss on a project card (no Saves when… line) |
+| A Sova-wide card where nobody may act | Waiting for you: apply it in the chat that prepared it. |
+| Settings history | by a Create chat |
 
 ## §design.copy-deck/context-window — Context window
 

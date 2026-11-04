@@ -43,14 +43,16 @@ new session, and needs no model to re-arm it.
   until you approve it. Only your click in Sova approves: `POST /api/schedules/approve {cwd,
   playbook, pin}` from the Playbooks dialog or the Overseer's Approvals & Schedules, or **Apply and
   Approve** on a project overseer's Settings change card that grants it (§app.project-overseer/settings:
-  the schedule's lines as the card showed them, refused when the file differs). A request that carries
-  the Overseer's sender mark is refused, so no model approves one.
+  the schedule's lines as the card showed them, refused when the file differs). Anything but your own
+  page is refused (§app.access/your-click), so no model, script or extension approves one. A schedule
+  on another of your computers can be approved from this page too, with proof of your click carried
+  across the link between the computers. Any caller on another computer whose proof fails or is missing
+  gets the same refusal (§design.copy-deck/your-click), and a fresh click gets a fresh one-time proof.
 - **Pinned to what you saw.** An approval records the schedule's pin: its `when:` and `tz:` lines,
   the linked profile's identity (§chat.profiles/projects), and that profile's powers (what it removes
   and grants, One at a time, and whether the Overseer may start it). `pin` is the one the client was
   shown; the approve is refused (409) when the file's pin differs now, and while the linked project
-  profile still needs its own approval (§chat.profiles/trust). A request with the Overseer's sender
-  mark is refused with 403.
+  profile still needs its own approval (§chat.profiles/trust).
 - **When it asks again.** A change to `when:`, `tz:` or the linked profile (another profile, or the
   same one with other powers) pauses the schedule: "Changed since you approved it", until you approve
   it again. Edits to the playbook's instructions and to `task:` never ask again: the profile, which

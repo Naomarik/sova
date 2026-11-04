@@ -17,9 +17,9 @@
       "pi-config/extensions/mode/tests/fixtures/flag-off-master.json"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-29T08:55Z",
-      "source": "pi-session:01a18449-3180-7289-9604-872364de6a92#6b6ec653"
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§chat.mode-menu/how-a-switch-reaches-the-chat": {
@@ -37,9 +37,14 @@
       "server/mode-state.ts"
     ],
     "agreed": {
-      "by": "Omar (operator)",
-      "at": "2026-10-17"
-    }
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    },
+    "requires": [
+      "§app.access/your-click",
+      "§chat.create-mode/minor-modes"
+    ]
   },
   "§chat.mode-menu/memory-panel": {
     "kind": "behavior",
@@ -79,13 +84,19 @@
       "server/chat-manager.ts",
       "src/lib/mode-glyphs.ts",
       "src/components/ModeGlyph.tsx",
-      "src/design/base.css"
+      "src/design/base.css",
+      "public/icons/mode-create.svg"
     ],
     "agreed": {
-      "by": "omar (user)",
-      "at": "2026-10-27T08:43Z",
-      "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#db36b4af"
-    }
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    },
+    "requires": [
+      "§chat/create-mode",
+      "§chat.create-mode/per-chat-only",
+      "§chat.create-mode/where-offered"
+    ]
   },
   "§chat.mode-menu/minor-toggle-keeps-prompt": {
     "kind": "behavior",
@@ -127,7 +138,8 @@
     "kind": "behavior",
     "requires": [
       "§chat.mode-menu/project-modes",
-      "§chat.sandbox/states"
+      "§chat.sandbox/states",
+      "§app.commands/cli"
     ],
     "authority": "accepted",
     "code": [
@@ -156,13 +168,19 @@
       "server/project-mode-menu.ts",
       "server/mode-commands-worker.test.ts"
     ],
-    "evidence": "verified"
+    "evidence": "verified",
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
   },
   "§chat.mode-menu/project-mode-hooks": {
     "kind": "behavior",
     "requires": [
       "§chat.mode-menu/project-modes",
-      "§chat.sandbox/states"
+      "§chat.sandbox/states",
+      "§app.access/your-click"
     ],
     "authority": "accepted",
     "code": [
@@ -192,9 +210,9 @@
     ],
     "evidence": "verified",
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§chat.mode-menu/project-modes": {
@@ -208,13 +226,14 @@
       "§chat.playbooks/where-playbooks-come-from",
       "§app.overseer/tools",
       "§chat.sandbox/states",
-      "§chat.worktrees/worktree-config"
+      "§chat.worktrees/worktree-config",
+      "§app.access/your-click"
     ],
     "authority": "accepted",
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T15:12Z",
-      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     },
     "code": [
       "pi-config/extensions/mode/project-tools.ts",
@@ -309,14 +328,20 @@
       "src/components/ModeMenu.tsx",
       "src/lib/mode-menu.ts",
       "pi-config/extensions/mode/index.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
   },
   "§chat.mode-menu/terminal": {
     "kind": "behavior",
     "requires": [
       "§chat.mode-menu/how-a-switch-reaches-the-chat",
       "§chat.mode-menu/strict",
-      "§chat.mode-menu/prompt-holds-across-turn-starters"
+      "§chat.mode-menu/prompt-holds-across-turn-starters",
+      "§chat.create-mode/per-chat-only"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -331,8 +356,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T15:12Z",
-      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§chat.mode-menu/tokens": {
@@ -371,7 +396,8 @@
       "§chat.sandbox/workers",
       "§chat.worktrees/worktree-config",
       "§app.worker-restore/resume",
-      "§app.subagents-pane/transcript-view"
+      "§app.subagents-pane/transcript-view",
+      "§chat.create-mode/delegate-parity"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -406,14 +432,16 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T15:12Z",
-      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§chat/mode-menu": {
     "kind": "surface",
     "requires": [
-      "§chat/subagent-profiles"
+      "§chat/subagent-profiles",
+      "§chat/create-mode",
+      "§chat.create-mode/per-chat-only"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -428,8 +456,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T15:11Z",
-      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     },
     "notOwned": [
       "§chat/subagent-profiles",

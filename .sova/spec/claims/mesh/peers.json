@@ -70,7 +70,12 @@
       "server/mesh/lan-mesh.integration.test.ts",
       "server/overseer-link-tools.test.ts",
       "server/sync/docs-grants.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
   },
   "§mesh.peers/health": {
     "kind": "behavior",
@@ -168,7 +173,12 @@
       "scripts/mesh-termux/deploy.sh",
       "server/index.ts",
       "server/app.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
   },
   "§mesh/peers": {
     "kind": "surface",

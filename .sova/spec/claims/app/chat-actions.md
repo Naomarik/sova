@@ -20,6 +20,8 @@ chat's own sentence. On an archived chat every action but Stop and Reload Now an
 
 Two differences from a press: the rewound text comes back in the answer and is not placed into an
 open composer, and an action does not mark the session as seen, so its unread mark stays as it was.
+A third: a Rewind or Regenerate that would lower the chat's sandbox is refused to a script, and what a script
+starts through this route is never the user's (§app.access/your-click).
 
 The route never sends a message, a steer or an answer to a waiting dialog. Answering a dialog can
 approve a sandbox widening, so it stays with the person and the Overseer's own tool.

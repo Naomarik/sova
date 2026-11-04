@@ -25,8 +25,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-27T22:52Z",
-      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
+      "at": "2026-11-04T16:27Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#e85d747a"
     }
   },
   "§app.access/devices": {
@@ -112,6 +112,76 @@
       "src/lib/socket.ts",
       "src/main.tsx"
     ]
+  },
+  "§app.access/your-click": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/project-mode-hooks",
+      "§design.copy-deck/your-click",
+      "§chat.offers/approval",
+      "§chat.profiles/trust",
+      "§chat.schedules/approval",
+      "§app.project-overseer/autonomy-levels",
+      "§chat.sandbox/toggle",
+      "§chat.mode-menu/project-modes",
+      "§app.overseer/tools",
+      "§app.overseer/org-project-overseers",
+      "§app.commands/catalogue",
+      "§chat.transcript-cards/trust",
+      "§app.updates/restart",
+      "§app.updates/operator"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/page-only.ts",
+      "server/session-offers-routes.ts",
+      "server/session-profile-routes.ts",
+      "server/schedule-routes.ts",
+      "server/project-overseer-routes.ts",
+      "server/app.ts",
+      "server/overseer-tools.ts",
+      "server/chat-manager.ts",
+      "server/commands-inventory/scan.ts",
+      "server/commands-inventory/baseline.json",
+      "server/mesh/click-proof.ts",
+      "server/testing/page.ts",
+      "server/your-click.test.ts",
+      "server/your-click-sandbox.test.ts",
+      "server/auth.ts",
+      "server/ws.ts",
+      "server/sandbox-state.ts",
+      "server/chat-runtime/methods.ts",
+      "shared/powers.ts",
+      "server/mesh/proxy.ts",
+      "server/mesh/index.ts",
+      "server/mesh/access.ts",
+      "server/mode-commands-routes.test.ts",
+      "server/transcript-cards.ts",
+      "server/transcript-cards-routes.ts",
+      "server/queue.ts",
+      "server/chat-handle-remote.ts",
+      "server/chat-runtime/host.ts",
+      "shared/chat-runtime.ts",
+      "server/overseer-runtime.test.ts",
+      "server/updates/routes.ts",
+      "server/updates/routes.test.ts",
+      "server/updates/restart-route.test.ts",
+      "server/project-services/engine.ts",
+      "server/project-services/self-host.ts",
+      "server/project-services/routes.ts",
+      "server/project-services/view-routes.ts",
+      "server/project-services/adopt.test.ts",
+      "server/chat-actions.ts",
+      "server/chat-actions.test.ts",
+      "server/chat-runtime/trial-your-click.integration.test.ts",
+      "scripts/chat-runtime-trial/run.mjs"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:58Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
   },
   "§app/access": {
     "kind": "surface",

@@ -116,6 +116,23 @@ export function canSend(way: AddWay, f: AddFields, name: string | null): boolean
   return !!(way === "address" ? f.address : way === "command" ? f.command : f.paste).trim();
 }
 
+/** The one server a pasted entry names, for an empty Name field: `{"mcpServers": {"docs": {…}}}` or `{"docs": {…}}`.
+    An entry with no name of its own (it holds `command` or `url`) names nothing. */
+export function pastedName(text: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!parsed || typeof parsed !== "object") return null;
+  const o = parsed as Record<string, unknown>;
+  const list = (o.mcpServers && typeof o.mcpServers === "object" ? o.mcpServers : o) as Record<string, unknown>;
+  const names = Object.keys(list);
+  const only = names.length === 1 ? names[0]! : null;
+  return only && list[only] && typeof list[only] === "object" ? only : null;
+}
+
 /** The project section's groups: a checkout with no file says nothing beside one that has servers,
     and when none has a file the section is its one line. */
 export function projectGroups(view: McpProjectServers): McpProjectServers["checkouts"] {

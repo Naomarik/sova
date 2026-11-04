@@ -2,7 +2,7 @@ import { createSignal, For, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { McpServerRow } from "../../shared/mcp";
 import { addMcpServer, editMcpServer } from "../lib/api";
-import { ADD_WAYS, type AddFields, type AddWay, canSend, editedServer, isReservedName, newServer, RESERVED_FIELD, SECRET_HINT } from "../lib/mcp";
+import { ADD_WAYS, type AddFields, type AddWay, canSend, editedServer, isReservedName, newServer, pastedName, RESERVED_FIELD, SECRET_HINT } from "../lib/mcp";
 import { McpRow } from "./McpServerRow";
 import { trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
@@ -126,7 +126,12 @@ export function McpServerDialog(props: { editing?: McpServerRow; onClose: () => 
                 <Show when={way() === "paste"}>
                   <label class="field">
                     <span class="field-label">Paste from Another Tool</span>
-                    <textarea class="textarea input-mono" rows={6} spellcheck={false} value={fields().paste} onInput={(ev) => set("paste", ev.currentTarget.value)} />
+                    <textarea class="textarea input-mono" rows={6} spellcheck={false} value={fields().paste} onInput={(ev) => {
+                        const text = ev.currentTarget.value;
+                        set("paste", text);
+                        const named = pastedName(text);
+                        if (named && !name().trim()) setName(named);
+                      }} />
                   </label>
                 </Show>
                 <Show when={way() !== "paste"}>

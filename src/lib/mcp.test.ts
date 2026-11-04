@@ -13,6 +13,7 @@ import {
   mcpToolWords,
   newServer,
   noteOnHost,
+  pastedName,
   NO_CHECK,
   projectGroups,
   refusedLines,
@@ -75,6 +76,14 @@ test("Add and Check: a command's secret needs its name, an address's doesn't, an
   assert.deepEqual(newServer("command", "a", fields({ command: "npx x", secretName: "KEY" })), { way: "command", name: "a", command: "npx x" }, "no secret, no name for one");
   assert.deepEqual(newServer("paste", "a", fields({ paste: "{}", secret: "stale" })), { way: "paste", name: "a", text: "{}" }, "a Secret typed on another tab never leaves with a paste");
   assert.deepEqual(editedServer("address", fields({ address: "https://x" })), { address: "https://x" });
+});
+
+test("a pasted entry fills the name only when it names exactly 1 server", () => {
+  assert.equal(pastedName('{"mcpServers":{"docs":{"command":"x"}}}'), "docs");
+  assert.equal(pastedName('{"docs":{"command":"x"}}'), "docs");
+  assert.equal(pastedName('{"mcpServers":{"a":{},"b":{}}}'), null);
+  assert.equal(pastedName('{"command":"npx","args":["x"]}'), null, "the entry itself names nothing");
+  assert.equal(pastedName("npx x"), null);
 });
 
 test("a checkout's heading is its folder's name, from a path or a bare name", () => {

@@ -85,6 +85,10 @@ test("only a chat with its sandbox On is told it, by the lookup, and an unlimite
 	assert.ok(CREATE_INSTRUCTIONS.includes("project modes and cards don't work here"));
 });
 
+test("restarting or updating Sova goes to the entry, never to a command on Sova itself", () => {
+	assert.ok(/never run a git or service command on Sova's own folder or service[^\n]*`computers` topic/.test(CREATE_INSTRUCTIONS));
+});
+
 test("a strict chat is told how to know, and that bash writes are file changes", () => {
 	assert.ok(/no `edit` or `write` tool, the chat is strict[^\n]*writing with `bash`/.test(CREATE_INSTRUCTIONS));
 });

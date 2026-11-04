@@ -21,7 +21,7 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { after, before, describe, test } from "node:test";
+import { after, afterEach, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { provenanceOf } from "../lab.mjs";
 import { container, hostUrl, lab, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, STATE, unlockPage, waitFor, writeAgentFile } from "./lib.mjs";
@@ -130,16 +130,28 @@ async function session(host, stated) {
   okJson(await call(host, "/api/sessions/configure", { method: "POST", body: { path: s.path, model: MODEL }, stated, timeoutMs: 60000 }), `${host}: configure`);
   return s;
 }
-/** A session that opens by URL: it has a message, its reply has ended, and its file reads as old, so
-    a page opens it as a chat and never as a just-written file (a file written in the last 2 minutes by no one known refuses a chat). */
+/** A session that opens by URL: it has a message, its reply has ended, and the host has recorded the
+    file as its own, so it opens as a chat after a restart too. Never touch the file to make it look
+    old: a held chat reads any outside change as a foreign write and turns read only. */
 async function spoken(host, stated) {
   const s = await session(host, stated);
   okJson(await call(host, "/api/sessions/prompt", { method: "POST", body: { path: s.path, text: "Reply with the single word: ok" }, stated }), `${host}: first message`);
   await waitIdle(host, s.id);
-  age(host, s);
+  await recorded(host, s);
   return s;
 }
-const age = (host, s) => assert.equal(sh(host, `touch -d '1 hour ago' '${s.path}'`).code, 0, `age ${s.path}`);
+/** Until `host`'s owned-writes.json has the session file as it is now: what lets a restarted host open it
+    as a chat (a file written in the last 2 minutes by no one known opens read only). Call before a swap. */
+const recorded = (host, s) =>
+  waitFor(
+    () => {
+      const r = sh(host, `node -e 'const fs=require("fs"),p=process.argv[1],d=process.env.PI_CODING_AGENT_DIR+"/sova/owned-writes.json",o=JSON.parse(fs.readFileSync(d,"utf8"))[p],t=fs.statSync(p);console.log(JSON.stringify({own:o,size:t.size,mtimeMs:t.mtimeMs}))' '${s.path}'`);
+      const st = JSON.parse(r.out || "{}");
+      if (st.own?.size === st.size && st.own?.mtimeMs === st.mtimeMs) return true;
+      throw new Error(r.out || r.err);
+    },
+    { timeoutMs: 30000, intervalMs: 500, what: `${host} records ${s.path} as its own` },
+  );
 const fixture = async (host) => {
   const rows = okJson(await call(host, "/api/sessions"), `${host}: list`);
   const s = (Array.isArray(rows) ? rows : rows.sessions).find((r) => JSON.stringify(r).includes("fixture session on lab host"));
@@ -163,7 +175,9 @@ function chat(node, path, { composer, via } = {}) {
   const base = hostUrl(via ?? node).replace(/^http/, "ws");
   const ws = new WebSocket(`${base}${via ? `/peer/${node}` : ""}/ws/chat?${q}`, { headers: labTokenHeaders() });
   ws.onmessage = (e) => frames.push(JSON.parse(String(e.data)));
-  const hello = waitFor(() => frames.some((f) => f.type === "hello"), { timeoutMs: 30000, intervalMs: 100, what: `chat hello from ${node}` });
+  const hello = waitFor(() => frames.some((f) => f.type === "hello"), { timeoutMs: 30000, intervalMs: 100, what: `chat hello from ${node}` }).catch((e) => {
+    throw new Error(`${e.message}; socket state ${ws.readyState}; frames: ${JSON.stringify(frames).slice(0, 800)}`);
+  });
   return {
     frames,
     hello,
@@ -195,6 +209,19 @@ async function tab(host, hash = "#/mesh") {
   await page.reload(); // a goto that only changes the hash keeps the document; a tab starts from a load
   return page;
 }
+/** What every open tab shows when a test fails: a shot and its words, so a timeout says what it saw. */
+afterEach(async (t) => {
+  if (t.passed !== false) return;
+  let n = 0;
+  for (const ctx of tabs)
+    for (const page of ctx.pages()) {
+      n += 1;
+      const name = `failed-${t.name.replace(/\W+/g, "-").slice(0, 50)}-${n}`;
+      await page.screenshot({ path: join(SHOTS, `${name}.png`) }).catch(() => {});
+      const words = await page.locator("body").innerText({ timeout: 3000 }).catch((e) => e.message);
+      console.log(`# ${name}: ${page.url()}\n# ${JSON.stringify(words.slice(-900))}`);
+    }
+});
 const closeTabs = async () => {
   for (const c of tabs.splice(0)) await c.close().catch(() => {});
 };
@@ -635,7 +662,10 @@ for (const bumped of ["sessions", "peer"]) {
       // c matches a, so its copy says the sync went out; only then can b's lack of one mean anything.
       // Back on matching builds, the same link carries a message and the favorite arrives on b: the
       // absences above are the state's doing, not a broken link or a broken sync.
-      await waitFor(() => (readAgentFile("c", "model-favorites.json") ?? "").includes(marker), { timeoutMs: 60000, what: "the favorite reaches c" });
+      await waitFor(() => (readAgentFile("c", "model-favorites.json") ?? "").includes(marker), { timeoutMs: 60000, what: "the favorite reaches c" }).catch(async (e) => {
+        const sync = async (h) => JSON.stringify((await (await laptopFetch(h, "/api/mesh")).json()).sync);
+        assert.fail(`${e.message}; a's file: ${readAgentFile(A, "model-favorites.json")}; c's file: ${readAgentFile("c", "model-favorites.json")}; a's sync: ${await sync(A)}; c's sync: ${await sync("c")}`);
+      });
       assert.ok(!(readAgentFile(B, "model-favorites.json") ?? "").includes(marker), "no sync while Update needed");
       await builds({ a: "base", b: "base", c: "base" });
       await waitFor(() => (readAgentFile(B, "model-favorites.json") ?? "").includes(marker), { timeoutMs: 60000, what: "sync resumes once the numbers match" });
@@ -670,8 +700,8 @@ describe("6. a tab left open across an update", () => {
     const s = await spoken(A);
     const stale = await tab(A, sessionHash(s, null));
     await stale.locator("form.composer-inner").waitFor({ timeout: 30000 });
+    await recorded(A, s);
     await builds({ a: "composer", b: "base" });
-    age(A, s);
     const fresh = await tab(A);
     await meshSays(fresh, B, "read-only");
     await shots(fresh, "6-fresh-tab");
@@ -690,8 +720,8 @@ describe("6. a tab left open across an update", () => {
     const s = await spoken(A);
     const stale = await tab(A, sessionHash(s, null));
     await stale.locator("form.composer-inner").waitFor({ timeout: 30000 });
+    await recorded(A, s);
     await builds({ a: "base", b: "base" });
-    age(A, s);
     await typeAndSend(stale, "From a tab ahead of its host");
     await stale.getByText(/Host A needs an update before it can take sends from this page/).first().waitFor({ timeout: 30000 });
   });
@@ -703,10 +733,10 @@ describe("6. a tab left open across an update", () => {
       const s = await spoken(A);
       const stale = await tab(A, sessionHash(s, null));
       await stale.locator("form.composer-inner").waitFor({ timeout: 30000 });
+      await recorded(A, s);
       lab("swap", A, commitOf("composer"));
       running[A] = "composer";
       startFakeLlm([A]);
-      age(A, s);
       await typeAndSend(stale, "Mesh off, stale tab");
       await stale.getByText(/older than this host\. Reload the page to send here/).first().waitFor({ timeout: 30000 });
       await shots(stale, "6-stale-tab-mesh-off");

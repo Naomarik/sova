@@ -20,7 +20,7 @@ await dump("/");
 await dump("/api/health");
 // The page's own JS as a browser asks for it, and as a script does: the gate judges Origin (server/auth.ts).
 const asset = /src="(\/assets\/[^"]+)"/.exec(await (await laptopFetch(host, "/")).text())?.[1];
-for (const origin of [hostUrl(host), "http://127.0.0.1:4800", null]) {
+for (const origin of [hostUrl(host), "http://127.0.0.1:4800", null, "http://127.0.0.1:4899"]) {
   const r = await laptopFetch(host, asset, { headers: origin ? { origin } : {} });
   console.log(`--- GET ${asset} origin ${origin} -> ${r.status} ${JSON.stringify(Object.fromEntries(r.headers))}${r.ok ? "" : ` ${await r.text()}`}`);
 }

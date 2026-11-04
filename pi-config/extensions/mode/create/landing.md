@@ -62,7 +62,7 @@ The whole section, beside the file's other keys. `run` is a list of arguments, a
 - Change: what the reviewer of each landing looks for. Key: `merge.review`, the folder of the project's review kit.
 - Lives: a folder in the project such as `.sova/playbooks/review/`, with its instructions and references. It has no `SKILL.md` and sits in no skills folder, so ordinary chats never load it.
 - Approves: the person, by Land. Review on or off afterwards is the setting above.
-- By: Land.
+- By: Land. A `merge.review` key in the change turns review on when it lands, with no card: say so first, and have them check the review model, because a review that can't run stops the queue.
 - Live: after landing, from the next landing.
 - Check: the next landing shows a review, with its chat. Open Folder in Settings → Merge Queue shows the kit as the target has it.
 

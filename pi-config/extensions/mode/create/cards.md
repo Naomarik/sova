@@ -23,7 +23,7 @@ Recommend send buttons first:
 
 ## Card types
 
-- Change: a card a chat can raise, up to 16 per project. `draws` picks one Sova draws from data (`question`, `checklist`, `status`, `table`, `buttons`) or `view`, the project's own view. A type with `when` can be raised by the agent; one without is raised only from outside, by a script or a project mode's hook.
+- Change: a card a chat can raise, up to 16 per project. `draws` picks one Sova draws from data (`question`, `checklist`, `status`, `table`, `buttons`) or `view`, the project's own view. A type with `when` can be raised by the agent; one without is raised only from outside, by a script or a project mode's hook. A type Sova draws fixes no words: whoever raises it supplies the title, options and buttons each time, and a `buttons` file holds no button. Never promise a fixed button from one. For a button with fixed words, use an offer, or a view.
 - Lives: `.sova/cards/<name>/card.json` in the project, and `view.tsx` beside it for a view, which also needs `data`, the shape of its data. A chat reads the checkout it runs in, so a chat in a worktree uses its own branch's cards.
 - Approves: the person, by Land. The first time a card wants to act (send a message or run a command that changes something; a view, any command) it asks, and the person presses Trust {project}'s Cards. That covers the whole project from then on; Stop Trusting Cards on the Cards section ends it.
 - By: Land. No card holds these.
@@ -42,8 +42,8 @@ A data card takes no `data` shape: Sova's own is used.
 - Lives: `.sova/drawings/<name>/` in the project: `kind.json`, `view.tsx` and `GUIDE.md`, which the agent reads to learn it.
 - Approves: the person, by Land.
 - By: Land. No card holds these.
-- Live: new chats after landing, with vis on. A chat keeps the kinds it started with. Saving `view.tsx` redraws open drawings.
-- Check: the Cards section lists it or says what's broken. In a new chat with vis on, ask for one.
+- Live: new chats after landing. A chat keeps the kinds it started with, and with vis on it's told them. With vis off a kind still draws but the chat isn't told, so look in `<project>/.sova/drawings/` before you say there are none. Saving `view.tsx` redraws open drawings.
+- Check: the Cards section lists it or says what's broken. In a new chat, ask for one.
 
 ```json
 {"version": 1, "toolkit": 1, "accepts": "text"}

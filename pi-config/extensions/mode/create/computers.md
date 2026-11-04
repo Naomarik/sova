@@ -4,25 +4,27 @@ All of this works in any folder. It's about this computer and how it reaches oth
 
 You never restart or update Sova, by any command, `server.restart` included. Name the control below for the person, and never report something you didn't do.
 
-To link computers, read where things stand with `sova_settings` get (it never shows a key or pin; if it has no mesh state yet, ask what the Mesh page shows), say which step they're on, and go through these in order, one at a time. Each is done by its section below. A computer that isn't linked yet is out of your reach, so give the exact steps to do there. Never put a pairing code, token or secret in chat text.
+To link computers, read where things stand with `sova_settings` get: each computer's state, access and pairing role, what syncs, the front door and the relay, never a key or pin. Say which step they're on, and go through these in order, one at a time, each by its section below. A computer that isn't linked yet is out of your reach, so give the exact steps to do there. Never put a pairing code, token or secret in chat text.
 
-1. Choose the way: the same tailnet, or dial-out for a computer off it, a phone or a server. Say first that every device reaching one computer can reach them all, as far as each grant allows.
-2. Name this computer: this host's name in Settings → Mesh.
+1. Choose the way: the same tailnet, or a pairing for a computer off it. Say first that every device reaching one computer can reach them all, as far as each grant allows.
+2. Name this computer: `mesh.settings` with `hostLabel`.
 3. The other computer needs Sova running (/docs/install, /docs/phone), and for a tailnet both need Tailscale on.
-4. Add it here. A peer from the form starts at `presence`.
-5. Add this computer there. Each lists the other, or a peer reads refused: "this host is not in its peers.json".
-6. Set what each may see and do, on each computer. Show the whole access after the change.
-7. Choose what syncs. A login already sent can't be recalled.
-8. If they want it: the front door, and a gateway for public links.
+4. Link it here: `mesh.peer-add` on a tailnet, `mesh.pairing` off it. Linking is one-sided.
+5. Link this computer there, from that computer's own Sova: give the exact steps. Until then a peer reads refused: "this host is not in its peers.json".
+6. Set what each may see and do, on each computer: `mesh.access`. The card shows every computer's access after the change, so point the person to it.
+7. Choose what syncs: `mesh.settings` with `sync`. A login already sent can't be recalled.
+8. If they want it: the front door, `mesh.settings` with `frontDoor`, and a gateway for public links.
 
-When it's stuck: `down`: that computer's off or unreachable. `skewed`: they run different builds, so name Resync, in the session pane's host menu, for one that's behind. `hidden`: that computer grants this one nothing, so change the grant there. Half connected: one side of a pairing isn't up yet. An error instead of a state: this computer's peers file is invalid and the mesh is off, so fix that first.
+When it's stuck: `down`: that computer's off or unreachable. `skewed`: they run different builds; for one that's behind, offer `mesh.resync`. `hidden`: that computer grants this one nothing, so change the grant there. Half connected: one side of a pairing isn't up yet. An error instead of a state: this computer's peers file is invalid and the mesh is off, so fix that first.
+
+These stay on screens: links between computers, claiming a login and an internet relay, on the Mesh page, and a resync's recipe, in the session pane's host menu. Name the control. Use `sova_settings` reference for each id's exact value. These have run on one computer only so far, so check each step's result before you say it worked.
 
 ## Your other computers
 
 - Change: which other Sova computers this one lists as peers. With no peer, nothing changes: no extra port, no outbound request.
 - Lives: this computer's list of peers, curated by the person. Being on the same tailnet makes nothing a peer. Each computer keeps its own list.
-- Approves: the person, on each computer.
-- By: Screen. Home, Mesh. Every computer in a mesh must be reachable by exactly the same devices: a device that can reach one can use all of them, as far as each one's grant allows.
+- Approves: the person, by Apply on each computer. The card marks a new link as a grant.
+- By: Card or Screen. `mesh.peer-add` links one on this tailnet, with a required `preset`. `mesh.peers` holds the whole list of those already linked: rename, order, addresses, or remove, which ends its access at once. The Mesh page has the same controls. Every computer in a mesh must be reachable by exactly the same devices: a device that can reach one can use all of them, as far as each one's grant allows.
 - Live: now.
 - Check: the Mesh page shows each host's state, and the session list shows every host's sessions.
 
@@ -31,7 +33,7 @@ When it's stuck: `down`: that computer's off or unreachable. `skewed`: they run 
 - Change: each peer's grant here: `full`, `sessions`, `presence` or `none`, with finer switches. Granting sessions grants everything else in effect, since starting a session runs commands as the person.
 - Lives: this computer only, never synced.
 - Approves: the person, on this computer. Grants go per direction: what this computer can see on a peer is that peer's choice.
-- By: Screen. The Mesh page, per host. A peer from the form starts at `presence`; a tailnet peer the file doesn't list has `full`.
+- By: Card or Screen. `mesh.access`, one computer per card, or the Mesh page, per host. A peer from the form starts at `presence`; a tailnet peer the file doesn't list has `full`.
 - Live: now. Lowering a grant ends open connections.
 - Check: the host's row on the Mesh page.
 
@@ -39,8 +41,8 @@ When it's stuck: `down`: that computer's off or unreachable. `skewed`: they run 
 
 - Change: bring in a computer that dials out to a relay, an Android phone, or a VPS.
 - Lives: pairings on the Mesh page, and the installers Sova carries for a phone and a server.
-- Approves: the person, on both computers: each pastes the other's fingerprint and checks it by eye.
-- By: Screen or Terminal. Pair a Host on the Mesh page; a phone or a VPS is set up from a terminal, and the root steps on a VPS are an admin's. /docs/phone goes further.
+- Approves: the person, on both computers: each types the other's fingerprint into the card's own field or the Mesh page and checks it by eye. Never ask for a fingerprint in chat, and if they paste one, don't use it.
+- By: Card or Screen or Terminal. `mesh.pairing` pairs a computer, each doing its half in its own Sova; `mesh.relay` sets this computer's own relay address on the local network; Pair a Host on the Mesh page does the same. A phone or a VPS is set up from a terminal, and the root steps on a VPS are an admin's. /docs/phone goes further.
 - Live: now, once both sides are paired.
 - Check: the Dial-out pairings card shows it connected.
 
@@ -48,8 +50,8 @@ When it's stuck: `down`: that computer's off or unreachable. `skewed`: they run 
 
 - Change: which kinds of thing reach this computer's peers: settings, themes, extensions (listed only, never run) and logins. Settings includes new-session defaults, model favorites and policy, request limits, the mode, Delegate, Spec and Align settings, the subagent profile library, and the person's session profiles, which also need the sessions grant.
 - Lives: this computer's Settings → Mesh, and each peer's grant. Sova's own `settings.json` is among what syncs. Never synced: sessions, the theme a browser picked, the default subagent profile, device keys, a file that links into a Git checkout, and Claude Code's own login.
-- Approves: the person.
-- By: Screen. Settings → Mesh. Logins are chosen per peer on the Mesh page.
+- Approves: the person, by Apply or on the tab. More reaching other computers is marked as a grant.
+- By: Card or Screen. `mesh.settings` with `sync`, or Settings → Mesh. Which logins go to a peer is its grant, `mesh.access`.
 - Live: now, on every peer that's up with that category on. The newest version wins, and a replaced settings file is kept on the computer it was replaced on. A category can reach a peer through a third computer.
 - Check: make a small change on one computer and look on another.
 
@@ -76,7 +78,7 @@ When it's stuck: `down`: that computer's off or unreachable. `skewed`: they run 
 - Change: whether a device can open this computer's Sova, and whether a peer's browsers may.
 - Lives: the Access page and a host's details on the Mesh page. Each browser unlocks with a pairing code or the install's token. Neither passes through you.
 - Approves: the person, on a device that's already unlocked.
-- By: Screen. The Access page mints a short-lived, single-use pairing code. /docs/phone goes further.
+- By: Card or Screen. The Access page mints a short-lived, single-use pairing code, which is the person's alone. `mesh.browser-access` sets whether a computer in the mesh has a browser address. /docs/phone goes further.
 - Live: now.
 - Check: the device opens Sova.
 

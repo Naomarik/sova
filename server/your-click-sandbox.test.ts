@@ -134,3 +134,25 @@ test("a card's click from anything but the page never reaches the chat; the page
   await leaves("subagents");
   assert.equal(state(), "on", "the page's click reaches the chat");
 });
+
+test("only a socket that isn't the page or a peer is marked as not the user", async () => {
+  const { path } = await openChat();
+  const chat = await acquireChat(path);
+  const real = chat.handle.bind(chat);
+  const seen: Record<string, boolean | undefined> = {};
+  chat.handle = ((client: { notUser?: true }, msg: { clientId?: string }) => {
+    seen[msg.clientId ?? ""] = client.notUser;
+    return real(client as never, msg as never);
+  }) as never;
+  const frame = (clientId: string, headers: Record<string, string>, env?: Record<string, unknown>) =>
+    app.request(`/api/chat/frames?path=${encodeURIComponent(path)}`, { method: "POST", headers: { ...json, ...headers }, body: JSON.stringify({ frames: [{ type: "prompt", text: "/sandbox on", clientId }] }) }, env);
+  const sent: [string, Record<string, string>, Record<string, unknown>?][] = [
+    ["script", script()],
+    ["chat", { "x-sova-caller": "a-chat-key" }],
+    ["page", pageHeaders()],
+    ["peer", {}, { meshPeer: { id: "other", nodeId: "n" } }],
+  ];
+  for (const [id, headers, env] of sent) assert.equal((await frame(id, headers, env)).status, 202, id);
+  for (let i = 0; i < 400 && Object.keys(seen).length < sent.length; i++) await new Promise((r) => setTimeout(r, 10));
+  assert.deepEqual(seen, { script: true, chat: true, page: undefined, peer: undefined });
+});

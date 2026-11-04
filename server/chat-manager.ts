@@ -470,6 +470,9 @@ export interface ChatClient {
   /** The same message already serialized (server/ws.ts): a hello or history made once for every
       client that gets it. Without it, `send`. */
   sendRaw?(json: string): void;
+  /** A script's, a chat's or an extension's socket (server/page-only.ts): what it sends runs, but is never the user's,
+      so no turn it opens is attended (§app.access/your-click). A page, here or through a peer, has none. */
+  notUser?: true;
   /** Asked for wire 2 (`/ws/chat?wire=2`, shared/protocol.ts WireVersion): its events and rows are
       mapped (server/wire-rows.ts). Absent: wire 1, every message as it always was. */
   wire?: 2;
@@ -1391,7 +1394,7 @@ class ChatSession {
     this.flushDeferredAppends();
     const images = item.images as ImageInput[] | undefined;
     // The message goes in labelled with its send's key (§app.chat-processes/worker-instructions).
-    const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.origin, send, item.confirm, !!item.overseer));
+    const toSdk = <T>(send: () => T) => this.sendKeys.run(item.key, () => this.toSdk(item.notUser ? "server" : item.origin, send, item.confirm, !!item.overseer));
     // What the extensions' input handlers are told: a person's input, or Sova's own (§app.overseer/input-source).
     const source = inputSourceOf(item);
     // The sender's mark goes in with the message, never earlier: a held item is not in the SDK,
@@ -1472,6 +1475,7 @@ class ChatSession {
       session?: WebQueueItem["session"];
       confirm?: WebQueueItem["confirm"];
       byPerson?: WebQueueItem["byPerson"];
+      notUser?: WebQueueItem["notUser"];
       key?: string;
     },
   ): boolean {
@@ -1489,6 +1493,7 @@ class ChatSession {
       ...(item.session ? { session: item.session } : {}),
       ...(item.confirm ? { confirm: item.confirm } : {}),
       ...(item.byPerson ? { byPerson: true as const } : {}),
+      ...(item.notUser ? { notUser: true as const } : {}),
       ...(item.key !== undefined ? { key: item.key } : {}),
     });
     return true;
@@ -2943,6 +2948,8 @@ class ChatSession {
       confirm?: string;
       /** A person typed it elsewhere (a group batch): its input source is `interactive` (inputSourceOf). */
       byPerson?: true;
+      /** It came from a client that isn't the user (ChatClient.notUser): the turn it opens is unattended. */
+      notUser?: true;
       /** The key it was sent under: its message is labelled with it (§app.chat-processes/worker-instructions). */
       key?: string;
     },
@@ -2970,7 +2977,8 @@ class ChatSession {
       const fromSession = opts?.sentBySession ? { session: opts.sentBySession } : {};
       const confirm = opts?.confirm ? { confirm: opts.confirm } : {};
       const byPerson = opts?.byPerson ? { byPerson: true as const } : {};
-      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm, ...byPerson, ...(key !== undefined ? { key } : {}) });
+      const notUser = opts?.notUser ? { notUser: true as const } : {};
+      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm, ...byPerson, ...notUser, ...(key !== undefined ? { key } : {}) });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
@@ -2988,7 +2996,7 @@ class ChatSession {
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
     const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
-    const turn = this.sendKeys.run(key, () => this.toSdk(origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm, !!opts?.sentByOverseer));
+    const turn = this.sendKeys.run(key, () => this.toSdk(opts?.notUser ? "server" : origin, () => this.tracked(opts?.replay ? "" : text, () => this.harness.send(text, { images, source, ...(opts?.replay ? { expand: false } : {}) })), opts?.confirm, !!opts?.sentByOverseer));
     this.noteStarting(turn);
     // Whoever sent it: a `/mode …` that reaches the extension (strict, a minor mode) is read back, so the menu never lags.
     if (isModeText(text)) turn.then(() => this.readModeBack(), () => {});
@@ -3013,6 +3021,7 @@ class ChatSession {
         ...(opts?.sentBySession ? { session: opts.sentBySession } : {}),
         ...(opts?.confirm ? { confirm: opts.confirm } : {}),
         ...(opts?.byPerson ? { byPerson: true as const } : {}),
+        ...(opts?.notUser ? { notUser: true as const } : {}),
         ...(key !== undefined ? { key } : {}),
       };
       if (!this.heldForCompaction(err, item)) throw err;
@@ -3298,6 +3307,7 @@ class ChatSession {
       accepted = this.acceptPrompt(sent.text ?? String(msg.text ?? ""), images, "client", clientId, {
         sentByBaton: { by: sent.by },
         ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
+        ...(client.notUser ? { notUser: true as const } : {}),
       });
     } catch (err) {
       void port.action("@clientSendRefused", {}).catch(() => {});
@@ -3461,7 +3471,7 @@ class ChatSession {
           // A confirm card's click in the Overseer or a project overseer (never a typed answer): the turn it opens may act on
           // the card's items.
           const confirm = this.takesClicks && msg.type === "prompt" && typeof msg.confirm === "string" && msg.confirm ? msg.confirm : undefined;
-          const { queued, turn } = this.acceptPrompt(text, images, "client", clientId, confirm ? { confirm } : undefined);
+          const { queued, turn } = this.acceptPrompt(text, images, "client", clientId, { ...(confirm ? { confirm } : {}), ...(client.notUser ? { notUser: true as const } : {}) });
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
           this.ackSend(client, clientId, queued);
@@ -3620,7 +3630,7 @@ class ChatSession {
   private steer(client: ChatClient, msg: Extract<ChatClientMessage, { type: "steer" }>, clientId: string | undefined, fail: (err: unknown) => void): void {
     this.assertModelAllowed();
     const text = String(msg.text ?? "");
-    const { queued, turn } = this.acceptPrompt(text, parseImages(msg.images), "client", clientId, { delivery: "steer" });
+    const { queued, turn } = this.acceptPrompt(text, parseImages(msg.images), "client", clientId, { delivery: "steer", ...(client.notUser ? { notUser: true as const } : {}) });
     this.ackSend(client, clientId, queued);
     turn.catch(fail);
   }
@@ -3739,7 +3749,7 @@ class ChatSession {
     // The branch is now at the point before the user message, so the session is idle and this
     // starts a turn rather than queueing. Its failure reports into this session's pane, where
     // every other turn failure already does.
-    const { turn } = this.acceptPrompt(target.text, target.images as ImageInput[] | undefined, "client", undefined, { replay: true });
+    const { turn } = this.acceptPrompt(target.text, target.images as ImageInput[] | undefined, "client", undefined, { replay: true, ...(client.notUser ? { notUser: true as const } : {}) });
     turn.catch((err) => this.reportTurnFailure(err));
   }
 

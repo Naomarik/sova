@@ -404,6 +404,8 @@ export type ChatReply<M extends ChatMethod = ChatMethod> =
 /** A browser on `/ws/chat`, as the chat sees it: which wire it reads and how it wants the transcript. */
 export interface ChatClientInfo {
   clientId: string;
+  /** Not the user's socket (ChatClient.notUser): what it sends runs, and no turn it opens is attended. */
+  notUser?: true;
   wire?: 2;
   tail?: boolean;
   pull?: { prefetch: boolean };

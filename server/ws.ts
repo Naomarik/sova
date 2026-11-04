@@ -115,6 +115,8 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
       sendRaw(ws, json);
     },
     close: (code, reason) => ws.close(code, reason),
+    // A peer's socket stays as it was: a page on another computer comes that way (§app.access/your-click).
+    ...(who !== null && who !== "local" ? { notUser: true as const } : {}),
     ...(wire === 2 ? { wire: 2 as const } : {}),
     ...(ask.tail ? { tail: true } : {}),
     ...(ask.tail && ask.pull ? { pull: { prefetch: ask.prefetch } } : {}),

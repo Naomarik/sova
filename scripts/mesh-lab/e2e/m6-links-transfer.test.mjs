@@ -20,13 +20,12 @@
 // built code, no qdisc, no sandbox, and deletes every tree it made (they exist only in the containers).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { chaos, container, hostUrl, lab, labToken, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, tailnetIp, waitFor, writeAgentFile } from "./lib.mjs";
+import { chaos, container, hostUrl, lab, labPageHeaders, labTokenHeaders, laptopFetch, readAgentFile, requireLab, sh, tailnetIp, waitFor, writeAgentFile } from "./lib.mjs";
 import { accept, api, byId, decline, inbox, link, makeTree, MODEL, newSession, offer, offers, prompt, releaseLock, rowOf, send, takeLock, transcript, treeHash, unlink, waitIdle, waitInbox, waitOffer, writeLinksFile } from "./links-lib.mjs";
 
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
@@ -63,12 +62,11 @@ const noticeRows = async (host, session, of) => {
 /** The transcript without its `info` rows (the model and thinking that configure wrote): what a turn adds. */
 const turnRows = async (host, path) => (await transcript(host, path)).filter((i) => i.kind !== "info");
 /** Set a chat's sandbox as the page does: lowering it passes only on the page's cookie (§app.access/your-click), and
-    the lab's other calls carry the token in a header. The cookie's name is authCookieName of the nodes' agent dir. */
-const PAGE_COOKIE = () => `sova_token_${createHash("sha256").update("/sova/.agent").digest("hex").slice(0, 8)}=${labToken()}`;
+    the lab's other calls carry the token in a header. */
 const sandbox = async (host, s, on) => {
   const res = await fetch(`${hostUrl(host)}/api/sandbox?path=${encodeURIComponent(s.path)}`, {
     method: "POST",
-    headers: { "content-type": "application/json", cookie: PAGE_COOKIE() },
+    headers: { "content-type": "application/json", ...labPageHeaders() },
     body: JSON.stringify({ on }),
     signal: AbortSignal.timeout(60000),
   });

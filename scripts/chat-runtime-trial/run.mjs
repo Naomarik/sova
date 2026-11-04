@@ -307,7 +307,7 @@ async function booted(o, s, url, sharePort) {
     const want = darwin ? "detached" : driver;
     R.check(h?.chatHost?.driver === want && h?.chatHost?.bun !== false, `live-like: with no switch set, chats run in processes of their own on the ${want} driver (health chatHost ${JSON.stringify(h?.chatHost)?.slice(0, 120)})`);
   }
-  const cl = client(url, tokenOf(o.agent ?? agent));
+  const cl = client(url, tokenOf(o.agent ?? agent), o.agent ?? agent);
   if (!o.agent) {
     shareBase = `http://127.0.0.1:${sharePort}`;
     srv = s;

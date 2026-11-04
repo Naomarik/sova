@@ -48,10 +48,10 @@ import { hasPage, listExplanations, sortExplanations } from "./explanations";
 import { isOwnPid, readLiveRecords, type RawLiveRecord, workerCountsOf } from "./live";
 import { modelProvider, sharedWorkerWindowResolver } from "./models";
 import { resolveSessionPath } from "./paths";
-import { collectSkills, hasSkills, skillLinesOf } from "./skills";
-import { parsePiBranch } from "./harness/pi/reader";
+import { collectSkills, compactSkillLine, hasSkills, skillLinesOf, type SkillLine } from "./skills";
+import { parsePiBranch, PiFileFold } from "./harness/pi/reader";
 import { extensionEntries } from "./harness/pi/state";
-import { REWIND } from "./harness/state-kinds";
+import { REWIND, WORKTREES } from "./harness/state-kinds";
 import { stateView } from "./harness/state-view";
 import { describeWorktrees, worktreesOf } from "./worktrees-state";
 import { goneWorkOf, REMOVED_EMPTY, treeReadinessOf } from "./merge-readiness";
@@ -640,7 +640,7 @@ function lastKnown(p: UsageProvider): UsageProvider {
 
 // ---------------------------------------------------------------------------
 // Session JSONL facts: teams (subagents-team-v1), last worker reports (subagent-complete),
-// topic-outline snapshot, compactions. One parse per (mtime, size), active branch only.
+// topic-outline snapshot, compactions. Active branch only. Each line is parsed once: see sessionFacts.
 
 const TEAM_ENTRY = "subagents-team-v1";
 /** The durable per-worker records the protocol fold reads (readWorkerManifests). */
@@ -685,8 +685,15 @@ interface SessionFacts {
   settled: Map<string, NonNullable<TeamMember["lastReport"]>>;
 }
 
-const FACTS_MAX = 64;
-const factsCache = new Map<string, { mtimeMs: number; size: number; facts: SessionFacts }>();
+/** What the facts cache may hold, in session files and in PiFileFold's weight: the oldest used file goes
+    first, and the file just read always stays. */
+export const FACTS_LIMITS = { files: 64, weight: 64 * 1024 * 1024 };
+interface CachedFacts {
+  fold: PiFileFold<FactDigest>;
+  stat: { dev: number; ino: number; size: number; mtimeMs: number };
+  facts: SessionFacts;
+}
+const factsCache = new Map<string, CachedFacts>();
 
 
 function decodeMember(m: unknown): RosterTeam["members"][number] | null {
@@ -885,7 +892,17 @@ function settledStates(records: Rec[]): SessionFacts["settled"] {
   return out;
 }
 
-export function extractFacts(text: string): SessionFacts {
+/** What foldFacts reads. `branch` may leave out any entry factDigest would. */
+interface FactSources {
+  header: { id?: unknown } | null;
+  branch: HEntry[];
+  skills: SkillLine[];
+  /** The worker records, on every branch, and those on the active one, each in file order. */
+  records: HEntry[];
+  activeRecords: HEntry[];
+}
+
+function foldFacts({ header, branch, skills, records, activeRecords }: FactSources): SessionFacts {
   const teams = new Map<string, RosterTeam>();
   const reports: SessionFacts["reports"] = new Map();
   let outlineData: unknown;
@@ -894,8 +911,6 @@ export function extractFacts(text: string): SessionFacts {
   const rewinds: RewindInfo[] = [];
   const explanations: ExplanationInfo[] = [];
   const teamEvents: TeamEvent[] = [];
-  const { header, branch, states: records = [] } = parsePiBranch(text, { states: WORKER_RECORD_TYPES });
-  const branchIds = new Set(branch.map((h) => h.id));
   for (const h of branch) {
     if (h.kind === "state" && h.key === TEAM_ENTRY) addTeamEntry(teams, h.data);
     else if (h.kind === "state" && h.key === TEAM_EVENT_TYPE) {
@@ -919,8 +934,7 @@ export function extractFacts(text: string): SessionFacts {
     if (x) rewinds.push(x);
   }
   // The subagents extension folds its worker records in pi's own entry shape.
-  const allRecords = extensionEntries(records);
-  const activeRecords = extensionEntries(records.filter((h) => branchIds.has(h.id)));
+  const active = extensionEntries(activeRecords);
   return {
     teams: [...teams.values()],
     reports,
@@ -931,13 +945,39 @@ export function extractFacts(text: string): SessionFacts {
     rewinds,
     explanations,
     sessionId: (header ? str(header.id) : undefined) ?? null,
-    skills: collectSkills(skillLinesOf(branch)),
-    workerRecords: { all: allRecords, active: activeRecords },
+    skills: collectSkills(skills),
+    workerRecords: { all: extensionEntries(records), active },
     teamEvents,
-    settled: settledStates(activeRecords),
+    settled: settledStates(active),
     worktrees: worktreesOf(branch),
   };
 }
+
+/** A session file's whole text as facts: the full read sessionFacts' incremental one must equal. */
+export function extractFacts(text: string): SessionFacts {
+  const { header, branch, states: records = [] } = parsePiBranch(text, { states: WORKER_RECORD_TYPES });
+  const branchIds = new Set(branch.map((h) => h.id));
+  return foldFacts({ header, branch, skills: skillLinesOf(branch), records, activeRecords: records.filter((h) => branchIds.has(h.id)) });
+}
+
+/** The state keys foldFacts reads. */
+const FACT_STATES: ReadonlySet<string> = new Set([TEAM_ENTRY, TEAM_EVENT_TYPE, "topic-outline", EXPLAIN_ENTRY, REWIND.type, WORKTREES.type, WORKER_MANIFEST_ENTRY_TYPE]);
+
+/** What sessionFacts keeps of one entry: the entry when foldFacts reads it, its skill line (reduced) when
+    only skills do, and nothing for the rest, which is where a session file's size is. */
+type FactDigest = { entry: HEntry } | { skill: SkillLine };
+
+function factDigest(h: HEntry): FactDigest | null {
+  if (h.kind === "state") return FACT_STATES.has(h.key) ? { entry: h } : null;
+  if (h.kind === "compaction" || (h.kind === "note" && !h.inMessage && h.noteType === "subagent-complete")) return { entry: h };
+  if (h.kind !== "system" && h.kind !== "user" && h.kind !== "assistant") return null;
+  const line = skillLinesOf([h])[0];
+  const skill = line && compactSkillLine(line);
+  return skill ? { skill } : null;
+}
+
+const entriesOf = (list: FactDigest[]): HEntry[] => list.flatMap((d) => ("entry" in d ? [d.entry] : []));
+const isRecord = (h: HEntry): boolean => h.kind === "state" && WORKER_RECORD_TYPES.has(h.key);
 
 /** Each worker's resolved cwd, from its durable records (the live record deliberately carries none). */
 function workerCwds(records: Rec[]): Map<string, string> {
@@ -952,25 +992,63 @@ function workerCwds(records: Rec[]): Map<string, string> {
 
 const EMPTY_FACTS: SessionFacts = { teams: [], reports: new Map(), outline: null, outlines: [], compactions: [], rewinds: [], explanations: [], sessionId: null, skills: { offered: [], used: [] }, workerRecords: { all: [], active: [] }, teamEvents: [], settled: new Map() };
 
-async function sessionFacts(path: string): Promise<SessionFacts> {
+function trimFacts(): void {
+  let weight = 0;
+  for (const c of factsCache.values()) weight += c.fold.weight;
+  while (factsCache.size > 1 && (factsCache.size > FACTS_LIMITS.files || weight > FACTS_LIMITS.weight)) {
+    const [path, oldest] = factsCache.entries().next().value as [string, CachedFacts];
+    weight -= oldest.fold.weight;
+    factsCache.delete(path);
+  }
+}
+
+async function refreshFacts(path: string): Promise<SessionFacts> {
   try {
     const st = await stat(path);
     const hit = factsCache.get(path);
-    if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.facts;
-    const text = await readFile(path, "utf8");
-    opNote("sessionFacts read", text.length);
-    const facts = extractFacts(text);
+    if (hit && hit.stat.mtimeMs === st.mtimeMs && hit.stat.size === st.size && hit.stat.ino === st.ino && hit.stat.dev === st.dev) return hit.facts;
+    const fold = hit?.fold ?? new PiFileFold(factDigest);
+    const view = await fold.read(path);
+    // What it read: what the file grew by, or all of it when it was new or replaced.
+    opNote("sessionFacts read", hit && hit.stat.ino === view.stat.ino && view.stat.size >= hit.stat.size ? view.stat.size - hit.stat.size : view.stat.size);
+    const branch = entriesOf(view.branch);
+    const records = entriesOf(view.all).filter(isRecord);
+    const facts = foldFacts({
+      header: view.header,
+      branch,
+      skills: view.branch.flatMap((d) => ("skill" in d ? [d.skill] : [])),
+      records,
+      activeRecords: records.filter((h) => view.branchIds.has(h.id)),
+    });
     factsCache.delete(path); // re-insert as most recent
-    factsCache.set(path, { mtimeMs: st.mtimeMs, size: st.size, facts });
-    while (factsCache.size > FACTS_MAX) {
-      const oldest = factsCache.keys().next().value;
-      if (oldest === undefined) break;
-      factsCache.delete(oldest);
-    }
+    factsCache.set(path, { fold, stat: view.stat, facts });
+    trimFacts();
     return facts;
   } catch {
+    factsCache.delete(path); // gone or unreadable: whatever comes next at this path is read from its start
     return EMPTY_FACTS;
   }
+}
+
+/** Each path's read in progress, and the one that follows it for callers who came during it. */
+const factsReads = new Map<string, { running: Promise<SessionFacts>; next?: Promise<SessionFacts> }>();
+
+/**
+ * A session file's facts, as extractFacts gives for the whole file: stat first, then only the bytes the file
+ * grew by (PiFileFold, which falls back to the whole file by itself). One read per path at a time. A caller
+ * who arrives during a read waits for the next one, shared by all who came during that read: the running read
+ * may have stat'ed the file before this caller's change to it, and the next one folds only what is left.
+ */
+export function sessionFacts(path: string): Promise<SessionFacts> {
+  const read = factsReads.get(path);
+  if (read) return (read.next ??= read.running.then(() => sessionFacts(path)));
+  const started = {
+    running: refreshFacts(path).finally(() => {
+      if (factsReads.get(path) === started) factsReads.delete(path);
+    }),
+  };
+  factsReads.set(path, started);
+  return started.running;
 }
 
 // ---------------------------------------------------------------------------

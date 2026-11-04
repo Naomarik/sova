@@ -1,7 +1,7 @@
 import { createContext, createSignal, For, Show, useContext } from "solid-js";
 import type { SettingsCardView, SettingsHistoryRow, SettingsToolDetails } from "../../shared/project-settings";
 import { applySettingsCard, applySovaSettingsCard, cancelLocalSettingsSave, cancelMergeSettings, getProjectSettings, getSovaSettingsCards, undoSettingsRow, withdrawSettingsCard, withdrawSovaSettingsCard } from "../lib/api";
-import { cancelHeldSave, cardCanAct, createCardLive, type CardTimer, type SettingsCardScope } from "../lib/settings-card-live";
+import { applyToast, cancelHeldSave, cardCanAct, createCardLive, QUEUE_CARD_WAITS, type CardTimer, type SettingsCardScope } from "../lib/settings-card-live";
 import { toast } from "../lib/ui-state";
 
 /**
@@ -15,8 +15,7 @@ import { toast } from "../lib/ui-state";
 
 export const SettingsCardContext = createContext<SettingsCardScope>({ overseer: false, create: false });
 
-/** A card applied while a branch is checking (§app.merge-queue/settings-save). */
-export const QUEUE_CARD_WAITS = "Saves when the current branch finishes.";
+export { QUEUE_CARD_WAITS };
 
 /** How often a waiting card reads its state again (an Apply on the project page shows here this way). */
 const POLL_MS = 15_000;
@@ -48,7 +47,7 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusy(false));
   };
-  const apply = () => act(() => (project === null ? applySovaSettingsCard(c().id, c().fingerprint) : applySettingsCard(project, c().id, c().fingerprint)), (out) => (out.card.saveWaits ? QUEUE_CARD_WAITS : local() ? "Landed the folder's settings edits." : c().grants.length ? `Applied and approved ${c().id}.` : `Applied ${c().id}.`));
+  const apply = () => act(() => (project === null ? applySovaSettingsCard(c().id, c().fingerprint) : applySettingsCard(project, c().id, c().fingerprint)), (out) => applyToast(out.card, c()));
   const dismiss = () => act(() => (project === null ? withdrawSovaSettingsCard(c().id) : withdrawSettingsCard(project, c().id, local() ? c().fingerprint : undefined)), local() ? "Discarded the folder's settings edits." : `Dismissed ${c().id}.`);
   const cancelSave = () =>
     project !== null &&
@@ -164,6 +163,13 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
           <Show when={showDiff()}>
             <pre class="settings-card-diff text-mono">{c().diff}</pre>
           </Show>
+        </Show>
+        <Show when={c().stillNeeds?.length}>
+          <div class="banner banner-warn" role="status">
+            <div class="banner-body">
+              <For each={c().stillNeeds}>{(line) => <p class="settings-card-why">{line}</p>}</For>
+            </div>
+          </div>
         </Show>
         <Show when={c().saveFailed}>
           {(why) => (

@@ -10,7 +10,7 @@ const solid = await import("solid-js");
 const { createModeSave } = await import("./mode-save");
 const { majorGear, menuModes } = await import("./mode-menu");
 const { majorGlyph } = await import("./mode-glyphs");
-const { cancelHeldSave, cardCanAct, createCardLive, readCard } = await import("./settings-card-live");
+const { applyToast, cancelHeldSave, cardCanAct, createCardLive, QUEUE_CARD_WAITS, readCard } = await import("./settings-card-live");
 type ShownMode = import("./mode-menu").ShownMode;
 type SettingsCardView = import("../../shared/project-settings").SettingsCardView;
 type CardReads = import("./settings-card-live").CardReads;
@@ -110,6 +110,18 @@ describe("a card in a Create chat", () => {
     for (let i = 0; i < 100 && !done(); i++) await new Promise((r) => setImmediate(r));
     assert.ok(done(), "the read arrived");
   };
+
+  test("Apply's toast says only what happened: held isn't applied, and an unrecorded grant isn't approved", () => {
+    const granted = { id: "sc_6", grants: [{ key: "k" }] } as unknown as Pick<SettingsCardView, "id" | "grants">;
+    assert.equal(applyToast({ state: "applied" }, granted), "Applied and approved sc_6.");
+    assert.equal(applyToast({ state: "applied" }, { id: "sc_6", grants: [] }), "Applied sc_6.");
+    assert.equal(applyToast({ state: "waiting" }, granted), QUEUE_CARD_WAITS);
+    const one = applyToast({ state: "applied", stillNeeds: ["a"] }, granted);
+    assert.equal(one, "Applied sc_6. 1 approval still needs you: the card says where.");
+    assert.match(applyToast({ state: "applied", stillNeeds: ["a", "b"] }, granted), /2 approvals still need you/);
+    assert.equal(applyToast({ state: "applied" }, { ...granted, id: "local" }), "Landed the folder's settings edits.");
+    assert.match(applyToast({ state: "applied", stillNeeds: ["a"] }, { ...granted, id: "local" }), /^Landed the folder's settings edits\. 1 approval/);
+  });
 
   test("Cancel Save takes the card's own road: the folder's edits are never discarded by it", () => {
     const done: string[] = [];

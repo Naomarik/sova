@@ -68,6 +68,13 @@ test("a project card, and the folder's edits, hold the same way", () => {
   }
 });
 
+test("a grant that wasn't recorded reads as still needed, each with where to approve it", () => {
+  const applied = draw(card({ id: "sc_6", state: "applied", stillNeeds: ["Schedule weekly still needs approving, in the Playbooks dialog."] }), "p1");
+  assert.match(applied, /banner-warn/);
+  assert.match(applied, /Schedule weekly still needs approving, in the Playbooks dialog\./);
+  assert.doesNotMatch(draw(card({ id: "sc_6", state: "applied" }), "p1"), /banner-warn/, "nothing when all were recorded");
+});
+
 test("a save that failed when its turn came says why on the card", () => {
   const failed = draw(card({ id: "sc_4", kind: "queue", saveWaits: true, saveFailed: "A newer save took its place." }), "p1");
   assert.match(failed, /A newer save took its place/);

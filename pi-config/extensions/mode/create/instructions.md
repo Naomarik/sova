@@ -24,7 +24,7 @@ A rule at or above a chat's folder reaches new chats only: it can't show in this
 - Change: rules that apply only while the agent works in one subfolder.
 - Lives: `<project>/<subfolder>/AGENTS.md` or `CLAUDE.md`. Folders named `node_modules` or starting with `.` are skipped. It's always on: there's no setting.
 - Approves: the person, by Land.
-- By: Land. In a folder that isn't in Git, say the change is made by hand. Before they land it, tell them a chat working there through `bash` never loads the rule, and that a chat started in that folder reads it from the start.
+- By: Land. In a folder that isn't in Git, say the change is made by hand. When you offer one, say: it reaches a chat once the chat reads or edits a file there, or starts in that folder, and `bash` alone doesn't load it.
 - Live: after landing, the first time a chat or worker uses `read`, `edit` or `write` on a file in that folder. `bash`, `grep`, `find` and `ls` don't load it. It loads again after a compaction.
 - Check: once it has loaded, the session pane's Context tab lists the file.
 

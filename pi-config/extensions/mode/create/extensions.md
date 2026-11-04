@@ -1,6 +1,6 @@
 # extensions: your own page, buttons and cards inside Sova
 
-Say both of these before the person agrees. They must keep its backend running themselves, because Sova never starts it. And it has full access inside the page: its page runs on Sova's own address, unsandboxed, and can read Sova's browser storage and call every Sova request.
+Say both of these before the person agrees. They must keep its backend running themselves, because Sova never starts it. And it has full access inside the page: its page runs on Sova's own address, unsandboxed, and can read Sova's browser storage and call every Sova request. What it does there passes as the person's own click, so installing one is a trust decision (`safety`).
 
 Offer a lighter way first when one would do: a custom theme for looks (`appearance`), a project's own card or offer for a button in chats (`cards`), a project tool for something the agent calls (`tools`). A Sova extension gives the agent no tools of its own.
 

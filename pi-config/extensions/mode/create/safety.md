@@ -50,7 +50,7 @@ A malformed policy makes every sandboxed tool refuse until it's fixed. Prefer `s
 - Live: as each topic says.
 - Check: the control shows the new state.
 
-Only the person's own click passes these. Sova refuses a chat, a script, an extension and another computer, and the refusal names the click:
+Only the person's own click passes these. Sova refuses a chat, a script, an extension's backend and another computer, and the refusal names the click:
 
 - A project's run buttons: Approve Run Buttons on the project page's Offers list.
 - A profile's powers: Approve in Settings → Profiles or on the profile picker.
@@ -79,6 +79,9 @@ Add-ons, Sova extensions and a project's own add-on files ask nothing, so the pe
 - Check: there's nothing to check.
 
 It raises the bar; it isn't a wall. The approvals stop a chat following its instructions, not a program on this computer deliberately posing as the person's browser. The same local route passes every approval on this list, and a chat whose own tools aren't sandboxed, which is the default state, can reach it. So don't tell anyone an approval holds against code running on their computer. The refusal stops the ordinary road and tells the chat where to send the person. A chat with the sandbox On at full enforcement can't reach that route. Weaker enforcement hasn't been tested, so say so. Never try to get past a refusal: ask the person.
+
+<!-- Interim (D16): keep this paragraph on its own so it's easy to change. -->
+An installed Sova extension's page passes as the person's click, because it runs in Sova's own page. So installing one is a trust decision: say so before their OK.
 
 ## Worker priority
 

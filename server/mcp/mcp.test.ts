@@ -15,7 +15,7 @@ const { normalizeEntry, putComputerEntry, readMcpFile, readComputerList, reserve
 const { fillValues, namedValues, unpinned } = await import("./values");
 const { versionOf } = await import("./fingerprint");
 const { approve, approvedVersions, forgetApprovals, isApproved, MCP_VERSIONS_KEPT } = await import("./trust");
-const { mcpSecretsDir, readSecret, removeServerSecrets, saveSecret, secretValues, withoutSecrets } = await import("./secrets");
+const { mcpSecretsDir, readSecret, removeServerSecrets, saveSecret, secretValues, withoutSecrets } = await import("./saved-values");
 const { changeRow, saveCheck, saveFailedCheck } = await import("./store");
 const { readyToRun, refusalOf, secretNames } = await import("./resolve");
 const { rowOfEntry, rowState } = await import("./rows");

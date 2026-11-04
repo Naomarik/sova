@@ -5,7 +5,7 @@ import { agentRoot } from "../state-root";
 import { checkServer, spawnCheckChild } from "./check";
 import { rowId, type RowRef } from "./ids";
 import { readyToRun } from "./resolve";
-import { withoutSecrets } from "./secrets";
+import { withoutSecrets } from "./saved-values";
 
 const SIGN_IN_MS = 10 * 60_000;
 

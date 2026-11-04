@@ -16,7 +16,7 @@ mkdirSync(join(agent, "sessions", "live"), { recursive: true });
 
 const { testApp } = await import("../mesh/app-test-fixtures");
 const app = await testApp();
-const { saveSecret, mcpSecretsDir } = await import("./secrets");
+const { saveSecret, mcpSecretsDir } = await import("./saved-values");
 const { computerListPath } = await import("./config");
 
 after(() => rmSync(root, { recursive: true, force: true }));

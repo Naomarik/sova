@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { agentRoot } from "../state-root";
 import { readyToRun, type McpReady } from "./resolve";
-import { withoutSecrets } from "./secrets";
+import { withoutSecrets } from "./saved-values";
 import { saveCheck, saveFailedCheck, type McpCheckRecord } from "./store";
 import { cleanMcpEnv } from "./transport";
 import type { McpOwner } from "./trust";

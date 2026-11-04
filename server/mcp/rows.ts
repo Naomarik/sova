@@ -5,7 +5,7 @@ import type { McpEntry } from "./config";
 import { versionOf } from "./fingerprint";
 import { rowId } from "./ids";
 import { baseOf, refusalOf, secretNames, sourceOf } from "./resolve";
-import { hasSecret, secretValues, withoutSecrets } from "./secrets";
+import { hasSecret, secretValues, withoutSecrets } from "./saved-values";
 import { chatLines, readRow, recordOf, type McpRecordTool, type RowFile } from "./store";
 import { approvedVersions, isApproved, type McpOwner } from "./trust";
 import { unpinned } from "./values";

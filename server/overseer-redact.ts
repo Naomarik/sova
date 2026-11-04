@@ -39,7 +39,7 @@ export function secretSources(home = homedir(), agentDir = agentRoot()): SecretS
     // Sova's own Jev key (Settings → Decisions, server/decide-secret.ts): the whole file is the key.
     { path: join(home, ".pi", "agent", "sova", "secrets", "jev-key"), pick: textValue, text: true as const },
     { path: join(agentDir, "sova", "secrets", "jev-key"), pick: textValue, text: true as const },
-    // MCP servers' saved secrets (server/mcp/secrets.ts, §app.mcp/secrets): every file in the folder is one value.
+    // MCP servers' saved secrets (server/mcp/saved-values.ts, §app.mcp/secrets): every file in the folder is one value.
     { path: join(home, ".pi", "agent", "sova", "secrets", "mcp"), pick: textValue, text: true as const, dir: true as const },
     { path: join(agentDir, "sova", "secrets", "mcp"), pick: textValue, text: true as const, dir: true as const },
     // pi's MCP sign-ins (`mcp-auth.json`, §app.mcp/sign-in): every value in it.

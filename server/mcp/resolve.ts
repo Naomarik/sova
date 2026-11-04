@@ -5,7 +5,7 @@ import type { McpServerRow } from "../../shared/mcp";
 import { agentRoot } from "../state-root";
 import { readComputerList, readProjectList, reservedName, type McpEntry } from "./config";
 import { versionOf, namedFolders } from "./fingerprint";
-import { readSecret } from "./secrets";
+import { readSecret } from "./saved-values";
 import { isApproved, type McpOwner } from "./trust";
 import { fillValues, namedValues } from "./values";
 

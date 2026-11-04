@@ -13,7 +13,7 @@ mkdirSync(join(agent, "sessions"), { recursive: true });
 after(() => rmSync(root, { recursive: true, force: true }));
 
 const REPO = resolve(import.meta.dirname, "..", "..");
-const { saveSecret } = await import("./secrets");
+const { saveSecret } = await import("./saved-values");
 const { Redactor, secretSources } = await import("../overseer-redact");
 const { settingsDocs } = await import("../sync/docs");
 const { targetsRoot } = await import("../targets");

@@ -15,7 +15,7 @@ import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT } from "../../../pi-config/
 import { reservedName } from "../../mcp/config";
 import { NO_MCP, normalizeChatList, workerListOf, type McpChatList, type McpChatServer } from "../../mcp/list";
 import { readyToRun } from "../../mcp/resolve";
-import { secretValues, withoutSecrets } from "../../mcp/secrets";
+import { secretValues, withoutSecrets } from "../../mcp/saved-values";
 import { addChatLine, type McpCheckRecord } from "../../mcp/store";
 import { cleanMcpEnv, ENV_ALLOW, Events, StdioServer, type JsonRpc, type Launch } from "../../mcp/transport";
 import { agentRoot, stateRoot } from "../../state-root";

@@ -11,7 +11,7 @@ import { normalizeEntry, putComputerEntry, readComputerList, removeComputerEntry
 import { versionOf } from "./fingerprint";
 import { parseRowId, rowId, type RowRef } from "./ids";
 import { baseOf, currentEntry, refusalOf } from "./resolve";
-import { removeServerSecrets, removeSecret, saveSecret } from "./secrets";
+import { removeServerSecrets, removeSecret, saveSecret } from "./saved-values";
 import { pasteAddress, signInState, startSignIn, stopSignIn } from "./sign-in";
 import { changeRow, forgetRow } from "./store";
 import { approve, forgetApprovals, type McpOwner } from "./trust";

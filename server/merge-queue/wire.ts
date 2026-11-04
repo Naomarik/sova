@@ -245,6 +245,9 @@ export function branchProjectNow(root: string): BranchProject | null {
   return latestViews.get(servedKey(root))?.project ?? null;
 }
 
+/** Re-read the queue fields of the rows no queue joins. */
+const rereadUnrooted = (): Promise<void> => import("../merge-readiness").then((m) => m.rereadBranches()).catch((err) => console.warn(`[merge-queue] rows: ${err instanceof Error ? err.message : err}`));
+
 /** Tests only: stand these in for the server's queues (null: none). */
 export function setQueueListForTest(d: QueueListDeps | null): void {
   listDeps = d;
@@ -541,7 +544,12 @@ export async function startMergeQueue(
   const served = new ServedRule({ listed: opts.listed ?? (() => listProjects()), definitionAt: (root, ref) => definitionAt(root, ref), checksOf: checks.checksOf });
   setServedRule(served);
   const writer = startServedWriter(served, join(stateRoot(), SERVED_FILE_NAME), {
-    onRoots: (roots) => (servedNow = new Set(roots.map((r) => servedKey(r.root)))),
+    onRoots: (roots) => {
+      const was = servedNow;
+      servedNow = new Set(roots.map((r) => servedKey(r.root)));
+      // A root gaining service: its rows have no root to join by, and an archived one has no read coming.
+      if (listDeps && [...servedNow].some((r) => !was.has(r))) void rereadUnrooted();
+    },
   });
   servedWriter = writer;
   const runMerge: RunMerge = makeRunMerge({ state: stateRoot(), services: engineServices(projectEngine()) });
@@ -735,7 +743,7 @@ export async function startMergeQueue(
     now: Date.now,
   };
   // Rows read before this line have no queue fields, and nothing else re-reads an archived one.
-  void import("../merge-readiness").then((m) => m.rereadBranches()).catch((err) => console.warn(`[merge-queue] rows: ${err instanceof Error ? err.message : err}`));
+  void rereadUnrooted();
   // The chats' file is current before the typed go-ahead door opens.
   await writer.first;
   // Leftover records of a repo the queue doesn't serve stay on disk, never loaded.

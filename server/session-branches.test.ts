@@ -204,6 +204,8 @@ function listDeps(over: Partial<import("./merge-queue/wire").QueueListDeps> = {}
   };
   return { asked, state, deps };
 }
+/** The stand-in's views are in: the first, and the one its needs-fix branches called for. */
+const asked0 = (state: { viewAt: number }) => state.viewAt >= 2;
 /** A view read by checkQueueViews (or a row) has answered. */
 const viewsSettled = async (read: () => boolean) => {
   while (!read()) await new Promise<void>((go) => setImmediate(go));
@@ -415,6 +417,34 @@ test("a served queue going away drops its view", async () => {
   } finally {
     wire.setQueueListForTest(null);
     wire.resetQueueViewsForTest();
+  }
+});
+
+test("through the wire: a project leaving the list takes its queue facts off its rows, archived ones too", async () => {
+  wire.resetQueueViewsForTest();
+  r.resetReadiness();
+  let listed = true;
+  const { state, deps } = listDeps({ projectIdOf: () => (listed ? "prj_1" : null) });
+  state.needsFix = [entry("feat/own", "needs-fix")];
+  const view0 = deps.view;
+  wire.setQueueListForTest({ ...deps, view: (root) => (listed ? view0(root) : Promise.resolve(null)) });
+  r.configureReadiness({ served: async () => true, asksUser: () => undefined, insights: { treeStatus: async (p: string) => status(p) }, branchFields: wire.branchQueueFields, queueNow: wire.branchQueueNow, projectNow: wire.branchProjectNow });
+  try {
+    const row = { ...summary(sessionFile([tree(own, "feat/own")])), archived: true };
+    r.readinessOverlay(row);
+    await r.readinessIdle();
+    assert.equal(r.branchesOverlay(row)![0]!.queue?.state, "needs-fix");
+    assert.equal(r.branchesOverlay(row)![0]!.mergeServed, true);
+    await viewsSettled(() => wire.checkQueueViews() === 0 && asked0(state));
+    listed = false;
+    assert.equal(wire.checkQueueViews(), 1);
+    await viewsSettled(() => r.branchesOverlay(row)![0]!.mergeServed === undefined);
+    assert.equal(r.branchesOverlay(row)![0]!.queue, undefined);
+    assert.equal(r.branchesOverlay(row)![0]!.mergeProject, undefined);
+  } finally {
+    wire.setQueueListForTest(null);
+    wire.resetQueueViewsForTest();
+    r.resetReadiness();
   }
 });
 

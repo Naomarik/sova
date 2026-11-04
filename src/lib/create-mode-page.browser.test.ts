@@ -10,7 +10,7 @@ const solid = await import("solid-js");
 const { createModeSave } = await import("./mode-save");
 const { majorGear, menuModes } = await import("./mode-menu");
 const { majorGlyph } = await import("./mode-glyphs");
-const { cardCanAct, createCardLive, readCard } = await import("./settings-card-live");
+const { cancelHeldSave, cardCanAct, createCardLive, readCard } = await import("./settings-card-live");
 type ShownMode = import("./mode-menu").ShownMode;
 type SettingsCardView = import("../../shared/project-settings").SettingsCardView;
 type CardReads = import("./settings-card-live").CardReads;
@@ -110,6 +110,19 @@ describe("a card in a Create chat", () => {
     for (let i = 0; i < 100 && !done(); i++) await new Promise((r) => setImmediate(r));
     assert.ok(done(), "the read arrived");
   };
+
+  test("Cancel Save takes the card's own road: the folder's edits are never discarded by it", () => {
+    const done: string[] = [];
+    const cancels = {
+      queue: async (p: string) => void done.push(`queue:${p}`),
+      card: async (p: string, id: string) => void done.push(`card:${p}:${id}`),
+      local: async (p: string) => void done.push(`local:${p}`),
+    };
+    void cancelHeldSave({ id: "sc_4", kind: "queue" }, "p1", cancels);
+    void cancelHeldSave({ id: "sc_5" }, "p1", cancels);
+    void cancelHeldSave({ id: "local" }, "p1", cancels);
+    assert.deepEqual(done, ["queue:p1", "card:p1:sc_5", "local:p1"]);
+  });
 
   test("only the chat that prepared it, or the overseer's own, may act; an archived pane may not", () => {
     assert.equal(cardCanAct({ overseer: false, create: true }, { create: true }), true);

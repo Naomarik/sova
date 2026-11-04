@@ -59,6 +59,15 @@ test("a queue card whose Save waits has Cancel Save in place of Apply", () => {
   assert.doesNotMatch(ready, /Cancel Save/);
 });
 
+test("a project card, and the folder's edits, hold the same way", () => {
+  for (const c of [card({ id: "sc_5", saveWaits: true }), card({ id: "local", saveWaits: true })]) {
+    const held = draw(c, "p1");
+    assert.ok(held.includes(QUEUE_CARD_WAITS));
+    assert.match(held, /Cancel Save/);
+    assert.doesNotMatch(held, /Discard Edits|Land Edits|>\s*Apply\s*</, "no other button while it holds");
+  }
+});
+
 test("a save that failed when its turn came says why on the card", () => {
   const failed = draw(card({ id: "sc_4", kind: "queue", saveWaits: true, saveFailed: "A newer save took its place." }), "p1");
   assert.match(failed, /A newer save took its place/);

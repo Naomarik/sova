@@ -26,6 +26,21 @@ export async function readCard(details: Pick<SettingsToolDetails, "projectId">, 
   return [...lists.cards, ...lists.recent].find((c) => c.id === id);
 }
 
+/** The ways to cancel a held Save, which differ by card. */
+export interface HeldSaveCancels {
+  queue(projectId: string): Promise<unknown>;
+  card(projectId: string, id: string): Promise<unknown>;
+  /** Keeps the folder's edits: never the Discard call, which deletes them. */
+  local(projectId: string): Promise<unknown>;
+}
+
+/** Cancel Save on a held card: a queue card's pending save, the folder's edits (they stay, and the
+    card returns to Land), or a held project card, which ends Dismissed. */
+export function cancelHeldSave(card: Pick<SettingsCardView, "id" | "kind">, projectId: string, cancels: HeldSaveCancels): Promise<unknown> {
+  if (card.kind === "queue") return cancels.queue(projectId);
+  return card.id === "local" ? cancels.local(projectId) : cancels.card(projectId, card.id);
+}
+
 /** A repeating timer, stopped by what it returns. */
 export type CardTimer = (run: () => void, ms: number) => () => void;
 

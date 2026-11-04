@@ -1,7 +1,7 @@
 import { createContext, createSignal, For, Show, useContext } from "solid-js";
 import type { SettingsCardView, SettingsHistoryRow, SettingsToolDetails } from "../../shared/project-settings";
-import { applySettingsCard, applySovaSettingsCard, cancelMergeSettings, getProjectSettings, getSovaSettingsCards, undoSettingsRow, withdrawSettingsCard, withdrawSovaSettingsCard } from "../lib/api";
-import { cardCanAct, createCardLive, type CardTimer, type SettingsCardScope } from "../lib/settings-card-live";
+import { applySettingsCard, applySovaSettingsCard, cancelLocalSettingsSave, cancelMergeSettings, getProjectSettings, getSovaSettingsCards, undoSettingsRow, withdrawSettingsCard, withdrawSovaSettingsCard } from "../lib/api";
+import { cancelHeldSave, cardCanAct, createCardLive, type CardTimer, type SettingsCardScope } from "../lib/settings-card-live";
 import { toast } from "../lib/ui-state";
 
 /**
@@ -15,7 +15,7 @@ import { toast } from "../lib/ui-state";
 
 export const SettingsCardContext = createContext<SettingsCardScope>({ overseer: false, create: false });
 
-/** A queue card applied while a branch is checking (§app.merge-queue/settings-save). */
+/** A card applied while a branch is checking (§app.merge-queue/settings-save). */
 export const QUEUE_CARD_WAITS = "Saves when the current branch finishes.";
 
 /** How often a waiting card reads its state again (an Apply on the project page shows here this way). */
@@ -50,7 +50,9 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
   };
   const apply = () => act(() => (project === null ? applySovaSettingsCard(c().id, c().fingerprint) : applySettingsCard(project, c().id, c().fingerprint)), (out) => (out.card.saveWaits ? QUEUE_CARD_WAITS : local() ? "Landed the folder's settings edits." : c().grants.length ? `Applied and approved ${c().id}.` : `Applied ${c().id}.`));
   const dismiss = () => act(() => (project === null ? withdrawSovaSettingsCard(c().id) : withdrawSettingsCard(project, c().id, local() ? c().fingerprint : undefined)), local() ? "Discarded the folder's settings edits." : `Dismissed ${c().id}.`);
-  const cancelSave = () => project !== null && act(() => cancelMergeSettings(project), `Cancelled the save of ${c().id}.`);
+  const cancelSave = () =>
+    project !== null &&
+    act(() => cancelHeldSave(c(), project, { queue: cancelMergeSettings, card: withdrawSettingsCard, local: cancelLocalSettingsSave }), local() ? "Cancelled the save. The folder's edits stay." : `Cancelled the save of ${c().id}.`);
   const undo = (row: SettingsHistoryRow) => {
     if (!props.canAct || busy() || project === null) return;
     setBusy(true);

@@ -1642,6 +1642,8 @@ export const withdrawSettingsCard = (projectId: string, card: string, fingerprin
 export const getSovaSettingsCards = () => request<SovaCardsInfo>("/api/settings/cards", { cache: "no-store" });
 export const applySovaSettingsCard = (card: string, fingerprint: string) => request<SettingsApplyResult>("/api/settings/apply", jsonInit("POST", { card, fingerprint }));
 export const withdrawSovaSettingsCard = (card: string) => request<SovaCardsInfo>(`/api/settings/cards/${encodeURIComponent(card)}/withdraw`, jsonInit("POST", {}));
+/** Cancel the held Save of the folder's edits: `cancelSave` keeps them, where the same call without it is Discard. */
+export const cancelLocalSettingsSave = (projectId: string) => request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings/cards/local/withdraw`, jsonInit("POST", { cancelSave: true }));
 export const undoSettingsRow = (projectId: string, id: string) =>
   request<{ undone?: SettingsHistoryRow[]; card?: SettingsCardView }>(`${projectPath(projectId)}/settings/undo`, jsonInit("POST", { id }));
 export const getProjectOffers = (projectId: string) => request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers`, { cache: "no-store" });

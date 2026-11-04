@@ -75,6 +75,13 @@ test("every file in the folder is a topic, or shared.md, or overview.md", () => 
 	assert.ok(!CREATE_INSTRUCTIONS.includes("<!--"), "no owner note reaches the model");
 });
 
+test("the block has a limited chat say what it can't do in its first reply, finding out by a read-only probe", () => {
+	const limits = CREATE_INSTRUCTIONS.split("\n").find((line) => line.startsWith("In your first reply after entering Create"));
+	assert.ok(limits, "the paragraph is there");
+	for (const can_t of ["project modes and cards", "write files on this computer", "reach Sova's commands", "run project tools"]) assert.ok(limits.includes(can_t), can_t);
+	assert.ok(limits.includes("`test -w "), "the sandbox's state is never told to the model, so the block must say how to find out");
+});
+
 test("a header line is `# <topic>: <words>`, and a file whose header names another topic isn't listed", () => {
 	assert.deepEqual(parseHeader("# models: which models\n\nbody"), { topic: "models", line: "which models" });
 	assert.equal(parseHeader("models: which models"), undefined);

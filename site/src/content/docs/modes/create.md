@@ -131,8 +131,8 @@ carry (a mode's helper files, card types, drawing kinds, automation files, skill
 change to how the project runs goes by Land too when the project has checks, even as one file, because
 a card lands with no checks and Land runs them. The chat or a worker makes the change on a branch in a worktree,
 and the branch lands when you press Land, like any other, or when you type "land it" or "merge it" in the
-chat that owns it. With no merge queue the chat merges the same branch on that word, and with no Git the
-change is made by hand.
+chat that owns it. With no merge queue the chat merges the same branch on that word, or on your plain
+agreement to its own offer to merge, and with no Git the change is made by hand.
 
 **Your OK** covers files on your computer that aren't settings: themes, personal skills, add-ons,
 rules and personas. Create shows the path and the whole change, then waits. Its instructions take only

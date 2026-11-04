@@ -136,4 +136,7 @@ A deploy takes your confirm: from the project's Deploy panel, or `--confirm` on 
 **How strong this is.** These approvals stop a chat following its instructions. They don't stop a program
 on this computer deliberately posing as your browser. One local route passes every door, and a chat whose
 own tools aren't sandboxed, the default state, can reach it. A chat with its sandbox On at full enforcement
-can't connect; weaker enforcement isn't tested. The refusal stops the ordinary road and gives a chat the words to send you to the page.
+couldn't connect in the one run so far; weaker enforcement isn't tested. The refusal stops the ordinary road
+and gives a chat the words to send you to the page.
+
+An installed Sova extension's page passes as your click, so installing one is a trust decision.

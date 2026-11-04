@@ -24,8 +24,8 @@ doing the work itself.
 Create has no settings of its own. The Subagents picker and every profile are Delegate's, and
 moving a chat between Delegate and Create keeps its subagent profile. **Configure Create**, the gear
 on Create's row, opens the same Settings → Subagents as Delegate's gear. The [strict](/docs/modes/#strict)
-flag does the same in both: while it's on, the chat has no `edit` or `write` tool and every file
-change goes through a worker.
+flag does the same in both: while it's on, the chat has no `edit` or `write` tool. `bash` and every other
+tool stay, so the rule that file changes go through a worker is the chat's instructions, not a wall.
 
 A worker gets nothing of a major mode, so the chat reads what it needs and puts it in the worker's
 brief.

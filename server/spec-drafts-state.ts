@@ -205,3 +205,37 @@ export function draftsChanged(pressed: { hash: string; names: string[]; each?: R
   if (!pressed.each) return names;
   return names.filter((n) => (pressed.each![n] ?? null) !== (now?.each[n] ?? null));
 }
+
+/** A cheap stamp of a worktree's drafts folder (every file under `.sova/spec/drafts/`, by path, size and mtime): a
+    drafts edit moves it, with no commit (the merge queue's watch on a branch sent back for its drafts). "" when none. */
+export function draftsStamp(dir: string): string {
+  const draftsDir = join(dir, ".sova", "spec", "drafts");
+  const parts: string[] = [];
+  for (const rel of filesUnder(draftsDir).sort()) {
+    try {
+      const st = statSync(join(draftsDir, rel));
+      parts.push(`${rel}:${st.size}:${st.mtimeMs}`);
+    } catch {
+      parts.push(`${rel}:-`);
+    }
+  }
+  return parts.join("\n");
+}
+
+/** A content hash over every file under a worktree's `.sova/spec/drafts/` (each draft's `draft.json`, where notes and
+    evidence go, included): what a fix that only records a note moves, which `draftsHash` leaves out by design.
+    undefined: no drafts folder. */
+export function draftsFingerprint(dir: string): string | undefined {
+  const draftsDir = join(dir, ".sova", "spec", "drafts");
+  try {
+    statSync(draftsDir);
+  } catch {
+    return undefined;
+  }
+  const lines: string[] = [];
+  for (const rel of filesUnder(draftsDir).sort()) {
+    const buf = readOr(join(draftsDir, rel));
+    lines.push(`${rel} ${buf ? sha(buf) : "-"}`);
+  }
+  return createHash("sha256").update(lines.join("\n")).digest("hex");
+}

@@ -198,6 +198,7 @@ export class MergeCards {
         card.approvedBy = e.approval.by;
         delete card.failures;
         delete card.stats;
+        delete card.removed;
       }
       if (!card) {
         card = { id: e.id, entry: e.id, session: e.session, project: e.project, root, branch: e.branch, target: e.target, commit: e.commit, approvedBy: e.approval.by, state: e.state, notes: [], revisions: [], updatedAt: this.iso() };
@@ -247,6 +248,8 @@ export class MergeCards {
       this.fill(card, e, extra.run);
       setOpt(card, "head", head);
       if (stats) card.stats = stats;
+      // Remove from Queue: the card's last revision; a later Land of the branch moves the same card on.
+      if (kind === "removed") card.removed = true;
       card.revisions.push(this.revision(card, kind, after, run || undefined));
       rec.done[key] = this.iso();
       let wake: string | null = null;
@@ -376,6 +379,8 @@ export class MergeCards {
     setOpt(card, "landed", e.landed ? structuredClone(e.landed) : undefined);
     setOpt(card, "request", e.request ? structuredClone(e.request) : undefined);
     setOpt(card, "worktree", e.worktree);
+    setOpt(card, "redrafted", e.state === "needs-fix" && e.redrafted ? true : undefined);
+    setOpt(card, "sentBackFor", e.state === "needs-fix" ? e.sentBackFor : undefined);
     const thread = e.state === "needs-fix" ? e.notes.find((n) => n.kind === "thread") : undefined;
     setOpt(card, "explanation", thread ? { text: thread.text, at: thread.at } : undefined);
     if (run && e.state === "needs-fix") card.failures = failuresOf(run);

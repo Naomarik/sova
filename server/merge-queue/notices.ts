@@ -10,7 +10,7 @@ import { type MergeEntry, type MergeRun, newerWords } from "../../shared/merge-q
  */
 
 /** `approved`: Land or a typed "land it" put the branch in line (its chat's card appears). */
-export type MergeNoticeKind = "approved" | "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained" | "requested" | "pushed" | "closed";
+export type MergeNoticeKind = "approved" | "landed" | "needs-fix" | "sent-back" | "drafts-changed" | "explained" | "requested" | "pushed" | "closed" | "removed";
 
 const short = (sha: string | undefined) => (sha ?? "").slice(0, 7);
 
@@ -37,8 +37,10 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
           for (const x of f) if (x.message) lines.push(`  ${x.message.split("\n")[0]!.slice(0, 240)}`);
         }
       }
-      if (run && run.verdict === "conflict") lines.push(`Merge ${e.target} into ${e.branch}, resolve the conflicts, commit, and ask the user to land it again.`);
-      else lines.push(`It passes on ${e.target} alone in the same copy, so it is this branch's to fix. Fix it, commit, and ask the user to land it again.`);
+      if (e.sentBackFor === "drafts")
+        lines.push(`Fix them in your drafts on ${e.branch}: that needs no commit. Once they fit, the user sees Land on ${e.branch} again at this same commit (or Land This Commit Again on its row and card), or they type "land it" in this chat.`);
+      else if (run && run.verdict === "conflict") lines.push(`Merge ${e.target} into ${e.branch}, resolve the conflicts, commit, and ask the user to land it again: Land comes back on its row once your fix is committed and finished.`);
+      else lines.push(`It passes on ${e.target} alone in the same copy, so it is this branch's to fix. Fix it, commit, and ask the user to land it again: Land comes back on its row once your fix is committed and finished.`);
       return lines.join("\n");
     }
     case "sent-back": {
@@ -64,5 +66,7 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
       return `${e.branch}'s request was closed on the host without merging; land it again to open or update it.`;
     case "drafts-changed":
       return `${e.branch}'s spec drafts changed since the user approved it at ${short(e.commit)}, so it waits: the user lands it again once the drafts are as they want them.`;
+    case "removed":
+      return `The user removed ${e.branch} from the merge queue at ${short(e.commit)}; nothing of the branch was deleted.`;
   }
 }

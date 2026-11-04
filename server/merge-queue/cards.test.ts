@@ -175,6 +175,44 @@ describe("a branch's card in its own chat", () => {
     }
   });
 
+  test("sent back for its drafts: the wake says no commit is needed and names Land; once fixed the card reads redrafted; Remove from Queue is a final Removed revision, no turn", async () => {
+    let print = "p1";
+    const t = cardKit({ deps: { draftsHash: () => ({ hash: "h1", names: ["x"] }), draftsFingerprint: () => print, docsCheck: () => ({ problems: [] }) } });
+    try {
+      const q = await t.k.q();
+      t.k.run.set(() => ({ verdict: "failed", blame: "branch", cause: "drafts", why: "your spec drafts don't fit, so nothing was made official: x" }));
+      t.k.repo.branch("feat/doc", { "x.txt": "x\n" });
+      const { entry } = await q.add({ branch: "feat/doc", by: "land-button", session: "s1" });
+      await until(async () => (await t.k.entry(entry.id)).state === "needs-fix", "needs-fix");
+      await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.revisions.length === 2), "needs-fix revision");
+      assert.equal(t.wakes.length, 1);
+      assert.match(t.wakes[0]!.text, /Fix them in your drafts on feat\/doc: that needs no commit/);
+      assert.match(t.wakes[0]!.text, /Land This Commit Again/);
+      assert.doesNotMatch(t.wakes[0]!.text, /Fix it, commit/);
+      assert.equal(t.cards.cardsOf("s1")[0]!.sentBackFor, "drafts");
+      print = "p2";
+      await t.cards.sync(await q.view({ fresh: true }));
+      assert.equal(t.cards.cardsOf("s1")[0]!.redrafted, true);
+      await q.cancel(entry.id);
+      await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.revisions.length === 3), "removed revision");
+      const card = t.cards.cardsOf("s1")[0]!;
+      assert.deepEqual(card.revisions.map((r) => r.kind), ["approved", "needs-fix", "removed"]);
+      assert.equal(card.state, "cancelled");
+      assert.equal(card.removed, true);
+      assert.equal(card.redrafted, undefined);
+      assert.equal(t.wakes.length, 1, "no turn for a removal");
+      // A later Land of the branch moves the same card on (held: nothing runs past the test).
+      await q.pause("hold");
+      const again = await q.add({ branch: "feat/doc", by: "land-button", session: "s1" });
+      await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.entry === again.entry.id), "moved on");
+      assert.equal(t.cards.cardsOf("s1")[0]!.removed, undefined);
+      await q.idle();
+      await t.settle();
+    } finally {
+      await t.k.done();
+    }
+  });
+
   test("a worker owns the branch: its Needs a fix wakes the chat that runs it, once; one that can't take it leaves the hidden line", async () => {
     for (const parentArchived of [false, true]) {
       const sent: { path: string; text: string }[] = [];

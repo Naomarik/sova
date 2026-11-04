@@ -113,6 +113,11 @@ test("Land starts with a worktree, in the words every turn carries, and every lo
 	for (const words of ["`sova_settings` get", "A project with a merge queue", "A project with no merge queue", "offer Initialize", "A folder that isn't a project", "offer Add as Project", "A folder that isn't in Git", "made by hand"]) assert.ok(shared.includes(words), words);
 });
 
+test("an alignment's go-ahead is never the OK, in the block and in the shared rules", () => {
+	assert.ok(CREATE_INSTRUCTIONS.includes("An alignment's go-ahead is never that OK."));
+	assert.ok(stripOwnerNotes(CREATE_FILES.shared!).includes("An alignment's go-ahead or a decided question is not one"));
+});
+
 test("a topic that isn't listed is refused, and the answer lists the topics", () => {
 	assert.throws(() => createGuide("nope"), (err: Error) => err.message === `No topic nope. Topics: ${CREATE_TOPICS.join(", ")}.`);
 	assert.throws(() => createGuide("shared"), /^Error: No topic shared\./);

@@ -21,7 +21,7 @@ const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { OVERSEER_SENDER_HEADER, senderSecret } = await import("./overseer-sender");
-const { sandboxCommand, sandboxLowers } = await import("./sandbox-state");
+const { sandboxAfterRewind, sandboxCommand, sandboxLowers } = await import("./sandbox-state");
 const { pageHeaders } = await import("./testing/page");
 after(() => disposeAllChats());
 
@@ -155,4 +155,32 @@ test("only a socket that isn't the page or a peer is marked as not the user", as
   for (const [id, headers, env] of sent) assert.equal((await frame(id, headers, env)).status, 202, id);
   for (let i = 0; i < 400 && Object.keys(seen).length < sent.length; i++) await new Promise((r) => setTimeout(r, 10));
   assert.deepEqual(seen, { script: true, chat: true, page: undefined, peer: undefined });
+});
+
+test("an action a script sends is never the user's: POST /api/chat/action marks its client, and the page's isn't", async () => {
+  const { path } = await openChat();
+  const chat = await acquireChat(path);
+  const real = chat.handle.bind(chat);
+  const seen: (boolean | undefined)[] = [];
+  chat.handle = ((client: { notUser?: true }, msg: { type: string }) => {
+    if (msg.type === "compact") seen.push(client.notUser);
+    return real(client as never, msg as never);
+  }) as never;
+  const act = (headers: Record<string, string>) =>
+    app.request(`/api/chat/action?path=${encodeURIComponent(path)}&wait=2000`, { method: "POST", headers: { ...json, ...headers }, body: JSON.stringify({ type: "compact" }) });
+  await act(script());
+  await act(pageHeaders());
+  assert.deepEqual(seen, [true, undefined]);
+});
+
+test("sandboxAfterRewind reads the state of the branch before the user message it goes back to", () => {
+  const entry = (on: boolean) => ({ id: "s", kind: "state", key: "sandbox", data: { version: 1, on, level: "workspace-write", backend: "linux-bwrap", enforcement: "full", reasons: [] } });
+  const u = (id: string) => ({ id, kind: "user" });
+  const a = { id: "a2", kind: "assistant" };
+  const branch = [u("u1"), entry(true), u("u2"), a] as never;
+  assert.equal(sandboxAfterRewind(branch, "u1"), "subagents", "back past the raise");
+  assert.equal(sandboxAfterRewind(branch, "u2"), "on", "after it");
+  assert.equal(sandboxAfterRewind(branch, "a2"), "on", "a reply goes back to its user message");
+  assert.equal(sandboxAfterRewind(branch, "a2:0"), "on");
+  assert.equal(sandboxAfterRewind(branch, "nope"), null);
 });

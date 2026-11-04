@@ -71,6 +71,7 @@ const DOORS = {
   schedule: "Only the user approves a schedule. Ask them to press Approve in the Playbooks dialog or the Overseer's Approvals & Schedules. Nothing was approved.",
   power: "Turning on a Project Overseer power needs the user's own click. Ask them to turn it on in the project page's Settings tab. Nothing was changed.",
   sandbox: SANDBOX_LOWER_REFUSAL,
+  rewind: "Only the user lowers a chat's sandbox. Ask them to rewind this chat in the page. Nothing was changed.",
   restart: "Only the user restarts Sova. Ask them to press Restart Sova in Settings → General. Nothing was restarted.",
   update: "Only the user updates Sova. Ask them to do it in Settings → General. Nothing was changed.",
   cardClick: "Only the user answers a card. Ask them to click it in that chat. Nothing was sent.",

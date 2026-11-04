@@ -4,7 +4,7 @@
 // builtins only), like mode-state.ts imports mode/state.ts, and never learn what a policy, a level
 // or a backend is beyond the status words in that entry. Without the extension nothing here runs.
 import { describeActive, isStarting, LEVELS, parseState, type SandboxActive, type SandboxState, STATES, stateOf } from "../pi-config/extensions/sandbox/state.ts";
-import type { OwnedCommand, StateView } from "../shared/harness";
+import type { HEntry, OwnedCommand, StateView } from "../shared/harness";
 import type { ChatServerMessage, SandboxApplyResult, SandboxInfo } from "../shared/protocol";
 import { stateViewOf } from "./harness/pi/state";
 import { SANDBOX } from "./harness/state-kinds";
@@ -56,6 +56,14 @@ export const SANDBOX_LOWER_REFUSAL = "Only the user lowers a chat's sandbox. Ask
 /** Whether moving from `from` to `to` confines less (§app.access/your-click). A chat with no sandbox state (null,
     undefined: no extension) has nothing to lower. */
 export const sandboxLowers = (from: SandboxState | null | undefined, to: SandboxState): boolean => !!from && STATES.indexOf(to) < STATES.indexOf(from);
+
+/** The state a rewind or regenerate at `entryId` leaves the chat in: the sandbox entries of the branch before the user
+    message it goes back to, as the extension restores them. Null when the entry isn't on the branch (the chat refuses it). */
+export function sandboxAfterRewind(branch: readonly HEntry[], entryId: string): SandboxState | null {
+  let i = branch.findIndex((h) => h.id === entryId || (entryId.includes(":") && h.id === entryId.slice(0, entryId.indexOf(":"))));
+  while (i >= 0 && branch[i]!.kind !== "user") i--;
+  return i < 0 ? null : (sandboxInfo(branch.slice(0, i)).state ?? null);
+}
 
 /** What one held chat gives the adapter (ChatSession.sandboxHost). */
 export interface SandboxHost {

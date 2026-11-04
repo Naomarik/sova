@@ -7,7 +7,7 @@ import { cappedWebSocketServer, streamWebSocketServer } from "./runtime-quirks";
 import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, V2EventFrame, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
 import { type NotPage, notPageSocket, yourClickBody } from "./page-only";
-import { sandboxCommand, sandboxLowers } from "./sandbox-state";
+import { sandboxAfterRewind, sandboxCommand, sandboxLowers } from "./sandbox-state";
 import { isDirectLocal } from "./compression";
 import { acquireChatHandle, ArchivedError, BusyError, ConfigError, type ChatClient } from "./chat-handle";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
@@ -85,6 +85,19 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     // chat's (§app.access/your-click). A click relayed by a peer stays as it was: a page on another computer sends one.
     if (who !== null && who !== "local" && msg.type === "prompt" && msg.confirm) {
       client.send({ type: "error", code: "refused", message: yourClickBody("cardClick", who).error, ...(msg.clientId ? { clientId: msg.clientId } : {}) });
+      return;
+    }
+    // Going back past a raise lowers the sandbox: the extension restores the state of the branch it lands on.
+    if (who !== null && (msg.type === "rewind" || msg.type === "regenerate")) {
+      Promise.all([open.sandboxInfo(), open.branch()]).then(
+        ([info, branch]) => {
+          const after = sandboxAfterRewind(branch, String(msg.entryId ?? ""));
+          if (!after || !sandboxLowers(info?.state, after)) return open.clientMessage(client, msg);
+          const type = msg.type === "rewind" ? ("rewind_refused" as const) : ("regenerate_refused" as const);
+          client.send({ type, id: msg.id, entryId: msg.entryId, reason: "cancelled", message: yourClickBody("rewind", who).error });
+        },
+        (err) => client.send({ type: "error", code: "internal", message: err instanceof Error ? err.message : String(err) }),
+      );
       return;
     }
     const asked = who !== null && (msg.type === "prompt" || msg.type === "steer") ? sandboxCommand(String(msg.text ?? "")) : null;
@@ -265,7 +278,7 @@ export interface RecordedChat {
  * `onFrame`, parsed. Nothing is sent until `emit()`; the caller emits once it has the hello.
  * Never a viewer (no seen stamp); never forced.
  */
-export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (msg: Record<string, unknown>) => void, onClose: () => void): RecordedChat {
+export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (msg: Record<string, unknown>) => void, onClose: () => void, notPage: NotPage | null = "script"): RecordedChat {
   let open = true;
   let sent = false;
   const rec = Object.assign(new EventEmitter(), {
@@ -291,7 +304,7 @@ export function recordFrame(path: string, frame: ChatClientMessage, onFrame: (ms
     },
   });
   const ws = rec as unknown as WebSocket;
-  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { viewer: false }).catch((err) => {
+  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { viewer: false, notPage }).catch((err) => {
     console.error("[chat/action]", err);
     rec.close();
   });

@@ -73,7 +73,7 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
         </h3>
         <span class={stateChip[c().state]}>
           <span class="chip-dot" aria-hidden="true" />
-          {held() ? "Waiting for a branch" : stateWords[c().state]}
+          {c().saveFailed ? "Save failed" : held() ? "Waiting for a branch" : stateWords[c().state]}
         </span>
       </div>
       <div class="card-body settings-card-body">
@@ -183,7 +183,9 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
               when={!held()}
               fallback={
                 <div class="overseer-card-buttons">
-                  <span class="overseer-confirm-hint">{QUEUE_CARD_WAITS}</span>
+                  <Show when={!c().saveFailed}>
+                    <span class="overseer-confirm-hint">{QUEUE_CARD_WAITS}</span>
+                  </Show>
                   <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={cancelSave}>
                     Cancel Save
                   </button>

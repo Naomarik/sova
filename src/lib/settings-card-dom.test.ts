@@ -52,5 +52,9 @@ test("a queue card whose Save waits has Cancel Save in place of Apply", () => {
 });
 
 test("a save that failed when its turn came says why on the card", () => {
-  assert.match(draw(card({ id: "sc_4", kind: "queue", saveFailed: "A newer save took its place." }), "p1"), /A newer save took its place/);
+  const failed = draw(card({ id: "sc_4", kind: "queue", saveWaits: true, saveFailed: "A newer save took its place." }), "p1");
+  assert.match(failed, /A newer save took its place/);
+  assert.match(failed, /Save failed/);
+  assert.match(failed, /Cancel Save/);
+  assert.ok(!failed.includes(QUEUE_CARD_WAITS), "it no longer waits for a branch");
 });

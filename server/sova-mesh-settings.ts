@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { grantCaps, MESH_CAPS, MESH_PRESETS, presetCaps, type MeshCap, type MeshGrant, type MeshPreset } from "../shared/mesh-access";
 import type { MeshAccessRow } from "../shared/project-settings";
 import type { SovaSettingId } from "../shared/sova-settings-reference";
@@ -5,6 +6,9 @@ import { applyMeshAccess, applyMeshPairing, applyMeshPeers, applyMeshRelay, appl
 import { accessFile } from "./mesh/access";
 import { meshCardPort } from "./mesh/card-port";
 import { PEER_ID_RE, peersFile } from "./mesh/peers";
+import { parseRecipes, recipesFile } from "./mesh/resync";
+import { writeFileAtomic } from "./sync/logins-stores";
+import { credentialArg, credentialRefusal } from "./card-refusals";
 
 /**
  * Mesh by a card (§chat.create-mode/settings-cards): each setting checked and written by the code the Mesh page's
@@ -178,6 +182,43 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
       return run ? errorOf(await run(peer, commit)) : "Resync isn't available here.";
     },
   },
+  // Only mesh-resync.json: a recipe derived from a deploy script's local.env is never read here, nor shown.
+  "mesh.resync-recipe": {
+    files: () => [recipesFile()],
+    read: (v) => ({ peer: (v as { peer: string }).peer, recipe: fileRecipe((v as { peer: string }).peer) }),
+    check(v) {
+      if (!isObj(v) || typeof v.peer !== "string" || !("recipe" in v) || Object.keys(v).length !== 2) return "Expected {peer, recipe}.";
+      const peer = meshPeers().find((p) => p.id === v.peer);
+      if (!peer) return `No computer ${v.peer} linked here: a chat can't act on a computer that isn't.`;
+      if (peer.lan) return `${v.peer} is a dial-out pairing: update it on that host.`;
+      if ("error" in recipesOnDisk()) return "mesh-resync.json can't be read, so it isn't overwritten: fix or remove it by hand.";
+      if (v.recipe === null) return null;
+      if (!isObj(v.recipe)) return "recipe is {kind, ssh?, sshPort?, args?} or null.";
+      for (const k of Object.keys(v.recipe)) if (!["kind", "ssh", "sshPort", "args"].includes(k)) return `"${k}" can't go in a recipe: kind, ssh, sshPort and args can.`;
+      const { errors } = parseRecipes({ hosts: { [v.peer]: v.recipe } });
+      if (errors.length) return errors[0]!;
+      if (Array.isArray(v.recipe.args) && (v.recipe.args as string[]).some(credentialArg)) return credentialRefusal("the file mesh-resync.json in the sova folder of this chat's agent folder");
+      return null;
+    },
+    async notes(v) {
+      const { peer, recipe } = v as { peer: string; recipe: Record<string, unknown> | null };
+      if (recipe === null) return [`Removes ${peer}'s recipe from mesh-resync.json. If a deploy script's settings name ${peer}, the recipe they give takes over.`];
+      const args = (recipe.args as string[] | undefined) ?? [];
+      return [
+        `${peer}'s recipe, in full: kind ${String(recipe.kind)}; ssh ${String(recipe.ssh ?? "from its deploy script's settings")}; port ${String(recipe.sshPort ?? "default")}; arguments ${args.length ? args.join(" ") : "none"}.`,
+        "This wins over anything a deploy script's settings give this computer. Those settings aren't read or shown here.",
+      ];
+    },
+    async write(v) {
+      const { peer, recipe } = v as { peer: string; recipe: unknown };
+      const now = recipesOnDisk();
+      if ("error" in now) return "mesh-resync.json can't be read, so it wasn't overwritten.";
+      const { [peer]: _gone, ...hosts } = now.hosts;
+      writeFileAtomic(recipesFile(), `${JSON.stringify({ ...now.file, hosts: { ...hosts, ...(recipe === null ? {} : { [peer]: recipe }) } }, null, 2)}\n`);
+      return null;
+    },
+    widens: (_b, v) => (v as { recipe: unknown }).recipe !== null,
+  },
   "mesh.pairing": {
     files: () => [peersFile(), accessFile()],
     read: () => null,
@@ -213,6 +254,27 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
     widens: (_b, v) => v !== null,
   },
 };
+/** mesh-resync.json as it is on disk, and nothing derived: absent reads as empty, anything unusable as an error. */
+function recipesOnDisk(): { file: Record<string, unknown>; hosts: Record<string, unknown> } | { error: true } {
+  let text: string;
+  try {
+    text = readFileSync(recipesFile(), "utf8");
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code === "ENOENT" ? { file: {}, hosts: {} } : { error: true };
+  }
+  try {
+    const file = JSON.parse(text) as unknown;
+    return isObj(file) && isObj(file.hosts) ? { file, hosts: file.hosts } : { error: true };
+  } catch {
+    return { error: true };
+  }
+}
+
+const fileRecipe = (peer: string): unknown => {
+  const now = recipesOnDisk();
+  return "error" in now ? null : (now.hosts[peer] ?? null);
+};
+
 interface MeshAdapter {
   files(): string[];
   read(value?: unknown): unknown;

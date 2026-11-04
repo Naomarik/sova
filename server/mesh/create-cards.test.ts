@@ -2,7 +2,7 @@
 // Mesh by a Create chat (§chat.create-mode/settings-cards): what `get` reads, and cards that only the person's click
 // applies, through the same code the Mesh page's routes run. A peer's answers come over the test wire.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -27,6 +27,9 @@ const wire = fakeWire();
 const app = await testApp();
 const { meshEnabled, meshPeers, meshSelf, readMeshConfig, readMeshSettings, stopMesh } = await import("./index");
 const { allows } = await import("./access");
+const { recipesFile, ResyncService } = await import("./resync");
+const { cardSheet } = await import("../../src/lib/mesh-resync");
+const sova = await import("../sova-settings");
 const { setMeshCardPort } = await import("./card-port");
 const { OVERSEER_SENDER_HEADER, senderSecret } = await import("../overseer-sender");
 const { ownProtocol } = await import("./hello");
@@ -159,6 +162,59 @@ describe("cards, applied only by the person's click", () => {
     assert.equal(live.fingerprint, resync.card.fingerprint);
     assert.equal((await asPage(resync.card)).status, 200);
     assert.deepEqual(started, [`b@${commit}`], "the commit the card showed, once");
+  });
+});
+
+describe("a resync recipe", () => {
+  const propose = async (value: unknown) => (await runCreateSettingsTool(chat, { op: "propose", why: "Asked.", edits: [{ setting: "sova", id: "mesh.resync-recipe", value }] })).details as { card: { id: string; fingerprint: string; grants: unknown[]; notes: string[] } };
+  const apply = (c: { id: string; fingerprint: string }) => app.request("/api/settings/apply", { method: "POST", headers: { "content-type": "application/json", ...pageHeaders() }, body: JSON.stringify({ card: c.id, fingerprint: c.fingerprint }) });
+  const onDisk = () => JSON.parse(readFileSync(recipesFile(), "utf8")) as { hosts: Record<string, unknown>; note?: string };
+
+  test("the card shows it in full, nothing writes until Apply, and other hosts' entries stay", async () => {
+    writeFileSync(recipesFile(), JSON.stringify({ note: "mine", hosts: { other: { kind: "vps" } } }));
+    const recipe = { kind: "termux", ssh: "me@phone", sshPort: 8022, args: ["--branch-name", "x"] };
+    const { card } = await propose({ peer: "b", recipe });
+    assert.equal(card.grants.length, 1);
+    assert.match(card.notes[0]!, /kind termux; ssh me@phone; port 8022; arguments --branch-name x\./);
+    assert.equal(onDisk().hosts.b, undefined, "nothing until Apply");
+    for (const headers of [{ "x-sova-token": "x" }, { "x-sova-caller": "k" }] as Record<string, string>[])
+      assert.equal((await app.request("/api/settings/apply", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ card: card.id, fingerprint: card.fingerprint }) })).status, 403);
+    assert.equal(onDisk().hosts.b, undefined);
+    assert.equal((await apply(card)).status, 200);
+    assert.deepEqual(onDisk(), { note: "mine", hosts: { other: { kind: "vps" }, b: recipe } });
+    const gone = await propose({ peer: "b", recipe: null });
+    assert.equal(gone.card.grants.length, 0, "removing it opens nothing");
+    assert.equal((await apply(gone.card)).status, 200);
+    assert.deepEqual(Object.keys(onDisk().hosts), ["other"]);
+  });
+
+  test("the file's own parser and the credential scan refuse; a broken file is never overwritten", async () => {
+    await assert.rejects(propose({ peer: "b", recipe: { kind: "bash" } }), /kind must be/);
+    await assert.rejects(propose({ peer: "b", recipe: { kind: "vps", run: "curl x" } }), /can't go in a recipe/);
+    await assert.rejects(propose({ peer: "b", recipe: { kind: "termux", args: ["--rev", "x"] } }), /may not set --rev/);
+    await assert.rejects(propose({ peer: "stranger", recipe: { kind: "vps" } }), /isn't/);
+    for (const args of [["--token=abc"], ["--api-key", "abc"], ["--password=abc"]]) await assert.rejects(propose({ peer: "b", recipe: { kind: "termux", args } }), /Create doesn't handle sign-ins or keys.*mesh-resync\.json/);
+    writeFileSync(recipesFile(), "{ broken");
+    await assert.rejects(propose({ peer: "b", recipe: { kind: "vps" } }), /isn't overwritten/);
+    assert.equal(readFileSync(recipesFile(), "utf8"), "{ broken");
+    rmSync(recipesFile());
+  });
+
+  test("a recipe derived from local.env: its values are never read for a card, nor shown", async () => {
+    const root = join(tmp, "checkout");
+    mkdirSync(join(root, "scripts", "mesh-vps"), { recursive: true });
+    const SECRET = ["sentinel-host", "example.invalid"].join(".");
+    writeFileSync(join(root, "scripts", "mesh-vps", "local.env"), `VPS_ID=b\nVPS_HOST=${SECRET}\n`);
+    const peer = { id: "b", label: "Bee", nodeId: "nB", dnsName: "b.lab" };
+    const service = new ResyncService({ root, mesh: { enabled: () => true, config: () => ({ peers: [peer] }), self: () => ({ id: "a", label: "A" }) } as never, build: () => ({ commit: "a".repeat(40) }) as never, probe: async () => ({ state: "up" }) as never });
+    const info = await service.info();
+    assert.equal(info!.hosts[0]!.recipe, "vps", "the derived recipe is there");
+    assert.ok(!JSON.stringify([info, cardSheet(info!, "b")]).includes(SECRET), "what mesh.resync's card reads carries no value");
+    const { card } = await propose({ peer: "b", recipe: { kind: "vps" } });
+    assert.ok(!JSON.stringify(card).includes(SECRET));
+    sova.withdrawSovaCard(card.id);
+    const code = readFileSync(join(import.meta.dirname, "..", "sova-mesh-settings.ts"), "utf8");
+    assert.ok(!/localEnvs|derivedRecipes|readRecipes|parseLocalEnv/.test(code), "the recipe card's code reaches no reader of local.env");
   });
 });
 

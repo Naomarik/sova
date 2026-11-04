@@ -7105,7 +7105,7 @@
       ]
     },
     "create-settings": {
-      "bytes": 2823,
+      "bytes": 2844,
       "tools": [
         {
           "name": "sova_settings",
@@ -7183,6 +7183,7 @@
                   "mesh.access",
                   "mesh.browser-access",
                   "mesh.resync",
+                  "mesh.resync-recipe",
                   "mesh.relay",
                   "mesh.pairing"
                 ],

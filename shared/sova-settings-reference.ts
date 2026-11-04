@@ -37,6 +37,7 @@ export const SOVA_SETTING_IDS = [
   "mesh.access",
   "mesh.browser-access",
   "mesh.resync",
+  "mesh.resync-recipe",
   "mesh.relay",
   "mesh.pairing",
 ] as const;
@@ -93,7 +94,8 @@ export const SOVA_SETTINGS: Record<SovaSettingId, SovaSettingEntry> = {
   "mesh.peer-add": e({ id: "mesh.peer-add", label: "Link a computer", file: "~s/peers.json", summary: "Link a computer on this tailnet. It starts the mesh if this is the first one. The other computer must link this one too, from its own Sova.", value: "{name: its tailnet name, id?, label?, preset: \"none\"|\"presence\"|\"sessions\"|\"full\"}", grant: "That computer gets the access shown here.", sync: null, live: "at once", screen: "the Mesh page, Hosts" }),
   "mesh.access": e({ id: "mesh.access", label: "What a computer may do here", file: "~s/mesh-access.json", summary: "One linked computer's access to this one. `sessions` is shell-level: it can run anything here.", value: "{peer: its id, grant: {preset, caps?, logins?} | null}", grant: "That computer gets more reach into this one.", sync: null, live: "its next request", screen: "the Mesh page, Hosts" }),
   "mesh.browser-access": e({ id: "mesh.browser-access", label: "Browser access", file: "~s/peers.json", summary: "Whether a computer in the mesh has a browser address. It runs on this computer, or on a linked one that lets this one change its settings.", value: "{host: a computer's id, on: true|false}", grant: "That computer can be opened in a browser.", sync: null, live: "at once", screen: "the Mesh page, Mesh Details, Browser access" }),
-  "mesh.resync": e({ id: "mesh.resync", label: "Resync", file: "~s/mesh-resync.json (read only)", summary: "Start the recipe kept for a linked computer, to bring it up to this build. The recipe itself stays on its screen.", value: "{peer: its id}", grant: "It runs that computer's resync recipe.", sync: null, live: "at once, as a job on Settings → Mesh", screen: "the session pane's host menu, Resync" }),
+  "mesh.resync": e({ id: "mesh.resync", label: "Resync", file: "~s/mesh-resync.json", summary: "Start the recipe kept for a linked computer, to bring it up to this build. Its recipe is mesh.resync-recipe.", value: "{peer: its id}", grant: "It runs that computer's resync recipe.", sync: null, live: "at once, as a job on Settings → Mesh", screen: "the session pane's host menu, Resync" }),
+  "mesh.resync-recipe": e({ id: "mesh.resync-recipe", label: "Resync recipe", file: "~s/mesh-resync.json", summary: "How a build reaches one linked computer: a kind and its arguments, never a shell command. Only this file: a recipe derived from a deploy script's local.env stays as it is, and a card neither reads nor shows that file.", value: "{peer, recipe: {kind: \"vps\"|\"termux\", ssh?, sshPort?, args?: [...]} | null} (null removes it from the file)", grant: "It changes how a build reaches that computer.", sync: null, live: "next resync", screen: null }),
   "mesh.relay": e({ id: "mesh.relay", label: "This computer as a relay", file: "~s/peers.json", summary: "Where this computer listens for computers that dial out to it, on the local network. An internet relay stays on its screen.", value: "{host: one of this computer's addresses, port} or null", grant: "Paired computers can reach this one there.", sync: null, live: "at once", screen: "the Mesh page, Dial-out pairings" }),
   "mesh.pairing": e({ id: "mesh.pairing", label: "Pair a computer", file: "~s/peers.json", summary: "Pair a computer that isn't on the tailnet. The person types its fingerprint into the card's own field: it never goes through this chat, so never ask for it and never put it in value. Each computer does its half, in its own Sova.", value: "{id, label?, role: \"dial\"|\"accept\", host?, port?, preset} (role dial: its relay's host and port)", grant: "That computer gets the access shown here.", sync: null, live: "at once", screen: "the Mesh page, Dial-out pairings" }),
 };
@@ -109,7 +111,6 @@ export const SCREEN_ONLY_SETTINGS: Record<string, string> = {
   "mesh.links": "Links between computers stay on their own screen: they are conversations and file offers, not settings. Name it for the person: the session pane's Agents tab, Remotely linked agents.",
   "mesh.login-claim": "Claiming a login stays on its own screen: Create doesn't handle sign-ins or keys. Name it for the person: the Mesh page, Sync, Logins.",
   "mesh.internet-relay": "An internet relay stays on its own screen: it needs an accept process installed by hand. Name it for the person: the Mesh page, Dial-out pairings.",
-  "mesh.resync-recipe": "A resync recipe stays out of a card: it says how a build reaches another computer, and no screen edits it. Name the file for the person: mesh-resync.json in the sova folder of this chat's agent folder.",
 };
 
 export const isSovaSettingId = (v: unknown): v is SovaSettingId => typeof v === "string" && (SOVA_SETTING_IDS as readonly string[]).includes(v);

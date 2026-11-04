@@ -22,6 +22,9 @@ const SECRET_SHAPES: readonly RegExp[] = [
 
 const envReference = (v: string): boolean => /^(\$[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Z][A-Z0-9_]*)$/.test(v.trim());
 
+/** A command-line argument that hands over a credential: `--token=…`, or `--token` with its value in the next one. */
+export const credentialArg = (arg: string): boolean => arg.startsWith("-") && CREDENTIAL_KEY.test(arg.split("=")[0]!);
+
 /** The first credential in `value` (where it was), or null. A key's value is judged, an empty one isn't one. */
 export function credentialProblem(value: unknown, at = ""): string | null {
   if (typeof value === "string") return SECRET_SHAPES.some((re) => re.test(value)) ? at || "the value" : null;

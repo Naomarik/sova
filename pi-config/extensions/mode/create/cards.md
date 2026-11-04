@@ -42,7 +42,7 @@ A data card takes no `data` shape: Sova's own is used.
 - Lives: `.sova/drawings/<name>/` in the project: `kind.json`, `view.tsx` and `GUIDE.md`, which the agent reads to learn it.
 - Approves: the person, by Land.
 - By: Land. No card holds these.
-- Live: new chats after landing. A chat keeps the kinds it started with, and with vis on it's told them. With vis off a kind still draws but the chat isn't told, so look in `<project>/.sova/drawings/` before you say there are none. Saving `view.tsx` redraws open drawings.
+- Live: new chats after landing. A chat keeps the kinds it started with. To draw one, with or without vis, look in `<project>/.sova/drawings/`, read that kind's `GUIDE.md`, and write its `vis project.<name>` fence in your reply. Never draw ASCII in place of a kind the project has. Saving `view.tsx` redraws open drawings.
 - Check: the Cards section lists it or says what's broken. In a new chat, ask for one.
 
 ```json

@@ -214,7 +214,8 @@
     "project.verb.release.abandon",
     "project.verb.release.withdraw",
     "mcp.servers.list",
-    "mcp.server.status"
+    "mcp.server.status",
+    "project.merge-queue.branch-summary.retry"
   ],
   "retired": [
     "settings.agents.get",

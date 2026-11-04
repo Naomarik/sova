@@ -106,6 +106,7 @@ import { registerScheduleRoutes } from "./schedule-routes";
 import { readWebSettings, writeWebSettings } from "./web-settings";
 import { alignSettingsInfo, saveAlignSettingsBody } from "./align-settings";
 import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
+import { setBranchBulletWriter, summaryLineWriter } from "./merge-queue/branch-summaries";
 import { claudeCliStatus } from "./claude-status";
 import { AutoTitleSweep, autoTitlePaths, nameSession, shortenPicks, traceToFile, type NameDeps } from "./session-autotitle";
 import { setSummaryWriter, summaryFromChain } from "./version-summaries";
@@ -678,6 +679,9 @@ export function buildApp(deps: AppDeps) {
   });
   // Versions' summaries for the owner (§app.project-assistant/versions) are written by the same title models.
   setSummaryWriter((prompt) => summaryFromChain(readSessionTitleSettings(), prompt, titleDeps()));
+  // The merge queue's branch summaries (server/merge-queue/branch-summaries.ts) are written by the summary-line
+  // chain (Settings → Summaries), never the title models; their spend is their own purpose, with the project.
+  setBranchBulletWriter(summaryLineWriter(titleDeps));
   const autoTitleSweep = new AutoTitleSweep({
     settings: () => readSessionTitleSettings(),
     list: listSessions,

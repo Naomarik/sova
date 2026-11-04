@@ -119,6 +119,10 @@ export interface QueueDeps {
   log?: (line: string) => void;
   /** A release entry moved (landed, handed back, waits for the user, cancelled): the releaser follows its release. */
   releaseEvent?: (ev: ReleaseQueueEvent) => void;
+  /** What a branch does (branch-summaries.ts), for a row at a commit; never starts a write. */
+  summaryOf?: (root: string, branch: string, commit: string) => import("../../shared/merge-queue").BranchSummary | undefined;
+  /** Drop the summaries no row needs: `live` branches have a ref and haven't landed at it; `shown` commits a row shows. */
+  pruneSummaries?: (root: string, live: ReadonlySet<string>, shown: ReadonlySet<string>) => void;
   /** The review and thread models' check: the new-chat default and why a pick can't be used (models.ts
    *  liveModelCheck; default: no default read, every pick usable). */
   modelCheck?: ModelCheck;
@@ -376,7 +380,44 @@ export class ProjectQueue {
     // An entry the hold keeps waiting has no start time: it starts once the release is published or abandoned.
     if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
     const chats = this.deps.chatsOf?.(this.root) ?? {};
-    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
+    const readyRows = this.attachSummaries(v, ready);
+    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
+  }
+
+  /** The view is read again and published (a branch summary started, was written or failed). */
+  republish(): void {
+    this.viewCache = null;
+    this.schedulePublish();
+  }
+
+  private summariesPrunedAt = 0;
+  /** Each row's branch summary (branch-summaries.ts): Ready rows at their head, entries at their approved commit
+   *  (landed rows keep the one they had). Every 10 minutes at most, the summaries no row needs are dropped. */
+  private attachSummaries(v: MergeQueueView, ready: MergeReady[]): MergeReady[] {
+    const of = this.deps.summaryOf;
+    if (!of) return ready;
+    const entries = [...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix, ...(v.waitingOnHost ?? []), ...v.recent.map((l) => l.entry)];
+    const rows = ready.map((r) => {
+      const s = of(this.root, r.branch, r.commit);
+      return s ? { ...r, summary: s } : r;
+    });
+    for (const e of entries) {
+      const s = of(this.root, e.branch, e.commit);
+      if (s) e.summary = s;
+    }
+    if (this.deps.pruneSummaries && this.now() - this.summariesPrunedAt > 10 * 60_000) {
+      this.summariesPrunedAt = this.now();
+      const prune = this.deps.pruneSummaries;
+      const shown = new Set([...rows.map((r) => r.commit), ...rows.map((r) => r.summary?.stale?.commit).filter((c): c is string => !!c), ...entries.map((e) => e.commit), ...entries.map((e) => e.summary?.stale?.commit).filter((c): c is string => !!c)]);
+      void (async () => {
+        const refs = await this.git(["for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads/"], this.root);
+        if (refs.code !== 0) return;
+        const landedAt = new Set(this.q.entries.filter((e) => e.state === "landed").map((e) => `${e.branch} ${e.commit}`));
+        const live = new Set(refs.stdout.split("\n").filter((l) => l && !landedAt.has(l)).map((l) => l.slice(0, l.lastIndexOf(" "))));
+        prune(this.root, live, shown);
+      })().catch((err) => this.log(`summaries prune failed: ${err instanceof Error ? err.message : err}`));
+    }
+    return rows;
   }
 
   /** Whether the project has origin, and origin's copy of the target as last fetched (its remote-tracking ref; never a fetch). */

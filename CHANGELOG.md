@@ -4,15 +4,57 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
-## Unreleased
+## v0.10.0 — 2026-11-04
+
+A merge queue that lands every branch, releases cut from Sova, MCP servers for every chat, and a
+Context tab. 262 commits since v0.9.0. The highlights:
+
+- **The merge queue.** Land (the composer's worktrees control, the session pane, the project's new
+  Merge Queue tab, or "land it" typed in the branch's own chat) puts a branch in its project's
+  queue. The queue merges it onto the newest main branch in a copy beside the project, runs the
+  checks the project declares, lands exactly the commit it tested and pushes it. A failure goes back
+  to the branch's chat as one card with Land This Commit Again and Remove from Queue; a failure that
+  can't be pinned on the branch reads "Can't tell whose failure · waiting for you", with Land
+  Anyway. A merge thread chat per project notes each landing and judges conflicts. Set the queue up
+  once from the Merge Queue tab (Try It on Main, then Save Checks) and adjust it in Settings → Merge
+  Queue; until then Merge Branch merges as before.
+- **Releases.** A project's Releases tab starts a release chat that picks the number, writes the
+  notes and makes the release commit; the queue runs the release checks, and you Publish (the tag,
+  the moved channel and the push in one step) or Withdraw. Set Up Releases proposes a project's
+  release setup. A copy following a withdrawn release is told so in Settings → Updates and offered
+  the release its channel is back on.
+- **MCP servers.** Settings → MCP Servers adds a server by address, command or a paste from another
+  tool; Add and Check lists its tools, and every ordinary chat can use them, on pi and Claude Code
+  models alike. A project can declare its own.
+- **The Context tab.** A chat's detail pane shows what fills its context window and what each part
+  costs, with its instruction files opened in a shared reader.
+- **Branch status in the session list.** Each row shows its chat's branch status, replacing "N of
+  M".
+- **macOS.** The installer installs Sova as an app (Chrome, Chromium, Brave, Edge or Vivaldi) with
+  its own Dock icon and a title band of its own; `--no-app-entry` leaves it out.
+- **Overseers.** The Overseer runs the extension commands marked for it; adding, archiving and
+  unarchiving a project happen on your typed word, with no card; a project overseer can read its
+  project's git history and its server log. Quick actions no longer raise the phone keyboard.
+- **Costs.** The Costs and Usage tabs split New input from Cache reads, and a model's row opens to
+  where its cost went.
+- **Smaller changes.** Settings → Alignment has an Eagerness choice (Eager by default, or Careful);
+  a queued message stays removable until the agent takes it; Delegate starts a team when asked, or
+  when parts depend on each other; tapping a flow drawing's shape only highlights it; the sandbox
+  cleans its private cache copies on its own (`/sandbox clean` runs it now); the session list does
+  far less work per refresh.
 
 ### Removed
 
+- **Landing cards and the merge captain.** Land through the merge queue replaces them; Not Yet holds
+  saved under v0.9.0 are dropped.
 - **The codemode minor mode.** It is gone from the mode menu, profiles, automations and the
   Overseer's coding sessions, and a settings file that still names it is refused as an unknown
   mode. Experiments showed no gain in quality, cost more, and the agent never chose it on its own.
-  An old chat's script calls now show as ordinary tool steps. A terminal's pi follows its own
-  settings for its codemode tool.
+  An old chat's script calls now show as ordinary tool steps.
+
+Going back to `v0.9.0` (`SOVA_REF=v0.9.0`) hasn't been tested on this release: the merge queue's
+records, release records and MCP server settings are new stored data that v0.9.0 doesn't read, a
+branch waiting in the queue doesn't land there, and a settings file can't name codemode again.
 
 ## v0.9.0 — 2026-10-26
 

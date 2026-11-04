@@ -64,8 +64,8 @@ export default function (pi) {
 - Lives: an add-on file calling `pi.registerProvider`. The key stays out of the file: use the name of an environment variable the person sets themselves.
 - Approves: nobody. The person's OK on the file is the only check.
 - By: OK.
-- Live: new chat. Say that its exact timing on a running Sova isn't certain, and a restart is the sure way.
-- Check: the model appears in the model picker and in Settings → Models.
+- Live: restart. A new chat alone doesn't get it: until Sova restarts the model isn't listed, and picking it is refused as an unknown model. The person restarts Sova under Settings → General. Then it's in every chat.
+- Check: after the restart, the model appears in the model picker and in Settings → Models.
 
 A complete example, `<agent dir>/extensions/my-models.ts`, for a service that speaks the OpenAI API:
 

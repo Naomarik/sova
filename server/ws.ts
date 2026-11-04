@@ -81,6 +81,12 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   /** One frame into the chat. `/sandbox` typed in the page's composer runs; from anything else a lowering is refused
       (§app.access/your-click), the send's refusal reaching this socket like any other. */
   const toChat = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
+    // A card's click opens a turn that may act on what the card names, so it is the person's, never a script's or a
+    // chat's (§app.access/your-click). A click relayed by a peer stays as it was: a page on another computer sends one.
+    if (who !== null && who !== "local" && msg.type === "prompt" && msg.confirm) {
+      client.send({ type: "error", code: "refused", message: yourClickBody("cardClick", who).error, ...(msg.clientId ? { clientId: msg.clientId } : {}) });
+      return;
+    }
     const asked = who !== null && (msg.type === "prompt" || msg.type === "steer") ? sandboxCommand(String(msg.text ?? "")) : null;
     if (!asked) return open.clientMessage(client, msg);
     open.sandboxInfo().then(

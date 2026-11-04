@@ -114,3 +114,23 @@ test("frames from anything but the page: a /sandbox that lowers never runs, rais
   assert.equal((await post(pageHeaders(), "/sandbox off", "p1")).status, 202);
   await reaches("off");
 });
+
+test("a card's click from anything but the page never reaches the chat; the page's does", async () => {
+  const { path, state } = await openChat();
+  const frames = (headers: Record<string, string>, list: unknown[]) =>
+    app.request(`/api/chat/frames?path=${encodeURIComponent(path)}`, { method: "POST", headers: { ...json, ...headers }, body: JSON.stringify({ frames: list }) });
+  const leaves = async (from: string) => {
+    for (let i = 0; i < 400 && state() === from; i++) await new Promise((r) => setTimeout(r, 10));
+  };
+  // Raising runs for anyone, so a click that got through would show: on, then the plain raise below can't lower it.
+  const click = (id: string, text = "/sandbox on") => ({ type: "prompt", text, clientId: id, confirm: "c_1" });
+  assert.equal((await frames(pageHeaders(), [{ type: "prompt", text: "/sandbox off", clientId: "p0" }])).status, 202);
+  await leaves("subagents");
+  assert.equal(state(), "off");
+  assert.equal((await frames(script(), [click("s1"), { type: "prompt", text: "/sandbox subagents", clientId: "s2" }])).status, 202);
+  await leaves("off");
+  assert.equal(state(), "subagents", "the plain frame ran and the click didn't");
+  assert.equal((await frames(pageHeaders(), [click("p1")])).status, 202);
+  await leaves("subagents");
+  assert.equal(state(), "on", "the page's click reaches the chat");
+});

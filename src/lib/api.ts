@@ -4,6 +4,7 @@ import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer } from "../../shared/transcript-cards";
 import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
+import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -1012,8 +1013,8 @@ export const fetchSessionContextView = (path: string) => request<SessionContextV
 export const fetchSessionTools = (path: string) => request<SessionTools>(`/api/sessions/tools?path=${encodeURIComponent(path)}`);
 /** Switch a new session's context files and skills (§chat.transcript/setup-card-toggles): the
     whole off set; the answer is the card's fresh read of the rebuilt runtime. */
-export const setSessionLoadout = (path: string, offContext: string[], offSkills: string[]) =>
-  request<SessionSetup>("/api/sessions/loadout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, offContext, offSkills }) });
+export const setSessionLoadout = (path: string, offContext: string[], offSkills: string[], mcp: { offMcp: string[]; onMcp: string[] } = { offMcp: [], onMcp: [] }) =>
+  request<SessionSetup>("/api/sessions/loadout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, offContext, offSkills, ...mcp }) });
 
 /** The worktrees of a session's repository, counted (§chat.worktrees/cleanup). */
 export const fetchWorktreesSummary = (path: string) => request<WorktreesSummary>(`/api/worktrees/summary?path=${encodeURIComponent(path)}`);
@@ -1708,3 +1709,23 @@ export const saveMergeSettings = (projectId: string, changes: import("../../shar
   request<import("../../shared/merge-queue-settings").MergeSettingsSaveResult>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings`, jsonInit("POST", { changes, confirm: true }));
 /** Cancels a save waiting for the current branch. */
 export const cancelMergeSettings = (projectId: string) => request<unknown>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings/pending`, { method: "DELETE" });
+
+// -- MCP servers (§app/mcp) --
+const mcpRow = (id: string, tail = "") => `/api/mcp/rows/${encodeURIComponent(id)}${tail}`;
+export const getMcpServers = () => request<McpServers>("/api/mcp/servers");
+export const getProjectMcp = (projectId: string) => request<McpProjectServers>(`/api/projects/${encodeURIComponent(projectId)}/mcp`);
+/** Add and Check: answers once the Check has finished; a failed Check is a row in state failed. */
+export const addMcpServer = (server: McpNewServer) => request<McpServerRow>("/api/mcp/servers", jsonInit("POST", server));
+export const editMcpServer = (id: string, entry: { address: string; secret?: string } | { command: string; secret?: string; secretName?: string }) =>
+  request<McpServerRow>(mcpRow(id), jsonInit("PUT", entry));
+export const removeMcpServer = (id: string) => request<McpServers>(mcpRow(id), { method: "DELETE" });
+export const switchMcpServer = (id: string, change: { newChats: boolean } | { tool: string; on: boolean }) => request<McpServerRow>(mcpRow(id), jsonInit("PATCH", change));
+/** Approves the version shown. 409 `{code: "changed", row}` when the entry has moved on. */
+export const approveMcpServer = (id: string, version: string) => request<McpServerRow>(mcpRow(id, "/approve"), jsonInit("POST", { version }));
+export const checkMcpServer = (id: string) => request<McpServerRow>(mcpRow(id, "/check"), { method: "POST" });
+export const saveMcpSecret = (id: string, name: string, value: string) => request<McpServerRow>(mcpRow(id, `/secrets/${encodeURIComponent(name)}`), jsonInit("PUT", { value }));
+export const removeMcpSecret = (id: string, name: string) => request<McpServerRow>(mcpRow(id, `/secrets/${encodeURIComponent(name)}`), { method: "DELETE" });
+export const startMcpSignIn = (id: string) => request<McpSignIn>(mcpRow(id, "/sign-in"), { method: "POST" });
+export const readMcpSignIn = (id: string) => request<McpSignIn>(mcpRow(id, "/sign-in"));
+export const finishMcpSignIn = (id: string, address: string) => request<McpSignIn>(mcpRow(id, "/sign-in/address"), jsonInit("POST", { address }));
+export const cancelMcpSignIn = (id: string) => request<unknown>(mcpRow(id, "/sign-in"), { method: "DELETE" });

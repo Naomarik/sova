@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 509 |
-| Routes a catalogue entry points at | 153 |
-| Catalogue entries | 212 |
+| Routes registered | 524 |
+| Routes a catalogue entry points at | 155 |
+| Catalogue entries | 214 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -24,11 +24,11 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: The catalogue itself | 1 |
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
-| Class: Trust grants | 5 |
+| Class: Trust grants | 17 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
 | Class: Left as is, by choice | 248 |
-| Class: Page plumbing | 9 |
+| Class: Page plumbing | 10 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 5 |
@@ -213,6 +213,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `insights.usage.refresh` | Refresh Usage Limits | changes | `POST /api/insights/usage/refresh` | sessions |
 | `schedule.list` | List Schedules | looks | `GET /api/schedules` | sessions |
 | `playbook.list` | List Playbooks | looks | `GET /api/playbooks` | sessions |
+| `mcp.servers.list` | List MCP Servers | looks | `GET /api/mcp/servers` | full |
+| `mcp.server.status` | Show MCP Server | looks | `GET /api/mcp/rows/:id` | full |
 | `draft-spec.list` | List Draft Specs | looks | `GET /api/draft-specs` | full |
 | `insights.agents` | Agents Board | looks | `GET /api/insights/agents` | sessions |
 | `insights.worktrees` | Session Worktrees | looks | `GET /api/insights/worktrees` | sessions |
@@ -398,12 +400,24 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `ALL /explain/*` | full |
 | `GET /explain/:id` | full |
 
-### Trust grants (5)
+### Trust grants (17)
 
-Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
+Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings), adding, approving, signing in to and changing an MCP server (§app.mcp/approval) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
 
 | Route | Mesh need |
 | --- | --- |
+| `DELETE /api/mcp/rows/:id` | full |
+| `PATCH /api/mcp/rows/:id` | full |
+| `PUT /api/mcp/rows/:id` | full |
+| `POST /api/mcp/rows/:id/approve` | full |
+| `POST /api/mcp/rows/:id/check` | full |
+| `DELETE /api/mcp/rows/:id/secrets/:name` | full |
+| `PUT /api/mcp/rows/:id/secrets/:name` | full |
+| `DELETE /api/mcp/rows/:id/sign-in` | full |
+| `GET /api/mcp/rows/:id/sign-in` | full |
+| `POST /api/mcp/rows/:id/sign-in` | full |
+| `POST /api/mcp/rows/:id/sign-in/address` | full |
+| `POST /api/mcp/servers` | full |
 | `POST /api/projects/:pid/offers/approve` | admin |
 | `PUT /api/projects/:pid/services/limit` | admin |
 | `POST /api/projects/:pid/settings/apply` | admin |
@@ -685,7 +699,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/voice/transcribe` | admin |
 | `POST /api/voice/warm` | admin |
 
-### Page plumbing (9)
+### Page plumbing (10)
 
 Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name). Exactly these routes (`PAGE_PLUMBING`).
 
@@ -696,6 +710,7 @@ Requests a view, the composer or a link card makes to draw itself (attachments a
 | `GET /api/explanations` | sessions |
 | `POST /api/links/:id/seen` | sessions |
 | `GET /api/links/:id/thread` | sessions |
+| `GET /api/projects/:pid/mcp` | sessions |
 | `GET /api/sessions/dir` | sessions |
 | `GET /api/targets/:name/folders` | sessions |
 | `GET /api/transcript/tool` | sessions |
@@ -753,6 +768,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/insights/usage/history` | sessions | `insights.usage.history` |
 | `POST /api/insights/usage/refresh` | sessions | `insights.usage.refresh` |
 | `GET /api/insights/worktrees` | sessions | `insights.worktrees` |
+| `GET /api/mcp/rows/:id` | full | `mcp.server.status` |
+| `GET /api/mcp/servers` | full | `mcp.servers.list` |
 | `GET /api/merge-queue/cards` | sessions | `session.merge-cards` |
 | `POST /api/merge-queue/entries/:id/publish` | admin | `project.merge-queue.request.publish` |
 | `PUT /api/merge-queue/projects/:project/land-how` | admin | `project.merge-queue.land-how.set` |

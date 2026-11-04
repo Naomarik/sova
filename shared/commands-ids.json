@@ -212,7 +212,9 @@
     "project.verb.release.retry",
     "project.verb.release.publish",
     "project.verb.release.abandon",
-    "project.verb.release.withdraw"
+    "project.verb.release.withdraw",
+    "mcp.servers.list",
+    "mcp.server.status"
   ],
   "retired": [
     "settings.agents.get",

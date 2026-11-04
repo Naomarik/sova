@@ -19,6 +19,7 @@ const {
   isCapabilityNeutral,
   keyOf,
   lockedReason,
+  profileSentence,
   normalizeCaps,
   parseProfile,
   profileFileError,
@@ -82,6 +83,14 @@ describe("the model", () => {
     assert.deepEqual(normalizeCaps([], ["sessions.message"]), { remove: [], grant: ["sessions.read", "sessions.message"] });
     assert.deepEqual(normalizeCaps([], ["sessions.all"]), { remove: [], grant: ["sessions.read", "sessions.all"] });
     assert.deepEqual(normalizeCaps(["web"], []), { remove: ["workers", "web"], grant: [] });
+    assert.deepEqual(normalizeCaps(["mcp"], []), { remove: ["mcp"], grant: [] }, "removing only MCP Servers leaves Workers alone");
+    assert.deepEqual(normalizeCaps(["web", "mcp"], []), { remove: ["workers", "web", "mcp"], grant: [] }, "any other removal behaves as before");
+    assert.equal(lockedReason("workers", ["mcp"]), null, "Workers can be switched with only MCP Servers off");
+    const words = (remove: ("workers" | "mcp" | "web")[]) => profileSentence({ label: "P", remove, grant: [] });
+    assert.match(words(["workers", "mcp"]), /Workers & teams, MCP Servers off/, "Workers off by hand are said");
+    assert.match(words(["workers"]), /has Workers & teams off/);
+    assert.ok(!words(["workers", "web"]).includes("Workers"), "taken by a removal, they go unsaid, as before");
+    assert.match(lockedReason("workers", ["web", "mcp"]) ?? "", /Workers would get every tool back/);
     assert.deepEqual(normalizeCaps(["nope", "shell"], ["root"]), { remove: ["shell", "workers"], grant: [] });
     assert.equal(lockedReason("workers", ["web", "workers"]), "Workers would get every tool back, so removing anything removes them too.");
     assert.equal(lockedReason("workers", ["workers"]), null);
@@ -140,7 +149,7 @@ describe("the model", () => {
     assert.deepEqual((parseProfile({ id: "only-links", label: "L", remove: ["links"] }) as Profile).remove, []);
     // Still a typo next to it is an error, naming only the typo and the names that exist today.
     const err = profileFileError({ ...CAPTAIN, remove: ["links", "linkz"] }) ?? "";
-    assert.match(err, /unknown name "linkz"\. Known: shell, edit, workers, web, worktrees, timers\.$/);
+    assert.match(err, /unknown name "linkz"\. Known: shell, edit, workers, web, worktrees, timers, mcp\.$/);
   });
 
   test("parseProfile refuses bad ids and names, and clamps limits to whole numbers from 1", () => {

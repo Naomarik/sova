@@ -7,7 +7,7 @@ each other (§design/ground-rules and §design/deviations record the deviation).
 the session stays behind, closed by the scrim, Esc, or its Close button (Cancel while anything
 is unsaved, which discards it, §app.settings-dialog/save-bar).
 
-The rail is the structure: each settings screen is one tab — General, Models, Accounts, Subagents,
+The rail is the structure: each settings screen is one tab — General, Models, Accounts, MCP Servers, Subagents,
 Alignment, Profiles, Overseer, Notifications, Decisions, Summaries, Memory, Organizations, Merge Queue, Themes, Mesh, Public links, Outreach, Voice, Experimental.
 Merge Queue shows one project's queue settings at a time (§app.merge-queue/settings): a project's
 **Queue Settings** opens it on that project, and its picker switches project.
@@ -671,7 +671,7 @@ Folders box or the tab writes nothing.
 Every Settings tab that writes a file on the server is Save-gated: **Models**, **Subagents**
 (the library and this device's default), **Overseer**, **Notifications** (the **Phone Notifications** form), **Decisions**, **Summaries**, **Memory**, **Organizations**,
 **Mesh**, **Alignment** and **Experimental**, and on General the **Updates** form (§app/updates). A change on them is staged, never written as it is made. No form has a Save or
-Discard button of its own: saving is the dialog's. Merge Queue is the one tab that saves on its own (below).
+Discard button of its own: saving is the dialog's. Merge Queue (below) and MCP Servers (§app.mcp/settings-tab) are the tabs that save on their own.
 
 - **The footer.** Left to right: a status line, then **Save Changes**
   (primary; **Saving…** while it writes) and **Cancel** (ghost), while any gated form on any tab holds

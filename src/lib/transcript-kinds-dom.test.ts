@@ -65,6 +65,8 @@ const CASES: Record<string, { items: TranscriptItem[]; props?: Record<string, un
   "info: login note after a user row": { items: [user, row("l2", { text: "Signed in as someone", loginNote: true } as never)] },
   "info: a sent mark draws nothing": { items: [row("m1", { text: "sent", overseerMark: { kind: "sent", targetId: "x" } } as never)] },
   "info: a handoff run stays its own row": { items: [row("h1", { text: "Handing off…", handoffRun: { status: "running" } } as never)] },
+  "info: an MCP failure note with its link": { items: [user, row("n1", { mcpNote: { server: "docs", how: "failed", reason: "no key", link: { to: "settings", id: "x" } } } as never)] },
+  "info: an MCP note in a chat on another computer has no link": { items: [user, row("n2", { mcpNote: { server: "docs", how: "other-computer", host: "desk" } } as never)] },
   "mixed: every migrated kind in one transcript": {
     items: [
       user,

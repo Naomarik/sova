@@ -484,8 +484,8 @@ and only the review step opens it. A project with no kit has no review step.
 
 **How it runs.** For each run, a fresh, read-only chat reviews exactly the commit being checked,
 in the merge copy, alongside the checks.
-- It runs on the shipped **Merge reviewer** profile: no edit tools, no web, no workers, no timers
-  and no worktrees.
+- It runs on the shipped **Merge reviewer** profile: no edit tools, no web, no workers, no timers,
+  no worktrees and no MCP servers (§app.mcp/who-gets).
 - It runs in mode normal with no minor modes at all: no Delegate, Align, Spec or Vis, and no
   memory. Its mode is pinned at creation, so the default modes saved on this computer never reach
   it, now or after they change.

@@ -12,7 +12,8 @@ once the first message is sent, and kept by the session itself. The UI says
 - **Capabilities, not tool names.** A profile names groups (`shared/profiles.ts`, one map for server
   and client). Removable: **Shell** (`bash`), **Edit files** (`edit`, `write`), **Workers & teams**
   (`agent_*`, `team_*`), **Web** (`web_search`, `fetch_content`, `get_search_content`,
-  `source_check`), **Worktrees** (`worktree`), **Timers** (`wake_nudge`). The link tools are no
+  `source_check`), **Worktrees** (`worktree`), **Timers** (`wake_nudge`), **MCP Servers** (every
+  tool of the chat's MCP servers, §app.mcp/who-gets). The link tools are no
   capability: a session has them only as a link member, born or joined (§mesh.links/tools), so
   no profile or board lists, keeps or removes them. A profile file that still names the old
   `links` removal reads as if it didn't, and the rest of it is kept.
@@ -217,10 +218,14 @@ Overseer, project overseers, baton, organization and TUI-live sessions show no p
 - **Removals** are the SDK's `excludeTools`, given when the runtime is built. They filter the tool
   registry itself, so no extension's `setActiveTools` (mode strict's restore, align, vis_check,
   vision-delegate) and no re-registration (the sandbox's bash) brings a removed tool back.
-- **Workers never exceed their session.** A profile that removes anything also removes Workers &
-  teams, since a worker would start with every default tool. The board shows that toggle off and
-  disabled while another removal is on: "Workers would get every tool back, so removing anything
-  removes them too."
+  **MCP Servers** has no fixed tool names, so it applies where a chat's list is made: a chat on
+  that profile lists no server (§app.mcp/tool-list).
+- **Workers never exceed their session.** A profile that removes a tool also removes Workers &
+  teams, since a worker would start with every default tool. MCP Servers is no such removal: a
+  worker's servers are capped to its chat's, so a chat with none gives a worker none, and removing
+  MCP Servers alone leaves Workers & teams as they were, neither taking them nor bringing them back.
+  The board shows that toggle off and disabled while a removal that takes it is on: "Workers would
+  get every tool back, so removing anything removes them too."
 - **Grants** are one in-process extension, `sova-session-powers`, added only when the profile grants
   something. Its tool names and its prompt section are fixed for the runtime's life, and a Default
   session gets neither, so it is byte-identical to a session before profiles.

@@ -26,7 +26,7 @@ method" and "This project's" (§app.merge-queue/settings).
 **One thread, with memory, on its own.** Each project keeps one merge thread, whose only mode is
 memory (UniiChat). It reads its playbook again whenever it changed, works without waiting for the
 user, and is never replaced for its age, only when it can't go on or the user presses Start Fresh
-(§chat.merge-queue/thread-life).
+(§chat.merge-queue/thread-life). It has no MCP servers (§app.mcp/who-gets).
 
 **Its model.** A new merge thread opens on the merge-thread model the project has on this computer
 (§app.merge-queue/models), else on the new-chat default. A thread already open keeps its model

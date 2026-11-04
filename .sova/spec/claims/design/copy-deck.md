@@ -640,6 +640,36 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate) |
 | Save failed (banner-error at the end of the tab; the unsaved switches stay) | **Couldn't save the model policy.** {reason}. Your saved policy is unchanged. |
 
+## §design.copy-deck/mcp-servers — MCP servers (§app/mcp)
+
+| Where | Copy |
+|---|---|
+| Settings tab · intro | MCP Servers · "Servers on this computer. Each project's own servers are on its project page." · Add Server |
+| No servers yet | "No servers yet. Add one to give your chats more tools." |
+| Load failed (banner-error) | **Couldn't read the MCP servers.** Nothing was changed. {reason} |
+| Row | {name} · Address · {n} tools (1: 1 tool) · Command · {n} tools · then one state: Connected · Needs Sign-in · Failed · Off · Waiting for You · No Check yet (chip, with Check Again on the row) · switch: New Chats |
+| Opened row | heading Tools · each tool's switch, `aria-label` "Use {tool}" · heading Last Error Lines (none: "No errors from the last Check.") · buttons: Check Again · Sign In · Edit · Remove |
+| Computer row replaced in a project | "Replaced in {project} by that project's {name}." (several: one line each) |
+| Remove (inline confirm) | "Remove {name}? Its approval, secrets and sign-in go with it." · Remove · Keep |
+| Add Server | title Add Server · tabs Address · Command · Paste from Another Tool · fields Name · Address · Command · Secret · Secret's Name (Command only) · Secret hint: "Saved on this computer only. Never shown again and never copied to your other computers." · Cancel · Add and Check · after Add and Check: Close |
+| Add Server refused | "Give the server a name." · "Give the server's address, starting with https://." · "Give the command that starts the server." · "That isn't an entry Sova can read: {reason}" · "This paste has {names}, and none is named {name}. Use one of those names." · "There's already a server named {name}." · "A secret's name is letters, digits and underscores." |
+| Edit | title Edit {name} · Cancel · Save and Check |
+| Reserved name (field error, and a file entry's row) | "The name sova is Sova's own. Pick another." · in a file: "This entry uses the name sova, which is Sova's own, so it won't run." |
+| Check failed | "{name} didn't start." · its error lines · Check Again |
+| Waiting for You, opened | "This server runs nothing until you approve it." · Runs {command and arguments} · Address {address} · Values {names} · Secrets {names} · unpinned: "Runs the newest version each start." · Approve · changed: "This server changed, so it needs your approval again." |
+| Approve refused (it changed since you looked) | "This server changed since you looked. Check what it runs, then approve it again." |
+| Refused to any caller but the page | add, edit and approve: "Only you can approve a server, on the page." · sign-in: "Only you can sign in to a server, on the page." · switches, secrets, remove and check: "Only you can change a server, on the page." |
+| Sign In | title Sign in to {name} · "The sign-in page opens in a new tab. If it ends on a page that won't load, paste that page's address here." · field Address from the browser · Cancel · Open Sign-in Page · paste button: Finish Sign-In |
+| Secret field | button Save Secret · saved: "Saved on this computer." · Replace · Remove · needed: "{NAME} isn't saved yet." · bad value (row): "{NAME} isn't a saved secret, so this server won't start." · unusable entry (row): "{field} can't be used, so this server won't start." |
+| Project page section | heading MCP Servers · "From this project's .mcp.json. Each checkout approves its own copy." · a group per checkout, by its folder's name · no file: "No servers yet. Add a .mcp.json to this project to declare one." · broken file: "This project's .mcp.json can't be read: {reason}." |
+| Setup card group | heading MCP Servers · row: {name} · ≈{n} tokens · switch, `aria-label` "Use {name}" · no switch: Waiting for You. Approve it in Settings → MCP Servers. (project: … on the project page.) · "No Check yet." · "Address servers stay off while the sandbox is On." |
+| Setup card, one line (remote and profile only when this computer has a server or the folder declares one) | remote: "MCP servers don't run in remote chats: they would run here while this chat's files are on {target}." · profile: "{profile} removes MCP servers." · no project: "This folder isn't a project, so its .mcp.json won't run." |
+| Tool row | {server} · {tool} · the transcript's tool row carries {server, tool} from the server · the chat's status line while it runs: running {server} · {tool} |
+| Chat note | "{server} failed: {reason}." (reasons include "it needs a sign-in" and "it was removed from Sova") · link Open Its Settings · inside the sandbox: "{server} failed inside this chat's sandbox. It may need something the sandbox blocks." · under write-only confinement, in the chat that started the worker: "{server} failed under {worker}'s write-only confinement. It may need to write outside its worktree." · address under On: "{server} is off while the sandbox is On." · changed: "{server} changed and is waiting for your approval." · another computer, drawn by the page: "{server} failed on {host}. Check it in Sova on {host}." |
+| Row error line from a chat | "In {chat}, inside its sandbox: {line}" (write-only: "In {worker}, under write-only confinement: {line}" · no sandbox: "In {chat}: {line}") |
+| Worker refused | "{chat}'s servers are {names}, so a worker can't have {name}." · on `useWorktreeConfig`: "{worker} uses its worktree's own config, so it can't have MCP servers." |
+| Profile capability | MCP Servers |
+
 ## §design.copy-deck/settings-mesh — Settings · Mesh (§mesh.ui/settings)
 
 | Where | Copy |

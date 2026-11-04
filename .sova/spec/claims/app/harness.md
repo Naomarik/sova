@@ -253,6 +253,9 @@ model a message-less session opens on (its recorded model, else the saved defaul
 likewise its effort, unless Sova asks one open to skip what the file records, as a new session would; and
 warms the Claude Code provider. Creating the one shared model runtime also applies the cached model
 levels and starts pi's built-in catalog refresh in the background (§app.model-levels/sova-boot).
+MCP servers are Sova's decision too (§app/mcp): the adapter (`server/harness/pi/mcp.ts`) gives a chat
+exactly the servers, tools and environment Sova hands it, and pi's own server files and project
+trust decide nothing.
 The chat (`server/chat-manager.ts`) keeps the policy: which special
 loadout, profile, loadout and defaults apply, decided from a read of the session's neutral history
 and state that the adapter hands it; a special session kind recognises its file from that read too,

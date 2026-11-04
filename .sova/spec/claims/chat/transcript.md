@@ -1401,6 +1401,7 @@ main-pane rows.
       <div class="setup-group">…Context (/setup-card-context)…</div>
       <div class="setup-group">…Skills (/setup-card-skills)…</div>
       <div class="setup-group">…Tools…</div>
+      <div class="setup-group">…MCP Servers (/setup-card-toggles)…</div>
     </details>
     <div class="setup-group">
       <h2 class="text-eyebrow setup-label">Repository</h2>
@@ -1417,8 +1418,8 @@ main-pane rows.
   picked profile changes (§chat.profiles/picker) sit between the title and this card. The
   `sova-profile` entry draws no row, so picking a profile keeps the empty state.
 - **System context is folded.** Everything on the card but Repository, that is the loadout (the
-  `System context` line, Context and Skills, or the one line in their place) and the Tools group,
-  sits in one `<details class="setup-context">`, closed by default. Its `<summary>` is the
+  `System context` line, Context and Skills, or the one line in their place), the Tools group and
+  the MCP Servers group, sits in one `<details class="setup-context">`, closed by default. Its `<summary>` is the
   `System context` line with a chevron, and reads just "System context" when there is no sum to
   show. Repository stays outside it, always shown. Opening or closing it is kept for that session
   while the page is open, so the redraw after a profile pick or a switch flip (the runtime reopens)
@@ -1433,10 +1434,11 @@ main-pane rows.
   card has gone, or for a session it no longer shows, is dropped. Nothing on it polls or links: no
   Refresh button, no timer, no anchors (a file's name is a button that reads that one file when
   pressed, /setup-card-open-file), and a commit's age is worked out when the card draws and
-  doesn't tick. The loadout is redrawn in two cases only, both from
-  /setup-card-toggles: a flip of a row's switch draws the server's answer in place, and when the
+  doesn't tick. The loadout is redrawn in three cases only, the first two from
+  /setup-card-toggles: a flip of a row's switch draws the server's answer in place; when the
   chat says the switch window has opened after the first read, the loadout is read again,
-  skipping the cache. Neither redraw draws over a newer answer. Either answer can be the server's cached read of that folder, up
+  skipping the cache; and a profile pick that takes MCP Servers away or gives them back, or a
+  sandbox change, reads the MCP Servers group again. None of them draws over a newer answer. Either answer can be the server's cached read of that folder, up
   to 30s old for the loadout and 10s for the repository, and a repository read already running
   for the same session is joined rather than repeated.
 - **Order.** The loadout comes first and Repository last, every time. For a local folder pi's
@@ -1749,15 +1751,27 @@ skills it is offered, for this one session only.
   and not open in a terminal. Otherwise the card is as before, with no switches, though a row
   this session keeps off still reads off (except while a terminal has it open, since the TUI
   loads every row).
-- **On by default, every time.** Each new session starts with every row on. Nothing is
+- **On by default, every time.** Each new session starts with every file and skill row on. Nothing is
   remembered between sessions, per folder or globally: the choice lives in the session alone.
+- **MCP Servers.** The card's MCP Servers group, after Tools, has one row for each server the chat
+  could list (§app.mcp/tool-list): its name, its token cost measured at its last Check, and a switch
+  that follows this section's window and flip. A server starts as its New Chats switch says, not
+  always on, and a flip holds for this chat alone. A server that can't be switched on here keeps its
+  row with no switch and says why: Waiting for You, no Check yet, or an address server under
+  sandbox On (§app.mcp/sandbox). A refused entry (§app.mcp/rows) has no row at all. The group is one line, with no rows, in a remote chat and on a
+  profile that removes MCP Servers, and only when this computer has a server or the folder declares
+  one. A folder that is no project says its `.mcp.json` won't run (§app.mcp/project-servers). With no
+  server on the computer and none declared there is no group. It adds nothing
+  to the `System context` figures.
 - **A flip applies at once.** The card sends the session's whole off set
-  (`POST /api/sessions/loadout {path, offContext, offSkills}`), and while it applies every switch
+  (`POST /api/sessions/loadout {path, offContext, offSkills, offMcp, onMcp}`), and while it applies every switch
   is disabled. The server writes a hidden `custom` entry `customType: "sova-loadout"`, data
-  `{v: 1, offContext: [absolute paths], offSkills: [skill names]}`, newest on the branch wins, then
+  `{v: 1, offContext: [absolute paths], offSkills: [skill names], offMcp: [server names], onMcp:
+  [server names]}`, the last two only where a flip differs from the server's New Chats switch, newest
+  on the branch wins, then
   rebuilds the session's runtime the way a profile pick does: open tabs get `reloaded` and
   reconnect, keeping the draft. The answer is the card's new loadout, which it draws in place. A
-  refusal (409: "Context files and skills are fixed once a message is sent.", mid-turn, open in a
+  refusal (409: "Context files, skills and MCP servers are fixed once a message is sent.", mid-turn, open in a
   terminal, a foreign writer, a special session) changes nothing and is shown as a toast. A set
   equal to the one the session already has writes nothing and rebuilds nothing.
 - **The entry.** It records exclusions only, never context: no file text, no skill text. It draws

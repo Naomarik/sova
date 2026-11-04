@@ -474,18 +474,21 @@
       "server/chat-runtime/trial-s4-hidden.integration.test.ts",
       "server/chat-runtime/trial-s4-off.integration.test.ts",
       "server/chat-runtime/trial-s5-handoff.integration.test.ts",
-      "server/project-services/worker-verbs.test.ts"
+      "server/project-services/worker-verbs.test.ts",
+      "pi-config/extensions/subagents/runner.ts",
+      "pi-config/extensions/subagents/registry.ts"
     ],
     "requires": [
       "§app/chat-processes",
       "§app.chat-processes/idle-stop",
       "§app.load-priority/workers",
-      "§app/worker-restore"
+      "§app/worker-restore",
+      "§app.mcp/who-gets"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-26T22:15Z",
-      "source": "pi-session:8b23c48f-d360-42fe-bcf5-c5429461f6ed#436f1b6f"
+      "by": "user",
+      "at": "2026-11-04T02:26Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
     },
     "evidence": "verified"
   },

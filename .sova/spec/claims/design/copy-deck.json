@@ -120,6 +120,26 @@
     "authority": "migrated",
     "evidence": "unreviewed"
   },
+  "§design.copy-deck/mcp-servers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/McpServerRow.tsx",
+      "src/components/ProjectMcpCard.tsx",
+      "src/components/SessionSetup.tsx",
+      "src/components/McpAddServer.tsx",
+      "src/lib/mcp.ts"
+    ],
+    "requires": [
+      "§app/mcp"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
+  },
   "§design.copy-deck/merge-queue": {
     "kind": "note",
     "authority": "accepted",

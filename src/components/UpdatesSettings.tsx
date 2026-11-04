@@ -4,7 +4,7 @@ import { applyUpdate, checkUpdates } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { announce } from "../lib/ui-state";
 import { goBackLabel, KIND_LABEL, refreshUpdates, resultLine, runningLine, setUpdatesState, sourceName, upgradeLabel, updatesState, withdrawnTitle } from "../lib/updates";
-import { setUpdatesDraft, setUpdatesSaved, updatesDraft, updatesSaveError, updatesSaving, type UpdatesDraft } from "../lib/updates-draft";
+import { setUpdatesDraft, setUpdatesSaved, updatesDraft, updatesProblem, updatesSaveError, updatesSaving, type UpdatesDraft } from "../lib/updates-draft";
 import { Banner } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
@@ -278,11 +278,11 @@ export function UpdatesSettingsSection() {
                         spellcheck={false}
                         autocomplete="off"
                         disabled={updatesSaving()}
-                        aria-invalid={!d().branch.trim() ? "true" : undefined}
+                        aria-invalid={updatesProblem(d()) ? "true" : undefined}
                         onInput={(e) => edit({ branch: e.currentTarget.value })}
                       />
-                      <Show when={!d().branch.trim()} fallback={<span class="field-hint">Save Changes looks it up in Sova's repository.</span>}>
-                        <span class="field-error">Name the branch.</span>
+                      <Show when={updatesProblem(d())} fallback={<span class="field-hint">Save Changes looks it up in Sova's repository.</span>}>
+                        {(p) => <span class="field-error">{p().replace(/^Updates: /, "")}</span>}
                       </Show>
                     </div>
                   </Show>

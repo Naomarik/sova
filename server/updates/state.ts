@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { UpdateCheck, UpdateJob, UpdateSource, UpdatesSettings } from "../../shared/protocol";
+import { validBranchName } from "../../shared/branch-name";
 
 /**
  * `<stateRoot>/updates.json`: the Updates form, when the last check ran and what it
@@ -22,12 +23,8 @@ export const CHECK_EVERY_MS = 24 * 60 * 60 * 1000;
 /** After a check that couldn't reach the repository. */
 export const RETRY_AFTER_MS = 60 * 60 * 1000;
 
-/** A branch name git would take as a branch of the repository (a cheap `git check-ref-format --branch`). */
-export function validBranchName(name: string): boolean {
-  if (!name || name.length > 200 || name.startsWith("-") || name.startsWith("/") || name.endsWith("/") || name.endsWith(".") || name.endsWith(".lock")) return false;
-  if (/[\x00-\x20\x7f~^:?*[\\]/.test(name) || name.includes("..") || name.includes("//") || name.includes("@{") || name === "@") return false;
-  return name.split("/").every((part) => part.length > 0 && !part.startsWith("."));
-}
+/** A branch name git would take (shared with Settings → Updates, which checks it before Save). */
+export { validBranchName };
 
 /** A source as stored, or null when it isn't one. */
 export function parseSource(v: unknown): UpdateSource | null {

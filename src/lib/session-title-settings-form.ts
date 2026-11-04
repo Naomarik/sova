@@ -52,8 +52,8 @@ export function sameTitleSettings(d: SessionTitleDraft, s: SessionTitleSettings)
 
 /** Why the draft can't be saved, one sentence naming the form (the dialog's footer), or null. */
 export function titleDraftProblem(d: SessionTitleDraft): string | null {
-  if (minutesOf(d.intervalMinutes, INTERVAL) === null) return "Session titles needs a whole number of minutes between checks.";
-  if (minutesOf(d.quietMinutes, QUIET) === null) return "Session titles needs a whole number of quiet minutes.";
+  if (minutesOf(d.intervalMinutes, INTERVAL) === null) return `Session titles needs a whole number of minutes between checks, ${INTERVAL.min} to ${INTERVAL.max}.`;
+  if (minutesOf(d.quietMinutes, QUIET) === null) return `Session titles needs a whole number of quiet minutes, ${QUIET.min} to ${QUIET.max}.`;
   if (!d.primary.model) return "Session titles needs a primary model.";
   if (!d.primary.effort) return "Session titles needs an effort for its primary model.";
   if (d.fallback && !d.fallback.model) return "Session titles needs a fallback model.";

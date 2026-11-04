@@ -51,3 +51,10 @@ test("the offer drops Delegate's subagent marks: a title model obeys only the gl
   assert.equal(out.backends[1]!.models, null);
   assert.equal(withoutSubagentMarks(undefined), undefined);
 });
+
+test("Save's reason for a minute field gives its range, the same words as under the field (Settings QA D7)", () => {
+  const d = toTitleDraft(saved);
+  assert.equal(titleDraftProblem({ ...d, intervalMinutes: "9999" }), "Session titles needs a whole number of minutes between checks, 1 to 1440.");
+  assert.equal(titleDraftProblem({ ...d, intervalMinutes: "" }), "Session titles needs a whole number of minutes between checks, 1 to 1440.");
+  assert.equal(titleDraftProblem({ ...d, quietMinutes: "1441" }), "Session titles needs a whole number of quiet minutes, 0 to 1440.");
+});

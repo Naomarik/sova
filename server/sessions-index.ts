@@ -134,7 +134,23 @@ interface CacheEntry {
   zeroInput: boolean;
 }
 
-const cache = new Map<string, CacheEntry>();
+const entries = new Map<string, CacheEntry>();
+/** The summary cache, read-only here so that `storeEntry` and `dropEntry` stay its only writers:
+    they are what keeps `idIndex` true. */
+const cache: ReadonlyMap<string, CacheEntry> = entries;
+/** `indexedSessionPaths`' answer until an id may have changed: replaced, never mutated, since a caller
+    may keep one. Never updated in place either: paths can share an id, and the one that answers
+    is the last in `cache`'s order, which only a fresh pass knows. */
+let idIndex: ReadonlyMap<string, string> | null = null;
+
+function storeEntry(path: string, entry: CacheEntry): void {
+  if (entries.get(path)?.summary.id !== entry.summary.id) idIndex = null;
+  entries.set(path, entry);
+}
+
+function dropEntry(path: string): void {
+  if (entries.delete(path)) idIndex = null;
+}
 
 /** Worker-session detection (a subagent's / team member's own file). Kept apart from `cache` on
  *  purpose: the flag depends on OTHER files (owners append refs) and on the live registry, so it
@@ -829,7 +845,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       align,
       zeroInput: st.size <= MAX_HEAD && !head.input,
     };
-    cache.set(path, entry);
+    storeEntry(path, entry);
     if (summary.outlineGist && summary.outlineGist !== hit?.summary.outlineGist) gistChanged(path);
     return withWindow(entry, resolveWindow);
   } catch {
@@ -1222,7 +1238,7 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
     workerSessionPaths(files, track?.dirty),
   ]);
   const present = new Set(files);
-  for (const k of cache.keys()) if (!present.has(k)) cache.delete(k);
+  for (const k of cache.keys()) if (!present.has(k)) dropEntry(k);
   const out: SessionSummary[] = [];
   const parents = workerSessions.parents();
   for (const s of results) {
@@ -1426,7 +1442,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
         await closeChat(s.path, "Session archived; its runtime was closed.");
         await unlink(s.path);
         await cleanDeletedTours(s.id);
-        cache.delete(s.path);
+        dropEntry(s.path);
         setArchived(s.id, false);
         removeWebSession(s.id);
         dropDrafts([s.id]);
@@ -1463,10 +1479,11 @@ export async function markArchived(id: string, path: string): Promise<void> {
  * the one caller falls back to a real walk only for ids it cannot find here, rather than paying
  * for a directory scan on every press of Send.
  */
-export function indexedSessionPaths(): Map<string, string> {
+export function indexedSessionPaths(): ReadonlyMap<string, string> {
+  if (idIndex) return idIndex;
   const out = new Map<string, string>();
   for (const [path, entry] of cache) out.set(entry.summary.id, path);
-  return out;
+  return (idIndex = out);
 }
 
 /** The session id of a session file: the uuidv7 after the last "_" of its name. */
@@ -1596,7 +1613,7 @@ export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: 
       await closeChat(path, "Session deleted by archive cleanup; its runtime was closed.");
       await unlink(path);
       await cleanDeletedTours(id);
-      cache.delete(path);
+      dropEntry(path);
       setArchived(id, false);
       removeWebSession(id);
       dropDrafts([id]);

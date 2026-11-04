@@ -19,16 +19,21 @@ The Overseer is always in the normal mode, with no minor modes, so its composer 
 
 ## What it reads
 
-- **What needs you.** The same news as the sidebar's [Needs you](/docs/needs-you/) list, plus the items worth a decision (a branch ready to merge, a reply that seems to ask you something) and what's just for your information (what's running, a session close to its context limit). For a branch ready to land it points you to **Land**: it never lands a branch itself.
+- **What needs you.** The same news as the sidebar's [Needs you](/docs/needs-you/) list, plus the items worth a decision (a branch ready to land, a reply that seems to ask you something) and what's just for your information (what's running, a session close to its context limit). For a branch ready to land it points you to **Land**: it never lands a branch itself.
 - **What's outstanding.** Ask "anything outstanding?" or "what needs me?" and it answers itself, from one roundup of the last 14 days, without starting a session to look: work lost or at risk because its worktree was removed before it merged (with the command that recovers lost commits), questions waiting for you, branches ready to merge, work built but not merged, uncommitted work, and turns that ended in an error. It names every session, and lists what it couldn't check instead of counting it as fine.
 - **Sessions.** The list, narrowed by date or by what a session has (open questions, a branch ready or not merged, an error, a reply that asks you something), with how each one ended; one session's details and what's true of it now; its alignments; and a bounded slice of its transcript, such as your last message through the final reply. It can also search your sessions' messages for a few words. Text it reads from another session is treated as untrusted.
 - **Your setup.** Groups, remote targets, models, subagent profiles, and recent folders.
+- **Code history and the server log.** Read-only git in any project registered in Sova (status, log, diff, show, branch listing and merge-base), and Sova's own server log. It needs no session to look.
+- **Links.** Every live share, hand-off, owner and preview link, with what it serves and when it expires.
 
 ## What it can do
 
 - **Start sessions** in any folder, on a remote target, or on another Sova host, with a first prompt, a model, modes, a profile the Overseer may start, and a sandbox setting.
 - **Send a message** to a session, as if you typed it there. If a turn is running, the message is queued behind it; it steers the running turn only when you've asked it to interrupt.
-- **Run your organizations**: their projects, rosters, gathering sessions and project overseers. It can also link sessions across Sova hosts.
+- **Run your organizations**: their projects, rosters, gathering sessions and project overseers. It can also link sessions across Sova hosts. Adding, archiving and unarchiving a project happen on your typed word in a message you sent, with no card.
+- **Manage running copies** of your projects: it stops a copy, or tears down or resets one whose conversation is finished, on your word. A copy whose conversation is still working, or a leftover process holding one of a project's ports, needs your click on a card.
+- **Run extension commands** that an installed extension offers to the Overseer, while that extension is running. Turn the extension off to take its commands away.
+- **Start WhatsApp sending again** when the sender stopped, in a turn you started.
 - **Archive and unarchive** sessions (never a permanent delete), rename them, and move them between groups.
 - **Change a session's** model, mode, or subagent profile.
 - **Turn a project's own modes on or off** in a session it starts or changes, from the modes that session's checkout ships ([Project modes](/docs/modes/project-modes/)), though not in a session it starts on another Sova host. When it turns on a mode that runs tools or commands, that counts as the approval of them: nothing waits for you, and the approval is recorded as the Overseer's. It never approves a mode's hooks: they wait until you approve them yourself, from the mode menu's **Approve Hooks**.
@@ -41,7 +46,9 @@ It can't send to a session that's open in a terminal, archived, or a worker, and
 
 ## It asks with cards
 
-When it isn't sure, or the act is risky, the Overseer writes what it found and asks with a **card**. A card lists each session, idea, todo, person or project it would touch, each with a short note on what it is and why the action fits it. Options are lettered and items are numbered, so you can click, or answer in chat with something like "c_4 b".
+When it isn't sure, or the act is risky, the Overseer writes what it found and asks with a **card**. A card lists each session, idea, todo, person or project it would touch, each with a short note on what it is and why the action fits it. Options are lettered and items are numbered, so you can click, or answer in chat with something like "c_4 b". A card can group its rows under headings, such as "Ready to land" or "Failed check", and a row can show the exact message its Go will send. The numbering runs once through the whole card, top to bottom.
+
+If an Apply stops partway, because a limit was reached or an act was refused, the card stays open: the rows it acted on show as done, the rest keep the choices you applied, and Apply again sends only the rest.
 
 If a click doesn't reach the Overseer (its chat was restarting or closed before taking it, say), the card's buttons come back with "Your click didn't reach the Overseer. Click again." A click never turns into typed text in the composer, since typed text approves nothing a click would.
 
@@ -71,8 +78,9 @@ Before each act the Overseer checks its limits, and when one is reached it stops
 | Links made | 3 |
 | Organization changes | 20 |
 | Gathering sessions started | 3 |
+| Extension commands run | 5 |
 
-At most 10 sessions it started or messaged may be working at once. While any are, its composer shows "3 of 10 running"; press it to open the limits in Settings → Overseer.
+At most 10 sessions it started or messaged may be working at once, sessions an extension command it ran reports included. While any are, its composer shows "3 of 10 running"; press it to open the limits in Settings → Overseer.
 
 Every act is written to `~/.pi/agent/sova/overseer-actions.jsonl`, with secrets redacted.
 

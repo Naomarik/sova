@@ -26,7 +26,7 @@ const { sessionItems } = await import("./attention");
 const { canonicalPath } = await import("./paths");
 const { settled } = await import("./workspace-git");
 const { seedBuild, seedPoState } = await import("./org-test-fixtures");
-const { readBuilds } = await import("./build-loadout");
+const { readBuilds, readEngineBuilds } = await import("./build-loadout");
 
 after(async () => {
   await settled(join(root, "ws"));
@@ -139,6 +139,17 @@ describe("SessionSummary.org", async () => {
     assert.deepEqual(rows.map((r) => r.kind).sort(), ["coding", "operator-coding"]);
     // codingOf (project-overseer.ts) filters `kind === "coding"`: the one row the overseer started.
     assert.deepEqual(rows.filter((r) => r.kind === "coding").map((r) => r.sessionId), [coding.id]);
+  });
+
+  test("an engine's build rows are the project's rows without their session file", () => {
+    const byId = <R extends { sessionId: string }>(rows: R[]) => [...rows].sort((a, b) => a.sessionId.localeCompare(b.sessionId));
+    const located = byId(readBuilds(project.id));
+    assert.ok(located.length && located.every((r) => r.path), "the control: both files are found");
+    const rows = byId(readEngineBuilds(org.id));
+    assert.deepEqual(rows, located.map(({ path: _, ...row }) => ({ ...row, projectId: project.id })));
+    assert.ok(rows.every((r) => !("path" in r)));
+    // @ts-expect-error a reader of these rows can't reach for a path: typecheck fails if the type gets it back
+    void rows[0]?.path;
   });
 
   test("attention items carry the org (the sidebar's Organizations Needs you), ordinary ones don't", async () => {

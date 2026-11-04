@@ -1,5 +1,5 @@
 import type { SessionProject } from "../shared/protocol";
-import { buildStartedBy, readEngineBuilds, type BuildRow } from "./build-loadout";
+import { buildStartedBy, readEngineBuilds, type StatechartBuildRow } from "./build-loadout";
 import { buildMerged } from "./build-merged";
 import { openEngineIds } from "./org-engine";
 import { readPoMarker, readPoState } from "./project-overseer-store";
@@ -24,8 +24,8 @@ export interface ProjectSessionLookup {
 }
 
 /** Session id → its build, in every open engine. */
-function codingSessions(): Map<string, { projectId: string; row: BuildRow }> {
-  const out = new Map<string, { projectId: string; row: BuildRow }>();
+function codingSessions(): Map<string, { projectId: string; row: StatechartBuildRow }> {
+  const out = new Map<string, { projectId: string; row: StatechartBuildRow }>();
   for (const engine of openEngineIds()) for (const r of readEngineBuilds(engine)) if (CODING_KINDS.has(r.kind) && !out.has(r.sessionId)) out.set(r.sessionId, { projectId: r.projectId, row: r });
   return out;
 }
@@ -37,7 +37,7 @@ export const projectCodingIds = (): Set<string> => new Set(codingSessions().keys
 export function projectSessionLookup(): ProjectSessionLookup {
   const projects = new Map(listProjects().map((p) => [p.id, p]));
   if (!projects.size) return { of: () => undefined };
-  let coding: Map<string, { projectId: string; row: BuildRow }> | null = null;
+  let coding: Map<string, { projectId: string; row: StatechartBuildRow }> | null = null;
   const currents = new Map<string, string | null>();
   const currentOf = (projectId: string): string | null => {
     if (!currents.has(projectId)) currents.set(projectId, readPoState({ projectId })?.current ?? null);

@@ -6,7 +6,8 @@
 //   bun restart-sova.mjs plan    [--repo <main checkout>] [--target master] [--health <url> | --live <sha>]
 //     {action: "restart" | "build" | "nothing" | "unknown", install, live, tip, restart[], build[], why}
 //     live: the commit the running server started on (GET /api/health head); tip: the target's head.
-//     The landed files are `git diff live..tip`, read with that tip's own rule (server/restart-paths.ts).
+//     The landed files are `git diff live..tip`, read with that tip's own rule (server/restart-paths.ts); a
+//     package.json whose only change is its top-level version (a release's bump) doesn't count.
 //     --live names the running commit instead of asking the server.
 //   bun restart-sova.mjs build   [--repo <main checkout>] [--install]
 //     {ok, step: "install" | "build", tail}: pnpm install --frozen-lockfile (with --install), then pnpm run build.
@@ -75,7 +76,14 @@ export async function plan(o) {
   const diff = git(repo, "diff", "--name-only", "--no-renames", live.head, tip.out);
   if (!diff.ok) return { ...base, why: `git diff failed: ${diff.err}` };
   const files = diff.out.split("\n").map((l) => l.trim()).filter(Boolean);
-  const p = mod.restartPlan(files);
+  // A release's own commit bumps package.json's version only: that owes no install and no restart.
+  const versionOnly = [];
+  if (files.includes("package.json") && typeof mod.onlyVersionBumped === "function") {
+    const before = git(repo, "show", `${live.head}:package.json`);
+    const after = git(repo, "show", `${tip.out}:package.json`);
+    if (before.ok && after.ok && mod.onlyVersionBumped(before.out, after.out)) versionOnly.push("package.json");
+  }
+  const p = mod.restartPlan(files, { versionOnly });
   const ahead = git(repo, "merge-base", "--is-ancestor", live.head, tip.out).ok;
   return {
     ...base,

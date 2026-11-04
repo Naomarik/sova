@@ -65,3 +65,18 @@ test("plan: unknown when the main checkout isn't on the target's tip; an unknown
   const foreign = (await plan({ repo: r.dir, live: "f".repeat(40), target: "master" })) as Plan;
   assert.deepEqual([foreign.action, foreign.install], ["restart", true]);
 });
+
+test("plan: a release's version bump alone (package.json's version, CHANGELOG.md) owes nothing; a new dependency owes a restart with an install", async () => {
+  const r = repo();
+  const pkg = (o: object) => `${JSON.stringify({ name: "x", version: "1.0.0", dependencies: { a: "1.0.0" }, ...o }, null, 2)}\n`;
+  const base = r.put({ "package.json": pkg({}) }, "package");
+  r.put({ "package.json": pkg({ version: "1.1.0" }), "CHANGELOG.md": "## v1.1.0\n" }, "Release v1.1.0");
+  const bump = (await plan({ repo: r.dir, live: base, target: "master" })) as Plan;
+  assert.deepEqual([bump.action, bump.install, bump.restart], ["nothing", false, []]);
+  const released = r.git("rev-parse", "HEAD");
+  r.put({ "package.json": pkg({ version: "1.1.0", dependencies: { a: "1.0.0", b: "2.0.0" } }) }, "adds b");
+  const dep = (await plan({ repo: r.dir, live: released, target: "master" })) as Plan;
+  assert.deepEqual([dep.action, dep.install, dep.restart], ["restart", true, ["package.json"]]);
+  // From before the release, the dependency still counts: the bump alone is what is left out.
+  assert.equal(((await plan({ repo: r.dir, live: base, target: "master" })) as Plan).install, true);
+});

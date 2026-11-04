@@ -85,10 +85,28 @@ export function needsBuild(file: string): boolean {
   return /^(?:src|public)\//.test(file) || file === "index.html" || /^vite\.config\.[cm]?[jt]s$/.test(file) || /^tsconfig[^/]*\.json$/.test(file);
 }
 
+/** Whether two package.json texts differ only in the top-level `version` (a release's bump): such a change needs no
+ *  install, no build and no restart. Unreadable JSON on either side counts as a real change. */
+export function onlyVersionBumped(before: string, after: string): boolean {
+  try {
+    const a = JSON.parse(before) as Record<string, unknown>;
+    const b = JSON.parse(after) as Record<string, unknown>;
+    if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+    delete a.version;
+    delete b.version;
+    return JSON.stringify(a) === JSON.stringify(b);
+  } catch {
+    return false;
+  }
+}
+
 /** What a set of landed files owes the live server: a restart (with an install first when `install`), a build of the
- *  page only, or nothing. */
-export function restartPlan(files: readonly string[]): { action: "restart" | "build" | "nothing"; install: boolean; restart: string[]; build: string[] } {
-  const restart = files.filter(needsRestart);
-  const build = files.filter((f) => !needsRestart(f) && needsBuild(f));
-  return { action: restart.length ? "restart" : build.length ? "build" : "nothing", install: files.some(needsInstall), restart, build };
+ *  page only, or nothing. `versionOnly`: files whose change is only a version bump (package.json, by onlyVersionBumped),
+ *  left out, so a release's own commit owes nothing. needsRestart (the session readiness) stays file-level: it reads
+ *  names only, and a release commit there just asks for a restart it doesn't need. */
+export function restartPlan(files: readonly string[], opts: { versionOnly?: readonly string[] } = {}): { action: "restart" | "build" | "nothing"; install: boolean; restart: string[]; build: string[] } {
+  const counted = files.filter((f) => !opts.versionOnly?.includes(f));
+  const restart = counted.filter(needsRestart);
+  const build = counted.filter((f) => !needsRestart(f) && needsBuild(f));
+  return { action: restart.length ? "restart" : build.length ? "build" : "nothing", install: counted.some(needsInstall), restart, build };
 }

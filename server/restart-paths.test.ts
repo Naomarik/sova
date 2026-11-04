@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
-import { needsBuild, needsInstall, needsRestart, restartPlan, SERVER_SRC_IMPORTS } from "./restart-paths";
+import { needsBuild, needsInstall, needsRestart, onlyVersionBumped, restartPlan, SERVER_SRC_IMPORTS } from "./restart-paths";
 import { runtimeSpecifiers, serverImportedSrc } from "./restart-paths-walk";
 import * as readiness from "./merge-readiness";
 
@@ -52,4 +52,12 @@ test("restartPlan: a restart wins over a page build; the install rides along; do
   assert.deepEqual(restartPlan(["pnpm-lock.yaml"]), { action: "restart", install: true, restart: ["pnpm-lock.yaml"], build: [] });
   assert.equal(restartPlan(["README.md", "server/x.test.ts"]).action, "nothing");
   assert.equal(restartPlan([]).action, "nothing");
+});
+
+test("onlyVersionBumped: the top-level version alone; anything else, or bad JSON, is a real change", () => {
+  assert.equal(onlyVersionBumped('{"name":"x","version":"1.0.0"}', '{"version":"1.1.0","name":"x"}'), true, "where version sits doesn't matter");
+  assert.equal(onlyVersionBumped('{"name":"x","version":"1.0.0"}', '{"name":"x","version":"1.1.0"}'), true);
+  assert.equal(onlyVersionBumped('{"version":"1","dependencies":{"a":"1"}}', '{"version":"2","dependencies":{"a":"2"}}'), false);
+  assert.equal(onlyVersionBumped("{", "{}"), false);
+  assert.deepEqual(restartPlan(["package.json", "CHANGELOG.md"], { versionOnly: ["package.json"] }), { action: "nothing", install: false, restart: [], build: [] });
 });

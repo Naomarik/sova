@@ -5,6 +5,7 @@
 
 import { produce, type SetStoreFunction } from "solid-js/store";
 import type { McpToolName } from "../../shared/mcp";
+import { mcpToolWords } from "./mcp";
 import type { SovaEvent, SovaPart } from "../../shared/harness-wire";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import { isLinkMessage } from "../../shared/link-message";
@@ -187,13 +188,13 @@ export interface RunDetail {
 
 export function runDetail(s: LiveState): RunDetail | null {
   const running = Object.values(s.tools).find((t) => t.status === "running");
-  if (running) return { step: "tool", text: `running ${running.name}` };
+  if (running) return { step: "tool", text: `running ${running.mcp ? mcpToolWords(running.mcp) : running.name}` };
   const last = streamingAssistant(s);
   if (!last) return null;
   const block = [...last.blocks].reverse().find(Boolean);
   if (block?.type === "thinking") return { step: "thinking", text: "thinking" };
   if (block?.type === "text") return { step: "writing", text: "writing" };
-  if (block?.type === "toolCall") return { step: "tool", text: `running ${block.name}` };
+  if (block?.type === "toolCall") return { step: "tool", text: `running ${block.mcp ? mcpToolWords(block.mcp) : block.name}` };
   return null;
 }
 

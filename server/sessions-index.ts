@@ -35,6 +35,7 @@ import { pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
 import { projectOverseerOfPath, readPoState } from "./project-overseer-store";
 import { projectOverseerUnread } from "./project-overseer-unread";
+import { engineBuildsReader, type EngineBuildsReader } from "./build-loadout";
 import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-sessions";
 import { reservedRoots } from "./projects/contributions";
 import { removeMemory } from "./memory/store";
@@ -50,7 +51,7 @@ import { opTrack } from "./stall-recorder";
  */
 export interface SessionsPart {
   /** Once per listing pass: the fields of one file, or undefined. `project`: what the project layer says of it. */
-  lookup(): { of(path: string, id: string, project?: SessionSummary["project"]): Pick<SessionSummary, "baton" | "org" | "folderOrg"> | undefined };
+  lookup(builds: EngineBuildsReader): { of(path: string, id: string, project?: SessionSummary["project"]): Pick<SessionSummary, "baton" | "org" | "folderOrg"> | undefined };
   /** Why the file may never be deleted here, or null. */
   keeps?(path: string): string | null;
 }
@@ -62,11 +63,12 @@ export function contributeSessions(part: SessionsPart): void {
 /** One listing pass's lookups: the project layer's (by marker, build, then the session's folder), then every contributed part's. */
 /** `mtimeMs`: the file's mtime as the listing holds it, so the project overseer marker check needs no stat. */
 function fieldLookup(): (path: string, id: string, cwd?: string, mtimeMs?: number) => Pick<SessionSummary, "baton" | "org" | "folderOrg" | "project" | "projectOverseer"> {
-  const parts = sessionParts.map((p) => p.lookup());
-  const projects = projectSessionLookup();
+  const builds = engineBuildsReader();
+  const parts = sessionParts.map((p) => p.lookup(builds));
+  const projects = projectSessionLookup(builds);
   return (path, id, cwd, mtimeMs) => {
     const out: Pick<SessionSummary, "baton" | "org" | "folderOrg" | "project" | "projectOverseer"> = {};
-    const project = projects.of(path, id, cwd);
+    const project = projects.of(path, id, cwd, mtimeMs);
     for (const l of parts) Object.assign(out, l.of(path, id, project) ?? {});
     if (project) out.project = project;
     if (!out.baton) {
@@ -1020,7 +1022,10 @@ async function withUnreadReplies(row: SessionSummary): Promise<SessionSummary> {
 
 /** How long a finished listing serves further callers, from its build's start (§app.session-list/listing-reuse). */
 export const LIST_REUSE_MS = 1_000;
-let listing: { generation: number; startedAt: number; rows: Promise<SessionSummary[]> } | null = null;
+type Listing = { generation: number; startedAt: number; stamp: number; built: Promise<{ rows: SessionSummary[]; files: string[] }> };
+let listing: Listing | null = null;
+/** One more per build started, of either kind: a higher stamp is a build that started later. */
+let listStamp = 0;
 
 /** All sessions, newest activity first, with fresh live presence merged in. Callers share a build
     that is running or started less than LIST_REUSE_MS ago, unless something in this process changed
@@ -1031,13 +1036,13 @@ export function listSessions(): Promise<SessionSummary[]> {
   const generation = listGeneration();
   let l = listing;
   if (!l || l.generation !== generation || now - l.startedAt >= LIST_REUSE_MS || now < l.startedAt) {
-    const mine: { generation: number; startedAt: number; rows: Promise<SessionSummary[]> } = { generation, startedAt: now, rows: buildSessions().then((b) => b.rows) };
+    const mine: Listing = { generation, startedAt: now, stamp: ++listStamp, built: buildSessions() };
     listing = l = mine;
-    mine.rows.catch(() => {
+    mine.built.catch(() => {
       if (listing === mine) listing = null;
     });
   }
-  return l.rows.then((rows) => [...rows]);
+  return l.built.then((b) => [...b.rows]);
 }
 
 /** The last listing's rows by path (buildSessions hands an unchanged row out as the same object). */
@@ -1077,7 +1082,7 @@ export const STAT_SWEEP_MS = 60_000;
  * file set and cached summaries and reads only the files named since its last build. `all`: the
  * watch could not say (or nothing is known yet), so the next build reads every folder.
  */
-const tracker = { active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, statAt: 0, chain: Promise.resolve() as Promise<unknown> };
+const tracker = { active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, statAt: 0, listed: 0, chain: Promise.resolve() as Promise<unknown> };
 
 /** Start tracking (the feed's watch starts it with itself); returns the note sink and its stop. */
 export function trackSessionFiles(): { note: (path: string | null) => void; stop: () => void } {
@@ -1103,7 +1108,15 @@ export function trackSessionFiles(): { note: (path: string | null) => void; stop
 }
 
 /** Builds the tracked listing has run, and how many were full (tests, measurement). */
-export const trackedStats = { builds: 0, full: 0, statSweeps: 0, lastDirty: 0 };
+export const trackedStats = { builds: 0, full: 0, statSweeps: 0, lastDirty: 0, joined: 0 };
+
+/** Which builds the feed's listing has read, against which have started: a signal heard at `now()`
+    is in a list only when `listed()` came out higher. With no tracker the feed's list is listSessions,
+    joining nothing of its own accord: nothing to compare. */
+export const listStamps = {
+  now: (): number => listStamp,
+  listed: (): number => (tracker.active > 0 ? tracker.listed : Infinity),
+};
 
 /**
  * listSessions for the session feed: the same rows (a full build gives the same list), but while a
@@ -1111,17 +1124,49 @@ export const trackedStats = { builds: 0, full: 0, statSweeps: 0, lastDirty: 0 };
  * file's cached summary stands. A full build runs when nothing is known yet, when the watch could
  * not say what changed, and at least every SWEEP_MS; every STAT_SWEEP_MS each known file is
  * stat'ed and re-read only if it moved. Without a tracker it is listSessions. Builds
- * run one at a time; never shares listSessions' reuse window.
+ * run one at a time.
+ *
+ * `join`: a listSessions build that started within LIST_REUSE_MS and later than the last list read
+ * here stands in for a build of this one's own. It read every file, so it holds whatever a tracked
+ * build would have, up to its own start; the caller compares listStamps for what came after. Never
+ * the other way: a tracked build skips what a watch never named, and listSessions promises more.
  */
-export function listSessionsTracked(): Promise<SessionSummary[]> {
+export function listSessionsTracked(opts: { join?: boolean } = {}): Promise<SessionSummary[]> {
   if (tracker.active === 0) return listSessions();
+  const shared = opts.join ? joinableListing() : null;
+  if (shared) return joinListing(shared);
+  return ownTrackedBuild();
+}
+
+function ownTrackedBuild(): Promise<SessionSummary[]> {
   const run = tracker.chain.then(buildTracked, buildTracked);
   tracker.chain = run.catch(() => undefined);
   return run.then((rows) => [...rows]);
 }
 
+function joinableListing(now = Date.now()): Listing | null {
+  const l = listing;
+  return l && l.stamp > tracker.listed && now >= l.startedAt && now - l.startedAt < LIST_REUSE_MS ? l : null;
+}
+
+async function joinListing(l: Listing): Promise<SessionSummary[]> {
+  tracker.listed = l.stamp;
+  trackedStats.joined++;
+  let built: Awaited<Listing["built"]>;
+  try {
+    built = await l.built;
+  } catch {
+    return ownTrackedBuild();
+  }
+  // Its file set is the newest there is: the next tracked build starts from it, and what the watch
+  // noted meanwhile stays dirty for that build, so a row can't leave with the next list.
+  if (tracker.active > 0) tracker.files = built.files;
+  return [...built.rows];
+}
+
 async function buildTracked(): Promise<SessionSummary[]> {
   const now = Date.now();
+  tracker.listed = ++listStamp;
   trackedStats.builds++;
   const full = tracker.all || tracker.files === null || now - tracker.sweptAt >= SWEEP_MS || now < tracker.sweptAt;
   // Taken before any await: what is noted during this build is the next build's.

@@ -170,6 +170,19 @@ export function readBuilds(projectId: string): BuildRow[] {
 
 /** Every build an engine holds, with its project. No session file: a listing reads this per pass, and
     finding each row's file would walk the whole index for an answer no reader of these rows wants. */
+export type EngineBuildsReader = (engine: string) => (StatechartBuildRow & { projectId: string })[];
+
+/** `readEngineBuilds` for one listing pass: its project and org lookups share one reading of each
+    engine, gone with the pass: nothing is kept for the next one, so a step is never read late. */
+export function engineBuildsReader(): EngineBuildsReader {
+  const read = new Map<string, (StatechartBuildRow & { projectId: string })[]>();
+  return (engine) => {
+    let rows = read.get(engine);
+    if (!rows) read.set(engine, (rows = readEngineBuilds(engine)));
+    return rows;
+  };
+}
+
 export function readEngineBuilds(engine: string): (StatechartBuildRow & { projectId: string })[] {
   if (!isOrgHostOpen(engine)) return [];
   return hostOf(engine)

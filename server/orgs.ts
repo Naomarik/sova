@@ -181,13 +181,21 @@ function orgRootsOf(index: OrgIndex): string[] {
   return orgRoots.roots;
 }
 
+export type OrgOfSessionPath = (sessionPath: string) => { orgId: string; dir: string } | null;
+
+/** `orgOfSessionPath` for one listing pass: the index is read once, however many rows ask. */
+export function orgOfSessionPathReader(): OrgOfSessionPath {
+  const index = readIndex();
+  const roots = orgRootsOf(index);
+  return (sessionPath) => {
+    const o = index.orgs[roots.indexOf(dirname(sessionPath))];
+    return o ? { orgId: o.id, dir: o.dir } : null;
+  };
+}
+
 /** The attached org whose workspace sessions dir holds `sessionPath`, or null. */
 export function orgOfSessionPath(sessionPath: string): { orgId: string; dir: string } | null {
-  const parent = dirname(sessionPath);
-  const index = readIndex();
-  const i = orgRootsOf(index).indexOf(parent);
-  const o = index.orgs[i];
-  return o ? { orgId: o.id, dir: o.dir } : null;
+  return orgOfSessionPathReader()(sessionPath);
 }
 
 // ---- ids, slugs, dirs ------------------------------------------------------------------------------

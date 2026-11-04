@@ -523,6 +523,16 @@ describe("Apply and Approve says only what was approved", async () => {
   });
 });
 
+test("a project overseer's chat keeps its own sova_settings; only a plain chat is declared Create's", async () => {
+  const { servedToolsFor } = await import("./chat-handle");
+  const declared = (powers: boolean, plain: boolean) => servedToolsFor(`/x/${Math.random()}.jsonl`, "s", () => undefined, powers, plain).map((d) => d.name);
+  assert.ok(declared(false, true).includes("sova_settings"), "a plain chat");
+  assert.ok(!declared(false, false).includes("sova_settings"), "a special kind: its own tool of that name must keep answering");
+  assert.ok(!declared(true, false).includes("sova_settings"), "a powers profile");
+  const handle = readFileSync(join(import.meta.dirname, "chat-handle.ts"), "utf8");
+  assert.match(handle, /servedToolsFor\(chatId, sessionId, known, kind === "powers", kind === null\)/, "every kind goes through this one call");
+});
+
 test("what stays on its own screen is refused by name, saying where, in either shape of edit", async () => {
   const screens: Record<string, RegExp> = { "public-links": /Settings → Public Links, Where links open/, voice: /Settings → Voice, Set Up Voice/, updates: /Settings → General, Update from/, "mesh.links": /session pane's Agents tab/, "mesh.login-claim": /the Mesh page, Sync, Logins/, "mesh.internet-relay": /the Mesh page, Dial-out pairings/ };
   for (const [name, where] of Object.entries(screens)) {

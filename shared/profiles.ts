@@ -263,20 +263,23 @@ export const DEFAULT_PROFILE: Profile = {
 
 /**
  * The rules every profile is brought to, whatever made it: grants imply reading, and a profile that
- * removes anything removes Workers & teams too (§chat.profiles/enforcement: a worker would start
- * with every default tool). Returns sorted, deduplicated lists.
+ * removes a tool removes Workers & teams too (§chat.profiles/enforcement: a worker would start with
+ * every default tool). MCP Servers is no such removal: a worker's servers are capped to its chat's,
+ * so one on a chat with none has none. Returns sorted, deduplicated lists.
  */
+const takesWorkers = (cap: Removable): boolean => cap !== "mcp";
+
 export function normalizeCaps(remove: readonly string[], grant: readonly string[]): { remove: Removable[]; grant: Grantable[] } {
   const r = new Set(remove.filter((x): x is Removable => (REMOVABLE as readonly string[]).includes(x)));
   const g = new Set(grant.filter((x): x is Grantable => (GRANTABLE as readonly string[]).includes(x)));
   if (g.has("sessions.message") || g.has("sessions.all")) g.add("sessions.read");
-  if (r.size > 0) r.add("workers");
+  if ([...r].some(takesWorkers)) r.add("workers");
   return { remove: REMOVABLE.filter((x) => r.has(x)), grant: GRANTABLE.filter((x) => g.has(x)) };
 }
 
 /** Why a toggle on the board can't change now, or null. */
 export function lockedReason(cap: Removable | Grantable, remove: readonly Removable[]): string | null {
-  if (cap === "workers" && remove.some((r) => r !== "workers")) return "Workers would get every tool back, so removing anything removes them too.";
+  if (cap === "workers" && remove.some((r) => r !== "workers" && takesWorkers(r))) return "Workers would get every tool back, so removing anything removes them too.";
   return null;
 }
 

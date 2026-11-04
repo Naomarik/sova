@@ -82,6 +82,10 @@ describe("the model", () => {
     assert.deepEqual(normalizeCaps([], ["sessions.message"]), { remove: [], grant: ["sessions.read", "sessions.message"] });
     assert.deepEqual(normalizeCaps([], ["sessions.all"]), { remove: [], grant: ["sessions.read", "sessions.all"] });
     assert.deepEqual(normalizeCaps(["web"], []), { remove: ["workers", "web"], grant: [] });
+    assert.deepEqual(normalizeCaps(["mcp"], []), { remove: ["mcp"], grant: [] }, "removing only MCP Servers leaves Workers alone");
+    assert.deepEqual(normalizeCaps(["web", "mcp"], []), { remove: ["workers", "web", "mcp"], grant: [] }, "any other removal behaves as before");
+    assert.equal(lockedReason("workers", ["mcp"]), null, "Workers can be switched with only MCP Servers off");
+    assert.match(lockedReason("workers", ["web", "mcp"]) ?? "", /Workers would get every tool back/);
     assert.deepEqual(normalizeCaps(["nope", "shell"], ["root"]), { remove: ["shell", "workers"], grant: [] });
     assert.equal(lockedReason("workers", ["web", "workers"]), "Workers would get every tool back, so removing anything removes them too.");
     assert.equal(lockedReason("workers", ["workers"]), null);

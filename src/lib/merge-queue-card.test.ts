@@ -32,7 +32,10 @@ test("each state's actions: none of them writes into the chat (all merge verbs)"
   assert.deepEqual(cardActions(card({ state: "checking" })), []);
   assert.deepEqual(cardActions(card({ state: "behaviour-differs" })), ["accept", "send-back"]);
   assert.deepEqual(cardActions(card({ state: "review-flagged" })), ["land-anyway", "send-back"]);
-  assert.deepEqual(cardActions(card({ state: "needs-fix" })), []);
+  assert.deepEqual(cardActions(card({ state: "needs-fix" })), ["land-this-again", "remove"], "every Needs a fix card: never left without a button");
+  assert.deepEqual(cardActions(card({ state: "needs-fix", redrafted: true })), ["land", "remove"], "its drafts fixed: Land at the same commit");
+  assert.deepEqual(cardActions(card({ state: "drafts-changed" })), ["land"]);
+  assert.deepEqual(cardActions(card({ state: "cancelled", removed: true })), []);
   assert.deepEqual(cardActions(card({ state: "landed" })), []);
   assert.deepEqual(cardActions(card({ state: "landed", newerCommits: 1 })), ["land-again"]);
 });
@@ -76,6 +79,10 @@ test("a request project's card: the pill follows the host's facts, the folded li
   assert.equal(cardPill(card({ state: "pushed", request: { how: "push-branch", branch: "feat/x", base: "master" } })).label, "Pushed");
   assert.equal(cardPill(card({ state: "request-review", request })).label, "Review the request");
   assert.equal(foldedLine("feat/x", { state: "requested" }), "feat/x · Request opened");
+  // Remove from Queue: the card and its revision say Removed, never Cancelled.
+  assert.equal(cardPill(card({ state: "cancelled", removed: true })).label, "Removed");
+  assert.equal(cardPill(card({ state: "cancelled" })).label, "Cancelled");
+  assert.equal(foldedLine("feat/x", { state: "cancelled", kind: "removed" }), "feat/x · Removed");
   assert.deepEqual(cardActions(card({ state: "requested" })), [], "the request's own actions draw from its facts (MergeQueueRequests), not the card's list");
 });
 

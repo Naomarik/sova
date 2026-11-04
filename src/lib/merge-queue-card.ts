@@ -22,7 +22,7 @@ export interface QueueCardRow {
 export type CardTone = "success" | "warn" | "error" | "info" | "accent" | "neutral";
 
 /** The pill, from a state and place in line; a request's from its host facts when the card has them. */
-export function cardPill(d: Pick<MergeCardRevision, "state" | "position"> & Partial<Pick<MergeCard, "request" | "reason">>): { label: string; tone: CardTone; live?: boolean } {
+export function cardPill(d: Pick<MergeCardRevision, "state" | "position"> & Partial<Pick<MergeCard, "request" | "reason" | "removed">> & { kind?: MergeCardRevision["kind"] }): { label: string; tone: CardTone; live?: boolean } {
   if (isRequestState(d.state)) return requestChip(d.state, d.request, d.reason);
   switch (d.state) {
     case "queued":
@@ -44,7 +44,8 @@ export function cardPill(d: Pick<MergeCardRevision, "state" | "position"> & Part
     case "landed":
       return { label: "Landed", tone: "success" };
     case "cancelled":
-      return { label: "Cancelled", tone: "neutral" };
+      // Remove from Queue: the card's last revision says so (the card, by its `removed`; a revision, by its kind).
+      return d.removed || d.kind === "removed" ? { label: "Removed", tone: "neutral" } : { label: "Cancelled", tone: "neutral" };
   }
   return { label: "Unknown", tone: "neutral" };
 }
@@ -82,12 +83,19 @@ export const cardNewer = (c: Pick<MergeCard, "state" | "newerCommits">): string 
 
 export const cardNotes = (c: Pick<MergeCard, "notes">) => notesOf(c.notes);
 
-/** What the card offers, by state. Every one is a merge verb; none writes into the chat. */
-export type CardAction = "cancel" | "accept" | "land-anyway" | "send-back" | "land-again";
-export function cardActions(c: Pick<MergeCard, "state" | "newerCommits">): CardAction[] {
+/** What the card offers, by state. Every one is a merge verb; none writes into the chat. Needs a fix: Land This Commit
+ *  Again (a new approval of the same commit, every check from the start) and Remove from Queue; once its drafts are
+ *  fixed (`redrafted`), Land at the same commit in place of the first. Drafts changed: Land (approves the drafts as
+ *  they are now). */
+export type CardAction = "cancel" | "accept" | "land-anyway" | "send-back" | "land-again" | "land" | "land-this-again" | "remove";
+export function cardActions(c: Pick<MergeCard, "state" | "newerCommits"> & Partial<Pick<MergeCard, "redrafted">>): CardAction[] {
   switch (c.state) {
     case "queued":
       return ["cancel"];
+    case "needs-fix":
+      return [c.redrafted ? "land" : "land-this-again", "remove"];
+    case "drafts-changed":
+      return ["land"];
     case "behaviour-differs":
       return ["accept", "send-back"];
     case "review-flagged":
@@ -101,7 +109,7 @@ export function cardActions(c: Pick<MergeCard, "state" | "newerCommits">): CardA
 }
 
 /** A folded earlier copy's one line, from its own frozen state: "feat/x · Queued 2nd". */
-export const foldedLine = (branch: string, r: Pick<MergeCardRevision, "state" | "position">): string => `${branch} · ${isRequestState(r.state) ? FROZEN_REQUEST[r.state] : cardPill(r).label.replace(" · ", " ")}`;
+export const foldedLine = (branch: string, r: Pick<MergeCardRevision, "state" | "position"> & Partial<Pick<MergeCardRevision, "kind">>): string => `${branch} · ${isRequestState(r.state) ? FROZEN_REQUEST[r.state] : cardPill(r).label.replace(" · ", " ")}`;
 /** A request revision's own frozen word: the host facts it was raised at aren't kept on the revision. */
 const FROZEN_REQUEST = { "request-review": "Request ready for your look", requested: "Request opened", pushed: "Pushed", closed: "Closed on the host" } as const;
 

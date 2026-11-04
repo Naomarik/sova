@@ -36,7 +36,7 @@ export type Tone = "success" | "warn" | "error" | "info" | "accent" | "neutral";
 
 /** A row's one action. Land carries a ▾ with Land Without Review (only where the project has a
     review kit) and Land Without Its Specs…. */
-export type RowAction = "land" | "setup" | "cancel" | "accept" | "land-anyway" | "none";
+export type RowAction = "land" | "setup" | "cancel" | "accept" | "land-anyway" | "land-this-again" | "none";
 
 export type RowKey =
   | "uncommitted"
@@ -80,6 +80,8 @@ export interface QueueRow {
   action: RowAction;
   /** Send Back beside the action (behaviour differs, review flagged). */
   sendBack?: boolean;
+  /** Remove from Queue beside the action (Needs a fix): the entry leaves the queue; nothing is deleted. */
+  remove?: boolean;
   /** A run to See Why on. */
   run?: string;
 }
@@ -129,7 +131,7 @@ export const shownCommit = (w: Partial<Pick<SessionWorktreeInfo, "readiness" | "
   w.mergeStats?.head ?? w.readiness?.landing?.commit;
 
 /** A sent-back row's line when the queue gave no reason. */
-export const SENT_BACK_LINE = "Sent back to its chat. Land comes back here once its chat commits a fix and finishes.";
+export const SENT_BACK_LINE = "Sent back to its chat. Land comes back once its chat fixes it, or use Land This Commit Again.";
 
 /** The branch reads finished again at a commit other than the one sent back: the fix is in. */
 export const fixedPast = (w: { readiness?: { landing?: { commit: string } } }, sentBack: string): boolean => {
@@ -138,20 +140,23 @@ export const fixedPast = (w: { readiness?: { landing?: { commit: string } } }, s
 };
 
 /** Why a Land item that knows only the branch's queue entry (no readiness: the Overseer's coding-worktree menu) is
- *  off, or undefined when it's on. Sent back: off, as on every row (al_4); with no readiness it can't see a fixed,
- *  finished commit, so Land comes back on the rows that can. In line: off. Drafts changed: on (Land re-approves). */
-export function entryLandBlock(e: Pick<WorktreeQueueInfo, "state"> | undefined): string | undefined {
+ *  off, or undefined when it's on. Sent back: off, as on every row (al_4), until the queue says its drafts are fixed
+ *  (`redrafted`: sent back for its drafts, changed since, and Sova's docs check reads clean), then on at the same
+ *  commit; with no readiness it can't see a fixed, finished commit, so Land comes back on the rows that can. In line:
+ *  off. Drafts changed: on (Land re-approves). */
+export function entryLandBlock(e: Pick<WorktreeQueueInfo, "state" | "redrafted"> | undefined): string | undefined {
   if (!e) return undefined;
-  if (e.state === "needs-fix") return SENT_BACK_LINE;
+  if (e.state === "needs-fix") return e.redrafted ? undefined : SENT_BACK_LINE;
   if ((["queued", "checking", "conflict", "behaviour-differs", "review-flagged"] as string[]).includes(e.state)) return "Already in the merge queue.";
   return undefined;
 }
 
 /** The tab's Sent back list: only entries that still need a fix. One the queue marks settled (a later entry for its
  *  branch, already in the target, its branch or folder removed) leaves it, and so does one whose branch already reads
- *  ready at a newer commit (the Ready to land row, with Land, stands for it). Capped at 20, after leaving. */
+ *  ready at a newer commit, or at the same commit once its drafts are fixed (`redrafted`): the Ready to land row, with
+ *  Land, stands for it. Capped at 20, after leaving. */
 export const stillSentBack = (v: Pick<MergeQueueView, "needsFix" | "ready">): MergeEntry[] =>
-  v.needsFix.filter((e) => !e.settled && !(v.ready ?? []).some((r) => r.branch === e.branch && r.commit !== e.commit)).slice(0, 20);
+  v.needsFix.filter((e) => !e.settled && !e.redrafted && !(v.ready ?? []).some((r) => r.branch === e.branch && r.commit !== e.commit)).slice(0, 20);
 
 /** The worktree is merged or removed: that wins over Needs a fix (nothing is left to fix). */
 const pastSentBack = (w: RowKeyInput): boolean => w.status === "merged" || !!w.mergedInto || !w.exists || !!w.gone || w.readiness?.state === "merged";
@@ -163,12 +168,12 @@ const SIZED: RowKey[] = ["ready", "uncommitted", "queued", "checking", "conflict
 export type RowKeyInput = Pick<QueueRowInput, "status" | "exists"> &
   Partial<Pick<QueueRowInput, "mergedInto" | "gone">> & {
     readiness?: Pick<NonNullable<QueueRowInput["readiness"]>, "state" | "dirtyCount" | "noCommits" | "landing">;
-    queue?: Pick<RowQueueFacts, "state" | "commit" | "request" | "settled">;
+    queue?: Pick<RowQueueFacts, "state" | "commit" | "request" | "settled" | "redrafted">;
   };
 
 /** The key its queue entry gives a row, or null when the entry doesn't speak for it (none, cancelled, a sent-back
-    branch whose fix reads finished at a newer commit, is settled, or whose tree is merged or removed; a state this build
-    doesn't know): the tree's own key then. */
+    branch whose fix reads finished at a newer commit, whose drafts the queue says are fixed at the same commit, is
+    settled, or whose tree is merged or removed; a state this build doesn't know): the tree's own key then. */
 export function entryKeyOf(w: RowKeyInput): RowKey | null {
   const e = w.queue;
   if (!e) return null;
@@ -186,9 +191,10 @@ export function entryKeyOf(w: RowKeyInput): RowKey | null {
     case "closed":
       return e.state;
     case "needs-fix":
-      // Sent back: once the branch reads finished again at a newer commit, that commit wins (Ready with Land).
+      // Sent back: once the branch reads finished again at a newer commit, that commit wins (Ready with Land); sent
+      // back for its drafts and the queue says they're fixed (`redrafted`), the same commit reads Ready again.
       // Settled by the queue, or the worktree merged or removed: nothing is left to fix (the tree's own key).
-      return e.settled || fixedPast(w, e.commit) || pastSentBack(w) ? null : "needs-fix";
+      return e.settled || e.redrafted || fixedPast(w, e.commit) || pastSentBack(w) ? null : "needs-fix";
     case "requested":
       // The host merged it while the queue hasn't moved the entry yet: it reads as landed.
       return e.request?.facts?.state === "merged" ? "landed" : "requested";
@@ -256,11 +262,13 @@ function queueRowOf(w: QueueRowInput): QueueRow {
       case "drafts-changed":
         return { ...base, key: "drafts-changed", label: "Drafts changed", tone: "warn", reason: e.reason ?? "Its spec drafts changed since you approved. Land again to approve them.", action: "land" };
       case "needs-fix":
-        // Sent back: no Land at all while its chat fixes it. Once the branch reads finished again at a newer commit
-        // (clean, no conflicts, its chat idle: Sova's ready reading), that commit wins and the row is Ready with Land.
-        // Settled (a later entry for the branch, already in the target, its branch or folder removed): nothing to fix.
-        // entryKeyOf gives no key in either case, and the row reads as the worktree itself, below.
-        return { ...base, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "none" };
+        // Sent back: no Land while its chat fixes it; Land This Commit Again (the same commit, every check from the
+        // start) and Remove from Queue instead. Once the branch reads finished again at a newer commit (clean, no
+        // conflicts, its chat idle: Sova's ready reading), or sent back for its drafts and the queue says they're fixed,
+        // that commit wins and the row is Ready with Land. Settled (a later entry for the branch, already in the
+        // target, its branch or folder removed): nothing to fix. entryKeyOf gives no key in those cases, and the row
+        // reads as the worktree itself, below.
+        return { ...base, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "land-this-again", remove: true };
       case "landed":
         return {
           ...base,
@@ -346,14 +354,15 @@ function queueRowOf(w: QueueRowInput): QueueRow {
 
 /** A row's buttons, as the Worktrees modal and the session pane draw them, in order. Set Up Queue needs the
     project to link to; Send Back follows the row's one action. */
-export type RowButton = "Land" | "Set Up Queue" | "Cancel" | "Accept" | "Land Anyway" | "Send Back";
-export function rowButtons(row: Pick<QueueRow, "action" | "sendBack">, projectId: string | undefined): RowButton[] {
-  const one: Partial<Record<RowAction, RowButton>> = { land: "Land", cancel: "Cancel", accept: "Accept", "land-anyway": "Land Anyway" };
+export type RowButton = "Land" | "Set Up Queue" | "Cancel" | "Accept" | "Land Anyway" | "Send Back" | "Land This Commit Again" | "Remove from Queue";
+export function rowButtons(row: Pick<QueueRow, "action" | "sendBack" | "remove">, projectId: string | undefined): RowButton[] {
+  const one: Partial<Record<RowAction, RowButton>> = { land: "Land", cancel: "Cancel", accept: "Accept", "land-anyway": "Land Anyway", "land-this-again": "Land This Commit Again" };
   const out: RowButton[] = [];
   if (row.action === "setup") {
     if (projectId) out.push("Set Up Queue");
   } else if (one[row.action]) out.push(one[row.action]!);
   if (row.sendBack) out.push("Send Back");
+  if (row.remove) out.push("Remove from Queue");
   return out;
 }
 

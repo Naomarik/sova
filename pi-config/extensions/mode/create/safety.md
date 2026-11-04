@@ -19,7 +19,7 @@ To stop a tool call in every ordinary chat on this computer, such as reading `.e
 | Subagents only (the start) | Unconfined | Writes only in that worktree | Unconfined |
 | On | Sandbox | Sandbox, narrowed to that worktree | Sandbox |
 
-With On, files outside the chat's folder and its worktrees are read-only, the agent folder is read-only, credentials are hidden, the network goes through an allowlist, and the chat can't reach Sova at all. So a chat with the sandbox On can't write files on this computer, reach Sova's commands, or run project tools, and it says so first.
+With On, files outside the chat's folder and its worktrees are read-only, the agent folder is read-only, credentials are hidden, the network goes through an allowlist, and by how it's built the chat can't reach Sova at all. So a chat with the sandbox On can't write files on this computer, reach Sova's commands, or run project tools, and it says so first.
 
 Be exact about what it is: containment for an agent's mistakes on a single-user computer, not a wall against hostile code. It confines tools, not the chat's own process, so add-ons aren't confined. It doesn't reach what the person later runs from what the agent wrote: `npm run`, `make`, an editor task. Reviewing the changes first is the control there.
 
@@ -82,7 +82,7 @@ Add-ons, Sova extensions and a project's own add-on files ask nothing, so the pe
 - Live: always.
 - Check: there's nothing to check.
 
-It raises the bar; it isn't a wall. The approvals stop a chat following its instructions, not a program on this computer deliberately posing as the person's browser. The same local route passes every approval on this list, and a chat whose own tools aren't sandboxed, which is the default state, can reach it. So don't tell anyone an approval holds against code running on their computer. The refusal stops the ordinary road and tells the chat where to send the person. A chat with the sandbox On at full enforcement couldn't reach that route in the one run so far. Weaker enforcement hasn't been tested, so say so. Never try to get past a refusal: ask the person.
+It raises the bar; it isn't a wall. The approvals stop a chat following its instructions, not a program on this computer deliberately posing as the person's browser. The same local route passes every approval on this list, and a chat whose own tools aren't sandboxed, which is the default state, can reach it. So don't tell anyone an approval holds against code running on their computer. The refusal stops the ordinary road and tells the chat where to send the person. A chat whose sandbox is On and enforced can't reach that route, because its network doesn't reach Sova's port. That's how the sandbox is built, not something proven by a run, so say it that way. Never try to get past a refusal: ask the person.
 
 A click relayed through a computer the person has linked can't be told from a script going through that computer. This applies only to computers they've linked.
 

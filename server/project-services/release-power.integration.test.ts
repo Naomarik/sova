@@ -172,7 +172,7 @@ describe("the release power (q12): start and publish after the waiting period, c
     const rec = await until(() => open(), "the power's release to open", 30_000);
     assert.equal(rec.startedBy, "power");
     assert.equal(holds().length, 0);
-    assert.ok(firstMessages.at(-1)!.endsWith("\n\n---\nrelease as 0.2.0"), "the power's start sends the operator's note last, after ---");
+    assert.ok(firstMessages.at(-1)!.endsWith("\n\n---\nRelease Note from the operator (saved on the Releases tab):\nrelease as 0.2.0"), "the power's start sends the operator's note last, after ---");
     assert.equal(recOf(rec.id).note, "release as 0.2.0");
     assert.equal((await call("release.status", {})).release!.view!.note, null, "the note is consumed by the start that sent it");
     assert.equal((await r.run("release.note", { project: repo.root, text: "x" }, { kind: "project-overseer", id: "po", root: repo.root, act: async () => {}, releaseAct: true } as Caller)).error?.code, "forbidden", "never the overseer's");

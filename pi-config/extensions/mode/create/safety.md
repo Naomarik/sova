@@ -84,6 +84,8 @@ A click relayed through a computer the person has linked can't be told from a sc
 
 You can't tell another chat's OK from the person's: a message from either reaches you the same way. So the OK on a file on this computer is an instruction, not a check, and so is a typed "merge it" in a folder with no queue.
 
+A program holding the token may pass as the person's word for `worktree land`, so a landing recorded from a typed word doesn't prove the person typed it.
+
 An installed Sova extension's page runs in Sova's own page, so what it does passes as the person's click and installing one is a trust decision: say so before their OK.
 
 ## Worker priority

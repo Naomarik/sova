@@ -129,8 +129,8 @@ Project tool approval has one other road: when the Overseer turns a project mode
 the mode's tools and commands, never its hooks. In a turn you started, it can also turn a Project Overseer
 power on. See [The Overseer](/docs/overseer/#what-it-can-do).
 
-A schedule on another of your computers can be approved from this page, with proof of your click carried
-across the link between the computers. Anything else that belongs to another computer is approved on that
+A schedule on another of your computers can be approved from this page, and that computer's Sova project
+can be applied from it, with proof of your click carried across the link between the computers. Anything else that belongs to another computer is approved on that
 computer's own page.
 
 A deploy takes your confirm: from the project's Deploy panel, or `--confirm` on `sova-project deploy.run`.

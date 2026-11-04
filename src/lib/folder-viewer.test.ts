@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { fileCount, fileKind, firstFile, sizeWords, sortFiles } from "./folder-viewer";
+import { fileCount, fileKind, firstFile, sizeWords, sortFiles, withoutFrontMatter } from "./folder-viewer";
 
 describe("the folder viewer's model", () => {
   test("markdown is rendered; scripts, JSON and anything else are shown as text", () => {
@@ -25,6 +25,16 @@ describe("the folder viewer's model", () => {
     assert.deepEqual(firstFile([{ group: "a", files: [] }, { group: "b", files: [{ path: "z.md" }, { path: "README.md" }] }]), { group: "b", path: "README.md" });
     assert.equal(firstFile([{ group: "a", files: [] }]), null);
     assert.equal(firstFile([]), null);
+  });
+
+  test("front matter goes only from the very start, and only when it closes", () => {
+    assert.equal(withoutFrontMatter("---\ntitle: A\nmore: b\n---\n\n# Body\n"), "# Body\n");
+    assert.equal(withoutFrontMatter("---\r\ntitle: A\r\n---\r\n# Body"), "# Body", "CRLF");
+    assert.equal(withoutFrontMatter("---\n---\n# Body"), "# Body", "an empty block");
+    assert.equal(withoutFrontMatter("---\ntitle: A\n---"), "", "nothing after it");
+    assert.equal(withoutFrontMatter("---\na: 1\n---\nb\n---\nc"), "b\n---\nc", "the first closing line ends it");
+    for (const same of ["---\ntitle: A\nno close\n", "\n---\na: 1\n---\nb", "# Top\n\n---\na\n---\n", "----\na\n---\n", "---\na\n----\nb", ""])
+      assert.equal(withoutFrontMatter(same), same);
   });
 
   test("counts and sizes read as words", () => {

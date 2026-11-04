@@ -27,8 +27,8 @@ const result = (blocks: string[], extra: Partial<HEntry> = {}): HEntry =>
   ({ kind: "tool-result", id: `e${++n}`, parentId: null, tool: "read", blocks: blocks.map((text) => ({ type: "text", text })), ...extra }) as HEntry;
 const user = (): HEntry => ({ kind: "user", id: `e${++n}`, parentId: null, blocks: [] }) as HEntry;
 
-const attach = (cwd: string, touched: string[], loaded: Set<string> = new Set(), inFlight = new Set<string>(), selfRead?: { path: string; offset?: unknown; limit?: unknown }) =>
-  blocksToAttach(cwd, { touched, loaded: () => loaded, inFlight, ...(selfRead ? { selfRead } : {}) });
+const attach = (cwd: string, path: string, loaded: Set<string> = new Set(), inFlight = new Set<string>(), selfRead?: { path: string; offset?: unknown; limit?: unknown }) =>
+  blocksToAttach(cwd, { path, loaded: () => loaded, inFlight, ...(selfRead ? { selfRead } : {}) });
 const pathsOf = (blocks: string[]) => blocks.flatMap((b) => markersIn([{ type: "text", text: "" }, { type: "text", text: b }]));
 
 test("a folder's file is the first of AGENTS.override.md, AGENTS.md, AGENTS.MD, CLAUDE.md, CLAUDE.MD that is a regular file", () => {
@@ -55,40 +55,40 @@ test("the folders run strictly below cwd to the file's own, outermost first; hid
 
 test("a touch attaches each unloaded file on its way, outermost first, with relative paths; once loaded, nothing", () => {
   const cwd = project({ "AGENTS.md": "root", "api/AGENTS.md": "api rules", "api/v1/CLAUDE.md": "v1 rules", "api/v1/h.ts": "" });
-  const blocks = attach(cwd, ["api/v1/h.ts"]);
+  const blocks = attach(cwd, "api/v1/h.ts");
   assert.deepEqual(pathsOf(blocks), ["api/AGENTS.md", "api/v1/CLAUDE.md"]);
   assert.equal(blocks[0], markerBlock("api/AGENTS.md", "api rules"));
   assert.match(blocks[1]!, /^<sova-instructions path="api\/v1\/CLAUDE.md">\nv1 rules\n<\/sova-instructions>$/);
-  assert.deepEqual(attach(cwd, [join(cwd, "api/v1/h.ts")], new Set(["api/AGENTS.md"])).length, 1, "absolute paths too; the loaded one is skipped");
-  assert.deepEqual(attach(cwd, ["@api/v1/h.ts"], new Set(["api/AGENTS.md", "api/v1/CLAUDE.md"])), []);
+  assert.deepEqual(attach(cwd, join(cwd, "api/v1/h.ts"), new Set(["api/AGENTS.md"])).length, 1, "absolute paths too; the loaded one is skipped");
+  assert.deepEqual(attach(cwd, "@api/v1/h.ts", new Set(["api/AGENTS.md", "api/v1/CLAUDE.md"])), []);
 });
 
 test("two calls of one batch never both attach a file: the second sees the first's in-flight set", () => {
   const cwd = project({ "api/AGENTS.md": "x", "api/a.ts": "", "api/b.ts": "" });
   const inFlight = new Set<string>();
-  assert.equal(attach(cwd, ["api/a.ts"], new Set(), inFlight).length, 1);
-  assert.deepEqual(attach(cwd, ["api/b.ts"], new Set(), inFlight), []);
+  assert.equal(attach(cwd, "api/a.ts", new Set(), inFlight).length, 1);
+  assert.deepEqual(attach(cwd, "api/b.ts", new Set(), inFlight), []);
 });
 
 test("reading the instruction file itself attaches a one-line marker, not its text again", () => {
   const cwd = project({ "api/AGENTS.md": "the rules", "x/AGENTS.md": "x rules" });
-  const blocks = attach(cwd, ["api/AGENTS.md"], new Set(), new Set(), { path: "api/AGENTS.md" });
+  const blocks = attach(cwd, "api/AGENTS.md", new Set(), new Set(), { path: "api/AGENTS.md" });
   assert.deepEqual(blocks, [selfReadMarker("api/AGENTS.md")]);
   assert.ok(!blocks[0]!.includes("\n"));
 });
 
 test("a read from line 1 whose limit covers the file is whole (glm's offset:1, limit:2000): marker only", () => {
   const cwd = project({ "api/AGENTS.md": "# API rules\nThe codeword is PELICAN-42.\n" });
-  assert.deepEqual(attach(cwd, ["api/AGENTS.md"], new Set(), new Set(), { path: "api/AGENTS.md", offset: 1, limit: 2000 }), [selfReadMarker("api/AGENTS.md")]);
-  assert.deepEqual(attach(cwd, ["api/AGENTS.md"], new Set(), new Set(), { path: "api/AGENTS.md", offset: 0 }), [selfReadMarker("api/AGENTS.md")], "offset 0, no limit");
+  assert.deepEqual(attach(cwd, "api/AGENTS.md", new Set(), new Set(), { path: "api/AGENTS.md", offset: 1, limit: 2000 }), [selfReadMarker("api/AGENTS.md")]);
+  assert.deepEqual(attach(cwd, "api/AGENTS.md", new Set(), new Set(), { path: "api/AGENTS.md", offset: 0 }), [selfReadMarker("api/AGENTS.md")], "offset 0, no limit");
 });
 
 test("a partial read of an instruction file still gets the full block", () => {
   const text = "line 1\nline 2\nline 3\nline 4";
   const cwd = project({ "api/AGENTS.md": text });
   const full = [markerBlock("api/AGENTS.md", text)];
-  assert.deepEqual(attach(cwd, ["api/AGENTS.md"], new Set(), new Set(), { path: "api/AGENTS.md", offset: 3 }), full, "a later start");
-  assert.deepEqual(attach(cwd, ["api/AGENTS.md"], new Set(), new Set(), { path: "api/AGENTS.md", offset: 1, limit: 2 }), full, "a limit short of the file");
+  assert.deepEqual(attach(cwd, "api/AGENTS.md", new Set(), new Set(), { path: "api/AGENTS.md", offset: 3 }), full, "a later start");
+  assert.deepEqual(attach(cwd, "api/AGENTS.md", new Set(), new Set(), { path: "api/AGENTS.md", offset: 1, limit: 2 }), full, "a limit short of the file");
 });
 
 test("a marker counts only in a result's trailing blocks: a tool's own output holding the header can't fake one", () => {
@@ -140,18 +140,6 @@ test("the hook appends the blocks to a read/edit/write result, never to bash or 
   assert.equal(await res("read"), undefined, "the same batch: in flight");
   await hooks.get("turn_end")!({}, ctxOf(cwd));
   assert.equal(texts(await res("read")).length, 2, "a new turn with a branch that lacks it (a rewind) loads it again");
-});
-
-test("codemode: nested read/edit/write paths attach at the parent call's own result", async () => {
-  const cwd = project({ "api/AGENTS.md": "rules", "web/CLAUDE.md": "web", "api/a.ts": "" });
-  const hooks = hooked();
-  await hooks.get("tool_call")!({ type: "tool_call", toolCallId: "p1/1", parentToolCallId: "p1", toolName: "read", input: { path: "api/a.ts" } }, ctxOf(cwd));
-  await hooks.get("tool_call")!({ type: "tool_call", toolCallId: "p1/2", parentToolCallId: "p1", toolName: "grep", input: { path: "web" } }, ctxOf(cwd));
-  await hooks.get("tool_call")!({ type: "tool_call", toolCallId: "p1/3", parentToolCallId: "p1", toolName: "write", input: { path: "web/new.ts" } }, ctxOf(cwd));
-  const nested = await hooks.get("tool_result")!({ type: "tool_result", toolCallId: "p1/1", parentToolCallId: "p1", toolName: "read", input: { path: "api/a.ts" }, content: [], isError: false }, ctxOf(cwd));
-  assert.equal(nested, undefined, "a nested result is never in the transcript");
-  const out = await hooks.get("tool_result")!({ type: "tool_result", toolCallId: "p1", toolName: "codemode", input: { code: "" }, content: [{ type: "text", text: "done" }], isError: false }, ctxOf(cwd));
-  assert.deepEqual(texts(out), ["done", markerBlock("api/AGENTS.md", "rules"), markerBlock("web/CLAUDE.md", "web")]);
 });
 
 test("the hook skips a file the chat may not be shown, and one the branch already loaded", async () => {

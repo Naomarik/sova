@@ -266,24 +266,6 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("C7: a codemode script's nested calls reach tool_call with parentToolCallId, the parent's own tool_result after them", async () => {
-    const seen: string[] = [];
-    const ext = (api: any) => {
-      const registered: any[] = [];
-      pi.agent.createCodemodeExtension()(new Proxy(api, { get: (t, k) => (k === "registerTool" ? (def: any) => void registered.push(def) : Reflect.get(t, k)) }));
-      api.registerTool(registered[0]);
-      api.registerTool({ name: "echo", label: "echo", description: "echo", parameters: Type.Object({ word: Type.String() }), execute: async (_id: string, p: { word: string }) => ({ content: [{ type: "text", text: p.word }], details: {} }) });
-      api.on("tool_call", (e: any) => void seen.push(`call ${e.toolName} ${e.parentToolCallId ?? "-"}`));
-      api.on("tool_result", (e: any) => void seen.push(`result ${e.toolName} ${e.parentToolCallId ?? "-"}`));
-    };
-    const { session, model } = await quirkSession({ extensions: [ext] });
-    session.setActiveToolsByName([...session.getActiveToolNames(), "codemode"]);
-    model.reply({ toolCall: { name: "codemode", arguments: { code: `return await tools.echo({ word: "hi" });` } } }, { text: "done" });
-    await session.prompt("go");
-    assert.deepEqual(seen, ["call codemode -", "call echo call-1", "result echo call-1", "result codemode -"]);
-    session.dispose();
-  });
-
   test("C5: prompt and steer take image content {type, data, mimeType} and store it as such", async () => {
     const { session, faux } = await scriptedSession();
     let steered = false;

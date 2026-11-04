@@ -81,7 +81,7 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
 
   return (
     <div class="session-panel-scroll" tabindex="0">
-      <div class="stack-4">
+      <div class="stack">
         <Show when={pickable().length > 0}>
           <label class="field">
             <span class="field-label">Whose context</span>
@@ -131,7 +131,7 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
                   </p>
                   <p class="usage-note text-muted">
                     {v().total === null ? "Each size below is an estimate (≈)." : "As of the last reply. Each part is an estimate (≈); Other is what the estimates don't explain."}
-                    <Show when={!v().prompt}> This chat isn't open here, so its mode, rules and tools are unknown and fall under Other.</Show>
+                    <Show when={!v().prompt}> This chat isn't running here, so its mode, rules and tools are unknown and fall under Other.</Show>
                   </p>
                   <ul class="list context-lines" aria-labelledby="context-window-label">
                     <For each={lines()}>
@@ -163,7 +163,7 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
                   </ul>
                 </section>
 
-                <div ref={viewerEl}>
+                <div class="context-viewer-slot" ref={viewerEl}>
                   <Show when={open()} keyed>
                     {(id) => (
                       <FolderViewer

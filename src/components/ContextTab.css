@@ -1,4 +1,6 @@
 /* The Context tab (ContextTab.tsx): the headline and the line sizes; the rows are the shared list's. */
+/* Closed, the viewer's slot takes no gap in the tab's stack. */
+.context-viewer-slot:empty { display: none; }
 .context-headline { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: 600; }
 .context-line-size { flex: none; font-variant-numeric: tabular-nums; }
 .context-lines .list-main,

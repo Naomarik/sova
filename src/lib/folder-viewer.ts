@@ -44,6 +44,13 @@ export function fileKind(path: string, text?: string, said?: FolderItem["kind"])
   return MARKDOWN.test(path) ? "markdown" : "text";
 }
 
+/** A markdown file's text without its front matter: a `---` block at the very start, closed by its own
+    `---` line. Anything else comes back as it was. Pure. */
+export function withoutFrontMatter(text: string): string {
+  const block = /^---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*(?:\r?\n|$)/.exec(text);
+  return block ? text.slice(block[0].length).replace(/^(?:[ \t]*\r?\n)+/, "") : text;
+}
+
 /** Files in reading order: a folder's own files before its subfolders', the playbook or readme first, then by name. Pure. */
 export function sortFiles(files: readonly FolderItem[]): FolderItem[] {
   const depth = (p: string) => p.split("/").length - 1;

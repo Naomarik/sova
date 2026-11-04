@@ -1,5 +1,5 @@
 import { createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js";
-import { fileKind, firstFile, sizeWords, sortFiles, type FolderItem, type FolderGroup } from "../lib/folder-viewer";
+import { fileKind, firstFile, sizeWords, sortFiles, withoutFrontMatter, type FolderItem, type FolderGroup } from "../lib/folder-viewer";
 import { Markdown } from "./Markdown";
 import { Icon } from "./ui";
 import "./FolderViewer.css";
@@ -162,7 +162,7 @@ export function FolderViewer(props: {
                     <p class="text-caption text-muted">Too large to show here.</p>
                   </Match>
                   <Match when={kind() === "markdown"}>
-                    <Markdown text={file()?.text ?? ""} />
+                    <Markdown text={withoutFrontMatter(file()?.text ?? "")} />
                   </Match>
                   <Match when={true}>
                     <pre class="folder-viewer-text">{file()?.text ?? ""}</pre>

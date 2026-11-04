@@ -1,7 +1,6 @@
 // Subfolder instruction files, pi's half (the engine is server/deeper-context.ts): an inline extension
 // every chat with file tools loads. At a read, edit or write's tool_result it appends the instruction
-// files of the folders the call touched that the branch hasn't loaded yet. Calls another tool made
-// (tool_call with parentToolCallId) are collected and attached at that tool's own result.
+// files of the folders the call touched that the branch hasn't loaded yet.
 import { blocksToAttach, loadedInstructions, LOADING_TOOLS } from "../../deeper-context";
 import type { PiExtensionAPI } from "./extension-types";
 import { toolCtx } from "./tools";
@@ -13,32 +12,19 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean 
     factory: (pi: PiExtensionAPI) => {
       /** Files attached this turn: two calls of one batch never both attach one. */
       const inFlight = new Set<string>();
-      /** The read/edit/write paths of calls another tool made, by that tool's call id. */
-      const nested = new Map<string, string[]>();
       const pathOf = (input: unknown): string | undefined => {
         const p = (input as { path?: unknown } | undefined)?.path;
         return typeof p === "string" && p ? p : undefined;
       };
 
-      pi.on("tool_call", async (event) => {
-        if (!event.parentToolCallId || !LOADING_TOOLS.has(event.toolName)) return;
-        const p = pathOf(event.input);
-        if (!p) return;
-        // A nested call's parent may itself be nested: the root id is the transcript's.
-        const root = event.parentToolCallId.split("/")[0]!;
-        nested.set(root, [...(nested.get(root) ?? []), p]);
-      });
       pi.on("tool_result", async (event, ctx) => {
-        if (event.parentToolCallId) return;
-        const own = LOADING_TOOLS.has(event.toolName) ? pathOf(event.input) : undefined;
-        const touched = [...(own ? [own] : []), ...(nested.get(event.toolCallId) ?? [])];
-        nested.delete(event.toolCallId);
-        if (!touched.length || event.isError) return;
+        const path = LOADING_TOOLS.has(event.toolName) ? pathOf(event.input) : undefined;
+        if (!path || event.isError) return;
         try {
           const input = event.input as { offset?: unknown; limit?: unknown };
           const blocks = blocksToAttach(ctx.cwd, {
-            touched,
-            ...(event.toolName === "read" && own ? { selfRead: { path: own, offset: input.offset, limit: input.limit } } : {}),
+            path,
+            ...(event.toolName === "read" ? { selfRead: { path, offset: input.offset, limit: input.limit } } : {}),
             loaded: () => loadedInstructions(toolCtx(ctx).branch()),
             inFlight,
             ...(opts.allow ? { allow: opts.allow } : {}),
@@ -52,7 +38,6 @@ export function deeperContextExtension(opts: { allow?: (abs: string) => boolean 
       });
       pi.on("turn_end", async () => {
         inFlight.clear();
-        nested.clear();
       });
     },
   };

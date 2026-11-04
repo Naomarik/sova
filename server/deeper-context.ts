@@ -111,8 +111,8 @@ export function wholeRead(text: string, r: { offset?: unknown; limit?: unknown }
 }
 
 export interface AttachOptions {
-  /** The paths (absolute or as the tool got them) the call touched. */
-  touched: readonly string[];
+  /** The path (absolute or as the tool got it) the call touched. */
+  path: string;
   /** A read's own path and range: when it is an instruction file read whole, only a marker is added. */
   selfRead?: { path: string; offset?: unknown; limit?: unknown };
   /** What the branch has loaded (read only when a candidate exists). */
@@ -125,13 +125,7 @@ export interface AttachOptions {
 
 /** The text blocks to append to a tool result, outermost first; none when nothing new loads. */
 export function blocksToAttach(cwd: string, o: AttachOptions): string[] {
-  const files: string[] = [];
-  for (const t of o.touched) {
-    for (const dir of candidateDirs(cwd, resolveToolPath(cwd, t))) {
-      const f = instructionFileIn(dir);
-      if (f && !files.includes(f)) files.push(f);
-    }
-  }
+  const files = candidateDirs(cwd, resolveToolPath(cwd, o.path)).flatMap((dir) => instructionFileIn(dir) ?? []);
   if (!files.length) return [];
   const loaded = o.loaded();
   const self = o.selfRead ? resolveToolPath(cwd, o.selfRead.path) : undefined;

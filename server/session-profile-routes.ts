@@ -11,7 +11,7 @@ import { addProfile } from "./profiles-store";
 import { profileModelCount, subagentProfilesInfo } from "./subagent-profiles";
 import { getSessionInsight } from "./insights";
 import { resolveSessionPath } from "./paths";
-import { findProfile, profileSources, readHidden, setHidden } from "./profile-sources";
+import { findProfile, profileRefusedWhy, profileSources, readHidden, setHidden } from "./profile-sources";
 import { approve } from "./profile-trust";
 import { projectRootOf } from "./project-root";
 import { type PowersHost, type PowersSend, type PowersSendResult, sendInviting, setPowersHost } from "./session-powers";
@@ -266,7 +266,7 @@ export function registerProfileRoutes(app: Hono): void {
     if (!cwd || !id || !Array.isArray(body?.grant) || typeof body?.overseerMayStart !== "boolean")
       return c.json({ error: "Expected {cwd, id, grant, overseerMayStart}" }, 400);
     const p = await findProfile({ source: "project", id }, cwd);
-    if (!p) return c.json({ error: `No profile "${id}" in this folder's project.` }, 404);
+    if (!p) return c.json({ error: (await profileRefusedWhy(id, cwd)) ?? `No profile "${id}" in this folder's project.` }, 404);
     try {
       approve(p, { grant: body.grant as never, overseerMayStart: body.overseerMayStart });
     } catch (err) {

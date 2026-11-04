@@ -53,7 +53,7 @@ import { orgLinkRows } from "./shares-overview";
 import { linkUrl, shareState } from "./share/listener";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { cut, type ReadFrom, Refusal, renderTranscript, sessionRef, text, writableRefusal } from "./session-guards";
-import { findProfile } from "./profile-sources";
+import { findProfile, profileRefusedWhy } from "./profile-sources";
 import { approvalRefusal } from "./profile-trust";
 import { singletonHolder } from "./session-profile";
 import { keyOf, singletonRunningText, titleCase } from "../shared/profiles";
@@ -1455,7 +1455,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
           // Resolved in the new session's own project (§chat.profiles/projects); a target's cwd has none.
           const where = typeof p.cwd === "string" && p.cwd ? p.cwd : null;
           const prof = await findProfile(p.profile, where);
-          if (!prof) throw new Refusal(`No profile "${p.profile}" for that folder. No session was created.`);
+          if (!prof) throw new Refusal(`${(await profileRefusedWhy(p.profile, where)) ?? `No profile "${p.profile}" for that folder.`} No session was created.`);
           if (!prof.overseerMayStart)
             throw new Refusal(`The ${prof.label} profile isn't marked "The Overseer may start it" (in its file), so you can't start it. No session was created; ask the user to start it or to allow it.`);
           if (prof.approval === "needed") throw new Refusal(`${approvalRefusal(prof)} No session was created.`);

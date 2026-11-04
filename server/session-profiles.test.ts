@@ -33,6 +33,7 @@ type SessionSummary = import("../shared/protocol").SessionSummary;
 const { linkedPlaybook, playbookTurnText } = await import("../shared/playbooks");
 const { readProfiles } = await import("./profiles-store");
 const { findProfile, profileSources } = await import("./profile-sources");
+const { createNotNamed } = await import("../shared/profiles");
 const { profilesListing } = await import("./session-profile-routes");
 const { approve, trustFile } = await import("./profile-trust");
 const { clearProjectCache, projectOf } = await import("./project-root");
@@ -297,6 +298,16 @@ describe("where profiles come from (§chat.profiles/projects)", () => {
     writeFileSync(typo, JSON.stringify({ version: 1, profiles: [{ id: "a", label: "A", remove: ["shel"] }] }));
     const t = readProfiles(typo);
     assert.ok(!t.ok && /profiles\[0\]: "remove" has unknown name "shel"/.test(t.error));
+  });
+
+  test("a project profile naming Create can't start a chat, and the refusal says why, not that it's missing", async () => {
+    const root = project("create-named", { bad: { ...CAPTAIN, id: "bad", mode: "create" } });
+    const got = await resolveChoice("bad", root);
+    assert.equal(got.ok, false);
+    assert.ok(!got.ok && got.error.includes(createNotNamed("a profile")), JSON.stringify(got));
+    assert.ok(!got.ok && !got.error.startsWith("No profile"), "the file's reason, not a missing profile");
+    const gone = await resolveChoice("never-was", root);
+    assert.ok(!gone.ok && gone.error.startsWith(`No profile "never-was"`));
   });
 
   test("a project's files: each parsed alone, a bad one listed as a problem with its path and error, never hiding the rest", async () => {

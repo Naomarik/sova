@@ -11,7 +11,7 @@ import { chatClaudeLogin, loginName } from "./claude-login-state";
 import { briefOverseer, countStarted, freeRunSlots } from "./overseer";
 import { promptSession } from "./session-prompt";
 import { listPlaybooks, listProjectPlaybooks, readProjectPlaybook } from "./playbooks";
-import { findProfile } from "./profile-sources";
+import { findProfile, profileRefusedWhy } from "./profile-sources";
 import { projectRootOf } from "./project-root";
 import { DEFAULT_TICK_MS, ScheduleKeeper, scheduleKeeper, scheduleRunsFile, schedulesFile, setScheduleKeeper, type LoginNow } from "./schedules";
 import { readSeen } from "./seen";
@@ -117,6 +117,7 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
     lateAfterMs: Math.max(60_000, 2 * tickMs * speed),
     readPlaybook: readProjectPlaybook,
     findProfile: (id, root) => findProfile(id, root),
+    profileRefusedWhy: (id, root) => profileRefusedWhy(id, root),
     automations: readAutomations,
     createForAutomation: (root, a, text, title) => createAutomationSession(request, root, a, text, title),
     configure: configureAutomationSession,

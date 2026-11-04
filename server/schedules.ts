@@ -215,6 +215,8 @@ export interface KeeperDeps {
   lateAfterMs: number;
   readPlaybook(root: string, id: string): Promise<{ info: PlaybookInfo; fields: Record<string, string> } | null>;
   findProfile(id: string, root: string): Promise<ListedProfile | null>;
+  /** Why a profile that wasn't found can't be used, when its file says why. */
+  profileRefusedWhy?(id: string, root: string): Promise<string | null>;
   /** The project's automation files, each parsed or with its error; [] without the folder. */
   automations?(root: string): Promise<AutomationRead[]>;
   sessions(): Promise<SessionSummary[]>;
@@ -418,7 +420,7 @@ export class ScheduleKeeper {
     out.view.text = scheduleText(header.triggers);
     const profile = await this.deps.findProfile(header.profile!, s.root);
     if (!profile) {
-      out.view.reason = `No profile "${header.profile}" for ${basename(s.root)}.`;
+      out.view.reason = (await this.deps.profileRefusedWhy?.(header.profile!, s.root)) ?? `No profile "${header.profile}" for ${basename(s.root)}.`;
       if (s.approved) out.view.state = "paused";
       return out;
     }

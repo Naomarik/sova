@@ -92,7 +92,7 @@ import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
-import { singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
+import { CREATE_NO_DEFAULT, createNotNamed, singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { subagentProfilesInfo, requireSubagentProfile, restoreReplacedProfiles, saveSubagentProfileDefault, saveSubagentProfiles } from "./subagent-profiles";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
@@ -1291,8 +1291,11 @@ export function buildApp(deps: AppDeps) {
     if (path === null) {
       // The default never stores project modes (§chat.mode-menu/project-modes): they belong to one chat's checkout.
       if (request.patch.projectModes !== undefined) return c.json({ error: "Project modes belong to one chat: send projectModes with ?path=" }, 400);
+      if (request.patch.mode === "create") return c.json({ error: CREATE_NO_DEFAULT }, 400);
       return c.json(await switchMode(request.patch));
     }
+    // Only a chat picks Create for itself (§chat.create-mode/per-chat-only); nothing was switched.
+    if (request.patch.mode === "create" && overseerSender(c.req.header(OVERSEER_SENDER_HEADER))) return c.json({ error: createNotNamed("the Overseer") }, 409);
     // The merge queue's own chats keep the modes Sova started them with (profiles/system, thread.ts threadMemoryOn).
     if (queueChatRole((await getSessionSummary(path).catch(() => null))?.profile)) return c.json({ error: QUEUE_CHAT_MODE_REFUSAL }, 409);
     const got = await chatFor(path);
@@ -1308,6 +1311,8 @@ export function buildApp(deps: AppDeps) {
     try {
       const result = await got.chat.switchMode(patch);
       if (result.needsApproval) return c.json({ error: result.error ?? "Approval needed", needsApproval: result.needsApproval } satisfies ProjectModeApprovalNeeded, 409);
+      // A chat on code older than Create keeps its mode, and one open elsewhere takes no switch.
+      if (patch.mode === "create" && result.mode !== "create") return c.json({ error: "This chat can't switch to Create: it runs older code or is open somewhere else. Reload it, then try again." }, 409);
       return c.json(result);
     } catch (err) {
       if (err instanceof ModeRefusedError) return c.json({ error: err.message }, 409);

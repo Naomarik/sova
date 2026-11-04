@@ -347,6 +347,17 @@ describe("a Sova-wide card", () => {
     rmSync(file);
   });
 
+  test("a key in the why is refused on every kind of card, and nothing is prepared", async () => {
+    const why = ["Use sk-ant", "FAKE-abc123def456ghi789-NOTREAL for it."].join("-");
+    const { project } = await gitProject("why-key");
+    const waiting = sova.sovaCardsInfo().cards.length;
+    await assert.rejects(runCreateSettingsTool(chat(null), { op: "propose", why, edits: [{ setting: "sova", id: "workers.priority", value: 7 }] }), /Create doesn't handle sign-ins or keys/);
+    await assert.rejects(runCreateSettingsTool(chat(project.id), { op: "propose", why, edits: [{ setting: "project", name: "n" }] }), /Create doesn't handle sign-ins or keys/);
+    await assert.rejects(runCreateSettingsTool(chat(project.id), { op: "propose", why, edits: [{ setting: "merge-queue", changes: { push: false } }] }), /Create doesn't handle sign-ins or keys/);
+    assert.equal(sova.sovaCardsInfo().cards.length, waiting);
+    assert.equal((await settings.settingsInfo(project.id)).cards.length, 0);
+  });
+
   test("rows read as words, never raw JSON", async () => {
     const d = await propose("models.limits", { limits: { zai: 3 } });
     const row = (d.card.kept as { label: string; fromText: string; toText: string }[]);

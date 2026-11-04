@@ -2,6 +2,7 @@ import type { SettingsBy, SettingsToolDetails } from "../shared/project-settings
 import { CLAUDE_LOGIN_REFERENCE, CLAUDE_LOGIN_SETTING, isSettingId, referenceText } from "../shared/settings-reference";
 import { isSovaSettingId, SCREEN_ONLY_SETTINGS, sovaReferenceText, sovaSettingsIndex } from "../shared/sova-settings-reference";
 import type { MeshCardState } from "../shared/mesh-access";
+import { credentialProblem, credentialRefusal } from "./card-refusals";
 import type { CreateSettingsHost } from "./create-settings-tool";
 import { meshCardState } from "./mesh";
 import { queueCardPort } from "./merge-queue/card-port";
@@ -71,6 +72,8 @@ export async function runCreateSettingsTool(chat: CreateChat, q: Record<string, 
   if (op === "propose") {
     const edits = q.edits;
     if (!Array.isArray(edits) || edits.length === 0) throw new SettingsRefusal("edits must list at least one change.");
+    // The why goes on the card too, whichever kind it is.
+    if (credentialProblem(q.why)) throw new SettingsRefusal(credentialRefusal("this card, once its why names no key"));
     for (const e of edits as { setting?: unknown; id?: unknown }[]) {
       const said = SCREEN_ONLY_SETTINGS[String(e?.setting)] ?? (e?.setting === "sova" ? SCREEN_ONLY_SETTINGS[String(e.id)] : undefined);
       if (said) throw new SettingsRefusal(said);

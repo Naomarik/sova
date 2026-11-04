@@ -97,7 +97,7 @@ export interface SetupMcp {
     /** What it starts as. */
     newChats: boolean;
     /** No switch, and why. */
-    off?: "waiting" | "no-check" | "sandbox" | "address-in-chat";
+    off?: "waiting" | "no-check" | "sandbox";
   }[];
 }
 

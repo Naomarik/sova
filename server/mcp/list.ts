@@ -14,13 +14,6 @@ import { isApproved, type McpOwner } from "./trust";
 
 export { NO_MCP, normalizeChatList, type McpChatList, type McpChatServer } from "./list-shape";
 
-/**
- * Address servers don't run in a chat yet: pi's HTTP transport needs @earendil-works/pi-mcp as a direct dependency
- * (tmp/mcp-proof.md item 3). The one switch: a Check and a sign-in work on them already, and a chat's transport for
- * one is the seam in server/harness/pi/mcp.ts.
- */
-export const ADDRESS_SERVERS_IN_CHATS = false;
-
 export interface McpChoice {
   offMcp?: readonly string[];
   onMcp?: readonly string[];
@@ -47,11 +40,9 @@ function candidate(owner: McpOwner, e: McpEntry, choice: McpChoice, sandboxOn: b
       ? "waiting"
       : !record
         ? "no-check"
-        : e.kind === "address" && !ADDRESS_SERVERS_IN_CHATS
-          ? "address-in-chat"
-          : e.kind === "address" && sandboxOn
-            ? "sandbox"
-            : undefined;
+        : e.kind === "address" && sandboxOn
+          ? "sandbox"
+          : undefined;
   const wanted = row.settings.newChats ? !choice.offMcp?.includes(e.name) : !!choice.onMcp?.includes(e.name);
   const on = !off && wanted;
   return {

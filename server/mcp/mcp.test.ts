@@ -304,11 +304,14 @@ describe("a chat's list", () => {
 
   test("no servers and no file: no group", () => assert.equal(setupOf(noProject(), {}, false), undefined));
 
-  test("address servers don't reach a chat yet, and say so", () => {
+  test("an address server is a chat's like any other, and stays off under Sandbox On", () => {
     putComputerEntry(ready(computer, "site", { url: "https://e/mcp" }));
     const folder = noProject();
-    assert.deepEqual(chatListOf(folder, {}, false).servers, []);
-    assert.equal(setupOf(folder, {}, false)!.rows[0]!.off, "address-in-chat");
+    assert.deepEqual(chatListOf(folder, {}, false).servers.map((s) => [s.name, s.kind]), [["site", "address"]]);
+    assert.equal(setupOf(folder, {}, false)!.rows[0]!.on, true);
+    assert.equal(setupOf(folder, {}, false)!.rows[0]!.off, undefined);
+    assert.deepEqual(chatListOf(folder, {}, true).servers, []);
+    assert.equal(setupOf(folder, {}, true)!.rows[0]!.off, "sandbox");
   });
 
   test("a worker's list is capped to the chat's own, its tools as trimmed there; a stranger's name is refused", () => {

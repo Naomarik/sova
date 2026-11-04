@@ -20,9 +20,13 @@ import { addChatLine, type McpCheckRecord } from "../../mcp/store";
 import { cleanMcpEnv, ENV_ALLOW, Events, StdioServer, type JsonRpc, type Launch } from "../../mcp/transport";
 import { agentRoot, stateRoot } from "../../state-root";
 import type { PiExtensionAPI } from "./extension-types";
+import { addressValues, AddressServer, McpCallFailed, type AddressLaunch } from "./mcp-http";
 import { noteMcpTool } from "./mcp-tools";
 
 type McpTransport = ReturnType<McpTransportFactory>;
+
+/** A server's copy behind a SnapshotTransport: a command's process, or an address's session. */
+type McpUpstream = Pick<StdioServer, "start" | "send" | "close" | "onMessage" | "onError" | "onClose" | "stderr" | "sandboxed" | "values"> & { readonly pid: number | undefined };
 
 /** The session entries: a chat's list, kept from its first message on, and a failure's note. */
 export const MCP_LIST_ENTRY = "sova-mcp-list";
@@ -49,9 +53,24 @@ export interface McpServerStatus {
  */
 export const reservedMcpServerName = reservedName;
 
-/** A listed server as pi's config: every tool declared. Its command never reaches pi: the transport is Sova's. */
+/** pi reads a client secret through its own expansion when it refreshes; `$$` and `$!` are its literal forms (P36). */
+export const piLiteral = (value: string): string => value.replace(/\$/g, "$$$$").replace(/^!/, "$$!");
+
+/**
+ * A listed server as pi's config: every tool declared. A command never reaches pi, nor does any header: the transport
+ * is Sova's. An address that signs in or takes a provider's token goes by its URL, the one way pi builds the auth
+ * provider a transport is handed (P36). One that can't start now needs none: its start says why.
+ */
 export function mcpConfigOf(server: McpChatServer): McpServerConfig {
-  return { command: server.name, exposure: "direct" };
+  const plain: McpServerConfig = { command: server.name, exposure: "direct" };
+  if (server.kind !== "address") return plain;
+  const ready = readyToRun(server.owner, server.name);
+  if (!ready.ok) return plain;
+  const { url, headers, oauth, auth, timeout } = ready.entry;
+  const secret = oauth?.clientSecret;
+  const limit = timeout ? { timeout } : {};
+  if (Object.keys(headers ?? {}).some((h) => h.toLowerCase() === "authorization") && !auth) return { ...plain, ...limit };
+  return { url: url!, exposure: "direct", ...limit, ...(auth ? { auth } : {}), ...(oauth ? { oauth: { ...oauth, ...(typeof secret === "string" ? { clientSecret: piLiteral(secret) } : {}) } } : {}) } as McpServerConfig;
 }
 
 const HANDSHAKE_ID = "sova-mcp-handshake";
@@ -67,8 +86,8 @@ const LIST_CHANGED = new Set(["notifications/tools/list_changed", "notifications
  * server that exited starts again at the next call. A start that fails answers that call with the reason.
  */
 export class SnapshotTransport extends Events {
-  private upstream: StdioServer | undefined;
-  private starting: Promise<StdioServer> | undefined;
+  private upstream: McpUpstream | undefined;
+  private starting: Promise<McpUpstream> | undefined;
   private initializeParams: unknown;
   private pending = new Set<string | number>();
   private closed = false;
@@ -78,7 +97,7 @@ export class SnapshotTransport extends Events {
 
   constructor(
     private readonly record: McpCheckRecord,
-    private readonly start_: () => StdioServer,
+    private readonly start_: () => McpUpstream,
     private readonly report: (patch: Partial<McpServerStatus>, how?: "changed" | "failed" | "address-under-on") => void,
     private readonly requestTimeoutMs: number,
   ) {
@@ -129,12 +148,25 @@ export class SnapshotTransport extends Events {
       const server = await this.running();
       await server.send(message);
     } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      if (error instanceof McpCallFailed) return this.lost(id, reason);
       this.pending.delete(id);
-      this.fail(id, error instanceof Error ? error.message : String(error));
+      this.fail(id, reason);
     }
   }
 
-  private running(): Promise<StdioServer> {
+  /** An address server's failed request: what a process's exit is to a command server. The next call opens a new copy. */
+  private async lost(id: string | number, reason: string): Promise<void> {
+    if (!this.pending.has(id)) return;
+    for (const waiting of this.pending) this.fail(waiting, reason);
+    this.pending.clear();
+    const server = this.upstream;
+    this.upstream = undefined;
+    this.status({ state: "failed", pid: undefined, error: reason });
+    await server?.close().catch(() => {});
+  }
+
+  private running(): Promise<McpUpstream> {
     if (this.upstream) return Promise.resolve(this.upstream);
     this.starting ??= this.open().finally(() => {
       this.starting = undefined;
@@ -142,7 +174,7 @@ export class SnapshotTransport extends Events {
     return this.starting;
   }
 
-  private async open(): Promise<StdioServer> {
+  private async open(): Promise<McpUpstream> {
     const server = this.start_();
     this.run = server;
     this.status({ state: "starting", error: undefined });
@@ -291,8 +323,6 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
 
       const launchOf = (server: McpChatServer, cwd: string) => async (): Promise<Launch> => {
         // Every start checks the approval again, as the files stand now.
-        // The seam for address servers: pi's HTTP transport isn't reachable without @earendil-works/pi-mcp.
-        if (server.kind === "address") throw new McpStartRefused(sandbox.on ? "address-under-on" : "failed", sandbox.on ? "address servers stay off while the sandbox is On" : "Address servers don't run in chats yet.");
         const ready = readyToRun(server.owner, server.name);
         if (!ready.ok) throw new McpStartRefused(ready.how, ready.reason);
         const argv = [ready.entry.command!, ...(ready.entry.args ?? [])];
@@ -307,7 +337,18 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
         return { ...confinedLaunch(prepared.value, argv, ready.entry.env), sandboxed: true, cwd: at, values: ready.values };
       };
 
-      const createTransport: McpTransportFactory = (entry, cwd) => {
+      const addressLaunch = (server: McpChatServer, authProvider: AddressLaunch["authProvider"], signedInTo: string | undefined) => (): AddressLaunch => {
+        // It would be Sova's own process reaching out, past the sandbox's network limits.
+        if (sandbox.on) throw new McpStartRefused("address-under-on", "address servers stay off while the sandbox is On");
+        const ready = readyToRun(server.owner, server.name);
+        if (!ready.ok) throw new McpStartRefused(ready.how, ready.reason);
+        const { url, headers } = ready.entry;
+        // A server moved since this chat opened: its sign-in belongs to the old address.
+        const keepsAuth = authProvider && url === signedInTo;
+        return { url: url!, headers: headers ?? {}, ...(keepsAuth ? { authProvider } : {}), values: addressValues(ready.entry, ready.values) };
+      };
+
+      const createTransport: McpTransportFactory = (entry, cwd, authProvider) => {
         // Only the chat's list runs: another extension's pi.registerMcpServer lands here too.
         const server = list.servers.find((s) => s.name === entry.name);
         if (!server) throw new Error(`MCP server "${entry.name}" isn't on this chat's list.`);
@@ -322,7 +363,9 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
             failed(server, how ?? (inside ? (writeOnly() ? "write-only" : "sandbox") : "failed"), patch.error ?? "unknown error");
           }
         };
-        const transport = new SnapshotTransport(server.record, () => new StdioServer(launchOf(server, cwd), cwd), report, 60_000);
+        const signedInTo = "url" in entry.config ? entry.config.url : undefined;
+        const upstream = () => (server.kind === "address" ? new AddressServer(addressLaunch(server, authProvider, signedInTo)) : new StdioServer(launchOf(server, cwd), cwd));
+        const transport = new SnapshotTransport(server.record, upstream, report, 60_000);
         transports.add(transport);
         transport.onClose(() => transports.delete(transport));
         return transport as unknown as McpTransport;

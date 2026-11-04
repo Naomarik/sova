@@ -7,6 +7,7 @@ import { after, describe, test } from "node:test";
 import { linkPiConfigExtensions } from "../../testing/agent-dir";
 import { ScriptedModel, scriptedModelsJson } from "./testing/scripted-model";
 import { piSession } from "./testing/handle";
+import { startAddressStub, type AddressStub } from "./testing/mcp-http-stub.fixture";
 import { cleanMcpEnv, StdioServer } from "../../mcp/transport";
 import { SnapshotTransport, type McpServerStatus } from "./mcp";
 
@@ -541,3 +542,214 @@ describe("a value that was filled in", () => {
   });
 });
 
+
+describe("an address server in a chat", () => {
+  const { saveSecret } = require("../../mcp/saved-values") as typeof import("../../mcp/saved-values");
+  const stubs: AddressStub[] = [];
+  after(() => stubs.forEach((s) => s.stop()));
+  const stubbed = async (tools?: string[]) => {
+    const stub = await startAddressStub(tools);
+    stubs.push(stub);
+    return stub;
+  };
+  /** This computer's list as Add and Check leaves it, for one address server. */
+  const approveAddress = (name: string, raw: Record<string, unknown>, tools = ["echo"]) => {
+    writeFileSync(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: { [name]: raw } }));
+    const version = versionOf(normalizeEntry(name, raw, "computer"), agentDir);
+    trust(computer, name, version);
+    saveCheck(computer, name, version, record(name, tools) as never);
+  };
+  const calls = (stub: AddressStub) => stub.seen.filter((s) => s.rpc.method === "tools/call");
+  const hellos = (stub: AddressStub) => stub.seen.filter((s) => s.rpc.method === "initialize");
+  const held = (entries: { type: string; data: unknown }[], path: string, value: string, what: string) =>
+    assert.ok(!JSON.stringify(entries).includes(value) && !readFileSync(path, "utf8").includes(value), `${what} leaked ${value}`);
+
+  test("nothing reaches it until the first call; one session across turns; its tools are the record's", async () => {
+    const stub = await stubbed();
+    approveAddress("site", { url: stub.url, headers: { Authorization: "Bearer plain-header-token" } });
+    const { say, results, declared } = await open(project("site"));
+    await say("first", { text: "no call" });
+    assert.equal(stub.seen.length, 0, "a turn that calls nothing reaches nothing");
+    assert.deepEqual(declared(), ["mcp__site__echo"], "the record's tools, not the server's");
+    await say("second", call("mcp__site__echo"), { text: "done" });
+    assert.equal(results()[0]!.isError, false, results()[0]!.text);
+    assert.equal(results()[0]!.text, "called echo");
+    await say("third", call("mcp__site__echo"), { text: "done" });
+    assert.equal(hellos(stub).length, 1, "one launch across turns");
+    assert.equal(calls(stub).length, 2);
+    assert.ok(!stub.seen.some((s) => s.rpc.method === "tools/list"), "a chat never asks a server for its tools");
+    const session = "stub-session-1";
+    assert.deepEqual(calls(stub).map((c) => c.session), [session, session]);
+    assert.equal(calls(stub)[0]!.headers["mcp-protocol-version"], "2025-06-18", "it speaks the version the server answered");
+    assert.equal(calls(stub)[0]!.headers.authorization, "Bearer plain-header-token");
+  });
+
+  test("a value is the string written: no !command runs and no $VAR is read, in a header or a saved secret", async () => {
+    const stub = await stubbed();
+    const cwd = project("literal");
+    const ran = [join(cwd, "ran-header"), join(cwd, "ran-saved")];
+    process.env.MCP_TEST_NOT_READ = "expanded-by-mistake";
+    approveAddress("lit", { url: stub.url, headers: { "X-Bang": `!touch ${ran[0]}`, "X-Dollar": "${MCP_TEST_PATHLESS}-$MCP_TEST_NOT_READ", "X-Saved": "${MCP_SAVED}", Authorization: "Bearer x" } });
+    saveSecret(computer, "lit", "MCP_SAVED", `!touch ${ran[1]}`);
+    saveSecret(computer, "lit", "MCP_TEST_PATHLESS", "${MCP_TEST_NOT_READ}");
+    const { say, results } = await open(cwd);
+    await say("go", call("mcp__lit__echo"), { text: "done" });
+    delete process.env.MCP_TEST_NOT_READ;
+    assert.equal(results()[0]!.isError, false, results()[0]!.text);
+    const { headers } = calls(stub)[0]!;
+    assert.equal(headers["x-bang"], `!touch ${ran[0]}`);
+    assert.equal(headers["x-saved"], `!touch ${ran[1]}`);
+    assert.equal(headers["x-dollar"], "${MCP_TEST_NOT_READ}-$MCP_TEST_NOT_READ", "a filled value is filled once");
+    for (const file of ran) assert.equal(existsSync(file), false, "a value ran");
+  });
+
+  test("what a server's headers hold stays out of every line Sova says of a failed start", async () => {
+    const stub = await stubbed();
+    stub.fail = "all";
+    const [saved, literal, bearer] = ["saved-header-value-4e1a", "literal-header-value-77b0", "bearer-credential-c91d"];
+    approveAddress("noisy", { url: stub.url, headers: { Authorization: `Bearer ${bearer}`, "X-Literal": literal, "X-Saved": "${MCP_KEY}" } });
+    saveSecret(computer, "noisy", "MCP_KEY", saved);
+    const { say, results, path } = await open(project("noisy"));
+    await say("go", call("mcp__noisy__echo"), { text: "done" });
+    assert.equal(results()[0]!.isError, true);
+    assert.match(results()[0]!.text, /500/, "the failure's own words stay");
+    const rows = chatLines(computer, "noisy");
+    assert.match(JSON.stringify(rows), /500/);
+    const notes = custom(path, MCP_NOTE_ENTRY);
+    assert.deepEqual(notes.map((n) => n.how), ["failed"]);
+    for (const value of [saved, literal, bearer]) {
+      assert.ok(JSON.stringify(stub.seen).includes(value), "the stub really got it, so its 500 repeats it");
+      assert.ok(!results()[0]!.text.includes(value), results()[0]!.text);
+      held([...rows, ...notes], path, value, "a failed start");
+    }
+  });
+
+  test("the same on a call that fails once the server is up, and the next call opens a new session", async () => {
+    const stub = await stubbed();
+    const secret = "later-hdr-90aa";
+    approveAddress("later", { url: stub.url, headers: { "X-Key": secret, Authorization: "Bearer x" } });
+    const { say, results, path } = await open(project("later"));
+    await say("up", call("mcp__later__echo"), { text: "done" });
+    assert.equal(results()[0]!.isError, false, results()[0]!.text);
+    stub.fail = "calls";
+    await say("down", call("mcp__later__echo"), { text: "done" });
+    const failed = results()[1]!;
+    assert.equal(failed.isError, true);
+    assert.match(failed.text, /500/);
+    assert.ok(!failed.text.includes(secret), failed.text);
+    const rows = chatLines(computer, "later");
+    const notes = custom(path, MCP_NOTE_ENTRY);
+    assert.deepEqual(notes.map((n) => n.how), ["failed"], "a failed call is the chat's note");
+    assert.match(JSON.stringify(rows), /500/, "and the row's line");
+    held([...rows, ...notes], path, secret, "a failed call");
+    stub.fail = false;
+    await say("back", call("mcp__later__echo"), { text: "done" });
+    assert.equal(results()[2]!.isError, false, results()[2]!.text);
+    assert.equal(hellos(stub).length, 2);
+    stub.fail = "calls";
+    await say("again", call("mcp__later__echo"), { text: "done" });
+    assert.equal(custom(path, MCP_NOTE_ENTRY).length, 2, "it worked in between, so a new failure gets its note");
+  });
+
+  test("a server that went away fails the call with the reason, and works again once it's back", async () => {
+    const stub = await stubbed();
+    approveAddress("gone", { url: stub.url, headers: { Authorization: "Bearer x" } });
+    const { say, results, path } = await open(project("gone"));
+    await say("up", call("mcp__gone__echo"), { text: "done" });
+    stub.stop();
+    await say("down", call("mcp__gone__echo"), { text: "done" });
+    assert.equal(results()[1]!.isError, true);
+    assert.deepEqual(custom(path, MCP_NOTE_ENTRY).map((n) => n.how), ["failed"]);
+    await stub.listen();
+    await say("back", call("mcp__gone__echo"), { text: "done" });
+    assert.equal(results()[2]!.isError, false, results()[2]!.text);
+  });
+
+  test("a server that forgot its session answers on a new one, and the call isn't lost", async () => {
+    const stub = await stubbed();
+    approveAddress("forgot", { url: stub.url, headers: { Authorization: "Bearer x" } });
+    const { say, results, path } = await open(project("forgot"));
+    await say("up", call("mcp__forgot__echo"), { text: "done" });
+    stub.forgetSessions();
+    await say("again", call("mcp__forgot__echo"), { text: "done" });
+    assert.equal(results()[1]!.isError, false, results()[1]!.text);
+    assert.equal(hellos(stub).length, 2);
+    assert.deepEqual(custom(path, MCP_NOTE_ENTRY), []);
+  });
+
+  const signedIn = (name: string, url: string, tokens: Record<string, unknown>) =>
+    writeFileSync(join(agentDir, "mcp-auth.json"), JSON.stringify({ [`mcp__${name}|${url}`]: { serverUrl: url, tokens: { token_type: "Bearer", ...tokens } } }), { mode: 0o600 });
+
+  test("a sign-in reaches the server; one that's stale refreshes with a client secret passed literally", async () => {
+    const stub = await stubbed();
+    const cwd = project("oauth");
+    const ran = join(cwd, "ran-secret");
+    stub.bearer = "stub-old-token";
+    signedIn("oa", stub.url, { access_token: "stub-old-token", refresh_token: "stub-old-refresh" });
+    approveAddress("oa", { url: stub.url, oauth: { clientId: "stub-client", clientSecret: "${MCP_CLIENT}" } });
+    const literal = `!touch ${ran}`;
+    saveSecret(computer, "oa", "MCP_CLIENT", literal);
+    const { say, results } = await open(cwd);
+    await say("go", call("mcp__oa__echo"), { text: "done" });
+    assert.equal(results()[0]!.isError, false, results()[0]!.text);
+    assert.equal(calls(stub)[0]!.headers.authorization, "Bearer stub-old-token");
+    stub.bearer = "stub-rotated-away";
+    await say("stale", call("mcp__oa__echo"), { text: "done" });
+    assert.equal(results()[1]!.isError, false, results()[1]!.text);
+    assert.deepEqual(stub.refreshes, [{ clientSecret: literal, refreshToken: "stub-old-refresh" }]);
+    assert.equal(existsSync(ran), false, "a client secret ran");
+    assert.equal(calls(stub).at(-1)!.headers.authorization, "Bearer stub-fresh-token");
+    assert.match(readFileSync(join(agentDir, "mcp-auth.json"), "utf8"), /stub-fresh-refresh/, "the refresh is kept where a Check reads it");
+  });
+
+  test("with no sign-in the call fails saying so, with the note", async () => {
+    const stub = await stubbed();
+    stub.bearer = "stub-nobody-has-this";
+    rmSync(join(agentDir, "mcp-auth.json"), { force: true });
+    approveAddress("nosign", { url: stub.url });
+    const { say, results, path } = await open(project("nosign"));
+    await say("go", call("mcp__nosign__echo"), { text: "done" });
+    assert.equal(results()[0]!.isError, true);
+    assert.match(results()[0]!.text, /needs a sign-in/);
+    assert.match(custom(path, MCP_NOTE_ENTRY)[0].reason, /needs a sign-in/);
+  });
+
+  test("a sign-in stays with its address: a server moved and approved again never sends it to the new one", async () => {
+    const [old, moved] = [await stubbed(), await stubbed()];
+    moved.bearer = "stub-nobody-has-this";
+    signedIn("moved", old.url, { access_token: "stub-other-address-token", refresh_token: "r" });
+    approveAddress("moved", { url: old.url });
+    const { say, results } = await open(project("moved"));
+    await say("first", { text: "done" });
+    approveAddress("moved", { url: moved.url });
+    await say("go", call("mcp__moved__echo"), { text: "done" });
+    assert.equal(results()[0]!.isError, true);
+    assert.ok(!JSON.stringify(moved.seen).includes("stub-other-address-token"));
+  });
+
+  test("Sandbox On: a chat listing one reaches nothing, says why, and works again after", async () => {
+    const stub = await stubbed();
+    approveAddress("fenced", { url: stub.url, headers: { Authorization: "Bearer x" } });
+    const { chat, say, results, path } = await open(project("fenced"));
+    await say("up", call("mcp__fenced__echo"), { text: "done" });
+    assert.equal((await chat.applySandbox("on")).outcome, "command");
+    const before = stub.seen.length;
+    await say("on", call("mcp__fenced__echo"), { text: "done" });
+    assert.equal(results()[1]!.isError, true);
+    assert.match(results()[1]!.text, /sandbox/i);
+    assert.equal(stub.seen.length, before, "nothing left this computer for it");
+    assert.deepEqual(custom(path, MCP_NOTE_ENTRY).map((n) => n.how), ["address-under-on"]);
+    assert.equal((await chat.applySandbox("off")).outcome, "command");
+    await say("off", call("mcp__fenced__echo"), { text: "done" });
+    assert.equal(results()[2]!.isError, false, results()[2]!.text);
+  });
+
+  test("a chat started with the sandbox On doesn't list it", async () => {
+    const stub = await stubbed();
+    approveAddress("offlist", { url: stub.url, headers: { Authorization: "Bearer x" } });
+    const { chat, say, declared } = await open(project("offlist"));
+    assert.equal((await chat.applySandbox("on")).outcome, "command");
+    await say("first", { text: "done" });
+    assert.deepEqual(declared(), []);
+  });
+});

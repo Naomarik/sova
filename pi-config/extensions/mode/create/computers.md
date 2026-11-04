@@ -37,6 +37,7 @@ These stay on screens: links between computers, claiming a login and an internet
 - Live: now. Lowering a grant ends open connections.
 - Check: the host's row on the Mesh page.
 
+<!-- Pairing by card awaits the main chat. To pull it: drop `mesh.pairing` and `mesh.relay` from this section's By line, the fingerprint sentence from Approves, and the `mesh.pairing` clause in step 4; By goes back to Screen or Terminal. -->
 ## A computer off the tailnet, a phone or a server
 
 - Change: bring in a computer that dials out to a relay, an Android phone, or a VPS.

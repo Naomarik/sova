@@ -21,7 +21,7 @@ import {
   rowFacts,
   setupLine,
   setupOffLine,
-  setupProfileKey,
+  setupServersKey,
   setupShows,
   stateTone,
   stateWord,
@@ -117,12 +117,19 @@ test("a setup row with no switch says why, naming where to approve it", () => {
   assert.equal(setupOffLine(row({ off: "sandbox" })), "Address servers stay off while the sandbox is On.");
 });
 
+test("the sandbox's state moves the card's key, each way", () => {
+  const key = (state: string) => setupServersKey(null, state);
+  assert.notEqual(key("on"), key("subagents"));
+  assert.notEqual(key("on"), key("off"));
+  assert.equal(key("on"), key("on"));
+});
+
 test("a profile that takes MCP Servers away, or gives them back, changes the card's key; another capability doesn't", () => {
-  const custom = (remove: string[]) => setupProfileKey({ label: "Custom", remove });
+  const custom = (remove: string[]) => setupServersKey({ label: "Custom", remove });
   assert.notEqual(custom(["mcp"]), custom([]));
   assert.equal(custom(["web"]), custom([]));
-  assert.notEqual(setupProfileKey({ label: "Reader", remove: ["mcp"] }), custom(["mcp"]), "the line names the profile");
-  assert.equal(setupProfileKey(null), setupProfileKey(undefined));
+  assert.notEqual(setupServersKey({ label: "Reader", remove: ["mcp"] }), custom(["mcp"]), "the line names the profile");
+  assert.equal(setupServersKey(null), setupServersKey(undefined));
 });
 
 test("the group: one line for remote and a profile, none at all with no servers", () => {

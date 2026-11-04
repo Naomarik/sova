@@ -55,7 +55,7 @@ type Answer<T> = { ok: T } | { error: string };
  * Everything but Repository is one fold, closed by default, whose summary is the System context
  * line; its open state lives per session in lib/setup-fold, so a redraw after a pick keeps it.
  */
-export function SessionSetupCard(props: { path: string; editable?: boolean; toolsKey?: string; /** lib/mcp setupProfileKey. */ profileKey?: string }) {
+export function SessionSetupCard(props: { path: string; editable?: boolean; toolsKey?: string; /** lib/mcp setupServersKey. */ serversKey?: string }) {
   const [setup, setSetup] = createSignal<Answer<SessionSetup> | null>(null);
   const [git, setGit] = createSignal<Answer<GitSummary> | null>(null);
   const [landed, setLanded] = createSignal(false);
@@ -111,12 +111,12 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
     }),
   );
 
-  // A profile pick that takes MCP Servers away or gives them back: the group reads again. The fold
+  // A profile pick or a sandbox change can move what the server group says: it reads again. The fold
   // and everything else on the card stay as they are.
-  const profileKey = createMemo(() => props.profileKey);
+  const serversKey = createMemo(() => props.serversKey);
   createEffect(
     on(
-      profileKey,
+      serversKey,
       () => {
         const mine = run;
         void settle(fetchSessionSetup(path(), true)).then((next) => {

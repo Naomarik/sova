@@ -141,3 +141,6 @@ couldn't connect in the one run so far; weaker enforcement isn't tested. The ref
 and gives a chat the words to send you to the page.
 
 An installed Sova extension's page passes as your click, so installing one is a trust decision.
+
+A click relayed through a computer you've linked can't be told from a script going through that computer.
+This applies only to computers you've linked.

@@ -43,6 +43,12 @@ export type CommandId =
   | "session.card.get"
   | "session.merge-cards"
   | "session.card.answer"
+  | "session.cleanup"
+  | "session.title.auto"
+  | "session.title.shorten"
+  | "session.worktree.summary"
+  | "session.worktree.cleanup"
+  | "session.diff.summary"
   | "project.verb.create"
   | "project.verb.up"
   | "project.verb.down"
@@ -91,6 +97,9 @@ export type CommandId =
   | "project.overseer.todo.remove"
   | "project.overseer.todo.reorder"
   | "project.overseer.todo.clear-done"
+  | "project.overseer.get"
+  | "project.overseer.actions"
+  | "project.overseer.memory.get"
   | "project.list"
   | "project.get"
   | "project.create"
@@ -134,6 +143,8 @@ export type CommandId =
   | "overseer.idea.update"
   | "overseer.notes.get"
   | "overseer.notes.set"
+  | "overseer.get"
+  | "overseer.memory.get"
   | "models.list"
   | "extensions.list"
   | "targets.list"
@@ -150,6 +161,10 @@ export type CommandId =
   | "usage.prices.refresh"
   | "insights.usage"
   | "insights.usage.history"
+  | "insights.usage.refresh"
+  | "schedule.list"
+  | "playbook.list"
+  | "draft-spec.list"
   | "insights.agents"
   | "insights.worktrees"
   | "insights.session.workers"
@@ -467,6 +482,56 @@ export interface CommandParams {
     "card": string;
     /** {option: n}, {button: n} or {items: [true|false, …]} */
     "answer": unknown;
+  };
+  /** Delete session files for good: older than 7 or 30 days, empty husks, or named archived sessions. Live, busy and just-written ones are skipped; --dry-run lists what would go. (changes something; needs the card's owner trusted) */
+  "session.cleanup": {
+    /** What goes: by age, empty husks, or the named paths */
+    "mode": "age" | "husks" | "paths";
+    /** With age: 7 or 30 */
+    "min-age-days"?: number;
+    /** With paths: archived session paths, comma-separated (at most 100) */
+    "paths"?: string[];
+    /** Only list what would be deleted */
+    "dry-run"?: boolean;
+  };
+  /** Name sessions with the title model, as Auto-title does; --redo replaces one session's title. (changes something; needs the card's owner trusted) */
+  "session.title.auto": {
+    /** Session paths, comma-separated */
+    "paths": string[];
+    /** Only say which would be named */
+    "dry-run"?: boolean;
+    /** Replace the title, even a typed one (exactly one path) */
+    "redo"?: boolean;
+  };
+  /** Rename this host's sessions whose generated titles are long, with the title model; typed titles are kept. (changes something; needs the card's owner trusted) */
+  "session.title.shorten": {
+    /** Only say which would be renamed */
+    "dry-run"?: boolean;
+  };
+  /** How many worktrees of a session's repository are merged and could be cleaned up. (only looks; needs the card's owner trusted) */
+  "session.worktree.summary": {
+    /** The session, by id or by path */
+    "session"?: string;
+  };
+  /** Remove the merged worktrees of a session's repository: --dry-run lists them, then --expect names exactly the paths to remove. Never forced. (changes something; needs the card's owner trusted) */
+  "session.worktree.cleanup": {
+    /** The session, by id or by path */
+    "session"?: string;
+    /** Only list what would be removed */
+    "dry-run"?: boolean;
+    /** The absolute worktree paths to remove, as the dry run listed them */
+    "expect"?: string[];
+  };
+  /** The files a session's worktree, commit, merge or dirty folder changed, as the changes viewer lists them. (only looks; needs the card's owner trusted) */
+  "session.diff.summary": {
+    /** What to compare */
+    "kind": "dirty" | "worktree" | "commit" | "merge";
+    /** The session's path; the folder must be one it knows */
+    "session-path": string;
+    /** The folder: the worktree, the repository, or the dirty folder */
+    "path": string;
+    /** With commit or merge: the commit */
+    "sha"?: string;
   };
   /** The project verb create, as the operator (sova-project create). (changes something; needs the card's owner trusted) */
   "project.verb.create": {
@@ -2310,6 +2375,23 @@ export interface CommandParams {
     /** The project's id */
     "pid": string;
   };
+  /** A project overseer: its conversation and history, settings, coding sessions, what it started, and its usage. (only looks; needs the card's owner trusted) */
+  "project.overseer.get": {
+    /** The project's id */
+    "pid": string;
+  };
+  /** A project overseer's recorded actions, newest first. (only looks; needs the card's owner trusted) */
+  "project.overseer.actions": {
+    /** The project's id */
+    "pid": string;
+    /** At most this many (1–500; 50 when left out) */
+    "limit"?: number;
+  };
+  /** A project overseer's memory switch: on or off, its type and size, and its state. (only looks; needs the card's owner trusted) */
+  "project.overseer.memory.get": {
+    /** The project's id */
+    "pid": string;
+  };
   /** Every registered project, in an organization or not. (only looks; needs the card's owner trusted) */
   "project.list": Record<string, never>;
   /** One registered project. (only looks; needs the card's owner trusted) */
@@ -2609,6 +2691,10 @@ export interface CommandParams {
     /** The notes you last read, so one the Overseer added meanwhile isn't lost */
     "base"?: string;
   };
+  /** The Overseer's conversation, its history, its badge and unread count, and whether it is busy. (only looks; needs the card's owner trusted) */
+  "overseer.get": Record<string, never>;
+  /** The Overseer's memory switch: on or off, its type and size, and its state. (only looks; needs the card's owner trusted) */
+  "overseer.memory.get": Record<string, never>;
   /** The models this server can run, with favorites and the policy's verdicts. (only looks; needs the card's owner trusted) */
   "models.list": Record<string, never>;
   /** The installed extensions and whether each backend answers. (only looks; needs the card's owner trusted) */
@@ -2685,6 +2771,22 @@ export interface CommandParams {
     "window": string;
     /** Readings around this time (epoch ms) */
     "at"?: number;
+  };
+  /** Ask each provider for its usage again, then the readings as the sidebar shows them. (changes something; needs the card's owner trusted) */
+  "insights.usage.refresh": Record<string, never>;
+  /** Every approved schedule and its state. (only looks; needs the card's owner trusted) */
+  "schedule.list": Record<string, never>;
+  /** The playbooks Sova ships, yours, and a folder's project ones, with each project schedule's state. (only looks; needs the card's owner trusted) */
+  "playbook.list": {
+    /** A folder whose project playbooks to list */
+    "cwd"?: string;
+  };
+  /** The draft specs conversations proposed, in every project or one, waiting for review. (only looks; needs the card's owner trusted) */
+  "draft-spec.list": {
+    /** Only this project's (its id) */
+    "project"?: string;
+    /** Only this session's (its id) */
+    "session-id"?: string;
   };
   /** The Agents page's workers and teams. (only looks; needs the card's owner trusted) */
   "insights.agents": {
@@ -2953,6 +3055,12 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "session.card.get": "looks",
   "session.merge-cards": "looks",
   "session.card.answer": "changes",
+  "session.cleanup": "changes",
+  "session.title.auto": "changes",
+  "session.title.shorten": "changes",
+  "session.worktree.summary": "looks",
+  "session.worktree.cleanup": "changes",
+  "session.diff.summary": "looks",
   "project.verb.create": "changes",
   "project.verb.up": "changes",
   "project.verb.down": "changes",
@@ -3001,6 +3109,9 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.overseer.todo.remove": "changes",
   "project.overseer.todo.reorder": "changes",
   "project.overseer.todo.clear-done": "changes",
+  "project.overseer.get": "looks",
+  "project.overseer.actions": "looks",
+  "project.overseer.memory.get": "looks",
   "project.list": "looks",
   "project.get": "looks",
   "project.create": "changes",
@@ -3044,6 +3155,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "overseer.idea.update": "changes",
   "overseer.notes.get": "looks",
   "overseer.notes.set": "changes",
+  "overseer.get": "looks",
+  "overseer.memory.get": "looks",
   "models.list": "looks",
   "extensions.list": "looks",
   "targets.list": "looks",
@@ -3060,6 +3173,10 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "usage.prices.refresh": "changes",
   "insights.usage": "looks",
   "insights.usage.history": "looks",
+  "insights.usage.refresh": "changes",
+  "schedule.list": "looks",
+  "playbook.list": "looks",
+  "draft-spec.list": "looks",
   "insights.agents": "looks",
   "insights.worktrees": "looks",
   "insights.session.workers": "looks",

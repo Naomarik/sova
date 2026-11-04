@@ -2224,6 +2224,10 @@ after).
 - **Request.** `{ mode: "paths", paths: string[] }` — 1 to 100 paths, each validated exactly like
   the archive route's `path` (`resolveSessionPath`), so a path outside the sessions dir is a 400
   before anything runs. The UI always sends exactly one.
+- **Every field is checked first.** In every mode, a `dryRun` that is present and not a boolean
+  ("dryRun must be true or false"), a mode that isn't `age`, `husks` or `paths`, a `minAgeDays`
+  that is present and not 7 or 30, and a `paths` that is present and not 1 to 100 strings are each
+  a 400 with its sentence before anything runs: a malformed `dryRun` is never read as a real run.
 - **Guard.** Only sessions carrying the archive mark are deletable this way; that's the order of
   operations (§app/session-list "Archiving"), and it's what stops a mis-click from destroying live work. An
   unarchived session is refused with the reason "Not archived — archive it first, then delete it."

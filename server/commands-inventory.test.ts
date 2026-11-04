@@ -18,7 +18,7 @@ import { COMMANDS } from "../shared/commands-catalog";
 import { renderCommandsDoc } from "./commands-inventory/render";
 import {
   type Inventory, chatClientTypes, compareInventory, formatInventory, inventoryRoutes, isPageSource, isToolSource, keydownListeners, listFiles,
-  pendingGrowth, routeOfEntry, toolSpecs,
+  CAPABILITY_LINKS, CHAT_START, GRANTS, OPTED_OUT, PAGE_PLUMBING, PENDING_NEVER_GROWS, ROUTE_CLASSES, optedOut, pendingGrowth, routeOfEntry, toolSpecs,
 } from "./commands-inventory/scan";
 
 const REPO = resolve(import.meta.dirname, "..");
@@ -120,6 +120,62 @@ describe("routes, on a made-up app", () => {
   });
 });
 
+// ---- 2b. The areas left as is, by choice ---------------------------------------------------------------
+
+describe("the areas left as is, by choice", () => {
+  const routes = [
+    { method: "GET", path: "/api/sessions" },
+    { method: "GET", path: "/api/voice/state" },
+    { method: "POST", path: "/api/push/test" },
+    { method: "GET", path: "/api/settings" },
+  ];
+  const needOf = () => "sessions";
+  const entries = [{ id: "push.test", route: { method: "POST", path: "/api/push/test" } }];
+  const base: Inventory = { routes: inventoryRoutes(routes, entries, needOf).rows, frames: [], keydown: {}, tools: {} };
+
+  test("a listed area's route is the class; an entry there still wins, with no problem; a core route stays pending", () => {
+    const { rows, problems } = inventoryRoutes(routes, entries, needOf);
+    assert.deepEqual(problems, []);
+    assert.deepEqual(rows, {
+      "GET /api/sessions": { need: "sessions", is: "pending" },
+      "GET /api/settings": { need: "sessions", is: "opted-out" },
+      "GET /api/voice/state": { need: "sessions", is: "opted-out" },
+      "POST /api/push/test": { need: "sessions", is: "command", ids: ["push.test"] },
+    });
+  });
+
+  test("a new route in a core area is pending growth; one in a listed area is not", () => {
+    const more = [...routes, { method: "POST", path: "/api/sessions/new-thing" }, { method: "POST", path: "/api/voice/new-thing" }];
+    const now: Inventory = { ...base, routes: inventoryRoutes(more, entries, needOf).rows };
+    assert.deepEqual(pendingGrowth(base, now), ["POST /api/sessions/new-thing"]);
+    assert.match(compareInventory(base, now).join("\n"), /POST \/api\/sessions\/new-thing is new \(pending/);
+  });
+
+  test("taking an area back turns its routes pending, unless each is listed on its own", () => {
+    const back = OPTED_OUT.filter((a) => a !== "voice");
+    assert.equal(optedOut("GET", "/api/voice/state", back), false);
+    assert.equal(optedOut("GET", "/api/voice/state", [...back, "GET /api/voice/state"]), true);
+    assert.equal(optedOut("GET", "/api/voicemail", OPTED_OUT), false, "a name is a whole segment");
+  });
+
+  test("no listed area is a core one, and the failure names the list only for areas already on it", () => {
+    const core = ["sessions", "projects", "overseer", "schedules", "playbooks", "worktrees", "diff", "attachment", "memory", "links", "upload", "transcript", "insights", "explanations", "draft-specs", "targets", "subagents", "chat"];
+    assert.deepEqual(OPTED_OUT.filter((a) => core.includes(a)), []);
+    assert.match(PENDING_NEVER_GROWS, /only for an area already on it/);
+    assert.match(PENDING_NEVER_GROWS, /adding an area is the user's decision/);
+  });
+
+  test("each listed area overlaps no other class, at its root or below", () => {
+    const others = ROUTE_CLASSES.filter((c) => c.id !== "opted-out");
+    const hits = OPTED_OUT.flatMap((a) =>
+      ["GET", "POST", "PUT", "DELETE", "PATCH", "ALL"].flatMap((m) =>
+        [`/api/${a}`, `/api/${a}/x`, `/api/${a}/:id/y`, `/api/${a}/*`].flatMap((p) => others.filter((c) => c.matches(m, p)).map((c) => `${m} ${p}: ${c.id}`)),
+      ),
+    );
+    assert.deepEqual(hits, []);
+  });
+});
+
 // ---- 3. The real app and tree, against the baseline ---------------------------------------------------
 
 const { testApp } = await import("./mesh/app-test-fixtures");
@@ -155,9 +211,36 @@ const baseline: Inventory = JSON.parse(readFileSync(join(REPO, BASELINE), "utf8"
 describe("the real app and tree", () => {
   test("the walk saw the app: hundreds of routes, every catalogue entry on one", () => {
     assert.ok(Object.keys(actual.routes).length > 300, `only ${Object.keys(actual.routes).length} routes`);
-    fail(routes.problems, "Each catalogue entry must land on one registered route that is in no class.");
+    fail(routes.problems, "Each catalogue entry must land on one registered route that is in no class (or in one whose entries win: opted-out).");
     const pointed = new Set(Object.values(actual.routes).flatMap((r) => r.ids ?? []));
     assert.deepEqual(COMMANDS.map((c) => c.id).filter((id) => !pointed.has(id)), []);
+  });
+
+  test("no route in an area left as is is pending, or in another class; its entries' routes stay commands", () => {
+    const listed = app.routes.filter((r) => optedOut(r.method, r.path));
+    assert.ok(listed.length > 200, `only ${listed.length} routes left as is`);
+    const others = ROUTE_CLASSES.filter((c) => c.id !== "opted-out");
+    assert.deepEqual(listed.flatMap((r) => others.filter((c) => c.matches(r.method, r.path)).map((c) => `${r.method} ${r.path}: ${c.id}`)), []);
+    const rows = listed.map((r) => [`${r.method} ${r.path}`, actual.routes[`${r.method} ${r.path}`]!] as const);
+    assert.deepEqual(rows.filter(([, row]) => row.is === "pending").map(([k]) => k), []);
+    assert.deepEqual([...new Set(rows.map(([, row]) => row.is))].sort(), ["command", "opted-out"]);
+    assert.ok(rows.some(([k, row]) => k === "POST /api/push/test" && row.is === "command"), "push.test stays a command");
+  });
+
+  test("the core areas' not-a-command classes are exact routes: each registered, each in its class only, nothing beside them", () => {
+    const lists: [string, readonly string[]][] = [["page-plumbing", PAGE_PLUMBING], ["chat-start", CHAT_START], ["capability-links", CAPABILITY_LINKS], ["grants", GRANTS]];
+    const registered = new Set(app.routes.map((r) => `${r.method} ${r.path}`));
+    for (const [id, list] of lists) {
+      const cls = ROUTE_CLASSES.find((c) => c.id === id)!;
+      for (const k of list) {
+        assert.ok(registered.has(k), `${id}: ${k} is not a registered route`);
+        assert.equal(actual.routes[k]?.is, id, k);
+        const [m, p] = [k.slice(0, k.indexOf(" ")), k.slice(k.indexOf(" ") + 1)];
+        // A neighbour (a sub-path, another method) is not in the class: a new core route still arrives pending.
+        for (const [nm, np] of [[m, `${p}/x`], [m === "GET" ? "POST" : "GET", p], [m, p.replace(/\/[^/]+$/, "/x")]] as const)
+          if (!list.includes(`${nm} ${np}`)) assert.equal(cls.matches(nm, np), false, `${id} matches ${nm} ${np}`);
+      }
+    }
   });
 
   test("ChatClientMessage is read whole: every member an inline object with a literal type", () => {
@@ -168,7 +251,7 @@ describe("the real app and tree", () => {
   test(`routes, mesh needs, frames, listeners and tools are exactly ${BASELINE}`, () => {
     fail(
       compareInventory(baseline, actual),
-      `${BASELINE} is the inventory. A new route needs a catalogue entry (agents/server/commands/overview.md) or a class in scan.ts; ` +
+      `${BASELINE} is the inventory. A new route needs a catalogue entry (agents/server/commands/overview.md) or a not-a-command class in scan.ts; ` +
         "a route that became a command drops its pending row; a mesh need that moved is reviewed as one. " +
         `Then SOVA_INVENTORY_OUT=$PWD/${BASELINE} pnpm test -- server/commands-inventory.test.ts and node scripts/commands-inventory.mjs.`,
     );
@@ -191,6 +274,6 @@ describe("the pending list in the working tree never grows past the committed on
       t.skip?.("no committed baseline");
       return;
     }
-    fail(pendingGrowth(head, baseline), `${BASELINE} gained pending rows against HEAD. The pending list only shrinks: give these routes catalogue entries (or a class), never a pending row.`);
+    fail(pendingGrowth(head, baseline), `${BASELINE} gained pending rows against HEAD. Give these routes catalogue entries (or a not-a-command class), never a pending row: ${PENDING_NEVER_GROWS}`);
   });
 });

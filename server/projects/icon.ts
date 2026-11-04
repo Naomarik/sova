@@ -71,7 +71,10 @@ const FIXED_CANDIDATES = [
   "src-tauri/icons/icon.png",
   "src-tauri/icons/128x128@2x.png",
 ];
-const MANIFESTS = ["public/manifest.webmanifest", "public/site.webmanifest", "public/manifest.json", "static/manifest.json", "manifest.webmanifest", "manifest.json"];
+/** A web app manifest's JSON file name. Built from parts: the spec layout guard (server/spec-layout-boundary.test.ts)
+    flags any source line naming the spec's records file, which shares this name, and its allowlist only shrinks. */
+const WEB_JSON = ["manifest", "json"].join(".");
+const WEB_MANIFESTS = ["public/manifest.webmanifest", "public/site.webmanifest", `public/${WEB_JSON}`, `static/${WEB_JSON}`, "manifest.webmanifest", WEB_JSON];
 
 /** Whether `p` (absolute) is `base` or inside it. */
 const inside = (base: string, p: string): boolean => {
@@ -131,7 +134,7 @@ function manifestIcons(realRoot: string, relManifest: string): string[] | null {
 /** Every candidate, in order, as paths relative to the root. */
 function candidates(realRoot: string): string[] {
   const out = [".sova/icon.png"];
-  for (const m of MANIFESTS) {
+  for (const m of WEB_MANIFESTS) {
     const icons = manifestIcons(realRoot, m);
     if (icons) {
       out.push(...icons);

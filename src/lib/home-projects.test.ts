@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AttentionDigest, AttentionItem, SessionSummary } from "../../shared/protocol";
 import type { ProjectSummary } from "../../shared/projects";
-import { CARD_LIMIT, CARD_LIMIT_NARROW, freezeOrder, projectCards, shortFolder, visibleCards } from "./home-projects";
+import { CARD_LIMIT, CARD_LIMIT_NARROW, freezeOrder, projectCards, shortFolder, showsFilter, visibleCards } from "./home-projects";
 
 const project = (id: string, name: string, createdAt = "2026-01-01T00:00:00.000Z", extra: Partial<ProjectSummary> = {}): ProjectSummary => ({
   id,
@@ -108,4 +108,12 @@ test("shortFolder shortens the home folder only at a boundary", () => {
   assert.equal(shortFolder("/home/me", "/home/me"), "~");
   assert.equal(shortFolder("/home/meg/x", "/home/me"), "/home/meg/x");
   assert.equal(shortFolder("/srv/x", null), "/srv/x");
+});
+
+test("the filter field counts live projects only: 7 live + 2 archived shows none; 9 live shows it", () => {
+  const live = Array.from({ length: 7 }, (_, i) => project(`prj_l${i}`, `Live ${i}`));
+  const gone = Array.from({ length: 2 }, (_, i) => project(`prj_a${i}`, `Old ${i}`, undefined, { archived: { at: "2026-01-02T00:00:00.000Z" } }));
+  assert.equal(showsFilter(projectCards([...live, ...gone], [], undefined, "badge")), false);
+  const more = [...live, project("prj_l7", "Live 7"), project("prj_l8", "Live 8")];
+  assert.equal(showsFilter(projectCards([...more, ...gone], [], undefined, "badge")), true);
 });

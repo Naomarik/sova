@@ -1,10 +1,11 @@
-import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
 import type { AttentionDigest, OverseerProactivity, SessionSummary } from "../../shared/protocol";
 import { getSessionSummaryById, listProjects, startProjectCoding } from "../lib/api";
 import { relativeTime, stampTime } from "../lib/format";
-import { CARD_LIMIT, CARD_LIMIT_NARROW, FILTER_FROM, freezeOrder, projectCards, shortFolder, visibleCards, type ProjectCard } from "../lib/home-projects";
+import { CARD_LIMIT, CARD_LIMIT_NARROW, freezeOrder, showsFilter, projectCards, shortFolder, visibleCards, type ProjectCard } from "../lib/home-projects";
 import { startInProject } from "../lib/new-session";
+import { ForKey } from "../lib/for-key";
 import { createPoll } from "../lib/poll";
 import { PROJECTS_HREF, projectHref, projectOverseerHref, projectTabHref } from "../lib/projects-route";
 import { adoptSession, home, toast } from "../lib/ui-state";
@@ -98,7 +99,7 @@ export function OverviewProjects(props: {
           All Projects
         </a>
       </div>
-      <Show when={(projects()?.length ?? 0) > FILTER_FROM}>
+      <Show when={showsFilter(sorted())}>
         <input
           class="input overview-projects-filter"
           type="search"
@@ -133,37 +134,42 @@ export function OverviewProjects(props: {
             <p class="overview-projects-note">No project matches "{filter().trim()}"</p>
           </Show>
           <ul class="overview-projects-grid" aria-label="Projects">
-            <For each={shown()}>
+            {/* Keyed by project id: a list update hands each card its fresh row, and its DOM (an open menu, focus) stays. */}
+            <ForKey each={shown()} by={(r) => r.project.id}>
               {(c) => {
-                const state = () => starts[c.project.id];
+                const state = () => starts[c().project.id];
+                const activeAt = () => {
+                  const t = c().lastActivity;
+                  return t === null ? null : new Date(t).toISOString();
+                };
                 return (
                   <li>
-                    <div class="card project-card" classList={{ "project-card-needs": c.needsYou > 0 }}>
-                      <ProjectIcon project={c.project} size={40} local class="project-card-icon" />
+                    <div class="card project-card" classList={{ "project-card-needs": c().needsYou > 0 }}>
+                      <ProjectIcon project={c().project} size={40} local class="project-card-icon" />
                       <div class="project-card-names">
                         {/* The card's one big target: its ::after covers the card, under the buttons. */}
-                        <a class="project-card-name" href={projectHref(c.project.id)}>
-                          {c.project.name}
+                        <a class="project-card-name" href={projectHref(c().project.id)}>
+                          {c().project.name}
                         </a>
-                        <span class="project-card-where" title={c.project.space.kind === "org" ? undefined : c.project.root}>
-                          {where(c)}
+                        <span class="project-card-where" title={c().project.space.kind === "org" ? undefined : c().project.root}>
+                          {where(c())}
                         </span>
                       </div>
                       <div class="project-card-menu">
-                        <ActionMenu label={`Project actions · ${c.project.name}`} title="Project actions">
+                        <ActionMenu label={`Project actions · ${c().project.name}`} title="Project actions">
                           {(menu) => (
-                            <div class="model-menu-list" role="menu" aria-label={`Project actions · ${c.project.name}`}>
+                            <div class="model-menu-list" role="menu" aria-label={`Project actions · ${c().project.name}`}>
                               <menu.Item
                                 label="New Chat…"
-                                aria={`New Chat… in ${c.project.name}: pick a model, branch or subfolder`}
+                                aria={`New Chat… in ${c().project.name}: pick a model, branch or subfolder`}
                                 icon={<Icon name="plus" small />}
-                                onRun={() => props.onNewSessionIn(c.project.root)}
+                                onRun={() => props.onNewSessionIn(c().project.root)}
                                 keepFocus
                               />
-                              <menu.Item label="Overseer" aria={`Overseer · ${c.project.name}`} icon={<Icon name="eye" small />} href={projectOverseerHref(c.project.id)} />
-                              <menu.Item label="Merge Queue" aria={`Merge Queue · ${c.project.name}`} icon={<Icon name="branch" small />} href={projectTabHref(c.project.id, "merge-queue")} />
-                              <menu.Item label="Branches" aria={`Branches · ${c.project.name}`} icon={<Icon name="terminal" small />} href={projectTabHref(c.project.id, "branches")} />
-                              <menu.Item label="Settings" aria={`Settings · ${c.project.name}`} icon={<Icon name="settings" small />} href={projectTabHref(c.project.id, "settings")} />
+                              <menu.Item label="Overseer" aria={`Overseer · ${c().project.name}`} icon={<Icon name="eye" small />} href={projectOverseerHref(c().project.id)} />
+                              <menu.Item label="Merge Queue" aria={`Merge Queue · ${c().project.name}`} icon={<Icon name="branch" small />} href={projectTabHref(c().project.id, "merge-queue")} />
+                              <menu.Item label="Branches" aria={`Branches · ${c().project.name}`} icon={<Icon name="terminal" small />} href={projectTabHref(c().project.id, "branches")} />
+                              <menu.Item label="Settings" aria={`Settings · ${c().project.name}`} icon={<Icon name="settings" small />} href={projectTabHref(c().project.id, "settings")} />
                             </div>
                           )}
                         </ActionMenu>
@@ -171,21 +177,21 @@ export function OverviewProjects(props: {
                       <div class="project-card-foot">
                         <div class="project-card-status">
                           <Show
-                            when={c.needsYou > 0 || c.working > 0}
+                            when={c().needsYou > 0 || c().working > 0}
                             fallback={
-                              <span class="project-card-when" title={c.lastActivity ? stampTime(new Date(c.lastActivity).toISOString()) : undefined}>
-                                {c.lastActivity ? `Active ${relativeTime(new Date(c.lastActivity).toISOString(), props.now)}` : "No chats yet"}
+                              <span class="project-card-when" title={activeAt() ? stampTime(activeAt()!) : undefined}>
+                                {activeAt() ? `Active ${relativeTime(activeAt()!, props.now)}` : "No chats yet"}
                               </span>
                             }
                           >
-                            <Show when={c.needsYou > 0}>
+                            <Show when={c().needsYou > 0}>
                               <Chip tone="warn">
-                                Needs you · <span class="text-num">{c.needsYou}</span>
+                                Needs you · <span class="text-num">{c().needsYou}</span>
                               </Chip>
                             </Show>
-                            <Show when={c.working > 0}>
+                            <Show when={c().working > 0}>
                               <CountChip>
-                                <span class="text-num">{c.working}</span> working
+                                <span class="text-num">{c().working}</span> working
                               </CountChip>
                             </Show>
                           </Show>
@@ -193,9 +199,9 @@ export function OverviewProjects(props: {
                         <button
                           type="button"
                           class="button button-sm project-card-new"
-                          aria-label={state()?.pending ? `Starting a chat in ${c.project.name}…` : `New chat in ${c.project.name}`}
+                          aria-label={state()?.pending ? `Starting a chat in ${c().project.name}…` : `New chat in ${c().project.name}`}
                           disabled={!!state()?.pending}
-                          onClick={() => void newChat(c)}
+                          onClick={() => void newChat(c())}
                         >
                           <Show
                             when={!state()?.pending}
@@ -220,7 +226,7 @@ export function OverviewProjects(props: {
                   </li>
                 );
               }}
-            </For>
+            </ForKey>
             <Show when={!filter().trim()}>
               <li>
                 <button type="button" class="project-card-add" onClick={() => setAdding(true)}>

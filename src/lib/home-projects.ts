@@ -86,6 +86,9 @@ export function freezeOrder(prevIds: readonly string[], rows: readonly ProjectCa
   return [...kept, ...rows.filter((r) => !seen.has(r.project.id))];
 }
 
+/** Whether the filter field shows: more than FILTER_FROM cards (archived projects have none, so they never count). */
+export const showsFilter = (cards: readonly ProjectCard[]): boolean => cards.length > FILTER_FROM;
+
 /** Which cards show: up to the limit unless expanded; a filter (a name substring, any case) shows every match. */
 export function visibleCards(rows: readonly ProjectCard[], opts: { limit: number; expanded: boolean; filter: string }): ProjectCard[] {
   const q = opts.filter.trim().toLowerCase();

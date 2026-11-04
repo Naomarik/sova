@@ -6,8 +6,8 @@ All of this is about this computer and works in any folder. None of it spreads t
 
 - Change: whether Sova notifies the person's devices, the contact address it needs, which kinds it sends (needs input, open questions, error, baton, subagent error, playbook needs you, WhatsApp down, app down), and quiet hours.
 - Lives: this computer. Subagent errors are off by default, the rest on. Quiet hours run on the server's clock and drop, never queue.
-- Approves: the person, by Save Changes.
-- By: Screen. Settings → Notifications. No card holds these. Nothing is sent until a contact address is saved.
+- Approves: the person, by Apply, or Save Changes on the tab.
+- By: Card or Screen. The Sova-wide setting `notifications`, or Settings → Notifications. Nothing is sent until a contact address is saved.
 - Live: from the next send.
 - Check: Send Test on Settings → Notifications sends one to every device.
 
@@ -60,7 +60,7 @@ All of this is about this computer and works in any folder. None of it spreads t
 
 - Change: which WhatsApp numbers this computer sends from, the default, and which other computers may send through it. WhatsApp is the only channel; a new one needs Sova's own code.
 - Lives: this computer. Pairing happens on the phone.
-- Approves: the person, on the page.
-- By: Screen. Settings → Outreach.
+- Approves: the person, by Apply on the card, which marks it as a grant, or on the tab.
+- By: Card or Screen. The Sova-wide setting `outreach`, or Settings → Outreach. Pairing a phone and the sender's buttons stay on that tab.
 - Live: now, for sends after it's saved.
 - Check: Settings → Outreach shows each number's state.

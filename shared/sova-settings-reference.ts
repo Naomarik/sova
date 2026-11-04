@@ -82,6 +82,17 @@ export const SOVA_SETTINGS: Record<SovaSettingId, SovaSettingEntry> = {
   "models.favorites": e({ id: "models.favorites", label: "Favourite models", file: "~a/model-favorites.json", summary: "The starred models every picker shows first.", value: "the whole list: [\"provider/id\", …]", grant: null, sync: "settings:model-favorites.json", live: "at once", screen: "the star in the model picker" }),
 };
 
+/**
+ * What stays on its own screen (§chat.create-mode/settings-cards): the words a card that names one is refused with,
+ * so a chat is never at a dead end. An edit may name one as its `setting`, or as a Sova-wide `id`.
+ */
+export const SCREEN_ONLY_SETTINGS: Record<string, string> = {
+  "public-links": "Public links stay on their own screen, so no card holds them. Name it for the person: Settings → Public Links, Where links open.",
+  voice: "Voice stays on its own screen, so no card holds it. Name it for the person: Settings → Voice, Set Up Voice.",
+  updates: "Updates stay on their own screen, so no card holds them. Name it for the person: Settings → General, Update from.",
+  mesh: "Mesh stays on its own screen, so no card holds it yet. Name it for the person: Settings → Mesh.",
+};
+
 export const isSovaSettingId = (v: unknown): v is SovaSettingId => typeof v === "string" && (SOVA_SETTING_IDS as readonly string[]).includes(v);
 
 /** The short index `get` carries: one line per setting. */

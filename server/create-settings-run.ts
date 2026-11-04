@@ -1,6 +1,6 @@
 import type { SettingsBy, SettingsToolDetails } from "../shared/project-settings";
 import { CLAUDE_LOGIN_REFERENCE, CLAUDE_LOGIN_SETTING, isSettingId, referenceText } from "../shared/settings-reference";
-import { isSovaSettingId, sovaReferenceText, sovaSettingsIndex } from "../shared/sova-settings-reference";
+import { isSovaSettingId, SCREEN_ONLY_SETTINGS, sovaReferenceText, sovaSettingsIndex } from "../shared/sova-settings-reference";
 import type { CreateSettingsHost } from "./create-settings-tool";
 import { OrgError } from "./org-error";
 import { folderMatcher } from "./project-folder";
@@ -31,13 +31,14 @@ export async function runCreateSettingsTool(chat: CreateChat, q: Record<string, 
   const by: SettingsBy = { kind: "create", via: "tool", chat: chat.sessionId };
   if (op === "get") {
     const waiting = sovaCardsInfo().cards;
-    const parts = [`Sova-wide settings (each changes by a card, {setting: "sova", id, value}):`, sovaSettingsIndex()];
+    const parts = [`Sova-wide settings (each changes by a card, {setting: "sova", id, value}):`, sovaSettingsIndex(), "", "On their own screens, no card:", ...Object.values(SCREEN_ONLY_SETTINGS).map((w) => `- ${w}`)];
     if (waiting.length) parts.push("", "Sova-wide cards waiting for the person:", ...waiting.map(cardWords));
     if (chat.projectId) parts.push("", (await runSettingsTool(chat.projectId, { op: "get" }, false)).content[0]!.text);
     else parts.push("", chat.noProject ?? "");
     return { content: text(parts.join("\n")), details: { project: chat.projectId, cards: waiting.map((c) => c.id) } };
   }
   if (op === "reference") {
+    if (typeof q.setting === "string" && SCREEN_ONLY_SETTINGS[q.setting]) return { content: text(SCREEN_ONLY_SETTINGS[q.setting]!), details: { setting: q.setting } };
     if (q.setting === CLAUDE_LOGIN_SETTING) return { content: text(CLAUDE_LOGIN_REFERENCE), details: { setting: q.setting } };
     if (isSovaSettingId(q.setting)) return { content: text(sovaReferenceText(q.setting)), details: { setting: q.setting } };
     if (isSettingId(q.setting)) return { content: text(referenceText(q.setting, { create: true })), details: { setting: q.setting } };
@@ -46,6 +47,10 @@ export async function runCreateSettingsTool(chat: CreateChat, q: Record<string, 
   if (op === "propose") {
     const edits = q.edits;
     if (!Array.isArray(edits) || edits.length === 0) throw new SettingsRefusal("edits must list at least one change.");
+    for (const e of edits as { setting?: unknown; id?: unknown }[]) {
+      const said = SCREEN_ONLY_SETTINGS[String(e?.setting)] ?? (e?.setting === "sova" ? SCREEN_ONLY_SETTINGS[String(e.id)] : undefined);
+      if (said) throw new SettingsRefusal(said);
+    }
     const sova = edits.filter(isSovaEdit);
     if (sova.length && sova.length !== edits.length) throw new SettingsRefusal("A Sova-wide change goes on a card of its own: propose it apart from the project's.");
     const said = (id: string, grants: number, body: string) => `Card ${id} waits for the person${grants ? "'s Apply and Approve" : "'s Apply"}; nothing in it applies until they click, even what narrows. Tell them in a sentence what it changes and why; never claim it is applied.\n${body}`;

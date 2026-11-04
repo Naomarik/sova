@@ -404,6 +404,14 @@ describe("the added cards", async () => {
   });
 });
 
+test("what stays on its own screen is refused by name, saying where, in either shape of edit", async () => {
+  const screens: Record<string, RegExp> = { "public-links": /Settings → Public Links, Where links open/, voice: /Settings → Voice, Set Up Voice/, updates: /Settings → General, Update from/, mesh: /Settings → Mesh/ };
+  for (const [name, where] of Object.entries(screens)) {
+    await assert.rejects(runCreateSettingsTool(chat(null), { op: "propose", why: "x", edits: [{ setting: name, value: 1 }] }), where);
+    await assert.rejects(runCreateSettingsTool(chat(null), { op: "propose", why: "x", edits: [{ setting: "sova", id: name, value: 1 }] }), where);
+  }
+});
+
 test("in Create the tool reaches the card path; a refusal is the tool's own words", async () => {
   const { setCreateSettingsRun } = await import("./create-settings-tool");
   const { runCreateSettings } = await import("./create-settings-run");

@@ -115,7 +115,9 @@ A card can hold:
 - **Project settings**, when the change is one settings file.
 - **Sova-wide settings**: everything Sova keeps for itself or for this computer, those with no screen
   included, such as a custom provider, the image fallback, a remote target, the sandbox policy, worker
-  priority or a summary timeout. Your mesh's stored settings and setup steps go by card or button.
+  priority or a summary timeout. Your mesh's stored settings and setup steps go by card or button. To pair a
+  computer that isn't on the tailnet, you type its fingerprint into the card's own field, so it never
+  passes through the chat.
   Links between computers, claiming a login, an internet relay and a resync recipe stay on their own
   screens, and so do public links, voice and updates.
 - **Merge queue settings**: what Settings → Merge Queue saves, such as pushing, review and each check's

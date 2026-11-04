@@ -4,7 +4,7 @@ import { alignFileSchema } from "./align.ts";
 import { ALIGN_EAGERNESS_LABELS, ALIGN_STYLE_LABELS, type AlignEagerness, type AlignStyle } from "./align-settings.ts";
 import { ALIGN_STYLE_PARAGRAPHS, ALIGN_TRIGGER_LEAD, ALIGN_TRIGGER_PARAGRAPHS, ALIGN_TRIGGER_SHARED, buildMinorPrompt, MINOR_MODES, promptedMinorModes, VIS_GUIDE_DIR, workerMinorModes, type AlignPromptOptions, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
-import type { Mode, ModeState } from "./state.ts";
+import { orchestrates, type Mode, type ModeState } from "./state.ts";
 import { WORKER_MODES_CAP, type ProjectModeRef, type ProjectModeSnapshot } from "./project-format.ts";
 
 /** Before any probe: every profile on its primary, unverified. What a fresh Delegate session starts from. */
@@ -126,7 +126,7 @@ export function composePrompt(
 	projectBlocks: readonly string[] = [],
 ): string | undefined {
 	const blocks: string[] = [];
-	if (state.mode === "delegate") {
+	if (orchestrates(state.mode)) {
 		const delegate = buildDelegatePrompt(routes);
 		blocks.push(state.minorModes.includes("align") ? `${delegate}\n\n${buildDelegateAlignBridge(align?.visuals === true)}` : delegate);
 	}
@@ -313,7 +313,7 @@ export function statusLabel(
 ): { text: string; tone: StatusTone } {
 	const extras: string[] = [];
 	let degraded = false;
-	if (mode === "delegate") {
+	if (orchestrates(mode)) {
 		const fallback = shortNames(routes, "fallback");
 		const none = shortNames(routes, "none");
 		if (fallback.length > 0) extras.push(`fallback:${fallback.map((p) => DELEGATE_PROFILE_INFO[p].short).join(",")}`);
@@ -328,6 +328,6 @@ export function statusLabel(
 	}
 	return {
 		text: [mode, ...extras].join(" · "),
-		tone: degraded ? "warning" : mode === "delegate" || minorModes.length + projectIds.length > 0 ? "accent" : "dim",
+		tone: degraded ? "warning" : orchestrates(mode) || minorModes.length + projectIds.length > 0 ? "accent" : "dim",
 	};
 }

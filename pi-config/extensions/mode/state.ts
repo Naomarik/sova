@@ -12,21 +12,41 @@ import { isAlignEagerness, isAlignStyle, type AlignEagerness, type AlignStyle } 
 import { MINOR_MODES, normalizeMinorModes, type MinorMode } from "./minor.ts";
 import { isProjectModeSnapshot, normalizeProjectModeRefs, PROJECT_SNAPSHOT_TYPE, type ProjectModeRef, type ProjectModeSnapshot } from "./project-format.ts";
 
-export type Mode = "normal" | "delegate";
+export type Mode = "normal" | "delegate" | "create";
+
+/** The modes a default, a profile or any other starter can hold: every mode but Create, which only a chat picks for itself. */
+export type DefaultMode = Exclude<Mode, "create">;
 
 /** The modes, in menu order. */
-export const MODES: readonly Mode[] = ["normal", "delegate"];
+export const MODES: readonly Mode[] = ["normal", "delegate", "create"];
+
+/** The modes a default can hold, in menu order. */
+export const DEFAULT_MODES: readonly DefaultMode[] = ["normal", "delegate"];
 
 /** One line per mode: the palette rows and Sova's mode menu both show it. */
 export const MODE_DESCRIPTIONS: Record<Mode, string> = {
 	normal: "Pi as usual",
 	delegate: "Orchestrate: route planning, investigation and implementation to workers by profile",
+	create: "Configure and extend Sova: everything Delegate does, plus every way to make Sova yours.",
 };
+
+/**
+ * Whether a chat in `mode` orchestrates workers by the Delegate profiles: the one reading of "means what
+ * Delegate means", so a site that asks it can't forget a mode. Create does everything Delegate does.
+ */
+export function orchestrates(mode: Mode): boolean {
+	return mode === "delegate" || mode === "create";
+}
 
 export interface ModeState {
 	version: 1;
-	/** The major mode new sessions start in. A session's own mode lives in its `mode` entries (see ModeActive). */
+	/**
+	 * The major mode new sessions start in. A session's own mode lives in its `mode` entries (see ModeActive).
+	 * Read from the file it is never Create (normalizeState); Sova also uses this shape for one chat's mode, where it can be.
+	 */
 	mode: Mode;
+	/** One chat's last normal or Delegate choice while it is in Create (ModeActive); never in the file. */
+	lastMode?: DefaultMode;
 	/** Strict mode additionally removes the edit/write tools from the orchestrator while in delegate. Default for new sessions; off by default. */
 	strict: boolean;
 	/** Optional override of the toggle shortcut (a pi-tui KeyId, for example "alt+h"). Default: alt+m. Global. */
@@ -56,8 +76,50 @@ export function parseMode(value: unknown): Mode | undefined {
 	return isMode(value) ? value : undefined;
 }
 
-export function toggleMode(mode: Mode): Mode {
+/** A name a default can hold. */
+export function isDefaultMode(value: unknown): value is DefaultMode {
+	return typeof value === "string" && (DEFAULT_MODES as readonly string[]).includes(value);
+}
+
+/** The terminal shortcut's toggle: the terminal offers no Create, so any mode but normal goes to normal. */
+export function toggleMode(mode: Mode): DefaultMode {
 	return mode === "normal" ? "delegate" : "normal";
+}
+
+/**
+ * The server's hook (globalThis, Symbol.for): `(sessionId, mode) => boolean`, true only while Sova's server applies a
+ * switch to `mode` in that session (server/memory/permit.ts). Create is Sova-only, as memory is: unset (a terminal, a
+ * worker) or false, nothing can switch to it.
+ */
+export const WEB_MODE_HOOK = Symbol.for("sova:web-mode");
+
+/** Whether this process is Sova's: the hook is installed at load, before any chat starts. */
+export function insideSova(): boolean {
+	return typeof (globalThis as Record<symbol, unknown>)[WEB_MODE_HOOK] === "function";
+}
+
+/** Why switching to `mode` is refused in `sessionId` here, or undefined when it may be. */
+export function webModeRefusal(mode: Mode, sessionId: string | undefined): string | undefined {
+	if (mode !== "create") return undefined;
+	const hook = (globalThis as Record<symbol, unknown>)[WEB_MODE_HOOK];
+	if (typeof hook === "function" && sessionId !== undefined) {
+		try {
+			if ((hook as (sessionId: string, mode: Mode) => unknown)(sessionId, mode) === true) return undefined;
+		} catch {
+			// A failing hook permits nothing.
+		}
+	}
+	return "Create is chosen in a Sova chat's mode menu";
+}
+
+/** What Save as Default saves as the mode: Create's last normal or Delegate choice, or the mode itself. */
+export function defaultModeOf(state: { mode: Mode; lastMode?: DefaultMode }): DefaultMode {
+	return state.mode === "create" ? (state.lastMode ?? "normal") : state.mode;
+}
+
+/** The mode fields of a switch from `from` to `to`: `lastMode` only while in Create, kept from the last other mode. */
+export function modeSwitch(from: { mode: Mode; lastMode?: DefaultMode }, to: Mode): { mode: Mode; lastMode?: DefaultMode } {
+	return to === "create" ? { mode: to, lastMode: defaultModeOf(from) } : { mode: to };
 }
 
 // Matches the single-chord KeyId grammar pi-tui parses; double-tap/leader chords are not supported by pi.
@@ -76,8 +138,8 @@ export function normalizeState(value: unknown): ModeState {
 	const state = defaults();
 	if (value === null || typeof value !== "object" || Array.isArray(value)) return state;
 	const record = value as Record<string, unknown>;
-	const mode = parseMode(record.mode);
-	if (mode !== undefined) state.mode = mode;
+	// Create is chosen per chat: a file that names it by hand reads as normal, like any name it can't hold.
+	if (isDefaultMode(record.mode)) state.mode = record.mode;
 	if (typeof record.strict === "boolean") state.strict = record.strict;
 	const shortcut = parseShortcut(record.shortcut);
 	if (shortcut !== undefined) state.shortcut = shortcut;
@@ -123,11 +185,14 @@ export interface ModeActive {
 	 * `minorModes`; absent when none is on, and never in mode.json (ModeState has no such field).
 	 */
 	projectModes?: ProjectModeRef[];
+	/** In Create only: the chat's last normal or Delegate choice, which Save as Default saves. Absent: it has been in no other mode. */
+	lastMode?: DefaultMode;
 }
 
 /** The session-scoped triple of a state or another active snapshot, copied (never aliased). */
-export function activeOf(state: Pick<ModeState, "mode" | "strict" | "minorModes"> & { projectModes?: readonly ProjectModeRef[] }): ModeActive {
+export function activeOf(state: Pick<ModeState, "mode" | "strict" | "minorModes"> & { projectModes?: readonly ProjectModeRef[]; lastMode?: DefaultMode }): ModeActive {
 	const active: ModeActive = { version: 1, mode: state.mode, strict: state.strict, minorModes: [...state.minorModes] };
+	if (state.mode === "create" && state.lastMode !== undefined) active.lastMode = state.lastMode;
 	if (state.projectModes && state.projectModes.length > 0) active.projectModes = state.projectModes.map((ref) => ({ ...ref }));
 	return active;
 }
@@ -176,7 +241,8 @@ export function normalizeActive(value: unknown): ModeActive | undefined {
 	const record = value as Record<string, unknown>;
 	const mode = parseMode(record.mode);
 	if (record.version !== 1 || mode === undefined) return undefined;
-	return activeOf({ mode, strict: record.strict === true, minorModes: normalizeMinorModes(record.minorModes), projectModes: normalizeProjectModeRefs(record.projectModes) });
+	const lastMode = isDefaultMode(record.lastMode) ? record.lastMode : undefined;
+	return activeOf({ mode, strict: record.strict === true, minorModes: normalizeMinorModes(record.minorModes), projectModes: normalizeProjectModeRefs(record.projectModes), ...(lastMode ? { lastMode } : {}) });
 }
 
 /**

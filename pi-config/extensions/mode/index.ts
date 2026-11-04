@@ -128,7 +128,12 @@ import {
 	MODE_HEAD_TYPE,
 	MODE_NOTE_TYPE,
 	MODE_STATE_EVENT,
-	MODES,
+	DEFAULT_MODES,
+	defaultModeOf,
+	insideSova,
+	isDefaultMode,
+	modeSwitch,
+	orchestrates,
 	parseMode,
 	projectModesOf,
 	restoreActive,
@@ -136,6 +141,7 @@ import {
 	restoreProjectSnapshots,
 	saveState,
 	toggleMode,
+	webModeRefusal,
 	withMinor,
 	withProjectMode,
 	type Mode,
@@ -552,7 +558,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	function recomputeRoutes(): void {
 		const policy = readPolicy();
 		const denial = (choice: { backend: DelegateBackend; model: string }) => policyDenial(policy, choice.backend, choice.model);
-		if (active.mode === "delegate") {
+		if (orchestrates(active.mode)) {
 			const delegate = readDelegate();
 			// Off: no worker lines at all; the prompt asks the agent to choose (buildDelegatePrompt).
 			routes = delegate ? routeAll(delegate, discoveries, denial) : [];
@@ -567,7 +573,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	 * on and one is set. `key` identifies it; no backends means nothing to probe.
 	 */
 	function probeScope(): { key: string; backends: DelegateBackend[] } {
-		const delegate = active.mode === "delegate" ? (readDelegate() ?? undefined) : undefined;
+		const delegate = orchestrates(active.mode) ? (readDelegate() ?? undefined) : undefined;
 		const spec = hasMinor(active, "spec") && !workerRole ? readSpec() : undefined;
 		const reviewer = probedReviewer();
 		const backends = new Set<DelegateBackend>([
@@ -620,7 +626,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 			syncHostSection();
 			renderStatus(ctx);
 			if (!run.notify) return;
-			const notices = active.mode === "delegate" ? routes.map(routeNotice).filter((line): line is string => line !== undefined) : [];
+			const notices = orchestrates(active.mode) ? routes.map(routeNotice).filter((line): line is string => line !== undefined) : [];
 			if (notices.length > 0) ctx.ui.notify(`Delegate routing:\n${notices.join("\n")}`, "warning");
 			const writerNotice = writerRoute ? slotNotice(SPEC_WRITER_LABEL, writerRoute, "the agent") : undefined;
 			if (writerNotice) ctx.ui.notify(writerNotice, "warning");
@@ -677,16 +683,24 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 			renderStatus(ctx);
 			return;
 		}
-		active = { ...active, mode: next };
+		// Create is Sova-only: taken only while Sova's server applies a switch for this session.
+		const refused = webModeRefusal(next, sessionIdOf(ctx));
+		if (refused) {
+			ctx.ui.notify(`Mode not changed: ${refused}`, "warning");
+			renderStatus(ctx);
+			return;
+		}
+		const { lastMode: _left, ...rest } = active;
+		active = { ...rest, ...modeSwitch(active, next) };
 		publishActive();
 		appendSwitch({ mode: next });
 		publishWorkerModes();
-		if (next === "delegate") {
+		if (orchestrates(next)) {
 			if (active.strict) applyStrictTools();
 			recomputeRoutes();
 			syncHostSection();
 			renderStatus(ctx);
-			ctx.ui.notify("Mode: delegate", "info");
+			ctx.ui.notify(`Mode: ${next}`, "info");
 			await refreshRouting(ctx, true);
 		} else {
 			restoreTools();
@@ -859,7 +873,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	 */
 	function saveDefault(ctx: ExtensionContext): void {
 		try {
-			const next: ModeState = { ...loadState(STATE_FILE), mode: active.mode, strict: active.strict, minorModes: [...active.minorModes] };
+			const next: ModeState = { ...loadState(STATE_FILE), mode: defaultModeOf(active), strict: active.strict, minorModes: [...active.minorModes] };
 			saveState(STATE_FILE, next);
 			config = next;
 			ctx.ui.notify(`Default mode saved: ${activeSummary(active)} (new sessions start here)`, "info");
@@ -889,11 +903,12 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 			// Normal, not strict, and only the worker-scope minors of --minor; never mode.json's default.
 			next = { mode: "normal", strict: false, minorModes: workerMinorModes(parseMinorFlag(pi.getFlag("minor"))?.minorModes ?? []) };
 		} else if (restored !== undefined) {
-			next = restored;
+			// A terminal has no Create: a chat saved in it opens as Delegate, what it builds on. The entry stays as it is.
+			next = restored.mode === "create" && !insideSova() ? { ...restored, mode: "delegate" } : restored;
 		} else if (reason === undefined || reason === "startup") {
 			// One-shot launch overrides on top of the default; never written to the file or the session.
-			const flag = parseMode(pi.getFlag("major"));
-			if (flag !== undefined) next = { ...next, mode: flag };
+			const flag = pi.getFlag("major");
+			if (isDefaultMode(flag)) next = { ...next, mode: flag };
 			const minorFlag = parseMinorFlag(pi.getFlag("minor"));
 			if (minorFlag) {
 				// A web-only mode can't be started from a flag: it is dropped, with a warning.
@@ -949,7 +964,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		headEagerness = restoredHead.headEagerness;
 		toldEagerness = restoredHead.eagerness?.told ?? headEagerness;
 		// A restore can land on a different strict flag than the tools currently reflect.
-		if (active.mode === "delegate" && active.strict) applyStrictTools();
+		if (orchestrates(active.mode) && active.strict) applyStrictTools();
 		else restoreTools();
 		syncAlignTool();
 		syncVisGuideTool();
@@ -1192,13 +1207,13 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	function routingLines(): string[] {
 		const settings = readDelegate();
 		if (!settings) return ["  none: the subagent profile is Off, so the agent picks each worker"];
-		if (active.mode === "delegate") recomputeRoutes();
+		if (orchestrates(active.mode)) recomputeRoutes();
 		return DELEGATE_PROFILES.map((profile) => {
 			const { primary, fallback } = settings.profiles[profile];
 			const configured = `${describeChoice(primary)}${fallback ? `, fallback ${describeChoice(fallback)}` : ", no fallback"}`;
 			const route = routes.find((r) => r.profile === profile);
 			const using =
-				active.mode !== "delegate" || !route
+				!orchestrates(active.mode) || !route
 					? ""
 					: route.via === "primary"
 						? route.primary.availability === "unverified" ? " — using primary (not verified)" : " — using primary"
@@ -1279,7 +1294,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		ctx.ui.notify(`Subagent profile: ${profileLine()}`, "info");
 	}
 
-	const usage = `Usage: /mode [${MODES.join("|")}|status|default|sync|strict on|strict off|subagents <profile>|${MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|")}|<project mode> [on|off]|${PROJECT_MODE_PREFIX}<project mode> [on|off]]`;
+	const usage = `Usage: /mode [${DEFAULT_MODES.join("|")}|status|default|sync|strict on|strict off|subagents <profile>|${MINOR_MODES.map((minor) => `${minor} [on|off]`).join("|")}|<project mode> [on|off]|${PROJECT_MODE_PREFIX}<project mode> [on|off]]`;
 
 	// The ctrl+p "Mode" category; the palette asks for fresh rows on every open.
 	registerPaletteCategory(pi.events, {
@@ -1339,7 +1354,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 			const projectItems = projectRows()
 				.filter((row) => row.problem === undefined || row.on)
 				.flatMap((row) => [row.id, `${row.id} on`, `${row.id} off`]);
-			const items = [...MODES, "status", "default", "sync", "strict on", "strict off", "subagents", ...minorItems, ...projectItems]
+			const items = [...DEFAULT_MODES, "status", "default", "sync", "strict on", "strict off", "subagents", ...minorItems, ...projectItems]
 				.filter((value) => value.startsWith(argumentPrefix.trim()))
 				.map((value) => ({ value, label: value }));
 			return items.length > 0 ? items : null;
@@ -1395,13 +1410,13 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 					active = { ...active, strict };
 					publishActive();
 					appendSwitch({ strict });
-					if (active.mode === "delegate") {
+					if (orchestrates(active.mode)) {
 						if (strict) applyStrictTools();
 						else restoreTools();
 					}
 					syncHostSection();
 				}
-				const appliedNow = changed && active.mode === "delegate";
+				const appliedNow = changed && orchestrates(active.mode);
 				ctx.ui.notify(
 					`Strict mode ${strict ? "on" : "off"}${appliedNow ? ` (edit/write ${strict ? "removed from" : "restored to"} the orchestrator)` : ""}`,
 					"info",
@@ -1640,7 +1655,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		// Only a user prompt reaches here: the run it starts answers a question when it ends in one.
 		runUserAsked = /\?\s*$/.test(event.prompt ?? "");
 		refreshPick(ctx);
-		if (active.mode === "delegate" || hasMinor(active, "spec")) {
+		if (orchestrates(active.mode) || hasMinor(active, "spec")) {
 			const { key } = probeScope();
 			recomputeRoutes();
 			// Announce only a routing the user changed; a timed refresh or the start-up probe joined

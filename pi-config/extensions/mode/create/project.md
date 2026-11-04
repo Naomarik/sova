@@ -28,6 +28,15 @@ Smallest working file, a static site:
 {"version": 1, "services": {"site": {"static": ".", "ports": {"http": {"base": 8731}}}}}
 ```
 
+## Running copies
+
+- Change: start, stop or restart a running copy of the project.
+- Lives: this computer. The Branches tab shows every copy; the main checkout's copy is the row called `main`.
+- Approves: the person, for the main checkout's copy. A chat or worker acts only on the copies of its own worktrees.
+- By: Screen. The project page's Branches tab, with Start Main when the main checkout has no copy. A chat can't start or restart the main checkout's copy, and no offer button can either. A worker starts its own with `project_verbs`, and must tear down what it starts before it ends: a chat can't tear down a copy its worker made.
+- Live: now.
+- Check: the Branches tab shows the copy's state, and who created it.
+
 ## Tests
 
 - Change: the project's test command, what it needs running first, and the small selection that proves a copy works. Key: `test`, with `run`, `requires`, `timeout` and `smoke`.

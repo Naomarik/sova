@@ -4,7 +4,7 @@ Recommend an offer when the person wants a button that answers a question or run
 
 ## Offers
 
-- Change: a button card the agent may show under its reply, up to 8 per project, each saying when it may show and what its 1 to 4 buttons do. A `send` button sends a message; a `run` button runs one of Sova's commands.
+- Change: a button card the agent may show under its reply, up to 8 per project, each saying when it may show and what its 1 to 4 buttons do. A `send` button sends a message as the person, so it does only what a chat can do when asked; it can't start or restart the project's main copy, for one. A `run` button runs Sova's own command, and only `project.worktree.merge` is allowed, for a session the project's overseer tracks. So before you offer a button, check that a chat could do the job if the person typed it. If it couldn't, say a button can't do this and name the control that can: for a server, the Branches tab (the `project` topic).
 - Lives: `.sova/offers.json` in the project. Only the main branch's file counts: a branch can't give itself offers.
 - Approves: the person, by Land or Apply. Send buttons need nothing more. Run buttons need the person's own click in the page: Approve Run Buttons on the project page's Offers list, or Apply and Approve on the card. They ask again when they change.
 - By: Card or Land. The card is the `offers` setting and holds the whole file, or null to remove it. Land when the project has checks.

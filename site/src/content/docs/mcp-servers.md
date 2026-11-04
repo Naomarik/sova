@@ -43,11 +43,11 @@ the first state that applies:
 | State | Means |
 |---|---|
 | **Waiting for You** | It isn't approved, so it runs nothing. |
+| **No Check yet** | It's approved, but a Check hasn't finished. |
 | **Off** | Its **New Chats** switch is off. A chat can still switch it on. |
 | **Needs Sign-in** | The last Check found that it needs a sign-in. |
 | **Failed** | The last Check failed. Its error lines are on the row. |
 | **Connected** | The last Check succeeded. |
-| **No Check yet** | It's approved, but a Check hasn't finished. |
 
 Open a row to see its tools and last error lines, with **Check Again**, **Sign In**, **Edit** and
 **Remove**. An error line from a chat's copy of the server names that chat.

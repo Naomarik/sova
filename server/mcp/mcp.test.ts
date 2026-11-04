@@ -211,6 +211,7 @@ describe("a row's state", () => {
     assert.equal(rowState(true, row({ last: { at: 1, ok: false, version: "v", errors: [] } }), "v"), "failed");
     assert.equal(rowState(true, row({ last: { at: 1, ok: true, version: "v", errors: [] } }), "v"), "connected");
     assert.equal(rowState(true, row({ versions: [] }), "v"), "no-check");
+    assert.equal(rowState(true, row({ versions: [], settings: { newChats: false, offTools: [] } }), "v"), "no-check", "ahead of Off: no chat can switch on a server with no record");
     assert.equal(rowState(true, row({ last: { at: 1, ok: false, version: "old", errors: [] } }), "v"), "connected", "another version's failure isn't this one's");
   });
 

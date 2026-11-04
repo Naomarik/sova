@@ -19,8 +19,10 @@ const authorized = (e: McpEntry) => Object.keys(e.headers ?? {}).some((h) => h.t
 /** The first state that applies. */
 export function rowState(approved: boolean, row: RowFile, version: string): McpRowState {
   if (!approved) return "waiting";
-  if (!row.settings.newChats) return "off";
   const last = row.last?.version === version ? row.last : undefined;
+  // Before Off: Off says a chat can still switch it on, and with no record none can.
+  if (!last && !recordOf(row, version)) return "no-check";
+  if (!row.settings.newChats) return "off";
   if (last?.needsSignIn) return "needs-sign-in";
   if (last && !last.ok) return "failed";
   return recordOf(row, version) ? "connected" : "no-check";

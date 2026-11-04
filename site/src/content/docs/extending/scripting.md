@@ -114,7 +114,7 @@ refusal says where to click.
 | A profile's powers | **Approve** in Settings → Profiles or on the profile picker |
 | A schedule | **Approve** in the Playbooks dialog or the Overseer's Approvals & Schedules |
 | Turning on a Project Overseer power | The power's switch on the project page's Settings tab |
-| Lowering a chat's sandbox | The Sandbox rows in that chat's composer. A `/sandbox` sent as a message is refused too |
+| Lowering a chat's sandbox | The Sandbox rows in that chat's composer. A `/sandbox` sent as a message is refused too, and so is a rewind or regenerate that goes back past a raise. In the page, that rewind still lowers it |
 | Approving a project tool | **Approve and Turn On** in that chat's mode menu |
 | Trusting a project's or an extension's cards | **Trust {name}'s Cards** on the card |
 | Restarting or updating Sova | **Restart Sova** and the update controls in Settings → General, or Apply on the Sova project's Branches tab |

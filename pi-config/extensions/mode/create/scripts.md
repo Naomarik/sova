@@ -28,7 +28,7 @@ It reaches this computer's Sova only: `--url`, else `$SOVA_URL`, else `http://12
 ## Your own program
 
 - Change: nothing. Call Sova's requests from any language.
-- Lives: this computer's Sova, at `$SOVA_URL`, else `http://127.0.0.1:$SOVA_PORT`, else port 4800. Never assume 4800 in a chat: this Sova may be on another port. If neither is set and the answer doesn't look like this Sova, ask the person which port it runs on. The token sits in `<agent dir>/sova/auth-token`, and `sova token` prints it. Send it as the `x-sova-token` header: `Authorization: Bearer` doesn't count.
+- Lives: this computer's Sova, at `$SOVA_URL`, else `http://127.0.0.1:$SOVA_PORT`, else port 4800. A Sova chat has `$SOVA_URL` set to its own Sova, so use it and never assume 4800. A chat with no `$SOVA_URL` asks the person where Sova runs. The token sits in `<agent dir>/sova/auth-token`, and `sova token` prints it. Send it as the `x-sova-token` header: `Authorization: Bearer` doesn't count.
 - Approves: holding the token is acting as the person, except for what passes only on the person's click.
 - By: Terminal.
 - Live: now.

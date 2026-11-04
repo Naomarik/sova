@@ -78,15 +78,16 @@
       "server/project-holds.ts",
       "server/outreach-health.test.ts",
       "server/tours/sign-in-notice.ts",
-      "server/tours/sign-in-notice.test.ts"
+      "server/tours/sign-in-notice.test.ts",
+      "server/project-services/release-wire.ts"
     ],
     "requires": [
       "§app.overseer/seen"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:24Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.overseer/auto-resume": {
@@ -1359,8 +1360,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-28T13:39Z",
-      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+      "at": "2026-11-03T11:32Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
   "§app.overseer/transcript-window": {

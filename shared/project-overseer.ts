@@ -217,7 +217,7 @@ export type AllowanceUse = Record<PoLimitKind, { used: number; max: Allowance }>
     nothing is picked and the session runs on this computer's default profile. */
 export interface ProjectCodingMode {
   mode: "normal" | "delegate";
-  /** Canonical order (the mode extension's MINOR_MODES): any of align, spec, vis, codemode. */
+  /** Canonical order (the mode extension's MINOR_MODES): any of align, spec, vis. */
   minorModes: string[];
   subagentProfile?: string;
 }

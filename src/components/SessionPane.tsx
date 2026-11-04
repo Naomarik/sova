@@ -12,6 +12,7 @@ import { jumpWhenArrived } from "../lib/jump";
 import { paneShares } from "../lib/pane-shares";
 import { sharingTabLabel } from "../lib/session-shares";
 import { RemotePaneStatus } from "./RemoteStatus";
+import { ContextTab } from "./ContextTab";
 import { SessionDetails, SharingSection } from "./SessionDetails";
 import { MemoryOutlineSection } from "./MemoryOutline";
 import { SessionTimeline } from "./SessionTimeline";
@@ -31,12 +32,13 @@ export interface PaneInsight {
   changed: number;
 }
 
-export type TabId = "session" | "timeline" | "agents" | "usage" | "sharing" | "skills" | "explain";
+export type TabId = "session" | "timeline" | "agents" | "usage" | "context" | "sharing" | "skills" | "explain";
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: "session", label: "Session" },
   { id: "timeline", label: "Timeline" },
   { id: "agents", label: "Agents" },
   { id: "usage", label: "Usage" },
+  { id: "context", label: "Context" },
   { id: "sharing", label: "Sharing" },
   { id: "skills", label: "Skills" },
   { id: "explain", label: "Explain" },
@@ -46,7 +48,7 @@ const isTab = (id: string | null): id is TabId => TABS.some((t) => t.id === id);
 /**
  * The session detail pane: a head, a tab strip, and one tab's panel. Session is what the session
  * is (SessionDetails); Timeline is the session's one time axis; Agents is the subagents pane it grew
- * out of; Usage is what the session has spent (SessionUsage); Sharing is its share links, with a
+ * out of; Usage is what the session has spent (SessionUsage); Context is what fills its window now (ContextTab); Sharing is its share links, with a
  * viewing-now badge on the tab; Skills says which skills loaded and when, here and in each worker; Explain lists this session's /explain pages. The tab is kept per
  * session path; with none kept, it opens on Agents while a worker is working, else on Session —
  * never on Usage, which its tab and the head's token chip open. Read-only throughout, except the
@@ -263,6 +265,9 @@ export function SessionPane(props: {
           </Match>
           <Match when={tab() === "usage"}>
             <SessionUsageTab spend={spend} workers={workers()} />
+          </Match>
+          <Match when={tab() === "context"}>
+            <ContextTab path={props.path} workers={workers()} teams={props.insight.data?.teams} changed={props.insight.changed} />
           </Match>
           <Match when={tab() === "sharing"}>
             <div class="session-panel-scroll" tabindex="0">

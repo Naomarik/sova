@@ -18,9 +18,13 @@ control sends to the route named, so every answer and refusal is the route's own
 - `overseer.notes.get`, `overseer.notes.set` (`GET`/`PUT /api/overseer/notes`): read or replace the Overseer's standing notes; a stale `base` gets the route's 409.
 - `project.overseer.idea.list|get|add|update` (`/api/projects/:pid/overseer/ideas`, `…/idea`): a project overseer's ideas.
 - `project.overseer.todo.list|add|update|remove|reorder|clear-done` (`/api/projects/:pid/overseer/todos`, `…/todo`, `…/todos/order`, `…/todos/done`): a project overseer's to-dos.
+- `overseer.get`, `overseer.memory.get` (`GET /api/overseer`, `GET /api/overseer/memory`): the Overseer's conversation, history, badge, unread count and whether it is busy; its memory switch and state.
+- `project.overseer.get`, `project.overseer.actions`, `project.overseer.memory.get` (`GET /api/projects/:pid/overseer`, `…/actions`, `…/memory`): a project overseer's state, settings and usage; its recorded actions, newest first; its memory switch and state.
 
 Each entry's mesh need is what the peer listener's classifier gives its route. Not entries: the
 Overseer's autonomy (approvals, rules and their revoke) and its settings, which grant trust; and
-`POST /api/projects/:pid/overseer/message`, which only the Overseer itself may call.
+`POST /api/projects/:pid/overseer/message`, which only the Overseer itself may call. Nothing on
+the catalogue starts, messages, runs, codes or clears an overseer, or turns on its memory, which
+would spend model time.
 The standing notes are a command although Settings also edits them: they are the Overseer's working
 text, not a setting that grants anything.

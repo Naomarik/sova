@@ -91,6 +91,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
     gaps: () => null,
     placed: () => true,
     contributed: () => [],
+    releaseAct: async (q: { verb: string; release?: string }) => (calls.push(`release:${q.verb}:${q.release ?? ""}`), `Held: ${q.verb}`),
     sessions: async () => sessions,
     transcript: async () => [],
     // This computer's default (opts.hostMode, else normal · spec), and its library's profiles.
@@ -218,13 +219,23 @@ describe("the powers, as the statecharts declare them (al_3)", () => {
     for (const l of ["L0", "L1", "L2", "L3"] as const) assert.equal(carryOver(l).deploy, false);
   });
 
-  test("sova_project_verbs' acts: services/down always, services/run copiesRun, services/reset copiesReset, neither held nor counted; services/share held; onboard held and counted as a start; deploy/run held", () => {
+  test("sova_project_verbs' acts: services/down always, services/run copiesRun, services/reset copiesReset, neither held nor counted; services/share held; onboard held and counted as a start; deploy/run and release/run held", () => {
     const acts = statechartInfo("project")!.acts as Record<string, { power?: string | null; tool?: string; hold?: boolean; counts?: string | null }>;
     assert.deepEqual(
       Object.entries(acts).filter(([, a]) => a.tool === "sova_project_verbs").map(([id, a]) => [id, a.power, !!a.hold, a.counts ?? null]).sort(),
-      [["deploy/run", "deploy", true, null], ["services/down", "always", false, null], ["services/reset", "copiesReset", false, null], ["services/run", "copiesRun", false, null], ["services/share", "share", true, null], ["verbs/onboard", "onboard", true, "create"]],
+      [["deploy/run", "deploy", true, null], ["release/run", "release", true, null], ["services/down", "always", false, null], ["services/reset", "copiesReset", false, null], ["services/run", "copiesRun", false, null], ["services/share", "share", true, null], ["verbs/onboard", "onboard", true, "create"]],
     );
     assert.equal(COUNTS.sova_project_verbs, "create", "only onboard draws on an allowance: a refusal for it is held until create comes back");
+  });
+
+  test("sova_project_verbs: release.start and release.publish go only through the project's release act; release.status is a read", async () => {
+    const { run, calls } = fake({ autonomy: "L3" });
+    const started = (await run("sova_project_verbs", { verb: "release.start", why: "lots landed" })) as { content: { text: string }[]; details: { verb: string } };
+    assert.equal(started.details.verb, "release/run");
+    assert.equal(started.content[0]!.text, "Held: start");
+    await run("sova_project_verbs", { verb: "release.publish", release: "rl_abc123" });
+    await run("sova_project_verbs", { verb: "release.status" });
+    assert.deepEqual(calls.filter((c) => c.startsWith("release:")), ["release:start:", "release:publish:rl_abc123"]);
   });
 
   test("sova_project_verbs: the engine's own refusals come before the act, and a read is no act", async () => {
@@ -391,8 +402,8 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
       { mode: "delegate" },
       { minor_modes: ["spec"] },
       { minor_modes: ["align", "spec"] },
-      { mode: "delegate", minor_modes: ["align", "spec", "vis", "codemode"] },
-      { minor_modes: ["spec", "vis", "codemode"] },
+      { mode: "delegate", minor_modes: ["align", "spec", "vis"] },
+      { minor_modes: ["spec", "vis"] },
       { subagent_profile: "big" },
       { subagent_profile: "off" },
     ];
@@ -408,7 +419,7 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
     assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: ["spec", "vis"], subagentProfile: "big" }]);
     assert.match((r.content[0] as { text: string }).text, /mode delegate · spec · visuals, subagent profile Big team\. Started as already agreed\.$/);
     // Spec is always on (§app.project-overseer/coding-mode): a set without it is refused before anything.
-    for (const minor_modes of [[], ["align"], ["vis", "codemode"]]) {
+    for (const minor_modes of [[], ["align"], ["align", "vis"]]) {
       const g = fake({ attended: true });
       await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", minor_modes }), /Spec is always on for coding sessions; it can't be turned off\. Name spec among minor_modes\./);
       await assert.rejects(() => g.run("sova_send", { session: "in-root", text: "p", minor_modes }), /Spec is always on for coding sessions/);
@@ -419,7 +430,7 @@ describe("coding sessions' modes (any mode, this computer's default unnamed; §a
   test("only unknown names are refused: nothing is created or sent, and no cap is taken", async () => {
     const asks: [Record<string, unknown>, RegExp][] = [
       [{ mode: "turbo" }, /Unknown mode turbo: use normal or delegate./],
-      [{ minor_modes: ["bogus"] }, /Unknown minor mode bogus: use align, spec, vis or codemode./],
+      [{ minor_modes: ["bogus"] }, /Unknown minor mode bogus: use align, spec or vis./],
       [{ subagent_profile: "nope" }, /Unknown subagent profile: nope. sova_list_subagent_profiles lists them./],
     ];
     for (const [ask, why] of asks) {

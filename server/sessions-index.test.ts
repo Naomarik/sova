@@ -19,7 +19,7 @@ const liveDir = join(agentDir, "sessions", "live");
 mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(liveDir, { recursive: true });
 
-const { archiveSession, cleanupSessions, getSessionSummary, idOf, LIST_REUSE_MS, listSessions } = await import("./sessions-index");
+const { archiveSession, cleanupSessions, getSessionSummary, idOf, LIST_REUSE_MS, listSessions, workerParentReadings } = await import("./sessions-index");
 const { sessionsChanged } = await import("./list-generation");
 const { isArchived, setArchived } = await import("./archived-sessions");
 const { addWebSession, isWebSession } = await import("./web-sessions");
@@ -365,6 +365,29 @@ test("workerSession: a file its owner names as a worker is flagged in the list a
   assert.equal((await listSessions()).find((s) => s.id === ID_W)?.workerSession, undefined);
 });
 
+test("workerOf: every worker row of a listing and a single summary name its parent; a live record beats a file", async () => {
+  const ID_DONE = "01234567-89ab-7cde-8f01-2345678900c1";
+  const ID_RUN = "01234567-89ab-7cde-8f01-2345678900c2";
+  const ID_FILE = "01234567-89ab-7cde-8f01-2345678900c3";
+  const ID_LIVE = "01234567-89ab-7cde-8f01-2345678900c4";
+  const done = session(ID_DONE, "finished worker");
+  const running = session(ID_RUN, "running worker");
+  const fileParent = session(ID_FILE, "the chat that names both");
+  const liveParent = session(ID_LIVE, "the chat running one");
+  const heading = (id: string) => JSON.stringify({ type: "custom_message", customType: "subagent-complete", display: true, content: `### ag_01 (from the heading) — done\nSession: ${id}\nModel: m\nreport` });
+  appendFileSync(fileParent, `${heading(ID_DONE)}\n${heading(ID_RUN)}\n`);
+  const record = join(liveDir, "p-worker-parents.json");
+  writeFileSync(record, JSON.stringify({ session: { pid: otherPid, sessionFile: liveParent }, presence: { workers: [{ id: "ag_02", name: "from the record", sessionFile: running }] } }));
+  after(() => rmSync(record, { force: true }));
+  sessionsChanged();
+
+  const byId = new Map((await listSessions()).map((s) => [s.id, s]));
+  assert.deepEqual(byId.get(ID_DONE)?.workerOf, { id: ID_FILE, path: canonicalPath(fileParent), name: "from the heading" });
+  assert.deepEqual(byId.get(ID_RUN)?.workerOf, { id: ID_LIVE, path: canonicalPath(liveParent), name: "from the record" });
+  assert.equal(byId.get(ID_FILE)?.workerOf, undefined);
+  assert.deepEqual((await getSessionSummary(canonicalPath(running)))?.workerOf, byId.get(ID_RUN)?.workerOf);
+});
+
 test("listing reuse (§app.session-list/listing-reuse): callers share a build for a second; this server's own writes are never missed", async () => {
   const ID_R = "01234567-89ab-7cde-8f01-2345678900b1";
   const ID_S = "01234567-89ab-7cde-8f01-2345678900b2";
@@ -388,4 +411,26 @@ test("listing reuse (§app.session-list/listing-reuse): callers share a build fo
   session(ID_T, "seen after the window");
   await new Promise((r) => setTimeout(r, LIST_REUSE_MS));
   assert.ok((await listSessions()).some((s) => s.id === ID_T), "past the window, a fresh build");
+});
+
+test("workers: a listing reads worker parents once, however many worker rows it has", async () => {
+  const parent = session("01234567-89ab-7cde-8f01-2345678901ff", "the chat that runs them");
+  const addWorkers = (from: number, to: number) => {
+    for (let i = from; i < to; i++) {
+      const id = `01234567-89ab-7cde-8f01-2345678902${i.toString(16).padStart(2, "0")}`;
+      session(id, `worker ${i}`);
+      appendFileSync(parent, `${JSON.stringify({ type: "custom_message", customType: "subagent-complete", display: true, content: `### ag_${i} (w${i}) — done\nSession: ${id}\nModel: m\nreport` })}\n`);
+    }
+  };
+  const readings = async () => {
+    sessionsChanged();
+    const before = workerParentReadings();
+    const rows = (await listSessions()).filter((s) => s.workerOf?.id === idOf(parent));
+    return { rows: rows.length, readings: workerParentReadings() - before };
+  };
+
+  addWorkers(0, 2);
+  assert.deepEqual(await readings(), { rows: 2, readings: 1 });
+  addWorkers(2, 40);
+  assert.deepEqual(await readings(), { rows: 40, readings: 1 });
 });

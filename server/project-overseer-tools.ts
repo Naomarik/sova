@@ -62,6 +62,9 @@ export interface PoToolHost {
   /** The project's deploy act (`deploy/run`, power deploy): held for the waiting period unattended; once it goes, the
       project's own recipe plans and runs and decides by itself whether it ships. Resolves with what to tell the model. */
   deployAct?(q: { target?: string; commit?: string; why?: string }): Promise<string>;
+  /** The project's release act (`release/run`, power release): starting a release, or publishing a ready one; held for
+      the waiting period unattended. Resolves with what to tell the model. */
+  releaseAct?(q: { verb: "start" | "publish"; release?: string; why?: string }): Promise<string>;
   /** The powers in force now (both columns after the brake, the brake). */
   effective(): { overseer: PowerMap; assistant: PowerMap; brake: Brake | null; autonomy: Autonomy; reason?: string };
   /** The run is the operator's (their message from the UI). */
@@ -198,6 +201,8 @@ export const OP_POWER: Record<string, Record<string, PowerId | "always" | "opera
     leftovers: "always", "stop-leftover": "operator",
     "deploy.status": "always", "deploy.logs": "always", "deploy.check": "always", "deploy.request": "always",
     "deploy.plan": "deploy", "deploy.run": "deploy", "deploy.rollback": "operator",
+    "release.status": "always", "release.logs": "always", "release.request": "always",
+    "release.start": "release", "release.publish": "release",
   },
 };
 
@@ -410,7 +415,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     const root = host.project().root;
     const all = await host.sessions();
     const mine = host.startedCoding();
-    const coding = all.filter((s) => (underRoot(root, s.cwd) || mine.has(s.id)) && !s.overseer && !s.baton && !s.projectOverseer && !s.workerSession);
+    const coding = all.filter((s) => (underRoot(root, s.cwd) || mine.has(s.id)) && !s.overseer && !s.baton && !s.projectOverseer && !s.workerSession && !s.queueChat);
     return { coding, otherIds: new Set(others().flatMap((o) => o.list().map((x) => x.id))) };
   }
 
@@ -751,7 +756,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     {
       name: "sova_create_session",
       label: "Start coding session",
-      // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
+      // Its card reads the recorded result (EAGER_TOOLS): never a call another tool made.
       exposure: "model-only",
       description:
         "Start an ordinary coding session in the project (its root, or a folder inside it) with a first prompt. When the project root is in git it runs in its own worktree and branch, cut from the root's HEAD; the operator merges it back. It starts in this computer's default mode and subagent profile unless you name others: `mode`, `minor_modes` and `subagent_profile` take any mode, minor modes and profile this computer has. Unless you pass already_agreed: true, align is turned on in its mode (whatever minor_modes says) and its first turn asks the operator one question, whether this is what they want built, and waits for their answer before any plan. Counts against your coding caps.",
@@ -764,7 +769,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           model: str('Model ref "provider/model".'),
           thinking: str("off | minimal | low | medium | high | xhigh"),
           mode: str("normal | delegate. Omitted: this computer's default."),
-          minor_modes: { type: "array", items: { type: "string" }, description: 'The minor modes on, the whole set: any of align, spec, vis, codemode, e.g. ["spec"]; [] turns them all off. Omitted: this computer\'s default.' },
+          minor_modes: { type: "array", items: { type: "string" }, description: 'The minor modes on, the whole set: any of align, spec, vis, e.g. ["spec"]; [] turns them all off. Omitted: this computer\'s default.' },
           subagent_profile: str("A subagent profile id or off (sova_list_subagent_profiles), for this session only. Omitted: this computer's default profile."),
           already_agreed: { type: "boolean", description: ALREADY_AGREED_PARAM },
           ...(gaps
@@ -814,7 +819,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           session: str(SESSION_PARAM),
           text: str("The message."),
           mode: str("normal | delegate: change its mode first."),
-          minor_modes: { type: "array", items: { type: "string" }, description: 'Its minor modes on, the whole set, first: any of align, spec, vis, codemode, e.g. ["spec"]; [] turns them all off.' },
+          minor_modes: { type: "array", items: { type: "string" }, description: 'Its minor modes on, the whole set, first: any of align, spec, vis, e.g. ["spec"]; [] turns them all off.' },
           subagent_profile: str("Change its subagent profile first: an id or off (sova_list_subagent_profiles)."),
         },
         ["session", "text"],
@@ -1048,8 +1053,15 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         return { content: text(said), details: { verb: "deploy/run" } };
       });
       const viaAct = (v: unknown) => host.deployAct && (v === "deploy.plan" || v === "deploy.run");
-      const reads = new Set<string>([...READ_VERBS, "leftovers"]);
-      return { ...t, execute: (id: string, params: any) => (viaAct(params?.verb) ? deployed(id, params) : reads.has(String(params?.verb)) ? exec(id, params) : acted(id, params)) } as Tool;
+      // release.start and release.publish: only as the project's own release act (power release), never by hand.
+      const released = act("sova_project_verbs", async (params) => {
+        const q = params as { verb?: unknown; release?: unknown; why?: unknown };
+        const said = await host.releaseAct!({ verb: q.verb === "release.publish" ? "publish" : "start", ...(typeof q.release === "string" ? { release: q.release } : {}), ...(typeof q.why === "string" ? { why: q.why } : {}) });
+        return { content: text(said), details: { verb: "release/run" } };
+      });
+      const viaRelease = (v: unknown) => host.releaseAct && (v === "release.start" || v === "release.publish");
+      const reads = new Set<string>([...READ_VERBS, "leftovers", "release.status", "release.logs"]);
+      return { ...t, execute: (id: string, params: any) => (viaAct(params?.verb) ? deployed(id, params) : viaRelease(params?.verb) ? released(id, params) : reads.has(String(params?.verb)) ? exec(id, params) : acted(id, params)) } as Tool;
     })(),
     // Another layer's tools (an org's roster, gatherings, decisions, owner updates), wrapped as these are.
     ...host.contributed({ act: (name, run, counts) => act(name, run, counts), read, heldText }),

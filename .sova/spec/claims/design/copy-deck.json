@@ -37,6 +37,19 @@
       "src/components/ChatView.tsx"
     ]
   },
+  "§design.copy-deck/context-tab": {
+    "kind": "note",
+    "requires": [
+      "§app.subagents-pane/context-tab"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/ContextTab.tsx",
+      "src/lib/context-parts.ts",
+      "src/components/SessionDetails.tsx"
+    ]
+  },
   "§design.copy-deck/context-window": {
     "kind": "note",
     "authority": "accepted",
@@ -130,7 +143,28 @@
       "src/components/ChangesViewer.tsx",
       "server/merge-queue/attribute.ts",
       "server/merge-queue/run.ts",
-      "server/merge-queue/wake.ts"
+      "server/merge-queue/wake.ts",
+      "src/lib/merge-queue-chats.ts",
+      "src/lib/merge-queue-settings.ts"
+    ]
+  },
+  "§design.copy-deck/merge-queue-chats": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "about": [
+      "§app.merge-queue/chats",
+      "§chat.merge-queue/asks",
+      "§app.merge-queue/owner"
+    ],
+    "code": [
+      "src/lib/merge-queue-chats.ts",
+      "src/components/MergeQueueChats.tsx",
+      "src/lib/merge-chat.ts",
+      "server/merge-queue/asks.ts",
+      "server/session-guards.ts",
+      "shared/merge-queue.ts",
+      "src/components/WorktreesModal.tsx"
     ]
   },
   "§design.copy-deck/message-actions": {
@@ -406,7 +440,9 @@
       "src/lib/needs-you.ts",
       "src/lib/signals.ts",
       "src/lib/overseer-menu.ts",
-      "src/lib/regions.ts"
+      "src/lib/regions.ts",
+      "src/lib/needs-you-row.ts",
+      "src/components/NeedsYouRow.tsx"
     ]
   },
   "§design.copy-deck/slash-commands": {

@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
+import { chatRefOf } from "../lib/merge-chat";
 import type { ProjectSummary } from "../../shared/projects";
 import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, archiveProject, getProjectPreviews, unarchiveProject } from "../lib/api";
@@ -14,6 +15,7 @@ import { ActionMenu } from "./ActionMenu";
 import { costFigure, createProjectCost, ProjectCostCard } from "./ProjectCostCard";
 import { ProjectServicesTab } from "./ProjectServicesTab";
 import { MergeQueueTab } from "./MergeQueueTab";
+import { createReleasesPoll, ReleasesCard, ReleasesTab } from "./ReleasesTab";
 import { PlaybookReviewBanner } from "./PlaybookReview";
 import { ProjectDeployPanel } from "./ProjectDeployPanel";
 import { createRuntimePoll, ProjectSoftwareCard } from "./ProjectSoftwareCard";
@@ -101,6 +103,8 @@ export function ProjectPage(props: {
   const previews = createPoll(() => getProjectPreviews(projectId), PREVIEWS_POLL_MS, { cacheKey: `project:${projectId}:previews-chip` });
   // The software registry, read once for the page: the Software card and a proposed run's banner.
   const runtime = createRuntimePoll(projectId);
+  // The project's releases, read once for the page: the Releases tab, its Overview card and the Deploy card's "Runs vX".
+  const releases = createReleasesPoll(projectId, () => project().root);
   const ideaList = () => (po.ideas.data() ? openIdeas(po.ideas.data()!.ideas) : undefined);
   const archived = () => project().archived ?? null;
   const org = props.org?.({
@@ -304,8 +308,10 @@ export function ProjectPage(props: {
               <div class="project-col">
                 {/* Its software registry on this host (§app.project-runtime/software-card). */}
                 <ProjectSoftwareCard projectId={projectId} archived={!!archived()} runtime={runtime} />
+                {/* Its numbered releases: the latest and what landed since, or the one in progress. */}
+                <ReleasesCard projectId={projectId} poll={releases} />
                 {/* Its deploy targets on this host: the deploy panel, which reads deploy.status itself. */}
-                <ProjectDeployPanel projectId={projectId} root={project().root} archived={!!archived()} />
+                <ProjectDeployPanel projectId={projectId} root={project().root} archived={!!archived()} releases={() => releases.data()?.history} />
                 {/* Files people sent it (§app.organizations/files-card): while placed, or once it holds one. */}
                 <ProjectFilesCard projectId={projectId} placed={!!org} tick={costTick} />
                 <Show when={org}>
@@ -344,12 +350,13 @@ export function ProjectPage(props: {
               root={project().root}
               name={project().name}
               run={props.run}
-              chatOf={(id) => {
-                // The queue records a chat by its id (an older record by its path).
-                const s = props.sessions?.()?.find((x) => x.id === id || x.path === id);
-                return s ? { path: s.path, title: s.title, archived: s.archived } : undefined;
-              }}
+              // The queue records a chat by its id (an older record by its path); a worker is named as its chat's.
+              chatOf={(id) => chatRefOf(id, props.sessions?.())}
             />
+          </Match>
+          <Match when={tab() === "releases"}>
+            {/* The release in progress, then every numbered release. */}
+            <ReleasesTab projectId={projectId} root={project().root} name={project().name} archived={!!archived()} poll={releases} runtime={runtime} />
           </Match>
           <Match when={tab() === "cost"}>
             <ProjectCostCard projectId={projectId} poll={cost} />
@@ -403,7 +410,7 @@ export function ProjectPage(props: {
   );
 }
 
-const TAB_LABEL: Record<ProjectTab, string> = { overview: "Overview", requirements: "Requirements", branches: "Branches", "merge-queue": "Merge Queue", cost: "Cost", settings: "Settings" };
+const TAB_LABEL: Record<ProjectTab, string> = { overview: "Overview", requirements: "Requirements", branches: "Branches", "merge-queue": "Merge Queue", releases: "Releases", cost: "Cost", settings: "Settings" };
 
 /** The page's tab strip, as the org page's: a tab per view (the tab is in the URL, each pick a history
     entry), Left/Right moving focus along it (wrapping), Home/End jumping; Enter or Space selects.

@@ -4,6 +4,7 @@ import { test } from "node:test";
 import type { ProjectSummary } from "../../shared/projects";
 import type { AttentionItem, SessionOrg, SessionSummary } from "../../shared/protocol";
 import {
+  heldProjectId,
   eyeLabel,
   doneOpen,
   inArchivedProject,
@@ -402,4 +403,11 @@ test("which placed projects the region lists: this host's unarchived org project
   // A search that finds a project but none of its sessions keeps its heading with no row.
   const hit = orgSections([], listedOrgProjects(projects, { query: "ledger", here: true }));
   assert.deepEqual(hit.map((o) => [o.name, o.projects.map((p) => [p.name, projectCount(p)])]), [["Mamluk Arabia", [["Ledger", 0]]]]);
+});
+
+test("every held act carries its project for Cancel: an org's by its org, a standalone project's by the page its row opens", () => {
+  assert.equal(heldProjectId({ org: { orgId: "o", orgName: "O", projectId: "prj_a", projectName: "A" }, href: "#/projects/prj_x" }), "prj_a");
+  assert.equal(heldProjectId({ href: "#/projects/prj_b" }), "prj_b");
+  assert.equal(heldProjectId({ href: "#/projects/prj_c/releases" }), "prj_c");
+  assert.equal(heldProjectId({ href: "#/settings" }), null);
 });

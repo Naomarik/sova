@@ -147,7 +147,7 @@ test("templates render every known variable and $$ as a literal $", () => {
 test("every error code has one exit class and one status", () => {
   const want: Record<number, string[]> = {
     1: ["not-ready", "start-failed", "hook-failed", "tests-failed", "deploy-failed", "verify-failed"],
-    2: ["not-conformant", "cap-reached", "slots-blocked", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "needs-override"],
+    2: ["not-conformant", "cap-reached", "slots-blocked", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm", "deploy-refused", "release-refused", "needs-override"],
     3: ["invalid-request", "invalid-definition", "not-found"],
     4: ["busy"],
   };
@@ -396,6 +396,23 @@ test("merge: target, push, checks (a list or \"none\"), install and review, pars
   assert.equal(m({ review: "/abs" }), "$.merge.review");
   assert.equal(m({ review: "../out" }), "$.merge.review");
   for (const k of ["target", "push", "checks", "install", "review"]) assert.ok(DEFINITION_KEYS.merge.includes(k as never));
+});
+
+test("merge.land (how a branch lands) and merge.request (the request skill folder): optional, strict, outside the hash", async () => {
+  const { defHashOf } = await import("../server/project-services/def-hash");
+  const services = { web: { cmd: ["node", "web.js"], ports: { http: { base: 5100 } } } };
+  const plain = parse({ version: 1, services, merge: { checks: "none" } });
+  assert.equal(plain.merge?.land, undefined, "absent: merged locally, as every project before");
+  for (const land of ["local", "github-pr", "gitlab-mr", "push-branch"]) {
+    const d = parse({ version: 1, services, merge: { checks: "none", land, request: ".sova/playbooks/request" } });
+    assert.deepEqual(d.merge, { checks: "none", land, request: ".sova/playbooks/request" });
+    assert.equal(defHashOf(d), defHashOf(plain));
+  }
+  const m = (merge: unknown) => refusedAt({ version: 1, services, merge });
+  assert.equal(m({ land: "pr" }), "$.merge.land");
+  assert.equal(m({ land: true }), "$.merge.land");
+  assert.equal(m({ request: "/abs" }), "$.merge.request");
+  assert.equal(m({ request: "../out" }), "$.merge.request");
 });
 
 test("Sova's own definition declares its merge checks", async () => {

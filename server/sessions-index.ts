@@ -25,7 +25,7 @@ import { parseTargetCwd } from "./targets";
 import { firstText, headerOf, joinedText, lineEntry, lineMay, toHEntry } from "./harness/pi/reader";
 import { contextStep } from "./harness/pi/usage";
 import { type AlignScan, readAlignScan } from "./align-state";
-import { WorkerSessions } from "./worker-sessions";
+import { type WorkerParents, WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
 import { readSignals, type SignalsFile, signalsOverlay, withoutRestartAsk } from "./signals-store";
@@ -35,11 +35,13 @@ import { pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
 import { projectOverseerOfPath, readPoState } from "./project-overseer-store";
 import { projectOverseerUnread } from "./project-overseer-unread";
+import { engineBuildsReader, type EngineBuildsReader } from "./build-loadout";
 import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-sessions";
 import { reservedRoots } from "./projects/contributions";
 import { removeMemory } from "./memory/store";
 import { removeSessionTours } from "./tours/lifecycle";
 import { byActivity } from "../src/lib/summary-diff";
+import { queueChatRole } from "../shared/merge-queue";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -48,7 +50,7 @@ import { byActivity } from "../src/lib/summary-diff";
  */
 export interface SessionsPart {
   /** Once per listing pass: the fields of one file, or undefined. `project`: what the project layer says of it. */
-  lookup(): { of(path: string, id: string, project?: SessionSummary["project"]): Pick<SessionSummary, "baton" | "org" | "folderOrg"> | undefined };
+  lookup(builds: EngineBuildsReader): { of(path: string, id: string, project?: SessionSummary["project"]): Pick<SessionSummary, "baton" | "org" | "folderOrg"> | undefined };
   /** Why the file may never be deleted here, or null. */
   keeps?(path: string): string | null;
 }
@@ -60,11 +62,12 @@ export function contributeSessions(part: SessionsPart): void {
 /** One listing pass's lookups: the project layer's (by marker, build, then the session's folder), then every contributed part's. */
 /** `mtimeMs`: the file's mtime as the listing holds it, so the project overseer marker check needs no stat. */
 function fieldLookup(): (path: string, id: string, cwd?: string, mtimeMs?: number) => Pick<SessionSummary, "baton" | "org" | "folderOrg" | "project" | "projectOverseer"> {
-  const parts = sessionParts.map((p) => p.lookup());
-  const projects = projectSessionLookup();
+  const builds = engineBuildsReader();
+  const parts = sessionParts.map((p) => p.lookup(builds));
+  const projects = projectSessionLookup(builds);
   return (path, id, cwd, mtimeMs) => {
     const out: Pick<SessionSummary, "baton" | "org" | "folderOrg" | "project" | "projectOverseer"> = {};
-    const project = projects.of(path, id, cwd);
+    const project = projects.of(path, id, cwd, mtimeMs);
     for (const l of parts) Object.assign(out, l.of(path, id, project) ?? {});
     if (project) out.project = project;
     if (!out.baton) {
@@ -82,6 +85,12 @@ function keptBy(path: string): string | null {
     if (why) return why;
   }
   return projectKeeps(path);
+}
+
+/** SessionSummary.queueChat, from the file's own profile pick: the merge queue's thread or a reviewer. */
+function queueChatField(profile: SessionSummary["profile"]): Pick<SessionSummary, "queueChat"> {
+  const role = queueChatRole(profile);
+  return role ? { queueChat: { role } } : {};
 }
 
 type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archived" | "busy">;
@@ -127,13 +136,39 @@ interface CacheEntry {
   zeroInput: boolean;
 }
 
-const cache = new Map<string, CacheEntry>();
+const entries = new Map<string, CacheEntry>();
+/** The summary cache, read-only here so that `storeEntry` and `dropEntry` stay its only writers:
+    they are what keeps `idIndex` true. */
+const cache: ReadonlyMap<string, CacheEntry> = entries;
+/** `indexedSessionPaths`' answer until an id may have changed: replaced, never mutated, since a caller
+    may keep one. Never updated in place either: paths can share an id, and the one that answers
+    is the last in `cache`'s order, which only a fresh pass knows. */
+let idIndex: ReadonlyMap<string, string> | null = null;
+
+function storeEntry(path: string, entry: CacheEntry): void {
+  if (entries.get(path)?.summary.id !== entry.summary.id) idIndex = null;
+  entries.set(path, entry);
+}
+
+function dropEntry(path: string): void {
+  if (entries.delete(path)) idIndex = null;
+}
 
 /** Worker-session detection (a subagent's / team member's own file). Kept apart from `cache` on
  *  purpose: the flag depends on OTHER files (owners append refs) and on the live registry, so it
  *  is recomputed on every listing, never baked into a file's cached head facts. */
 const workerSessions = new WorkerSessions({ idOf: (p) => idOf(p) });
 /** The session that runs worker `path` (worker-sessions.ts parentOf), from the last listing's scans; null: none known. */
+/** SessionSummary.workerOf for a worker's row: its parent and name, from what the worker scan already read. */
+function workerOfField(path: string, parents: Pick<WorkerParents, "workerOf"> = workerSessions): Pick<SessionSummary, "workerOf"> {
+  try {
+    const w = parents.workerOf(path);
+    return w ? { workerOf: { id: idOf(w.parent), path: w.parent, ...(w.name ? { name: w.name } : {}) } } : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function workerParentOf(path: string): Promise<string | null> {
   return workerSessions.parentOf(path);
 }
@@ -739,6 +774,11 @@ function gistChanged(path: string): void {
 /** Session-file syscalls of the listing's own reads (tests, measurement): stats of a file it may
     summarize, and opens of one it reads. The align and worker scans keep their own. */
 export const listIo = { stats: 0, opens: 0 };
+/** Readings of worker parents so far: one per listing, however many worker rows it has. */
+export const workerParentReadings = () => workerSessions.parentReadings;
+let fullSummaryCount = 0;
+/** Full summaries built so far (tests): a poll that reads one field stays on the base summary. */
+export const fullSummaries = () => fullSummaryCount;
 
 async function summarize(path: string, resolveWindow?: WindowResolver): Promise<BaseSummary | null> {
   let st;
@@ -793,6 +833,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(align.summary ? { align: align.summary } : {}),
       ...(profileField(head.profile) ? { profile: profileField(head.profile) } : {}),
+      ...queueChatField(profileField(head.profile)),
     };
     const entry: CacheEntry = {
       mtimeMs: st.mtimeMs,
@@ -806,12 +847,17 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       align,
       zeroInput: st.size <= MAX_HEAD && !head.input,
     };
-    cache.set(path, entry);
+    storeEntry(path, entry);
     if (summary.outlineGist && summary.outlineGist !== hit?.summary.outlineGist) gistChanged(path);
     return withWindow(entry, resolveWindow);
   } catch {
     return null;
   }
+}
+
+/** The file's merge-queue mark, from its base summary: the file is read only when the cache can't answer. */
+export async function queueChatOf(path: string): Promise<SessionSummary["queueChat"]> {
+  return (await summarize(path))?.queueChat;
 }
 
 function liveField(l: LiveRecord | undefined): SessionSummary["live"] {
@@ -975,7 +1021,10 @@ async function withUnreadReplies(row: SessionSummary): Promise<SessionSummary> {
 
 /** How long a finished listing serves further callers, from its build's start (§app.session-list/listing-reuse). */
 export const LIST_REUSE_MS = 1_000;
-let listing: { generation: number; startedAt: number; rows: Promise<SessionSummary[]> } | null = null;
+type Listing = { generation: number; startedAt: number; stamp: number; built: Promise<{ rows: SessionSummary[]; files: string[] }> };
+let listing: Listing | null = null;
+/** One more per build started, of either kind: a higher stamp is a build that started later. */
+let listStamp = 0;
 
 /** All sessions, newest activity first, with fresh live presence merged in. Callers share a build
     that is running or started less than LIST_REUSE_MS ago, unless something in this process changed
@@ -986,13 +1035,13 @@ export function listSessions(): Promise<SessionSummary[]> {
   const generation = listGeneration();
   let l = listing;
   if (!l || l.generation !== generation || now - l.startedAt >= LIST_REUSE_MS || now < l.startedAt) {
-    const mine: { generation: number; startedAt: number; rows: Promise<SessionSummary[]> } = { generation, startedAt: now, rows: buildSessions().then((b) => b.rows) };
+    const mine: Listing = { generation, startedAt: now, stamp: ++listStamp, built: buildSessions() };
     listing = l = mine;
-    mine.rows.catch(() => {
+    mine.built.catch(() => {
       if (listing === mine) listing = null;
     });
   }
-  return l.rows.then((rows) => [...rows]);
+  return l.built.then((b) => [...b.rows]);
 }
 
 /** The last listing's rows by path (buildSessions hands an unchanged row out as the same object). */
@@ -1032,7 +1081,7 @@ export const STAT_SWEEP_MS = 60_000;
  * file set and cached summaries and reads only the files named since its last build. `all`: the
  * watch could not say (or nothing is known yet), so the next build reads every folder.
  */
-const tracker = { active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, statAt: 0, chain: Promise.resolve() as Promise<unknown> };
+const tracker = { active: 0, all: true, dirty: new Set<string>(), files: null as string[] | null, sweptAt: 0, statAt: 0, listed: 0, chain: Promise.resolve() as Promise<unknown> };
 
 /** Start tracking (the feed's watch starts it with itself); returns the note sink and its stop. */
 export function trackSessionFiles(): { note: (path: string | null) => void; stop: () => void } {
@@ -1058,7 +1107,15 @@ export function trackSessionFiles(): { note: (path: string | null) => void; stop
 }
 
 /** Builds the tracked listing has run, and how many were full (tests, measurement). */
-export const trackedStats = { builds: 0, full: 0, statSweeps: 0, lastDirty: 0 };
+export const trackedStats = { builds: 0, full: 0, statSweeps: 0, lastDirty: 0, joined: 0 };
+
+/** Which builds the feed's listing has read, against which have started: a signal heard at `now()`
+    is in a list only when `listed()` came out higher. With no tracker the feed's list is listSessions,
+    joining nothing of its own accord: nothing to compare. */
+export const listStamps = {
+  now: (): number => listStamp,
+  listed: (): number => (tracker.active > 0 ? tracker.listed : Infinity),
+};
 
 /**
  * listSessions for the session feed: the same rows (a full build gives the same list), but while a
@@ -1066,17 +1123,49 @@ export const trackedStats = { builds: 0, full: 0, statSweeps: 0, lastDirty: 0 };
  * file's cached summary stands. A full build runs when nothing is known yet, when the watch could
  * not say what changed, and at least every SWEEP_MS; every STAT_SWEEP_MS each known file is
  * stat'ed and re-read only if it moved. Without a tracker it is listSessions. Builds
- * run one at a time; never shares listSessions' reuse window.
+ * run one at a time.
+ *
+ * `join`: a listSessions build that started within LIST_REUSE_MS and later than the last list read
+ * here stands in for a build of this one's own. It read every file, so it holds whatever a tracked
+ * build would have, up to its own start; the caller compares listStamps for what came after. Never
+ * the other way: a tracked build skips what a watch never named, and listSessions promises more.
  */
-export function listSessionsTracked(): Promise<SessionSummary[]> {
+export function listSessionsTracked(opts: { join?: boolean } = {}): Promise<SessionSummary[]> {
   if (tracker.active === 0) return listSessions();
+  const shared = opts.join ? joinableListing() : null;
+  if (shared) return joinListing(shared);
+  return ownTrackedBuild();
+}
+
+function ownTrackedBuild(): Promise<SessionSummary[]> {
   const run = tracker.chain.then(buildTracked, buildTracked);
   tracker.chain = run.catch(() => undefined);
   return run.then((rows) => [...rows]);
 }
 
+function joinableListing(now = Date.now()): Listing | null {
+  const l = listing;
+  return l && l.stamp > tracker.listed && now >= l.startedAt && now - l.startedAt < LIST_REUSE_MS ? l : null;
+}
+
+async function joinListing(l: Listing): Promise<SessionSummary[]> {
+  tracker.listed = l.stamp;
+  trackedStats.joined++;
+  let built: Awaited<Listing["built"]>;
+  try {
+    built = await l.built;
+  } catch {
+    return ownTrackedBuild();
+  }
+  // Its file set is the newest there is: the next tracked build starts from it, and what the watch
+  // noted meanwhile stays dirty for that build, so a row can't leave with the next list.
+  if (tracker.active > 0) tracker.files = built.files;
+  return [...built.rows];
+}
+
 async function buildTracked(): Promise<SessionSummary[]> {
   const now = Date.now();
+  tracker.listed = ++listStamp;
   trackedStats.builds++;
   const full = tracker.all || tracker.files === null || now - tracker.sweptAt >= SWEEP_MS || now < tracker.sweptAt;
   // Taken before any await: what is noted during this build is the next build's.
@@ -1194,8 +1283,9 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
     workerSessionPaths(files, track?.dirty),
   ]);
   const present = new Set(files);
-  for (const k of cache.keys()) if (!present.has(k)) cache.delete(k);
+  for (const k of cache.keys()) if (!present.has(k)) dropEntry(k);
   const out: SessionSummary[] = [];
+  const parents = workerSessions.parents();
   for (const s of results) {
     if (!s) continue;
     // Empty husks — no user message anywhere in the file — are never listed, so abandoned
@@ -1230,7 +1320,7 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
       workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
       origin: isWebSession(s.id) ? "web" : "external",
       archived: isArchived(s.id),
-      ...(workers.has(s.path) ? { workerSession: true as const } : {}),
+      ...(workers.has(s.path) ? { workerSession: true as const, ...workerOfField(s.path, parents) } : {}),
       ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
       ...heldChatField(s.path),
@@ -1299,6 +1389,7 @@ export function summaryReads(): SummaryReads {
 }
 
 export async function getSessionSummary(path: string, resolveWindow?: WindowResolver, reads?: SummaryReads): Promise<SessionSummary | null> {
+  fullSummaryCount++;
   const s = await summarize(path, resolveWindow);
   if (!s) return null;
   const r = reads ?? summaryReads();
@@ -1313,7 +1404,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
     origin: isWebSession(s.id) ? "web" : "external",
     archived: isArchived(s.id),
-    ...(worker ? { workerSession: true as const } : {}),
+    ...(worker ? { workerSession: true as const, ...workerOfField(s.path) } : {}),
     ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
     ...heldChatField(s.path),
@@ -1396,7 +1487,7 @@ export async function archiveSession(path: string, archived: boolean): Promise<A
         await closeChat(s.path, "Session archived; its runtime was closed.");
         await unlink(s.path);
         await cleanDeletedTours(s.id);
-        cache.delete(s.path);
+        dropEntry(s.path);
         setArchived(s.id, false);
         removeWebSession(s.id);
         dropDrafts([s.id]);
@@ -1433,10 +1524,11 @@ export async function markArchived(id: string, path: string): Promise<void> {
  * the one caller falls back to a real walk only for ids it cannot find here, rather than paying
  * for a directory scan on every press of Send.
  */
-export function indexedSessionPaths(): Map<string, string> {
+export function indexedSessionPaths(): ReadonlyMap<string, string> {
+  if (idIndex) return idIndex;
   const out = new Map<string, string>();
   for (const [path, entry] of cache) out.set(entry.summary.id, path);
-  return out;
+  return (idIndex = out);
 }
 
 /** The session id of a session file: the uuidv7 after the last "_" of its name. */
@@ -1485,7 +1577,7 @@ export interface CleanupResult {
  * file that's gone, and a file whose header doesn't parse — never delete what can't be read as
  * a pi session. Every mode leaves an attached org's workspace sessions alone (refused, in paths mode).
  */
-export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResult> {
+export async function cleanupSessions(req: CleanupRequest, opts: { queueChats?: boolean } = {}): Promise<CleanupResult> {
   const targets = req.mode === "paths" ? req.paths : await listSessionFiles();
   const live = readLive();
   const now = Date.now();
@@ -1526,6 +1618,12 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     // Overseer files (current and history) are never swept by age or as husks: a fresh Overseer
     // is a husk by definition, and its history is pruned by /clear itself (paths mode).
     if (req.mode !== "paths" && (await summarize(path))?.overseer) continue;
+    // The merge queue's own chats are kept until the user clears them from the Merge Queue tab's History
+    // (`opts.queueChats`, that route's alone): never swept, and refused by an ordinary paths delete.
+    if (!opts.queueChats && (await summarize(path))?.queueChat) {
+      if (req.mode === "paths") refusals.push({ path, reason: "That is one of the merge queue's own chats: clear it from the Merge Queue tab's History." });
+      continue;
+    }
     if (live.has(path)) {
       skipped.live++;
       continue;
@@ -1560,7 +1658,7 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
       await closeChat(path, "Session deleted by archive cleanup; its runtime was closed.");
       await unlink(path);
       await cleanDeletedTours(id);
-      cache.delete(path);
+      dropEntry(path);
       setArchived(id, false);
       removeWebSession(id);
       dropDrafts([id]);

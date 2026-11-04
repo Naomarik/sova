@@ -30,6 +30,7 @@ import { setFileCopyGuards } from "./project-files-tool";
 import { registerProjectRoutes } from "./projects/routes";
 import { registerProjectServiceRoutes } from "./project-services/routes";
 import { registerMergeCardRoutes } from "./merge-queue/routes";
+import { registerFolderReadRoutes } from "./folder-read";
 import { registerServicesViewRoutes } from "./project-services/view-routes";
 import { serverStart } from "./project-services/self-host";
 import { registerDecisionRoutes } from "./decisions-routes";
@@ -47,7 +48,7 @@ import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
 import { deliverFrames, postedFrames, POSTED_FRAMES_MAX } from "./ws";
 import { mountChatActions } from "./chat-actions";
-import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, getModelRuntime, ModeRefusedError } from "./chat-handle";
+import { acquireChatHandle, type ChatHandle, chatHandle, chatHandleById, chatHandles, getModelRuntime, ModeRefusedError, setOpeningChoice } from "./chat-handle";
 import { restorePick } from "../pi-config/extensions/subagents/subagent-profiles.ts";
 import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { agentRoot, stateRoot } from "./state-root";
@@ -64,6 +65,7 @@ import { registerUsageRoutes } from "./usage-routes";
 import { sessionFeed } from "./session-feed";
 import { LIST_VERSION_HEADER } from "../src/lib/summary-diff";
 import { archiveSession, cleanupSessions, getSessionSummary, idOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
+import { QUEUE_CHAT_MODE_REFUSAL, queueChatRole } from "../shared/merge-queue";
 import { cleanSessionTitle, readSessionTitleRecords, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { rowsOf } from "./transcript";
 import { readBranch, unknownEntries } from "./harness/pi/reader";
@@ -76,6 +78,7 @@ import { listProjectFiles } from "./files";
 import { getGitSummary } from "./git-summary";
 import { cleanupPlan, cleanupRemove, configureCleanup, worktreesSummary } from "./worktree-cleanup";
 import { applyLoadout, getSessionSetup, readSetupFile } from "./session-setup";
+import { getContextView } from "./context-tab";
 import { getSessionTools } from "./session-tools";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
@@ -90,7 +93,7 @@ import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
 import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
 import type { ProfilePick } from "./profile-sources";
-import { singletonRunningText } from "../shared/profiles";
+import { singletonRunningText, THINKING_LEVELS } from "../shared/profiles";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { subagentProfilesInfo, requireSubagentProfile, restoreReplacedProfiles, saveSubagentProfileDefault, saveSubagentProfiles } from "./subagent-profiles";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
@@ -161,7 +164,8 @@ import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
 import { registerUpdatesRoutes } from "./updates/routes";
 
-const DIST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
+/** The built frontend; SOVA_DIST: another build (a test's scratch one), as SOVA_SHARE_DIST is for the share page. */
+const DIST_DIR = process.env.SOVA_DIST || resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 /** tokens.css and base.css, served as is at /design/* for extension UIs (server/extensions.ts). */
 const DESIGN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "src", "design");
 /** AGENTS.md for the connection agent (owned by pi-config's remote extension team; read per request). */
@@ -288,7 +292,7 @@ export function buildApp(deps: AppDeps) {
   /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
       With `start`, it is made with that profile (§chat.profiles/after-first-message) and, given one, its
       first message is sent; a One at a time profile live elsewhere refuses before anything is made. */
-  async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start" }, subagentProfile?: string, linkMember = false) {
+  async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start"; opening?: { model?: string; thinking?: string } }, subagentProfile?: string, linkMember = false) {
     let pick: ProfilePick | undefined = start?.profile;
     if (start) {
       // Resolved against the new session's own project (§chat.profiles/projects); unapproved refuses.
@@ -313,13 +317,31 @@ export function buildApp(deps: AppDeps) {
       appendToClosedFile(made.path, SUBAGENT_PROFILE, { v: 1, profile: subagentProfile });
     }
     if (!start || !pick) return c.json(made, 201);
+    // The model and effort it starts on, instead of the new-chat default (the merge queue's reviewer and thread),
+    // as the first open; set again after the profile when the open didn't take them.
+    if (start.opening) setOpeningChoice(made.path, start.opening);
     const applied = await applyProfile(made.path, pick, start.by ?? "start");
     if (!applied.ok) return c.json({ error: `Created the session, but its profile was not set: ${applied.error}`, session: made }, applied.status);
+    // One that can't be used (turned off, not signed in) leaves it on the new-chat default, and the answer says why.
+    const opened = start.opening ? await openingTaken(made.path, start.opening) : null;
     if (start.prompt?.trim()) {
       const sent = await promptSession(made.path, start.prompt);
       if (!sent.ok) return c.json({ error: `Created the session with its profile, but its first message was refused: ${sent.error}`, session: made }, sent.status);
     }
-    return c.json((await getSessionSummary(made.path)) ?? made, 201);
+    const summary = (await getSessionSummary(made.path)) ?? made;
+    return c.json(opened && !opened.ok ? { ...summary, modelNotSet: opened.error } : summary, 201);
+  }
+
+  /** The chat runs on `want` (a model the open skipped is set now); an unusable one is said, never guessed around. */
+  async function openingTaken(path: string, want: { model?: string; thinking?: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+    try {
+      const chat = await acquireChatHandle(path);
+      if (want.model && want.model !== chat.mirror.model?.ref) await chat.setModel(want.model);
+      if (want.thinking && want.thinking !== chat.mirror.thinking) await chat.setThinking(want.thinking);
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: `its model wasn't set (${err instanceof Error ? err.message : String(err)})` };
+    }
   }
 
   async function createWebSessionFile(c: Context, cwd: string, seed?: NewSessionFile["seed"]) {
@@ -348,7 +370,7 @@ export function buildApp(deps: AppDeps) {
   // `target` flag, so the remote extension runs every tool on the far side. `link: true` makes it a
   // link member session (§app.overseer/links-tools): only the Overseer's create sends it.
   app.post("/api/sessions", async (c) => {
-    let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown; subagent_profile?: unknown; link?: unknown };
+    let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown; subagent_profile?: unknown; link?: unknown; model?: unknown; thinking?: unknown };
     try {
       body = await c.req.json();
     } catch {
@@ -360,6 +382,9 @@ export function buildApp(deps: AppDeps) {
       catch (err) { return c.json({ error: String(err instanceof Error ? err.message : err) }, 400); }
     }
     if (body.link !== undefined && typeof body.link !== "boolean") return c.json({ error: "link must be true or false" }, 400);
+    if (body.model !== undefined && (typeof body.model !== "string" || !/^[^/\s]+\/\S+$/.test(body.model) || body.model.length > 200)) return c.json({ error: 'model is "provider/model"' }, 400);
+    if (body.thinking !== undefined && !(THINKING_LEVELS as readonly unknown[]).includes(body.thinking)) return c.json({ error: `thinking is one of ${THINKING_LEVELS.join(", ")}` }, 400);
+    if ((body.model !== undefined || body.thinking !== undefined) && body.profile === undefined) return c.json({ error: "model and thinking come with a profile" }, 400);
     const linkMember = body.link === true;
     if (body.target !== undefined) {
       if (!isTargetName(body.target)) return c.json({ error: "target must be a target name" }, 400);
@@ -378,7 +403,7 @@ export function buildApp(deps: AppDeps) {
   });
 
   /** POST /api/sessions's optional `profile` (an id or `{source, id}`) and `prompt`: the chip's Run Again, the Overseer. */
-  function startOf(body: { profile?: unknown; prompt?: unknown }, byOverseer = false): { profile: ProfilePick; prompt?: string; by: "overseer" | "start" } | undefined {
+  function startOf(body: { profile?: unknown; prompt?: unknown; model?: unknown; thinking?: unknown }, byOverseer = false): { profile: ProfilePick; prompt?: string; by: "overseer" | "start"; opening?: { model?: string; thinking?: string } } | undefined {
     const p = body.profile as { source?: unknown; id?: unknown } | string | undefined;
     const pick: ProfilePick | undefined =
       typeof p === "string" && p
@@ -387,7 +412,8 @@ export function buildApp(deps: AppDeps) {
           ? { source: p.source, id: p.id }
           : undefined;
     if (!pick) return undefined;
-    return { profile: pick, by: byOverseer ? "overseer" : "start", ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}) };
+    const opening = { ...(typeof body.model === "string" ? { model: body.model } : {}), ...(typeof body.thinking === "string" ? { thinking: body.thinking } : {}) };
+    return { profile: pick, by: byOverseer ? "overseer" : "start", ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}), ...(Object.keys(opening).length ? { opening } : {}) };
   }
 
   // The connection agent: a new session in a fixed seed dir whose AGENTS.md (the remote-runtime
@@ -425,6 +451,8 @@ export function buildApp(deps: AppDeps) {
   registerProjectServiceRoutes(app);
   // A chat's merge queue cards (server/merge-queue/cards.ts).
   registerMergeCardRoutes(app);
+  // A folder of a project's files at a ref, or one of Sova's own, read only (server/folder-read.ts).
+  registerFolderReadRoutes(app);
   registerServicesViewRoutes(app);
   // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
   registerDecisionRoutes(app);
@@ -709,13 +737,20 @@ export function buildApp(deps: AppDeps) {
     } catch {
       return c.json({ error: "Expected JSON body { mode, dryRun }" }, 400);
     }
+    if (!body || typeof body !== "object" || Array.isArray(body)) return c.json({ error: "Expected JSON body { mode, dryRun }" }, 400);
+    // Every field that is present is checked before anything runs: a dryRun that isn't a boolean is
+    // refused, never read as a real run.
+    if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") return c.json({ error: "dryRun must be true or false" }, 400);
+    if (body.mode !== "age" && body.mode !== "husks" && body.mode !== "paths") return c.json({ error: 'mode must be "husks", "paths", or "age"' }, 400);
+    if (body.minAgeDays !== undefined && body.minAgeDays !== 7 && body.minAgeDays !== 30) return c.json({ error: "minAgeDays must be 7 or 30" }, 400);
+    const validPaths = (v: unknown): v is string[] => Array.isArray(v) && v.length > 0 && v.length <= 100 && v.every((p) => typeof p === "string");
+    if (body.paths !== undefined && !validPaths(body.paths)) return c.json({ error: "paths must be 1–100 session paths" }, 400);
     const dryRun = body.dryRun === true;
     if (body.mode === "age" && (body.minAgeDays === 7 || body.minAgeDays === 30))
       return c.json(await cleanupSessions({ mode: "age", minAgeDays: body.minAgeDays, dryRun }));
     if (body.mode === "husks") return c.json(await cleanupSessions({ mode: "husks", dryRun }));
     if (body.mode === "paths") {
-      if (!Array.isArray(body.paths) || body.paths.length === 0 || body.paths.length > 100 || !body.paths.every((p) => typeof p === "string"))
-        return c.json({ error: "paths must be 1–100 session paths" }, 400);
+      if (!validPaths(body.paths)) return c.json({ error: "paths must be 1–100 session paths" }, 400);
       // Each path validated exactly like the archive route's, so nothing outside the sessions dir
       // reaches the delete loop.
       const paths: string[] = [];
@@ -811,8 +846,11 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
-    const dryRun = body?.dryRun === true;
+    if (body?.dryRun !== undefined && typeof body.dryRun !== "boolean") return c.json({ error: "dryRun must be true or false" }, 400);
     const expect = body?.expect;
+    if (expect !== undefined && !(Array.isArray(expect) && expect.every((p) => typeof p === "string" && p.startsWith("/"))))
+      return c.json({ error: "expect must be a list of absolute paths" }, 400);
+    const dryRun = body?.dryRun === true;
     if (dryRun === Array.isArray(expect) || (Array.isArray(expect) && !expect.every((p) => typeof p === "string" && p.startsWith("/"))))
       return c.json({ error: "Send either dryRun: true or expect: [absolute paths]" }, 400);
     if (dryRun) {
@@ -846,6 +884,15 @@ export function buildApp(deps: AppDeps) {
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
     const r = await readSetupFile(path, file);
     return r.ok ? c.json(r.file, 200, { "Cache-Control": "no-store" }) : c.json({ error: r.error }, r.status);
+  });
+
+  // What fills one chat's context window now, for the session pane's Context tab (server/context-tab.ts):
+  // a worker is read by its own session file. Same 400/404 as above. Never cached.
+  app.get("/api/sessions/context-view", async (c) => {
+    const path = resolveSessionPath(c.req.query("path"));
+    if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
+    if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    return c.json(await getContextView(path), 200, { "Cache-Control": "no-store" });
   });
 
   // Triage on a session's open alignment cards (§app.decisions/align-triage): a stakes chip per open
@@ -1266,6 +1313,8 @@ export function buildApp(deps: AppDeps) {
       if (request.patch.projectModes !== undefined) return c.json({ error: "Project modes belong to one chat: send projectModes with ?path=" }, 400);
       return c.json(await switchMode(request.patch));
     }
+    // The merge queue's own chats keep the modes Sova started them with (profiles/system, thread.ts threadMemoryOn).
+    if (queueChatRole((await getSessionSummary(path).catch(() => null))?.profile)) return c.json({ error: QUEUE_CHAT_MODE_REFUSAL }, 409);
     const got = await chatFor(path);
     if ("error" in got) return c.json({ error: got.error }, got.status);
     // A project's coding session keeps spec on (§app.project-overseer/coding-mode).
@@ -1902,7 +1951,14 @@ export function buildApp(deps: AppDeps) {
   const staticFiles = serveStatic({ root: DIST_DIR });
   const spaIndex = serveStatic({ root: DIST_DIR, path: "index.html" });
   app.use("*", (c, next) => (hasDist() ? staticFiles(c, next) : next()));
-  app.get("*", (c, next) => (hasDist() ? spaIndex(c, next) : next()));
+  // A code file this build doesn't have (one a rebuild removed, asked for by a tab of the older
+  // build) is missing, never the app's page: answered as HTML it fails as a wrong file type, and
+  // the tab couldn't tell that Sova was updated.
+  app.get("*", async (c, next) => {
+    if (!hasDist()) return next();
+    if (c.req.path.startsWith("/assets/")) return c.text("Not found", 404);
+    return spaIndex(c, next);
+  });
 
   return { app, autoTitleSweep, claudeAccounts, meshResync };
 }

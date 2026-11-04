@@ -825,18 +825,18 @@ test("a measured reply's end carries its timing to the live row, with the time i
   assert.equal(plain?.kind === "assistant" && (plain.reply ?? plain.endedAt), undefined);
 });
 
-test("a codemode script's own calls are no live tools; the script's updates carry its calls as details", () => {
+test("a call another tool made is no live tool; the caller's updates carry its details", () => {
   const [s, set] = store();
-  feed(set, { type: "tool_execution_start", toolCallId: "c1", toolName: "codemode", args: { code: "return 1" } });
+  feed(set, { type: "tool_execution_start", toolCallId: "c1", toolName: "orch", args: {} });
   feed(set, { type: "tool_execution_start", toolCallId: "c1/1", toolName: "read", parentToolCallId: "c1", args: { path: "a" } });
   const calls = { calls: [{ id: "c1/1", name: "read", args: "{\"path\":\"a\"}", status: "running" }] };
-  feed(set, { type: "tool_execution_update", toolCallId: "c1", toolName: "codemode", partialResult: { content: [], details: calls } });
+  feed(set, { type: "tool_execution_update", toolCallId: "c1", toolName: "orch", partialResult: { content: [], details: calls } });
   feed(set, { type: "tool_execution_update", toolCallId: "c1/1", toolName: "read", parentToolCallId: "c1", partialResult: { content: [{ type: "text", text: "partial" }] } });
   feed(set, { type: "tool_execution_end", toolCallId: "c1/1", toolName: "read", parentToolCallId: "c1", result: { content: [{ type: "text", text: "x" }] }, isError: false });
   assert.deepEqual(Object.keys(s.tools), ["c1"], "the nested call never becomes a live tool");
-  assert.equal(s.tools.c1?.status, "running", "and its end ends nothing of the script's");
-  assert.deepEqual(JSON.parse(JSON.stringify(s.tools.c1?.details)), calls, "the script's calls so far, live");
-  feed(set, { type: "tool_execution_end", toolCallId: "c1", toolName: "codemode", result: { content: [{ type: "text", text: "Script completed" }], details: { calls: [] } }, isError: false });
+  assert.equal(s.tools.c1?.status, "running", "and its end ends nothing of the caller's");
+  assert.deepEqual(JSON.parse(JSON.stringify(s.tools.c1?.details)), calls, "the caller's details so far, live");
+  feed(set, { type: "tool_execution_end", toolCallId: "c1", toolName: "orch", result: { content: [{ type: "text", text: "Done" }], details: { calls: [] } }, isError: false });
   assert.equal(s.tools.c1?.status, "done");
 });
 

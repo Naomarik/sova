@@ -375,7 +375,7 @@ export class DarwinSeatbeltBackend implements Backend {
 		return {
 			hidden: [
 				h(".ssh"), h(".gnupg"), h(".aws"), h(".docker"), h(".kube"), h(".azure"), h(".password-store"),
-				h(".config/gh"), h(".config/gcloud"), h(".config/hub"),
+				h(".config/gh"), h(".config/glab-cli"), h("Library/Application Support/glab-cli"), h(".config/gcloud"), h(".config/hub"),
 				h(".netrc"), h(".git-credentials"), h(".npmrc"), h(".pypirc"), h(".cargo/credentials.toml"),
 				h(".claude/.credentials.json"), h(".claude.json"),
 				// Keychain files are always hidden by the profile itself (keychainDirs); browser and mail data.

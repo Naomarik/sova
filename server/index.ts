@@ -36,7 +36,7 @@ import { usageHistory } from "./usage-history";
 import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
 import { wireRequestChats } from "./owner-request-chat";
-import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
+import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, listStamps, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
 import { detachChatHost, startChatHost, stopWorkersOf } from "./chat-host";
@@ -243,7 +243,8 @@ let feedChanged: (() => void) | null = null;
 onOrgChange(() => feedChanged?.());
 configureSessionFeed({
   // Re-reads only the session files the watch named since the last build (with a full sweep).
-  list: () => listSessionsTracked().then(events.seeList),
+  list: (opts) => listSessionsTracked(opts).then(events.seeList),
+  stamps: listStamps,
   watch: (changed) => {
     feedChanged = changed;
     const tracked = trackSessionFiles();

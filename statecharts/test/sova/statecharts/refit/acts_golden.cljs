@@ -6,6 +6,7 @@
 (def golden
   {
    ["project" ":deploy/run"] {:code-facing true, :hold true, :power "deploy", :tool "sova_project_verbs", :what? true}
+   ["project" ":release/run"] {:code-facing true, :hold true, :power "release", :tool "sova_project_verbs", :what? true}
    ["project" ":services/reset"] {:power "copiesReset", :tool "sova_project_verbs"}
    ["watch" ":operator/powers-set"] {}
    ["baton" ":baton/abilities"] {}

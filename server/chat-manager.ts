@@ -59,10 +59,10 @@ import { sovaToken } from "./auth";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
 import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
-import { codemodeFactory } from "./harness/pi/codemode";
-import { claimSessionSlot, holdingSlot } from "./provider-limits";
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
+import { deeperContextExtension } from "./harness/pi/deeper-context";
+import { LOADING_TOOLS } from "./deeper-context";
 import { playbookExtension, type PlaybookHost } from "./harness/pi/playbook";
 import { playbookHost } from "./playbook-host";
 import { ChatMemory } from "./memory/chat";
@@ -259,19 +259,14 @@ export function alignLaunchOf(state: Pick<SessionState, "branch" | "file">): Ali
   return { data: { v: 1, review: reviewSaved(), visuals: alignForPick(pick).visuals }, recorded: false };
 }
 
-/** The extensions every ordinary session loads beyond pi-config's: resource monitoring, inherited
-    fork-cache affinity, and pi's codemode tool (registered inactive: the codemode minor mode turns it
-    on, §chat.mode-menu/codemode; in a Claude Code chat it is a fixed stub). None changes prompt
-    sections or tool declarations by loading. A caller that passes its own list for an ordinary session
+/** The extensions every ordinary session loads beyond pi-config's: resource monitoring and inherited
+    fork-cache affinity. None changes prompt sections or tool declarations by loading. A caller that passes its own list for an ordinary session
     starts from this one; the special loadouts keep exactly their own. */
 const DEFAULT_EXTENSION_FACTORIES = [
   { name: "sova-resource-monitor", factory: monitorExtension },
   { name: "sova-fork-cache", factory: forkCacheExtension },
-  codemodeFactory({
-    allowed: (ref) => modelAllowed(readModelPolicy(), ref),
-    acquire: (provider, opts) => claimSessionSlot(provider, opts),
-    holding: holdingSlot,
-  }),
+  // Subfolder AGENTS.md / CLAUDE.md files, attached to the read/edit/write result that first reaches them.
+  deeperContextExtension(),
 ];
 
 /** Register the Claude Code provider without waiting for the user to open a session: a throwaway
@@ -771,9 +766,12 @@ function workerHostExtension(pi: PiExtensionAPI): void {
  * instance note, as an ordinary chat does (§app.project-services/callers), served when the server declared it, else
  * in this process.
  */
-export function workerExtensionFactories(w: Pick<WorkerSpec, "kind">, path: string) {
-  if (w.kind !== "worker") return [];
+export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null }, path: string) {
+  // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
+  const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension()] : [];
+  if (w.kind !== "worker") return files;
   return [
+    ...files,
     servedDecls
       ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
       : projectVerbsExtension(projectEngine),
@@ -1928,8 +1926,8 @@ class ChatSession {
         console.error("[chat] reply timing failed", err);
       }
       // A turn starting or settling, and a tool call ending (the Overseer's tools write stores in
-      // process), start the next session listing afresh (§app.session-list/listing-reuse). A codemode
-      // script's own calls don't: its result's end does, once.
+      // process), start the next session listing afresh (§app.session-list/listing-reuse). A call
+      // another tool made (nested) doesn't: its caller's end does, once.
       if ((event.type === "tool.end" && !event.nested) || event.type === "run.start" || event.type === "run.settled") sessionsChanged();
       // A Claude login picked during the reply goes in now, before the queue wake below can start
       // the next turn: applyLoginPick holds the web queue until it has landed

@@ -4,6 +4,16 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## Unreleased
+
+### Removed
+
+- **The codemode minor mode.** It is gone from the mode menu, profiles, automations and the
+  Overseer's coding sessions, and a settings file that still names it is refused as an unknown
+  mode. Experiments showed no gain in quality, cost more, and the agent never chose it on its own.
+  An old chat's script calls now show as ordinary tool steps. A terminal's pi follows its own
+  settings for its codemode tool.
+
 ## v0.9.0 — 2026-10-26
 
 A new owner page, dependable landings, a waiting badge in the composer, and git that cleans up

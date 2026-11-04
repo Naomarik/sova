@@ -40,9 +40,9 @@
       "§app.project-overseer/tools"
     ],
     "agreed": {
-      "by": "Omar",
-      "at": "2026-10-23T21:49Z",
-      "source": "pi-session:6ec048f1-982c-47b9-9547-c0d8cbc3c635#4f6c19c9"
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.project-overseer/coding-mode": {
@@ -80,9 +80,9 @@
       "server/app.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-27T23:54Z",
-      "source": "pi-session:01a16fc3-76aa-7539-b91a-753e2e7fee8b#3962b059"
+      "by": "user",
+      "at": "2026-11-03T15:12Z",
+      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
     }
   },
   "§app.project-overseer/coding-worktrees": {
@@ -132,11 +132,13 @@
       "src/lib/project-queue.ts",
       "src/lib/project-queue.test.ts",
       "server/merge-queue-ui.integration.test.ts",
-      "server/merge-queue/wire.ts"
+      "server/merge-queue/wire.ts",
+      "src/lib/merge-queue.ts",
+      "src/lib/merge-queue.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:27Z",
+      "at": "2026-11-03T14:28Z",
       "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
@@ -347,7 +349,9 @@
       "server/overseer-opening.ts",
       "server/overseer-run-note.ts",
       "server/project-overseer-opening.test.ts",
-      "server/other-project-dirs.ts"
+      "server/other-project-dirs.ts",
+      "server/chat-special.ts",
+      "server/harness/pi/deeper-context.ts"
     ],
     "requires": [
       "§app.overseer/hosting",
@@ -643,7 +647,7 @@
   "§app.project-overseer/settings": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/project-settings.ts",
       "server/project-settings-git.ts",
@@ -677,9 +681,9 @@
       "§app.requirements/frozen-spec"
     ],
     "agreed": {
-      "by": "omar (user)",
-      "at": "2026-10-24T17:42Z",
-      "source": "pi-session:01a16d55-548f-7753-a545-667b0b324cd2#84ee31e2"
+      "by": "user",
+      "at": "2026-11-03T11:29Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
   "§app.project-overseer/statechart-tools": {
@@ -889,8 +893,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-28T13:39Z",
-      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.project-overseer/watch-loop": {

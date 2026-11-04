@@ -11,6 +11,8 @@ import { CardErrorBox } from "./TranscriptKind";
 import { Icon } from "./ui";
 import { UnclearChecks } from "./WorktreesModal";
 import { unattributedWhy } from "../lib/merge-queue";
+import { isRequestState } from "../lib/merge-queue-requests";
+import { RequestReview, RequestStatus, type RequestEntry } from "./MergeQueueRequests";
 
 /**
  * The merge queue's card for one branch, in the chat that built it: its state pill, "feat/x into
@@ -64,6 +66,10 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
   const [error, setError] = createSignal<string | null>(null);
   const facts = () => cardFacts(d());
   const runHref = () => (d().run ? mergeRunHref(d().project, d().run!) : null);
+  /** Past Sova's checks on a request or push project: the host's states, Open on the host, Send Back to Chat. */
+  const onRequest = () => isRequestState(d().state) || (d().state === "landed" && !!d().request);
+  const reqEntry = (): RequestEntry => ({ id: d().entry, branch: d().branch, state: d().state as RequestEntry["state"], reason: d().reason, newerCommits: d().newerCommits, request: d().request });
+  const [reviewingRequest, setReviewingRequest] = createSignal(false);
 
   const act = async (a: CardAction) => {
     if (busy()) return;
@@ -115,7 +121,7 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
             {cardSha(d())}
           </span>
         </span>
-        <Show when={d().state === "landed" && d().landed && session}>
+        <Show when={d().state === "landed" && d().landed && d().landed!.via !== "host" && session}>
           <button
             type="button"
             class="button button-sm worktree-merge-review"
@@ -159,7 +165,15 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
         <p class="text-caption mq-card-line">{unattributedWhy(d().reason, d().target)} Nobody is blamed: Land Anyway lands the commit it tested, Send Back hands it to this chat.</p>
         <UnclearChecks projectId={d().project} unclear={d().unclear} target={d().target} />
       </Show>
-      <Show when={d().reason && d().state !== "landed" && d().state !== "unattributed"}>
+      <Show when={onRequest()}>
+        <Show
+          when={reviewingRequest() && d().state === "request-review" && !props.readOnly}
+          fallback={<RequestStatus entry={reqEntry()} root={d().root} target={d().target} head={d().head} readOnly={props.readOnly} noChip onReview={() => setReviewingRequest(true)} />}
+        >
+          <RequestReview entry={reqEntry()} target={d().target} onDone={() => setReviewingRequest(false)} onCancel={() => setReviewingRequest(false)} />
+        </Show>
+      </Show>
+      <Show when={d().reason && d().state !== "landed" && d().state !== "unattributed" && !onRequest()}>
         <p class="text-caption mq-card-line">
           {d().reason}
           <Show when={runHref()}>

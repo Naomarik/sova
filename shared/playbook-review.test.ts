@@ -22,3 +22,12 @@ test("a deploy-setup run's proposal is its deploy recipe", () => {
   assert.equal(reviewDetail(dep), "Project verbs: its branch sova/v-1a2b3c has no valid deploy recipe: read its report");
   assert.equal(reviewBanner(dep).body, "Its branch has no valid deploy recipe: read its report.");
 });
+
+test("a release-setup run's banner names a release setup, never its hash", () => {
+  const rel = { ...run, label: "Release playbook maker", proposes: "release" as const };
+  assert.deepEqual(reviewBanner(rel), { title: "Release playbook maker proposes a release setup on sova/v-1a2b3c.", body: "Read it, then merge it into main." });
+  assert.ok(!reviewBanner(rel).title.includes("0123456789ab"));
+  assert.equal(reviewBanner({ ...rel, hash: undefined }).body, "Its branch has no valid release setup: read its report.");
+  // A definition's and a deploy recipe's banner still show the hash they pin.
+  assert.match(reviewBanner({ ...run, proposes: "deploy" as const }).title, /proposes 0123456789ab on/);
+});

@@ -56,9 +56,10 @@ const fromDecl = (c: MergeCheckDecl, source: CheckSource, why?: string, select?:
  * selectors it runs again narrowed; naming an optional check runs that check; naming nothing declared is dropped (the
  * thread can't add commands, nor drop one). `"none"` and `"unset"` give an empty list.
  */
-export function planChecks(def: ProjectDef | null, picks: readonly CheckPick[] = []): PlannedCheck[] {
+export function planChecks(def: ProjectDef | null, picks: readonly CheckPick[] = [], release: readonly MergeCheckDecl[] = []): PlannedCheck[] {
   const declared = checksOf(def);
-  if (declared === "none" || declared === "unset") return [];
+  if (declared === "unset") return [];
+  if (declared === "none") return withRelease([], release);
   const decls: MergeCheckDecl[] =
     declared === "declared"
       ? (def!.merge!.checks as MergeCheckDecl[])
@@ -75,6 +76,17 @@ export function planChecks(def: ProjectDef | null, picks: readonly CheckPick[] =
     }
     const id = out.some((c) => c.id === d.id) ? `${d.id}+${out.filter((c) => c.id === d.id || c.id.startsWith(`${d.id}+`)).length}` : d.id;
     out.push({ ...fromDecl(d, "picked", p.why, select), picked: true, id, label: select.length ? `${d.label} (${select.length === 1 ? select[0] : `${select.length} selected`})` : d.label });
+  }
+  return withRelease(out, release);
+}
+
+/** A release entry's gating checks (the release section's, resolved), after the merge set, in order; one the list
+ *  already runs in full (a required merge check the release names again) runs once. */
+function withRelease(out: PlannedCheck[], release: readonly MergeCheckDecl[]): PlannedCheck[] {
+  for (const c of release) {
+    const have = out.find((x) => x.id === c.id && !x.select);
+    if (have) continue;
+    out.push({ ...fromDecl(c, "release"), why: "a release gate", picked: true });
   }
   return out;
 }

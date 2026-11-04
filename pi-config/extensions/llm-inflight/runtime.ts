@@ -3,7 +3,7 @@
  * pi request of a process goes through: the agent's turns and their retries, compaction and branch
  * summaries, prompt-cache warming, and an extension's ctx.modelRegistry.stream/streamSimple/complete.
  * Its `complete*` and `fetchDeferred` call `this.stream*`, so wrapping the stream methods on the
- * instance counts each call once. Its `classify` and `generateImages` (a codemode script's `models.*`)
+ * instance counts each call once. Its `classify` and `generateImages` (a script tool's `models.*`)
  * stream nothing and are wrapped on their own: one call and one record each.
  *
  * Duck-typed and builtins only: Sova's server instruments the runtime it owns with this, and the
@@ -329,7 +329,7 @@ export function instrumentModelRuntime(runtime: unknown): Instrumented {
 				return result;
 			};
 		/**
-		 * A classifier or image call (pi 1.0's ModelRuntime.classify / generateImages: a codemode script's
+		 * A classifier or image call (pi 1.0's ModelRuntime.classify / generateImages: a script tool's
 		 * `models.*`): no stream, one promise. In flight from the call to its settling, and one usage record
 		 * (purpose `classify` / `image`) for whoever the caller's usage context names.
 		 */

@@ -65,7 +65,15 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `project.settings.history`, `project.settings.undo`, `project.settings.propose.withdraw`,
   `project.overseer.settings.set`, `project.claude-login.get`, `project.claude-login.set`,
   `org.claude-login.get`, `org.claude-login.set`, `server.restart`, `session.card.post`,
-  `session.card.get`, `session.card.answer`, `project.cards.list`.
+  `session.card.get`, `session.card.answer`, `project.cards.list`, `session.cleanup`,
+  `session.title.auto`, `session.title.shorten`, `session.worktree.summary`,
+  `session.worktree.cleanup`, `session.diff.summary`, `overseer.get`, `overseer.memory.get`,
+  `project.overseer.get`, `project.overseer.actions`, `project.overseer.memory.get`,
+  `insights.usage.refresh`, `schedule.list`, `playbook.list`, `draft-spec.list`,
+  `project.verb.release.status`, `project.verb.release.logs`, `project.verb.release.request`,
+  `project.verb.release.start`, `project.verb.release.step`, `project.verb.release.notes`,
+  `project.verb.release.continue`, `project.verb.release.retry`, `project.verb.release.publish`,
+  `project.verb.release.abandon`, `project.verb.release.withdraw`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).
@@ -94,7 +102,9 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   renamed or given to another action. Core ids never start with `ext.`. An id whose action is
   removed is retired, never deleted: it moves from `ids` to the same file's `retired`, which is
   append-only too, and no entry may ever use it again. Retired: `settings.agents.get` (Settings →
-  Agents, removed before it was released).
+  Agents, removed before it was released), and `session.tags.backfill`,
+  `session.tags.backfill.status` and `session.tags.backfill.cancel` (their routes went with
+  automatic session tags, §app.decisions/backfill, before the entries were released).
 
 ## §app.commands/cli — The `sova` command line
 
@@ -236,3 +246,27 @@ names its extension.
   its page (§app.extensions/page), and the page remembers it; they leave every reply at once. An
   extension whose answers are dropped, or have a part dropped, 3 times in a row, or whose frame
   navigated, is muted: no longer asked, and nothing of it drawn, until the page reloads.
+
+## §app.commands/opted-out — Areas left as is, by choice
+
+Every route the main listener registers is a catalogue entry's, in a class that is not a command,
+or pending: not yet a command, on a list that only shrinks, so a new route that arrives pending
+fails the inventory test. One of those classes is the areas the user chose not to make scriptable,
+"Left as is, by choice": every route under `/api/` in `orgs`, `outreach`, `mesh`, `session-shares`,
+`public-links`, `previews`, `shares-overview`, `tours`, `voice`, `settings`, `claude`, `profiles`,
+`push`, `updates`, `themes`, `visitor-logging`, `baton`, `monitor`, `provider-limits` and
+`services`. They are named in one list, `OPTED_OUT` in `server/commands-inventory/scan.ts`.
+
+- **A route there is never pending**, and a new route there needs no catalogue entry.
+- **An entry still wins.** A route there that a catalogue entry points at stays a command (the
+  `settings.*` entries, `push.test`, `project.preview.off` and the `org.owner.request.*` ones), and
+  that is no error there, while an entry on any other class's route is one.
+- **It overlaps no other class.** A route that matches it and another class is an error.
+- **The core areas keep the default.** Sessions, projects, the Overseer with its to-dos and ideas,
+  and chats are not on the list: a new user-visible action there still gets a catalogue entry, and
+  their routes not yet converted stay pending.
+- **Taking an area back** is removing its name from the list. Its routes not yet converted then turn
+  pending and fail the inventory test by design, so the same change converts them, or lists each
+  one still left as is on the list as a single `METHOD /path`.
+- **Adding an area is the user's decision.** The inventory test's failure names the list as a way
+  out only for an area already on it, never as a fix for a new one.

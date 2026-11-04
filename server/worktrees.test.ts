@@ -3,7 +3,7 @@
 // removed afterwards; ~/.pi is never read or written.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync, symlinkSync, unlinkSync, readFileSync, statSync, utimesSync, renameSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync, symlinkSync, unlinkSync, readFileSync, statSync, utimesSync, renameSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -15,7 +15,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute 
 const sessionsDir = join(agentDir, "sessions", "--tmp-worktrees-test--");
 mkdirSync(sessionsDir, { recursive: true });
 
-const { WorktreeInsights, execGit, pickBase, sumNumstat, worktreeStamp, driverStamp, shellWords } = await import("./worktrees");
+const { WorktreeInsights, execGit, pickBase, sumNumstat, worktreeStamp, driverStamp, shellWords, MAX_CACHED, dependencyWork } = await import("./worktrees");
 type Runner = typeof execGit;
 
 const ENV = { ...process.env, GIT_AUTHOR_NAME: "t", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "t", GIT_COMMITTER_EMAIL: "t@t", GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" };
@@ -691,10 +691,10 @@ test("settled observations are capped and unseen values expire without stranding
   const internals = ins as unknown as { observe<T>(key: string, token: () => string, load: () => Promise<T>, good: (v: T) => boolean): Promise<T>; observations: Map<string, unknown> };
   let reads = 0;
   const read = () => { reads++; return Promise.resolve(reads); };
-  for (let i = 0; i < 520; i++) { now++; await internals.observe(`bounded-${i}`, () => "same", read, () => true); }
-  assert.equal(internals.observations.size, 512);
+  for (let i = 0; i < MAX_CACHED + 8; i++) { now++; await internals.observe(`bounded-${i}`, () => "same", read, () => true); }
+  assert.equal(internals.observations.size, MAX_CACHED);
   await internals.observe("bounded-0", () => "same", read, () => true);
-  assert.equal(reads, 521, "evicted fact is read again");
+  assert.equal(reads, MAX_CACHED + 9, "evicted fact is read again");
   now += 3600001;
   await ins.get([]);
   assert.equal(internals.observations.size, 0);
@@ -937,4 +937,175 @@ test("a branch with several merge bases (a criss-cross merge) is reused like any
   calls.length = 0;
   assert.deepEqual(await ins.treeStatus(wt), first);
   assert.deepEqual(calls, [], "no Git on the second check");
+});
+
+test("more trees than the old bound: a second look runs no Git (they are never read round and round)", async () => {
+  // Folders shaped as linked worktrees, with Git answered by hand: 300 real ones would take this test a minute.
+  const common = join(root, "many", ".git");
+  mkdirSync(join(common, "refs/heads"), { recursive: true });
+  writeFileSync(join(common, "config"), "[core]\n");
+  writeFileSync(join(common, "packed-refs"), "");
+  const oid = (s: string) => s.padStart(40, "a");
+  const trees: string[] = [];
+  for (let i = 0; i < 300; i++) {
+    const top = join(root, "many", `w${i}`), gd = join(common, "worktrees", `w${i}`);
+    mkdirSync(top, { recursive: true });
+    mkdirSync(gd, { recursive: true });
+    writeFileSync(join(top, ".git"), `gitdir: ${gd}\n`);
+    writeFileSync(join(gd, "commondir"), "../..\n");
+    writeFileSync(join(gd, "HEAD"), `ref: refs/heads/w${i}\n`);
+    writeFileSync(join(gd, "index"), "");
+    writeFileSync(join(common, "refs/heads", `w${i}`), `${oid(String(i))}\n`);
+    trees.push(top);
+  }
+  let calls = 0;
+  const run: Runner = async (args, { cwd }) => {
+    calls++;
+    const done = (stdout: string, code = 0) => ({ code, stdout, stderr: "" });
+    const i = /w(\d+)$/.exec(cwd)?.[1] ?? "0";
+    if (args.includes("--show-toplevel")) return done(`${cwd}\n${join(common, "worktrees", `w${i}`)}\n${common}\n`);
+    if (args[0] === "version") return done("git version 2.50.0");
+    if (args[0] === "--exec-path") return done("/nowhere");
+    if (args[0] === "symbolic-ref") return done(`refs/heads/w${i}\n`);
+    if (args[0] === "for-each-ref") return done(`refs/heads/master\0${oid("b")}\0\n`);
+    if (args[0] === "rev-parse") return done(`${oid(i)}\n`);
+    if (args[0] === "log" && args.includes("-1")) return done(`${oid(i)} 1700000000\n`);
+    if (args[0] === "log") return done("a commit\n");
+    if (args[0] === "merge-base" && args.includes("--is-ancestor")) return done("", 1);
+    if (args[0] === "merge-base") return done(`${oid("b")}\n`);
+    if (args[0] === "merge-tree") return done(`${oid("c")}\n`);
+    if (args[0] === "rev-list") return done("0\t1\n");
+    if (args[0] === "config") return done("", 1);
+    return done("");
+  };
+  const ins = new WorktreeInsights({ run, scratchDir: root });
+  for (const t of trees) ins.dirtyLifetime(t, 3_600_000);
+  for (const t of trees) assert.equal((await ins.treeStatus(t))?.ahead, 1);
+  const first = calls;
+  assert.ok(first > trees.length * 5, "the first look reads them");
+  for (const t of trees) await ins.treeStatus(t);
+  assert.equal(calls, first, "nothing moved: no Git at all");
+});
+
+test("a read works out each repository token once, and an idle one reads no dependency file twice", async () => {
+  const r = repo("one-walk");
+  const wt = feature(r, "one-walk-f", ["x"]);
+  const ins = new WorktreeInsights({});
+  ins.dirtyLifetime(wt, 3_600_000);
+  await ins.treeStatus(wt);
+  const settled = dependencyWork.settledMs;
+  dependencyWork.settledMs = -60_000; // every file here counts as settled
+  try {
+    await ins.treeStatus(wt); // keeps them
+    const walks = dependencyWork.walks, reads = dependencyWork.reads;
+    await ins.treeStatus(wt);
+    assert.equal(dependencyWork.reads, reads, "nothing moved: the stat stands for every file");
+    assert.ok(dependencyWork.walks - walks <= 8, `walks in one read: ${dependencyWork.walks - walks}`);
+  } finally {
+    dependencyWork.settledMs = settled;
+  }
+});
+
+test("a kept ref file: a rewrite in place, same size, its time put back, reads the new commit", async () => {
+  const r = repo("in-place");
+  const wt = feature(r, "in-place-f", ["x"]);
+  const ins = new WorktreeInsights({});
+  ins.dirtyLifetime(wt, 3_600_000);
+  const first = (await ins.treeStatus(wt))?.head;
+  const settled = dependencyWork.settledMs;
+  dependencyWork.settledMs = -60_000;
+  try {
+    await ins.treeStatus(wt);
+    const reads = dependencyWork.reads;
+    await ins.treeStatus(wt);
+    assert.equal(dependencyWork.reads, reads, "kept");
+    const ref = join(r, ".git/refs/heads/in-place-f");
+    const st = statSync(ref);
+    const other = git(r, "rev-parse", "master");
+    writeFileSync(ref, `${other}\n`);
+    utimesSync(ref, st.atime, st.mtime);
+    assert.equal((await ins.treeStatus(wt))?.head, other);
+    assert.notEqual(first, other);
+  } finally {
+    dependencyWork.settledMs = settled;
+  }
+});
+
+test("a file just written is never kept: its next stat could not tell a second write in the same tick", async () => {
+  const r = repo("racy");
+  const wt = feature(r, "racy-f", ["x"]);
+  const ins = new WorktreeInsights({});
+  ins.dirtyLifetime(wt, 3_600_000);
+  const settled = dependencyWork.settledMs;
+  dependencyWork.settledMs = 3_600_000; // nothing here has settled
+  try {
+    await ins.treeStatus(wt);
+    const reads = dependencyWork.reads;
+    await ins.treeStatus(wt);
+    assert.ok(dependencyWork.reads > reads, "read again");
+  } finally {
+    dependencyWork.settledMs = settled;
+  }
+});
+
+test("a link in the refs: retargeted, same bytes, it still ends the reuse", async () => {
+  const r = repo("linked-ref");
+  const wt = feature(r, "linked-ref-f", ["x"]);
+  const oid = git(r, "rev-parse", "master");
+  mkdirSync(join(r, "elsewhere"));
+  writeFileSync(join(r, "elsewhere/a"), `${oid}\n`);
+  linkSync(join(r, "elsewhere/a"), join(r, "elsewhere/b")); // same inode and times: only the path says it moved
+  const link = join(r, ".git/refs/heads/link");
+  symlinkSync(join(r, "elsewhere/a"), link);
+  const calls: string[] = [];
+  const run: Runner = (args, opts) => { calls.push(args.join(" ")); return execGit(args, opts); };
+  const ins = new WorktreeInsights({ run });
+  ins.dirtyLifetime(wt, 3_600_000);
+  await ins.treeStatus(wt);
+  await ins.treeStatus(wt);
+  const n = calls.length;
+  await ins.treeStatus(wt);
+  assert.equal(calls.length, n, "nothing moved");
+  unlinkSync(link);
+  symlinkSync(join(r, "elsewhere/b"), link);
+  await ins.treeStatus(wt);
+  assert.ok(calls.length > n, "the link's target moved");
+});
+
+test("a read shares tokens only until its Git: a ref moved while Git runs is read next, and no later read keeps them", async () => {
+  const r = repo("mid-read");
+  const wt = feature(r, "mid-read-f", ["x"]);
+  const other = git(r, "rev-parse", "master");
+  let moved = false;
+  const run: Runner = async (args, opts) => {
+    const out = await execGit(args, opts);
+    if (!moved && args[0] === "status") { moved = true; git(r, "update-ref", "refs/heads/mid-read-f", other); }
+    return out;
+  };
+  const ins = new WorktreeInsights({ run });
+  ins.dirtyLifetime(wt, 0);
+  await ins.treeStatus(wt);
+  ins.dirtyLifetime(wt, 3_600_000);
+  assert.ok(moved);
+  assert.equal((await ins.treeStatus(wt))?.head, other);
+});
+
+test("quietStamp over many trees: the same stamp as alone; the next pass sees a base move", async () => {
+  const r = repo("together");
+  const a = feature(r, "together-a", ["x"]);
+  const b = feature(r, "together-b", ["y"]);
+  const ins = new WorktreeInsights({});
+  await ins.treeStatus(a);
+  await ins.treeStatus(b);
+  const pass = () => { const m = new Map<string, unknown>(); return [ins.quietStamp(a, m), ins.quietStamp(b, m), m] as const; };
+  const [sa, sb, shared] = pass();
+  assert.equal(sa, ins.quietStamp(a));
+  assert.equal(sb, ins.quietStamp(b));
+  assert.ok(shared.size > 0, "the map holds what they share");
+  writeFileSync(join(r, "a.txt"), "moved\n");
+  git(r, "commit", "-qam", "base moves");
+  const [na, nb] = pass();
+  assert.notEqual(na, sa);
+  assert.notEqual(nb, sb);
+  assert.equal(na, ins.quietStamp(a));
 });

@@ -336,7 +336,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   scope.tip = tip;
 
   // 6. checks, with the review beside them
-  const list = planChecks(def, input.picks);
+  const list = planChecks(def, input.picks, input.releaseChecks);
   checksShown = picksOf(list);
   hooks.checks(checksShown);
   const review = input.review ? startReview({ input, copy, tip, steps, deps, def }) : null;
@@ -344,7 +344,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     await review?.cancel();
     return o;
   };
-  if (declared === "none") {
+  if (declared === "none" && !list.length) {
     const r = review ? await review.result : null;
     return reviewed(r, out({ verdict: "passed", tip, mergeSha, copy, noChecks: true, notes: [{ kind: "no-checks", text: "No checks declared: landed after a clean merge", at: now() }] }));
   }
@@ -584,10 +584,10 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     if (again) return out({ verdict: "failed", why: `setup (${again.failed.id}) fails on ${target} itself (log: ${again.step.log})`, copy });
     notes.push({ kind: "flaky", text: `setup (${failed.failed.id}) failed, then passed on a rerun`, at: now() });
   }
-  const list = planChecks(def, input.picks);
+  const list = planChecks(def, input.picks, input.releaseChecks);
   checksShown = picksOf(list);
   hooks.checks(checksShown);
-  if (declared === "none") return out({ verdict: "passed", noChecks: true, copy });
+  if (declared === "none" && !list.length) return out({ verdict: "passed", noChecks: true, copy });
   let services: { slot: number; down: () => Promise<void> } | null = null;
   try {
     const needs = [...new Set(list.flatMap((c) => c.requires))];

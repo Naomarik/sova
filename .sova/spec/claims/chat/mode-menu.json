@@ -1,31 +1,4 @@
 {
-  "§chat.mode-menu/codemode": {
-    "kind": "behavior",
-    "requires": [
-      "§chat.mode-menu/how-a-switch-reaches-the-chat",
-      "§chat.mode-menu/minor-toggle-keeps-prompt",
-      "§chat.mode-menu/workers",
-      "§tools.spec/census-note"
-    ],
-    "authority": "accepted",
-    "evidence": "verified",
-    "code": [
-      "pi-config/extensions/mode/minor.ts",
-      "pi-config/extensions/mode/index.ts",
-      "pi-config/extensions/mode/prompt.ts",
-      "pi-config/extensions/mode/palette.ts",
-      "server/harness/pi/codemode.ts",
-      "server/chat-manager.ts",
-      "server/mode-state.ts",
-      "shared/harness-tools.ts",
-      "src/components/ToolCard.tsx",
-      "pi-config/extensions/mode/index.test.ts",
-      "server/codemode-runtime.test.ts",
-      "server/harness/pi/contract.test.ts",
-      "server/harness/pi/tools.test.ts",
-      "pi-config/extensions/mode/tests/codemode-handover.mjs"
-    ]
-  },
   "§chat.mode-menu/delegate-teams": {
     "kind": "behavior",
     "requires": [
@@ -88,7 +61,12 @@
       "src/components/ChatView.tsx",
       "src/lib/memory-ui.test.ts",
       "src/app.css"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T15:12Z",
+      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
+    }
   },
   "§chat.mode-menu/menu": {
     "kind": "behavior",
@@ -140,8 +118,9 @@
       "§app.worker-restore/claude-bridge-restart"
     ],
     "agreed": {
-      "by": "user (guided-tours vis-only operator decision)",
-      "at": "2026-10-15T04:58:35.959Z"
+      "by": "user",
+      "at": "2026-11-03T15:11Z",
+      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
     }
   },
   "§chat.mode-menu/project-mode-commands": {
@@ -233,9 +212,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-20T09:31Z",
-      "source": "pi-session:4441e428-24f6-4250-885d-3456497e0d92#2db8e784"
+      "by": "user",
+      "at": "2026-11-03T15:12Z",
+      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
     },
     "code": [
       "pi-config/extensions/mode/project-tools.ts",
@@ -256,6 +235,7 @@
       "shared/project-modes.ts",
       "server/project-mode-approvals.test.ts",
       "src/lib/session-tools.ts",
+      "src/lib/session-tools.test.ts",
       "src/components/ModeMenu.tsx",
       "src/lib/mode-menu.ts",
       "src/lib/mode-menu.test.ts",
@@ -351,7 +331,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-14T08:06Z"
+      "at": "2026-11-03T15:12Z",
+      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
     }
   },
   "§chat.mode-menu/tokens": {
@@ -366,7 +347,7 @@
   "§chat.mode-menu/trigger": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "src/components/ChatView.tsx",
       "src/components/ModeMenu.tsx",
@@ -378,9 +359,9 @@
       "src/components/fold-fit.ts"
     ],
     "agreed": {
-      "by": "omar (user)",
-      "at": "2026-10-27T20:04Z",
-      "source": "pi-session:1ae40f4c-6da9-448a-b26b-9a1e99076f16#4df15dba"
+      "by": "user",
+      "at": "2026-11-03T15:11Z",
+      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
     }
   },
   "§chat.mode-menu/workers": {
@@ -424,9 +405,9 @@
       "pi-config/extensions/mode/project-tools-worker.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-22T03:24Z",
-      "source": "pi-session:ecc675e0-f5e1-4efc-915d-91012183b844#6f4c32b2"
+      "by": "user",
+      "at": "2026-11-03T15:12Z",
+      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
     }
   },
   "§chat/mode-menu": {
@@ -441,11 +422,14 @@
       "server/mode-state.ts",
       "server/chat-manager.ts",
       "server/project-overseer.ts",
-      "server/mode-state.test.ts"
+      "server/mode-state.test.ts",
+      "src/components/ToolCard.tsx",
+      "server/transcript.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-14T08:06Z"
+      "at": "2026-11-03T15:11Z",
+      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
     },
     "notOwned": [
       "§chat/subagent-profiles",

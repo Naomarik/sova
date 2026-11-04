@@ -2,12 +2,13 @@
  * The user's go-aheads to land a branch at one commit, kept per user outside every repository:
  *
  *   <state root>/landing.json
- *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs?, withoutReview?, in?, drafts? } ] }
+ *   { "v": 1, "goAheads": [ { branch, commit, session?, at, by, withoutSpecs?, withoutReview?, via?, in?, drafts? } ] }
  *
  * The `worktree` tool's `land` writes one (`by: "owner-chat"`) for the user's word typed in the branch's own chat
  * (read by `typedGoAhead`, never a message another sender sent: `newestUserMessage`). Sova's merge queue reads those
  * records and queues the branch at that commit (server/merge-queue/ingest.ts). `withoutSpecs`: its drafts stay
- * behind; `withoutReview`: no review step. The other `by` values are older records, read so a file holding them
+ * behind; `withoutReview`: no review step; `via`: "open a PR" / "open an MR" typed, so it lands as that request whatever
+ * the project's way of landing is. The other `by` values are older records, read so a file holding them
  * stays valid; an older file's `notYet` and `docsEntries` lists are ignored. Every writer holds the file's lock (withLandingLock).
  *
  * Node builtins only (the extension runs in every chat). Writes re-read the file, merge and replace it
@@ -38,12 +39,19 @@ export interface GoAhead {
 	withoutSpecs?: true;
 	/** "land it, skip review": the merge queue lands it without its review step. */
 	withoutReview?: true;
+	/** "open a PR" / "open an MR": it lands as a request on origin's host, whatever the project's way of landing is
+	    (the queue maps the words to origin's host: "open a PR" on GitLab opens a merge request there). */
+	via?: RequestVia;
 	/** The session it was given in, when not the branch's own. */
 	in?: string;
 	/** The branch's spec drafts as they were at the approval (one hash over the files under each draft's spec/,
 	    each draft's own hash, the names), so a later change to them holds the branch. */
 	drafts?: DraftsSeen;
 }
+
+/** The request the user's words asked for. */
+export type RequestVia = "github-pr" | "gitlab-mr";
+export const REQUEST_VIAS: readonly RequestVia[] = ["github-pr", "gitlab-mr"];
 
 export interface DraftsSeen {
 	hash: string;
@@ -83,7 +91,7 @@ function cleanGoAhead(v: unknown): GoAhead | null {
 	if (!isRec(v) || !str(v.branch) || typeof v.commit !== "string" || !SHA.test(v.commit) || !str(v.at)) return null;
 	if (typeof v.by !== "string" || !(GO_AHEAD_BY as readonly string[]).includes(v.by)) return null;
 	const drafts = cleanDrafts(v.drafts);
-	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at, by: v.by as GoAheadBy, ...(v.withoutSpecs === true ? { withoutSpecs: true as const } : {}), ...(v.withoutReview === true ? { withoutReview: true as const } : {}), ...(str(v.in) ? { in: v.in } : {}), ...(drafts ? { drafts } : {}) };
+	return { branch: v.branch, commit: v.commit, ...(str(v.session) ? { session: v.session } : {}), at: v.at, by: v.by as GoAheadBy, ...(v.withoutSpecs === true ? { withoutSpecs: true as const } : {}), ...(v.withoutReview === true ? { withoutReview: true as const } : {}), ...(typeof v.via === "string" && (REQUEST_VIAS as readonly string[]).includes(v.via) ? { via: v.via as RequestVia } : {}), ...(str(v.in) ? { in: v.in } : {}), ...(drafts ? { drafts } : {}) };
 }
 
 const HEX = /^[0-9a-f]{64}$/;
@@ -202,13 +210,24 @@ const NOT_NOW = /\b(?:don'?t|dont|do not|never|not|no|should|shall|why|what|how|
  * ("land it", "ok, merge it", "go ahead and land feat/x"), the verb within its first 40 characters and nothing
  * before it that asks, waits or refuses, and "not yet", "don't" or "do not" nowhere in that line. "without
  * specs" anywhere in the message lands it without its specs; "skip review" / "without review" / "no review" lands it
- * without the merge queue's review step. → {withoutSpecs, withoutReview} | null (not a go-ahead).
+ * without the merge queue's review step. Asking for a request is a go-ahead too ("open a PR", "create an MR", "open a
+ * merge request", "land it as a PR"): `via` names it (a pull request on GitHub, a merge request on GitLab), the same
+ * rules applying to its verb. → {withoutSpecs, withoutReview, via?} | null (not a go-ahead).
  */
-export function typedGoAhead(text: string): { withoutSpecs: boolean; withoutReview: boolean } | null {
+export function typedGoAhead(text: string): { withoutSpecs: boolean; withoutReview: boolean; via?: RequestVia } | null {
 	if (typeof text !== "string" || NOT_TYPED.test(text)) return null;
 	const line = (text.trim().split("\n")[0] ?? "").toLowerCase();
+	const open = OPEN_REQUEST.exec(line);
 	const verb = /\b(?:land|merge)\b/.exec(line);
-	if (!verb || verb.index > 40 || NOT_NOW.test(line.slice(0, verb.index))) return null;
+	const at = open && (!verb || open.index <= verb.index) ? open.index : verb?.index;
+	if (at === undefined || at > 40 || NOT_NOW.test(line.slice(0, at))) return null;
 	if (/\bnot yet\b|\bdon'?t\b|\bdo not\b/.test(line)) return null;
-	return { withoutSpecs: /\bwithout (?:its |the |any )?specs?\b/i.test(text), withoutReview: /\b(?:skip(?:ping)? (?:the |its )?review|without (?:the |its |a |any )?review|no review)\b/i.test(text) };
+	const asked = (open && open.index === at ? open[1] : undefined) ?? (verb ? AS_REQUEST.exec(line.slice(verb.index))?.[1] : undefined);
+	const via: RequestVia | undefined = asked ? (/^(?:pr|pull request)$/.test(asked) ? "github-pr" : "gitlab-mr") : undefined;
+	return { withoutSpecs: /\bwithout (?:its |the |any )?specs?\b/i.test(text), withoutReview: /\b(?:skip(?:ping)? (?:the |its )?review|without (?:the |its |a |any )?review|no review)\b/i.test(text), ...(via ? { via } : {}) };
 }
+
+/** "open a PR", "create a new merge request", "raise an MR", "put up a pull request": the verb asks for a request. */
+const OPEN_REQUEST = /\b(?:open|create|make|raise|submit|file|put up)\s+(?:up\s+)?(?:(?:a|an)\s+)?(?:new\s+)?(pr|pull request|mr|merge request)\b/;
+/** "land it as a PR", "merge it as an MR". */
+const AS_REQUEST = /\bas\s+(?:a|an)\s+(pr|pull request|mr|merge request)\b/;

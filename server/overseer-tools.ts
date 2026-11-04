@@ -992,7 +992,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         const now = Date.now();
         const since = parseSince(p.since, now);
         const has = hasParam(p.has);
-        const all = (await host.sessions()).filter((s) => !s.overseer && !s.workerSession);
+        const all = (await host.sessions()).filter((s) => !s.overseer && !s.workerSession && !s.queueChat);
         const region = p.region ?? "active";
         const q = typeof p.query === "string" ? p.query.toLowerCase() : "";
         const matched = all.filter((s) => {
@@ -1400,7 +1400,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
     {
       name: "sova_create_session",
       label: "Create session",
-      // Its card reads the recorded result (EAGER_TOOLS): never a codemode script's call.
+      // Its card reads the recorded result (EAGER_TOOLS): never a call another tool made.
       exposure: "model-only",
       description:
         "Start a new session in a local folder (cwd) or on a remote target (target + remote_cwd), optionally with a model, thinking level, mode, minor modes, title, group and a first prompt. The mode and minor modes are set before the first prompt is sent, so its first turn already runs in them; they apply to that session only. With host (a mesh peer's id) the session is made on that host (cwd is a folder there; no group). With link: true it is a link member session, the only kind sova_link accepts: it has the link tools from its first turn, and no other session ever gets them. Counts against the per-turn cap on new sessions (and on prompts, when it has one). The first prompt runs with no browser attached: any extension dialog it raises falls back to its default.",

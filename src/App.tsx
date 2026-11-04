@@ -67,7 +67,7 @@ import { rememberedWidth, setSpine, spine, spineWidth } from "./lib/spine";
 import { isOverviewHash, leaveOverview } from "./lib/overview-route";
 import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
-import { closeSettings, openSettings, settingsOpenAt, settingsTabFromHash } from "./lib/settings-nav";
+import { closeSettings, openSettings, settingsOpenAt, settingsProjectFromHash, settingsTabFromHash } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
 import { activeTab, focusMoving, focusView, groupSendAll, hideThinking, hideTools, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
@@ -133,8 +133,9 @@ function openSettingsFromHash() {
     lastHash = location.hash || "#/";
     return;
   }
+  const project = settingsProjectFromHash(location.hash);
   history.replaceState(history.state, "", lastHash);
-  openSettings(tab);
+  openSettings(tab, null, project ? { project } : {});
 }
 
 /** While a run is in flight and the session feed is down, re-read the list often enough that the

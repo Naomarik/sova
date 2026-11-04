@@ -403,12 +403,13 @@
       "src/components/PowersGrid.tsx",
       "src/lib/powers-view.ts",
       "src/lib/projects-route.test.ts",
-      "src/components/MergeQueueTab.tsx"
+      "src/components/MergeQueueTab.tsx",
+      "src/components/ReleasesTab.tsx"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:27Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.organizations/projects": {

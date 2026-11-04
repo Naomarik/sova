@@ -280,6 +280,17 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.settings.propose.withdraw": "a valid call needs a settings card, which only the project overseer's sova_settings propose makes, in its chat",
   "usage.prices.refresh": "fetches the price list over the network; the in-process ledger here has prices off, so a valid call changes nothing",
   "push.test": "sends a real notification to every registered device",
+  // The merge queue's settings act on a started queue of a git project (queue-settings.test.ts, settings-routes.test.ts).
+  "project.merge-queue.settings.get": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.merge-queue.models.set": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.merge-queue.settings.save": "a valid call commits onto a git project's target through its started merge queue",
+  "project.merge-queue.settings.cancel": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.merge-queue.update-local-main": "a valid call needs the server's merge queue started on a git project with an origin, which the unit tier's app doesn't start",
+  "project.merge-queue.request.publish": "a valid call needs a queue entry checked and waiting for its request's text, which the unit tier's app doesn't start",
+  "project.merge-queue.land-how.set": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.merge-queue.land-how.clear": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
+  "project.folder.list": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
+  "project.folder.read": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
   "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the operator's browser or the token may)",
   "chat.stop": "a valid call on an open chat drives its process; on a closed one it writes nothing, so no effect oracle can read it back",
   "chat.compact": "acquires a chat handle, which starts the chat's process",
@@ -290,6 +301,10 @@ const VALIDATE_ONLY: Record<string, string> = {
   "chat.mode-command": "acquires a chat handle, which starts the chat's process, and runs a project's program",
   "org.owner.request.chat": "a valid call starts a coding session in the request's project, which starts its chat process",
   "session.offers.choose": "a valid click on a send button sends its text as the user's message, which starts the session's chat process for the turn",
+  "session.title.auto": "a valid call names sessions with the title model, a model call",
+  "session.title.shorten": "a valid call renames long titles with the title model, a model call",
+  "session.worktree.cleanup": "a valid removal needs a git repository with a merged worktree; the dry run changes nothing, so no oracle can read it back",
+  "insights.usage.refresh": "asks every provider for its usage over the network, which the unit tier may not",
 };
 
 /**
@@ -336,6 +351,8 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id.startsWith("usage.")) return pendingSetup.push(async () => { const { setUsageAsker } = await import("./usage-helper/client"); const { BadRequest, createService } = await import("./usage-helper/service"); const svc = createService({ usageRoot: join(agentDir, "usage", "v1"), stateDir: join(agentDir, "sova", "usage-ledger"), pricesPath: join(agentDir, "sova", "model-prices.json"), log: () => {}, prices: { enabled: false } }); setUsageAsker(async (op, params) => { try { return { status: 200, body: Buffer.from(JSON.stringify(await svc.answer({ ...params, op }))) }; } catch (err) { return err instanceof BadRequest ? { status: 400, body: Buffer.from(JSON.stringify({ error: err.message })) } : { status: 500, body: Buffer.from(JSON.stringify({ error: "usage-helper-failed" })) }; } }); after(() => setUsageAsker(null)); }), [...(c.params.range ? [{ anchor: { range: "bogus" }, refuse: true, kind: "refused" as const }] : []), { anchor: {}, refuse: false, kind: "real" }];
   // In-chat actions: a missing session, and a real file a terminal holds, whose 409 comes after the body and wait checks, so each wrong-typed value is refused for itself.
   if (c.id.startsWith("chat.")) return [{ anchor: { session: sessionArg(c, missing) }, refuse: true, kind: "refused" }, { anchor: { session: sessionArg(c, liveSession()) }, refuse: true, kind: "live" }];
+  // It takes no input, and every call asks each provider over the network, which the unit tier may not: no cases.
+  if (c.id === "insights.usage.refresh") return [];
   const out: Anchor[] = [];
   // Tags are kept by id, for any id: a missing session is no refusal there (a finding, reported).
   if (c.id === "session.tags.set") return [{ anchor: { session: "no-such-id" }, refuse: false, kind: "real" }, { anchor: { session: session()[1] }, refuse: false, kind: "real" }];
@@ -487,6 +504,7 @@ const FIXTURES: Record<string, Fixture> = {
   "session.context": { values: () => ({ session: session()[0] }), status: 200 },
   // A path the setup doesn't list: refused before any read.
   "session.context.file": { values: () => ({ session: session()[0], file: "/etc/hostname" }), status: 404 },
+  "session.context.view": { values: () => ({ session: session()[0] }), status: 200 },
   "session.align.triage": { values: () => ({ session: session()[0] }), status: 200 },
   "session.workers.checks": { values: () => ({ session: session()[0] }), status: 200 },
   "session.insights": { values: () => ({ session: session()[0] }), status: 200 },
@@ -771,6 +789,36 @@ const FIXTURES: Record<string, Fixture> = {
     },
     status: 200,
   },
+  "session.worktree.summary": { values: () => ({ session: session()[0] }), status: 200 },
+  "session.cleanup": {
+    // An archived session last written an hour ago, past the guard on files a process may still be writing.
+    values: () => { const s = session(true); archived.push(s[0]); const then = new Date(Date.now() - 3_600_000); process.getBuiltinModule("node:fs").utimesSync(s[0], then, then); return { mode: "paths", paths: [s[0]] }; },
+    status: 200,
+    oracle: async (_b, v) => assert.equal(existsSync(String((v.paths as string[])[0])), false),
+  },
+  "session.diff.summary": {
+    // A git repository with one commit, and a session whose folder it is.
+    values: () => {
+      const d = join(root, `diff-repo-${++n}`);
+      mkdirSync(d, { recursive: true });
+      execFileSync("git", ["init", "-q"], { cwd: d });
+      execFileSync("git", ["-c", "user.name=fuzz", "-c", "user.email=fuzz@example.invalid", "commit", "-q", "--allow-empty", "-m", "init"], { cwd: d });
+      const id = `fuzz-${++n}`;
+      const path = join(sessionsDir, `2026-10-17T00-00-00-000Z_${id}.jsonl`);
+      writeFileSync(path, `${JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-10-17T00:00:00.000Z", cwd: d })}\n`);
+      return { kind: "dirty", "session-path": canonicalPath(path), path: d };
+    },
+    status: 200,
+  },
+  // Its first read makes the Overseer's file; done in the set-up, so the valid call only reads.
+  "overseer.get": { values: () => { pendingSetup.push(async () => void (await sendTo(app, "GET", "/api/overseer"))); return {}; }, status: 200 },
+  "overseer.memory.get": { values: () => ({}), status: 200 },
+  "project.overseer.get": { values: () => withProject(), status: 200 },
+  "project.overseer.actions": { values: () => withProject(), status: 200 },
+  "project.overseer.memory.get": { values: () => withProject(), status: 200 },
+  "schedule.list": { values: () => ({}), status: 200 },
+  "playbook.list": { values: () => ({}), status: 200 },
+  "draft-spec.list": { values: () => ({}), status: 200 },
 };
 /** A registered project (its overseer's settings read their defaults), made in the set-up. */
 async function newProject(): Promise<string> {

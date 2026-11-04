@@ -17,7 +17,7 @@ export function hashed(v: unknown, key = ""): unknown {
   const out: Record<string, unknown> = {};
   for (const k of Object.keys(v as Record<string, unknown>).sort()) {
     if (k === "timeout") continue;
-    if (key === "" && (k === "sources" || k === "open" || k === "deploy" || k === "merge")) continue;
+    if (key === "" && (k === "sources" || k === "open" || k === "deploy" || k === "merge" || k === "release")) continue;
     if (key === "ready" && k === "path") continue;
     if (key === "services" && (k === "about" || k === "isolation" || (k === "start" && (v as Record<string, unknown>)[k] === "up"))) continue;
     out[k] = hashed((v as Record<string, unknown>)[k], k);

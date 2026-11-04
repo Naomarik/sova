@@ -89,12 +89,13 @@
       "server/project-services/worker-verbs.test.ts",
       "server/project-services/slots.test.ts",
       "server/project-services/copy-approvals.test.ts",
-      "server/overseer-copies.ts"
+      "server/overseer-copies.ts",
+      "server/project-services/release.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-28T13:39Z",
-      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.project-services/conform": {
@@ -166,12 +167,13 @@
       "playbooks/project-verbs/scripts/project-verbs.mjs",
       "server/project-services/no-services.integration.test.ts",
       "server/merge-queue/checks.ts",
-      "server/merge-queue/checks.test.ts"
+      "server/merge-queue/checks.test.ts",
+      "shared/project-contract-release.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.project-services/create": {
@@ -212,8 +214,14 @@
       "server/project-services/engine.integration.test.ts",
       "playbooks/project-verbs/scripts/project-verbs.mjs",
       "playbooks/project-verbs/references/contract.md",
-      "server/project-services/def-hash.ts"
-    ]
+      "server/project-services/def-hash.ts",
+      "shared/project-contract-release.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
   },
   "§app.project-services/deploy-callers": {
     "kind": "behavior",
@@ -259,8 +267,14 @@
       "server/project-services/deploy.ts",
       "server/project-services/deploy-run.test.ts",
       "server/project-services/deploy-run.integration.test.ts",
-      "server/project-services/deploy-recipe.ts"
-    ]
+      "server/project-services/deploy-recipe.ts",
+      "server/project-services/release-deploy.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
   },
   "§app.project-services/deploy-run": {
     "kind": "behavior",
@@ -440,8 +454,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:54Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-03T18:31Z",
+      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
     },
     "code": [
       "server/merge-queue/routes.ts",
@@ -454,7 +468,11 @@
       "server/project-services/tools.ts",
       "scripts/sova-project.mjs",
       "server/merge-queue/served.ts",
-      "server/merge-queue/served-rule.test.ts"
+      "server/merge-queue/served-rule.test.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/asks.test.ts",
+      "src/card-toolkit/commands.gen.ts",
+      "docs/commands.md"
     ]
   },
   "§app.project-services/on-merge": {
@@ -548,12 +566,13 @@
       "server/project-services/tools.ts",
       "server/project-services/share.test.ts",
       "server/project-services/share.integration.test.ts",
-      "server/project-services/slots.test.ts"
+      "server/project-services/slots.test.ts",
+      "shared/project-contract-release.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T20:30Z",
-      "source": "pi-session:01a16a5f-a5d9-73c7-8958-5e89ac30c359#ddd8cd7b"
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.project-services/self-host": {
@@ -789,6 +808,11 @@
       "§app/project-runtime",
       "§chat.profiles/projects",
       "§mesh.public/preview-serve"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:13Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
   }
 }

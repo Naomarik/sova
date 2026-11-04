@@ -2,6 +2,7 @@ import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
 import {
+  type LandHow,
   type CheckPick,
   type ChecksDeclared,
   ENTRY_OPEN,
@@ -15,6 +16,7 @@ import {
   NOTE_MAX,
   type PauseInfo,
   type PauseKind,
+  type PushState,
   type ReviewVerdict,
   type RunStep,
 } from "../../shared/merge-queue";
@@ -28,7 +30,23 @@ import { estimateFromRuns } from "./estimate";
 import { deliverReview } from "./review-step";
 import { invalidOf, resolveTarget, setUpOf } from "./served";
 import { isFinal, newId, type QueueFile, QueueStore } from "./store";
+import { hasOrigin, publishGit, revertCommit, withdrawGit } from "./release-git";
+import type { MergeCheckDecl } from "../../shared/project-contract";
+import { settledFacts } from "./settled";
 import { buildView } from "./view";
+import { type MergeQueueSettings, type MergeSettingsChange, type MergeSettingsSaveResult, SETTINGS_DIRTY_WORDS } from "../../shared/merge-queue-settings";
+import { effectiveModel, type ModelCheck, readModels } from "./models";
+import { buildSettings, fixedValues, playbookDiffers } from "./settings";
+import { approvalHow, effectiveHow, landHowSetting, opensRequest, publishes, type RequestHow, writeOverride } from "./strategy";
+import { checkPublishText, draftText, type Hosting, hostMismatch, pollRequest, publishEntry, type PublishOutcome, publishSettings as publishSettingsRequest, reconcilePublish, requestInfo } from "./strategy-run";
+import { fetchTarget, localBehind, updateLocalMain as updateMainTip } from "./publish";
+import type { Drafter } from "./hosts/request-kit";
+import { type HostAdapter, type HostKind, type HostRepo, NO_HOST_WORDS, NO_ORIGIN_WORDS } from "./hosts/types";
+import { githubAdapter } from "./hosts/github";
+import { gitlabAdapter } from "./hosts/gitlab";
+import { suggestLanding } from "./hosts/repo";
+import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsEditError } from "./settings-edit";
+import { PROJECT_PLAYBOOK } from "./thread";
 
 /**
  * One merge queue per project: approved branches wait in line and are checked one at a time; a passed run lands
@@ -87,8 +105,10 @@ export interface QueueDeps {
   keepRuns?: number;
   /** The project's review kit is declared (and readable). Default: `def.merge.review` set. */
   hasReviewKit?: (def: ProjectDef | null, root: string) => boolean;
-  /** The project's merge thread chat (thread.ts threadOf). */
-  threadOf?: (root: string) => { session: string; startedAt: string } | null;
+  /** The project's merge thread chat (thread.ts threadInfo): the Merge thread card's facts. */
+  threadOf?: (root: string) => import("../../shared/merge-queue").MergeThreadInfo | null;
+  /** The queue's own chats (chats.ts): the reviewer running now and the History's rows. */
+  chatsOf?: (root: string) => Pick<MergeQueueView, "reviewing" | "chats">;
   /** Hand a reviewer's verdict to the review step (default review-step.ts deliverReview). */
   deliverReview?: typeof deliverReview;
   /** The mechanical sanity check of a resolution (default conflicts.ts sanityCheck). */
@@ -97,7 +117,43 @@ export interface QueueDeps {
   legacyNames?: { root: string; file: string };
   /** Logs (default console). */
   log?: (line: string) => void;
+  /** A release entry moved (landed, handed back, waits for the user, cancelled): the releaser follows its release. */
+  releaseEvent?: (ev: ReleaseQueueEvent) => void;
+  /** The review and thread models' check: the new-chat default and why a pick can't be used (models.ts
+   *  liveModelCheck; default: no default read, every pick usable). */
+  modelCheck?: ModelCheck;
+  /** The hosts how-it-lands reads (strategy.ts landHowSetting; default server/merge-queue/hosts/). */
+  hosts?: Parameters<typeof landHowSetting>[0]["hosts"];
+  /** A host's adapter (request strategies; default hosts/github.ts or hosts/gitlab.ts with the real CLI). */
+  hostAdapter?: (kind: HostKind) => HostAdapter;
+  /** The project's repository on its host (default: origin's URL read by hosts/repo.ts repoOf). */
+  hostRepo?: (root: string) => Promise<HostRepo | null>;
+  /** Whether the chat that owns a branch is idle (nothing running): the docs commit waits for it (q9 = c). Default: idle. */
+  chatIdle?: (session: string) => Promise<boolean>;
+  /** A chat's title (a request's title, a5); null: unknown. */
+  chatTitle?: (session: string) => Promise<string | null>;
+  /** Writes a request's text from the request kit's brief (default: Sova's plain text). */
+  drafter?: Drafter;
+  /** How often open requests are read on the host (default 3 min). */
+  pollMs?: number;
 }
+
+/** What the queue tells the releaser about one of a release's entries. */
+export interface ReleaseQueueEvent {
+  /** The project's main checkout. */
+  root: string;
+  release: string;
+  kind: "release" | "revert";
+  entry: MergeEntry;
+  /** landed: on the target (not pushed); failed: handed back (`why`); waiting: needs the user (review, can't tell
+   *  whose failure); checking: its run started; cancelled. */
+  what: "checking" | "landed" | "failed" | "waiting" | "cancelled";
+  why?: string;
+  run?: string;
+}
+
+const SETTINGS_FILE = ".sova/project.json";
+type QueueSettingsPublish = { state: "requested"; branch: string; url: string; number: number; commit: string } | { state: "pushed"; branch: string; commit: string };
 
 export interface AddRequest {
   branch?: string;
@@ -110,6 +166,8 @@ export interface AddRequest {
   session?: string;
   by: MergeApproval["by"];
   at?: string;
+  /** Typed "open a PR" / "open an MR": this approval opens that request, whatever the project's setting. */
+  via?: "github-pr" | "gitlab-mr";
 }
 
 interface Current {
@@ -117,9 +175,11 @@ interface Current {
   entry: string;
   ac: AbortController;
   /** Why it was aborted, if it was. */
-  voidWhy: null | "master-moved" | "cancelled" | "superseded" | "stopping";
+  voidWhy: null | "master-moved" | "cancelled" | "superseded" | "stopping" | "release";
   watch: ReturnType<typeof setInterval> | null;
   done: Promise<void>;
+  /** The local target's head at the run's start: what the watch compares (a request project's base is origin's). */
+  localBase: string;
 }
 
 type Entry = QueueFile["entries"][number];
@@ -269,6 +329,8 @@ export class ProjectQueue {
     const ready = await this.readyList(head);
     const thread = this.deps.threadOf?.(this.root) ?? null;
     const tryRun = this.trying?.run ?? (this.lastTry ? this.store.readRun(this.lastTry) : null);
+    const origin = await this.originFacts();
+    const settled = await this.settledFacts(head);
     const v = buildView({
       q: this.q,
       root: this.root,
@@ -279,9 +341,293 @@ export class ProjectQueue {
       takesMs: takes,
       now: this.now(),
       readRun: (id) => this.store.readRun(id),
+      origin,
+      settled,
     });
+    const settings = head ? await this.settings().catch((err) => (this.log(`settings unreadable: ${err instanceof Error ? err.message : err}`), null)) : null;
+    // Landing by request or push (al_3): what waits on the host, and how far local main is behind origin's.
+    const weekAgo = new Date(this.now() - 7 * 24 * 3600_000).toISOString();
+    const onHost = this.q.entries
+      .filter((e) => e.state === "requested" || ((e.state === "closed" || e.state === "pushed") && e.updatedAt >= weekAgo))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, 20)
+      .map(({ seq: _seq, ...rest }) => structuredClone(rest) as MergeEntry);
+    if (onHost.length) v.waitingOnHost = onHost;
+    const requestProject = publishes(effectiveHow(d.def?.merge?.land, this.store.dir).effective) || this.q.entries.some((e) => !!e.request && !isFinal(e));
+    if (requestProject && head) {
+      const behind = await localBehind(this.git, this.root, this.q.target);
+      if (behind) {
+        v.heads.behind = behind;
+        const co = await checkoutOf(this.git, this.root, this.q.target);
+        const why = co ? await dirtyWhy(this.git, co) : null;
+        if (why) v.heads.behindBlocked = `${why}: commit or put them away, then Update Local Main`;
+      }
+    }
+    // Opening the tab reads the host now (at most every 20 s), contracts §5.
+    if (this.q.entries.some((e) => e.state === "requested") && this.now() - this.lastPoll > 20_000) {
+      this.lastPoll = this.now();
+      void this.pollHost().catch((err) => this.log(`host poll failed: ${err instanceof Error ? err.message : err}`));
+    }
+    // Served by the queue (team mq-served-only, served.ts): on Sova's Projects list with its setup done.
     const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
-    return { ...v, served, ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}) };
+    const hold = this.q.release ? (({ checks: _c, ...h }) => h)(this.q.release) : undefined;
+    // An entry the hold keeps waiting has no start time: it starts once the release is published or abandoned.
+    if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
+    const chats = this.deps.chatsOf?.(this.root) ?? {};
+    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
+  }
+
+  /** Whether the project has origin, and origin's copy of the target as last fetched (its remote-tracking ref; never a fetch). */
+  private async originFacts(): Promise<{ has: boolean; tracking: string | null }> {
+    const has = (await this.git(["remote"], this.root)).stdout.split("\n").includes("origin");
+    return { has, tracking: has ? await revParse(this.git, this.root, `refs/remotes/origin/${this.q.target}`) : null };
+  }
+
+  // ---- settings (the Settings dialog's Merge Queue tab) ----------------------------------------------
+
+  private settingsCache: { key: string; at: number; v: MergeQueueSettings } | null = null;
+
+  /** Every setting the queue uses, read from the target's head; re-read at most every 10 s or when anything it shows changes. */
+  async settings(): Promise<MergeQueueSettings> {
+    const d = await this.declared();
+    const head = d.head || "";
+    const heldBy = this.q.release ? this.releaseName() : undefined;
+    const key = `${head}|${JSON.stringify(this.q.pendingSave ?? null)}|${heldBy ?? ""}`;
+    if (this.settingsCache && this.settingsCache.key === key && this.now() - this.settingsCache.at < 10_000) return structuredClone(this.settingsCache.v);
+    const at = async (path: string) => (await this.git(["cat-file", "-e", `${head}:${path}`], this.root)).code === 0;
+    const kit = d.review ? d.def?.merge?.review : undefined;
+    const kitFiles = kit ? (await this.git(["ls-tree", "-r", "--name-only", "-z", head, "--", `${kit}/`], this.root)).stdout.split("\0").filter(Boolean).map((f) => f.slice(kit.length + 1)) : [];
+    const namesOf = this.names();
+    let count = 0;
+    if (namesOf.exists) {
+      try {
+        const raw = JSON.parse((await import("node:fs")).readFileSync(namesOf.file, "utf8")) as { privateNames?: unknown[] };
+        count = Array.isArray(raw.privateNames) ? raw.privateNames.length : 0;
+      } catch {}
+    }
+    const picks = readModels(this.store.dir);
+    const check = this.deps.modelCheck ?? { defaults: () => ({}), denial: () => null };
+    const file = await this.settingsFileState(head);
+    const v = buildSettings({
+      root: this.root,
+      projectId: this.deps.projectIdOf?.(this.root) ?? null,
+      head,
+      target: this.q.target,
+      def: d.def,
+      checks: d.checks,
+      review: d.review,
+      kitFiles,
+      kitOnTarget: await at(REVIEW_KIT_DIR),
+      projectPlaybook: existsSync(join(this.root, PROJECT_PLAYBOOK, "PLAYBOOK.md")),
+      projectPlaybookDiffers: await playbookDiffers(this.git, this.root, head),
+      names: { setUp: namesOf.exists, count },
+      models: { review: await effectiveModel(picks.review, check), thread: await effectiveModel(picks.thread, check) },
+      projectFileDiffers: file.differs,
+      ...(file.blocked ? { editBlocked: file.blocked } : {}),
+      ...(this.q.pendingSave ? { pendingSave: { ...this.q.pendingSave, ...(heldBy && !this.q.pendingSave.failed ? { release: heldBy } : {}) } } : {}),
+      fixed: fixedValues(this.root, { ...(this.deps.retryDelayMs !== undefined ? { retryDelayMs: this.deps.retryDelayMs } : {}) }),
+      how: await landHowSetting({ dir: this.store.dir, root: this.root, projectHow: d.def?.merge?.land, ...(this.deps.hosts ? { hosts: this.deps.hosts } : {}) }),
+    });
+    this.settingsCache = { key, at: this.now(), v };
+    return structuredClone(v);
+  }
+
+  /** A save or a model pick changed what the settings show. */
+  settingsChanged(): void {
+    this.settingsCache = null;
+    this.viewCache = null;
+    this.schedulePublish();
+  }
+
+  /** The main checkout's settings file against the target's: differs (an edit not committed, or another branch out), and
+   *  why a save can't be made now (its uncommitted edit, or other uncommitted edits in the checkout holding the target). */
+  private async settingsFileState(head: string): Promise<{ differs: boolean; blocked?: string }> {
+    const shown = await this.git(["show", `${head}:${SETTINGS_FILE}`], this.root);
+    let local: string | null = null;
+    try {
+      local = (await import("node:fs")).readFileSync(join(this.root, SETTINGS_FILE), "utf8");
+    } catch {}
+    const differs = (shown.code === 0 ? shown.stdout : null) !== local;
+    const co = await checkoutOf(this.git, this.root, this.q.target);
+    if (!co) return { differs };
+    const st = await this.git(statusArgs("--porcelain", "--untracked-files=no", "--", SETTINGS_FILE), co);
+    if (st.stdout.trim()) return { differs, blocked: SETTINGS_DIRTY_WORDS };
+    const why = await dirtyWhy(this.git, co);
+    return why ? { differs, blocked: `${why}: commit or put them away first (nothing is forced)` } : { differs };
+  }
+
+  /**
+   * Save a settings change (push, review on or off, each check's time limit, rerun and optional) as one commit on the
+   * target, after the user's confirm. Never under a branch being checked: while a run (or Try It on Main, or a
+   * landing) holds the target it waits (`pendingSave`, kept in queue.json) and is made at the next quiet point.
+   */
+  saveSettings(changes: MergeSettingsChange): Promise<MergeSettingsSaveResult> {
+    return this.serial(async () => {
+      if (isEmptyChange(changes)) throw new MergeFailure("invalid-request", "the change names nothing to save");
+      const head = await this.targetHead();
+      if (!head) throw new MergeFailure("not-found", `no branch ${this.q.target} in ${this.root}`);
+      // Checked now, so a change that can't apply is refused at once, not when it is due.
+      await this.settingsText(head, changes);
+      const file = await this.settingsFileState(head);
+      if (file.blocked) throw new MergeFailure("invalid-request", file.blocked);
+      // A project that lands by request or by pushing a branch never moves the target with a save: nothing to wait for.
+      const how = effectiveHow((await this.declared()).def?.merge?.land, this.store.dir).effective;
+      // While a release holds the queue the target stays on the release commit: a save waits for Publish or Abandon.
+      if (this.q.release || (!publishes(how) && (this.current || this.trying || this.landing))) {
+        // A second save while one waits joins it (the later value of each setting wins).
+        const was = this.q.pendingSave && !this.q.pendingSave.failed ? this.q.pendingSave.changes : {};
+        const checks = { ...(was.checks ?? {}) };
+        for (const [id, c] of Object.entries(changes.checks ?? {})) checks[id] = { ...(checks[id] ?? {}), ...c };
+        const joined: MergeSettingsChange = { ...was, ...changes, ...(Object.keys(checks).length ? { checks } : {}) };
+        await this.settingsText(head, joined);
+        this.q.pendingSave = { at: this.iso(), changes: joined };
+        this.save();
+        this.settingsChanged();
+        return { state: "waiting" as const, ...(this.q.release ? { release: this.releaseName() } : {}) };
+      }
+      this.lastSettingsPublish = null;
+      const commit = await this.publishSettings(head, changes);
+      // A request (or push-branch) project published it as its own branch: the answer says where.
+      const pub = this.lastSettingsPublish as QueueSettingsPublish | null;
+      if (pub?.state === "requested") return { state: "requested" as const, commit, branch: pub.branch, url: pub.url, number: pub.number };
+      if (pub?.state === "pushed") return { state: "pushed" as const, commit, branch: pub.branch };
+      return { state: "saved" as const, commit, pushed: false as const };
+    });
+  }
+
+  /** Cancel a save waiting for the current branch; false: none waits. */
+  cancelPendingSave(): Promise<boolean> {
+    return this.serial(async () => {
+      if (!this.q.pendingSave) return false;
+      delete this.q.pendingSave;
+      this.save();
+      this.settingsChanged();
+      return true;
+    });
+  }
+
+  /** The settings file's new text at `head` with `changes`; a change that can't apply is refused with why. */
+  private async settingsText(head: string, changes: MergeSettingsChange): Promise<string> {
+    const shown = await this.git(["show", `${head}:${SETTINGS_FILE}`], this.root);
+    const text = shown.code === 0 ? shown.stdout : '{\n  "version": 1\n}\n';
+    try {
+      return editSettingsText(text, changes, { kitExists: (await this.git(["cat-file", "-e", `${head}:${REVIEW_KIT_DIR}`], this.root)).code === 0 });
+    } catch (err) {
+      if (err instanceof SettingsEditError) throw new MergeFailure("invalid-request", err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * Where a settings save goes: a project that lands locally commits it onto the target (commitSettings). The one seam
+   * for how-it-lands strategies (a request project publishes it as a request): until those exist, they refuse.
+   */
+  private async publishSettings(head: string, changes: MergeSettingsChange): Promise<string> {
+    // A project that lands by request (or push) takes its settings save the same way, as its own branch and request
+    // (al_3 q7): local main never moves; the change applies once the host merges it.
+    const how = effectiveHow((await this.declared()).def?.merge?.land, this.store.dir).effective;
+    if (publishes(how)) {
+      const message = `Merge queue settings: ${changeWords(changes)}`;
+      const plain = `Changes the merge queue's settings in ${SETTINGS_FILE}: ${changeWords(changes)}.`;
+      let body = `${plain}\n\nOpened by Sova`;
+      if (opensRequest(how)) {
+        const d = await this.declared();
+        const t = await draftText({ root: this.root, folder: d.def?.merge?.request ?? null, how, input: { branch: "sova/settings", base: this.q.target, chatTitle: message }, drafter: async () => ({ title: message, body: plain }) });
+        if (!t.ok) throw new MergeFailure("invalid-request", t.why);
+        body = t.text.body;
+      }
+      const r = await publishSettingsRequest(await this.publishCtx(how), { how, file: SETTINGS_FILE, textAt: (base) => this.settingsText(base, changes), message, body, at: new Date(this.now()), scratch: this.store.dir });
+      if (r.state === "refused") throw new MergeFailure("invalid-request", r.why);
+      this.log(`settings ${r.state === "requested" ? `opened as request #${r.number} (${r.url})` : `pushed as ${r.branch}`}: ${message}`);
+      this.lastSettingsPublish = r;
+      this.settingsChanged();
+      return r.commit;
+    }
+    const text = await this.settingsText(head, changes);
+    return this.commitSettings(head, text, `Merge queue settings: ${changeWords(changes)}`);
+  }
+
+  /** The last settings save published as a request or a pushed branch (q7), for the save's answer. */
+  lastSettingsPublish: { state: "requested"; branch: string; url: string; number: number; commit: string } | { state: "pushed"; branch: string; commit: string } | null = null;
+
+  /** One commit on the target holding `text` as the settings file, moved to like a landing; the queue knows it as its own. */
+  private async commitSettings(head: string, text: string, message: string): Promise<string> {
+    if (this.q.knownTarget && head !== this.q.knownTarget) throw new MergeFailure("busy", `${this.q.target} moved outside the queue (${this.q.knownTarget.slice(0, 7)} → ${head.slice(0, 7)}): resume the queue first`);
+    const tmp = join(this.store.dir, `settings-${Date.now()}`);
+    mkdirSync(this.store.dir, { recursive: true });
+    writeFileSync(`${tmp}.json`, text);
+    try {
+      const blob = (await this.git(["hash-object", "-w", `${tmp}.json`], this.root)).stdout.trim();
+      const env = { ...process.env, GIT_INDEX_FILE: `${tmp}.index` };
+      for (const a of [["read-tree", head], ["update-index", "--add", "--cacheinfo", `100644,${blob},${SETTINGS_FILE}`]]) {
+        const r = await this.git(a, this.root, { env });
+        if (r.code !== 0) throw new MergeFailure("busy", `git ${a[0]} failed: ${r.stderr.trim()}`);
+      }
+      const tree = (await this.git(["write-tree"], this.root, { env })).stdout.trim();
+      const name = (await this.git(["config", "user.name"], this.root)).stdout.trim();
+      const email = (await this.git(["config", "user.email"], this.root)).stdout.trim();
+      const ident = name && email ? {} : { GIT_AUTHOR_NAME: name || "Sova merge queue", GIT_AUTHOR_EMAIL: email || "merge-queue@sova.invalid", GIT_COMMITTER_NAME: name || "Sova merge queue", GIT_COMMITTER_EMAIL: email || "merge-queue@sova.invalid" };
+      const c = await this.git(["commit-tree", tree, "-p", head, "-m", message], this.root, { env: { ...process.env, ...ident } });
+      if (c.code !== 0) throw new MergeFailure("busy", `git commit-tree failed: ${c.stderr.trim()}`);
+      const commit = c.stdout.trim();
+      this.landing = true;
+      try {
+        const r = await landTip(this.git, this.root, this.q.target, head, commit);
+        if (r.kind !== "landed") throw new MergeFailure(r.kind === "dirty" ? "invalid-request" : "busy", r.kind === "dirty" ? `${r.why}: commit or put them away first (nothing is forced)` : `${this.q.target} moved meanwhile: try again`);
+      } finally {
+        this.landing = false;
+      }
+      this.q.landed.push(commit);
+      this.q.knownTarget = commit;
+      this.checksCache = null;
+      // Not pushed on its own: it goes out with the next landing; the view says so meanwhile.
+      const origin = await this.originFacts();
+      if (origin.has) {
+        if (!this.q.heads.pushed && origin.tracking) this.q.heads.pushed = origin.tracking;
+        if (!this.q.heads.pushWhy) this.q.heads.pushWhy = PUSH_WAITS_NEXT_LANDING;
+      }
+      this.log(`settings saved as ${commit.slice(0, 7)}: ${message}`);
+      this.save();
+      this.settingsChanged();
+      this.kickSoon();
+      return commit;
+    } finally {
+      rmSync(`${tmp}.json`, { force: true });
+      rmSync(`${tmp}.index`, { force: true });
+    }
+  }
+
+  /** The waiting save, at a quiet point (nothing checking, landing or trying). One that fails is kept with why, not retried. */
+  private async applyPendingSave(): Promise<void> {
+    const p = this.q.pendingSave;
+    if (!p || p.failed || this.current || this.trying || this.landing || this.q.release) return;
+    const head = await this.targetHead();
+    if (!head) return;
+    // A target moved from outside waits for the resume, like the line.
+    if (this.q.knownTarget && head !== this.q.knownTarget) return;
+    try {
+      const file = await this.settingsFileState(head);
+      if (file.blocked) throw new MergeFailure("invalid-request", file.blocked);
+      await this.publishSettings(head, p.changes);
+      delete this.q.pendingSave;
+      this.save();
+      this.settingsChanged();
+    } catch (err) {
+      const why = err instanceof Error ? err.message : String(err);
+      this.log(`the waiting settings save failed: ${why}`);
+      this.q.pendingSave = { ...p, failed: why };
+      this.save();
+      this.settingsChanged();
+    }
+  }
+
+  private settledCache: { at: number; head: string; facts: Map<string, "merged" | "gone"> } | null = null;
+  /** Sent-back entries git says need no fix any more (settled.ts), re-read at most every 15 s or when the target moves. */
+  private async settledFacts(head: string): Promise<Map<string, "merged" | "gone">> {
+    if (this.settledCache && this.settledCache.head === head && this.now() - this.settledCache.at < 15_000) return this.settledCache.facts;
+    const facts = await settledFacts(this.git, this.root, head, this.q.entries);
+    this.settledCache = { at: this.now(), head, facts };
+    return facts;
   }
 
   private readyCache: { at: number; head: string; list: MergeReady[] } | null = null;
@@ -307,7 +653,8 @@ export class ProjectQueue {
     return this.filterReady(out);
   }
   private filterReady(list: MergeReady[]): MergeReady[] {
-    return list.filter((r) => !this.q.entries.some((e) => e.branch === r.branch && (ENTRY_OPEN.includes(e.state) || (e.state === "landed" && e.commit === r.commit))));
+    // A branch sent back (needs-fix) is Ready again only at a newer commit: never Land at the commit it was sent back at.
+    return list.filter((r) => !this.q.entries.some((e) => e.branch === r.branch && (ENTRY_OPEN.includes(e.state) || ((e.state === "landed" || e.state === "needs-fix") && e.commit === r.commit))));
   }
 
   private estimateCache: { at: number; ms: number | null } | null = null;
@@ -375,9 +722,45 @@ export class ProjectQueue {
         ...(req.withoutSpecs ? { withoutSpecs: true as const } : {}),
         ...(req.withoutReview ? { withoutReview: true as const } : {}),
       };
+      // How it lands, pinned now (a later settings edit never redirects it); local is recorded as nothing, as before.
+      const how = effectiveHow(d.def?.merge?.land, this.store.dir).effective;
+      if (how !== "local") approval.how = how;
+      if (req.via) approval.via = req.via;
+      // A request is checked against origin's host when it is approved, never only after the run (a11): a typed "open
+      // a PR / an MR" opens the request on origin's own host (a PR on GitHub, an MR on GitLab), and a project, or a
+      // typed word, that can't open one there, or a computer not signed in to it, is refused now.
+      if (opensRequest(approvalHow(approval))) {
+        const host = await this.hosting();
+        if (!host) throw new MergeFailure("invalid-request", (await this.git(["remote", "get-url", "origin"], this.root)).code === 0 ? NO_HOST_WORDS : NO_ORIGIN_WORDS);
+        if (approval.via) approval.via = host.repo.kind === "github" ? "github-pr" : "gitlab-mr";
+        const mismatch = hostMismatch(approvalHow(approval) as RequestHow, host);
+        if (mismatch) throw new MergeFailure("invalid-request", mismatch);
+        const a = await host.adapter.auth(host.repo);
+        if (!a.ok) throw new MergeFailure("invalid-request", a.why);
+      }
+      // Land Again on a branch whose request is published or waiting to be (al_3 b1): the same entry goes back in line,
+      // its request kept, so the new work is added on top of what origin has.
+      const onHost = this.q.entries.find((e) => e.branch === branch && (e.state === "requested" || e.state === "request-review" || e.state === "closed") && e.request);
+      if (onHost && !this.q.entries.some((e) => e.branch === branch && ENTRY_OPEN.includes(e.state))) {
+        onHost.commit = commit;
+        onHost.approval = approval;
+        if (req.session) onHost.session = req.session;
+        if (wt) onHost.worktree = wt;
+        onHost.state = "queued";
+        onHost.seq = ++this.q.seq;
+        delete onHost.reason;
+        delete onHost.newerCommits;
+        onHost.updatedAt = this.iso();
+        if (!this.current && !this.q.entries.some((x) => x.state === "queued" || x.state === "checking")) this.q.knownTarget = head;
+        this.save();
+        this.wake("queued", onHost);
+        this.deps.notify?.("approved", this.withPosition(onHost), { root: this.root });
+        this.kickSoon();
+        return { entry: this.withPosition(onHost), changed: true };
+      }
       const open = this.q.entries.find((e) => e.branch === branch && ENTRY_OPEN.includes(e.state));
       if (open) {
-        const same = open.commit === commit && !!open.approval.withoutReview === !!req.withoutReview && !!open.approval.withoutSpecs === !!req.withoutSpecs && open.approval.drafts?.hash === approval.drafts?.hash;
+        const same = open.commit === commit && !!open.approval.withoutReview === !!req.withoutReview && !!open.approval.withoutSpecs === !!req.withoutSpecs && open.approval.drafts?.hash === approval.drafts?.hash && open.approval.how === approval.how && open.approval.via === approval.via;
         if (same && (open.state === "queued" || open.state === "checking")) return { entry: this.withPosition(open), changed: false };
         if (open.state === "queued") {
           open.commit = commit;
@@ -463,6 +846,7 @@ export class ProjectQueue {
       e.updatedAt = this.iso();
       if (note !== undefined) this.setNote(e, note, "thread");
       this.save();
+      this.releaseEvent(e, "cancelled");
       this.kickSoon();
       return e;
     });
@@ -587,11 +971,11 @@ export class ProjectQueue {
     return this.serial(async () => {
       const e = this.mustEntry(entryId);
       if (answer === "send-back") {
-        if (!["behaviour-differs", "review-flagged", "unattributed", "conflict", "drafts-changed"].includes(e.state)) throw new MergeFailure("invalid-request", `${e.branch} isn't waiting for you (it is ${e.state})`);
+        if (!["behaviour-differs", "review-flagged", "unattributed", "conflict", "drafts-changed", "request-review", "requested"].includes(e.state)) throw new MergeFailure("invalid-request", `${e.branch} isn't waiting for you (it is ${e.state})`);
         this.clearConflictTimer(e.id);
         const was = e.state;
         e.state = "needs-fix";
-        e.reason = why?.trim() || (was === "unattributed" ? `a check failed on the merge and on ${e.target} alone, and couldn't say whose failure it is${e.reason ? ` (${e.reason})` : ""}` : was === "review-flagged" ? `the review flagged it: ${e.review?.text ?? ""}`.trim() : was === "drafts-changed" ? "its spec drafts changed since you approved" : `conflicts with ${e.target}${e.conflict?.files.length ? ` in ${e.conflict.files.join(", ")}` : ""}`);
+        e.reason = why?.trim() || (was === "unattributed" ? `a check failed on the merge and on ${e.target} alone, and couldn't say whose failure it is${e.reason ? ` (${e.reason})` : ""}` : was === "review-flagged" ? `the review flagged it: ${e.review?.text ?? ""}`.trim() : was === "drafts-changed" ? "its spec drafts changed since you approved" : was === "request-review" || was === "requested" ? `its request needs another look${e.request?.facts?.checks === "fail" ? ": the host's checks failed" : e.request?.facts?.review === "changes-requested" ? ": changes were requested on the host" : e.request?.facts?.mergeable === "conflicts" ? `: it conflicts with ${e.target} on the host` : ""}` : `conflicts with ${e.target}${e.conflict?.files.length ? ` in ${e.conflict.files.join(", ")}` : ""}`);
         e.updatedAt = this.iso();
         this.save();
         this.deps.notify?.("sent-back", e, { root: this.root });
@@ -786,6 +1170,7 @@ export class ProjectQueue {
         return { run: structuredClone(run) };
       }
       // Save: one commit on the target holding the new definition, moved to like a landing.
+      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: save the checks after Publish or Abandon`);
       const co = await checkoutOf(this.git, this.root, this.q.target);
       if (co) {
         const why = await dirtyWhy(this.git, co);
@@ -869,11 +1254,14 @@ export class ProjectQueue {
   }
 
   private async startNext(): Promise<void> {
-    if (this.stopped || this.current || this.trying || this.q.paused || this.landing) return;
+    if (this.stopped || this.current || this.trying || this.landing) return;
+    // A settings save that waited for the branch just checked goes first, before the next branch starts on the target.
+    if (this.q.pendingSave) await this.applyPendingSave();
+    if (this.q.paused) return;
     if (this.holdUntil > this.now()) return;
     const head = await this.targetHead();
     if (!head) return;
-    const line = this.queued();
+    const line = this.releaseLine(this.queued());
     if (this.q.knownTarget && head !== this.q.knownTarget) {
       if (line.length) {
         this.pauseNow("master-moved", `${this.q.target} moved outside the queue (${this.q.knownTarget.slice(0, 7)} → ${head.slice(0, 7)}): resume once that is intended`);
@@ -902,7 +1290,26 @@ export class ProjectQueue {
           continue;
         }
       }
-      await this.startRun(e, head, own ?? undefined);
+      // A branch that lands by request or push is tested against the host's target as it is now (al_3 b2): origin's,
+      // fetched just before, never the local one (which only Update Local Main moves).
+      let base = head;
+      if (publishes(approvalHow(e.approval))) {
+        const f = await fetchTarget(this.git, this.root, this.q.target);
+        if ("why" in f) {
+          const tries = (this.q.machineTries[e.id] ?? 0) + 1;
+          this.q.machineTries[e.id] = tries;
+          e.reason = f.why;
+          e.updatedAt = this.iso();
+          if (tries <= 1) {
+            this.holdUntil = this.now() + (this.deps.retryDelayMs ?? 60_000);
+            this.save();
+            this.later(this.deps.retryDelayMs ?? 60_000, () => this.kickSoon());
+          } else this.pauseNow("machine", `${f.why}: ${e.branch} can't be tested against origin's ${this.q.target}. No branch is blamed.`);
+          return;
+        }
+        base = f.sha;
+      }
+      await this.startRun(e, base, own ?? undefined, head);
       return;
     }
     if (invalid) this.pauseNow("definition-invalid", invalidWords(invalid));
@@ -942,7 +1349,7 @@ export class ProjectQueue {
   }
 
   /** `own`: the branch's own definition, when the target's doesn't parse and this branch fixes it. */
-  private async startRun(e: Entry, base: string, own?: ProjectDef): Promise<void> {
+  private async startRun(e: Entry, base: string, own?: ProjectDef, localBase: string = base): Promise<void> {
     const declared = await this.declared();
     const d = own ? { ...declared, def: own, review: (this.deps.hasReviewKit ?? ((x) => !!x?.merge?.review))(own, this.root) } : declared;
     const runId = newId("mr");
@@ -965,10 +1372,11 @@ export class ProjectQueue {
     e.updatedAt = this.iso();
     this.store.writeRun(run);
     const ac = new AbortController();
-    const cur: Current = { run, entry: e.id, ac, voidWhy: null, watch: null, done: Promise.resolve() };
+    const cur: Current = { run, entry: e.id, ac, voidWhy: null, watch: null, done: Promise.resolve(), localBase };
     this.current = cur;
     this.save();
     this.log(`run ${runId}: ${e.branch} at ${e.commit.slice(0, 7)} onto ${this.q.target} ${base.slice(0, 7)}`);
+    this.releaseEvent(e, "checking", undefined, runId);
     const resolution = e.conflict?.commit && (e.conflict.verdict === "no-behaviour-change" || e.notes.some((n) => n.kind === "resolved")) ? e.conflict.commit : undefined;
     const input: RunInput = {
       runId,
@@ -980,6 +1388,9 @@ export class ProjectQueue {
       runDir,
       ...(draftsDir ? { draftsDir } : {}),
       picks: [...e.picks],
+      // A tag-only release's entry is the frozen target itself: its checks run there, nothing is merged or moved.
+      ...(this.tagOnly(e, base) ? { tryOnly: true as const } : {}),
+      ...(e.release && e.releaseKind === "release" && this.q.release?.id === e.release && this.q.release.checks?.length ? { releaseChecks: structuredClone(this.q.release.checks) } : {}),
       ...(this.names().exists ? { namesFile: this.names().file } : {}),
       review: d.review && !e.approval.withoutReview,
       signal: ac.signal,
@@ -1027,7 +1438,7 @@ export class ProjectQueue {
       void (async () => {
         if (this.current !== cur || cur.voidWhy || this.landing) return;
         const h = await this.targetHead();
-        if (h && h !== base && this.current === cur && !this.landing && !cur.voidWhy) {
+        if (h && h !== cur.localBase && this.current === cur && !this.landing && !cur.voidWhy) {
           cur.voidWhy = "master-moved";
           cur.ac.abort();
         }
@@ -1076,14 +1487,15 @@ export class ProjectQueue {
     if (cur.voidWhy || e.state === "cancelled") {
       const why = cur.voidWhy ?? "cancelled";
       run.verdict = why === "cancelled" ? "cancelled" : "void";
-      run.why = why === "master-moved" ? `${this.q.target} moved outside the queue` : why === "superseded" ? "approved again at a newer commit" : why === "stopping" ? "Sova stopped" : "cancelled";
+      run.why = why === "master-moved" ? `${this.q.target} moved outside the queue` : why === "superseded" ? "approved again at a newer commit" : why === "stopping" ? "Sova stopped" : why === "release" ? "a release started: it waits for the release" : "cancelled";
       this.store.writeRun(run);
       if (why === "master-moved" && e.state === "checking") {
         this.toFront(e);
         const head = await this.targetHead();
         this.pauseNow("master-moved", `${this.q.target} moved outside the queue (${run.base.slice(0, 7)} → ${(head ?? "?").slice(0, 7)}) while ${e.branch} was checking: that run was voided; resume once that is intended`, run.id);
-      } else if (why === "stopping" && e.state === "checking") {
+      } else if ((why === "stopping" || why === "release") && e.state === "checking") {
         this.toFront(e);
+        if (why === "release") e.reason = this.waitingWords();
       }
       this.save();
       this.kickSoon();
@@ -1119,6 +1531,12 @@ export class ProjectQueue {
       case "conflict": {
         run.verdict = "conflict";
         this.store.writeRun(run);
+        if (e.release) {
+          // A release's commit was cut from the frozen target: a conflict is a fault of the release, never judged.
+          this.handBack(e, run, `the release commit conflicts with ${this.q.target}${out.conflict?.files?.length ? ` in ${out.conflict.files.slice(0, 3).join(", ")}` : ""}`);
+          this.kickSoon();
+          return;
+        }
         e.state = "conflict";
         const files = out.conflict?.files ?? [];
         delete e.conflict;
@@ -1167,6 +1585,7 @@ export class ProjectQueue {
         if (out.targetRed?.length) this.q.heads.targetRed = [...out.targetRed];
         e.updatedAt = this.iso();
         this.save();
+        this.releaseEvent(e, "waiting", e.reason, run.id);
         this.kickSoon();
         return;
       }
@@ -1179,6 +1598,7 @@ export class ProjectQueue {
         this.addNotes(e, out.notes);
         e.updatedAt = this.iso();
         this.save();
+        this.releaseEvent(e, "waiting", e.reason, run.id);
         this.kickSoon();
         return;
       }
@@ -1189,6 +1609,8 @@ export class ProjectQueue {
         this.addNotes(e, out.notes);
         if (out.noChecks && !e.notes.some((n) => n.kind === "no-checks")) e.notes.push({ kind: "no-checks", text: "No checks declared", at: this.iso() });
         delete this.q.machineTries[e.id];
+        // A tag-only release lands nothing: what passed is the target as it stands.
+        if (this.tagOnly(e, run.base)) run.tip = run.base;
         if (!run.tip) {
           run.verdict = "machine";
           run.why = "the run passed but named no tip to land";
@@ -1214,6 +1636,7 @@ export class ProjectQueue {
     e.updatedAt = this.iso();
     this.save();
     this.deps.notify?.("needs-fix", e, { ...(run ? { run, logDir: this.store.runDir(run.id) } : {}), root: this.root });
+    this.releaseEvent(e, "failed", why, run?.id);
   }
 
   private armConflictTimer(e: Entry, run: MergeRun): void {
@@ -1237,6 +1660,8 @@ export class ProjectQueue {
 
   /** Land a passed run's tip (the entry is `checking`). */
   async landTested(e: Entry, run: MergeRun): Promise<void> {
+    // Landing by request or by push (al_3): the target never moves here; the tested work is published instead.
+    if (publishes(approvalHow(e.approval))) return this.landByRequest(e, run);
     const tip = run.tip!;
     const d = await this.declared();
     this.landing = true;
@@ -1280,6 +1705,302 @@ export class ProjectQueue {
     }
   }
 
+  // ---- landing by request or by push (al_3) ------------------------------------------------------
+
+  /** origin's repository on its host, and that host's adapter; null: origin isn't on a host Sova opens requests on. */
+  private async hosting(): Promise<Hosting | null> {
+    let repo: HostRepo | null;
+    try {
+      if (this.deps.hostRepo) repo = await this.deps.hostRepo(this.root);
+      else {
+        const url = await this.git(["remote", "get-url", "origin"], this.root);
+        repo = url.code === 0 && url.stdout.trim() ? ((await suggestLanding(url.stdout.trim())).repo ?? null) : null;
+      }
+    } catch {
+      repo = null;
+    }
+    if (!repo) return null;
+    const adapter = this.deps.hostAdapter ? this.deps.hostAdapter(repo.kind) : repo.kind === "github" ? githubAdapter() : gitlabAdapter();
+    return { adapter, repo };
+  }
+
+  private async publishCtx(how: RequestHow): Promise<import("./strategy-run").PublishCtx> {
+    const names = this.names();
+    return { git: this.git, root: this.root, target: this.q.target, namesFile: names.exists ? names.file : undefined, holdFile: join(this.store.dir, "push-hold"), host: how === "push-branch" ? null : await this.hosting() };
+  }
+
+  /** A passed run on a request or push project (the entry is `checking`): its request's text drafted for the user's
+   *  look (q10), or, onto a request already open (Land Again) or for Push branch only, published at once. */
+  private async landByRequest(e: Entry, run: MergeRun): Promise<void> {
+    const how = approvalHow(e.approval) as RequestHow;
+    run.verdict = "passed";
+    this.store.writeRun(run);
+    const host = how === "github-pr" ? ("github" as const) : how === "gitlab-mr" ? ("gitlab" as const) : undefined;
+    const sameHow = e.request?.how === how;
+    e.request = { ...(sameHow ? e.request : {}), how, ...(host ? { host } : {}), branch: e.branch, base: this.q.target };
+    delete e.reason;
+    e.updatedAt = this.iso();
+    const open = sameHow && !!e.request.number && e.request.facts?.state !== "closed" && e.request.facts?.state !== "merged";
+    if (opensRequest(how) && !open) {
+      const d = await this.declared();
+      const title = (e.session && this.deps.chatTitle ? await this.deps.chatTitle(e.session).catch(() => null) : null) ?? e.branch;
+      const note = e.notes.find((n) => n.kind === "thread" || n.kind === "operator")?.text;
+      const t = await draftText({
+        root: this.root,
+        folder: d.def?.merge?.request ?? null,
+        how,
+        input: { branch: e.branch, base: this.q.target, chatTitle: title, ...(note ? { note } : {}), checksPassed: run.checks.map((c) => c.label), ...(e.review?.text ? { reviewNotes: e.review.text } : {}) },
+        ...(this.deps.drafter ? { drafter: this.deps.drafter } : {}),
+      }).catch((err: unknown) => ({ ok: false as const, why: err instanceof Error ? err.message : String(err) }));
+      e.state = "request-review";
+      if (t.ok) {
+        e.request.text = t.text;
+        if (t.folder) e.request.folder = t.folder;
+      } else e.reason = `the request's text couldn't be written: ${t.why}; write it yourself, then Publish`;
+      this.save();
+      this.kickSoon();
+      return;
+    }
+    // Published at once: it stays `checking` until the outcome is known (a wait reads request-review, with why).
+    this.q.awaitingPublish = { ...(this.q.awaitingPublish ?? {}), [e.id]: null };
+    e.request.publishRequested = true;
+    this.save();
+    await this.publishNow(e);
+    this.kickSoon();
+  }
+
+  /** q10's Publish: the user's reviewed title and description; the request goes out once the chat's folder is quiet. */
+  publish(entryId: string, t: { title: string; body: string; draft: boolean }): Promise<MergeEntry> {
+    return this.serial(async () => {
+      const e = this.mustEntry(entryId);
+      if (e.state !== "request-review" || !e.request) throw new MergeFailure("invalid-request", `${e.branch} isn't waiting for its request's text (it is ${e.state})`);
+      let text = { title: t.title.trim(), body: t.body, draft: t.draft };
+      if (opensRequest(e.request.how)) {
+        const d = await this.declared();
+        // A folder check that fails is shown on the request's text, never a lock (lead's ruling): only Sova's own limits
+        // and a check that can't run stop it.
+        const c = await checkPublishText({ root: this.root, folder: d.def?.merge?.request ?? null, how: e.request.how, branch: e.branch, base: this.q.target, text });
+        if (!c.ok) throw new MergeFailure("invalid-request", c.why);
+        text = { title: c.title, body: c.body, draft: t.draft };
+        e.request.text = { title: c.title, body: c.body, draft: t.draft, checks: c.checks };
+      }
+      this.q.awaitingPublish = { ...(this.q.awaitingPublish ?? {}), [e.id]: text };
+      e.request.publishRequested = true;
+      e.reason = "publishing";
+      e.updatedAt = this.iso();
+      this.save();
+      await this.publishNow(e);
+      this.kickSoon();
+      return this.withPosition(e);
+    });
+  }
+
+  /** Publish an approved entry now (serial): the docs commit, the scanned push, the request; each step's intent first. */
+  private async publishNow(e: Entry): Promise<void> {
+    const waiting = this.q.awaitingPublish ?? {};
+    if (!(e.id in waiting)) return;
+    const job = waiting[e.id] ?? null;
+    const drop = () => {
+      const { [e.id]: _gone, ...rest } = this.q.awaitingPublish ?? {};
+      this.q.awaitingPublish = rest;
+      if (e.request) delete e.request.publishRequested;
+    };
+    const run = e.run ? this.store.readRun(e.run) : null;
+    if ((e.state !== "request-review" && e.state !== "checking") || !e.request || !run?.tip) {
+      drop();
+      if (e.state === "request-review") e.reason = "its tested run is gone: land it again";
+      this.save();
+      return;
+    }
+    const how = e.request.how;
+    const ctx = await this.publishCtx(how);
+    const session = e.session;
+    const out = await publishEntry(
+      ctx,
+      {
+        how,
+        branch: e.branch,
+        commit: e.commit,
+        mergeSha: run.mergeSha ?? run.tip,
+        tip: run.tip,
+        runId: run.id,
+        worktree: e.worktree,
+        base: run.base,
+        text: job ? { title: job.title, body: job.body } : e.request.text ? { title: e.request.text.title, body: e.request.text.body } : undefined,
+        number: e.request.number,
+        chatIdle: session && this.deps.chatIdle ? () => this.deps.chatIdle!(session) : undefined,
+      },
+      (step, head) => {
+        this.q.publish = { entry: e.id, run: run.id, how, branch: e.branch, step, head, at: this.iso() };
+        this.save();
+      },
+    );
+    this.recordPublish(e, out, run);
+  }
+
+  /** What a publication came to, on the entry (then told). */
+  private recordPublish(e: Entry, out: PublishOutcome, run: MergeRun | null): void {
+    const drop = () => {
+      const { [e.id]: _gone, ...rest } = this.q.awaitingPublish ?? {};
+      this.q.awaitingPublish = rest;
+      if (e.request) delete e.request.publishRequested;
+    };
+    delete this.q.publish;
+    e.updatedAt = this.iso();
+    switch (out.kind) {
+      case "wait":
+        e.state = "request-review";
+        e.reason = out.why;
+        this.save();
+        this.armPoll();
+        return;
+      case "refused":
+        drop();
+        if (out.blame === "branch") {
+          this.handBack(e, run ?? undefined, out.why);
+          return;
+        }
+        e.state = "request-review";
+        e.reason = out.why;
+        this.save();
+        if (/private names not set up/.test(out.why)) this.wake("names", e, undefined, { namesFile: this.names().file });
+        return;
+      case "pushed":
+        drop();
+        e.request = { ...e.request!, publishedHead: out.head };
+        e.state = "pushed";
+        delete e.reason;
+        this.save();
+        this.log(`pushed ${e.branch} at ${out.head.slice(0, 7)}`);
+        this.deps.notify?.("pushed", e, { ...(run ? { run } : {}), root: this.root });
+        return;
+      case "requested":
+        drop();
+        e.request = { ...requestInfo(e.request!, out.request, this.iso()), publishedHead: out.head };
+        e.state = "requested";
+        delete e.reason;
+        this.save();
+        this.log(`${e.branch} at ${out.head.slice(0, 7)}: request #${out.request.number} ${out.opened ? "opened" : "updated"}`);
+        this.deps.notify?.("requested", e, { ...(run ? { run } : {}), root: this.root });
+        this.armPoll();
+        return;
+    }
+  }
+
+  private pollTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastPoll = 0;
+  /** Read the host again in a while, while anything waits on it. */
+  private armPoll(): void {
+    if (this.stopped || this.pollTimer) return;
+    if (!this.q.entries.some((e) => e.state === "requested" || (e.state === "request-review" && e.id in (this.q.awaitingPublish ?? {})))) return;
+    const t = setTimeout(() => {
+      this.pollTimer = null;
+      void this.pollHost().catch((err) => this.log(`host poll failed: ${err instanceof Error ? err.message : err}`));
+    }, this.deps.pollMs ?? 180_000);
+    t.unref?.();
+    this.pollTimer = t;
+  }
+
+  /** Read every open request on the host now (and retry publications that waited): merged → Landed on the host's word,
+   *  closed → Closed; the host's facts kept on the entry. Results are written before anyone is told. */
+  pollHost(): Promise<void> {
+    return this.serial(async () => {
+      this.lastPoll = this.now();
+      for (const e of [...this.q.entries]) {
+        if (e.state === "request-review" && e.id in (this.q.awaitingPublish ?? {})) {
+          await this.publishNow(e);
+          continue;
+        }
+        if (e.state !== "requested" || !e.request?.number) continue;
+        const ctx = await this.publishCtx(e.request.how);
+        const from = await revParse(this.git, this.root, `refs/remotes/origin/${this.q.target}`);
+        const r = await pollRequest(ctx, { number: e.request.number, from });
+        if (r.kind === "unknown") {
+          this.log(`${e.branch}: the host couldn't be read: ${r.why}`);
+          continue;
+        }
+        const before = JSON.stringify(e.request.facts ?? null);
+        e.request = requestInfo(e.request, r.request, this.iso());
+        const run = e.run ? this.store.readRun(e.run) : null;
+        if (r.kind === "open") {
+          if (JSON.stringify(e.request.facts) !== before) {
+            e.updatedAt = this.iso();
+            this.save();
+          }
+          continue;
+        }
+        e.updatedAt = this.iso();
+        if (r.kind === "merged") {
+          for (const c of r.parents) if (!this.q.landed.includes(c)) this.q.landed.push(c);
+          e.request.mergeCommit = r.sha;
+          e.state = "landed";
+          delete e.reason;
+          e.landed = { sha: r.sha, from: run?.base ?? from ?? "", at: this.iso(), pushed: "pushed", via: "host" };
+          this.save();
+          this.log(`${e.branch}: request #${e.request.number} merged on the host at ${r.sha.slice(0, 7)}`);
+          this.deps.notify?.("landed", e, { ...(run ? { run } : {}), root: this.root });
+          this.wake("landed", e, run?.id);
+        } else {
+          e.state = "closed";
+          e.reason = "closed on the host without merging";
+          this.save();
+          this.deps.notify?.("closed", e, { ...(run ? { run } : {}), root: this.root });
+        }
+      }
+      this.armPoll();
+    });
+  }
+
+  /** Update Local Main (q11): the local target fast-forwarded to origin's by the queue itself, so it never reads as a
+   *  move from outside; refused with the reason on a dirty checkout, never pausing the line. */
+  updateLocalMain(): Promise<{ kind: "updated" | "current"; head: string }> {
+    return this.serial(async () => {
+      if (this.landing) throw new MergeFailure("busy", "a landing is moving the target now: try again in a moment");
+      if (this.q.release) throw new MergeFailure("invalid-request", `${this.q.target} stays on the release commit ${this.whileOpen()}: update it after Publish or Abandon`);
+      this.landing = true;
+      try {
+        const r = await updateMainTip(this.git, this.root, this.q.target);
+        if (r.kind === "refused") throw new MergeFailure("invalid-request", r.why);
+        if (r.kind === "current") return { kind: "current" as const, head: r.head };
+        for (const c of r.parents) if (!this.q.landed.includes(c)) this.q.landed.push(c);
+        if (!this.q.knownTarget || this.q.knownTarget === r.from) this.q.knownTarget = r.to;
+        if (this.current && this.current.localBase === r.from) this.current.localBase = r.to;
+        this.checksCache = null;
+        this.save();
+        this.settingsChanged();
+        this.log(`local ${this.q.target} updated to origin's ${r.to.slice(0, 7)}`);
+        this.kickSoon();
+        return { kind: "updated" as const, head: r.to };
+      } finally {
+        this.landing = false;
+      }
+    });
+  }
+
+  /** How it lands, saved on this computer (wins over the project file) or in the project file (through the settings
+   *  save path). A pinned approval keeps its own. */
+  setLandHow(how: LandHow, where: "project" | "computer"): Promise<{ state: "saved"; commit?: string } | { state: "waiting"; release?: string }> {
+    if (where === "computer") {
+      return this.serial(async () => {
+        this.refuseHowChangeWhileHeld();
+        writeOverride(this.store.dir, how);
+        this.settingsChanged();
+        this.save();
+        return { state: "saved" as const };
+      });
+    }
+    return this.saveSettings({ land: how }) as Promise<{ state: "saved"; commit?: string } | { state: "waiting"; release?: string }>;
+  }
+
+  clearLandHowOverride(): Promise<void> {
+    return this.serial(async () => {
+      this.refuseHowChangeWhileHeld();
+      writeOverride(this.store.dir, null);
+      this.settingsChanged();
+      this.save();
+    });
+  }
+
   /** The target is at the tip: record the landing, clear the intent, tell the branch, push. Recovery calls it too. */
   async markLanded(e: Entry, run: MergeRun, parents: string[], def: ProjectDef | null): Promise<void> {
     const tip = run.tip!;
@@ -1296,8 +2017,11 @@ export class ProjectQueue {
     if (newer) e.newerCommits = newer;
     else delete e.newerCommits;
     delete this.q.intent;
+    // The revert of an abandoned release lands: the release's hold is lifted with it (its push goes out as any).
+    if (e.release && e.releaseKind === "revert" && this.q.release?.id === e.release) this.liftNow();
     this.save();
     this.log(`landed ${e.branch} at ${tip.slice(0, 7)}`);
+    this.releaseEvent(e, "landed", undefined, run.id);
     await this.push(tip, def, e);
     this.deps.notify?.("landed", e, { run, root: this.root });
     this.wake("landed", e, run.id);
@@ -1313,8 +2037,10 @@ export class ProjectQueue {
   private async push(tip: string, def: ProjectDef | null, e?: Entry): Promise<void> {
     const names = this.names();
     let p: Awaited<ReturnType<typeof pushTip>>;
-    const hasOrigin = (await this.git(["remote"], this.root)).stdout.split("\n").includes("origin");
-    if (!names.exists && def?.merge?.push !== false && hasOrigin) {
+    const origin = (await this.git(["remote"], this.root)).stdout.split("\n").includes("origin");
+    if (this.q.release && def?.merge?.push !== false && origin) {
+      p = { state: "not-pushed", why: `held: ${this.holdWords()}` };
+    } else if (!names.exists && def?.merge?.push !== false && origin) {
       p = { state: "not-pushed", why: PUSH_HELD_NAMES };
       if (e) this.wake("names", e, undefined, { namesFile: names.file });
     } else p = await pushTip(this.git, this.root, this.q.target, tip, { landed: new Set(this.q.landed), ...(def?.merge?.push === false ? { push: false } : {}), holdFile: join(this.store.dir, "push-hold") });
@@ -1355,6 +2081,318 @@ export class ProjectQueue {
     }
   }
 
+  // ---- releases (q9, a5, a6, t22, t24) ------------------------------------------------------------
+
+  /** While a release holds the queue, only its own entries run; every other one waits with the release named. */
+  private releaseLine(line: Entry[]): Entry[] {
+    const hold = this.q.release;
+    if (!hold) return line;
+    const words = this.waitingWords();
+    let changed = false;
+    for (const e of line) {
+      if (e.release === hold.id || e.reason === words) continue;
+      e.reason = words;
+      changed = true;
+    }
+    if (changed) this.save();
+    return line.filter((e) => e.release === hold.id);
+  }
+
+  /** A tag-only release's entry: its commit is the frozen target's own head (no release commit). */
+  private tagOnly(e: Entry, base: string): boolean {
+    return !!e.release && (e.releaseKind ?? "release") === "release" && e.commit === base && this.q.release?.id === e.release;
+  }
+
+  private waitingWords(): string {
+    const h = this.q.release;
+    return h ? `waits for ${h.tag ?? (h.version ? `release ${h.version}` : "the open release")} to be published or abandoned` : "waiting";
+  }
+  /** A reason the hold wrote (it is rewritten as the release's tag becomes known, and dropped when the hold lifts). */
+  private isWaitingWords(r: string | undefined): boolean {
+    return !!r && r.startsWith("waits for ") && r.endsWith(" to be published or abandoned");
+  }
+  /** The holding release as the screens name it: its tag once picked, never its id ("the open release" until then). */
+  private releaseName(): string {
+    const h = this.q.release;
+    const named = h?.tag ?? h?.version;
+    return named ? `release ${named}` : "the open release";
+  }
+  /** "while release vX is open"; before a version is picked, "while a release is open". */
+  private whileOpen(): string {
+    const name = this.releaseName();
+    return `while ${name === "the open release" ? "a release" : name} is open`;
+  }
+
+  /** Set or cleared, this computer's how-it-lands can't change under an open release: Publish must land as it started. */
+  private refuseHowChangeWhileHeld(): void {
+    if (this.q.release) throw new MergeFailure("invalid-request", `how it lands can't change ${this.whileOpen()}: change it after Publish or Abandon`);
+  }
+
+  /** Release lands its commit on the target here and pushes it itself: a project that lands by request or by pushing a
+   *  branch (no direct push to the target) can't release (yet). */
+  private async mustLandLocally(): Promise<void> {
+    const how = effectiveHow((await this.declared()).def?.merge?.land, this.store.dir).effective;
+    if (publishes(how)) throw new MergeFailure("unsupported", `this project lands ${how === "push-branch" ? "by pushing a branch" : "by request"}, and a release lands its commit on ${this.q.target} and pushes it itself: set how it lands to local (Settings → Merge Queue) to release here`);
+  }
+
+  private holdWords(): string {
+    const h = this.q.release;
+    return h ? `${this.whileOpen().slice("while ".length)}: nothing is pushed until it is published or abandoned` : "";
+  }
+  private holdFile(): string {
+    return join(this.store.dir, "push-hold");
+  }
+
+  private releaseEvent(e: Entry, what: ReleaseQueueEvent["what"], why?: string, run?: string): void {
+    if (!e.release || !this.deps.releaseEvent) return;
+    try {
+      this.deps.releaseEvent({ root: this.root, release: e.release, kind: e.releaseKind ?? "release", entry: this.withPosition(e), what, ...(why ? { why } : {}), ...(run ? { run } : {}) });
+    } catch (err) {
+      this.log(`release event failed: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  /** The release holding the queue, if any. */
+  releaseHold(): QueueFile["release"] | null {
+    return this.q.release ? structuredClone(this.q.release) : null;
+  }
+
+  /**
+   * Hold the queue for release `id`: from now on only its entries land, and nothing is pushed (the push-hold file is
+   * set too) until publishRelease or abandonRelease lifts it. A run of another branch in flight is voided and waits at
+   * the front of the line. Answers the target's head: the release's base. Idempotent for the same release.
+   */
+  freezeForRelease(release: { id: string; version?: string | null; state?: string; checks?: MergeCheckDecl[] }): Promise<{ base: string }> {
+    return this.serial(async () => {
+      const held = this.q.release;
+      if (held && held.id !== release.id) throw new MergeFailure("busy", `${this.releaseName()} already holds the queue`);
+      if (!held) await this.mustLandLocally();
+      const head = await this.targetHead();
+      if (!head) throw new MergeFailure("invalid-request", `${this.q.target} has no commit to release`);
+      if (this.q.intent) throw new MergeFailure("busy", "a landing is in flight: try again in a moment");
+      if (!held) {
+        this.q.release = { id: release.id, version: release.version ?? null, state: release.state ?? "preparing", base: head, since: this.iso(), ...(release.checks?.length ? { checks: structuredClone(release.checks) } : {}) };
+        if (this.current) {
+          const cur = this.current;
+          const e = this.entry(cur.entry);
+          if (!e?.release) {
+            cur.voidWhy = "release";
+            cur.ac.abort();
+          }
+        }
+        this.q.knownTarget = head;
+      } else if (release.checks) this.q.release!.checks = structuredClone(release.checks);
+      mkdirSync(this.store.dir, { recursive: true });
+      writeFileSync(this.holdFile(), `${this.holdWords()}\n`, { mode: 0o600 });
+      this.releaseLine(this.queued());
+      this.save();
+      if (this.q.pendingSave) this.settingsChanged();
+      this.log(`held for release ${release.id} at ${head.slice(0, 7)}`);
+      return { base: this.q.release!.base };
+    });
+  }
+
+  /** The hold's banner follows the release (its version once picked, its state). */
+  updateReleaseHold(id: string, u: { version?: string | null; tag?: string | null; state?: string }): Promise<void> {
+    return this.serial(async () => {
+      const h = this.q.release;
+      if (!h || h.id !== id) return;
+      if (u.version !== undefined) h.version = u.version;
+      if (u.tag !== undefined) h.tag = u.tag;
+      if (u.state !== undefined) h.state = u.state;
+      writeFileSync(this.holdFile(), `${this.holdWords()}\n`, { mode: 0o600 });
+      // Waiting rows name the release by its version once it has one.
+      for (const e of this.queued()) if (e.release !== h.id && this.isWaitingWords(e.reason)) e.reason = this.waitingWords();
+      if (this.q.pendingSave) this.settingsChanged();
+      this.save();
+    });
+  }
+
+  /** Lift the hold in the serial chain's step that ends it (publish, the revert landing, abandon with nothing landed). */
+  private liftNow(): void {
+    const h = this.q.release;
+    if (!h) return;
+    delete this.q.release;
+    rmSync(this.holdFile(), { force: true });
+    for (const e of this.queued()) if (this.isWaitingWords(e.reason)) delete e.reason;
+    if (this.q.pendingSave) this.settingsChanged();
+    this.log(`hold of release ${h.id} lifted`);
+    this.kickSoon();
+  }
+
+  /**
+   * A release entry, added by Sova (never a person's Land): the release commit (`kind: "release"`, it runs the merge
+   * checks plus the release's own) or an abandoned release's revert. It goes first in line and runs without a review.
+   */
+  addReleaseEntry(r: { release: string; branch: string; commit: string; kind?: "release" | "revert"; session?: string; worktree?: string }): Promise<MergeEntry> {
+    return this.serial(async () => {
+      const hold = this.q.release;
+      if (!hold || hold.id !== r.release) throw new MergeFailure("invalid-request", "that release doesn't hold this queue");
+      const kind = r.kind ?? "release";
+      const open = this.q.entries.find((e) => e.release === r.release && (e.releaseKind ?? "release") === kind && !isFinal(e));
+      if (open) {
+        if (open.commit === r.commit) return this.withPosition(open);
+        throw new MergeFailure("busy", `this release already has ${kind === "revert" ? "a revert" : "a release commit"} in line`);
+      }
+      const sha = await revParse(this.git, this.root, r.commit);
+      if (!sha) throw new MergeFailure("invalid-request", `no commit ${r.commit}`);
+      if (kind === "release" && !(await isAncestor(this.git, this.root, hold.base, sha))) throw new MergeFailure("invalid-request", `${sha.slice(0, 7)} isn't cut from the release's base ${hold.base.slice(0, 7)}`);
+      const at = this.iso();
+      const e: Entry = {
+        id: newId("mq"),
+        project: this.id,
+        target: this.q.target,
+        branch: r.branch.replace(/^refs\/heads\//, ""),
+        ...(r.worktree ? { worktree: r.worktree } : {}),
+        ...(r.session ? { session: r.session } : {}),
+        commit: sha,
+        approval: { by: "release", at, commit: sha, withoutReview: true },
+        state: "queued",
+        runs: [],
+        picks: [],
+        notes: [],
+        release: r.release,
+        releaseKind: kind,
+        createdAt: at,
+        updatedAt: at,
+        seq: ++this.q.seq,
+      };
+      this.q.entries.push(e);
+      this.toFront(e);
+      this.save();
+      this.kickSoon();
+      return this.withPosition(e);
+    });
+  }
+
+  /** Retry a release entry handed back (Retry Step on checks): back in line at the same commit. */
+  retryReleaseEntry(release: string): Promise<MergeEntry> {
+    return this.serial(async () => {
+      const e = [...this.q.entries].reverse().find((x) => x.release === release && (x.releaseKind ?? "release") === "release");
+      if (!e) throw new MergeFailure("not-found", `release ${release} has no release commit in the queue`);
+      if (e.state === "landed") throw new MergeFailure("invalid-request", "its release commit already landed");
+      if (e.state === "checking" || e.state === "queued") return this.withPosition(e);
+      delete this.q.machineTries[e.id];
+      this.toFront(e);
+      delete e.reason;
+      this.save();
+      this.kickSoon();
+      return this.withPosition(e);
+    });
+  }
+
+  /**
+   * Publish: all or none. The numbered tag at the release commit (its message the notes), each channel moved to it,
+   * and, for a project that pushes (merge.push not false, an origin), master with both in one atomic push (channels
+   * leased on origin's old value). A local-only project tags and moves its channels on this machine. On success the
+   * hold is lifted and the waiting landings go on; on failure every local ref is as before and the hold stays.
+   */
+  publishRelease(p: { release: string; tag: string; channels: string[]; commit: string; notes: string }): Promise<{ pushed: PushState; why?: string; channelsFrom: Record<string, string | null> }> {
+    return this.serial(async () => {
+      const hold = this.q.release;
+      if (!hold || hold.id !== p.release) throw new MergeFailure("invalid-request", "that release doesn't hold this queue");
+      if (this.current) throw new MergeFailure("busy", "a run is checking: publish once it is done");
+      const head = await this.targetHead();
+      if (head !== p.commit) throw new MergeFailure("invalid-request", `${this.q.target} is at ${(head ?? "?").slice(0, 7)}, not the release commit ${p.commit.slice(0, 7)}`);
+      await this.mustLandLocally();
+      const def = (await this.declared()).def;
+      const pushes = def?.merge?.push !== false && (await hasOrigin(this.git, this.root));
+      if (pushes && !this.names().exists) throw new MergeFailure("invalid-request", PUSH_HELD_NAMES);
+      const r = await publishGit(this.git, { root: this.root, target: this.q.target, commit: p.commit, tag: p.tag, channels: p.channels, message: p.notes, push: pushes, landed: new Set(this.q.landed) });
+      if (!r.ok) {
+        this.log(`publish of ${p.tag} failed: ${r.why}`);
+        throw new MergeFailure("busy", r.why);
+      }
+      if (r.pushed === "pushed") {
+        this.q.heads.pushed = p.commit;
+        delete this.q.heads.pushWhy;
+        for (const x of this.q.entries) if (x.state === "landed" && x.landed && x.landed.pushed !== "pushed" && (x.landed.sha === p.commit || (await isAncestor(this.git, this.root, x.landed.sha, p.commit)))) x.landed = { ...x.landed, pushed: "pushed" };
+        for (const x of this.q.entries) if (x.landed?.pushed === "pushed") delete x.landed.pushWhy;
+      } else {
+        for (const x of this.q.entries) if (x.release === p.release && x.landed) x.landed = { ...x.landed, pushed: r.pushed, ...(r.why ? { pushWhy: r.why } : {}) };
+        if (r.why) this.q.heads.pushWhy = r.why;
+      }
+      this.liftNow();
+      this.save();
+      this.log(`published ${p.tag} at ${p.commit.slice(0, 7)} (${r.pushed})`);
+      return { pushed: r.pushed, ...(r.why ? { why: r.why } : {}), channelsFrom: r.channelsFrom };
+    });
+  }
+
+  /**
+   * Abandon: a release entry still in line is cancelled; one that landed is undone by a revert entry the queue lands
+   * first (never a reset of the shared checkout), and that landing lifts the hold. Nothing landed: the hold lifts now.
+   */
+  abandonRelease(r: { release: string; why?: string }): Promise<{ revert: string | null }> {
+    return this.serial(async () => {
+      const hold = this.q.release;
+      if (!hold || hold.id !== r.release) return { revert: null };
+      const mine = this.q.entries.filter((e) => e.release === r.release);
+      const revertOpen = mine.find((e) => e.releaseKind === "revert" && !isFinal(e));
+      if (revertOpen) return { revert: revertOpen.id };
+      for (const e of mine) {
+        if (isFinal(e) || (e.releaseKind ?? "release") !== "release") continue;
+        if (this.current?.entry === e.id) {
+          this.current.voidWhy = "cancelled";
+          this.current.ac.abort();
+        }
+        e.state = "cancelled";
+        e.reason = `release abandoned${r.why ? `: ${r.why.split("\n")[0]!.slice(0, 160)}` : ""}`;
+        e.updatedAt = this.iso();
+      }
+      const landed = [...mine].reverse().find((e) => (e.releaseKind ?? "release") === "release" && e.state === "landed" && e.landed);
+      const head = await this.targetHead();
+      if (!landed || !head || head === hold.base) {
+        this.liftNow();
+        this.save();
+        return { revert: null };
+      }
+      if (head !== landed.landed!.sha) throw new MergeFailure("invalid-request", `${this.q.target} is at ${head.slice(0, 7)}, not the release commit ${landed.landed!.sha.slice(0, 7)}: undo it by hand`);
+      const sha = await revertCommit(this.git, this.root, head, landed.landed!.from, `Revert ${this.releaseName()} (abandoned)${r.why ? `\n\n${r.why}` : ""}`);
+      if (typeof sha !== "string") throw new MergeFailure("busy", sha.error);
+      const branch = `sova/release-revert-${r.release}`;
+      const u = await this.git(["update-ref", `refs/heads/${branch}`, sha], this.root);
+      if (u.code !== 0) throw new MergeFailure("busy", `couldn't name the revert: ${u.stderr.trim()}`);
+      const at = this.iso();
+      const e: Entry = {
+        id: newId("mq"),
+        project: this.id,
+        target: this.q.target,
+        branch,
+        commit: sha,
+        approval: { by: "release", at, commit: sha, withoutReview: true },
+        state: "queued",
+        runs: [],
+        picks: [],
+        notes: [],
+        release: r.release,
+        releaseKind: "revert",
+        createdAt: at,
+        updatedAt: at,
+        seq: ++this.q.seq,
+      };
+      this.q.entries.push(e);
+      this.toFront(e);
+      hold.state = "abandoned";
+      this.save();
+      this.kickSoon();
+      return { revert: e.id };
+    });
+  }
+
+  /** Withdraw: each channel back to its previous release (or removed), pushed with a lease when the project pushes.
+   *  The numbered tag never moves. */
+  withdrawRelease(w: { tag: string; sha: string; channels: Record<string, string | null>; why: string }): Promise<{ pushed: "pushed" | "not-pushed" | "no-remote"; channelsFrom: Record<string, string | null> }> {
+    return this.serial(async () => {
+      const def = (await this.declared()).def;
+      const pushes = def?.merge?.push !== false && (await hasOrigin(this.git, this.root));
+      const r = await withdrawGit(this.git, { root: this.root, channels: w.channels, tag: w.tag, sha: w.sha, why: w.why, push: pushes });
+      if (!r.ok) throw new MergeFailure("busy", r.why);
+      this.log(`withdrew ${w.tag}: ${Object.entries(w.channels).map(([c, to]) => `${c} → ${to ? to.slice(0, 7) : "none"}`).join(", ")}`);
+      return { pushed: r.pushed === "pending" ? "not-pushed" : r.pushed, channelsFrom: r.channelsFrom };
+    });
+  }
+
   // ---- recovery and stop ------------------------------------------------------------------------
 
   /** At load: reconcile a landing intent left by a stop, requeue runs a stop interrupted, re-arm conflict waits. */
@@ -1388,6 +2426,15 @@ export class ProjectQueue {
     for (const e of this.q.entries) {
       if (e.state !== "checking") continue;
       if (this.q.paused?.kind === "main-checkout-dirty" && this.q.paused.run === e.run) continue;
+      // Stopped while publishing a tested run (Land Again onto an open request, Push branch only): its docs commit may
+      // be on the chat's branch already, so it is finished from that run, never rerun.
+      if (e.id in (this.q.awaitingPublish ?? {}) && e.request && e.run && this.store.readRun(e.run)?.tip) {
+        e.state = "request-review";
+        e.reason = "Sova stopped while publishing it: finishing it";
+        e.updatedAt = this.iso();
+        did.push(`kept ${e.branch}'s publication: Sova stopped during it`);
+        continue;
+      }
       const run = e.run ? this.store.readRun(e.run) : null;
       if (run && run.verdict === "running") {
         run.verdict = "void";
@@ -1398,6 +2445,22 @@ export class ProjectQueue {
       this.toFront(e);
       did.push(`requeued ${e.branch}: Sova stopped during its run`);
     }
+    // A publication Sova stopped in the middle of (al_3, a17): what origin and the host have now decides, never a blind
+    // retry; one that can't be settled waits for the user's Publish again.
+    const pub = this.q.publish;
+    if (pub) {
+      const e = this.entry(pub.entry);
+      const run = this.store.readRun(pub.run);
+      if (e && e.state === "request-review" && e.request) {
+        const out = await reconcilePublish(await this.publishCtx(pub.how), { how: pub.how, branch: pub.branch, head: pub.head, text: e.request.text ? { title: e.request.text.title, body: e.request.text.body } : undefined }).catch((err: unknown) => ({ kind: "wait" as const, why: err instanceof Error ? err.message : String(err) }));
+        this.recordPublish(e, out.kind === "refused" && out.blame === "branch" ? { ...out, blame: "setup" } : out, run);
+        did.push(`settled the publication of ${e.branch} Sova stopped in: ${e.state}`);
+      } else {
+        delete this.q.publish;
+        this.save();
+      }
+    }
+    this.armPoll();
     for (const e of this.q.entries) if (e.state === "conflict" && e.run) {
       const run = this.store.readRun(e.run);
       if (run) this.armConflictTimer(e, run);
@@ -1410,6 +2473,7 @@ export class ProjectQueue {
   async stop(): Promise<void> {
     this.stopped = true;
     for (const t of this.timers) clearTimeout(t);
+    if (this.pollTimer) clearTimeout(this.pollTimer);
     for (const t of this.conflictTimers.values()) clearTimeout(t);
     if (this.publishTimer) clearTimeout(this.publishTimer);
     if (this.trying) {

@@ -420,13 +420,14 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   overseer line, the coding sessions with their branches, the counts, the cost, the cards), then
   updates each part in place as its fresh read answers. Nothing of it is kept once the tab closes
   or reloads, and nothing is written anywhere.
-- **Tabs**: Overview (the default) · Requirements (only while placed) · Branches · Merge Queue · Cost · Settings, the org page's tab strip
+- **Tabs**: Overview (the default) · Requirements (only while placed) · Branches · Merge Queue · Releases · Cost · Settings, the org page's tab strip
   (`.tabs`, keyboard as §app.organizations/org-page; Requirements carries the warn dot while a
   conflict is open or a decision is ready to promote). The tab is in the URL:
   `#/projects/<pid>` is Overview, `…/requirements`, `…/branches`, `…/merge-queue` (the project's
   merge queue, or, while the queue doesn't serve the project, its "No merge queue settings are
   set up" note with Initialize, §app.merge-queue/view,
-  §app.merge-queue/setup; a run's page is `…/merge-queue/<run>`), `…/cost`, `…/settings` the others
+  §app.merge-queue/setup; a run's page is `…/merge-queue/<run>`), `…/releases` (the project's releases, or,
+  while they aren't set up, how to set them up, §app.release/tab), `…/cost`, `…/settings` the others
   (`…/overseer` stays the overseer's door). Picking a tab or a chip adds a history entry, so Back
   returns to the previous tab and a reload opens the same one; the page is not reloaded and its
   fetched data stays.
@@ -434,7 +435,8 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   {n} decision(s) ready to promote." with **Review Requirements**. Then, in two columns when the
   pane is at least 1000px wide (one column below): **Coding sessions**
   (§app.project-overseer/coding-worktrees) and the gathering **Sessions it started**, and **Previews**
-  (§mesh.public/preview-card) in the first; **Software** (§app.project-runtime/software-card),
+  (§mesh.public/preview-card) in the first; **Software** (§app.project-runtime/software-card), **Releases** (its latest release and the landings since, or the
+  one in progress, §app.release/tab),
   **Files** (§app.organizations/files-card, while placed or holding a file), **History** (while
   placed), **Activity** and
   **To-do** in the second. Overview's

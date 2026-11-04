@@ -70,8 +70,8 @@ export interface ToolSpec<P = any, D = any> {
       served: required beside it on a served tool. */
   prepareRule?: PrepareRule;
   executionMode?: "sequential" | "parallel";
-  /** How the model reaches the tool. `model-only`: declared to the model, never callable from a codemode
-      script (§chat.mode-menu/codemode), for a tool whose state Sova reads back from its own recorded
+  /** How the model reaches the tool. `model-only`: declared to the model, never among the tools another
+      tool may call (pi's ToolExposure), for a tool whose state Sova reads back from its own recorded
       result. Absent: a direct tool, callable both ways. */
   exposure?: "model-only";
   /** pi's positional order, kept so a ToolSpec is a type swap for every existing tool and wrapper. */

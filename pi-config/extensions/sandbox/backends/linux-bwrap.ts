@@ -312,7 +312,7 @@ export class LinuxBwrapBackend implements Backend {
 		return {
 			hidden: [
 				h(".ssh"), h(".gnupg"), h(".aws"), h(".docker"), h(".kube"), h(".azure"), h(".password-store"),
-				h(".config/gh"), h(".config/gcloud"), h(".config/hub"), h(".local/share/keyrings"),
+				h(".config/gh"), h(".config/glab-cli"), h(".config/gcloud"), h(".config/hub"), h(".local/share/keyrings"),
 				h(".mozilla"), h(".config/google-chrome"), h(".config/chromium"), h(".config/BraveSoftware"),
 				h(".netrc"), h(".git-credentials"), h(".npmrc"), h(".pypirc"), h(".cargo/credentials.toml"),
 				h(".claude/.credentials.json"), h(".claude.json"),

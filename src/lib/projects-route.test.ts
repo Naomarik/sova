@@ -65,3 +65,11 @@ test("the Merge Queue tab, and one run under it; nothing else takes a page under
   assert.equal(projectTabHref("prj_1", "merge-queue"), "#/projects/prj_1/merge-queue");
   assert.equal(mergeRunHref("prj_1", "mr_42"), "#/projects/prj_1/merge-queue/mr_42");
 });
+
+test("the Releases tab sits right after Merge Queue, with no page under it", async () => {
+  const { PROJECT_TABS, projectsRouteFromHash, projectTabHref } = await import("./projects-route");
+  assert.equal(PROJECT_TABS.indexOf("releases"), PROJECT_TABS.indexOf("merge-queue") + 1);
+  assert.deepEqual(projectsRouteFromHash("#/projects/prj_1/releases"), { kind: "project", projectId: "prj_1", tab: "releases" });
+  assert.equal(projectsRouteFromHash("#/projects/prj_1/releases/rel_1"), null);
+  assert.equal(projectTabHref("prj_1", "releases"), "#/projects/prj_1/releases");
+});

@@ -23,7 +23,7 @@ export const CONTRACT_FILE = ".sova/project.json";
 // ---- canonical key order (references/contract.md; pinned against the parser by tests/) ----------
 
 export const ORDER = {
-  top: ["version", "slots", "host", "sources", "setup", "data", "services", "open", "hooks", "test", "share", "deploy", "merge"],
+  top: ["version", "slots", "host", "sources", "setup", "data", "services", "open", "hooks", "test", "share", "deploy", "merge", "release"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
   data: ["kind", "path", "from", "provision", "deprovision", "timeout", "sensitive"],
@@ -39,15 +39,17 @@ export const ORDER = {
   share: ["endpoints", "maxDays", "allow"],
   open: ["endpoint", "path"],
   deploy: ["targets"],
-  target: ["about", "branch", "requires", "credentials", "plan", "build", "steps", "verify", "rollback"],
+  target: ["about", "branch", "releases", "requires", "credentials", "plan", "build", "steps", "verify", "rollback"],
   deployStep: ["id", "run", "timeout"],
   verify: ["http", "expect", "timeout"],
   rollback: ["steps", "none"],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request"],
   mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
   mergeInstall: ["run", "inputs", "timeout"],
+  release: ["playbook", "tag", "scheme", "channels", "commit", "checks", "quietMin"],
+  releaseCheck: ["id", "label", "run", "timeout", "rerun", "requires"],
 };
 /** Maps whose keys are names in declaration order, kept as written. */
 const NAMED_MAPS = new Set(["data", "services", "ports", "env", "targets"]);
@@ -92,6 +94,10 @@ export function canonical(def) {
     d.merge = sortKeys(d.merge, ORDER.merge);
     if (Array.isArray(d.merge.checks)) d.merge.checks = d.merge.checks.map((c) => (isObj(c) ? sortKeys(c, ORDER.mergeCheck) : c));
     if (isObj(d.merge.install)) d.merge.install = sortKeys(d.merge.install, ORDER.mergeInstall);
+  }
+  if (isObj(d.release)) {
+    d.release = sortKeys(d.release, ORDER.release);
+    if (Array.isArray(d.release.checks)) d.release.checks = d.release.checks.map((c) => (isObj(c) ? sortKeys(c, ORDER.releaseCheck) : c));
   }
   if (isObj(d.deploy)) {
     d.deploy = sortKeys(d.deploy, ORDER.deploy);

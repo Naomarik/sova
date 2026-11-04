@@ -16,14 +16,18 @@ import { WakeCard } from "./WakeCard";
 import { BUILTIN_VIEWS } from "./BuiltinKinds";
 import { LIVE_VIEWS } from "./LiveKinds";
 import { Icon } from "./ui";
+import { isModuleLoadError } from "../lib/module-load";
+import { recheckHost } from "../lib/mesh";
 
 /**
  * The card toolkit's host for one transcript row (§chat.transcript-cards/toolkit): it draws the
  * row's kind's view (lib/transcript-kinds.ts) inside an error box of its own. A view that throws
- * while drawing, or whose module fails to load, draws "This card couldn't be drawn: {why}" with
- * Reload in its place, and every other row goes on. Reload draws that card again (a module view
- * is loaded again); it never reloads the page or the chat. The boundary adds nothing to the page
- * while the view draws.
+ * while drawing draws "This card couldn't be drawn: {why}" with Reload in its place, and every
+ * other row goes on. Reload draws that card again; it never reloads the page or the chat. A view
+ * whose code file can't be loaded (lib/module-load: a rebuild removed it, and the browser keeps a
+ * failed load for the page's life) says Sova was updated instead, with Reload Page, and asks the
+ * host again so the stale-tab banner rises. The boundary adds nothing to the page while the view
+ * draws.
  *
  * A piece of the running turn (`input`, matched by a kind's live form: `hit.live`) is drawn the same
  * way, by its kind's live view (components/LiveKinds.tsx). A host draws a live piece or a settled
@@ -73,7 +77,7 @@ export function TranscriptKindRow(props: { hit: KindHit; item?: KindViewProps["i
       ));
     });
   };
-  return <ErrorBoundary fallback={(err, reset) => <CardErrorBox why={whyOf(err)} reload={reset} />}>{/* a memo is drawn as a reactive child */ draw() as unknown as JSX.Element}</ErrorBoundary>;
+  return <ErrorBoundary fallback={(err, reset) => <CardFailure error={err} reload={reset} />}>{/* a memo is drawn as a reactive child */ draw() as unknown as JSX.Element}</ErrorBoundary>;
 }
 
 /** Why a card couldn't be drawn, in a sentence's words (an Error's message, else the thrown value). */
@@ -81,6 +85,31 @@ export const whyOf = (err: unknown): string => {
   const why = err instanceof Error ? err.message : typeof err === "string" ? err : "it failed while drawing";
   return why.trim().replace(/\.$/, "") || "it failed while drawing";
 };
+
+/** A card's failure: its code file couldn't be loaded (Sova was updated: Reload Page), or anything else (Reload, that card). */
+export function CardFailure(props: { error: unknown; reload: () => void }) {
+  if (!isModuleLoadError(untrack(() => props.error))) return <CardErrorBox why={whyOf(props.error)} reload={props.reload} />;
+  // The host is asked now, not at its next check: the tab learns at once that it is the older build.
+  recheckHost();
+  return <NewerSovaBox />;
+}
+
+/** A card whose code file this page's build can't load: only the newer page draws it. */
+export function NewerSovaBox() {
+  return (
+    <div class="banner banner-error card-error" role="status">
+      <Icon name="alert-circle" class="banner-icon" />
+      <div class="banner-main">
+        <p class="banner-title">This card needs the newer Sova. Reload the page to draw it.</p>
+      </div>
+      <div class="banner-action">
+        <button type="button" class="button button-sm" onClick={() => location.reload()}>
+          Reload Page
+        </button>
+      </div>
+    </div>
+  );
+}
 
 /** A card's error box: what went wrong, in the error colour, and Reload (§chat.transcript-cards/toolkit). */
 export function CardErrorBox(props: { why: string; reload: () => void; /** What couldn't be drawn: a card (the default) or a drawing. */ noun?: "card" | "drawing" }) {
@@ -99,7 +128,7 @@ export function CardErrorBox(props: { why: string; reload: () => void; /** What 
   );
 }
 
-/** A kind's view; a module view is loaded again each time it is made (a failed load is tried again on Reload, never cached). */
+/** A kind's view; a module view is loaded again each time it is made (a Reload after a view threw). */
 function viewComponent(view: KindView | undefined): Component<KindViewProps> | undefined {
   if (!view) return undefined;
   if ("page" in view) return PAGE_VIEWS[view.page] as Component<KindViewProps>;

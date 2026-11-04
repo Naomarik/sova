@@ -1,7 +1,7 @@
 // Run: npx tsx --test src/lib/markdown-viewer.test.ts (or npm test)
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { closeMarkdown, markdownViewer, openMarkdown } from "./markdown-viewer";
+import { closeMarkdown, COLOUR_MAX, fileShape, markdownViewer, openMarkdown } from "./markdown-viewer";
 
 const withFocus = (el: unknown, fn: () => void) => {
   const g = globalThis as { document?: unknown };
@@ -66,4 +66,43 @@ test("after a close, the next open takes the element focused then", () => {
 test("without a document (server-side), the opener is null", () => {
   openMarkdown({ title: "t", markdown: "m" });
   assert.equal(markdownViewer()!.opener, null);
+});
+
+test("a file is shown by its name and contents", () => {
+  assert.deepEqual(fileShape("guide.md", "---\na: 1\n---\n# Top"), { kind: "markdown", body: "# Top" });
+  assert.deepEqual(fileShape("x:y", "# Top", "markdown"), { kind: "markdown", body: "# Top" });
+  assert.deepEqual(fileShape("run.mjs", "let a = 1"), { kind: "code", body: "let a = 1", lang: "javascript" });
+  assert.deepEqual(fileShape("a.json", '{"a":1}'), { kind: "code", body: '{\n  "a": 1\n}', lang: "json" });
+  assert.deepEqual(fileShape("tool:read", "[1]", "json"), { kind: "code", body: "[\n  1\n]", lang: "json" });
+  assert.deepEqual(fileShape("a.json", "{nope"), { kind: "text" }, "invalid JSON stays as it is");
+  assert.deepEqual(fileShape("notes.txt", "hi"), { kind: "text" });
+  assert.deepEqual(fileShape("LICENSE", "hi"), { kind: "text" });
+});
+
+test("over the ceiling a file is plain text, whatever its type; at it, still coloured", () => {
+  const at = "x".repeat(COLOUR_MAX);
+  assert.equal(fileShape("a.ts", at).kind, "code");
+  for (const name of ["a.ts", "a.md", "a.json"]) assert.deepEqual(fileShape(name, `${at}x`), { kind: "text" }, name);
+});
+
+test("what can't be shown says so, and a source's word wins", () => {
+  const binary = "Not a text file, so it isn't shown.";
+  assert.deepEqual(fileShape("a.md", "a\u0000b"), { kind: "note", note: binary });
+  assert.deepEqual(fileShape("a.md", "", undefined, "binary"), { kind: "note", note: binary });
+  assert.deepEqual(fileShape("a.md", "", undefined, "too-large"), { kind: "note", note: "Too large to show here." });
+});
+
+test("a file doc keeps the exact text and hides front matter only from Rendered; the opener it names wins over focus", () => {
+  const opener = { id: "row" } as unknown as HTMLElement;
+  const text = "---\na: 1\n---\n# Top";
+  withFocus({ id: "other" }, () => openMarkdown({ title: "a", markdown: text, name: "a.md", opener }));
+  const s = markdownViewer()!;
+  assert.equal(s.markdown, text);
+  assert.deepEqual(s.shape, { kind: "markdown", body: "# Top" });
+  assert.equal(s.opener, opener);
+});
+
+test("a doc with no name is markdown, as written, front matter and all", () => {
+  openMarkdown({ title: "a", markdown: "---\na: 1\n---\nx" });
+  assert.deepEqual(markdownViewer()!.shape, { kind: "markdown", body: "---\na: 1\n---\nx" });
 });

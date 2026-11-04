@@ -6,7 +6,8 @@
 //
 // The raw API (parseLines, activeBranch, readActiveBranch, rawOf) is counted by the boundary's reader
 // ratchet wherever it is imported (server/harness/boundary-scan.ts RAW_SOURCES).
-import { open, readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { type FileHandle, open, readFile, stat } from "node:fs/promises";
 import type { AgentSession, ExtensionContext, SessionManager } from "@earendil-works/pi-coding-agent";
 import type { EntryId, HBlock, HEntry, HHeader, HUsage, SessionRead } from "../../../shared/harness";
 import { stripImageNotes } from "../../../shared/image-note";
@@ -217,6 +218,7 @@ export function toHEntry(raw: unknown): HEntry | null {
       put(h, "tokensBefore", e.tokensBefore);
       put(h, "summary", e.summary);
       put(h, "details", e.details);
+      put(h, "firstKeptEntryId", e.firstKeptEntryId);
       break;
     case "branch_summary":
       h.kind = "summary";
@@ -564,10 +566,12 @@ export function lineHeader(line: string | Buffer): HHeader | null {
 
 const CHUNK = 64 * 1024;
 
-/** Reads [from, size) of a file and hands each complete, non-blank line to `onLine`; returns where the
-    last complete line ends (a torn last line is left for the next read, which starts at its first byte). */
-export async function appendLines(path: string, from: number, size: number, onLine: (line: string) => void): Promise<number> {
-  const fh = await open(path, "r");
+/** Reads [from, size) of a file (a path, or a handle the caller keeps open) and hands each complete,
+    non-blank line to `onLine`; returns where the last complete line ends (a torn last line is left for the
+    next read, which starts at its first byte). `onBytes` sees every byte up to that point in order, blank
+    lines included, in pieces valid only during the call. */
+export async function appendLines(file: string | FileHandle, from: number, size: number, onLine: (line: string) => void, onBytes?: (bytes: Buffer) => void): Promise<number> {
+  const fh = typeof file === "string" ? await open(file, "r") : file;
   try {
     const buf = Buffer.alloc(CHUNK);
     let pos = from;
@@ -585,11 +589,12 @@ export async function appendLines(path: string, from: number, size: number, onLi
         start = nl + 1;
       }
       consumed += start;
+      if (start > 0) onBytes?.(data.subarray(0, start));
       carry = Buffer.from(data.subarray(start));
     }
     return consumed;
   } finally {
-    await fh.close();
+    if (fh !== file) await fh.close();
   }
 }
 
@@ -642,6 +647,164 @@ export class BranchScan<T extends ScanItem> {
   leafId(): string | null {
     const b = this.branch();
     return b.length ? (b[b.length - 1]!.id ?? null) : null;
+  }
+}
+
+/** How much of a kept prefix's start and end PiFileFold compares. */
+const CHECK_BYTES = 4096;
+const checksum = (bytes: Buffer): string => createHash("sha1").update(bytes).digest("base64");
+
+/** What one PiFileFold.read saw: `branch` and `all` hold what `digest` kept, in order. */
+export interface PiFoldView<K> {
+  /** The stat the read was made against: the bytes folded are exactly this file's first `size` bytes. */
+  stat: { dev: number; ino: number; size: number; mtimeMs: number };
+  /** The first header in the file, null when it has none. */
+  header: HHeader | null;
+  /** The kept entries on the active branch, root first. */
+  branch: K[];
+  /** The kept entries, on the branch or not, in file order. */
+  all: K[];
+  /** Every id on the active branch, kept or not (null for an entry without one): what parsePiBranch's
+      branch would list. An entry off the branch can share an id with one on it. */
+  branchIds: Set<string | null>;
+}
+
+interface FoldItem<K> {
+  id: string | null;
+  parentId: string | null;
+  kept: K | null;
+}
+
+/**
+ * A session file as parsePiBranch reads it, folded incrementally. Each entry is turned once into a compact
+ * item: its place in the tree plus whatever `digest` keeps of its HEntry, so a read after an append parses
+ * only the new lines, and the branch is then picked afresh over every item (activeBranch's own rule), which
+ * is what makes a branch switch, a duplicate id or an id-less entry come out as a full read does.
+ *
+ * Every read checks that the file still starts with what was folded, on one handle: same device and inode,
+ * no shorter than the folded prefix, and the same checksum of the prefix's first bytes (at most CHECK_BYTES,
+ * fixed at the first read) and last CHECK_BYTES. Anything else starts over from byte 0. Sums are kept, never
+ * the bytes. What this can't see: an in-place write of the same inode, no shorter, that changes only bytes
+ * between the two windows.
+ *
+ * Only newline-ended lines are folded for good. An unterminated last line counts for this read alone, as a
+ * full read counts it when it parses, and is read again from its first byte next time. One read at a time per
+ * instance: the caller serializes them. A read that throws leaves the fold empty.
+ */
+export class PiFileFold<K> {
+  /** A rough measure of what this holds: a small cost per item, plus the line of each kept one. */
+  weight = 0;
+  private items: FoldItem<K>[] = [];
+  private header: HHeader | null = null;
+  private offset = 0;
+  private dev = 0;
+  private ino = 0;
+  private head = { length: 0, sum: "" };
+  private tail = { length: 0, sum: "" };
+
+  constructor(private readonly digest: (h: HEntry) => K | null) {}
+
+  async read(path: string): Promise<PiFoldView<K>> {
+    try {
+      const fh = await open(path, "r");
+      try {
+        return await this.readOn(fh);
+      } finally {
+        await fh.close();
+      }
+    } catch (e) {
+      this.reset();
+      throw e;
+    }
+  }
+
+  private reset(): void {
+    this.items = [];
+    this.header = null;
+    this.weight = this.offset = 0;
+    this.head = { length: 0, sum: "" };
+    this.tail = { length: 0, sum: "" };
+  }
+
+  private async slice(fh: FileHandle, at: number, length: number): Promise<Buffer> {
+    const b = Buffer.alloc(length);
+    let got = 0;
+    while (got < length) {
+      const { bytesRead } = await fh.read(b, got, length - got, at + got);
+      if (bytesRead <= 0) break;
+      got += bytesRead;
+    }
+    return b.subarray(0, got);
+  }
+
+  /** The folded prefix's last bytes when the file still holds that prefix, else null. */
+  private async keptTail(fh: FileHandle, st: PiFoldView<K>["stat"]): Promise<Buffer | null> {
+    if (st.dev !== this.dev || st.ino !== this.ino || st.size < this.offset) return null;
+    if (checksum(await this.slice(fh, 0, this.head.length)) !== this.head.sum) return null;
+    const recent = await this.slice(fh, this.offset - this.tail.length, this.tail.length);
+    return checksum(recent) === this.tail.sum ? recent : null;
+  }
+
+  private async readOn(fh: FileHandle): Promise<PiFoldView<K>> {
+    const { dev, ino, size, mtimeMs } = await fh.stat();
+    const st = { dev, ino, size, mtimeMs };
+    let recent = this.offset > 0 ? await this.keptTail(fh, st) : null;
+    if (!recent) {
+      this.reset();
+      recent = Buffer.alloc(0);
+    }
+    this.dev = dev;
+    this.ino = ino;
+    const from = this.offset;
+    let last = recent;
+    this.offset = await appendLines(
+      fh,
+      from,
+      size,
+      (line) => {
+        for (const raw of parseLines(line)) {
+          if (raw.type === "session") this.header ??= headerOf(raw);
+          else this.add(raw, line.length);
+        }
+      },
+      (bytes) => {
+        if (this.head.length === 0) {
+          const length = Math.min(bytes.length, CHECK_BYTES);
+          this.head = { length, sum: checksum(bytes.subarray(0, length)) };
+        }
+        // A copy: `bytes` is the reader's buffer, and both windows must be the bytes the lines came from.
+        last = bytes.length >= CHECK_BYTES ? Buffer.from(bytes.subarray(bytes.length - CHECK_BYTES)) : Buffer.concat([last, bytes]).subarray(-CHECK_BYTES);
+      },
+    );
+    if (this.offset > from) this.tail = { length: last.length, sum: checksum(last) };
+    return this.viewOf(st, this.offset < size ? parseLines((await this.slice(fh, this.offset, size - this.offset)).toString("utf8")) : []);
+  }
+
+  private itemOf(raw: Entry): FoldItem<K> {
+    const h = toHEntry(raw)!;
+    return { id: h.id, parentId: h.parentId, kept: this.digest(h) };
+  }
+
+  private add(raw: Entry, bytes: number): void {
+    const item = this.itemOf(raw);
+    this.items.push(item);
+    this.weight += 120 + (item.kept === null ? 0 : bytes);
+  }
+
+  private viewOf(stat: PiFoldView<K>["stat"], torn: Entry[]): PiFoldView<K> {
+    let header = this.header;
+    let items = this.items;
+    for (const raw of torn) {
+      if (raw.type === "session") header ??= headerOf(raw);
+      else items = [...items, this.itemOf(raw)];
+    }
+    const onBranch = activeBranch(items) as FoldItem<K>[];
+    const keptOf = (list: FoldItem<K>[]): K[] => {
+      const out: K[] = [];
+      for (const i of list) if (i.kept !== null) out.push(i.kept);
+      return out;
+    };
+    return { stat, header, branch: keptOf(onBranch), all: keptOf(items), branchIds: new Set(onBranch.map((i) => i.id)) };
   }
 }
 

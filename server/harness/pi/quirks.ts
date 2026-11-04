@@ -329,20 +329,6 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi restores a recorded model on any branch",
   },
   {
-    id: "P21",
-    name: "codemode-definition",
-    kind: "semantic",
-    relies:
-      "createCodemodeExtension's factory registers exactly one tool, `codemode`, inactive, through the API it is handed (so Sova catches the definition and registers it itself); a script's models.classify / generateImages reach the tool context's modelRegistry; and its nested calls emit tool_execution_* with parentToolCallId and ids <parent>/<n>, writing no transcript entries.",
-    pi: ["createCodemodeExtension", "ExtensionAPI.registerTool", "ExtensionContext.modelRegistry", "ExtensionToolContext.executeTool"],
-    where: [
-      { file: "server/harness/pi/codemode.ts", symbol: "captureCodemode" },
-      { file: "server/harness/pi/codemode.ts", symbol: "scriptRegistry" },
-    ],
-    canary: "P21 codemode-definition: the factory registers one inactive codemode tool, its models.* reach ctx.modelRegistry, nested calls carry parentToolCallId",
-    retireWhen: "pi exports the codemode tool definition and a model hook for scripts",
-  },
-  {
     id: "P22",
     name: "declared-tools",
     kind: "private-read",

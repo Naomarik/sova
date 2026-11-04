@@ -105,7 +105,10 @@ test("the shared rules define <agent dir>, so an entry that uses it can't be rea
 });
 
 test("Land starts with a worktree, in the words every turn carries, and every lookup says to find out where the chat is first", () => {
-	assert.ok(/never change on the main branch[^\n]*`worktree` tool/.test(CREATE_INSTRUCTIONS));
+	assert.ok(/starts with the `worktree` tool/.test(CREATE_INSTRUCTIONS));
+	assert.ok(/never commit to the main branch and you never merge, in any kind of folder/.test(CREATE_INSTRUCTIONS));
+	assert.ok(/With no queue there's no Land, so never mention it/.test(CREATE_INSTRUCTIONS));
+	assert.ok(/call `sova_settings` get and tell the person which kind of folder this is/.test(CREATE_INSTRUCTIONS));
 	const shared = stripOwnerNotes(CREATE_FILES.shared!);
 	for (const words of ["`sova_settings` get", "A project with a merge queue", "A project with no merge queue", "offer Initialize", "A folder that isn't a project", "offer Add as Project", "A folder that isn't in Git", "made by hand"]) assert.ok(shared.includes(words), words);
 });

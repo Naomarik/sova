@@ -1,6 +1,6 @@
 # landing: what must pass before a branch reaches your project, and how it lands
 
-A project's branches go through its merge queue once the project is on Sova's Projects list and its checks are set up. Until then the project has no Land: its chats merge a branch into the main branch themselves when the person says so. In a folder that isn't a project, offer Add as Project first (the `project` topic). In a project with no queue, offer Initialize. In a folder that isn't in Git there's no landing at all.
+A project's branches go through its merge queue once the project is on Sova's Projects list and its checks are set up. Until then the project has no Land, so don't promise it: a worker's branch is the person's own to merge, and you never merge it. In a folder that isn't a project, offer Add as Project first (the `project` topic). In a project with no queue, offer Initialize. In a folder that isn't in Git there's no landing at all.
 
 Landing a branch is always the person's: Land beside the composer, on the project page's Merge Queue tab, or "land it" typed in the branch's own chat. You never land one, and you never send anyone those words. The queue reads the target branch's copy of `.sova/project.json`, never the branch's, so a branch that changes its checks is tested by the old ones, and its own take effect once it lands.
 

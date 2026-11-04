@@ -1376,3 +1376,124 @@ test("a finished branch that can't be queued to land: Sova names what blocks it 
     servedReset();
   }
 });
+
+test("a grown session file: only the lines appended are scanned, and what they say counts", async () => {
+  const lines = chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z"), user("hello", "2026-09-29T15:37:00.000Z"), assistant([{ type: "text", text: "Shall I merge?" }], "stop", "2026-09-29T15:38:00.000Z")]);
+  const path = sessionFile(lines);
+  const fs = await import("node:fs");
+  const first = await r.readReadinessScan(path, fs.statSync(path).size, null);
+  assert.ok(first.facts?.lastReply);
+  const more = chain([user("no", "2026-09-29T15:39:00.000Z")]);
+  (more[0] as { parentId: string | null }).parentId = (lines.at(-1) as { id: string }).id;
+  writeFileSync(path, `${JSON.stringify(more[0])}\n`, { flag: "a" });
+  const scanned = r.readinessScanWork.lines;
+  const again = await r.readReadinessScan(path, fs.statSync(path).size, first.scan);
+  assert.equal(r.readinessScanWork.lines - scanned, 1, "the one new line");
+  assert.equal(again.facts?.lastReply, undefined, "and it is read");
+  // Growing again carries on from the digest this read kept.
+  const third = chain([assistant([{ type: "text", text: "Done." }], "stop", "2026-09-29T15:40:00.000Z")]);
+  (third[0] as { parentId: string | null }).parentId = (more[0] as { id: string }).id;
+  writeFileSync(path, `${JSON.stringify(third[0])}\n`, { flag: "a" });
+  const before = r.readinessScanWork.lines;
+  const last = await r.readReadinessScan(path, fs.statSync(path).size, again.scan);
+  assert.equal(r.readinessScanWork.lines - before, 1);
+  assert.equal(last.facts?.lastReply?.text, "Done.");
+});
+
+test("a rewrite in place that grows, line starts where they were: nothing old is carried", async () => {
+  const lines = chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z"), user("hello", "2026-09-29T15:37:00.000Z")]);
+  const path = sessionFile(lines);
+  const fs = await import("node:fs");
+  const first = await r.readReadinessScan(path, fs.statSync(path).size, null);
+  assert.equal(first.facts?.trees[0]?.branch, "feat/agents-row-dropdown");
+  const old = fs.readFileSync(path, "utf8");
+  const ino = fs.statSync(path).ino;
+  // Same length, so every line still starts where it did; a line follows, so the size grew.
+  const fh = fs.openSync(path, "r+");
+  fs.writeSync(fh, old.replace("feat/agents-row-dropdown", "feat/agents-row-otherwis"), 0);
+  fs.writeSync(fh, `${JSON.stringify({ ...user("more", "2026-09-29T15:38:00.000Z"), id: "e-late", parentId: (lines.at(-1) as { id: string }).id })}\n`, Buffer.byteLength(old));
+  fs.closeSync(fh);
+  assert.equal(fs.statSync(path).ino, ino);
+  const before = r.readinessScanWork.lines;
+  const again = await r.readReadinessScan(path, fs.statSync(path).size, first.scan);
+  assert.equal(again.facts?.trees[0]?.branch, "feat/agents-row-otherwis");
+  assert.ok(r.readinessScanWork.lines - before > 1, "from the start");
+});
+
+test("the listing's refresh carries a growing file on, and a replacement (a new inode) never does", async () => {
+  servedReset();
+  const lines = chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z"), user("hello", "2026-09-29T15:37:00.000Z")]);
+  const path = sessionFile(lines);
+  const fs = await import("node:fs");
+  r.configureReadiness({ insights: { treeStatus: async () => readyStatus() }, asksUser: () => undefined });
+  try {
+    r.readinessOverlay(summary(path));
+    await r.readinessIdle();
+    const more = chain([user("again", "2026-09-29T15:38:00.000Z")]);
+    (more[0] as { parentId: string | null }).parentId = (lines.at(-1) as { id: string }).id;
+    writeFileSync(path, `${JSON.stringify(more[0])}\n`, { flag: "a" });
+    let before = r.readinessScanWork.lines;
+    r.readinessOverlay(summary(path));
+    await r.readinessIdle();
+    assert.equal(r.readinessScanWork.lines - before, 1, "the appended line alone");
+    const tmp = `${path}.new`;
+    fs.writeFileSync(tmp, fs.readFileSync(path));
+    fs.renameSync(tmp, path);
+    before = r.readinessScanWork.lines;
+    r.readinessOverlay(summary(path));
+    await r.readinessIdle();
+    assert.ok(r.readinessScanWork.lines - before > 1, "a new file is read whole");
+  } finally { await r.readinessIdle(); servedReset(); }
+});
+
+test("served: one question per repository at a time and per 2 s; a new answer is seen after that; a failure isn't kept", async () => {
+  let now = 1000, asked = 0, answer = true, fail = false;
+  let release = () => {};
+  let gate: Promise<void> = Promise.resolve();
+  const served = r.servedReader(async (dir) => (dir.startsWith("/none") ? null : dir.split("/")[1]!), async () => {
+    asked++;
+    await gate;
+    if (fail) throw new Error("no");
+    return answer;
+  }, () => now);
+  gate = new Promise((go) => { release = go; });
+  const both = Promise.all([served("/repo/a"), served("/repo/b"), served("/repo/c")]);
+  await new Promise<void>((done) => queueMicrotask(done));
+  release();
+  assert.deepEqual(await both, [true, true, true]);
+  assert.equal(asked, 1, "three trees of one repository, one question");
+  await served("/other/a");
+  assert.equal(asked, 2, "another repository asks for itself");
+  assert.equal(await served("/none/x"), false);
+  assert.equal(asked, 2, "no repository: nothing to ask");
+  answer = false;
+  now += r.SERVED_TTL_MS - 1;
+  assert.equal(await served("/repo/a"), true, "within the bound");
+  now += 1;
+  assert.equal(await served("/repo/a"), false, "past it");
+  fail = true;
+  now += r.SERVED_TTL_MS;
+  await assert.rejects(served("/repo/a"));
+  fail = false;
+  assert.equal(await served("/repo/a"), false, "the failure was not kept");
+});
+
+test("one listing's rows share their stats, the next doesn't inherit them", async () => {
+  servedReset();
+  const paths = [sessionFile(chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z")])), sessionFile(chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z")]))];
+  const seen: (Map<string, unknown> | undefined)[] = [];
+  r.configureReadiness({ insights: { treeStatus: async () => readyStatus() }, asksUser: () => undefined, treeStamp: (_dir, together) => { seen.push(together); return "stamp"; } });
+  try {
+    const rows = paths.map((p) => summary(p));
+    for (const row of rows) r.readinessOverlay(row);
+    await r.readinessIdle();
+    seen.length = 0;
+    for (const row of rows) r.readinessOverlay(row);
+    assert.equal(seen.length, 2);
+    assert.ok(seen[0] && seen[0] === seen[1], "one listing, one map");
+    await Promise.resolve();
+    await Promise.resolve();
+    r.readinessOverlay(rows[0]!);
+    assert.notEqual(seen[2], seen[0], "the next listing starts fresh");
+  } finally { await r.readinessIdle(); servedReset(); }
+});

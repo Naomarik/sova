@@ -1118,6 +1118,16 @@ would list master's changes instead.
     bookkeeping calls ~1,970/14 days, landings without docs 20–25%; after: filled in 14 days after landing.
   - Upgrade: see UPGRADING step 17.
 
+### 2026-11-04
+
+**`draftOfficial` takes an optional `io`: a host judging many drafts shares the work** (branch `feat/readiness-perf`, not on master yet).
+
+Changed: `draftOfficial(specDir, draftDir, draftsDir, io)` takes `read`, `hash`, `cut`, `json` and `seen`, each answering as the default does for the same bytes; no `io` reads directly, as before, and the rule itself is unchanged. `seen` names every file and folder the answer rests on, which is more than `read`: a draft's files it didn't change. The server's readiness (`server/spec-drafts-state.ts`) uses them: one read per file per pass, one cut per file name and content, one hash per file while its stat stands.
+
+§: none.
+
+Numbers: on a copy of 70 real worktrees with drafts, the same 70 answers; every draft judged cold 4.3 s to 1.25 s; the costliest folder (46 drafts) cold 2.8 s to 0.35 s, and after one `draft.json` changes 1.5 s to 0.17 s. Not from a scorecard: `~/.cache` scratch benches, deleted.
+
 ## Integration → master
 
 The integration merges after 96ab3014 and the master commits that re-applied them. The integration

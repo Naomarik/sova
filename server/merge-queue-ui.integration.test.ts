@@ -354,14 +354,14 @@ async function until(what: string, ok: () => boolean | Promise<boolean>, ms = 10
 const words = async (l: { textContent(): Promise<string | null> }) => (await l.textContent()) ?? "";
 const called = (o: Opened, verb: string) => until(`a ${verb} call`, () => o.calls.some((c) => c.verb === verb));
 const lastCall = (o: Opened, verb: string) => [...o.calls].reverse().find((c) => c.verb === verb)!;
-/** Land… asks first: it opens the row's confirm (its actions step aside) with focus on the confirm's action, and only
+/** Land asks first: it opens the row's confirm (its actions step aside) with focus on the confirm's action, and only
     that action lands. `confirm` is the action's words: "Land 3 Commits" from the row's count. */
 async function confirmLand(o: Opened, scope: Locator, branch: string, confirm: string | RegExp = /^Land (\d+ Commits?|Branch)$/) {
   const before = o.calls.filter((c) => c.verb === "merge.add").length;
-  await scope.getByRole("button", { name: `Land ${branch}…`, exact: true }).click();
+  await scope.getByRole("button", { name: `Land ${branch}`, exact: true }).click();
   const ask = scope.getByRole("group", { name: `Land ${branch}`, exact: true });
   await ask.waitFor();
-  assert.equal(o.calls.filter((c) => c.verb === "merge.add").length, before, "Land… alone lands nothing");
+  assert.equal(o.calls.filter((c) => c.verb === "merge.add").length, before, "Land alone lands nothing");
   const go = ask.getByRole("button", { name: confirm });
   await until("focus on the confirm's action", () => go.evaluate((el) => el === document.activeElement));
   await go.click();
@@ -551,11 +551,12 @@ for (const width of [1280, 390]) {
 
       // The branch moves after the page read it: Land still pins the commit the row showed.
       o.move((rows) => rows.map((r) => ({ ...r, mergeStats: { ahead: 4, added: 41, removed: 2, head: sha("e") } as SessionWorktreeInfo["mergeStats"] })));
-      // Land… asks first: the row's actions give way to the confirm, Not Yet and Escape each put them back with
-      // focus on Land…, and Escape never closes the modal; only the confirm's own action lands.
+      // Land asks first: the row's actions give way to the confirm, Not Yet and Escape each put them back with
+      // focus on Land, and Escape never closes the modal; only the confirm's own action lands.
       const draftsRow = modal.locator('[data-branch="feat/composer-drafts"]');
-      const landAsk = draftsRow.getByRole("button", { name: "Land feat/composer-drafts…", exact: true });
-      assert.equal(await words(landAsk), "Land…");
+      const landAsk = draftsRow.getByRole("button", { name: "Land feat/composer-drafts", exact: true });
+      assert.equal((await words(landAsk)).trim(), "Land", "no ellipsis");
+      await shot(page, `${width}-modal-land-idle`);
       await landAsk.click();
       const ask = draftsRow.getByRole("group", { name: "Land feat/composer-drafts", exact: true });
       await ask.waitFor();
@@ -567,13 +568,13 @@ for (const width of [1280, 390]) {
       await shot(page, `${width}-modal-land-confirm`);
       await ask.getByRole("button", { name: "Not Yet" }).click();
       await until("the confirm closed", async () => (await ask.count()) === 0);
-      await until("focus back on Land…", () => landAsk.evaluate((el) => el === document.activeElement));
+      await until("focus back on Land", () => landAsk.evaluate((el) => el === document.activeElement));
       await landAsk.click();
       await ask.waitFor();
       await page.keyboard.press("Escape");
       await until("Escape closed the confirm", async () => (await ask.count()) === 0);
       assert.equal(await page.getByRole("dialog", { name: "Worktrees" }).count(), 1, "Escape on the confirm leaves the modal open");
-      await until("focus back on Land… after Escape", () => landAsk.evaluate((el) => el === document.activeElement));
+      await until("focus back on Land after Escape", () => landAsk.evaluate((el) => el === document.activeElement));
       assert.equal(o.calls.filter((c) => c.verb === "merge.add").length, 0, "nothing landed yet");
       await confirmLand(o, modal, "feat/composer-drafts", "Land 3 Commits");
       await called(o, "merge.add");
@@ -611,10 +612,10 @@ for (const width of [1280, 390]) {
       await until("a send-back", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "send-back" && c.body.entry === "me_r"));
 
       // An uncommitted row has no Land.
-      assert.equal(await modal.getByRole("button", { name: "Land feat/draft-sync-tabs…", exact: true }).count(), 0);
+      assert.equal(await modal.getByRole("button", { name: "Land feat/draft-sync-tabs", exact: true }).count(), 0);
       assert.equal(await modal.locator('[data-branch="fix/draft-autosave-race"] a', { hasText: "See Why" }).getAttribute("href"), `#/projects/${PID}/merge-queue/mr_fail`);
       // Sent back: no Land and no Land menu while its chat fixes it (al_4).
-      assert.equal(await modal.getByRole("button", { name: "Land fix/draft-autosave-race…", exact: true }).count(), 0);
+      assert.equal(await modal.getByRole("button", { name: "Land fix/draft-autosave-race", exact: true }).count(), 0);
       assert.equal(await modal.getByRole("button", { name: "More ways to land fix/draft-autosave-race" }).count(), 0);
       await noRestartOrLive(page, ".wt-queue-modal");
       await noSideScroll(page);
@@ -632,7 +633,7 @@ for (const width of [1280, 390]) {
       await modal.waitFor();
       assert.match(await words(modal), /The queue is paused: the project folder has uncommitted edits\./);
       assert.equal(await modal.getByRole("link", { name: "Set Up Queue" }).getAttribute("href"), `#/projects/${PID}/merge-queue`);
-      assert.equal(await modal.getByRole("button", { name: "Land feat/other…", exact: true }).count(), 0);
+      assert.equal(await modal.getByRole("button", { name: "Land feat/other", exact: true }).count(), 0);
       // Listed, not set up: it merges plainly (al_1 a5).
       assert.match(await words(modal.locator('[data-branch="feat/other"]')), /Ready to merge.*Say “land it” in the chat to merge it into main[.]/);
       await noRestartOrLive(o.page, ".wt-queue-modal");
@@ -677,7 +678,7 @@ for (const width of [1280, 390]) {
       for (const word of ["Ready", "Queued · 2nd", "Uncommitted", "Needs a fix", "Behaviour differs", "Review flagged", "Landed"]) assert.match(text, new RegExp(word), word);
       assert.match(text, /2 ready · 1 queued · 1 behaviour differs · 1 review flagged · 1 needs a fix · 1 uncommitted · 1 landed/);
       assert.match(await words(section.locator('[data-branch="feat/composer-drafts"]')), /3 commits · \+40 −2/);
-      assert.equal(await section.getByRole("button", { name: "Land fix/draft-autosave-race…", exact: true }).count(), 0, "sent back: no Land (al_4)");
+      assert.equal(await section.getByRole("button", { name: "Land fix/draft-autosave-race", exact: true }).count(), 0, "sent back: no Land (al_4)");
       assert.equal(await section.getByRole("button", { name: "More ways to land fix/draft-autosave-race" }).count(), 0, "sent back: no Land menu (al_4)");
       await section.getByRole("button", { name: "Cancel landing fix/paste-images" }).click();
       await called(o, "merge.cancel");
@@ -1209,8 +1210,8 @@ for (const width of [1280, 390]) {
       await page.keyboard.press("Escape");
       await until("the viewer closed", async () => (await viewer.count()) === 0);
 
-      // Land…: its confirm, then queued, nothing opened; a tap on the confirm's words opens nothing either.
-      await ready.getByRole("button", { name: "Land feat/ready-one…", exact: true }).click();
+      // Land: its confirm, then queued, nothing opened; a tap on the confirm's words opens nothing either.
+      await ready.getByRole("button", { name: "Land feat/ready-one", exact: true }).click();
       const readyAsk = ready.getByRole("group", { name: "Land feat/ready-one", exact: true });
       await readyAsk.locator(".wt-queue-confirm-line").click();
       assert.equal(await hashOf(page), start, "a tap on the confirm doesn't open the chat");
@@ -1222,11 +1223,16 @@ for (const width of [1280, 390]) {
       // A phone: no sideways scroll; the actions on their own line, Review Changes left of Land, both 44px tall.
       await noSideScroll(page);
       const r = await box(review);
-      const land = await box(ready.getByRole("button", { name: "Land feat/ready-one…", exact: true }));
+      const land = await box(ready.getByRole("button", { name: "Land feat/ready-one", exact: true }));
       const chatLine = await box(ready.locator(".mq-summary"));
-      // Unfolded: the actions a column at the row's top right, Review Changes over Land…; folded, one line.
-      if (width >= 768) assert.ok(r.y < land.y && Math.abs(r.x - land.x) < 2, "Review Changes over Land…, one column");
-      else assert.ok(r.x < land.x, "Review Changes before Land");
+      // Unfolded: the actions a column at the row's top right, Review Changes over Land; folded, one line.
+      // Land and its ▾ keep their own size: never taller than Review Changes, never stretched to its width.
+      const split = await box(ready.locator(".wt-queue-split"));
+      assert.ok(land.height <= r.height + 0.5 && split.height <= r.height + 0.5, `Land no taller than Review Changes (${land.height}, ${split.height}, ${r.height})`);
+      if (width >= 768) {
+        assert.ok(r.y < land.y && Math.abs(r.x + r.width - (split.x + split.width)) < 2, "Review Changes over Land, one column, right edges together");
+        assert.ok(split.width < r.width - 8, `the split at its own width, not stretched (${split.width} vs ${r.width})`);
+      } else assert.ok(r.x < land.x, "Review Changes before Land");
       if (width < 600) {
         assert.ok(r.height >= 44 && land.height >= 44, `44px controls (${r.height}, ${land.height})`);
         assert.ok(r.y >= chatLine.y + chatLine.height - 1 && Math.abs(r.y - land.y) < 2, "the actions on their own line, together");
@@ -1258,7 +1264,7 @@ for (const width of [1280, 390]) {
       const review = row.getByRole("button", { name: "Review Changes on feat/composer-drafts" });
       if (width < 600) {
         const r = await box(review);
-        const land = await box(row.getByRole("button", { name: "Land feat/composer-drafts…", exact: true }));
+        const land = await box(row.getByRole("button", { name: "Land feat/composer-drafts", exact: true }));
         assert.ok(r.height >= 44 && land.height >= 44, "44px controls");
         assert.ok(r.x < land.x && Math.abs(r.y - land.y) < 2, "Review Changes left of Land on one line");
       }

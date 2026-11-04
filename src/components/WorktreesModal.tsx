@@ -34,13 +34,13 @@ export function QueueChip(props: { row: Pick<QueueRow, "label" | "tone" | "live"
   );
 }
 
-/** Land… and its ▾: Land… asks first (onAsk opens the row's confirm); the ▾ holds Land Without Review (only with a
+/** Land and its ▾: Land asks first (onAsk opens the row's confirm); the ▾ holds Land Without Review (only with a
     review kit), which lands at once, and Land Without Its Specs…, which asks first. */
 export function LandSplit(props: { branch: string; review: boolean; busy: boolean; onAsk(): void; onLand(o?: LandOptions): void; onWithoutSpecs(): void }) {
   return (
     <div class="button-split wt-queue-split">
-      <button type="button" class="button button-sm wt-queue-land" data-land="" aria-label={`Land ${props.branch}…`} disabled={props.busy} aria-busy={props.busy ? "true" : undefined} onClick={() => props.onAsk()}>
-        Land…
+      <button type="button" class="button button-sm wt-queue-land" data-land="" aria-label={`Land ${props.branch}`} disabled={props.busy} aria-busy={props.busy ? "true" : undefined} onClick={() => props.onAsk()}>
+        Land
       </button>
       <ActionMenu label={`More ways to land ${props.branch}`} title="More ways to land" icon="chevron-down" ghost={false} menuName={`Land ${props.branch}`} returnFocus>
         {(menu) => (
@@ -99,8 +99,8 @@ export function LandSpecsConfirm(props: { branch: string; busy: boolean; onConfi
   );
 }
 
-/** Which confirm a row has open: Land…'s or Land Without Its Specs…'s. Closing one by its cancel puts focus back on
-    what opened it (Land…, or the ▾ for the specs one). */
+/** Which confirm a row has open: Land's or Land Without Its Specs…'s. Closing one by its cancel puts focus back on
+    what opened it (Land, or the ▾ for the specs one). */
 export function createLandConfirm() {
   const [ask, setAsk] = createSignal<"land" | "specs" | null>(null);
   let row: HTMLElement | undefined;
@@ -185,7 +185,7 @@ export const queueHrefOf = (rows: QueueWorktree[]): string | null => {
 
 /**
  * One worktree in the queue's words, with its one action (§ the composer modal and the session pane
- * draw the same rows from the same state, so they always agree): Land… on a ready one, which asks first (its ▾
+ * draw the same rows from the same state, so they always agree): Land on a ready one, which asks first (its ▾
  * holds Land Without Review and Land Without Its Specs…), Cancel on a queued one, Accept or Land Anyway
  * beside Send Back where it waits for you, Set Up Queue where the project has none.
  */

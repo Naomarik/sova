@@ -1,4 +1,4 @@
-// Run: pnpm test -- src/lib/land-confirm.test.ts. Land… asks first, everywhere Land appears (the Worktrees modal, the
+// Run: pnpm test -- src/lib/land-confirm.test.ts. Land asks first, everywhere Land appears (the Worktrees modal, the
 // session pane's Worktrees rows and the Merge Queue tab's Ready rows all draw LandSplit and LandConfirms from
 // WorktreesModal.tsx): the button's words, the confirm's words from the row's own commit count, the order of its
 // buttons, the specs confirm drawn the same way, and the rows hiding their actions while a confirm is open. Focus and
@@ -42,17 +42,18 @@ test("the confirm's words: the row's commit count, what moves once the checks pa
   assert.doesNotMatch(landConfirmWords("feat/x", 2, "main", "push-branch").line, /main moves/);
 });
 
-test("Land… is the split's wide part and says it asks; its ▾ is a separate button", () => {
+test("Land reads Land (no ellipsis) and only asks; its ▾ is a separate button", () => {
   const h = html(() => solid.createComponent(LandSplit, { branch: "feat/x", review: true, busy: false, onAsk: noop, onLand: noop, onWithoutSpecs: noop }));
   const b = buttons(h);
-  assert.equal(nth(h, 0).text, "Land…");
+  assert.equal(nth(h, 0).text, "Land");
   assert.match(nth(h, 0).cls, /\bwt-queue-land\b/);
-  assert.match(h, /aria-label="Land feat\/x…"/);
+  assert.match(h, /aria-label="Land feat\/x"/);
+  assert.doesNotMatch(h, /Land…|feat\/x…/, "no ellipsis on Land");
   assert.match(h, /aria-haspopup="menu"/, "the ▾ is its own menu button");
-  assert.equal(b.filter((x) => x.text === "Land…").length, 1);
+  assert.equal(b.filter((x) => x.text === "Land").length, 1);
 });
 
-test("an open Land… confirm: bold question, the muted line, Not Yet (ghost) then the primary action rightmost", () => {
+test("an open Land confirm: bold question, the muted line, Not Yet (ghost) then the primary action rightmost", () => {
   const h = html(() => solid.createComponent(LandConfirms, { confirm: asking("land"), branch: "feat/x", ahead: 3, target: "master", busy: false, onLand: noop }));
   assert.match(h, /class="wt-queue-confirm"[^>]*role="group"[^>]*aria-label="Land feat\/x"/);
   assert.match(h, /<p class="wt-queue-confirm-title">Land feat\/x\?<\/p>/);
@@ -81,18 +82,18 @@ test("no confirm open draws nothing; the confirm state opens one kind at a time 
   c.open("land");
   assert.equal(c.ask(), "land");
   c.open("specs");
-  assert.equal(c.ask(), "specs", "the ▾'s confirm replaces Land…'s");
+  assert.equal(c.ask(), "specs", "the ▾'s confirm replaces Land's");
   c.close(true); // no row element: nothing to focus, and no throw
   assert.equal(c.ask(), null);
 });
 
-test("every row that draws Land… hides its actions while a confirm is open, and Land… only opens it", () => {
+test("every row that draws Land hides its actions while a confirm is open, and Land only opens it", () => {
   for (const file of ["WorktreesModal.tsx", "MergeQueueTab.tsx"]) {
     const src = readFileSync(new URL(`../components/${file}`, import.meta.url), "utf8");
     const uses = [...src.matchAll(/<LandSplit\b[\s\S]*?\/>/g)].map((m) => m[0]);
     assert.ok(uses.length >= 1, `${file} draws LandSplit`);
-    for (const u of uses) assert.match(u, /onAsk=\{\(\) => confirm\.open\("land"\)\}/, `${file}: Land… opens the confirm, never lands`);
-    assert.equal([...src.matchAll(/<LandConfirms\b/g)].length, uses.length, `${file}: one confirm per Land…`);
+    for (const u of uses) assert.match(u, /onAsk=\{\(\) => confirm\.open\("land"\)\}/, `${file}: Land opens the confirm, never lands`);
+    assert.equal([...src.matchAll(/<LandConfirms\b/g)].length, uses.length, `${file}: one confirm per Land`);
     assert.equal([...src.matchAll(/<Show when=\{!confirm\.ask\(\)\}>/g)].length, uses.length, `${file}: the actions step aside for it`);
   }
 });

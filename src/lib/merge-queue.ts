@@ -369,7 +369,7 @@ export function modalHead(rows: Pick<QueueRowInput, "mergeServed" | "mergeProjec
   };
 }
 
-/** What Land…'s confirm says: the branch, how many commits go to the queue (the row's own count, else none named) and
+/** What Land's confirm says: the branch, how many commits go to the queue (the row's own count, else none named) and
     what moves once the checks pass, by the way of landing when the caller knows it (else the target moves). */
 export function landConfirmWords(branch: string, ahead: number | undefined, target: string | undefined, how?: LandHow): { title: string; line: string; confirm: string } {
   const n = typeof ahead === "number" && ahead > 0 ? ahead : undefined;

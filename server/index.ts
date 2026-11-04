@@ -13,7 +13,7 @@ import { startBudgetRecount } from "./baton-recount";
 import { listProjects, openRegisteredProjects } from "./projects/spaces";
 import { startGitMaintenance } from "./git-maintenance";
 import { reconcileProjectServices } from "./project-services/routes";
-import { startMergeQueue, stopMergeQueue } from "./merge-queue/wire";
+import { checkQueueViews, startMergeQueue, stopMergeQueue } from "./merge-queue/wire";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
 import { finishImports, rollForwardCopies } from "./project-import";
@@ -252,7 +252,7 @@ configureSessionFeed({
   watch: (changed) => {
     feedChanged = changed;
     const tracked = trackSessionFiles();
-    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs], files: tracked.note });
+    const offWatch = watchFeedInputs(changed, { checks: [checkReadinessInputs, checkQueueViews], files: tracked.note });
     const offAttention = onAttentionNotified(changed);
     return () => {
       feedChanged = null;

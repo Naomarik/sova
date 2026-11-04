@@ -5,11 +5,11 @@ import { open } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HBlock } from "../shared/harness";
-import type { AttentionItem, AttentionKind, AttentionTier, BranchStatus, ReadinessState, SessionReadiness, SessionSummary, WorktreeReadiness } from "../shared/protocol";
+import type { AttentionItem, AttentionKind, AttentionTier, BranchStatus, ReadinessState, SessionBranchQueue, SessionBranchRow, SessionReadiness, SessionSummary, WorktreeReadiness } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { isLinkMessage } from "../shared/link-message";
 import { isTopicBatch } from "../shared/topic-message";
-import { canonical, normalizeMergeDetails, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
+import { canonical, normalizeMergeDetails, sharedWith, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { stateRoot } from "./state-root";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
@@ -18,7 +18,7 @@ import { blockedNoteText, type DocsPreview, docsNudgeText, type Finished, fileLa
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
 import { WORKTREES } from "./harness/state-kinds";
-import { DIRTY_TTL_MS, execGit, gitInputsStamp, type GitRunner, linkedCheckoutOf, worktreeInsights, type WorktreeInsights } from "./worktrees";
+import { DIRTY_TTL_MS, execGit, gitInputsStamp, gitRefsStamp, type GitRunner, linkedCheckoutOf, worktreeInsights, type WorktreeInsights } from "./worktrees";
 import { goneTreeState, type GoneState } from "./removed-worktrees";
 import { sessionsChanged } from "./list-generation";
 import { opTrack } from "./stall-recorder";
@@ -576,6 +576,20 @@ export interface ReadinessDeps {
       setup done). Ready to land, Landing specs, the specs nudge and the blocked note are only for those; every
       other repo merges plainly (§chat.worktrees/ready-to-land). Absent: every repo is served (tests). */
   served?: (dir: string) => Promise<boolean>;
+  /** Git's "already merged" answer for an active tree (worktrees-state.ts mergedInto, the Session tab's own). */
+  mergedInto?: (t: TrackedWorktree) => Promise<SessionBranchRow["mergedInto"] | undefined>;
+  /** The refs a tree's "already merged" answer rests on, as stat stamps (worktrees.ts gitRefsStamp); absent or null:
+      nothing pins it, git is asked each time. */
+  refsStamp?: (dir: string, refs: readonly string[]) => string | null;
+  /** A branch's queue fields as the Session tab reads them, cut for the list, with the root its entry joins by
+      (merge-queue/wire.ts branchQueueFields). Absent: none. */
+  branchFields?: (path: string, branch: string) => Promise<{ root?: string; fields: Pick<SessionBranchRow, "queue" | "mergeServed" | "mergeProject"> }>;
+  /** A branch's entry in its queue's newest view, read at listing time (wire.ts branchQueueNow): null when no view
+      of that queue is known yet. Absent: the background read's answer stands. */
+  queueNow?: (root: string, branch: string) => SessionBranchQueue | undefined | null;
+  /** A queue's project facts in its newest view, read at listing time (wire.ts branchProjectNow): null when no view
+      of that queue is known yet. Absent: the background read's answer stands. */
+  projectNow?: (root: string) => SessionBranchRow["mergeProject"] | null;
 }
 
 let wireMod: typeof import("./merge-queue/wire") | null = null;
@@ -592,6 +606,15 @@ function queueLandingsHere(sessionId: string): QueueLandingFacts[] {
     const at = Date.parse(c.landed.at) || 0;
     return [{ id: c.id, at, approvedAt: approved ? Date.parse(approved.at) || at : at, branch: c.branch, target: c.target, commits: c.stats?.commits ?? 0, added: c.stats?.added ?? 0, removed: c.stats?.removed ?? 0 }];
   });
+}
+
+/** wire.ts once loaded (queueLandingsHere starts the load): the listing's join never waits on an import. */
+function loadWire(): typeof import("./merge-queue/wire") | null {
+  if (!wireMod && !wireAsked) {
+    wireAsked = true;
+    void import("./merge-queue/wire").then((m) => (wireMod = m)).catch(() => {});
+  }
+  return wireMod;
 }
 
 const defaultDeps = (): ReadinessDeps => ({
@@ -622,6 +645,14 @@ const defaultDeps = (): ReadinessDeps => ({
     },
     async (root) => (await import("./merge-queue/served")).servedByQueue(root),
   ),
+  mergedInto: async (t) => (await import("./worktrees-state")).mergedInto(t, Date.now(), true),
+  refsStamp: gitRefsStamp,
+  branchFields: async (path, branch) => (await import("./merge-queue/wire")).branchQueueFields(path, branch),
+  queueNow: (root, branch) => {
+    const w = loadWire();
+    return w ? w.branchQueueNow(root, branch) : null;
+  },
+  projectNow: (root) => loadWire()?.branchProjectNow(root) ?? null,
 });
 
 /** How long one repository's served answer stands: the served rule keeps its merge setup this long, and Ready to land
@@ -730,7 +761,7 @@ async function treeFacts(t: TrackedWorktree, dirs: readonly string[]): Promise<T
 /** Another session's file records this tree merged: that session's own record of the merge it
     made, which outlives the `git branch -d` of its clean-up (as far as readiness has read it). */
 function mergedElsewhere(t: TrackedWorktree): boolean {
-  for (const c of cache.values()) if (c.facts?.trees.some((o) => o.status === "merged" && o.path === t.path && o.branch === t.branch)) return true;
+  for (const c of cache.values()) if (!excluded(c.row) && c.facts?.trees.some((o) => o.status === "merged" && o.path === t.path && o.branch === t.branch)) return true;
   return false;
 }
 
@@ -846,6 +877,105 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
   return { ...r, status };
 }
 
+/** An "already merged" answer stands this long at most with its refs unmoved: all a failed read's "not merged" can last. */
+export const MERGED_BACKSTOP_MS = 30 * 60_000;
+/** With nothing to stamp (a folder with no `.git` left, a reftable repo), an "already merged" answer stands this long. */
+export const MERGED_UNPINNED_MS = 5 * 60_000;
+/** Each tree's "already merged" answer, while the refs it rests on stay put: sessions sharing a tree share it, and no
+    idle row asks git again. Taken before git is read, so refs moving during the read are never certified. */
+const mergedSeen = new Map<string, { stamp: string; at: number; v: Promise<SessionBranchRow["mergedInto"] | undefined> }>();
+function mergedByStamp(t: TrackedWorktree): Promise<SessionBranchRow["mergedInto"] | undefined> {
+  const ask = deps.mergedInto!;
+  const stamp = deps.refsStamp?.(t.path, ["master", "main", ...(t.baseBranch ? [t.baseBranch] : []), t.branch].map((b) => `refs/heads/${b}`)) ?? null;
+  const key = `${t.path}\0${t.branch}\0${t.base}\0${t.baseBranch ?? ""}`;
+  const hit = mergedSeen.get(key);
+  if (hit && hit.stamp === (stamp ?? "") && deps.now() - hit.at < (stamp === null ? MERGED_UNPINNED_MS : MERGED_BACKSTOP_MS)) return hit.v;
+  const v = ask(t);
+  mergedSeen.delete(key);
+  mergedSeen.set(key, { stamp: stamp ?? "", at: deps.now(), v });
+  if (mergedSeen.size > 5000) mergedSeen.delete(mergedSeen.keys().next().value!);
+  return v;
+}
+
+/** One branch the chat counts, with the project root its queue entry is joined by at listing time. */
+export interface BranchReading {
+  row: SessionBranchRow;
+  root?: string;
+}
+
+/**
+ * The branches the session's chat counts in its composer status row (SessionSummary.branches): every non-dropped
+ * tracked worktree, its own and inherited ones alike, read as the Session tab's rows read them (worktrees-state.ts
+ * describeWorktrees: the folder, git's "already merged", the queue fields where its folder exists). Their readiness
+ * is the session's own (`readiness.trees`, joined by path), which holds no inherited tree: the chat has none for one
+ * either. Undefined when it tracks none.
+ */
+export async function computeBranches(s: Pick<SessionSummary, "id">, facts: Pick<FileFacts, "trees">): Promise<BranchReading[] | undefined> {
+  const trees = facts.trees.filter((t) => t.status !== "dropped");
+  if (trees.length === 0) return undefined;
+  return Promise.all(
+    trees.map(async (t): Promise<BranchReading> => {
+      const exists = existsSync(t.path);
+      const shared = sharedWith(t, s.id);
+      const merged = t.status === "active" && exists && deps.mergedInto ? await mergedByStamp(t).catch(() => undefined) : undefined;
+      const q = exists && deps.branchFields ? await deps.branchFields(t.path, t.branch).catch(() => null) : null;
+      const row: SessionBranchRow = {
+        path: t.path,
+        branch: t.branch,
+        status: t.status === "merged" ? "merged" : "active",
+        exists,
+        ...(shared ? { sharedWith: shared } : {}),
+        ...(merged ? { mergedInto: merged } : {}),
+        ...(q?.fields ?? {}),
+      };
+      return q?.root ? { row, root: q.root } : { row };
+    }),
+  );
+}
+
+/** A reading's branches with each served one's queue entry as its queue's newest view has it now. */
+export function joinBranches(readings: readonly BranchReading[], now: ReadinessDeps["queueNow"], project?: ReadinessDeps["projectNow"]): SessionBranchRow[] {
+  return readings.map(({ row, root }) => {
+    if (!root) return row;
+    const p = project?.(root) ?? null;
+    const base = p ? { ...row, mergeProject: p } : row;
+    const q = now ? now(root, row.branch) : null;
+    if (q === null) return base;
+    const { queue: _old, ...rest } = base;
+    return q ? { ...rest, queue: q } : rest;
+  });
+}
+
+/**
+ * The session's branches for its list row (SessionSummary.branches): the last background read's, each served branch's
+ * queue entry joined from the merge queue's newest view, so a landing, a send-back or a check starting shows at the
+ * queue's own push, not at the next read. No Git, no file read: map lookups only.
+ */
+export function branchesOverlay(s: SessionSummary): SessionBranchRow[] | undefined {
+  if (!branchesCovered(s)) return undefined;
+  const b = cache.get(s.path)?.branches;
+  return b?.length ? joinBranches(b, deps.queueNow, deps.projectNow) : undefined;
+}
+
+/**
+ * Read the queue fields again of every row they went wrong for, parked ones too, without its readiness: with no root
+ * the rows the queue's start found unjoined (no join would ever reach them), with `root` the rows of a queue gone from
+ * service (the join keeps a read's fields while no view is known). After the reads under way, which may be such rows.
+ */
+export async function rereadBranches(root?: string): Promise<void> {
+  await readinessIdle();
+  let moved = false;
+  for (const [path, hit] of [...cache]) {
+    const wrong = hit.branches?.some((b) => (root === undefined ? !b.root && b.row.exists : b.root === root));
+    if (!wrong || !hit.facts) continue;
+    const branches = await computeBranches(hit.row, hit.facts);
+    if (cache.get(path) !== hit || JSON.stringify(branches ?? null) === JSON.stringify(hit.branches)) continue;
+    cache.set(path, { ...hit, ...(branches ? { branches } : {}) });
+    moved = true;
+  }
+  if (moved) sessionsChanged();
+}
+
 /** Ask the follow-up check for every merge card with a reply it hasn't answered. */
 export async function checkFollowUps(s: SessionSummary, facts: FileFacts, r: SessionReadiness | undefined): Promise<boolean> {
   const f = deps.followUps;
@@ -899,6 +1029,8 @@ interface Cached {
   at: number;
   /** The row the answer was computed for: an explicit inspection re-reads with it. */
   row: SessionSummary;
+  /** The branches its chat counts (computeBranches). */
+  branches?: BranchReading[];
   /** A tree's dirty reading may have stood IDLE_DIRTY_TTL_MS: an inspection re-reads it. */
   longDirty?: boolean;
   /** Idle when computed (nothing running): its trees' stamps, which each listing compares to re-read
@@ -954,7 +1086,8 @@ export function trackedWorktrees(): { version: number; each(): Iterable<[session
   return {
     version: cache.version,
     *each() {
-      for (const [path, c] of cache) if (c.facts?.trees.length) yield [path, c.facts.trees] as [string, readonly TrackedWorktree[]];
+      // Only sessions readiness covers: a worker's or a baton's read (for its branches) never makes it an owner.
+      for (const [path, c] of cache) if (c.facts?.trees.length && !excluded(c.row)) yield [path, c.facts.trees] as [string, readonly TrackedWorktree[]];
     },
   };
 }
@@ -1000,6 +1133,11 @@ const parked = (s: SessionSummary) => !!s.archived && !s.live && !runningNow(s);
 
 /** Sessions readiness never covers. */
 const excluded = (s: SessionSummary) => !!(s.workerSession || s.queueChat || s.overseer || s.projectOverseer || s.baton || s.target);
+/** Sessions whose list row carries its branches (SessionSummary.branches): every one whose chat shows the worktrees
+    control, i.e. all but the Overseers (ChatView.tsx), and never a merge-queue chat (left out of every list).
+    Readiness itself still covers fewer (`excluded`): a worker's, a baton's or a target's background read computes
+    its branches only, and never makes it a branch's owner. */
+const branchesCovered = (s: SessionSummary) => !(s.overseer || s.projectOverseer || s.queueChat);
 
 /**
  * The session's readiness as it will read once its turn ends: its file read now, with nothing running
@@ -1040,26 +1178,31 @@ async function refresh(input: RefreshInput): Promise<void> {
   // file may carry on only past bytes its scan's hash proves (readReadinessScan), a new inode never.
   const unchanged = prev?.file === input.file;
   const previousScan = unchanged || (prev?.scan?.found && sameInode(prev.file, input.file)) ? prev!.scan : null;
-  const { scan, facts } = await readReadinessScan(s.path, input.size, previousScan, unchanged);
+  // The same bytes: their facts stand, and an aged read costs no file read (it is here for Git's sake).
+  const { scan, facts } = unchanged && prev.scan?.found && prev.facts ? { scan: prev.scan, facts: prev.facts } : await readReadinessScan(s.path, input.size, previousScan, unchanged);
   if (!current()) return;
   const fresh = forced.delete(s.path) || !prev || prev.key !== input.key || prev.file !== input.file;
   const longDirty = !fresh && !!facts?.trees.some((t) => dirtyTtlFor(s, t.path, false) > DIRTY_TTL_MS);
   // Taken before Git is read: a commit landing during the read is never certified as seen.
   const before = facts ? stampsOf(facts.trees.filter((t) => t.status !== "dropped" && t.session === s.id).map((t) => t.path)) : undefined;
   const watch = facts ? watchStamp(facts, s.id) : undefined;
-  const value = facts ? await computeReadiness(s, facts, current, fresh) : undefined;
+  // Readiness only for the sessions it covers; the others' reads are for their branches alone.
+  const value = facts && !excluded(s) ? await computeReadiness(s, facts, current, fresh) : undefined;
+  if (!current()) return;
+  const branches = facts ? await computeBranches(s, facts) : undefined;
   if (!current()) return;
   const stamps = idleStamps(s, value, before);
-  cache.set(s.path, { scan, facts, ...(value ? { value } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}), ...(watch ? { watch } : {}) });
+  cache.set(s.path, { scan, facts, ...(value ? { value } : {}), ...(branches ? { branches } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}), ...(watch ? { watch } : {}) });
   if (value) nudgeSpecs(s, value);
   if (facts && value && (await checkFollowUps(s, facts, value).catch(() => false))) {
     if (!current()) return;
     const again = await computeReadiness(s, facts, current);
-    if (current()) cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}), ...(watch ? { watch } : {}) });
+    if (current()) cache.set(s.path, { scan, facts, ...(again ? { value: again } : {}), ...(branches ? { branches } : {}), key: input.key, file: input.file, at: deps.now(), row: s, longDirty, ...(stamps ? { stamps } : {}), ...(watch ? { watch } : {}) });
   }
   // A new answer shows on the next listing: the session feed compares at once (§app.decisions/push)
   // instead of waiting for a listing that happens to come.
-  if (JSON.stringify(cache.get(s.path)?.value ?? null) !== JSON.stringify(prev?.value ?? null)) sessionsChanged();
+  const now = cache.get(s.path);
+  if (JSON.stringify([now?.value ?? null, now?.branches ?? null]) !== JSON.stringify([prev?.value ?? null, prev?.branches ?? null])) sessionsChanged();
 }
 
 /** A session's own trees' Git inputs, or undefined when none can be read. */
@@ -1200,14 +1343,16 @@ function listingStats(): Map<string, unknown> {
  * its own. A file that never wrote a `worktrees` entry is searched again only when it changed.
  */
 export function readinessOverlay(s: SessionSummary): SessionReadiness | undefined {
-  if (excluded(s)) return undefined;
+  // A session readiness doesn't cover still has its branches read (branchesOverlay), never its readiness.
+  if (!branchesCovered(s)) return undefined;
+  const shown = (v: SessionReadiness | undefined) => (excluded(s) ? undefined : v);
   const hit = cache.get(s.path);
   const input = fileInput(s);
   const flight = active.get(s.path);
   if (flight) {
     if (sameInput(flight, input)) queued.delete(s.path);
     else queued.set(s.path, input);
-    return hit?.value;
+    return shown(hit?.value);
   }
   // An idle answer stands IDLE_TTL_MS while its trees' stamps stay put.
   const idleHit = !!hit?.stamps && !runningNow(s);
@@ -1219,7 +1364,7 @@ export function readinessOverlay(s: SessionSummary): SessionReadiness | undefine
     queued.set(s.path, input);
     void drain();
   }
-  return hit?.value;
+  return shown(hit?.value);
 }
 
 /** Every listed session's readiness, and the follow-up store kept to listed sessions. */
@@ -1347,6 +1492,7 @@ export function resetReadiness(): void {
   checksBySession.clear();
   blockedBySession.clear();
   restartBySha.clear();
+  mergedSeen.clear();
   serverCheckout = null;
   deps = defaultDeps();
 }

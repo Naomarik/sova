@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ReadinessState, SessionReadiness } from "../../shared/protocol";
-import { branchStatusLine, readinessBadge, readinessCount, readinessCountWords, readinessTitle, readinessWord } from "./readiness";
+import { afterMergeLines, branchStatusLine, readinessBadge, readinessTitle, readinessWord } from "./readiness";
 import { readinessChip, readinessReason } from "./worktrees";
 
 const r = (over: Partial<SessionReadiness>): SessionReadiness => ({ trees: [{ path: "/wt/a", branch: "feat/a", state: "merged" }], since: 1, ...over });
@@ -13,29 +13,9 @@ test("the muted badge carries only a restart and named follow-up work", () => {
   for (const value of [undefined, r({}), r({ badge: "merged" }), r({ badge: "merged", cleanup: 3 }), r({ badge: "ready" }), r({ badge: "waiting" })]) assert.equal(readinessBadge(value), null);
 });
 
-test("worktree counts and accessible words retain all ordinary states", () => {
-  assert.equal(readinessCount(undefined), null);
-  assert.equal(readinessCount(r({ trees: [] })), null);
-  const states: ReadinessState[] = ["merged", "stale", "in-progress", "blocked", "ready", "waiting-approval"];
-  for (const state of states) {
-    const count = readinessCount(r({ trees: [{ path: "/wt/a", branch: "feat/a", state }, { path: "/wt/b", branch: "feat/b", state: "merged" }] }))!;
-    const ready = state === "ready" || state === "waiting-approval";
-    assert.deepEqual(count, { merged: state === "merged" ? 2 : 1, total: 2, ready });
-    assert.equal(readinessCountWords(count), `${count.merged} of 2 worktrees merged${ready ? ", one is ready to merge" : ""}`);
-    assert.ok(readinessWord(state));
-  }
-  assert.deepEqual(readinessCount(r({})), { merged: 1, total: 1, ready: false });
-  assert.equal(readinessCount(r({ trees: [{ path: "/wt/a", branch: "a", state: "stale" }, { path: "/wt/b", branch: "b", state: "ready" }] }))?.ready, true, "a stale sibling cannot hide a ready count");
-});
-
-test("the count counts git-merged trees, clean or not", () => {
-  const trees: SessionReadiness["trees"] = [
-    { path: "/wt/a", branch: "a", state: "merged", merged: true },
-    { path: "/wt/b", branch: "b", state: "stale", merged: true },
-    { path: "/wt/c", branch: "c", state: "in-progress", merged: true },
-    { path: "/wt/d", branch: "d", state: "in-progress" },
-  ];
-  assert.deepEqual(readinessCount(r({ trees })), { merged: 3, total: 4, ready: false });
+test("every ordinary state has its word", () => {
+  const states: ReadinessState[] = ["merged", "stale", "in-progress", "blocked", "ready", "waiting-approval", "removed"];
+  for (const state of states) assert.ok(readinessWord(state));
 });
 
 test("titles retain every ordinary follow-up and ignore legacy spec observations", () => {
@@ -44,7 +24,9 @@ test("titles retain every ordinary follow-up and ignore legacy spec observations
   assert.equal(readinessTitle(value), expected);
   const legacy = { ...value, specObservations: { state: "incomplete", items: [], reasons: ["fixture"] } };
   assert.equal(readinessTitle(legacy), expected, "old wire data must not revive the removed display");
-  assert.deepEqual(readinessCount(legacy), readinessCount(value));
+  assert.deepEqual(afterMergeLines(legacy), afterMergeLines(value));
+  assert.deepEqual(afterMergeLines(value), expected.split("\n").slice(2), "what follows a merge: the title's last lines");
+  assert.deepEqual(afterMergeLines(undefined), []);
   assert.equal(readinessBadge(legacy), readinessBadge(value));
   assert.equal(readinessTitle(undefined), null);
 });

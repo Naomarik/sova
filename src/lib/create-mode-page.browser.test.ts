@@ -10,7 +10,7 @@ const solid = await import("solid-js");
 const { createModeSave } = await import("./mode-save");
 const { majorGear, menuModes } = await import("./mode-menu");
 const { majorGlyph } = await import("./mode-glyphs");
-const { applyToast, cancelHeldSave, cardCanAct, createCardLive, QUEUE_CARD_WAITS, readCard } = await import("./settings-card-live");
+const { applyToast, cancelHeldSave, cardCanAct, createCardLive, QUEUE_CARD_WAITS, readCard, typedInput } = await import("./settings-card-live");
 type ShownMode = import("./mode-menu").ShownMode;
 type SettingsCardView = import("../../shared/project-settings").SettingsCardView;
 type CardReads = import("./settings-card-live").CardReads;
@@ -121,6 +121,13 @@ describe("a card in a Create chat", () => {
     assert.match(applyToast({ state: "applied", stillNeeds: ["a", "b"] }, granted), /2 approvals still need you/);
     assert.equal(applyToast({ state: "applied" }, { ...granted, id: "local" }), "Landed the folder's settings edits.");
     assert.match(applyToast({ state: "applied", stillNeeds: ["a"] }, { ...granted, id: "local" }), /^Landed the folder's settings edits\. 1 approval/);
+  });
+
+  test("the field goes with Apply only on a card that asks for it", () => {
+    const asks = { input: { field: "pin", label: "Fingerprint" } };
+    assert.equal(typedInput(asks, "  abc  "), "abc");
+    assert.equal(typedInput(asks, "   "), "", "empty holds Apply back");
+    assert.equal(typedInput({}, "abc"), undefined, "a card with no field sends nothing");
   });
 
   test("Cancel Save takes the card's own road: the folder's edits are never discarded by it", () => {

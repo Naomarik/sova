@@ -1640,7 +1640,8 @@ export const withdrawSettingsCard = (projectId: string, card: string, fingerprin
   request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings/cards/${encodeURIComponent(card)}/withdraw`, jsonInit("POST", fingerprint ? { fingerprint } : {}));
 /** Sova-wide cards, which have no project: only the chat that prepared one shows it (§chat.create-mode/settings-cards). */
 export const getSovaSettingsCards = () => request<SovaCardsInfo>("/api/settings/cards", { cache: "no-store" });
-export const applySovaSettingsCard = (card: string, fingerprint: string) => request<SettingsApplyResult>("/api/settings/apply", jsonInit("POST", { card, fingerprint }));
+/** `input`: what the person typed on the card; it goes with this request and nowhere else. */
+export const applySovaSettingsCard = (card: string, fingerprint: string, input?: string) => request<SettingsApplyResult>("/api/settings/apply", jsonInit("POST", { card, fingerprint, ...(input !== undefined ? { input } : {}) }));
 export const withdrawSovaSettingsCard = (card: string) => request<SovaCardsInfo>(`/api/settings/cards/${encodeURIComponent(card)}/withdraw`, jsonInit("POST", {}));
 /** Cancel the held Save of the folder's edits: `cancelSave` keeps them, where the same call without it is Discard. */
 export const cancelLocalSettingsSave = (projectId: string) => request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings/cards/local/withdraw`, jsonInit("POST", { cancelSave: true }));

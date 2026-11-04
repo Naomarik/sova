@@ -75,6 +75,36 @@ test("a grant that wasn't recorded reads as still needed, each with where to app
   assert.doesNotMatch(draw(card({ id: "sc_6", state: "applied" }), "p1"), /banner-warn/, "nothing when all were recorded");
 });
 
+test("every computer's access is listed, the changed row marked and a shell-level one said plainly", () => {
+  const html = draw(
+    card({
+      kind: "sova",
+      access: [
+        { peer: "a", label: "Laptop", before: "sessions: presence", after: "sessions: presence, shell", changed: true, shell: true },
+        { peer: "b", label: "Desktop", before: "sessions: presence", after: "sessions: presence", changed: false, shell: false },
+      ],
+    }),
+    null,
+  );
+  assert.match(html, /Every computer(&#39;|')s access after this/);
+  assert.match(html, /Laptop/);
+  assert.match(html, /Desktop/);
+  assert.equal(html.match(/data-access-changed/g)?.length, 1, "only the row that changes");
+  assert.equal(html.match(/Shell-level: it can run anything here\./g)?.length, 1, "only the row that is shell-level");
+});
+
+test("a card's field: Apply waits for it, nothing fills it in, and it shows only where Apply does", () => {
+  const pairing = card({ kind: "sova", input: { field: "pin", label: "The other computer's fingerprint" } });
+  const html = draw(pairing, null);
+  assert.match(html, /The other computer(&#39;|')s fingerprint/);
+  assert.match(html, /autocomplete="off"/);
+  assert.match(html, /<button[^>]*button-primary[^>]*disabled[^>]*>/, "Apply is held back while it's empty");
+  assert.match(html, /Open Mesh Settings/);
+  assert.doesNotMatch(draw(pairing, null, false), /<input/, "no field where nobody may apply");
+  assert.doesNotMatch(draw({ ...pairing, state: "applied" }, null), /<input/, "no field once it has ended");
+  assert.doesNotMatch(draw(card({ kind: "sova" }), null), /<input|<button[^>]*button-primary[^>]*disabled/, "a card without one: Apply stands ready");
+});
+
 test("a save that failed when its turn came says why on the card", () => {
   const failed = draw(card({ id: "sc_4", kind: "queue", saveWaits: true, saveFailed: "A newer save took its place." }), "p1");
   assert.match(failed, /A newer save took its place/);

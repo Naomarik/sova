@@ -1,7 +1,8 @@
-import { createContext, createSignal, For, Show, useContext } from "solid-js";
+import { createContext, createEffect, createSignal, For, Show, useContext } from "solid-js";
 import type { SettingsCardView, SettingsHistoryRow, SettingsToolDetails } from "../../shared/project-settings";
 import { applySettingsCard, applySovaSettingsCard, cancelLocalSettingsSave, cancelMergeSettings, getProjectSettings, getSovaSettingsCards, undoSettingsRow, withdrawSettingsCard, withdrawSovaSettingsCard } from "../lib/api";
-import { applyToast, cancelHeldSave, cardCanAct, createCardLive, QUEUE_CARD_WAITS, type CardTimer, type SettingsCardScope } from "../lib/settings-card-live";
+import { applyToast, cancelHeldSave, cardCanAct, createCardLive, QUEUE_CARD_WAITS, typedInput, type CardTimer, type SettingsCardScope } from "../lib/settings-card-live";
+import { openSettings } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
 
 /**
@@ -35,6 +36,13 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
   /** A queue card whose Save is held: Apply was pressed, and it lands when the branch finishes. */
   const held = () => waiting() && !!c().saveWaits;
   const project = props.projectId;
+  /** The card's field, if it has one: held here only, sent only with Apply, gone once Apply took it or the card ended. */
+  const [typed, setTyped] = createSignal("");
+  createEffect(() => {
+    if (!waiting()) setTyped("");
+  });
+  const inputValue = () => typedInput(c(), typed());
+  const inputEmpty = () => inputValue() === "";
   const act = <T,>(run: () => Promise<T>, done: string | ((out: T) => string)) => {
     if (!props.canAct || busy()) return;
     setBusy(true);
@@ -47,7 +55,16 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setBusy(false));
   };
-  const apply = () => act(() => (project === null ? applySovaSettingsCard(c().id, c().fingerprint) : applySettingsCard(project, c().id, c().fingerprint)), (out) => applyToast(out.card, c()));
+  const apply = () => {
+    if (inputEmpty()) return;
+    act(
+      () => (project === null ? applySovaSettingsCard(c().id, c().fingerprint, inputValue()) : applySettingsCard(project, c().id, c().fingerprint)),
+      (out) => {
+        setTyped("");
+        return applyToast(out.card, c());
+      },
+    );
+  };
   const dismiss = () => act(() => (project === null ? withdrawSovaSettingsCard(c().id) : withdrawSettingsCard(project, c().id, local() ? c().fingerprint : undefined)), local() ? "Discarded the folder's settings edits." : `Dismissed ${c().id}.`);
   const cancelSave = () =>
     project !== null &&
@@ -164,6 +181,61 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
             <pre class="settings-card-diff text-mono">{c().diff}</pre>
           </Show>
         </Show>
+        <Show when={c().access?.length}>
+          <div class="settings-card-group">
+            <span class="text-eyebrow">Every computer's access after this</span>
+            <ul class="settings-card-list">
+              <For each={c().access}>
+                {(a) => (
+                  <li class="settings-card-row" data-access-changed={a.changed ? "true" : undefined}>
+                    <span>
+                      {a.label}:{" "}
+                      <Show when={a.changed} fallback={a.after}>
+                        {a.before} → <strong>{a.after}</strong>
+                      </Show>
+                    </span>
+                    <Show when={a.changed}>
+                      <span class="chip chip-warn">
+                        <span class="chip-dot" aria-hidden="true" />
+                        Changes
+                      </span>
+                    </Show>
+                    <Show when={a.shell}>
+                      <span class="text-warn">Shell-level: it can run anything here.</span>
+                    </Show>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </div>
+        </Show>
+        <Show when={c().input && waiting() && !held() && props.canAct ? c().input : null}>
+          {(field) => (
+            <div class="field">
+              <label class="field-label" for={`settings-card-input-${c().id}`}>
+                {field().label}
+              </label>
+              <input
+                class="input text-mono"
+                id={`settings-card-input-${c().id}`}
+                type="text"
+                autocomplete="off"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck={false}
+                value={typed()}
+                disabled={busy()}
+                onInput={(e) => setTyped(e.currentTarget.value)}
+              />
+              <p class="field-hint">
+                This computer's own fingerprint is in Settings → Mesh, Pairings.{" "}
+                <button type="button" class="button button-sm button-ghost" onClick={() => openSettings("mesh")}>
+                  Open Mesh Settings
+                </button>
+              </p>
+            </div>
+          )}
+        </Show>
         <Show when={c().stillNeeds?.length}>
           <div class="banner banner-warn" role="status">
             <div class="banner-body">
@@ -201,7 +273,7 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
               }
             >
               <div class="overseer-card-buttons">
-                <button type="button" class="button button-sm button-primary" disabled={busy()} onClick={apply}>
+                <button type="button" class="button button-sm button-primary" disabled={busy() || inputEmpty()} onClick={apply}>
                   {applyLabel()}
                 </button>
                 <button type="button" class={`button button-sm ${local() ? "button-destructive" : "button-ghost"}`} disabled={busy()} onClick={dismiss}>

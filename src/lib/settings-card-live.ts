@@ -39,6 +39,10 @@ export function applyToast(answer: Pick<SettingsCardView, "state" | "stillNeeds"
   return needs ? `${done} ${needs === 1 ? "1 approval still needs" : `${needs} approvals still need`} you: the card says where.` : done;
 }
 
+/** What Apply sends of the card's field: undefined for a card with none, so nothing typed goes
+    astray; "" while it is empty, which holds Apply back. */
+export const typedInput = (card: Pick<SettingsCardView, "input">, typed: string): string | undefined => (card.input ? typed.trim() : undefined);
+
 /** The ways to cancel a held Save, which differ by card. */
 export interface HeldSaveCancels {
   queue(projectId: string): Promise<unknown>;

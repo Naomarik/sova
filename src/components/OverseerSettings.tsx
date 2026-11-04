@@ -16,6 +16,7 @@ import {
   EXTRA_PROMPT_MAX,
   lengthCount,
   NOTES_MAX,
+  NOTES_TOO_LONG_MESSAGE,
   QUICK_ACTIONS_MAX,
   quickActionTooLong,
   resetExplorer,
@@ -85,6 +86,8 @@ export function OverseerSettingsSection() {
   });
 
   const d = () => draft();
+  /** The last save stopped because the merged notes ran over the limit: said beside the notes too. */
+  const notesTooLong = () => overseerSaveError()?.message === NOTES_TOO_LONG_MESSAGE;
 
   // Opened from the composer's "3 of 10 running": bring Limits into view once the form renders.
   let limits: HTMLFieldSetElement | undefined;
@@ -514,13 +517,18 @@ export function OverseerSettingsSection() {
                     rows={3}
                     value={cur().notes}
                     disabled={saving()}
-                    aria-invalid={cur().notes.length > NOTES_MAX ? "true" : undefined}
-                    aria-describedby="overseer-notes-hint overseer-notes-count"
+                    aria-invalid={cur().notes.length > NOTES_MAX || notesTooLong() ? "true" : undefined}
+                    aria-describedby={notesTooLong() ? "overseer-notes-error overseer-notes-hint overseer-notes-count" : "overseer-notes-hint overseer-notes-count"}
                     onInput={(e) => setOverseerDraft({ ...cur(), notes: e.currentTarget.value })}
                   />
                   <span class="field-hint" id="overseer-notes-hint">
                     The Overseer reads these every turn and can add to them. They survive /clear.
                   </span>
+                  <Show when={notesTooLong()}>
+                    <span class="field-error" id="overseer-notes-error">
+                      {NOTES_TOO_LONG_MESSAGE}.
+                    </span>
+                  </Show>
                   <span class={`${cur().notes.length > NOTES_MAX ? "field-error" : "field-hint"} text-num`} id="overseer-notes-count">
                     {lengthCount(cur().notes, NOTES_MAX)}
                   </span>

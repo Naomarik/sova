@@ -176,6 +176,13 @@ export class NotesConflict extends Error {
   }
 }
 
+/** The user's notes and what the Overseer appended meanwhile merge past NOTES_MAX: nothing is written. */
+export class NotesTooLong extends Error {
+  constructor() {
+    super("The standing notes would be too long with what the Overseer added");
+  }
+}
+
 /** What a save reads and writes, injected (src/lib/api.ts in the app, fakes in the tests). */
 export interface OverseerSaveIO {
   getSettings(): Promise<OverseerSettingsInfo>;
@@ -197,6 +204,9 @@ export async function saveOverseerDraft(draft: OverseerDraft, base: OverseerDraf
   const info = completeInfo(read);
   if (mergeNotes(draft.notes, base.notes, notes) === null) throw new NotesConflict();
   const next = rebaseOverseer(draft, base, { settings: info.settings, notes });
+  // The form checked the user's notes; what the Overseer appended since can still push the merge
+  // over the server's limit. Refuse before the settings are written, so the save never half-lands.
+  if (next.notes.length > NOTES_MAX) throw new NotesTooLong();
   const result = sameValue(next.settings, info.settings) ? { ...info, warnings: [] } : await io.putSettings(next.settings);
   const savedNotes = next.notes === notes ? notes : await io.putNotes(next.notes, notes);
   return { result, notes: savedNotes };
@@ -212,6 +222,9 @@ const serverIO: OverseerSaveIO = {
 
 export const NOTES_CONFLICT_MESSAGE =
   "The Overseer rewrote its standing notes while you were editing them, so your notes weren't saved. Your edit is still in the box: Save Changes again replaces the Overseer's version, and Cancel drops your edit, so the Overseer's version shows the next time you open Settings";
+
+export const NOTES_TOO_LONG_MESSAGE =
+  "The Overseer added to its standing notes while you were editing them, and together they're over 8,000 characters, so nothing was saved. Shorten the notes, then Save Changes again";
 
 const store = createDraftStore<OverseerForm, OverseerDraft, OverseerSaveResult>({
   tab: "overseer",
@@ -242,7 +255,7 @@ const store = createDraftStore<OverseerForm, OverseerDraft, OverseerSaveResult>(
         ([info, notes]) => store.refreshSaved(cloneOverseer({ settings: info.settings, notes })),
         () => {},
       );
-      throw new SaveFailed(conflict ? NOTES_CONFLICT_MESSAGE : failureOf(err).message, wrote);
+      throw new SaveFailed(err instanceof NotesTooLong ? NOTES_TOO_LONG_MESSAGE : conflict ? NOTES_CONFLICT_MESSAGE : failureOf(err).message, wrote);
     }
   },
 });

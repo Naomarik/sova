@@ -5,6 +5,8 @@ import {
   cloneOverseer,
   mergeNotes,
   NotesConflict,
+  NotesTooLong,
+  NOTES_TOO_LONG_MESSAGE,
   type OverseerDraft,
   overseerSaved,
   rebaseOverseer,
@@ -434,4 +436,30 @@ test("each Overseer Reset to Defaults puts back its group alone, limits as box t
   const all = resetExplorer(resetQuickActions(resetLimits(form, defaults), defaults), defaults);
   assert.deepEqual(atDefaults(all, defaults), { limits: true, quickActions: true, explorer: true });
   assert.equal(overseerDraftProblem(all), null);
+});
+
+test("notes the Overseer appended to under an edit can merge past 8,000: refused before anything is written", async () => {
+  const base: OverseerDraft = { settings: settings(), notes: "x".repeat(7990) };
+  const draft = cloneOverseer(base);
+  draft.notes = `${base.notes}z`;
+  draft.settings.proactivity = "brief";
+  let putSettings = 0;
+  let putNotes = 0;
+  const io = {
+    getSettings: async () => ({ settings: settings(), file: "/x", defaults: { quickActions: [], caps: settings().caps, explorer: settings().explorer } }),
+    getNotes: async () => `${base.notes}\n${"y".repeat(50)}`,
+    putSettings: async (s: OverseerSettings) => {
+      putSettings++;
+      return { settings: s, file: "/x", defaults: { quickActions: [], caps: s.caps, explorer: s.explorer }, warnings: [] };
+    },
+    putNotes: async (t: string) => {
+      putNotes++;
+      return t;
+    },
+  };
+  assert.equal(overseerDraftProblem(draft), null, "the form's own check passes: only the merge is too long");
+  await assert.rejects(saveOverseerDraft(draft, base, io), NotesTooLong);
+  assert.equal(putSettings, 0, "the settings are never written");
+  assert.equal(putNotes, 0, "nor the notes");
+  assert.match(NOTES_TOO_LONG_MESSAGE, /8,000 characters/);
 });

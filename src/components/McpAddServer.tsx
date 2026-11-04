@@ -87,20 +87,29 @@ export function McpServerDialog(props: { editing?: McpServerRow; onClose: () => 
                   </For>
                 </div>
                 <Show when={!e}>
-                  <label class="field">
-                    <span class="field-label">Name</span>
-                    <input
-                      class="input"
-                      value={name()}
-                      autocomplete="off"
-                      aria-invalid={nameError() ? "true" : undefined}
-                      onInput={(ev) => {
-                        setName(ev.currentTarget.value);
-                        setNameError(isReservedName(ev.currentTarget.value) ? RESERVED_FIELD : null);
-                      }}
-                    />
-                    <Show when={nameError()}>{(t) => <span class="field-error">{t()}</span>}</Show>
-                  </label>
+                  <div class="field">
+                    <label class="field">
+                      <span class="field-label">Name</span>
+                      <input
+                        class="input"
+                        value={name()}
+                        autocomplete="off"
+                        aria-invalid={nameError() ? "true" : undefined}
+                        aria-describedby={nameError() ? "mcp-name-error" : undefined}
+                        onInput={(ev) => {
+                          setName(ev.currentTarget.value);
+                          setNameError(isReservedName(ev.currentTarget.value) ? RESERVED_FIELD : null);
+                        }}
+                      />
+                    </label>
+                    <Show when={nameError()}>
+                      {(t) => (
+                        <span class="field-error" id="mcp-name-error">
+                          {t()}
+                        </span>
+                      )}
+                    </Show>
+                  </div>
                 </Show>
                 <Show when={way() === "address"}>
                   <label class="field">
@@ -127,11 +136,15 @@ export function McpServerDialog(props: { editing?: McpServerRow; onClose: () => 
                       <input class="input input-mono" value={fields().secretName} autocomplete="off" spellcheck={false} onInput={(ev) => set("secretName", ev.currentTarget.value)} />
                     </label>
                   </Show>
-                  <label class="field">
-                    <span class="field-label">Secret</span>
-                    <input class="input input-mono" type="password" value={fields().secret} autocomplete="off" onInput={(ev) => set("secret", ev.currentTarget.value)} />
-                    <span class="field-hint">{SECRET_HINT}</span>
-                  </label>
+                  <div class="field">
+                    <label class="field">
+                      <span class="field-label">Secret</span>
+                      <input class="input input-mono" type="password" value={fields().secret} autocomplete="off" aria-describedby="mcp-secret-hint" onInput={(ev) => set("secret", ev.currentTarget.value)} />
+                    </label>
+                    <span class="field-hint" id="mcp-secret-hint">
+                      {SECRET_HINT}
+                    </span>
+                  </div>
                 </Show>
                 <Show when={error()}>{(t) => <p class="field-error">{t()}</p>}</Show>
               </div>
@@ -153,6 +166,10 @@ export function McpServerDialog(props: { editing?: McpServerRow; onClose: () => 
                   <McpRow
                     row={row()}
                     open
+                    onRemoved={() => {
+                      props.onChanged();
+                      props.onClose();
+                    }}
                     onChange={(next) => {
                       setResult(next);
                       props.onChanged();

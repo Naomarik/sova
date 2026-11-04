@@ -413,7 +413,7 @@ export function McpRow(props: {
               </Show>
             </Show>
             <Show when={r().source === "computer"}>
-              <Show when={r().refused?.why !== "reserved"}>
+              <Show when={props.onEdit && r().refused?.why !== "reserved"}>
                 <button type="button" class="button button-sm" disabled={busy()} onClick={() => props.onEdit?.(r())}>
                   Edit
                 </button>

@@ -316,7 +316,8 @@
       "server/project-overseer-store.ts",
       "src/lib/summary-diff.ts",
       "server/sessions-index-tracked.test.ts",
-      "server/sessions-index-real.parity.test.ts"
+      "server/sessions-index-real.parity.test.ts",
+      "server/session-feed-join.test.ts"
     ],
     "requires": [
       "§app/session-list",

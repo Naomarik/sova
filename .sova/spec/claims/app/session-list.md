@@ -2565,7 +2565,7 @@ a session, another server's stores) therefore reaches a listing up to 1 second l
 
 The schedule's discovery, which runs on a timer, reads the session
 feed's last list instead while a feed is connected and nothing it watches has changed since that
-list was built (§app.decisions/push), a list at most two minutes old (the feed's safety net
+list was built (§app.decisions/push), a list about two minutes old at most (the feed's safety net
 renews it every minute); otherwise it lists as above. So an idle
 server with windows open builds the list only for the feed's safety net.
 
@@ -2576,7 +2576,7 @@ opens a changed file once to build its row: its head, its outline and one window
 256 KB, which the row's model, context and ending all read from (a file's first read may go
 further back, to its outline); its alignment and worker marks read only what the file gained
 since their last read. The feed's
-listing looks at every folder and every file (a full build) only on its first listing, when the
+own build looks at every folder and every file (a full build) only on its first listing, when the
 watch can't say what changed (a folder joins or leaves the watched set, a watch fails, a change
 comes with no file name), and every 5 minutes. Once a minute it also checks the size and
 modification time of every session file it already knows, without listing a folder, and reads
@@ -2586,7 +2586,10 @@ comparison reads no session file.
 A session with no message of the user's yet is told apart from the read its row already made,
 never by reading its file again. Every session stays in the list, however old: none is left out
 to save work. Rows with the same last activity come in path order, so two listings of the same
-sessions come in the same order. Every caller other than the feed lists as above.
+sessions come in the same order. Every caller other than the feed lists as above. A comparison may
+instead read a list another caller's build started less than 1 second ago, later than the last list
+it read; that build looked at every folder and every file. If anything signalled after that build
+started, a further comparison follows, so that change never waits for the safety net.
 
 A change a caller makes through this server is never missed that way. Any request other than a
 read (a REST call that is not `GET` or `HEAD`, a peer's included, before it runs and again when it
@@ -2596,6 +2599,7 @@ write in process), a chat being opened by this server and a held chat's model, t
 mode changing (its row carries the held chat's `chat` state), and every write to the stores a row reads (archived, titles, seen and the open
 panes, drafts, groups, tags, attention signals, Sova's own sessions, the Decisions settings, the
 organizations registry, the Overseer's and project overseers' state, kept preview links) start the
-next listing afresh: no caller joins or reuses a list built before them. So a caller that archives,
+next listing afresh: no caller joins or reuses a list built before them, except a comparison as
+above, which the further one then follows. So a caller that archives,
 renames, creates a session or gives one a One at a time profile sees that change in the very next
 listing it asks for, and so does the One at a time check that follows it.

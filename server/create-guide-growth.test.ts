@@ -47,7 +47,7 @@ function scanEnv(): string[] {
       const p = join(dir, e.name);
       if (e.isDirectory()) walk(p);
       else if (/\.(ts|tsx|mjs|sh)$/.test(e.name) && !/\.test\.|\.fixture\./.test(e.name))
-        for (const m of readFileSync(p, "utf8").matchAll(ENV_SHAPED)) found.add(m[1]!);
+        for (const m of readFileSync(p, "utf8").matchAll(ENV_SHAPED)) if (e.name.endsWith(".sh") || !m[0].startsWith("${")) found.add(m[1]!); // `${X}` in a template string is the code's own X.
     }
   };
   for (const dir of ["server", "shared", "src", "scripts", "pi-config"]) walk(join(ROOT, dir));

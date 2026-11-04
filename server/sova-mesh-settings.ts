@@ -158,12 +158,24 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
     files: () => [],
     read: () => ({ peer: null }),
     async check(v) {
-      if (!isObj(v) || typeof v.peer !== "string") return "Expected {peer}.";
-      return (await meshCardPort().resyncProblem?.(v.peer)) ?? null;
+      if (!isObj(v) || typeof v.peer !== "string" || Object.keys(v).length !== 1) return "Expected {peer}.";
+      const sheet = await meshCardPort().resyncSheet?.(v.peer);
+      if (!sheet) return "Resync isn't available here.";
+      return "problem" in sheet ? sheet.problem : null;
+    },
+    // The commit is pinned here, so Apply starts what the card showed, or nothing.
+    async prepare(v) {
+      const sheet = await meshCardPort().resyncSheet?.((v as { peer: string }).peer);
+      return !sheet || "problem" in sheet ? v : { ...(v as object), commit: sheet.commit };
+    },
+    async notes(v) {
+      const sheet = await meshCardPort().resyncSheet?.((v as { peer: string }).peer);
+      return !sheet ? [] : "problem" in sheet ? [sheet.problem] : sheet.lines;
     },
     async write(v) {
       const run = meshCardPort().resync;
-      return run ? errorOf(await run((v as { peer: string }).peer)) : "Resync isn't available here.";
+      const { peer, commit } = v as { peer: string; commit: string };
+      return run ? errorOf(await run(peer, commit)) : "Resync isn't available here.";
     },
   },
   "mesh.pairing": {
@@ -208,6 +220,8 @@ interface MeshAdapter {
   write(value: unknown, input?: string): Promise<string | null>;
   /** A value the person types into the card's own field at Apply: it never reaches a chat. */
   input?: { field: string; label: string };
+  prepare?(value: unknown): Promise<unknown>;
+  notes?(value: unknown): Promise<string[]>;
   widens?(before: unknown, value: unknown): boolean;
   access?(value: unknown): Promise<MeshAccessRow[]>;
 }

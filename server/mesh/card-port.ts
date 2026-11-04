@@ -1,3 +1,4 @@
+import type { CardSheet } from "../../src/lib/mesh-resync";
 import type { MeshResult } from "./index";
 
 /**
@@ -6,9 +7,10 @@ import type { MeshResult } from "./index";
  */
 export interface MeshCardPort {
   browserAccess?(body: { id?: unknown; browserAccess?: unknown }): Promise<MeshResult>;
-  resync?(peer: string): Promise<MeshResult>;
-  /** Whether a resync of `peer` could start: a recipe, and no reason not to. */
-  resyncProblem?(peer: string): Promise<string | null>;
+  /** Start the recipe, for exactly the commit the card showed. */
+  resync?(peer: string, commit: string): Promise<MeshResult>;
+  /** What the confirm sheet says of resyncing `peer` now, or why it can't start. */
+  resyncSheet?(peer: string): Promise<CardSheet>;
 }
 const port: MeshCardPort = {};
 export const setMeshCardPort = (p: Partial<MeshCardPort>): void => void Object.assign(port, p);

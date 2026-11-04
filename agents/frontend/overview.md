@@ -48,6 +48,8 @@ must stay DOM- and Solid-free), browser testing, and the project skills.
 One runtime import direction runs from the server into `src/`, so these files must load without a DOM
 or Solid, and an edit to them reaches the running server only at its restart:
 
+- `server/mesh/resync.ts` imports `src/lib/mesh-resync.ts`: a Create card's resync shows the confirm sheet's own
+  sentences (`cardSheet`, `sheetText`).
 - `server/vis-check.ts` (the vis retry and the `vis_check` tool) imports `src/vis/parse.ts`,
   `src/vis/kinds/frame/parse.ts` and `src/vis/kinds/wireframe/layout.ts` (with `kinds/tree/measure.ts`, whose canvas
   is guarded): the parse side of `src/vis/` (`parse.ts`, `registry.ts`, `src/vis/core/`,

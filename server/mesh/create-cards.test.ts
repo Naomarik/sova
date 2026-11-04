@@ -136,7 +136,7 @@ describe("cards, applied only by the person's click", () => {
     await assert.rejects(propose("mesh.relay", { host: "203.0.113.5", port: 9000 }));
     await assert.rejects(propose("mesh.relay", { host: "203.0.113.5", port: 9000, exposure: "internet" }), /internet relay stays on the Mesh page, Dial-out pairings/);
     await assert.rejects(propose("mesh.resync", { peer: "stranger" }), /No computer stranger/);
-    await assert.rejects(propose("mesh.resync", { peer: "b" }), /no resync recipe/);
+    await assert.rejects(propose("mesh.resync", { peer: "b" }), /No resync recipe/);
     const relay = await propose("mesh.relay", { host: "127.0.0.1", port: 9000 });
     assert.equal(relay.card.grants.length, 1);
     assert.equal((await asPage(relay.card)).status, 200);
@@ -144,11 +144,21 @@ describe("cards, applied only by the person's click", () => {
     assert.equal((await propose("mesh.relay", null)).card.grants.length, 0, "stopping being a relay opens nothing");
     // The button starts the recipe that is there, once, on the click.
     const started: string[] = [];
-    setMeshCardPort({ resyncProblem: async () => null, resync: async (peer) => (started.push(peer), { status: 200, body: {} }) });
+    const commit = "a".repeat(40);
+    let lines = ["Bee gets aaaaaaa, the build A runs (3 commits ahead of its bbbbbbb), and restarts onto it.", "Nothing is running on Bee now."];
+    setMeshCardPort({ resyncSheet: async () => ({ commit, lines }), resync: async (peer, at) => (started.push(`${peer}@${at}`), { status: 200, body: {} }) });
+    await assert.rejects(propose("mesh.resync", { peer: "b", commit: "c".repeat(40) }), /Expected \{peer\}/);
     const resync = await propose("mesh.resync", { peer: "b" });
+    assert.deepEqual((resync.card as unknown as { notes: string[] }).notes, lines, "the confirm sheet's own sentences, before Apply");
     assert.deepEqual(started, [], "nothing until Apply");
+    // What runs there changes while it waits: the card reads it again, and its fingerprint stands.
+    lines = [lines[0]!, "1 turn running on Bee stops when it restarts."];
+    const read = (await (await app.request("/api/settings/cards")).json()) as { cards: { id: string; fingerprint: string; notes: string[] }[] };
+    const live = read.cards.find((c) => c.id === resync.card.id)!;
+    assert.deepEqual(live.notes, lines);
+    assert.equal(live.fingerprint, resync.card.fingerprint);
     assert.equal((await asPage(resync.card)).status, 200);
-    assert.deepEqual(started, ["b"]);
+    assert.deepEqual(started, [`b@${commit}`], "the commit the card showed, once");
   });
 });
 

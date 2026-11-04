@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { pageOnlyRefusal } from "./page-only";
-import { applySovaCard, sovaCardsInfo, SovaSettingsRefusal, withdrawSovaCard } from "./sova-settings";
+import { applySovaCard, refreshSovaNotes, sovaCardsInfo, SovaSettingsRefusal, withdrawSovaCard } from "./sova-settings";
 
 /**
  * Sova-wide settings cards (§chat.create-mode/settings-cards; the list is in shared/sova-settings-reference.ts). Main
@@ -29,7 +29,10 @@ const handle =
   };
 
 export function registerSovaSettingsRoutes(app: Hono<any>): void {
-  app.get("/api/settings/cards", (c) => c.json(sovaCardsInfo(), 200, NO_STORE));
+  app.get("/api/settings/cards", async (c) => {
+    await refreshSovaNotes();
+    return c.json(sovaCardsInfo(), 200, NO_STORE);
+  });
   app.post(
     "/api/settings/cards/:card/withdraw",
     handle(async (c) => {

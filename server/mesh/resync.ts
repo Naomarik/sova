@@ -1,3 +1,4 @@
+import { cardSheet } from "../../src/lib/mesh-resync";
 import { setMeshCardPort } from "./card-port";
 import { type ChildProcess, spawn } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, readFileSync, type WriteStream } from "node:fs";
@@ -5,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { type MeshResync, noRecipeReason, type ResyncHost, type ResyncJob, type ResyncKind, type ResyncRelation, type ResyncSelf } from "../../shared/mesh-resync";
+import { type MeshResync, noRecipeReason, type ResyncHost, type ResyncJob, type ResyncKind, type ResyncRelation, type ResyncSelf, relationRefusal } from "../../shared/mesh-resync";
 import { stateRoot } from "../state-root";
 import { type BootBuild, bootBuild, bootBuildChecked, type Git, realGit } from "./build-id";
 import { fetchPeerDetails } from "./details";
@@ -345,13 +346,7 @@ export class ResyncService {
     const facts = await this.peerFacts(peer, probe);
     const rel = await this.relation(build.commit, facts.commit);
     if (rel.relation !== "behind") {
-      const why: Record<Exclude<ResyncRelation, "behind">, string> = {
-        ahead: `${name} runs a newer build than ${selfName}; update ${selfName} instead`,
-        same: `${name} runs the same commit`,
-        diverged: `${name} runs a build on another branch`,
-        unknown: `${name}'s commit isn't known in this checkout`,
-      };
-      return { status: 409, body: { error: why[rel.relation] } };
+      return { status: 409, body: { error: relationRefusal(rel.relation, name, selfName) } };
     }
     return { status: 202, body: this.run(peer, recipe, build.commit) };
   }
@@ -477,18 +472,13 @@ const small = bodyLimit({ maxSize: 1024, onError: (c) => c.json({ error: "Too la
 /** GET /api/mesh/resync and POST /api/mesh/resync/:id (main listener only: /api/mesh/*). */
 export function mountResync(app: Hono, mesh: MeshApi, deps: Partial<ResyncDeps> = {}): ResyncService {
   const service = new ResyncService({ mesh, ...deps });
-  // A Create card's button: the same start, on this host's own boot commit, the only one it takes.
+  // A Create card's Apply: the same start, for the commit the card showed, with the confirm sheet's own words.
   setMeshCardPort({
-    async resync(peer) {
-      const commit = (await service.info())?.self.commit;
-      return service.start(peer, { commit }, "application/json");
-    },
-    async resyncProblem(peer) {
+    resync: (peer, commit) => service.start(peer, { commit }, "application/json"),
+    async resyncSheet(peer) {
+      if (mesh.config()?.peers.find((p) => p.id === peer)?.lan) return { problem: `${peer} is a dial-out pairing: update it on that host` };
       const info = await service.info();
-      const host = info?.hosts.find((h) => h.id === peer);
-      if (!host) return `No computer ${peer} here.`;
-      if (!host.recipe) return `There's no resync recipe for ${host.label}: recipes are set in mesh-resync.json in Sova's folder.`;
-      return host.recipeProblem ?? (info?.self.blocked ?? null);
+      return info ? cardSheet(info, peer) : { problem: "The mesh is off here." };
     },
   });
   app.get("/api/mesh/resync", async (c) => {

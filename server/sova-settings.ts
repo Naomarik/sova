@@ -82,6 +82,10 @@ interface Adapter {
   write(value: unknown, input?: string): Promise<string | null>;
   /** A value the person types into the card's own field at Apply: it never reaches a chat. */
   input?: { field: string; label: string };
+  /** The value the card holds, when more is pinned than the chat named. */
+  prepare?(value: unknown): Promise<unknown>;
+  /** What the person should read before Apply, as it stands now. */
+  notes?(value: unknown): Promise<string[]>;
   /** Whether this change is a grant, where only some are; absent: the entry's grant always stands. */
   widens?(before: unknown, value: unknown): boolean;
   /** Every computer's access after this change: the whole of what it means, not the one change. */
@@ -443,6 +447,8 @@ interface StoredEdit {
   value: unknown;
   /** What the card showed of every computer's access. */
   access?: MeshAccessRow[];
+  /** Read again as the card is read; never part of its fingerprint. */
+  notes?: string[];
 }
 
 interface StoredSovaCard {
@@ -568,6 +574,7 @@ function cardView(c: StoredSovaCard): SettingsCardView {
     diff: diffOf(c.edits),
     fingerprint: c.fingerprint,
     ...(c.edits.map((e) => SOVA_ADAPTERS[e.id].input).find(Boolean) ? { input: c.edits.map((e) => SOVA_ADAPTERS[e.id].input).find(Boolean)! } : {}),
+    ...(c.edits.some((e) => e.notes?.length) ? { notes: c.edits.flatMap((e) => e.notes ?? []) } : {}),
     ...(c.edits.some((e) => e.access) ? { access: c.edits.flatMap((e) => e.access ?? []) } : {}),
     ...(c.appliedAt ? { appliedAt: c.appliedAt } : {}),
     ...(c.dismissedAt ? { dismissedAt: c.dismissedAt } : {}),
@@ -577,6 +584,20 @@ function cardView(c: StoredSovaCard): SettingsCardView {
 export function sovaCardsInfo(): SovaCardsInfo {
   const s = readStore();
   return { cards: s.cards.filter((c) => c.state === "waiting").map(cardView), recent: s.cards.filter((c) => c.state !== "waiting").slice(-KEEP_DONE).map(cardView) };
+}
+
+/** What a waiting card's notes say now: the page reads this before it draws, so they age no more than a poll. */
+export async function refreshSovaNotes(): Promise<void> {
+  const fresh = new Map<string, string[]>();
+  for (const c of readStore().cards.filter((x) => x.state === "waiting"))
+    for (const e of c.edits) {
+      const now = await SOVA_ADAPTERS[e.id].notes?.(e.value).catch(() => null);
+      if (now && !same(now, e.notes)) fresh.set(`${c.id}/${e.id}`, now);
+    }
+  if (!fresh.size) return;
+  const store = readStore();
+  for (const c of store.cards) for (const e of c.edits) if (fresh.has(`${c.id}/${e.id}`)) e.notes = fresh.get(`${c.id}/${e.id}`)!;
+  writeStore(store);
 }
 
 /** Prepare a card (a Create chat's propose): every edit checked first, a refusal writes nothing. It never applies. */
@@ -598,10 +619,12 @@ export async function proposeSova(input: { edits: unknown[]; why: unknown }, by:
     const problem = await SOVA_ADAPTERS[id].check(raw.value);
     if (problem) refuse(`${SOVA_SETTINGS[id].label}: ${problem}`);
     if (edits.some((e) => e.id === id)) refuse(`Two edits change ${id}: make it one.`);
-    const before = SOVA_ADAPTERS[id].read(raw.value);
-    if (!same(before, raw.value)) {
-      const access = await SOVA_ADAPTERS[id].access?.(raw.value);
-      edits.push({ id, before, value: raw.value, ...(access ? { access } : {}) });
+    const value = (await SOVA_ADAPTERS[id].prepare?.(raw.value)) ?? raw.value;
+    const before = SOVA_ADAPTERS[id].read(value);
+    if (!same(before, value)) {
+      const access = await SOVA_ADAPTERS[id].access?.(value);
+      const notes = await SOVA_ADAPTERS[id].notes?.(value);
+      edits.push({ id, before, value, ...(access ? { access } : {}), ...(notes ? { notes } : {}) });
     }
   }
   if (!edits.length) return null;

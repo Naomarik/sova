@@ -3,6 +3,8 @@
 <!-- Screen items become "Card or Screen" when cards' Sova-wide list arrives. -->
 The major modes are a closed list: Sova can't add one, and a project minor mode is the nearest way. Create itself is chosen per chat and can't be a default.
 
+Spec mode's writer is set in a subagent profile (`workers`). `mode-spec.json` is an older file that only seeds the profile library: don't offer it.
+
 A project mode lives in the checkout, so a chat in a worktree sees its own branch's modes. It never turns itself on: no default, profile or schedule can name one. Chats on a remote machine have none.
 
 ## What new chats start in

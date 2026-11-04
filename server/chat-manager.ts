@@ -58,6 +58,7 @@ import { cwdFallbackNote, probeFolder, type CwdFallback } from "./session-cwd";
 import { sovaToken } from "./auth";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
+import { SHELL_GUARD_FACTORY } from "./shell-guard-extension";
 import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache.ts";
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
@@ -259,12 +260,13 @@ export function alignLaunchOf(state: Pick<SessionState, "branch" | "file">): Ali
   return { data: { v: 1, review: reviewSaved(), visuals: alignForPick(pick).visuals }, recorded: false };
 }
 
-/** The extensions every ordinary session loads beyond pi-config's: resource monitoring and inherited
-    fork-cache affinity. None changes prompt sections or tool declarations by loading. A caller that passes its own list for an ordinary session
-    starts from this one; the special loadouts keep exactly their own. */
+/** The extensions every ordinary session loads beyond pi-config's: resource monitoring, inherited
+    fork-cache affinity and the macOS kill guard (server/shell-guard.ts). None changes prompt sections or tool declarations by loading. A caller that passes its own list for an ordinary session
+    starts from this one; the special loadouts keep exactly their own (none has bash). */
 const DEFAULT_EXTENSION_FACTORIES = [
   { name: "sova-resource-monitor", factory: monitorExtension },
   { name: "sova-fork-cache", factory: forkCacheExtension },
+  SHELL_GUARD_FACTORY,
   // Subfolder AGENTS.md / CLAUDE.md files, attached to the read/edit/write result that first reaches them.
   deeperContextExtension(),
 ];
@@ -762,15 +764,17 @@ function workerHostExtension(pi: PiExtensionAPI): void {
 }
 
 /**
- * A worker chat's own inline extensions: a worker or team member (never a hidden chat) gets project_verbs and its
+ * A worker chat's own inline extensions: every one, hidden chats included, gets the macOS kill guard
+ * (server/shell-guard.ts); a worker or team member (never a hidden chat) also gets project_verbs and its
  * instance note, as an ordinary chat does (§app.project-services/callers), served when the server declared it, else
  * in this process.
  */
 export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null }, path: string) {
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
   const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension()] : [];
-  if (w.kind !== "worker") return files;
+  if (w.kind !== "worker") return [SHELL_GUARD_FACTORY, ...files];
   return [
+    SHELL_GUARD_FACTORY,
     ...files,
     servedDecls
       ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
@@ -781,7 +785,7 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
 /**
  * One build of a worker chat (design §2.3): its own extensions only, in its order, discovery off; its
  * flags; the built-ins outside its list excluded (extension tools never filtered); its appended
- * prompt; its model and thinking as a fresh session takes them. Nothing of an ordinary chat but, for a worker or team member, project_verbs.
+ * prompt; its model and thinking as a fresh session takes them. Nothing of an ordinary chat but the kill guard and, for a worker or team member, project_verbs.
  */
 function workerBuild(w: WorkerSpec, path: string): PiBuild {
   return {

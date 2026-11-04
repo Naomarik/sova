@@ -480,7 +480,8 @@
       "§app/chat-processes",
       "§app.chat-processes/idle-stop",
       "§app.load-priority/workers",
-      "§app/worker-restore"
+      "§app/worker-restore",
+      "§chat/kill-guard"
     ],
     "agreed": {
       "by": "omar",

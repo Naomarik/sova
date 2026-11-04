@@ -1,6 +1,6 @@
 # modes: what new chats start in, how planning behaves, and modes your project ships
 
-<!-- Screen items become "Card or Screen" when cards' Sova-wide list arrives. -->
+<!-- Ids are shared/sova-settings-reference.ts's. mode.json has no id: Save as default is its only way. -->
 The major modes are a closed list: Sova can't add one, and a project minor mode is the nearest way. Create itself is chosen per chat and can't be a default.
 
 Spec mode's writer is set in a subagent profile (`workers`). `mode-spec.json` is an older file that only seeds the profile library: don't offer it.
@@ -20,8 +20,8 @@ A project mode lives in the checkout, so a chat in a worktree sees its own branc
 
 - Change: align's Eagerness (Eager or Careful), its writing style (Project manager, Simplified or Technical) and Visuals.
 - Lives: `<agent dir>/mode-align.json`. A subagent profile can override any of them for its chats.
-- Approves: the person, by Save Changes.
-- By: Screen. Settings → Alignment.
+- Approves: the person, by Apply or Save Changes.
+- By: Card or Screen. Card `alignment.style`. Screen: Settings → Alignment.
 - Live: next message for Eagerness and style; new chat for Visuals. Reaches their other computers with sync on.
 - Check: the tab shows the choice after Save.
 
@@ -29,8 +29,8 @@ A project mode lives in the checkout, so a chat in a worktree sees its own branc
 
 - Change: a read-only reviewer that checks the plan and the diff of risky work in align chats.
 - Lives: `alignment.review` in `<agent dir>/sova/settings.json`. The chat's subagent profile names the reviewer's model.
-- Approves: the person, by Save Changes.
-- By: Screen. Settings → Alignment, Adversarial review.
+- Approves: the person, by Apply or Save Changes.
+- By: Card or Screen. Card `alignment.review`. Screen: Settings → Alignment, Adversarial review.
 - Live: new chat. Reaches their other computers with sync on.
 - Check: the Reviewer section appears on each profile in Settings → Subagents.
 
@@ -38,8 +38,8 @@ A project mode lives in the checkout, so a chat in a worktree sees its own branc
 
 - Change: which small model summarizes, and how much summary a chat keeps. Memory itself is turned on from a chat's mode menu.
 - Lives: `<agent dir>/mode-memory.json`.
-- Approves: the person, by Save Changes.
-- By: Screen. Settings → Memory. The default memory type comes from Save as default in the mode menu.
+- Approves: the person, by Apply or Save Changes.
+- By: Card or Screen. Card `memory`. Screen: Settings → Memory. The default memory type comes from Save as default in the mode menu.
 - Live: next summary. It stays on this computer.
 - Check: the tab shows the choice after Save.
 

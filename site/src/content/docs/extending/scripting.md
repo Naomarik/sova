@@ -105,8 +105,8 @@ and `--limit` takes up to 1,000.
 ## What no script can do
 
 Each of these lets something act later without asking, so it passes only on your own click in Sova's
-page. A script, a chat's terminal, an extension or another computer is refused, and the refusal says where
-to click.
+page. A script, a chat's terminal, an extension, a button on a card or another computer is refused, and the
+refusal says where to click.
 
 | Approval | Where you click |
 |---|---|
@@ -123,14 +123,15 @@ mode at a version already approved stay open to scripts.
 **Apply and Approve** on a Settings change card is your click too, and the same goes for Apply itself,
 trusting a project's or an extension's cards, and approving a project mode's hooks.
 
-The Overseer keeps what it could already do: when it turns a project mode on, that still approves the
-mode's tools and commands, never its hooks. See [The Overseer](/docs/overseer/#what-it-can-do).
+Project tool approval has one other road: when the Overseer turns a project mode on, that still approves
+the mode's tools and commands, never its hooks. In a turn you started, it can also turn a Project Overseer
+power on. See [The Overseer](/docs/overseer/#what-it-can-do).
 
 A schedule on another of your computers can be approved from this page, with proof of your click carried
 across the link between the computers. Anything else that belongs to another computer is approved on that
 computer's own page.
 
-Shipping is yours too: no script plans, runs or rolls back a deploy.
+A deploy takes your confirm: from the project's Deploy panel, or `--confirm` on `sova-project deploy.run`.
 
 **How strong this is.** It raises the bar; it isn't a wall. Sova tells its page from a program by how the
 token is sent. A chat without the sandbox runs as you, so it can read the token from disk, and a program

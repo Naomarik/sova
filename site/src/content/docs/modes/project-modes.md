@@ -189,8 +189,8 @@ Approvals are kept in Sova's own state, outside every repository. Sova remembers
 each mode in each checkout, so switching back to a branch whose tools you already approved doesn't
 ask again. Approving a mode's tools is your own click in the mode menu; a chat's agent, a script, an
 extension or another computer is refused. The Overseer can still turn a mode on, and its approval covers
-the tools and commands but never the hooks. So can an approval one of the others gave earlier. Either way
-the hooks stay inactive, and the row says **Hooks need your approval.** Its **Approve Hooks** control shows the hooks and
+the tools and commands but never the hooks. An approval one of the others gave before this rule stands the
+same way. Either way the hooks stay inactive, and the row says **Hooks need your approval.** Its **Approve Hooks** control shows the hooks and
 approves that exact version. Only you approve hooks, from Sova's page on this machine: an approval
 of hooks from any of those, or through a mesh peer, is refused.
 

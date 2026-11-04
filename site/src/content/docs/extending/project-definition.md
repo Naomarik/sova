@@ -32,7 +32,7 @@ A static site is one service:
 | `host` | Names of values kept on this computer, never in the repository, that templates read | Each name set on this computer |
 | `share` | Which endpoints a running copy may share as a preview link, and for how long. Without it, no copy is shared | Conformance checks each endpoint answers |
 | `open` | Where a person opens the app | Conformance checks it answers |
-| `deploy` | Where the project ships: targets only you ship to | Its own check, `deploy.check`, which proves a recipe offline and runs nothing |
+| `deploy` | Where the project ships: its targets, and how each one ships and rolls back | Its own check, `deploy.check`, which proves a recipe offline and runs nothing |
 | `merge` | How branches land | See [below](#merge) |
 | `sources` | The files the definition was written from, such as a lockfile or compose file. When one changes, the project reads as stale | Nothing |
 
@@ -92,5 +92,6 @@ From a chat, the `project_verbs` tool runs these on your own worktree. From a ch
 | `conform` | Whether the definition passes the whole suite |
 | `deploy.check` | Whether a deploy recipe is sound: programs, host values and credentials by presence |
 
-Only you ship. A chat can read deploy status and check a recipe, but it can't plan, run or roll back a
-deploy.
+A chat can read deploy status and check a recipe, but it can't plan, run or roll back a deploy. You ship
+from the project's Deploy panel. A Project Overseer or the Project Assistant can set off the project's own
+deploy only with the `deploy` power on, and it waits the holding period like any act that reaches the code.

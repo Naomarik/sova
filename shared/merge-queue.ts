@@ -448,6 +448,22 @@ export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "
   reviewKit?: boolean;
 };
 
+/** A branch's entry as the session list carries it (protocol.ts SessionBranchQueue): its state, never a precomputed
+ *  key, so a new state flows through, and the fields a row's words read. */
+export type BranchQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit" | "position" | "reason" | "conflict" | "review" | "request" | "settled">;
+
+/** The session list's cut of a worktree row's queue entry. Pure. */
+export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
+  state: q.state,
+  commit: q.commit,
+  ...(q.position ? { position: q.position } : {}),
+  ...(q.reason ? { reason: q.reason } : {}),
+  ...(q.conflict ? { conflict: q.conflict } : {}),
+  ...(q.review ? { review: q.review } : {}),
+  ...(q.request ? { request: q.request } : {}),
+  ...(q.settled ? { settled: q.settled } : {}),
+});
+
 export interface MergeReady {
   branch: string;
   worktree: string;

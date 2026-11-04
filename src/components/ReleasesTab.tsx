@@ -433,7 +433,7 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
           <Show when={r().asked}>
             {(a) => (
               <div class="rel-saved-note">
-                <p class="text-eyebrow">Asked by {askerWord(a().by).replace(/^The /, "the ")}</p>
+                <p class="text-eyebrow">Asked by {askerWord(a().by)}</p>
                 <p class="rel-note-text">{a().why}</p>
                 <p class="text-caption text-muted">Passed to the chat as background, not as your instructions.</p>
               </div>

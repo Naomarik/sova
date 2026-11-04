@@ -189,7 +189,7 @@ test("the Release Note editor: Save keeps the trimmed text, offers nothing when 
 test("the saved note's line and who asked", () => {
   assert.match(savedNoteLine(false), /^Start Release sends this note/);
   assert.match(savedNoteLine(true), /^The next Start Release/);
-  assert.equal(askerWord("assistant:prj_1"), "The Project Assistant");
-  assert.equal(askerWord("overseer:s1"), "The overseer");
-  assert.equal(askerWord("project-overseer:prj_1"), "The overseer");
+  assert.equal(askerWord("assistant:prj_1"), "the Project Assistant");
+  assert.equal(askerWord("overseer:s1"), "the Overseer");
+  assert.equal(askerWord("project-overseer:prj_1"), "the project's overseer");
 });

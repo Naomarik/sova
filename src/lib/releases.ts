@@ -195,7 +195,7 @@ export const setupLiveLine = (r: Extract<SetupRun, { kind: "live" }>): string =>
 export const NOTE_MAX = RELEASE_NOTE_MAX;
 
 /** Who asked for a release (a release.request's `by`), in plain words. */
-export const askerWord = (by: string): string => (by.startsWith("assistant") ? "The Project Assistant" : "The overseer");
+export const askerWord = (by: string): string => (by.startsWith("assistant") ? "the Project Assistant" : by.startsWith("project-overseer") ? "the project's overseer" : "the Overseer");
 
 /** The editor's Save: the note as Sova keeps it (trimmed), and whether Save would change anything. */
 export function noteDraft(draft: string, saved: string | null | undefined): { text: string; changed: boolean; tooLong: boolean } {

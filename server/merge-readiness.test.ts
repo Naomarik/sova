@@ -1382,7 +1382,7 @@ test("a grown session file: only the lines appended are scanned, and what they s
   const path = sessionFile(lines);
   const fs = await import("node:fs");
   const first = await r.readReadinessScan(path, fs.statSync(path).size, null);
-  assert.ok(first.scan.digest && first.facts?.lastReply);
+  assert.ok(first.facts?.lastReply);
   const more = chain([user("no", "2026-09-29T15:39:00.000Z")]);
   (more[0] as { parentId: string | null }).parentId = (lines.at(-1) as { id: string }).id;
   writeFileSync(path, `${JSON.stringify(more[0])}\n`, { flag: "a" });

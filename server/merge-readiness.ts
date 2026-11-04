@@ -441,9 +441,9 @@ export interface ReadinessScan {
   found: boolean;
   entries?: ScanEntry[];
   checkIds?: Set<string>;
-  /** A hash of the file's first `size` bytes: what lets a grown file carry on from here. */
-  digest?: string;
 }
+/** A scan's hash of the file's first `size` bytes: what lets a grown file carry on from it. */
+const scanDigests = new WeakMap<ReadinessScan, string>();
 
 const MARKER = lineNeedle({ state: WORKTREES_ENTRY_TYPE });
 const CHUNK = 256 * 1024;
@@ -506,7 +506,8 @@ export async function readReadinessScan(path: string, size: number, prev: Readin
     // Carried on from a copy of the last read while it still ends at a line start and its bytes are the
     // same; else read again from the beginning, with no check ids carried.
     let hash = createHash("sha256");
-    const same = async (p: ReadinessScan) => unchanged || (p.digest !== undefined && (await hashBytes(hash, path, 0, p.size)) && hash.copy().digest("hex") === p.digest);
+    const digest = prev ? scanDigests.get(prev) : undefined;
+    const same = async (p: ReadinessScan) => unchanged || (digest !== undefined && (await hashBytes(hash, path, 0, p.size)) && hash.copy().digest("hex") === digest);
     const resume = grown && prev.found && prev.entries && prev.checkIds && (await atLineStart(path, prev.size)) && (await same(prev));
     if (!resume) hash = createHash("sha256");
     const checkIds = new Set(resume ? prev.checkIds : []);
@@ -519,8 +520,10 @@ export async function readReadinessScan(path: string, size: number, prev: Readin
       scan.items = [...prev.entries!];
     }
     await scan.grow(path, size);
-    const kept = resume && scan.size === prev.size && unchanged ? prev.digest : (await hashBytes(hash, path, resume && !unchanged ? prev.size : 0, scan.size)) ? hash.digest("hex") : undefined;
-    return { scan: { size: scan.size, found: true, entries: scan.items, checkIds, ...(kept ? { digest: kept } : {}) }, facts: factsOf(scan.branch()) };
+    const kept = resume && scan.size === prev.size && unchanged ? digest : (await hashBytes(hash, path, resume && !unchanged ? prev.size : 0, scan.size)) ? hash.digest("hex") : undefined;
+    const out: ReadinessScan = { size: scan.size, found: true, entries: scan.items, checkIds };
+    if (kept) scanDigests.set(out, kept);
+    return { scan: out, facts: factsOf(scan.branch()) };
   } catch {
     return { scan: { size, found: false }, facts: null };
   }

@@ -18,7 +18,7 @@ Landing a branch is always the person's: Land beside the composer, on the projec
 - Change: whether a landing pushes, whether review runs, and for each check its time limit (at most 30 minutes), whether it reruns only the failed files, and whether it always runs or only when the merge thread picks it.
 - Lives: the `merge` section of `.sova/project.json` on the target branch.
 - Approves: the person, by Apply on the card, which stands for the confirm on the Settings tab.
-- By: Card or Screen. The card goes the same way as Save in Settings → Merge Queue, the same commit and the same refusals, and it isn't checked first. Applied while a branch is checking, it reads "Saves when the current branch finishes." It's refused while the project folder has an uncommitted change. On a project that lands by request, it goes out as a request of its own instead.
+- By: Card or Screen. `{setting: "merge-queue", changes}`, on a card of its own. The card goes the same way as Save in Settings → Merge Queue, the same commit and the same refusals, and it isn't checked first. Applied while a branch is checking, it reads "Saves when the current branch finishes." It's refused while the project folder has an uncommitted change. On a project that lands by request, it goes out as a request of its own instead.
 - Live: from the next landing, or on a request project once that request merges.
 - Check: Settings → Merge Queue shows the value, tagged Project file, with "From {target} at {sha}".
 
@@ -36,7 +36,7 @@ Landing a branch is always the person's: Land beside the composer, on the projec
 - Change: which model and effort the review and the merge thread run on, for one project.
 - Lives: this computer. They never go in the project's file, and they don't spread.
 - Approves: the person, by Apply.
-- By: Card or Screen. On Settings → Merge Queue each has Change. A model turned off in Settings → Models can't be picked.
+- By: Card or Screen. `{setting: "merge-queue", models}`, or Change on Settings → Merge Queue. A model turned off in Settings → Models can't be picked.
 - Live: from the next review, or the next fresh merge thread. One running keeps its model.
 - Check: Settings → Merge Queue shows the model, or "Same as new chats".
 

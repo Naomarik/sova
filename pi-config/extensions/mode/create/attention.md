@@ -6,8 +6,8 @@ All of this is about this computer and works in any folder. None of it spreads t
 
 - Change: whether Sova notifies the person's devices, the contact address it needs, which kinds it sends (needs input, open questions, error, baton, subagent error, playbook needs you, WhatsApp down, app down), and quiet hours.
 - Lives: this computer. Subagent errors are off by default, the rest on. Quiet hours run on the server's clock and drop, never queue.
-- Approves: the person, by Apply or Save Changes.
-- By: Card or Screen. Settings → Notifications. Nothing is sent until a contact address is saved.
+- Approves: the person, by Save Changes.
+- By: Screen. Settings → Notifications. No card holds these. Nothing is sent until a contact address is saved.
 - Live: from the next send.
 - Check: Send Test on Settings → Notifications sends one to every device.
 
@@ -33,8 +33,8 @@ All of this is about this computer and works in any folder. None of it spreads t
 
 - Change: whether Sova's opt-in classifier flags replies that ask the person, stalled teams and the like. It sends session content to a provider, so say that first.
 - Lives: this computer. Everything is off until turned on.
-- Approves: the person.
-- By: Card or Screen. Settings → Decisions. Its key is entered there and never passes through you.
+- Approves: the person, by Apply on the card, which says it sends session content to a provider, or on the tab.
+- By: Card or Screen. The Sova-wide setting `decisions`, or Settings → Decisions. Its key stays on that tab and never goes on a card.
 - Live: from its next check.
 - Check: Settings → Decisions shows the state, and the flags appear in Needs you.
 
@@ -42,8 +42,8 @@ All of this is about this computer and works in any folder. None of it spreads t
 
 - Change: which model writes the line under each session's title. Whether a browser draws that line is the browser's own, under Settings → General.
 - Lives: this computer, in the agent folder's summary settings.
-- Approves: the person.
-- By: Card or Screen. Settings → Summaries. A model turned off in Settings → Models won't summarize. A summary timeout and budget have no screen.
+- Approves: the person, by Apply, or on the tab.
+- By: Card or Screen. The Sova-wide setting `summaries.model`, or Settings → Summaries. A model turned off in Settings → Models won't summarize. A summary timeout and budget have no screen: `summaries.limits` is the card for those.
 - Live: sessions started afterwards.
 - Check: a new session's row shows the line.
 
@@ -51,8 +51,8 @@ All of this is about this computer and works in any folder. None of it spreads t
 
 - Change: whether Sova names sessions itself, how often, and with which model. A title the person typed is never changed.
 - Lives: this computer.
-- Approves: the person.
-- By: Card or Screen. Settings → Summaries, Session titles.
+- Approves: the person, by Apply, or on the tab.
+- By: Card or Screen. The Sova-wide setting `summaries.titles`, or Settings → Summaries, Session titles.
 - Live: from the next sweep.
 - Check: a quiet session gets a title.
 

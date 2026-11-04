@@ -45,7 +45,7 @@ The project ones need a project: in a folder that isn't one, offer Add as Projec
 - Change: its proactivity, model and thinking, its 8 limits, quick actions, standing notes, idea explorer, extra instructions, and whether it resumes interrupted runs.
 - Lives: this computer. It doesn't spread.
 - Approves: the person, by Apply or Save Changes.
-- By: Card or Screen. Settings → Overseer.
+- By: Card or Screen. The Sova-wide setting `overseer.global`, or Settings → Overseer. Standing notes have no card: they're on that tab.
 - Live: the model when it's idle, or at the end of its turn; notes and instructions from its next run.
 - Check: Settings → Overseer shows them.
 
@@ -63,7 +63,7 @@ The project ones need a project: in a folder that isn't one, offer Add as Projec
 - Change: the model that writes its replies, the model for coding sessions it starts, and the model for feature request chats. A project can set its own coding and gathering models. It has no instructions of its own to edit: the nearest way is the owner page's controls.
 - Lives: a default on this computer, an organization's own pick in its workspace, and a project's pick in Sova's settings for it.
 - Approves: the person.
-- By: Card or Screen. The default is on Settings → Organizations, an organization's pick on its Owner card, and a project's in `overseer.assistant-models`.
+- By: Card or Screen. The default is the Sova-wide setting `assistant.default`, or Settings → Organizations; a project's is `overseer.assistant-models`. An organization's pick is on its Owner card, with no card of Create's.
 - Live: from its next read: replies, fixes and feature request chats all follow it.
 - Check: the Owner card shows each model and whether it's ready.
 

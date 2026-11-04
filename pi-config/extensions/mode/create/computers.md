@@ -43,7 +43,7 @@ All of this works in any folder. It's about this computer and how it reaches oth
 - Change: where read-only links open for people outside: off, this computer as the gateway, or through a peer that is one. Also the public address, the preview address for running copies, the front, the local port, which computers send links here, and visitor logging.
 - Lives: this computer, and environment variables win over it. The front is a web server or tunnel the person runs: Sova shows the steps and never writes its configuration. Sova's own page never goes public.
 - Approves: the person.
-- By: Card or Screen. Settings → Public links, then Verify Address. Running the front is theirs, in a terminal. It doesn't spread.
+- By: Screen. Settings → Public links, then Verify Address. No card holds these. Running the front is theirs, in a terminal. It doesn't spread.
 - Live: now, once saved and the front is up.
 - Check: Verify Address reads "Verified". The chip says `Not listening` when the share port can't open.
 
@@ -96,8 +96,8 @@ All of this works in any folder. It's about this computer and how it reaches oth
 
 - Change: a machine or container a chat's tools can run on, reached by ssh, Docker or an Incus cell.
 - Lives: `targets.json` in the person's agent folder. It holds key paths and profile names only, never a key. It doesn't spread.
-- Approves: the person, by their OK on the whole file.
-- By: OK. Show the path and the whole change first.
+- Approves: the person, by Apply.
+- By: Card. The Sova-wide setting `remote.targets`, with `sova_settings` reference for its value.
 - Live: new chats, from New Session → Remote.
 - Check: start a chat on it and run a command. A chat on a remote machine has no project modes or cards.
 

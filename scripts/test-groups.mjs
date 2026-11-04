@@ -120,6 +120,35 @@ export const GROUPS = [
       ...SELF,
     ],
   },
+  {
+    name: "settings",
+    title: "Settings in a browser",
+    // The Settings dialog driven in Chrome: every tab's edit, save, reload, invalid box and Reset to
+    // Defaults. Settings code only: its forms, their drafts and checks, and the routes and stores
+    // they save through (decision q4 of the settings QA: not every package bump).
+    files: ["server/settings-browser.integration.test.ts"],
+    except: [],
+    landing: "triggered",
+    triggers: [
+      "src/components/*Settings*.tsx",
+      "src/lib/*-draft.ts",
+      "src/lib/*-form.ts",
+      "src/lib/settings-*.ts",
+      "src/lib/public-links.ts",
+      "src/lib/outreach.ts",
+      "src/lib/provider-limits.ts",
+      "shared/mesh-settings-checks.ts",
+      "server/*-settings.ts",
+      "server/overseer-store.ts",
+      "server/provider-limits.ts",
+      "server/push-routes.ts",
+      "server/push-store.ts",
+      "server/updates/routes.ts",
+      "server/tours/browser.ts",
+      ...TEST_SETUP,
+      ...SELF,
+    ],
+  },
 ];
 
 /** The name of the everyday set: every integration file in no group. */

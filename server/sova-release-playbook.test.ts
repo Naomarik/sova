@@ -152,3 +152,27 @@ test("the release checks' pure parts: the dated changelog entry, the built landi
   assert.equal(sr.sameCommit("abc", "abc"), false);
   assert.equal(sr.sameCommit("abc1234", "abc1235"), false);
 });
+
+test("the Docs step runs every release and finishes on its own; the Release Note is the operator's word, an ask only context", () => {
+  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbooks/release/release.json"), "utf8"));
+  const docs = manifest.steps.find((s) => s.id === "docs");
+  assert.ok(docs);
+  assert.notEqual(docs.held, true, "the docs step is not held");
+  const playbook = readFileSync(join(ROOT, ".sova/playbooks/release/PLAYBOOK.md"), "utf8");
+  const ref = readFileSync(join(ROOT, ".sova/playbooks/release/references/docs.md"), "utf8");
+  const general = readFileSync(join(ROOT, "playbooks/release/PLAYBOOK.md"), "utf8");
+  const docsBullet = playbook.slice(playbook.indexOf("- `docs`:"), playbook.indexOf("- `commit`:"));
+  assert.match(docsBullet, /every release unless the operator's Release Note/);
+  for (const text of [docsBullet, ref]) {
+    assert.doesNotMatch(text, /skipped\*\* unless|only when the start reason|step `held`|End your turn/);
+  }
+  assert.match(ref, /Report the step `done`, never `held`/);
+  assert.match(ref, /new feature, by default/i);
+  // A new page's record is made official on the release branch: promote, then commit the claims by explicit path.
+  assert.match(ref, /sova-spec-draft\.mjs" promote <draft> --all --write/);
+  assert.match(ref, /commit the claims files .* by explicit path\) in a commit of their own, before the page's commit and the release commit/);
+  assert.match(playbook, /Release Note[^\n]*names[^\n]*wins over this rule/);
+  assert.match(playbook, /An ask[^\n]*context only[^\n]*Never take a version from it/);
+  assert.match(general, /operator's Release Note/);
+  assert.match(general, /ask from a Project Assistant or an overseer is separate from the note/);
+});

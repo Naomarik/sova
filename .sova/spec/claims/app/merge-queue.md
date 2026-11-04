@@ -910,8 +910,9 @@ queue uses."
 Everything else is read only: check commands, setup, install, the kit's folder, and every value
 Set by Sova. A command is changed in a branch, where the queue tests it.
 
-**Open Folder** opens the folder viewer (§app/folder-viewer) in place, under its row, on the
-folder as it is at the target's head (**Close Folder** puts it away): the review kit; the merge
+**Open Folder** opens the folder viewer's list (§app/folder-viewer) in place, under its row, on the
+folder as it is at the target's head (**Close Folder** puts it away), and a picked file opens in the
+reading window (§app/markdown-viewer): the review kit; the merge
 thread's two playbooks as two labelled groups, "Sova's method" and "This project's"; the request
 kit. It is read only, and no script in it runs. The merge thread reads the project's playbook from
 the project folder (§chat.merge-queue/thread); when that copy differs from the target's (a change

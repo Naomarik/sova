@@ -1410,13 +1410,13 @@ test("a rewrite in place that grows, line starts where they were: nothing old is
   const ino = fs.statSync(path).ino;
   // Same length, so every line still starts where it did; a line follows, so the size grew.
   const fh = fs.openSync(path, "r+");
-  fs.writeSync(fh, old.replace("feat/agents-row-dropdown", "feat/agents-row-elsewhere"), 0);
+  fs.writeSync(fh, old.replace("feat/agents-row-dropdown", "feat/agents-row-otherwis"), 0);
   fs.writeSync(fh, `${JSON.stringify({ ...user("more", "2026-09-29T15:38:00.000Z"), id: "e-late", parentId: (lines.at(-1) as { id: string }).id })}\n`, Buffer.byteLength(old));
   fs.closeSync(fh);
   assert.equal(fs.statSync(path).ino, ino);
   const before = r.readinessScanWork.lines;
   const again = await r.readReadinessScan(path, fs.statSync(path).size, first.scan);
-  assert.equal(again.facts?.trees[0]?.branch, "feat/agents-row-elsewhere");
+  assert.equal(again.facts?.trees[0]?.branch, "feat/agents-row-otherwis");
   assert.ok(r.readinessScanWork.lines - before > 1, "from the start");
 });
 

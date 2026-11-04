@@ -283,6 +283,13 @@ function refuseTmpInRepo(tmpBase) {
 }
 const flags = rest.filter((a) => a.startsWith("-"));
 const named = rest.filter((a) => !a.startsWith("-"));
+// A folder reaches the test runner whole, each tier's files in one lane: a fixture whose setup the tier guard stops then
+// writes to its empty root, which is this checkout. Name the files.
+const folder = named.find((a) => fs.statSync(path.resolve(ROOT, a), { throwIfNoEntry: false })?.isDirectory());
+if (folder) {
+  console.error(`run-tests: ${folder} is a folder: name its test files, or use --changed\n${USAGE}`);
+  process.exit(2);
+}
 const tiersAsked = opts["--all"] ? ["unit", "integration"] : opts["--integration"] ? ["integration"] : ["unit"];
 let files = named.length
   ? named

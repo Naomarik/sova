@@ -63,7 +63,8 @@ import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-chec
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
 import { deeperContextExtension } from "./harness/pi/deeper-context";
 import { mcpExtension } from "./harness/pi/mcp";
-import { normalizeChatList, type McpChatList } from "./mcp/list";
+import { nothingDeclared } from "./mcp/folder";
+import { NO_MCP, normalizeChatList, type McpChatList } from "./mcp/list";
 import type { McpListAsk } from "./mcp/chat";
 import type { McpNote } from "../shared/mcp";
 import { LOADING_TOOLS } from "./deeper-context";
@@ -4480,7 +4481,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               // Its MCP servers (§app/mcp); a profile may remove them (§chat.profiles/capabilities).
               mcpExtension({
                 list: async (cwd, sandboxOn) =>
-                  snap?.remove.includes("mcp") ? null : (chatHosts.mcpList ?? mcpListHere)({ path, cwd, sandboxOn, offMcp: loadout.data?.offMcp ?? [], onMcp: loadout.data?.onMcp ?? [] }),
+                  snap?.remove.includes("mcp") || nothingDeclared(cwd) ? NO_MCP : (chatHosts.mcpList ?? mcpListHere)({ path, cwd, sandboxOn, offMcp: loadout.data?.offMcp ?? [], onMcp: loadout.data?.onMcp ?? [] }),
               }),
               // Its workers' and hidden chats' host (§app.chat-processes/workers).
               { name: "sova-worker-host", factory: workerHostExtension },

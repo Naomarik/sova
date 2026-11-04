@@ -1,19 +1,11 @@
 // Which projects and checkouts exist, for the rows and for a chat's folder. The server's
 // side only: projects live in the org engines, which a chat's process doesn't open.
 import { execFile } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync } from "node:fs";
 import { folderMatcher } from "../project-folder";
 import { listProjects } from "../projects/spaces";
 import { agentRoot } from "../state-root";
-
-const real = (p: string): string => {
-  try {
-    return realpathSync(p);
-  } catch {
-    return p;
-  }
-};
+import { checkoutRootOf, real } from "./folder";
 
 export interface McpProject {
   id: string;
@@ -33,19 +25,13 @@ export function checkoutsOf(root: string): Promise<string[]> {
   });
 }
 
-/** The top of the checkout a folder is in, by its `.git`; null when it is in none. */
-export function checkoutRootOf(cwd: string): string | null {
-  for (let dir = real(cwd); ; dir = dirname(dir)) {
-    if (existsSync(join(dir, ".git"))) return dir;
-    if (dirname(dir) === dir) return null;
-  }
-}
-
 export interface McpFolder {
   project: McpProject | null;
   /** The real path whose `.mcp.json` this folder reads. */
   checkout: string;
 }
+
+export { checkoutRootOf };
 
 export function folderOf(cwd: string, projects: readonly McpProject[] = mcpProjects()): McpFolder {
   const id = folderMatcher(projects, agentRoot())(cwd);

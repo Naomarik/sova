@@ -21,6 +21,7 @@ const { readyToRun, refusalOf, secretNames } = await import("./resolve");
 const { rowOfEntry, rowState } = await import("./rows");
 const { chatListOf, setupOf, workerListOf } = await import("./list");
 const { parseRowId, rowId } = await import("./ids");
+const { mcpNamesOf, mcpToolOfRow } = await import("./tool-names");
 
 const computer = { kind: "computer" } as const;
 const record = (...tools: string[]) => ({ protocolVersion: "1", serverInfo: { name: "s", version: "1" }, tools: tools.map((name) => ({ name, description: `d ${name}`, inputSchema: { type: "object" } })) });
@@ -320,5 +321,24 @@ describe("a chat's list", () => {
     assert.deepEqual(given.list.servers[0]!.record.tools.map((t) => t.name), ["x"]);
     assert.deepEqual(workerListOf(own, ["b"], "Chat"), { refused: "Chat's servers are a, so a worker can't have b." });
     assert.deepEqual(workerListOf({ v: 1, servers: [] }, ["b"], "Chat"), { refused: "Chat's servers are none, so a worker can't have b." });
+  });
+});
+
+describe("a tool row's name", () => {
+  const list = { v: 1 as const, servers: [{ id: "i", name: "my-srv", owner: computer, kind: "command" as const, version: "v", record: record("a.b", "y".repeat(100)) }] };
+  const names = mcpNamesOf(list);
+
+  test("the chat's list reads sanitized and hashed names back to the server's own", () => {
+    assert.deepEqual(mcpToolOfRow("mcp__my_srv__a_b", undefined, names), { server: "my-srv", tool: "a.b" });
+    const hashed = [...names.keys()].find((n) => n.length === 64)!;
+    assert.deepEqual(mcpToolOfRow(hashed, undefined, names), { server: "my-srv", tool: "y".repeat(100) });
+  });
+
+  test("a result's details win; with neither, the name is read; Sova's own tools and others are nobody's", () => {
+    assert.deepEqual(mcpToolOfRow("mcp__x__y", { server: "s", tool: "t" }, names), { server: "s", tool: "t" });
+    assert.deepEqual(mcpToolOfRow("mcp__proj__p1", {}), { server: "proj", tool: "p1" });
+    assert.deepEqual(mcpToolOfRow("mcp__sova__mcp__proj__p1", undefined), { server: "proj", tool: "p1" }, "a Claude Code file's name");
+    assert.equal(mcpToolOfRow("mcp__sova__read", undefined), undefined);
+    assert.equal(mcpToolOfRow("read", undefined), undefined);
   });
 });

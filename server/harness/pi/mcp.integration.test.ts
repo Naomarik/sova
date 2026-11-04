@@ -417,7 +417,7 @@ describe("when a server fails in a chat", () => {
   test("a tool row reads its server and tool, hashed names too, saved and live", async () => {
     const long = "x".repeat(100);
     approve([server("named-one", join(root, "named.log"), [], [long])]);
-    const { say, declared, notes, path } = await open(project("named"));
+    const { say, declared, notes, path, results } = await open(project("named"));
     await say("first", { text: "done" });
     const name = declared()[0]!;
     assert.ok(!name.includes(long), "pi shortened it");
@@ -425,10 +425,15 @@ describe("when a server fails in a chat", () => {
     const live = notes.map((m) => JSON.parse(m)).find((m) => m.event?.type === "tool_execution_start");
     assert.deepEqual(live?.event?.mcp, { server: "named-one", tool: long });
     assert.deepEqual((await import("../../../shared/wire-v1")).fromV1(live)[0], { type: "tool.start", callId: live.event.toolCallId, name, args: { text: "hi" }, mcp: { server: "named-one", tool: long } });
-    const { normalizeEntries, slimRows } = await import("../../transcript");
-    const rows = slimRows(normalizeEntries(entriesOf(path).filter((e) => e.type !== "session")));
-    const mcp = rows.filter((r) => r.kind === "tool-call" || r.kind === "tool-result").map((r) => r.mcp);
-    assert.deepEqual(mcp, [{ server: "named-one", tool: long }, { server: "named-one", tool: long }]);
+    const { rowsOf } = await import("../../transcript");
+    const { readBranch } = await import("./reader");
+    const toolRows = async () => rowsOf(await readBranch(path)).filter((r) => r.kind === "tool-call" || r.kind === "tool-result").map((r) => r.mcp);
+    const named = { server: "named-one", tool: long };
+    assert.deepEqual(await toolRows(), [named, named], "a saved row, read as a reload reads it");
+    writeFileSync(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: {} }));
+    await say("third", call(name), { text: "done" });
+    assert.equal(results().at(-1)!.isError, true, "a call that failed before the server has no details");
+    assert.deepEqual(await toolRows(), [named, named, named, named], "its row reads the same, hashed name and all");
   });
 });
 

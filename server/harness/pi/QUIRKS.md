@@ -69,6 +69,7 @@ Paths in "Where" are under `server/`.
 | P32 mcp-status-text | error-text | `readStatus` (harness/pi/mcp-check.ts), `recordOf` (harness/pi/mcp-check.ts) | `createMcpExtension`, `ToolDefinition.label` | pi exports a status read and the tool's raw name |
 | P33 mcp-auth-keys | private-read | `forgetSignIn` (mcp/forget-sign-in.ts) | `McpOAuthCredentialStore.remove` | pi exports its credential store |
 | P34 mcp-registered-list | ordering | `mcpExtension` (harness/pi/mcp.ts) | `ExtensionAPI.registerMcpServer`, `ExtensionAPI.unregisterMcpServer`, `createMcpExtension` | pi lets a host hand it a chat's list at each prompt |
+| P35 mcp-tool-name | semantic | `piToolNames` (mcp/tool-names.ts) | `createMcpToolDefinition` | pi records the raw names in every result, or exports its naming |
 | T1 scripted-model (test-only) | private-write | `ScriptedModel.attach` (harness/pi/testing/scripted-model.ts) | `AgentSession._modelRuntime`, `Agent.getApiKey`, `Agent.streamFunction` | pi offers a public test model hook |
 
 ## What each one relies on
@@ -260,6 +261,12 @@ Canary: `P33 mcp-auth-keys: pi's oauth store keys a server by its namespace and 
 A chat's list reaches pi as registered servers, not as config: a handler ahead of pi's `session_start` registers them, and a list that changed before the first message swaps through `unregisterMcpServer`/`registerMcpServer`, which pi applies in its `mcp_servers_change` handler. Both have to land in the first request (§app.mcp/tool-list).
 
 Canary: `P34 mcp-registered-list: a server registered ahead of pi's session_start connects, and one swapped in before the first prompt is declared in it`.
+
+### P35 mcp-tool-name
+
+A saved tool row reads its server and tool from the result's details, and a call that failed before the server has none, so the chat's kept list answers by pi's own naming rule (`piToolNames`): the name sanitized, and shortened with a hash of server and tool past 64 characters or when taken.
+
+Canary: `P35 mcp-tool-name: a plain, a sanitized and a shortened tool register under the names piToolNames gives`.
 
 ### T1 scripted-model (test-only)
 

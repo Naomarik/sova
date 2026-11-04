@@ -1056,6 +1056,20 @@ describe("pi contract", () => {
     session.dispose();
   });
 
+  test("P35 mcp-tool-name: a plain, a sanitized and a shortened tool register under the names piToolNames gives", async () => {
+    const { piToolNames } = await import("../../mcp/tool-names");
+    const seen: { name: string }[] = [];
+    const long = "x".repeat(100);
+    const config = { errors: [], autoEnableCodemode: false, servers: [{ name: "my-srv", source: "sova", scope: "global", config: { command: "no-such-program", exposure: "direct" } }] };
+    const factory = pi.agent.createMcpExtension({ loadConfig: () => config as never, createTransport: () => answeringTransport(["plain", "a.b", long].map((name) => ({ name, inputSchema: { type: "object" } })), []) as never });
+    const wrapped = (api: any) => factory(new Proxy(api, { get(t, k) { if (k === "registerTool") return (d: never) => (seen.push(d), t.registerTool(d)); const v = t[k]; return typeof v === "function" ? v.bind(t) : v; } }));
+    const { session } = await quirkSession({ extensions: [wrapped] });
+    await session.bindExtensions({ uiContext: { notify() {}, setStatus() {}, select: async () => undefined, confirm: async () => false, input: async () => undefined, custom: async () => undefined, setWidget() {}, theme: {} } as never, mode: "rpc" as never });
+    while (seen.length < 3) await new Promise((r) => setTimeout(r, 1));
+    assert.deepEqual(seen.map((d) => d.name), [piToolNames("my-srv", "plain")[0], piToolNames("my-srv", "a.b")[0], piToolNames("my-srv", long)[1]]);
+    session.dispose();
+  });
+
   test("P33 mcp-auth-keys: pi's oauth store keys a server by its namespace and URL as forgetSignIn deletes it", () => {
     const source = readFileSync(join(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "extensions", "mcp", "oauth.js"), "utf8");
     assert.ok(source.includes("key: `${mcpNamespace(name)}|${legacyKey}`"), "the store's key");

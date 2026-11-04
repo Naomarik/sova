@@ -1,4 +1,5 @@
-import { MCP_NOTE } from "./harness/state-kinds";
+import { MCP_LIST, MCP_NOTE } from "./harness/state-kinds";
+import { mcpNamesOf, mcpToolOfRow, type McpNames } from "./mcp/tool-names";
 import {
   EAGER_TOOLS,
   OVERSEER_DIALOG_ANSWER_ENTRY,
@@ -257,32 +258,24 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
  * tool rows their `tool`, an unknown row its entry without signatures. Rows made from one entry
  * share it, so a reply's later blocks carry no meta of their own.
  */
-export function slimRows(rows: TranscriptItem[]): TranscriptItem[] {
+export function slimRows(rows: TranscriptItem[], mcpNames?: McpNames): TranscriptItem[] {
   let prev: HEntry | undefined;
-  const mcpCalls = new Map<string, NonNullable<TranscriptItem["mcp"]>>();
   for (const it of rows) {
     const h = sources.get(it);
     if (h && h !== prev) it.meta = factsOf(h);
     prev = h;
     if (it.kind === "tool-call" || it.kind === "tool-result") {
+      const name = it.kind === "tool-call" ? it.text : h?.kind === "tool-result" ? h.tool : undefined;
+      const details = h?.kind === "tool-result" ? h.details : undefined;
       slimTool(it, h);
-      const details = h?.kind === "tool-result" ? (rawOf(h) as { message?: { details?: { server?: unknown; tool?: unknown } }; details?: { server?: unknown; tool?: unknown } } | undefined) : undefined;
-      const d = details?.message?.details ?? details?.details;
-      if (typeof d?.server === "string" && typeof d.tool === "string") {
-        it.mcp = { server: d.server, tool: d.tool };
-        if (it.toolCallId) mcpCalls.set(it.toolCallId, it.mcp);
-      }
+      const mcp = mcpToolOfRow(name, details, mcpNames);
+      if (mcp) it.mcp = mcp;
     }
     else if (it.kind === "unknown" && h) {
       // The Unrecognized entry card shows the entry as the harness wrote it.
       const raw = rawOf(h);
       if (raw) it.entry = withoutSignatures(raw);
     }
-  }
-  // A call's row reads its server and tool from its result, whose details pi wrote them in.
-  if (mcpCalls.size) for (const it of rows) if (it.kind === "tool-call" && it.toolCallId) {
-    const mcp = mcpCalls.get(it.toolCallId);
-    if (mcp) it.mcp = mcp;
   }
   return rows;
 }
@@ -753,8 +746,8 @@ function teamEventRow(id: string, h: StateEntry): TranscriptItem[] {
 
 /** A neutral entry's rows (0..n TranscriptItems), as they go over the wire (slimRows); `state` carries the
     running model. An id-less entry's rows are keyed by `fallbackId`. */
-export function rowsOfEntry(h: HEntry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
-  return slimRows(entryRows(h, fallbackId, state));
+export function rowsOfEntry(h: HEntry, fallbackId = "?", state?: { model?: string; mcpNames?: McpNames }): TranscriptItem[] {
+  return slimRows(entryRows(h, fallbackId, state), state?.mcpNames);
 }
 
 /** Normalize one parsed pi entry into 0..n TranscriptItems, as they go over the wire (slimRows). The
@@ -869,7 +862,9 @@ function stateRows(id: string, h: StateEntry): TranscriptItem[] {
 /** The rows of a run of history; `line(i)` is the position an id-less entry's rows are keyed by. */
 function historyRows(history: readonly HEntry[], line: (i: number) => number): TranscriptItem[] {
   const out: TranscriptItem[] = [];
-  const state: { model?: string } = {}; // running model change, for assistant rows without their own
+  const state: { model?: string; mcpNames?: McpNames } = {}; // running model change, for assistant rows without their own
+  // A chat's own list says what its tools' names mean, a hashed one too (the newest on this run).
+  for (const h of history) if (h.kind === "state" && h.key === MCP_LIST.type) state.mcpNames = mcpNamesOf(MCP_LIST.parse(h.data));
   // Align-doc entries are revisions of one document: only the newest renders (none if it's cleared).
   let newestAlign = -1;
   history.forEach((h, i) => { if (isAlignDoc(h)) newestAlign = i; });

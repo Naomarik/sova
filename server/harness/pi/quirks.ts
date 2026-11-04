@@ -494,6 +494,16 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi lets a host hand it a chat's list at each prompt",
   },
   {
+    id: "P35",
+    name: "mcp-tool-name",
+    kind: "semantic",
+    relies: "pi names a tool `mcp__<server>__<tool>` with anything outside [A-Za-z0-9_] as `_`, and past 64 characters or when taken, cuts it to fit `_` and the first 8 hex of sha256(`<server>\\0<tool>`). A saved row reads its server and tool from the chat's list by that rule: a failed call has no details.",
+    pi: ["createMcpToolDefinition"],
+    where: [{ file: "server/mcp/tool-names.ts", symbol: "piToolNames" }],
+    canary: "P35 mcp-tool-name: a plain, a sanitized and a shortened tool register under the names piToolNames gives",
+    retireWhen: "pi records the raw names in every result, or exports its naming",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

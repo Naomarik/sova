@@ -267,7 +267,7 @@ export function SessionPane(props: {
             <SessionUsageTab spend={spend} workers={workers()} />
           </Match>
           <Match when={tab() === "context"}>
-            <ContextTab path={props.path} workers={workers()} teams={props.insight.data?.teams} changed={props.insight.changed} />
+            <ContextTab path={props.path} workers={workers()} teams={props.insight.data?.teams} changed={props.insight.changed} onClose={props.onClose} />
           </Match>
           <Match when={tab() === "sharing"}>
             <div class="session-panel-scroll" tabindex="0">

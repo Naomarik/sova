@@ -1,5 +1,6 @@
-// Run: TMPDIR=/dev/shm/q pnpm test:int -- server/settings-browser.integration.test.ts
-// (Chrome's sockets need a short temp dir: agents/testing/overview.md, "Tour recording tests".)
+// Run: pnpm test:int -- server/settings-browser.integration.test.ts
+// Chrome's sockets need a short temp dir: the file picks its own (settings-browser-temp.ts), so a long
+// TMPDIR never fails it; with no short writable one at all it skips, saying why.
 // Settings in a real browser (§app.settings-dialog/save-bar), against a throwaway server
 // (server/testing/hermetic-server.ts) serving this tree's frontend, built fresh into the scratch root
 // (a stale dist/ would test old code). Per tab: the dialog opens clean; an edit says "Unsaved: <form>";
@@ -13,33 +14,42 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { chromium, type Browser, type Page } from "playwright-core";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
-import { assertTourBrowserTempPath, discoverTourBrowser } from "./tours/browser";
+import { discoverTourBrowser } from "./tours/browser";
+import { chooseBrowserTemp } from "./settings-browser-temp";
 import { scratchRoot } from "./test-scratch";
 
 const ROOT = resolve(import.meta.dirname, "..");
 let s: HermeticServer;
 let browser: Browser;
 let page: Page;
+const temp = chooseBrowserTemp();
+const skip = "skip" in temp ? temp.skip : undefined;
+const shortTmp = "dir" in temp ? temp.dir : undefined;
+const keptTmpdir = process.env.TMPDIR;
 
 before(async () => {
-  // Chrome's named sockets go under TMPDIR: a long one fails here, saying so, not in a launch.
-  assertTourBrowserTempPath(tmpdir());
+  if (skip) return;
+  // Chrome (and Playwright's profile for it) put their sockets under TMPDIR: the short one chosen.
+  process.env.TMPDIR = shortTmp;
   const dist = join(scratchRoot("sova-settings-browser-"), "dist");
   mkdirSync(dist, { recursive: true });
   execFileSync("node", [join(ROOT, "node_modules", "vite", "bin", "vite.js"), "build", "--outDir", dist, "--emptyOutDir", "--logLevel", "error"], { cwd: ROOT, stdio: ["ignore", "ignore", "inherit"] });
   s = await startHermeticServer({ env: { SOVA_DIST: dist } });
-  browser = await chromium.launch({ executablePath: discoverTourBrowser(), headless: true });
+  browser = await chromium.launch({ executablePath: discoverTourBrowser(), headless: true, env: { ...process.env, TMPDIR: shortTmp! } });
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: { "x-sova-token": s.token }, serviceWorkers: "block" });
   page = await ctx.newPage();
 }, { timeout: 180_000 });
 after(async () => {
   await browser?.close();
+  // The server's scratch root is under the short temp dir: stop it (and check its HOME) first.
   const changed = await s?.stop();
+  if (keptTmpdir === undefined) delete process.env.TMPDIR;
+  else process.env.TMPDIR = keptTmpdir;
+  if ("cleanup" in temp) temp.cleanup();
   assert.deepEqual(changed ?? [], [], "the sentinel HOME changed");
 });
 
@@ -104,7 +114,7 @@ async function setSwitch(label: string | RegExp, on: boolean): Promise<void> {
   assert.equal(await c.isChecked(), on, `the switch ${label} didn't move`);
 }
 
-describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout: 280_000 }, () => {
+describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout: 280_000, skip }, () => {
   test("Overseer: a limit up to 1000 saves (D1); a half-typed or too-large box stays red as typed (D2); over-long notes wait (D5); Reset to Defaults recovers", async () => {
     const cap = () => box("#overseer-cap-concurrentSessions");
     await open("overseer", cap);
@@ -188,6 +198,19 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     await edit().click();
     await box("#subagents-name").waitFor({ timeout: 15_000 });
     assert.equal(await box("#subagents-name").inputValue(), "P".repeat(48));
+  });
+
+  test("Subagents → Teams: a cleared or 'abc' Wrap-up context % stays as typed and red; Save waits (D14)", { todo: "D14" }, async () => {
+    const edit = () => box("#subagents-edit-my-setup");
+    await open("subagents", edit);
+    await edit().click();
+    await dialog().locator("summary", { hasText: "Teams" }).first().click();
+    await setSwitch("Add a coordinator to new teams", true);
+    await setSwitch("Add a monitor to new teams", true);
+    const pct = box("#subagents-my-setup-contextPct");
+    await pct.waitFor({ timeout: 15_000 });
+    for (const t of ["", "abc", "1.", "500"]) await refused(pct, t, "Subagents");
+    for (const t of ["-3", "2.5"]) await refused(pct, t, "Subagents", true);
   });
 
   test("Alignment: a switch saves and reloads", async () => {

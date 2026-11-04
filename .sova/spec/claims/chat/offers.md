@@ -155,7 +155,8 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   (**Approve Run Buttons**), or with **Apply and Approve** on a project overseer's Settings change card
   that grants the file's run buttons (§app.project-overseer/settings: the fingerprint the card showed).
   `POST /api/projects/:pid/offers/approve {fingerprint}` is refused when
-  the file's run buttons changed since you looked: what you approve is what you saw. It is a trust
+  the file's run buttons changed since you looked: what you approve is what you saw. From anything
+  but your own page it is refused too (§app.access/your-click). It is a trust
   grant, so it is no catalogue command (the commands inventory classes it as a trust grant), and no
   agent tool reaches it.
 - Offers with only send buttons never need approval. A click on a run button checks the approval

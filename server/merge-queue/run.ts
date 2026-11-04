@@ -44,6 +44,8 @@ export interface RunDeps extends ReviewDeps {
 
 const now = () => new Date().toISOString();
 const short = (sha: string) => sha.slice(0, 7);
+/** At most `n` characters; a cut text ends in "…" (the full text is in the step's log). */
+export const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 const tail = (s: string, n = 1) => s.trim().split("\n").slice(-n).join(" ").slice(0, 300);
 
 /** The steps of one run: each with its own log file from its first line, every change reported to the queue. */
@@ -636,8 +638,8 @@ function reviewed(r: ReviewResult | null, o: RunOutcome): RunOutcome {
   if (!r.ok) return { ...o, verdict: "machine", blame: "reviewer", why: `the review couldn't finish: ${r.why}` };
   const v = r.verdict;
   if (v.verdict === "ok") return { ...o, review: v };
-  if (v.verdict === "notes") return { ...o, review: v, notes: [...o.notes, { kind: "review", text: (v.text ?? "review notes").slice(0, 300), at: v.at }] };
-  return { ...o, review: v, verdict: "review-flagged", why: `review flagged: ${(v.text ?? "").slice(0, 200)}` };
+  if (v.verdict === "notes") return { ...o, review: v, notes: [...o.notes, { kind: "review", text: clip(v.text ?? "review notes", 300), at: v.at }] };
+  return { ...o, review: v, verdict: "review-flagged", why: `review flagged: ${clip(v.text ?? "", 200)}` };
 }
 
 type ReviewResult = { ok: true; verdict: ReviewVerdict } | { ok: false; why: string };
@@ -655,7 +657,7 @@ function startReview(o: { input: RunInput; copy: string; tip: string; steps: Ste
       return { ok: true as const, verdict: { verdict: "ok" as const, commit: o.tip, at: now(), text: "no review kit" } };
     }
     const r = await reviewStep({ awaitReview: o.input.awaitReview, runId: o.input.runId, projectId: o.input.project.id, root: o.input.project.root, copy: o.copy, base: o.input.base, commit: o.tip, branch: o.input.entry.branch, kit, target: o.input.project.target, log: st.log, signal: ctl.signal }, o.deps);
-    if (r.ok) st.end(r.verdict.verdict === "blocking" ? "failed" : "passed", { detail: `${r.verdict.verdict}${r.verdict.text ? `: ${r.verdict.text.slice(0, 200)}` : ""}` });
+    if (r.ok) st.end(r.verdict.verdict === "blocking" ? "failed" : "passed", { detail: `${r.verdict.verdict}${r.verdict.text ? `: ${clip(r.verdict.text, 200)}` : ""}` });
     else st.end("failed", { detail: r.why });
     return r;
   })().finally(() => {

@@ -222,17 +222,12 @@ in mono (`master · abc1234`), and offers **Restart Sova**. What it shows comes 
   restarting. Upgrade once it's back."). A scheduled restart that hasn't stopped this server
   within 2 minutes didn't happen: both refusals clear and the button is back.
 
-**Who may.** `POST /api/updates/restart` answers the operator at a signed-in browser (a
-same-origin request on the main listener, as §app.updates/operator says) and a script on this
-machine: a call on the main listener that passed the gate and shows the token in `x-sova-token`,
-as the command line's does. The catalogue lists it as `server.restart` (§app/settings-commands),
-so `sova run server.restart` restarts Sova from a terminal, without the inline question. A call
-from the peer listener (a mesh peer, `sova run server.restart --host <peer>` included), a call
-with no socket (the Overseer's in-process dispatch, a schedule), a call carrying the Overseer's
-sender header, and an extension's backend (its key isn't the token) are refused with 403
-("Restart Sova is the operator's: open Settings → General, or run `sova run server.restart` on
-this machine."). No agent tool offers it; a chat's shell that runs the command line reaches it as
-any script on this machine does. Every restart asked for is recorded with its origin: the server's
+**Who may.** `POST /api/updates/restart` answers only your own page on this machine
+(§app.access/your-click). The catalogue lists it as `server.restart` (§app/settings-commands), so the
+command exists, and it answers anything but the page with 403 ("Only the user restarts Sova. Ask them to
+press Restart Sova in Settings → General. Nothing was restarted."): a script, a chat's terminal, a call from
+the peer listener, a call with no socket (the Overseer's in-process dispatch, a schedule), the Overseer's
+sender header and an extension's backend. No agent tool offers it. Every restart asked for is recorded with its origin: the server's
 log names who asked (`browser`, `command server.restart (<caller>)` or `script (<caller>)`, the
 caller as §app.command-audit/attribution names it), the unit, and whether it was scheduled or
 refused; a script's call also leaves its row in Sova's record of who ran what
@@ -240,14 +235,10 @@ refused; a script's call also leaves its row in Sova's record of who ran what
 
 ## §app.updates/operator — Only the operator
 
-Only the operator, at a signed-in browser, can check, change the update settings or upgrade
-(restarting is the one Updates action a script on this machine may also take,
-§app.updates/restart):
-`POST /api/updates/check`, `PUT /api/updates/settings` and `POST /api/updates/apply` answer a
-request on the main listener that passed the gate (§app.access/gate) and that a browser marks as
-same-origin (`Sec-Fetch-Site: same-origin`). A call with no socket (the Overseer's in-process
-dispatch, a schedule), a call from the peer listener, and a call carrying the Overseer's sender
-header are refused with 403 ("Updates are the operator's: open Settings → General."). No agent tool
+Only the operator, at a signed-in browser, can check, change the update settings or upgrade:
+`POST /api/updates/check`, `PUT /api/updates/settings` and `POST /api/updates/apply` answer only your own
+page on this machine (§app.access/your-click). Anything else is refused with 403 ("Only the user updates
+Sova. Ask them to do it in Settings → General. Nothing was changed."). No agent tool
 reaches them, none of them is on the command catalogue, and a mesh peer needs the `full` grant even to read them (§mesh.peers/grants). `GET /api/updates` (what runs, what the last check found, the job's progress) is
 readable like any gated route. The daily check and Upgrade automatically are the server's own.
 

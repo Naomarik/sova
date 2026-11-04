@@ -3,7 +3,7 @@ import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer } from "../../shared/transcript-cards";
-import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
+import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow, SovaCardsInfo } from "../../shared/project-settings";
 import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
@@ -1659,6 +1659,13 @@ export const applySettingsCard = (projectId: string, card: string, fingerprint: 
 /** Dismiss a card (Discard, for "local", with the fingerprint it showed). */
 export const withdrawSettingsCard = (projectId: string, card: string, fingerprint?: string) =>
   request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings/cards/${encodeURIComponent(card)}/withdraw`, jsonInit("POST", fingerprint ? { fingerprint } : {}));
+/** Sova-wide cards, which have no project: only the chat that prepared one shows it (§chat.create-mode/settings-cards). */
+export const getSovaSettingsCards = () => request<SovaCardsInfo>("/api/settings/cards", { cache: "no-store" });
+/** `input`: what the person typed on the card; it goes with this request and nowhere else. */
+export const applySovaSettingsCard = (card: string, fingerprint: string, input?: string) => request<SettingsApplyResult>("/api/settings/apply", jsonInit("POST", { card, fingerprint, ...(input !== undefined ? { input } : {}) }));
+export const withdrawSovaSettingsCard = (card: string) => request<SovaCardsInfo>(`/api/settings/cards/${encodeURIComponent(card)}/withdraw`, jsonInit("POST", {}));
+/** Cancel the held Save of the folder's edits: `cancelSave` keeps them, where the same call without it is Discard. */
+export const cancelLocalSettingsSave = (projectId: string) => request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings/cards/local/withdraw`, jsonInit("POST", { cancelSave: true }));
 export const undoSettingsRow = (projectId: string, id: string) =>
   request<{ undone?: SettingsHistoryRow[]; card?: SettingsCardView }>(`${projectPath(projectId)}/settings/undo`, jsonInit("POST", { id }));
 export const getProjectOffers = (projectId: string) => request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers`, { cache: "no-store" });

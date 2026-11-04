@@ -1,7 +1,9 @@
 import { codingModeWords, type CodingModeSwitch, type ProjectCodingMode } from "../shared/project-overseer";
 import { MINOR_MODES, parseModePatch, readMode } from "./mode-state";
 import { MINOR_SURFACES } from "../pi-config/extensions/mode/minor.ts";
+import { defaultModeOf } from "../pi-config/extensions/mode/state.ts";
 import { MEMORY_CODING_REFUSAL } from "../shared/memory";
+import { createNotNamed, type CreateNamer } from "../shared/profiles";
 import type { SubagentProfilesInfo } from "../shared/subagent-profiles";
 import { requireSubagentProfile, subagentProfilesInfo } from "./subagent-profiles";
 
@@ -13,8 +15,8 @@ import { requireSubagentProfile, subagentProfilesInfo } from "./subagent-profile
  *   `hostDefaultMode`) with no subagent profile picked, and is pinned there.
  * - Spec is always on (§app.project-overseer/coding-mode): every start adds it to the default's minor
  *   modes, and a set of minor modes that leaves it out is refused, from an Overseer or the mode menu.
- * - Both Overseers may name any mode, any minor modes (spec among them) and any subagent profile, on a
- *   start or on a running session: there is no other ceiling. Only unknown names are refused
+ * - Both Overseers may name any mode but Create, any minor modes (spec among them) and any subagent profile, on a
+ *   start or on a running session: there is no other ceiling. Only unknown names and Create are refused
  *   (`codingModeChoice`, `codingModeSwitch`; a profile is checked against this computer's library by the caller).
  * - A verb playbook's run gets align on beside its base (playbookRunMode), because the operator
  *   answers its questions; nobody else answers them, an Overseer never.
@@ -42,9 +44,10 @@ export function codingSpecRefusal(minorModes: readonly string[] | undefined): st
 }
 
 /** The names a request carries, checked with the copy's own sentences. */
-function checkNames(mode: unknown, minors: unknown): { mode?: ProjectCodingMode["mode"]; minorModes?: string[] } | { error: string } {
+function checkNames(mode: unknown, minors: unknown, by: CreateNamer): { mode?: ProjectCodingMode["mode"]; minorModes?: string[] } | { error: string } {
   const out: { mode?: ProjectCodingMode["mode"]; minorModes?: string[] } = {};
   if (mode !== undefined) {
+    if (mode === "create") return { error: createNotNamed(by) };
     if (mode !== "normal" && mode !== "delegate") return { error: `Unknown mode ${String(mode)}: use normal or delegate.` };
     out.mode = mode;
   }
@@ -64,7 +67,7 @@ function checkNames(mode: unknown, minors: unknown): { mode?: ProjectCodingMode[
     (coding sessions never get it, §chat.memory/where), with spec always on. */
 export function hostDefaultMode(file?: string): ProjectCodingMode {
   const s = file ? readMode(file) : readMode();
-  return { mode: s.mode, minorModes: withSpec(s.minorModes.filter((m) => m !== "memory")) };
+  return { mode: defaultModeOf(s), minorModes: withSpec(s.minorModes.filter((m) => m !== "memory")) };
 }
 
 /** An Overseer's request (the tools' `mode` / `minor_modes` / `subagent_profile`), validated by name only. */
@@ -72,6 +75,8 @@ export interface ModeRequest {
   mode?: unknown;
   minor_modes?: unknown;
   subagent_profile?: unknown;
+  /** Who asks, for the words of a refusal; absent: a project overseer. */
+  by?: CreateNamer;
 }
 
 const named = (v: unknown) => v !== undefined && v !== null && v !== "";
@@ -88,7 +93,7 @@ function profileOf(req: ModeRequest): { subagentProfile?: string } | { error: st
  * or a refusal sentence. Null when it names nothing. Checked before anything is sent or any cap taken.
  */
 export function codingModeSwitch(req: ModeRequest): { mode: CodingModeSwitch | null } | { error: string } {
-  const p = checkNames(named(req.mode) ? req.mode : undefined, req.minor_modes !== undefined && req.minor_modes !== null ? req.minor_modes : undefined);
+  const p = checkNames(named(req.mode) ? req.mode : undefined, req.minor_modes !== undefined && req.minor_modes !== null ? req.minor_modes : undefined, req.by ?? "a project overseer");
   if ("error" in p) return p;
   const prof = profileOf(req);
   if ("error" in prof) return prof;
@@ -221,4 +226,4 @@ export const sameCodingMode = (a: ProjectCodingMode, b: ProjectCodingMode): bool
   a.mode === b.mode && a.minorModes.length === b.minorModes.length && a.minorModes.every((m, i) => b.minorModes[i] === m) && a.subagentProfile === b.subagentProfile;
 
 /** A mode as people read it: `normal · spec · visuals`. */
-export const describeCodingMode = (m: Pick<ProjectCodingMode, "mode" | "minorModes">): string => codingModeWords(m);
+export const describeCodingMode = (m: { mode: string; minorModes: string[] }): string => codingModeWords(m);

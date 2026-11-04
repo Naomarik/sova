@@ -39,6 +39,7 @@ import { CardJumpContext } from "../lib/card-refs";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
+import { createLimits } from "../lib/mode-menu";
 import { sandboxOffMissing, sandboxStateOf, type SandboxState } from "../lib/sandbox";
 import { approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
@@ -1092,6 +1093,7 @@ export function ChatView(props: {
             minorModes: msg.minorModes,
             strict: msg.strict,
             applies: msg.applies,
+            ...(msg.saveMode ? { saveMode: msg.saveMode } : {}),
             ...(msg.memory ? { memory: msg.memory } : {}),
             ...(msg.projectModes ? { projectModes: msg.projectModes } : {}),
             ...(msg.project ? { project: msg.project } : {}),
@@ -1983,10 +1985,14 @@ export function ChatView(props: {
     },
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
+  const createLimitsHere = () => {
+    const s = sandbox();
+    return createLimits({ sandboxOn: !!s && sandboxStateOf(s) === "on", remote: !!remote });
+  };
   const modeControl: ModeControl = { state: modeState, path: props.path, blocked: () => {
       const r = blocked();
       return r?.quiet ? r.text : null;
-    }, ready: chatReady, wake };
+    }, ready: chatReady, wake, limits: createLimitsHere };
   /** What the setup card's Tools group re-reads on (§chat.transcript/setup-card-tools): the model, the
       mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
       signal's objects are new on every "mode" message). */
@@ -2431,7 +2437,7 @@ export function ChatView(props: {
                   focusComposer();
                 },
               }}>
-              <SettingsCardContext.Provider value={!!props.projectOverseer && !archivedPane()}>
+              <SettingsCardContext.Provider value={{ overseer: !!props.projectOverseer && !archivedPane(), create: !archivedPane() }}>
               <OfferContext.Provider value={offers}>
               <CardContext.Provider value={raisedCards}>
               <HistoryItems
@@ -2520,6 +2526,7 @@ export function ChatView(props: {
                         )}
                       </Show>
                       <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} toolsKey={toolsKey()} serversKey={`${setupServersKey(profileInfo()?.profile, sandbox() ? sandboxStateOf(sandbox()!) : undefined)}:${profilePicks()}`} />
+                      <Show when={modeState()?.mode === "create" ? createLimitsHere() : null}>{(limits) => <p class="empty-body">{limits()}</p>}</Show>
                       <p class="empty-body">Your first message becomes its title.</p>
                       <EmptyWorktrees path={props.path} />
                     </div>

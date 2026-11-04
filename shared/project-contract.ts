@@ -17,7 +17,7 @@ export type MergeVerb = (typeof MERGE_VERBS)[number];
 /** The merge verbs that change nothing. */
 export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs"];
 /** The release verbs (shared/release.ts): a project's release in progress and its history, never an instance. */
-export const RELEASE_VERBS = ["release.status", "release.logs", "release.request", "release.start", "release.step", "release.notes", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw"] as const;
+export const RELEASE_VERBS = ["release.status", "release.logs", "release.request", "release.start", "release.step", "release.notes", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw", "release.note"] as const;
 export type ReleaseVerb = (typeof RELEASE_VERBS)[number];
 /** The release verbs that change nothing. */
 export const RELEASE_READ_VERBS: readonly ReleaseVerb[] = ["release.status", "release.logs"];

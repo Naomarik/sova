@@ -27,4 +27,4 @@ export const pi = "https://pi.dev";
 export const verified = { ref: "v0.10.0", rev: "ba95c135", date: "2026-11-04" };
 
 // The revision and date the /docs pages were written from Sova's spec and checked against its source.
-export const docsVerified = { rev: "094c968e", date: "2026-10-16" };
+export const docsVerified = { rev: "eec308b6", date: "2026-11-04" };

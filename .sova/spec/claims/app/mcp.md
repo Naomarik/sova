@@ -171,7 +171,9 @@ who wrote a file. Adding or editing on the page counts as approving, so normal u
   repository, and it never copies to another computer. No branch or clone carries an approval.
 - **What you approve is what you saw.** The request carries the version the page showed and is
   refused when the entry has changed since.
-- **Only the page approves.** A chat, script, extension, Overseer or another computer is refused. A
+- **Only the page approves.** A chat, script, extension, Overseer or another computer is refused, and so
+  is a call that doesn't show itself as the page by the install's cookie on the main listener, as at
+  every approval of §app.access/your-click. A
   project overseer's Settings change card never approves a server. Approving is a trust grant: it is
   no catalogue command (the commands inventory classes it so) and no agent tool reaches it.
 - **Nothing runs before approval.** No Check, no sign-in, no copy in a chat. Every start checks the

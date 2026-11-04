@@ -62,8 +62,9 @@ answer in `<state root>/merge-served.json`: each served repository's main checko
 It writes the file at every start, before it takes any typed go-ahead, and again whenever the
 answer changes (a project added to the list, removed or archived, a setup saved, a target whose
 definition changed). A chat reads it afresh at each merge or "land it", never once at its start,
-so a project listed or set up while the chat is open takes effect at its next merge. A chat Sova
-doesn't run treats every repository as not served. A chat Sova runs that finds the file missing or
+so a project listed or set up while the chat is open takes effect at its next merge. Every chat Sova
+starts is told its server's state root. A chat Sova doesn't run treats every repository as not served. A
+chat Sova runs with no state root reads as served, and one that finds the file missing or
 damaged treats the repository as served, so a served project never merges around its queue. When
 the server can't read its Projects list, it serves nothing until it can.
 
@@ -538,6 +539,10 @@ after 60 seconds, then the queue pauses. No chat is told. The branch is never bl
 **Skipping it.** "Land without review" (or "land it, skip review") skips it for that approval
 only.
 
+Where the queue shortens the reviewer's text (the review step's detail and a flagged run's reason, to
+200 characters; a review note, to 300), a cut text ends in "…"; the whole verdict is in the review
+step's log.
+
 A verdict holds at most 10 findings, each of a kind: dead code, duplication, hack, missing test,
 naming, or other. The kit is never a registered skill: it has no `SKILL.md`, and it is in no skills
 folder or pi setting.
@@ -598,6 +603,9 @@ recorded, and a host merge never pauses the line.
 - **During a run**, the run is voided and the queue pauses: "master moved outside the queue ({old} →
   {new}) while {branch} was checking: that run was voided; resume once that is intended".
 - **While Sova was stopped**, with entries in line, the queue starts paused the same way.
+- **A settings card doesn't do this.** Its commit waits (§app.project-overseer/settings' held Apply) and
+  applies at the queue's next quiet point as the queue's own move, so no run voids and the queue doesn't
+  pause.
 
 **Resume** accepts the new head, and waiting entries run on it.
 
@@ -788,8 +796,10 @@ is offered only on hover.
 **The run page** (`…/merge-queue/<run>`) shows:
 - the branch and its verdict, the base, the branch's commit and the tested commit, when it started
   and how long it took, its chat, and how it was approved;
-- **View Logs** (every step's log, in order, from the copy's first line), **Open Merge Thread** and
-  **Back to Queue**;
+- one action row: **View Logs** (outlined, opening full width below the row: every step's log, in
+  order, from the copy's first line), **Open Merge Thread** and **Back to Queue** (both borderless,
+  Back to Queue with a back arrow), all on one line (on a phone, Back to Queue wraps below the other
+  two);
 - its review, when it has one: each attempt's reviewer chat, as on the rows
   (§app.merge-queue/chats);
 - "Nothing has merged from this run. {target} moves only once every check passes." while it runs,
@@ -802,7 +812,25 @@ is offered only on hover.
   finished (nothing blamed); or passed, the target moved to exactly the tested commit;
 - for a red run, a "Whose failure is it?" block (machine or setup, already failing on the target,
   flaky), drawn from the reruns (§app.merge-queue/blame);
-- **Checks and why**: every step with its tag and reason, its failures, time and counts, and its log.
+- **Checks and why**, its legend under the title: every step with its tag and reason, its failures,
+  time and counts, and its log. Each row reads, in this order: its status mark, its name with its
+  description under it (the test counts there too, "11496 passed · 5 skipped", a failed count in
+  red), its time in a fixed column aligned right, then **Log**, in the same place on every row. A
+  description shows at most 2 lines and ends in "…" when cut; a path in it that starts at the home
+  folder shows it as `~/` (only where the path starts, never the same folder inside another path),
+  and a commit is in mono. The marks: a check for passed, a cross for failed, a clock for running, a
+  dash for skipped (or setup unchanged since the last run), an empty ring for waiting. A running
+  check's time counts up from its start; a waiting or skipped one shows no time, and a skipped one no
+  "0 passed".
+
+**Open logs stay open.** A log opened on the run page (a check's **Log**, or View Logs) stays open
+until the user closes it. Re-reading the run (every 3 s while it runs, and on each queue change)
+never closes it, and never moves the keyboard focus or the log's scroll. The open log of a check
+still running follows it: it is read again about every 3 s and stops updating once the check ends.
+Whether it follows its bottom is decided when it is opened, not when the page loaded: a check that
+was waiting when the page loaded and is running when its log is opened follows. A log short enough
+to fit its panel counts as at its bottom, and keeps following as it grows past it. Scrolling up
+stops following; scrolling back to the end resumes it.
 
 Every action here is a catalogue command: Land, Land This Commit Again, Cancel, Remove from Queue,
 Pause, Resume, Accept, Send Back, Land Anyway, Start Fresh, Send Answer, Clear and Clear All over the merge verbs (§app.project-services/merge-verbs), Update Local Main and Publish over
@@ -1047,6 +1075,11 @@ a branch pushed to origin") and "It applies once it's merged into {target}.", wi
 at once, even while a branch is checking; after it, "Opened PR #{n} for the settings
 change. It applies once it's merged into {target}." with **Open PR** (GitLab: "MR !{n}", **Open
 MR**), or "Pushed the settings change as {branch}. It applies once it's merged into {target}."
+
+**From a Create card.** A chat in Create can prepare these same changes on a Settings change card
+(§chat.create-mode/settings-cards). The card's Apply stands for the confirm and goes this same way,
+with the same commit, refusals and waits: while a branch is checking the card reads "Saves when the
+current branch finishes." and has **Cancel Save**, and a chat never applies one.
 
 ## §app.merge-queue/models — The review and merge-thread models, per project
 

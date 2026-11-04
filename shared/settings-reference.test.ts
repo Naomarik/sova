@@ -76,7 +76,7 @@ test("every offers file, offer and button key has an entry", () => {
 });
 
 test("every top-level and service key of the services contract has an entry", () => {
-  assert.deepEqual(missing([...DEFINITION_KEYS.top, ...DEFINITION_KEYS.service.map((k) => `services.<name>.${k}`)], keysOf("services")), []);
+  assert.deepEqual(missing([...DEFINITION_KEYS.top, ...DEFINITION_KEYS.service.map((k) => `services.<name>.${k}`), ...DEFINITION_KEYS.release.map((k) => `release.${k}`)], keysOf("services")), []);
 });
 
 test("the index names every setting once; a standalone project's leaves out what needs an organization", () => {

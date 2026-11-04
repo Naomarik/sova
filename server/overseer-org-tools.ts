@@ -936,7 +936,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
             const item = typeof p.item === "string" && p.item.trim() ? p.item.trim() : "";
             if (!item && (typeof p.prompt !== "string" || !p.prompt.trim() || typeof p.title !== "string" || !p.title.trim())) throw refuse("Give an item (td_… or §…), or both prompt and title.");
             // Any mode and profile; an unknown name is refused before anything is taken (§app.project-overseer/coding-mode).
-            const chose = checkedCodingModeChoice({ mode: p.mode, minor_modes: p.minor_modes, subagent_profile: p.subagent_profile });
+            const chose = checkedCodingModeChoice({ mode: p.mode, minor_modes: p.minor_modes, subagent_profile: p.subagent_profile, by: "the Overseer" });
             if ("error" in chose) throw refuse(`${chose.error} No session was started.`);
             const slot = d.slot();
             if ("refusal" in slot) throw refuse(slot.refusal);

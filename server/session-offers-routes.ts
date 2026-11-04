@@ -5,6 +5,7 @@ import { OrgError } from "./org-error";
 import { resolveSessionPath } from "./paths";
 import { readProject } from "./projects/spaces";
 import { canonicalRoot, chooseAllAt, chooseOfferAt, notNowAt, OfferRefusal, projectOffers, readOffersFile, sessionOffersAt, sessionPathOf, showOffer } from "./session-offers";
+import { yourClickRefusal } from "./page-only";
 import { approveRuns } from "./session-offers-trust";
 
 /**
@@ -112,6 +113,8 @@ export function registerSessionOfferRoutes(app: Hono<any>): void {
   app.post(
     "/api/projects/:pid/offers/approve",
     handle(async (c) => {
+      const notYou = yourClickRefusal(c, "runButtons");
+      if (notYou) return notYou;
       const project = readProject(c.req.param("pid") ?? "");
       const b = await body(c);
       const root = canonicalRoot(project.root);

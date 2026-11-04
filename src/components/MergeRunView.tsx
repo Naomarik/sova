@@ -1,9 +1,10 @@
-import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type Accessor } from "solid-js";
 import { relativeTime } from "../lib/format";
-import { attribution, clock, sentence, short, sourceTag, unattributedWhy, verdictChip, type MergeEntry, type MergeQueueView, type MergeRun, type RunStep } from "../lib/merge-queue";
+import { attribution, clock, sentence, short, sourceTag, stepCounts, stepDetail, stepMark, stepTime, unattributedWhy, verdictChip, type MergeEntry, type MergeQueueView, type MergeRun, type RunStep } from "../lib/merge-queue";
 import { answerEntry, mergeChanged, readLog, readRun, refusal } from "../lib/merge-queue-client";
+import { createFollowedRead, createRunRead, logFollow } from "../lib/merge-run";
 import type { MergeAnswer } from "../../shared/merge-queue";
-import { announce, toast } from "../lib/ui-state";
+import { announce, home, toast } from "../lib/ui-state";
 import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { Banner, Icon } from "./ui";
 import { type ChatOf, FromChat } from "./MergeQueueTab";
@@ -11,14 +12,8 @@ import { ReviewerLinks } from "./MergeQueueChats";
 import { QueueChip, UnclearChecks } from "./WorktreesModal";
 
 const RUN_POLL_MS = 3000;
-
-const MARK: Record<RunStep["result"], { icon: "check" | "close" | "clock" | "chevron-right"; cls: string; word: string }> = {
-  passed: { icon: "check", cls: "mq-pass", word: "Passed" },
-  failed: { icon: "close", cls: "mq-fail", word: "Failed" },
-  running: { icon: "clock", cls: "mq-running", word: "Running" },
-  pending: { icon: "chevron-right", cls: "mq-wait", word: "Waiting" },
-  skipped: { icon: "chevron-right", cls: "mq-skip", word: "Skipped" },
-};
+/** An open log of a step (or run) still running is read again this often. */
+const LOG_FOLLOW_MS = 3000;
 
 /**
  * One run of the queue (`#/projects/<pid>/merge-queue/<run>`): what was merged onto what and what it
@@ -26,19 +21,21 @@ const MARK: Record<RunStep["result"], { icon: "check" | "close" | "clock" | "che
  * the copy and setup included — with where each check came from, why, its time and its log.
  */
 export function MergeRunView(props: { projectId: string; view: MergeQueueView; runId: string; chatOf?: ChatOf }) {
-  const [run, { refetch }] = createResource(() => props.runId, readRun);
-  // A running run moves: read it again while it runs, and on any queue change.
-  createEffect(
-    on(
-      () => run()?.verdict,
-      (verdict) => {
-        if (verdict !== "running") return;
-        const t = setTimeout(() => void refetch(), RUN_POLL_MS);
-        return () => clearTimeout(t);
-      },
-    ),
-  );
-  createEffect(on(mergeChanged, () => void refetch(), { defer: true }));
+  // A running run moves: it's read again while it runs, and on any queue change. Each read is reconciled into
+  // the last (lib/merge-run), so the step rows stay put and an open log stays open.
+  const read = createRunRead(() => props.runId, readRun, RUN_POLL_MS);
+  const run = read.run;
+  createEffect(on(mergeChanged, () => read.refetch(), { defer: true }));
+  const running = createMemo(() => run()?.verdict === "running");
+  // A running step's time counts up: one clock for the page, ticking only while the run runs.
+  const [now, setNow] = createSignal(Date.now());
+  createEffect(() => {
+    if (!running()) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    onCleanup(() => clearInterval(t));
+  });
+  const [allLogs, setAllLogs] = createSignal(false);
   const entry = () => {
     const r = run();
     const v = props.view;
@@ -51,7 +48,7 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
         <span aria-hidden="true"> › </span>
         <span>{run()?.branch ?? props.runId}</span>
       </nav>
-      <Show when={run()} fallback={<p class="orgs-empty">{run.error ? `Couldn't read this run. ${run.error instanceof Error ? run.error.message : String(run.error)}` : "Reading the run."}</p>}>
+      <Show when={run()} fallback={<p class="orgs-empty">{read.error() ? `Couldn't read this run. ${read.error() instanceof Error ? (read.error() as Error).message : String(read.error())}` : "Reading the run."}</p>}>
         {(r) => (
           <>
             <div class="stack-2">
@@ -82,8 +79,11 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
             </Show>
             <ReviewerLinks projectId={props.projectId} view={props.view} run={r().id} />
             </div>
-            <div class="button-row">
-              <AllLogs run={r()} />
+            <div class="button-row mq-run-actions">
+              <button type="button" class="button button-sm" aria-expanded={allLogs() ? "true" : "false"} aria-controls="mq-run-all-logs" onClick={() => setAllLogs(!allLogs())}>
+                <Icon name="terminal" small />
+                {allLogs() ? "Hide Logs" : "View Logs"}
+              </button>
               <Show when={props.view.thread}>
                 {(t) => (
                   <a class="button button-sm button-ghost" href={projectSessionHref(props.projectId, t().path ?? t().session)}>
@@ -93,9 +93,13 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
                 )}
               </Show>
               <a class="button button-sm button-ghost" href={projectTabHref(props.projectId, "merge-queue")}>
+                <Icon name="chevron-left" small />
                 Back to Queue
               </a>
             </div>
+            <Show when={allLogs()}>
+              <AllLogs run={r()} />
+            </Show>
             <Verdict run={r()} target={props.view.target} unattributed={entry()?.state === "unattributed"} />
             <Show when={entry()?.state === "unattributed" && (entry()!.run ?? r().id) === r().id && entry()}>
               {(e) => <Unattributed projectId={props.projectId} entry={e()} target={props.view.target} />}
@@ -126,7 +130,7 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
               )}
             </Show>
             <div class="mq-card" role="group" aria-labelledby="mq-steps-title">
-              <div class="spread">
+              <div class="mq-card-head">
                 <h3 class="text-heading-s" id="mq-steps-title">
                   Checks and why
                 </h3>
@@ -135,8 +139,8 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
               <Show when={r().noChecks}>
                 <p class="text-caption">This project declares no automated tests: it lands after a clean merge.</p>
               </Show>
-              <ol class="mq-steps">
-                <For each={r().steps}>{(s) => <StepRow run={r()} step={s} />}</For>
+              <ol class="mq-steps mq-run-steps">
+                <For each={r().steps}>{(s) => <StepRow run={r()} step={s} now={now} />}</For>
               </ol>
             </div>
           </>
@@ -242,24 +246,51 @@ function Verdict(props: { run: MergeRun; target: string; /** Its own banner says
   );
 }
 
-function StepRow(props: { run: MergeRun; step: RunStep }) {
+/** Keeps an open log at its end while it grows (lib/merge-run's logFollow); it decides when the panel mounts, that is when it opens. */
+function followScroll(text: Accessor<string | undefined>, running: () => boolean) {
+  let pre: HTMLPreElement | undefined;
+  const follow = logFollow(running);
+  createEffect(
+    on(text, () => {
+      if (pre) follow.grew(pre);
+    }),
+  );
+  return {
+    ref: (el: HTMLPreElement) => {
+      pre = el;
+      follow.opened();
+    },
+    onScroll: () => {
+      if (pre) follow.scrolled(pre);
+    },
+  };
+}
+
+function StepRow(props: { run: MergeRun; step: RunStep; now: Accessor<number> }) {
   const s = () => props.step;
   const tag = () => sourceTag(s().source);
-  const mark = () => MARK[s().result];
+  const mark = () => stepMark(s());
   const [open, setOpen] = createSignal(false);
-  const [log] = createResource(
-    () => (open() ? [props.run.id, s().id, s().result] : null),
-    ([run, step]) => readLog(run as string, step as string),
+  const live = () => open() && s().result === "running";
+  const log = createFollowedRead(
+    () => (open() ? `${props.run.id}\n${s().id}\n${s().result}` : null),
+    (key) => {
+      const [run, step] = key.split("\n");
+      return readLog(run!, step!);
+    },
+    live,
+    LOG_FOLLOW_MS,
   );
-  const counts = () => {
-    const c = s().counts;
-    if (!c) return "";
-    return [c.passed != null ? `${c.passed} passed` : "", c.failed ? `${c.failed} failed` : "", c.skipped ? `${c.skipped} skipped` : ""].filter(Boolean).join(" · ");
-  };
+  const detail = () => stepDetail(s(), home());
+  const counts = () => stepCounts(s());
+  const line = () => [s().why, detail().map((d) => d.text).join(""), counts().map((c) => c.text).join(" · ")].filter(Boolean).join(" · ");
+  const scroll = followScroll(log.text, () => s().result === "running");
   return (
     <li class={`mq-step mq-step-${s().result}`} data-step={s().id}>
       <span class={`mq-mark ${mark().cls}`} title={mark().word}>
-        <Icon name={mark().icon} small />
+        <Show when={mark().icon} fallback={<span class="mq-ring" aria-hidden="true" />}>
+          {(icon) => <Icon name={icon()} small />}
+        </Show>
         <span class="visually-hidden">{mark().word}</span>
       </span>
       <div class="mq-step-main">
@@ -267,8 +298,26 @@ function StepRow(props: { run: MergeRun; step: RunStep }) {
           <span>{s().label}</span>
           <Show when={tag()}>{(t) => <QueueChip row={t()} />}</Show>
         </p>
-        <Show when={s().why || s().detail}>
-          <p class="text-caption text-muted">{[s().why, s().detail].filter(Boolean).join(" · ")}</p>
+        <Show when={line()}>
+          <p class="text-caption text-muted mq-step-desc" title={line()}>
+            <Show when={s().why}>{s().why}</Show>
+            <For each={detail()}>
+              {(d, i) => (
+                <>
+                  {i() === 0 && s().why ? " · " : ""}
+                  {d.mono ? <span class="text-mono">{d.text}</span> : d.text}
+                </>
+              )}
+            </For>
+            <For each={counts()}>
+              {(c, i) => (
+                <>
+                  {i() > 0 || s().why || detail().length ? " · " : ""}
+                  {c.failed ? <span class="mq-fail">{c.text}</span> : c.text}
+                </>
+              )}
+            </For>
+          </p>
         </Show>
         <For each={s().failures ?? []}>
           {(f) => (
@@ -278,45 +327,36 @@ function StepRow(props: { run: MergeRun; step: RunStep }) {
             </p>
           )}
         </For>
-        <Show when={open()}>
-          <pre class="mq-log text-mono" aria-label={`Log of ${s().label}`}>
-            {log.loading ? "Reading the log." : log.error ? `Couldn't read the log. ${log.error instanceof Error ? log.error.message : ""}` : log() || "Nothing logged yet."}
-          </pre>
-        </Show>
       </div>
-      <div class="mq-step-end">
-        <span class="text-caption text-mono text-muted">
-          {s().result === "pending" || s().result === "skipped" ? "" : clock(s().ms)}
-          {counts() ? ` · ${counts()}` : ""}
-        </span>
+      <span class="mq-step-time text-caption text-mono text-muted">{stepTime(s(), props.now())}</span>
+      <span class="mq-step-log">
         <Show when={s().result !== "pending"}>
           <button type="button" class="button button-sm button-ghost" aria-expanded={open() ? "true" : "false"} aria-label={`${open() ? "Hide" : "Show"} the log of ${s().label}`} onClick={() => setOpen(!open())}>
             Log
           </button>
         </Show>
-      </div>
+      </span>
+      <Show when={open()}>
+        <pre class="mq-log text-mono" aria-label={`Log of ${s().label}`} ref={scroll.ref} onScroll={scroll.onScroll}>
+          {log.text() === undefined ? (log.error() ? `Couldn't read the log. ${log.error()}` : "Reading the log.") : log.text() || "Nothing logged yet."}
+        </pre>
+      </Show>
     </li>
   );
 }
 
-/** View Logs: every step's log, in order, from the run's first step (the copy and setup included). */
+/** View Logs: every step's log, in order, from the run's first step (the copy and setup included); it follows the run while it runs. */
 function AllLogs(props: { run: MergeRun }) {
-  const [open, setOpen] = createSignal(false);
-  const [log] = createResource(
-    () => (open() ? props.run.id : null),
-    (run) => readLog(run),
+  const log = createFollowedRead(
+    () => `${props.run.id}\n${props.run.verdict}`,
+    (key) => readLog(key.split("\n")[0]!),
+    () => props.run.verdict === "running",
+    LOG_FOLLOW_MS,
   );
+  const scroll = followScroll(log.text, () => props.run.verdict === "running");
   return (
-    <>
-      <button type="button" class="button button-sm" aria-expanded={open() ? "true" : "false"} onClick={() => setOpen(!open())}>
-        <Icon name="terminal" small />
-        {open() ? "Hide Logs" : "View Logs"}
-      </button>
-      <Show when={open()}>
-        <pre class="mq-log mq-log-all text-mono" aria-label="Every step's log">
-          {log.loading ? "Reading the logs." : log.error ? `Couldn't read the logs. ${log.error instanceof Error ? log.error.message : ""}` : log() || "Nothing logged yet."}
-        </pre>
-      </Show>
-    </>
+    <pre id="mq-run-all-logs" class="mq-log mq-log-all text-mono" aria-label="Every step's log" ref={scroll.ref} onScroll={scroll.onScroll}>
+      {log.text() === undefined ? (log.error() ? `Couldn't read the logs. ${log.error()}` : "Reading the logs.") : log.text() || "Nothing logged yet."}
+    </pre>
   );
 }

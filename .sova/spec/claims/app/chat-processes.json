@@ -317,7 +317,10 @@
       "server/chat-runtime/gc-timer.test.ts",
       "server/chat-runtime/main.ts",
       "server/caller-keys.ts",
-      "server/chat-runtime/link.integration.test.ts"
+      "server/chat-runtime/link.integration.test.ts",
+      "server/auth.ts",
+      "server/chat-server-url.integration.test.ts",
+      "server/chat-host-caller-key.test.ts"
     ],
     "requires": [
       "§app/chat-processes",
@@ -326,8 +329,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-25T23:29Z",
-      "source": "pi-session:49024490-24f8-404c-966c-f9b12c550bb9#0b5e0614"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     },
     "evidence": "verified"
   },

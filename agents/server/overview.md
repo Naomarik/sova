@@ -39,9 +39,8 @@ watcher, the price seed and the share listener. The pi harness boundary has its 
   each as an operator stop, through the supervisor's records, never a process found by name.
 - On macOS the live server is the launchd agent `sova-runtime` (`~/Library/LaunchAgents/sova-runtime.plist`,
   the launchd example in docs/running-as-a-service.md), and every restart rule holds. Its restart is
-  `launchctl kickstart -k gui/$(id -u)/sova-runtime`; the verb form
-  (`sova-project apply --checkout ~/webapps/sova --confirm`) runs it 3 s later from a process detached
-  from the server. Pid and state: `launchctl print gui/$(id -u)/sova-runtime`; start time:
+  `launchctl kickstart -k gui/$(id -u)/sova-runtime`; Apply on the project's Branches tab runs it 3 s later
+  from a process detached from the server. `sova-project apply` of Sova's own slot 0 is refused. Pid and state: `launchctl print gui/$(id -u)/sova-runtime`; start time:
   `ps -o lstart= -p <pid>`; log: `~/Library/Logs/sova-runtime.log`.
 - The claude-code bridge's `globalThis` singleton is a `Symbol.for` registry entry in each chat's
   process: a chat gets a bridge from new code only when it reloads onto that code.

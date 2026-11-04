@@ -1615,7 +1615,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
 @media (pointer: coarse) {
   .wt-queue-act .button,
   .mq-row .button,
-  .mq-step-end .button { min-height: var(--tap-min); }
+  .mq-step-end .button,
+  .mq-step-log .button { min-height: var(--tap-min); }
 }
 .wt-queue-modal .modal-body { display: grid; gap: var(--space-3); }
 .wt-queue-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
@@ -1718,8 +1719,12 @@ html, body { overflow: clip; overscroll-behavior: none; }
 
 /* The run's page. */
 .mq-crumbs { color: var(--color-ink-muted); }
-.mq-run > .button-row { flex-wrap: wrap; }
+/* Its three actions on one centre line: View Logs (outlined), Open Merge Thread and Back to Queue (borderless). */
+.mq-run-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
+.mq-card-head { display: grid; gap: var(--space-1); }
 .mq-legend { margin: 0; }
+/* A list of steps, shared with the Releases tab: mark | step | its time and actions, which wrap under the name at
+   phone width. */
 .mq-steps { list-style: none; margin: 0; padding: 0; }
 .mq-step { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: var(--space-1) var(--space-3); align-items: start; padding: var(--space-2) 0; border-top: 1px solid var(--color-border); }
 .mq-step:first-child { border-top: 0; }
@@ -1729,15 +1734,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-step-main p { margin: 0; }
 .mq-step-name { flex-wrap: wrap; font-weight: var(--fw-medium); }
 .mq-step-end { display: flex; align-items: center; gap: var(--space-2); justify-content: flex-end; flex-wrap: wrap; }
-.mq-fail-line { color: var(--status-error); overflow-wrap: anywhere; }
-.mq-log { margin: var(--space-2) 0 0; max-height: 360px; overflow: auto; padding: var(--space-2) var(--space-3); border-radius: var(--r-sm); background: var(--color-sunken); font-size: var(--fs-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
-.mq-log-all { flex-basis: 100%; }
-.mq-whose { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-2); margin: 0; }
-.mq-whose > div { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
-.mq-whose dd { margin: var(--space-1) 0 0; font-weight: var(--fw-medium); }
-.mq-whose-failed { color: var(--status-error); }
-.mq-whose-ok { color: var(--status-success); }
-/* At phone width a step's time and Log wrap under its name. */
 @container (max-width: 520px) {
   .mq-step { grid-template-columns: 24px minmax(0, 1fr); }
   .mq-step-end { grid-column: 2; justify-content: flex-start; }
@@ -1745,6 +1741,35 @@ html, body { overflow: clip; overscroll-behavior: none; }
 @media (max-width: 767px) {
   .mq-step { grid-template-columns: 24px minmax(0, 1fr); }
   .mq-step-end { grid-column: 2; justify-content: flex-start; }
+}
+/* The run's checks and why: one grid for every row (mark | check | time | Log), so each time and each Log sit in the
+   same place on every row, those with no time or no Log included. The mark, time and Log sit on the name's line. */
+.mq-run-steps { --mq-line: calc(var(--fs-body) * var(--lh-body)); display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto; column-gap: var(--space-3); }
+/* Its rows take the list's columns and gaps (column-gap: normal, so the shared rule's gap gives way). */
+.mq-run-steps > .mq-step { grid-column: 1 / -1; grid-template-columns: subgrid; row-gap: var(--space-1); column-gap: normal; }
+.mq-run-steps .mq-mark { height: var(--mq-line); }
+.mq-run-steps .mq-step-name { min-height: var(--mq-line); }
+/* Waiting: an empty muted ring, nothing that looks like it expands. */
+.mq-ring { width: 12px; height: 12px; border: var(--stroke-icon) solid currentColor; border-radius: var(--r-full); }
+/* A description shows at most two lines; the rest is in the step's log (and its title). */
+.mq-step-desc { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; }
+.mq-step-time { min-width: 5ch; line-height: var(--mq-line); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mq-step-log { display: flex; align-items: center; justify-content: flex-end; height: var(--mq-line); }
+.mq-step > .mq-log { grid-column: 2 / -1; margin-top: var(--space-1); }
+.mq-fail-line { color: var(--status-error); overflow-wrap: anywhere; }
+.mq-log { margin: var(--space-2) 0 0; max-height: 360px; overflow: auto; padding: var(--space-2) var(--space-3); border-radius: var(--r-sm); background: var(--color-sunken); font-size: var(--fs-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.mq-run > .mq-log-all { margin: 0; }
+.mq-whose { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: var(--space-2); margin: 0; }
+.mq-whose > div { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+.mq-whose dd { margin: var(--space-1) 0 0; font-weight: var(--fw-medium); }
+.mq-whose-failed { color: var(--status-error); }
+.mq-whose-ok { color: var(--status-success); }
+/* A 44px Log button overflows the name's line: give the row the room. */
+@media (pointer: coarse) {
+  .mq-run-steps > .mq-step { padding-block: var(--space-3); }
+}
+@media (max-width: 599px) {
+  .mq-run-steps { column-gap: var(--space-2); }
 }
 
 /* Onboarding. */

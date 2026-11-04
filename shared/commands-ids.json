@@ -215,7 +215,10 @@
     "project.verb.release.withdraw",
     "mcp.servers.list",
     "mcp.server.status",
-    "overseer.abilities"
+    "overseer.abilities",
+    "settings.cards.get",
+    "settings.cards.withdraw",
+    "project.verb.release.note"
   ],
   "retired": [
     "settings.agents.get",

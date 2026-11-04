@@ -55,6 +55,9 @@ no state confines the main thread and leaves its workers loose.
   gives at most one toast, with the state it ended in. A provisional entry overtaken by Off or
   Subagents only leaves no trace but a brief "Turning on…" on the shield: it ends on the later
   state, and no row or toast reports the provisional one.
+- **Lowering it is your click.** Any move to a state that confines less passes only on what Sova
+  takes for your own click in the page (§app.access/your-click, with its limit), a rewind or regenerate
+  past a raise included (§chat.sandbox/toggle); raising it stays open.
 - **Workers take it at their start.** A change reaches the session's own tools from their next
   tool call, and its workers only when they start or resume afterwards
   (§app.worker-restore/resume): a running worker keeps the confinement it started with until it
@@ -135,7 +138,11 @@ tools from their next call and is recorded in a `sandbox` entry.
   probes again and records an entry only if the state changed.
 - **Only the user changes it from the session.** The agent has no tool that changes the state;
   `/sandbox` is a command, not a tool. A sandboxed `bash` cannot reach Sova's API (its network is
-  unshared), so it cannot change it through the server either. The Overseer can set it on another
+  unshared), so it cannot change it through the server either. An unsandboxed `bash` can reach the
+  API, so there a lowering is refused unless Sova takes it for your own click, by `POST /api/sandbox`, by a
+  `/sandbox` sent through the send request, or by going back past a raise (§app.access/your-click). A rewind or
+  regenerate in the page past a raise still lowers the sandbox, since the state is the one on the branch it lands
+  on, and the page shows the new state. The Overseer can set it on another
   session only as §app.overseer/tools says, and lowering it needs the user's click there. A
   worker started with the sandbox on cannot lower it (§chat.sandbox/workers).
 

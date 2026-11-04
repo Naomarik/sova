@@ -111,10 +111,22 @@ export async function diffOf(repo: Repo, parent: string | null, commit: string, 
   return out.length > max ? `${out.slice(0, max)}\n… (cut at ${max} bytes)` : out;
 }
 
+/**
+ * A read of a checkout, as these reads must be: no optional locks and no fsmonitor. A plain `git status` refreshes the
+ * index under index.lock, and a settings read during a landing then makes the queue's fast-forward of this checkout
+ * refuse, which pauses the queue. Porcelain `git diff` does it even with this flag: `worktreeDiff` is plumbing.
+ */
+const readArgs = (...args: string[]): string[] => ["--no-optional-locks", "-c", "core.fsmonitor=false", ...args];
+
+/** What `rels` (relative to the project root) differ by from HEAD in the working tree, as a patch. */
+export async function worktreeDiff(repo: Repo, rels: string[]): Promise<string> {
+  return (await git(readArgs("diff-index", "-p", "--no-color", "--no-ext-diff", "HEAD", "--", ...rels.map((x) => repoPath(repo, x))), repo.top)).stdout;
+}
+
 /** The project root's settings paths (relative to the root) with uncommitted changes: staged, unstaged or untracked. */
 export async function dirtyPaths(repo: Repo, rels: string[]): Promise<string[]> {
   if (!rels.length) return [];
-  const r = await git(["status", "--porcelain=v1", "-z", "--untracked-files=all", "--", ...rels.map((x) => repoPath(repo, x))], repo.top);
+  const r = await git(readArgs("status", "--porcelain=v1", "-z", "--untracked-files=all", "--", ...rels.map((x) => repoPath(repo, x))), repo.top);
   if (r.code !== 0) throw new SettingsGitError((r.stderr || "git status failed").trim().split("\n")[0]!);
   const out: string[] = [];
   const parts = r.stdout.split("\0").filter(Boolean);

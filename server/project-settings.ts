@@ -329,6 +329,8 @@ interface StoredCard {
   kept: KeptChange[];
   memory?: { on?: boolean; type?: string; size?: number };
   name?: string;
+  /** The name as it read when the card was made: its before, after Apply too. */
+  nameFrom?: string;
   files: StoredFile[];
   parent: string | null;
   commit: string | null;
@@ -351,6 +353,8 @@ interface QueueCardPart {
   waiting?: boolean;
   /** It failed when its turn came (the queue keeps it, not retried). */
   failed?: string;
+  /** The branch Save commits to. */
+  target?: string;
 }
 
 interface Store {
@@ -575,11 +579,11 @@ async function cardView(projectId: string, c: StoredCard, repo: Repo | null): Pr
   const diff = repo && c.commit ? await diffOf(repo, c.parent, c.commit).catch(() => "") : "";
   const extra: KeptChange[] = [
     ...(c.memory ? [{ field: "memory", label: fieldLabel("memory"), from: null, to: c.memory, fromText: "", toText: `${c.memory.on === false ? "off" : "on"}${c.memory.type ? `, ${c.memory.type}` : ""}${c.memory.size ? `, ${c.memory.size} bytes` : ""}` }] : []),
-    ...(c.name ? [{ field: "project.name", label: fieldLabel("project.name"), from: project.name, to: c.name, fromText: project.name, toText: c.name }] : []),
+    ...(c.name ? [{ field: "project.name", label: fieldLabel("project.name"), from: c.nameFrom ?? project.name, to: c.name, fromText: c.nameFrom ?? project.name, toText: c.name }] : []),
   ];
   return {
     id: c.id,
-    ...(c.queue ? { kind: "queue" as const, ...(c.queue.waiting && c.state === "waiting" ? { saveWaits: true } : {}), ...(c.queue.failed && c.state === "waiting" ? { saveFailed: c.queue.failed } : {}) } : {}),
+    ...(c.queue ? { kind: "queue" as const, place: queuePlace(c.queue), ...(c.queue.waiting && c.state === "waiting" ? { saveWaits: true } : {}), ...(c.queue.failed && c.state === "waiting" ? { saveFailed: c.queue.failed } : {}) } : {}),
     state: c.state,
     title: titleOf(c),
     why: c.why,
@@ -843,7 +847,7 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
     by: ctx.by,
     kept: onCard,
     ...(cardMemory ? { memory: cardMemory } : {}),
-    ...(cardName ? { name: cardName } : {}),
+    ...(cardName ? { name: cardName, nameFrom: project.name } : {}),
     files,
     parent: repo?.head ?? null,
     commit,
@@ -924,7 +928,14 @@ async function queuePart(projectId: string, e: Extract<SettingsEdit, { setting: 
     }
   }
   if (!rows.length) return refuse("Nothing changed: every edit is already as asked.");
-  return { changes, ...(Object.keys(models).length ? { models } : {}), rows };
+  return { changes, ...(Object.keys(models).length ? { models } : {}), rows, target: now.landing.target };
+}
+
+/** Where a merge queue card lands, in words: the project's file on the target, and this computer for the models. */
+function queuePlace(q: QueueCardPart): string {
+  const inFile = Object.keys(q.changes).length > 0;
+  const file = `${CONTRACT_FILE} on ${q.target ?? "the target"}`;
+  return inFile && q.models ? `${file}, and this computer` : inFile ? file : "This computer";
 }
 
 /** Whether the queue's file values now read as this save asked. */

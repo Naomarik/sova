@@ -1,8 +1,9 @@
 /**
  * Credentials never pass through a Create card (§chat.create-mode/settings-cards). `credentialProblem` looks
  * through whatever a card would carry: a key named like a credential holding a value, and any string shaped like
- * one. An environment variable's name is a reference, not a secret, so `OPENAI_API_KEY` and `$OPENAI_API_KEY` pass;
- * pi's `!command` form does not, because it runs a command to fetch one.
+ * one. pi resolves `$NAME` and `${NAME}` from the environment, so those are references, not secrets. A bare all-capitals
+ * word passes too: pi takes it literally, which is what a local server's dummy value is, and no real key looks like
+ * it. pi's `!command` form does not pass, because it runs a command to fetch one.
  */
 
 const CREDENTIAL_KEY = /(^key$|api[_-]?key|secret|token(?!iz)|passw|credential|bearer|authorization|private[_-]?key|cookie|oauth)/i;
@@ -19,7 +20,7 @@ const SECRET_SHAPES: readonly RegExp[] = [
   /\bBearer\s+[A-Za-z0-9._~+/-]{16,}/i,
 ];
 
-const envReference = (v: string): boolean => /^\$?\{?[A-Z][A-Z0-9_]*\}?$/.test(v.trim());
+const envReference = (v: string): boolean => /^(\$[A-Za-z_][A-Za-z0-9_]*|\$\{[A-Za-z_][A-Za-z0-9_]*\}|[A-Z][A-Z0-9_]*)$/.test(v.trim());
 
 /** The first credential in `value` (where it was), or null. A key's value is judged, an empty one isn't one. */
 export function credentialProblem(value: unknown, at = ""): string | null {

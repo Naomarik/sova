@@ -89,7 +89,7 @@ export interface SettingsCardView {
   id: string;
   /** Absent: "project". */
   kind?: SettingsCardKind;
-  /** A Sova-wide card's place in words, drawn as given: "Sova-wide", or "Sova-wide, and your other computers by sync". */
+  /** Where a Sova-wide or merge queue card lands, in words, drawn as given: "Sova-wide", "Sova-wide, and your other computers by sync", ".sova/project.json on main". */
   place?: string;
   /** A merge queue card Applied while a branch checks: the save waits (state stays "waiting"); Cancel Save cancels it. */
   saveWaits?: boolean;

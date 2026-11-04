@@ -98,6 +98,15 @@ describe("a project's card", async () => {
     assert.deepEqual([row.by.kind, row.by.via, row.by.chat], ["create", "card", "chat-1"]);
   });
 
+  test("an applied rename keeps its before", async () => {
+    const out = await runCreateSettingsTool(chat(pid), { op: "propose", why: "A better name.", edits: [{ setting: "project", name: "Corner Shop" }] });
+    const c = (out.details as { card: { id: string; fingerprint: string } }).card;
+    const r = await post(app(), `/api/projects/${pid}/settings/apply`, { card: c.id, fingerprint: c.fingerprint });
+    assert.equal(r.status, 200, await r.clone().text());
+    const row = (await settings.settingsCard(pid, c.id))!.kept.find((k) => k.field === "project.name")!;
+    assert.deepEqual([row.fromText, row.toText], ["narrow", "Corner Shop"]);
+  });
+
   test("a chat withdraws only what it prepared", async () => {
     const out = await runCreateSettingsTool(chat(pid), { op: "propose", why: "Rename.", edits: [{ setting: "project", name: "Other" }] });
     const id = (out.details as { card: { id: string } }).card.id;
@@ -162,6 +171,7 @@ describe("a merge queue card", async () => {
   test("Apply is a Save: its commit, and only from the page", async () => {
     const { card: c } = await propose({ push: false });
     assert.equal(c.kind, "queue");
+    assert.equal((c as unknown as { place: string }).place, ".sova/project.json on main", "the card says where it lands");
     assert.equal(saved.length, 0, "a propose saves nothing");
     for (const headers of callers) assert.equal((await apply(c, headers)).status, 403);
     assert.equal(saved.length, 0);
@@ -296,8 +306,7 @@ describe("a Sova-wide card", () => {
     await assert.rejects(propose("models.providers", provider("abc123literalkey")), /Create doesn't handle sign-ins or keys/);
     await assert.rejects(propose("models.providers", provider("!cat ~/.key")), /Create doesn't handle sign-ins or keys/);
     await assert.rejects(propose("decisions", { jev: { key: "abcdef" } }), /Settings → Decisions/);
-    const d = await propose("models.providers", provider("MY_PROVIDER_KEY"));
-    sova.withdrawSovaCard(d.card.id);
+    for (const reference of ["$MY_PROVIDER_KEY", "${my_key}", "LOCAL"]) sova.withdrawSovaCard((await propose("models.providers", provider(reference))).card.id);
   });
 
   test("a link into Sova's own folder is never written, and the way that fits is named", async () => {

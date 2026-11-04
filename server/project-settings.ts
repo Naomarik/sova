@@ -29,7 +29,7 @@ import { approvalOf, approve as approveProfile, readTrust } from "./profile-trus
 import { findProfile, profileSources } from "./profile-sources";
 import { isApproved as modeApproved, recordApproval as recordModeApproval } from "./project-mode-approvals";
 import { mergePoPatch, projectOf, projectOverseerPaths, readPoSettings } from "./project-overseer-store";
-import { advanceBranch, blobAt, busyWith, commitOnto, deleteRef, diffOf, dirtyPaths, git, readBlob, type Repo, repoOf, repoPath, SettingsGitError, setRef, writeBlob } from "./project-settings-git";
+import { advanceBranch, blobAt, busyWith, commitOnto, deleteRef, diffOf, dirtyPaths, git, readBlob, type Repo, repoOf, repoPath, SettingsGitError, setRef, worktreeDiff, writeBlob } from "./project-settings-git";
 import { scheduleKeeper } from "./schedules";
 import { approveRuns, runFingerprint, runsApproved } from "./session-offers-trust";
 import { stateRoot } from "./state-root";
@@ -681,9 +681,9 @@ export async function localCard(projectId: string): Promise<SettingsCardView | n
     const g = await fileGrant(project.root, f, beforeText, f.text);
     if (g && !grants.some((x) => x.key === g.key)) grants.push(g);
   }
-  const d = await git(["diff", "--no-color", "--no-ext-diff", "HEAD", "--", ...files.filter((f) => f.before).map((f) => repoPath(repo, f.rel))], repo.top);
+  const d = await worktreeDiff(repo, files.filter((f) => f.before).map((f) => f.rel));
   const untracked = files.filter((f) => !f.before && f.text !== null).map((f) => `--- /dev/null\n+++ b/${f.rel}\n${f.text!.split("\n").map((l) => `+${l}`).join("\n")}`);
-  const diff = [d.stdout, ...untracked].join("\n").slice(0, 64 * 1024);
+  const diff = [d, ...untracked].join("\n").slice(0, 64 * 1024);
   const card = { kept: [], files, grants };
   return {
     id: "local",

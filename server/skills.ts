@@ -94,6 +94,8 @@ export type SkillLine = { id: string; at?: string; cwd?: string } & (
   | { kind: "assistant"; blocks: readonly unknown[] }
   /** Says nothing about skills but its `cwd`. */
   | { kind: "other" }
+  /** A line reduced to the loads it holds: compactSkillLine. */
+  | { kind: "used"; uses: readonly SessionSkillUse[] }
 );
 
 /** A block as its harness wrote it: one this version can't read is passed on whole. */
@@ -114,6 +116,17 @@ export function skillLinesOf(branch: readonly HEntry[], cwd?: string): SkillLine
     else if (h.kind === "assistant") out.push({ ...base, kind: "assistant", blocks: h.blocks.map(asWritten) });
   }
   return out;
+}
+
+/**
+ * One line of a file with no recorded cwd, kept for later replay, as little of it as collectSkills needs: an
+ * offer as it is, a line with loads as those loads, and null for any other. A line's loads depend on nothing
+ * around it when no line carries a cwd. The strings are copies: a regex capture keeps its whole source alive.
+ */
+export function compactSkillLine(line: SkillLine): SkillLine | null {
+  if (line.kind === "offer") return line;
+  const { used } = collectSkills([line]);
+  return used.length > 0 ? { id: "", kind: "used", uses: JSON.parse(JSON.stringify(used)) as SessionSkillUse[] } : null;
 }
 
 /** A Claude Code transcript's lines as skill lines: its line type is the role, and every line carries
@@ -276,6 +289,11 @@ export function collectSkills(lines: readonly SkillLine[]): SessionSkills {
 
     if (line.kind === "offer") {
       applyOffer(parseSkillSection(line.section), at, open, offered);
+      continue;
+    }
+
+    if (line.kind === "used") {
+      used.push(...line.uses);
       continue;
     }
 

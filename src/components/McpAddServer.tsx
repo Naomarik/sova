@@ -183,7 +183,8 @@ export function McpServerDialog(props: { editing?: McpServerRow; onClose: () => 
                 </ul>
               </div>
               <div class="modal-foot">
-                <button type="button" class="button button-primary" onClick={() => props.onClose()}>
+                {/* The form that held focus is gone: focus moves here, so Escape and Tab stay in the dialog. */}
+                <button type="button" class="button button-primary" ref={(el) => queueMicrotask(() => el.focus())} onClick={() => props.onClose()}>
                   Close
                 </button>
               </div>

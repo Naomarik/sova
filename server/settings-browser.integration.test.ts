@@ -43,7 +43,7 @@ after(async () => {
   assert.deepEqual(changed ?? [], [], "the sentinel HOME changed");
 });
 
-const NAMES: Record<string, string> = { general: "General", models: "Models", alignment: "Alignment", overseer: "Overseer", notifications: "Notifications", decisions: "Decisions", summaries: "Summaries", memory: "Memory", organizations: "Organizations", mesh: "Mesh", "public-links": "Public links" };
+const NAMES: Record<string, string> = { general: "General", models: "Models", subagents: "Subagents", alignment: "Alignment", overseer: "Overseer", notifications: "Notifications", decisions: "Decisions", summaries: "Summaries", memory: "Memory", organizations: "Organizations", mesh: "Mesh", "public-links": "Public links" };
 /** The Settings dialog (the close-hold asks in a dialog of its own). */
 const dialog = () => page.locator('[role="dialog"]:has(#settings-foot-status)');
 const status = async () => ((await page.locator("#settings-foot-status").textContent()) ?? "").replace(/\s+/g, " ").trim();
@@ -162,6 +162,32 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     }
     await open("general", recent);
     assert.equal(await recent().inputValue(), "7", "a reload keeps the repaired count");
+  });
+
+  test("Subagents: a pasted 60-character name stays whole and red with its count, Save waits, and shortening it clears that (D10)", async () => {
+    const edit = () => box("#subagents-edit-my-setup");
+    await open("subagents", edit);
+    await edit().click();
+    const name = box("#subagents-name");
+    await name.waitFor({ timeout: 15_000 });
+    const sixty = "P".repeat(60);
+    await name.fill("");
+    await name.focus();
+    // A paste is one text insertion (a box's maxlength would cut it to 48 here).
+    await page.keyboard.insertText(sixty);
+    await until("the 60-character name turns its box red", async () => (await name.getAttribute("aria-invalid")) === "true");
+    assert.equal(await name.inputValue(), sixty, "the pasted name was cut");
+    assert.equal(((await box("#subagents-name-count").textContent()) ?? "").trim(), "60 / 48");
+    assert.match(await status(), /Subagents/, "the footer names Subagents");
+    assert.equal(await saveButton().isDisabled(), true, "Save Changes is enabled over a 60-character name");
+    await name.fill("P".repeat(48));
+    await until("a 48-character name clears the red box", async () => (await name.getAttribute("aria-invalid")) === null);
+    assert.equal(((await box("#subagents-name-count").textContent()) ?? "").trim(), "48 / 48");
+    await save("Subagents");
+    await open("subagents", edit);
+    await edit().click();
+    await box("#subagents-name").waitFor({ timeout: 15_000 });
+    assert.equal(await box("#subagents-name").inputValue(), "P".repeat(48));
   });
 
   test("Alignment: a switch saves and reloads", async () => {

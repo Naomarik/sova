@@ -591,3 +591,85 @@ describe("every number box: each raw string stays as typed, is a problem, and cl
     });
   }
 });
+
+// The subagent profile editor's team numbers: nested in a profile of the `profiles` array, so the
+// flat table above can't see them. The draft holds the box's parse (team-form.ts `numberOf`, what
+// the box's onInput writes; the box itself keeps the typed text, settings-browser.integration.test.ts).
+// Each raw string is a problem and Save waits; the bound saves and reads back. The coverage check
+// walks the whole profile, arrays and all: a new number anywhere in a profile with no row fails.
+const teamForm = await import("./team-form");
+describe("Subagents: every team number inside a profile", () => {
+  const TEAM_BOXES: Record<string, keyof typeof teamForm.TEAM_NUMBER_BOUNDS> = {
+    "teams.monitor.contextPct": "contextPct",
+    "teams.monitor.everyMinutes": "everyMinutes",
+    "teams.monitor.usage.pausePct": "pausePct",
+    "teams.monitor.usage.resumeMarginMinutes": "resumeMarginMinutes",
+    "teams.handover.retireTimeoutMinutes": "retireTimeoutMinutes",
+  };
+  /** Every number's path in `o`, arrays included (`[0]`). */
+  const numbers = (o: Json, prefix = ""): string[] =>
+    o && typeof o === "object"
+      ? Object.entries(o).flatMap(([k, v]) => numbers(v, Array.isArray(o) ? `${prefix}[${k}].` : `${prefix}${k}.`))
+      : typeof o === "number"
+        ? [prefix.slice(0, -1)]
+        : [];
+  /** The profile list with profile 0's teams switched on, as the editor's switch seeds them. */
+  const withTeams = async (): Promise<Json> => {
+    const seed = (await api.getTeamDefaults()).defaults;
+    const d: Json = clone(profiles.profilesDraft.draft());
+    // On Claude Code picks: the seed's pi model isn't in this process's registry.
+    const claude = { primary: pick("claude-code", "claude-sonnet-5-5", "low"), fallback: null };
+    d.profiles[0].teams = { coordinator: { ...seed.coordinator, ...claude }, monitor: { ...seed.monitor, ...claude }, handover: seed.handover };
+    return d;
+  };
+  const load = async () => {
+    resetAllDrafts();
+    await primeClaude();
+    profiles.profilesDraft.setSaved(profiles.savedOf(await api.getSubagentProfiles()));
+  };
+
+  test("the table names every number in a profile (its teams seeded), and every team number field", async () => {
+    await load();
+    const d = await withTeams();
+    assert.deepEqual(numbers(d.profiles[0]).sort(), Object.keys(TEAM_BOXES).sort());
+    assert.deepEqual(Object.values(TEAM_BOXES).sort(), Object.keys(teamForm.TEAM_NUMBER_BOUNDS).sort());
+  });
+  for (const [path, field] of Object.entries(TEAM_BOXES)) {
+    test(`profiles[0].${path}: "1." (half-typed) is a problem, as in every other number box`, { todo: "D14" }, async () => {
+      await load();
+      const d = await withTeams();
+      put(d.profiles[0], path, teamForm.numberOf("1."));
+      profiles.profilesDraft.setDraft(d);
+      assert.notEqual(form("Subagents").problem(), null, `${path}: "1." is no problem`);
+      form("Subagents").discard();
+    });
+    test(`profiles[0].${path}: each raw string is a problem; its bounds save and read back`, async () => {
+      await load();
+      const f = form("Subagents");
+      const { min, max } = teamForm.TEAM_NUMBER_BOUNDS[field];
+      const base = await withTeams();
+      const at0 = (v: unknown) => {
+        const d = clone(base);
+        put(d.profiles[0], path, v);
+        return d;
+      };
+      // "1." is D14 (its own todo case below): Number("1.") is 1, so the box saves what wasn't a whole number typed.
+      for (const raw of [...RAW.filter((r) => r !== "1."), String(max + 1), String(min - 1)]) {
+        profiles.profilesDraft.setDraft(at0(teamForm.numberOf(raw)));
+        assert.notEqual(f.problem(), null, `${path}: "${raw}" is no problem`);
+        assert.equal(await f.save(), "skipped", `${path}: Save wrote "${raw}"`);
+        profiles.profilesDraft.setDraft(at0(max));
+        assert.equal(f.problem(), null, `${path}: typing ${max} over "${raw}" leaves a problem`);
+      }
+      for (const v of [min, max]) {
+        profiles.profilesDraft.setDraft(at0(v));
+        await primeClaude();
+        await f.save();
+        assert.equal(f.error(), null, `${path} = ${v}: the save failed`);
+        f.reset();
+        await load();
+        assert.equal(at(profiles.profilesDraft.draft()!.profiles[0], path), v, `${path} = ${v}: a fresh read holds it`);
+      }
+    });
+  }
+});

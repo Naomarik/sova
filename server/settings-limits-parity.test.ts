@@ -237,6 +237,13 @@ describe("each settings limit: the form and the server agree on both sides of it
     for (const k of overseer.CAP_KEYS) assert.equal(overseer.CAP_LABEL[k].label, store.CAP_LABELS[k], `${k}'s label`);
     assert.deepEqual([...overseer.CAP_KEYS].sort(), Object.keys(store.DEFAULT_CAPS).sort(), "the form has a box for every server limit");
   });
+  test("MCP Servers: the Add form's secret-name rule is the route's (D12)", async () => {
+    const { secretNameIssue } = await import("../src/lib/mcp");
+    const { isSecretName } = await import("./mcp/values");
+    for (const n of ["API_KEY", "_x", "a1", "A", "bad-name x", "1KEY", "a.b", "KEY ", "é", "A_B_C9"]) {
+      assert.equal(secretNameIssue(n.trim()) === null, isSecretName(n.trim()), `"${n}": the form and the route disagree`);
+    }
+  });
   test("a refusal names the field in words, never an internal key (D1's 'caps.concurrentSessions')", async () => {
     const s = ovSettings();
     s.caps.concurrentSessions = 1001;

@@ -43,6 +43,11 @@ export function applyToast(answer: Pick<SettingsCardView, "state" | "stillNeeds"
     astray; "" while it is empty, which holds Apply back. */
 export const typedInput = (card: Pick<SettingsCardView, "input">, typed: string): string | undefined => (card.input ? typed.trim() : undefined);
 
+/** The held card's one button. On a project card whose save failed, cancelling is dismissing, and the
+    failure may say to dismiss it; a queue card cancels a kept save, and the folder's edits stay. */
+export const heldButton = (card: Pick<SettingsCardView, "id" | "kind" | "saveFailed">): "Dismiss" | "Cancel Save" =>
+  card.saveFailed && card.kind !== "queue" && card.id !== "local" ? "Dismiss" : "Cancel Save";
+
 /** The ways to cancel a held Save, which differ by card. */
 export interface HeldSaveCancels {
   queue(projectId: string): Promise<unknown>;

@@ -68,6 +68,15 @@ test("a held card says what holds it, in the server's words", () => {
   assert.ok(draw(card({ id: "sc_5", saveWaits: true, saveWords: words }), "p1", false).includes(words), "where nobody may act too");
 });
 
+test("a failed held card's button says what it does", () => {
+  const why = "It changed: dismiss it and ask for a new card. Nothing was saved.";
+  const failed = (over: Record<string, unknown>) => draw(card({ saveWaits: true, saveFailed: why, ...over }), "p1");
+  assert.match(failed({ id: "sc_5" }), />\s*(<!--[^>]*-->)?\s*Dismiss/);
+  assert.doesNotMatch(failed({ id: "sc_5" }), /Cancel Save/);
+  assert.match(failed({ id: "sc_5", kind: "queue" }), /Cancel Save/, "a queue card cancels the queue's kept save");
+  assert.match(failed({ id: "local" }), /Cancel Save/, "the folder's edits stay, so it isn't a dismissal");
+});
+
 test("a project card, and the folder's edits, hold the same way", () => {
   for (const c of [card({ id: "sc_5", saveWaits: true }), card({ id: "local", saveWaits: true })]) {
     const held = draw(c, "p1");

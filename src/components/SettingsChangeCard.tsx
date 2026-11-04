@@ -1,7 +1,7 @@
 import { createContext, createEffect, createSignal, For, Show, useContext } from "solid-js";
 import type { SettingsCardView, SettingsHistoryRow, SettingsToolDetails } from "../../shared/project-settings";
 import { applySettingsCard, applySovaSettingsCard, cancelLocalSettingsSave, cancelMergeSettings, getProjectSettings, getSovaSettingsCards, undoSettingsRow, withdrawSettingsCard, withdrawSovaSettingsCard } from "../lib/api";
-import { applyToast, cancelHeldSave, cardCanAct, createCardLive, QUEUE_CARD_WAITS, typedInput, type CardTimer, type SettingsCardScope } from "../lib/settings-card-live";
+import { applyToast, cancelHeldSave, cardCanAct, createCardLive, heldButton, QUEUE_CARD_WAITS, typedInput, type CardTimer, type SettingsCardScope } from "../lib/settings-card-live";
 import { MESH_HREF } from "../lib/mesh";
 import { toast } from "../lib/ui-state";
 
@@ -70,7 +70,7 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
   const dismiss = () => act(() => (project === null ? withdrawSovaSettingsCard(c().id) : withdrawSettingsCard(project, c().id, local() ? c().fingerprint : undefined)), local() ? "Discarded the folder's settings edits." : `Dismissed ${c().id}.`);
   const cancelSave = () =>
     project !== null &&
-    act(() => cancelHeldSave(c(), project, { queue: cancelMergeSettings, card: withdrawSettingsCard, local: cancelLocalSettingsSave }), local() ? "Cancelled the save. The folder's edits stay." : `Cancelled the save of ${c().id}.`);
+    act(() => cancelHeldSave(c(), project, { queue: cancelMergeSettings, card: withdrawSettingsCard, local: cancelLocalSettingsSave }), local() ? "Cancelled the save. The folder's edits stay." : heldButton(c()) === "Dismiss" ? `Dismissed ${c().id}.` : `Cancelled the save of ${c().id}.`);
   const undo = (row: SettingsHistoryRow) => {
     if (!props.canAct || busy() || project === null) return;
     setBusy(true);
@@ -276,7 +276,7 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
                     <span class="overseer-confirm-hint">{saveWords()}</span>
                   </Show>
                   <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={cancelSave}>
-                    Cancel Save
+                    {heldButton(c())}
                   </button>
                 </div>
               }

@@ -8,7 +8,7 @@ The project ones need a project: in a folder that isn't one, offer Add as Projec
 
 - Change: its switches, each On or Off, in two columns: the overseer on its own, and the Project Assistant from a client. Powers: `gather`, `whatsapp`, `ownerUpdates`, `roster`, `promote`, `bookkeeping`, `codingStart`, `codingPrompt`, `onboard`, `markMerged`, `copiesRun`, `copiesReset`, `share`, `deploy`. The Assistant's column has only `gather`, `codingStart`, `codingPrompt`, `copiesRun` and `deploy`.
 - Lives: Sova's own settings for the project.
-- Approves: only the person's own click in the page: Apply on the card, or the switch on the Settings tab. Each power turned On is marked on the card with what it allows.
+- Approves: the person's own click in the page: Apply on the card, or the switch on the Settings tab. The Overseer can also turn one On, in a turn the person started. Every other caller needs that click. Each power turned On is marked on the card with what it allows.
 - By: Card or Screen. `overseer.powers`, proposed as the `overseer` setting with `powers`. The project page's Settings tab has the same switches.
 - Live: from its next tool call.
 - Check: the Settings tab shows the switch, and Settings history lists the change with Undo.
@@ -51,7 +51,7 @@ The project ones need a project: in a folder that isn't one, offer Add as Projec
 
 ## Approvals the Overseer holds
 
-- Change: an approval for later, or a standing rule, that lets its unattended runs act on named sessions. Separately, when the Overseer turns on a project mode, that counts as the approval of the mode's tools and commands, and nothing waits for the person. It's the one approval the Overseer holds for itself: every other caller needs the person's click in the page. Tell them this before they let the Overseer run a project's modes.
+- Change: an approval for later, or a standing rule, that lets its unattended runs act on named sessions. Separately, when the Overseer turns on a project mode, that counts as the approval of the mode's tools and commands, and nothing waits for the person. Every other caller needs the person's click in the page. Tell them this before they let the Overseer run a project's modes.
 - Lives: the Overseer's own conversation.
 - Approves: the person, by a click on the card option the Overseer proposes. Words typed in chat never make an approval.
 - By: Screen. They're made on the Overseer's cards and ended under Approvals & Schedules on its page. You can't make or end one.

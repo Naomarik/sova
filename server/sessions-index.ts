@@ -758,6 +758,9 @@ function gistChanged(path: string): void {
 export const listIo = { stats: 0, opens: 0 };
 /** Readings of worker parents so far: one per listing, however many worker rows it has. */
 export const workerParentReadings = () => workerSessions.parentReadings;
+let fullSummaryCount = 0;
+/** Full summaries built so far (tests): a poll that reads one field stays on the base summary. */
+export const fullSummaries = () => fullSummaryCount;
 
 async function summarize(path: string, resolveWindow?: WindowResolver): Promise<BaseSummary | null> {
   let st;
@@ -832,6 +835,11 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
   } catch {
     return null;
   }
+}
+
+/** The file's merge-queue mark, from its base summary: the file is read only when the cache can't answer. */
+export async function queueChatOf(path: string): Promise<SessionSummary["queueChat"]> {
+  return (await summarize(path))?.queueChat;
 }
 
 function liveField(l: LiveRecord | undefined): SessionSummary["live"] {
@@ -1320,6 +1328,7 @@ export function summaryReads(): SummaryReads {
 }
 
 export async function getSessionSummary(path: string, resolveWindow?: WindowResolver, reads?: SummaryReads): Promise<SessionSummary | null> {
+  fullSummaryCount++;
   const s = await summarize(path, resolveWindow);
   if (!s) return null;
   const r = reads ?? summaryReads();

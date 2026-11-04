@@ -13,10 +13,13 @@ import { after, test } from "node:test";
 const agentDir = mkdtempSync(join(tmpdir(), "sova-queue-chats-"));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const sessionsDir = join(agentDir, "sessions", "--tmp-queue-chats--");
+const liveDir = join(agentDir, "sessions", "live");
 mkdirSync(sessionsDir, { recursive: true });
+mkdirSync(liveDir, { recursive: true });
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 
-const { getSessionSummary, cleanupSessions, archiveSession } = await import("./sessions-index");
+const { getSessionSummary, cleanupSessions, archiveSession, fullSummaries } = await import("./sessions-index");
+const { getAgentsInsight } = await import("./insights");
 const { canonicalPath } = await import("./paths");
 const { sessionItems } = await import("./attention");
 const { exclusionReason, quietTeam } = await import("./attention-signals");
@@ -40,6 +43,12 @@ function session(name: string, profile: Record<string, unknown> | null, title = 
   return canonicalPath(path);
 }
 const sova = (id: string) => ({ id, label: id, icon: "branch", source: "sova" });
+/** A live record for `path`: a TUI's, as the Agents board reads it. */
+function live(name: string, path: string): string {
+  const file = join(liveDir, `p${process.pid}-${name}.json`);
+  writeFileSync(file, JSON.stringify({ heartbeat: Date.now(), session: { sessionFile: path, pid: process.pid, mode: "tui", status: "idle" } }));
+  return file;
+}
 
 test("queueChatRole: Sova's merge-thread and merge-reviewer profiles only, never by title or a user profile", () => {
   assert.equal(queueChatRole({ id: "merge-thread", source: "sova" }), "thread");
@@ -76,6 +85,35 @@ test("every server list and act leaves a queue chat out; the same chat without t
   assert.equal(hiddenFromProfiles(row(marked)), true);
   assert.equal(hiddenFromProfiles(row(plain)), false);
   assert.ok(configureRefusal(row(marked), false, 0));
+});
+
+test("the Agents board leaves a queue chat out, read from its file when no listing has cached it yet", async () => {
+  // Neither file has been summarized: both are cache misses here.
+  const rev = session("board-rev", sova("merge-reviewer"));
+  const plain = session("board-plain", null);
+  const records = [live("rev", rev), live("plain", plain)];
+  try {
+    const onBoard = (await getAgentsInsight()).sessions.map((s) => s.path);
+    assert.ok(onBoard.includes(plain), `the control is on the board: ${onBoard}`);
+    assert.ok(!onBoard.includes(rev), `the queue chat is not: ${onBoard}`);
+  } finally {
+    for (const f of records) rmSync(f);
+  }
+});
+
+test("an Agents poll builds no full summary, at 2 live records or at 20", async () => {
+  const fullSummariesOfAPoll = async (n: number) => {
+    const records = Array.from({ length: n }, (_, i) => live(`poll${i}`, session(`poll${i}`, i ? null : sova("merge-thread"))));
+    try {
+      const before = fullSummaries();
+      const { sessions } = await getAgentsInsight();
+      return { rows: sessions.length, fullSummaries: fullSummaries() - before };
+    } finally {
+      for (const f of records) rmSync(f);
+    }
+  };
+  assert.deepEqual(await fullSummariesOfAPoll(2), { rows: 1, fullSummaries: 0 });
+  assert.deepEqual(await fullSummariesOfAPoll(20), { rows: 19, fullSummaries: 0 });
 });
 
 test("Clean Up never sweeps a queue chat by age or as a husk, and refuses it by path; the History's clear may", async () => {

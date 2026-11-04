@@ -47,13 +47,13 @@ The fork has its own id and keeps the reply's model, thinking level, mode, sandb
 
 While a turn runs, the composer's **Send** becomes **Steer**, and its placeholder reads "Steer the current turn…". What you send goes into the running turn at its next step, so you can correct course without stopping.
 
-Until the agent takes it, your message shows as **Queued**, with a button to remove it. A removed message is discarded.
+Until the agent takes it at its next step, your message shows as **Queued**, with a button to remove it, even after it has been handed into the running turn. Remove takes out only that message, never another one with the same text or something else waiting (a reminder, a worker's report). A removed message is discarded, and if the agent took it in the same instant, Sova says "Already sent. It can't be removed now." This works the same in every chat: pi, Claude Code, workers and team members.
 
 **Stop** ends the turn. Anything still queued comes back to the composer for you to edit or send again, and the transcript notes "Stopped by you at 1:43 PM." `Esc` doesn't stop a turn, so a stray key can't.
 
 ## Switch models mid-session
 
-Press the model name at the left of the composer's foot, then **Model**, or press `Ctrl+P` (`⌘P` on a Mac). Pick a provider, then a model, or type to search across them. The star on a model row (or `Ctrl+F`) adds it to Favorites at the top of the list without choosing it. The same menu holds the **Thinking** levels for the current model.
+The left of the composer's foot shows the model's short name, such as `Opus 5.5`, after a small ring whose fill and letter show the thinking level (L, M, H, X, a bolt for max; no ring when the model has no levels). Hover it for the full model, provider and level. Press it, then **Model**, or press `Ctrl+P` (`⌘P` on a Mac). Pick a provider, then a model, or type to search across them. The star on a model row (or `Ctrl+F`) adds it to Favorites at the top of the list without choosing it. The same menu holds the **Thinking** levels for the current model, each with its ring, under a line that spells out the choice in full, such as "glm-5.3 · zai · high".
 
 - **Between turns.** A switch waits until the running turn finishes: "Model changes wait until this turn finishes."
 - **It's this session's.** Once a session has your first message, a pick changes only that session. A model or thinking level you pick in a brand-new session becomes the default for new sessions.

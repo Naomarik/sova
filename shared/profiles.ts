@@ -6,7 +6,7 @@
  */
 
 /** Removable capabilities, in the order every list shows them. */
-export const REMOVABLE = ["shell", "edit", "workers", "web", "worktrees", "timers"] as const;
+export const REMOVABLE = ["shell", "edit", "workers", "web", "worktrees", "timers", "mcp"] as const;
 export type Removable = (typeof REMOVABLE)[number];
 /** Removal names an older build had, still accepted in a profile file and a session's copy and read
     as if absent: `links` (the link tools are no capability now; only a link member session has them,
@@ -25,6 +25,8 @@ export const CAPABILITY_TOOLS: Record<Removable, readonly string[]> = {
   web: ["web_search", "fetch_content", "get_search_content", "source_check"],
   worktrees: ["worktree"],
   timers: ["wake_nudge"],
+  // No fixed names: it applies where a chat's list is made, so a chat on the profile lists no server (§chat.profiles/capabilities).
+  mcp: [],
 };
 
 /** Every tool the `*` groups hold today (pi-config's subagents extension), so a runtime
@@ -49,6 +51,7 @@ export const CAPABILITY_LABEL: Record<Removable | Grantable, string> = {
   web: "Web",
   worktrees: "Worktrees",
   timers: "Timers",
+  mcp: "MCP Servers",
   "sessions.read": "Read other sessions",
   "sessions.message": "Message other sessions",
   "sessions.all": "See all Sova sessions",

@@ -188,7 +188,8 @@ export function fromV1(frame: Pick<V1EventFrame, "event" | "entryId" | "reply">)
     }
     case "tool_execution_start": {
       const callId = str(event.toolCallId);
-      return callId ? [{ type: "tool.start", callId, name: str(event.toolName) ?? "tool", args: event.args, ...nestedIn(event) }] : [];
+      const mcp = isObj(event.mcp) ? { mcp: event.mcp as { server: string; tool: string } } : {};
+      return callId ? [{ type: "tool.start", callId, name: str(event.toolName) ?? "tool", args: event.args, ...mcp, ...nestedIn(event) }] : [];
     }
     case "tool_execution_update": {
       const callId = str(event.toolCallId);

@@ -77,7 +77,7 @@ export type SovaEvent =
     }
   /** `parentCallId` (on tool.start, .update and .end): a call another tool made (pi's parentToolCallId), by the
       calling tool's id. It has no row and no live tool of its own: its caller's result records it. */
-  | { type: "tool.start"; callId: string; name: string; args?: unknown; parentCallId?: string }
+  | { type: "tool.start"; callId: string; name: string; args?: unknown; parentCallId?: string; /** A server's tool (§app.mcp/in-a-chat). */ mcp?: { server: string; tool: string } }
   /** The tool's output so far: its text blocks joined, and its images as data URLs; `details`, the partial
       result's details when it has some (a calling tool's progress so far). */
   | { type: "tool.update"; callId: string; output: string; images: string[]; details?: unknown; parentCallId?: string }

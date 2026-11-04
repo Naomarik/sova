@@ -118,6 +118,8 @@ const QUESTION_CHARS = 4000;
 // Public snapshot protocol consumed by sessions/workers.ts; no UI dependency.
 const WORKERS_SNAPSHOT_EVENT = "subagents:workers-snapshot";
 const WORKERS_REQUEST_EVENT = "subagents:workers-request";
+/** The chat's MCP list, from Sova's adapter (server/harness/pi/mcp.ts): spelled again, this extension imports nothing of Sova. */
+const MCP_WORKERS_EVENT = "sova:mcp-list";
 const WORKER_PREVIEW_CHARS = 320;
 /* Busy-worker activity tail (see recentActivity): a tool-heavy run must not read
  * as "no output" while the only missing thing is final prose. */
@@ -168,6 +170,11 @@ const AgentSpec = Type.Object(
 					"Start the child from a copy of this conversation's full history instead of a fresh context. Requires a persisted parent session.",
 			}),
 		),
+		mcpServers: Type.Optional(
+			Type.Array(Nonempty, {
+				description: "MCP servers this worker gets, by name: only ones this chat has, with its tools as trimmed here. None named: it has none. Not part of tools.",
+			}),
+		),
 		useWorktreeConfig: Type.Optional(
 			Type.Boolean({
 				description:
@@ -198,6 +205,7 @@ const TeamMemberSpec = Type.Object(
 		model: AgentSpec.properties.model,
 		effort: AgentSpec.properties.effort,
 		tools: AgentSpec.properties.tools,
+		mcpServers: AgentSpec.properties.mcpServers,
 		systemPrompt: AgentSpec.properties.systemPrompt,
 		cwd: AgentSpec.properties.cwd,
 		wake: AgentSpec.properties.wake,
@@ -293,7 +301,7 @@ export function readTeamArgs(args: unknown, top: readonly string[]): unknown {
 	return members === args.members ? args : { ...args, members };
 }
 /** agent_spawn's settings that may sit beside agents and apply to every agent that leaves them out. */
-const SHARED_SPAWN_KEYS = ["backend", "model", "effort", "cwd", "wake", "tools", "systemPrompt", "backendOptions", "extensions", "useWorktreeConfig"] as const;
+const SHARED_SPAWN_KEYS = ["backend", "model", "effort", "cwd", "wake", "tools", "mcpServers", "systemPrompt", "backendOptions", "extensions", "useWorktreeConfig"] as const;
 /** Settings that stay per agent: refused beside agents. */
 const PER_AGENT_KEYS = ["name", "count", "fork", "agentType"] as const;
 const SPAWN_TOP_KEYS = new Set([...AGENT_KEYS, "agents", "groupLabel"]);
@@ -1434,6 +1442,15 @@ export function registerSubagents(
 	 * back every created worker and rethrows; returns only after the group is
 	 * published. Callers keep context(), abort and tool-shape checks.
 	 */
+	/** What the chat answers for a worker's `mcpServers`: its own list, capped to the names, or its refusal thrown. */
+	const workerMcp = (names: readonly string[] | undefined): unknown => {
+		if (!names?.length) return undefined;
+		let answer: { list?: unknown; refused?: string } | undefined;
+		pi.events?.emit(MCP_WORKERS_EVENT, { version: 1, names, reply: (a: { list?: unknown; refused?: string }) => (answer = a) });
+		if (!answer) throw new Error(`This chat's servers are none, so a worker can't have ${names[0]}.`);
+		if (answer.refused) throw new Error(answer.refused);
+		return answer.list;
+	};
 	const spawnBatch = async (ctx: ExtensionContext, request: BatchRequest, signal?: AbortSignal): Promise<AgentGroup> => {
 		// An old Claude id (opus[1m], sonnet, claude-opus-5-5[1m], …) is resolved through the catalog's
 		// read-only legacy table, quietly: the catalog id is what runs and what is recorded.
@@ -1479,6 +1496,7 @@ export function registerSubagents(
 			if (!spec.prompt.trim()) throw new Error("Task must not be blank.");
 			// A team's monitor has no tools to follow them with; a worker on its worktree's own agent dir
 			// gets them from that tree's mode extension (below), never twice.
+			const mcp = workerMcp(spec.mcpServers);
 			const modes = request.team?.members[index]?.duty === "monitor" || spec.useWorktreeConfig ? undefined : modesNow;
 			const modePrompt = modes?.prompt;
 			// The mode prompt already carries spec mode's whole worker block: the brief would repeat it.
@@ -1549,7 +1567,7 @@ export function registerSubagents(
 				if (remote) throw new Error(`Backend ${backendId} cannot run workers of a remote session (only pi workers have remote tooling).`);
 				// Last: the prompt the runner uses is this one.
 				if (modePrompt) prepared = { ...prepared, systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, modePrompt].filter(Boolean).join("\n\n") };
-				return { spec, cwd, model: spec.model, tools: spec.tools, systemPrompt: spec.systemPrompt,
+				return { spec, cwd, model: spec.model, tools: spec.tools, systemPrompt: spec.systemPrompt, mcp,
 					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined,
 					givenModes: modePrompt ? givenModesOf(modes!) : [], landed: false, projectToolsFile: undefined };
 			}
@@ -1611,6 +1629,7 @@ export function registerSubagents(
 				cwd,
 				model,
 				tools,
+				mcp,
 				extensions,
 				forkSession,
 				systemPrompt: [definition?.systemPrompt, spec.systemPrompt, specWorker && !specInPrompt ? workerSpecBrief(SPEC_CORE_DIR) : undefined, modePrompt].filter(Boolean).join("\n\n") || undefined,
@@ -1635,7 +1654,7 @@ export function registerSubagents(
 		let abandoned = false;
 		const earlySettled = new Set<Worker>();
 		try {
-			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, treeConfig, givenModes, landed, projectToolsFile }] of prepared.entries()) {
+			for (const [index, { spec, cwd, model, tools, systemPrompt, mcp, extensions, forkSession, backend, prepared: backendPrepared, flags, treeConfig, givenModes, landed, projectToolsFile }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
 					const id = resuming ? resuming.id : `ag_${String(++counter).padStart(2, "0")}`;
@@ -1665,6 +1684,7 @@ export function registerSubagents(
 							systemPrompt,
 							extensions,
 							forkSession,
+							...(mcp ? { mcp } : {}),
 							backendOptions: spec.backendOptions,
 							...(flags ? { flags } : {}),
 							...backendPrepared,
@@ -1696,6 +1716,7 @@ export function registerSubagents(
 						...(model === undefined ? {} : { model }),
 						...(spec.effort === undefined ? {} : { effort: spec.effort }),
 						...(spec.tools === undefined ? {} : { tools: [...spec.tools] }),
+						...(spec.mcpServers === undefined ? {} : { mcpServers: [...spec.mcpServers] }),
 						...(spec.systemPrompt === undefined ? {} : { systemPrompt: spec.systemPrompt }),
 						...(spec.agentType === undefined ? {} : { agentType: spec.agentType }),
 						...(spec.extensions === undefined ? {} : { extensions: [...spec.extensions] }),
@@ -3283,6 +3304,7 @@ export function registerSubagents(
 			...pick(launch.effort ?? manifest.spec?.effort, "effort"),
 			...pick(continuing ? continuationTools(launch.tools ?? manifest.spec?.tools) : launch.tools ?? manifest.spec?.tools, "tools"),
 			...pick(launch.systemPrompt, "systemPrompt"),
+			...pick(launch.mcpServers, "mcpServers"),
 			...pick(launch.agentType, "agentType"),
 			...pick(launch.cwd ?? manifest.spec?.cwd, "cwd"),
 			wake: manifest.spec?.wake ?? true,
@@ -3494,6 +3516,7 @@ export function registerSubagents(
 					params.model,
 					params.effort,
 					params.tools,
+					params.mcpServers,
 					params.systemPrompt,
 					params.agentType,
 					params.cwd,
@@ -3979,6 +4002,7 @@ export function registerSubagents(
 			...(model === undefined ? {} : { model }),
 			...((launch?.effort ?? old?.effort) ? { effort: launch?.effort ?? old?.effort } : {}),
 			...(launch?.tools === undefined ? {} : { tools: [...launch.tools] }),
+			...(launch?.mcpServers === undefined ? {} : { mcpServers: [...launch.mcpServers] }),
 			...(launch?.systemPrompt === undefined ? {} : { systemPrompt: launch.systemPrompt }),
 			...(launch?.cwd === undefined ? {} : { cwd: launch.cwd }),
 			...(launch?.backendOptions === undefined ? {} : { backendOptions: launch.backendOptions }),
@@ -4732,6 +4756,7 @@ export function registerSubagents(
 								...(launch.model ?? manifest.spec?.model ? { model: launch.model ?? manifest.spec?.model } : {}),
 								...(launch.effort ?? manifest.spec?.effort ? { effort: launch.effort ?? manifest.spec?.effort } : {}),
 								...(launch.tools ? { tools: [...launch.tools] } : {}),
+								...(launch.mcpServers ? { mcpServers: [...launch.mcpServers] } : {}),
 								...(launch.extensions ? { extensions: [...launch.extensions] } : {}),
 							},
 							{ onChange: scheduleRefresh, onSettled, onExit },

@@ -32,6 +32,7 @@ import type {
   SpecialSpec,
 } from "../shared/chat-runtime";
 import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wire";
+import type { McpNote } from "../shared/mcp";
 import type { HEntry, HookCtx, ImageInput, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
 import type { ChatClientMessage, ChatModeResult, HeldChatState, ProjectModeApproval } from "../shared/protocol";
 import {
@@ -212,6 +213,10 @@ export abstract class ChatHandle {
   }
   writeLoadout(data: LoadoutEntryData): Promise<null> {
     return this.call("writeLoadout", { data });
+  }
+
+  noteMcp(note: McpNote): Promise<null> {
+    return this.call("noteMcp", { note });
   }
   flushDeferredAppends(): Promise<null> {
     return this.call("flushDeferredAppends", {});
@@ -791,6 +796,10 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
       return fetchSessionTimings(String(a.sessionId ?? ""));
     case "offers.note":
       return offerNoteFor(String(a.sessionId ?? ""));
+    case "mcp.list":
+      return (await import("./mcp/chat")).chatListFor(a as never);
+    case "mcp.tell":
+      return (await import("./mcp/chat")).tellParent(a.parent, a.note as McpNote);
     case "cards.note":
       return withMergeCardNote(cardNoteFor(String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null), String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null);
     case "powers.sessions":

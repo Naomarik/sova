@@ -7,7 +7,8 @@ import { after, describe, test } from "node:test";
 import { linkPiConfigExtensions } from "../../testing/agent-dir";
 import { ScriptedModel, scriptedModelsJson } from "./testing/scripted-model";
 import { piSession } from "./testing/handle";
-import { cleanMcpEnv, SnapshotTransport, StdioServer, type McpServerStatus } from "./mcp";
+import { cleanMcpEnv, StdioServer } from "../../mcp/transport";
+import { SnapshotTransport, type McpServerStatus } from "./mcp";
 
 for (const k of Object.keys(process.env)) if (/_API_KEY$|_AUTH_TOKEN$/.test(k)) delete process.env[k];
 process.env.SOVA_CANARY = "canary-b7f3";
@@ -58,7 +59,20 @@ const record = (name: string, tools = ["echo"]) => ({
 const server = (name: string, log: string, flags: string[] = [], tools = ["echo"], env: Record<string, string> = {}) => ({
   name, command: node, args: [STUB, "--name", name, "--log", log, "--tools", tools.join(","), ...flags], env, record: record(name, tools),
 });
-const approve = (servers: unknown[]) => writeFileSync(join(agentDir, "sova", "mcp-approved.json"), JSON.stringify({ servers }));
+const { approve: trust } = await import("../../mcp/trust");
+const { saveCheck } = await import("../../mcp/store");
+const { versionOf } = await import("../../mcp/fingerprint");
+const { normalizeEntry } = await import("../../mcp/config");
+const computer = { kind: "computer" } as const;
+/** This computer's list, each server approved as written and its Check recorded, as Add and Check leaves it. */
+const approve = (servers: { name: string; command: string; args?: string[]; env?: Record<string, string>; record: never | ReturnType<typeof record> }[]) => {
+  writeFileSync(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: Object.fromEntries(servers.map(({ name, command, args, env }) => [name, { command, args, env }])) }));
+  for (const { name, command, args, env, record: r } of servers) {
+    const version = versionOf(normalizeEntry(name, { command, args, env }, "computer"), agentDir);
+    trust(computer, name, version);
+    saveCheck(computer, name, version, r as never);
+  }
+};
 const lines = (log: string): any[] => (existsSync(log) ? readFileSync(log, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)) : []);
 const starts = (log: string) => lines(log).filter((e) => e.event === "start");
 
@@ -181,7 +195,7 @@ describe("what Sova reads of a copy", () => {
     await transport.send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "echo", arguments: {} } });
     await until(() => replies.length === 2, "the failed call");
     await transport.close();
-    assert.deepEqual(heard.map((s) => s.state), ["starting", "starting", "running", "exited"]);
+    assert.deepEqual(heard.map((s) => s.state), ["starting", "starting", "running", "failed"]);
     assert.match(heard.at(-1)!.error!, /stub dying on purpose/);
     assert.match(replies[1]!.error!.message, /stub dying on purpose/);
 
@@ -266,7 +280,7 @@ describe("Sandbox On", () => {
     assert.equal(failed!.isError, true);
     assert.match(failed!.text, /inside the sandbox/);
     assert.match(failed!.text, /write failed/);
-    const noted = () => notes.filter((m) => /"method":"notify".*MCP server .{1,2}needs.{1,2} failed/.test(m));
+    const noted = () => notes.filter((m) => /"mcpNote":\{[^}]*"server":"needs"[^}]*"how":"sandbox"/.test(m));
     await until(() => noted().length > 0, "the chat's note");
     assert.equal(noted().length, 1, "one failed start, one note");
   });

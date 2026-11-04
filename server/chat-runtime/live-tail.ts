@@ -32,6 +32,7 @@ export class LiveTail {
           callId: e.callId,
           name: e.name,
           ...(e.args !== undefined ? { args: e.args } : {}),
+          ...(e.mcp ? { mcp: e.mcp } : {}),
           output: "",
           images: [],
           ...(e.parentCallId ? { parentCallId: e.parentCallId } : {}),

@@ -1,49 +1,32 @@
-// MCP servers in Sova chats: the proof step (§app/mcp draft, tmp/mcp-proof.md). pi's own MCP extension
-// (createMcpExtension) carries the tools through pi's pipeline; Sova holds its two seams:
-// - `loadConfig`: Sova's approved set, every server `direct`, so pi's own reading of mcp.json and a
-//   repository's .pi/mcp.json never happens;
-// - `createTransport`: pi connects every server at session_start and declares what it lists. Sova hands
-//   it a transport that answers the handshake and `tools/list` from the server's Check record and starts
-//   the real server at the first call, so a late connect can't change the declared list and a chat that
-//   never calls a server runs nothing for it (`SnapshotTransport`).
-// Workers, hidden chats and special loadouts don't get this factory. No screen, route or trust store
-// reads this yet: the approved set is a file the proof writes by hand.
-import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+// MCP servers in Sova chats (§app/mcp, §app.mcp/in-a-chat). pi's own MCP extension (createMcpExtension) carries the
+// tools through pi's pipeline; Sova holds its seams:
+// - `loadConfig` answers nothing, so pi's own reading of mcp.json and a repository's .pi/mcp.json never happens, and
+//   the chat's list reaches pi as registered servers, every one `direct`;
+// - `createTransport`: pi connects every server at session_start and declares what it lists. Sova hands it a
+//   transport that answers the handshake and `tools/list` from the chat's list and starts the real server at the
+//   first call, so a late connect can't change the declared tools and a chat that never calls a server runs nothing.
+// The list itself is data: made by the server (server/mcp/list.ts), kept in the session from the first message on.
 import { join } from "node:path";
-import {
-  createMcpExtension,
-  type LoadedMcpConfig,
-  type McpServerEntry,
-  type McpTransportFactory,
-} from "@earendil-works/pi-coding-agent";
+import { createMcpExtension, type McpServerConfig, type McpTransportFactory } from "@earendil-works/pi-coding-agent";
+import type { McpErrorLine, McpNote, McpToolName } from "../../../shared/mcp";
 import { prepareSessionCommand, type PreparedSessionCommand } from "../../../pi-config/extensions/sandbox/session-policy.ts";
+import type { ParentScope } from "../../../pi-config/extensions/sandbox/policy.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT } from "../../../pi-config/extensions/sandbox/state.ts";
+import { reservedName } from "../../mcp/config";
+import { NO_MCP, normalizeChatList, workerListOf, type McpChatList, type McpChatServer } from "../../mcp/list";
+import { readyToRun } from "../../mcp/resolve";
+import { secretValues, withoutSecrets } from "../../mcp/secrets";
+import { addChatLine, type McpCheckRecord } from "../../mcp/store";
+import { cleanMcpEnv, ENV_ALLOW, Events, StdioServer, type JsonRpc, type Launch } from "../../mcp/transport";
 import { agentRoot, stateRoot } from "../../state-root";
-import type { PiExtensionAPI, PiExtensionFactory } from "./extension-types";
+import type { PiExtensionAPI } from "./extension-types";
+import { noteMcpTool } from "./mcp-tools";
 
 type McpTransport = ReturnType<McpTransportFactory>;
-type JsonRpc = { jsonrpc?: string; id?: string | number | null; method?: string; params?: unknown; result?: unknown; error?: unknown };
 
-/** What a Check recorded: the handshake's answer and the tools, in the server's own shape. */
-export interface McpCheckRecord {
-  protocolVersion: string;
-  serverInfo: { name: string; version: string };
-  instructions?: string;
-  tools: { name: string; description?: string; inputSchema: Record<string, unknown>; [key: string]: unknown }[];
-}
-
-export interface ApprovedMcpServer {
-  name: string;
-  /** A command server. Address servers don't run in a chat yet: pi's HTTP transport isn't reachable from here. */
-  command: string;
-  args?: string[];
-  /** Literal values only: nothing here is expanded or run. */
-  env?: Record<string, string>;
-  /** Seconds a request may take (pi's default, 60). */
-  timeout?: number;
-  record: McpCheckRecord;
-}
+/** The session entries: a chat's list, kept from its first message on, and a failure's note. */
+export const MCP_LIST_ENTRY = "sova-mcp-list";
+export const MCP_NOTE_ENTRY = "sova-mcp-note";
 
 export type McpServerState = "idle" | "starting" | "running" | "exited" | "failed";
 
@@ -59,209 +42,16 @@ export interface McpServerStatus {
   starts: number;
 }
 
-/** The proof's approved set: `<state root>/mcp-approved.json`. */
-export const mcpApprovedPath = () => join(stateRoot(), "mcp-approved.json");
-
 /**
- * `sova`, in any case, is Sova's own: its tools reach a Claude Code chat under the MCP server `sova`, so
- * a server of that name would give a chat two tools that read alike, `mcp__sova__read` for pi's `read`
- * and `mcp__sova__mcp__sova__read` for the server's. The provider's prefix strip (`toPiToolName`) tells
- * them apart on the real CLI; a fold's plain text and the model can't.
+ * `sova`, in any case, is Sova's own: its tools reach a Claude Code chat under the MCP server `sova`, so a server of
+ * that name would give a chat two tools that read alike (§app.mcp/add-server). The rule is `reservedName`; a list is
+ * held to it again here, the last door.
  */
-export function reservedMcpServerName(name: string): boolean {
-  return name.toLowerCase() === "sova";
-}
+export const reservedMcpServerName = reservedName;
 
-/** The approved set the proof reads. Everything refused is a line of `errors`, which pi reports once. */
-function readApproved(): { servers: ApprovedMcpServer[]; errors: string[] } {
-  const path = mcpApprovedPath();
-  if (!existsSync(path)) return { servers: [], errors: [] };
-  let parsed: { servers?: ApprovedMcpServer[] };
-  try {
-    parsed = JSON.parse(readFileSync(path, "utf8"));
-  } catch (error) {
-    return { servers: [], errors: [`${path}: ${error instanceof Error ? error.message : String(error)}`] };
-  }
-  const servers: ApprovedMcpServer[] = [];
-  const errors: string[] = [];
-  for (const server of parsed.servers ?? []) {
-    if (reservedMcpServerName(server.name)) errors.push(`MCP server "${server.name}" can't run: the name is Sova's own.`);
-    else if (!server.command) errors.push(`MCP server "${server.name}" can't run in a chat: only command servers do so far.`);
-    else if (!server.record) errors.push(`MCP server "${server.name}" has no Check record.`);
-    else servers.push(server);
-  }
-  return { servers, errors };
-}
-
-/** The approved set as pi's config: every tool declared, nothing of pi's own config reading. */
-export function mcpConfigOf(servers: readonly ApprovedMcpServer[], errors: readonly string[] = []): LoadedMcpConfig {
-  return {
-    autoEnableCodemode: false,
-    errors: [...errors],
-    servers: servers.map((server): McpServerEntry => ({
-      name: server.name,
-      source: mcpApprovedPath(),
-      scope: "global",
-      config: {
-        command: server.command,
-        ...(server.args ? { args: server.args } : {}),
-        ...(server.timeout ? { timeout: server.timeout } : {}),
-        exposure: "direct",
-      },
-    })),
-  };
-}
-
-/** The basics a program needs. Everything else in Sova's environment stays out. */
-const ENV_ALLOW = /^(PATH|HOME|USER|LOGNAME|LANG|LANGUAGE|LC_[A-Z_]+|TZ|TMPDIR|TEMP|TMP)$/;
-
-export function cleanMcpEnv(source: NodeJS.ProcessEnv, own: Record<string, string> = {}): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [key, value] of Object.entries(source)) if (value !== undefined && ENV_ALLOW.test(key)) env[key] = value;
-  return { ...env, ...own };
-}
-
-abstract class Events {
-  private messages = new Set<(message: JsonRpc) => void>();
-  private errors = new Set<(error: Error) => void>();
-  private closes = new Set<() => void>();
-  private closeSent = false;
-  onMessage(listener: (message: JsonRpc) => void) {
-    this.messages.add(listener);
-    return () => void this.messages.delete(listener);
-  }
-  onError(listener: (error: Error) => void) {
-    this.errors.add(listener);
-    return () => void this.errors.delete(listener);
-  }
-  onClose(listener: () => void) {
-    this.closes.add(listener);
-    return () => void this.closes.delete(listener);
-  }
-  protected emitMessage(message: JsonRpc) {
-    for (const listener of [...this.messages]) listener(message);
-  }
-  protected emitError(error: Error) {
-    for (const listener of [...this.errors]) listener(error);
-  }
-  protected emitClose() {
-    if (this.closeSent) return;
-    this.closeSent = true;
-    for (const listener of [...this.closes]) listener();
-  }
-}
-
-interface Launch {
-  argv: string[];
-  env: Record<string, string>;
-  fds?: { fd: number; data: string }[];
-  sandboxed: boolean;
-  dispose(): Promise<void>;
-}
-
-const STDERR_TAIL = 2_000;
-const STOP_GRACE_MS = 500;
-const live = new Set<number>();
-let exitHook = false;
-
-/** One server process on newline-delimited JSON-RPC. pi's own transport can't hand a confined launch its fds. */
-export class StdioServer extends Events {
-  private child: ChildProcess | undefined;
-  private buffer = Buffer.alloc(0);
-  private ended = false;
-  stderr = "";
-  constructor(private readonly launch: () => Promise<Launch>, private readonly cwd: string) {
-    super();
-  }
-  get pid() {
-    return this.child?.pid;
-  }
-  sandboxed = false;
-  private disposeLaunch: (() => Promise<void>) | undefined;
-
-  async start(): Promise<void> {
-    const launch = await this.launch();
-    this.sandboxed = launch.sandboxed;
-    this.disposeLaunch = launch.dispose;
-    const fds = launch.fds ?? [];
-    const stdio: ("pipe" | "ignore")[] = ["pipe", "pipe", "pipe"];
-    for (const f of fds) {
-      while (stdio.length <= f.fd) stdio.push("ignore");
-      stdio[f.fd] = "pipe";
-    }
-    const child = spawn(launch.argv[0]!, launch.argv.slice(1), { cwd: this.cwd, env: launch.env, stdio, detached: process.platform !== "win32" });
-    this.child = child;
-    for (const f of fds) (child.stdio[f.fd] as NodeJS.WritableStream | undefined)?.end(f.data);
-    await new Promise<void>((resolve, reject) => {
-      child.once("spawn", resolve);
-      child.once("error", reject);
-    }).catch(async (error) => {
-      await this.disposeLaunch?.();
-      throw error;
-    });
-    const pid = child.pid;
-    if (pid !== undefined) {
-      live.add(pid);
-      if (!exitHook) {
-        exitHook = true;
-        process.once("exit", () => {
-          for (const group of live) try { process.kill(-group, "SIGTERM"); } catch { /* gone */ }
-        });
-      }
-    }
-    child.stdout!.on("data", (chunk: Buffer) => this.read(chunk));
-    child.stderr!.on("data", (chunk: Buffer) => { this.stderr = (this.stderr + chunk.toString("utf8")).slice(-STDERR_TAIL); });
-    child.stdin!.on("error", () => {});
-    child.on("close", () => {
-      if (pid !== undefined) live.delete(pid);
-      void this.disposeLaunch?.();
-      this.child = undefined;
-      this.emitClose();
-    });
-  }
-
-  private read(chunk: Buffer) {
-    this.buffer = Buffer.concat([this.buffer, chunk]);
-    for (;;) {
-      const newline = this.buffer.indexOf(0x0a);
-      if (newline < 0) return;
-      const line = this.buffer.subarray(0, newline).toString("utf8").trim();
-      this.buffer = this.buffer.subarray(newline + 1);
-      if (!line) continue;
-      try {
-        this.emitMessage(JSON.parse(line) as JsonRpc);
-      } catch (error) {
-        this.emitError(error instanceof Error ? error : new Error(String(error)));
-      }
-    }
-  }
-
-  async send(message: JsonRpc): Promise<void> {
-    const stdin = this.child?.stdin;
-    if (!stdin?.writable) throw new Error("the server isn't running");
-    await new Promise<void>((resolve, reject) => stdin.write(`${JSON.stringify(message)}\n`, (error) => (error ? reject(error) : resolve())));
-  }
-
-  /** Stdin first, as the spec asks, then the whole process group: wrappers like npx leave the server behind. */
-  async close(): Promise<void> {
-    if (this.ended) return;
-    this.ended = true;
-    const child = this.child;
-    if (!child?.pid) return;
-    const pid = child.pid;
-    await new Promise<void>((resolve) => {
-      const kill = (signal: NodeJS.Signals) => { try { process.kill(-pid, signal); } catch { /* gone */ } };
-      const term = setTimeout(() => kill("SIGTERM"), STOP_GRACE_MS);
-      const hard = setTimeout(() => kill("SIGKILL"), STOP_GRACE_MS * 4);
-      child.once("close", () => {
-        clearTimeout(term);
-        clearTimeout(hard);
-        kill("SIGTERM");
-        resolve();
-      });
-      child.stdin?.end();
-    });
-  }
+/** A listed server as pi's config: every tool declared. Its command never reaches pi: the transport is Sova's. */
+export function mcpConfigOf(server: McpChatServer): McpServerConfig {
+  return { command: server.name, exposure: "direct" };
 }
 
 const HANDSHAKE_ID = "sova-mcp-handshake";
@@ -282,11 +72,12 @@ export class SnapshotTransport extends Events {
   private initializeParams: unknown;
   private pending = new Set<string | number>();
   private closed = false;
+  private stopping = false;
 
   constructor(
     private readonly record: McpCheckRecord,
     private readonly start_: () => StdioServer,
-    private readonly status: (patch: Partial<McpServerStatus>) => void,
+    private readonly status: (patch: Partial<McpServerStatus>, how?: "changed" | "failed") => void,
     private readonly requestTimeoutMs: number,
   ) {
     super();
@@ -362,9 +153,10 @@ export class SnapshotTransport extends Events {
     server.onClose(() => {
       const wasUp = up;
       this.upstream = undefined;
-      if (this.closed) return;
+      if (this.closed || this.stopping) return;
       const reason = describe(wasUp ? "the server exited" : "the server exited while starting");
-      this.status({ state: wasUp ? "exited" : "failed", pid: undefined, error: reason });
+      // One that exited with no call waiting has failed nobody: the next call starts it again.
+      this.status({ state: wasUp && !this.pending.size ? "exited" : "failed", pid: undefined, error: reason });
       handshake?.reject(new Error(reason));
       for (const id of this.pending) this.fail(id, reason);
       this.pending.clear();
@@ -383,7 +175,7 @@ export class SnapshotTransport extends Events {
       await server.send({ jsonrpc: "2.0", method: "notifications/initialized" });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.status({ state: "failed", pid: undefined, error: message });
+      this.status({ state: "failed", pid: undefined, error: message }, error instanceof McpStartRefused ? error.how : undefined);
       await server.close().catch(() => {});
       throw new Error(`MCP server "${this.record.serverInfo.name}" didn't start: ${message}`);
     }
@@ -396,8 +188,10 @@ export class SnapshotTransport extends Events {
   /** Stops the running copy; the next call starts another (a sandbox change does this). */
   async stopCopy(): Promise<void> {
     await this.starting?.catch(() => {});
+    this.stopping = true;
     await this.upstream?.close();
     this.upstream = undefined;
+    this.stopping = false;
   }
 
   async close(): Promise<void> {
@@ -409,92 +203,204 @@ export class SnapshotTransport extends Events {
 
 interface SandboxState {
   on: boolean;
+  scope?: { worktreeRoots?: string[]; parent?: unknown };
 }
 
+/** What a chat's extension asks of the chat it runs in. */
 export interface McpExtensionHooks {
-  /** Each copy's status as it changes: what a chat's note and a row's error lines read. */
+  /** The list a chat with no list yet takes now; null: none, ever (a remote chat, a profile without servers). */
+  list(cwd: string, sandboxOn: boolean): Promise<McpChatList | null>;
+  /** A worker's failure, for the chat that started it (§app.mcp/sandbox). Absent in an ordinary chat. */
+  tellParent?(note: McpNote): void;
+  /** Each copy's status as it changes. */
   onStatus?(status: McpServerStatus): void;
 }
 
+/** How long the first message waits for a list that changed since the chat opened to reach pi. */
+const SWAP_WAIT_MS = 2_000;
+
+const sameList = (a: McpChatList, b: McpChatList) => JSON.stringify(a) === JSON.stringify(b);
+
 /** A chat's servers. One factory call per runtime, so each chat has its own copies. */
-export function mcpExtension(hooks: McpExtensionHooks = {}): PiExtensionFactory {
+export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory: (pi: PiExtensionAPI) => void } {
   return {
     name: "sova-mcp",
     factory: (pi: PiExtensionAPI) => {
       let sandbox: SandboxState = { on: false };
       let sessionId = "";
-      let notify: (message: string) => void = () => {};
+      let chatName = "";
+      let list: McpChatList = NO_MCP;
+      let settled = false;
       const transports = new Set<SnapshotTransport>();
-      let approved = new Map<string, ApprovedMcpServer>();
+      const noted = new Set<string>();
+      const toolWaiters = new Set<() => void>();
 
       pi.events?.on(SANDBOX_STATE_EVENT, (data: unknown) => {
-        const next = data as { version?: unknown; on?: unknown } | undefined;
+        const next = data as { version?: unknown; on?: unknown; scope?: SandboxState["scope"] } | undefined;
         if (next?.version !== 1) return;
         const on = next.on === true;
         const changed = on !== sandbox.on;
-        sandbox = { on };
+        sandbox = { on, ...(next.scope ? { scope: next.scope } : {}) };
         // A copy runs under the state it started in; a change makes the next call start a new one.
         if (changed) for (const transport of transports) void transport.stopCopy();
       });
 
-      const launchOf = (server: ApprovedMcpServer, cwd: string) => async (): Promise<Launch> => {
-        const argv = [server.command, ...(server.args ?? [])];
-        const env = cleanMcpEnv(process.env, server.env);
-        if (!sandbox.on) return { argv, env, sandboxed: false, dispose: async () => {} };
-        const prepared = await prepareSessionCommand({ agentDir: agentRoot(), cwd, sessionId }, argv, { env: server.env ?? {} });
+      const writeOnly = () => (sandbox.scope?.parent as { writeOnly?: unknown } | undefined)?.writeOnly === true;
+
+      /** The call has failed already; this is the chat's note and the row's line, once until it works again. */
+      const failed = (server: McpChatServer, how: McpNote["how"], reason: string) => {
+        if (noted.has(server.name)) return;
+        noted.add(server.name);
+        const link: McpNote["link"] = server.owner.kind === "computer" ? { to: "settings", id: server.id } : { to: "project", projectId: server.owner.projectId, id: server.id };
+        const clean = withoutSecrets(reason, secretValues(server.owner, server.name));
+        const short = firstLines(clean);
+        const note: McpNote = { server: server.name, how, ...(how === "failed" ? { reason: short } : {}), link };
+        // Write-only: the chat that started the worker reads it; a worker's own transcript has nobody reading.
+        if (how === "write-only") hooks.tellParent?.({ ...note, worker: chatName || "a worker" });
+        else pi.appendEntry(MCP_NOTE_ENTRY, note);
+        if (how === "changed") return;
+        const where: McpErrorLine["where"] = how === "sandbox" || how === "write-only" ? how : undefined;
+        for (const line of clean.split("\n").filter(Boolean).slice(0, 6)) {
+          try {
+            addChatLine(server.owner, server.name, { line, ...(chatName ? { chat: chatName } : { chat: "a chat" }), ...(where ? { where } : {}) });
+          } catch {
+            // a line that can't be kept never fails the chat
+          }
+        }
+      };
+
+      const launchOf = (server: McpChatServer, cwd: string) => async (): Promise<Launch> => {
+        // Every start checks the approval again, as the files stand now (§app.mcp/approval).
+        // The seam for address servers: pi's HTTP transport isn't reachable without @earendil-works/pi-mcp.
+        if (server.kind === "address") throw new McpStartRefused("failed", "Address servers don't run in chats yet.");
+        const ready = readyToRun(server.owner, server.name);
+        if (!ready.ok) throw new McpStartRefused(ready.how, ready.reason);
+        const argv = [ready.entry.command!, ...(ready.entry.args ?? [])];
+        const at = ready.cwd ?? cwd;
+        if (!sandbox.on) return { argv, env: cleanMcpEnv(process.env, ready.entry.env), sandboxed: false, cwd: at, dispose: async () => {} };
+        const prepared = await prepareSessionCommand(
+          { agentDir: agentRoot(), cwd: at, sessionId, ...(sandbox.scope?.worktreeRoots ? { worktreeRoots: sandbox.scope.worktreeRoots } : {}), ...(sandbox.scope?.parent ? { parent: sandbox.scope.parent as ParentScope } : {}) },
+          argv,
+          { env: ready.entry.env ?? {} },
+        );
         if (!prepared.ok) throw new Error(`the sandbox can't run it: ${prepared.error}`);
-        return { ...confinedLaunch(prepared.value, argv, server.env), sandboxed: true };
+        return { ...confinedLaunch(prepared.value, argv, ready.entry.env), sandboxed: true, cwd: at };
       };
 
       const createTransport: McpTransportFactory = (entry, cwd) => {
-        // Only the approved set runs: another extension's pi.registerMcpServer lands here too.
-        const server = entry.scope === "global" ? approved.get(entry.name) : undefined;
-        if (!server) throw new Error(`MCP server "${entry.name}" isn't approved in Sova.`);
+        // Only the chat's list runs: another extension's pi.registerMcpServer lands here too.
+        const server = list.servers.find((s) => s.name === entry.name);
+        if (!server) throw new Error(`MCP server "${entry.name}" isn't on this chat's list.`);
         const status: McpServerStatus = { name: entry.name, state: "idle", sandboxed: false, starts: 0 };
-        const report = (patch: Partial<McpServerStatus>) => {
-          // One failed start reaches here twice, from the process's exit and from the start's own failure.
-          const newly = patch.state === "failed" && status.state !== "failed";
+        const report = (patch: Partial<McpServerStatus>, how?: McpNote["how"]) => {
           Object.assign(status, patch);
           if (patch.state === "starting") status.starts++;
+          if (patch.state === "running") noted.delete(entry.name);
           hooks.onStatus?.({ ...status });
-          if (newly) notify(`MCP server "${entry.name}" failed: ${firstLines(patch.error)}`);
+          if (patch.state === "failed") {
+            const inside = status.sandboxed || sandbox.on;
+            failed(server, how ?? (inside ? (writeOnly() ? "write-only" : "sandbox") : "failed"), patch.error ?? "unknown error");
+          }
         };
-        const transport = new SnapshotTransport(
-          server.record,
-          () => new StdioServer(launchOf(server, cwd), cwd),
-          report,
-          (server.timeout ?? 60) * 1000,
-        );
+        const transport = new SnapshotTransport(server.record, () => new StdioServer(launchOf(server, cwd), cwd), report, 60_000);
         transports.add(transport);
         transport.onClose(() => transports.delete(transport));
         return transport as unknown as McpTransport;
       };
 
-      createMcpExtension({
-        loadConfig: () => {
-          const { servers, errors } = readApproved();
-          approved = new Map(servers.map((server) => [server.name, server]));
-          return mcpConfigOf(servers, errors);
-        },
+      const inner = createMcpExtension({
+        loadConfig: () => ({ autoEnableCodemode: false, errors: [], servers: [] }),
         createTransport,
         updateConfig: () => {},
         logPath: join(stateRoot(), "mcp.log"),
-      })(hideMcpCommand(pi));
-
-      pi.on("session_start", (_event, ctx) => {
-        sessionId = ctx.sessionManager.getSessionId();
-        notify = (message) => ctx.ui.notify(message, "warning");
-        pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
       });
+
+      const reach = (next: McpChatList) => {
+        for (const s of list.servers) pi.unregisterMcpServer(s.name);
+        list = next;
+        for (const s of list.servers) if (!reservedName(s.name)) pi.registerMcpServer(s.name, mcpConfigOf(s));
+      };
+
+      // Before pi's own handlers below: what pi connects at session_start is what is registered by then.
+      pi.on("session_start", async (_event, ctx) => {
+        sessionId = ctx.sessionManager.getSessionId();
+        chatName = pi.getSessionName() ?? "";
+        pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
+        const branch = ctx.sessionManager.getBranch() as { type?: string; customType?: string; data?: unknown; message?: { role?: string } }[];
+        const kept = branch.filter((e) => e.type === "custom" && e.customType === MCP_LIST_ENTRY).map((e) => normalizeChatList(e.data)).filter((l) => l !== null).pop();
+        const begun = branch.some((e) => e.type === "message");
+        settled = !!kept || begun;
+        const next = kept ?? (begun ? NO_MCP : ((await hooks.list(ctx.cwd, sandbox.on).catch(() => null)) ?? NO_MCP));
+        reach(next);
+      });
+
+      // Settled when the first message is sent (§app.mcp/tool-list): a server added since the chat opened counts.
+      pi.on("before_agent_start", async (_event, ctx) => {
+        if (settled) return;
+        settled = true;
+        const next = (await hooks.list(ctx.cwd, sandbox.on).catch(() => null)) ?? list;
+        if (!sameList(next, list)) {
+          const before = new Set(list.servers.map((s) => s.name));
+          const expected = next.servers.filter((s) => !before.has(s.name)).length;
+          let left = expected;
+          const landed = new Promise<void>((resolve) => {
+            const step = () => (--left <= 0 ? resolve() : undefined);
+            if (expected) toolWaiters.add(step);
+            else resolve();
+          });
+          reach(next);
+          let timer: ReturnType<typeof setTimeout> | undefined;
+          await Promise.race([landed, new Promise<void>((resolve) => (timer = setTimeout(resolve, SWAP_WAIT_MS)))]);
+          clearTimeout(timer);
+          toolWaiters.clear();
+        }
+        if (list.servers.length) pi.appendEntry(MCP_LIST_ENTRY, list);
+      });
+
+      // Workers take theirs from this chat's list (server/mcp/list.ts workerListOf).
+      pi.events?.on(MCP_WORKERS_EVENT, (data: unknown) => {
+        const ask = data as { version?: unknown; names?: string[]; reply?: (answer: { list: McpChatList } | { refused: string }) => void } | undefined;
+        if (ask?.version === 1) ask.reply?.(workerListOf(list, ask.names ?? [], chatName || "This chat"));
+      });
+
+      inner(tapped(pi, (name, tool) => {
+        noteMcpTool(name, tool);
+      }, () => {
+        for (const step of toolWaiters) step();
+      }));
     },
   };
 }
 
-/** `/mcp` would sign in and reconnect from the composer, and those stay on the page. */
-function hideMcpCommand(pi: PiExtensionAPI): PiExtensionAPI {
+class McpStartRefused extends Error {
+  constructor(readonly how: "changed" | "failed", reason: string) {
+    super(reason);
+  }
+}
+
+/** The event a chat's workers ask its list on (pi-config/extensions/subagents). */
+export const MCP_WORKERS_EVENT = "sova:mcp-list";
+
+/**
+ * pi's extension with two things changed: `/mcp` stays out of a chat's composer (it would sign in and reconnect, and
+ * those stay on the page), and each registered tool is told, by the server's name and the tool's.
+ */
+function tapped(pi: PiExtensionAPI, tool: (name: string, raw: McpToolName) => void, served: () => void): PiExtensionAPI {
+  const label = /^(.+?)\/(.+)$/;
+  let server = "";
   return new Proxy(pi, {
     get(target, key, receiver) {
       if (key === "registerCommand") return (name: string, options: unknown) => (name === "mcp" ? undefined : (target.registerCommand as (n: string, o: unknown) => void)(name, options));
+      if (key === "registerTool")
+        return (definition: { name: string; label?: string }) => {
+          const m = definition.label ? label.exec(definition.label) : null;
+          if (m) tool(definition.name, { server: m[1]!, tool: m[2]! });
+          (target.registerTool as (d: unknown) => void)(definition);
+          if (m && m[1] !== server) {
+            server = m[1]!;
+            served();
+          }
+        };
       const value = Reflect.get(target, key, receiver);
       return typeof value === "function" ? value.bind(target) : value;
     },

@@ -44,6 +44,8 @@ export interface WorkerLaunchSpec {
 	backendOptions?: Record<string, unknown>;
 	/** Team membership, for re-attaching the member tools and mailbox. */
 	orchestrator?: boolean;
+	/** The MCP servers it was started with, by name (its list stays in its own session). */
+	mcpServers?: string[];
 	/** Ran on its worktree's own agent dir (agent_spawn useWorktreeConfig); a resume applies it again. */
 	useWorktreeConfig?: boolean;
 }

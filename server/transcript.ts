@@ -1,3 +1,4 @@
+import { MCP_NOTE } from "./harness/state-kinds";
 import {
   EAGER_TOOLS,
   OVERSEER_DIALOG_ANSWER_ENTRY,
@@ -258,16 +259,30 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
  */
 export function slimRows(rows: TranscriptItem[]): TranscriptItem[] {
   let prev: HEntry | undefined;
+  const mcpCalls = new Map<string, NonNullable<TranscriptItem["mcp"]>>();
   for (const it of rows) {
     const h = sources.get(it);
     if (h && h !== prev) it.meta = factsOf(h);
     prev = h;
-    if (it.kind === "tool-call" || it.kind === "tool-result") slimTool(it, h);
+    if (it.kind === "tool-call" || it.kind === "tool-result") {
+      slimTool(it, h);
+      const details = h?.kind === "tool-result" ? (rawOf(h) as { message?: { details?: { server?: unknown; tool?: unknown } }; details?: { server?: unknown; tool?: unknown } } | undefined) : undefined;
+      const d = details?.message?.details ?? details?.details;
+      if (typeof d?.server === "string" && typeof d.tool === "string") {
+        it.mcp = { server: d.server, tool: d.tool };
+        if (it.toolCallId) mcpCalls.set(it.toolCallId, it.mcp);
+      }
+    }
     else if (it.kind === "unknown" && h) {
       // The Unrecognized entry card shows the entry as the harness wrote it.
       const raw = rawOf(h);
       if (raw) it.entry = withoutSignatures(raw);
     }
+  }
+  // A call's row reads its server and tool from its result, whose details pi wrote them in.
+  if (mcpCalls.size) for (const it of rows) if (it.kind === "tool-call" && it.toolCallId) {
+    const mcp = mcpCalls.get(it.toolCallId);
+    if (mcp) it.mcp = mcp;
   }
   return rows;
 }
@@ -717,6 +732,15 @@ function claudeLoginRow(id: string, h: StateEntry): TranscriptItem[] {
   return [it];
 }
 
+/** A server's failure in this chat (§app.mcp/in-a-chat): the page draws the words from `mcpNote`. */
+function mcpNoteRow(id: string, h: StateEntry): TranscriptItem[] {
+  const note = MCP_NOTE.parse(h.data);
+  if (!note) return [];
+  const it = item(id, "info", h, `${note.server}: ${note.reason ?? note.how}`.slice(0, 300));
+  it.mcpNote = note;
+  return [it];
+}
+
 /** A subagents team event (handover, retire, pause, resume, wrap-up): one machine row, like a
     model change, in both webapp-owned and watched sessions. Undecodable: nothing. */
 function teamEventRow(id: string, h: StateEntry): TranscriptItem[] {
@@ -837,6 +861,7 @@ function stateRows(id: string, h: StateEntry): TranscriptItem[] {
   if (h.key === OVERSEER_DIALOG_ANSWER_ENTRY) return overseerAnswerRow(id, h);
   if (h.key === TEAM_EVENT_TYPE) return teamEventRow(id, h);
   if (h.key === "claude-login") return claudeLoginRow(id, h);
+  if (h.key === MCP_NOTE.type) return mcpNoteRow(id, h);
   if (BATON_ROWS.has(h.key)) return batonRow(id, h);
   return [];
 }

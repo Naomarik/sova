@@ -20,6 +20,9 @@ export interface LoadoutEntryData {
   offContext: string[];
   /** Skills left out of the skills offered, by name. */
   offSkills: string[];
+  /** MCP servers this chat turns off, or on against their New Chats switch, by name: only the flips. */
+  offMcp?: string[];
+  onMcp?: string[];
 }
 
 /** The largest off set the route accepts, per kind; far above any real loadout. */
@@ -31,14 +34,17 @@ const strings = (v: unknown): string[] | null =>
 /** The entry's data, strictly: anything else is not an entry (null). */
 export function normalizeLoadout(v: unknown): LoadoutEntryData | null {
   if (!v || typeof v !== "object") return null;
-  const d = v as { v?: unknown; offContext?: unknown; offSkills?: unknown };
+  const d = v as { v?: unknown; offContext?: unknown; offSkills?: unknown; offMcp?: unknown; onMcp?: unknown };
   if (d.v !== 1) return null;
   const offContext = strings(d.offContext);
   const offSkills = strings(d.offSkills);
   if (!offContext || !offSkills) return null;
   if (offContext.length > LOADOUT_MAX || offSkills.length > LOADOUT_MAX) return null;
   if (!offContext.every((p) => p.startsWith("/"))) return null;
-  return { v: 1, offContext, offSkills };
+  const offMcp = d.offMcp === undefined ? [] : strings(d.offMcp);
+  const onMcp = d.onMcp === undefined ? [] : strings(d.onMcp);
+  if (!offMcp || !onMcp || offMcp.length > LOADOUT_MAX || onMcp.length > LOADOUT_MAX) return null;
+  return { v: 1, offContext, offSkills, ...(offMcp.length ? { offMcp } : {}), ...(onMcp.length ? { onMcp } : {}) };
 }
 
 /** The newest well-formed `sova-loadout` entry on a branch (null: none, everything on). The entries are pi's
@@ -49,7 +55,7 @@ export function loadoutOnBranch(branch: readonly unknown[]): LoadoutEntryData | 
 
 /** Whether an entry leaves anything out at all. */
 export const leavesOut = (d: LoadoutEntryData | null | undefined): d is LoadoutEntryData =>
-  !!d && (d.offContext.length > 0 || d.offSkills.length > 0);
+  !!d && (d.offContext.length > 0 || d.offSkills.length > 0 || !!d.offMcp?.length || !!d.onMcp?.length);
 
 /**
  * What a runtime was built with: the entry, and the loader's UNFILTERED lists as the overrides last

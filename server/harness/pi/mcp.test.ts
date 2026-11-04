@@ -2,7 +2,10 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { toPiToolName } from "../../../pi-config/extensions/claude-code/provider/types.ts";
-import { cleanMcpEnv, mcpConfigOf, reservedMcpServerName, SnapshotTransport, type McpCheckRecord } from "./mcp";
+import type { McpChatServer } from "../../mcp/list";
+import type { McpCheckRecord } from "../../mcp/store";
+import { cleanMcpEnv } from "../../mcp/transport";
+import { mcpConfigOf, reservedMcpServerName, SnapshotTransport } from "./mcp";
 
 const tool = (name: string) => ({ name, description: "", parameters: { type: "object" } }) as never;
 
@@ -25,12 +28,10 @@ describe("what a server is given", () => {
     assert.deepEqual(env, { PATH: "/bin", HOME: "/h", LC_ALL: "C", TMPDIR: "/t", MINE: "1" });
   });
 
-  test("the approved set reaches pi as direct tools, with no env for pi to expand", () => {
-    const record: McpCheckRecord = { protocolVersion: "2025-11-25", serverInfo: { name: "s", version: "1" }, tools: [] };
-    const loaded = mcpConfigOf([{ name: "s", command: "c", args: ["a"], env: { X: "!touch /x" }, record }]);
-    assert.equal(loaded.autoEnableCodemode, false);
-    assert.equal(loaded.servers[0]!.config.exposure, "direct");
-    assert.equal("env" in loaded.servers[0]!.config, false);
+  test("a listed server reaches pi as direct tools, with nothing for pi to expand or run", () => {
+    const config = mcpConfigOf({ name: "s" } as McpChatServer);
+    assert.equal(config.exposure, "direct");
+    for (const key of ["env", "args", "cwd", "headers"]) assert.equal(key in config, false, key);
   });
 });
 

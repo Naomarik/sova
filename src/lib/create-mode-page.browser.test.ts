@@ -8,7 +8,7 @@ if (!import.meta.resolve("solid-js").endsWith("/dist/solid.js")) throw new Error
 
 const solid = await import("solid-js");
 const { createModeSave } = await import("./mode-save");
-const { majorGear } = await import("./mode-menu");
+const { majorGear, menuModes } = await import("./mode-menu");
 const { majorGlyph } = await import("./mode-glyphs");
 const { cardCanAct, createCardLive, readCard } = await import("./settings-card-live");
 type ShownMode = import("./mode-menu").ShownMode;
@@ -71,6 +71,13 @@ describe("Save as default across Create", () => {
 });
 
 describe("Create's row", () => {
+  test("the global list gives a peer's chat the row; an older host gives none, and Create comes after the rest", () => {
+    const normal = { id: "normal", description: "" };
+    const create = { id: "create", description: "" };
+    assert.deepEqual(menuModes({ modes: [normal], chatModes: [create] }), [normal, create]);
+    assert.deepEqual(menuModes({ modes: [normal] }), [normal]);
+  });
+
   test("Create and Delegate each carry a gear and their own icon; normal has no gear", () => {
     assert.equal(majorGear("create"), "configure-create");
     assert.equal(majorGear("delegate"), "configure-delegate");

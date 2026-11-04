@@ -39,6 +39,12 @@ export function footNote(m: ShownMode | null): string {
   return m?.mode === "create" ? `${CREATE_FOOT_NOTE} Save as default saves ${modeSummary(savableMode(m))}.` : FOOT_NOTE;
 }
 
+/** The major modes a chat's menu offers, from the global list: those a default can hold, then those
+    only a chat can pick. A host older than Create has neither, so its chats get no row. */
+export function menuModes<T>(read: { modes: readonly T[]; chatModes?: readonly T[] }): T[] {
+  return [...read.modes, ...(read.chatModes ?? [])];
+}
+
 /** The gear a major mode's row carries: Create shares Delegate's settings, so each has one, and the
     normal mode has none. */
 export function majorGear(id: string): "configure-delegate" | "configure-create" | null {

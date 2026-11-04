@@ -16,6 +16,7 @@ import {
   filterProfiles,
   isDefaultMode,
   majorGear,
+  menuModes,
   modeSummary,
   nextProjectModes,
   noProfileMatch,
@@ -333,7 +334,8 @@ export function ModeMenu(props: { control: ModeControl }) {
     }
     try {
       const read = await getMode(host());
-      setInfo(read);
+      // A local chat's own answer below replaces this list; a peer's chat has only this one.
+      setInfo({ ...read, modes: menuModes(read) });
       setDefaultMode(shownOf(read));
       setDefaultMemory(memoryOf(read));
     } catch {

@@ -91,6 +91,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; settings?: Partia
     gaps: () => null,
     placed: () => true,
     contributed: () => [],
+    releaseAct: async (q: { verb: string; release?: string }) => (calls.push(`release:${q.verb}:${q.release ?? ""}`), `Held: ${q.verb}`),
     sessions: async () => sessions,
     transcript: async () => [],
     // This computer's default (opts.hostMode, else normal · spec), and its library's profiles.
@@ -218,13 +219,23 @@ describe("the powers, as the statecharts declare them (al_3)", () => {
     for (const l of ["L0", "L1", "L2", "L3"] as const) assert.equal(carryOver(l).deploy, false);
   });
 
-  test("sova_project_verbs' acts: services/down always, services/run copiesRun, services/reset copiesReset, neither held nor counted; services/share held; onboard held and counted as a start; deploy/run held", () => {
+  test("sova_project_verbs' acts: services/down always, services/run copiesRun, services/reset copiesReset, neither held nor counted; services/share held; onboard held and counted as a start; deploy/run and release/run held", () => {
     const acts = statechartInfo("project")!.acts as Record<string, { power?: string | null; tool?: string; hold?: boolean; counts?: string | null }>;
     assert.deepEqual(
       Object.entries(acts).filter(([, a]) => a.tool === "sova_project_verbs").map(([id, a]) => [id, a.power, !!a.hold, a.counts ?? null]).sort(),
-      [["deploy/run", "deploy", true, null], ["services/down", "always", false, null], ["services/reset", "copiesReset", false, null], ["services/run", "copiesRun", false, null], ["services/share", "share", true, null], ["verbs/onboard", "onboard", true, "create"]],
+      [["deploy/run", "deploy", true, null], ["release/run", "release", true, null], ["services/down", "always", false, null], ["services/reset", "copiesReset", false, null], ["services/run", "copiesRun", false, null], ["services/share", "share", true, null], ["verbs/onboard", "onboard", true, "create"]],
     );
     assert.equal(COUNTS.sova_project_verbs, "create", "only onboard draws on an allowance: a refusal for it is held until create comes back");
+  });
+
+  test("sova_project_verbs: release.start and release.publish go only through the project's release act; release.status is a read", async () => {
+    const { run, calls } = fake({ autonomy: "L3" });
+    const started = (await run("sova_project_verbs", { verb: "release.start", why: "lots landed" })) as { content: { text: string }[]; details: { verb: string } };
+    assert.equal(started.details.verb, "release/run");
+    assert.equal(started.content[0]!.text, "Held: start");
+    await run("sova_project_verbs", { verb: "release.publish", release: "rl_abc123" });
+    await run("sova_project_verbs", { verb: "release.status" });
+    assert.deepEqual(calls.filter((c) => c.startsWith("release:")), ["release:start:", "release:publish:rl_abc123"]);
   });
 
   test("sova_project_verbs: the engine's own refusals come before the act, and a read is no act", async () => {

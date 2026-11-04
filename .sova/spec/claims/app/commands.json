@@ -20,9 +20,9 @@
     ],
     "authority": "accepted",
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:24Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "user",
+      "at": "2026-11-04T01:13Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     },
     "evidence": "verified"
   },
@@ -66,6 +66,27 @@
       "at": "2026-10-17T17:59Z"
     },
     "evidence": "verified"
+  },
+  "§app.commands/opted-out": {
+    "kind": "behavior",
+    "requires": [
+      "§app.commands/catalogue"
+    ],
+    "code": [
+      "server/commands-inventory/scan.ts",
+      "server/commands-inventory.test.ts",
+      "server/commands-inventory/baseline.json",
+      "docs/commands.md",
+      "agents/server/commands/overview.md",
+      "AGENTS.md"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-03T23:49Z",
+      "source": "pi-session:4441e428-24f6-4250-885d-3456497e0d92#e164e6ea"
+    }
   },
   "§app.commands/reply-place": {
     "kind": "behavior",

@@ -1246,6 +1246,23 @@ export function clickCardId(text: string): string | null {
   return /^(c_[1-9]\d*)(?::| [a-z]:) /.exec(text)?.[1] ?? null;
 }
 
+/** A click's facts from the branch: the latest user message and the card it clicked, open when that message arrived. */
+export interface ClickContext {
+  message: HEntry & { id: string };
+  card: OverseerCard;
+}
+
+/** The ClickContext of `card` on `branch`, or null: no user message yet, or the card wasn't open. Pure. */
+export function clickContext(card: string, branch: readonly HEntry[]): ClickContext | null {
+  let last = branch.length - 1;
+  while (last >= 0 && branch[last]!.kind !== "user") last--;
+  const message = branch[last];
+  if (last < 0 || !message?.id) return null;
+  const c = foldCards(branch.slice(0, last)).find((x) => x.id === card);
+  return c?.phase === "open" ? { message: message as ClickContext["message"], card: c } : null;
+}
+
+
 /**
  * Whether `text` is exactly a message a click on `card` composes: an option click, or a per-item
  * Apply (each token recomposed and compared). null for anything else, typed text that merely looks

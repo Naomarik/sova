@@ -14,8 +14,15 @@
       "src/lib/project-deploy.test.ts",
       "src/lib/api.ts",
       "src/components/ProjectPage.tsx",
-      "src/projects.css"
-    ]
+      "src/projects.css",
+      "src/lib/releases-client.ts",
+      "server/project-releases-ui.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
   },
   "§app.project-runtime/deploy-playbook": {
     "kind": "behavior",
@@ -61,7 +68,9 @@
       "src/lib/project-queue.ts",
       "src/lib/project-queue.test.ts",
       "server/merge-queue-ui.integration.test.ts",
-      "server/projects/playbook-review.ts"
+      "server/projects/playbook-review.ts",
+      "server/projects/release-proposal.ts",
+      "server/projects/runtime.test.ts"
     ],
     "requires": [
       "§app.project-runtime/review",
@@ -69,8 +78,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.project-runtime/onboard": {
@@ -94,11 +103,17 @@
       "server/projects/playbook-review.integration.test.ts",
       "statecharts/src/sova/statecharts/build.cljc",
       "statecharts/src/sova/statecharts/rules/runtime.cljc",
-      "statecharts/EVENTS.md"
+      "statecharts/EVENTS.md",
+      "src/components/ReleasesTab.tsx"
     ],
     "requires": [
       "§app.project-overseer/coding-worktrees"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
   },
   "§app.project-runtime/playbook": {
     "kind": "behavior",
@@ -173,12 +188,20 @@
       "src/lib/push-draft.test.ts",
       "src/components/ProjectSoftwareCard.tsx",
       "src/lib/project-software.ts",
-      "src/lib/project-software.test.ts"
+      "src/lib/project-software.test.ts",
+      "src/components/NeedsYouRow.tsx",
+      "src/lib/needs-you-row.ts",
+      "server/needs-you-rows-ui.integration.test.ts"
     ],
     "requires": [
       "§app.project-runtime/onboard",
       "§app.overseer/attention-digest"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
   },
   "§app.project-runtime/run-progress": {
     "kind": "behavior",
@@ -211,11 +234,19 @@
       "src/components/ProjectDeployPanel.tsx",
       "src/lib/project-deploy.ts",
       "server/project-services/deploy-recipe.ts",
-      "server/project-services/deploy-recipe.test.ts"
+      "server/project-services/deploy-recipe.test.ts",
+      "server/projects/release-proposal.ts",
+      "src/components/ReleasesTab.tsx",
+      "server/project-services/observe.ts"
     ],
     "requires": [
       "§app.project-runtime/registry"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
   },
   "§app.project-runtime/software-card": {
     "kind": "behavior",
@@ -236,7 +267,12 @@
     ],
     "requires": [
       "§app.project-runtime/registry"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
   },
   "§app.project-runtime/standing": {
     "kind": "behavior",
@@ -279,11 +315,17 @@
       "statecharts/src/sova/statecharts/rules/runtime.cljc",
       "statecharts/test/sova/statecharts/refit/runtime_test.cljs",
       "statecharts/EVENTS.md",
-      "server/overseer-tools.ts"
+      "server/overseer-tools.ts",
+      "server/projects/playbook-review.ts"
     ],
     "requires": [
       "§app.project-runtime/onboard"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
   },
   "§app/project-runtime": {
     "kind": "surface",

@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PLAYBOOK_ENTRIES, type PlaybookCatalog, type PlaybookEntry, type PlaybookInfo, type PlaybookSchedule } from "../shared/protocol";
+import { PLAYBOOK_ENTRIES, PLAYBOOK_PROPOSES, type PlaybookProposes, type PlaybookCatalog, type PlaybookEntry, type PlaybookInfo, type PlaybookSchedule } from "../shared/protocol";
 import { scheduleOf, scheduleText } from "../shared/schedules";
 import { defaultRemoteOf, type RemoteCwd } from "./files";
 import { projectOf } from "./project-root";
@@ -127,7 +127,7 @@ async function readOne(dir: string, id: string, source: Source): Promise<{ info:
   };
   if (fields.promptHint) info.promptHint = fields.promptHint;
   const proposes = fields.proposes?.trim();
-  if (proposes === "definition" || proposes === "deploy") info.proposes = proposes;
+  if ((PLAYBOOK_PROPOSES as readonly string[]).includes(proposes ?? "")) info.proposes = proposes as PlaybookProposes;
   const schedule = headerSchedule(fields, source);
   if (schedule) info.schedule = schedule;
   return { info, fields };

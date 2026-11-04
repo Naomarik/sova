@@ -17,6 +17,7 @@ import {
   parseMinutes,
   rebaseDraft,
   refusalWords,
+  pendingSaveTitle,
   saveResultWords,
   freshChatWords,
   SOURCE_TAG,
@@ -338,7 +339,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
       <Show when={pending()}>
         <Banner
           tone={pendingFailed() ? "warn" : "info"}
-          title={pendingFailed() ? "The waiting save couldn't be applied." : "Saves when the current branch finishes."}
+          title={pendingSaveTitle(pending()!, !!pendingFailed())}
           body={`${changeLines(pending()!.changes, s()).join("; ")}.${pendingFailed() ? ` ${pendingFailed()!.replace(/[.]$/, "")}.` : ""}`}
           action={
             <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={() => void cancelPending()}>

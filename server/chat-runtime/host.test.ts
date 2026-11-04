@@ -3,7 +3,7 @@
 // throwaway PI_CODING_AGENT_DIR with no credentials (no model is ever called). The test plays the
 // server: control, open, calls, browsers, server-hosted tools, drains.
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Duplex } from "node:stream";
@@ -15,6 +15,7 @@ import {
   type ChatWireType,
   DEFAULT_RUNTIME_SETTINGS,
   type ExitCause,
+  FRAME_MAX_BYTES,
   type FrameOf,
   NOT_RUN_NO_SERVER,
   OUTCOME_UNKNOWN,
@@ -161,6 +162,36 @@ test("calls: the chat's own answers; a stale epoch runs nothing", async () => {
   assert.deepEqual(stale, { id: stale.id, ok: false, error: { message: "stale controller" } });
   assert.deepEqual(await t.call(t.ctl.server, t.ctl.epoch, "releaseIdleModelChild"), { id: `c4`, ok: true, result: "none" });
   assert.deepEqual(await t.call(t.ctl.server, t.ctl.epoch, "reacquire", { force: false }), { id: `c5`, ok: true, result: "ok" });
+});
+
+test("calls: an answer above the frame limit fails at once, the link stays up and the next call is answered", async () => {
+  const t = await setup({ open: false });
+  appendFileSync(t.path, `${JSON.stringify({ type: "custom", customType: "big", data: { pad: "x".repeat(FRAME_MAX_BYTES + 1024) }, id: "b1", parentId: "a1", timestamp: "2026-10-12T00:00:03.000Z" })}\n`);
+  const opened = awaitFrame(t.ctl.server, "opened", 20_000);
+  t.ctl.server.send({ t: "open", id: "o1", path: t.path, force: true, link: null, served: [] });
+  assert.equal((await opened).ok, true);
+
+  const entries = await t.call(t.ctl.server, t.ctl.epoch, "entries");
+  assert.equal(entries.ok, false);
+  assert.match(entries.ok ? "" : ("error" in entries ? entries.error.message : ""), /entries is too large/);
+  assert.equal(t.ctl.server.isOpen, true);
+  const small = await t.call(t.ctl.server, t.ctl.epoch, "stateEntries", { keys: ["none"] });
+  assert.deepEqual(small.ok ? small.result : null, { branch: [], all: [] });
+});
+
+test("stateEntries: the entries under those keys, of the branch and of the whole file, and nothing else", async () => {
+  const t = await setup({ open: false });
+  const state = (id: string, parentId: string, customType: string) => JSON.stringify({ type: "custom", customType, data: { id }, id, parentId, timestamp: "2026-10-12T00:00:03.000Z" });
+  // s1 sits on a branch the leaf left: the whole file has it, the branch doesn't.
+  appendFileSync(t.path, `${[state("s1", "u1", "wanted"), state("s2", "a1", "wanted"), state("s3", "s2", "other"), JSON.stringify({ type: "message", id: "a2", parentId: "s3", timestamp: "2026-10-12T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "the long transcript" }] } })].join("\n")}\n`);
+  const opened = awaitFrame(t.ctl.server, "opened", 5_000);
+  t.ctl.server.send({ t: "open", id: "o1", path: t.path, force: true, link: null, served: [] });
+  assert.equal((await opened).ok, true);
+
+  const r = await t.call(t.ctl.server, t.ctl.epoch, "stateEntries", { keys: ["wanted"] });
+  assert.ok(r.ok);
+  const got = r.result as { branch: { id: string }[]; all: { id: string }[] };
+  assert.deepEqual({ branch: got.branch.map((e) => e.id), all: got.all.map((e) => e.id) }, { branch: ["s2"], all: ["s1", "s2"] });
 });
 
 test("a browser: the chat's frames for it, serialized, hello first; gone on detach", async () => {

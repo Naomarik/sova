@@ -52,6 +52,43 @@
       "§chat.context-window/honesty"
     ]
   },
+  "§app.subagents-pane/context-tab": {
+    "kind": "behavior",
+    "requires": [
+      "§app.subagents-pane/tabs",
+      "§app/folder-viewer",
+      "§chat.context-window/last-reply",
+      "§chat.transcript/setup-card-open-file",
+      "§chat/subfolder-instructions"
+    ],
+    "authority": "accepted",
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-04T00:35Z",
+      "source": "pi-session:7a7258e9-bad0-4fcd-9d36-2acd1d3e9527#1e870985"
+    },
+    "evidence": "verified",
+    "code": [
+      "src/components/ContextTab.tsx",
+      "src/components/ContextTab.css",
+      "src/lib/context-parts.ts",
+      "src/lib/context-parts.test.ts",
+      "src/components/SessionPane.tsx",
+      "src/components/SessionDetails.tsx",
+      "src/lib/api.ts",
+      "server/context-tab.ts",
+      "server/context-tab.test.ts",
+      "server/context-tab.integration.test.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "server/chat-handle.ts",
+      "server/chat-runtime/methods.ts",
+      "shared/chat-runtime.ts",
+      "server/harness/pi/session.ts",
+      "server/harness/pi/session.test.ts",
+      "shared/harness-session.ts"
+    ]
+  },
   "§app.subagents-pane/head": {
     "kind": "behavior",
     "authority": "accepted",
@@ -218,12 +255,13 @@
       "server/worker-skills.ts",
       "src/components/CostBreakdown.tsx",
       "src/cost-breakdown.css",
-      "src/lib/cost-history.ts"
+      "src/lib/cost-history.ts",
+      "src/components/ContextTab.tsx"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-29T10:30Z",
-      "source": "pi-session:d5243096-4638-4e5a-b0a2-a6393cd8c7cb#2879ee9c"
+      "by": "naomarik",
+      "at": "2026-11-03T14:34Z",
+      "source": "pi-session:7a7258e9-bad0-4fcd-9d36-2acd1d3e9527#52bfacda"
     }
   },
   "§app.subagents-pane/tokens": {

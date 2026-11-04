@@ -12,8 +12,10 @@ const solid = await import("solid-js");
 const { renderToString } = await import("solid-js/web");
 const resolve = (s: string) => import.meta.resolve(s);
 const { DataCard } = await importSsr(new URL("../components/DataCards.tsx", import.meta.url), resolve);
-const { TranscriptKindRow, CardErrorBox, whyOf } = await importSsr(new URL("../components/TranscriptKind.tsx", import.meta.url), resolve);
+const { TranscriptKindRow, CardErrorBox, CardFailure, whyOf } = await importSsr(new URL("../components/TranscriptKind.tsx", import.meta.url), resolve);
 const { kindById } = await import("./transcript-kinds");
+const { ModuleLoadError } = await import("./module-load");
+const { setHostCheck } = await import("./mesh");
 
 /** The markup without Solid's hydration keys, markers and the script SSR adds for a caught error. */
 const clean = (html: string) => html.replace(/ data-hk="[^"]*"/g, "").replace(/<!--[^>]*-->/g, "").replace(/<script>[\s\S]*?<\/script>/g, "");
@@ -144,6 +146,23 @@ describe("the error box", () => {
     assert.match(html, /<div class="banner banner-error card-error" role="status">/);
     assert.match(text(html), /^This card couldn't be drawn: .+\. Reload Still here$/);
     assert.match(html, /<button type="button" class="button button-sm">Reload<\/button>/);
+  });
+
+  test("a card whose code file can't be loaded says Sova was updated, with Reload Page, and asks the host again", () => {
+    let asked = 0;
+    setHostCheck(() => asked++);
+    try {
+      const failed = new ModuleLoadError(new TypeError("Failed to fetch dynamically imported module: http://sova.test/assets/TranscriptCard-abc.js"));
+      const html = clean(renderToString(() => solid.createComponent(CardFailure as never, { error: failed, reload() {} } as never)));
+      assert.equal(text(html), "This card needs the newer Sova. Reload the page to draw it. Reload Page");
+      assert.equal(asked, 1);
+      // Any other failure, even in a load failure's words: its own box, Reload (that card), the host not asked.
+      const other = clean(renderToString(() => solid.createComponent(CardFailure as never, { error: new TypeError("Failed to fetch dynamically imported module: x"), reload() {} } as never)));
+      assert.equal(text(other), "This card couldn't be drawn: Failed to fetch dynamically imported module: x. Reload");
+      assert.equal(asked, 1);
+    } finally {
+      setHostCheck(null);
+    }
   });
 
   test("the box's words: the error's own, one sentence", () => {

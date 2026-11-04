@@ -11,7 +11,8 @@
       "server/removed-worktrees.ts",
       "server/index.ts",
       "shared/protocol.ts",
-      "server/app.ts"
+      "server/app.ts",
+      "server/cleanup-dry-run.test.ts"
     ],
     "requires": [
       "§chat.worktrees/merged-state",

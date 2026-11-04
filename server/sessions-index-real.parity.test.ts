@@ -111,7 +111,7 @@ if (!all.length) {
   const order = (rows: readonly SessionSummary[]) => [...rows].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt) || (a.path < b.path ? -1 : 1));
   async function agree(label: string): Promise<number> {
     const fresh = order(await NEW.listSessionsTracked());
-    const old = order(await OLD.__parityBuild());
+    const old = order((await OLD.__parityBuild()).rows);
     sessionsChanged();
     const full = order(await NEW.listSessions());
     const oldBy = new Map(old.map((s) => [s.path, s]));

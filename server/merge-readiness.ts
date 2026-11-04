@@ -621,7 +621,9 @@ let deps: ReadinessDeps = defaultDeps();
 
 /** The chats the merge queue starts itself (its merge thread and its review step) run as these profiles: they
     never own a branch, and their replies after a merge are about the queue's branches. */
-export const MERGE_QUEUE_PROFILES: readonly string[] = ["merge-thread", "merge-reviewer"];
+/** Sova's own chats that never own a branch to land: the merge queue's, and the release chat (its release commit is
+    queued by Sova itself). */
+export const MERGE_QUEUE_PROFILES: readonly string[] = ["merge-thread", "merge-reviewer", "release-thread"];
 const isMergeThread = (s: SessionSummary) => !!s.profile && MERGE_QUEUE_PROFILES.includes(s.profile.id);
 
 /** index.ts wires the follow-up check and the privacy gate's terminal test; tests swap git. */

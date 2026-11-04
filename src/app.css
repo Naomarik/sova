@@ -1609,8 +1609,18 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-queue-error,
 .mq-error { color: var(--status-error); }
 .wt-queue-act { display: flex; flex-wrap: wrap; gap: var(--space-2); flex: none; align-items: center; }
-.wt-queue-confirm { margin-top: var(--space-2); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--r-md); background: var(--color-sunken); }
-.wt-queue-confirm p { margin: 0 0 var(--space-2); }
+/* Land…'s confirm (and Land Without Its Specs…'s): it replaces the row's actions, right-aligned under the row, the
+   cancel ghost on the left and the action rightmost. Full width folded; at most 420px from unfolded. */
+.wt-queue-confirm { flex: 1 1 100%; min-width: 0; margin-top: var(--space-1); padding: var(--space-2) 10px; border: 1px solid var(--status-warn); border-radius: var(--r-md); background: var(--status-warn-bg); text-align: right; }
+.wt-queue-confirm p { margin: 0; overflow-wrap: anywhere; white-space: normal; }
+.wt-queue-confirm-title { font-weight: var(--fw-semibold); color: var(--color-ink); }
+.wt-queue-confirm-line { margin-top: 2px !important; color: var(--color-ink-2); }
+.wt-queue-confirm-act { justify-content: flex-end; flex-wrap: wrap; margin-top: var(--space-2); }
+/* Land… is the wide part, its ▾ a narrow tab beside it. */
+.wt-queue-split > .wt-queue-land { min-width: 76px; }
+.wt-queue-split > .button[aria-haspopup="menu"] { width: 32px; min-width: 32px; padding: 0; }
+/* Folded: the actions on a line of their own under the bullets, at its end. */
+.wt-queue-row > .wt-queue-act { flex: 1 1 100%; justify-content: flex-end; }
 @media (pointer: coarse) {
   .wt-queue-act .button,
   .mq-row .button,
@@ -1619,7 +1629,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-queue-modal .modal-body { display: grid; gap: var(--space-3); }
 .wt-queue-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-3); }
 .wt-queue-head p { margin: var(--space-1) 0 0; }
-.wt-queue-intro { margin: 0; color: var(--color-ink-2); }
+/* The foot: the queue's one line on the left (muted), View Merge Queue a small link on the right. */
+.wt-queue-foot { justify-content: space-between; }
+.wt-queue-intro { margin: 0; min-width: 0; color: var(--color-ink-muted); }
+.wt-queue-foot-link { flex: none; margin-inline-start: auto; display: inline-flex; align-items: center; min-height: var(--tap-min); }
 .wt-queue-paused { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--status-warn-bg); color: var(--color-ink); }
 
 /* The tab. */
@@ -1709,6 +1722,34 @@ html, body { overflow: clip; overscroll-behavior: none; }
   .wt-queue-modal .wt-queue-act .button,
   .wt-queue-modal .wt-queue-act .button-split > .button { min-height: var(--tap-min); }
   .wt-queue-modal .wt-queue-review { margin-inline-end: auto; }
+}
+/* Unfolded: a row is two columns, its words left and its actions a stretched column at the top right; an open
+   confirm spans the row and sits at its right. The modal asks the window (it is no pane's); the pane's and the
+   tab's rows ask their pane too, so a narrow pane keeps the folded layout. */
+@media (min-width: 768px) {
+  .wt-queue-modal .wt-queue-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); align-items: start; }
+  .wt-queue-modal .wt-queue-row > .list-main { grid-column: 1; grid-row: 1; }
+  .wt-queue-modal .wt-queue-row > .wt-queue-act { grid-column: 2; grid-row: 1; flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+  .wt-queue-modal .wt-queue-row > .wt-queue-act .button-split { display: flex; }
+  .wt-queue-modal .wt-queue-row > .wt-queue-act .button-split > .wt-queue-land { flex: 1 1 auto; }
+  .wt-queue-modal .wt-queue-row > .wt-queue-act .button-destructive { margin-left: 0; margin-top: var(--space-2); }
+  .wt-queue-modal .wt-queue-row > .wt-queue-confirm { grid-column: 1 / -1; justify-self: end; width: 100%; max-width: 420px; }
+  @container (min-width: 30rem) {
+    .wt-queue-list .wt-queue-row,
+    .mq-tab .mq-row-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); align-items: start; }
+    .wt-queue-list .wt-queue-row > .list-main,
+    .mq-tab .mq-row-grid > .list-main { grid-column: 1; grid-row: 1; }
+    .wt-queue-list .wt-queue-row > .wt-queue-act,
+    .mq-tab .mq-row-grid > .mq-row-act { grid-column: 2; grid-row: 1; width: auto; flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+    .wt-queue-list .wt-queue-row > .wt-queue-act .button-split,
+    .mq-tab .mq-row-grid > .mq-row-act .button-split { display: flex; }
+    .wt-queue-list .wt-queue-row > .wt-queue-act .button-split > .wt-queue-land,
+    .mq-tab .mq-row-grid > .mq-row-act .button-split > .wt-queue-land { flex: 1 1 auto; }
+    .wt-queue-list .wt-queue-row > .wt-queue-act .button-destructive,
+    .mq-tab .mq-row-grid > .mq-row-act .button-destructive { margin-left: 0; margin-top: var(--space-2); }
+    .wt-queue-list .wt-queue-row > .wt-queue-confirm,
+    .mq-tab .mq-row-grid > .wt-queue-confirm { grid-column: 1 / -1; justify-self: end; width: 100%; max-width: 420px; }
+  }
 }
 .mq-sides { display: grid; gap: var(--space-2); margin: var(--space-2) 0 0; }
 .mq-sides > div { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }

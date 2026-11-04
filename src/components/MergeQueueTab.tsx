@@ -15,8 +15,8 @@ import { introWords, isRequestState } from "../lib/merge-queue-requests";
 import { QueueSettingsButton, QueueSummaryLine } from "./settings/MergeQueueSummary";
 import { notSetUp, takeInitialize } from "../lib/merge-queue-initialize";
 import { Banner, Icon } from "./ui";
-import { LandSpecsConfirm, LandSplit, QueueChip, UnclearChecks } from "./WorktreesModal";
-import type { MergeReady } from "../../shared/merge-queue";
+import { createLandConfirm, LandConfirms, LandSplit, QueueChip, UnclearChecks } from "./WorktreesModal";
+import type { LandHow, MergeReady } from "../../shared/merge-queue";
 import { BranchSummaryView } from "./BranchSummary";
 import type { DiffScope } from "../../shared/protocol";
 import { ReviewChangesButton } from "./ReviewChanges";
@@ -193,7 +193,8 @@ export function rowOpens(href: () => string | undefined) {
     if (!to || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const target = e.target as Element;
     if (!e.currentTarget.contains(target)) return;
-    if (target.closest("a, button, input, textarea, select, label, form, summary, [role=menuitem], [popover]")) return;
+    // A row's open confirm is a choice in progress: a tap on its words never leaves for the chat.
+    if (target.closest("a, button, input, textarea, select, label, form, summary, [role=menuitem], [popover], .wt-queue-confirm")) return;
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed && sel.anchorNode && e.currentTarget.contains(sel.anchorNode)) return;
     location.hash = to;
@@ -364,7 +365,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
         <div class="stack-2">
           <h3 class="text-heading-s">Ready to land, not approved</h3>
           <ul class="list mq-list">
-            <For each={v().ready}>{(r) => <ReadyRow projectId={props.projectId} root={v().root} ready={r} review={v().review} chatOf={props.chatOf} onChanged={props.onChanged} />}</For>
+            <For each={v().ready}>{(r) => <ReadyRow projectId={props.projectId} root={v().root} target={v().target} how={v().settings?.how?.effective} ready={r} review={v().review} chatOf={props.chatOf} onChanged={props.onChanged} />}</For>
           </ul>
         </div>
       </Show>
@@ -598,7 +599,7 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
   const answer = (a: MergeAnswer, done: string) => void act.run(a, () => answerEntry(e(), a), done);
   return (
     <li
-      class="list-row mq-row mq-needs"
+      class="list-row mq-row mq-row-grid mq-needs"
       classList={{ "mq-tap": !!e().session }}
       data-branch={e().branch}
       data-state={e().state}
@@ -692,17 +693,17 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
 }
 
 /** A branch ready to land that nobody approved yet: Review Changes, and Land with its ▾. Land names the row's chat. */
-function ReadyRow(props: { projectId: string; root: string; ready: MergeReady; review: boolean; chatOf?: ChatOf; onChanged(): void }) {
+function ReadyRow(props: { projectId: string; root: string; target?: string; how?: LandHow; ready: MergeReady; review: boolean; chatOf?: ChatOf; onChanged(): void }) {
   const r = () => props.ready;
   const act = useAct(props.onChanged);
-  const [askSpecs, setAskSpecs] = createSignal(false);
+  const confirm = createLandConfirm();
   // Land names no chat: the server records the branch's owner by the same rule that put this row's chat here
   // (server/merge-queue/owners.ts).
   const doLand = (o: LandOptions = {}) =>
     void act.run("land", () => landBranch(props.root, r().branch, { ...o, commit: r().commit }), `Queued ${r().branch}${o.withoutReview ? " without review" : ""}${o.withoutSpecs ? " without its specs" : ""}.`);
   const lines = () => (r().added !== undefined && r().removed !== undefined ? ` · +${r().added} −${r().removed}` : "");
   return (
-    <li class="list-row mq-row" classList={{ "mq-tap": !!r().session }} data-branch={r().branch} data-state="ready" onClick={rowOpens(() => r().session && chatHref(props.projectId, r().session!, props.chatOf))}>
+    <li class="list-row mq-row mq-row-grid" classList={{ "mq-tap": !!r().session, "wt-queue-asking": !!confirm.ask() }} data-branch={r().branch} data-state="ready" ref={confirm.rowRef} onClick={rowOpens(() => r().session && chatHref(props.projectId, r().session!, props.chatOf))}>
       <div class="list-main">
         <RowHead projectId={props.projectId} branch={r().branch} session={r().session} archived={r().sessionArchived} chatOf={props.chatOf} />
         <p class="mq-facts">
@@ -713,23 +714,16 @@ function ReadyRow(props: { projectId: string; root: string; ready: MergeReady; r
           </span>
         </p>
         <BranchSummaryView summary={r().summary} projectId={props.projectId} branch={r().branch} />
-        <Show when={askSpecs()}>
-          <LandSpecsConfirm
-            branch={r().branch}
-            busy={!!act.busy()}
-            onConfirm={() => {
-              setAskSpecs(false);
-              doLand({ withoutSpecs: true });
-            }}
-            onCancel={() => setAskSpecs(false)}
-          />
-        </Show>
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
       </div>
-      <div class="mq-row-act">
-        <QueueReview projectId={props.projectId} branch={r().branch} scope={{ kind: "queue", project: props.projectId, branch: r().branch }} session={r().session} chatOf={props.chatOf} />
-        <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onLand={doLand} onWithoutSpecs={() => setAskSpecs(true)} />
-      </div>
+      {/* A confirm replaces the row's actions while it is open. */}
+      <LandConfirms confirm={confirm} branch={r().branch} ahead={r().ahead} target={props.target} how={props.how} busy={!!act.busy()} onLand={doLand} />
+      <Show when={!confirm.ask()}>
+        <div class="mq-row-act">
+          <QueueReview projectId={props.projectId} branch={r().branch} scope={{ kind: "queue", project: props.projectId, branch: r().branch }} session={r().session} chatOf={props.chatOf} />
+          <LandSplit branch={r().branch} review={props.review} busy={!!act.busy()} onAsk={() => confirm.open("land")} onLand={doLand} onWithoutSpecs={() => confirm.open("specs")} />
+        </div>
+      </Show>
     </li>
   );
 }

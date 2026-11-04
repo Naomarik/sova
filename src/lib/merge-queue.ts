@@ -3,7 +3,7 @@
 // Solid, no DOM. The shapes are the queue's (shared/merge-queue.ts); the verb calls live in
 // merge-queue-client.ts.
 import type { SessionWorktreeInfo } from "../../shared/protocol";
-import { newerWords, ordinal } from "../../shared/merge-queue";
+import { newerWords, ordinal, type LandHow } from "../../shared/merge-queue";
 import type { MergeEntry, MergeNote, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo } from "./merge-queue-types";
 import { requestChip, requestReason } from "./merge-queue-requests";
 
@@ -364,8 +364,29 @@ export function modalHead(rows: Pick<QueueRowInput, "mergeServed" | "mergeProjec
   if (!served) return { intro: null, paused: null };
   const p = rows.find((w) => w.mergeServed && w.mergeProject)?.mergeProject;
   return {
-    intro: `Land queues a branch. It's merged onto ${p?.target ?? "the target branch"}, checked there on its own, and lands as exactly the commit that was tested.`,
+    intro: "Land queues a branch; it lands as the commit that was tested.",
     paused: p?.paused ? `The queue is paused: ${p.paused}. Land still takes your approval; it's checked once the queue resumes.` : null,
+  };
+}
+
+/** What Land…'s confirm says: the branch, how many commits go to the queue (the row's own count, else none named) and
+    what moves once the checks pass, by the way of landing when the caller knows it (else the target moves). */
+export function landConfirmWords(branch: string, ahead: number | undefined, target: string | undefined, how?: LandHow): { title: string; line: string; confirm: string } {
+  const n = typeof ahead === "number" && ahead > 0 ? ahead : undefined;
+  const to = target ?? "the target branch";
+  const go = n === undefined ? "Its commits go" : `${n} ${n === 1 ? "commit goes" : "commits go"}`;
+  const after =
+    how === "github-pr"
+      ? "a pull request opens on GitHub once checks pass."
+      : how === "gitlab-mr"
+        ? "a merge request opens on GitLab once checks pass."
+        : how === "push-branch"
+          ? "the branch is pushed once checks pass."
+          : `${to} moves once checks pass.`;
+  return {
+    title: `Land ${branch}?`,
+    line: `${go} to the merge queue; ${after}`,
+    confirm: n === undefined ? "Land Branch" : `Land ${n} ${n === 1 ? "Commit" : "Commits"}`,
   };
 }
 

@@ -101,6 +101,7 @@ test("the shared rules define <agent dir>, so an entry that uses it can't be rea
 	const shared = stripOwnerNotes(CREATE_FILES.shared!);
 	assert.ok(shared.includes('"${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"'));
 	assert.ok(CREATE_TOPICS.some((topic) => CREATE_FILES[topic]!.includes("<agent dir>")), "entries use the name the rule defines");
+	assert.ok(/Resolve `<agent dir>` first[^\n]*real path in the brief/.test(CREATE_INSTRUCTIONS), "a worker never gets the rule, so the block must have the chat resolve it for the brief");
 });
 
 test("a topic that isn't listed is refused, and the answer lists the topics", () => {

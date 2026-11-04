@@ -14,4 +14,4 @@ Before you act on a topic, call `create_guide` with it; never answer about a top
 
 {{CONTENTS}}
 
-Workers get none of this: no list, no `create_guide`, no `sova_settings`. Quote the part of an entry a worker needs in that worker's brief, word for word, with its way of changing.
+Workers get none of this: no list, no `create_guide`, no `sova_settings`. Quote the part of an entry a worker needs in that worker's brief, word for word, with its way of changing. Resolve `<agent dir>` first, as the shared rules say, and put the real path in the brief: a worker can't resolve it for itself.

@@ -45,7 +45,8 @@ takes `sessions.read`, `sessions.message` and `sessions.all`, as a session profi
 `limits` and `overseerMayStart` are a profile's too.
 
 The file is read strictly: an unknown key or a wrong value makes it invalid, with the exact error, and
-it never runs in part.
+it never runs in part. Settings change cards don't reach these files: one changes as a file in the project, on a
+branch that lands.
 
 ## What it can't name
 

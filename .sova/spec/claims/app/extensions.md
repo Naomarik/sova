@@ -36,7 +36,10 @@ installer does.
   `api` isn't `http(s)://127.0.0.1|localhost:<port>` with an explicit port and an optional path
   prefix, with no trailing slash, credentials, query or fragment. A second entry with an id already
   taken is dropped. Each distinct complaint is logged once per server process, not per request.
-- **Optional fields fall back quietly.** No `title` → the id. `description` is omitted when empty.
+- **Optional fields fall back quietly.** No `title` → the id. A `title` that isn't one plain line
+  of at most 80 characters (one with a control character, U+2028 or U+2029 among them) is not used
+  either: the id stands in, the rest of the entry stays, and the server logs why.
+  `description` is omitted when empty.
   An `icon` that isn't a plain icon name (`[a-z0-9-]+`, a file in `public/icons/`) is ignored,
   because it ends up in a CSS `url()`. Unknown keys are ignored.
 - **`commands`, `screens`, `cards` and `drawings` are what it offers.** An entry may list its own

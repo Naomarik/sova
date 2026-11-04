@@ -95,12 +95,13 @@
       "server/extensions.ts",
       "server/extensions.test.ts",
       "server/extensions.integration.test.ts",
-      "server/extension-views.ts"
+      "server/extension-views.ts",
+      "docs/customization.md"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:24Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "Omar",
+      "at": "2026-11-04T12:24Z",
+      "source": "pi-session:01a1a628-48c2-7136-a762-464d5bf0599f#d0ac6d72"
     }
   },
   "§app.extensions/maximize": {

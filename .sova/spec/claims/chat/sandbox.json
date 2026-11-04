@@ -215,12 +215,13 @@
       "pi-config/extensions/sandbox/tests/unit/proxy.unit.test.ts",
       "pi-config/extensions/sandbox/session-policy.ts",
       "pi-config/extensions/sandbox/README.md",
+      "pi-config/extensions/sandbox/tests/unit/darwin-seatbelt-browser.integration.test.ts",
       "pi-config/extensions/sandbox/shadow-prune.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:41Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-04T14:16Z",
+      "source": "pi-session:01a1a628-48c2-7136-a762-464d5bf0599f#bf9df942"
     }
   },
   "§chat.sandbox/workers": {

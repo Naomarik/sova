@@ -38,7 +38,8 @@
       "server/shell-guard-extension.ts",
       "server/chat-manager.ts",
       "server/project-services/worker-verbs.test.ts",
-      "server/harness/pi/shell-guard-session.integration.test.ts"
+      "server/harness/pi/shell-guard-session.integration.test.ts",
+      "server/chat-manager-defaults.test.ts"
     ],
     "requires": [
       "§app/claude-code-provider",

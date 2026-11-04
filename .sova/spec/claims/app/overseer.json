@@ -184,13 +184,14 @@
       "src/lib/settings-nav.ts",
       "src/design/base.css",
       "server/overseer-prompt.md",
-      "server/overseer-card-apply.test.ts"
+      "server/overseer-card-apply.test.ts",
+      "server/overseer-ext-counts.test.ts"
     ],
     "requires": [],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-27T21:10Z",
-      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
+      "by": "Omar",
+      "at": "2026-11-04T12:24Z",
+      "source": "pi-session:01a1a628-48c2-7136-a762-464d5bf0599f#d0ac6d72"
     }
   },
   "§app.overseer/card-partial-apply": {
@@ -489,7 +490,11 @@
       "server/harness/pi/golden/special-model-view.json",
       "server/overseer-abilities.ts",
       "server/overseer-abilities.test.ts",
-      "server/overseer-store.test.ts"
+      "server/overseer-store.test.ts",
+      "server/overseer-ext-counts.test.ts",
+      "server/extension-offers-overseer.test.ts",
+      "docs/customization.md",
+      "server/overseer-run-note.test.ts"
     ],
     "requires": [
       "§app.overseer/tools",
@@ -504,9 +509,9 @@
       "§app.extensions/list"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T17:10Z",
-      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#42b7b210"
+      "by": "Omar",
+      "at": "2026-11-04T12:24Z",
+      "source": "pi-session:01a1a628-48c2-7136-a762-464d5bf0599f#d0ac6d72"
     }
   },
   "§app.overseer/file-writes": {

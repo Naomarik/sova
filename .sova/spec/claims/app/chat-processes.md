@@ -388,7 +388,7 @@ starts each from the loadout its parent computed (model, effort, tools, MCP serv
 system prompt, sandbox, remote target, modes, team identity, agent dir), with nothing of an ordinary chat
 added (no profile, mode menu, memory, topics, links or session powers, and of the Sova-served tools
 only `project_verbs` with its instance note, which a worker or team member gets and a hidden chat
-doesn't, §app.project-services/callers), and
+doesn't, §app.project-services/callers; each, hidden or not, gets the kill guard, §chat/kill-guard), and
 opens it the way it opens any chat. The parent never starts a worker's process and never talks to
 it directly: the server passes it the parent's task, steers, follow-ups, aborts and stops, and
 passes its events back. A worker never runs inside the server's process.

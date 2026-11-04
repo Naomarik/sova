@@ -245,6 +245,16 @@ so. It is not a choice in the UI. Under `workspace-write`:
   every other host port, Sova's API included, are unreachable. Mach services are denied except a
   short allowlist (user lookups, notifications, logging, certificate checks), so the pasteboard,
   Apple events and the GUI do not work, and setuid programs (`sudo`, `ps`) cannot run.
+  With the policy's `browser` set to `"headless-shell"` (§chat.sandbox/policy-file), the profile
+  adds two Chromium rules: opening the power-management user client (`RootDomainUserClient`)
+  and registering and looking up the `org.chromium.Chromium.MachPortRendezvousServer.` names.
+  Playwright's `chrome-headless-shell` then runs and takes screenshots inside the sandbox when it
+  is started with `--no-sandbox` (Playwright's default), since Seatbelt cannot nest Chrome's own
+  sandbox. The rules sit before the hidden paths and the Keychain deny, which still win. Every
+  command confined under the session's policy gets them, a tour recording's included
+  (§app.tours/sandbox). An app-bundle Chrome (Google Chrome, Chrome for Testing) is not supported
+  and still crashes; a sandboxed tour recording on macOS therefore uses the headless shell and
+  refuses before launch when only an app-bundle Chrome is installed (§app.tours/sandbox).
 
 ## §chat.sandbox/cache-cleanup — Cleaning the cache copies
 
@@ -311,7 +321,11 @@ never a link into the repo: a policy inside a checkout would be writable wheneve
 is the workspace. `install.sh --check` reports drift from the template and never overwrites it.
 
 - **Keys.** `version`, `level`, `defaultOn`, `writable`, `hidden`, `readOnlyWithinWritable`,
-  `shadowed`, `proxy` (`allow`), `env` (`allow`), `acceptPartial`.
+  `shadowed`, `proxy` (`allow`), `env` (`allow`), `acceptPartial`, and the optional `browser`.
+- **`browser`** is `"none"` (the template's value, and the meaning when the key is absent) or
+  `"headless-shell"`, which lets Playwright's `chrome-headless-shell` run inside every confined
+  macOS profile (§chat.sandbox/what-on-enforces). Any other value, `true` included, fails closed
+  like every other malformed key. It has no effect on Linux.
 - **The template hides the WhatsApp sender's home**, `$AGENT_DIR/sova/whatsapp` (its linked
   device's credentials, §app.outreach/secrets), beside `$AGENT_DIR/auth.json`. A policy seeded
   before that keeps its own list: `install.sh --check` reports the drift.
@@ -338,7 +352,7 @@ A project's own config can tighten the sandbox, never loosen it.
 
 A project may carry `<cwd>/.sova/sandbox.json`. It may only **tighten**: lower the level to
 `read-only`, add hidden paths, remove proxy hosts, remove writable roots, remove shadowed
-paths. A loosening key is
+paths, set `browser` to `"none"`. A loosening key (`browser: "headless-shell"` included) is
 ignored with a visible notice. The cache cleanup settings (§chat.sandbox/cache-cleanup) are not a
 project's to set either: a cleanup key in that file is ignored with the same notice. Loosening is the user's alone: flipping the toggle off, or editing
 the global policy file from outside the sandbox.
@@ -352,8 +366,8 @@ enforces independently. If the parent's sandbox is unavailable, or `partial` wit
 probe fails after it starts, every tool it calls refuses; it never runs unsandboxed. A worker gets exactly its parent's writable roots; its
 own cwd is not added. A pi worker started inside one of the session's tracked worktrees gets
 only that worktree instead (§chat.worktrees/workers). A worker is also held to its parent's
-hidden list and its proxy and environment allowlists, whatever the policy file of its own agent
-dir says. Any worker, pi or Claude Code, whose cwd is outside those roots is refused
+hidden list, its proxy and environment allowlists and its `browser` setting, whatever the
+policy file of its own agent dir says. Any worker, pi or Claude Code, whose cwd is outside those roots is refused
 at spawn with a message naming the sandbox. A worker started with `--sandbox on` cannot lower
 it: its `/sandbox off` and `/sandbox subagents` refuse, so the parent's agent cannot switch it
 off by sending the command as a steer. A parent that is not on confines a worker only under
@@ -433,6 +447,14 @@ These are the gaps the sandbox leaves, each named so that nobody relies on it th
 - **macOS tools that ignore the environment.** A tool that writes a fixed temp or cache path
   instead of honouring `TMPDIR` or the cache variables fails under the sandbox there.
 - **The user's own `!` commands** are not confined.
+- **With `browser` on, Chrome's own sandbox is off** (§chat.sandbox/what-on-enforces): its
+  renderer and GPU processes run with the worker's own rights, so an exploit in web content it
+  loads can read what the worker reads and write where it writes. Any confined process may also
+  open the power-management user client and claim a Chromium rendezvous name, which can make a
+  host Chromium-branded browser fail to start. Only the headless shell is supported. Under On
+  nothing can listen on a TCP port, so a browser driven over `--remote-debugging-port` (the
+  Playwright skill's start script) works only under Subagents only; under On drive it over
+  Playwright's default pipe within one `bash` call.
 - **A write-only worker's view of the host `/tmp`** (Linux, §chat.worktrees/workers) masks the
   Unix sockets found there when its command or its process starts; a socket created later in
   `/tmp` is reachable from a worker already running. The kernel's list names a socket by the

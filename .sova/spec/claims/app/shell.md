@@ -393,7 +393,8 @@ Sova draws a title band of its own in its place.
   padding; the sessions pane keeps its usual width and floor
   (§app.shell/resizing-the-sessions-pane). Overlays that cover the window (the dialog scrim, the
   lightbox, a guided tour, a maximized extension, the drop overlay) and the stale-tab notice start
-  below it too, and a centred dialog centres in the space under it. A dialog that still reaches into
+  below it too, and a centred dialog centres in the space under it. A maximized extension fills
+  the whole window below the band, down to its bottom edge. A dialog that still reaches into
   the band stays clickable there (`app-region: no-drag`).
 - **Showing the title bar again** (the browser's toggle) gives back the ordinary layout at once:
   the band goes and the shell starts at the window's top edge; hiding it brings the band back. An

@@ -53,7 +53,12 @@ function teamsNumberError(p: SubagentProfile): string | null {
 }
 
 /** A name no profile may have, whatever the others are called: blank, padded, over 48, multi-line, "Off". */
-const nameBadAlone = (name: string): boolean => !name.trim() || name.trim() !== name || name.length > 48 || /[\r\n\x00-\x1f]/.test(name) || name.toLowerCase() === "off";
+const nameBadAlone = (name: string): boolean => !name.trim() || name.trim() !== name || name.length > PROFILE_NAME_MAX || /[\r\n\x00-\x1f]/.test(name) || name.toLowerCase() === "off";
+
+/** A profile name's most characters (the server's too). */
+export const PROFILE_NAME_MAX = 48;
+/** The name box's count: "49 / 48". */
+export const profileNameCount = (name: string): string => `${name.length} / ${PROFILE_NAME_MAX}`;
 
 /** What the name box says under itself while it is red. */
 export const PROFILE_NAME_RULE = 'A unique name on one line, at most 48 characters, never "Off".';

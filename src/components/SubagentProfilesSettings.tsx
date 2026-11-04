@@ -3,7 +3,7 @@ import type { SubagentProfile, SubagentProfilesInfo, TeamsSetting } from "../../
 import type { WorkerChoice } from "../../shared/protocol";
 import { getDelegateOptions, getDelegateSettings, getSubagentProfiles, getTeamDefaults, restoreSubagentProfiles } from "../lib/api";
 import { replacedNotice } from "../lib/subagent-replaced";
-import { cloneProfiles, PROFILE_NAME_RULE, profileNameBad, profilesDraft as store, savedOf } from "../lib/subagent-profiles-draft";
+import { cloneProfiles, PROFILE_NAME_MAX, PROFILE_NAME_RULE, profileNameBad, profileNameCount, profilesDraft as store, savedOf } from "../lib/subagent-profiles-draft";
 import { claudeDriftNotes, fallbackFor } from "../lib/delegate-form";
 import { filterProfiles, nextSetup } from "../lib/mode-menu";
 import { numberIssue, numberOf, TEAM_NUMBER_BOUNDS, type TeamNumberField } from "../lib/team-form";
@@ -533,10 +533,9 @@ export function SubagentProfilesSettings() {
                 <input
                   class="input"
                   id="subagents-name"
-                  maxlength={48}
                   value={p().name}
                   aria-invalid={profileNameBad(store.draft()!, p().id) ? "true" : undefined}
-                  aria-describedby={profileNameBad(store.draft()!, p().id) ? "subagents-name-error subagents-name-footprint" : "subagents-name-footprint"}
+                  aria-describedby={profileNameBad(store.draft()!, p().id) ? "subagents-name-error subagents-name-count subagents-name-footprint" : "subagents-name-count subagents-name-footprint"}
                   disabled={store.saving()}
                   onInput={(e) => change((x) => (x.name = e.currentTarget.value))}
                 />
@@ -545,6 +544,9 @@ export function SubagentProfilesSettings() {
                     {PROFILE_NAME_RULE}
                   </span>
                 </Show>
+                <span class={`${p().name.length > PROFILE_NAME_MAX ? "field-error" : "field-hint"} text-num`} id="subagents-name-count">
+                  {profileNameCount(p().name)}
+                </span>
                 <span class="field-hint text-mono" id="subagents-name-footprint">
                   {footprintOf(p().id) ?? "Not saved yet"}
                 </span>

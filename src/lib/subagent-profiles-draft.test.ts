@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { profileNameBad, profilesProblem, type LibraryDraft } from "./subagent-profiles-draft";
+import { profileNameBad, profileNameCount, profilesProblem, type LibraryDraft } from "./subagent-profiles-draft";
 import type { SubagentProfile, TeamsSetting } from "../../shared/subagent-profiles";
 import type { WorkerChoice } from "../../shared/protocol";
 
@@ -119,4 +119,16 @@ test("the name box itself says when its name holds Save (Settings QA D11): the e
     assert.equal(profileNameBad(d, "my-setup"), true, JSON.stringify(name));
     assert.equal(profileNameBad(d, "other"), name === "other", `the other profile's box only for a clash: ${JSON.stringify(name)}`);
   }
+});
+
+test("a pasted name over 48 characters stays whole in the draft, red, and Save waits (Settings QA D10)", () => {
+  const long = "x".repeat(300);
+  const d = file([validProfile({ name: long })]);
+  assert.equal(d.profiles[0]!.name.length, 300, "nothing cuts it");
+  assert.equal(profilesProblem(d), `Subagents needs unique, single-line names of at most 48 characters (never "Off").`);
+  assert.equal(profileNameBad(d, "my-setup"), true);
+  assert.equal(profileNameCount("x".repeat(49)), "49 / 48");
+  assert.equal(profileNameCount("My setup"), "8 / 48");
+  // The box is not capped by the browser: a cut there is silent.
+  assert.doesNotMatch(readFileSync(new URL("../components/SubagentProfilesSettings.tsx", import.meta.url), "utf8"), /maxlength=\{48\}/);
 });

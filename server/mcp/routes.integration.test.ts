@@ -16,7 +16,9 @@ mkdirSync(join(agent, "sessions", "live"), { recursive: true });
 
 const { testApp } = await import("../mesh/app-test-fixtures");
 const app = await testApp();
-const { saveSecret, mcpSecretsDir } = await import("./saved-values");
+const { readSecret, saveSecret, mcpSecretsDir } = await import("./saved-values");
+const { currentEntry } = await import("./resolve");
+const computer = { kind: "computer" } as const;
 const { computerListPath } = await import("./config");
 
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -83,6 +85,18 @@ describe("adding a server", () => {
     assert.equal(two.state, "connected");
     const bad = await ask("POST", "/api/mcp/servers", { way: "paste", name: "x", text: "{nope" });
     assert.equal(bad.status, 400);
+  });
+
+  test("a paste of several servers needs a Name that's one of them; refused, it adds nothing", async () => {
+    const one = { command: node, args: [STUB, "--name", "first"] };
+    const two = { command: node, args: [STUB, "--name", "second"] };
+    const text = JSON.stringify({ mcpServers: { alpha: one, beta: two } });
+    const { status, json } = await ask("POST", "/api/mcp/servers", { way: "paste", name: "gamma", text });
+    assert.equal(status, 400);
+    assert.deepEqual(json, { error: "This paste has alpha, beta, and none is named gamma. Use one of those names.", code: "invalid" });
+    assert.equal(await row("gamma"), undefined);
+    const picked = (await ask("POST", "/api/mcp/servers", { way: "paste", name: "beta", text })).json as McpServerRow;
+    assert.match(picked.entry.runs ?? "", /--name second/, "a Name that matches takes that one");
   });
 
   test("the Address secret is a Bearer header; the row holds its name, never its value", async () => {
@@ -214,6 +228,39 @@ describe("a row's switches, secrets, Edit and Remove", () => {
     assert.deepEqual(off.tools.map((t) => [t.name, t.on]), [["one", true], ["two", false]]);
     const edited = (await ask("PUT", `/api/mcp/rows/${r.id}`, { command: `${node} ${STUB} --name switches --tools one,two,three` })).json as McpServerRow;
     assert.deepEqual(edited.tools.map((t) => [t.name, t.on]), [["one", true], ["two", false], ["three", true]], "kept by name; a new tool is on");
+  });
+
+  test("an unchanged Edit keeps everything it doesn't touch: every env key, cwd and a spaced argument", async () => {
+    const entry = { command: node, args: [STUB, "--name", "two words", "--tools", "one"], env: { FOO: "bar", TOKEN: "${MY_KEY}" }, cwd: root, timeout: 30 };
+    const r = (await ask("POST", "/api/mcp/servers", { way: "paste", name: "kept", text: JSON.stringify(entry) })).json as McpServerRow;
+    const before = currentEntry(computer, "kept");
+    assert.ok(r.edit?.command?.includes('"two words"'), r.edit?.command);
+    const { status, json } = await ask("PUT", `/api/mcp/rows/${r.id}`, r.edit);
+    assert.equal(status, 200, JSON.stringify(json));
+    assert.deepEqual(currentEntry(computer, "kept"), before);
+    assert.deepEqual(JSON.parse(readFileSync(computerListPath(), "utf8")).mcpServers.kept, entry);
+  });
+
+  test("an Edit changes only what it names: the command, or the secret its entry already names", async () => {
+    const entry = { command: node, args: [STUB, "--name", "a"], env: { FOO: "bar", TOKEN: "${MY_KEY}" } };
+    const r = (await ask("POST", "/api/mcp/servers", { way: "paste", name: "changed", text: JSON.stringify(entry) })).json as McpServerRow;
+    await ask("PUT", `/api/mcp/rows/${r.id}`, { command: `${node} ${STUB} --name b`, secretName: r.edit?.secretName, secret: "new-value" });
+    const after = currentEntry(computer, "changed")!;
+    assert.deepEqual(after.args, [STUB, "--name", "b"]);
+    assert.deepEqual(after.env, entry.env, "${MY_KEY} stays, and FOO");
+    assert.equal(readSecret(computer, "changed", "MY_KEY"), "new-value");
+    assert.equal(readSecret(computer, "changed", "TOKEN"), undefined);
+  });
+
+  test("an address Edit keeps its oauth and its headers", async () => {
+    const entry = { url: "http://127.0.0.1:9/mcp", headers: { "X-Api": "${HDR_KEY}" }, oauth: { clientId: "c", scope: "s" } };
+    const r = (await ask("POST", "/api/mcp/servers", { way: "paste", name: "addr-edit", text: JSON.stringify(entry) })).json as McpServerRow;
+    await ask("PUT", `/api/mcp/rows/${r.id}`, { address: "http://127.0.0.1:10/mcp", secret: "hdr-value" });
+    const after = currentEntry(computer, "addr-edit")!;
+    assert.equal(after.url, "http://127.0.0.1:10/mcp");
+    assert.deepEqual(after.oauth, entry.oauth);
+    assert.deepEqual(after.headers, entry.headers);
+    assert.equal(readSecret(computer, "addr-edit", "HDR_KEY"), "hdr-value");
   });
 
   test("Remove takes its approval, record, secrets and sign-in with it, and a re-add starts clean", async () => {

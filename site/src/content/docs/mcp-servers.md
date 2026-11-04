@@ -95,6 +95,10 @@ Each server gets a clean environment: the basics a program needs, plus what its 
 own keys and your provider keys never reach it. In a project's file, a command inside a value doesn't
 run, and a value can only name a saved secret.
 
+Sova takes a server's secrets out of its error lines, failed calls and log messages. What a tool answers
+is the server's own, and reaches the chat and the model as it comes, so a server that repeats a key in its
+answer sends that key to them. Give a key only to a server you trust with it.
+
 ## A project's servers
 
 A project declares servers in `.mcp.json` at the root of a checkout, in the same shape other tools

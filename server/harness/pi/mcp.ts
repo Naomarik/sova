@@ -73,11 +73,13 @@ export class SnapshotTransport extends Events {
   private pending = new Set<string | number>();
   private closed = false;
   private stopping = false;
+  /** The run in hand: what it was filled with stays out of everything said about it. */
+  private run: Pick<StdioServer, "values"> | undefined;
 
   constructor(
     private readonly record: McpCheckRecord,
     private readonly start_: () => StdioServer,
-    private readonly status: (patch: Partial<McpServerStatus>, how?: "changed" | "failed" | "address-under-on") => void,
+    private readonly report: (patch: Partial<McpServerStatus>, how?: "changed" | "failed" | "address-under-on") => void,
     private readonly requestTimeoutMs: number,
   ) {
     super();
@@ -89,7 +91,21 @@ export class SnapshotTransport extends Events {
     queueMicrotask(() => this.emitMessage({ jsonrpc: "2.0", id, result }));
   }
   private fail(id: JsonRpc["id"], message: string) {
-    queueMicrotask(() => this.emitMessage({ jsonrpc: "2.0", id, error: { code: SERVER_ERROR, message } }));
+    const clean = this.clean(message);
+    queueMicrotask(() => this.emitMessage({ jsonrpc: "2.0", id, error: { code: SERVER_ERROR, message: clean } }));
+  }
+  private clean(text: string): string {
+    return withoutSecrets(text, this.run?.values ?? []);
+  }
+  private status(patch: Partial<McpServerStatus>, how?: "changed" | "failed" | "address-under-on") {
+    this.report(patch.error ? { ...patch, error: this.clean(patch.error) } : patch, how);
+  }
+  /** Every string of a server's error reply or notification. A tool's result is its own answer, and passes as it came. */
+  private cleanDeep(value: unknown): unknown {
+    if (typeof value === "string") return this.clean(value);
+    if (Array.isArray(value)) return value.map((v) => this.cleanDeep(v));
+    if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, this.cleanDeep(v)]));
+    return value;
   }
 
   async send(message: JsonRpc): Promise<void> {
@@ -128,6 +144,7 @@ export class SnapshotTransport extends Events {
 
   private async open(): Promise<StdioServer> {
     const server = this.start_();
+    this.run = server;
     this.status({ state: "starting", error: undefined });
     let handshake: { resolve(): void; reject(error: Error): void } | undefined;
     const answered = new Promise<void>((resolve, reject) => {
@@ -147,9 +164,9 @@ export class SnapshotTransport extends Events {
       }
       if (message.method && LIST_CHANGED.has(message.method)) return;
       if (message.id !== undefined && message.method === undefined) this.pending.delete(message.id as string | number);
-      this.emitMessage(message);
+      this.emitMessage(message.result !== undefined ? message : (this.cleanDeep(message) as JsonRpc));
     });
-    server.onError((error) => this.emitError(error));
+    server.onError((error) => this.emitError(new Error(this.clean(error.message))));
     server.onClose(() => {
       const wasUp = up;
       this.upstream = undefined;
@@ -280,14 +297,14 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
         if (!ready.ok) throw new McpStartRefused(ready.how, ready.reason);
         const argv = [ready.entry.command!, ...(ready.entry.args ?? [])];
         const at = ready.cwd ?? cwd;
-        if (!sandbox.on) return { argv, env: cleanMcpEnv(process.env, ready.entry.env), sandboxed: false, cwd: at, dispose: async () => {} };
+        if (!sandbox.on) return { argv, env: cleanMcpEnv(process.env, ready.entry.env), sandboxed: false, cwd: at, values: ready.values, dispose: async () => {} };
         const prepared = await prepareSessionCommand(
           { agentDir: agentRoot(), cwd: at, sessionId, ...(sandbox.scope?.worktreeRoots ? { worktreeRoots: sandbox.scope.worktreeRoots } : {}), ...(sandbox.scope?.parent ? { parent: sandbox.scope.parent as ParentScope } : {}) },
           argv,
           { env: ready.entry.env ?? {} },
         );
         if (!prepared.ok) throw new Error(`the sandbox can't run it: ${prepared.error}`);
-        return { ...confinedLaunch(prepared.value, argv, ready.entry.env), sandboxed: true, cwd: at };
+        return { ...confinedLaunch(prepared.value, argv, ready.entry.env), sandboxed: true, cwd: at, values: ready.values };
       };
 
       const createTransport: McpTransportFactory = (entry, cwd) => {

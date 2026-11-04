@@ -1,6 +1,6 @@
 // A stub MCP stdio server for tests (server/harness/pi/mcp.integration.test.ts). Node builtins only.
 // argv: --name n --log file [--delay ms] [--tools a,b] [--extra] [--announce] [--write path [--need-write]]
-//       [--net url [--need-net]] [--die-on-call]. --log gets one JSON line per thing that happens.
+//       [--net url [--need-net]] [--die-on-call] [--leak ENV_NAME]. --log gets one JSON line per thing that happens.
 import { appendFileSync, writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 const arg = (k, d) => { const i = process.argv.indexOf(`--${k}`); return i < 0 ? d : process.argv[i + 1]; };
@@ -24,6 +24,6 @@ rl.on("line", async (l) => {
   if (m.id === undefined) return;
   if (m.method === "initialize") { if (delay) await new Promise((r) => setTimeout(r, delay)); return out({ id: m.id, result: { protocolVersion: m.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name, version: "1" }, instructions: `Stub ${name}` } }); }
   if (m.method === "tools/list") return out({ id: m.id, result: { tools } });
-  if (m.method === "tools/call") { if (flag("die-on-call")) { process.stderr.write("stub dying on purpose\n"); process.exit(7); } return out({ id: m.id, result: { content: [{ type: "text", text: `${nonce} tool=${m.params.name} args=${JSON.stringify(m.params.arguments)}` }] } }); }
+  if (m.method === "tools/call") { if (arg("leak")) process.stderr.write(`failed with ${process.env[arg("leak")]}\n`); if (flag("die-on-call")) { process.stderr.write("stub dying on purpose\n"); process.exit(7); } return out({ id: m.id, result: { content: [{ type: "text", text: `${nonce} tool=${m.params.name} args=${JSON.stringify(m.params.arguments)}` }] } }); }
   out({ id: m.id, error: { code: -32601, message: "nf" } });
 });

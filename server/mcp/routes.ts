@@ -7,7 +7,7 @@ import { pageOnlyRefusal, type PageOnlyWords } from "../page-only";
 import { readProject } from "../projects/spaces";
 import { OrgError } from "../org-error";
 import { checkServer } from "./check";
-import { normalizeEntry, putComputerEntry, readComputerList, removeComputerEntry, reservedName, type McpEntry } from "./config";
+import { entryJson, normalizeEntry, putComputerEntry, readComputerList, removeComputerEntry, reservedName, type McpEntry } from "./config";
 import { versionOf } from "./fingerprint";
 import { parseRowId, rowId, type RowRef } from "./ids";
 import { baseOf, currentEntry, refusalOf } from "./resolve";
@@ -15,7 +15,7 @@ import { removeServerSecrets, removeSecret, saveSecret } from "./saved-values";
 import { pasteAddress, signInState, startSignIn, stopSignIn } from "./sign-in";
 import { changeRow, forgetRow } from "./store";
 import { approve, forgetApprovals, type McpOwner } from "./trust";
-import { isSecretName } from "./values";
+import { isSecretName, namedValues } from "./values";
 import { computerServers, projectServers, rowOf } from "./view";
 import { forgetSignIn } from "./forget-sign-in";
 
@@ -112,7 +112,9 @@ function pastedEntry(name: string, text: unknown): McpEntry {
   }
   const servers = (parsed as { mcpServers?: unknown })?.mcpServers ?? parsed;
   const o = (servers ?? {}) as Record<string, unknown>;
-  const raw = "command" in o || "url" in o ? o : (o[name] ?? Object.values(o)[0]);
+  const alone = "command" in o || "url" in o;
+  if (!alone && !(name in o) && Object.keys(o).length > 1) throw new Refusal(`This paste has ${Object.keys(o).join(", ")}, and none is named ${name}. Use one of those names.`, 400, "invalid");
+  const raw = alone ? o : (o[name] ?? Object.values(o)[0]);
   const entry = normalizeEntry(name, raw, "computer");
   if (entry.problems) throw new Refusal(`That isn't an entry Sova can read: ${entry.problems.join(", ")}`, 400, "invalid");
   return entry;
@@ -129,6 +131,42 @@ function entryOfNew(b: Partial<McpNewServer> & Record<string, unknown>): { entry
   }
   if (b.way === "paste") return { entry: pastedEntry(name, b.text) };
   throw new Refusal("Expected way: address, command or paste.", 400, "invalid");
+}
+
+/**
+ * An Edit over the entry it changes: the command and arguments or the address, and the named secret. Everything else
+ * stays: its other values, `cwd`, `oauth`, a pasted header. A secret goes to the name the entry already gives it, so
+ * `TOKEN: "\${MY_KEY}"` stays as it is and the value saves under MY_KEY; a name it doesn't have is added, as Add adds it.
+ */
+function editedEntry(was: McpEntry, b: Record<string, unknown>, given: string | undefined, hasValue: boolean): { entry: McpEntry; secretName?: string } {
+  const next: McpEntry = { ...was };
+  const named = namedValues(was).names;
+  let secretName: string | undefined;
+  if (typeof b.address === "string") {
+    const fresh = addressEntry(was.name, b.address, false);
+    if (was.kind !== "address") return hasValue ? { entry: addressEntry(was.name, b.address, true), secretName: SECRET_NAME } : { entry: fresh };
+    next.url = fresh.url!;
+    if (hasValue) {
+      secretName = named[0] ?? SECRET_NAME;
+      if (!named.length) next.headers = { ...was.headers, Authorization: `Bearer \${${SECRET_NAME}}` };
+    }
+  } else {
+    const fresh = commandEntry(was.name, b.command, undefined);
+    if (was.kind !== "command") {
+      const name = given ?? (hasValue ? SECRET_NAME : undefined);
+      return { entry: commandEntry(was.name, b.command, name), ...(name ? { secretName: name } : {}) };
+    }
+    next.command = fresh.command!;
+    if (fresh.args) next.args = fresh.args;
+    else delete next.args;
+    const name = given ?? (hasValue ? (named[0] ?? SECRET_NAME) : undefined);
+    if (name) {
+      const held = /^\$\{([^}]+)\}$/.exec(was.env?.[name] ?? "")?.[1];
+      secretName = held ?? name;
+      if (!held && !named.includes(name)) next.env = { ...was.env, [name]: `\${${name}}` };
+    }
+  }
+  return { entry: normalizeEntry(was.name, entryJson(next), "computer"), ...(secretName ? { secretName } : {}) };
 }
 
 const computer: McpOwner = { kind: "computer" };
@@ -168,14 +206,8 @@ export function registerMcpRoutes(app: Hono<any>): void {
       const value = typeof b.secret === "string" && b.secret ? b.secret : undefined;
       const given = typeof b.secretName === "string" && b.secretName.trim() ? b.secretName.trim() : undefined;
       if (given && !isSecretName(given)) throw new Refusal("A secret's name is letters, digits and underscores.", 400, "invalid");
-      if (typeof b.address === "string") {
-        // A pasted header stays; the Secret field is the Bearer header's.
-        const kept = addressEntry(ref.name, b.address, !!value);
-        const headers = value ? kept.headers : was.headers;
-        return c.json(await saveApproved({ ...kept, ...(headers ? { headers } : {}) }, value ? { name: SECRET_NAME, value } : undefined), 200, NO_STORE);
-      }
-      const name = given ?? (value ? SECRET_NAME : undefined);
-      return c.json(await saveApproved(commandEntry(ref.name, b.command, name), value ? { name: name!, value } : undefined), 200, NO_STORE);
+      const { entry, secretName } = editedEntry(was, b, given, !!value);
+      return c.json(await saveApproved(entry, value ? { name: secretName!, value } : undefined), 200, NO_STORE);
     }),
   );
 

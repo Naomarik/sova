@@ -51,6 +51,8 @@ export interface Launch {
   sandboxed: boolean;
   /** Where it starts, when the launch knows better than the caller. */
   cwd?: string;
+  /** The saved or environment values filled into it: none of them leaves in anything Sova says of this run. */
+  values?: string[];
   dispose(): Promise<void>;
 }
 
@@ -72,11 +74,13 @@ export class StdioServer extends Events {
     return this.child?.pid;
   }
   sandboxed = false;
+  values: string[] = [];
   private disposeLaunch: (() => Promise<void>) | undefined;
 
   async start(): Promise<void> {
     const launch = await this.launch();
     this.sandboxed = launch.sandboxed;
+    this.values = launch.values ?? [];
     this.disposeLaunch = launch.dispose;
     const fds = launch.fds ?? [];
     const stdio: ("pipe" | "ignore")[] = ["pipe", "pipe", "pipe"];

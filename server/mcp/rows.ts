@@ -78,5 +78,8 @@ function editOf(e: McpEntry): NonNullable<McpServerRow["edit"]> {
   const named = /^\$\{([^}]+)\}$/;
   const envName = Object.entries(e.env ?? {}).find(([, v]) => named.test(v))?.[0];
   if (e.url) return { address: e.url };
-  return { command: [e.command, ...(e.args ?? [])].join(" "), ...(envName ? { secretName: envName } : {}) };
+  return { command: [e.command!, ...(e.args ?? [])].map(quoted).join(" "), ...(envName ? { secretName: envName } : {}) };
 }
+
+/** One word of a command line, as `splitCommand` reads it back. */
+const quoted = (word: string): string => (word && !/[\s"'\\]/.test(word) ? word : `"${word.replace(/(["\\])/g, "\\$1")}"`);

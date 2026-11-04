@@ -517,3 +517,27 @@ describe("workers", () => {
     setChatHosts({});
   });
 });
+
+describe("a value that was filled in", () => {
+  test("a computer entry's ${ENV_VAR} stays out of the tool result, the note, the row and the session", async () => {
+    const value = "env-resolved-value-71c2";
+    process.env.MCP_TEST_ENV_KEY = value;
+    const log = join(root, "leak.log");
+    approve([server("leaky", log, ["--die-on-call", "--leak", "K"], ["echo"], { K: "${MCP_TEST_ENV_KEY}" })]);
+    const { say, results, path } = await open(project("leak"));
+    await say("leak it", call("mcp__leaky__echo"), { text: "done" });
+    delete process.env.MCP_TEST_ENV_KEY;
+    const [failed] = results();
+    assert.equal(failed!.isError, true);
+    assert.match(failed!.text, /stub dying on purpose/);
+    assert.ok(!failed!.text.includes(value), failed!.text);
+    const note = JSON.stringify(custom(path, MCP_NOTE_ENTRY));
+    assert.match(note, /"how":"failed"/);
+    assert.ok(!note.includes(value), note);
+    const rowLines = JSON.stringify(chatLines(computer, "leaky"));
+    assert.match(rowLines, /stub dying on purpose/);
+    assert.ok(!rowLines.includes(value), rowLines);
+    assert.ok(!readFileSync(path, "utf8").includes(value), "the session file holds it");
+  });
+});
+

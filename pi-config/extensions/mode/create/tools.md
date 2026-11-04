@@ -55,7 +55,7 @@ console.log(`${file}: ${lines.length} TODO lines`);
 
 - Change: a tool in every ordinary chat on this computer, from a pi extension in the person's own folder. Offer it only when they ask for that reach.
 - Lives: `<agent dir>/extensions/<name>.ts`, where the agent dir is `$PI_CODING_AGENT_DIR`, else `~/.pi/agent`. Check first that the path doesn't link into Sova's own folder.
-- Approves: nobody. Sova never asks, and the person's OK on the file is the only check. Say before that OK: it runs inside each chat with the person's full access, the sandbox doesn't confine it, it can read prompts and credentials, and a profile can't take it away.
+- Approves: nobody. Sova never asks, and the person's OK on the file is all there is. Say before that OK: it runs inside each chat with the person's full access, the sandbox doesn't confine it, it can read prompts and credentials, and a profile can't take it away.
 - By: OK.
 - Live: new chat. This chat and every other open chat keep what they started with, so never promise the tool here.
 - Check: start a new chat and look for the tool in the Tools group of its setup card, or ask that chat to call it.

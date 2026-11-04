@@ -8,7 +8,7 @@ Offer a lighter way first when one would do: a custom theme for looks (`appearan
 
 - Change: a small web app of the person's own: a card on the home page, and a page at `#/ext/<id>` beside the sessions list.
 - Lives: a folder of the person's own for its files, plus one entry in `<agent dir>/sova/extensions.json` (the agent dir is `$PI_CODING_AGENT_DIR`, else `~/.pi/agent`). Sova reads that file and never writes it. Keep the extension's folder outside Sova's own.
-- Approves: nobody. Sova asks nothing, so the person's OK is the only check.
+- Approves: nobody. Sova asks nothing, so the person's OK is all there is.
 - By: OK. Show the whole manifest entry and every file, then write them. Then give the person the command that starts the backend: they run it and keep it running, in a terminal or a service of their own. A chat can't keep it running for them.
 - Live: now. The home card appears at the next read, and within about 15 seconds on an open page. It stops working when the backend stops: its card reads `Down`, and its own requests answer 502.
 - Check: the home card reads `Running`, its page opens, and `extensions.list` shows it. Other computers on the mesh see the entry listed and nothing served.

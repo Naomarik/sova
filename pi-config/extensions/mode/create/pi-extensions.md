@@ -6,7 +6,7 @@ An add-on is a pi extension: code that loads inside every ordinary chat on this 
 
 - Change: event handlers, guards that block or rewrite a tool call, and other chat behaviour, in every ordinary chat on this computer.
 - Lives: `<agent dir>/extensions/<name>.ts`, or `<agent dir>/extensions/<name>/index.ts`, where the agent dir is `$PI_CODING_AGENT_DIR`, else `~/.pi/agent`. Check first that the path doesn't link into Sova's own folder.
-- Approves: nobody. The person's OK on the file is the only check.
+- Approves: nobody. The person's OK on the file is all there is.
 - By: OK.
 - Live: new chat. This chat and every other open chat keep what they started with, so never promise it here.
 - Check: start a new chat and do the thing it changes.
@@ -62,7 +62,7 @@ export default function (pi) {
 
 - Change: a provider or models Sova doesn't list, kept in the person's own folder, which is the way when `models.json` links into Sova's folder.
 - Lives: an add-on file calling `pi.registerProvider`. The key stays out of the file: use the name of an environment variable the person sets themselves.
-- Approves: nobody. The person's OK on the file is the only check.
+- Approves: nobody. The person's OK on the file is all there is.
 - By: OK.
 - Live: restart. A new chat alone doesn't get it: until Sova restarts the model isn't listed, and picking it is refused as an unknown model. The person restarts Sova under Settings → General. Then it's in every chat.
 - Check: after the restart, the model appears in the model picker and in Settings → Models.

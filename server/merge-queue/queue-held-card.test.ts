@@ -48,7 +48,7 @@ async function checking(outcome: Record<string, unknown> = {}, files: Record<str
   const q = await k.q();
   const { project } = await registerProjectIn("standalone", k.repo.root, { name: `p${Math.random()}`, origin: "folder" });
   await po.ensureProjectOverseer(project.id);
-  setQueueCardPort({ settings: () => q.settings(), save: (c) => q.saveSettings(c as never) as never, models: async () => {}, modelDenial: async () => null, whenQuiet: (_id, branch, fn) => q.runWhenQuiet(branch, fn) });
+  setQueueCardPort({ settings: () => q.settings(), save: (c) => q.saveSettings(c as never) as never, models: async () => {}, modelDenial: async () => null, heldByRelease: async () => q.heldByRelease(), whenQuiet: (_id, branch, fn) => q.runWhenQuiet(branch, fn) });
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
   k.run.set(async (input) => {
@@ -176,6 +176,32 @@ describe("a card that commits files, while a branch checks", () => {
         t.release();
         t.k.done();
       }
+    }
+  });
+});
+
+describe("a release holding the queue", () => {
+  test("a file card waits for it, says so, and lands when it ends", async () => {
+    const t = await checking();
+    try {
+      t.release();
+      await until(async () => (await t.k.entry(t.entry.id)).state === "landed", "the branch landed");
+      const hold = t.q as unknown as { q: { release?: { id: string; tag: string } } };
+      hold.q.release = { id: "rl_1", tag: "v1.2.0" };
+      const c = await propose(t.pid, [profileEdit]);
+      const head = t.k.repo.head();
+      const r = await apply(t.pid, c);
+      assert.equal(r.status, 200, await r.clone().text());
+      const held = (await settings.settingsCard(t.pid, c.id))!;
+      assert.equal(held.state, "waiting");
+      assert.equal(held.saveWords, "Saves once release v1.2.0 is published or abandoned.");
+      assert.equal(t.k.repo.head(), head, "the target stays on the release commit");
+      delete hold.q.release;
+      assert.equal((await settings.settingsCard(t.pid, c.id))!.state, "applied", "the hold is over: it lands");
+      assert.notEqual(t.k.repo.head(), head);
+    } finally {
+      setQueueCardPort(null);
+      t.k.done();
     }
   });
 });

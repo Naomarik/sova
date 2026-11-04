@@ -97,7 +97,19 @@ const topKeys: Record<string, string> = {
   share: "which endpoints may be shared, for how long",
   deploy: "the deploy targets and their recipe",
   sources: "other checkouts it builds from",
+  merge: "the merge queue's section: see merge-queue",
+  release: "how the project releases: its playbook, tag, channels and gating checks (absent: releases aren't set up)",
 };
+const RELEASE_KEY_WORDS: Record<string, string> = {
+  playbook: "the release playbook's folder, which holds release.json",
+  tag: 'the tag pattern, holding ${version} once (absent: "v${version}")',
+  scheme: "how versions read: semver, calver or none",
+  channels: "the moving tags it updates, at most 3",
+  commit: "false: tag-only, no release commit through the queue",
+  checks: "the release-only checks: a merge check's id, or one declared here",
+  quietMin: "minutes without a report from the release chat before Sova says so",
+};
+const releaseKeys = Object.fromEntries(DEFINITION_KEYS.release.map((k) => [`release.${k}`, RELEASE_KEY_WORDS[k] ?? k]));
 const COPIES_KEY_WORDS: Record<(typeof COPIES_EDIT_KEYS)[number], string> = {
   limit: "how many of the project's copies may run at once on this machine, 1–16; null removes this machine's value, so the main checkout's .sova/project.json (its slots {cap}, default 4) applies",
 };
@@ -299,7 +311,7 @@ export const SETTINGS_REFERENCE: Record<SettingId, ReferenceEntry> = {
     summary: "The project's software: its services, running copies, tests, sharing and deploy (the services contract).",
     edit: '{setting: "services", file: {…the whole .sova/project.json…} | null}',
     grant: "Any change: it decides what runs on this computer.",
-    keys: { ...serviceTop, ...serviceKeys },
+    keys: { ...serviceTop, ...serviceKeys, ...releaseKeys },
     changedAt: "the Branches tab and the Software card",
   },
   "merge-queue": {

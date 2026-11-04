@@ -14,6 +14,7 @@ import { COPIES_EDIT_KEYS, COPIES_FIELD, PROJECT_EDIT_KEYS } from "../shared/pro
 import { copyLimitOf } from "../shared/project-slots";
 import { copyLimitProblem, machineCopyLimit, setMachineCopyLimit } from "./project-services/copy-limit";
 import type { MergeQueueSettings, MergeSettingsChange, ModelChoice } from "../shared/merge-queue-settings";
+import { settingsWaitingWords } from "../shared/merge-queue-settings";
 import { queueCardPort, setQueueQuietWork } from "./merge-queue/card-port";
 import { listProjects } from "./projects/spaces";
 import { parseChoice } from "./merge-queue/models";
@@ -589,6 +590,9 @@ function fileSummary(f: { setting: SettingId; id?: string; rel: string }, after:
 
 // ---- views --------------------------------------------------------------------------------------------
 
+/** What a held save waits for, in the Merge Queue tab's words. */
+const waitWords = async (projectId: string): Promise<string> => `${settingsWaitingWords(await queueCardPort()?.heldByRelease?.(projectId).catch(() => undefined))}.`;
+
 async function cardView(projectId: string, c: StoredCard, repo: Repo | null): Promise<SettingsCardView> {
   const project = projectOf(projectId);
   const files: FileChangeView[] = c.files.map((f) => ({ setting: f.setting, ...(f.id ? { id: f.id } : {}), path: f.rel, change: f.after === null ? "removed" : f.before === null ? "added" : "changed", summary: f.summary }));
@@ -600,6 +604,7 @@ async function cardView(projectId: string, c: StoredCard, repo: Repo | null): Pr
   return {
     id: c.id,
     ...(c.held && c.state === "waiting" ? { saveWaits: true, ...(c.held.failed ? { saveFailed: c.held.failed } : {}) } : {}),
+    ...(c.state === "waiting" && (c.held || c.queue?.waiting) ? { saveWords: await waitWords(projectId) } : {}),
     ...(c.queue ? { kind: "queue" as const, place: queuePlace(c.queue), ...(c.queue.waiting && c.state === "waiting" ? { saveWaits: true } : {}), ...(c.queue.failed && c.state === "waiting" ? { saveFailed: c.queue.failed } : {}) } : {}),
     state: c.state,
     title: titleOf(c),
@@ -695,6 +700,7 @@ export async function localCard(projectId: string): Promise<SettingsCardView | n
       const hold = readStore(projectId).localHold;
       return hold ? { saveWaits: true, ...(hold.failed ? { saveFailed: hold.failed } : {}) } : {};
     })(),
+    ...(readStore(projectId).localHold ? { saveWords: await waitWords(projectId) } : {}),
   };
 }
 

@@ -496,9 +496,14 @@ export class ProjectQueue {
     });
   }
 
-  /** Busy for a commit on the target: a branch holds it, or it moved from outside and waits for the resume. */
+  /** The release holding the target, as shown, or undefined. */
+  heldByRelease(): string | undefined {
+    return this.q.release ? this.releaseName() : undefined;
+  }
+
+  /** Busy for a commit on the target: a branch or a release holds it, or it moved from outside and waits for the resume. */
   private async targetHeld(): Promise<boolean> {
-    if (this.current || this.trying || this.landing) return true;
+    if (this.current || this.trying || this.landing || this.q.release) return true;
     const head = await this.targetHead();
     return !!this.q.knownTarget && head !== null && head !== this.q.knownTarget;
   }

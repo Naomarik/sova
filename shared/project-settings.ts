@@ -106,6 +106,8 @@ export interface SettingsCardView {
   place?: string;
   /** A merge queue card Applied while a branch checks: the save waits (state stays "waiting"); Cancel Save cancels it. */
   saveWaits?: boolean;
+  /** What a waiting save waits for, in words, drawn as given: a branch, or the release holding the queue. */
+  saveWords?: string;
   /** The waiting save failed when its turn came (the queue keeps it, not retried). */
   saveFailed?: string;
   /** What to read before Apply, drawn as given: a mesh.resync card's confirm sentences. Read live while it waits. */

@@ -13,6 +13,8 @@ export interface QueueCardPort {
   models(projectId: string, patch: { review?: ModelChoice | null; thread?: ModelChoice | null }): Promise<void>;
   /** Why this model can't be picked, or null. */
   modelDenial(ref: string): Promise<string | null>;
+  /** The release holding the target, as shown, or undefined: a branch's the wait, if any. */
+  heldByRelease?(projectId: string): Promise<string | undefined>;
   /**
    * Run `fn`, a commit on `branch`, at a moment no branch holds the target: true when it ran (the queue takes the
    * commit as its own), false while a branch checks or the target waits for a resume (nothing ran), null when the

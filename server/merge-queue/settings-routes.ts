@@ -26,6 +26,7 @@ export interface SettingsQueue {
   settingsChanged(): void;
   readonly store: { readonly dir: string };
   runWhenQuiet?(branch: string, fn: () => Promise<void>): Promise<boolean>;
+  heldByRelease?(): string | undefined;
 }
 
 export interface SettingsRouteDeps {
@@ -197,6 +198,7 @@ export function registerLiveMergeSettingsRoutes(app: Hono<any>): void {
       q.settingsChanged();
     },
     modelDenial: async (ref) => modelCheck.denial(ref),
+    heldByRelease: async (id) => (await served(id))?.heldByRelease?.(),
     async whenQuiet(id, branch, fn) {
       if (!(await import("./wire")).mergeQueues()) return false; // Still starting: asked again at the next read.
       const q = await served(id);

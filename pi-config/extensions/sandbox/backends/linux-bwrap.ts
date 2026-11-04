@@ -371,6 +371,8 @@ export class LinuxBwrapBackend implements Backend {
 			}
 		}
 		if (policy.network.localPorts?.length) notes.push("network: localPorts is not implemented; those ports are unreachable");
+		// macOS-only rules (darwin-seatbelt BROWSER_RULES); the probe caches this note once per policy.
+		if (policy.browser) notes.push("browser: no effect on Linux");
 
 		// A write-only worker keeps the host's /tmp (read-only, sockets masked) when its sockets can be
 		// listed; its temp files go to its own tmp, bound writable at its own path by the mount plan.

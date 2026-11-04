@@ -451,6 +451,7 @@ const FIXTURES: Record<string, Fixture> = {
     oracle: async (_b, v) => assert.equal((await import("./project-assistant-store")).findRequest(String(v["org-id"]), String(v["request-id"]))?.closed?.noted, true),
   },
   "overseer.attention": { values: () => ({}), status: 200 },
+  "overseer.abilities": { values: () => ({}), status: 200 },
   "overseer.todo.list": { values: () => ({}), status: 200 },
   "models.list": { values: () => ({}), status: 200 },
   "extensions.list": { values: () => ({}), status: 200 },

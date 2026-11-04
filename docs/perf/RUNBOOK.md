@@ -11,8 +11,9 @@ load would skew it. Message `verifier` before each batch (steps 2, 3, 4), wait f
 and tell it when the batch ends.
 
 Harness: `scripts/perf/load-experiment.mjs` (orchestrator) and `scripts/perf/load-standin.mjs` (the
-load: full `node --test` suites, `tsc --noEmit`, `vite build` into `~/.cache/sova-perf/`, each
-restarted as it exits). Builtins only, no network, nothing written to `~/.pi`.
+load: full `node --test` suites, `tsc --noEmit`, `vite build` into the repo's gitignored
+`.cache/sova-perf/`, each restarted as it exits; never `~/.cache`, which inside the sandbox is a
+private copy nobody else sees). Builtins only, no network, nothing written to `~/.pi`.
 
 ## Ports and processes
 
@@ -60,9 +61,9 @@ node scripts/perf/load-experiment.mjs --variants nice0,nice10,weight,ext,weight-
 node scripts/perf/load-experiment.mjs --variants nice0,fixed --reps 3 \
   --out docs/perf/data/2026-10-03-after 2>&1 | tee docs/perf/data/2026-10-03-after.console.log
 
-# 5. Clean up (also safe to run any time), then verify nothing is left.
+# 5. Clean up (also safe to run any time; it also removes <repo>/.cache/sova-perf), then verify
+#    nothing is left.
 node scripts/perf/load-experiment.mjs --cleanup
-rm -rf ~/.cache/sova-perf
 systemctl --user list-units --type=scope --all 'sova-perf-*' --no-legend   # must print nothing
 pgrep -af 'load-standin|load-experiment|--inspect=127.0.0.1:9267'          # must print nothing
 ss -ltn | grep -E ':(4867|9267)\b'                                          # must print nothing

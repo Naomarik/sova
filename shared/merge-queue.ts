@@ -235,10 +235,24 @@ export interface MergeEntry {
    *  branch has a later entry for the same target; `merged`: its sent-back commit or the branch's tip is already in the
    *  target; `gone`: the branch or its worktree folder was removed. A settled entry leaves the Sent back list. */
   settled?: MergeSettled;
+  /** needs-fix only, stored at the hand-back: why it was sent back. Absent on entries sent back before it was kept:
+   *  read as not the drafts' (the queue infers `drafts` once from a run whose docs step failed). */
+  sentBackFor?: SentBackFor;
+  /** needs-fix for its drafts, stored at the hand-back: a fingerprint of its worktree's drafts folder then (notes
+   *  included), so a fix that only records a note reads as a change. */
+  sentBackDrafts?: string;
+  /** needs-fix only, derived when the view is read (never stored): sent back for its drafts, its drafts changed since
+   *  (since the hand-back; for an entry from before that was kept, since the approval pinned them), and Sova's docs
+   *  check of them finds no problem. Land comes back at the same commit. */
+  redrafted?: true;
   createdAt: string;
   updatedAt: string;
 }
 export type MergeSettled = "superseded" | "merged" | "gone";
+/** Why an entry was sent back: its spec drafts didn't fit (`drafts`), a check failed with it (`checks`), a conflict
+ *  nobody judged (`conflict`), the user's Send Back (`user`), or the host refused its publication (`host`). Only
+ *  `drafts` can be fixed with no commit. */
+export type SentBackFor = "drafts" | "checks" | "conflict" | "user" | "host";
 
 export type PushState = "pending" | "pushed" | "not-pushed" | "no-remote";
 
@@ -439,7 +453,7 @@ export interface MergeUnclear {
   why?: string;
 }
 
-export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled"> & {
+export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted"> & {
   project: string;
   run?: string;
   /** The run's newest reviewer chat (Open Reviewer Chat on the branch's Worktrees row), while it runs and after. */
@@ -450,7 +464,7 @@ export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "
 
 /** A branch's entry as the session list carries it (protocol.ts SessionBranchQueue): its state, never a precomputed
  *  key, so a new state flows through, and the fields a row's words read. */
-export type BranchQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit" | "position" | "reason" | "conflict" | "review" | "request" | "settled">;
+export type BranchQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit" | "position" | "reason" | "conflict" | "review" | "request" | "settled" | "redrafted">;
 
 /** The session list's cut of a worktree row's queue entry. Pure. */
 export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
@@ -462,6 +476,7 @@ export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
   ...(q.review ? { review: q.review } : {}),
   ...(q.request ? { request: q.request } : {}),
   ...(q.settled ? { settled: q.settled } : {}),
+  ...(q.redrafted ? { redrafted: true as const } : {}),
 });
 
 export interface MergeReady {
@@ -558,8 +573,8 @@ export interface MergeCardsFeed {
 // ---- a branch's card in the chat that built it ---------------------------------------------------
 
 /** An outcome that moves the card to the bottom of the chat as a new revision. */
-export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "sent-back" | "requested" | "pushed" | "closed";
-export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "sent-back", "requested", "pushed", "closed"];
+export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "sent-back" | "requested" | "pushed" | "closed" | "removed";
+export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "sent-back", "requested", "pushed", "closed", "removed"];
 
 /**
  * One copy of the card at its own point in the chat. The newest revision draws the whole card (the card's live data);
@@ -629,6 +644,14 @@ export interface MergeCard {
   failures?: MergeCardFailure[];
   /** Needs a fix: the merge thread's later diagnosis (its note), added to the same card in place. */
   explanation?: { text: string; at: string };
+  /** Needs a fix: why it was sent back (the entry's `sentBackFor`). */
+  sentBackFor?: SentBackFor;
+  /** Needs a fix, sent back for its drafts: they are fixed (the entry's `redrafted`), so Land comes back at the same commit. */
+  redrafted?: true;
+  /** The user removed it from the queue (Remove from Queue): its last revision, until a new Land moves it on. */
+  removed?: true;
+  /** Needs a fix that no longer needs one (the entry's `settled`: superseded, merged, gone): it offers nothing. */
+  settled?: MergeSettled;
   revisions: MergeCardRevision[];
   updatedAt: string;
 }

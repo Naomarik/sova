@@ -15,7 +15,8 @@ import { join } from "node:path";
 import type { MergeEntry, MergeQueueView, MergeRun } from "../../../shared/merge-queue";
 import { recordGoAhead } from "../../../pi-config/extensions/worktrees/landing.ts";
 import { definitionAt } from "../../project-services/deploy-recipe";
-import { draftsHash } from "../../spec-drafts-state";
+import { draftsFingerprint, draftsHash } from "../../spec-drafts-state";
+import { previewDocs } from "../../docs-preview";
 import { checksOf } from "../checks";
 import type { ThreadEvent } from "../contract";
 import type { Git } from "../guard";
@@ -81,6 +82,8 @@ export function queueDeps(stateRoot: string, extra: Partial<QueueDeps> & { git?:
       return { def: r.def, error: r.error };
     },
     draftsHash: (dir) => draftsHash(dir),
+    docsCheck: (dir, commit, hash, done) => previewDocs(dir, commit, hash, done),
+    draftsFingerprint: (dir) => draftsFingerprint(dir),
     retryDelayMs: 200,
     watchMs: 200,
     conflictWaitMs: 60_000,

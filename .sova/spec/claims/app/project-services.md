@@ -655,8 +655,10 @@ the one result shape with its own `merge` key (§app.project-services/result).
   starts first, or no automated tests; a dry run tries them, and a save commits them:
   §app.merge-queue/setup), the user's only.
 - **The user's**: `merge.add` (a branch or checkout, its commit by default the head, and the
-  options without its specs and without review: §app.merge-queue/approve), `merge.cancel` (an
-  entry), `merge.pause` and `merge.resume` (a project, with an optional why), and `merge.answer`
+  options without its specs and without review: §app.merge-queue/approve; at a sent-back entry's
+  commit it is Land This Commit Again), `merge.cancel` (an entry: one in line, checking or
+  waiting is taken out of the line; a Needs a fix one is Remove from Queue, cancelled as
+  "removed by you", deleting nothing), `merge.pause` and `merge.resume` (a project, with an optional why), and `merge.answer`
   (an entry waiting for the user: `accept` a resolution, `land-anyway` over a blocking review or a failure
   whose owner can't be told, or `send-back`), `merge.reply` (a merge thread's question by its id
   and the user's answer: §chat.merge-queue/asks), `merge.fresh` (a project: Start Fresh,
@@ -690,8 +692,8 @@ nothing is recorded or loaded. For a listed project whose merge setup isn't done
 (its view says it isn't served, §app.merge-queue/view) and `merge.setup` (Initialize,
 §app.merge-queue/setup) are taken; every other verb gets that same refusal.
 
-The Land, Cancel, Pause, Resume, Accept, Send Back, Land Anyway, Start Fresh, Send Answer, Clear
-and Clear All actions are catalogue commands pointing at these verbs (§app/commands).
+The Land, Land This Commit Again, Cancel, Remove from Queue, Pause, Resume, Accept, Send Back, Land
+Anyway, Start Fresh, Send Answer, Clear and Clear All actions are catalogue commands pointing at these verbs (§app/commands).
 
 ## §app.project-services/self-host — When the project is Sova itself
 

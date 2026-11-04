@@ -9,6 +9,7 @@ import type { TourJob } from "../../shared/tour";
 import { createSessionFile } from "../harness/pi/state";
 import { MODE, SANDBOX } from "../harness/state-kinds";
 import type { ChatHandle } from "../chat-handle";
+import { macConfinedBrowserSkip } from "./mac-browser.integration.fixture";
 
 // b1 through the default production runtime: a real session file whose own Sandbox entry is the only
 // policy source, the default context snapshot, the real resolver, runner, confined child and browser.
@@ -27,10 +28,15 @@ policy.writable = [];
 policy.shadowed = [];
 // Recording never reads the policy's default: a default chat that is not On must still record unconfined.
 policy.defaultOn = true;
+// macOS: the headless shell's Seatbelt rules, so the confined recorder can run it (§chat.sandbox/what-on-enforces).
+if (process.platform === "darwin") policy.browser = "headless-shell";
 writeFileSync(join(agentDir, "sandbox-policy", process.platform, "policy.json"), JSON.stringify(policy));
 const previous = { HOME: process.env.HOME, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR };
 process.env.HOME = root;
 process.env.PI_CODING_AGENT_DIR = agentDir;
+
+const macSkip = macConfinedBrowserSkip();
+if (macSkip) console.warn(`sandbox-runtime.integration: SKIPPED: ${macSkip}`);
 
 type Seed = Parameters<typeof createSessionFile>[0]["seed"];
 const page = "<!doctype html><html><body><main><h1>Saved drafts</h1><p>Made-up private loopback page.</p></main></body></html>";
@@ -98,7 +104,7 @@ test.after(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-test("b1: the default TourRuntime follows a chat's own Sandbox On entry; a denied loopback port gets no request", { timeout: 180_000 }, async () => {
+test("b1: the default TourRuntime follows a chat's own Sandbox On entry; a denied loopback port gets no request", { timeout: 180_000, skip: macSkip }, async () => {
   const f = await loopbackFixture();
   // The holding process reports Off throughout: a recorded On entry still confines, never loosened.
   await hold(heldOff);
@@ -118,7 +124,7 @@ test("b1: the default TourRuntime follows a chat's own Sandbox On entry; a denie
 
 // G1: a default chat writes no sandbox entry. Its effective state is what the chat process that holds
 // it reports (the same in-memory branch its own tools run under), never the policy's default.
-test("G1: a default chat with no sandbox entry records as its held chat reports; not held refuses before contact", { timeout: 240_000 }, async () => {
+test("G1: a default chat with no sandbox entry records as its held chat reports; not held refuses before contact", { timeout: 240_000, skip: macSkip }, async () => {
   const f = await loopbackFixture();
   try {
     // Not held by this server: unknown, refused before any job or contact (this policy's defaultOn is true and is not read).

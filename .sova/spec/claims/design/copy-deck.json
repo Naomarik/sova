@@ -165,7 +165,8 @@
       "server/merge-queue/run.ts",
       "server/merge-queue/wake.ts",
       "src/lib/merge-queue-chats.ts",
-      "src/lib/merge-queue-settings.ts"
+      "src/lib/merge-queue-settings.ts",
+      "server/merge-queue/notices.ts"
     ]
   },
   "§design.copy-deck/merge-queue-chats": {
@@ -337,11 +338,13 @@
       "server/sandbox-state.ts",
       "pi-config/extensions/subagents/index.ts",
       "server/app.ts",
-      "server/quiet-close-actions.test.ts"
+      "server/quiet-close-actions.test.ts",
+      "pi-config/extensions/sandbox/shadow-prune.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-14T13:46Z"
+      "at": "2026-10-30T12:02Z",
+      "source": "pi-session:01a18c63-8f43-7660-9a5a-04b82a0fed6e#73daaccb"
     }
   },
   "§design.copy-deck/session-share": {

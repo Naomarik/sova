@@ -63,6 +63,9 @@ export interface QueueListDeps {
   view: (root: string) => Promise<MergeQueueView | null>;
   /** Whether a sent-back entry's worktree is there. */
   exists: (path: string) => boolean;
+  /** A stamp of a worktree's spec drafts folder (spec-drafts-state.ts draftsStamp): an entry sent back for its drafts
+   *  is fixed with no commit, so its drafts are watched. Absent: not watched. */
+  draftsStamp?: (worktree: string) => string;
   now: () => number;
 }
 let listDeps: QueueListDeps | null = null;
@@ -145,6 +148,8 @@ interface KeptView {
   /** What a change no `save()` tells of would move (checkQueueViews): the target and the sent-back branches. */
   refs: string[];
   worktrees: string[];
+  /** The worktrees of entries sent back for their drafts: a drafts edit, with no commit, may bring Land back. */
+  drafts: string[];
   /** The look taken before the newest view read for the list: at those refs, its stamp, and when. */
   seen?: { refs: string; stamp: string | null; at: number };
 }
@@ -156,9 +161,10 @@ const latestViews = new Map<string, KeptView>();
 const viewing = new Map<string, Promise<KeptView | undefined>>();
 
 /** What a queue's view rests on, as of now. */
-function lookAt(d: QueueListDeps, key: string, refs: readonly string[], worktrees: readonly string[]): NonNullable<KeptView["seen"]> {
+function lookAt(d: QueueListDeps, key: string, refs: readonly string[], worktrees: readonly string[], drafts: readonly string[] = []): NonNullable<KeptView["seen"]> {
   const raw = d.stamp(key, refs);
-  return { refs: refs.join("\n"), stamp: raw === null ? null : `${raw}\0${worktrees.map((w) => d.exists(w)).join()}`, at: d.now() };
+  const draftsPart = d.draftsStamp && drafts.length ? `\0${drafts.map((w) => d.draftsStamp!(w)).join("\0")}` : "";
+  return { refs: refs.join("\n"), stamp: raw === null ? null : `${raw}\0${worktrees.map((w) => d.exists(w)).join()}${draftsPart}`, at: d.now() };
 }
 
 /** Read a queue's view for the list. `seen` is the look taken before it: a move during the read is never certified,
@@ -205,6 +211,7 @@ export function noteQueueView(view: Pick<MergeQueueView, "root" | "at" | "projec
     digest,
     refs: [...targetRefs(view.target), ...view.needsFix.map((e) => `refs/heads/${e.branch}`)],
     worktrees: view.needsFix.flatMap((e) => (e.worktree ? [e.worktree] : [])),
+    drafts: view.needsFix.flatMap((e) => (e.worktree && !e.settled && e.sentBackFor === "drafts" ? [e.worktree] : [])),
     ...(prev?.seen ? { seen: prev.seen } : {}),
   });
   // A change re-lists; so does a queue's first view after a start when it holds entries: the rows' background reads
@@ -225,7 +232,7 @@ export function checkQueueViews(): number {
   let n = 0;
   for (const [key, v] of latestViews) {
     if (viewing.has(key)) continue;
-    const look = lookAt(d, key, v.refs, v.worktrees);
+    const look = lookAt(d, key, v.refs, v.worktrees, v.drafts);
     const seen = v.seen;
     const unmoved = seen?.refs === look.refs && d.projectIdOf(key) !== null && (look.stamp === null ? look.at - seen.at < VIEW_UNPINNED_MS : look.stamp === seen.stamp && look.at - seen.at < VIEW_BACKSTOP_MS);
     if (unmoved) continue;
@@ -532,7 +539,7 @@ export async function startMergeQueue(
 ): Promise<void> {
   if (queues) return;
   const base = join(stateRoot(), "merge-queue");
-  const [{ projectEngine }, { publishFeed }, { projectOf }, { definitionAt }, { draftsHash }, { listProjects }, checks, threadMod, review] = await Promise.all([
+  const [{ projectEngine }, { publishFeed }, { projectOf }, { definitionAt }, { draftsHash, draftsStamp, draftsFingerprint }, { listProjects }, checks, threadMod, review, { previewDocs }] = await Promise.all([
     import("../project-services/routes"),
     import("../session-feed"),
     import("../project-root"),
@@ -542,6 +549,7 @@ export async function startMergeQueue(
     import("./checks"),
     import("./thread"),
     import("./review-step"),
+    import("../docs-preview"),
   ]);
   const releaseWire = await import("../project-services/release-wire");
   const served = new ServedRule({ listed: opts.listed ?? (() => listProjects()), definitionAt: (root, ref) => definitionAt(root, ref), checksOf: checks.checksOf });
@@ -659,6 +667,9 @@ export async function startMergeQueue(
     ownerOf: async (_root, _branch, worktree) => (worktree ? worktreeOwnerOf(worktree) : null),
     thread,
     draftsHash: (dir) => draftsHash(dir),
+    // A branch sent back for its drafts: Sova's docs check of them, the one readiness runs (one cache).
+    docsCheck: (dir, commit, hash, done) => previewDocs(dir, commit, hash, done),
+    draftsFingerprint: (dir) => draftsFingerprint(dir),
     threadOf: (root) => threadMod.threadInfo(threadMod.mergeThreadKeeper(), root, busyOf),
     chatsOf: (root) => chatsView(root),
     // Landing by request (al_3): the docs commit goes into a chat's folder only while it is idle, read as the worktree
@@ -757,6 +768,7 @@ export async function startMergeQueue(
       return (await served.served(root)) ? (await q.get(root)).view({ fresh: true }) : null;
     },
     exists: existsSync,
+    draftsStamp: (worktree) => draftsStamp(worktree),
     now: Date.now,
   };
   // Rows read before this line have no queue fields, and nothing else re-reads an archived one.

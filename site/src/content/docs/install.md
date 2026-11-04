@@ -34,6 +34,7 @@ What it puts on your machine:
 - **Sova itself** in `~/.local/share/sova`, with its Bun inside it.
 - **A launcher**, `~/.local/bin/sova`.
 - **Sova in your app launcher**, with its icon: `~/.local/share/applications/sova.desktop` on Linux, `~/Applications/Sova.app` on macOS. It's written on every run, and a file of the same name the installer didn't write stops it before it changes anything (`--no-app-entry` leaves the entry out).
+- **On macOS, Sova as an app of its own**, installed in the browser profile kept for Sova: its own icon and name in the Dock and the app switcher, and no title bar. The browser keeps its own launcher for it, `~/Applications/Chrome Apps.localized/sova.app` with Chrome. `--no-app-entry` leaves this out too.
 - **Sova's pi extensions**, linked one by one into `~/.pi/agent/extensions/` (or your `$PI_CODING_AGENT_DIR`). They're links, not copies, so an update brings them along. Anything already there that isn't Sova's own link is left alone, and the installer tells you which extension it skipped.
 - **A login service**, only if you say yes.
 
@@ -51,6 +52,8 @@ Either one starts the server in the background if it isn't running (through the 
 
 The window is Chrome, Chromium, Brave, Edge, Vivaldi or Helium (your default browser if it's one of them), with a browser profile kept for Sova alone: `~/.config/sova-browser` on Linux, `~/Library/Application Support/sova-browser` on macOS. Without any of them, Sova opens as a tab of your default browser instead, and the installer tells you so. A browser installed only as a Flatpak isn't found.
 
+On macOS that window is Sova's installed app, with no browser title bar: Sova draws a slim band of its own across the top, in its own colours, holding the window buttons at the top left and the browser's title-bar toggle and ⋮ menu at the top right. Drag the band to move the window; the toggle brings the browser's title bar back. The installer opens and closes the browser once to install it. If Sova's window is open, it closes it first when you run the installer in a terminal; an upgrade from Settings leaves it open, and `sova open` finishes the install the next time it opens Sova. The app the Dock shows is the browser's own launcher for it: pinned, it opens Sova without starting the server, so pin it if you run the login service, and use **Sova** otherwise. If the install fails, Sova opens in a bare browser window instead, and `sova app --install` tries again.
+
 To run the server in a terminal yourself, run `sova`; `Ctrl+C` stops it.
 
 | Command | Does |
@@ -59,6 +62,7 @@ To run the server in a terminal yourself, run `sova`; `Ctrl+C` stops it.
 | `sova --node` | Runs the server on Node instead, with no chats or workers: they need Bun. |
 | `sova open` | Starts the server if needed, then opens the app in its own window, signed in. |
 | `sova app` | The same as `sova open`; what the app launcher's Sova runs. |
+| `sova app --install` | macOS: installs Sova as an app of its own again (the installer does it for you). |
 | `sova token` | Prints this install's access token. |
 
 A server `sova open` starts writes its output to `~/.pi/agent/sova/app-server.log`. If it doesn't answer within 20 seconds, you get a notification naming that log, and nothing opens. `sova token` never starts the server; before it has run once there's no token yet, and it tells you to start it first. On a machine with no browser opener, such as a server you reach over SSH, `sova open` says so; open the page yourself and paste the token from `sova token`.
@@ -139,8 +143,10 @@ rm -rf ~/.config/sova-browser
 On macOS:
 
 ```sh
-rm -rf ~/Applications/Sova.app ~/Library/Application\ Support/sova-browser
+rm -rf ~/Applications/Sova.app ~/Applications/Chrome\ Apps.localized/sova.app ~/Library/Application\ Support/sova-browser
 ```
+
+With another browser, its launcher for the app is in the `… Apps.localized` folder named after it.
 
 Your pi sessions and credentials, and Sova's own state in `~/.pi/agent/sova/`, stay. So do pnpm's package store and cache, which other projects may share. If nothing else on the machine uses pnpm, you can remove them too (on Linux):
 

@@ -13,7 +13,8 @@ can.
 It is local containment of an agent's mistakes on a single-user machine. It is not a boundary
 for hostile code and has not been security-audited (§chat.sandbox/limits).
 
-Owns: the three states, the `/sandbox` toggle, what On enforces on Linux and macOS, failing closed,
+Owns: the three states, the `/sandbox` toggle, what On enforces on Linux and macOS, cleaning its
+cache copies, failing closed,
 the policy file and per-project tightening, what workers inherit, and what it does not
 cover. Not here: the composer's shield and Sandbox group
 (§chat.composer/sandbox-shield, §chat.composer/composer-flyout), a worktree worker's write-only
@@ -83,7 +84,9 @@ tools from their next call and is recorded in a `sandbox` entry.
 
 - **Where.** In pi, `/sandbox on`, `/sandbox subagents` and `/sandbox off` set On, Subagents only
   and Off (§chat.sandbox/states), and bare `/sandbox` (or `/sandbox status`) reports the current
-  state; anything else answers with the usage line. A runtime started with
+  state; `/sandbox clean` and `/sandbox clean all` clean the sandbox's cache copies
+  (§chat.sandbox/cache-cleanup), and change no state; anything else answers with the usage line,
+  "usage: /sandbox on | subagents | off | clean [all]". A runtime started with
   `--sandbox on|subagents|off` starts in that state. How another host (such as Sova's web
   composer) offers the choice is that host's own surface; it drives the same command.
 - **Status.** While on, the TUI footer shows `sandbox on`, or `sandbox on (partial)`,
@@ -95,6 +98,17 @@ tools from their next call and is recorded in a `sandbox` entry.
   ({reasons})", "Sandbox on · workspace-write · unavailable: {reasons} (tools refuse)", or, for a
   session that is on but enforced nowhere (a remote session), "Sandbox on · not enforced on
   remote" ("Sandbox on · not enforced" when no reason is recorded).
+- **Caches line.** Bare `/sandbox` prints one more line after that status line, about the
+  sandbox's cache copies (§chat.sandbox/cache-cleanup): their size, their limit and what set it
+  (such as "5% of free space"), when they were last cleaned and how much that freed. When the
+  copies are over their limit because everything left was used recently, the line says so instead,
+  giving their size, the limit and what set it, without when they were cleaned or what that freed. It is
+  read from the last cleanup's record, so printing it never measures the caches. The status line
+  itself, the footer and the composer shield's title are unchanged.
+- **Cleaning now.** `/sandbox clean` runs the same cleanup at once, even if one ran in the last
+  24 hours, and reports what it freed. `/sandbox clean all` removes every entry of the copies not
+  used in the last hour, tool caches included, and reports what it freed. Either is refused, with
+  nothing removed, while another cleanup is running.
 - **Effect.** A change reaches **this session only**: its own tools from their **next tool
   call**, its workers when they start or resume (§chat.sandbox/states). A tool call
   already running finishes under the rules it started with; nothing is killed, and no turn is
@@ -152,7 +166,8 @@ so. It is not a choice in the UI. Under `workspace-write`:
   worktrees from that list.
 - **Shadowed caches.** Build caches (`~/.cache`, `~/.npm`, `~/.m2`: the policy's `shadowed`) are
   the sandbox's own private copies, kept between sessions; nothing written there reaches the
-  host's caches. Each copy lives under `<agentDir>/sova/sandbox/shadow/`, is shared by all
+  host's caches. They are cleaned by age and size, never of anything used recently
+  (§chat.sandbox/cache-cleanup). Each copy lives under `<agentDir>/sova/sandbox/shadow/`, is shared by all
   sandboxed sessions and is mounted at the cache's usual path, so host tools that later run
   cached code (build dirs, editor bytecode, npx packages, Maven plugins) never see what the
   sandbox wrote, and the host's own cache is not visible inside. They start cold: the first
@@ -230,6 +245,58 @@ so. It is not a choice in the UI. Under `workspace-write`:
   every other host port, Sova's API included, are unreachable. Mach services are denied except a
   short allowlist (user lookups, notifications, logging, certificate checks), so the pasteboard,
   Apple events and the GUI do not work, and setuid programs (`sudo`, `ps`) cannot run.
+  With the policy's `browser` set to `"headless-shell"` (§chat.sandbox/policy-file), the profile
+  adds two Chromium rules: opening the power-management user client (`RootDomainUserClient`)
+  and registering and looking up the `org.chromium.Chromium.MachPortRendezvousServer.` names.
+  Playwright's `chrome-headless-shell` then runs and takes screenshots inside the sandbox when it
+  is started with `--no-sandbox` (Playwright's default), since Seatbelt cannot nest Chrome's own
+  sandbox. The rules sit before the hidden paths and the Keychain deny, which still win. Every
+  command confined under the session's policy gets them, a tour recording's included
+  (§app.tours/sandbox). An app-bundle Chrome (Google Chrome, Chrome for Testing) is not supported
+  and still crashes; a sandboxed tour recording on macOS therefore uses the headless shell and
+  refuses before launch when only an app-bundle Chrome is installed (§app.tours/sandbox).
+
+## §chat.sandbox/cache-cleanup — Cleaning the cache copies
+
+The sandbox's private cache copies (§chat.sandbox/what-on-enforces) are cleaned on their own, by
+age and by size, and nothing used recently is ever removed from them.
+
+- **When.** When a sandboxed chat starts, at most once every 24 hours for each agent directory;
+  a remote chat never starts it. The cleanup runs in the background at low priority (the lowest
+  CPU priority everywhere, and the lowest disk priority where the system offers one, as Linux
+  does), and never delays the chat being ready. `/sandbox clean` runs it at once (§chat.sandbox/toggle).
+- **What it removes.** Whole top-level entries of the copies: each `~/.cache/<name>`,
+  `~/.npm/<name>` and `~/.m2/<name>` as the sandbox sees them, and each entry of a copy left under
+  `<agentDir>/sova/sandbox/shadow/` by an older layout. It never removes a copy's own folder.
+- **By age.** An entry nothing in which was used for 7 days is removed. Known tool caches are kept
+  30 days instead: in `~/.cache`, the entries named `pnpm`, `ms-playwright`, `pip`, `uv`,
+  `go-build`, `node-gyp`, `yarn`, `deno`, `typescript`, `puppeteer`, `mise`, `huggingface` and the
+  voice install cache's, and every entry of `~/.npm` and `~/.m2`. Everything else is scratch.
+- **By size.** Then, while the copies together are over their limit, the least recently used
+  entries are removed first, scratch before tool caches, until they are under it. The limit is the
+  smallest of the `maxSizeGB` setting (50 GB by default), 5% of the size of the disk holding the
+  copies and 5% of that disk's free space, and never less than 2 GB.
+- **Recent use is protected.** Neither pass removes an entry with any file written in the last 24
+  hours or read in the last 48 hours. When only such entries are left and the copies are still
+  over their limit, the cleanup records that they stayed over, and bare `/sandbox` says so.
+- **Nothing half-removed.** An entry is first moved aside, into
+  `<agentDir>/sova/sandbox/shadow-trash/`, and deleted from there in the background, so no chat
+  ever finds part of one. Each cleanup first empties what an earlier one left there. One cleanup
+  runs at a time for each agent directory; a lock left by one that ended without releasing it
+  stops blocking at once when its process is gone, else within 2 hours.
+- **Its record.** Each cleanup writes `<agentDir>/sova/sandbox/shadow-prune.json`: when it ran, how
+  much it freed, the copies' sizes, the limit it used and which bound set it, and whether the copies
+  stayed over it. Bare `/sandbox` reports from that record (§chat.sandbox/toggle).
+- **Sizes.** A size is the disk space the files take, counting a hard-linked file once. Freed space
+  is "up to" that amount (§chat.sandbox/limits).
+- **Settings.** An optional file, `<agentDir>/sandbox-policy/<platform>/caches.json`, beside the
+  policy file (§chat.sandbox/policy-file), whose template is the repo's
+  `pi-config/sandbox-policy/<platform>/caches.json`: `on` (`true`), `maxSizeGB` (`50`),
+  `scratchDays` (`7`), `toolCacheDays` (`30`) and `toolCaches` (the names above). `"on": false`
+  turns automatic cleanup off; `/sandbox clean` still runs. A missing file means those defaults. An invalid one turns cleanup
+  off, with a visible notice saying why; it never touches the sandbox itself, which keeps working
+  and never fails closed on it. Like the policy, it cannot be changed from inside the sandbox, and
+  a project cannot set it (§chat.sandbox/project-tightening).
 
 ## §chat.sandbox/fail-closed — Fail closed
 
@@ -254,13 +321,22 @@ never a link into the repo: a policy inside a checkout would be writable wheneve
 is the workspace. `install.sh --check` reports drift from the template and never overwrites it.
 
 - **Keys.** `version`, `level`, `defaultOn`, `writable`, `hidden`, `readOnlyWithinWritable`,
-  `shadowed`, `proxy` (`allow`), `env` (`allow`), `acceptPartial`.
+  `shadowed`, `proxy` (`allow`), `env` (`allow`), `acceptPartial`, and the optional `browser`.
+- **`browser`** is `"none"` (the template's value, and the meaning when the key is absent) or
+  `"headless-shell"`, which lets Playwright's `chrome-headless-shell` run inside every confined
+  macOS profile (§chat.sandbox/what-on-enforces). Any other value, `true` included, fails closed
+  like every other malformed key. It has no effect on Linux.
 - **The template hides the WhatsApp sender's home**, `$AGENT_DIR/sova/whatsapp` (its linked
   device's credentials, §app.outreach/secrets), beside `$AGENT_DIR/auth.json`. A policy seeded
   before that keeps its own list: `install.sh --check` reports the drift.
 - **The template hides MCP's secrets and sign-ins**, `$AGENT_DIR/sova/secrets/mcp` and
   `$AGENT_DIR/mcp-auth.json` (§app.mcp/secrets, §app.mcp/sign-in), the same way.
 - **Re-read on every tool call.** An edit applies to the next tool call of every session.
+- **Cache cleanup has its own file.** The cleanup settings (§chat.sandbox/cache-cleanup) live in
+  an optional `caches.json` beside `policy.json`, never in it: `policy.json` keeps exactly the keys
+  above and its strict check, and a mistake in `caches.json` only turns cleanup off, never the
+  sandbox. It is seeded from its template like the policy and never overwritten; since a missing
+  one means its defaults, `install.sh --check` only notes it missing and does not fail on that.
 - **Never writable from inside.** The whole agent directory is read-only (it holds sessions,
   settings and extensions that pi runs later outside the sandbox), `<agentDir>/sandbox-policy/`
   included. Each `policy.json` there is also hidden; each `CLAUDE.md` stays readable. The file tools refuse those canonical
@@ -276,8 +352,9 @@ A project's own config can tighten the sandbox, never loosen it.
 
 A project may carry `<cwd>/.sova/sandbox.json`. It may only **tighten**: lower the level to
 `read-only`, add hidden paths, remove proxy hosts, remove writable roots, remove shadowed
-paths. A loosening key is
-ignored with a visible notice. Loosening is the user's alone: flipping the toggle off, or editing
+paths, set `browser` to `"none"`. A loosening key (`browser: "headless-shell"` included) is
+ignored with a visible notice. The cache cleanup settings (§chat.sandbox/cache-cleanup) are not a
+project's to set either: a cleanup key in that file is ignored with the same notice. Loosening is the user's alone: flipping the toggle off, or editing
 the global policy file from outside the sandbox.
 
 ## §chat.sandbox/workers — Workers inherit
@@ -289,8 +366,8 @@ enforces independently. If the parent's sandbox is unavailable, or `partial` wit
 probe fails after it starts, every tool it calls refuses; it never runs unsandboxed. A worker gets exactly its parent's writable roots; its
 own cwd is not added. A pi worker started inside one of the session's tracked worktrees gets
 only that worktree instead (§chat.worktrees/workers). A worker is also held to its parent's
-hidden list and its proxy and environment allowlists, whatever the policy file of its own agent
-dir says. Any worker, pi or Claude Code, whose cwd is outside those roots is refused
+hidden list, its proxy and environment allowlists and its `browser` setting, whatever the
+policy file of its own agent dir says. Any worker, pi or Claude Code, whose cwd is outside those roots is refused
 at spawn with a message naming the sandbox. A worker started with `--sandbox on` cannot lower
 it: its `/sandbox off` and `/sandbox subagents` refuse, so the parent's agent cannot switch it
 off by sending the command as a steer. A parent that is not on confines a worker only under
@@ -370,6 +447,14 @@ These are the gaps the sandbox leaves, each named so that nobody relies on it th
 - **macOS tools that ignore the environment.** A tool that writes a fixed temp or cache path
   instead of honouring `TMPDIR` or the cache variables fails under the sandbox there.
 - **The user's own `!` commands** are not confined.
+- **With `browser` on, Chrome's own sandbox is off** (§chat.sandbox/what-on-enforces): its
+  renderer and GPU processes run with the worker's own rights, so an exploit in web content it
+  loads can read what the worker reads and write where it writes. Any confined process may also
+  open the power-management user client and claim a Chromium rendezvous name, which can make a
+  host Chromium-branded browser fail to start. Only the headless shell is supported. Under On
+  nothing can listen on a TCP port, so a browser driven over `--remote-debugging-port` (the
+  Playwright skill's start script) works only under Subagents only; under On drive it over
+  Playwright's default pipe within one `bash` call.
 - **A write-only worker's view of the host `/tmp`** (Linux, §chat.worktrees/workers) masks the
   Unix sockets found there when its command or its process starts; a socket created later in
   `/tmp` is reachable from a worker already running. The kernel's list names a socket by the
@@ -377,3 +462,9 @@ These are the gaps the sandbox leaves, each named so that nobody relies on it th
   was bound from another network or mount namespace (a container, another sandbox's private
   `/tmp`) is masked only if the shallow scan finds it: directly in `/tmp` or one folder down,
   within the scan's first 4,096 entries.
+- **Freed cache space is "up to".** On a copy-on-write disk (Btrfs, APFS and the like), files that
+  share their blocks with others give back less than their size when removed, so the space a cache
+  cleanup reports freed (§chat.sandbox/cache-cleanup) is at most what the disk gained.
+- **Read-only use is protected best-effort.** The 48-hour read protection relies on the disk
+  recording read times. Where it does not (a `noatime` mount, for one), an entry that was only read, never written, may look older than it is
+  and be removed by age or size; the next use downloads or builds it again.

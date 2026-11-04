@@ -165,8 +165,11 @@ The server runs on Bun; Node only when the user asks (server guide). An agent ne
   every model).
 - Throwaway test sessions run on `zai/glm-5.3`. New web sessions default to a costlier model: set the
   model before the first prompt, and archive the session afterwards.
-- Never `git stash`, `checkout`, `reset` or `restore` in a worktree others share. Take baselines with
-  `git archive <rev> | tar -x -C ~/.cache/<name>`, never `git worktree add` (it writes the shared `.git`).
+- Never `git stash`, `checkout`, `reset` or `restore` in a worktree others share. Take baselines in
+  your worktree's gitignored `.cache/`: `mkdir -p .cache/<name> && git archive <rev> | tar -x -C
+  .cache/<name>`, and delete it when done; never `git worktree add` (it writes the shared `.git`). Never
+  `~/.cache`: inside the sandbox that is a private copy shared by every sandboxed chat, which nobody
+  outside it sees. Throwaway files go in the temp dir (`$TMPDIR`, else `/tmp`).
 - Run `mise trust <worktree>` in a fresh worktree before any node/pnpm command (again after a
   `mise.toml` change).
 - Retire a worker past 50% of its context window: have it write a checkpoint, then hand off to a fresh

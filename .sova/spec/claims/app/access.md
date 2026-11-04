@@ -194,7 +194,8 @@ Every caller keeps working with no new step for the person:
   runtime without the flag sends none, as before.
 - **Extension UIs** served at `/ext` are the same origin as the app and ride the same cookie.
 - **Extension backends** never see it: a request proxied to one loses every `sova_token_*`
-  cookie, `x-sova-token`, a chat's key in `x-sova-caller`, and an `Authorization` that carries
+  cookie, `x-sova-token`, a chat's key in `x-sova-caller`, the Overseer's sender mark
+  `x-sova-overseer` and its card header `x-sova-overseer-card`, and an `Authorization` that carries
   the token, while its other cookies and headers (an extension's own `Authorization` included,
   unless it carries an extension's key) pass through. A backend that calls this server back sends
   its own key (§app.extensions/backend-key), and every such call is recorded as its extension's;
@@ -214,7 +215,8 @@ Every caller keeps working with no new step for the person:
   minted a token says to start it once and exits nonzero; it never starts the server. `open` is
   `sova app`, what the app entry runs (§app.installer/app-entry): it starts the server when nothing
   answers on the port, then opens `http://127.0.0.1:<PORT, else the install's port>/#t=<token>` in
-  a bare app window of a Chromium-family browser, or as a tab of the default browser when there is
+  a bare app window of a Chromium-family browser (on macOS, Sova's installed app of its own when
+  there is one, §app.installer/mac-app), or as a tab of the default browser when there is
   none. Plain `sova` serves on that same port. With neither such a browser nor a browser opener
   (`open` on macOS, `xdg-open`), `open` says to paste the token from `sova token` into the page
   and exits nonzero.

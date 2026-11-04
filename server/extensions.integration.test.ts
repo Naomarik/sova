@@ -165,6 +165,24 @@ describe("HTTP proxy", () => {
     assert.equal(seen.authorization, undefined);
   });
 
+  test("the Overseer's sender mark and card header never reach the backend, in-process or over the socket", async () => {
+    writeManifest([stub()]);
+    const { senderSecret, OVERSEER_SENDER_HEADER, OVERSEER_CARD_HEADER } = await import("./overseer-sender");
+    const card = JSON.stringify({ sessions: ["s1"], people: [], projects: [] });
+    const sent = { [OVERSEER_SENDER_HEADER]: senderSecret(), [OVERSEER_CARD_HEADER]: card, "x-custom": "kept" };
+    const inProcess = ((await (await app.request("/ext/stub/api/echo", { method: "POST", headers: sent, body: "{}" })).json()) as { headers: Record<string, string> }).headers;
+    // Over the real socket the gate wants the token (dropped too, as above).
+    const real = await fetch(`http://127.0.0.1:${sovaPort()}/ext/stub/api/echo`, { method: "POST", headers: { ...sent, "x-sova-token": sovaToken() }, body: "{}" });
+    assert.equal(real.status, 200);
+    const socket = ((await real.json()) as { headers: Record<string, string> }).headers;
+    for (const [how, seen] of [["in-process", inProcess], ["socket", socket]] as const) {
+      assert.equal(seen[OVERSEER_SENDER_HEADER], undefined, `${how}: no sender mark`);
+      assert.equal(seen[OVERSEER_CARD_HEADER], undefined, `${how}: no card header`);
+      assert.equal(JSON.stringify(seen).includes(senderSecret()), false, `${how}: the secret appears nowhere`);
+      assert.equal(seen["x-custom"], "kept", `${how}: other headers pass`);
+    }
+  });
+
   test("a backend status passes through; an api prefix is kept", async () => {
     writeManifest([{ ...stub(), api: `http://127.0.0.1:${backendPort}/pre` }]);
     const res = await app.request("/ext/stub/api/teapot");

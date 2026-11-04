@@ -76,11 +76,11 @@ Limits: 3 chips per extension and 6 under a reply; 1 chip per extension and 2 on
 ## Its own commands
 
 - Change: named actions of the extension that scripts, chips and menus can run.
-- Lives: `commands` in its manifest entry, each `{name, label, summary?, params?, menu?}`. Each is listed as `ext.<id>.<name>` and reaches the backend at `POST /api/commands/<name>`.
+- Lives: `commands` in its manifest entry, each `{name, label, summary?, params?, menu?, overseer?, description?, job?}`. Each is listed as `ext.<id>.<name>` and reaches the backend at `POST /api/commands/<name>`. `overseer: true` gives the command to the Overseer, which runs it only when the person asked in their own message; `description` (at most 1,000 characters) tells it what the command does; `job: true` means the command answers at once and reports later. The person stops them by turning the extension off: there is no switch per command.
 - Approves: nobody.
 - By: OK.
 - Live: now, while its entry is installed.
-- Check: it's listed in `GET /api/commands`, and running it reaches the backend.
+- Check: it's listed in `GET /api/commands`, and running it reaches the backend. A command marked for the Overseer is listed in About the Overseer, the (i) in its head.
 
 ## Its backend's key
 

@@ -483,7 +483,8 @@
       "§app.chat-processes/idle-stop",
       "§app.load-priority/workers",
       "§app/worker-restore",
-      "§app.mcp/who-gets"
+      "§app.mcp/who-gets",
+      "§chat/kill-guard"
     ],
     "agreed": {
       "by": "user",

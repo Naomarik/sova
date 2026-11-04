@@ -28,6 +28,18 @@ export interface TourChild {
   dispose(): Promise<void>;
 }
 
+/**
+ * macOS only: a private temp folder short enough for Chromium's named Unix sockets (browser.ts) and
+ * the attempt's proxy socket, which goes beside its tmp. The default there (/var/folders/…, and a
+ * confined attempt's pi-sandbox-<uid>/<session>-tool-<uuid>/tmp below it) never fits Chromium's, and
+ * macOS has no private /tmp to mount as on Linux. Undefined elsewhere, or
+ * when /tmp can't be used: the attempt then keeps the default and the path check refuses it clearly.
+ */
+export function macRecordingTmp(platform = process.platform): string | undefined {
+  if (platform !== "darwin") return undefined;
+  try { return mkdtempSync("/tmp/st-"); } catch { return undefined; }
+}
+
 /** Launch the entire controller/browser under the requesting tool's effective policy. */
 /**
  * `proxy`: the attempt's own proxy inside the sandbox (sandbox on). `ownProxy`: a sandbox-off
@@ -49,12 +61,15 @@ export async function spawnTourCommand(context: TourRecordingContext, argv: read
   let fds: { fd: number; data: string }[] = [];
   let dispose = async () => {};
   if (context.sandbox.on) {
+    const short = macRecordingTmp();
     const prepared = await prepareSessionCommand({
       agentDir: context.agentDir, cwd: context.cwd, sessionId: context.sessionId,
+      // Its own child, since the attempt's profile sits beside the tmp and dispose removes the parent.
+      ...(short ? { tmpDir: join(short, "t") } : {}),
       worktreeRoots: context.sandbox.worktreeRoots, parent: context.sandbox.parent, home: context.home,
       ...(context.sandbox.cwdWritable === false ? { cwdWritable: false } : {}),
     }, command, { env: attribution, ...(proxy ? { proxy } : {}) });
-    if (!prepared.ok) throw new Error(`Recording refused: sandbox unavailable (${prepared.error}). Nothing ran.`);
+    if (!prepared.ok) { if (short) rmSync(short, { recursive: true, force: true }); throw new Error(`Recording refused: sandbox unavailable (${prepared.error}). Nothing ran.`); }
     command = prepared.value.argv;
     env = prepared.value.env;
     fds = prepared.value.fds ?? [];
@@ -62,7 +77,7 @@ export async function spawnTourCommand(context: TourRecordingContext, argv: read
   } else {
     // The parent owns even an unconfined attempt's temporary tree, so a killed controller
     // cannot leave its profile behind. The confined backend owns its private tmp instead.
-    const root = mkdtempSync(join(tmpdir(), "st-"));
+    const root = macRecordingTmp() ?? mkdtempSync(join(tmpdir(), "st-"));
     env.TMPDIR = root;
     for (const k of ["HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy"]) delete env[k];
     if (ownProxy) { env.HTTPS_PROXY = ownProxy; env.HTTP_PROXY = ownProxy; }

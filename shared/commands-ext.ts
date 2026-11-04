@@ -71,6 +71,43 @@ export function extCommand(extId: string, raw: unknown): ExtCommandEntry | null 
   };
 }
 
+/** A command's `description` for a model (ext-contract-v1.18): at most this many characters. */
+export const DESCRIPTION_MAX = 1000;
+
+/** What a command declares for the Overseer (ext-contract-v1.18, §app.overseer/extension-commands). */
+export interface ExtOverseerKeys {
+  /** `overseer: true`: the Overseer may run it while its extension is running (nothing to switch on). */
+  overseer?: true;
+  /** Text for a model, 1–DESCRIPTION_MAX characters; line breaks allowed, no other control character. */
+  description?: string;
+  /** `job: true`: running it starts a job the extension reports on (202 {job: {id}}). */
+  job?: true;
+  /** The keys left out for a bad value (each alone; the command always stays). */
+  dropped: string[];
+}
+
+/** One declared command's v1.18 keys, each read on its own: a bad value leaves out only that key.
+    Absent keys are absent; nothing here can drop the command (extCommand decides that). */
+export function extOverseerKeys(raw: unknown): ExtOverseerKeys {
+  const out: ExtOverseerKeys = { dropped: [] };
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return out;
+  const r = raw as Record<string, unknown>;
+  if (r.overseer !== undefined) {
+    if (r.overseer === true) out.overseer = true;
+    else if (r.overseer !== false) out.dropped.push("overseer");
+  }
+  if (r.job !== undefined) {
+    if (r.job === true) out.job = true;
+    else if (r.job !== false) out.dropped.push("job");
+  }
+  if (r.description !== undefined) {
+    const d = r.description;
+    if (typeof d === "string" && d.trim().length > 0 && d.length <= DESCRIPTION_MAX && !/[\u0000-\u0009\u000b-\u001f\u007f]/.test(d)) out.description = d.trim();
+    else out.dropped.push("description");
+  }
+  return out;
+}
+
 /** Every valid extension command in an extensions.json document, in manifest order. An entry
     with a bad id, a second entry with a taken id, a bad command and a second command with a taken
     name are each left out alone. Anything that isn't `{version: 1, extensions: [...]}` is none. */

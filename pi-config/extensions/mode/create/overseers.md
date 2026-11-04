@@ -42,12 +42,12 @@ The project ones need a project: in a folder that isn't one, offer Add as Projec
 
 ## The Overseer
 
-- Change: its proactivity, model and thinking, its 8 limits, quick actions, standing notes, idea explorer, extra instructions, and whether it resumes interrupted runs.
+- Change: its proactivity, model and thinking, its 9 limits, quick actions, standing notes, idea explorer, extra instructions, and whether it resumes interrupted runs.
 - Lives: this computer. It doesn't spread.
 - Approves: the person, by Apply or Save Changes.
 - By: Card or Screen. The Sova-wide setting `overseer.global`, or Settings → Overseer. Standing notes have no card: they're on that tab.
 - Live: the model when it's idle, or at the end of its turn; notes and instructions from its next run.
-- Check: Settings → Overseer shows them.
+- Check: Settings → Overseer shows them. About the Overseer, the (i) in its head, lists its abilities, its limits and the extension commands it may run (an extension's own, the `extensions` topic).
 
 ## Approvals the Overseer holds
 

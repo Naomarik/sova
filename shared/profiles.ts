@@ -428,7 +428,9 @@ export function profileSentence(p: Pick<Profile, "label" | "remove" | "grant">, 
         ? "reads all Sova sessions"
         : "reads sessions in its project"
       : "";
-  const off = p.remove.filter((r) => r !== "workers" || p.remove.length === 1).map((r) => CAPABILITY_LABEL[r]);
+  // Workers go unsaid only where another removal took them: MCP Servers doesn't, so they were switched off by hand.
+  const took = p.remove.some((r) => r !== "workers" && takesWorkers(r));
+  const off = p.remove.filter((r) => r !== "workers" || !took).map((r) => CAPABILITY_LABEL[r]);
   const tools = kept !== undefined && total !== undefined ? `keeps ${kept} of ${total} tools` : "";
   const withOff = off.length ? ` with ${off.join(", ")} off` : "";
   const parts = [powers, tools ? `${tools}${withOff}` : off.length ? `has ${off.join(", ")} off` : ""].filter(Boolean);

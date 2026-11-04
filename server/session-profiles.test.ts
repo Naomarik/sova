@@ -19,6 +19,7 @@ const {
   isCapabilityNeutral,
   keyOf,
   lockedReason,
+  profileSentence,
   normalizeCaps,
   parseProfile,
   profileFileError,
@@ -85,6 +86,10 @@ describe("the model", () => {
     assert.deepEqual(normalizeCaps(["mcp"], []), { remove: ["mcp"], grant: [] }, "removing only MCP Servers leaves Workers alone");
     assert.deepEqual(normalizeCaps(["web", "mcp"], []), { remove: ["workers", "web", "mcp"], grant: [] }, "any other removal behaves as before");
     assert.equal(lockedReason("workers", ["mcp"]), null, "Workers can be switched with only MCP Servers off");
+    const words = (remove: ("workers" | "mcp" | "web")[]) => profileSentence({ label: "P", remove, grant: [] });
+    assert.match(words(["workers", "mcp"]), /Workers & teams, MCP Servers off/, "Workers off by hand are said");
+    assert.match(words(["workers"]), /has Workers & teams off/);
+    assert.ok(!words(["workers", "web"]).includes("Workers"), "taken by a removal, they go unsaid, as before");
     assert.match(lockedReason("workers", ["web", "mcp"]) ?? "", /Workers would get every tool back/);
     assert.deepEqual(normalizeCaps(["nope", "shell"], ["root"]), { remove: ["shell", "workers"], grant: [] });
     assert.equal(lockedReason("workers", ["web", "workers"]), "Workers would get every tool back, so removing anything removes them too.");

@@ -25,7 +25,7 @@ import { parseTargetCwd } from "./targets";
 import { firstText, headerOf, joinedText, lineEntry, lineMay, toHEntry } from "./harness/pi/reader";
 import { contextStep } from "./harness/pi/usage";
 import { type AlignScan, readAlignScan } from "./align-state";
-import { WorkerSessions } from "./worker-sessions";
+import { type WorkerParents, WorkerSessions } from "./worker-sessions";
 import { isOverseerId, overseerDir } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
 import { readSignals, type SignalsFile, signalsOverlay, withoutRestartAsk } from "./signals-store";
@@ -142,9 +142,9 @@ const cache = new Map<string, CacheEntry>();
 const workerSessions = new WorkerSessions({ idOf: (p) => idOf(p) });
 /** The session that runs worker `path` (worker-sessions.ts parentOf), from the last listing's scans; null: none known. */
 /** SessionSummary.workerOf for a worker's row: its parent and name, from what the worker scan already read. */
-function workerOfField(path: string): Pick<SessionSummary, "workerOf"> {
+function workerOfField(path: string, parents: Pick<WorkerParents, "workerOf"> = workerSessions): Pick<SessionSummary, "workerOf"> {
   try {
-    const w = workerSessions.workerOf(path);
+    const w = parents.workerOf(path);
     return w ? { workerOf: { id: idOf(w.parent), path: w.parent, ...(w.name ? { name: w.name } : {}) } } : {};
   } catch {
     return {};
@@ -756,6 +756,8 @@ function gistChanged(path: string): void {
 /** Session-file syscalls of the listing's own reads (tests, measurement): stats of a file it may
     summarize, and opens of one it reads. The align and worker scans keep their own. */
 export const listIo = { stats: 0, opens: 0 };
+/** Readings of worker parents so far: one per listing, however many worker rows it has. */
+export const workerParentReadings = () => workerSessions.parentReadings;
 
 async function summarize(path: string, resolveWindow?: WindowResolver): Promise<BaseSummary | null> {
   let st;
@@ -1214,6 +1216,7 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
   const present = new Set(files);
   for (const k of cache.keys()) if (!present.has(k)) cache.delete(k);
   const out: SessionSummary[] = [];
+  const parents = workerSessions.parents();
   for (const s of results) {
     if (!s) continue;
     // Empty husks — no user message anywhere in the file — are never listed, so abandoned
@@ -1248,7 +1251,7 @@ async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<strin
       workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),
       origin: isWebSession(s.id) ? "web" : "external",
       archived: isArchived(s.id),
-      ...(workers.has(s.path) ? { workerSession: true as const, ...workerOfField(s.path) } : {}),
+      ...(workers.has(s.path) ? { workerSession: true as const, ...workerOfField(s.path, parents) } : {}),
       ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
       ...heldChatField(s.path),

@@ -76,7 +76,7 @@ import { OVERSEER_SENDER_HEADER, overseerSender, senderSecret } from "./overseer
 
 import { onSessionPrompted, pathOfId, promptSession, sessionActivity, toolCatalogue, type PromptDelivery, type PromptResult } from "./session-prompt";
 import { contactRedactor } from "./overseer-org-view";
-import { CARDS_NOTE_MESSAGE, cardsNote, clickItems, foldCards, matchCardClick } from "../shared/overseer-card";
+import { CARDS_NOTE_MESSAGE, cardsNote, clickContext, type ClickContext, clickItems, foldCards, matchCardClick } from "../shared/overseer-card";
 import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type Permit, permitFromClick, RULE_ENTRY, type RuleEntry, sessionsText } from "../shared/overseer-grants";
 import { readAliases, sessionName, setAlias } from "./session-names";
 import { RESUME_DELAY_MS, type ResumeDeps, resumeInterrupted } from "./auto-resume";
@@ -498,7 +498,8 @@ async function applySettingsNow(): Promise<void> {
   // record the new model — three info rows before the first message. A reopen seeds the runtime
   // from overseer.json directly (chat-manager createRuntime), so the file only ever records the
   // chosen model, at the first prompt. Open tabs get "reloaded" and reconnect.
-  const untouched = !(await chat.entries()).some(sentOrSet);
+  // Pristine first: a used conversation can be any size, and one with no message yet is a few lines.
+  const untouched = chat.mirror.pristine && !(await chat.entries()).some(sentOrSet);
   if (untouched) {
     await closeChat(chat.path, "The Overseer's model changed; reopening it.");
     return;
@@ -775,15 +776,14 @@ export function confirmedItems(card: string | null, branch: readonly HEntry[]): 
  * must carry `later` or `rule`. `all` is the whole file (numbering, one write per click). Pure.
  */
 export function permitOnClick(card: string | null, branch: readonly HEntry[], all: readonly HEntry[], now = new Date().toISOString()): ReturnType<typeof permitFromClick> {
-  if (!card) return undefined;
-  let last = branch.length - 1;
-  while (last >= 0 && branch[last]!.kind !== "user") last--;
-  const message = branch[last]?.id;
-  if (last < 0 || !message || clickWrote(all, message)) return undefined;
-  const c = foldCards(branch.slice(0, last)).find((x) => x.id === card);
-  if (!c || c.phase !== "open") return undefined;
-  const click = matchCardClick(c, joinedText(branch[last]!, { images: false }).trim());
-  return click ? permitFromClick(c, click, all, message, now) : undefined;
+  return card ? permitOfClick(clickContext(card, branch), all, now) : undefined;
+}
+
+/** permitOnClick from a click's facts. `all` may hold the state entries alone. */
+function permitOfClick(ctx: ClickContext | null, all: readonly HEntry[], now = new Date().toISOString()): ReturnType<typeof permitFromClick> {
+  if (!ctx || clickWrote(all, ctx.message.id)) return undefined;
+  const click = matchCardClick(ctx.card, joinedText(ctx.message, { images: false }).trim());
+  return click ? permitFromClick(ctx.card, click, all, ctx.message.id, now) : undefined;
 }
 
 /** "any act on these 3 sessions until 6:00 PM" / "rule: <text>". */
@@ -792,13 +792,32 @@ export function permitLabel(p: Permit): string {
   return `${p.card} ${p.option}: "${p.text}" (${actsText(p.acts)} on ${sessionsText(p.sessions)})`;
 }
 
-/** The Overseer file's entries: the held runtime's, else read from disk. */
+/** The state entries the approvals are folded from: a poll reads this, so it never carries the transcript. */
+const PERMIT_KEYS = [GRANT.type, RULE.type, REVOKE.type, GRANT_USE.type];
+
+/** A chat's approval entries. A chat still on older code has no stateEntries: it answers with everything. */
+async function permitEntries(chat: ChatHandle): Promise<{ branch: readonly HEntry[]; all: readonly HEntry[] }> {
+  try {
+    return await chat.stateEntries(PERMIT_KEYS);
+  } catch {
+    return { branch: await chat.branch(), all: await chat.entries() };
+  }
+}
+
+/** The approval or rule a click on `card` writes, reading the chat's branch only where it runs. */
+async function permitOfChat(chat: ChatHandle, card: string): Promise<ReturnType<typeof permitFromClick>> {
+  const { all } = await permitEntries(chat);
+  const ctx = await chat.clickContext(card).catch(async () => clickContext(card, await chat.branch()));
+  return permitOfClick(ctx, all);
+}
+
+/** The Overseer file's approval entries: the held runtime's, else read from disk. */
 async function overseerEntries(): Promise<{ path: string; branch: readonly HEntry[]; all: readonly HEntry[] } | null> {
   const st = readOverseerState();
   const path = st ? await pathOfId(st.current) : null;
   if (!path) return null;
   const chat = chatHandle(path);
-  if (chat) return { path, branch: await chat.branch(), all: await chat.entries() };
+  if (chat) return { path, ...(await permitEntries(chat)) };
   const { entries } = parsePi(await readFile(path, "utf8").catch(() => ""));
   return { path, branch: branchOf(entries), all: entries };
 }
@@ -1220,9 +1239,8 @@ registerSpecialHost({
           setImmediate(() => {
             const chat = chatHandle(path);
             if (!chat) return done();
-            void Promise.all([chat.branch(), chat.entries()])
-              .then(([branch, entries]) => {
-                const w = permitOnClick(card, branch, entries);
+            void permitOfChat(chat, card)
+              .then((w) => {
                 if (!w) return;
                 return w.type === RULE_ENTRY ? chat.appendState(RULE, w.data) : chat.appendState(GRANT, w.data);
               })

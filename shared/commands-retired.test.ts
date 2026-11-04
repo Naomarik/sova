@@ -22,5 +22,5 @@ test("a retired id is listed once, and never also as a live id", () => {
 
 test("the retired ids stay listed", () => {
   // Each removal appends here; deleting one is deleting an id ever shipped.
-  for (const id of ["settings.agents.get"]) assert.ok(retired.includes(id), `${id} was retired and must stay listed`);
+  for (const id of ["settings.agents.get", "session.tags.backfill", "session.tags.backfill.status", "session.tags.backfill.cancel"]) assert.ok(retired.includes(id), `${id} was retired and must stay listed`);
 });

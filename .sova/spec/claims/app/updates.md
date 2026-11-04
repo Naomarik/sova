@@ -255,5 +255,12 @@ The banner says "A newer Sova is available." and "Reload when you're ready.", th
 the mesh on or off, with **Reload Tab**, which reloads the page, and **Dismiss**, which hides it
 until the next change. A different wire protocol
 shows the banner's warning instead, with Reload Tab and no Dismiss. There is no other notice: no
-note in a corner of the page. Chats move to the new code when they're idle, as after any restart
-(§app/chat-processes).
+note in a corner of the page. A card that can't load its code because Sova changed under the page
+also points to the update: its box asks for a page reload (§chat.transcript-cards/toolkit), and the
+page checks for the banner at that moment too. Chats move to the new code when they're idle, as
+after any restart (§app/chat-processes).
+
+Sova keeps no previous build's files. A request for an app code file under `/assets/` that this
+build doesn't have is answered "not found", never with the app's page in its place, on the main
+listener and the share listener alike (§app.baton/share-listener); every other app page address
+still opens the app.

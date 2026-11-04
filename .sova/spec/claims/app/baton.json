@@ -537,9 +537,9 @@
       "§app/tours"
     ],
     "agreed": {
-      "by": "omar (user)",
-      "at": "2026-10-25T16:19Z",
-      "source": "pi-session:01a173c3-7183-70d4-a656-e47ab7fd7392#93a64791"
+      "by": "user",
+      "at": "2026-11-03T20:00Z",
+      "source": "pi-session:f7abf7a7-3c8a-4801-a5d7-0e26b8fc21c6#019641ba"
     }
   },
   "§app.baton/strip-layout": {

@@ -8,8 +8,11 @@ import { rowId } from "./ids";
 import type { McpFolder } from "./places";
 import { baseOf, refusalOf, sourceOf } from "./resolve";
 import { toolTokens } from "./rows";
-import { readRow, recordOf, type McpCheckRecord } from "./store";
+import type { McpChatList, McpChatServer } from "./list-shape";
+import { readRow, recordOf } from "./store";
 import { isApproved, type McpOwner } from "./trust";
+
+export { NO_MCP, normalizeChatList, type McpChatList, type McpChatServer } from "./list-shape";
 
 /**
  * Address servers don't run in a chat yet: pi's HTTP transport needs @earendil-works/pi-mcp as a direct dependency
@@ -17,24 +20,6 @@ import { isApproved, type McpOwner } from "./trust";
  * one is the seam in server/harness/pi/mcp.ts.
  */
 export const ADDRESS_SERVERS_IN_CHATS = false;
-
-/** One server of a chat's list. */
-export interface McpChatServer {
-  id: string;
-  name: string;
-  owner: McpOwner;
-  kind: "command" | "address";
-  version: string;
-  /** The record with the tools that were on when the list was made. */
-  record: McpCheckRecord;
-}
-
-export interface McpChatList {
-  v: 1;
-  servers: McpChatServer[];
-}
-
-export const NO_MCP: McpChatList = { v: 1, servers: [] };
 
 export interface McpChoice {
   offMcp?: readonly string[];
@@ -110,12 +95,4 @@ export function workerListOf(list: McpChatList, names: readonly string[], chat: 
   const unknown = names.find((n) => !have.includes(n));
   if (unknown !== undefined) return { refused: `${chat}'s servers are ${have.length ? have.join(", ") : "none"}, so a worker can't have ${unknown}.` };
   return { list: { v: 1, servers: list.servers.filter((s) => names.includes(s.name)) } };
-}
-
-/** A list as session state: anything else is no list. */
-export function normalizeChatList(v: unknown): McpChatList | null {
-  const d = v as Partial<McpChatList> | null;
-  if (!d || d.v !== 1 || !Array.isArray(d.servers)) return null;
-  const good = d.servers.every((s) => s && typeof s.name === "string" && typeof s.id === "string" && typeof s.version === "string" && s.owner && s.record && Array.isArray(s.record.tools));
-  return good ? { v: 1, servers: d.servers } : null;
 }

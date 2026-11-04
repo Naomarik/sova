@@ -36,6 +36,7 @@ export function startSignIn(ref: RowRef): Run {
   runs.set(id, run);
   const timer = setTimeout(() => run.stop(), SIGN_IN_MS);
   let out = "";
+  let finished = false;
   const clean = (s: string) => withoutSecrets(s, ready.values);
   child.stdout.on("data", (c: Buffer) => {
     out += c.toString("utf8");
@@ -51,7 +52,10 @@ export function startSignIn(ref: RowRef): Run {
       if (m.t === "url" && m.url) {
         run.state = { state: "waiting", url: m.url };
         gotUrl();
-      } else if (m.ok === true) void checkServer(ref.owner, ref.name).then(() => void (run.state = { state: "checked" }));
+      } else if (m.ok === true) {
+        finished = true;
+        void checkServer(ref.owner, ref.name).then(() => void (run.state = { state: "checked" }));
+      }
       else if (m.ok === false) {
         run.state = { state: "failed", error: clean(m.error ?? "The sign-in didn't finish.") };
         gotUrl();
@@ -60,7 +64,7 @@ export function startSignIn(ref: RowRef): Run {
   });
   child.on("close", () => {
     clearTimeout(timer);
-    if (run.state.state === "starting" || run.state.state === "waiting") run.state = { state: "failed", error: "The sign-in stopped." };
+    if (!finished && (run.state.state === "starting" || run.state.state === "waiting")) run.state = { state: "failed", error: "The sign-in stopped." };
     gotUrl();
   });
   return run;

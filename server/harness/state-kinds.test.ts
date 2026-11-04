@@ -262,6 +262,8 @@ const tree = { path: "/w/t", branch: "b", base: "main", session: "s1", at: ISO, 
 
 /** Each type's samples, well-formed and not. */
 const SAMPLES: Record<string, unknown[]> = {
+  "sova-mcp-list": [{ v: 1, servers: [{ id: "a", name: "s", version: "1", owner: { kind: "computer" }, kind: "command", record: { tools: [] } }] }, { v: 1, servers: [{}] }, { servers: [] }],
+  "sova-mcp-note": [{ server: "s", how: "failed", reason: "r" }, { server: "" }],
   "sova-rewind": [{ targetId: "aaaa0001", fromLeafId: "aaaa0002" }, { targetId: "aaaa0003" }, null, "x", { targetId: 5, fromLeafId: [] }],
   "sova-topic-delivered": [{ v: 1, targetId: "aaaa0001", topic: "t", batch: 1, items: [] }],
   "sova-fanout-member": [{ v: 1 }, null],
@@ -499,6 +501,8 @@ describe("the state kind registry", () => {
       "sova-fork-cache extension:subagents file-list",
       "sova-link-member sova marker",
       "sova-loadout sova newest-on-branch",
+      "sova-mcp-list sova newest-on-branch",
+      "sova-mcp-note sova branch-list",
       "sova-memory sova newest-on-branch",
       "sova-overseer sova presence",
       "sova-overseer-dialog-answer sova branch-list",

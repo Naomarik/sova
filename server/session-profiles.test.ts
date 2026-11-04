@@ -140,7 +140,7 @@ describe("the model", () => {
     assert.deepEqual((parseProfile({ id: "only-links", label: "L", remove: ["links"] }) as Profile).remove, []);
     // Still a typo next to it is an error, naming only the typo and the names that exist today.
     const err = profileFileError({ ...CAPTAIN, remove: ["links", "linkz"] }) ?? "";
-    assert.match(err, /unknown name "linkz"\. Known: shell, edit, workers, web, worktrees, timers\.$/);
+    assert.match(err, /unknown name "linkz"\. Known: shell, edit, workers, web, worktrees, timers, mcp\.$/);
   });
 
   test("parseProfile refuses bad ids and names, and clamps limits to whole numbers from 1", () => {

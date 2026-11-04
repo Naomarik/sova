@@ -47,7 +47,7 @@ import {
   type UseEntry,
 } from "../../shared/overseer-grants";
 import { LINK_MEMBER_ENTRY, type LinkMemberData } from "../../shared/mesh-links";
-import { normalizeChatList, type McpChatList } from "../mcp/list";
+import { normalizeChatList, type McpChatList } from "../mcp/list-shape";
 import type { McpNote } from "../../shared/mcp";
 import { PROFILE_ENTRY, RETIRED_REMOVABLE, SESSION_SENT_ENTRY, type ProfileEntryData, type SessionSentData } from "../../shared/profiles";
 import { PROJECT_OVERSEER_ENTRY, type ProjectOverseerMarkerData } from "../../shared/project-overseer";

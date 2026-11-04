@@ -13,6 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { after, describe, test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { loadPi } from "./testing/load-pi.ts";
 import { STANDIN_FILTER } from "./headless.ts";
 import { packageFrom, patchResolve } from "./own-code.ts";
@@ -1032,6 +1033,61 @@ describe("pi contract", () => {
     assert.deepEqual(methods.slice(0, 3), ["initialize", "notifications/initialized", "tools/list"], "what a connect asks, in order");
     assert.deepEqual(methods.slice(3), ["tools/call"], "a call is the only other thing it sends");
     await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+    session.dispose();
+  });
+
+  test("P32 mcp-status-text: /mcp's status lines read as readStatus matches them, and a tool's label holds its server and raw name", async () => {
+    const { readStatus } = await import("./mcp-check");
+    const seen: { name: string; label?: string }[] = [];
+    const factory = pi.agent.createMcpExtension({ loadConfig: () => onlyConfig as never, createTransport: () => answeringTransport([{ name: "t", inputSchema: { type: "object" } }], []) as never });
+    const wrapped = (api: any) => factory(new Proxy(api, { get(t, k) { if (k === "registerTool") return (d: never) => (seen.push(d), t.registerTool(d)); const v = t[k]; return typeof v === "function" ? v.bind(t) : v; } }));
+    const { session } = await quirkSession({ extensions: [wrapped] });
+    const notes: string[] = [];
+    await session.bindExtensions({ uiContext: { notify: (t: string) => notes.push(t), setStatus() {}, select: async () => undefined, confirm: async () => false, input: async () => undefined, custom: async () => undefined, setWidget() {}, theme: {} } as never, mode: "rpc" as never });
+    const runner = session.extensionRunner;
+    const command = runner.getCommand("mcp")!;
+    await command.handler("", runner.createCommandContext());
+    assert.equal(readStatus("s", notes).state, "connected", notes.join("\n"));
+    assert.equal(seen[0]?.label, "s/t");
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "extensions", "mcp", "index.js"), "utf8");
+    assert.ok(source.includes("`${name}: needs sign-in, run /mcp login ${name} (${exposure})`"), "the needs-sign-in line");
+    assert.equal(readStatus("s", ["s: needs sign-in, run /mcp login s (direct)"]).state, "needs-sign-in");
+    assert.deepEqual(readStatus("s", ["s: failed (direct)\n    boom: no key"]), { state: "failed", errors: ["failed (direct)", "boom: no key"] });
+    session.dispose();
+  });
+
+  test("P33 mcp-auth-keys: pi's oauth store keys a server by its namespace and URL as forgetSignIn deletes it", () => {
+    const source = readFileSync(join(dirname(fileURLToPath(import.meta.resolve("@earendil-works/pi-coding-agent"))), "extensions", "mcp", "oauth.js"), "utf8");
+    assert.ok(source.includes("key: `${mcpNamespace(name)}|${legacyKey}`"), "the store's key");
+    assert.ok(source.includes("const legacyKey = String(new URL(serverUrl));"));
+  });
+
+  test("P34 mcp-registered-list: a server registered ahead of pi's session_start connects, and one swapped in before the first prompt is declared in it", async () => {
+    const empty = { errors: [], autoEnableCodemode: false, servers: [] };
+    const asked: string[] = [];
+    const inner = pi.agent.createMcpExtension({ loadConfig: () => empty as never, createTransport: (entry: { name: string }) => (asked.push(entry.name), answeringTransport([{ name: "t", inputSchema: { type: "object" } }], []) as never) });
+    const ext = (api: any) => {
+      let waited: Promise<void> | undefined;
+      api.on("session_start", async () => void api.registerMcpServer("first", { command: "x", exposure: "direct" }));
+      api.on("before_agent_start", async () => {
+        api.unregisterMcpServer("first");
+        api.registerMcpServer("second", { command: "x", exposure: "direct" });
+        waited = new Promise((r) => setTimeout(r, 50));
+        await waited;
+      });
+      inner(api);
+    };
+    const { session, model } = await quirkSession({ extensions: [ext as never] });
+    await session.bindExtensions({ uiContext: { notify() {}, setStatus() {}, select: async () => undefined, confirm: async () => false, input: async () => undefined, custom: async () => undefined, setWidget() {}, theme: {} } as never, mode: "rpc" as never });
+    while (!session.getAllTools().some((t: { name: string }) => t.name === "mcp__first__t")) await new Promise((r) => setTimeout(r, 1));
+    let declared: string[] = [];
+    model.reply(() => {
+      declared = session.agent.state.tools.map((t: { name: string }) => t.name).filter((n: string) => n.startsWith("mcp__"));
+      return { text: "done" };
+    });
+    await session.prompt("go");
+    assert.deepEqual(asked.sort(), ["first", "second"], "createTransport builds both");
+    assert.deepEqual(declared, ["mcp__second__t"], "the first request declares the swapped list");
     session.dispose();
   });
 

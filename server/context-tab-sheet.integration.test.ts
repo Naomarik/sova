@@ -253,7 +253,7 @@ for (const width of [390, 880, 1440]) {
       await page.locator(`[data-ctx-key="part:subfolder:${CWD}/src/AGENTS.md"]`).click();
       await page.locator(".context-sheet .md-viewer-doc .message-body").waitFor();
       assert.equal(await page.locator(".context-sheet-sub").first().innerText(), `${CWD}/src/AGENTS.md`);
-      assert.match(await page.locator(".context-sheet").innerText(), /Not counted yet\. It loads the first time the agent reads, edits or writes a file in src\/\./);
+      assert.match(await page.locator(".context-sheet").innerText(), /Not counted yet\. It loads the first time the agent reads, edits or writes a file in src\./);
       assert.equal(await page.locator(".context-sheet").getByRole("button", { name: "Source" }).count(), 1);
       await targetsOk(page, "a file");
       await noSideways(page, "a file");

@@ -161,7 +161,7 @@ describe("a part's row and reading", () => {
   test("the subtitle is the full path for a file or a skill, else the group's name; the notes", () => {
     assert.equal(partSubtitle(get("skills:skill:a"), { label: "Skills offered" }), "/s/a/SKILL.md");
     assert.equal(partSubtitle(get("tools:tool:read"), { label: "Tools" }), "Tools");
-    assert.match(partNote(get("subfolder:/p/web/AGENTS.md"))!, /^Not counted yet\. It loads the first time the agent reads, edits or writes a file in web\/\.$/);
+    assert.match(partNote(get("subfolder:/p/web/AGENTS.md"))!, /^Not counted yet\. It loads the first time the agent reads, edits or writes a file in web\.$/);
     assert.equal(partNote(get("subfolder:/p/api/AGENTS.md")), null);
     assert.match(partNote(get("skills:skill:b"))!, /only what the model is offered/);
     assert.equal(partNote(get("tools:tool:read")), null);

@@ -261,7 +261,7 @@ export const partSubtitle = (p: ContextPart, line: Pick<ContextLine, "label">): 
 /** A part's own note in the sheet, if any: when a file not yet loaded would load, or what a skill's
     size counts. Pure. */
 export function partNote(p: ContextPart): string | null {
-  if (p.group === "subfolder" && !p.loaded) return `Not counted yet. It loads the first time the agent reads, edits or writes a file in ${p.folder ?? ""}/.`;
+  if (p.group === "subfolder" && !p.loaded) return `Not counted yet. It loads the first time the agent reads, edits or writes a file in ${p.folder ?? ""}.`;
   if (p.group === "skills") return "Its size counts only what the model is offered: name and description. The full SKILL.md loads when the agent reads it, then counts under Conversation.";
   return null;
 }

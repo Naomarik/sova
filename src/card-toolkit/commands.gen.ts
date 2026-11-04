@@ -97,6 +97,7 @@ export type CommandId =
   | "project.verb.release.publish"
   | "project.verb.release.abandon"
   | "project.verb.release.withdraw"
+  | "project.verb.release.note"
   | "project.services.view"
   | "project.overseer.idea.list"
   | "project.overseer.idea.get"
@@ -2629,6 +2630,37 @@ export interface CommandParams {
     /** Dismiss the request */
     "dismiss"?: boolean;
   };
+  /** The project verb release.note, as the operator (sova-project release.note). (changes something; needs the card's owner trusted) */
+  "project.verb.release.note": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
   /** A project's Branches tab: its copies, their services and the supervisor. (only looks; needs the card's owner trusted) */
   "project.services.view": {
     /** The project's id */
@@ -3473,6 +3505,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.verb.release.publish": "changes",
   "project.verb.release.abandon": "changes",
   "project.verb.release.withdraw": "changes",
+  "project.verb.release.note": "changes",
   "project.services.view": "looks",
   "project.overseer.idea.list": "looks",
   "project.overseer.idea.get": "looks",

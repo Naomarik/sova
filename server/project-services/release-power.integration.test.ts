@@ -57,6 +57,8 @@ sh(repo.root, "tag", "-a", "v0.1.0", "-m", "First");
 sh(repo.root, "tag", "-a", "stable", "-m", "stable: v0.1.0");
 sh(repo.root, "push", "-q", "origin", "master", "v0.1.0", "stable");
 const def = { ...DEF, release: RELEASE } as unknown as ProjectDef;
+/** Each release chat's first message, in start order. */
+const firstMessages: string[] = [];
 const k = makeKit({ repo, deps: { definitionAt: async () => ({ def, error: null }), releaseEvent: (ev) => r.onQueueEvent(ev, ev.root) } });
 const r = new Releaser({
   dir: join(repo.state, "release"),
@@ -64,7 +66,8 @@ const r = new Releaser({
   rootOf: async (p) => (p.startsWith(repo.root) ? repo.root : null),
   definitionAt: async () => ({ def, error: null }),
   thread: {
-    async start() {
+    async start(i) {
+      firstMessages.push(i.text);
       return { id: "s-release", path: join(repo.state, "s-release.jsonl") };
     },
     async wake() {
@@ -155,6 +158,10 @@ describe("the release power (q12): start and publish after the waiting period, c
 
   test("S29: On, unattended: start waits its hold, then opens; publish of a ready release waits its hold, then publishes in one push", async () => {
     await settings({ powers: { overseer: { release: true } }, holdMin: 1 });
+    // The operator's Release Note, saved through the engine as the tab's route does; the power's start sends it.
+    const saved = (await projectEngine().run("release.note", { project: repo.root, text: "release as 0.2.0" }, op)) as { ok: boolean; release?: { view?: { note: { text: string } | null } } };
+    assert.equal(saved.ok, true);
+    assert.equal(saved.release?.view?.note?.text, "release as 0.2.0");
     const said = await overseer({ verb: "release.start", why: "lots landed" });
     assert.match(said, /held|waits|cancel/i, said);
     assert.equal(holds().length, 1, "the start waits in a hold");
@@ -165,6 +172,10 @@ describe("the release power (q12): start and publish after the waiting period, c
     const rec = await until(() => open(), "the power's release to open", 30_000);
     assert.equal(rec.startedBy, "power");
     assert.equal(holds().length, 0);
+    assert.ok(firstMessages.at(-1)!.endsWith("\n\n---\nrelease as 0.2.0"), "the power's start sends the operator's note last, after ---");
+    assert.equal(recOf(rec.id).note, "release as 0.2.0");
+    assert.equal((await call("release.status", {})).release!.view!.note, null, "the note is consumed by the start that sent it");
+    assert.equal((await r.run("release.note", { project: repo.root, text: "x" }, { kind: "project-overseer", id: "po", root: repo.root, act: async () => {}, releaseAct: true } as Caller)).error?.code, "forbidden", "never the overseer's");
 
     await prepare(rec.id, "0.2.0");
     await checksEnd(rec.id);

@@ -90,6 +90,8 @@ You can't tell another chat's OK from the person's: a message from either reache
 
 A program holding the token may pass as the person's word for `worktree land`, so a landing recorded from a typed word doesn't prove the person typed it.
 
+A chat's release refusal stops a chat calling Sova in its normal way, not a program deliberately posing as the person's terminal: Sova can't tell that from the person, the same limit as imitating the page.
+
 Restarting and updating Sova are an approval for every chat, but Sova's server can't stop a raw `systemctl`, `launchctl` or `kill` on this computer. You never use those on Sova.
 
 An installed Sova extension's page runs in Sova's own page, so what it does passes as the person's click and installing one is a trust decision: say so before their OK.

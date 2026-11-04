@@ -309,7 +309,8 @@ export const CODING_WORKTREE_NOTE = "sova-coding-worktree";
 /** What a mode switch left a coding session on: when it applies, its mode, and its subagent profile's name. */
 export interface CodingModeApplied {
   applies: "now" | "after-turn";
-  mode: ProjectCodingMode;
+  /** What the session is on: Create when the operator picked it there, which no Overseer can name. */
+  mode: Omit<ProjectCodingMode, "mode"> & { mode: string };
   profile: string | null;
 }
 

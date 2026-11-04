@@ -36,6 +36,7 @@ mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 
 const { testApp } = await import("./mesh/app-test-fixtures");
+const { pageHeaders } = await import("./testing/page");
 const app = await testApp();
 const { addWebSession } = await import("./web-sessions");
 const { canonicalPath } = await import("./paths");
@@ -77,7 +78,7 @@ const outsideState = () => `${treeHash(homedir(), [root, join(homedir(), ".cache
 
 interface Answer { status: number; body: unknown }
 async function sendTo(a: Hono, method: string, url: string, raw?: string): Promise<Answer> {
-  const res = await a.request(url, { method, ...(raw === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: raw }) });
+  const res = await a.request(url, { method, ...(raw === undefined ? {} : { headers: { "Content-Type": "application/json", ...pageHeaders() }, body: raw }) });
   const text = await res.text();
   let body: unknown = text;
   try { body = JSON.parse(text); } catch { /* not JSON: the judge says so */ }
@@ -277,6 +278,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.preview.off": "needs a minted preview, and minting connects to the port it shows",
   "project.worktree.merge": "a valid call needs a coding session of the project (its build row and git worktree), which only starting a coding session makes, and that starts its chat process",
   "project.worktree.remove": "a valid call needs a coding session of the project (its build row and git worktree), which only starting a coding session makes, and that starts its chat process",
+  "settings.cards.withdraw": "a valid call needs a Sova-wide card, which only a Create chat's sova_settings propose makes",
   "project.settings.propose.withdraw": "a valid call needs a settings card, which only the project overseer's sova_settings propose makes, in its chat",
   "usage.prices.refresh": "fetches the price list over the network; the in-process ledger here has prices off, so a valid call changes nothing",
   "push.test": "sends a real notification to every registered device",
@@ -291,7 +293,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.merge-queue.land-how.clear": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
   "project.folder.list": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
   "project.folder.read": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
-  "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the operator's browser or the token may)",
+  "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the user's own page may)",
   "chat.stop": "a valid call on an open chat drives its process; on a closed one it writes nothing, so no effect oracle can read it back",
   "chat.compact": "acquires a chat handle, which starts the chat's process",
   "chat.rewind": "acquires a chat handle, which starts the chat's process",
@@ -337,6 +339,7 @@ function anchors(c: CommandEntry): Anchor[] {
     pendingSetup.push(async () => { const d = join(root, `project-${++n}`); mkdirSync(d, { recursive: true }); v.pid = ((await sendTo(app, "POST", "/api/projects", JSON.stringify({ root: d }))).body as { project: { id: string } }).project.id; await sendTo(app, "GET", `/api/projects/${v.pid}/runtime`); });
     return [{ anchor: { pid: "no-such-project" }, refuse: true, kind: "refused" }, { anchor: v, refuse: false, kind: "real" }];
   }
+  if (c.id === "settings.cards.withdraw") return [{ anchor: { card: "sw_0" }, refuse: true, kind: "refused" }];
   if (c.id === "project.settings.undo" || c.id === "project.settings.propose.withdraw" || c.id === "project.overseer.settings.set") return [{ anchor: { pid: "no-such-project", card: "sc_1" }, refuse: true, kind: "refused" }, { anchor: withProject({ card: "sc_1" }), refuse: false, kind: "real", onlyWrongTypes: true }];
   // A folder that is no folder is refused whatever else the body says; one already registered (in the set-up) is the
   // route's own 409 after its checks of the body, so each case meets them and none registers a project.
@@ -755,6 +758,7 @@ const FIXTURES: Record<string, Fixture> = {
     oracle: async (_b, v) => assert.equal(((await read("GET", `/api/session-cards?path=${encodeURIComponent(String(v.session))}`)).cards as { state: string }[])[0]?.state, "answered"),
   },
   "project.settings.get": { values: () => withProject(), status: 200 },
+  "settings.cards.get": { values: () => ({}), status: 200 },
   "project.settings.history": { values: () => withProject(), status: 200 },
   "project.overseer.settings.set": {
     values: () => withProject({ watch: false }),

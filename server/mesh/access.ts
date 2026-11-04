@@ -206,6 +206,8 @@ export interface Classified {
 // Peer-only routes, by their judged path.
 const PEER_RULES: Array<[RegExp, Need]> = [
   [/^\/api\/peer\/hello$/, "hello"],
+  // A one-time random id checked and burnt: it shows the peer nothing, and a grant must not stop your click.
+  [/^\/api\/peer\/click-proof$/, "hello"],
   [/^\/api\/peer\/details$/, "presence"],
   [/^\/api\/peer\/(?:label|browser-access)$/, "presence"],
   [/^\/api\/peer\/(?:rename|set-browser-access)$/, "admin"],

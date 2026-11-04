@@ -1,3 +1,4 @@
+import { yourClickRefusal } from "./page-only";
 import type { Hono } from "hono";
 import { QUEUE_CHAT_MODE_REFUSAL } from "../shared/merge-queue";
 import { DEFAULT_PROFILE, keyOf, parseMine, THINKING_LEVELS, type ListedProfile, type Profile, type ProfileMine, type ProfilesListing } from "../shared/profiles";
@@ -10,7 +11,7 @@ import { addProfile } from "./profiles-store";
 import { profileModelCount, subagentProfilesInfo } from "./subagent-profiles";
 import { getSessionInsight } from "./insights";
 import { resolveSessionPath } from "./paths";
-import { findProfile, profileSources, readHidden, setHidden } from "./profile-sources";
+import { findProfile, profileRefusedWhy, profileSources, readHidden, setHidden } from "./profile-sources";
 import { approve } from "./profile-trust";
 import { projectRootOf } from "./project-root";
 import { type PowersHost, type PowersSend, type PowersSendResult, sendInviting, setPowersHost } from "./session-powers";
@@ -257,13 +258,15 @@ export function registerProfileRoutes(app: Hono): void {
   // Approve a project profile's powers (§chat.profiles/trust): the ones the file has now, and only
   // when they are the ones the client was shown.
   app.post("/api/profiles/approve", async (c) => {
+    const notYou = yourClickRefusal(c, "profile");
+    if (notYou) return notYou;
     const body = (await c.req.json().catch(() => null)) as { cwd?: unknown; id?: unknown; grant?: unknown; overseerMayStart?: unknown } | null;
     const cwd = str(body?.cwd);
     const id = str(body?.id);
     if (!cwd || !id || !Array.isArray(body?.grant) || typeof body?.overseerMayStart !== "boolean")
       return c.json({ error: "Expected {cwd, id, grant, overseerMayStart}" }, 400);
     const p = await findProfile({ source: "project", id }, cwd);
-    if (!p) return c.json({ error: `No profile "${id}" in this folder's project.` }, 404);
+    if (!p) return c.json({ error: (await profileRefusedWhy(id, cwd)) ?? `No profile "${id}" in this folder's project.` }, 404);
     try {
       approve(p, { grant: body.grant as never, overseerMayStart: body.overseerMayStart });
     } catch (err) {

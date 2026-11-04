@@ -168,7 +168,7 @@ const DENY = new Set(["INVOCATION_ID", "JOURNAL_STREAM", "MANAGERPID", "NOTIFY_S
 /**
  * The variables the launch sets for one chat process, and only for it: its socket, file, id, unit and
  * build, the state root of the server that started it, where its code was copied from and to
- * (§app.chat-processes/code-generations), and its caller key (§app.command-audit/keys). A server never reads them: one started from a chat's own
+ * (§app.chat-processes/code-generations), and its caller key (§app.command-audit/keys), and the URL of that server. A server never reads them: one started from a chat's own
  * tools (a hermetic server in a worktree) deletes them from its env at boot (scrubChatProcessEnv),
  * and a chat process never inherits them from its server.
  */
@@ -182,6 +182,7 @@ export const CHAT_PROCESS_ENV = [
   "SOVA_CHAT_LIVE_ROOT",
   "SOVA_CHAT_COPIES_ROOT",
   "SOVA_CALLER_KEY",
+  "SOVA_URL",
   // accounts.ts LOGIN_CONTEXT_ENV: a chat's project login, handed over per chat (never inherited by a server).
   "SOVA_CLAUDE_LOGIN_CONTEXT",
 ] as const;

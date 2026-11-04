@@ -8,6 +8,8 @@ order: 2
 
 ## What changes
 
+[Create](/docs/modes/create/) does everything on this page and shares these settings.
+
 Delegate is a major mode: pick **delegate** in the chat's mode menu (see [Modes](/docs/modes/)).
 From the chat's next message, the agent plans and routes the work to subagents (workers) instead of
 doing it all itself. Delegate routes 4 kinds of work:
@@ -68,7 +70,7 @@ routes, all on Claude Code:
 
 ## Teams
 
-Besides single workers, the agent can start a **team**, in either major mode. It starts one when
+Besides single workers, the agent can start a **team**, in any major mode. It starts one when
 you ask for a team, or when parts of the work depend on each other: they change the same files or
 interfaces at the same time, or one worker builds while another checks. Otherwise it uses single
 workers.

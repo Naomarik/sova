@@ -120,6 +120,8 @@ const GLOBS = [
   "src/vis/**/*.test.ts",
   // The model-levels core (builtins only) that Sova's pi adapter imports.
   "pi-config/extensions/model-levels/*.test.ts",
+  // Create's guide: its table of contents and each entry's structure (builtins only).
+  "pi-config/extensions/mode/create/*.test.ts",
   // The Claude Code bridge's memory-view layout (pi-free, pure): a chat that stops caching its view fails here.
   "pi-config/extensions/claude-code/provider/memory-layout.test.ts",
   // Which Claude program every spawn runs (builtins only; the server imports it).
@@ -288,6 +290,13 @@ function refuseTmpInRepo(tmpBase) {
 }
 const flags = rest.filter((a) => a.startsWith("-"));
 const named = rest.filter((a) => !a.startsWith("-"));
+// A folder reaches the test runner whole, each tier's files in one lane: a fixture whose setup the tier guard stops then
+// writes to its empty root, which is this checkout. Name the files.
+const folder = named.find((a) => fs.statSync(path.resolve(ROOT, a), { throwIfNoEntry: false })?.isDirectory());
+if (folder) {
+  console.error(`run-tests: ${folder} is a folder: name its test files, or use --changed\n${USAGE}`);
+  process.exit(2);
+}
 const tiersAsked = opts["--all"] ? ["unit", "integration"] : opts["--integration"] ? ["integration"] : ["unit"];
 let files = named.length
   ? named

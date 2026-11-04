@@ -12,6 +12,9 @@ import { stateHash } from "./store";
 
 let checkout: string | null | undefined;
 
+/** Apply of this server's own checkout from anything but the user's page (§app.access/your-click, §design.copy-deck/your-click). */
+export const SELF_APPLY_REFUSAL = "Only the user restarts Sova. Ask them to press Apply on the Branches tab of Sova's project page. Nothing was restarted.";
+
 /** The git checkout the running server was loaded from, or null outside one. */
 export function serverCheckout(): string | null {
   if (checkout !== undefined) return checkout;

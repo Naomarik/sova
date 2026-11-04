@@ -1,7 +1,7 @@
 /** Rows for the ctrl+p "Mode" category. Pure: the palette type is imported as a type only. */
 import type { MenuItem } from "../command-palette/contracts.ts";
 import { MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_SURFACES, type MinorMode } from "./minor.ts";
-import { hasMinor, MODE_DESCRIPTIONS, MODES, type Mode, type ModeState } from "./state.ts";
+import { DEFAULT_MODES, hasMinor, MODE_DESCRIPTIONS, type Mode, type ModeState } from "./state.ts";
 
 export interface ModeActions {
 	setMode(next: Mode): void | Promise<void>;
@@ -52,7 +52,7 @@ export const MODE_CATEGORY_ID = "mode";
  */
 export function modeCategoryItems(getState: () => Pick<ModeState, "mode" | "minorModes">, actions: ModeActions): MenuItem[] {
 	const current = getState().mode;
-	const majors: MenuItem[] = MODES.map((mode) => ({
+	const majors: MenuItem[] = DEFAULT_MODES.map((mode) => ({
 		id: `mode:${mode}`,
 		label: `${mode === current ? "✓" : " "} ${mode}`,
 		description: MODE_DESCRIPTIONS[mode],

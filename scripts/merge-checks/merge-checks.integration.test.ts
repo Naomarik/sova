@@ -22,11 +22,13 @@ function repo() {
   return { root, tree, git, base };
 }
 
-/** This process's environment without what makes a check run as the queue's own (SOVA_VERB=merge, set when these tests
- *  run as a merge check themselves): a case that wants it sets it. */
+/** This process's environment without what makes a check run as the queue's own (SOVA_VERB=merge and SOVA_MERGE_*, set
+ *  when these tests run as a merge check themselves; SOVA_MERGE_PICKED=1 when the merge thread picked it): a case that
+ *  wants one sets it. */
 function cleanEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.SOVA_VERB;
+  for (const k of Object.keys(env)) if (k.startsWith("SOVA_MERGE_")) delete env[k];
   return env;
 }
 

@@ -55,7 +55,7 @@ export function agentDirOf(env: NodeJS.ProcessEnv = process.env): string {
 
 /**
  * The store's file: under the state root of the server that started this chat (`SOVA_CHAT_STATE_ROOT`,
- * set when a worker runs on another agent dir), else `<agent dir>/sova`. Read per call.
+ * set for every chat Sova starts), else `<agent dir>/sova`. Read per call.
  */
 export function approvalsFile(env: NodeJS.ProcessEnv = process.env, agentDir: string = agentDirOf(env)): string {
 	return join(env.SOVA_CHAT_STATE_ROOT || join(agentDir, "sova"), APPROVALS_FILE_NAME);

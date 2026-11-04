@@ -145,11 +145,14 @@ and `fill="none" stroke="currentColor"`.
 | `trash.svg` | Archive Session: the Session tab's icon-only button (web sessions only, §app/session-list "Archiving"); its Unarchive Session form uses `undo.svg` |
 | `chevron-left.svg` / `chevron-right.svg` | Also: lightbox Previous Image / Next Image |
 | `check.svg` | The copy button's icon for 1.5s after a copy; the current-model mark |
+| `check-circle.svg` | Ready on the session row's branch status (§app.session-list/content-rules "Row line 3"); in drawings (vis), the ok tone icon |
 | `folder.svg` | Folder picker rows, cwd group label, the group picker's group tiles |
 | `info.svg` | Info rows, info banners |
-| `alert-circle.svg` | Error banners, warn banners |
+| `alert-circle.svg` | Error banners, warn banners; needs you on the session row's branch status (§app.session-list/content-rules "Row line 3") |
+| `alert-triangle.svg` | Needs a fix on the session row's branch status (§app.session-list/content-rules "Row line 3"): a triangle with an exclamation mark. New, drawn on the system grid |
 | `attention.svg` | Composer reason when the session is read only |
-| `clock.svg` | "Reconnecting" reason; the outline strip's Open Timeline button (§chat/timeline) |
+| `clock.svg` | "Reconnecting" reason; the outline strip's Open Timeline button (§chat/timeline); queued on the session row's branch status (§app.session-list/content-rules "Row line 3") |
+| `progress.svg` | Checking on the session row's branch status (§app.session-list/content-rules "Row line 3"): a faint full circle under a quarter arc. Still, never spun. New, drawn on the system grid |
 | `bell.svg` | The wake-nudge card in the transcript (§chat/transcript) |
 | `refresh.svg` | Refresh Usage / Refresh Agents: the icon button in the insights head (§app/insights). While a refresh it started is in flight it's `aria-disabled` and `aria-busy`. The session list has no refresh button: it updates live |
 | `arrow-right.svg` | Send |
@@ -166,11 +169,12 @@ and `fill="none" stroke="currentColor"`.
 | `activity.svg` | Resource monitor: the button at the right end of the sidebar foot's Usage row, and its spine item (§app.resource-monitor/entry-button). A pulse line: flat, one sharp peak and trough, flat again. New, drawn on the system grid |
 | `sliders.svg` | The normal mode's icon: in the mode trigger at the right end of the composer foot (also alone before the chat's mode is known), the mode menu's Normal row and the profile cards (§chat.mode-menu/trigger). Three tracks with an offset handle each. New, drawn on the system grid |
 | `mode-delegate.svg` | The delegate mode's icon: the mode trigger, its menu row and the profile cards (§chat.mode-menu/trigger). A node with an arrow leaving it to the right. New, drawn on the system grid |
+| `mode-create.svg` | The Create mode's icon: the mode trigger and its menu row (§chat.mode-menu/trigger). A four-point spark with a small plus |
 | `mode-align.svg`, `mode-spec.svg`, `mode-vis.svg`, `mode-memory.svg` | One per built-in minor mode, wherever the major mode's icon shows: align two centred bars on a vertical axis, spec a clipboard with lines, vis a bar chart on axes, memory a stacked cylinder. A project mode has no file: it is its id's first letter in a rounded square (`.mode-letter`). New, drawn on the system grid |
 | `subagents.svg` | Subagents: the mode menu's Subagents row and the profile cards' subagents count (§chat.profiles/picker). Branching nodes: one node above, a stem down to three below. New, drawn on the system grid |
 | `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads, and the composer's subagents trigger (§app.subagents-pane/trigger) (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)
-| `branch.svg` | Git branches and the mesh: the setup card's repository line, a worktree's line on the Agents page, the worktree merge card, the Mesh card and the Settings dialog's Mesh tab |
+| `branch.svg` | Git branches and the mesh: the setup card's repository line, a worktree's line on the Agents page, the worktree merge card, the Mesh card and the Settings dialog's Mesh tab; the fallback, {n} worktrees, on the session row's branch status (§app.session-list/content-rules "Row line 3") |
 | `external.svg` | Opens elsewhere: Open in New Tab (extension view), Open Directly (mesh), Open workspace, Open Groups (the Groups region head), Open {n} Explanations, the Settings dialog's Public links tab |
 | `network.svg` | Organizations (its Settings tab, the overview's Organizations card); the mesh: the host filter, the Overseer's link card, a link's section in the subagents pane |
 | `building.svg` | The spine's Organizations item |
@@ -181,7 +185,7 @@ and `fill="none" stroke="currentColor"`.
 | `shield-on.svg`, `shield-partial.svg`, `shield-off.svg` | The composer's sandbox shield, one per state (§chat.composer/sandbox-shield): a heavy rim with a filled core, the core's left half, a thin dashed outline |
 | `star.svg` | The model menu's favourite toggle; the Overseer's Ideas button |
 | `expand.svg` | Focus (§chat.transcript/focus-view): the round button in the transcript's corner. Four corner brackets. New, drawn on the system grid |
-| `check-circle.svg`, `x-circle.svg`, `menu.svg` | Drawings only (vis): the ok / error tone icons, and wireframe icons |
+| `x-circle.svg`, `menu.svg` | Drawings only (vis): the error tone icon, and wireframe icons |
 
 The effort ring (§chat.composer/behavior) has no file either: the ring and its mark, the max
 level's filled bolt included, are drawn in its own inline SVG.
@@ -226,6 +230,11 @@ Spend `--color-accent` on only three things:
 
 Selected rows and user bubbles take `--color-accent-tint`. Anything else that "needs color" is a
 status (`--status-*`), and always pairs a dot or icon with a word.
+
+One exception: a session row's branch status (§app.session-list/content-rules "Row line 3") pairs
+its tone with a symbol of its own per status and no word, keeping its words in its `title` and the
+row's accessible name, so tone is never the only signal; its checking mark takes the accent, as the
+Worktrees window's Checking state does, and stays still (Motion).
 
 ## §design.ground-rules/motion — Motion
 

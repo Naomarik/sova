@@ -113,7 +113,7 @@ export function ProjectAllSettings(props: { data: ProjectSettingsData }) {
 }
 
 const byWords = (r: SettingsHistoryRow) =>
-  r.by.kind === "project-overseer" ? "the overseer" : r.by.kind === "overseer" ? "the Overseer" : r.by.via === "card" ? `you, on ${r.card === "local" ? "the folder's edits" : r.card}` : r.by.via === "undo" ? "you (Undo)" : r.by.via === "script" ? "a script" : "you";
+  r.by.kind === "create" ? "a Create chat" : r.by.kind === "project-overseer" ? "the overseer" : r.by.kind === "overseer" ? "the Overseer" : r.by.via === "card" ? `you, on ${r.card === "local" ? "the folder's edits" : r.card}` : r.by.via === "undo" ? "you (Undo)" : r.by.via === "script" ? "a script" : "you";
 const valueWords = (v: unknown) => (v === null || v === undefined ? "none" : typeof v === "string" ? (v.length > 40 ? `${v.slice(0, 39)}…` : v) : JSON.stringify(v));
 
 /** Each change to the project's settings, newest first, with Undo (§app.project-overseer/settings). */

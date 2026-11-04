@@ -85,10 +85,11 @@ export function promotionClaims(rel, baseBuf, propBuf, wroteBuf) {
   return Object.fromEntries(changedUnits(b, p).map((k) => [k, [p.get(k) ?? null, w.get(k) ?? null]]));
 }
 
-function filesUnder(dir, rel = "") {
+function filesUnder(dir, rel = "", seen = null) {
+  seen?.(join(dir, rel));
   let entries;
   try { entries = readdirSync(join(dir, rel), { withFileTypes: true }); } catch { return []; }
-  return entries.flatMap((e) => { const r = rel ? `${rel}/${e.name}` : e.name; return e.isDirectory() ? filesUnder(dir, r) : e.isFile() ? [r] : []; });
+  return entries.flatMap((e) => { const r = rel ? `${rel}/${e.name}` : e.name; return e.isDirectory() ? filesUnder(dir, r, seen) : e.isFile() ? [r] : []; });
 }
 const idOf = (unit) => (/^[rt]:/.test(unit) ? unit.slice(2) : null);
 const draftJson = (dir) => { try { const d = JSON.parse(readFileSync(join(dir, "draft.json"), "utf8")); return obj(d) ? d : null; } catch { return null; } };
@@ -98,30 +99,39 @@ const draftJson = (dir) => { try { const d = JSON.parse(readFileSync(join(dir, "
  * draft in `draftsDir` (its own included). → undefined (not a readable draft) | {official, changed: how many claims it
  * changed, notOfficial: [§ id], read: [every path it read]}; a unit outside any § (a manifest key, a file's lines
  * outside its declarations) that isn't official makes the draft not official without naming an id.
+ *
+ * `io` lets a caller that judges many drafts share the work: any of `read(path)`, `hash(path)`, `cut(rel, buf, cut)`,
+ * `json(dir, draftJson)` must answer as the default does for the same bytes, and `seen(path)` is told each file and
+ * folder the answer rests on, which is more than `read` lists (a draft's files it didn't change). No `io` reads directly.
  */
-export function draftOfficial(specDir, draftDir, draftsDir) {
-  const d = draftJson(draftDir);
+export function draftOfficial(specDir, draftDir, draftsDir, io = {}) {
+  const readFile = io.read ?? readOr;
+  const cutOf = io.cut ? (rel, buf) => io.cut(rel, buf, cut) : cut;
+  const metaOf = io.json ? (dir) => io.json(dir, draftJson) : draftJson;
+  const digest = io.hash ?? ((p) => { const b = readFile(p); return b ? sha(b) : undefined; });
+  const seen = io.seen ?? (() => {});
+  const d = metaOf(draftDir);
   if (!d || !obj(d.base?.files)) return undefined;
   const own = join(draftDir, "spec"), base = join(draftDir, "base");
   let others = [];
   try { others = readdirSync(draftsDir, { withFileTypes: true }).filter((e) => e.isDirectory() && !e.name.startsWith(".")).map((e) => join(draftsDir, e.name)).filter((x) => x !== draftDir); } catch {}
-  const receipts = [{ d, mine: true }, ...others.map((dir) => ({ dir, d: draftJson(dir) }))].filter((x) => Array.isArray(x.d?.promotions));
+  const receipts = [{ d, mine: true }, ...others.map((dir) => ({ dir, d: metaOf(dir) }))].filter((x) => Array.isArray(x.d?.promotions));
   const read = [join(draftDir, "draft.json"), ...others.map((x) => join(x, "draft.json"))], notOfficial = new Set();
   let official = true, changed = 0, recs = null;
   const curRecords = () => {
     if (recs) return recs;
     recs = new Map();
-    for (const rel of [ROOT_FILE, ...filesUnder(specDir, "claims").filter((f) => isRecordFile(f))]) {
+    for (const rel of [ROOT_FILE, ...filesUnder(specDir, "claims", seen).filter((f) => isRecordFile(f))]) {
       read.push(join(specDir, rel));
-      for (const [k, h] of claimUnits(rel, readOr(join(specDir, rel)))) if (k.startsWith("r:")) recs.set(k, h);
+      for (const [k, h] of cutOf(rel, readFile(join(specDir, rel))).units) if (k.startsWith("r:")) recs.set(k, h);
     }
     return recs;
   };
-  for (const rel of [...new Set([...filesUnder(own), ...Object.keys(d.base.files)])].sort()) {
-    const mine = readOr(join(own, rel));
-    if ((mine ? sha(mine) : undefined) === d.base.files[rel]) continue; // not changed by this draft
+  for (const rel of [...new Set([...filesUnder(own, "", seen), ...Object.keys(d.base.files)])].sort()) {
+    seen(join(own, rel));
+    if (digest(join(own, rel)) === d.base.files[rel]) continue; // not changed by this draft
     read.push(join(own, rel), join(base, rel), join(specDir, rel));
-    const [p, b, cur] = [mine, readOr(join(base, rel)), readOr(join(specDir, rel))].map((buf) => cut(rel, buf));
+    const [p, b, cur] = [own, base, specDir].map((from) => cutOf(rel, readFile(join(from, rel))));
     // Every unit hash a promotion in this tree wrote in this file: its own only as the draft still says it; another's
     // receipt from before claims were recorded, as that draft says it now, for the ids it names.
     const wrote = new Set(), add = (k, h) => h && wrote.add(`${k}\0${h}`);
@@ -131,7 +141,7 @@ export function draftOfficial(specDir, draftDir, draftsDir) {
         const said = pr?.claims; // the receipt's {unit: [said, wrote]}, not spec records
         if (obj(said)) { for (const [k, v] of Object.entries(said)) if (Array.isArray(v) && (!self || v[0] === (p.units.get(k) ?? null))) add(k, v[1]); continue; }
         if (self || !Array.isArray(pr?.files) || !pr.files.includes(rel)) continue;
-        if (!theirs) { read.push(join(dir, "spec", rel)); theirs = claimUnits(rel, readOr(join(dir, "spec", rel))); }
+        if (!theirs) { read.push(join(dir, "spec", rel)); theirs = cutOf(rel, readFile(join(dir, "spec", rel))).units; }
         const ids = new Set(Array.isArray(pr.ids) ? pr.ids : []);
         for (const [k, h] of theirs) if (!idOf(k) || ids.has(idOf(k))) add(k, h);
       }

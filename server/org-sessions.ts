@@ -4,8 +4,8 @@ import type { SessionOrg, SessionOrgRef } from "../shared/protocol";
 import { allBatons, batonSummaryField, isRetiredBaton } from "./baton";
 import { contributeSessions } from "./sessions-index";
 import { buildMerged } from "./build-merged";
-import { orgOfSessionPath, readIndex, readOrg, readProjects } from "./orgs";
-import { readEngineBuilds, type BuildKind, type BuildRow } from "./build-loadout";
+import { orgOfSessionPath, orgOfSessionPathReader, readIndex, readOrg, readProjects, type OrgOfSessionPath } from "./orgs";
+import { readEngineBuilds, type BuildKind, type EngineBuildsReader, type StatechartBuildRow } from "./build-loadout";
 import { projectOverseerPaths, readPoMarker, readPoState } from "./project-overseer-store";
 
 /**
@@ -37,7 +37,7 @@ const NONE: OrgLookup = { of: () => undefined, placing: () => undefined };
  * One lookup per listing: each org's names, batons, overseer states and builds are read at
  * most once, and only when a file needs them.
  */
-export function orgLookup(): OrgLookup {
+export function orgLookup(orgOf: OrgOfSessionPath = orgOfSessionPath, builds?: EngineBuildsReader): OrgLookup {
   const orgs = readIndex().orgs;
   if (!orgs.length) return NONE;
   const names = new Map<string, { orgName: string; projects: Map<string, string>; roots: Map<string, string>; archived: Set<string> }>();
@@ -96,8 +96,8 @@ export function orgLookup(): OrgLookup {
     return currents.get(k) ?? null;
   };
 
-  let coding: Map<string, { orgId: string; dir: string; projectId: string; row: BuildRow }> | null = null;
-  const codingOf = (id: string) => (coding ??= codingSessions(orgs)).get(id);
+  let coding: Map<string, { orgId: string; dir: string; projectId: string; row: StatechartBuildRow }> | null = null;
+  const codingOf = (id: string) => (coding ??= codingSessions(orgs, builds)).get(id);
 
   const placings = new Map<string, SessionOrgRef | undefined>();
   return {
@@ -109,7 +109,7 @@ export function orgLookup(): OrgLookup {
       return placings.get(projectId);
     },
     of(path, id) {
-      const ws = orgOfSessionPath(path);
+      const ws = orgOf(path);
       if (ws) {
         const b = batonOf(id);
         if (b && b.orgId === ws.orgId) {
@@ -145,10 +145,10 @@ export function orgCodingIds(): Set<string> {
 
 /** Session id → project, for every build of the attached orgs (a project removed from the org's
     list keeps its builds, so its sessions stay organizational). */
-function codingSessions(orgs: readonly { id: string; dir: string }[]): Map<string, { orgId: string; dir: string; projectId: string; row: BuildRow }> {
-  const out = new Map<string, { orgId: string; dir: string; projectId: string; row: BuildRow }>();
+function codingSessions(orgs: readonly { id: string; dir: string }[], builds: EngineBuildsReader = readEngineBuilds): Map<string, { orgId: string; dir: string; projectId: string; row: StatechartBuildRow }> {
+  const out = new Map<string, { orgId: string; dir: string; projectId: string; row: StatechartBuildRow }>();
   for (const o of orgs) {
-    for (const r of readEngineBuilds(o.id)) if (ORG_CODING_KINDS.has(r.kind) && !out.has(r.sessionId)) out.set(r.sessionId, { orgId: o.id, dir: o.dir, projectId: r.projectId, row: r });
+    for (const r of builds(o.id)) if (ORG_CODING_KINDS.has(r.kind) && !out.has(r.sessionId)) out.set(r.sessionId, { orgId: o.id, dir: o.dir, projectId: r.projectId, row: r });
   }
   return out;
 }
@@ -161,11 +161,12 @@ export const ORG_NOT_GROUPED = "Organization sessions stay with their project.";
 // ---- what the org adds to the session list (server/sessions-index.ts) ---------------------------------------
 
 contributeSessions({
-  lookup() {
-    const orgs = orgLookup();
+  lookup(builds) {
+    const orgOf = orgOfSessionPathReader();
+    const orgs = orgLookup(orgOf, builds);
     return {
       of(path, id, project) {
-        const baton = batonSummaryField(path);
+        const baton = batonSummaryField(path, orgOf);
         const org = orgs.of(path, id);
         // A session in a placed project's folder stays ordinary (no `org`); the Organizations region still lists it under
         // the project.

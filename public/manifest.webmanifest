@@ -2,9 +2,11 @@
   "name": "sova",
   "short_name": "sova",
   "description": "Sessions, Orchestration, Viewing & Agents. Browse, watch and chat in pi coding agent sessions.",
+  "id": "/",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay"],
   "theme_color": "#2C2C38",
   "background_color": "#1E1A5C",
   "icons": [

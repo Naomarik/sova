@@ -108,7 +108,7 @@ export interface OwnerProjectAbilities {
   fix: OwnerAbilityOutcome;
   /** Try the latest version; "none": no version listed that could be opened. */
   version: OwnerAbilityOutcome | "none";
-  /** Release a new version. */
+  /** Ship the latest version (a deploy; a numbered release is the Releases tab's). */
   release: OwnerAbilityOutcome;
   /** Plan something new with you (§app.project-assistant/feature-chats): `now` opens a feature request chat, `team`
       sends it to the team. Absent from an older server: read as `team`. */

@@ -8,6 +8,7 @@ import { projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { MergeRunButton, proposedRun } from "./PlaybookReview";
 import { DeployRecipeSteps } from "./ProjectDeployPanel";
+import { ReleaseSetupSteps } from "./ReleasesTab";
 import { Chip, Icon, Placeholder } from "./ui";
 
 /** The registry changes on a merge, a conformance or a run: read it often enough to follow one. */
@@ -200,6 +201,8 @@ export function ProjectSoftwareCard(props: { projectId: string; archived: boolea
                   <p class="list-meta">{reviewProofWord(r())}</p>
                   {/* A deploy-setup run: its recipe as Sova renders it. */}
                   <Show when={r().deploy}>{(d) => <DeployRecipeSteps recipe={d()} />}</Show>
+                  {/* A Release playbook maker run: the release settings and the playbook's steps it proposes. */}
+                  <Show when={r().release}>{(rel) => <ReleaseSetupSteps setup={rel()} />}</Show>
                   <Show when={v().playbook?.path}>
                     {(path) => (
                       <p class="orgs-line">

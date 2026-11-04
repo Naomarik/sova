@@ -26,7 +26,7 @@ method" and "This project's" (§app.merge-queue/settings).
 **One thread, with memory, on its own.** Each project keeps one merge thread, whose only mode is
 memory (UniiChat). It reads its playbook again whenever it changed, works without waiting for the
 user, and is never replaced for its age, only when it can't go on or the user presses Start Fresh
-(§chat.merge-queue/thread-life).
+(§chat.merge-queue/thread-life). It has no MCP servers (§app.mcp/who-gets).
 
 **Its model.** A new merge thread opens on the merge-thread model the project has on this computer
 (§app.merge-queue/models), else on the new-chat default. A thread already open keeps its model
@@ -150,7 +150,7 @@ chat the approval names (a typed "land it", a Land in a chat's own control or pa
 (§app.merge-queue/owner), the chat that row shows: the chat that created and tracks the worktree,
 else the newest chat working in it, an archived one included. A branch with no known chat gets no
 card anywhere. Approving the same branch again after a hand-back
-or a Cancel moves its same card on, as a new "approved" revision; a Landed card is never reused.
+a Remove from Queue or a Cancel moves its same card on, as a new "approved" revision; a Landed card is never reused.
 
 **One card per branch.** A chat that owns several branches in the queue shows one card for each,
 and each moves only at its own outcomes. The composer's worktrees control stays the summary of all
@@ -163,8 +163,8 @@ follow card does (§chat.transcript-cards/placement):
   estimate, "Checking · 4 of 7 steps". These updates change the card where it stands and never move
   it or the rows above it: it is never rebuilt, so the chat never shifts.
 - **A new revision at the bottom** at each outcome: Landed, Needs a fix, Behaviour differs, Review
-  flagged, Can't tell whose failure, Drafts changed, Sent back, and on the host Request ready,
-  Requested, Pushed and Closed. A request's host state changes in place. A conflict the merge thread is still judging stays in
+  flagged, Can't tell whose failure, Drafts changed, Sent back, Removed, and on the host Request
+  ready, Requested, Pushed and Closed. A request's host state changes in place. A conflict the merge thread is still judging stays in
   place; its outcome is Behaviour differs or a hand-back. The newest revision is the full card; each
   earlier one folds to one line ("feat/x · Queued 2nd · earlier copy") that opens to show it as it
   was, read-only and with no actions. The newest
@@ -196,12 +196,27 @@ takes ~N min" and offers **Cancel**; while checking, "Checking · 4 of 7 steps".
   Again also shows on an open request or a pushed branch once the branch has newer commits.
 - **Needs a fix** gives the reason with **See Why**, and lists the failing checks ("Unit tests · 1
   failed") with their failing tests and a link to each log. When the merge thread's explanation
-  arrives later, it is added to the same card ("Merge thread: …").
+  arrives later, it is added to the same card ("Merge thread: …"). It and a **Sent back** revision
+  offer **Land This Commit Again** and **Remove from Queue** (§chat.composer/worktrees-control).
+  For a branch sent back for its drafts, once they have changed since and fit, the card keeps its
+  Needs a fix pill and offers **Land** at the same commit in place of Land This Commit Again, beside
+  Remove from Queue; it changes by itself when the drafts are edited. A fix at a newer commit
+  leaves the card's buttons as they are: Land for the new commit is on the rows and the tab. Once
+  the entry no longer needs a fix (the branch approved again later, already in the target, or its
+  branch or folder gone), the card offers no action at all, so nothing on it is one the queue would
+  refuse.
+- **Drafts changed** offers **Land**, as the Merge Queue tab and the rows do: a new approval of the
+  card's commit for the drafts as they are now (§app.merge-queue/approve).
+- **Removed**, after Remove from Queue: a final revision with the **Removed** pill and the reason
+  "removed by you", and no queue action; approving the branch again later moves the card on as a
+  new "approved" revision.
+
+Land and Land This Commit Again on the card approve the commit the card shows; Land Again approves
+the branch's head.
 - **Behaviour differs** shows both sides and the proposal, with **Accept** and **Send Back**;
   **Review flagged** shows the review's findings, with **Land Anyway** and **Send Back**;
   **Can't tell whose failure** names the check that failed on the merge and on the target alone,
-  with its log, and offers **Land Anyway** and **Send Back** (§app.merge-queue/blame). These, Cancel
-  and Land Again are the same actions as the composer's modal and the pane, kept in
+  with its log, and offers **Land Anyway** and **Send Back** (§app.merge-queue/blame). These, Cancel, Land Again, Land This Commit Again and Remove from Queue are the same actions as the composer's modal and the pane, kept in
   sync with them. They are catalogue commands over the merge verbs
   (§app.project-services/merge-verbs): they act on the queue directly and never type into the chat.
 
@@ -247,7 +262,14 @@ message, queue card or queue line, whatever its branches look like. The one exce
   message the Overseer sent: never counted in the composer's "N inputs", and on the Timeline an
   input row reading "From the merge queue", which Inputs Only leaves out (§chat.timeline/inputs-only).
   The turn carries what the card shows: the failing checks and where their logs are, or both sides of
-  the conflict, or the review's findings. A chat busy with other work takes it after that turn. A
+  the conflict, or the review's findings. A Needs a fix turn also names what the user will see once it
+  is fixed: for a branch sent back for its spec drafts, that fixing them needs no commit and that once
+  they fit the user sees Land again at the same commit (or Land This Commit Again on its row and card),
+  or types "land it" in the chat; for a broken check or a conflict, that Land comes back on its row
+  once the fix is committed and finished. The turn a user's Send Back starts ends the same way: Land
+  comes back on its row once the fix is committed and finished, or the user can use Land This Commit
+  Again. **Remove from Queue** starts no turn and leaves no hidden
+  line. A chat busy with other work takes it after that turn. A
   wake the chat can't take (archived, an Overseer, a project overseer or a baton chat, or one held
   open in a terminal, which Sova never writes to) is refused and becomes the hidden line
   instead. A worker chat that owns a branch is never woken itself (a worker's session takes no

@@ -548,17 +548,30 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .org-needs-chip { letter-spacing: 0; text-transform: none; }
 .org-needs { border-bottom: var(--stroke-thin) solid var(--color-border); }
 .org-needs > .list { padding-bottom: var(--space-1); }
-/* A project to pick a main stakeholder for: a link to its page, its sentence under the name. */
-.org-needs-item { align-items: flex-start; }
-.org-needs-item .list-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.org-needs-item .list-meta { white-space: normal; overflow-wrap: anywhere; }
-/* A held act: the row opens the project page, Cancel sits beside it (not inside the link). */
-.org-needs-held { display: flex; align-items: center; gap: var(--space-2); }
-.org-needs-held .org-needs-item { flex: 1; min-width: 0; border-bottom: 0; }
-.org-needs-held { border-bottom: var(--stroke-thin) solid var(--color-border); }
-.org-needs-cancel { flex: none; min-height: var(--tap-min); margin-right: var(--space-2); }
-/* A proposed playbook run's Merge Branch, under its Needs you row (§app.project-runtime/review). */
-.needs-you-playbook { display: flex; padding: 0 var(--space-3) var(--space-2); border-bottom: var(--stroke-thin) solid var(--color-border); }
+/* One Needs you row: the link stretched over the row is its target; a real action sits above that stretch, in the
+   row's last line, beside the words of what the row opens. */
+.ny-row { position: relative; border-bottom: var(--stroke-thin) solid var(--color-border); transition: background-color var(--dur-fast) var(--ease-standard); }
+.ny-row:last-child { border-bottom: 0; }
+.ny-row:hover { background: var(--color-sunken); }
+.ny-row-current,
+.ny-row-current:hover { background: var(--color-accent-tint); }
+.ny-link { display: flex; flex-direction: column; gap: 2px; padding: var(--space-3) var(--space-4); color: inherit; text-decoration: none; }
+.ny-link:hover { color: inherit; }
+.ny-link::after { content: ""; position: absolute; inset: 0; }
+.ny-link:focus-visible { outline: none; }
+.ny-link:focus-visible::after { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.ny-top { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-width: 0; }
+.ny-top > .chip { flex: none; }
+.ny-name { flex: 1; min-width: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ny-title { font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--color-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ny-title-muted { color: var(--color-ink-muted); }
+.ny-detail { font-size: var(--fs-caption); color: var(--color-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ny-action { display: inline-flex; align-self: flex-start; align-items: center; gap: var(--space-1); margin-top: var(--space-1); font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-accent); }
+.ny-acts { position: relative; z-index: 1; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--space-2); margin-top: calc(-1 * (var(--tap-min) + var(--space-3))); padding: 0 var(--space-4) var(--space-3); pointer-events: none; }
+.ny-acts > * { pointer-events: auto; }
+.ny-acts:not(:has(*)) { display: none; }
+.ny-acts .button { min-height: var(--tap-min); }
+.ny-row:has(.ny-acts > *) .ny-action { min-height: var(--tap-min); margin-top: 0; }
 .playbook-review-act { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .playbook-review-act .button { min-height: var(--tap-min); }
 .org-section + .org-section { border-top: var(--stroke-thin) solid var(--color-border); }
@@ -1568,6 +1581,18 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-dot-ok { background: var(--status-success); }
 .wt-dot-warn { background: var(--status-warn); }
 .wt-dot-err { background: var(--status-error); }
+
+/* A session row's branch status (line 3, after the time): the control's headline as its own mark and its number,
+   each fact with a symbol of its own so the tone is never the only signal, and every mark still: the row's one moving
+   thing is its Busy dot. The model after it is cut first. */
+.session-row .list-meta .session-branch-status { white-space: nowrap; }
+.session-branch-status > .icon { width: 12px; height: 12px; margin-right: 3px; vertical-align: -2px; }
+.session-branch-status-error { color: var(--status-error); }
+.session-branch-status-warn { color: var(--status-warn); }
+.session-branch-status-success { color: var(--status-success); }
+.session-branch-status-accent { color: var(--color-accent); }
+.session-branch-status-info { color: var(--status-info); }
+.session-branch-status-muted { color: var(--color-ink-muted); }
 
 /* The rows, in the modal and in the pane: branch in mono, the path, then the chip and its facts;
    the action at the row's end, wrapping under the facts on a narrow pane. */

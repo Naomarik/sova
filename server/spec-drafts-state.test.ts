@@ -3,12 +3,12 @@
 // temp folders shaped as the draft tool writes them: draft.json, base/, spec/.
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { after, test } from "node:test";
 import { promotionClaims } from "../pi-config/extensions/spec/core/official.mjs";
 import { scratchRoot } from "./test-scratch";
-import { unofficialDrafts } from "./spec-drafts-state";
+import { draftWork, unofficialDrafts } from "./spec-drafts-state";
 
 const draftCount = (dir: string) => unofficialDrafts(dir)?.length;
 
@@ -123,4 +123,71 @@ test("an unreadable draft isn't official: its state is unknown, as the merge rou
   const wt = tree();
   put(join(dir(wt, "x"), "draft.json"), "{}");
   assert.deepEqual(unofficialDrafts(wt), ["x"]);
+});
+
+/** A file every draft keeps as its base has it: the draft says nothing about it until someone edits it. */
+function sibling(wt: string, name: string, text: string) {
+  const F2 = "claims/b.md";
+  put(join(spec(wt), F2), text);
+  put(join(dir(wt, name), "base", F2), text);
+  put(join(dir(wt, name), "spec", F2), text);
+  const meta = JSON.parse(readFileSync(join(dir(wt, name), "draft.json"), "utf8"));
+  meta.base.files[F2] = sha(text);
+  writeFileSync(join(dir(wt, name), "draft.json"), JSON.stringify(meta));
+}
+
+test("an edit to a draft's file it hadn't changed ends the kept answer, and so does a new file in it", () => {
+  const b = "# §b — B\n\nb says one thing.\n";
+  const wt = tree();
+  draft(wt, "feat", file("x says one thing."));
+  sibling(wt, "feat", b);
+  assert.equal(draftCount(wt), 0);
+  writeFileSync(join(dir(wt, "feat"), "spec", "claims/b.md"), "# §b — B\n\nb says another thing.\n");
+  assert.deepEqual(unofficialDrafts(wt), ["feat"]);
+  writeFileSync(join(dir(wt, "feat"), "spec", "claims/b.md"), b);
+  assert.equal(draftCount(wt), 0);
+  put(join(dir(wt, "feat"), "spec", "claims/c.md"), "# §c — C\n\nNew.\n");
+  assert.deepEqual(unofficialDrafts(wt), ["feat"]);
+});
+
+test("an edit in another draft's receipt, or the current spec, is seen after a shared pass", () => {
+  const wt = tree();
+  draft(wt, "one", file("x says another."));
+  draft(wt, "two", file("x says one thing.", "y says another."));
+  assert.deepEqual(unofficialDrafts(wt), ["one", "two"]);
+  promote(wt, "one", file("x says another."));
+  assert.deepEqual(unofficialDrafts(wt), ["two"]);
+  writeFileSync(join(spec(wt), F), file("x says one thing."));
+  assert.deepEqual(unofficialDrafts(wt), ["one", "two"]);
+});
+
+test("the same content, name apart, is judged once: many drafts and worktrees share reads and cuts", () => {
+  const wts = [tree(), tree()];
+  for (const wt of wts) writeFileSync(join(spec(wt), F), file("x says something only this test says."));
+  for (const wt of wts) for (const n of ["a1", "a2", "a3", "a4"]) draft(wt, n, file(`x says ${n}.`));
+  const start = { ...draftWork };
+  const first = unofficialDrafts(wts[0]!);
+  const firstWork = { reads: draftWork.reads - start.reads, cuts: draftWork.cuts - start.cuts };
+  assert.deepEqual(first, ["a1", "a2", "a3", "a4"]);
+  // One current file, one shared base and 4 proposals, each cut once; without sharing each draft cuts its own 3.
+  assert.equal(firstWork.cuts, 1 + 4, "cuts by name and content");
+  // Each draft's own file is hashed, then read and shared for the cut: never a file read per draft per reader.
+  assert.ok(firstWork.reads <= 4 * 3 + 1, `reads ${firstWork.reads}`);
+  const before = draftWork.cuts;
+  assert.deepEqual(unofficialDrafts(wts[1]!), first);
+  assert.equal(draftWork.cuts, before, "the second worktree's same files are not cut again");
+});
+
+test("a rewrite of a draft's file with its time put back is still seen", () => {
+  const wt = tree();
+  const b = "# §b — B\n\nb says one thing.\n";
+  draft(wt, "feat", file("x says one thing."));
+  sibling(wt, "feat", b);
+  const old = new Date(Date.now() - 60_000);
+  for (const f of [F, "claims/b.md"]) utimesSync(join(dir(wt, "feat"), "spec", f), old, old);
+  // ctime can't be set back: a hash taken this soon after the write isn't kept, so the rewrite below can't hide.
+  assert.equal(draftCount(wt), 0);
+  writeFileSync(join(dir(wt, "feat"), "spec", "claims/b.md"), "# §b — B\n\nb says two thing.\n");
+  utimesSync(join(dir(wt, "feat"), "spec", "claims/b.md"), old, old);
+  assert.deepEqual(unofficialDrafts(wt), ["feat"]);
 });

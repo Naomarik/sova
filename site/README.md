@@ -48,8 +48,8 @@ Set `SOVA_SITE_URL` to the address the site is served from so link previews get 
   version pill, its release-page link and the footer. The install command, URL and script link
   stay on `stable` (`installRef`), the tag each release moves to itself. Re-check every claim on
   the page against the release commit, then update `verified` (the revision and date the footer
-  names). The repository's release playbook, `.sova/playbooks/release/PLAYBOOK.md`, runs this
-  and the deploy below.
+  names). The repository's release playbook, `.sova/playbooks/release/PLAYBOOK.md`, does this
+  in its release commit; the deploy below follows the release, as its own step.
 - **The design tokens:** re-copy `src/design/tokens.css` into `src/styles/tokens.css`; don't edit
   values here.
 - **The Vis page's examples:** after a change to an example (`scripts/vis-examples/examples.mjs`)
@@ -107,22 +107,28 @@ Static output, no Functions and no adapter. The site is live at https://sova.nao
 
 Leave Cloudflare Web Analytics off: the page promises no analytics.
 
-The Pages project is not connected to Git: a push to master deploys nothing. Deploy by hand with
-wrangler, from a build of the commit you mean to publish (a `git archive` of it, so no checkout
-is touched). The archive has no hero video (videos are gitignored), so add it before the build:
-`site/scripts/screens/add-video.mjs` copies every video the screens manifest references from
-`$SOVA_SITE_VIDEO_DIR` (default: the main checkout's `site/public/video`, found with git from the
-current directory) into the export, and exits non-zero, publishing nothing, when any is missing:
+The Pages project is not connected to Git: a push to master deploys nothing. The site is Sova's
+deploy target `site` (`deploy.targets.site` in `.sova/project.json`): after a release is published,
+the operator ships it with Plan Deploy on the project's Deploy card, which takes only a published,
+not withdrawn, release's commit and keeps the deploy's log and Roll Back. Its recipe, in a fresh
+checkout of that commit:
 
-```sh
-export=$(mktemp -d) && git archive <sha> | tar -x -C "$export"
-node site/scripts/screens/add-video.mjs "$export"   # from the checkout; stop here if it refuses
-cd "$export/site"
-pnpm install --frozen-lockfile
-SOVA_SITE_URL=https://sova.naomarik.com/ pnpm run build
-node scripts/check-docs-leaks.mjs
-wrangler pages deploy dist --project-name <the Pages project> --branch main --commit-hash <sha>
-```
+1. `video`: copies the hero videos (gitignored, so a checkout has none) from `$SOVA_SITE_VIDEO_DIR`
+   (`site/scripts/screens/add-video.mjs`), one of the target's env credentials. When that value is
+   unset the plan fails its credential check, and a folder that misses a video fails the step: a
+   deploy never ships the site without its hero video.
+2. `install` and `site`: `pnpm install --frozen-lockfile`, then the build with
+   `SOVA_SITE_URL=https://sova.naomarik.com/` (so `og:image` is absolute); the build runs the docs
+   leak check.
+3. `pages`: `wrangler pages deploy site/dist --project-name <the Pages project> --branch main
+   --commit-hash <sha>`. `--branch main` is the project's production branch; any other branch name
+   makes a preview deploy.
+4. Verify: the address answers 200.
 
-`--branch main` is the project's production branch; any other branch name makes a preview
-deploy. Then check the live pages (the release playbook's publish step lists the checks).
+What it needs on the deploying machine, set by the operator and never in the repository: wrangler
+logged in (`wrangler whoami`), and in Sova's host values for the project `SOVA_SITE_PAGES_PROJECT`
+(the Pages project's name) and `SOVA_SITE_VIDEO_DIR` (the main checkout's `site/public/video`).
+Deploy check names what is missing without running anything. A deploy's steps get a fixed
+environment (`PATH`, `HOME` and a few more) plus the target's env credentials, which is why the
+video folder is declared as one. Then check the live pages: the landing names `/stable/scripts/install.sh`
+and links `/releases/tag/vX.Y.Z`, and `/docs/install/` shows the `stable` command.

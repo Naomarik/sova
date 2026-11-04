@@ -73,8 +73,9 @@ export interface MergeQueueSettings {
   projectFileDiffers: boolean;
   /** Why saves are refused now ("Commit or discard the edit in the project folder first"). */
   editBlocked?: string;
-  /** A save waiting for the branch checking now. */
-  pendingSave?: { at: string; changes: MergeSettingsChange };
+  /** A save waiting for the branch checking now, or for the release holding the queue. `release`: that release, as
+   *  shown ("release v0.4.0"), read from the hold now, so it goes when the hold lifts (settingsWaitingWords). */
+  pendingSave?: { at: string; changes: MergeSettingsChange; failed?: string; release?: string };
   landing: {
     target: string;
     /** null: absent, so it pushes when origin exists. */
@@ -120,11 +121,12 @@ export interface LandHowSetting {
 }
 
 /** What a save answers. */
-/** What a save answers: committed on the target; waiting for the branch checking now; or, on a project that lands by
- *  request or by pushing a branch, published that way (the change applies once the host merges it). */
+/** What a save answers: committed on the target; waiting for the branch checking now, or for the release holding the
+ *  queue (`release`, as shown); or, on a project that lands by request or by pushing a branch, published that way (the
+ *  change applies once the host merges it). */
 export type MergeSettingsSaveResult =
   | { state: "saved"; commit: string; pushed: false }
-  | { state: "waiting" }
+  | { state: "waiting"; release?: string }
   | { state: "requested"; commit: string; branch: string; url: string; number: number }
   | { state: "pushed"; commit: string; branch: string };
 
@@ -132,3 +134,7 @@ export type MergeSettingsSaveResult =
 export const SETTINGS_DIRTY_WORDS = "Commit or discard the edit in the project folder first";
 /** The words while a save waits for the branch checking now. */
 export const SETTINGS_WAITING_WORDS = "Saves when the current branch finishes";
+/** The words for a waiting save: the release holding it when one does (`release`, as shown), else the branch's. */
+export const settingsWaitingWords = (release?: string): string => `Saves ${settingsWaitingClause(release)}`;
+/** The same, as a clause for a sentence of its own ("{how} saves to the project file {clause}."). */
+export const settingsWaitingClause = (release?: string): string => (release ? `once ${release} is published or abandoned` : "when the current branch finishes");

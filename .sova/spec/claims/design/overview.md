@@ -96,6 +96,7 @@ One file per document, in reading order.
 | [§chat/markdown · Markdown and code](../chat/markdown.md) | Markdown rendering and code blocks. |
 | [§chat/context-window · Context window](../chat/context-window.md) | The context readout in the session head: plain text, the sidebar ring, steps toward the limit. |
 | [§chat/mode-menu · Mode menu](../chat/mode-menu.md) | Per-chat mode switching and the always-visible Subagents picker. |
+| [§chat/create-mode · Create](../chat/create-mode.md) | The third major mode: everything Delegate does, plus every supported way to configure or extend Sova. |
 | [§chat/subagent-profiles · Subagent profiles](../chat/subagent-profiles.md) | Named worker setups, device-local defaults, per-chat ID picks and usage-limit recovery. |
 | [§chat/playbooks · Playbooks](../chat/playbooks.md) | Markdown recipes from the composer flyout: the three provenance groups, the two-step modal, and what gets sent into the chat. |
 | [§app/new-session-dialog · New Session dialog](../app/new-session-dialog.md) | Creating a session: the modal, the in-place folder picker, fields, and validation. |

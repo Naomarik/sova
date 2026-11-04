@@ -138,7 +138,7 @@ test("the merge-reviewer profile ships with Sova: no edit tools, web, workers, t
   const raw = JSON.parse(readFileSync(join(REPO, "profiles", "system", "merge-reviewer.json"), "utf8"));
   assert.equal(profileFileError(raw), null);
   assert.equal((await findProfile({ source: "sova", id: "merge-reviewer" }, null))?.id, "merge-reviewer");
-  assert.deepEqual([...raw.remove].sort(), ["edit", "timers", "web", "workers", "worktrees"]);
+  assert.deepEqual([...raw.remove].sort(), ["edit", "mcp", "timers", "web", "workers", "worktrees"]);
   assert.deepEqual(raw.grant, []);
 });
 

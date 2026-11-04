@@ -85,7 +85,7 @@ export function profileSummary(p: Pick<Profile, "remove" | "grant" | "singleton"
   const g = new Set(p.grant);
   if (g.has("sessions.message")) parts.push(g.has("sessions.all") ? "sees and messages all sessions" : "reads and messages sessions");
   else if (g.has("sessions.read")) parts.push(g.has("sessions.all") ? "reads all sessions" : "reads sessions");
-  const off = p.remove.filter((r) => r !== "workers" || p.remove.length === 1);
+  const off = p.remove.filter((r) => r !== "workers" || !p.remove.some(takesWorkersAway));
   if (off.length) parts.push(`no ${off.map((r) => CAPABILITY_LABEL[r].toLowerCase()).join(", ")}`);
   if (p.singleton) parts.push("One at a time");
   parts.push(...modeParts(p));
@@ -95,6 +95,19 @@ export function profileSummary(p: Pick<Profile, "remove" | "grant" | "singleton"
 /** A profile's mode and minor modes as line parts, each only when it sets it: "delegate", "align, spec, vis" or "no minor modes". */
 function modeParts(p: Pick<Profile, "mode" | "minorModes">): string[] {
   return [...(p.mode ? [p.mode] : []), ...(p.minorModes ? [p.minorModes.length ? p.minorModes.join(", ") : "no minor modes"] : [])];
+}
+
+/** A removal that takes Workers & teams with it (shared/profiles normalizeCaps): any tool, but not MCP Servers. */
+const takesWorkersAway = (cap: Removable): boolean => cap !== "workers" && cap !== "mcp";
+
+/** A capability's switch on the board: the list it leaves. Workers went with the last removal that
+    took them (§chat.profiles/enforcement), so they come back with it. MCP Servers takes nothing and
+    brings nothing back: Workers switched off by hand beside it stay off. */
+export function flippedRemove(remove: readonly string[], cap: Removable, on: boolean): string[] {
+  if (!on) return [...remove, cap];
+  const next = remove.filter((r) => r !== cap);
+  const took = cap !== "workers" && cap !== "mcp";
+  return took && !next.some((r) => takesWorkersAway(r as Removable)) ? next.filter((r) => r !== "workers") : next;
 }
 
 /** One row of "What changes vs My settings". */

@@ -2,7 +2,8 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 While the mesh is on, hosts share settings, themes, extensions and logins, each category behind its
-own toggle. Sessions never sync. Device-bound keys (Tailscale, ssh) never sync. The subagent
+own toggle. Sessions never sync. Device-bound keys (Tailscale, ssh) never sync. MCP servers, their
+approvals, secrets and sign-ins never sync (§app.mcp/this-computer). The subagent
 profile library merges profile by profile (§mesh.sync/profile-library), and a host keeps the
 settings it had whenever another host's copy replaces them (§mesh.sync/kept-copies).
 

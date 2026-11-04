@@ -3,10 +3,10 @@ import { MergeThreadCard, QueueHistory, ReviewerLinks, ReviewRunningButton } fro
 import type { ChatRef } from "../lib/merge-chat";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { mins, notesOf, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, stillSentBack } from "../lib/merge-queue";
+import { mins, notesOf, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, SENT_BACK_LINE, stillSentBack } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
-import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
+import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
 import { announce, toast } from "../lib/ui-state";
 import { MergeOnboarding } from "./MergeOnboarding";
 import { MergeRunView } from "./MergeRunView";
@@ -63,6 +63,8 @@ export function MergeQueueTab(props: { projectId: string; root: string; name: st
   );
 }
 
+/** The release holding the queue, as the Releases tab names it: its tag, else its version. */
+const holdName = (r: { version: string | null; tag?: string | null }): string => (r.tag ? `release ${r.tag}` : r.version ? `release ${r.version}` : "a release");
 
 /**
  * A listed project with no merge setup: its chats merge plainly. The tab says so, and Initialize opens the
@@ -267,7 +269,7 @@ export function useAct(onChanged: () => void) {
 
 function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: ChatOf; onChanged(): void }) {
   const v = () => props.view;
-  const chip = () => queueStateChip(v());
+  const chip = () => (v().release && v().state !== "paused" && !v().invalid ? { label: "Frozen for a release", tone: "warn" as const } : queueStateChip(v()));
   const head = useAct(props.onChanged);
   const paused = () => v().state === "paused";
   return (
@@ -341,6 +343,21 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
           }
         />
       </Show>
+      {/* An open release freezes the target on it: only its own entries land until it's published or abandoned. */}
+      <Show when={v().release}>
+        {(rel) => (
+          <Banner
+            tone="info"
+            title={`${v().target} is frozen for ${holdName(rel())}`}
+            body="Other landings wait in line, and nothing is pushed, until the release is published or abandoned."
+            action={
+              <a class="button button-sm" href={projectTabHref(props.projectId, "releases")}>
+                Open Releases
+              </a>
+            }
+          />
+        )}
+      </Show>
       <CheckingNow projectId={props.projectId} view={v()} chatOf={props.chatOf} />
       <Waiting projectId={props.projectId} view={v()} chatOf={props.chatOf} onChanged={props.onChanged} />
       <Show when={v().needsYou.length > 0}>
@@ -379,30 +396,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
           <h3 class="text-heading-s">Sent back to its chat</h3>
           <ul class="list mq-list">
             <For each={stillSentBack(v())}>
-              {(e) => (
-                <li class="list-row mq-row" classList={{ "mq-tap": !!e.session }} data-branch={e.branch} data-state="needs-fix" onClick={rowOpens(() => e.session && chatHref(props.projectId, e.session, props.chatOf))}>
-                  <div class="list-main">
-                    <p class="list-title mq-branch text-mono">{e.branch}</p>
-                    <p class="mq-facts">
-                      <QueueChip row={{ label: "Needs a fix", tone: "error" }} />
-                      <span class="text-mono text-muted">{short(e.commit)}</span>
-                    </p>
-                    <p class="list-meta">{e.reason ?? "It failed a check that passes on the target."}</p>
-                    <ChatLine projectId={props.projectId} session={e.session} worktree={e.worktree} chatOf={props.chatOf} tail={<span class="text-muted"> · {relativeTime(e.updatedAt)}</span>} />
-                    <ReviewerLinks projectId={props.projectId} view={v()} run={e.run} />
-                  </div>
-                  <div class="button-row mq-row-act">
-                    <QueueReview projectId={props.projectId} branch={e.branch} scope={{ kind: "queue", project: props.projectId, entry: e.id }} session={e.session} chatOf={props.chatOf} />
-                    <Show when={e.run}>
-                      {(r) => (
-                        <a class="button button-sm button-ghost" href={mergeRunHref(props.projectId, r())}>
-                          See Why
-                        </a>
-                      )}
-                    </Show>
-                  </div>
-                </li>
-              )}
+              {(e) => <SentBackRow projectId={props.projectId} root={v().root} entry={e} view={v()} chatOf={props.chatOf} onChanged={props.onChanged} />}
             </For>
           </ul>
         </div>
@@ -473,7 +467,13 @@ function CheckingNow(props: { projectId: string; view: MergeQueueView; chatOf?: 
       when={cur()}
       fallback={
         <p class="mq-empty text-caption">
-          {props.view.waiting.length ? `${props.view.waiting.length} waiting. The next one starts in a moment.` : "Nothing being checked. A branch starts as soon as you press Land."}
+          {props.view.release
+            ? props.view.waiting.length
+              ? `${props.view.waiting.length} waiting for ${holdName(props.view.release)}: they start once it's published or abandoned.`
+              : `Nothing being checked. A branch you land now waits for ${holdName(props.view.release)}.`
+            : props.view.waiting.length
+              ? `${props.view.waiting.length} waiting. The next one starts in a moment.`
+              : "Nothing being checked. A branch starts as soon as you press Land."}
         </p>
       }
     >
@@ -547,7 +547,7 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
                   <div class="list-main">
                     <p class="list-title mq-branch text-mono">{e.branch}</p>
                     <p class="mq-facts">
-                      <QueueChip row={{ label: `In line · ${e.position ?? "?"}`, tone: "neutral" }} />
+                      <QueueChip row={e.release ? { label: "Release", tone: "accent" } : { label: `In line · ${e.position ?? "?"}`, tone: "neutral" }} />
                       <span class="text-mono text-muted">{short(e.commit)}</span>
                       <span>
                         approved {relativeTime(e.approval.at)} · {e.approval.by === "typed" ? "typed in its chat" : "Land button"}
@@ -556,12 +556,16 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
                       </span>
                     </p>
                     <ChatLine projectId={props.projectId} session={e.session} worktree={e.worktree} chatOf={props.chatOf} />
-                    <Show when={e.eta}>
+                    {/* While a release holds the queue, no estimate holds: the row's reason says what it waits for. */}
+                    <Show when={props.view.release && !e.release ? null : e.eta}>
                       {(t) => (
                         <p class="list-meta">
                           <Icon name="clock" small /> starts in ~{mins(t().startsInMs)} · takes ~{mins(t().takesMs)}
                         </p>
                       )}
+                    </Show>
+                    <Show when={e.release ? null : e.reason}>
+                      {(why) => <p class="list-meta">{why()}</p>}
                     </Show>
                     <Show when={e.newerCommits}>
                       <p class="list-meta">
@@ -683,12 +687,69 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
           <button type="button" class="button button-sm button-primary" aria-label={`Land ${e().branch}`} disabled={!!act.busy()} onClick={() => void act.run("land", () => landBranch(props.root, e().branch), `Queued ${e().branch}.`)}>
             Land
           </button>
+          <button type="button" class="button button-sm" aria-label={`Cancel landing ${e().branch}`} disabled={!!act.busy()} onClick={() => void act.run("cancel", () => cancelEntry(e()), `Cancelled landing ${e().branch}.`)}>
+            Cancel
+          </button>
         </Show>
         <Show when={e().state === "behaviour-differs" || e().state === "review-flagged" || e().state === "unattributed"}>
           <button type="button" class="button button-sm button-destructive" aria-label={`Send ${e().branch} back to its chat`} disabled={!!act.busy()} onClick={() => answer("send-back", `Sent ${e().branch} back to its chat.`)}>
             Send Back
           </button>
         </Show>
+      </div>
+    </li>
+  );
+}
+
+/** A branch sent back to its chat (Needs a fix): its reason, Land This Commit Again (a new approval of the same
+ *  commit, every check from the start) and Remove from Queue (it leaves the queue; nothing is deleted). Once its chat
+ *  fixes it (a newer finished commit, or its drafts fixed at the same commit) the Ready to land row stands for it. */
+function SentBackRow(props: { projectId: string; root: string; entry: MergeEntry; view: MergeQueueView; chatOf?: ChatOf; onChanged(): void }) {
+  const e = () => props.entry;
+  const act = useAct(props.onChanged);
+  return (
+    <li class="list-row mq-row" classList={{ "mq-tap": !!e().session }} data-branch={e().branch} data-state="needs-fix" onClick={rowOpens(() => e().session && chatHref(props.projectId, e().session!, props.chatOf))}>
+      <div class="list-main">
+        <p class="list-title mq-branch text-mono">{e().branch}</p>
+        <p class="mq-facts">
+          <QueueChip row={{ label: "Needs a fix", tone: "error" }} />
+          <span class="text-mono text-muted">{short(e().commit)}</span>
+        </p>
+        <p class="list-meta">{e().reason ?? "It failed a check that passes on the target."}</p>
+        <p class="list-meta text-muted">{SENT_BACK_LINE}</p>
+        <ChatLine projectId={props.projectId} session={e().session} worktree={e().worktree} chatOf={props.chatOf} tail={<span class="text-muted"> · {relativeTime(e().updatedAt)}</span>} />
+        <ReviewerLinks projectId={props.projectId} view={props.view} run={e().run} />
+        <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
+      </div>
+      <div class="button-row mq-row-act">
+        <QueueReview projectId={props.projectId} branch={e().branch} scope={{ kind: "queue", project: props.projectId, entry: e().id }} session={e().session} chatOf={props.chatOf} />
+        <Show when={e().run}>
+          {(r) => (
+            <a class="button button-sm button-ghost" href={mergeRunHref(props.projectId, r())}>
+              See Why
+            </a>
+          )}
+        </Show>
+        <button
+          type="button"
+          class="button button-sm"
+          aria-label={`Land ${e().branch} at this commit again`}
+          title="Approve the same commit again: every check runs from the start."
+          disabled={!!act.busy()}
+          onClick={() => void act.run("land", () => landBranch(props.root, e().branch, { commit: e().commit }), `Queued ${e().branch} at ${short(e().commit)} again.`)}
+        >
+          Land This Commit Again
+        </button>
+        <button
+          type="button"
+          class="button button-sm"
+          aria-label={`Remove ${e().branch} from the merge queue`}
+          title="Takes it off the queue. Its branch, folder, commits and drafts stay."
+          disabled={!!act.busy()}
+          onClick={() => void act.run("cancel", () => cancelEntry(e()), `Removed ${e().branch} from the merge queue.`)}
+        >
+          Remove from Queue
+        </button>
       </div>
     </li>
   );

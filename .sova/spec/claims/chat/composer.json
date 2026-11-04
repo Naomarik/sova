@@ -296,12 +296,15 @@
       "§app.project-services/merge-verbs",
       "§chat.timeline/inputs-only",
       "§chat.changes/viewer",
-      "§chat.changes/endpoint"
+      "§chat.changes/endpoint",
+      "§chat.merge-queue/chat-card",
+      "§app.merge-queue/run",
+      "§chat.worktrees/ready-to-land"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     },
     "code": [
       "src/components/WorktreesControl.tsx",
@@ -321,7 +324,14 @@
       "src/lib/worktrees-served.test.ts",
       "src/components/ReviewChanges.tsx",
       "src/lib/worktrees.ts",
-      "src/lib/merge-queue-sent-back.test.ts"
+      "src/lib/merge-queue-sent-back.test.ts",
+      "src/lib/branch-status.ts",
+      "src/lib/branch-status.test.ts",
+      "server/merge-queue/queue.ts",
+      "shared/merge-queue.ts",
+      "server/merge-queue/view.ts",
+      "server/docs-preview.ts",
+      "server/spec-drafts-state.ts"
     ]
   },
   "§chat/composer": {

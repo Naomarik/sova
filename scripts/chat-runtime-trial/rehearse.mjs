@@ -292,7 +292,7 @@ try {
   const h0 = await healthy(baseUrl);
   const pidM = mainPid();
   Rec.note(`master up: pid ${pidM}, health ${JSON.stringify(h0).slice(0, 160)}`);
-  const c = client(baseUrl, tokenOf(agent));
+  const c = client(baseUrl, tokenOf(agent), agent);
   const newChat = async () => {
     const { path } = await c.api("/api/sessions", { method: "POST", body: JSON.stringify({ cwd: proj }) });
     const s = await chat(c, path);
@@ -366,7 +366,7 @@ try {
   const pidF = mainPid();
   const oClosed = await waitFor(() => O.closed(), 5000, 200);
   Rec.check(oClosed, "the socket left open on master (O) was closed by the stop, as a page's is");
-  const c2 = client(baseUrl, tokenOf(agent));
+  const c2 = client(baseUrl, tokenOf(agent), agent);
   const reopen = async (path, label) => {
     // busy: a chat whose reply the stop cut may be refused as written by an unknown process (its last
     // entry, master's abort, is not in master's owned-writes record): the page reads "Read only while

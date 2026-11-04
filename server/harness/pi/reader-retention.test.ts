@@ -16,6 +16,7 @@ after(() => rmSync(agentDir, { recursive: true, force: true }));
 
 const { readAlignScan } = await import("../../align-state");
 const { readReadinessScan } = await import("../../merge-readiness");
+const { sessionFacts } = await import("../../insights");
 
 const isBun = typeof (globalThis as { Bun?: unknown }).Bun !== "undefined";
 const LINES = 500;
@@ -95,6 +96,14 @@ describe("the session list's scans keep compact items, never whole lines", { ski
     assert.equal(scan.entries?.length, ENTRIES);
     assert.equal(scan.entries?.filter((e) => e.userPrompt).length, 1, "the prompt was parsed, not skipped");
     assert.ok(grew < 5 * MB, `the alignment scan kept ${(grew / MB).toFixed(1)} MB`);
+  });
+
+  test("the session facts fold (insights) keeps under 5 MB of a 78 MB session", async () => {
+    const before = await retained();
+    const facts = await sessionFacts(path);
+    const grew = (await retained()) - before;
+    assert.equal(facts.sessionId, "s0", "the file was read");
+    assert.ok(grew < 5 * MB, `the facts fold kept ${(grew / MB).toFixed(1)} MB`);
   });
 
   test("the tracked-worktree scan (merge-readiness) keeps under 5 MB of a 78 MB session", async () => {

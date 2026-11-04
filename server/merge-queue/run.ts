@@ -325,7 +325,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   const docs = await makeDocs({ input, copy, steps, ident, deps, signal });
   if (signal.aborted) return voided("aborted");
   if (docs.kind === "machine") return out({ verdict: "machine", why: docs.why, copy, mergeSha });
-  if (docs.kind === "refused") return out({ verdict: "failed", blame: "branch", why: docs.why, copy, mergeSha });
+  if (docs.kind === "refused") return out({ verdict: "failed", blame: "branch", cause: "drafts", why: docs.why, copy, mergeSha });
   if (docs.kind === "made") {
     tip = docs.sha;
     const more = (await gitProc(copy, ["diff", "--name-only", `${mergeSha}..${tip}`])).out.split("\n").filter(Boolean);
@@ -334,7 +334,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   scope.tip = tip;
 
   // 6. checks, with the review beside them
-  const list = planChecks(def, input.picks);
+  const list = planChecks(def, input.picks, input.releaseChecks);
   checksShown = picksOf(list);
   hooks.checks(checksShown);
   const review = input.review ? startReview({ input, copy, tip, steps, deps, def }) : null;
@@ -342,7 +342,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     await review?.cancel();
     return o;
   };
-  if (declared === "none") {
+  if (declared === "none" && !list.length) {
     const r = review ? await review.result : null;
     return reviewed(r, out({ verdict: "passed", tip, mergeSha, copy, noChecks: true, notes: [{ kind: "no-checks", text: "No checks declared: landed after a clean merge", at: now() }] }));
   }
@@ -582,10 +582,10 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     if (again) return out({ verdict: "failed", why: `setup (${again.failed.id}) fails on ${target} itself (log: ${again.step.log})`, copy });
     notes.push({ kind: "flaky", text: `setup (${failed.failed.id}) failed, then passed on a rerun`, at: now() });
   }
-  const list = planChecks(def, input.picks);
+  const list = planChecks(def, input.picks, input.releaseChecks);
   checksShown = picksOf(list);
   hooks.checks(checksShown);
-  if (declared === "none") return out({ verdict: "passed", noChecks: true, copy });
+  if (declared === "none" && !list.length) return out({ verdict: "passed", noChecks: true, copy });
   let services: { slot: number; down: () => Promise<void> } | null = null;
   try {
     const needs = [...new Set(list.flatMap((c) => c.requires))];
@@ -810,7 +810,7 @@ async function landDrafts(o: { input: RunInput; copy: string; ident: Record<stri
   if (j.exit !== 0 || !j.written) {
     const f = (j.findings ?? []).slice(0, 6).map((x) => `${x.id ?? x.draft ?? ""} ${x.code ?? ""}: ${x.message ?? ""}`.trim());
     st.end("failed", { detail: `drafts don't fit: ${f.join("; ").slice(0, 300)}` });
-    return { kind: "refused", why: `your spec drafts don't fit, so nothing was made official: ${f.join("; ").slice(0, 400)}. Fix them in your drafts (no commit needed) and approve again.` };
+    return { kind: "refused", why: `your spec drafts don't fit, so nothing was made official: ${f.join("; ").slice(0, 400)}. Fix them in your drafts (no commit needed); Land comes back here, or type "land it" in this chat.` };
   }
   const paths = (j.paths ?? []).filter((x): x is string => typeof x === "string" && x.startsWith(".sova/spec/") && !x.startsWith(".sova/spec/drafts/"));
   if (!paths.length) {

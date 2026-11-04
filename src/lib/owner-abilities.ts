@@ -27,20 +27,20 @@ export function nameList(names: readonly string[]): string {
 }
 
 type Kind = "fix" | "version" | "release";
-const NAME: Record<Kind, string> = { fix: "Get a problem fixed", version: "Try the latest version", release: "Release a new version" };
+const NAME: Record<Kind, string> = { fix: "Get a problem fixed", version: "Try the latest version", release: "Ship the latest version" };
 /** One plain sentence per answer, when every project the line covers gives it. */
 const PLAIN: Record<Kind, Record<OwnerAbilityOutcome, string>> = {
   fix: { now: "Starts right away", held: "Starts on its own in a few minutes", team: "The team decides when to start it" },
   // A version is never held; a held answer reads as right away.
   version: { now: "Starts right away, with an Open button", held: "Starts right away, with an Open button", team: "The team starts it for you" },
-  release: { now: "Starts right away", held: "Starts on its own in a few minutes", team: "The team releases it" },
+  release: { now: "Starts right away", held: "Starts on its own in a few minutes", team: "The team ships it" },
 };
 /** The segment of each answer when projects differ, in this order. */
 const ORDER: readonly OwnerAbilityOutcome[] = ["now", "held", "team"];
 const SEGMENT: Record<Kind, Record<OwnerAbilityOutcome, (projects: string) => string>> = {
   fix: { now: (p) => `right away for ${p}`, held: (p) => `on its own for ${p}`, team: (p) => `the team starts it for ${p}` },
   version: { now: (p) => `right away for ${p}`, held: (p) => `right away for ${p}`, team: (p) => `the team starts it for ${p}` },
-  release: { now: (p) => `right away for ${p}`, held: (p) => `on its own for ${p}`, team: (p) => `the team releases it for ${p}` },
+  release: { now: (p) => `right away for ${p}`, held: (p) => `on its own for ${p}`, team: (p) => `the team ships it for ${p}` },
 };
 
 /** The "how" of one line over the projects it covers (each name with its answer, in Home's order). */
@@ -88,7 +88,7 @@ export function abilityLines(projects: readonly { id: string; name: string }[], 
     id: "release",
     name: NAME.release,
     ...howLine("release", shown.map((s) => ({ name: s.name, outcome: s.release }))),
-    prefill: single ? `Please release a new version of ${single}.` : "Please release a new version of ",
+    prefill: single ? `Please ship the latest version of ${single}.` : "Please ship the latest version of ",
   });
   return lines;
 }

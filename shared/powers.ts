@@ -26,7 +26,7 @@ export const POWERS = [
   "promote", "bookkeeping", // spec
   "codingStart", "codingPrompt", "onboard", "markMerged", // code
   "copiesRun", "copiesReset", // copies
-  "share", "deploy", // release
+  "share", "deploy", "release", // release
 ] as const;
 export type PowerId = (typeof POWERS)[number];
 export const isPowerId = (v: unknown): v is PowerId => typeof v === "string" && (POWERS as readonly string[]).includes(v);
@@ -61,6 +61,7 @@ export const POWER_INFO: Record<PowerId, PowerInfo> = {
   copiesReset: { group: "copies", oldLevel: "L3", assistant: false, label: "Reset or tear down running copies" },
   share: { group: "release", oldLevel: "L1", assistant: false, label: "Share a version to try" },
   deploy: { group: "release", oldLevel: null, assistant: true, label: "Deploy (the project's own recipe)" },
+  release: { group: "release", oldLevel: null, assistant: false, label: "Release (the project's release playbook; may publish after its waiting period)" },
 };
 
 export const POWER_GROUP_LABEL: Record<PowerGroup, string> = { people: "People", spec: "Spec", code: "Code", copies: "Running copies", release: "Release" };
@@ -77,6 +78,7 @@ export const ALWAYS_PHRASES: readonly string[] = [
   "stopping a running copy",
   "taking a share link back",
   "asking you to deploy",
+  "asking you to release",
 ];
 
 export const powersOfGroup = (g: PowerGroup): PowerId[] => POWERS.filter((p) => POWER_INFO[p].group === g);
@@ -296,6 +298,21 @@ export function applyPowersPatch(s: StoredPowers, patch: { overseer?: Partial<Po
   for (const [k, v] of Object.entries(patch.overseer ?? {})) if (isPowerId(k) && typeof v === "boolean") overseer[k] = v;
   for (const [k, v] of Object.entries(patch.assistant ?? {})) if (isPowerId(k) && typeof v === "boolean") assistant[k] = v && POWER_INFO[k].assistant;
   return { ...s, overseer, assistant, derivedAutonomy: derivedAutonomy(overseer) };
+}
+
+/** Whether a PATCH …/overseer body, by `powers` or the older `autonomy`, turns On any power that is Off now. A body
+    that names neither, or that isn't valid, turns nothing on (it is refused for what it is). */
+export function powerTurnsOn(s: StoredPowers, body: { powers?: unknown; autonomy?: unknown }): boolean {
+  let overseer = s.overseer;
+  let assistant = s.assistant;
+  if (isLevel(body.autonomy)) overseer = carryOver(body.autonomy);
+  if (body.powers !== undefined) {
+    if (powersPatchProblem(body.powers)) return false;
+    const next = applyPowersPatch({ ...s, overseer }, body.powers as { overseer?: Partial<PowerMap>; assistant?: Partial<PowerMap> });
+    overseer = next.overseer;
+    assistant = next.assistant;
+  }
+  return POWERS.some((p) => (overseer[p] === true && s.overseer[p] !== true) || (assistant[p] === true && s.assistant[p] !== true));
 }
 
 // ---- the wire (GET/PATCH …/overseer, §3 of the design) --------------------------------------------

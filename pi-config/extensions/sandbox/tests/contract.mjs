@@ -450,7 +450,7 @@ if (!linuxReady) {
 		const auth = path.join(process.env.HOME, ".pi/agent/auth.json");
 		if (!existsSync(auth)) { console.log("       no host auth.json; case vacuous"); return; }
 		const host = readFileSync(auth, "utf8");
-		ok(host.length > 8, "precondition: host auth.json is nonempty");
+		if (host.length <= 8) { console.log("       host auth.json holds no logins; case vacuous"); return; }
 		const p = makePolicy(fx, { network: { mode: "none" }, extraHidden: [BE.canonicalizePath(auth)] });
 		const probe2 = await backend.probe(p);
 		ok(probe2.ok === true, `probe with the extra hidden file must succeed: ${JSON.stringify(probe2)}`);

@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { linkedPlaybook, playbookTurnText } from "../../shared/playbooks";
-import type { PlaybookInfo } from "../../shared/protocol";
+import type { PlaybookInfo, PlaybookProposes } from "../../shared/protocol";
 import { defaultRemoteOf } from "../files";
 import { listModels } from "../models";
 import { listPlaybooks } from "../playbooks";
@@ -72,7 +72,7 @@ export interface OnboardStart {
   /** The verb playbook the run is keyed by (§app.project-runtime/verb-playbooks): its id, title and what it proposes. */
   playbookId: string;
   label: string;
-  proposes: "definition" | "deploy";
+  proposes: PlaybookProposes;
   /** Set when the host refuses: nothing may start. */
   invalid?: string;
 }

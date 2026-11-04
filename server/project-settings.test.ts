@@ -32,6 +32,7 @@ const orgs = await import("./orgs");
 const reconcile = await import("./reconcile");
 const { runSettingsTool } = await import("./project-settings-tool");
 const { settled } = await import("./workspace-git");
+const { pageHeaders } = await import("./testing/page");
 
 after(async () => {
   await disposeAllChats();
@@ -66,7 +67,7 @@ function app() {
   return a;
 }
 const post = (a: Hono, path: string, body: unknown, headers: Record<string, string> = {}) =>
-  a.request(path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+  a.request(path, { method: "POST", headers: { "content-type": "application/json", ...(Object.keys(headers).length ? {} : pageHeaders()), ...headers }, body: JSON.stringify(body) });
 
 describe("b1: its own switches, in the operator's turn", async () => {
   const { project } = await gitProject("b1");
@@ -346,7 +347,7 @@ test("a standalone project has no stakeholder, owner's page or Frozen: refused i
   await assert.rejects(() => run(project.id, true, { op: "propose", why: "x", edits: [{ setting: "project", frozen: true }] }), /only an organization's project/i);
 });
 
-test("only the project overseer has sova_settings, and its ops map to a power (propose always, apply the operator's)", async () => {
+test("only the project overseer and a Create chat have sova_settings, and its ops map to a power (propose always, apply the operator's)", async () => {
   const { TOOL_POWER, OP_POWER } = await import("./project-overseer-tools");
   assert.equal(TOOL_POWER.sova_settings, "per-op");
   assert.deepEqual(OP_POWER.sova_settings, { get: "always", reference: "always", propose: "always", withdraw: "always", apply: "operator" });
@@ -354,7 +355,7 @@ test("only the project overseer has sova_settings, and its ops map to a power (p
   const families = Object.entries((JSON.parse(snapshot) as { families: Record<string, unknown> }).families)
     .filter(([, v]) => JSON.stringify(v).includes("sova_settings"))
     .map(([k]) => k);
-  assert.ok(families.length > 0 && families.every((k) => k.startsWith("project-overseer")), families.join(", "));
+  assert.ok(families.length > 0 && families.every((k) => k.startsWith("project-overseer") || k === "create-settings"), families.join(", "));
 });
 
 test("an offers file's only grant is its unapproved run buttons: removing a leftover mainMerges, or the file, is none", async () => {
@@ -380,7 +381,7 @@ describe("this machine's copy limit (§app.project-services/instances): a Sova-k
   const put = (body: unknown, headers: Record<string, string> = {}) => {
     const a = new Hono();
     registerServicesViewRoutes(a);
-    return a.request(`/api/projects/${pid}/services/limit`, { method: "PUT", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+    return a.request(`/api/projects/${pid}/services/limit`, { method: "PUT", headers: { "content-type": "application/json", ...(Object.keys(headers).length ? {} : pageHeaders()), ...headers }, body: JSON.stringify(body) });
   };
 
   test("lowering applies at once in the operator's turn; raising waits on a card; a run the operator didn't start applies nothing", async () => {

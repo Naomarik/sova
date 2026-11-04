@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { NamedChange } from "../../shared/orgs";
+import { normalizeCaps } from "../../shared/profiles";
 import { groupChanges, orgHoursChangeLine, orgHoursRevert, revertible, valueText, writerWord } from "./profile-changes";
+import { flippedRemove } from "./profiles";
 
 const ch = (at: string, personId: string, field: NamedChange["field"], to: unknown, kind: NamedChange["by"]["kind"] = "operator", extra: Partial<NamedChange> = {}): NamedChange => ({
   at,
@@ -92,4 +94,14 @@ test("r13: a company-hours line reverts unless its field changed since (C6) or t
   assert.deepEqual(orgHoursRevert(history[0]!, history, { tz: "Europe/Istanbul", hours: h9 }), { ok: false, why: "The hours are already these." });
   assert.deepEqual(orgHoursRevert(history[1]!, history, { hours: h10 }), { ok: false, why: "The time zone is already this." });
   assert.equal(orgHoursChangeLine({ field: "tz", from: "Europe/Istanbul", to: "", revertOf: "t2" }), "Reverted. Time zone: Europe/Istanbul → —");
+});
+
+test("the board: Workers come back with the last tool removal, and MCP Servers neither takes nor brings them", () => {
+  assert.deepEqual(flippedRemove([], "mcp", false), ["mcp"]);
+  assert.deepEqual(normalizeCaps(flippedRemove([], "mcp", false), []).remove, ["mcp"], "switching MCP Servers off leaves Workers on");
+  assert.deepEqual(flippedRemove(["mcp"], "mcp", true), []);
+  assert.deepEqual(flippedRemove(["workers", "mcp"], "mcp", true), ["workers"], "Workers switched off by hand stay off");
+  assert.deepEqual(flippedRemove(["web", "workers"], "web", true), [], "the old rule holds");
+  assert.deepEqual(flippedRemove(["web", "workers", "mcp"], "web", true), ["mcp"], "with MCP Servers still off, too");
+  assert.deepEqual(flippedRemove(["web", "edit", "workers"], "web", true), ["edit", "workers"]);
 });

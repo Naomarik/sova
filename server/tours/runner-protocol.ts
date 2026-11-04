@@ -22,7 +22,8 @@ export interface TourStorageState {
 /** `declared`: this tour's own origins (source, listed sites, test-account origin). */
 /** `signIn`: the script's form sign-in is usable: its origins, and the tour's stored signed-in session if any. No login rides here. */
 /** `look`: a look (§app.tours/look), a dry run that lists each page's controls; `signInRoute`: first list that page signed out. */
-export interface TourAttemptInput { script: TourScript; origin: string; dryRun: boolean; proxied: boolean; declared?: string[]; account?: { origin: string; username: string; password: string }; sova?: { origin: string; name: string; value: string; marker: string }; signIn?: { origins: string[]; storage?: TourStorageState }; look?: { signInRoute?: string } }
+/** `browser`: the executable the server chose (macOS only); absent, the child discovers its own. */
+export interface TourAttemptInput { script: TourScript; origin: string; dryRun: boolean; proxied: boolean; browser?: string; declared?: string[]; account?: { origin: string; username: string; password: string }; sova?: { origin: string; name: string; value: string; marker: string }; signIn?: { origins: string[]; storage?: TourStorageState }; look?: { signInRoute?: string } }
 export type TourChildMessage =
   | { type: "contact"; id: number; origin: string }
   | { type: "checkpoint"; id: number }

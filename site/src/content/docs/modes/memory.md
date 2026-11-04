@@ -163,3 +163,6 @@ An overseer's memory is **on by default**, with UniiChat, whatever default you s
 ordinary chats. Switched off, it stays off until someone switches it on again, and Clear keeps the
 choice. An overseer that already has history is prepared in the background, like any chat. The
 coding sessions an overseer starts never get memory.
+
+Each project's merge thread, the chat Sova starts to run its merge queue, has memory on too, pinned:
+its mode menu can't turn it off.

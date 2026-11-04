@@ -2,7 +2,7 @@
  * Projects: the project verbs, made from the contract's lists, and the project screens. Part of the command catalogue, assembled by shared/commands-catalog.ts
  * (rules: agents/server/commands/overview.md). Pure, erasable syntax only.
  */
-import { DEPLOY_READ_VERBS, DEPLOY_VERBS, MERGE_READ_VERBS, MERGE_VERBS, READ_VERBS, VERB_FLAGS, VERB_PARAMS, VERBS } from "../project-contract.ts";
+import { DEPLOY_READ_VERBS, DEPLOY_VERBS, MERGE_READ_VERBS, MERGE_VERBS, READ_VERBS, RELEASE_READ_VERBS, RELEASE_VERBS, VERB_FLAGS, VERB_PARAMS, VERBS } from "../project-contract.ts";
 import type { CommandEntry, CommandParam } from "./types.ts";
 import { PROJECT_OVERSEER_ENTRIES } from "./overseer.ts";
 
@@ -23,17 +23,21 @@ const DEPLOY_PARAMS: Record<string, CommandParam> = Object.fromEntries(VERB_FLAG
 /** The keys scripts/sova-project.mjs sends for a merge verb, as params. */
 const MERGE_PARAMS: Record<string, CommandParam> = Object.fromEntries(VERB_FLAGS.merge.map((f) => verbParam(f, false)));
 
-/** One entry per project verb, deploy verb and merge verb, from the contract's own lists. */
-export const VERB_ENTRIES: CommandEntry[] = [...VERBS, ...DEPLOY_VERBS, ...MERGE_VERBS].map((verb): CommandEntry => {
+/** The keys scripts/sova-project.mjs sends for a release verb, as params. */
+const RELEASE_PARAMS: Record<string, CommandParam> = Object.fromEntries(VERB_FLAGS.release.map((f) => verbParam(f, false)));
+
+/** One entry per project verb, deploy verb, merge verb and release verb, from the contract's own lists. */
+export const VERB_ENTRIES: CommandEntry[] = [...VERBS, ...DEPLOY_VERBS, ...MERGE_VERBS, ...RELEASE_VERBS].map((verb): CommandEntry => {
   const deploy = (DEPLOY_VERBS as readonly string[]).includes(verb);
   const merge = (MERGE_VERBS as readonly string[]).includes(verb);
-  const reads = (READ_VERBS as readonly string[]).includes(verb) || (DEPLOY_READ_VERBS as readonly string[]).includes(verb) || (MERGE_READ_VERBS as readonly string[]).includes(verb);
+  const release = (RELEASE_VERBS as readonly string[]).includes(verb);
+  const reads = (READ_VERBS as readonly string[]).includes(verb) || (DEPLOY_READ_VERBS as readonly string[]).includes(verb) || (MERGE_READ_VERBS as readonly string[]).includes(verb) || (RELEASE_READ_VERBS as readonly string[]).includes(verb);
   return {
     id: `project.verb.${verb}`,
     label: `Project ${verb}`,
     summary: `The project verb ${verb}, as the operator (sova-project ${verb}).`,
     effect: reads ? "looks" : "changes",
-    params: deploy ? DEPLOY_PARAMS : merge ? MERGE_PARAMS : INSTANCE_PARAMS,
+    params: deploy ? DEPLOY_PARAMS : merge ? MERGE_PARAMS : release ? RELEASE_PARAMS : INSTANCE_PARAMS,
     route: { method: "POST", path: `/api/project-services/${verb}` },
     sessionKey: null,
     sessionFile: "never",
@@ -249,6 +253,7 @@ const PROJECTS_SWEEP: CommandEntry[] = [
     pid,
     card: { type: "string", description: "The card's id (sc_…), or local", in: "path", required: true },
     fingerprint: { type: "string", description: "local only: the fingerprint the card showed", in: "body" },
+    "cancel-save": { type: "boolean", description: "local only: cancel a held Land and keep the edits", in: "body", key: "cancelSave" },
   }),
   changes("project.overseer.settings.set", "Set Project Overseer Settings", "Change a project overseer's settings: Watch, powers, models, limits, pace, the hold, extra instructions.", "PATCH", "/api/projects/:pid/overseer", {
     pid,

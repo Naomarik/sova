@@ -35,7 +35,7 @@ export interface ReplyTiming {
 export type SovaPart =
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
-  | { kind: "toolCall"; id: string; name: string; args?: unknown };
+  | { kind: "toolCall"; id: string; name: string; args?: unknown; mcp?: { server: string; tool: string } };
 
 /**
  * A live event. Optional fields keep the reducer's fallbacks: a part event without an `index`
@@ -54,10 +54,10 @@ export type SovaEvent =
       `images` its images as data URLs. */
   | { type: "message.start"; role: "user"; text: string; images: string[] }
   | { type: "part.start"; index?: number; kind: "text" | "thinking" }
-  | { type: "part.start"; index?: number; kind: "toolCall"; id?: string; name?: string }
+  | { type: "part.start"; index?: number; kind: "toolCall"; id?: string; name?: string; mcp?: { server: string; tool: string } }
   | { type: "part.delta"; index?: number; kind: "text" | "thinking" | "toolCall"; delta: string }
   | { type: "part.end"; index?: number; kind: "text" | "thinking"; text?: string }
-  | { type: "part.end"; index?: number; kind: "toolCall"; id?: string; name?: string; args?: unknown }
+  | { type: "part.end"; index?: number; kind: "toolCall"; id?: string; name?: string; args?: unknown; mcp?: { server: string; tool: string } }
   /** `entryId`: the transcript entry the message was written as, when it was. */
   | { type: "message.end"; role: "user"; entryId?: string }
   /** The message as written, authoritative over what streamed. `parts` empty keeps the streamed
@@ -77,7 +77,7 @@ export type SovaEvent =
     }
   /** `parentCallId` (on tool.start, .update and .end): a call another tool made (pi's parentToolCallId), by the
       calling tool's id. It has no row and no live tool of its own: its caller's result records it. */
-  | { type: "tool.start"; callId: string; name: string; args?: unknown; parentCallId?: string }
+  | { type: "tool.start"; callId: string; name: string; args?: unknown; parentCallId?: string; /** A server's tool (§app.mcp/in-a-chat). */ mcp?: { server: string; tool: string } }
   /** The tool's output so far: its text blocks joined, and its images as data URLs; `details`, the partial
       result's details when it has some (a calling tool's progress so far). */
   | { type: "tool.update"; callId: string; output: string; images: string[]; details?: unknown; parentCallId?: string }

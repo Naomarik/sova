@@ -1,15 +1,89 @@
-import { accessSync, constants, mkdirSync, mkdtempSync, rmSync, statSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { accessSync, constants, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
+import { homedir, tmpdir, userInfo } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import { chromium, type Browser } from "playwright-core";
 
 /** Safe authored setup copy, never a browser's stderr or an executable/profile path. */
 export class TourBrowserSetupError extends Error {}
 
+function isRunnableFile(file: string): boolean {
+  try { if (!statSync(file).isFile()) return false; accessSync(file, constants.X_OK); return true; } catch { return false; }
+}
+
+/** The chrome-headless-shell revision this Sova's playwright-core pins, or undefined. */
+export function pinnedHeadlessShellRevision(): string | undefined {
+  try {
+    const dir = dirname(createRequire(import.meta.url).resolve("playwright-core/package.json"));
+    const list = (JSON.parse(readFileSync(join(dir, "browsers.json"), "utf8")) as { browsers?: { name?: string; revision?: string }[] }).browsers;
+    const revision = list?.find(b => b.name === "chromium-headless-shell")?.revision;
+    return typeof revision === "string" && /^\d+$/.test(revision) ? revision : undefined;
+  } catch { return undefined; }
+}
+
+/**
+ * macOS only: Playwright's already-installed chrome-headless-shell, which runs under the Seatbelt
+ * sandbox (its `browser` rules) and, unlike an app-bundle Chrome, never raises a crash or Keychain
+ * dialog. Where Playwright keeps it: PLAYWRIGHT_BROWSERS_PATH, else ~/Library/Caches/ms-playwright.
+ * The pinned revision first, else the newest; this machine's architecture first. Never downloads.
+ */
+export function findMacHeadlessShell(env: NodeJS.ProcessEnv = process.env, pinned = pinnedHeadlessShellRevision(), arch: string = process.arch): string | undefined {
+  let caches: string[];
+  if (env.PLAYWRIGHT_BROWSERS_PATH === "0") {
+    try { caches = [join(dirname(createRequire(import.meta.url).resolve("playwright-core/package.json")), ".local-browsers")]; } catch { return undefined; }
+  } else if (env.PLAYWRIGHT_BROWSERS_PATH) caches = [env.PLAYWRIGHT_BROWSERS_PATH];
+  else {
+    // HOME first, then the account's own (a runtime whose HOME was changed after it started; Bun answers
+    // with the HOME it started with, so the test runner names the cache: PLAYWRIGHT_BROWSERS_PATH).
+    let account: string | undefined;
+    try { account = userInfo().homedir; } catch { /* no passwd entry */ }
+    caches = [...new Set([env.HOME || homedir(), ...(account ? [account] : [])])].map(h => join(h, "Library", "Caches", "ms-playwright"));
+  }
+  const revisions: { n: number; dir: string }[] = [];
+  for (const cache of caches) {
+    try { for (const d of readdirSync(cache)) { const m = /^chromium_headless_shell-(\d+)$/.exec(d); if (m) revisions.push({ n: Number(m[1]), dir: join(cache, d) }); } } catch { /* not there */ }
+  }
+  const first = pinned === undefined ? NaN : Number(pinned);
+  revisions.sort((a, b) => Number(b.n === first) - Number(a.n === first) || b.n - a.n);
+  const own = `chrome-headless-shell-mac-${arch}`;
+  for (const r of revisions) {
+    let platforms: string[] = [];
+    try { platforms = readdirSync(r.dir).filter(p => /^chrome-headless-shell-mac-/.test(p)).sort((a, b) => Number(b === own) - Number(a === own)); } catch { /* unreadable */ }
+    for (const p of platforms) { const bin = join(r.dir, p, "chrome-headless-shell"); if (isRunnableFile(bin)) return bin; }
+  }
+  return undefined;
+}
+
+/** The executable sits inside a macOS app bundle (Google Chrome.app, Chromium.app), itself or through a link. */
+export function insideAppBundle(file: string): boolean {
+  let real = file;
+  try { real = realpathSync(file); } catch { /* the path as given */ }
+  return [file, real].some(p => /\.app(\/|$)/i.test(p));
+}
+
+export const TOUR_BROWSER_GUIDANCE = "Check the installed browser and this chat's sandbox on the recording host. Sova never downloads a browser or disables the sandbox to make recording work.";
+export const TOUR_APP_BROWSER_REFUSAL = "This recording's browser is a Chrome app, which can't run inside the macOS sandbox. Install Chrome's headless shell (for example: npx playwright install chromium-headless-shell), or point SOVA_TOUR_BROWSER at it, then retry. Sova never downloads a browser or loosens the sandbox.";
+
+/**
+ * The recording browser the server chooses before it starts the recording child, or undefined where
+ * the child finds its own (every platform but macOS). On macOS the server's own environment decides
+ * (a sandboxed child's environment drops SOVA_TOUR_BROWSER and PLAYWRIGHT_BROWSERS_PATH), and with
+ * the chat's sandbox on an app-bundle Chrome is refused before anything starts: it would only crash.
+ */
+export function chooseTourBrowser(sandboxOn: boolean, env: NodeJS.ProcessEnv = process.env, platform = process.platform): string | undefined {
+  if (platform !== "darwin") return undefined;
+  const executable = discoverTourBrowser(env, platform);
+  if (sandboxOn && insideAppBundle(executable)) throw new TourBrowserSetupError(TOUR_APP_BROWSER_REFUSAL);
+  return executable;
+}
+
 /** Discover installed software only. This module never invokes an installer or downloads. */
 export function discoverTourBrowser(env: NodeJS.ProcessEnv = process.env, platform = process.platform): string {
   const configured = env.SOVA_TOUR_BROWSER;
+  // macOS: Chrome's headless shell ahead of any Chrome or Chromium app; elsewhere nothing changes.
+  const shell = !configured && platform === "darwin" ? findMacHeadlessShell(env) : undefined;
   const candidates = configured ? [configured] : [
+    ...(shell ? [shell] : []),
     ...(env.PATH ?? "").split(delimiter).flatMap((p) => ["chromium", "chromium-browser", "google-chrome-stable", "google-chrome"].map((n) => join(p, n))),
     ...(platform === "darwin" ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium"] : []),
   ];

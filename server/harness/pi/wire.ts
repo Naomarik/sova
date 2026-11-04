@@ -8,6 +8,7 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { EntryMeta, V1EventFrame, V2EventFrame } from "../../../shared/protocol";
 import { hideTourCredentialsDeep, RECORD_TOUR_TOOL } from "../../../shared/tour";
 import { fromV1 } from "../../../shared/wire-v1";
+import { mcpToolOf } from "./mcp-tools";
 
 const SIGNATURE_KEYS = new Set(["thinkingSignature", "textSignature", "thoughtSignature"]);
 
@@ -44,6 +45,12 @@ export function toV1Event(event: any): unknown {
   return hideTourCredentialsDeep(withoutSignatures(wireEvent(event)));
 }
 
+/** A server's tool on a streaming frame, from the names the chat's own list registered (never guessed). */
+const mcpOn = (name: unknown) => {
+  const mcp = typeof name === "string" ? mcpToolOf(name) : undefined;
+  return mcp ? { mcp } : {};
+};
+
 function wireEvent(event: any): unknown {
   if (event?.type !== "message_update") return event;
   const ame = event.assistantMessageEvent ?? {};
@@ -53,8 +60,9 @@ function wireEvent(event: any): unknown {
     wire = rest;
     if (ame.type === "toolcall_start") {
       const tc = partial?.content?.[ame.contentIndex];
-      if (tc?.type === "toolCall") wire = { ...rest, id: tc.id, toolName: tc.name };
+      if (tc?.type === "toolCall") wire = { ...rest, id: tc.id, toolName: tc.name, ...mcpOn(tc.name) };
     }
+    if (ame.type === "toolcall_end") wire = { ...wire, ...mcpOn(ame.toolCall?.name) };
     // record_tour's arguments stream as raw JSON, credentials and all: its deltas carry nothing, and
     // its card shows the arguments once they end, hidden (toolcall_end, message_end).
     if (ame.type === "toolcall_delta" && partial?.content?.[ame.contentIndex]?.name === RECORD_TOUR_TOOL) wire = { ...wire, delta: "" };

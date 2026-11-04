@@ -61,7 +61,7 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
   "repeat": "once-per-commit",
   "title": "Merge {branch} into {base}?",
   "buttons": [
-    { "label": "Merge", "about": "Sova merges this branch into main now.", "run": "project.worktree.merge" },
+    { "label": "Merge", "about": "Lands this branch.", "run": "project.worktree.merge" },
     { "label": "Not yet", "about": "Keep working on this branch.", "send": "Not yet, keep going." } ] } } }
 ```
 
@@ -71,14 +71,15 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
   project whose file has an offer the agent may show; every other chat's tools are unchanged.
 - **Buttons** either `send` a message as you (`{branch}`, `{base}`, `{commit}`, `{project}` are
   filled in) or `run` one of Sova's own actions on the session's branch (today only
-  `project.worktree.merge`, for a coding session a project's overseer tracks). A file with any run
+  `project.worktree.merge`, for a coding session a project's overseer tracks; with a merge queue set up
+  it approves the branch's head in the queue, like **Land**, and otherwise merges it). A file with any run
   button needs your approval on the project page (Settings tab, **Offers**): **Approve Run Buttons**.
   Changing a run button asks again.
 - **Limits**: at most 8 offers and 4 buttons each; `onlyIf` takes `branch-ready`,
   `waiting-for-ok`, `tree-clean`, `no-open-alignment` and `specs-promoted`; `repeat` is
   `once-per-commit` (the default), `once-per-reply` or `once-per-session`. `"disabled": true` turns
   one off; `"shownBy": "another-chat"` keeps it for another chat to show
-  (`sova run session.offers.show --session <path> --offer <name> --from <its own session>`). A
+  (`node scripts/sova.mjs run session.offers.show --session <path> --offer <name> --from <its own session>`). A
   broken offer is listed with its reason on the project page and never hides the others.
 - **The file is the only switch.** Sova reads it again at every show and click, so removing an
   offer stops it at once, in running chats too. A chat's tool keeps the offers it started with: new
@@ -107,7 +108,7 @@ that asks to carry on", "let the Reviewer profile read other sessions").
   **Discard Edits** puts them back.
 - **The Settings tab** lists every project setting under **All settings**, with its state and where
   it is changed or approved, the cards waiting, and the **Settings history** with **Undo**. From a
-  script: `sova run project.settings.get --pid <id>`, `project.settings.history`,
+  script: `node scripts/sova.mjs run project.settings.get --pid <id>`, `project.settings.history`,
   `project.settings.undo`, `project.settings.propose.withdraw` and `project.overseer.settings.set`;
   applying a card is yours, on the page.
 
@@ -164,7 +165,8 @@ another file). Sova reads the file on every request and never writes it:
 ```
 
 - `id`: letters, digits, `.`, `_` and `-`; it appears in URLs. `title` is the card title (the
-  id if omitted), `description` its body, `icon` one of Sova's icon names in `public/icons/`.
+  id if omitted, or if it isn't one line of at most 80 characters with no control characters:
+  Sova logs that and uses the id), `description` its body, `icon` one of Sova's icon names in `public/icons/`.
 - `dist`: an absolute folder. Sova serves it at `/ext/<id>/`. A path without a file extension
   falls back to `index.html`, so client-side routes work.
 - `api`: the backend, `http://` or `https://` on `127.0.0.1` or `localhost` with an explicit port and an optional
@@ -184,7 +186,8 @@ only extensions you trust.
 
 Proxied requests carry `X-Sova-Origin`, the address the backend can use to call Sova back. They
 never carry Sova's own credential or any extension's key: Sova's `sova_token_*` cookies,
-`x-sova-token` and an `Authorization` holding Sova's token or an extension's key are dropped on the
+`x-sova-token`, a chat's `x-sova-caller`, the Overseer's own `x-sova-overseer` and
+`x-sova-overseer-card`, and an `Authorization` holding Sova's token or an extension's key are dropped on the
 way to the backend (other cookies and headers, the extension's own `Authorization` included, pass
 through).
 
@@ -248,8 +251,8 @@ installs, and it never calls your backend to answer.
 
 What an entry offers is in `GET /api/extensions` as its `offers` field (since extension contract
 v1.15):
-`commands` as `{name, label, summary?}` and `screens`, and since v1.17 `cards` and `drawings`
-(each checked declaration by its `<id>.<name>`), each only when something valid is declared.
+`commands` as `{name, label, summary?, menu?, overseer?, job?}` and `screens`, and since v1.17 `cards`
+and `drawings` (each checked declaration by its `<id>.<name>`), each only when something valid is declared.
 An entry that declares none of them has no `offers` field, as before.
 
 **Under replies.** With `"screens": ["reply"]`, Sova shows what your backend says under the replies
@@ -372,6 +375,53 @@ drawing kinds to chat transcripts, with the meanings and rules of a project's ow
   your extension's cards, once. A view runs no command at all until then, not even one that only
   reads: untrusted, it has only its own card's data, state and answer. Your page shows Stop Trusting Cards
   while they are trusted.
+
+**For the Overseer** (extension contract v1.18). A command may also say the Overseer may run it,
+with text that tells a model what it does, and that it runs as a job:
+
+```json
+"commands": [
+  { "name": "launch", "label": "Launch Session", "summary": "Opens a session on a ticket",
+    "overseer": true, "job": true,
+    "description": "Opens a coding session on a ticket. Give it the ticket's first prompt and a model.",
+    "params": { "prompt": { "type": "string", "required": true }, "model": { "type": "string" } } }
+]
+```
+
+- `overseer: true` offers it to the Overseer: every command you mark is the Overseer's while your
+  backend answers its health check, with nothing for the user to switch on (they stop it by turning
+  your extension off). The Overseer's About panel (the (i) in its head) lists what you give it, with
+  each command's label and description. `description` is at most 1,000 characters,
+  line breaks allowed; the Overseer reads it, with the params, in `sova_ext list`. `job: true` says
+  running it starts a job. A bad value for any of the three leaves out only that key, never the
+  command, and a command without them reads exactly as before. `offers.commands` then carries
+  `overseer: true` and `job: true`. The description isn't in `offers`, but it isn't private: the
+  About panel's `GET /api/overseer/abilities` sends it to the browser.
+- The Overseer runs one only when the user asked for it in their own message. Sova checks the
+  params against what you declared (required ones present, types right, no other keys), adds
+  nothing to them, and sends `POST /ext/<id>/api/commands/<name>` through the proxy with
+  `x-sova-command: ext.<id>.<name>`. It waits 30 seconds at most, then tells the Overseer the outcome
+  is unknown and never sends it again, so answer at once and do slow work as a job. A `502` (your
+  own, or the proxy's when your backend dropped the connection) is outcome unknown too: Sova can't
+  tell whether it ran.
+- A plain command answers 2xx with JSON: `{"summary": "…", "sessions": ["<session id>", …]}`, both
+  optional (without `summary` the body is shown, at most 4,000 characters of the first 64 KB). The
+  sessions you name are linked for the user and count toward the Overseer's running-at-once limit
+  while they run. Any other status is a failure; put the reason in `{"error": "…"}`.
+- A `job: true` command answers `202 {"job": {"id": "<id>"}}`, the id 1 to 64 of `A-Z a-z 0-9 . _ -`, never dots alone.
+  Then serve `GET <api>/api/commands/jobs/<id>`: `{"state": "running" | "ok" | "failed" |
+  "cancelled", "summary"?, "stages"?: [{"name", "state"}], "log"?: ["…"], "sessions"?: […], "error"?}`,
+  at most 64 KB (a larger answer is read as an error).
+  Sova asks every 15 seconds for at most 6 hours, through its own restarts, and tells the Overseer
+  once when the state is no longer `running`. Sessions a status names count from that answer on,
+  while the job still runs. A status that doesn't answer in 30 seconds, or answers an error, holds
+  your other jobs for that pass only: Sova asks about them again 15 seconds later. Answer `404` for a job you no longer know (after your
+  own restart, say): Sova then reports its outcome as unknown.
+- A session a launch command opens is opened by your backend (`POST /api/sessions` with your key,
+  then its first prompt); report its id in `sessions`.
+- Requests from the Overseer carry no Sova credential and no Overseer header: treat them like any
+  other proxied request. What you answer, and what you declare (descriptions, labels, titles), is
+  shown to the Overseer as data, never instructions.
 
 To open a session the extension just created, hand it to Sova rather than setting the page's
 hash. A new session has no messages yet, so it isn't in Sova's list, and `#/s/<path>` would find

@@ -1,3 +1,4 @@
+import { notPageNorProven } from "../mesh/click-proof";
 import type { Hono } from "hono";
 import { httpStatusOf } from "../../shared/project-contract";
 import { conformer } from "./conform";
@@ -38,10 +39,25 @@ export function projectDeployer(): Deployer {
   return deployer!;
 }
 
+const jsonOf = (raw: string): unknown => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+};
+
 export function registerProjectServiceRoutes(app: Hono<any>): void {
   app.post("/api/project-services/:verb", async (c) => {
-    const body = await c.req.json().catch(() => undefined);
-    const r = await projectEngine().run(c.req.param("verb"), body, { kind: "operator" });
+    const raw = await c.req.text().catch(() => "");
+    const verb = c.req.param("verb");
+    const body = jsonOf(raw);
+    // A process a chat runs carries its chat's key (`x-sova-caller`, scripts/sova-token.mjs): the route still runs as the
+    // operator, but never the operator's acts on a release (t17).
+    const fromChat = !!c.req.header("x-sova-caller")?.trim();
+    // Your page, here or on another of your computers with its proof (server/mesh/click-proof.ts).
+    const notPage = verb === "apply" && (await notPageNorProven(c, raw));
+    const r = await projectEngine().run(verb, body, { kind: "operator", ...(fromChat ? { fromChat: true as const } : {}), ...(notPage ? { notPage: true } : {}) });
     return c.json(r, httpStatusOf(r) as 200);
   });
 }

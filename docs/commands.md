@@ -13,10 +13,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 509 |
-| Routes a catalogue entry points at | 153 |
-| Catalogue entries | 201 |
-| Class: Peer protocol | 38 |
+| Routes registered | 529 |
+| Routes a catalogue entry points at | 158 |
+| Catalogue entries | 217 |
+| Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
 | Class: Extension proxy | 5 |
@@ -24,18 +24,18 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: The catalogue itself | 1 |
 | Class: Test only | 0 |
 | Class: Pages and assets | 7 |
-| Class: Trust grants | 5 |
+| Class: Trust grants | 17 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 248 |
-| Class: Page plumbing | 9 |
+| Class: Left as is, by choice | 249 |
+| Class: Page plumbing | 10 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
 | Class: Approvals and grants | 5 |
 | Pending (not yet a command) | 24 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 9 |
-| Hand-written tool specs | 127 |
+| Hand-written tool specs | 129 |
 
 ## Catalogue entries
 
@@ -124,6 +124,17 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.verb.merge.reply` | Project merge.reply | changes | `POST /api/project-services/merge.reply` | admin |
 | `project.verb.merge.fresh` | Project merge.fresh | changes | `POST /api/project-services/merge.fresh` | admin |
 | `project.verb.merge.clear` | Project merge.clear | changes | `POST /api/project-services/merge.clear` | admin |
+| `project.verb.release.status` | Project release.status | looks | `POST /api/project-services/release.status` | admin |
+| `project.verb.release.logs` | Project release.logs | looks | `POST /api/project-services/release.logs` | admin |
+| `project.verb.release.request` | Project release.request | changes | `POST /api/project-services/release.request` | admin |
+| `project.verb.release.start` | Project release.start | changes | `POST /api/project-services/release.start` | admin |
+| `project.verb.release.step` | Project release.step | changes | `POST /api/project-services/release.step` | admin |
+| `project.verb.release.notes` | Project release.notes | changes | `POST /api/project-services/release.notes` | admin |
+| `project.verb.release.continue` | Project release.continue | changes | `POST /api/project-services/release.continue` | admin |
+| `project.verb.release.retry` | Project release.retry | changes | `POST /api/project-services/release.retry` | admin |
+| `project.verb.release.publish` | Project release.publish | changes | `POST /api/project-services/release.publish` | admin |
+| `project.verb.release.abandon` | Project release.abandon | changes | `POST /api/project-services/release.abandon` | admin |
+| `project.verb.release.withdraw` | Project release.withdraw | changes | `POST /api/project-services/release.withdraw` | admin |
 | `project.services.view` | Show Project Services | looks | `GET /api/projects/:pid/services` | sessions |
 | `project.overseer.idea.list` | List Project Ideas | looks | `GET /api/projects/:pid/overseer/ideas` | sessions |
 | `project.overseer.idea.get` | Show Project Idea | looks | `GET /api/projects/:pid/overseer/idea` | sessions |
@@ -170,6 +181,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.merge-queue.land-how.set` | Change How It Lands | changes | `PUT /api/merge-queue/projects/:project/land-how` | admin |
 | `project.merge-queue.land-how.clear` | Clear This Computer's Choice | changes | `DELETE /api/merge-queue/projects/:project/land-how/override` | admin |
 | `overseer.attention` | Show Attention | looks | `GET /api/overseer/attention` | sessions |
+| `overseer.abilities` | Show Overseer Abilities | looks | `GET /api/overseer/abilities` | sessions |
 | `overseer.todo.list` | List To-dos | looks | `GET /api/overseer/todos` | sessions |
 | `overseer.todo.add` | Add To-do | changes | `POST /api/overseer/todos` | admin |
 | `overseer.todo.update` | Update To-do | changes | `PATCH /api/overseer/todo` | admin |
@@ -202,6 +214,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `insights.usage.refresh` | Refresh Usage Limits | changes | `POST /api/insights/usage/refresh` | sessions |
 | `schedule.list` | List Schedules | looks | `GET /api/schedules` | sessions |
 | `playbook.list` | List Playbooks | looks | `GET /api/playbooks` | sessions |
+| `mcp.servers.list` | List MCP Servers | looks | `GET /api/mcp/servers` | full |
+| `mcp.server.status` | Show MCP Server | looks | `GET /api/mcp/rows/:id` | full |
 | `draft-spec.list` | List Draft Specs | looks | `GET /api/draft-specs` | full |
 | `insights.agents` | Agents Board | looks | `GET /api/insights/agents` | sessions |
 | `insights.worktrees` | Session Worktrees | looks | `GET /api/insights/worktrees` | sessions |
@@ -221,6 +235,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `settings.memory.get` | Memory Settings | looks | `GET /api/settings/memory` | sessions |
 | `settings.subagents.get` | Subagent Profiles | looks | `GET /api/settings/subagents` | sessions |
 | `settings.align.set` | Save Alignment Settings | changes | `PUT /api/settings/align` | admin |
+| `settings.cards.get` | Sova-wide Settings Cards | looks | `GET /api/settings/cards` | sessions |
+| `settings.cards.withdraw` | Dismiss Sova-wide Settings Card | changes | `POST /api/settings/cards/:card/withdraw` | admin |
 | `settings.assistant-default.set` | Set the Project Assistant's Default Model | changes | `PUT /api/settings/project-assistant` | admin |
 | `push.test` | Send Test Notification | changes | `POST /api/push/test` | admin |
 | `audit.list` | List Who Ran What | looks | `GET /api/audit` | full |
@@ -277,7 +293,7 @@ class, leaves it, and a new route never joins it.
 
 ## Not-a-command classes
 
-### Peer protocol (38)
+### Peer protocol (39)
 
 Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer listener's door, never the operator's actions.
 
@@ -290,6 +306,7 @@ Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer li
 | `POST /api/peer/claude-pool/doc` | sync.logins |
 | `POST /api/peer/claude-pool/lend` | sync.logins |
 | `POST /api/peer/claude-pool/return` | sync.logins |
+| `POST /api/peer/click-proof` | hello |
 | `GET /api/peer/credentials/entry` | sync.logins |
 | `GET /api/peer/credentials/manifest` | sync.logins |
 | `POST /api/peer/credentials/push` | sync.logins |
@@ -387,12 +404,24 @@ The app shell, design CSS and explanation pages: what the browser loads to draw.
 | `ALL /explain/*` | full |
 | `GET /explain/:id` | full |
 
-### Trust grants (5)
+### Trust grants (17)
 
-Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
+Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings), adding, approving, signing in to and changing an MCP server (§app.mcp/approval) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.
 
 | Route | Mesh need |
 | --- | --- |
+| `DELETE /api/mcp/rows/:id` | full |
+| `PATCH /api/mcp/rows/:id` | full |
+| `PUT /api/mcp/rows/:id` | full |
+| `POST /api/mcp/rows/:id/approve` | full |
+| `POST /api/mcp/rows/:id/check` | full |
+| `DELETE /api/mcp/rows/:id/secrets/:name` | full |
+| `PUT /api/mcp/rows/:id/secrets/:name` | full |
+| `DELETE /api/mcp/rows/:id/sign-in` | full |
+| `GET /api/mcp/rows/:id/sign-in` | full |
+| `POST /api/mcp/rows/:id/sign-in` | full |
+| `POST /api/mcp/rows/:id/sign-in/address` | full |
+| `POST /api/mcp/servers` | full |
 | `POST /api/projects/:pid/offers/approve` | admin |
 | `PUT /api/projects/:pid/services/limit` | admin |
 | `POST /api/projects/:pid/settings/apply` | admin |
@@ -419,7 +448,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (248)
+### Left as is, by choice (249)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -598,6 +627,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `GET /api/session-shares/preview` | sessions |
 | `GET /api/session-shares/preview/img/:n` | sessions |
 | `PUT /api/settings` | admin |
+| `POST /api/settings/apply` | admin |
 | `GET /api/settings/claude-status` | sessions |
 | `GET /api/settings/decisions` | sessions |
 | `PUT /api/settings/decisions` | admin |
@@ -674,7 +704,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `POST /api/voice/transcribe` | admin |
 | `POST /api/voice/warm` | admin |
 
-### Page plumbing (9)
+### Page plumbing (10)
 
 Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name). Exactly these routes (`PAGE_PLUMBING`).
 
@@ -685,6 +715,7 @@ Requests a view, the composer or a link card makes to draw itself (attachments a
 | `GET /api/explanations` | sessions |
 | `POST /api/links/:id/seen` | sessions |
 | `GET /api/links/:id/thread` | sessions |
+| `GET /api/projects/:pid/mcp` | sessions |
 | `GET /api/sessions/dir` | sessions |
 | `GET /api/targets/:name/folders` | sessions |
 | `GET /api/transcript/tool` | sessions |
@@ -742,6 +773,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/insights/usage/history` | sessions | `insights.usage.history` |
 | `POST /api/insights/usage/refresh` | sessions | `insights.usage.refresh` |
 | `GET /api/insights/worktrees` | sessions | `insights.worktrees` |
+| `GET /api/mcp/rows/:id` | full | `mcp.server.status` |
+| `GET /api/mcp/servers` | full | `mcp.servers.list` |
 | `GET /api/merge-queue/cards` | sessions | `session.merge-cards` |
 | `POST /api/merge-queue/entries/:id/publish` | admin | `project.merge-queue.request.publish` |
 | `PUT /api/merge-queue/projects/:project/land-how` | admin | `project.merge-queue.land-how.set` |
@@ -763,6 +796,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/orgs/:id/projects/:pid/versions` | sessions | `org.project.versions` |
 | `PUT /api/orgs/:id/projects/:pid/versions/:instance` | admin | `org.project.version.automatic`, `org.project.version.hide`, `org.project.version.rewrite`, `org.project.version.show` |
 | `GET /api/overseer` | sessions | `overseer.get` |
+| `GET /api/overseer/abilities` | sessions | `overseer.abilities` |
 | `GET /api/overseer/attention` | sessions | `overseer.attention` |
 | `GET /api/overseer/idea` | sessions | `overseer.idea.get` |
 | `PATCH /api/overseer/idea` | admin | `overseer.idea.update` |
@@ -778,7 +812,7 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `PUT /api/overseer/todos/order` | admin | `overseer.todo.reorder` |
 | `GET /api/playbooks` | sessions | `playbook.list` |
 | `POST /api/previews/:id/off` | admin | `project.preview.off` |
-| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
+| `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.release.abandon`, `project.verb.release.continue`, `project.verb.release.logs`, `project.verb.release.notes`, `project.verb.release.publish`, `project.verb.release.request`, `project.verb.release.retry`, `project.verb.release.start`, `project.verb.release.status`, `project.verb.release.step`, `project.verb.release.withdraw`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
 | `GET /api/projects` | sessions | `project.list` |
 | `POST /api/projects` | admin | `project.create` |
 | `GET /api/projects/:pid` | sessions | `project.get` |
@@ -853,6 +887,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/settings` | sessions | `settings.sova.get` |
 | `GET /api/settings/align` | sessions | `settings.align.get` |
 | `PUT /api/settings/align` | admin | `settings.align.set` |
+| `GET /api/settings/cards` | sessions | `settings.cards.get` |
+| `POST /api/settings/cards/:card/withdraw` | admin | `settings.cards.withdraw` |
 | `GET /api/settings/delegate` | sessions | `settings.delegate.get` |
 | `GET /api/settings/memory` | sessions | `settings.memory.get` |
 | `GET /api/settings/models` | sessions | `settings.models.get` |
@@ -914,12 +950,14 @@ Per file, the tool names its object literals declare (`<computed: …>` where th
 | `server/chat-handle.ts` | 4 | `<computed: shorthand name>`, `<computed: spec.name>`, `@powers.send`, `trial_served_sleep` |
 | `server/conversation-draft-routes.ts` | 3 | `sova_draft_specs`, `sova_draft_approve`, `sova_draft_build` |
 | `server/conversation-draft-tools.ts` | 3 | `requirement_drop`, `requirements_summary`, `requirements_confirm` |
+| `server/create-settings-tool.ts` | 1 | `sova_settings` |
 | `server/feature-chat-align.ts` | 1 | `align` |
 | `server/harness/pi/session.ts` | 1 | `<computed: t.name>` |
 | `server/memory/tools.ts` | 2 | `<computed: MEMORY_ZOOM_TOOL>`, `<computed: MEMORY_DATE_TOOL>` |
 | `server/org-history-tools.ts` | 2 | `sova_history`, `sova_decide` |
 | `server/overseer-card-tool.ts` | 1 | `<computed: CARD_TOOL>` |
 | `server/overseer-code-history.ts` | 2 | `sova_project_git`, `sova_server_log` |
+| `server/overseer-ext-tools.ts` | 1 | `sova_ext` |
 | `server/overseer-idea-tools.ts` | 2 | `sova_ideas`, `sova_idea` |
 | `server/overseer-link-tools.ts` | 3 | `sova_link`, `sova_unlink`, `sova_links` |
 | `server/overseer-org-part.ts` | 10 | `sova_decisions`, `sova_roster`, `sova_start_gathering`, `sova_offer`, `sova_close_gathering`, `sova_owner_update`, `sova_send_to_person`, `sova_send_status`, `sova_reconcile`, `sova_promote` |

@@ -1,6 +1,7 @@
 // The words of Settings → Merge Queue and of the Merge Queue tab's summary line: what the queue's
 // settings say, where each lives, and what an edit changes. Pure (no DOM, no Solid).
 import type { EffectiveModel, MergeQueueSettings, MergeSettingsChange, MergeSettingsSaveResult, SettingSource } from "../../shared/merge-queue-settings";
+import { settingsWaitingWords } from "../../shared/merge-queue-settings";
 import { pickLabel } from "./model-pick";
 import { modelLabel } from "./format";
 
@@ -147,13 +148,16 @@ export function threadFolderCaption(s: Pick<MergeQueueSettings, "thread" | "land
   return s.thread.playbooks.some((p) => p.differsFromFolder) ? `The merge thread reads the project folder's copy, which differs from ${s.landing.target}.` : null;
 }
 
-/** What a save says, by how it went: onto the target, waiting for the current branch, a PR/MR opened, or a branch pushed. Pure. */
+/** The waiting save's banner title: why it waits (the branch checking now, or the release holding the queue), or that it failed. Pure. */
+export const pendingSaveTitle = (p: { release?: string }, failed: boolean): string => (failed ? "The waiting save couldn't be applied." : `${settingsWaitingWords(p.release)}.`);
+
+/** What a save says, by how it went: onto the target, waiting for the current branch or the open release, a PR/MR opened, or a branch pushed. Pure. */
 export function saveResultWords(r: MergeSettingsSaveResult, o: { target: string; pushes: boolean; gitlab: boolean }): { text: string; link?: { href: string; label: string } } {
   switch (r.state) {
     case "saved":
       return { text: savedWords(o.target, r.commit, o.pushes) };
     case "waiting":
-      return { text: "Saves when the current branch finishes." };
+      return { text: `${settingsWaitingWords(r.release)}.` };
     case "requested": {
       const kind = o.gitlab ? `MR !${r.number}` : `PR #${r.number}`;
       return { text: `Opened ${kind} for the settings change. It applies once it's merged into ${o.target}.`, link: { href: r.url, label: o.gitlab ? "Open MR" : "Open PR" } };

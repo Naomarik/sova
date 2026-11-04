@@ -95,7 +95,7 @@ list, or an extension, by default, without anyone re-implementing it. Spec: `§a
 | The areas left as is by choice are one list, `OPTED_OUT` in `server/commands-inventory/scan.ts`: none of their routes is pending, none is in a second class, an entry on one still makes it a command; a route in a core area still counts as pending growth | `server/commands-inventory.test.ts` ("the areas left as is, by choice" and the real app's "no route in an area left as is is pending") |
 | An entry points at the existing route and never re-implements it: running it is the web app's own request | `server/commands-catalog.test.ts` (every route registered; an entry's request gets the route's own answer, refusals word for word) |
 | Additions only add: nothing intercepts, vetoes or rewrites one of Sova's actions | the catalogue holds no handler, only data; `src/lib/reply-slot.test.ts` (a chip can't take one of Sova's action names) |
-| Agents get an action only when it is opened to them on purpose | nothing in the catalogue becomes an agent tool by being listed; a tool is its own change, reviewed as one |
+| Agents get an action only when it is opened to them on purpose. The one opening of extension commands is the global Overseer's `sova_ext` (`server/overseer-ext-tools.ts`, §app.overseer/extension-commands): only a command its extension marks `overseer: true`, while that extension is running, through the proxy, in turns the user started (no per-command switch: the user stops it by turning the extension off; the About panel, `GET /api/overseer/abilities`, reads the same list, `server/overseer-abilities.ts`) | nothing in the catalogue becomes an agent tool by being listed; a tool is its own change, reviewed as one. `sova_ext`: `server/overseer-ext-tools.test.ts`, `server/overseer-runtime.test.ts` |
 | An entry's `meshNeed` is exactly what `server/mesh/access.ts` `classifyRequest` gives its route | `server/commands-catalog.test.ts` |
 | No entry points at the peer, auth, share-page or extension-proxy routes (`/api/peer`, `/peer`, `/api/auth`, `/h`, `/i`, `/s`, `/ext`) | `shared/commands-catalog.test.ts` |
 | Ids are append-only; core ids never start with `ext.` | `shared/commands-catalog.test.ts` against `shared/commands-ids.json` |
@@ -131,7 +131,9 @@ When a rule changes, change its test in the same change; a rule without a test i
   profile and schedule approvals, logins, keys, decisions settings, mesh grants, an offers
   file's run-button approval (`POST /api/projects/:pid/offers/approve`) and applying a project's
   Settings change card or landing its folder's settings edits (`POST /api/projects/:pid/settings/apply`,
-  §app.project-overseer/settings), the inventory's Trust grants class. The project overseer's own settings
+  §app.project-overseer/settings), the inventory's Trust grants class. Applying a Sova-wide card
+  (`POST /api/settings/apply`, §chat.create-mode/settings-cards) is in the settings area left as is,
+  page-only by its own guard. The project overseer's own settings
   PATCH is a command (`project.overseer.settings.set`): it is the page's and a script's plain write, and what
   the overseer widens reaches it only through a card the operator applies. A plain preference
   a person sets (`settings.align.set`, the Overseer's own notes `overseer.notes.set`) is a command.

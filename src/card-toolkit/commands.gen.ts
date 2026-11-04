@@ -86,6 +86,17 @@ export type CommandId =
   | "project.verb.merge.reply"
   | "project.verb.merge.fresh"
   | "project.verb.merge.clear"
+  | "project.verb.release.status"
+  | "project.verb.release.logs"
+  | "project.verb.release.request"
+  | "project.verb.release.start"
+  | "project.verb.release.step"
+  | "project.verb.release.notes"
+  | "project.verb.release.continue"
+  | "project.verb.release.retry"
+  | "project.verb.release.publish"
+  | "project.verb.release.abandon"
+  | "project.verb.release.withdraw"
   | "project.services.view"
   | "project.overseer.idea.list"
   | "project.overseer.idea.get"
@@ -132,6 +143,7 @@ export type CommandId =
   | "project.merge-queue.land-how.set"
   | "project.merge-queue.land-how.clear"
   | "overseer.attention"
+  | "overseer.abilities"
   | "overseer.todo.list"
   | "overseer.todo.add"
   | "overseer.todo.update"
@@ -164,6 +176,8 @@ export type CommandId =
   | "insights.usage.refresh"
   | "schedule.list"
   | "playbook.list"
+  | "mcp.servers.list"
+  | "mcp.server.status"
   | "draft-spec.list"
   | "insights.agents"
   | "insights.worktrees"
@@ -183,6 +197,8 @@ export type CommandId =
   | "settings.memory.get"
   | "settings.subagents.get"
   | "settings.align.set"
+  | "settings.cards.get"
+  | "settings.cards.withdraw"
   | "settings.assistant-default.set"
   | "push.test"
   | "audit.list"
@@ -2274,6 +2290,347 @@ export interface CommandParams {
     /** A merge thread question id */
     "ask"?: string;
   };
+  /** The project verb release.status, as the operator (sova-project release.status). (only looks; needs the card's owner trusted) */
+  "project.verb.release.status": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
+  /** The project verb release.logs, as the operator (sova-project release.logs). (only looks; needs the card's owner trusted) */
+  "project.verb.release.logs": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
+  /** The project verb release.request, as the operator (sova-project release.request). (changes something; needs the card's owner trusted) */
+  "project.verb.release.request": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
+  /** The project verb release.start, as the operator (sova-project release.start). (changes something; needs the card's owner trusted) */
+  "project.verb.release.start": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
+  /** The project verb release.step, as the operator (sova-project release.step). (changes something; needs the card's owner trusted) */
+  "project.verb.release.step": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
+  /** The project verb release.notes, as the operator (sova-project release.notes). (changes something; needs the card's owner trusted) */
+  "project.verb.release.notes": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
+  /** The project verb release.continue, as the operator (sova-project release.continue). (changes something; needs the card's owner trusted) */
+  "project.verb.release.continue": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
+  /** The project verb release.retry, as the operator (sova-project release.retry). (changes something; needs the card's owner trusted) */
+  "project.verb.release.retry": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
+  /** The project verb release.publish, as the operator (sova-project release.publish). (changes something; needs the card's owner trusted) */
+  "project.verb.release.publish": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
+  /** The project verb release.abandon, as the operator (sova-project release.abandon). (changes something; needs the card's owner trusted) */
+  "project.verb.release.abandon": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
+  /** The project verb release.withdraw, as the operator (sova-project release.withdraw). (changes something; needs the card's owner trusted) */
+  "project.verb.release.withdraw": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
   /** A project's Branches tab: its copies, their services and the supervisor. (only looks; needs the card's owner trusted) */
   "project.services.view": {
     /** The project's id */
@@ -2501,6 +2858,8 @@ export interface CommandParams {
     "card": string;
     /** local only: the fingerprint the card showed */
     "fingerprint"?: string;
+    /** local only: cancel a held Land and keep the edits */
+    "cancel-save"?: boolean;
   };
   /** Change a project overseer's settings: Watch, powers, models, limits, pace, the hold, extra instructions. (changes something; needs the card's owner trusted) */
   "project.overseer.settings.set": {
@@ -2618,6 +2977,8 @@ export interface CommandParams {
   };
   /** What needs the user now, as the Overseer's digest has it. (only looks; needs the card's owner trusted) */
   "overseer.attention": Record<string, never>;
+  /** What the Overseer can do: its built-in abilities, its limits and the commands its extensions offer it. (only looks; needs the card's owner trusted) */
+  "overseer.abilities": Record<string, never>;
   /** The Overseer's to-do list. (only looks; needs the card's owner trusted) */
   "overseer.todo.list": Record<string, never>;
   /** Add a to-do to the Overseer's list. (changes something; needs the card's owner trusted) */
@@ -2781,6 +3142,13 @@ export interface CommandParams {
     /** A folder whose project playbooks to list */
     "cwd"?: string;
   };
+  /** This computer's MCP servers: each one's name, where it comes from, its state, tool count, tool names and last Check. Never a secret's value. (only looks; needs the card's owner trusted) */
+  "mcp.servers.list": Record<string, never>;
+  /** One MCP server's status, by its row id from the list. Never a secret's value. (only looks; needs the card's owner trusted) */
+  "mcp.server.status": {
+    /** The server's row id */
+    "id": string;
+  };
   /** The draft specs conversations proposed, in every project or one, waiting for review. (only looks; needs the card's owner trusted) */
   "draft-spec.list": {
     /** Only this project's (its id) */
@@ -2848,6 +3216,13 @@ export interface CommandParams {
     "visuals"?: unknown;
     /** The Eagerness: "careful", or omitted for Eager */
     "eagerness"?: unknown;
+  };
+  /** The Sova-wide settings cards a Create chat prepared: waiting, and recently applied or dismissed. (only looks; needs the card's owner trusted) */
+  "settings.cards.get": Record<string, never>;
+  /** Dismiss a Sova-wide settings card a Create chat prepared. Nothing changes. (changes something; needs the card's owner trusted) */
+  "settings.cards.withdraw": {
+    /** The card's id (sw_…) */
+    "card": string;
   };
   /** Set or clear the model and thinking every organization's Project Assistant uses unless it picks its own. (changes something; needs the card's owner trusted) */
   "settings.assistant-default.set": {
@@ -3098,6 +3473,17 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.verb.merge.reply": "changes",
   "project.verb.merge.fresh": "changes",
   "project.verb.merge.clear": "changes",
+  "project.verb.release.status": "looks",
+  "project.verb.release.logs": "looks",
+  "project.verb.release.request": "changes",
+  "project.verb.release.start": "changes",
+  "project.verb.release.step": "changes",
+  "project.verb.release.notes": "changes",
+  "project.verb.release.continue": "changes",
+  "project.verb.release.retry": "changes",
+  "project.verb.release.publish": "changes",
+  "project.verb.release.abandon": "changes",
+  "project.verb.release.withdraw": "changes",
   "project.services.view": "looks",
   "project.overseer.idea.list": "looks",
   "project.overseer.idea.get": "looks",
@@ -3144,6 +3530,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.merge-queue.land-how.set": "changes",
   "project.merge-queue.land-how.clear": "changes",
   "overseer.attention": "looks",
+  "overseer.abilities": "looks",
   "overseer.todo.list": "looks",
   "overseer.todo.add": "changes",
   "overseer.todo.update": "changes",
@@ -3176,6 +3563,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "insights.usage.refresh": "changes",
   "schedule.list": "looks",
   "playbook.list": "looks",
+  "mcp.servers.list": "looks",
+  "mcp.server.status": "looks",
   "draft-spec.list": "looks",
   "insights.agents": "looks",
   "insights.worktrees": "looks",
@@ -3195,6 +3584,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "settings.memory.get": "looks",
   "settings.subagents.get": "looks",
   "settings.align.set": "changes",
+  "settings.cards.get": "looks",
+  "settings.cards.withdraw": "changes",
   "settings.assistant-default.set": "changes",
   "push.test": "changes",
   "audit.list": "looks",

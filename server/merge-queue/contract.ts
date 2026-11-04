@@ -39,6 +39,9 @@ export interface RunInput {
   draftsDir?: string;
   /** The checks the merge thread added for this entry (merge.extend), on top of required + triggers. */
   picks: CheckPick[];
+  /** A release entry: the release's own gating checks (its `release.checks`, captured at the release's start), run
+   *  after the merge set. Absent: not a release entry. */
+  releaseChecks?: import("../../shared/project-contract").MergeCheckDecl[];
   /** The project's private names file (store.ts namesFileOf): the leak scan reads it (`--names` / SOVA_LEAK_NAMES).
    *  Absent: none yet (pushes are held until the merge thread's interview writes it). */
   namesFile?: string;
@@ -90,6 +93,8 @@ export interface RunOutcome {
   blame?: Blame;
   /** One line for the row ("unit failed: src/a.test.ts", "setup fails with your branch and passes on master"). */
   why?: string;
+  /** failed, blamed on the branch: its spec drafts didn't fit (the docs step), fixable with no commit. Absent: a check. */
+  cause?: "drafts";
   /** The merge commit. */
   mergeSha?: string;
   /** The commit that lands (the merge, plus the docs commit when drafts landed). passed / review-flagged / unattributed. */

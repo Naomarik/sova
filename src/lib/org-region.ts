@@ -255,7 +255,7 @@ export function orgNeedsYouRows(digest: Pick<AttentionDigest, "items"> | undefin
   for (const s of org) {
     if (listed.has(s.path) || orgDone(s)) continue;
     const w = batonWaitDetail(s);
-    if (w) rows.push({ session: s, detail: w.text, details: [w.text], since: w.since, soft: false });
+    if (w) rows.push({ session: s, detail: w.text, details: [w.text], since: w.since, kind: "baton-needs-you", soft: false });
   }
   return rows.sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
 }
@@ -283,6 +283,14 @@ export function orgProjectItems(digest: Pick<AttentionDigest, "items"> | undefin
       if (ga !== null || gb !== null) return ga === null ? 1 : gb === null ? -1 : ga - gb || a.id.localeCompare(b.id);
       return b.since - a.since || a.id.localeCompare(b.id);
     });
+}
+
+/** The project a held act waits in: its org's project, else the project page its row opens (a standalone project's
+    hold, such as the release power's waiting period before Publish), so every held act carries Cancel. */
+export function heldProjectId(it: Pick<AttentionItem, "org" | "href">): string | null {
+  if (it.org?.projectId) return it.org.projectId;
+  const m = /^#\/projects\/([A-Za-z0-9_-]+)/.exec(it.href ?? "");
+  return m ? m[1]! : null;
 }
 
 /** A row's place, said under the region's Needs you rows: "{org} · {project}". */

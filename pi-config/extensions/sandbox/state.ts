@@ -87,6 +87,9 @@ export interface SandboxStateEvent {
 	/** Real path of the sandbox extension directory, for a worker's `-e` list. */
 	extensionPath: string;
 	enforcement: Enforcement;
+	/** What a command this session starts itself needs to run under its policy (`prepareSessionCommand`): its
+	 *  tracked worktrees and, in a worker, its parent's scope. Absent in a remote session. */
+	scope?: { worktreeRoots: string[]; parent?: unknown };
 	/**
 	 * The one call every worker start goes through: on, the parent's scope (narrowed to a tracked
 	 * worktree's `root` when given) or a refusal (cwd outside the parent's writable roots, the

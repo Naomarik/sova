@@ -51,7 +51,7 @@ export const LAND_HOWS: readonly LandHow[] = ["local", "github-pr", "gitlab-mr",
 
 /** How the user approved: the Land button (composer modal, session pane, Merge Queue view) or "land it" typed in the
  *  branch's own chat (ingested from the worktree tool's go-ahead record). */
-export type ApprovalBy = "land-button" | "typed";
+export type ApprovalBy = "land-button" | "typed" | "release";
 
 export interface MergeApproval {
   by: ApprovalBy;
@@ -127,7 +127,7 @@ export interface MergeNote {
 export const NOTE_MAX = 300;
 
 /** A check the run will run, and why it is in the list. */
-export type CheckSource = "required" | "trigger" | "picked";
+export type CheckSource = "required" | "trigger" | "picked" | "release";
 export interface CheckPick {
   /** A check id from the project's merge section (required or optional), or `test` for its test command. */
   id: string;
@@ -226,14 +226,33 @@ export interface MergeEntry {
   request?: MergeRequestInfo;
   /** Estimates (ms): when it should start from now, and how long its run takes. */
   eta?: { startsInMs: number; takesMs: number };
+  /** The release this entry belongs to (rl_…): its release commit, or the revert of an abandoned one. Sova adds it
+   *  (approval `by: "release"`); it alone lands while that release holds the queue. */
+  release?: string;
+  /** A release entry's kind: the release commit, or the revert of an abandoned release's landed commit. */
+  releaseKind?: "release" | "revert";
   /** needs-fix only, derived when the view is read (never stored): the entry no longer needs a fix. `superseded`: the
    *  branch has a later entry for the same target; `merged`: its sent-back commit or the branch's tip is already in the
    *  target; `gone`: the branch or its worktree folder was removed. A settled entry leaves the Sent back list. */
   settled?: MergeSettled;
+  /** needs-fix only, stored at the hand-back: why it was sent back. Absent on entries sent back before it was kept:
+   *  read as not the drafts' (the queue infers `drafts` once from a run whose docs step failed). */
+  sentBackFor?: SentBackFor;
+  /** needs-fix for its drafts, stored at the hand-back: a fingerprint of its worktree's drafts folder then (notes
+   *  included), so a fix that only records a note reads as a change. */
+  sentBackDrafts?: string;
+  /** needs-fix only, derived when the view is read (never stored): sent back for its drafts, its drafts changed since
+   *  (since the hand-back; for an entry from before that was kept, since the approval pinned them), and Sova's docs
+   *  check of them finds no problem. Land comes back at the same commit. */
+  redrafted?: true;
   createdAt: string;
   updatedAt: string;
 }
 export type MergeSettled = "superseded" | "merged" | "gone";
+/** Why an entry was sent back: its spec drafts didn't fit (`drafts`), a check failed with it (`checks`), a conflict
+ *  nobody judged (`conflict`), the user's Send Back (`user`), or the host refused its publication (`host`). Only
+ *  `drafts` can be fixed with no commit. */
+export type SentBackFor = "drafts" | "checks" | "conflict" | "user" | "host";
 
 export type PushState = "pending" | "pushed" | "not-pushed" | "no-remote";
 
@@ -403,9 +422,25 @@ export interface MergeQueueView {
   ready?: MergeReady[];
   /** Try It on Main (merge.setup dryRun): the run in flight, or the last one. */
   tryRun?: MergeRun;
+  /** A release holds the queue (the freeze banner): only its entries land and nothing is pushed until it is
+   *  published or abandoned. */
+  release?: MergeReleaseHold;
   /** Every setting the queue uses, where each is kept, and the saves the Settings tab may make. */
   settings?: import("./merge-queue-settings").MergeQueueSettings;
   at: string;
+}
+
+/** The release holding a project's queue. `state`: the release record's (shared/release.ts ReleaseState). */
+export interface MergeReleaseHold {
+  id: string;
+  /** The release's version (0.4.0) once picked, else null. */
+  version: string | null;
+  /** Its numbered tag (v0.4.0) once the version is picked, else null: what the screens name it by. */
+  tag?: string | null;
+  state: string;
+  /** The target's commit at the release's start. */
+  base: string;
+  since: string;
 }
 
 /** What the session's worktree rows read (SessionWorktreeInfo.queue): the newest entry for that branch. */
@@ -418,7 +453,7 @@ export interface MergeUnclear {
   why?: string;
 }
 
-export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled"> & {
+export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted"> & {
   project: string;
   run?: string;
   /** The run's newest reviewer chat (Open Reviewer Chat on the branch's Worktrees row), while it runs and after. */
@@ -426,6 +461,23 @@ export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "
   /** The project has a review kit (the Land menu shows "Land without review"). */
   reviewKit?: boolean;
 };
+
+/** A branch's entry as the session list carries it (protocol.ts SessionBranchQueue): its state, never a precomputed
+ *  key, so a new state flows through, and the fields a row's words read. */
+export type BranchQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit" | "position" | "reason" | "conflict" | "review" | "request" | "settled" | "redrafted">;
+
+/** The session list's cut of a worktree row's queue entry. Pure. */
+export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
+  state: q.state,
+  commit: q.commit,
+  ...(q.position ? { position: q.position } : {}),
+  ...(q.reason ? { reason: q.reason } : {}),
+  ...(q.conflict ? { conflict: q.conflict } : {}),
+  ...(q.review ? { review: q.review } : {}),
+  ...(q.request ? { request: q.request } : {}),
+  ...(q.settled ? { settled: q.settled } : {}),
+  ...(q.redrafted ? { redrafted: true as const } : {}),
+});
 
 export interface MergeReady {
   branch: string;
@@ -521,8 +573,8 @@ export interface MergeCardsFeed {
 // ---- a branch's card in the chat that built it ---------------------------------------------------
 
 /** An outcome that moves the card to the bottom of the chat as a new revision. */
-export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "sent-back" | "requested" | "pushed" | "closed";
-export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "sent-back", "requested", "pushed", "closed"];
+export type MergeCardOutcome = "landed" | "needs-fix" | "conflict" | "behaviour-differs" | "review-flagged" | "unattributed" | "drafts-changed" | "sent-back" | "requested" | "pushed" | "closed" | "removed";
+export const MERGE_CARD_OUTCOMES: readonly MergeCardOutcome[] = ["landed", "needs-fix", "conflict", "behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "sent-back", "requested", "pushed", "closed", "removed"];
 
 /**
  * One copy of the card at its own point in the chat. The newest revision draws the whole card (the card's live data);
@@ -592,6 +644,14 @@ export interface MergeCard {
   failures?: MergeCardFailure[];
   /** Needs a fix: the merge thread's later diagnosis (its note), added to the same card in place. */
   explanation?: { text: string; at: string };
+  /** Needs a fix: why it was sent back (the entry's `sentBackFor`). */
+  sentBackFor?: SentBackFor;
+  /** Needs a fix, sent back for its drafts: they are fixed (the entry's `redrafted`), so Land comes back at the same commit. */
+  redrafted?: true;
+  /** The user removed it from the queue (Remove from Queue): its last revision, until a new Land moves it on. */
+  removed?: true;
+  /** Needs a fix that no longer needs one (the entry's `settled`: superseded, merged, gone): it offers nothing. */
+  settled?: MergeSettled;
   revisions: MergeCardRevision[];
   updatedAt: string;
 }

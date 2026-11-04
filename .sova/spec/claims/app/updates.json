@@ -14,7 +14,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-14T15:54Z"
+      "at": "2026-11-03T20:13Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.updates/check": {
@@ -36,11 +37,14 @@
       "server/index.ts",
       "src/components/UpdatesSettings.tsx",
       "package.json",
-      "server/updates/testing.ts"
+      "server/updates/testing.ts",
+      "src/lib/updates.ts",
+      "src/lib/updates.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-14T15:54Z"
+      "at": "2026-11-03T20:13Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.updates/indicator": {
@@ -80,7 +84,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-14T15:54Z"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§app.updates/reload-note": {
@@ -140,7 +145,12 @@
       "server/updates/disk-ahead.test.ts",
       "server/updates/install-kind.test.ts",
       "src/lib/restart.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
   },
   "§app.updates/running": {
     "kind": "behavior",
@@ -203,6 +213,7 @@
     "code": [
       "server/updates/runner.ts",
       "server/updates/runner.test.ts",
+      "server/updates/runner.integration.test.ts",
       "server/updates/manager.ts",
       "server/updates/manager.test.ts",
       "src/components/UpdatesSettings.tsx",
@@ -229,11 +240,13 @@
       "src/lib/api.ts",
       "src/lib/updates.ts",
       "server/app.ts",
-      "server/index.ts"
+      "server/index.ts",
+      "server/updates/check.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-14T15:54Z"
+      "at": "2026-11-03T20:13Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     },
     "notOwned": [
       "§app/installer",

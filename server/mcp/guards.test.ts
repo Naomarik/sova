@@ -80,6 +80,17 @@ describe("a chat with no servers", () => {
     assert.deepEqual(await setupFor({ path: file(cwd, [profile]), cwd, off: null }), { line: { why: "profile", profile: "Locked Down" }, rows: [] });
   });
 
+  test("a pick on a chat that hasn't been written yet counts: the held chat's profile, saved or Custom", async () => {
+    putComputerEntry(normalizeEntry("s", { command: "c" }, "computer"));
+    const cwd = join(root, "folder3");
+    mkdirSync(cwd, { recursive: true });
+    const path = file(cwd);
+    assert.notEqual((await setupFor({ path, cwd, off: null }))?.rows.length, 0, "nothing on file: the servers show");
+    for (const label of ["Custom", "Locked Down"])
+      assert.deepEqual(await setupFor({ path, cwd, off: null }, () => ({ label, remove: ["workers", "mcp"] })), { line: { why: "profile", profile: label }, rows: [] });
+    assert.notEqual((await setupFor({ path, cwd, off: null }, () => ({ label: "Open", remove: ["web"] })))?.rows.length, 0, "a profile that keeps them");
+  });
+
   test("a chat that has begun shows its own list, whatever the switches say now", async () => {
     putComputerEntry(normalizeEntry("s", { command: "c" }, "computer"));
     const cwd = join(root, "folder2");

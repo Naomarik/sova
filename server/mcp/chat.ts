@@ -35,11 +35,14 @@ export interface McpSetupAsk {
 
 const hasServers = () => readComputerList().entries.length > 0;
 
-export async function setupFor(ask: McpSetupAsk): Promise<SetupMcp | undefined> {
+/** The held chat's profile: a pick before the first message isn't in the file yet, since pi writes a session from its first reply. */
+const heldProfile = (path: string) => chatHandle(path)?.mirror.profile?.profile;
+
+export async function setupFor(ask: McpSetupAsk, held: (path: string) => { label: string; remove: readonly string[] } | null | undefined = heldProfile): Promise<SetupMcp | undefined> {
   if (ask.remote) return hasServers() ? { line: { why: "remote", target: ask.remote }, rows: [] } : undefined;
   const branch = await readBranch(ask.path).catch(() => null);
   const state = branch ? stateView(branch) : null;
-  const profile = state?.latest(PROFILE)?.data?.profile ?? null;
+  const profile = held(ask.path) ?? state?.latest(PROFILE)?.data?.profile ?? null;
   const folder = folderOf(ask.cwd);
   const setup = setupOf(folder, ask.off ?? {}, sandboxIsOn(state));
   if (!setup) return undefined;

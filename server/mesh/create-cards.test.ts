@@ -147,7 +147,7 @@ describe("cards, applied only by the person's click", () => {
     const commit = "a".repeat(40);
     let lines = ["Bee gets aaaaaaa, the build A runs (3 commits ahead of its bbbbbbb), and restarts onto it.", "Nothing is running on Bee now."];
     setMeshCardPort({ resyncSheet: async () => ({ commit, lines }), resync: async (peer, at) => (started.push(`${peer}@${at}`), { status: 200, body: {} }) });
-    await assert.rejects(propose("mesh.resync", { peer: "b", commit: "c".repeat(40) }), /Expected \{peer\}/);
+    await assert.rejects(propose("mesh.resync", { peer: "b", commit: "older" }), /Expected \{peer\}/);
     const resync = await propose("mesh.resync", { peer: "b" });
     assert.deepEqual((resync.card as unknown as { notes: string[] }).notes, lines, "the confirm sheet's own sentences, before Apply");
     assert.deepEqual(started, [], "nothing until Apply");

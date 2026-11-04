@@ -25,7 +25,7 @@ Create has no settings of its own. The Subagents picker and every profile are De
 moving a chat between Delegate and Create keeps its subagent profile. **Configure Create**, the gear
 on Create's row, opens the same Settings → Subagents as Delegate's gear. The [strict](/docs/modes/#strict)
 flag does the same in both: while it's on, the chat has no `edit` or `write` tool. `bash` and every other
-tool stay, so the rule that file changes go through a worker is the chat's instructions, not a wall.
+tool stay, so a chat can still write a file with `bash`.
 
 A worker gets nothing of a major mode, so the chat reads what it needs and puts it in the worker's
 brief.
@@ -134,8 +134,7 @@ branch is yours to merge, and with no Git the change is made by hand.
 
 **Your OK** covers files on your computer that aren't settings: themes, personal skills, add-ons,
 rules and personas. Create shows the path and the whole change, then waits. Only your own message in
-that chat counts. Then the chat writes the file. Under strict its instructions send the write to a worker
-outside any worktree. That is an instruction, not a limit: the chat still has `bash`.
+that chat counts. Then the chat writes the file, or a worker outside any worktree does.
 
 ## What only you do
 

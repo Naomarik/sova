@@ -28,6 +28,7 @@ import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact"
 import { trialActWait } from "./chat-handle";
 import { logAction, readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
 import { parseModePatch } from "./mode-state";
+import { createNotNamed } from "../shared/profiles";
 import { ideaTools, type IdeaToolHost, type ToolCall } from "./overseer-idea-tools";
 import { todoTools } from "./overseer-todo-tools";
 import { readTodos } from "./overseer-todos";
@@ -1430,6 +1431,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         // unknown one creates no session and takes no cap.
         // Memory is never given to a coding session (§chat.memory/where), here or on a peer.
         if (Array.isArray(p.minor_modes) && p.minor_modes.includes("memory")) throw new Refusal(`${MEMORY_CODING_REFUSAL}. No session was created.`);
+        if (p.mode === "create") throw new Refusal(createNotNamed("the Overseer"));
         if (p.mode || p.minor_modes !== undefined || p.project_modes !== undefined) {
           const bad = parseModePatch({ ...(p.mode ? { mode: p.mode } : {}), ...(p.minor_modes !== undefined ? { minorModes: p.minor_modes } : {}), ...(p.project_modes !== undefined ? { projectModes: p.project_modes } : {}) });
           if ("error" in bad) throw new Refusal(`${bad.error.replace("minorModes", "minor_modes").replace("projectModes", "project_modes")}. No session was created.`);
@@ -1563,6 +1565,7 @@ export function overseerTools(host: OverseerToolHost, shared: TurnLimits, redact
         ["session"],
       ),
       execute: act("sova_set_session", async (p) => {
+        if (p.mode === "create") throw new Refusal(createNotNamed("the Overseer"));
         if (Array.isArray(p.minor_modes) && p.minor_modes.includes("memory")) throw new Refusal(`${MEMORY_CODING_REFUSAL}. Nothing was changed.`);
         const s = await resolveWritable(p.session);
         // A session waiting on the user's alignment answers keeps align on (§app.project-overseer/coding-mode): checked first.

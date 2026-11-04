@@ -9,20 +9,24 @@ import { agentRoot } from "./state-root";
 import { MINOR_DESCRIPTIONS, MINOR_MODES } from "../pi-config/extensions/mode/minor.ts";
 import {
   activeOf,
+  defaultModeOf,
   loadState,
   MODE_ENTRY_TYPE,
   MODE_DESCRIPTIONS,
   MODES,
+  modeSwitch,
   normalizeState,
   parseMode,
   restoreActive,
   saveState,
+  withMinor,
   type ModeState,
 } from "../pi-config/extensions/mode/state.ts";
 import type { StateView } from "../shared/harness";
 import type { ChatMemoryChoice, MemoryModeInfo, MemoryType, ModeApplies, ModeInfo, ProjectModeApproval } from "../shared/protocol";
 import { parseApprovals, parseProjectModes } from "./project-mode-menu";
 import { MEMORY_SIZES, MEMORY_TYPE_INFO } from "../shared/memory";
+import { CREATE_NO_DEFAULT } from "../shared/profiles";
 import { parseMemoryPatch } from "./memory/settings";
 import { stateViewOf } from "./harness/pi/state";
 import { MODE } from "./harness/state-kinds";
@@ -38,12 +42,17 @@ export function memoryModeInfo(choice: ChatMemoryChoice): MemoryModeInfo {
   return { type: choice.type, size: choice.size, types: [...MEMORY_TYPE_INFO], sizes: [...MEMORY_SIZES] };
 }
 
-export function modeInfo(state: ModeState, memory?: ChatMemoryChoice): ModeInfo {
+/** Only in Create: the mode Save as Default saves (ModeInfo.saveMode). */
+export const saveModeOf = (state: Pick<ModeState, "mode" | "lastMode">): { saveMode?: string } => (state.mode === "create" ? { saveMode: defaultModeOf(state) } : {});
+
+/** `offersCreate`: the chat this describes offers Create (§chat.create-mode/where-offered); a default never does. */
+export function modeInfo(state: ModeState, memory?: ChatMemoryChoice, offersCreate = false): ModeInfo {
   return {
     mode: state.mode,
     minorModes: [...state.minorModes],
     strict: state.strict,
-    modes: MODES.map((id) => ({ id, description: MODE_DESCRIPTIONS[id] })),
+    ...saveModeOf(state),
+    modes: MODES.filter((id) => id !== "create" || offersCreate || state.mode === "create").map((id) => ({ id, description: MODE_DESCRIPTIONS[id] })),
     minors: MINOR_MODES.map((id) => ({ id, description: MINOR_DESCRIPTIONS[id] })),
     ...(memory ? { memory: memoryModeInfo(memory) } : {}),
   };
@@ -137,26 +146,31 @@ export function parseModeRequest(body: unknown): ModeRequest {
 }
 
 /**
- * What `Save as default` writes for a chat on `state`: its major mode, strict flag and minor modes —
+ * What `Save as default` writes for a chat on `state`: its major mode (in Create, its last normal or
+ * Delegate choice, §chat.create-mode/per-chat-only), strict flag and minor modes —
  * exactly the three fields `/mode default` writes in the TUI (saveDefault in
  * pi-config/extensions/mode/index.ts), and nothing else, so shortcuts and any other field in the
  * file are kept by writeMode's re-read. The minors are copied, never shared with the chat's state.
  */
-export function defaultPatchOf(state: Pick<ModeState, "mode" | "strict" | "minorModes">): Required<Pick<ModePatch, "mode" | "strict" | "minorModes">> {
-  return { mode: state.mode, strict: state.strict, minorModes: [...state.minorModes] };
+export function defaultPatchOf(state: Pick<ModeState, "mode" | "lastMode" | "strict" | "minorModes">): Required<Pick<ModePatch, "mode" | "strict" | "minorModes">> {
+  return { mode: defaultModeOf(state), strict: state.strict, minorModes: [...state.minorModes] };
 }
 
 /** Fresh file + the patch's fields. Every field the patch doesn't carry (strict unless it does, shortcuts,
-    future ones we know) is kept. */
+    future ones we know) is kept. Also one chat's own state + a switch: only a chat's state can be in
+    Create, which normalizeState (the file's reader) never keeps, and a switch to it turns align on
+    (§chat.create-mode/minor-modes), in the same step. */
 export function mergeMode(loaded: ModeState, patch: ModePatch): ModeState {
   const { memory: _memory, projectModes: _p, approve: _a, approvedBy: _b, ...modes } = patch;
-  return normalizeState({ ...loaded, ...modes });
+  const merged = { ...normalizeState({ ...loaded, ...modes }), ...modeSwitch(loaded, patch.mode ?? loaded.mode) };
+  return patch.mode === "create" && loaded.mode !== "create" ? withMinor(merged, "align", true) : merged;
 }
 
 export const readMode = (file = modeFile()): ModeState => loadState(file);
 
 /** loadState → normalizeState({...loaded, patch}) → saveState (atomic). Returns what was written. */
 export function writeMode(patch: ModePatch, file = modeFile()): ModeState {
+  if (patch.mode === "create") throw new Error(CREATE_NO_DEFAULT); // Callers refuse first; the file can never hold it.
   const next = mergeMode(loadState(file), patch);
   saveState(file, next);
   return next;
@@ -186,7 +200,7 @@ export const resolveChatMode = (branch: BranchEntries, file = modeFile()): ModeS
 export function chatModeOf(state: StateView, file = modeFile()): ModeState {
   const base = loadState(file);
   const active = state.latest(MODE)?.data.active;
-  return active ? { ...base, mode: active.mode, strict: active.strict, minorModes: [...active.minorModes] } : base;
+  return active ? { ...base, mode: active.mode, strict: active.strict, minorModes: [...active.minorModes], ...(active.lastMode ? { lastMode: active.lastMode } : {}) } : base;
 }
 
 /**
@@ -223,7 +237,7 @@ export function appliesAfter(plan: ReturnType<typeof modeApplyPlan>, streaming: 
  * from the extension's entries; a session pinned before its first prompt builds its head from the
  * pinned modes.
  */
-export function pinEntryFor(branch: BranchEntries, state: Pick<ModeState, "mode" | "strict" | "minorModes">): { customType: string; data: { mode: ModeState["mode"]; active: ReturnType<typeof activeOf> } } | null {
+export function pinEntryFor(branch: BranchEntries, state: Pick<ModeState, "mode" | "lastMode" | "strict" | "minorModes">): { customType: string; data: { mode: ModeState["mode"]; active: ReturnType<typeof activeOf> } } | null {
   const have = restoreActive(branch);
   // The project modes the chat has on ride along unchanged: the pin is the newest entry restoreActive reads,
   // so leaving them out would turn them off. A pin never adds one (mode.json has none).

@@ -4,6 +4,7 @@ import { alignFileSchema } from "./align.ts";
 import { ALIGN_EAGERNESS_LABELS, ALIGN_STYLE_LABELS, type AlignEagerness, type AlignStyle } from "./align-settings.ts";
 import { ALIGN_STYLE_PARAGRAPHS, ALIGN_TRIGGER_LEAD, ALIGN_TRIGGER_PARAGRAPHS, ALIGN_TRIGGER_SHARED, buildMinorPrompt, MINOR_MODES, promptedMinorModes, VIS_GUIDE_DIR, workerMinorModes, type AlignPromptOptions, type MinorMode } from "./minor.ts";
 import { routeAll, usable, type ProfileRoute, type SlotRoute } from "./routing.ts";
+import { CREATE_INSTRUCTIONS } from "./create/guide.ts";
 import { orchestrates, type Mode, type ModeState } from "./state.ts";
 import { WORKER_MODES_CAP, type ProjectModeRef, type ProjectModeSnapshot } from "./project-format.ts";
 
@@ -108,7 +109,7 @@ export function buildSpecWriterPrompt(route: SlotRoute): string {
 }
 
 /**
- * Everything to append to this turn's system prompt: delegate block first, then minor blocks in
+ * Everything to append to this turn's system prompt: delegate block first, then Create's in that mode, then minor blocks in
  * registry order. Takes just the session-scoped triple, so a `ModeActive` satisfies it too.
  * `writer` is the routed spec writer, or null when none is set. `headMinors` is the set of minor
  * modes the session's prompt was built with (the head, see index.ts), when it differs from the
@@ -130,6 +131,8 @@ export function composePrompt(
 		const delegate = buildDelegatePrompt(routes);
 		blocks.push(state.minorModes.includes("align") ? `${delegate}\n\n${buildDelegateAlignBridge(align?.visuals === true)}` : delegate);
 	}
+	// Create's own block follows Delegate's, whole, and changes none of it.
+	if (state.mode === "create") blocks.push(CREATE_INSTRUCTIONS);
 	for (const minor of promptedMinorModes(headMinors)) blocks.push(minorBlock(minor, writer, false, align));
 	blocks.push(...projectBlocks);
 	return blocks.length > 0 ? blocks.join("\n\n") : undefined;

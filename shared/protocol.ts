@@ -1724,9 +1724,11 @@ export interface BatchPromptResult {
     new sessions** (~/.pi/agent/mode.json), never one chat's state. `strict` is shown, never
     changed here. `modes`/`minors` list what exists. */
 export interface ModeInfo {
-  mode: string; // "normal" | "delegate"
+  mode: string; // "normal" | "delegate" | "create"
   minorModes: string[]; // canonical order
   strict: boolean;
+  /** Only in Create: the mode Save as Default saves, the chat's last normal or Delegate choice (§chat.create-mode/per-chat-only). */
+  saveMode?: string;
   modes: { id: string; description: string }[];
   minors: { id: string; description: string }[];
   /** The memory minor mode's choice (§chat/memory): in GET /api/mode the saved default new chats

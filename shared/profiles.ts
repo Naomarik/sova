@@ -64,6 +64,13 @@ export const isSubagentsRef = (v: unknown): v is string => typeof v === "string"
     pi-config's MINOR_MODES less its web-only ones (memory, which only a chat's own mode menu turns on;
     this file imports nothing), pinned equal by session-profiles.test.ts. */
 export const PROFILE_MINOR_MODES = ["align", "spec", "vis"] as const;
+
+/** Who is told Create can't be named (§design.copy-deck/create-mode). */
+export type CreateNamer = "a profile" | "an automation" | "the Overseer" | "a project overseer";
+/** The refusal when a starter names Create, which only a chat picks for itself (§chat.create-mode/per-chat-only). */
+export const createNotNamed = (who: CreateNamer): string => `Create is chosen in a chat's own mode menu, so ${who} can't name it. Nothing was changed.`;
+/** The refusal when a default names Create. */
+export const CREATE_NO_DEFAULT = "Create is chosen in each chat, so no default holds it.";
 export type ProfileMinorMode = (typeof PROFILE_MINOR_MODES)[number];
 
 export const PROFILE_ICONS = ["grid", "eye", "network", "branch", "wrench", "shield", "search", "terminal", "bulb", "building"] as const;
@@ -313,6 +320,7 @@ export function profileFileError(raw: unknown): string | null {
     if (o[k] !== undefined && typeof o[k] !== "string") return `"${k}" must be text.`;
   for (const k of ["singleton", "overseerMayStart"] as const) if (o[k] !== undefined && typeof o[k] !== "boolean") return `"${k}" must be true or false.`;
   if (o.icon !== undefined && !(PROFILE_ICONS as readonly string[]).includes(o.icon as string)) return `"icon" must be one of ${PROFILE_ICONS.join(", ")}.`;
+  if (o.mode === "create") return `"mode": ${createNotNamed("a profile")}`;
   if (o.mode !== undefined && o.mode !== "normal" && o.mode !== "delegate") return `"mode" must be "normal" or "delegate".`;
   if (o.thinking !== undefined && !(THINKING_LEVELS as readonly unknown[]).includes(o.thinking)) return `"thinking" must be one of ${THINKING_LEVELS.join(", ")}.`;
   if (o.subagents !== undefined && !isSubagentsRef(o.subagents)) return `"subagents" must be "off" or a subagent profile's id (lowercase letters, digits and dashes).`;

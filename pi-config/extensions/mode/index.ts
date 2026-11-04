@@ -74,6 +74,7 @@ import {
 import { registerAlignTool, type AlignToolHost } from "./align-tool.ts";
 import { reviewStartText } from "./review-prompt.ts";
 import { ALIGN_OVERLAY_OPTIONS, alignWidget, createAlignViewer, type AlignViewer } from "./align-ui.ts";
+import { CREATE_GUIDE_TOOL, registerCreateGuideTool } from "./create-guide-tool.ts";
 import { registerVisGuideTool, VIS_GUIDE_TOOL } from "./vis-guide-tool.ts";
 
 /** remote/workers.ts: a session on a target announces itself; asking makes it announce again. */
@@ -695,6 +696,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		publishActive();
 		appendSwitch({ mode: next });
 		publishWorkerModes();
+		syncCreateGuideTool();
 		if (orchestrates(next)) {
 			if (active.strict) applyStrictTools();
 			recomputeRoutes();
@@ -968,6 +970,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		else restoreTools();
 		syncAlignTool();
 		syncVisGuideTool();
+		syncCreateGuideTool();
 		syncProjectTools();
 		recomputeRoutes();
 		syncHostSection();
@@ -994,6 +997,11 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 	 */
 	function syncVisGuideTool(): void {
 		syncTool(VIS_GUIDE_TOOL, visToolsWanted(active.minorModes, alignVisuals));
+	}
+
+	/** create_guide is in the loadout exactly while the chat is in Create, so a worker never has it. */
+	function syncCreateGuideTool(): void {
+		syncTool(CREATE_GUIDE_TOOL, active.mode === "create");
 	}
 
 	function syncTool(tool: string, want: boolean): void {
@@ -1202,6 +1210,7 @@ export default function modeExtension(pi: ExtensionAPI, options: ModeExtensionOp
 		});
 	}
 	registerVisGuideTool(pi);
+	registerCreateGuideTool(pi);
 
 	/** One line per profile: the configured tuple(s) and, in delegate, what is actually in use. */
 	function routingLines(): string[] {

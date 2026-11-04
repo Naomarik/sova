@@ -16,7 +16,7 @@ import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueue
 import { decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { sessionsChanged } from "./list-generation";
-import { appliesAfter, type BranchEntries, chatModeOf, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
+import { appliesAfter, type BranchEntries, chatModeOf, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, saveModeOf, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
 import { restorePick, pickEntryFor } from "../pi-config/extensions/subagents/subagent-profiles.ts";
@@ -78,7 +78,7 @@ function overseerMemoryNow(file: string | undefined): OverseerMemoryInForce {
   }
   return overseerMemoryOf(parseOverseerMemory(raw));
 }
-import { withWebMinors } from "./memory/permit";
+import { withWebMinors, withWebMode } from "./memory/permit";
 import { approvalNeededText, checkProjectSwitch, listingFor, projectModesInfo } from "./project-mode-menu";
 import { isApproved, isApprovedByUser, recordApproval } from "./project-mode-approvals";
 import { ModeActions, notHereFor, type ModeCommandOutcome } from "./mode-commands";
@@ -2199,7 +2199,7 @@ class ChatSession {
   modeMessage(): ChatServerMessage {
     const s = this.modeState;
     // `memory` only where the menu can turn it on (§chat.memory/where): its absence hides the row.
-    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, applies: this.modeApplies, ...(this.memoryOffered() ? { memory: this.memory.choiceNow() } : {}), ...this.projectModesInfo() };
+    return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, ...saveModeOf(s), applies: this.modeApplies, ...(this.memoryOffered() ? { memory: this.memory.choiceNow() } : {}), ...this.projectModesInfo() };
   }
 
   /** The project modes this chat has on (its newest mode entry's `projectModes`, turn-on order). */
@@ -2251,7 +2251,8 @@ class ChatSession {
 
   /** This chat's mode as POST /api/mode?path= answers it, the project rows read now. */
   modeResult(): ChatModeResult {
-    return { ...modeInfo(this.modeState, this.memoryOffered() ? this.memory.choiceNow() : undefined), applies: this.modeApplies, ...this.projectModesInfo() };
+    // A chat with no mode switch (a gathering chat, any Overseer, the Project Assistant) has no Create.
+    return { ...modeInfo(this.modeState, this.memoryOffered() ? this.memory.choiceNow() : undefined, !this.overseer && !this.specialRefuses("mode")), applies: this.modeApplies, ...this.projectModesInfo() };
   }
 
   /**
@@ -2538,7 +2539,7 @@ class ChatSession {
           for (const id of projectModes) if (!was.includes(id)) await cmd.handler(`${PROJECT_MODE_PREFIX}${id} on`, ctx);
         }
         // Not awaited: after switching, setMode awaits the delegate routing probe (up to 15s).
-        cmd.handler(state.mode, ctx).catch((err) => {
+        withWebMode(this.harness.id, state.mode, () => cmd.handler(state.mode, ctx)).catch((err) => {
           console.error("[chat] /mode handler failed", err);
           if (this.disposed) return;
           this.modeApplies = "new-chats";

@@ -2,7 +2,7 @@
 // must still give what a full read gives. The differential below is the guard: after every step of a
 // scripted file history, sessionFacts deep-equals extractFacts over the file's whole text.
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { type FileHandle, open } from "node:fs/promises";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -298,6 +298,23 @@ describe("sessionFacts, against a fresh full read after every step", () => {
     writeFileSync(path, header("sess-2") + outline("o1", null, "new"));
     await same(path, "a new file at the deleted path");
     assert.equal((await sessionFacts(path)).teams.length, 0);
+  });
+
+  test("the golden corpus, written a line at a time, each line in two writes", async () => {
+    const dir = join(import.meta.dirname, "harness/pi/golden/fixtures");
+    const files = [...readdirSync(join(dir, "synthetic")).map((f) => join("synthetic", f)), ...readdirSync(join(dir, "faux"), { recursive: true }).map((f) => join("faux", String(f)))].filter((f) => f.endsWith(".jsonl"));
+    assert.ok(files.length >= 17, `only ${files.length} fixtures`);
+    for (const file of files) {
+      const path = fresh();
+      writeFileSync(path, "");
+      for (const piece of readFileSync(join(dir, file), "utf8").split(/(?<=\n)/)) {
+        const mid = Math.floor(piece.length / 2);
+        appendFileSync(path, piece.slice(0, mid));
+        await same(path, `${file}: half a line`);
+        appendFileSync(path, piece.slice(mid));
+        await same(path, `${file}: the line whole`);
+      }
+    }
   });
 
   test("an unchanged file is the same answer, read through nothing", async () => {

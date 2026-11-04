@@ -2,7 +2,7 @@
 // dirs in the OS temp dir, deleted after; ~/.pi is never read or written.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -14,6 +14,7 @@ mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 
 const orgs = await import("./orgs");
 const { resolveSessionPath } = await import("./paths");
+const { stateRoot } = await import("./state-root");
 const { settled } = await import("./workspace-git");
 const { Hono } = await import("hono");
 const { registerOrgRoutes } = await import("./org-routes");
@@ -217,6 +218,61 @@ describe("organizations", async () => {
     assert.ok(!orgs.participantLine(p).includes("السلام") && !orgs.participantLine(p).includes("archery"), "a conversation's other people stay name, role and areas");
     const bare = await orgs.addPerson(org.id, { name: "Bare" });
     assert.equal(orgs.overseerPersonLine(bare), `- Bare (id ${bare.id})`, "empty fields are left out");
+  });
+});
+
+describe("orgOfSessionPath: a workspace's canonical path is at most 1 s old", () => {
+  let now = 0;
+  before(() => orgs.setOrgRootsClockForTest(() => now));
+  after(() => orgs.setOrgRootsClockForTest(null));
+
+  test("a folder replaced by a symlink behind orgs.json shows at 1 s, sooner when the index reloads", async () => {
+    const dir = join(root, "ws-swap");
+    const org = await orgs.createOrg({ name: "Swap Co", dir });
+    await settled(dir);
+    const found = { orgId: org.id, dir };
+    const listed = join(dir, "sessions", "a.jsonl");
+    const real = join(root, "ws-moved", "sessions", "a.jsonl");
+    now += 1_000; // past any earlier reading: this one is the second that counts below
+    assert.deepEqual(orgs.orgOfSessionPath(listed), found);
+
+    renameSync(dir, join(root, "ws-moved"));
+    symlinkSync(join(root, "ws-moved"), dir);
+    now += 999;
+    assert.deepEqual(orgs.orgOfSessionPath(listed), found, "within the second: the reading still stands");
+    assert.equal(orgs.orgOfSessionPath(real), null);
+    now += 1;
+    assert.equal(orgs.orgOfSessionPath(listed), null, "at the second: as an uncached read answers");
+    assert.deepEqual(orgs.orgOfSessionPath(real), found);
+
+    // And back, with orgs.json written and the clock stopped: a reloaded index starts afresh.
+    rmSync(dir);
+    renameSync(join(root, "ws-moved"), dir);
+    orgs.setOperatorName("Swap Operator");
+    assert.deepEqual(orgs.orgOfSessionPath(listed), found, "a reloaded index reads the folder again");
+    assert.equal(orgs.orgOfSessionPath(real), null);
+  });
+
+  test("two orgs on one workspace: the first in the index wins, in either order", async () => {
+    const dir = join(root, "ws-twin");
+    const org = await orgs.createOrg({ name: "Twin Co", dir });
+    await settled(dir);
+    const file = join(stateRoot(), "orgs.json");
+    const saved = readFileSync(file, "utf8");
+    const index = JSON.parse(saved) as { orgs: { id: string; dir: string; attachedAt: string }[] };
+    const twin = { id: "org_twin", dir, attachedAt: "" };
+    try {
+      let stamp = Date.now() / 1000 + 10;
+      for (const [list, first] of [[[twin, ...index.orgs], twin.id], [[...index.orgs, twin], org.id]] as const) {
+        writeFileSync(file, JSON.stringify({ ...index, orgs: list }));
+        utimesSync(file, stamp, stamp++); // the index reloads on its mtime: two writes here can share one tick
+        now += 1; // inside the second: only the reload refreshes the alignment with the index
+        assert.equal(orgs.orgOfSessionPath(join(dir, "sessions", "a.jsonl"))?.orgId, first);
+      }
+    } finally {
+      writeFileSync(file, saved);
+      utimesSync(file, Date.now() / 1000 + 20, Date.now() / 1000 + 20);
+    }
   });
 });
 

@@ -292,6 +292,33 @@ describe("the Releases tab", () => {
     }
   });
 
+  for (const width of [1280, 390]) {
+    test(`a failed Publish at ${width}px: the tab says so near its top, and Retry Publish asks the same confirm`, async () => {
+      const steps = record().steps.map((s) =>
+        s.id === "publish" ? { ...s, state: "failed" as const, summary: "origin refused the push: not a fast-forward" } : s.phase === "after" || s.phase === "withdraw" ? s : { ...s, state: "done" as const },
+      );
+      const failed = record({ state: "ready", steps, publish: { at: iso(1), by: "operator", pushed: "not-pushed" as never, channelsFrom: {}, error: "origin refused the push: not a fast-forward" } });
+      const o = await open(width, TAB, view({ open: failed, gates: { checksPassed: true, stepsDone: true, notes: true, why: [] } }));
+      try {
+        const card = o.page.getByRole("group", { name: "Release in progress" });
+        await card.getByText(/^Step \d+ of \d+ · Publish failed/).waitFor();
+        await card.getByText("origin refused the push: not a fast-forward").waitFor();
+        assert.equal(await card.getByRole("button", { name: "Retry Publish" }).count(), 1, "one way to retry, not a step button beside it");
+        assert.equal(await card.getByRole("button", { name: /^Publish v/ }).count(), 0);
+        await card.getByRole("button", { name: "Retry Publish" }).click();
+        const ask = o.page.getByRole("group", { name: "Confirm publishing v0.10.0" });
+        await ask.getByText(/^Publishing pushes master/).waitFor();
+        await shot(o.page, `publish-failed-${width}`);
+        await ask.getByRole("button", { name: "Publish Now" }).click();
+        await called(o, "release.publish");
+        assert.equal(o.calls.some((c) => c.verb === "release.retry"), false);
+        await noSideScroll(o.page);
+      } finally {
+        await o.ctx.close();
+      }
+    });
+  }
+
   test("a local-only project's Publish says nothing is pushed", async () => {
     const ready = record({ state: "ready" });
     const o = await open(1280, TAB, view({ remote: false, open: ready, gates: { checksPassed: true, stepsDone: true, notes: true, why: [] } }));

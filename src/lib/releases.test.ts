@@ -10,6 +10,7 @@ import {
   progressLine,
   publishBlocked,
   publishConfirmLine,
+  publishLabel,
   releaseAt,
   releaseOfTarget,
   shownRecord,
@@ -75,12 +76,12 @@ test("after-withdraw steps are listed only once a release is withdrawn, and the 
 });
 
 test("Continue only on a held step and Retry Step only on a failed one, while the release can still act", () => {
-  assert.deepEqual(stepActions({ state: "preparing" }, { state: "held", phase: "prepare" }), { continue: true, retry: false });
-  assert.deepEqual(stepActions({ state: "checking" }, { state: "failed", phase: "sova" }), { continue: false, retry: true });
-  assert.deepEqual(stepActions({ state: "published" }, { state: "failed", phase: "after" }), { continue: false, retry: true });
-  assert.deepEqual(stepActions({ state: "published" }, { state: "failed", phase: "prepare" }), { continue: false, retry: false });
-  assert.deepEqual(stepActions({ state: "abandoned" }, { state: "held", phase: "prepare" }), { continue: false, retry: false });
-  assert.deepEqual(stepActions({ state: "withdrawn" }, { state: "failed", phase: "withdraw" }), { continue: false, retry: true });
+  assert.deepEqual(stepActions({ state: "preparing" }, { id: "x", state: "held", phase: "prepare" }), { continue: true, retry: false });
+  assert.deepEqual(stepActions({ state: "checking" }, { id: "x", state: "failed", phase: "sova" }), { continue: false, retry: true });
+  assert.deepEqual(stepActions({ state: "published" }, { id: "x", state: "failed", phase: "after" }), { continue: false, retry: true });
+  assert.deepEqual(stepActions({ state: "published" }, { id: "x", state: "failed", phase: "prepare" }), { continue: false, retry: false });
+  assert.deepEqual(stepActions({ state: "abandoned" }, { id: "x", state: "held", phase: "prepare" }), { continue: false, retry: false });
+  assert.deepEqual(stepActions({ state: "withdrawn" }, { id: "x", state: "failed", phase: "withdraw" }), { continue: false, retry: true });
 });
 
 test("Publish is offered only on a ready release; otherwise the gates' reasons say why", () => {
@@ -152,4 +153,12 @@ test("a Set Up Releases run: live (running or waiting) with its chat, proposed w
   assert.equal(setupRun({ playbookState: "idle", playbook: pb }), null);
   assert.equal(setupRun({ playbookState: "running", playbook: { ...pb, proposes: "deploy" } }), null);
   assert.equal(setupRun(undefined), null);
+});
+
+test("a failed Publish offers Retry Publish on the Publish button, never Retry Step, which would publish nothing", () => {
+  assert.deepEqual(stepActions({ state: "ready" }, { id: "publish", state: "failed", phase: "sova" }), { continue: false, retry: false });
+  assert.equal(publishLabel(record({ steps: [step("publish", "failed", "sova")] })), "Retry Publish");
+  assert.equal(publishLabel(record({ steps: [step("publish", "waiting", "sova")] })), "Publish v0.10.0");
+  // The gates' why still holds it: Publish stays refused, so no retry is offered.
+  assert.equal(publishBlocked({ gates: { checksPassed: true, stepsDone: true, notes: true, why: ["origin refused the push"] } }, { state: "ready" }), "Not ready to publish: origin refused the push.");
 });

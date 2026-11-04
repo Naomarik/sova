@@ -80,12 +80,16 @@ export function progressLine(r: Pick<ReleaseRecord, "steps" | "state">): string 
   return `Step ${i} of ${steps.length} · ${what} · ${done} done`;
 }
 
-/** The actions a step offers the operator: Continue on a held step, Retry Step on a failed one. Only while its
+/** The actions a step offers the operator: Continue on a held step, Retry Step on a failed one (but Publish). Only while its
     release can still act: open, published (its after-publish steps), withdrawn (its after-withdraw steps). */
-export function stepActions(r: Pick<ReleaseRecord, "state">, s: Pick<ReleaseStep, "state" | "phase">): { continue: boolean; retry: boolean } {
+export function stepActions(r: Pick<ReleaseRecord, "state">, s: Pick<ReleaseStep, "id" | "state" | "phase">): { continue: boolean; retry: boolean } {
   const live = isOpen(r.state) || (r.state === "published" && s.phase === "after") || (r.state === "withdrawn" && s.phase === "withdraw");
-  return { continue: live && s.state === "held", retry: live && s.state === "failed" };
+  // A failed Publish is retried from the Publish button, with its confirm: the step alone publishes nothing.
+  return { continue: live && s.state === "held", retry: live && s.state === "failed" && s.id !== "publish" };
 }
+
+/** The Publish button's words: Retry Publish after a failed one, which offers the same confirm. */
+export const publishLabel = (r: Pick<ReleaseRecord, "steps" | "tag" | "version">): string => (r.steps.some((s) => s.id === "publish" && s.state === "failed") ? "Retry Publish" : `Publish ${releaseName(r)}`);
 
 /** Why Publish isn't offered yet, as one sentence; null when it is. */
 export function publishBlocked(v: Pick<ReleaseView, "gates">, r: Pick<ReleaseRecord, "state">): string | null {

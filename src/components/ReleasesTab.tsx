@@ -13,6 +13,7 @@ import {
   progressLine,
   publishBlocked,
   publishConfirmLine,
+  publishLabel,
   RELEASE_CHIP,
   releaseName,
   shortSha,
@@ -387,7 +388,7 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
             <div class="deploy-actions rel-actions">
               <Show when={!blocked()} fallback={<p class="text-caption text-muted rel-why">{blocked()}</p>}>
                 <button type="button" class="button button-sm button-primary" aria-disabled={act.busy() ? "true" : undefined} onClick={() => setConfirm("publish")}>
-                  Publish {name()}
+                  {publishLabel(r())}
                 </button>
               </Show>
               <button type="button" class="button button-sm button-destructive rel-abandon" aria-disabled={act.busy() ? "true" : undefined} onClick={() => setConfirm("abandon")}>

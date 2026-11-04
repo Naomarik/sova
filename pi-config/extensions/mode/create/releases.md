@@ -1,4 +1,4 @@
-# releases: numbered versions of your project, and how they're cut and published
+# releases: numbered versions of your project, and how they're made and published
 
 Everything here needs a project with a merge queue that lands locally: a project that lands by request or by pushing a branch can't release yet, so say so and name How it lands in Settings → Merge Queue (the `landing` topic). In a folder that isn't a project, offer Add as Project (the `project` topic). With no queue, offer Initialize. In a folder that isn't in Git there are no releases.
 

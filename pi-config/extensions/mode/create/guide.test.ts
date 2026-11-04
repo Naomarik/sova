@@ -22,7 +22,7 @@ const PROMISED = `- **Make it yours.**
 - **Run your project.**
   - \`project\`: how your project runs, tests, shares and ships
   - \`landing\`: what must pass before a branch reaches your project, and how it lands
-  - \`releases\`: numbered versions of your project, and how they're cut and published
+  - \`releases\`: numbered versions of your project, and how they're made and published
   - \`automation\`: recipes you run by hand, or that run by themselves
   - \`cards\`: buttons, cards and drawings that are your project's own
   - \`overseers\`: how the Overseers and the Project Assistant watch, act and hold back

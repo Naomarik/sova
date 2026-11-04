@@ -1,5 +1,5 @@
 import type { ToolSpec } from "../shared/harness";
-import { SETTING_IDS } from "../shared/settings-reference";
+import { CLAUDE_LOGIN_SETTING, SETTING_IDS } from "../shared/settings-reference";
 import { SOVA_SETTING_IDS } from "../shared/sova-settings-reference";
 
 /**
@@ -13,19 +13,19 @@ export const CREATE_SETTINGS_TOOL = "sova_settings";
 export const CREATE_SETTINGS_TOOL_DESCRIPTION =
   "Every setting Sova has: this project's, its merge queue's and the Sova-wide ones. You only prepare a card; the person applies it with a click on Sova's own page, and you can neither apply nor undo one. Even a change that narrows waits for them. " +
   "get: every setting with its state, the cards waiting. reference {setting}: one setting's keys and what needs the person's approval. " +
-  'propose {why, edits}: prepare a card. A project edit is as the reference says; a merge queue edit is {setting: "merge-queue", changes?, models?}, on a card of its own; a Sova-wide edit is {setting: "sova", id, value}, on a card of its own. ' +
+  'propose {why, edits}: prepare a card. A project edit is as the reference says; a merge queue edit is {setting: "merge-queue", changes?, models?}, on a card of its own; which existing Claude login a project uses is {setting: "claude-login", login}; a Sova-wide edit is {setting: "sova", id, value}, on a card of its own. ' +
   "withdraw {card}: drop a card you prepared (sc_… or sw_…). Keys, tokens and sign-ins never go on a card: a card that carries one is refused, and the person signs in the supported way.";
 
 export const CREATE_SETTINGS_TOOL_PARAMETERS = {
   type: "object",
   properties: {
     op: { type: "string", enum: ["get", "reference", "propose", "withdraw"], description: "get | reference | propose | withdraw" },
-    setting: { type: "string", enum: [...SETTING_IDS, ...SOVA_SETTING_IDS], description: "reference: the setting." },
+    setting: { type: "string", enum: [...SETTING_IDS, CLAUDE_LOGIN_SETTING, ...SOVA_SETTING_IDS], description: "reference: the setting." },
     why: { type: "string", description: "propose: one or two sentences for the person, shown on the card." },
     edits: {
       type: "array",
       description: "propose: the changes, each an object naming its setting (see the description).",
-      items: { type: "object", properties: { setting: { type: "string", enum: ["overseer", "memory", "project", "copies", "profile", "playbook", "mode", "offers", "services", "merge-queue", "sova"] } }, required: ["setting"] },
+      items: { type: "object", properties: { setting: { type: "string", enum: ["overseer", "memory", "project", "copies", "profile", "playbook", "mode", "offers", "services", "merge-queue", "claude-login", "sova"] } }, required: ["setting"] },
     },
     card: { type: "string", description: "withdraw: the card's id (sc_… or sw_…)." },
   },

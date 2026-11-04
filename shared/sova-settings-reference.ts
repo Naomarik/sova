@@ -27,6 +27,10 @@ export const SOVA_SETTING_IDS = [
   "decisions",
   "overseer.global",
   "assistant.default",
+  "notifications",
+  "outreach",
+  "modes.default",
+  "models.favorites",
 ] as const;
 
 export type SovaSettingId = (typeof SOVA_SETTING_IDS)[number];
@@ -72,6 +76,10 @@ export const SOVA_SETTINGS: Record<SovaSettingId, SovaSettingEntry> = {
   decisions: e({ id: "decisions", label: "Decisions", file: "~s/decisions.json", summary: "The opt-in classifier that flags sessions needing you. Its key is never on a card: it stays on Settings → Decisions.", value: "{version: 1, jev, fallback, features, exclusions, neverSendTui}", grant: "It sends session content to a provider.", sync: null, live: "next check", screen: "Settings → Decisions" }),
   "overseer.global": e({ id: "overseer.global", label: "The Overseer", file: "~s/overseer.json", summary: "The Overseer's model, extra instructions, proactivity, quick actions, limits and explorer.", value: "{version: 1, model, thinking, extraSystemPrompt, proactivity, quickActions, caps, explorer}", grant: "It changes what the Overseer is told and may do.", sync: null, live: "its next turn", screen: "Settings → Overseer" }),
   "assistant.default": e({ id: "assistant.default", label: "The Project Assistant's default model", file: "~s/baton-settings.json", summary: "The model every organization's Project Assistant uses unless it picks its own.", value: "{model: \"provider/model\", thinking?} or null", grant: null, sync: null, live: "its next session", screen: "Settings" }),
+  notifications: e({ id: "notifications", label: "Phone notifications", file: "~s/push.json", summary: "Whether Sova notifies at all, its contact address, one switch per kind, and quiet hours. Each device still turns them on in its own browser.", value: "{enabled, contact, kinds: {<kind>: true|false}, quietHours}, as Settings → Notifications shows it", grant: null, sync: null, live: "next notification", screen: "Settings → Notifications" }),
+  outreach: e({ id: "outreach", label: "Outreach", file: "~s/outreach.json", summary: "Which number sends, the numbers and their labels, which computers may send through it, and whether it is paused. Pairing a phone stays on the screen.", value: "{sender, acceptFrom, paused, numbers?, labels?, authDir?}", grant: "It changes which number sends, or who may send through it.", sync: null, live: "next send", screen: "Settings → Outreach" }),
+  "modes.default": e({ id: "modes.default", label: "What new chats start in", file: "~a/mode.json", summary: "The mode, strict flag and minor modes new chats start with. Normal or Delegate: Create is chosen in each chat, so no default holds it.", value: "{mode: \"normal\"|\"delegate\", strict, minorModes: [...]}, all three", grant: null, sync: "settings:mode.json", live: "next new chat", screen: "a chat's mode menu (Save as Default)" }),
+  "models.favorites": e({ id: "models.favorites", label: "Favourite models", file: "~a/model-favorites.json", summary: "The starred models every picker shows first.", value: "the whole list: [\"provider/id\", …]", grant: null, sync: "settings:model-favorites.json", live: "at once", screen: "the star in the model picker" }),
 };
 
 export const isSovaSettingId = (v: unknown): v is SovaSettingId => typeof v === "string" && (SOVA_SETTING_IDS as readonly string[]).includes(v);
@@ -88,7 +96,7 @@ export function sovaReferenceText(id: SovaSettingId): string {
   const s = SOVA_SETTINGS[id];
   return [
     `${s.label} (${id}): ${s.summary}`,
-    `Where: ${s.file}. Changed at: ${s.screen ?? "no screen: only a card, or the file"}.`,
+    `Where: ${s.file} (~a is this chat's own agent folder, ~s Sova's folder in it; a card names the setting, never a path). Changed at: ${s.screen ?? "no screen: only a card, or the file"}.`,
     `Propose: {setting: "sova", id: "${id}", value: ${s.value}}`,
     `Needs the person's approval: ${s.grant ?? "never"}`,
     `Shows: ${s.live}.`,

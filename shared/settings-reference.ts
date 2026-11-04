@@ -442,6 +442,15 @@ export function settingsIndex(placed = true): string {
 export const MERGE_QUEUE_CARD_EDIT =
   '{setting: "merge-queue", changes?: {push?, review?, checks?: {<id>: {timeoutSec?, rerun?, optional?}}}, models?: {review?: {model, thinking?} | null, thread?: …}} on a card of its own. Check commands, the install step, the target and the kits go by Land; first setup stays the person\'s, on the Merge Queue tab.';
 
+/** A project's Claude login, for a Create chat only: not in the project overseer's list. */
+export const CLAUDE_LOGIN_SETTING = "project.claude-login";
+export const CLAUDE_LOGIN_REFERENCE = [
+  "The project's Claude login (project.claude-login): which existing login its new chats start on; open chats keep theirs.",
+  "Where: kept on this computer. Changed at: the project page's Claude login.",
+  'Propose: {setting: "claude-login", login: "<login id>" | "none" | "org"}: "none" is this computer\'s order, "org" follows its organization (a placed project only).',
+  "Needs the person's approval: never. Adding a login or signing in stays on Settings → Accounts.",
+].join("\n");
+
 /** One entry in full, for sova_settings reference (`create`: as a Create chat proposes it). */
 export function referenceText(id: SettingId, opts: { create?: boolean } = {}): string {
   const e = opts.create && id === "merge-queue" ? { ...SETTINGS_REFERENCE[id], edit: MERGE_QUEUE_CARD_EDIT } : SETTINGS_REFERENCE[id];

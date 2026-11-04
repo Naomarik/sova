@@ -41,5 +41,10 @@ export function credentialProblem(value: unknown, at = ""): string | null {
   return null;
 }
 
-/** §design.copy-deck/create-mode: "A setting that is a credential". */
-export const credentialRefusal = (where = "Sign in with `/login` in a terminal, or on Settings → Accounts for Claude."): string => `Create doesn't handle sign-ins or keys. ${where}`;
+/**
+ * §design.copy-deck/create-mode: "A setting that is a credential". The scan goes by names and shapes, so it can take
+ * a plain value for a key: `place` says where the person can make the change themselves, so a wrong refusal is no
+ * dead end.
+ */
+export const credentialRefusal = (place: string, where = "Sign in with `/login` in a terminal, or on Settings → Accounts for Claude."): string =>
+  `Create doesn't handle sign-ins or keys. ${where} If this isn't a key, name the place for the person, who can make the change themselves: ${place}.`;

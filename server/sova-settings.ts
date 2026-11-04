@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
+import type { OutreachPatch } from "../shared/outreach";
+import { CREATE_NO_DEFAULT } from "../shared/profiles";
 import type { KeptChange, SettingsBy, SettingsCardView, SettingsGrant, SovaCardsInfo } from "../shared/project-settings";
 import { isSovaSettingId, SOVA_SETTINGS, type SovaSettingId } from "../shared/sova-settings-reference";
 import { alignSettingsFile, alignSettingsInfo, saveAlignSettingsBody } from "./align-settings";
@@ -10,7 +12,11 @@ import { saveDecisions } from "./decide-routes";
 import { decisionsFile, parseDecisionSettings, readDecisionSettings } from "./decide-settings";
 import { memoryFile, memorySettingsInfo, parseMemorySettings, putMemorySettings } from "./memory/settings";
 import { parseModelPolicy, readModelPolicy, writeModelPolicy } from "./model-policy";
+import { favoritesFile, parseModelRef, setFavorite } from "./model-favorites";
+import { modeFile, parseModePatch, readMode, writeMode, type ModePatch } from "./mode-state";
+import { outreachFile, parseOutreach, readOutreach, readOutreachState } from "./outreach/settings";
 import { saveProviderLimits } from "./provider-limits";
+import { parsePushSettings, pushSettingsFile, readPushSettings, writePushSettings } from "./push-store";
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsFile, writeSessionTitleSettings } from "./session-titles-settings";
 import { credentialProblem, credentialRefusal } from "./card-refusals";
 import { agentRoot, stateRoot } from "./state-root";
@@ -94,6 +100,15 @@ function mergeKeys(file: string, keys: Record<string, unknown>): void {
   const was = readJson(file);
   mkdirSync(dirname(file), { recursive: true });
   writeFileAtomic(file, `${JSON.stringify({ ...(isObj(was) ? was : {}), ...keys }, null, 2)}\n`);
+}
+
+const OUTREACH_KEYS = ["sender", "acceptFrom", "paused", "numbers", "labels", "authDir"];
+
+/** The starred models as refs, in the file's order; none when it can't be read. */
+function favoriteRefs(): string[] {
+  const all = readJson(favoritesFile());
+  const models = isObj(all) && Array.isArray(all.models) ? all.models : [];
+  return models.filter(isObj).map((m) => `${String(m.provider)}/${String(m.id)}`);
 }
 
 const PI_DEFAULT_KEYS = ["defaultProvider", "defaultModel", "defaultThinkingLevel"];
@@ -301,6 +316,72 @@ export const SOVA_ADAPTERS: Record<SovaSettingId, Adapter> = {
       return errorOf(await saveOverseerSettings(v));
     },
   },
+  notifications: {
+    files: () => [pushSettingsFile()],
+    read: () => readPushSettings(),
+    check: (v) => errorOf(parsePushSettings(v, true)),
+    write: async (v) => errorOf(writePushSettings(v)),
+  },
+  outreach: {
+    files: () => [outreachFile()],
+    read() {
+      const file = readOutreach() as unknown as Record<string, unknown>;
+      return Object.fromEntries(OUTREACH_KEYS.filter((k) => file[k] !== undefined).map((k) => [k, file[k]]));
+    },
+    check(v) {
+      if (!isObj(v)) return `Expected {${OUTREACH_KEYS.join(", ")}}.`;
+      for (const k of Object.keys(v)) if (!OUTREACH_KEYS.includes(k)) return `"${k}" can't go on a card: ${OUTREACH_KEYS.join(", ")} can.`;
+      const { file, problem } = readOutreachState();
+      if (problem) return `outreach.json can't be read (${problem}).`;
+      try {
+        parseOutreach({ ...file, ...v });
+        return null;
+      } catch (err) {
+        return err instanceof Error ? err.message : String(err);
+      }
+    },
+    async write(v) {
+      const { applyOutreachPatch } = await import("./outreach/routes");
+      return errorOf(await applyOutreachPatch(v as OutreachPatch));
+    },
+  },
+  "modes.default": {
+    files: () => [modeFile()],
+    read() {
+      const m = readMode();
+      return { mode: m.mode, strict: m.strict, minorModes: m.minorModes };
+    },
+    check(v) {
+      if (!isObj(v)) return "Expected {mode, strict, minorModes}.";
+      if (v.mode === "create") return CREATE_NO_DEFAULT;
+      for (const k of ["mode", "strict", "minorModes"]) if (!(k in v)) return `Name all three: mode, strict and minorModes (${k} is missing).`;
+      for (const k of Object.keys(v)) if (!["mode", "strict", "minorModes"].includes(k)) return `"${k}" can't go on a card: mode, strict and minorModes can.`;
+      if (v.mode !== "normal" && v.mode !== "delegate") return 'mode is "normal" or "delegate".';
+      if (typeof v.strict !== "boolean") return "strict is true or false.";
+      return errorOf(parseModePatch({ minorModes: v.minorModes }));
+    },
+    async write(v) {
+      writeMode(v as ModePatch);
+      return null;
+    },
+  },
+  "models.favorites": {
+    files: () => [favoritesFile()],
+    read: favoriteRefs,
+    check(v) {
+      if (!Array.isArray(v) || v.some((r) => typeof r !== "string" || !parseModelRef(r))) return 'Expected the whole list: ["provider/id", …].';
+      return null;
+    },
+    async write(v) {
+      const was = favoriteRefs();
+      const now = v as string[];
+      for (const ref of [...now.filter((r) => !was.includes(r)).map((ref) => ({ ref, favorite: true })), ...was.filter((r) => !now.includes(r)).map((ref) => ({ ref, favorite: false }))]) {
+        const r = setFavorite(ref);
+        if (r.status !== 200) return errorOf(r.body);
+      }
+      return null;
+    },
+  },
   "assistant.default": {
     files: () => [join(stateRoot(), "baton-settings.json")],
     read() {
@@ -473,7 +554,7 @@ export async function proposeSova(input: { edits: unknown[]; why: unknown }, by:
     if (!isSovaSettingId(raw.id)) return refuse(`No Sova-wide setting "${String(raw.id)}" (sova_settings get lists them).`);
     const id = raw.id;
     if (!("value" in raw)) return refuse(`${id} names its value: ${SOVA_SETTINGS[id].value}.`);
-    if (credentialProblem(raw.value)) refuse(credentialRefusal(id === "decisions" ? "Its key stays on Settings → Decisions." : undefined));
+    if (credentialProblem(raw.value)) refuse(credentialRefusal(SOVA_SETTINGS[id].screen ?? `the file ${SOVA_SETTINGS[id].file}`, id === "decisions" ? "Its key stays on Settings → Decisions." : undefined));
     const link = linkProblem(id);
     if (link) refuse(link);
     const problem = await SOVA_ADAPTERS[id].check(raw.value);

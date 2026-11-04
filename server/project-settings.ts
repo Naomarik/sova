@@ -9,7 +9,7 @@ import { isPowerId, POWER_INFO, POWERS, type PowerColumn } from "../shared/power
 import { isProjectModeId, ModeFileError, parseModeFile, PROJECT_MODE_ENTRY, PROJECT_MODES_DIR } from "../shared/project-modes";
 import { scheduleOf, scheduleText } from "../shared/schedules";
 import { OFFERS_FILE, parseOffersFile, runButtonsOf } from "../shared/session-offers";
-import { SETTINGS_REFERENCE, type SettingId } from "../shared/settings-reference";
+import { SETTINGS_REFERENCE, type ReferenceEntry, type SettingId } from "../shared/settings-reference";
 import { COPIES_EDIT_KEYS, COPIES_FIELD, PROJECT_EDIT_KEYS } from "../shared/project-settings";
 import { copyLimitOf } from "../shared/project-slots";
 import { copyLimitProblem, machineCopyLimit, setMachineCopyLimit } from "./project-services/copy-limit";
@@ -18,6 +18,8 @@ import { queueCardPort } from "./merge-queue/card-port";
 import { parseChoice } from "./merge-queue/models";
 import { parseChange, SettingsEditError } from "./merge-queue/settings-edit";
 import { credentialProblem, credentialRefusal } from "./card-refusals";
+import { knownLogin, loginOptions, UNKNOWN_LOGIN } from "./claude-login-known";
+import { projectLoginView, setProjectLogin } from "./projects/claude-login";
 import { checkoutRootOf, discoverProjectModes, readProjectMode } from "../pi-config/extensions/mode/project-discovery.ts";
 import { OrgError } from "./org-error";
 import { isPlaybookId, listProjectPlaybooks, parseFrontmatter, PROJECT_PLAYBOOK_DIRS, readProjectPlaybook } from "./playbooks";
@@ -104,6 +106,9 @@ export function flatten(s: ProjectOverseerSettings): Fields {
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
+/** The project's Claude login: a Create card's alone (§chat.create-mode/settings-cards), kept on this host. */
+const LOGIN_FIELD = "claude-login";
+
 const LABEL: Record<string, string> = {
   watch: "Watch",
   model: "Its model",
@@ -125,6 +130,7 @@ const LABEL: Record<string, string> = {
   "project.ownerHidden": "Shown on the owner's page",
   "project.frozen": "Frozen spec",
   [COPIES_FIELD]: "Copy limit",
+  [LOGIN_FIELD]: "Claude login",
 };
 
 export function fieldLabel(field: string): string {
@@ -208,6 +214,18 @@ export function patchOf(changes: Pick<KeptChange, "field" | "to">[]): ProjectOve
 // ---- this machine's copy limit (§app.project-services/instances) ------------------------------------------
 
 const isCopiesField = (f: string): boolean => f === COPIES_FIELD;
+const isLoginField = (f: string): boolean => f === LOGIN_FIELD;
+const isOwnField = (f: string): boolean => !isPlacementField(f) && !isCopiesField(f) && !isLoginField(f);
+const loginWords = (v: unknown): string => (v === "none" ? "this computer's order" : v === "org" ? "same as its organization" : (loginOptions().find((o) => o.id === v)?.name ?? String(v)));
+
+/** Which existing login a project's new chats start on. No login is added or signed in to here. */
+function loginChange(projectId: string, to: unknown): KeptChange | null {
+  const p = projectOf(projectId);
+  if (to === "org" && p.space.kind === "standalone") refuse("Only a project an organization places can follow it.");
+  if (to !== "org" && to !== "none" && !knownLogin(to)) refuse(`${UNKNOWN_LOGIN} Choose one of: ${loginOptions().map((o) => `${o.id} (${o.name})`).join(", ")}, org or none. Adding one or signing in stays on Settings → Accounts.`);
+  const from = projectLoginView(projectId).setting;
+  return from === to ? null : { field: LOGIN_FIELD, label: LABEL[LOGIN_FIELD]!, from, to, fromText: loginWords(from), toText: loginWords(to) };
+}
 
 /** The project's file's limit (its `slots` cap, or the default): what a null machine value means. */
 const fileCopyLimit = (projectId: string): number => copyLimitOf(projectOf(projectId).root).cap;
@@ -414,7 +432,8 @@ export type SettingsEdit =
   | { setting: "offers"; file: Record<string, unknown> | null }
   | { setting: "services"; file: Record<string, unknown> | null }
   | { setting: "copies"; limit: number | null }
-  | { setting: "merge-queue"; changes?: unknown; models?: unknown };
+  | { setting: "merge-queue"; changes?: unknown; models?: unknown }
+  | { setting: "claude-login"; login?: unknown };
 
 const PATCH_REFUSED: Record<string, string> = {
   autonomy: "Levels are gone: set the powers (patch.powers) instead.",
@@ -425,7 +444,7 @@ const PATCH_REFUSED: Record<string, string> = {
 const PATCH_KNOWN = new Set(["model", "thinking", "codingModel", "codingThinking", "gatheringModel", "gatheringThinking", "gatheringAbilities", "watchGapMin", "soonLookSec", "watch", "holdMin", "extraSystemPrompt", "powers", "resume", "assistantModels", "caps"]);
 
 /** A file edit: its path, setting and new text (null: removed). Throws the parser's refusal. */
-async function fileEdit(root: string, e: Exclude<SettingsEdit, { setting: "overseer" | "memory" | "project" | "copies" | "merge-queue" }>): Promise<{ rel: string; setting: SettingId; id?: string; text: string | null }> {
+async function fileEdit(root: string, e: Exclude<SettingsEdit, { setting: "overseer" | "memory" | "project" | "copies" | "merge-queue" | "claude-login" }>): Promise<{ rel: string; setting: SettingId; id?: string; text: string | null }> {
   const json = (v: Record<string, unknown>) => `${JSON.stringify(v, null, 2)}\n`;
   const sized = (t: string) => (Buffer.byteLength(t) > FILE_MAX ? refuse(`That file would be over ${FILE_MAX / 1024} KB.`) : t);
   switch (e.setting) {
@@ -682,12 +701,13 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   const placementTo: Partial<Record<PlacementField, unknown>> = {};
   let copiesTo: { to: number | null } | undefined;
   let queue: QueueCardPart | undefined;
+  let loginTo: { to: string } | undefined;
   const create = ctx.by.kind === "create";
   const fileEdits: { rel: string; setting: SettingId; id?: string; text: string | null }[] = [];
   for (const raw of edits) {
     if (!isObj(raw) || typeof raw.setting !== "string") refuse('Each edit is an object naming its setting: {setting: "overseer" | "memory" | "project" | "copies" | "profile" | "playbook" | "mode" | "offers" | "services", …}.');
     // Credentials never pass through Create (§chat.create-mode/settings-cards), in any setting it can name.
-    if (create && credentialProblem(raw)) refuse(credentialRefusal());
+    if (create && credentialProblem(raw)) refuse(credentialRefusal(editPlace((raw as { setting: string }).setting)));
     const e = raw as SettingsEdit;
     if (e.setting === "overseer") {
       if (!isObj(e.patch)) refuse("An overseer edit carries patch: the fields to change.");
@@ -738,6 +758,10 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
       // Only Create's card path; the project overseer's stays refused by name (§chat.create-mode/settings-cards).
       if (!create) refuse("The merge queue's settings aren't proposed here: the operator changes push, review and the checks' limits in Settings → Merge Queue; anything else changes in a branch that lands through the queue.");
       queue = await queuePart(projectId, e);
+    } else if (e.setting === "claude-login") {
+      if (!create) refuse(`Unknown setting "claude-login".`);
+      if (typeof e.login !== "string") refuse('A claude-login edit names login: a login\'s id, "org" or "none".');
+      loginTo = { to: e.login as string };
     } else refuse(`Unknown setting "${String((raw as { setting: unknown }).setting)}".`);
   }
   let next: ProjectOverseerSettings = current;
@@ -752,6 +776,10 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
   if (placementNow) kept.push(...keptChanges(placementNow, placementTo));
   if (copiesTo) {
     const c = copiesChange(projectId, copiesTo.to);
+    if (c) kept.push(c);
+  }
+  if (loginTo) {
+    const c = loginChange(projectId, loginTo.to);
     if (c) kept.push(c);
   }
   if (body.resume === true) kept.push({ field: "resume", label: fieldLabel("resume"), from: "braked", to: "resumed", fromText: "on", toText: "lifted", grant: grantOf("resume", null, null)! });
@@ -833,6 +861,12 @@ export async function proposeSettings(projectId: string, input: { edits: unknown
 }
 
 /** A card's proposer in a commit's words. */
+/** Where the person makes an edit's change themselves, in words. */
+function editPlace(setting: string): string {
+  const ref = (SETTINGS_REFERENCE as Record<string, ReferenceEntry | undefined>)[setting] ?? SETTINGS_REFERENCE[setting === "memory" ? "overseer.memory" : setting === "project" ? "project.name" : "overseer.watch"];
+  return setting === "claude-login" ? "the project page's Claude login" : `${ref.changedAt}${ref.file ? ` (${ref.file})` : ""}`;
+}
+
 const byWords = (by: SettingsBy): string => (by.kind === "create" ? "a Create chat" : "the project overseer");
 
 /** A merge queue card's rows, from what the queue uses now. Each change is one line, its label Save's own words. */
@@ -939,9 +973,15 @@ async function settleQueueCards(projectId: string): Promise<void> {
 
 /** Apply Sova-kept changes: the overseer's own as one PATCH, then the placement's one by one; their history rows. */
 async function applyKept(projectId: string, changes: Pick<KeptChange, "field" | "to">[], by: SettingsBy, meta: { card?: string; revertOf?: string } = {}): Promise<SettingsHistoryRow[]> {
-  const own = changes.filter((k) => !isPlacementField(k.field) && !isCopiesField(k.field));
+  const own = changes.filter((k) => isOwnField(k.field));
   const rows: SettingsHistoryRow[] = own.length ? await depsOrThrow().patch(projectId, patchOf(own), by, meta) : [];
   for (const k of changes) if (isCopiesField(k.field)) rows.push(...setCopyLimit(projectId, k.to ?? null, by, meta));
+  for (const k of changes) {
+    if (!isLoginField(k.field)) continue;
+    const from = projectLoginView(projectId).setting;
+    setProjectLogin(projectId, String(k.to));
+    rows.push(...appendHistory(projectId, [{ field: k.field, from, to: k.to, by, ...(meta.card ? { card: meta.card } : {}), ...(meta.revertOf ? { revertOf: meta.revertOf } : {}) }]));
+  }
   for (const k of changes) {
     if (!isPlacementField(k.field)) continue;
     const from = placementOf(projectId)?.[k.field] ?? null;
@@ -1046,7 +1086,7 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
 
   // The kept part as it reads now: the grant set must be the card's.
   const current = readPoSettings(projectOverseerPaths(projectId));
-  const body = patchOf(c.kept.filter((k) => !isPlacementField(k.field) && !isCopiesField(k.field)));
+  const body = patchOf(c.kept.filter((k) => isOwnField(k.field)));
   let now: KeptChange[] = [];
   try {
     now = keptChanges(flatten(current), flatten(mergePoPatch(current, body)));
@@ -1062,6 +1102,11 @@ export async function applyCard(projectId: string, cardId: string, fingerprint: 
   const copiesKept = c.kept.find((k) => isCopiesField(k.field));
   if (copiesKept) {
     const ch = copiesChange(projectId, (copiesKept.to as number | null) ?? null);
+    if (ch) now.push(ch);
+  }
+  const loginKept = c.kept.find((k) => isLoginField(k.field));
+  if (loginKept) {
+    const ch = loginChange(projectId, loginKept.to);
     if (ch) now.push(ch);
   }
   if (c.kept.some((k) => k.field === "resume")) now.push({ ...c.kept.find((k) => k.field === "resume")! });
@@ -1218,6 +1263,7 @@ export async function undoRow(projectId: string, rowId: unknown, opts: { notPage
   if (!row) throw new OrgError(`No settings history line ${String(rowId)}.`, 404);
   const by: SettingsBy = { kind: "operator", via: "undo" };
   const meta = { revertOf: row.id };
+  if (row.field.startsWith("merge.")) throw new OrgError("Change it back in Settings → Merge Queue: a save there is its own commit.", 409);
   if (row.field.startsWith("file:")) {
     const rel = row.field.slice(5);
     const project = projectOf(projectId);

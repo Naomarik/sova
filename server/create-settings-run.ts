@@ -1,5 +1,5 @@
 import type { SettingsBy, SettingsToolDetails } from "../shared/project-settings";
-import { isSettingId, referenceText } from "../shared/settings-reference";
+import { CLAUDE_LOGIN_REFERENCE, CLAUDE_LOGIN_SETTING, isSettingId, referenceText } from "../shared/settings-reference";
 import { isSovaSettingId, sovaReferenceText, sovaSettingsIndex } from "../shared/sova-settings-reference";
 import type { CreateSettingsHost } from "./create-settings-tool";
 import { OrgError } from "./org-error";
@@ -38,6 +38,7 @@ export async function runCreateSettingsTool(chat: CreateChat, q: Record<string, 
     return { content: text(parts.join("\n")), details: { project: chat.projectId, cards: waiting.map((c) => c.id) } };
   }
   if (op === "reference") {
+    if (q.setting === CLAUDE_LOGIN_SETTING) return { content: text(CLAUDE_LOGIN_REFERENCE), details: { setting: q.setting } };
     if (isSovaSettingId(q.setting)) return { content: text(sovaReferenceText(q.setting)), details: { setting: q.setting } };
     if (isSettingId(q.setting)) return { content: text(referenceText(q.setting, { create: true })), details: { setting: q.setting } };
     throw new SettingsRefusal("Name a setting: sova_settings get lists them.");

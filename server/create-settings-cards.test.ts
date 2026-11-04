@@ -343,6 +343,58 @@ describe("a Sova-wide card", () => {
   });
 });
 
+describe("the added cards", async () => {
+  const { project } = await gitProject("login");
+  const pid = project.id;
+  const sw = async (id: string, value: unknown) => (await runCreateSettingsTool(chat(null), { op: "propose", why: "Asked.", edits: [{ setting: "sova", id, value }] })).details as { card: { id: string; fingerprint: string } };
+  const apply = (c: { id: string; fingerprint: string }) => post(app(), "/api/settings/apply", { card: c.id, fingerprint: c.fingerprint });
+
+  test("a project's Claude login names an existing one, by card, and the overseer can't", async () => {
+    const out = await runCreateSettingsTool(chat(pid), { op: "propose", why: "Bill this login.", edits: [{ setting: "claude-login", login: "default" }] });
+    const c = (out.details as { card: { id: string; fingerprint: string } }).card;
+    const { projectLoginView } = await import("./projects/claude-login");
+    assert.equal(projectLoginView(pid).setting, "none", "nothing until Apply");
+    const r = await post(app(), `/api/projects/${pid}/settings/apply`, { card: c.id, fingerprint: c.fingerprint });
+    assert.equal(r.status, 200, await r.clone().text());
+    assert.equal(projectLoginView(pid).setting, "default");
+    assert.deepEqual([settings.readHistory(pid).at(-1)!.field, settings.readHistory(pid).at(-1)!.by.kind], ["claude-login", "create"]);
+    await assert.rejects(runCreateSettingsTool(chat(pid), { op: "propose", why: "x", edits: [{ setting: "claude-login", login: "nobody@else" }] }), /isn't on this computer/);
+    await assert.rejects(settings.proposeSettings(pid, { why: "x", edits: [{ setting: "claude-login", login: "default" }] }, { attended: true, by: { kind: "project-overseer", via: "tool" } }), /Unknown setting/);
+  });
+
+  test("the default mode is normal or Delegate, and Create can never be saved", async () => {
+    await assert.rejects(sw("modes.default", { mode: "create", strict: false, minorModes: [] }), /no default holds it/);
+    const d = await sw("modes.default", { mode: "delegate", strict: true, minorModes: ["align"] });
+    assert.equal((await apply(d.card)).status, 200);
+    const { readMode } = await import("./mode-state");
+    assert.deepEqual([readMode().mode, readMode().minorModes], ["delegate", ["align"]]);
+  });
+
+  test("favourites go as a whole list, starring and unstarring through the palette's store", async () => {
+    await assert.rejects(sw("models.favorites", ["no-slash"]), /provider\/id/);
+    assert.equal((await apply((await sw("models.favorites", ["zai/glm-5.3", "x/y"])).card)).status, 200);
+    assert.equal((await apply((await sw("models.favorites", ["x/y"])).card)).status, 200);
+    assert.deepEqual(sova.SOVA_ADAPTERS["models.favorites"].read(), ["x/y"]);
+  });
+
+  test("notifications and outreach are checked by their own parsers", async () => {
+    const before = sova.SOVA_ADAPTERS.notifications.read() as Record<string, unknown>;
+    await assert.rejects(sw("notifications", { ...before, enabled: "yes" }), /enabled must be true or false/);
+    assert.equal((await apply((await sw("notifications", { ...before, enabled: !before.enabled })).card)).status, 200);
+    assert.equal((sova.SOVA_ADAPTERS.notifications.read() as { enabled: boolean }).enabled, !before.enabled);
+    await assert.rejects(sw("outreach", { nonsense: 1 }), /can't go on a card/);
+    await assert.rejects(sw("outreach", { paused: "no" }), /paused must be true or false/);
+    const c = await sw("outreach", { ...(sova.SOVA_ADAPTERS.outreach.read() as object), paused: true });
+    sova.withdrawSovaCard(c.card.id);
+  });
+
+  test("a plain value that reads like a key is refused, and the refusal says where the person can change it", async () => {
+    await assert.rejects(sw("models.providers", { providers: { mine: { token: "plain-label" } } }), /If this isn't a key.*~a\/models\.json/);
+    await assert.rejects(sw("alignment.review", { token: "plain-label" }), /If this isn't a key.*Settings → Alignment/);
+    await assert.rejects(runCreateSettingsTool(chat(pid), { op: "propose", why: "x", edits: [{ setting: "services", file: { token: "plain-label" } }] }), /If this isn't a key.*Branches tab/);
+  });
+});
+
 test("in Create the tool reaches the card path; a refusal is the tool's own words", async () => {
   const { setCreateSettingsRun } = await import("./create-settings-tool");
   const { runCreateSettings } = await import("./create-settings-run");

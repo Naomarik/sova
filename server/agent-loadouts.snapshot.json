@@ -7105,12 +7105,12 @@
       ]
     },
     "create-settings": {
-      "bytes": 2518,
+      "bytes": 2700,
       "tools": [
         {
           "name": "sova_settings",
           "label": "Settings",
-          "description": "Every setting Sova has: this project's, its merge queue's and the Sova-wide ones. You only prepare a card; the person applies it with a click on Sova's own page, and you can neither apply nor undo one. Even a change that narrows waits for them. get: every setting with its state, the cards waiting. reference {setting}: one setting's keys and what needs the person's approval. propose {why, edits}: prepare a card. A project edit is as the reference says; a merge queue edit is {setting: \"merge-queue\", changes?, models?}, on a card of its own; a Sova-wide edit is {setting: \"sova\", id, value}, on a card of its own. withdraw {card}: drop a card you prepared (sc_… or sw_…). Keys, tokens and sign-ins never go on a card: a card that carries one is refused, and the person signs in the supported way.",
+          "description": "Every setting Sova has: this project's, its merge queue's and the Sova-wide ones. You only prepare a card; the person applies it with a click on Sova's own page, and you can neither apply nor undo one. Even a change that narrows waits for them. get: every setting with its state, the cards waiting. reference {setting}: one setting's keys and what needs the person's approval. propose {why, edits}: prepare a card. A project edit is as the reference says; a merge queue edit is {setting: \"merge-queue\", changes?, models?}, on a card of its own; which existing Claude login a project uses is {setting: \"claude-login\", login}; a Sova-wide edit is {setting: \"sova\", id, value}, on a card of its own. withdraw {card}: drop a card you prepared (sc_… or sw_…). Keys, tokens and sign-ins never go on a card: a card that carries one is refused, and the person signs in the supported way.",
           "promptSnippet": "every setting: get, reference, propose a card the person applies, withdraw",
           "parameters": {
             "type": "object",
@@ -7152,6 +7152,7 @@
                   "schedule",
                   "mode",
                   "offers",
+                  "project.claude-login",
                   "models.policy",
                   "models.limits",
                   "models.default",
@@ -7171,7 +7172,11 @@
                   "summaries.titles",
                   "decisions",
                   "overseer.global",
-                  "assistant.default"
+                  "assistant.default",
+                  "notifications",
+                  "outreach",
+                  "modes.default",
+                  "models.favorites"
                 ],
                 "description": "reference: the setting."
               },
@@ -7198,6 +7203,7 @@
                         "offers",
                         "services",
                         "merge-queue",
+                        "claude-login",
                         "sova"
                       ]
                     }

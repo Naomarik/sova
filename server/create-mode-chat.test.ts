@@ -62,12 +62,12 @@ test("a chat offers Create, takes it through the extension, and align comes on w
 });
 
 /** A client on a chat's socket, as far as a typed send uses it: what it was sent. */
-async function typed(chat: Awaited<ReturnType<typeof acquireChat>>, text: string, id: string): Promise<{ type: string; message?: string }[]> {
+async function typed(chat: Awaited<ReturnType<typeof acquireChat>>, text: string, id: string, type: "steer" | "prompt" = "steer"): Promise<{ type: string; message?: string }[]> {
   const sent: { type: string; message?: string }[] = [];
   const client = { send: (m: { type: string; message?: string }) => void sent.push(m) };
   chat.attach(client as never);
   sent.length = 0;
-  chat.handle(client as never, { type: "prompt", text, clientId: id } as never);
+  chat.handle(client as never, { type, text, clientId: id } as never);
   const end = Date.now() + 10_000;
   while (!sent.some((m) => m.type === "error" || m.type === "send_ack" || m.type === "ack")) {
     if (Date.now() > end) throw new Error(`no answer to ${text}: ${JSON.stringify(sent)}`);
@@ -118,7 +118,7 @@ test("other typed /mode arguments are the extension's, and the server reads them
   assert.equal((await get(path)).saveMode, "delegate", "and the last choice");
   await typed(chat, "/mode align off", "s2");
   await until((m) => !m.minorModes.includes("align"));
-  await typed(chat, "/mode strict off", "s3");
+  await typed(chat, "/mode strict off", "s3", "prompt"); // a script's frame takes the same road
   await until((m) => m.strict === false);
   assert.ok(chat.harness.activeTools().includes("edit"));
 });

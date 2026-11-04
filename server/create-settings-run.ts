@@ -1,7 +1,9 @@
 import type { SettingsBy, SettingsToolDetails } from "../shared/project-settings";
 import { CLAUDE_LOGIN_REFERENCE, CLAUDE_LOGIN_SETTING, isSettingId, referenceText } from "../shared/settings-reference";
 import { isSovaSettingId, SCREEN_ONLY_SETTINGS, sovaReferenceText, sovaSettingsIndex } from "../shared/sova-settings-reference";
+import type { MeshCardState } from "../shared/mesh-access";
 import type { CreateSettingsHost } from "./create-settings-tool";
+import { meshCardState } from "./mesh";
 import { OrgError } from "./org-error";
 import { folderMatcher } from "./project-folder";
 import { proposeSettings, SettingsRefusal, withdrawCard } from "./project-settings";
@@ -13,6 +15,18 @@ import { parseTargetCwd } from "./targets";
 
 type Out = { content: { type: "text"; text: string }[]; details: unknown };
 const text = (t: string) => [{ type: "text" as const, text: t }];
+
+/** The mesh in words: each host's state and access; `sessions` said plainly, because it is shell-level. */
+function meshWords(m: MeshCardState): string[] {
+  if (!m.enabled) return [`Mesh: off. This computer (${m.self.label}) has no other computers linked.`];
+  return [
+    `Mesh: on. This computer: ${m.self.label} (${m.self.id}).`,
+    ...m.peers.map((p) => `- ${p.label} (${p.id}): ${p.state}; ${p.preset ?? "default"} access${p.caps.includes("sessions") ? " (shell-level: it can run anything here)" : ""}; can ${p.caps.join(", ") || "nothing"}${p.pairing ? `; paired, this computer ${p.pairing.role === "dial" ? "dials it" : "is dialled"}${p.pairing.internet ? " over the internet" : ""}` : ""}`),
+    `Sync: ${Object.entries(m.sync).map(([k, on]) => `${k} ${on ? "on" : "off"}`).join(", ")}.`,
+    `Front door: ${m.frontDoor ?? "none"}.`,
+    ...(m.relay ? [`This computer is a relay at ${m.relay.host}:${m.relay.port} (${m.relay.exposure}), ${m.relay.listening ? "listening" : "not listening"}.`] : []),
+  ];
+}
 
 /** The chat a Create card is prepared from. */
 export interface CreateChat {
@@ -33,6 +47,7 @@ export async function runCreateSettingsTool(chat: CreateChat, q: Record<string, 
     const waiting = sovaCardsInfo().cards;
     const parts = [`Sova-wide settings (each changes by a card, {setting: "sova", id, value}):`, sovaSettingsIndex(), "", "On their own screens, no card:", ...Object.values(SCREEN_ONLY_SETTINGS).map((w) => `- ${w}`)];
     if (waiting.length) parts.push("", "Sova-wide cards waiting for the person:", ...waiting.map(cardWords));
+    parts.push("", ...meshWords(await meshCardState()));
     if (chat.projectId) parts.push("", (await runSettingsTool(chat.projectId, { op: "get" }, false)).content[0]!.text);
     else parts.push("", chat.noProject ?? "");
     return { content: text(parts.join("\n")), details: { project: chat.projectId, cards: waiting.map((c) => c.id) } };

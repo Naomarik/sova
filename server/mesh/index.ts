@@ -1,3 +1,5 @@
+import { MESH_CAPS } from "../../shared/mesh-access";
+import type { MeshCardState } from "../../shared/mesh-access";
 import type { IncomingMessage } from "node:http";
 import { statSync } from "node:fs";
 import { hostname } from "node:os";
@@ -723,6 +725,36 @@ function lanStatus() {
   reloadIfChanged();
   if (rt.lan) return rt.lan.status(rt.config);
   return LanRuntime.idleStatus(rt.config);
+}
+
+/**
+ * Where the mesh stands, for a Create chat's `sova_settings get` (§chat.create-mode/settings-cards): each host's state
+ * and access, pairings and sync. Built from what the Mesh page reads, naming fields one by one: no key and no pin.
+ */
+export async function meshCardState(): Promise<MeshCardState> {
+  const info = await meshInfo();
+  const access = accessView();
+  const lan = lanStatus();
+  const settings = readMeshSettings();
+  const states = new Map(info.peers.map((p) => [p.id, p]));
+  return {
+    enabled: info.enabled,
+    self: { id: info.self.id, label: info.self.label },
+    peers: access.peers.map((p) => {
+      const pairing = lan.pairings.find((x) => x.id === p.id);
+      return {
+        id: p.id,
+        label: p.label,
+        state: states.get(p.id)?.state ?? "unknown",
+        preset: p.grant?.preset ?? null,
+        caps: MESH_CAPS.filter((k) => p.effective[k]),
+        ...(pairing ? { pairing: { role: pairing.role, ...(pairing.internet ? { internet: true as const } : {}) } } : {}),
+      };
+    }),
+    sync: settings.sync,
+    frontDoor: settings.frontDoor,
+    ...(lan.relay ? { relay: { host: lan.relay.host, port: lan.relay.port, exposure: lan.relay.exposure, listening: lan.relay.listening } } : {}),
+  };
 }
 
 // ---- grants editor (/api/mesh/access: this host's own browser only) -----------------------------

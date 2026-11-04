@@ -121,6 +121,9 @@ import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts"
 const GUARD_POLL_MS = 3000;
 const PERF_KINDS_SET: ReadonlySet<string> = new Set(["main", "worker", "overseer"]);
 /** The entry a message was written as, or null. */
+/** A `/mode …` command: what it does is the extension's, so the server reads it back. */
+const isModeText = (text: string): boolean => /^\/mode(\s|$)/.test(text.trim());
+
 const safeId = (harness: HarnessSession, message: unknown): string | null => {
   try {
     return harness.persistedId(message);
@@ -1426,6 +1429,8 @@ class ChatSession {
     await toSdk(() => this.tracked(item.text, () => this.harness.send(item.text, { images, delivery: item.kind, source }))).catch((err) => {
       if (!this.heldForCompaction(err, { ...item, id: undefined })) throw err;
     });
+    // One that waited for a running reply: the send's own read-back ran before this did.
+    if (isModeText(item.text)) this.readModeBack();
   }
 
   /** A keyed turn failed: its message never ran, unless it is held for a compaction to go in again (heldForCompaction). */
@@ -2221,6 +2226,12 @@ class ChatSession {
       approved: isApproved,
       approvedByUser: isApprovedByUser,
     }));
+  }
+
+  /** A client's send, as `turn`: any `/mode …` that isn't a major switch is the extension's own (strict, a minor mode),
+      so what it did is read back and the menu never lags. The page's composer sends as a steer, even idle (send-frame.ts). */
+  private readingModeBack(text: string, turn: Promise<void>): Promise<void> {
+    return isModeText(text) ? turn.then(() => this.readModeBack()) : turn;
   }
 
   /** This chat's mode as its branch says, after the extension's own handler changed it (a typed `/mode strict on`). */
@@ -3458,8 +3469,7 @@ class ChatSession {
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
           this.ackSend(client, clientId, queued);
-          // Any other `/mode …` is the extension's own (strict, a minor mode): what it did is read back, so the menu never lags.
-          (/^\/mode(\s|$)/.test(text.trim()) ? turn.then(() => this.readModeBack()) : turn).catch(fail);
+          this.readingModeBack(text, turn).catch(fail);
           return;
         }
         case "abort":
@@ -3613,9 +3623,10 @@ class ChatSession {
    */
   private steer(client: ChatClient, msg: Extract<ChatClientMessage, { type: "steer" }>, clientId: string | undefined, fail: (err: unknown) => void): void {
     this.assertModelAllowed();
-    const { queued, turn } = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId, { delivery: "steer" });
+    const text = String(msg.text ?? "");
+    const { queued, turn } = this.acceptPrompt(text, parseImages(msg.images), "client", clientId, { delivery: "steer" });
     this.ackSend(client, clientId, queued);
-    turn.catch(fail);
+    this.readingModeBack(text, turn).catch(fail);
   }
 
   /**

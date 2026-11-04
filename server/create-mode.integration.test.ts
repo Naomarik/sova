@@ -78,3 +78,36 @@ test("a real chat enters Create: the model gets the three blocks and the lookup,
     await server.stop();
   }
 });
+
+test("typed /mode strict on in a real chat process reaches the page and the mode route", { timeout: 120_000 }, async () => {
+  const server = await startHermeticServer();
+  try {
+    const settingsFile = join(server.agentDir, "settings.json");
+    const settings = JSON.parse(readFileSync(settingsFile, "utf8"));
+    writeFileSync(settingsFile, JSON.stringify({ ...settings, extensions: [join(ROOT, "pi-config", "extensions", "mode")] }, null, 2));
+    const headers = { "content-type": "application/json", "x-sova-token": server.token };
+    const res = await fetch(`${server.base}/api/sessions`, { method: "POST", headers, body: JSON.stringify({ cwd: realpathSync(server.work) }) });
+    const { path } = (await res.json()) as { path: string };
+    const modeUrl = `${server.base}/api/mode?path=${encodeURIComponent(path)}`;
+    assert.equal((await fetch(modeUrl, { method: "POST", headers, body: JSON.stringify({ mode: "create" }) })).status, 200);
+
+    const ws = new WebSocket(`${server.base.replace("http", "ws")}/ws/chat?path=${encodeURIComponent(path)}&tail=rest&wire=2`, { headers: { "x-sova-token": server.token } } as never);
+    const frames: { type: string; strict?: boolean }[] = [];
+    ws.addEventListener("message", (e) => frames.push(JSON.parse(String(e.data))));
+    const until = async (what: string, ok: () => boolean | Promise<boolean>) => {
+      const end = Date.now() + 20_000;
+      while (!(await ok())) {
+        if (Date.now() > end) throw new Error(`timed out: ${what}; frames ${JSON.stringify(frames.map((f) => f.type))}`);
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    };
+    await until("the socket's hello", () => frames.some((f) => f.type === "hello"));
+    // As the page's composer sends it: a steer, even idle (src/lib/send-frame.ts).
+    ws.send(JSON.stringify({ type: "steer", text: "/mode strict on", clientId: "typed-strict" }));
+    await until("the page's mode frame", () => frames.some((f) => f.type === "mode" && f.strict === true));
+    await until("the mode route", async () => ((await (await fetch(modeUrl, { headers })).json()) as { strict: boolean }).strict === true);
+    ws.close();
+  } finally {
+    await server.stop();
+  }
+});

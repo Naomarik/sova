@@ -17,7 +17,7 @@ To link computers, read where things stand with `sova_settings` get: each comput
 
 When it's stuck: `down`: that computer's off or unreachable. `skewed`: they run different builds; for one that's behind, offer `mesh.resync`. `hidden`: that computer grants this one nothing, so change the grant there. Half connected: one side of a pairing isn't up yet. An error instead of a state: this computer's peers file is invalid and the mesh is off, so fix that first.
 
-These stay on screens: links between computers, claiming a login and an internet relay, on the Mesh page, and a resync's recipe, in the session pane's host menu. Name the control. Use `sova_settings` reference for each id's exact value. Report only what `get` reads: never say a link works until it reads `up` on this computer.
+These have no card, so name the place: links between computers are on the session pane's Agents tab, claiming a login on the Mesh page under Sync, and an internet relay on the Mesh page under Dial-out pairings. A resync's recipe is a file, `<agent dir>/sova/mesh-resync.json`, or comes from a deploy script's `local.env`. Use `sova_settings` reference for each id's exact value. Report only what `get` reads: never say a link works until it reads `up` on this computer.
 
 ## Your other computers
 
@@ -37,7 +37,6 @@ These stay on screens: links between computers, claiming a login and an internet
 - Live: now. Lowering a grant ends open connections.
 - Check: the host's row on the Mesh page.
 
-<!-- Pairing by card awaits the main chat. To pull it: drop `mesh.pairing` and `mesh.relay` from this section's By line, the fingerprint sentence from Approves, and the `mesh.pairing` clause in step 4; By goes back to Screen or Terminal. -->
 ## A computer off the tailnet, a phone or a server
 
 - Change: bring in a computer that dials out to a relay, an Android phone, or a VPS.

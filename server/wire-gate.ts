@@ -7,20 +7,43 @@ import { meshEnabled, meshSelf } from "./mesh";
 // with the mesh on or off, for a page of this host as for one on another. The page's state is the
 // visible half; this is the rule, so a tab left open across an update can't write in an old format.
 
-/** The writing-area routes (§mesh.compatibility/areas), besides /ws/chat's frames (server/ws.ts) and
-    POST /api/chat/frames, whose route refuses on its own so what it carried goes back as a draft. */
+/**
+ * The writing-area routes (§mesh.compatibility/areas): messages, steering, Stop, model and in-chat
+ * actions, new sessions. Hono patterns, `:name` one path segment. Besides these, /ws/chat's frames
+ * (server/ws.ts) and POST /api/chat/frames, whose route refuses on its own so what it carried goes
+ * back as a draft.
+ *
+ * Judged outside the area, so not gated (each keeps working on another writing number):
+ * - the session's place in the list, not its chat: /api/sessions/title, /archive, /auto-title,
+ *   /shorten-titles, /cleanup, /api/session-groups (create, assign, rename, delete) and
+ *   /api/worktrees/cleanup;
+ * - a draft or a file staged before a send, which writes nothing into the chat (the send itself is
+ *   gated): PUT /api/sessions/draft, /api/upload, /api/attachment;
+ * - what an agent or another chat does in a chat, not a page's send: /api/session-cards/post and
+ *   /trust, /api/session-offers/show;
+ * - host settings and stores: /api/settings/*, /api/models/favorite, /api/profiles/*, /api/overseer/*;
+ * - organizations, batons, projects and the share listener's /api/i/*: best effort
+ *   (§mesh.compatibility/best-effort), no area of their own.
+ */
 export const WRITING_ROUTES = [
   "/api/sessions",
   "/api/sessions/connect",
   "/api/sessions/fork",
   "/api/sessions/prompt",
   "/api/sessions/configure",
+  "/api/sessions/loadout",
+  "/api/sessions/profile",
+  "/api/session-groups/:id/prompt",
   "/api/chat/action",
   "/api/mode",
+  "/api/mode/command",
   "/api/sandbox",
+  "/api/subagents",
+  "/api/workers/resume",
   "/api/session-offers/choose",
   "/api/session-cards/state",
   "/api/session-cards/run",
+  "/api/session-cards/answer",
 ] as const;
 
 /** This host's name in a refusal; with the mesh off it has none. */
@@ -32,12 +55,14 @@ export const writingRefused = (stated: string | null | undefined): string | null
 /** The answer to a refused writing request. */
 export const refusedAnswer = (c: Context, error: string): Response => c.json({ error, code: WIRE_VERSION_CODE } satisfies WritingRefused, 409);
 
-const writing = new Set<string>(WRITING_ROUTES);
+/** Each route as a whole-path pattern: `:name` is one segment, the rest literal. */
+const writing = WRITING_ROUTES.map((r) => new RegExp(`^${r.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/:[A-Za-z]+/g, "[^/]+")}$`));
+export const isWritingRoute = (path: string): boolean => writing.some((re) => re.test(path));
 
 /** Before the routes it guards. `c.req.path` is the very string the router matches, so no spelling
     that reaches a route gets past it. */
 const writingGate: MiddlewareHandler = async (c, next) => {
-  const why = c.req.method === "POST" && writing.has(c.req.path) ? writingRefused(c.req.header(COMPOSER_HEADER)) : null;
+  const why = c.req.method === "POST" && isWritingRoute(c.req.path) ? writingRefused(c.req.header(COMPOSER_HEADER)) : null;
   if (why) return refusedAnswer(c, why);
   await next();
 };

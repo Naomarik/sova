@@ -17,8 +17,10 @@ let routes: readonly string[];
 before(async () => {
   const { testApp } = await import("./mesh/app-test-fixtures");
   app = await testApp();
-  routes = (await import("./wire-gate")).WRITING_ROUTES;
+  routes = (await import("./wire-gate")).WRITING_ROUTES.map((r) => r.replace(/:[A-Za-z]+/g, "x"));
+  patterns = (await import("./wire-gate")).WRITING_ROUTES;
 });
+let patterns: readonly string[];
 after(() => rmSync(dir, { recursive: true, force: true }));
 
 const post = (path: string, stated?: string, body: unknown = {}) =>
@@ -32,6 +34,42 @@ describe("the writing gate", () => {
       assert.equal(res.status, 409, route);
       assert.deepEqual(await res.json(), { error: "This host needs an update before it can take sends from this page.", code: WIRE_VERSION_CODE }, route);
     }
+  });
+
+  test("each gated route is a real POST route of the app, so a typo can't leave one ungated", () => {
+    const posts = new Set(app.routes.filter((r) => r.method === "POST").map((r) => r.path));
+    for (const p of patterns) assert.ok(posts.has(p), `${p} is no POST route`);
+  });
+
+  // The routes the diff review found ungated, each as a page would call it.
+  const REVIEWED: Array<[string, unknown]> = [
+    ["/api/session-groups/g_1/prompt", { text: "to all" }],
+    ["/api/mode/command?path=%2Fx%2Fs.jsonl", { mode: "spec", name: "check" }],
+    ["/api/sessions/loadout", { path: "/x/s.jsonl" }],
+    ["/api/sessions/profile", { path: "/x/s.jsonl", profile: null }],
+    ["/api/subagents?path=%2Fx%2Fs.jsonl", { profile: "off" }],
+    ["/api/workers/resume?path=%2Fx%2Fs.jsonl&id=w1", {}],
+    ["/api/session-cards/answer", { path: "/x/s.jsonl", card: "cd_1", answer: 0 }],
+  ];
+  for (const [path, body] of REVIEWED)
+    test(`${path.split("?")[0]}: another number is refused with wire-version, its own reaches the route`, async () => {
+      const res = await post(path, ahead, body);
+      assert.equal(res.status, 409);
+      assert.equal(((await res.json()) as { code: string }).code, WIRE_VERSION_CODE);
+      const own = (await (await post(path, String(WIRE_AREAS.composer), body)).json().catch(() => null)) as { code?: string } | null;
+      assert.notEqual(own?.code, WIRE_VERSION_CODE);
+    });
+
+  test("the page's own stamp gets a group send through: a current tab still works", async () => {
+    const { stampInit, stampsRequest } = await import("../src/lib/wire-stamp");
+    const url = "/api/session-groups/g_1/prompt";
+    assert.ok(stampsRequest(url, "http://127.0.0.1:4800"), "the page stamps a group send");
+    const init = stampInit(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "to all" }) });
+    assert.equal(new Headers(init.headers).get(COMPOSER_HEADER), String(WIRE_AREAS.composer));
+    const got = (await (await app.request(url, init)).json().catch(() => null)) as { code?: string } | null;
+    assert.notEqual(got?.code, WIRE_VERSION_CODE);
+    const stale = stampInit(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "to all" }) }, WIRE_AREAS.composer + 1);
+    assert.equal((await app.request(url, stale)).status, 409, "a stale tab's group send");
   });
 
   test("a spelling that reaches the route reaches the gate", async () => {
@@ -65,8 +103,8 @@ describe("the writing gate", () => {
   });
 
   test("the catalogue's writing commands land on a gated route", () => {
-    const gated = (path: string) => routes.includes(path) || path === "/api/chat/frames";
-    const writing = COMMANDS.filter((c) => c.route.method === "POST" && /^\/api\/(?:chat\/action|sessions\/(?:prompt|configure))$/.test(c.route.path.split("?")[0]!));
+    const gated = (path: string) => patterns.includes(path) || path === "/api/chat/frames";
+    const writing = COMMANDS.filter((c) => c.route.method === "POST" && /^\/api\/(?:chat\/action|sessions\/(?:prompt|configure)|session-groups\/:id\/prompt|mode\/command|workers\/resume|session-cards\/answer)$/.test(c.route.path.split("?")[0]!));
     assert.ok(writing.length > 0);
     for (const c of writing) assert.ok(gated(c.route.path.split("?")[0]!), c.id);
   });

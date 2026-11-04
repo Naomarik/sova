@@ -35,6 +35,8 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
   const waiting = () => c().state === "waiting";
   /** A queue card whose Save is held: Apply was pressed, and it lands when the branch finishes. */
   const held = () => waiting() && !!c().saveWaits;
+  /** What holds the Save, as the server says it: a branch checking, or a release. */
+  const saveWords = () => c().saveWords ?? QUEUE_CARD_WAITS;
   const project = props.projectId;
   /** The card's field, if it has one: held here only, sent only with Apply, gone once Apply took it or the card ended. */
   const [typed, setTyped] = createSignal("");
@@ -91,7 +93,7 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
         </h3>
         <span class={stateChip[c().state]}>
           <span class="chip-dot" aria-hidden="true" />
-          {c().saveFailed ? "Save failed" : held() ? "Waiting for a branch" : stateWords[c().state]}
+          {c().saveFailed ? "Save failed" : held() ? "Waiting to save" : stateWords[c().state]}
         </span>
       </div>
       <div class="card-body settings-card-body">
@@ -265,13 +267,13 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
       </div>
       <div class="card-foot overseer-card-foot">
         <Show when={waiting()} fallback={<span class="overseer-confirm-hint">{c().state === "applied" ? `Applied${c().commit ? ` as ${c().commit!.slice(0, 10)}` : ""}.` : "Dismissed: nothing changed."}</span>}>
-          <Show when={props.canAct} fallback={<span class="overseer-confirm-hint">{held() ? QUEUE_CARD_WAITS : project === null ? "Waiting for you: apply it in the chat that prepared it." : "Waiting for the operator: apply it on the project's Settings tab."}</span>}>
+          <Show when={props.canAct} fallback={<span class="overseer-confirm-hint">{held() ? saveWords() : project === null ? "Waiting for you: apply it in the chat that prepared it." : "Waiting for the operator: apply it on the project's Settings tab."}</span>}>
             <Show
               when={!held()}
               fallback={
                 <div class="overseer-card-buttons">
                   <Show when={!c().saveFailed}>
-                    <span class="overseer-confirm-hint">{QUEUE_CARD_WAITS}</span>
+                    <span class="overseer-confirm-hint">{saveWords()}</span>
                   </Show>
                   <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={cancelSave}>
                     Cancel Save

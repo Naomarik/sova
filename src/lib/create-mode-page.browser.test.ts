@@ -116,6 +116,7 @@ describe("a card in a Create chat", () => {
     assert.equal(applyToast({ state: "applied" }, granted), "Applied and approved sc_6.");
     assert.equal(applyToast({ state: "applied" }, { id: "sc_6", grants: [] }), "Applied sc_6.");
     assert.equal(applyToast({ state: "waiting" }, granted), QUEUE_CARD_WAITS);
+    assert.equal(applyToast({ state: "waiting", saveWords: "Saves once release v1.2.0 is published or abandoned." }, granted), "Saves once release v1.2.0 is published or abandoned.");
     const one = applyToast({ state: "applied", stillNeeds: ["a"] }, granted);
     assert.equal(one, "Applied sc_6. 1 approval still needs you: the card says where.");
     assert.match(applyToast({ state: "applied", stillNeeds: ["a", "b"] }, granted), /2 approvals still need you/);

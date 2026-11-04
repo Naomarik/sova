@@ -52,11 +52,20 @@ test("a queue card whose Save waits has Cancel Save in place of Apply", () => {
   const held = draw(card({ id: "sc_4", kind: "queue", saveWaits: true }), "p1");
   assert.ok(held.includes(QUEUE_CARD_WAITS));
   assert.match(held, /Cancel Save/);
-  assert.match(held, /Waiting for a branch/);
+  assert.match(held, /Waiting to save/);
   assert.doesNotMatch(held, />\s*Apply\s*</);
   const ready = draw(card({ id: "sc_4", kind: "queue" }), "p1");
   assert.match(ready, /Apply/);
   assert.doesNotMatch(ready, /Cancel Save/);
+});
+
+test("a held card says what holds it, in the server's words", () => {
+  const words = "Saves once release v1.2.0 is published or abandoned.";
+  const held = draw(card({ id: "sc_5", saveWaits: true, saveWords: words }), "p1");
+  assert.ok(held.includes(words));
+  assert.ok(!held.includes(QUEUE_CARD_WAITS), "never says a branch holds it during a release");
+  assert.doesNotMatch(held, /a branch/);
+  assert.ok(draw(card({ id: "sc_5", saveWaits: true, saveWords: words }), "p1", false).includes(words), "where nobody may act too");
 });
 
 test("a project card, and the folder's edits, hold the same way", () => {

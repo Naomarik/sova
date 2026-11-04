@@ -31,8 +31,8 @@ export const QUEUE_CARD_WAITS = "Saves when the current branch finishes.";
 
 /** What Apply's answer says happened, and never more: a held card hasn't applied yet, and a grant
     that wasn't recorded isn't approved (the card names each one and where to approve it). */
-export function applyToast(answer: Pick<SettingsCardView, "state" | "stillNeeds">, card: Pick<SettingsCardView, "id" | "grants">): string {
-  if (answer.state === "waiting") return QUEUE_CARD_WAITS;
+export function applyToast(answer: Pick<SettingsCardView, "state" | "stillNeeds" | "saveWords">, card: Pick<SettingsCardView, "id" | "grants">): string {
+  if (answer.state === "waiting") return answer.saveWords ?? QUEUE_CARD_WAITS;
   const needs = answer.stillNeeds?.length ?? 0;
   const local = card.id === "local";
   const done = local ? "Landed the folder's settings edits." : card.grants.length && !needs ? `Applied and approved ${card.id}.` : `Applied ${card.id}.`;

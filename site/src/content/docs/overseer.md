@@ -26,7 +26,7 @@ The Overseer is always in the normal mode, with no minor modes, so its composer 
 
 ## What it can do
 
-- **Start sessions** in any folder, on a remote target, or on another Sova host, with a first prompt, a model, modes, a profile the Overseer may start, and a sandbox setting.
+- **Start sessions** in any folder, on a remote target, or on another Sova host, with a first prompt, a model, modes, a profile the Overseer may start, and a sandbox setting. It can't start or switch a session into [Create](/docs/modes/create/), which is chosen in a chat's own mode menu.
 - **Send a message** to a session, as if you typed it there. If a turn is running, the message is queued behind it; it steers the running turn only when you've asked it to interrupt.
 - **Run your organizations**: their projects, rosters, gathering sessions and project overseers. It can also link sessions across Sova hosts.
 - **Archive and unarchive** sessions (never a permanent delete), rename them, and move them between groups.

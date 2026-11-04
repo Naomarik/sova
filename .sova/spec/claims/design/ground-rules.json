@@ -35,7 +35,9 @@
       "public/icons/mode-align.svg",
       "public/icons/mode-spec.svg",
       "public/icons/mode-vis.svg",
-      "public/icons/mode-memory.svg"
+      "public/icons/mode-memory.svg",
+      "public/icons/alert-triangle.svg",
+      "public/icons/progress.svg"
     ]
   },
   "§design.ground-rules/motion": {

@@ -794,4 +794,6 @@ The actions are the merge verbs (§app.project-services/merge-verbs). Land sends
 showed, so a branch that moved meanwhile lands what the user saw (§app.merge-queue/approve). After one, the row is read again
 at once and then follows the queue's feed. A refusal shows its reason under the row and leaves the
 row as it was. The modal, the control and the pane's Worktrees rows (§chat.worktrees/pane) read the
-same state, so they always agree. Nothing here shows live state or offers a restart.
+same state, so they always agree. The chat's row in the session list shows the control's headline
+too, by the same rule from the rows the list last read, as a symbol and its figure with these
+words in its hover; how far it can lag is §app.session-list/content-rules "Row line 3". Nothing here shows live state or offers a restart.

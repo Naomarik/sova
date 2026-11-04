@@ -337,7 +337,11 @@ adds to rows, every row is exactly the row it was, and the pane asks nothing.
   optional `title` of at most 120 plain characters. A row chip does nothing when pressed, because
   the row is the link to its session: a chip with an `href` or an `action` is dropped. A chip whose
   label is one of Sova's own words on a row is dropped too, with case ignored: `TUI`, `Draft`,
-  `restart pending`, `{n} follow-up` or `{n} follow-ups`, the worktree count `{n} of {m}`, the
+  `restart pending`, `{n} follow-up` or `{n} follow-ups`, `{n} of {m}` (the merged count rows used to show), the
+  branch status's words as a figure, any number then the words, built from the one word table the
+  status and the chat's worktrees control read (§chat.composer/worktrees-control), one and many:
+  `{n} needs you`, `{n} need you`, `{n} needs a fix`, `{n} need a fix`, `{n} ready`, `{n} checking`,
+  `{n} queued`, `{n} worktree`, `{n} worktrees` (`1 needs you`, `2 ready`, `3 worktrees`), the
   worktree state words (`merged`, `stale`, `in progress`, `blocked`, `ready to merge`, `waiting for
   your OK`, `removed`), and the host mark's state words (`down`, `refused`, `hidden`, `other
   version`). Other keys are ignored.

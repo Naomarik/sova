@@ -16,7 +16,7 @@
   "§app.session-list/anatomy": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/components/Sidebar.tsx",
       "src/lib/readiness.ts",
@@ -24,12 +24,14 @@
       "src/components/RowPlace.tsx",
       "src/lib/row-place.ts",
       "src/lib/session-row.test.ts",
-      "src/lib/session-row.snapshot.json"
+      "src/lib/session-row.snapshot.json",
+      "src/lib/branch-status.ts",
+      "src/app.css"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "user",
+      "at": "2026-11-03T16:04Z",
+      "source": "pi-session:01a1a1b7-c99c-75b6-8a92-b66649ed6742#43572b80"
     }
   },
   "§app.session-list/archive-by-date": {
@@ -158,12 +160,25 @@
       "src/lib/for-key.browser.test.ts",
       "src/lib/list-scroll-hold.ts",
       "src/lib/list-scroll-hold.test.ts",
-      "server/sidebar-scroll.integration.test.ts"
+      "server/sidebar-scroll.integration.test.ts",
+      "src/lib/branch-status.ts",
+      "src/lib/branch-status.test.ts",
+      "src/lib/merge-queue.ts",
+      "src/app.css",
+      "server/session-branches.test.ts",
+      "server/sessions-index.ts",
+      "server/merge-readiness.ts",
+      "server/merge-queue/wire.ts",
+      "src/lib/summary-diff.ts",
+      "server/index.ts",
+      "server/worktrees.ts",
+      "server/worktrees-refs-stamp.test.ts",
+      "server/merge-queue/wire-unserved.integration.test.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-27T08:48Z",
-      "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
+      "by": "user",
+      "at": "2026-11-03T16:04Z",
+      "source": "pi-session:01a1a1b7-c99c-75b6-8a92-b66649ed6742#43572b80"
     }
   },
   "§app.session-list/drop-overlay": {
@@ -368,8 +383,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:13Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-04T05:47Z",
+      "source": "pi-session:01a1a1b7-c99c-75b6-8a92-b66649ed6742#43572b80"
     }
   },
   "§app.session-list/ordinary-surfaces": {

@@ -1,6 +1,6 @@
 // What a tool row's name means. pi names a tool from its server and raw name, shortening a long one with a hash
 // (quirk P35), so a chat's kept list says what each name was; a tool result's details say so too, on success. With
-// neither (a slice of history, a Claude Code file) the name itself is read.
+// neither it is no server's tool: a name alone can't tell, and `my-server` has already become `my_server` in it.
 import { createHash } from "node:crypto";
 import type { McpToolName } from "../../shared/mcp";
 import type { McpChatList } from "./list-shape";
@@ -8,7 +8,6 @@ import type { McpChatList } from "./list-shape";
 export type McpNames = ReadonlyMap<string, McpToolName>;
 
 const NAME_MAX = 64;
-const CLAUDE_PREFIX = "mcp__sova__";
 
 /** pi's name for a tool, and the hashed form it takes when that is too long or taken. */
 export function piToolNames(server: string, tool: string): string[] {
@@ -29,11 +28,5 @@ const isString = (v: unknown): v is string => typeof v === "string" && v.length 
 export function mcpToolOfRow(name: string | undefined, details: unknown, names?: McpNames): McpToolName | undefined {
   const d = details as { server?: unknown; tool?: unknown } | null | undefined;
   if (isString(d?.server) && isString(d?.tool)) return { server: d.server, tool: d.tool };
-  if (!name) return undefined;
-  const bare = name.startsWith(`${CLAUDE_PREFIX}mcp__`) ? name.slice(CLAUDE_PREFIX.length) : name;
-  const known = names?.get(bare);
-  if (known) return known;
-  if (name.startsWith(CLAUDE_PREFIX) && bare === name) return undefined; // Sova's own tool on the CLI
-  const m = /^mcp__(.+?)__(.+)$/.exec(bare);
-  return m ? { server: m[1]!, tool: m[2]! } : undefined;
+  return name ? names?.get(name) : undefined;
 }

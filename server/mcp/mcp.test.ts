@@ -334,10 +334,10 @@ describe("a tool row's name", () => {
     assert.deepEqual(mcpToolOfRow(hashed, undefined, names), { server: "my-srv", tool: "y".repeat(100) });
   });
 
-  test("a result's details win; with neither, the name is read; Sova's own tools and others are nobody's", () => {
+  test("a result's details win; with neither, a name alone is no server's tool, however it reads", () => {
     assert.deepEqual(mcpToolOfRow("mcp__x__y", { server: "s", tool: "t" }, names), { server: "s", tool: "t" });
-    assert.deepEqual(mcpToolOfRow("mcp__proj__p1", {}), { server: "proj", tool: "p1" });
-    assert.deepEqual(mcpToolOfRow("mcp__sova__mcp__proj__p1", undefined), { server: "proj", tool: "p1" }, "a Claude Code file's name");
+    assert.equal(mcpToolOfRow("mcp__team__team_inbox", {}), undefined, "a transcript's own tool");
+    assert.equal(mcpToolOfRow("mcp__team__team_inbox", undefined, names), undefined, "not on this chat's list");
     assert.equal(mcpToolOfRow("mcp__sova__read", undefined), undefined);
     assert.equal(mcpToolOfRow("read", undefined), undefined);
   });

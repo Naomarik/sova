@@ -13,9 +13,11 @@
 # copied to settings.json.bak first. An existing symlink (from older versions
 # of this script) is replaced by the merged file; its target is never written.
 #
-# The sandbox policy (sandbox-policy/<platform>/{policy.json,CLAUDE.md}) is a
-# second exception: it is COPIED into $agent/sandbox-policy when absent and
-# never overwritten, and --check reports how it differs from the template.
+# The sandbox policy (sandbox-policy/<platform>/{policy.json,CLAUDE.md}, and the
+# cache cleanup's caches.json) is a second exception: it is COPIED into
+# $agent/sandbox-policy when absent and never overwritten, and --check reports how
+# it differs from the template. caches.json is optional (missing = its defaults),
+# so --check only notes it missing.
 #
 # install.sh --check changes nothing: it exits nonzero if any expected link is
 # missing or points elsewhere, if any entry in the agent's extensions/
@@ -264,6 +266,8 @@ if [ -d "$policy_src" ]; then
 			if [ -L "$dst" ]; then
 				echo "is a symlink, want a copy: $dst"
 				bad=1
+			elif [ ! -e "$dst" ] && [ "$(basename "$dst")" = caches.json ]; then
+				echo "missing (optional, its defaults apply): $dst (run install.sh to copy it from $src)"
 			elif [ ! -e "$dst" ]; then
 				echo "missing: $dst (run install.sh to copy it from $src)"
 				bad=1

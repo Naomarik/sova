@@ -10,8 +10,11 @@ with its policy templates in `pi-config/sandbox-policy/`. Sova imports its sessi
 ## What lives here
 
 - [`README.md`](../../../pi-config/extensions/sandbox/README.md). Requirements: §chat/sandbox.
-- `pi-config/sandbox-policy/<platform>/` holds the templates (`policy.json` and a `CLAUDE.md`), copied, never
-  linked, into the agent dir by `install.sh`.
+- `pi-config/sandbox-policy/<platform>/` holds the templates (`policy.json`, a `CLAUDE.md` and the cache
+  cleanup's optional `caches.json`), copied, never linked, into the agent dir by `install.sh` when absent.
+- `shadow-prune.ts` (builtins only, imports nothing) cleans the shadowed caches' private copies in a detached
+  low-priority child (`shadow-prune-run.ts`); its settings are `caches.json`, never `policy.json`, whose strict
+  validator must not learn its keys (README, "Cache cleanup").
 - Tests: `cd pi-config/extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts && node tests/run.mjs`.
   `naive.mjs` writes its run record to `tests/out/NAIVE-RUN.txt`, gitignored. `tests/FIRST-RUN.txt` is a committed
   record of the first run; nothing rewrites it.

@@ -193,6 +193,8 @@ test("the sandbox policy is copied, never linked, never overwritten; --check rep
 	assert.equal(fs.lstatSync(dst).isSymbolicLink(), false);
 	assert.equal(fs.readFileSync(dst, "utf8"), fs.readFileSync(path.join(here, "sandbox-policy/linux/policy.json"), "utf8"));
 	assert.ok(fs.existsSync(path.join(s.agent, "sandbox-policy", "darwin", "CLAUDE.md")));
+	const caches = path.join(s.agent, "sandbox-policy", "linux", "caches.json");
+	assert.equal(fs.readFileSync(caches, "utf8"), fs.readFileSync(path.join(here, "sandbox-policy/linux/caches.json"), "utf8"));
 	let r = s.run("--check");
 	assert.equal(r.code, 0, r.out);
 	assert.doesNotMatch(r.out, /sandbox-policy/);
@@ -219,6 +221,18 @@ test("the sandbox policy is copied, never linked, never overwritten; --check rep
 	r = s.run("--check");
 	assert.notEqual(r.code, 0);
 	assert.match(r.out, /missing: .*darwin\/CLAUDE\.md/);
+	assert.equal(s.run().code, 0);
+
+	// caches.json is optional: missing is noted, never a failure; install copies it back, and keeps an edit.
+	fs.rmSync(caches);
+	r = s.run("--check");
+	assert.equal(r.code, 0, r.out);
+	assert.match(r.out, /missing \(optional, its defaults apply\): .*linux\/caches\.json/);
+	assert.equal(s.run().code, 0);
+	assert.ok(fs.existsSync(caches));
+	fs.writeFileSync(caches, '{"on": false}\n');
+	assert.equal(s.run().code, 0);
+	assert.equal(fs.readFileSync(caches, "utf8"), '{"on": false}\n');
 	fs.rmSync(s.root, { recursive: true, force: true });
 });
 

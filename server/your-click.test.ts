@@ -19,7 +19,7 @@ linkPiConfigExtensions(join(root, "agent"));
 await import("./testing/in-process-chats");
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
-const { disposeAllChats } = await import("./chat-manager");
+const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { registerProjectIn } = await import("./projects/spaces");
 const po = await import("./project-overseer");
 const { projectOverseerPaths, readPoSettings } = await import("./project-overseer-store");
@@ -53,7 +53,7 @@ const notTheUser = (): [string, Record<string, string>, Record<string, unknown> 
 ];
 const peers = (): [string, Record<string, string>, Record<string, unknown> | undefined][] => [
   ["a mesh peer", {}, { meshPeer: { id: "other", nodeId: "n" } }],
-  ["a peer relaying a browser", { "X-Sova-Relayed": "1", ...pageHeaders() }, undefined],
+  ["a peer relaying a browser", { "X-Sova-Relayed": "1", ...pageHeaders() }, { meshPeer: { id: "other", nodeId: "n" } }],
 ];
 
 const call = (method: string, url: string, body: unknown, headers: Record<string, string>, env?: Record<string, unknown>) =>
@@ -298,6 +298,37 @@ describe("applying Sova's own main copy", async () => {
   });
 });
 
+describe("the relay header proves nothing on the main listener", () => {
+  const RELAYED = { "X-Sova-Relayed": "1" };
+
+  test("alone it says nothing of who calls: a chat stays a chat, a script a script, and only the peer listener is a peer", () => {
+    const ctx = (h: Record<string, string>, env?: unknown) => ({ env, req: { header: (n: string) => h[n] ?? h[n.replace(/(^|-)x/g, (m) => m.toUpperCase())] } }) as never;
+    assert.equal(notPage(ctx({ ...RELAYED, "x-sova-caller": "k" })), "chat");
+    assert.equal(notPage(ctx({ ...RELAYED, [TOKEN]: "t" })), "script");
+    assert.equal(notPage(ctx(RELAYED)), "script", "and it is no page");
+    assert.equal(notPage(ctx({ ...RELAYED, "x-sova-caller": "k" }, { incoming: {}, meshPeer: { id: "b" } })), "local", "the real road: the peer listener");
+  });
+
+  test("a chat's key with the header can't send a card's click, and what it sends is never the user's", async () => {
+    const { path } = (await (await call("POST", "/api/sessions", { cwd: root }, pageHeaders())).json()) as { path: string };
+    const chat = await acquireChat(path);
+    const real = chat.handle.bind(chat);
+    const reached: Record<string, boolean | undefined> = {};
+    chat.handle = ((client: { notUser?: true }, msg: { clientId?: string }) => {
+      if (msg.clientId) reached[msg.clientId] = client.notUser;
+      return real(client as never, msg as never);
+    }) as never;
+    const headers = { ...RELAYED, "x-sova-caller": "a-chat-key" };
+    const frames = [
+      { type: "prompt", text: "c_1 a: go ahead", clientId: "click", confirm: "c_1" },
+      { type: "prompt", text: "/sandbox", clientId: "plain" },
+    ];
+    assert.equal((await call("POST", `/api/chat/frames?path=${encodeURIComponent(path)}`, { frames }, headers)).status, 202);
+    for (let i = 0; i < 300 && !("plain" in reached); i++) await new Promise((r) => setTimeout(r, 10));
+    assert.deepEqual(reached, { plain: true }, "the click was refused before the chat, and the plain frame isn't a present user");
+  });
+});
+
 describe("a click on this page that approves on another computer", () => {
   const relayed = (headers: Record<string, string>, body = "{\"pin\":\"a\"}", path = "/peer/b/api/schedules/approve") => new Request(`http://x${path}`, { method: "POST", headers, body });
   /** The proxy's own view of a request (Hono's Context, as clickProofFor reads it). */
@@ -309,7 +340,7 @@ describe("a click on this page that approves on another computer", () => {
     assert.equal(await clickProofFor(seen(relayed({})), "b", TAIL), undefined, "no page proof");
     assert.equal(await clickProofFor(seen(relayed({ ...pageHeaders(), "x-sova-token": "t" })), "b", TAIL), undefined, "a script");
     assert.equal(await clickProofFor(seen(relayed({ ...pageHeaders(), "x-sova-caller": "k" })), "b", TAIL), undefined, "a chat");
-    assert.equal(await clickProofFor(seen(relayed({ ...pageHeaders(), "X-Sova-Relayed": "1" })), "b", TAIL), undefined, "a chain through another peer");
+    assert.equal(await clickProofFor(seen(relayed({ ...pageHeaders(), "X-Sova-Relayed": "1" }), { meshPeer: { id: "a" } }), "b", TAIL), undefined, "a chain through another peer");
     assert.equal(await clickProofFor(seen(relayed(pageHeaders())), "b", "/api/sandbox"), undefined, "any other door");
   });
 

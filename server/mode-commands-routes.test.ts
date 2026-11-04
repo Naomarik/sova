@@ -151,7 +151,7 @@ test("approving a project tool from anyone but your own page or the Overseer is 
     ["an extension's key", { "x-sova-token": "sova-ext-key" }, undefined],
     ["a dispatch with no mark", { "x-sova-command": "session.mode.set" }, undefined],
     ["a sessions mesh peer", {}, { meshPeer: { nodeId: "nPeer" } }],
-    ["a relay through a peer", { "X-Sova-Relayed": "1" }, undefined],
+    ["a relay through a peer", { "X-Sova-Relayed": "1" }, { meshPeer: { nodeId: "nPeer" } }],
   ];
   for (const [i, [who, headers, env]] of callers.entries()) {
     const id = `hkc${i}`;

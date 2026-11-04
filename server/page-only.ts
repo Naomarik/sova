@@ -1,6 +1,5 @@
 import type { Context } from "hono";
 import { CALLER_HEADER, extensionCaller, isExtensionKey, presentsPageCookie, serverAuthEnabled, TOKEN_HEADER } from "./auth";
-import { RELAYED_HEADER } from "./mesh/proxy";
 import { isSenderSecret, OVERSEER_SENDER_HEADER } from "./overseer-sender";
 import { SANDBOX_LOWER_REFUSAL } from "./sandbox-state";
 
@@ -33,7 +32,8 @@ interface Shown {
  */
 function notPageOf(r: Shown): NotPage | null {
   if (isSenderSecret(r.header(OVERSEER_SENDER_HEADER))) return "overseer";
-  if (r.peer || r.header(RELAYED_HEADER)) return "local";
+  // Only the peer listener says so: the relay's header is one any caller of the main listener can send.
+  if (r.peer) return "local";
   if (r.header(CALLER_HEADER) !== undefined) return "chat";
   const token = r.header(TOKEN_HEADER);
   const bearer = /^Bearer\s+(.+)$/i.exec(r.header("authorization") ?? "")?.[1];

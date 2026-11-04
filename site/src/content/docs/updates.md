@@ -21,7 +21,7 @@ moved back. The script installs the same `stable` default from any tag or branch
 
 To pin a version, set `SOVA_REF`:
 
-- `| SOVA_REF=v0.10.0 bash` installs that release, and a re-run with it stays there.
+- `| SOVA_REF=v0.10.1 bash` installs that release, and a re-run with it stays there.
 - `| SOVA_REF=master bash`, or any other branch, updates to that branch's latest commit on each run.
 - A commit works too, as seven or more hex digits.
 
@@ -127,7 +127,7 @@ Each chat moves to the new code at its next quiet moment.
 
 ## Who can update
 
-Only you, at a signed-in browser, can check, change the update settings or upgrade. Restarting is
-the one Updates action a script on this machine may also take (`sova run server.restart`). The Overseer,
-agents and schedules can't, and another Sova machine in your mesh needs its full grant even to read
-what the section shows. To stop every check on a server, start it with `SOVA_UPDATES_CHECK=off`.
+Only you, at a signed-in browser, can check, change the update settings, upgrade or restart Sova:
+each answers only your own page on this machine. A script, a chat's terminal, the Overseer, agents
+and schedules are refused (`sova run server.restart` answers with where to click), and another
+Sova machine in your mesh needs its full grant even to read what the section shows. To stop every check on a server, start it with `SOVA_UPDATES_CHECK=off`.

@@ -108,7 +108,9 @@ socket (with room for a reload replacement's suffix: at most 103 bytes on macOS,
 under the runtime directory (the temp directory without one; `/private/tmp` on macOS). A chat
 whose socket path fits neither is refused, never given a path cut short. The chat process listens and the server dials. Each frame is a
 4-byte big-endian length followed by that many bytes of UTF-8 JSON, one object with a type `t`. A
-frame above 64 MiB, an empty one, or one that isn't such an object closes the link. Every
+frame above 64 MiB, an empty one, or one that isn't such an object closes the link. An answer to a
+command that would be above that limit is never sent: the command fails at once with a message saying
+it is too large, the link stays up, and its caller is never left waiting. Every
 connection starts with the chat's `hello` (protocol, build, pid, state, last event number, highest
 controller epoch). A later `hello` on the same link says only that the chat's state changed: once
 the link's `control` has come, whenever the chat's state differs from what the link's last `hello`

@@ -200,12 +200,18 @@ async function refusedFrame(c, msg, sentence, what) {
 
 /** What each page really sent: its socket frames and posted frames. */
 const left = new WeakMap();
+/** What each page's sockets received. */
+const came = new WeakMap();
 async function tab(host, hash = "#/mesh") {
   const ctx = await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: labTokenHeaders(), viewport: { width: 1440, height: 900 } });
   const page = await ctx.newPage();
   tabs.push(ctx);
   left.set(page, []);
-  page.on("websocket", (ws) => ws.on("framesent", (f) => left.get(page).push(String(f.payload))));
+  came.set(page, []);
+  page.on("websocket", (ws) => {
+    ws.on("framesent", (f) => left.get(page).push(String(f.payload)));
+    ws.on("framereceived", (f) => came.get(page).push(String(f.payload)));
+  });
   page.on("request", (r) => r.url().includes("/api/chat/frames") && left.get(page).push(r.postData() ?? ""));
   page.on("pageerror", (e) => console.log(`# page ${host}: ${e.message.slice(0, 300)}`));
   page.on("response", (r) => r.status() >= 400 && console.log(`# page ${host}: ${r.status()} ${r.url().slice(0, 120)}`));
@@ -257,11 +263,15 @@ async function meshSays(page, id, state) {
   return text;
 }
 /** The host menu's row: state, word, dot tone (amber is host-filter-skewed), and the Resync button's presence. */
-async function menuSays(page, id, state, { resync }) {
+async function menuSays(page, id, state, { resync, says }) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.evaluate(() => (location.hash = "#/"));
   const trigger = page.locator(".host-menu-trigger");
+  // The build line and Resync come from a read the menu starts on opening: until it answers, "no Resync" is
+  // true of any host, and a row has no line to read.
+  const read = page.waitForResponse((r) => r.url().includes("/api/mesh/resync"), { timeout: 15000 });
   await trigger.click({ timeout: 15000 });
+  await read;
   const row = page.locator(`[data-testid="host-menu-row"][data-host-id="${id}"]`);
   await waitFor(async () => (await row.getAttribute("data-host-state", { timeout: 2000 })) === state, { timeoutMs: 30000, what: `host menu says ${id} is ${state}` });
   const amber = await row.locator(".chip-dot.host-filter-skewed").count();
@@ -269,6 +279,7 @@ async function menuSays(page, id, state, { resync }) {
   if (WORD[state]) assert.match((await row.innerText()).toLowerCase(), new RegExp(WORD[state]));
   if (resync !== undefined)
     await waitFor(async () => (await row.getByRole("menuitem", { name: `Resync ${LABEL[id]}` }).count()) === (resync ? 1 : 0), { timeoutMs: 15000, what: `Resync ${resync ? "offered" : "not offered"} in the host menu` });
+  if (says) await waitFor(async () => says.test(await row.innerText()), { timeoutMs: 15000, what: `host menu row says ${says}` });
   const text = await row.innerText();
   await page.keyboard.press("Escape");
   return text;
@@ -396,12 +407,12 @@ describe("1. another build, nothing in the areas changed: Works fully", () => {
 
     const onA = await tab(A);
     assert.match(await meshSays(onA, B, "works"), /On another build/);
-    assert.match(await menuSays(onA, B, "works", { resync: false }), /another build/i);
+    assert.match(await menuSays(onA, B, "works", { resync: false, says: /another build/i }), /another build/i);
     await rowSays(onA, B, "works");
     await shots(onA, "1-works-another-build-older-side");
     const onB = await tab(B);
     assert.match(await meshSays(onB, A, "works"), /On another build: 1 commit behind/);
-    assert.match(await menuSays(onB, A, "works", { resync: true }), /another build/i);
+    assert.match(await menuSays(onB, A, "works", { resync: true, says: /another build/i }), /another build/i);
     await shots(onB, "1-works-another-build-newer-side");
 
     const s = await fixture(B);
@@ -665,8 +676,10 @@ for (const bumped of ["sessions", "peer"]) {
         assert.equal(kept?.endedAt, undefined, `${from}: the link survives`);
       }
 
-      const marker = `lab/m10-sync-${bumped}-${Date.now()}`;
-      const fav = await laptopFetch(A, "/api/models/favorite", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ref: marker, favorite: true }) });
+      // The file keeps provider and id apart, so it's the id that can be found in it.
+      const id = `m10-sync-${bumped}-${Date.now()}`;
+      const marker = `"${id}"`;
+      const fav = await laptopFetch(A, "/api/models/favorite", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ ref: `lab/${id}`, favorite: true }) });
       assert.ok(fav.status < 300);
       // c matches a, so its copy says the sync went out; only then can b's lack of one mean anything.
       // Back on matching builds, the same link carries a message and the favorite arrives on b: the
@@ -753,6 +766,53 @@ describe("6. a tab left open across an update", () => {
       await stale.locator("form.composer-inner").waitFor({ timeout: 30000 });
     } finally {
       lab("pair", "a,b,c");
+    }
+  });
+});
+
+describe("6. a tab that wakes a closed chat", () => {
+  after(closeTabs);
+  // The chat closes for real (§app.chat-processes/idle-stop) and the tab's send wakes it: the page puts it on
+  // the new socket as soon as that opens, so the host refuses it before the chat's hello. That refusal is
+  // told when the hello comes, and no start failure follows.
+  test("the send is refused with the reload sentence, the draft is back, and the chat opens", async () => {
+    await builds({ a: "base", b: "base" });
+    const s = await spoken(A);
+    const stale = await tab(A, sessionHash(s, null));
+    await stale.locator("form.composer-inner").waitFor({ timeout: 30000 });
+    await recorded(A, s);
+    lab("swap", A, commitOf("composer"));
+    running[A] = "composer";
+    lab("sova-env", A, "SOVA_CHAT_IDLE_MIN=0.05");
+    lab("sova-restart", A);
+    startFakeLlm([A]);
+    try {
+      await waitFor(() => came.get(stale).some((f) => f.includes('"type":"closed"')), { timeoutMs: 180000, intervalMs: 500, what: "the chat closes for being quiet, told to the tab" });
+      const closedAt = came.get(stale).length;
+      const sentBefore = left.get(stale).length;
+      const text = "Waking a closed chat from a stale tab";
+      await typeAndSend(stale, text);
+      await stale.getByText(/older than Host A\. Reload the page to send here/).first().waitFor({ timeout: 30000 });
+      assert.equal(await stale.locator("textarea.composer-input").first().inputValue(), text, "the text comes back as a draft");
+      assert.equal(await stale.getByText("This chat didn't start").count(), 0, "no start failure: the chat opens");
+      const since = came.get(stale).slice(closedAt).flatMap((f) => {
+        try {
+          return [JSON.parse(f)];
+        } catch {
+          return [];
+        }
+      });
+      const kinds = JSON.stringify(since.map((f) => f.type).slice(0, 12));
+      const refused = since.findIndex((f) => f.type === "error" && f.code === "refused");
+      const hello = since.findIndex((f) => f.type === "hello");
+      console.log(`# wake route: refused at frame ${refused}, hello at ${hello}, of ${kinds}`);
+      assert.ok(refused >= 0, `the host refused it: ${kinds}`);
+      assert.ok(hello >= 0 && refused < hello, `the refusal came before the hello, or this isn't the route: ${kinds}`);
+      assert.equal(left.get(stale).slice(sentBefore).filter((f) => f.includes(text)).length, 1, "sent once");
+      await shots(stale, "6-woken-chat-refused");
+    } finally {
+      lab("sova-env", A, "--clear");
+      lab("sova-restart", A);
     }
   });
 });

@@ -10,6 +10,7 @@
  * The file format is in shared.md's owner note; HTML comments (owner notes) never reach the model.
  */
 import { readdirSync, readFileSync } from "node:fs";
+import { restoreActive } from "../../sandbox/state.ts";
 
 /** The groups and their topics, in the table of contents' order. A topic with no file isn't listed or looked up. */
 export const CREATE_GROUPS: readonly { title: string; topics: readonly string[] }[] = [
@@ -70,6 +71,16 @@ export function createContents(): string {
 
 /** The mode's block: overview.md with the table of contents in its `{{CONTENTS}}` place. */
 export const CREATE_INSTRUCTIONS = stripOwnerNotes(CREATE_FILES.overview ?? "").replace("{{CONTENTS}}", () => createContents());
+
+/**
+ * What a lookup says first in a chat with its sandbox On, from the chat's own `sandbox` entries (On is
+ * always recorded), or undefined in a chat with no such limit. A tool result is the one place the
+ * sandbox may reach the model (§chat.sandbox/states), and an unlimited chat gets nothing to talk about.
+ */
+export function sandboxNote(entries: readonly { type: string; customType?: string; data?: unknown }[]): string | undefined {
+	if (!restoreActive(entries)?.on) return undefined;
+	return "This chat's sandbox is On: you can't write files on this computer, reach Sova's commands or run project tools here. If you haven't told the person, say so first, before you offer anything.";
+}
 
 /** What `create_guide {topic}` returns: the shared rules, then that topic's entry. A topic that isn't listed is refused, naming the topics (§design.copy-deck/create-mode). */
 export function createGuide(topic: string): string {

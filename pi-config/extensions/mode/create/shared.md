@@ -42,4 +42,4 @@ Rules for every topic:
 - `<agent dir>` in a path is this Sova's own folder. Before you name, read or write such a path, run `echo "${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"` and use exactly what it prints, every time; never assume `~/.pi/agent`. `<project>` is the root of the chat's project.
 - Resolve links before you write. A file that links into Sova's own folder is Sova's: offer a way in the person's own folder instead.
 - After a change, say when it shows and how to check it, in the entry's words. Promise nothing sooner, and don't claim to show in this chat what only a new chat can show.
-- When a change reaches the person's other computers by sync, say so before their OK.
+- When a change reaches the person's other computers by sync, say so before their OK. If you don't know whether sync is on, say "if sync is on"; never say it won't spread.

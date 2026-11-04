@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { CREATE_FILES, CREATE_GROUPS, CREATE_GUIDE_NAMES, CREATE_INSTRUCTIONS, CREATE_TOPICS, createContents, createGuide, parseHeader, stripOwnerNotes } from "./guide.ts";
+import { CREATE_FILES, CREATE_GROUPS, CREATE_GUIDE_NAMES, CREATE_INSTRUCTIONS, CREATE_TOPICS, createContents, createGuide, parseHeader, sandboxNote, stripOwnerNotes } from "./guide.ts";
 
 /** §chat.create-mode/contents, word for word: the table of contents the mode promises. */
 const PROMISED = `- **Make it yours.**
@@ -75,11 +75,18 @@ test("every file in the folder is a topic, or shared.md, or overview.md", () => 
 	assert.ok(!CREATE_INSTRUCTIONS.includes("<!--"), "no owner note reaches the model");
 });
 
-test("the block has a limited chat say what it can't do in its first reply, finding out by a read-only probe", () => {
-	const limits = CREATE_INSTRUCTIONS.split("\n").find((line) => line.startsWith("In your first reply after entering Create"));
-	assert.ok(limits, "the paragraph is there");
-	for (const can_t of ["project modes and cards", "write files on this computer", "reach Sova's commands", "run project tools"]) assert.ok(limits.includes(can_t), can_t);
-	assert.ok(limits.includes("`test -w "), "the sandbox's state is never told to the model, so the block must say how to find out");
+test("only a chat with its sandbox On is told it, by the lookup, and an unlimited chat runs no check", () => {
+	const entry = (data: Record<string, unknown>) => ({ type: "custom", customType: "sandbox", data: { version: 1, level: "workspace-write", backend: "bwrap", enforcement: "full", ...data } });
+	const note = sandboxNote([entry({ on: false }), entry({ on: true })]);
+	for (const can_t of ["write files on this computer", "reach Sova's commands", "run project tools"]) assert.ok(note?.includes(can_t), can_t);
+	assert.equal(sandboxNote([entry({ on: true }), entry({ on: false })]), undefined);
+	assert.equal(sandboxNote([]), undefined);
+	assert.ok(!CREATE_INSTRUCTIONS.includes("test -w"), "the block asks for no probe: a chat with nothing to report has nothing to talk about");
+	assert.ok(CREATE_INSTRUCTIONS.includes("project modes and cards don't work here"));
+});
+
+test("a strict chat is told how to know, and that bash writes are file changes", () => {
+	assert.ok(/no `edit` or `write` tool, the chat is strict[^\n]*writing with `bash`/.test(CREATE_INSTRUCTIONS));
 });
 
 test("a header line is `# <topic>: <words>`, and a file whose header names another topic isn't listed", () => {
@@ -122,7 +129,7 @@ test("an alignment's go-ahead is never the OK, in the block and in the shared ru
 });
 
 test("the block holds what real chats got wrong", () => {
-	for (const words of ["don't mention the check or limits at all", "never another chat, another mode or a project as a way to change Sova's code", "is about Sova unless this folder plainly holds that thing"]) assert.ok(CREATE_INSTRUCTIONS.includes(words), words);
+	for (const words of ["Otherwise say nothing about what this chat can or can't do", "never another chat, another mode, a project or \"outside Create\" as a way to change Sova's code", "is about Sova unless this folder plainly holds that thing"]) assert.ok(CREATE_INSTRUCTIONS.includes(words), words);
 	const shared = stripOwnerNotes(CREATE_FILES.shared!);
 	for (const words of ["Before you name, read or write such a path", "open the `models` entry before you say where to sign in"]) assert.ok(shared.includes(words), words);
 });

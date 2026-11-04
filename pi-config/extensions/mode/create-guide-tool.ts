@@ -5,9 +5,9 @@
  * when the tool is in the loadout: only while the chat is in Create, so a worker never has it.
  */
 import { StringEnum } from "@earendil-works/pi-ai";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { CREATE_GUIDE_NAMES, createGuide } from "./create/guide.ts";
+import { CREATE_GUIDE_NAMES, createGuide, sandboxNote } from "./create/guide.ts";
 
 export const CREATE_GUIDE_TOOL = "create_guide";
 
@@ -27,9 +27,16 @@ export function createGuideTool() {
 		// No promptSnippet or guidelines: those would put the tool in the system prompt, which a mode switch
 		// must not rewrite. The Create block names the tool.
 		parameters: CREATE_GUIDE_PARAMETERS,
-		async execute(_id: string, params: { topic: unknown }) {
+		async execute(_id: string, params: { topic: unknown }, _signal?: AbortSignal, _onUpdate?: unknown, ctx?: ExtensionContext) {
 			const topic = String(params.topic);
-			return { content: [{ type: "text" as const, text: createGuide(topic) }], details: { topic } };
+			const guide = createGuide(topic);
+			let note: string | undefined;
+			try {
+				note = ctx ? sandboxNote(ctx.sessionManager.getBranch()) : undefined;
+			} catch {
+				note = undefined; // The guide still answers.
+			}
+			return { content: [{ type: "text" as const, text: note ? `${note}\n\n${guide}` : guide }], details: { topic } };
 		},
 	};
 }

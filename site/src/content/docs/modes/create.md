@@ -133,8 +133,9 @@ and the branch lands when you press Land, like any other. Create never lands one
 branch is yours to merge, and with no Git the change is made by hand.
 
 **Your OK** covers files on your computer that aren't settings: themes, personal skills, add-ons,
-rules and personas. Create shows the path and the whole change, then waits. Only your own message in
-that chat counts, though a chat [can't tell another chat's OK from yours](/docs/extending/scripting/#what-no-script-can-do).
+rules and personas. Create shows the path and the whole change, then waits. Its instructions take only
+your own message in that chat as an OK. That is an instruction, not a limit: a chat
+[can't tell another chat's message from yours](/docs/extending/scripting/#what-no-script-can-do).
 Then the chat writes the file, or a worker outside any worktree does.
 
 ## What only you do

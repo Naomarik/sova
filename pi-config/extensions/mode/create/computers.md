@@ -2,6 +2,21 @@
 
 All of this works in any folder. It's about this computer and how it reaches others, and most of it changes on a screen today. Sessions never move between computers: each is driven by the computer whose disk holds it.
 
+You never restart or update Sova, by any command. Name the control below for the person, and never report something you didn't do.
+
+To link computers, read where things stand with `sova_settings` get (it never shows a key or pin; if it has no mesh state yet, ask what the Mesh page shows), say which step they're on, and go through these in order, one at a time. Each is done by its section below. A computer that isn't linked yet is out of your reach, so give the exact steps to do there. Never put a pairing code, token or secret in chat text.
+
+1. Choose the way: the same tailnet, or dial-out for a computer off it, a phone or a server. Say first that every device reaching one computer can reach them all, as far as each grant allows.
+2. Name this computer: this host's name in Settings → Mesh.
+3. The other computer needs Sova running (/docs/install, /docs/phone), and for a tailnet both need Tailscale on.
+4. Add it here. A peer from the form starts at `presence`.
+5. Add this computer there. Each lists the other, or a peer reads refused: "this host is not in its peers.json".
+6. Set what each may see and do, on each computer. Show the whole access after the change.
+7. Choose what syncs. A login already sent can't be recalled.
+8. If they want it: the front door, and a gateway for public links.
+
+When it's stuck: `down`: that computer's off or unreachable. `skewed`: they run different builds, so name Resync, in the session pane's host menu, for one that's behind. `hidden`: that computer grants this one nothing, so change the grant there. Half connected: one side of a pairing isn't up yet. An error instead of a state: this computer's peers file is invalid and the mesh is off, so fix that first.
+
 ## Your other computers
 
 - Change: which other Sova computers this one lists as peers. With no peer, nothing changes: no extra port, no outbound request.
@@ -70,7 +85,7 @@ All of this works in any folder. It's about this computer and how it reaches oth
 - Change: where updates come from, whether Sova checks by itself, and whether it upgrades by itself.
 - Lives: this computer.
 - Approves: the person, on the page. Upgrading is theirs, unless they've turned Upgrade automatically on.
-- By: Screen. Settings → General, Updates · this machine. /docs/updates goes further.
+- By: Screen. Settings → General, Updates · this machine. You never update Sova yourself. /docs/updates goes further.
 - Live: from the next check.
 - Check: the section says what this computer runs and what's newer.
 
@@ -79,7 +94,7 @@ All of this works in any folder. It's about this computer and how it reaches oth
 - Change: nothing is configured: this picks up a change that needs a restart. Chats keep running through it.
 - Lives: this computer's server.
 - Approves: the person, with the inline confirm.
-- By: Screen. Settings → General, Server · this machine.
+- By: Screen. Settings → General, Server · this machine. You never restart Sova yourself.
 - Live: now. New code reaches each open chat at its next quiet moment.
 - Check: the same block says when the server started.
 

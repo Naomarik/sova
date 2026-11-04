@@ -487,7 +487,7 @@ export function mountResync(app: Hono, mesh: MeshApi, deps: Partial<ResyncDeps> 
       const info = await service.info();
       const host = info?.hosts.find((h) => h.id === peer);
       if (!host) return `No computer ${peer} here.`;
-      if (!host.recipe) return `There's no resync recipe for ${host.label}: recipes stay on Settings → Mesh, Resync.`;
+      if (!host.recipe) return `There's no resync recipe for ${host.label}: recipes are set in mesh-resync.json in Sova's folder.`;
       return host.recipeProblem ?? (info?.self.blocked ?? null);
     },
   });

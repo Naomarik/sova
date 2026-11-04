@@ -134,7 +134,7 @@ describe("cards, applied only by the person's click", () => {
     const { card } = await propose("mesh.browser-access", { host: meshSelf().id, on: false });
     assert.equal((await asPage(card)).status, 200);
     await assert.rejects(propose("mesh.relay", { host: "203.0.113.5", port: 9000 }));
-    await assert.rejects(propose("mesh.relay", { host: "203.0.113.5", port: 9000, exposure: "internet" }), /internet relay stays on Settings → Mesh, Pairings/);
+    await assert.rejects(propose("mesh.relay", { host: "203.0.113.5", port: 9000, exposure: "internet" }), /internet relay stays on the Mesh page, Dial-out pairings/);
     await assert.rejects(propose("mesh.resync", { peer: "stranger" }), /No computer stranger/);
     await assert.rejects(propose("mesh.resync", { peer: "b" }), /no resync recipe/);
     const relay = await propose("mesh.relay", { host: "127.0.0.1", port: 9000 });

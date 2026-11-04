@@ -172,7 +172,7 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
     input: { field: "pin", label: "The other computer's fingerprint, from its Mesh page" },
     check(v) {
       if (!isObj(v)) return "Expected {id, role, preset, host?, port?, label?}.";
-      for (const k of Object.keys(v)) if (!["id", "label", "role", "host", "port", "preset"].includes(k)) return `"${k}" can't go on a card: id, label, role, host, port and preset can. The fingerprint goes in the card's own field, typed by the person, and an internet relay stays on Settings → Mesh, Pairings.`;
+      for (const k of Object.keys(v)) if (!["id", "label", "role", "host", "port", "preset"].includes(k)) return `"${k}" can't go on a card: id, label, role, host, port and preset can. The fingerprint goes in the card's own field, typed by the person, and an internet relay stays on the Mesh page, Dial-out pairings.`;
       if (typeof v.id !== "string" || !PEER_ID_RE.test(v.id)) return `id must match ${PEER_ID_RE}.`;
       if (v.role !== "dial" && v.role !== "accept") return 'role is "dial" or "accept".';
       if (v.role === "dial" && (typeof v.host !== "string" || typeof v.port !== "number")) return "A computer this one dials needs its relay's host and port.";
@@ -194,7 +194,7 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
     read: () => readMeshConfig()?.self.relay ?? null,
     check(v) {
       if (v !== null && (!isObj(v) || typeof v.host !== "string" || typeof v.port !== "number")) return "Expected {host, port} or null.";
-      if (isObj(v) && Object.keys(v).some((k) => k !== "host" && k !== "port")) return "A card holds host and port: an internet relay stays on Settings → Mesh, Pairings.";
+      if (isObj(v) && Object.keys(v).some((k) => k !== "host" && k !== "port")) return "A card holds host and port: an internet relay stays on the Mesh page, Dial-out pairings.";
       return errorOf(applyMeshRelay(v as never, { dry: true }));
     },
     write: async (v) => errorOf(applyMeshRelay(v as never)),

@@ -113,7 +113,7 @@ export function registerSessionOfferRoutes(app: Hono<any>): void {
   app.post(
     "/api/projects/:pid/offers/approve",
     handle(async (c) => {
-      const notYou = yourClickRefusal(c, "runButtons", { overseerKeeps: true });
+      const notYou = yourClickRefusal(c, "runButtons");
       if (notYou) return notYou;
       const project = readProject(c.req.param("pid") ?? "");
       const b = await body(c);

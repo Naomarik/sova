@@ -91,8 +91,11 @@ describe("a project's run buttons", async () => {
   const file = () => readOffersFile(canonicalRoot(p.dir));
   const seen = async () => runFingerprint(file());
 
-  test("refused to all but the page and the Overseer, and nothing is trusted", async () => {
+  test("refused to everyone but the page, the Overseer too, and nothing is trusted", async () => {
     const fingerprint = await seen();
+    assert.ok(fingerprint, "a real fingerprint, so only the door can refuse it");
+    await refuses(() => call("POST", url, { fingerprint }, { [OVERSEER_SENDER_HEADER]: senderSecret() }), /Approve Run Buttons on the project page's Offers list/, "the Overseer");
+    assert.equal(runsApproved(canonicalRoot(p.dir), file()), false, "the Overseer's call approved nothing");
     for (const [who, headers, env] of notTheUser()) await refuses(() => call("POST", url, { fingerprint }, headers, env), /Approve Run Buttons on the project page's Offers list/, who);
     for (const [who, headers, env] of peers()) await refuses(() => call("POST", url, { fingerprint }, headers, env), /./, who, true);
     assert.equal(existsSync(offersTrustFile()), false, "nothing was trusted");

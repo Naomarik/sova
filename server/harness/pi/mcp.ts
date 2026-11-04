@@ -15,7 +15,7 @@ import type { ParentScope } from "../../../pi-config/extensions/sandbox/policy.t
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT } from "../../../pi-config/extensions/sandbox/state.ts";
 import { reservedName } from "../../mcp/config";
 import { NO_MCP, normalizeChatList, workerListOf, type McpChatList, type McpChatServer } from "../../mcp/list";
-import { readyToRun } from "../../mcp/resolve";
+import { currentEntry, readyToRun } from "../../mcp/resolve";
 import { secretValues, withoutSecrets } from "../../mcp/saved-values";
 import { addChatLine, type McpCheckRecord } from "../../mcp/store";
 import { cleanMcpEnv, ENV_ALLOW, Events, StdioServer, type JsonRpc, type Launch } from "../../mcp/transport";
@@ -102,6 +102,8 @@ export class SnapshotTransport extends Events {
     private readonly start_: () => McpUpstream,
     private readonly report: (patch: Partial<McpServerStatus>, how?: "changed" | "failed" | "address-under-on") => void,
     private readonly requestTimeoutMs: number,
+    /** The server is off its list now: its running copy ends at the next call, as Remove promises. */
+    private readonly removed: () => boolean = () => false,
   ) {
     super();
   }
@@ -169,6 +171,7 @@ export class SnapshotTransport extends Events {
   }
 
   private running(): Promise<McpUpstream> {
+    if (this.upstream && this.removed()) void this.stopCopy();
     // A call that comes while a copy stops waits for the next one: the old copy is under the old state.
     if (this.stopped) return this.stopped.then(() => this.running());
     if (this.upstream) return Promise.resolve(this.upstream);
@@ -377,7 +380,7 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
         };
         const signedInTo = "url" in entry.config ? entry.config.url : undefined;
         const upstream = () => (server.kind === "address" ? new AddressServer(addressLaunch(server, authProvider, signedInTo)) : new StdioServer(launchOf(server, cwd), cwd));
-        const transport = new SnapshotTransport(server.record, upstream, report, 60_000);
+        const transport = new SnapshotTransport(server.record, upstream, report, 60_000, () => !currentEntry(server.owner, server.name));
         transports.add(transport);
         transport.onClose(() => transports.delete(transport));
         return transport as unknown as McpTransport;

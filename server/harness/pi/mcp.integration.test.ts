@@ -403,6 +403,22 @@ describe("when a server fails in a chat", () => {
     assert.equal(custom(path, MCP_NOTE_ENTRY).length, 1, "one note until it works again");
   });
 
+  test("a server removed while its copy runs: the next call stops the copy and fails with the note", async () => {
+    const log = join(root, "removed.log");
+    approve([server("removed", log)]);
+    const { say, results, path } = await open(project("removed"));
+    await say("first", call("mcp__removed__echo"), { text: "done" });
+    assert.equal(results()[0]!.isError, false, results()[0]!.text);
+    writeFileSync(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: {} }));
+    await say("second", call("mcp__removed__echo"), { text: "done" });
+    assert.equal(results()[1]!.isError, true);
+    assert.match(results()[1]!.text, /removed from Sova/);
+    assert.equal(lines(log).filter((e) => e.method === "tools/call").length, 1, "the call never reached the copy");
+    await until(() => lines(log).some((e) => e.event === "stdin-closed"), "the copy to stop");
+    assert.equal(starts(log).length, 1);
+    assert.deepEqual(custom(path, MCP_NOTE_ENTRY).map((n) => n.how), ["failed"]);
+  });
+
   test("a failure reaches the row's error lines with the chat's name, and the note links to the row", async () => {
     approve([{ ...server("lined", join(root, "lined.log")), command: join(root, "no-such-program") }]);
     const { say, path } = await open(project("lined"));
@@ -675,6 +691,20 @@ describe("an address server in a chat", () => {
     assert.equal(results()[1]!.isError, false, results()[1]!.text);
     assert.equal(hellos(stub).length, 2);
     assert.deepEqual(custom(path, MCP_NOTE_ENTRY), []);
+  });
+
+  test("a server removed while its session is open: the next call reaches nothing and fails with the note", async () => {
+    const stub = await stubbed();
+    approveAddress("cut", { url: stub.url, headers: { Authorization: "Bearer x" } });
+    const { say, results, path } = await open(project("cut"));
+    await say("first", call("mcp__cut__echo"), { text: "done" });
+    assert.equal(results()[0]!.isError, false, results()[0]!.text);
+    writeFileSync(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: {} }));
+    await say("second", call("mcp__cut__echo"), { text: "done" });
+    assert.equal(results()[1]!.isError, true);
+    assert.match(results()[1]!.text, /removed from Sova/);
+    assert.equal(calls(stub).length, 1, "the call never reached it");
+    assert.deepEqual(custom(path, MCP_NOTE_ENTRY).map((n) => n.how), ["failed"]);
   });
 
   const signedIn = (name: string, url: string, tokens: Record<string, unknown>) =>

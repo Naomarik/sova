@@ -28,7 +28,7 @@ How to read this entry. Each thing below says what can be changed, where it live
 - Card: prepare it with `sova_settings` propose. You prepare, and the person presses Apply; you never apply one, even a change that narrows.
 - Land: a worker makes it on a branch in a worktree, and the person lands it. You never land one. A change to how a project runs goes by Land when the project has checks, even as one file.
 - OK: show the path and the whole change, then wait. Only the person's own message in this chat is an OK. Then write it yourself, or under strict have a worker outside any worktree write it.
-- Terminal: name the command; the person runs it in a terminal.
+- Terminal: a shell command on the person's computer, outside this chat. Name the exact command; the person runs it. Create itself is only in Sova's chats.
 - None: there's no supported way today. Say so and offer the nearest way.
 
 Rules for every topic:

@@ -207,7 +207,9 @@ export function registerMcpRoutes(app: Hono<any>): void {
       const given = typeof b.secretName === "string" && b.secretName.trim() ? b.secretName.trim() : undefined;
       if (given && !isSecretName(given)) throw new Refusal("A secret's name is letters, digits and underscores.", 400, "invalid");
       const { entry, secretName } = editedEntry(was, b, given, !!value);
-      return c.json(await saveApproved(entry, value ? { name: secretName!, value } : undefined), 200, NO_STORE);
+      const saved = await saveApproved(entry, value ? { name: secretName!, value } : undefined);
+      if (entry.url !== was.url) forgetSignIn(was);
+      return c.json(saved, 200, NO_STORE);
     }),
   );
 

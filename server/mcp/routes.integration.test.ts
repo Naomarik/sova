@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
 import { startOAuthServer } from "./testing/oauth-stub.fixture";
+import { startAddressStub } from "../harness/pi/testing/mcp-http-stub.fixture";
 
 const root = realpathSync(mkdtempSync(join(process.env.TMPDIR ?? tmpdir(), "mcp-routes-")));
 const agent = join(root, "agent");
@@ -263,6 +264,23 @@ describe("a row's switches, secrets, Edit and Remove", () => {
     assert.equal(readSecret(computer, "addr-edit", "HDR_KEY"), "hdr-value");
   });
 
+  test("a sign-in stays with its address: an Edit that moves one forgets the old address's, and Remove the new one's", async () => {
+    const [before, after, other] = ["http://127.0.0.1:9/mcp", "http://127.0.0.1:10/mcp", "http://127.0.0.1:11/mcp"];
+    const r = (await ask("POST", "/api/mcp/servers", { way: "address", name: "moves", address: before })).json as McpServerRow;
+    const signIn = (token: string, url: string) => ({ serverUrl: url, tokens: { access_token: token, token_type: "Bearer" } });
+    const file = join(agent, "mcp-auth.json");
+    writeFileSync(file, JSON.stringify({ [`mcp__moves|${before}`]: signIn("token-old-address", before), "mcp__stays|http://127.0.0.1:11/mcp": signIn("token-other-server", other) }), { mode: 0o600 });
+    await ask("PUT", `/api/mcp/rows/${r.id}`, { address: after });
+    const moved = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+    moved[`mcp__moves|${after}`] = signIn("token-new-address", after);
+    assert.ok(!readFileSync(file, "utf8").includes("token-old-address"), "the Edit left the old address's sign-in");
+    writeFileSync(file, JSON.stringify(moved), { mode: 0o600 });
+    await ask("DELETE", `/api/mcp/rows/${r.id}`);
+    const left = readFileSync(file, "utf8");
+    assert.ok(!left.includes("token-old-address") && !left.includes("token-new-address"), left);
+    assert.ok(left.includes("token-other-server"), "another server's sign-in stays");
+  });
+
   test("Remove takes its approval, record, secrets and sign-in with it, and a re-add starts clean", async () => {
     const r = await addStub("gone");
     await ask("PUT", `/api/mcp/rows/${r.id}/secrets/K`, { value: "v" });
@@ -318,6 +336,19 @@ describe("saving a secret", () => {
 });
 
 describe("an address server", () => {
+  test("a plain address offers no Sign In: not reachable, nor connected with no sign-in, nor holding its own key", async () => {
+    const unreachable = (await ask("POST", "/api/mcp/servers", { way: "address", name: "plain-down", address: "http://127.0.0.1:9/mcp" })).json as McpServerRow;
+    assert.equal(unreachable.state, "failed");
+    assert.equal(unreachable.signsIn, false);
+    const stub = await startAddressStub();
+    const open_ = (await ask("POST", "/api/mcp/servers", { way: "address", name: "plain-up", address: stub.url })).json as McpServerRow;
+    stub.stop();
+    assert.equal(open_.state, "connected", JSON.stringify(open_.errors));
+    assert.equal(open_.signsIn, false);
+    const keyed = (await ask("POST", "/api/mcp/servers", { way: "address", name: "plain-key", address: "http://127.0.0.1:9/mcp", secret: "k" })).json as McpServerRow;
+    assert.equal(keyed.signsIn, false);
+  });
+
   test("Check reads Needs Sign-in; Sign In finishes on its callback, a Check follows; a !value stays literal", async () => {
     const oauth = await startOAuthServer();
     const pwn = join(root, "pwn-header");
@@ -335,6 +366,7 @@ describe("an address server", () => {
     assert.equal(now.state, "done", JSON.stringify(now));
     const r = (now as { row: McpServerRow }).row;
     assert.equal((await row("oa")).state, "connected");
+    assert.equal((await row("oa")).signsIn, true, "signed in, it still offers Sign In");
     assert.ok(r);
     assert.deepEqual((await row("oa")).tools.map((t) => t.name).sort(), ["search", "whoami"]);
     assert.equal(statSync(join(agent, "mcp-auth.json")).mode & 0o777, 0o600);

@@ -253,7 +253,7 @@ Canary: `P32 mcp-status-text: /mcp's status lines read as readStatus matches the
 
 ### P33 mcp-auth-keys
 
-Remove takes a server's sign-in with it (§app.mcp/rows). pi's `McpOAuthCredentialStore` isn't exported from its entry, so `forgetSignIn` deletes the one key from `mcp-auth.json`, by pi's own key format.
+Remove takes a server's sign-in with it, and an Edit that moves it takes the old address's (§app.mcp/rows). pi's `McpOAuthCredentialStore` isn't exported from its entry, so `forgetSignIn` deletes the one key from `mcp-auth.json`, and `hasSignIn` reads it, by pi's own key format.
 
 Canary: `P33 mcp-auth-keys: pi's oauth store keys a server by its namespace and URL as forgetSignIn deletes it`.
 

@@ -24,6 +24,7 @@ export interface McpServerRow {
   /** Newest first; free of secret values. */
   errors: McpErrorLine[];
   lastCheck?: { at: number; ok: boolean };
+  /** The last Check found it needs a sign-in, or one is kept for it. A row not yet Checked reads false. */
   signsIn: boolean;
   /** Can't run: no Approve, no Check. bad-value: a value names something other than a saved secret. unusable: these fields can't be used. */
   refused?: { why: "reserved" } | { why: "bad-value"; names: string[] } | { why: "unusable"; names: string[] };

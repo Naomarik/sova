@@ -3,6 +3,7 @@ import type { McpRowState, McpServerRow, McpErrorLine } from "../../shared/mcp";
 import { CHARS_PER_TOKEN } from "../../shared/protocol";
 import type { McpEntry } from "./config";
 import { versionOf } from "./fingerprint";
+import { hasSignIn } from "./forget-sign-in";
 import { rowId } from "./ids";
 import { baseOf, refusalOf, secretNames, sourceOf } from "./resolve";
 import { hasSecret, secretValues, withoutSecrets } from "./saved-values";
@@ -56,7 +57,7 @@ export function rowOfEntry(owner: McpOwner, e: McpEntry, extras: RowExtras = {})
     tools: (record?.tools ?? []).map((t) => ({ name: t.name, ...(t.description ? { description: t.description } : {}), tokens: toolTokens(t), on: !off.has(t.name) })),
     errors,
     ...(row.last ? { lastCheck: { at: row.last.at, ok: row.last.ok } } : {}),
-    signsIn: e.kind === "address" && !authorized(e),
+    signsIn: e.kind === "address" && !authorized(e) && (hasSignIn(e) || (row.last?.version === version && !!row.last.needsSignIn)),
     ...(refused ? { refused } : {}),
     entry: {
       version,

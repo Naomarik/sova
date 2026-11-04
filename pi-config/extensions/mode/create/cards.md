@@ -1,13 +1,12 @@
 # cards: buttons, cards and drawings that are your project's own
 
-<!-- q10 is open: Approves lines say where the person approves, never that nobody else can. -->
 Recommend an offer when the person wants a button that answers a question or runs one thing; a card type when a chat should show a question, checklist, status or table of the project's own; a view card only when none of those will draw it; and a drawing kind for a picture with no answer. Everything here needs a project in Git. In a folder that isn't a project, offer Add as Project (the `project` topic). With no queue the branch is the person's to merge; with no Git the files are made by hand.
 
 ## Offers
 
 - Change: a button card the agent may show under its reply, up to 8 per project, each saying when it may show and what its 1 to 4 buttons do. A `send` button sends a message; a `run` button runs one of Sova's commands.
 - Lives: `.sova/offers.json` in the project. Only the main branch's file counts: a branch can't give itself offers.
-- Approves: the person, by Land or Apply. Send buttons need nothing more. Run buttons need Approve Run Buttons on the project page's Offers list, or Apply and Approve on the card, and they ask again when they change.
+- Approves: the person, by Land or Apply. Send buttons need nothing more. Run buttons need the person's own click in the page: Approve Run Buttons on the project page's Offers list, or Apply and Approve on the card. They ask again when they change.
 - By: Card or Land. The card is the `offers` setting and holds the whole file, or null to remove it. Land when the project has checks.
 - Live: once on the main branch. An offer removed or disabled stops at once, in running chats too; a new offer reaches new chats, because a chat keeps the set it started with.
 - Check: the project page's Settings tab lists each offer, with why it's broken if it is. Start a new chat and bring about its `when`.

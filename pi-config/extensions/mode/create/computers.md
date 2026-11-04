@@ -32,7 +32,7 @@ All of this works in any folder. It's about this computer and how it reaches oth
 ## What syncs
 
 - Change: which kinds of thing reach this computer's peers: settings, themes, extensions (listed only, never run) and logins. Settings includes new-session defaults, model favorites and policy, request limits, the mode, Delegate, Spec and Align settings, the subagent profile library, and the person's session profiles, which also need the sessions grant.
-- Lives: this computer's Settings → Mesh, and each peer's grant. Never synced: sessions, the theme a browser picked, the default subagent profile, device keys, a file that links into a Git checkout, and Claude Code's own login.
+- Lives: this computer's Settings → Mesh, and each peer's grant. Sova's own `settings.json` is among what syncs. Never synced: sessions, the theme a browser picked, the default subagent profile, device keys, a file that links into a Git checkout, and Claude Code's own login.
 - Approves: the person.
 - By: Screen. Settings → Mesh. Logins are chosen per peer on the Mesh page.
 - Live: now, on every peer that's up with that category on. The newest version wins, and a replaced settings file is kept on the computer it was replaced on. A category can reach a peer through a third computer.
@@ -109,6 +109,15 @@ The whole file, with one target:
 ]}
 ```
 
+## Experimental switches
+
+- Change: nothing today: Settings → Experimental has no features right now.
+- Lives: the Experimental tab of Settings.
+- Approves: nobody: there's no change to approve.
+- By: None.
+- Live: never, today.
+- Check: the tab says so.
+
 ## Install and service
 
 - Change: where Sova is installed, its port, and whether it starts at login.
@@ -120,7 +129,7 @@ The whole file, with one target:
 
 ## Environment settings
 
-- Change: what only the environment sets. `HOST`, `PORT`, `SOVA_PORT`, `PI_CODING_AGENT_DIR`; access: `SOVA_AUTH`, `SOVA_ALLOWED_HOSTS`, `SOVA_ALLOWED_ORIGINS`; runtime: `SOVA_RUNTIME`, `SOVA_BUN`, `SOVA_DIST`; mesh: `SOVA_PEER_PORT`, `SOVA_PEER_HOST`, `SOVA_MESH_IDENTITY`, `SOVA_TAILSCALE_SOCKET`, `SOVA_SYNC_LOGIN_KINDS`, `SOVA_BROWSER_ACCESS`; public links: `SOVA_SHARE_PUBLIC_URL`, `SOVA_SHARE_HOST`, `SOVA_SHARE_PORT`, `SOVA_SHARE_PREVIEW_URL`; extensions: `SOVA_EXTENSIONS_FILE`; keys: `SOVA_JEV_KEY`; voice: `SOVA_VOICE_DIR`, `SOVA_VOICE_MODEL`; usage: `SOVA_USAGE_POLL`, `SOVA_PRICES_FETCH`; chats: `SOVA_CHAT_IDLE_MIN`, `SOVA_CHAT_CLAUDE_IDLE_MAX`, `SOVA_WORKER_NICE`, `SOVA_SCRIPT_NICE`; uploads: `SOVA_BATON_UPLOADS_MAX_MB`, `SOVA_BATON_UPLOADS_FREE_MB`, `SOVA_PROJECT_FILES_MAX_MB`, `SOVA_PROJECT_FILES_FREE_MB`; others: `SOVA_GIT_MAINTENANCE`, `SOVA_LEAK_NAMES`, `SOVA_PROJECT_NO_SYSTEMD`, `SOVA_WA_HOME`, `SOVA_WA_SOCKET`.
+- Change: what only the environment sets. `HOST`, `PORT`, `SOVA_PORT`, `PI_CODING_AGENT_DIR`; access: `SOVA_AUTH`, `SOVA_ALLOWED_HOSTS`, `SOVA_ALLOWED_ORIGINS`; runtime: `SOVA_RUNTIME`, `SOVA_BUN`, `SOVA_NODE`, `SOVA_DIST`, `SOVA_URL`; install: `SOVA_REF`, `SOVA_NO_APP_ENTRY`; updates: `SOVA_UPDATES_CHECK`; tours: `SOVA_TOUR_BROWSER`; mesh: `SOVA_PEER_PORT`, `SOVA_PEER_HOST`, `SOVA_MESH_IDENTITY`, `SOVA_TAILSCALE_SOCKET`, `SOVA_SYNC_LOGIN_KINDS`, `SOVA_BROWSER_ACCESS`; public links: `SOVA_SHARE_PUBLIC_URL`, `SOVA_SHARE_HOST`, `SOVA_SHARE_PORT`, `SOVA_SHARE_PREVIEW_URL`; extensions: `SOVA_EXTENSIONS_FILE`; keys: `SOVA_JEV_KEY`; voice: `SOVA_VOICE_DIR`, `SOVA_VOICE_MODEL`; usage: `SOVA_USAGE_POLL`, `SOVA_PRICES_FETCH`; chats: `SOVA_CHAT_IDLE_MIN`, `SOVA_CHAT_CLAUDE_IDLE_MAX`, `SOVA_SCRIPT_NICE`; uploads: `SOVA_BATON_UPLOADS_MAX_MB`, `SOVA_BATON_UPLOADS_FREE_MB`, `SOVA_PROJECT_FILES_MAX_MB`, `SOVA_PROJECT_FILES_FREE_MB`; others: `SOVA_GIT_MAINTENANCE`, `SOVA_LEAK_NAMES`, `SOVA_PROJECT_NO_SYSTEMD`, `SOVA_WA_HOME`, `SOVA_WA_SOCKET`, `SOVA_WA_LIMITS`, `SOVA_WA_LOG_LEVEL`.
 - Lives: the environment of the server's service, on this computer.
 - Approves: the person.
 - By: Terminal. A chat can't set these for the server.

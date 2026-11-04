@@ -83,9 +83,18 @@ One target. `rollback` is required; `{"none": "<reason>"}` is the way to have no
 - Change: the name Sova shows for the project.
 - Lives: Sova's own settings for the project, not the project's files.
 - Approves: the person, by Apply.
-- By: Card. The `project` setting with `name`.
+- By: Card. `project.name`, proposed as the `project` setting with `name`.
 - Live: now, once applied.
 - Check: the project's page shows it, and its Settings history lists the change with Undo.
+
+## An organization's project
+
+- Change: its main stakeholder, whether it shows on the owner's page, and whether its spec is frozen. A project in no organization has none of these.
+- Lives: Sova's own settings for the project.
+- Approves: the person, by Apply. Showing it on the owner's page again and unfreezing the spec are marked as grants.
+- By: Card. `project.stakeholder`, `project.ownerHidden` and `project.frozen`, proposed as the `project` setting.
+- Live: now, once applied.
+- Check: the project page and the owner's page show it.
 
 ## Copy limit
 
@@ -101,6 +110,6 @@ One target. `rollback` is required; `{"none": "<reason>"}` is the way to have no
 - Change: the project's folder, or whether it's archived.
 - Lives: this computer's list of projects.
 - Approves: the person, on the project page, archiving with its own confirm.
-- By: Screen. The project page. No card holds these.
+- By: Screen. The project page. No card holds these: `project.archive` is the person's.
 - Live: now.
 - Check: the project page shows the new folder, or the Projects page lists it as archived.

@@ -591,7 +591,7 @@ function sovaWatch(url: string, origin: string): boolean {
     const u = new URL(url);
     if (!["ws:", "wss:"].includes(u.protocol) || `${u.protocol === "wss:" ? "https" : "http"}://${u.host}` !== origin || u.pathname !== "/ws/watch" || u.username || u.password || u.hash) return false;
     const keys = [...u.searchParams.keys()];
-    if (new Set(keys).size !== keys.length || keys.some(k => !["path", "feed", "tail", "wire", "have", "claude"].includes(k))) return false;
+    if (new Set(keys).size !== keys.length || keys.some(k => !["path", "feed", "tail", "wire", "have", "claude", "rows"].includes(k))) return false;
     return !u.searchParams.has("feed") || u.searchParams.get("feed") === "sessions";
   } catch { return false; }
 }

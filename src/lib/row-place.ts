@@ -16,6 +16,7 @@ import { createContext, createEffect, createMemo, createSignal, on, onCleanup, u
 import type { ExtensionInfo, SessionReadiness, SessionSummary } from "../../shared/protocol";
 import { offersPlace, screenPath } from "../../shared/extension-offers";
 import { readinessBadge, readinessTitle, readinessWord } from "./readiness";
+import { HEADLINE_WORDS, type HeadlineKind } from "./merge-queue";
 import { ExtensionsContext } from "./reply-place";
 import { CHIP_TONES, createSlotPolicy, readCappedJson, SLOT_TIMEOUT_MS, type ChipTone, type SlotPolicy, type SlotStorage } from "./reply-slot";
 import { hostOf } from "./mesh";
@@ -90,8 +91,15 @@ export const ROW_SOVA_WORDS: readonly string[] = [
   ...(["down", "skewed", "refused", "hidden"] as const).map((state) => hostTone(state).word!),
 ];
 const SOVA_WORDS = new Set(ROW_SOVA_WORDS.map((w) => w.toLowerCase()));
-/** The follow-up count ("2 follow-ups") and the worktree count ("2 of 3"). */
-const SOVA_FIGURES = [/^\d+ follow-ups?$/i, /^\d+ of \d+$/i];
+/** A headline's words as a figure: its number, any number, then its words ("1 needs a fix" → /^\d+ needs a fix$/). */
+const figureOf = (words: string): RegExp => new RegExp(`^\\d+${words.replace(/^\d+/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
+/** The follow-up count ("2 follow-ups"), the old worktree count ("2 of 3"), and every branch status the row's
+    status says ("1 needs a fix", "2 queued", "3 worktrees"), one and many, from the headline's own word table. */
+const SOVA_FIGURES = [
+  /^\d+ follow-ups?$/i,
+  /^\d+ of \d+$/i,
+  ...[...new Set((Object.keys(HEADLINE_WORDS) as HeadlineKind[]).flatMap((k) => [HEADLINE_WORDS[k](1), HEADLINE_WORDS[k](2)]))].map(figureOf),
+];
 
 /** Whether a label is one of Sova's own words on a row. */
 export const isRowSovaWord = (label: string): boolean => SOVA_WORDS.has(label.toLowerCase()) || SOVA_FIGURES.some((re) => re.test(label));

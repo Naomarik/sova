@@ -331,15 +331,16 @@
       "src/lib/org-region.ts",
       "server/baton-links.ts",
       "src/components/Sidebar.tsx",
-      "shared/baton.ts"
+      "shared/baton.ts",
+      "src/lib/needs-you-row.ts"
     ],
     "requires": [
       "§app.overseer/attention-digest"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-22T23:27Z",
-      "source": "pi-session:09630622-80b3-4537-b2ca-569a55a7ad6b#24177c8f"
+      "by": "user",
+      "at": "2026-11-04T00:57Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.baton/offers-and-leases": {

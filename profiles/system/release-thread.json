@@ -1,0 +1,10 @@
+{
+  "id": "release-thread",
+  "label": "Release chat",
+  "icon": "branch",
+  "description": "A release's chat, started by Sova: follows Sova's release method and the project's release playbook in the release worktree, and reports each step through the release verbs. Never pushes, tags or publishes. No web, no workers.",
+  "remove": ["web", "workers", "timers"],
+  "grant": [],
+  "singleton": false,
+  "overseerMayStart": false
+}

@@ -291,7 +291,7 @@ chip and adds Removed or Cleaned up. A row with a readiness
 (§chat.worktrees/readiness) adds a chip after the status chip — Ready to merge (the row's and
 the digest's words), Waiting for your OK, In progress, Blocked or Stale, with the reason as its
 `title` — and none while merged or removed, which the status chip already says. Its tone follows
-mergeability, as the list row's lit worktree count does (§app.session-list/content-rules): Ready
+mergeability: Ready
 to merge and Waiting for your OK are success, In progress neutral, Blocked and Stale warn. A
 worktree that is Ready to land (§chat.worktrees/ready-to-land) reads **Ready** (success) in
 place of Ready to merge or Waiting for your OK, and its line starts "Ready to land"; one Landing
@@ -397,26 +397,59 @@ Routine follow-ups, also mechanical:
 
 Git is read in the background, at most every 20 seconds per session while the file doesn't change,
 and only for session files that ever wrote a `worktrees` entry, so a listing never waits on git.
+The same read also reads the branches the session's chat counts in its worktrees control
+(§chat.composer/worktrees-control): every non-dropped worktree, its own and inherited ones, each with
+its folder, git's "already merged" and its merge queue entry, which travel with the row
+(`SessionSummary.branches`) for the row's branch status (§app.session-list/content-rules "Row line
+3"). It reads them for every session but an Overseer or a project Overseer, a worker's, a baton's
+and a target session's included, though readiness itself still covers none of those and they never
+own a branch.
 
-**The row's count** (§app.session-list/content-rules) counts a worktree as merged when git finds
+Each branch's queue entry is joined at listing time from its queue's newest view, with no git read,
+and a change there re-lists the sessions, as does a queue's first view after a server start when it
+holds entries. So a change the queue makes reaches the list within seconds, as the queue publishes
+it. Reading a row runs no queue view unless the list has none of that queue yet. Every few seconds
+while the list is being watched, a look that spawns no git catches what moves with no queue change:
+the target's head, a sent-back branch or its worktree going, a project leaving the list. That reads
+the view once; a read that failed counts for nothing and is tried again at the next look, and refs
+moving during a read get it read again. A repo nothing can stamp has its view read every 20 seconds.
+
+Git's "already merged" answer and a repo's merge setup are kept while the refs they rest on don't
+change, so sessions on one tree share a read and an idle row asks git nothing; refs moving during a
+read are never taken as seen. Past that:
+
+- each is kept 30 minutes at most, which bounds what no stamp sees (the queue's view has the same
+  limit) and all a failed "already merged" read can last. A setup read that found no commit, or that
+  failed outright, is never kept;
+- where nothing can stamp them (a folder with no `.git` left, a reftable repo), an "already merged"
+  answer stands five minutes and a merge setup isn't kept at all;
+- a tree's project stands while its `.git` is unchanged, five minutes where it has none.
+
+A row whose queue view failed is put right by its next read. Rows read before the queue started and
+rows of a repo gaining service are read again then, archived ones too, and a queue leaving service
+takes its facts off its rows. What this means for a row against its chat, and the known bounds, is
+in §app.session-list/content-rules "Row line 3".
+
+**Merged, clean or not.** Each worktree's readiness carries, beside its state, whether git finds
 its branch merged into its base (the merged rule above without the clean tree), clean or not, or,
-its folder gone, when it reads merged by the removed rule above. A merged tree with uncommitted changes therefore
-counts as merged there while its own state stays stale or in progress, as above: the count's
-`title`, the Session tab's chip, the badge and the attention digest still read that state. Each
-worktree's readiness carries the fact (`merged: true`) beside its state.
+its folder gone, whether it reads merged by the removed rule above (`merged: true`). A merged tree
+with uncommitted changes carries it while its own state stays stale or in progress, as above: the
+Session tab's chip, the badge and the attention digest still read that state. The session row no
+longer counts merged worktrees: it shows the chat's branch status instead
+(§app.session-list/content-rules "Row line 3", §chat.composer/worktrees-control).
 
 **The row's badge** (§app.session-list/anatomy) is one short phrase from the session's worktrees,
 the first that holds: "Waiting for your OK" (a worktree waits for the go-ahead) and "Ready to
-merge" (one is ready) — the two states the row's count already lights for, and the two the
+merge" (one is ready) — two states the row's branch status already says, and the two the
 Overseer's decide tier words ("Ready to merge: {branch}", §app.overseer/attention-digest) — none
 while another worktree is in progress, stale or blocked (the busy and open-question
 marks say it), "restart pending", the follow-up count ({n} = only the
 §app.decisions/merge-followup answer when it names small or significant work; leftover worktrees
 — cleanup — are said only in the `title`, never counted), and "merged". **The row writes only the
-two a count cannot**: "restart pending", and the follow-up count as "{n} follow-up(s)" — never
-"merged", which the count already says, and never the ready or waiting phrases, which the count's
-own light and `title` carry. An **empty leftover
-worktree** — no commit of its own, a clean tree, nothing running — never changes the count. Its `title` names each worktree with its state and every
+two its branch status cannot**: "restart pending", and the follow-up count as "{n} follow-up(s)",
+after the status — never "merged", and never the ready or waiting phrases, which the status and
+its words carry. An **empty leftover
+worktree** — no commit of its own, a clean tree, nothing running — never changes the badge. Its `title` names each worktree with its state and every
 routine follow-up in words, one line each.
 The session's `readiness` travels with its row in the session list (`SessionSummary.readiness`),
 so the Overseer reads the same answer. An open offer card (§chat.offers/card) is no reply that

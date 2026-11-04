@@ -51,7 +51,7 @@ export const LAND_HOWS: readonly LandHow[] = ["local", "github-pr", "gitlab-mr",
 
 /** How the user approved: the Land button (composer modal, session pane, Merge Queue view) or "land it" typed in the
  *  branch's own chat (ingested from the worktree tool's go-ahead record). */
-export type ApprovalBy = "land-button" | "typed";
+export type ApprovalBy = "land-button" | "typed" | "release";
 
 export interface MergeApproval {
   by: ApprovalBy;
@@ -127,7 +127,7 @@ export interface MergeNote {
 export const NOTE_MAX = 300;
 
 /** A check the run will run, and why it is in the list. */
-export type CheckSource = "required" | "trigger" | "picked";
+export type CheckSource = "required" | "trigger" | "picked" | "release";
 export interface CheckPick {
   /** A check id from the project's merge section (required or optional), or `test` for its test command. */
   id: string;
@@ -226,6 +226,11 @@ export interface MergeEntry {
   request?: MergeRequestInfo;
   /** Estimates (ms): when it should start from now, and how long its run takes. */
   eta?: { startsInMs: number; takesMs: number };
+  /** The release this entry belongs to (rl_…): its release commit, or the revert of an abandoned one. Sova adds it
+   *  (approval `by: "release"`); it alone lands while that release holds the queue. */
+  release?: string;
+  /** A release entry's kind: the release commit, or the revert of an abandoned release's landed commit. */
+  releaseKind?: "release" | "revert";
   /** needs-fix only, derived when the view is read (never stored): the entry no longer needs a fix. `superseded`: the
    *  branch has a later entry for the same target; `merged`: its sent-back commit or the branch's tip is already in the
    *  target; `gone`: the branch or its worktree folder was removed. A settled entry leaves the Sent back list. */
@@ -403,9 +408,25 @@ export interface MergeQueueView {
   ready?: MergeReady[];
   /** Try It on Main (merge.setup dryRun): the run in flight, or the last one. */
   tryRun?: MergeRun;
+  /** A release holds the queue (the freeze banner): only its entries land and nothing is pushed until it is
+   *  published or abandoned. */
+  release?: MergeReleaseHold;
   /** Every setting the queue uses, where each is kept, and the saves the Settings tab may make. */
   settings?: import("./merge-queue-settings").MergeQueueSettings;
   at: string;
+}
+
+/** The release holding a project's queue. `state`: the release record's (shared/release.ts ReleaseState). */
+export interface MergeReleaseHold {
+  id: string;
+  /** The release's version (0.4.0) once picked, else null. */
+  version: string | null;
+  /** Its numbered tag (v0.4.0) once the version is picked, else null: what the screens name it by. */
+  tag?: string | null;
+  state: string;
+  /** The target's commit at the release's start. */
+  base: string;
+  since: string;
 }
 
 /** What the session's worktree rows read (SessionWorktreeInfo.queue): the newest entry for that branch. */
@@ -426,6 +447,22 @@ export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "
   /** The project has a review kit (the Land menu shows "Land without review"). */
   reviewKit?: boolean;
 };
+
+/** A branch's entry as the session list carries it (protocol.ts SessionBranchQueue): its state, never a precomputed
+ *  key, so a new state flows through, and the fields a row's words read. */
+export type BranchQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit" | "position" | "reason" | "conflict" | "review" | "request" | "settled">;
+
+/** The session list's cut of a worktree row's queue entry. Pure. */
+export const branchQueueOf = (q: WorktreeQueueInfo): BranchQueueFacts => ({
+  state: q.state,
+  commit: q.commit,
+  ...(q.position ? { position: q.position } : {}),
+  ...(q.reason ? { reason: q.reason } : {}),
+  ...(q.conflict ? { conflict: q.conflict } : {}),
+  ...(q.review ? { review: q.review } : {}),
+  ...(q.request ? { request: q.request } : {}),
+  ...(q.settled ? { settled: q.settled } : {}),
+});
 
 export interface MergeReady {
   branch: string;

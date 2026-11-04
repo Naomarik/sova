@@ -97,7 +97,13 @@ It needs the power `onboard` when the overseer starts it on its own, and it is r
 archived, when the project's folder is not on this host ("{name}'s folder is on {target}: the
 playbook runs only on a local folder." or "{name}'s folder {root} is missing on this host."), when
 the playbook is missing ("No playbook \"project-verbs\" is listed for {name}."), while a run
-is already live ("The Project verbs playbook is already running: \"{title}\"."), and, for an
+is already live ("The Project verbs playbook is already running: \"{title}\"."), and so while an
+earlier setup run's chat is still open, read from the project's builds even when the run's region
+lost it: working, waiting on alignment questions, or holding commits not merged counts as live;
+ended with no change, its chat neither archived nor its worktree removed, it holds a start too, as
+"The last setup run, \"{title}\", ended with no change but its chat is still open: open that chat to
+carry on, or archive it to start over." (Set Up Releases shows either as sent, with Open Chat for
+that run, §app.release/tab); and, for an
 unattended overseer, while the software is registered and current ("The project's software is
 registered and current: the playbook has nothing to do.").
 
@@ -114,7 +120,7 @@ the next turn (the operator's answer) moves it back to running. The registry's f
 "The Project verbs playbook was started{: why}.", "The Project verbs playbook could not start.",
 "The Project verbs playbook finished with no change.", "The Project verbs playbook proposes a
 definition on {branch}: read it, then merge it." ("… proposes a deploy recipe on {branch}: …" for a playbook
-that proposes `deploy`; sova_project's Software block says the same of the run), "The Project verbs playbook waits on your answers in
+that proposes `deploy`, "… proposes a release setup on {branch}: …" for one that proposes `release`; sova_project's Software block says the same of the run), "The Project verbs playbook waits on your answers in
 its session.", "The Project verbs playbook's branch was merged." and "The Project verbs playbook's worktree was removed."
 
 ## §app.project-runtime/playbook — The Project verbs playbook
@@ -203,7 +209,8 @@ one with a Sensitive chip in warn whose title says "Derived from production: cop
 shared."; "Proven {time} at {hash12} (suite v{n})";
 "Changed since: {paths}" while stale; "Failed at {check}: {detail}" while failed; the playbook
 run's line as a link to its session (while proposed, "The {Title} playbook proposes a definition on
-{branch}", or "… proposes a deploy recipe on {branch}" for a playbook that proposes `deploy`); and, under its own "Feed" label after the actions, the registry's latest feed lines, newest first, with
+{branch}", or "… proposes a deploy recipe on {branch}" for a playbook that proposes `deploy`, "…
+proposes a release setup on {branch}" for one that proposes `release`); and, under its own "Feed" label after the actions, the registry's latest feed lines, newest first, with
 the project's onMerge notes (§app.project-services/on-merge) and deploy notes
 (§app.project-services/deploy-status) among them. Its actions are
 **Run Playbook** (**Run Again** once registered), shown only while the statechart would take it,
@@ -220,7 +227,8 @@ run is proposed, its session has an act-tier attention item (§app.overseer/atte
 `playbook-review`, dated by its last turn's end: "{Title}: merge {hash12} into {target}", or
 "{Title}: its branch {branch} has no valid definition: read its report" when the branch's definition
 is absent or invalid (for a playbook that proposes `deploy`, the hash is its deploy recipe's, and "no
-valid deploy recipe" when the branch declares none) ({Title} the playbook's title, `target` the
+valid deploy recipe" when the branch declares none; for one that proposes `release`, the hash is its
+release setup's, and "no valid release setup") ({Title} the playbook's title, `target` the
 branch the run's worktree merges into). So it lists in the sidebar's Needs you as the run's session
 row, counts in the Overseer's "need you", and is a phone-notification kind, "Playbook needs you", on
 by default (§app.notifications/delivery). The item goes only when the run leaves proposed: its branch
@@ -229,10 +237,11 @@ merged, its worktree removed, or the run working again (a new turn); never on a 
 While the run is proposed, the project page shows a banner above its summary, on every tab: "{Title}
 proposes {hash12} on {branch}." with "Read it, then merge it into {target}." (with no valid
 definition on the branch, "{Title} proposes changes on {branch}." with "Its branch has no valid
-definition: read its report."), its action **Merge Branch** (§app.project-runtime/merge; none when
+definition: read its report."); a run that proposes `release` names no hash there, since its hash
+pins settings and playbook files together: "{Title} proposes a release setup on {branch}.", its action **Merge Branch** (§app.project-runtime/merge; none when
 there is nothing valid to merge) and a link to the run's session, **Read Report**. The Needs-you row
-of a `playbook-review` item carries the same button under it, the one exception to that region's
-rows having no button of their own (§app.session-list/needs-you).
+of a `playbook-review` item carries the same button beside the row's link, and its action words read
+"Read Report" (§app.session-list/needs-you).
 
 ## §app.project-runtime/merge — Merge Branch
 
@@ -241,7 +250,10 @@ run's session (§app.project-overseer/coding-worktrees) with all of its refusals
 refused 409, merging nothing, when `hash` is no longer the one the branch proposes ("The definition
 changed since it was shown: look again."). For a run whose playbook proposes `deploy`
 (§app.project-runtime/verb-playbooks), `hash` is the recipe's own deploy hash at the branch's tip,
-and the sentence is "The deploy recipe changed since it was shown: look again.". A merge that is
+and the sentence is "The deploy recipe changed since it was shown: look again.". For one that
+proposes `release`, `hash` is the release setup's own: a digest of the branch's `release` section
+together with its release playbook folder's tree at the tip (§app.release/maker), and the sentence
+is "The release setup changed since it was shown: look again.". A merge that is
 refused answers 409 with "The merge was refused: {its reason}". With no run proposed it is refused
 409: "No playbook run is proposed." It answers the registry, read again. The Software card shows
 **Merge Branch** while a run is proposed, beside the banner's and the Needs-you row's; each says, on
@@ -278,15 +290,22 @@ yet"). For a run whose playbook proposes `deploy`, the registry's read of the pr
 branch's deploy recipe as Sova renders it: for each target, in the order they run, every credential
 check, plan step, build step, step and rollback step as an argv with this host's `${host.…}` values in
 place (a name this host lacks shown unset, never guessed), its verify and its rollback; the Software
-card shows it under the review. A branch with no valid definition says why ("Its branch has no .sova/project.json." / "The
+card shows it under the review. For a run whose playbook proposes `release`, it carries the branch's
+release setup instead: the settings line (tag and scheme, the channels moved, a release commit or
+tag-only, the gating checks, the quiet minutes, the playbook's folder), the manifest's steps grouped
+"Before the checks", "After the checks, before Publish", "After Publish" and "After a Withdraw" (held
+steps marked "Held for you", built-file steps marked), the playbook's files, or the problem when the
+section, the folder, `release.json` or `PLAYBOOK.md` is missing or doesn't parse; the Software card
+and the Releases tab (§app.release/tab) show it. A branch with no valid definition says why ("Its branch has no .sova/project.json." / "The
 definition on its branch is invalid: {error}"). Under it, **Read Report** links to the run's session,
 whose last message is its report.
 
 ## §app.project-runtime/verb-playbooks — Verb playbooks
 
 A verb playbook is a playbook whose `PLAYBOOK.md` frontmatter says what it proposes,
-`proposes: definition` (the project's `.sova/project.json`, §app.project-services/contract) or
-`proposes: deploy`. `project-verbs` proposes `definition`. `verbs/onboard`'s `playbook` names one
+`proposes: definition` (the project's `.sova/project.json`, §app.project-services/contract),
+`proposes: deploy` or `proposes: release` (the `release` section with the project's release
+playbook folder, §app.release/maker). `project-verbs` proposes `definition`. `verbs/onboard`'s `playbook` names one
 by its id (lower case letters, digits and hyphens, else 400 "No playbook "{id}": a playbook id is
 lower case letters, digits and hyphens."). The registry's run is keyed by the
 playbook's id: it records the id, the playbook's title and what it proposes, and the run strip, the
@@ -337,7 +356,8 @@ The project page's Overview has a **Deploy** card under the Software card, the o
 how the project ships, reading `deploy.status` every 5 seconds. With no deploy declared on main it says
 "Main declares no deploy yet." and offers **Set Up Deploy**, which starts the Project deploy playbook
 (§app.project-runtime/deploy-playbook). Each target is a row: its name, its standing chip
-(Declared, Not declared; §app.project-runtime/deploy-standing), its
+(Declared, Not declared; §app.project-runtime/deploy-standing), the release it runs ("Runs
+{tag}", "(withdrawn)" when it is; §app.release/deploy), its
 about, its last deploy with a state chip (Deploying, the live indicator; Deployed; Failed; Verify failed;
 Interrupted) and its line ("Deployed {commit7} · {url} answered 200", "Deploy of {commit7} failed:
 {why}"), and an overseer's request ("The overseer asks: deploy {commit7} to {target}? {why}"). A
@@ -345,7 +365,9 @@ declared target offers **Plan Deploy** (**Open Plan** while a request waits); it
 one line that opens to each check ("{n} checks passed", or "{k} checks passed · {m} let through", open from
 the start when any is let through), what will run in a fresh checkout of the commit, and "Expires in {n} min"; a refusal says why, and when it
 needs a typed reason it asks for it ("Let it through without passing tests, because", "… with main's
-tree dirty, because") and offers **Plan Again**. A plan offers **Deploy {commit7}**, then a one-line
+tree dirty, because") and offers **Plan Again**. Plan Deploy of {tag} on the Releases tab plans its target
+here at the release's commit, scrolled into view, with "Planning release {tag} ({commit7})." and **Plan
+the Branch Tip Instead**. A plan offers **Deploy {commit7}**, then a one-line
 confirm ("This ships {commit7} to {target}: {about}. Everyone using it gets it.", the period added only when
 {about} doesn't end its own sentence) with **Deploy Now** and
 **Cancel**. **Roll Back** (outlined destructive, its title saying what it does) confirms the same way with

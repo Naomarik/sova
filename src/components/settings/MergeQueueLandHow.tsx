@@ -1,5 +1,5 @@
 import { createMemo, createSignal, For, Show } from "solid-js";
-import { HOW_HINT, HOW_LABEL, HOW_SHORT, inEffectWords, LAND_HOWS, signInWords, suggestionWords, type LandHow, type LandHowSetting } from "../../lib/merge-queue-requests";
+import { HOW_HINT, HOW_LABEL, HOW_SHORT, inEffectWords, LAND_HOWS, landHowWaitingWords, signInWords, suggestionWords, type LandHow, type LandHowSetting } from "../../lib/merge-queue-requests";
 import { clearLandHowOverride, saveLandHow } from "../../lib/merge-queue-requests-client";
 import { short } from "../../lib/merge-queue";
 import { announce, toast } from "../../lib/ui-state";
@@ -47,7 +47,7 @@ export function MergeQueueLandHow(props: { project: string; target: string; sett
       const r = await saveLandHow(props.project, how, where());
       if (!r.ok) return fail(r.message);
       if (where() === "computer") return done(`${HOW_SHORT[how]} on this computer, from the next Land.`);
-      if (r.body.state === "waiting") return done(`${HOW_SHORT[how]} saves to the project file when the current branch finishes.`);
+      if (r.body.state === "waiting") return done(landHowWaitingWords(how, r.body.release));
       done(`${HOW_SHORT[how]} saved to ${props.target}${r.body.commit ? ` as ${short(r.body.commit)}` : ""}; pushed with the next landing.`);
     } finally {
       setBusy(false);

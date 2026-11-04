@@ -114,7 +114,7 @@ placement.
   goes ahead at its end unless cancelled (a hold saved while it waited for a review goes ahead at the next
   resume). The Project Assistant's acts (`by` assistant) use their own column and are held like the
   overseer's. `project` `services/reset` (reset, teardown: `copiesReset`) is split from `services/run`, and
-  `deploy/run` (power `deploy`, held, effect `deploy-run`) runs the project's own recipe. `watch` v2 keeps
+  `deploy/run` (power `deploy`, held, effect `deploy-run`) runs the project's own recipe. `release/run` (power `release`, held, effect `release-run`) starts a release or publishes a ready one. `watch` v2 keeps
   both columns in its settings (v1's level migrates by the carry-over). Tests: `registry_test`,
   `powers_test`, `holds_test`.
 - **r8a feed classes**: every transition declares `:sova/feed` (rule in EVENTS.md); `registry_test`

@@ -42,16 +42,16 @@
     (is (= {"sova_correct" #{"bookkeeping" "markMerged"}
             "sova_idea" #{"always"}
             "sova_start_gathering" #{"always" "gather"}
-            "sova_project_verbs" #{"always" "copiesRun" "copiesReset" "share" "onboard" "deploy"}}
+            "sova_project_verbs" #{"always" "copiesRun" "copiesReset" "share" "onboard" "deploy" "release"}}
            (select-keys by-tool ["sova_correct" "sova_idea" "sova_start_gathering" "sova_project_verbs"])))
     (doseq [t ["sova_close_gathering" "sova_send_to_person" "sova_owner_update" "sova_roster" "sova_promote" "sova_create_session" "sova_send" "sova_preview" "sova_reconcile"]]
       (is (= 1 (count (get by-tool t))) t))))
 
 (deftest the-power-table-matches-shared-powers
   ;; shared/powers.ts POWER_INFO, as the statecharts keep it (a server test compares the bundle's copy too)
-  (is (= ["gather" "whatsapp" "ownerUpdates" "roster" "promote" "bookkeeping" "codingStart" "codingPrompt" "onboard" "markMerged" "copiesRun" "copiesReset" "share" "deploy"] pw/powers))
+  (is (= ["gather" "whatsapp" "ownerUpdates" "roster" "promote" "bookkeeping" "codingStart" "codingPrompt" "onboard" "markMerged" "copiesRun" "copiesReset" "share" "deploy" "release"] pw/powers))
   (is (= {"L1" #{"gather" "whatsapp" "ownerUpdates" "bookkeeping" "share"} "L2" #{"roster" "promote" "markMerged"}
-          "L3" #{"codingStart" "codingPrompt" "onboard" "copiesRun" "copiesReset"} nil #{"deploy"}}
+          "L3" #{"codingStart" "codingPrompt" "onboard" "copiesRun" "copiesReset"} nil #{"deploy" "release"}}
          (reduce (fn [acc p] (update acc (:old (pw/info p)) (fnil conj #{}) p)) {} pw/powers)))
   (is (= #{"gather" "codingStart" "codingPrompt" "copiesRun" "deploy"} (set (filter #(:assistant (pw/info %)) pw/powers)))))
 
@@ -67,12 +67,12 @@
   (let [now (at/table)
         bad (for [k (sort (into (set (keys now)) (keys ag/golden))) :when (not= (get now k) (get ag/golden k))]
               [k :now (get now k) :golden (get ag/golden k)])]
-    (is (= 83 (count ag/golden)))
+    (is (= 84 (count ag/golden)))
     (is (empty? bad) (str (count bad) " differ: " (pr-str (take 10 bad))))))
 
 (deftest exactly-these-acts-are-held
   (is (= #{["baton" ":baton/close"] ["build" ":build/prompt"] ["item" ":build/start"] ["item" ":gather/start"]
            ["person" ":person/approve"] ["person" ":person/decline"] ["placement" ":baton/start"] ["project" ":build/start"]
            ["placement" ":owner-update/post"] ["placement" ":outreach/send"] ["project" ":preview/start"] ["project" ":services/share"] ["project" ":session/prompt"] ["project" ":verbs/onboard"] ["reconciler" ":decision/promote"]
-           ["project" ":deploy/run"]}
+           ["project" ":deploy/run"] ["project" ":release/run"]}
          (set (for [[k m] (at/table) :when (:hold m)] k)))))

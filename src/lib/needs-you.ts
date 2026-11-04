@@ -35,6 +35,8 @@ export interface NeedsYouRow {
   /** A proposed verb playbook run's item (`playbook-review`): what the row's Merge Branch needs
       (§app.project-runtime/review), the one button a Needs you row carries. */
   playbook?: NonNullable<AttentionItem["playbook"]>;
+  /** The kind of the item its line says (its chip's word, lib/needs-you-row). */
+  kind: AttentionItem["kind"];
   /** Only guesses list it (soft items): it sits in the softer tier, under the blockers. */
   soft: boolean;
 }
@@ -49,32 +51,38 @@ export interface NeedsYouRow {
 export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined, sessions: readonly SessionSummary[]): NeedsYouRow[] {
   if (!digest) return [];
   const byPath = new Map(sessions.map((s) => [s.path, s]));
-  const acc = new Map<string, { session: SessionSummary; since: number; details: { at: number; text: string }[]; playbook?: NeedsYouRow["playbook"]; soft: boolean }>();
+  const acc = new Map<string, { session: SessionSummary; since: number; details: { at: number; text: string; kind: AttentionItem["kind"] }[]; first: AttentionItem["kind"]; playbook?: NeedsYouRow["playbook"]; soft: boolean }>();
   for (const it of digest.items) {
     if (!listsInNeedsYou(it)) continue;
     const session = byPath.get(it.path);
     if (!session) continue;
     let a = acc.get(it.path);
-    if (!a) acc.set(it.path, (a = { session, since: it.since, details: [], soft: true }));
+    if (!a) acc.set(it.path, (a = { session, since: it.since, details: [], first: it.kind, soft: true }));
     if (!it.soft) a.soft = false;
     a.since = Math.max(a.since, it.since);
-    if (it.detail) a.details.push({ at: it.since, text: it.detail });
+    if (it.detail) a.details.push({ at: it.since, text: it.detail, kind: it.kind });
     if (it.kind === "playbook-review" && it.playbook) a.playbook = it.playbook;
   }
   return [...acc.values()]
     .map((a) => {
       // Newest first; the sort is stable, so one time keeps the digest's own order (most urgent kind first).
-      const details = a.details.sort((x, y) => y.at - x.at).map((d) => d.text);
-      return { session: a.session, since: a.since, details, detail: details[0] ?? null, soft: a.soft, ...(a.playbook ? { playbook: a.playbook } : {}) };
+      const sorted = a.details.sort((x, y) => y.at - x.at);
+      const details = sorted.map((d) => d.text);
+      return { session: a.session, since: a.since, details, detail: details[0] ?? null, kind: sorted[0]?.kind ?? a.first, soft: a.soft, ...(a.playbook ? { playbook: a.playbook } : {}) };
     })
     // Blockers first, then the softer tier; each newest first.
     .sort((a, b) => Number(a.soft) - Number(b.soft) || b.since - a.since || a.session.path.localeCompare(b.session.path));
 }
 
+/** A project's release items: each opens its Releases tab. */
+export const RELEASE_KINDS: readonly AttentionItem["kind"][] = ["release-ready", "release-request", "release-held", "release-failed", "release-quiet"];
+export const isReleaseItem = (it: Pick<AttentionItem, "kind">): boolean => RELEASE_KINDS.includes(it.kind);
+
 /** The digest kinds of no session the region lists itself (a project's deploy, §app.project-services/deploy-status;
+    a project's release waiting on you: ready to publish, asked for, a step held or failed, its chat quiet;
     WhatsApp sending down, §app.outreach/sender-health; an org owner's request, outage or ask for a new link,
     §app.project-assistant/requests). */
-const DEPLOY_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["deploy-failed", "deploy-request", "whatsapp-down", "owner-request", "owner-outage", "owner-link-request", "owner-version-request", "owner-feature-ended", "owner-request-closed"]);
+const DEPLOY_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["deploy-failed", "deploy-request", "whatsapp-down", "owner-request", "owner-outage", "owner-link-request", "owner-version-request", "owner-feature-ended", "owner-request-closed", ...RELEASE_KINDS]);
 
 /**
  * The region's items of no session: a deploy target whose latest deploy failed, an overseer's request to deploy,
@@ -107,8 +115,12 @@ export const storedNeedsYouOpen = (raw: string | null): boolean => raw !== "0";
 export const needsYouOpen = (input: { stored: boolean; searching: boolean }): boolean => input.searching || input.stored;
 
 /** The head's title: what the region is, with its count. */
-export const needsYouTitle = (n: number, deploys = 0, whatsapp = false): string => {
-  const others = [...(deploys ? [`${deploys} deploy item${deploys === 1 ? "" : "s"}`] : []), ...(whatsapp ? ["WhatsApp sending"] : [])].join(" and ");
+export const needsYouTitle = (n: number, deploys = 0, whatsapp = false, releases = 0): string => {
+  const others = [
+    ...(deploys ? [`${deploys} deploy item${deploys === 1 ? "" : "s"}`] : []),
+    ...(releases ? [`${releases} release item${releases === 1 ? "" : "s"}`] : []),
+    ...(whatsapp ? ["WhatsApp sending"] : []),
+  ].join(" and ");
   if (!n) return `${others || "Nothing"} waiting on you.`;
   const sessions = n === 1 ? "The 1 session waiting on you" : `The ${n} sessions waiting on you, newest first`;
   return others ? `${sessions}, and ${others}.` : `${sessions}.`;

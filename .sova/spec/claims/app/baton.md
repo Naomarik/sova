@@ -884,7 +884,8 @@ The allowed public paths also include token-scoped reads for visible bound tour 
 - When the baton is handed to the operator (by `hand_to`, by Take back, or at the budget limit)
   the session **needs the operator**: an act-tier attention item `baton-needs-you`, "<from> → you:
   <question>" (≤ 200 characters), in the digest (§app.overseer/attention-digest) and so the
-  Organizations region's Needs you (§app.session-list/organizations), never the global one. The operator's reply clears it.
+  Organizations region's Needs you (§app.session-list/organizations), never the global one, as a row
+  with the state word **Your turn** and that sentence as its detail. The operator's reply clears it.
 - When a person holds the baton through a hand-off with no live link, the same item says "Send
   <name> their link: <question>"; getting the link, or sending it (§app.outreach/send), clears it.
   Never for the owner holding their own feature request chat: they answer on their owner page

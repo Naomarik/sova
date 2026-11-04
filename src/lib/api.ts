@@ -1497,6 +1497,20 @@ export async function runMergeVerb(project: string | null, verb: `merge.${string
     throw err;
   }
 }
+/** A release verb as the operator (release.status, release.start, release.publish, …): `project` is the project's root.
+    A refusal is a result too, never thrown. */
+export async function runReleaseVerb(project: string, verb: `release.${string}`, body: Record<string, unknown> = {}): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", { ...body, project }));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** Set Up Releases: the Release playbook maker, a guided setup that proposes the project's release playbook and settings. */
+export const runReleaseSetup = (projectId: string) =>
+  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "release-maker" }));
 /** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
 export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
 /** What runs on this host now, every project's (Running branches on `#/projects`). */

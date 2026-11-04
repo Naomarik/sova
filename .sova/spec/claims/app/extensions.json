@@ -172,7 +172,7 @@
       "§chat.worktrees/readiness"
     ],
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "shared/extension-offers.ts",
       "shared/protocol.ts",
@@ -190,7 +190,12 @@
       "src/lib/session-row.snapshot.json",
       "server/extension-offers-row.test.ts",
       "scenarios/row-place.json"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T16:05Z",
+      "source": "pi-session:01a1a1b7-c99c-75b6-8a92-b66649ed6742#43572b80"
+    }
   },
   "§app.extensions/serving": {
     "kind": "behavior",

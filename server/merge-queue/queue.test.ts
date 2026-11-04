@@ -16,6 +16,26 @@ const landed = (k: ReturnType<typeof makeKit>, id: string) =>
     return e.state === "landed" && e.landed?.pushed !== "pending";
   }, `${id} landed`);
 
+describe("the session list's view", () => {
+  test("a fresh view says a sent-back branch settled at once; the timed view may still say it hasn't", async () => {
+    const k = makeKit();
+    try {
+      k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed" }));
+      const q = await k.q();
+      const b = k.repo.branch("feat/bad", { "bad.txt": "x\n" });
+      const { entry } = await q.add({ branch: "feat/bad", by: "land-button" });
+      await until(async () => (await k.entry(entry.id)).state === "needs-fix", "sent back");
+      assert.equal((await q.view()).needsFix[0]?.settled, undefined);
+      sh(k.repo.root, "worktree", "remove", "--force", b.path);
+      sh(k.repo.root, "branch", "-D", "feat/bad");
+      assert.equal((await q.view()).needsFix[0]?.settled, undefined, "the head is unmoved: the 15 s cache answers");
+      assert.equal((await q.view({ fresh: true })).needsFix[0]?.settled, "gone");
+    } finally {
+      await k.done();
+    }
+  });
+});
+
 describe("approval", () => {
   test("Land pins the commit; the run lands exactly the tested merge on master, the main folder moves with it, origin is pushed, the chat is told", async () => {
     const k = makeKit();

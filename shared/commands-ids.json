@@ -202,6 +202,17 @@
     "playbook.list",
     "draft-spec.list",
     "session.context.view",
+    "project.verb.release.status",
+    "project.verb.release.logs",
+    "project.verb.release.request",
+    "project.verb.release.start",
+    "project.verb.release.step",
+    "project.verb.release.notes",
+    "project.verb.release.continue",
+    "project.verb.release.retry",
+    "project.verb.release.publish",
+    "project.verb.release.abandon",
+    "project.verb.release.withdraw",
     "overseer.abilities"
   ],
   "retired": [

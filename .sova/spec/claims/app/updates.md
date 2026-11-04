@@ -6,7 +6,8 @@ The **Updates · this machine** section at the bottom of Settings → General
 newer, and upgrades this machine's copy when the operator says so, or by itself when Upgrade
 automatically is on. The **Server · this machine** block above it says when this server started
 and restarts it, from there or from Sova's command line (§app.updates/restart). An upgrade never
-moves to older code, never touches a copy it can't move
+moves to older code on its own (going back from a withdrawn release is the operator's button only),
+never touches a copy it can't move
 safely, and keeps the version that runs now until the new one answers. The server owns all of it:
 checks run whether or not a browser is open, and the state lives in `<stateRoot>/updates.json`.
 
@@ -66,8 +67,9 @@ checks once a day, whether or not any browser is open. When the last check ran i
 check waits for the rest of the day. A check that couldn't reach the repository tries again an hour
 later. **Check Now** checks at once, whatever the checkbox says.
 
-A check reads the repository's refs with `git ls-remote` (no GitHub API), and fetches the source's
-commit into a private ref namespace of the checkout (`refs/sova-updates/*`), touching no branch,
+A check reads the repository's refs with `git ls-remote` (no GitHub API), the numbered releases'
+withdrawn markers (`refs/tags/withdrawn/*`, §app.release/withdraw) among them, and fetches the
+source's commit and those markers into a private ref namespace of the checkout (`refs/sova-updates/*`), touching no branch,
 no tag, no `HEAD` and no working file. In a shallow clone (the installer's) the first check fetches
 the history it needs to compare. It finds one of:
 
@@ -80,6 +82,12 @@ the history it needs to compare. It finds one of:
   resume when Stable catches up." No button. Sova never moves to older code: a newer numbered
   release is the only way forward from a release, and otherwise the source must contain the
   running commit.
+- **Withdrawn** — for Stable, the release that runs carries a withdrawn marker: a warning says
+  "{tag} was withdrawn: {why}." and "This copy runs a release that was taken back {when}. Nothing
+  changes on its own; Go Back to {previous} moves it to the release before.", the result line says
+  "Stable is back on {previous}.", never "ahead", and an installed copy is offered **Go Back to
+  {previous}** (the upgrade's own confirm and job). A developer copy is told the same and offered
+  nothing: it is never moved back.
 - **Diverged** — neither contains the other (the branch was rewritten, or the copy runs a branch
   the source never had). An installed copy offers to install the source as it is now, saying it was
   rewritten; a developer copy refuses ("Your copy's branch isn't part of master's history, so we
@@ -151,7 +159,8 @@ stays in the section for a day, with the path of its log, and is kept in `update
 **Upgrade automatically** is a checkbox, **off by default**. On, a check that finds an update this
 copy can install starts the same upgrade the button would, with the same refusals, keep-previous and
 rollback; nothing is asked. A refusal (uncommitted changes, not a fast-forward, another branch) is shown in the
-section and tried again only at the next check. A version that was put back because it didn't start
+section and tried again only at the next check. Going back from a withdrawn release is never automatic: Upgrade automatically never
+takes Go Back. A version that was put back because it didn't start
 within a minute is never installed again automatically ("v0.3.3 was put back last time, so it isn't
 installed again automatically. Upgrade by hand to try it again."); the button
 still offers it. An upgrade that failed and changed nothing (a network error) is tried again at the

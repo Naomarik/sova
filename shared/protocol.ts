@@ -955,15 +955,20 @@ export interface ThemeList {
 export const PLAYBOOK_ENTRIES = ["PLAYBOOK.md", "SKILL.md"] as const;
 export type PlaybookEntry = (typeof PLAYBOOK_ENTRIES)[number];
 
+/** What a verb playbook's branch proposes: the project's settings, its deploy section, or its releases (the release
+    section plus the project's release playbook). */
+export const PLAYBOOK_PROPOSES = ["definition", "deploy", "release"] as const;
+export type PlaybookProposes = (typeof PLAYBOOK_PROPOSES)[number];
+
 /** One entry in the Sova playbook catalog. */
 export interface PlaybookInfo {
   id: string;                 // directory name; validate against /^[a-z0-9][a-z0-9-]*$/ (no traversal)
   title: string;              // frontmatter title, else name, else the id
   description: string;        // frontmatter description, else ""
   promptHint?: string;        // frontmatter promptHint: what the reader may want to specify for the first turn
-  /** Frontmatter `proposes: definition | deploy`: a verb playbook, whose branch the operator merges
+  /** Frontmatter `proposes: definition | deploy | release`: a verb playbook, whose branch the operator merges
       (§app.project-runtime/verb-playbooks). Absent (or any other value): not a verb playbook. */
-  proposes?: "definition" | "deploy";
+  proposes?: PlaybookProposes;
   source: "sova" | "user" | "project";
   dir: string;                // ABSOLUTE directory holding the playbook: its entry file, scripts/, references/…; every relative path in it resolves here
   entry: PlaybookEntry;       // the file read as the playbook: PLAYBOOK.md when the folder has one, else SKILL.md
@@ -3638,6 +3643,11 @@ export type AttentionKind =
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
   | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project page)
+  | "release-ready"       // act tier, never pushed: a project's open release passed every gate and waits for Publish (shared/release.ts; no session: `path` "", `href` the project's Releases tab)
+  | "release-request"     // act tier, never pushed: an overseer or the Project Assistant asks the operator to release (release.request; no session: `path` "", `href` the Releases tab)
+  | "release-quiet"       // act tier, never pushed: the release chat sent no report for the project's quietMin while the queue is frozen (Open Chat, Abandon Release; `href` the Releases tab)
+  | "release-held"        // act tier, never pushed: a release step is held for the operator's Continue (`href` the Releases tab)
+  | "release-failed"      // act tier, never pushed: a release step or its gating checks failed (Retry Step, Abandon; `href` the Releases tab)
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "whatsapp-down"       // act tier, pushed (kind `whatsapp-down`): WhatsApp sending is down, logged out, replaced, blocked, unpaired, or unreachable 5 min (§app.outreach/sender-health; no session: `path` "", `href` "#/settings/outreach")
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
@@ -3702,7 +3712,7 @@ export interface AttentionItem {
   };
   /** kind `playbook-review` only: what Merge Branch needs (§app.project-runtime/merge). `hash`
       absent: the branch has no valid definition, so there is nothing to merge. */
-  playbook?: { projectId: string; label: string; hash?: string; branch: string; target: string; proposes?: "definition" | "deploy" };
+  playbook?: { projectId: string; label: string; hash?: string; branch: string; target: string; proposes?: PlaybookProposes };
 }
 
 /** Which org (and project) an organizational session belongs to; names as they read now. `projectId`
@@ -4676,7 +4686,37 @@ export interface SessionSummary {
       gains it a moment after it first lists. Absent when the session tracks no worktree of its
       own, before git was first read, and from older servers. */
   readiness?: SessionReadiness;
+  /** The branches its chat's composer status row counts (WorktreesControl): every non-dropped worktree the chat
+      tracks, its own and those inherited from the chat it was forked from, with what that row reads besides
+      `readiness` (joined by path, as the chat joins it). The session list says the chat's headline from them.
+      Read in the background with readiness; each entry's queue state is joined at listing time from the merge
+      queue's newest view. Absent when it tracks none, before the first read, for sessions readiness never covers,
+      and from older servers. Additive. */
+  branches?: SessionBranchRow[];
 }
+
+/** One branch as the chat's worktree row reads it (SessionWorktreeInfo), cut to what its words need. */
+export interface SessionBranchRow {
+  /** Canonical top level (SessionWorktreeInfo.path; readiness trees join on it). */
+  path: string;
+  branch: string;
+  status: "active" | "merged";
+  exists: boolean;
+  /** Inherited from that session (a fork copied the entry): no readiness of this chat's speaks for it. */
+  sharedWith?: string;
+  /** status "active": git finds its branch already merged (SessionWorktreeInfo.mergedInto). */
+  mergedInto?: { target: string; sha: string };
+  /** Its newest merge queue entry, the fields a row's words read. */
+  queue?: SessionBranchQueue;
+  /** Its repo is one the merge queue serves (SessionWorktreeInfo.mergeServed). */
+  mergeServed?: true;
+  /** Its project's merge setup as the ready row words it (SessionWorktreeInfo.mergeProject, cut). */
+  mergeProject?: Pick<import("./merge-queue").WorktreeMergeProject, "target" | "checks" | "invalid">;
+}
+
+/** A branch's merge queue entry as the session list carries it: its state (never a precomputed key, so a new state
+    flows through) and what the row's words read. */
+export type SessionBranchQueue = import("./merge-queue").BranchQueueFacts;
 
 /** One worktree's merge readiness (§chat.worktrees/readiness). */
 /** A chat running in the home folder because its stored local working directory is gone
@@ -4856,6 +4896,8 @@ export type SessionFeedMessage =
   | import("./merge-queue").MergeQueueFeed
   /** One chat's merge queue cards changed (shared/merge-queue.ts MergeCard): all of that chat's cards. Additive. */
   | import("./merge-queue").MergeCardsFeed
+  /** A project's release view changed (shared/release.ts ReleaseView, as release.status answers it). Never on connect. Additive. */
+  | import("./release").ReleaseFeed
   | { type: "error"; message: string };
 
 /** Why an LlmInflight count is only a floor. `host` is the peer's id; absent = this host. */
@@ -5257,8 +5299,31 @@ export interface MonitorSampler {
   startedAt: number;
 }
 
+/** The stall recorder's latest records, one line each; `<stateRoot>/stalls/stalls.jsonl` holds them in full. */
+export interface MonitorStallRecord {
+  kind: "stall" | "stall-open" | "memory";
+  at: number;
+  pid: number;
+  /** A stall: the most it can have lasted. */
+  ms?: number;
+  rssBytes?: number;
+  /** The commonest innermost frame while it lasted. */
+  top?: string;
+  /** The oldest operations in flight. */
+  ops?: string[];
+  /** A stall its process never reported the end of: it died or was killed inside it. */
+  unfinished?: boolean;
+}
+
+export interface MonitorStalls {
+  state: "on" | "off" | "failed";
+  recent: MonitorStallRecord[];
+}
+
 export interface MonitorSnapshot {
   at: number;
+  /** The stall recorder, absent from a snapshot built by a server without it. */
+  stalls?: MonitorStalls;
   platform: string;
   scope: MonitorScope;
   /** `unit` only: the unit name, e.g. "sova-runtime.service". */
@@ -5738,7 +5803,10 @@ export type UpdateCheckResult =
   | { state: "up-to-date" }
   | { state: "available"; target: UpdateTarget; rewritten?: boolean }
   | { state: "ahead"; message: string }
-  | { state: "diverged"; target: UpdateTarget; message: string };
+  | { state: "diverged"; target: UpdateTarget; message: string }
+  /** What runs is a withdrawn release (its channel was moved back): told so with the reason, instead of `ahead`, and
+      offered `target`, the release the channel points at now (going back). */
+  | { state: "withdrawn"; tag: string; why: string; at: string; target: UpdateTarget; message: string };
 
 export interface UpdateCheck {
   at: string;

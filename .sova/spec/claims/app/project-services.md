@@ -7,8 +7,8 @@ from that declaration as **instances**, one per checkout of the project, each wi
 ports and data. The primary user is a coding agent: each worktree gets its own running copy of the
 project, isolated from the others and from the main checkout, without hand-rolled `nohup` loops. One
 engine in the server implements a closed set of **verbs** (create, up, down, apply, status, logs,
-reset, teardown, doctor, conform, test, share, revoke, and the merge queue's `merge.*` verbs,
-§app.project-services/merge-verbs) the same way for every project, and every caller gets the same
+reset, teardown, doctor, conform, test, share, revoke, the merge queue's `merge.*` verbs,
+§app.project-services/merge-verbs, and the release verbs `release.*`, §app.release/verbs) the same way for every project, and every caller gets the same
 JSON from it: the REST routes, the `sova-project` CLI, the coding session's `project_verbs` tool and
 the Overseers' `sova_project_verbs` tool.
 
@@ -17,7 +17,8 @@ worktree, or a mix per service) is the project's choice, written into its declar
 are the same whichever it picks, and conformance proves the isolation, not the method. The engine
 never calls a model. A running copy can be shared with a stakeholder as a preview link
 (§app.project-services/share). A project may also declare how it ships, `deploy`: targets that only the
-operator ships to, through the deploy verbs (§app.project-services/deploy).
+operator ships to, through the deploy verbs (§app.project-services/deploy), and how it releases
+numbered versions, `release` (§app/release).
 
 Wire shapes are in `shared/project-contract.ts`, never `shared/protocol.ts`. The engine is
 `server/project-services/`.
@@ -122,6 +123,9 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   uses `test` (§app.merge-queue/checks); with neither, the project's queue isn't set up
   (§app.merge-queue/setup). A check runs with `SOVA_VERB=merge`, `SOVA_STEP` (its id), `SOVA_OUT`,
   `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths).
+- **`release`** (optional): how the project releases numbered versions, outside the definition's
+  hash: `playbook`, `tag`, `scheme`, `channels`, `commit`, `checks` and `quietMin`
+  (§app.release/settings). Absent, the project's releases aren't set up.
 - **`sources`** (optional): the checkout files the definition was written from (`bb.edn`,
   `package.json`, a compose file, `.mise.toml`: relative, no `..`, dot-files allowed, at most 50),
   whose change at HEAD is the project's drift (§app.project-services/facts). Each service may also
@@ -206,7 +210,8 @@ createdBy, url?}`, §app.project-services/share: share's link, the links revoke 
 links of the instance status reads; empty otherwise), then the verb's own key (`instances` for status of a whole
 project, `lines` for logs and test, `checks` for doctor and status (status: the supervisor's alone), `conform` for conform,
 `tests` for test, `deploy` for the deploy verbs, §app.project-services/deploy, `merge` for the
-merge verbs, §app.project-services/merge-verbs), then `error?` (`{code,
+merge verbs, §app.project-services/merge-verbs, `release` for the release verbs,
+§app.release/verbs), then `error?` (`{code,
 message, step?, service?}`), `defHash` and `at`. Arrays follow declaration order.
 Running a verb again with the same inputs gives the same object apart from `at`, `ms`, pids,
 `rssBytes` and a new generation.
@@ -214,12 +219,13 @@ Running a verb again with the same inputs gives the same object apart from `at`,
 The error codes are a closed list: `not-found`, `invalid-request`, `invalid-definition`,
 `not-conformant`, `cap-reached`, `slots-blocked`, `port-held`, `not-ready`, `start-failed`,
 `hook-failed`, `tests-failed`, `dirty-worktree`, `busy`, `unsupported`, `refused-slot0`, `share-denied`,
-`forbidden`, `needs-confirm`, `deploy-refused`, `needs-override`, `deploy-failed`, `verify-failed`. Each maps to one exit class, the CLI's exit code and the route's
+`forbidden`, `needs-confirm`, `deploy-refused`, `needs-override`, `deploy-failed`, `verify-failed`,
+`release-refused`. Each maps to one exit class, the CLI's exit code and the route's
 status: **0** done, a no-op included (200); **1** failed part-way — `not-ready`, `start-failed`,
 `hook-failed`, `tests-failed`, `deploy-failed`, `verify-failed` — with `state` saying what runs, and a re-run converges from there (502); **2**
 refused, nothing changed — `not-conformant`, `cap-reached`, `slots-blocked`, `port-held`,
 `dirty-worktree`, `unsupported`, `refused-slot0`, `share-denied`, `forbidden`, `needs-confirm`,
-`deploy-refused`, `needs-override` (409); **3** invalid — `invalid-request`, `invalid-definition`, `not-found` (400, 404 for
+`deploy-refused`, `needs-override`, `release-refused` (409); **3** invalid — `invalid-request`, `invalid-definition`, `not-found` (400, 404 for
 not-found); **4** `busy` (423). `status`, `logs` and `doctor` answer 0 when the app is unhealthy;
 the object says so.
 
@@ -631,7 +637,9 @@ no act, never held and taking no lock. Sova itself, on no one's request (the `sy
 only onMerge, §app.project-services/on-merge), runs `apply` and the reads, nothing else: any other
 verb is `forbidden`, and the self-host rule refuses it like any caller but the operator. The deploy
 verbs have callers of their own (§app.project-services/deploy-callers), and so do the merge verbs
-(§app.project-services/merge-verbs).
+(§app.project-services/merge-verbs) and the release verbs (§app.release/callers): a coding
+session's `project_verbs` reads its project's releases and nothing more, and the release chat's
+reports its own release's steps.
 
 ## §app.project-services/merge-verbs — The merge verbs
 
@@ -880,7 +888,9 @@ which Sova never reads; `check` is an argv whose exit 0 says the credential work
 steps, a dry run), `build` and `steps` (at least one) (each step `{id, run, timeout?}`, `run` an argv,
 `timeout` default 600 s, at most 1800, at most 30 per list), `verify` (`{http, expect?, timeout?}`: an
 `http://` or `https://` URL that must answer `expect`, default 200, within `timeout`, default 30 s) and
-`rollback` (required: `{steps}`, `"redeploy-previous"` or `{none: "<reason>"}`). Its templates read
+`rollback` (required: `{steps}`, `"redeploy-previous"` or `{none: "<reason>"}`) and `releases`
+(optional, only `"only"`: only a published, not withdrawn, numbered release ships there,
+§app.release/deploy). Its templates read
 `${host.<NAME>}` (each name in the top-level `host`), `${commit}`, `${target}`, `${checkout}` (the
 deploy's fresh checkout) and `${branch}`, and nothing else. A target is never an instance: the deploy
 verbs (`deploy.check`, `deploy.plan`, `deploy.run`, `deploy.status`, `deploy.logs`, `deploy.rollback`,
@@ -914,7 +924,9 @@ main's working tree, never under the state root): every
 host value the recipe reads is set (`host`); the required tests (`tests`: the smoke selection or the
 full suite, run as `test` runs them in an instance of that checkout, its setup first (`setup`), torn
 down afterwards); each credential check, and each plan step, as a unit of its own with the `env`
-credentials in its environment, their values redacted from what it says. A commit not on the branch
+credentials in its environment, their values redacted from what it says. A target that takes
+`releases: "only"` also checks that the commit is a numbered release of the project's tag pattern
+with no `withdrawn/<tag>` marker (`release`; §app.release/deploy), else `deploy-refused`. A commit not on the branch
 or not pushed, an unset host value, or a failed credential check or plan step is `deploy-refused`, for
 good. Required tests that failed or didn't run, and a dirty main, are `needs-override` unless the
 operator typed a reason (`overrideTests`, `overrideDirty`, at most 300 characters), which the software

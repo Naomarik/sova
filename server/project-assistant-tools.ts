@@ -92,6 +92,21 @@ export async function askOperatorToDeploy(projectId: string, why: string): Promi
   }
 }
 
+/** The operator is asked for a release (release.request, as an overseer's ask): the Project Assistant never starts or
+    publishes one (the release power is the overseer's column only). Returns whether the ask was filed. */
+export async function askOperatorToRelease(projectId: string, why: string): Promise<boolean> {
+  try {
+    const { listProjects } = await import("./projects/spaces");
+    const root = listProjects().find((p) => p.id === projectId)?.root;
+    if (!root) return false;
+    const { projectEngine } = await import("./project-services/routes");
+    const r = await projectEngine().run("release.request", { project: root, why: why.slice(0, 300) }, { kind: "assistant", id: "project-assistant", root });
+    return !r.error;
+  } catch {
+    return false;
+  }
+}
+
 const say = (text: string, details: Record<string, unknown> = {}) => ({ content: [{ type: "text" as const, text }], details });
 const obj = (properties: Record<string, unknown>, required: string[]) => ({ type: "object", properties, required, additionalProperties: false });
 const str = (description: string, extra: Record<string, unknown> = {}) => ({ type: "string", description, ...extra });

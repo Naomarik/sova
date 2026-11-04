@@ -144,12 +144,14 @@
                 <p class="list-summary" title="…">Wiring /ws/watch to the session tailer</p>
                 <span class="session-topics text-num" title="7 topics in this session">7</span>
               </div>
-              <!-- line 3: time, then the worktrees the session tracks, "2 of 3" merged of the ones
-                   it owns (§chat.worktrees/readiness) — a 12px branch glyph and the bare figure in
-                   the meta's own muted voice, both in success while one of them is ready to merge,
-                   never wrapped and never grown, the digits aria-hidden with the words beside them
-                   for AT:
-                   <span class="session-worktrees session-worktrees-ready" title="feat/x: ready to merge, checks passed"><span class="icon icon-sm" style="--icon:url(/icons/branch.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2 of 3</span><span class="visually-hidden">2 of 3 worktrees merged, one is ready to merge</span></span>
+              <!-- line 3: time, then the session's branch status, the chat's own headline
+                   (§chat.composer/worktrees-control; §app.session-list/content-rules "Row line 3")
+                   as a 12px symbol and the bare figure, no words: exclamation circle (needs you,
+                   warn), warning triangle (needs a fix, error), check circle (ready, success),
+                   progress mark (checking, accent, still), clock (queued, info), branch glyph
+                   ({n} worktrees, muted); never wrapped and never grown, the figure aria-hidden
+                   with the words beside it for AT:
+                   <span class="session-branch-status session-branch-status-success session-branch-status-ready" title="2 ready …"><span class="icon icon-sm" style="--icon:url(/icons/check-circle.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2</span><span class="visually-hidden">2 ready. …</span></span>
                    — then the muted readiness badge when there is one ("restart pending", "2
                    follow-ups" — lowercase, the meta's own muted voice, no tone, never wrapped; its
                    `title` the per-worktree lines; the place's built-in, §app.extensions/row-chips),
@@ -159,7 +161,7 @@
                    own mark (§app/session-list "Remote sessions"): one 6px muted dot before the time. Local rows
                    open with the time, as here. -->
               <div class="list-line list-meta-row">
-                <p class="list-meta">2h ago · <span class="session-worktrees session-worktrees-ready" title="feat/x: ready to merge, checks passed"><span class="icon icon-sm" style="--icon:url(/icons/branch.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2 of 3</span><span class="visually-hidden">2 of 3 worktrees merged, one is ready to merge</span></span> · <span class="session-readiness" title="feat/c: merged, 19 commits ahead">2 follow-ups</span> · <span class="text-mono" title="anthropic/claude-opus-5">Opus 5</span></p>
+                <p class="list-meta">2h ago · <span class="session-branch-status session-branch-status-success session-branch-status-ready" title="2 ready …"><span class="icon icon-sm" style="--icon:url(/icons/check-circle.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2</span><span class="visually-hidden">2 ready. …</span></span> · <span class="session-readiness" title="feat/c: merged, 19 commits ahead">2 follow-ups</span> · <span class="text-mono" title="anthropic/claude-opus-5">Opus 5</span></p>
                 <span class="context-ring {context-warn|context-error}" title="{the head's exact sentence}">
                   <svg viewBox="0 0 12 12" aria-hidden="true">
                     <circle class="context-ring-track" cx="6" cy="6" r="5" fill="none"/>
@@ -186,7 +188,7 @@ Below 768px the button is not rendered, because the pane there is the whole scre
 nothing to collapse into.
 
 The row does not display spec assessment observations or append them to readiness titles.
-Its ordinary worktree count, readiness badge, and three-line anatomy remain as above.
+Its ordinary branch status, readiness badge, and three-line anatomy remain as above.
 
 ## §app.session-list/spine — The spine
 
@@ -504,23 +506,75 @@ label a person reads says "sessions pane".
   beside (`readTailOutline` returns gist, "now" and count from the accepted entry), so the sentence
   and the figure can never disagree. No count, no chip — and no chip without a summary line either,
   since the line is what it rides on: a hidden line hides its count.
-- **Row line 3.** The worktrees the session tracks **lead the facts after the time**, when the
-  server has read at least one (§chat.worktrees/readiness): a 12px `branch` glyph and a bare figure,
-  "{merged} of {total}" — "0 of 1", "2 of 3" — over the session's own, non-dropped worktrees, in
-  the meta's own muted voice, {merged} counting each one git finds merged into its base, clean or
-  not (a merged tree with uncommitted changes counts though its state reads stale or in progress,
-  §chat.worktrees/readiness "The row's count"), `white-space: nowrap`, its `title` each worktree's state and reason.
-  Both the glyph and the figure take `--status-success` while **one or more** of those worktrees is
-  ready to merge, which includes one waiting for your OK: the light is the row's whole word for it,
-  so the row that can be merged is the row that glows — no check, no phrase. No worktrees, or none
-  the server has read yet, means no count at all, never "0 of 0". The digits are `aria-hidden` and
-  the row's accessible name carries the words ("2 of 3 worktrees merged, one is ready to merge").
-  The muted readiness badge follows it when there is one: "restart pending", or the follow-up count
-  ("1 follow-up", "2 follow-ups") — never the word "merged", which the count already says — and a
-  leftover worktree is only in the `title`, never counted. The chips extensions add come after the
+- **Row line 3.** The session's **branch status leads the facts after the time**: the same status
+  its chat shows in the composer's run-status row (§chat.composer/worktrees-control), worked out by
+  the same rule from the rows the list last read. A row says what its chat says once it has caught
+  up, and it can lag its chat only as far as "How far a row can lag its chat" below says. A sent-back
+  branch counts as needing a fix only while its chat's row reads Needs a fix: never once the queue
+  has settled that entry, once the branch reads ready again at a newer commit, or once it is merged
+  or its worktree folder removed (§chat.composer/worktrees-control "Nothing to land while it's sent
+  back"). It is the
+  control's headline, the first that holds: needs you, needs a fix, ready, checking, queued, else
+  the fallback, "{n} worktrees". Ready means exactly what it means there (a served branch Ready to
+  land, an unserved one Ready to merge), and the branches are counted as the chat counts them:
+  every worktree the session tracks that isn't dropped, a forked chat's inherited ones included.
+  Every row whose chat shows the worktrees control carries it: a worker's, a baton's and a target
+  session's rows too, so every session but an Overseer or a project Overseer. The chat itself, its
+  Worktrees window and the session pane's Worktrees section are unchanged.
+
+  **No words on the row**: a 12px symbol and the headline's bare figure, `white-space: nowrap`, in
+  the meta's line box (no row grows). Each status has a symbol of its own, so its tone is never the
+  only signal:
+  - needs you: an exclamation circle (`alert-circle`), warn;
+  - needs a fix: a warning triangle (`alert-triangle`), error;
+  - ready: a check in a circle (`check-circle`), success;
+  - checking: a progress mark (`progress`), accent, still: it never spins, since the row's one
+    moving thing is its Busy dot;
+  - queued: a clock (`clock`), info;
+  - {n} worktrees: the `branch` glyph, the meta's muted ink.
+
+  The figure is the headline's own number: 2 for "2 ready", 1 for "1 checking", the count of
+  branches for the fallback. The symbol and figure are `aria-hidden`. The status's `title`, and the
+  row link's accessible name, carry it in words: the chat's words first ("2 ready", "1 needs a
+  fix"), then each branch in the Worktrees window's words, its branch, state and detail or reason
+  ("feat/x: Queued · 2nd", "feat/y: Needs a fix · {reason}"), then the after-merge lines
+  the row carried before: the branch status line and each routine follow-up in words
+  (§chat.worktrees/readiness). The status replaces the "{merged} of {total}" count rows used to
+  show; nothing on the row counts merged worktrees any more. A session with no such worktree shows
+  nothing here, never "0", and so does a row before its branches are first read. Archived rows show
+  it the same way as every other row. Pressing it does nothing of its own: it is part of the row
+  link, which opens the session. It follows the merge queue: a change the queue makes reaches the
+  list within seconds, as the queue publishes it, a queue's first view after a server start
+  included. Reading a row runs no queue view unless the list has none of that queue yet, and the
+  git facts under a row are kept while the repo's refs don't change (§chat.worktrees/readiness).
+
+  **How far a row can lag its chat.** A chat reads its worktrees for itself; a row shows what the
+  list last read and catches up on its own. These are the known bounds:
+  - **Git's facts** reach the row at its next read, on the session's own cadence
+    (§app/idle-git-cache): at once when its worktree's or base's refs move, five minutes at most
+    while it is idle. The times below say how long an answer is kept; the row shows the new one at
+    the read after that.
+  - **A request landed or closed on the host** (§app.merge-queue/requests): up to 180 seconds while
+    nothing reads the queue's view and the host can be read, which is how often the queue asks it.
+  - **A read that failed.** A failed "already merged" check reads as not merged, and a setup read
+    that reached the target's commit but not its definition reads as not set up: each stands until
+    the refs it rests on move, 30 minutes at most. A setup read that found no commit is never kept.
+  - **A tree nothing can stamp** (its folder has no `.git` left, or its refs are in a reftable):
+    its "already merged" answer stands up to five minutes, and with no `.git` left its project too.
+  - **Anything else no stamp sees**: the "already merged" answer, the merge setup and the queue's
+    view stand 30 minutes at most.
+  - **An archived row** with nothing running keeps its last read (§app/idle-git-cache) while its
+    queue entry still follows the queue. One whose queue view failed has no queue to follow, so it
+    stays without its queue entry until its chat opens, its file or row changes, or a queue starts
+    or gains its repo.
+
+  The muted readiness badge follows the status when there is one: "restart pending", or the
+  follow-up count ("1 follow-up", "2 follow-ups") — never the word "merged" and never the ready or
+  waiting phrases, which the status and its words carry — and a leftover worktree is only in the
+  `title`, never counted. The chips extensions add come after the
   badge (§app.extensions/row-chips), and a row has none without such an extension. The line
   truncates from its end, so the model's name gives way first, then those chips, then the badge,
-  then the count, the time last — at a 280px desktop
+  then the status, the time last — at a 280px desktop
   sidebar and on a 390px phone alike. Then relative `lastActiveAt` ("just now", "4m ago", "2h
   ago", "yesterday", "Mar 4"), then ` · `, then the model in mono. Show only the part after the first
   `/` and put the full
@@ -716,7 +770,7 @@ their link, §app.baton/needs-you), a tour recording waiting for you to sign in 
 items): a reply that waits on you (§app.decisions/asks-user) and a reply that says it is done
 without checking. A team gone quiet (§app.decisions/team-stall) is not here: it is a quiet mark
 on its row. Neither is a worktree ready to merge or waiting for your OK: that is the row's
-worktree count, lit (§chat.worktrees/readiness). The blockers are the attention digest's **act** tier (§app.overseer/attention-digest), read
+branch status (§app.session-list/content-rules "Row line 3"). The blockers are the attention digest's **act** tier (§app.overseer/attention-digest), read
 from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts — less the
 organization sessions (§app.session-list/ordinary-surfaces), which wait in the Organizations
 region's own Needs you (§app.session-list/organizations). **The Overseer's count still includes
@@ -741,7 +795,7 @@ thing it waits on being done.
       Needs you <span class="sidebar-region-count">· 2</span>
     </h2>
   </summary>
-  <ul class="list">…session rows, with line 2 replaced by the digest's sentence…</ul>
+  <ul class="list">…one row each: name and state word, title, detail, what it opens…</ul>
   <!-- only when the digest's 30-item cap dropped act items -->
   <p class="sidebar-region-note">Some sessions may not be listed: this list stops at the 30 most urgent items.</p>
 </details>
@@ -759,32 +813,46 @@ thing it waits on being done.
   count, so the two agree but for the organization sessions the Overseer also counts.
 - **A project's deploy items** (`deploy-failed`, `deploy-request`, §app.project-services/deploy-status) belong
   to no session, so they list under the session rows as rows of their own, newest first, narrowed by the
-  search (project, folder or sentence): the project's name, the digest's sentence and the folder, each
-  opening the project page (its Deploy panel). The head's count and the spine's door count them too, and
-  the head's title says how many are deploy items ("The 2 sessions waiting on you, newest first, and 1
-  deploy item." / "1 deploy item waiting on you.").
+  search (project, folder or sentence), each opening the project page (its Deploy panel). The head's
+  count and the spine's door count them too, and the head's title says how many are deploy items ("The
+  2 sessions waiting on you, newest first, and 1 deploy item." / "1 deploy item waiting on you.").
+- **A project's release items** (`release-ready`, `release-request`, `release-held`, `release-failed`,
+  `release-quiet`, §app.release/quiet) list the same way, each opening the project's Releases tab. The
+  head's title counts them ("… and 2 release items.").
 - **WhatsApp sending down** (`whatsapp-down`, §app.outreach/sender-health), of no session too, lists
-  the same way, one row per sender: "WhatsApp sending", the digest's sentence and "Settings →
-  Outreach", opening Settings → Outreach, with an **Open Outreach Settings** button under it. The
-  head's count includes it, and its title names it ("… and 1 deploy item and WhatsApp sending." /
-  "WhatsApp sending waiting on you.").
+  the same way, one row per sender, opening Settings → Outreach. The head's count includes it, and its
+  title names it ("… and 1 deploy item and WhatsApp sending." / "WhatsApp sending waiting on you.").
 - **Not here: a project's own items.** A held act, a conflict to settle, a project whose
   stakeholder left and a WhatsApp message that wasn't sent belong to a project, not a session: they
   list in the Organizations region's own Needs you (§app.session-list/organizations), after its
-  session rows, held acts first and soonest on top, each with **Cancel** (§app.project-overseer/holds).
-- **Rows** are the same `SessionRow` as everywhere else — rail, marks, meta line, accessible name —
-  with one difference: **line 2 is the digest's sentence** for the session's newest act item
-  ("3 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited", "1 subagent ended in an error."), in place of the gist
-  or the draft preview, and shown even with summaries hidden in Settings › General. Its `title` is
-  every act sentence the session has, newest first. An act item with no sentence leaves line 2 as
-  the row draws it elsewhere. The rules live in `src/lib/needs-you.ts`.
-- **No row menu, no put-away.** A Needs you row carries no button of its own and no menu, except
-  a session whose act item is a proposed playbook run (`playbook-review`,
-  §app.project-runtime/review): under its row, **Merge Branch**, which acts
-  at once and says a refusal's reason under it; and WhatsApp sending down's **Open Outreach
-  Settings**. Otherwise: a press
-  held on it lifts it and, moved, opens the drop overlay (§app.session-list/drop-overlay), a lifted
-  row let go in place does nothing, and a right-click is the browser's, as on every other row.
+  session rows, held acts first and soonest on top, each with **Cancel** (§app.project-overseer/holds),
+  a standalone project's held act (one with no organization, such as the release power's waiting
+  period, §app.release/power) included.
+- **Every row reads the same**, here and in the Organizations region's Needs you
+  (§app.session-list/organizations), whatever it is about (words: §design.copy-deck/sidebar):
+  - the **name**, muted: the project, "{org} · {project}" for an organization's, else the folder's last
+    name ("{name} · {host}" for a session on another host), with a **state chip that always has a word**;
+  - the **title**, semibold: the session's title; on a row of no session what it is, by kind ("Deploy
+    failed"), an owner's item its own request, a held act what waits;
+  - one line of **detail**: the digest's sentence for the session's newest item ("3 open questions in
+    al_3 Autonomy settings", "Waiting on a dialog.", "429 rate limited"), shown even with summaries
+    hidden in Settings › General, and dropping the title where it would repeat it ("Ready to publish ·
+    v0.4.0" reads "v0.4.0"). Its `title` is the whole text: every act sentence the session has, newest
+    first. An item with no sentence has no detail line;
+  - **what it opens**, with an arrow ("Open Chat", "Read Report", "Open Deploy", "Review and Publish").
+
+  The rules live in `src/lib/needs-you.ts` and `src/lib/needs-you-row.ts`.
+- **Folder paths leave the row** and go to the name's `title`. Two listed projects of one name in
+  different folders read "Notes · work/notes", with only as many path segments as tell them apart; two
+  items of one project stay plain.
+- **The whole row is one link.** It is stretched over the row, one tab stop, and what it opens is words
+  inside it, never a second control. Two things act and are real buttons, each its own tab stop beside
+  the link in the row's last line, and pressing one doesn't navigate: **Merge Branch** on a proposed
+  playbook run (`playbook-review`, §app.project-runtime/review), which acts at once and says a refusal's
+  reason, and **Cancel** on a held act (§app.project-overseer/holds).
+- **Not a session row, no put-away.** A row here has none of a session row's marks or gestures: no rail,
+  unread dot, time, model, context ring or merge badge, no press-and-hold, lift or drag, and no menu; a
+  right-click is the browser's. The session's own row elsewhere keeps them all.
 - **The open session stays listed**, drawn with the current tint like any row: the count is the
   digest's, and a number must match its list.
 - **Open by default, collapsible.** The head is a twist (`<details>`, the Groups head's
@@ -1795,7 +1863,7 @@ projects (§app.projects/list).
   <section class="org-needs-you" aria-labelledby="r-orgs-needs">
     <h3 class="list-group-label" id="r-orgs-needs"
         title="The 2 organization sessions waiting on you, newest first."><span class="org-needs-dot" aria-hidden="true"></span>Needs you <span class="text-num">2</span></h3>
-    <ul class="list">…session rows: line 2 = what it waits on, line 3 = "{time} · {org} · {project}"…</ul>
+    <ul class="list">…Needs you rows, §app.session-list/needs-you: "{org} · {project}", state word, title, what it waits on, what it opens…</ul>
   </section>
 
   <!-- 2. One per org, by name A→Z, ties on id. Open by default, memory only. -->
@@ -1881,23 +1949,23 @@ projects (§app.projects/list).
   carries `needsYou` (a person's question, a limit reached), `sendLink` (a link to send) or at least
   one of `proposals` (a referral to approve) — read from the session list, so it holds whatever
   Overseer proactivity is — or when the attention digest has an **act** item for it (a dialog open, an
-  errored turn, a worker error; §app.overseer/attention-digest). **Line 2** is the sentence of its newest
-  waiting item: the digest's, verbatim, else the same words built from the baton — "{from} → you:
+  errored turn, a worker error; §app.overseer/attention-digest). Its row is a Needs you row
+  (§app.session-list/needs-you). Its **detail** is the sentence of its newest waiting item: the digest's, verbatim, else the same words built from the baton — "{from} → you:
   {question}", "Send {to} their link: {question}", "Approve {name} ({role}) proposed by {by}?" — with
-  every sentence, newest first, in its `title`. **Line 3** reads "{time} · {org} · {project}" in place of
-  the model (no project: "{time} · {org}"). Order: newest waiting item first (`since`), ties on path.
+  every sentence, newest first, in its `title`. Its **name** reads "{org} · {project}" (no project:
+  "{org}"). Order: newest waiting item first (`since`), ties on path.
   Like the global Needs you, it is a **shortcut, not a place a session lives**: each row is still under
   its project. Not collapsible (the region's own twist collapses it); omitted when it has no rows. The
   global Needs you never lists these sessions (§app.session-list/needs-you). Like a global Needs you
-  row, a row here has no button or menu of its own: it leaves when what it waits on is answered.
+  row, a row here has no menu of its own: it leaves when what it waits on is answered.
 - **A project's items, too.** The same block lists the digest's items that belong to a project
   rather than a session, each a row opening the project page with the digest's sentence: first each
   held act (§app.project-overseer/holds), the one going ahead soonest on top, its sentence recounted
-  on the list's clock and **Cancel** beside the row; then, newest first, each conflict for the
+  on the list's clock and **Cancel** beside the row's link; then, newest first, each conflict for the
   operator to settle (`conflict-to-operator`, §app.requirements/routing) and each project whose main
   stakeholder left (§app.organizations/stakeholder), and each overseer's WhatsApp message that was
-  not sent (`outreach-not-sent`, §app.outreach/send), which opens the person's page instead. Line 3
-  names the org. The block, and the
+  not sent (`outreach-not-sent`, §app.outreach/send), which opens the person's page instead. Their
+  name reads "{org} · {project}". The block, and the
   region, show while only such items wait.
 - **Organization → project → rows, always.** The org level is drawn even with one org, so the shape
   doesn't change when a second is attached. There are no `cwd` folder heads: every gathering session
@@ -2551,7 +2619,7 @@ a session, another server's stores) therefore reaches a listing up to 1 second l
 
 The schedule's discovery, which runs on a timer, reads the session
 feed's last list instead while a feed is connected and nothing it watches has changed since that
-list was built (§app.decisions/push), a list at most two minutes old (the feed's safety net
+list was built (§app.decisions/push), a list about two minutes old at most (the feed's safety net
 renews it every minute); otherwise it lists as above. So an idle
 server with windows open builds the list only for the feed's safety net.
 
@@ -2562,7 +2630,7 @@ opens a changed file once to build its row: its head, its outline and one window
 256 KB, which the row's model, context and ending all read from (a file's first read may go
 further back, to its outline); its alignment and worker marks read only what the file gained
 since their last read. The feed's
-listing looks at every folder and every file (a full build) only on its first listing, when the
+own build looks at every folder and every file (a full build) only on its first listing, when the
 watch can't say what changed (a folder joins or leaves the watched set, a watch fails, a change
 comes with no file name), and every 5 minutes. Once a minute it also checks the size and
 modification time of every session file it already knows, without listing a folder, and reads
@@ -2572,7 +2640,10 @@ comparison reads no session file.
 A session with no message of the user's yet is told apart from the read its row already made,
 never by reading its file again. Every session stays in the list, however old: none is left out
 to save work. Rows with the same last activity come in path order, so two listings of the same
-sessions come in the same order. Every caller other than the feed lists as above.
+sessions come in the same order. Every caller other than the feed lists as above. A comparison may
+instead read a list another caller's build started less than 1 second ago, later than the last list
+it read; that build looked at every folder and every file. If anything signalled after that build
+started, a further comparison follows, so that change never waits for the safety net.
 
 A change a caller makes through this server is never missed that way. Any request other than a
 read (a REST call that is not `GET` or `HEAD`, a peer's included, before it runs and again when it
@@ -2582,6 +2653,7 @@ write in process), a chat being opened by this server and a held chat's model, t
 mode changing (its row carries the held chat's `chat` state), and every write to the stores a row reads (archived, titles, seen and the open
 panes, drafts, groups, tags, attention signals, Sova's own sessions, the Decisions settings, the
 organizations registry, the Overseer's and project overseers' state, kept preview links) start the
-next listing afresh: no caller joins or reuses a list built before them. So a caller that archives,
+next listing afresh: no caller joins or reuses a list built before them, except a comparison as
+above, which the further one then follows. So a caller that archives,
 renames, creates a session or gives one a One at a time profile sees that change in the very next
 listing it asks for, and so does the One at a time check that follows it.

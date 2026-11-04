@@ -144,3 +144,5 @@ An installed Sova extension's page passes as your click, so installing one is a 
 
 A click relayed through a computer you've linked can't be told from a script going through that computer.
 This applies only to computers you've linked.
+
+A chat can't tell another chat's OK from yours.

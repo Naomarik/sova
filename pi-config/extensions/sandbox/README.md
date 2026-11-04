@@ -40,7 +40,9 @@ probes the exact backend profile (the policy's `browser` included, as `snapshot(
 returns confined argv/env/inherited-fd payloads plus `dispose()`. An unavailable or unaccepted partial backend refuses; a failed proxy tightens to no
 network. The caller runs the whole recording controller and its browser under that argv, writes
 fd payloads, reaps them before disposal, and never substitutes an unconfined command on failure.
-It does not call an extension command handler or change the session's sandbox state.
+It does not call an extension command handler or change the session's sandbox state. A caller's own
+`tmpDir` (a macOS recording's short one) replaces that attempt tmp, and the proxy socket goes beside
+it, since a socket under a long `TMPDIR` would mean no network.
 
 `{proxy?}` passes attempt-only options to that attempt's own proxy (`proxy.ts`), all off by
 default; the session's own proxy never gets them and nothing changes without them. `forbid(address)`

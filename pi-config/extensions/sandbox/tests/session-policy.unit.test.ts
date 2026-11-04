@@ -140,3 +140,49 @@ test("prepareSessionCommand hands the policy's browser to the backend, as the ex
 	setBrowser("headless-shell");
 	assert.deepEqual(await profileOf(scope), { probed: false, rules: false, any: false });
 });
+
+test("prepareSessionCommand: a caller's own tmp is the attempt's, and goes with its parent; without one, the default", async (t) => {
+	const { home, agentDir, ws } = rig(t);
+	const file = join(agentDir, "sandbox-policy", "darwin", "policy.json");
+	writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), level: "read-only" }));
+	const run = async (tmpDir?: string) => {
+		const backend = new DarwinSeatbeltBackend({ sandboxExec: process.execPath });
+		backend.probe = async () => ({ ok: true, enforcement: "full" });
+		const r = await prepareSessionCommand({ agentDir, cwd: ws, sessionId: "s-own-tmp", home, platform: "darwin", ...(tmpDir ? { tmpDir } : {}) }, ["/bin/true"], { backend });
+		assert.ok(r.ok, r.ok ? "" : r.error);
+		return r.value;
+	};
+	const parent = realpathSync(mkdtempSync(join(tmpdir(), "own-")));
+	t.after(() => rmSync(parent, { recursive: true, force: true }));
+	const own = await run(join(parent, "t"));
+	assert.equal(own.env.TMPDIR, `${join(parent, "t")}/`);
+	assert.equal(statSync(join(parent, "t")).mode & 0o777, 0o700);
+	await own.dispose();
+	assert.ok(!existsSync(parent), "the caller's folder goes with the attempt");
+	const dflt = await run();
+	assert.ok(canonicalize(dflt.env.TMPDIR!).startsWith(canonicalize(sessionTmpBase())), "no tmp asked for: the session tmp base");
+	const made = dflt.env.TMPDIR!;
+	await dflt.dispose();
+	assert.ok(!existsSync(made));
+});
+
+test("prepareSessionCommand: a caller's own tmp keeps the attempt's proxy socket beside it, whatever TMPDIR is", async (t) => {
+	const { home, agentDir, ws } = rig(t);
+	let parent: string;
+	// A socket path needs to be short: /tmp, which a sandboxed chat running this test can't write.
+	try { parent = realpathSync(mkdtempSync("/tmp/own-")); } catch { t.skip("/tmp is closed here"); return; }
+	t.after(() => rmSync(parent, { recursive: true, force: true }));
+	const backend = new DarwinSeatbeltBackend({ sandboxExec: process.execPath });
+	let socket: string | undefined;
+	backend.probe = async (policy) => { socket = policy.network.proxy?.socket; return { ok: true, enforcement: "full" }; };
+	const before = process.env.TMPDIR;
+	process.env.TMPDIR = join(parent, "x".repeat(120));
+	try {
+		const r = await prepareSessionCommand({ agentDir, cwd: ws, sessionId: "s-own-socket", home, platform: "darwin", tmpDir: join(parent, "t") }, ["/bin/true"], { backend });
+		assert.ok(r.ok, r.ok ? "" : r.error);
+		assert.equal(socket, join(parent, "p.sock"), "beside the tmp, so a long TMPDIR can't take the network away");
+		assert.ok(existsSync(socket!));
+		await r.value.dispose();
+		assert.ok(!existsSync(parent));
+	} finally { if (before === undefined) delete process.env.TMPDIR; else process.env.TMPDIR = before; }
+});

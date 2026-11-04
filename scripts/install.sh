@@ -555,7 +555,8 @@ pick_browser() {       # a Chromium-family browser's executable, or nothing
 			net.imput.helium) want=Helium ;;
 		esac
 		for name in ${want:+"$want"} "Google Chrome" Chromium "Brave Browser" "Microsoft Edge" Vivaldi Helium; do
-			for d in /Applications "$HOME/Applications"; do
+			# SOVA_APP_SYSTEM_APPS: install.test.sh only, so a test never finds (or starts) the Mac's own apps.
+			for d in "${SOVA_APP_SYSTEM_APPS:-/Applications}" "$HOME/Applications"; do
 				app="$d/$name.app"
 				[ -d "$app" ] || continue
 				exe=$(defaults read "$app/Contents/Info" CFBundleExecutable 2>/dev/null || true)

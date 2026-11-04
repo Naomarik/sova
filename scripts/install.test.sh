@@ -15,6 +15,10 @@ root=$(cd "$here/.." && pwd -P)
 installer=$root/scripts/install.sh
 
 tmp=$(mktemp -d "${TMPDIR:-/tmp}/sova-install-test.XXXXXX")
+# macOS: `sova app` looks for browsers in /Applications; a Darwin case looks in this empty folder
+# instead, so no case ever finds or starts the Mac's real Google Chrome (a crash or Keychain dialog).
+export SOVA_APP_SYSTEM_APPS="$tmp/no-system-apps"
+mkdir -p "$SOVA_APP_SYSTEM_APPS"
 test_bash=${TEST_BASH:-bash}
 trap 'rm -rf "$tmp"' EXIT
 pass=0
@@ -840,7 +844,19 @@ mac_cmd "$mac:$up:$sandbox"
 wait_for "$browsed" || true
 check "$(yes_if [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$home/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ])" \
 	"sova app, mac, no default known: the first bundle found"
+# The system apps folder (SOVA_APP_SYSTEM_APPS, the test's stand-in for /Applications) comes before ~/Applications.
+mk_browser "$SOVA_APP_SYSTEM_APPS/Google Chrome.app/Contents/MacOS/Google Chrome"
+mac_cmd "$mac:$up:$sandbox"
+wait_for "$browsed" || true
+check "$(yes_if [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$SOVA_APP_SYSTEM_APPS/Google Chrome.app/Contents/MacOS/Google Chrome" ])" \
+	"sova app, mac: the system apps folder first (the test's own stand-in for /Applications)"
+rm -rf "$SOVA_APP_SYSTEM_APPS/Google Chrome.app"
+mac_pick() { set +e; picked=$(env -u PI_CODING_AGENT_DIR -u PORT FAKE_UNAME=Darwin HOME="$home" FAKE_UP="$tmp/up.always" PATH="$1" "$home/.local/bin/sova" app --print-browser 2>/dev/null); set -e; }
+mac_pick "$mac:$up:$sandbox"
+check "$({ [ -n "$picked" ] && case "$picked" in "$tmp"/*) true ;; *) false ;; esac; } && echo true || echo false)" "sova app, mac: the browser picked is the test's own, never the Mac's"
 rm -rf "$home/Applications/Google Chrome.app" "$home/Applications/Brave Browser.app"
+mac_pick "$mac:$up:$sandbox"
+check "$(yes_if [ -z "$picked" ])" "sova app, mac, no browser of the test's: none picked, not the Mac's own Chrome"
 mac_cmd "$mac:$up:$sandbox"
 check "$(yes_if [ "$lstatus" -eq 0 ] && grep -qxF 'http://127.0.0.1:4800/#t=tok-mac' "$tmp/app-mac/opened")" "sova app, mac, no such browser: open's tab"
 
@@ -939,6 +955,14 @@ STUB
 	mac_log=$tmp/$name/mac-app.log
 	FAKE_MAC_CHECK=1 FAKE_UNAME=Darwin FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" CASE_PATH="$mac_tools:$mac_app_bin:$up:$sandbox" inst --no-service "$@"
 }
+helper_browsers_ours() {   # every --browser the helper was given is under this test's own folders, and there is one
+	local b n=0
+	while IFS= read -r b; do
+		n=$((n + 1))
+		case "$b" in "$tmp"/*) ;; *) return 1 ;; esac
+	done < <(sed -n 's/.*--browser \(.*\) --profile .*/\1/p' "$mac_log")
+	[ "$n" -gt 0 ]
+}
 brave_exe="Brave Browser.app/Contents/MacOS/Brave Browser"
 mac_app_case app-pwa
 mac_profile="$home/Library/Application Support/sova-browser"
@@ -947,6 +971,7 @@ check "$(yes_if grep -qxF "check --browser $home/Applications/$brave_exe --profi
 	"app, mac: asks the helper first, with the browser, the profile and the port"
 check "$(yes_if grep -qxF "install --browser $home/Applications/$brave_exe --profile $mac_profile --port 4800 --token-file $home/.pi/agent/sova/auth-token --auto" "$mac_log")" \
 	"app, mac: installs through the helper, unlocked by the token file; no terminal, so a running window is left open"
+check "$(yes_if helper_browsers_ours)" "app, mac: the browser handed to the helper is the test's own, never the Mac's"
 check "$({ said 'mac-app stub: installed' && said 'app: Sova is an app of its own'; } && echo true || echo false)" "app, mac: passes on what the helper says, and says what it is now"
 check "$(yes_if [ -x "$home/Applications/Sova.app/Contents/MacOS/sova-app" ])" "app, mac: Sova.app is still the app entry (it starts the server, then opens the app)"
 printf 'a terminal\n' > "$tmp/app-pwa/tty"
@@ -999,6 +1024,7 @@ sleep 0.5
 check "$({ [ "$lstatus" -eq 0 ] && grep -qxF "open --browser $home/Applications/$brave_exe --profile $home/Library/Application Support/sova-browser --port 4800 --url http://127.0.0.1:4800/#t=tok-pwa --token-file $home/.pi/agent/sova/auth-token" "$mac_log"; } && echo true || echo false)" \
 	"sova app, mac, installed: the helper opens the app, unlocked"
 check "$(yes_if [ ! -e "$browsed" ])" "sova app, mac, installed: no bare window as well"
+check "$(yes_if helper_browsers_ours)" "sova app, mac, installed: the browser handed to the helper is the test's own"
 # On Linux there is no such step.
 set +e
 launch=$(env -u PI_CODING_AGENT_DIR HOME="$home" PATH="$sandbox" "$home/.local/bin/sova" app --install 2>&1)

@@ -29,7 +29,7 @@ export interface SessionPolicyInput {
 	parent?: ParentScope;
 	/** false: the cwd is a stand-in (a home folder for a folder that is gone), never a writable root. */
 	cwdWritable?: boolean;
-	/** The session tmp, when the caller already made it; else `sessionTmpDir(sessionId)`. */
+	/** The session tmp, when the caller chose it; else `sessionTmpDir(sessionId)`. prepareSessionCommand keeps its proxy socket in its parent, and removes that parent on dispose. */
 	tmpDir?: string;
 	home?: string;
 	platform?: NodeJS.Platform;
@@ -109,7 +109,9 @@ export async function prepareSessionCommand(
 	};
 	try {
 		const resourceId = `${input.sessionId || "session"}-tool-${randomUUID()}`;
-		tmp = ensureSessionTmpDir(resourceId);
+		// A caller's own tmp (a tour recording on macOS, whose browser sockets need a short path): made here, and removed with its parent like the default.
+		if (input.tmpDir) mkdirSync(input.tmpDir, { recursive: true, mode: 0o700 });
+		tmp = input.tmpDir ?? ensureSessionTmpDir(resourceId);
 		const backend = options.backend ?? backendFor(input.platform);
 		const resolved = resolveSessionPolicy({ ...input, tmpDir: tmp, backend });
 		if (!resolved.ok) { await dispose(); return resolved; }
@@ -118,7 +120,9 @@ export async function prepareSessionCommand(
 		let network: Policy["network"] = { mode: p.writeOnly ? "host" : "none" };
 		if (p.level === "workspace-write" && !p.writeOnly) {
 			// Failure tightens to no network, just as snapshot() does.
-			try { proxy = await startProxy({ socket: proxySocketPath(resourceId), allow: p.proxyAllow, ...options.proxy }); } catch { /* no network */ }
+			// Beside a caller's own tmp (private, gone with the attempt): that caller chose it for its short path, and a socket under a long TMPDIR would mean no network.
+			const socket = input.tmpDir ? join(dirname(input.tmpDir), "p.sock") : proxySocketPath(resourceId);
+			try { proxy = await startProxy({ socket, allow: p.proxyAllow, ...options.proxy }); } catch { /* no network */ }
 			if (proxy) network = { mode: "proxy", proxy: { socket: proxy.socket, allow: p.proxyAllow } };
 		}
 		const policy: Policy = {

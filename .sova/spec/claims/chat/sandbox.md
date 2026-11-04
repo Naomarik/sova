@@ -235,7 +235,8 @@ so. It is not a choice in the UI. Under `workspace-write`:
   sandbox. The rules sit before the hidden paths and the Keychain deny, which still win. Every
   command confined under the session's policy gets them, a tour recording's included
   (§app.tours/sandbox). An app-bundle Chrome (Google Chrome, Chrome for Testing) is not supported
-  and still crashes.
+  and still crashes; a sandboxed tour recording on macOS therefore uses the headless shell and
+  refuses before launch when only an app-bundle Chrome is installed (§app.tours/sandbox).
 
 ## §chat.sandbox/fail-closed — Fail closed
 

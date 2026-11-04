@@ -1,16 +1,19 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import { tourScriptFixture } from "../../shared/tour-fixtures";
-import { discoverTourBrowser } from "./browser";
+import { assertTourBrowserTempPath, discoverTourBrowser } from "./browser";
+import { macConfinedBrowserSkip } from "./mac-browser.integration.fixture";
 import { runTourAttempt } from "./runner";
 import { spawnTourCommand, killTourChild, type TourRecordingContext } from "./sandbox";
 import { TourCaptureFailure } from "./targets";
 
 const fixture = resolve(import.meta.dirname, "sandbox-probe.integration.fixture.ts");
+const macSkip = macConfinedBrowserSkip();
+if (macSkip) console.warn(`sandbox.integration: SKIPPED: ${macSkip}`);
 
 async function probe(context: TourRecordingContext, executable: string, url: string, mode: string): Promise<string> {
   const handle = await spawnTourCommand(context, [process.execPath, fixture, executable, url, mode]);
@@ -31,7 +34,7 @@ async function probe(context: TourRecordingContext, executable: string, url: str
   }
 }
 
-test("b1: real recording browser cannot reach a non-allowlisted loopback port, including redirects and subresources", { timeout: 120_000 }, async () => {
+test("b1: real recording browser cannot reach a non-allowlisted loopback port, including redirects and subresources", { timeout: 120_000, skip: macSkip }, async () => {
   // The backend's write probe must target a real read-only host path, not a path under /tmp
   // that the sandbox intentionally remaps to its writable private tmp. Keep this fixture and
   // its isolated HOME outside /tmp. This test registers no project/repository.
@@ -48,6 +51,8 @@ test("b1: real recording browser cannot reach a non-allowlisted loopback port, i
   policy.proxy.allow = ["tour-probe.invalid"];
   policy.writable = [];
   policy.shadowed = [];
+  // macOS: the headless shell's Seatbelt rules, so the confined recorder can run it (§chat.sandbox/what-on-enforces).
+  if (process.platform === "darwin") policy.browser = "headless-shell";
   writeFileSync(join(agentDir, "sandbox-policy", process.platform, "policy.json"), JSON.stringify(policy));
   let requests = 0;
   const server = createServer((_req, res) => { requests++; res.end("<h1>Private loopback page</h1>"); });
@@ -88,6 +93,8 @@ async function confinedFixture() {
   policy.proxy.allow = ["tour-probe.invalid"];
   policy.writable = [];
   policy.shadowed = [];
+  // macOS: the headless shell's Seatbelt rules, so the confined recorder can run it (§chat.sandbox/what-on-enforces).
+  if (process.platform === "darwin") policy.browser = "headless-shell";
   writeFileSync(join(agentDir, "sandbox-policy", process.platform, "policy.json"), JSON.stringify(policy));
   process.env.HOME = root;
   process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -116,7 +123,30 @@ async function confinedFixture() {
   };
 }
 
-test("b1: a tour recorded with the chat's sandbox on cannot reach a non-allowlisted loopback port", { timeout: 120_000 }, async () => {
+// macOS's default temp folders are too long for Chromium's sockets, confined or not, whatever the session id.
+test("macOS: a recording's temp folder is its own, short enough for Chromium's sockets and its proxy's, and goes with the attempt", { timeout: 60_000, skip: process.platform !== "darwin" ? "macOS only" : false }, async () => {
+  const f = await confinedFixture();
+  const context: TourRecordingContext = { sessionId: "01a1a2df-ab7d-7770-b24b-4c3a8387f7a2", sessionFile: join(f.agentDir, "session.jsonl"), cwd: f.cwd, agentDir: f.agentDir, home: f.root, sandbox: { on: false } };
+  try {
+    for (const on of [false, true]) {
+      const handle = await spawnTourCommand({ ...context, sandbox: { on } }, [process.execPath, "-e", "process.stdout.write(JSON.stringify({ tmp: process.env.TMPDIR, proxy: process.env.HTTP_PROXY }))"]);
+      let output = "";
+      handle.process.stdout!.on("data", (b) => { output += String(b); });
+      const [code] = await once(handle.process, "close"); // close, not exit: all of its output has arrived
+      assert.equal(code, 0, `sandbox ${on ? "on" : "off"}`);
+      const { tmp, proxy } = JSON.parse(output) as { tmp: string; proxy?: string };
+      assert.match(tmp, /^(\/private)?\/tmp\/st-/, `sandbox ${on ? "on" : "off"}: ${tmp}`);
+      // A proxy socket that doesn't fit would mean no network, silently, and every b1 tour above still passes.
+      if (on) assert.match(proxy ?? "", /^http:\/\/127\.0\.0\.1:\d+$/, "the confined attempt really has its proxy, whatever TMPDIR is");
+      assert.ok(Buffer.byteLength(assertTourBrowserTempPath(tmp)) <= 100);
+      assert.ok(existsSync(tmp), "the attempt's temp folder is really there");
+      await handle.dispose();
+      assert.ok(!existsSync(tmp.replace(/\/t\/?$/, "")), "and goes with the attempt");
+    }
+  } finally { await f.close(); }
+});
+
+test("b1: a tour recorded with the chat's sandbox on cannot reach a non-allowlisted loopback port", { timeout: 120_000, skip: macSkip }, async () => {
   const f = await confinedFixture();
   const context: TourRecordingContext = { sessionId: "containment-tour", sessionFile: join(f.agentDir, "session.jsonl"), cwd: f.cwd, agentDir: f.agentDir, home: f.root, sandbox: { on: false } };
   const attempt = (sandbox: TourRecordingContext["sandbox"], progress: string[]) => runTourAttempt({
@@ -141,7 +171,7 @@ test("b1: a tour recorded with the chat's sandbox on cannot reach a non-allowlis
 
 // Q1: with the chat's sandbox on, the attempt's own proxy admits exactly this attempt's verified running
 // copy (one loopback host:port, re-checked on every contact); any other loopback port stays unreachable.
-test("sandbox on: a project tour reaches its own verified running copy through the attempt proxy; another loopback port gets nothing", { timeout: 180_000 }, async () => {
+test("sandbox on: a project tour reaches its own verified running copy through the attempt proxy; another loopback port gets nothing", { timeout: 180_000, skip: macSkip }, async () => {
   const f = await confinedFixture();
   let other = 0, otherConnections = 0, own = 0, changed = false;
   const otherServer = createServer((_req, res) => { other++; res.end("x"); });

@@ -28,7 +28,7 @@ const { registerProjectIn } = await import("./projects/spaces");
 const { readPoSettings, projectOverseerPaths } = await import("./project-overseer-store");
 const { OVERSEER_SENDER_HEADER, senderSecret } = await import("./overseer-sender");
 const { disposeAllChats } = await import("./chat-manager");
-const { runCreateSettingsTool } = await import("./project-settings-tool");
+const { runCreateSettingsTool } = await import("./create-settings-run");
 const { createSettingsTool } = await import("./create-settings-tool");
 const sova = await import("./sova-settings");
 const { SOVA_SETTING_IDS, SOVA_SETTINGS } = await import("../shared/sova-settings-reference");
@@ -341,6 +341,15 @@ describe("a Sova-wide card", () => {
     for (const m of made) sova.withdrawSovaCard(m.card.id);
     await assert.rejects(runCreateSettingsTool(chat("p"), { op: "propose", why: "x", edits: [{ setting: "sova", id: "workers.priority", value: 1 }, { setting: "project", name: "n" }] }), /card of its own/);
   });
+});
+
+test("in Create the tool reaches the card path; a refusal is the tool's own words", async () => {
+  const { setCreateSettingsRun } = await import("./create-settings-tool");
+  const { runCreateSettings } = await import("./create-settings-run");
+  setCreateSettingsRun(runCreateSettings);
+  const on = createSettingsTool({ sessionId: "s", mode: () => "create", cwd: () => join(root, "not-a-project") });
+  await assert.rejects(on.execute("t", { op: "propose", why: "x", edits: [{ setting: "project", name: "n" }] }, undefined as never, undefined as never, undefined as never), /isn't a project yet/);
+  setCreateSettingsRun(null);
 });
 
 test("the tool answers only in Create", async () => {

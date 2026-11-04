@@ -161,6 +161,8 @@ import { notPage, pageOnlyRefusal, yourClickBody, yourClickRefusal } from "./pag
 import { registerProjectSettingsRoutes } from "./project-settings-routes";
 import { registerSovaSettingsRoutes } from "./sova-settings-routes";
 import { setSovaSettingsDeps } from "./sova-settings";
+import { setCreateSettingsRun } from "./create-settings-tool";
+import { runCreateSettings } from "./create-settings-run";
 import { isProjectModeId } from "../shared/project-modes";
 import { extensionKeys } from "./extension-keys";
 import { registerUpdatesRoutes } from "./updates/routes";
@@ -441,6 +443,7 @@ export function buildApp(deps: AppDeps) {
   registerProjectOverseerRoutes(app);
   registerProjectSettingsRoutes(app);
   registerSovaSettingsRoutes(app);
+  setCreateSettingsRun(runCreateSettings);
   registerProjectCostRoutes(app);
   registerProjectFileRoutes(app);
   // Session offers: a session's offer cards and clicks, another chat's show, the project page's list (§chat/offers).

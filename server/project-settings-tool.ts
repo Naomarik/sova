@@ -1,8 +1,6 @@
 import type { SettingsBy, SettingsCardView, SettingsHistoryRow, SettingsToolDetails } from "../shared/project-settings";
 import { isSettingId, referenceText, SETTING_IDS } from "../shared/settings-reference";
-import { isSovaSettingId, sovaReferenceText, sovaSettingsIndex } from "../shared/sova-settings-reference";
 import { proposeSettings, settingsInfo, SettingsRefusal, withdrawCard } from "./project-settings";
-import { proposeSova, sovaCardsInfo, withdrawSovaCard } from "./sova-settings";
 
 /**
  * sova_settings, the project overseer's one settings tool (§app.project-overseer/settings): get, reference,
@@ -36,7 +34,7 @@ export const SETTINGS_TOOL_PARAMETERS = {
 type Out = { content: { type: "text"; text: string }[]; details: unknown };
 const text = (t: string) => [{ type: "text" as const, text: t }];
 
-function cardWords(c: SettingsCardView): string {
+export function cardWords(c: SettingsCardView): string {
   const lines = [
     `${c.id} "${c.title}" · ${c.state}${c.grants.length ? ` · needs the operator's approval (${c.grants.length} grant${c.grants.length === 1 ? "" : "s"})` : ""}`,
     ...c.kept.map((k) => `  - ${k.label}: ${k.fromText} → ${k.toText}${k.grant ? ` (grant: ${k.grant})` : ""}`),
@@ -79,63 +77,6 @@ export async function runSettingsTool(projectId: string, q: Record<string, unkno
   if (op === "withdraw") {
     if (typeof q.card !== "string" || !/^sc_\d+$/.test(q.card)) throw new SettingsRefusal("Name the card to withdraw (sc_…). The folder's uncommitted edits are the operator's to land or discard.");
     await withdrawCard(projectId, q.card, { operator: false });
-    return { content: text(`Withdrew ${q.card}.`), details: { card: q.card } };
-  }
-  throw new SettingsRefusal("op is get, reference, propose or withdraw.");
-}
-
-// ---- a Create chat (§chat.create-mode/settings-cards) ----------------------------------------------------
-
-/** The chat a Create card is prepared from. */
-export interface CreateChat {
-  sessionId: string;
-  /** The project the chat's folder belongs to, or null. */
-  projectId: string | null;
-  /** Why this folder takes no project card, or null (it has a project). */
-  noProject: string | null;
-}
-
-const isSovaEdit = (e: unknown): boolean => !!e && typeof e === "object" && (e as { setting?: unknown }).setting === "sova";
-
-/** sova_settings in a Create chat: everything only prepares (`attended: false`), so nothing applies until the page does. */
-export async function runCreateSettingsTool(chat: CreateChat, q: Record<string, unknown>): Promise<Out> {
-  const op = q.op;
-  const by: SettingsBy = { kind: "create", via: "tool", chat: chat.sessionId };
-  if (op === "get") {
-    const waiting = sovaCardsInfo().cards;
-    const parts = [`Sova-wide settings (each changes by a card, {setting: "sova", id, value}):`, sovaSettingsIndex()];
-    if (waiting.length) parts.push("", "Sova-wide cards waiting for the person:", ...waiting.map(cardWords));
-    if (chat.projectId) parts.push("", (await runSettingsTool(chat.projectId, { op: "get" }, false)).content[0]!.text);
-    else parts.push("", chat.noProject ?? "");
-    return { content: text(parts.join("\n")), details: { project: chat.projectId, cards: waiting.map((c) => c.id) } };
-  }
-  if (op === "reference") {
-    if (isSovaSettingId(q.setting)) return { content: text(sovaReferenceText(q.setting)), details: { setting: q.setting } };
-    if (isSettingId(q.setting)) return { content: text(referenceText(q.setting, { create: true })), details: { setting: q.setting } };
-    throw new SettingsRefusal("Name a setting: sova_settings get lists them.");
-  }
-  if (op === "propose") {
-    const edits = q.edits;
-    if (!Array.isArray(edits) || edits.length === 0) throw new SettingsRefusal("edits must list at least one change.");
-    const sova = edits.filter(isSovaEdit);
-    if (sova.length && sova.length !== edits.length) throw new SettingsRefusal("A Sova-wide change goes on a card of its own: propose it apart from the project's.");
-    const said = (id: string, grants: number, body: string) => `Card ${id} waits for the person${grants ? "'s Apply and Approve" : "'s Apply"}; nothing in it applies until they click, even what narrows. Tell them in a sentence what it changes and why; never claim it is applied.\n${body}`;
-    if (sova.length) {
-      const card = await proposeSova({ edits: sova, why: q.why }, by);
-      const details: SettingsToolDetails = { kind: "settings-card", projectId: null, card, appliedNow: [], create: true };
-      return { content: text(card ? said(card.id, card.grants.length, cardWords(card)) : "Nothing changed: every edit is already as asked."), details };
-    }
-    if (!chat.projectId) throw new SettingsRefusal(chat.noProject ?? "This chat's folder isn't a project.");
-    const r = await proposeSettings(chat.projectId, { edits, why: q.why }, { attended: false, by });
-    const details: SettingsToolDetails = { kind: "settings-card", projectId: chat.projectId, card: r.card, appliedNow: [], create: true };
-    return { content: text(r.card ? said(r.card.id, r.card.grants.length, cardWords(r.card)) : "Nothing changed: every edit is already as asked."), details };
-  }
-  if (op === "withdraw") {
-    if (typeof q.card === "string" && /^sw_\d+$/.test(q.card)) withdrawSovaCard(q.card, { chat: chat.sessionId });
-    else if (typeof q.card === "string" && /^sc_\d+$/.test(q.card)) {
-      if (!chat.projectId) throw new SettingsRefusal(chat.noProject ?? "This chat's folder isn't a project.");
-      await withdrawCard(chat.projectId, q.card, { operator: false, chat: chat.sessionId });
-    } else throw new SettingsRefusal("Name the card to withdraw (sc_… or sw_…).");
     return { content: text(`Withdrew ${q.card}.`), details: { card: q.card } };
   }
   throw new SettingsRefusal("op is get, reference, propose or withdraw.");

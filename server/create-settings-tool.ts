@@ -40,15 +40,10 @@ export interface CreateSettingsHost {
   cwd(): string;
 }
 
-/** The project of a chat's folder, or the sentence that says why a project card can't be made here. */
-async function chatProject(cwd: string): Promise<{ projectId: string | null; noProject: string | null }> {
-  const { parseTargetCwd } = await import("./targets");
-  if (parseTargetCwd(cwd)) return { projectId: null, noProject: "A chat on a remote machine can't prepare a project's card: open this project's chat on its own computer." };
-  const [{ listProjects }, { folderMatcher }, { agentRoot }] = await Promise.all([import("./projects/spaces"), import("./project-folder"), import("./state-root")]);
-  const projects = listProjects().filter((p) => !p.archived);
-  const projectId = cwd ? folderMatcher(projects, agentRoot())(cwd) : null;
-  return { projectId, noProject: projectId ? null : "This folder isn't a project yet: Add as Project first, then its settings can go on a card." };
-}
+/** The server's run of a call (server/create-settings-run.ts): set at start, so this module stays a declaration. */
+type CreateSettingsRun = (host: CreateSettingsHost, params: Record<string, unknown>) => Promise<{ content: { type: "text"; text: string }[]; details: unknown }>;
+let run: CreateSettingsRun | null = null;
+export const setCreateSettingsRun = (r: CreateSettingsRun | null): void => void (run = r);
 
 export function createSettingsTool(host: CreateSettingsHost): ToolSpec {
   return {
@@ -59,16 +54,8 @@ export function createSettingsTool(host: CreateSettingsHost): ToolSpec {
     parameters: CREATE_SETTINGS_TOOL_PARAMETERS as never,
     async execute(_id, params) {
       if (host.mode() !== "create") throw new Error("sova_settings is Create's: this chat isn't in Create.");
-      const { runCreateSettingsTool } = await import("./project-settings-tool");
-      const { OrgError } = await import("./org-error");
-      const { SettingsRefusal } = await import("./project-settings");
-      const { SovaSettingsRefusal } = await import("./sova-settings");
-      try {
-        return await runCreateSettingsTool({ sessionId: host.sessionId, ...(await chatProject(host.cwd())) }, params as Record<string, unknown>);
-      } catch (err) {
-        if (err instanceof SettingsRefusal || err instanceof SovaSettingsRefusal || err instanceof OrgError) throw new Error(err.message);
-        throw err;
-      }
+      if (!run) throw new Error("This server runs no settings cards.");
+      return run(host, params as Record<string, unknown>);
     },
   };
 }

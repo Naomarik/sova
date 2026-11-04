@@ -51,8 +51,8 @@ way doesn't reach them.
 ## When one reaches a chat
 
 An add-on loads when a chat's process starts, so a new chat gets it. An open chat keeps what it started
-with until it next reloads, which Sova does when its own code changes. A Sova chat has no `/reload`, so
-to try an add-on, start a new chat. A package added with `pi install` reaches chats the same way.
+with. When Sova's own code changes, an open chat reloads at a quiet moment and picks it up. A Sova chat has
+no `/reload`, so to try an add-on, start a new chat. A package added with `pi install` reaches chats the same way.
 
 A model provider is the exception: it needs Sova restarted. Until then its models aren't listed, and a new
 chat alone doesn't get them.

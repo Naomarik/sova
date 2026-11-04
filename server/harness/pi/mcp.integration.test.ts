@@ -416,10 +416,10 @@ describe("when a server fails in a chat", () => {
 
   test("a tool row reads its server and tool, hashed names too, saved and live", async () => {
     const long = "x".repeat(100);
-    approve([server("named-one", join(root, "named.log"), [], [long])]);
+    approve([server("named-one", join(root, "named.log"), [], [long]), { ...server("gone-one", join(root, "gone.log"), [], [long]), command: join(root, "no-such-program") }]);
     const { say, declared, notes, path, results } = await open(project("named"));
     await say("first", { text: "done" });
-    const name = declared()[0]!;
+    const name = declared().find((n) => n.startsWith("mcp__named"))!;
     assert.ok(!name.includes(long), "pi shortened it");
     await say("second", call(name), { text: "done" });
     const live = notes.map((m) => JSON.parse(m)).find((m) => m.event?.type === "tool_execution_start");
@@ -430,10 +430,11 @@ describe("when a server fails in a chat", () => {
     const toolRows = async () => rowsOf(await readBranch(path)).filter((r) => r.kind === "tool-call" || r.kind === "tool-result").map((r) => r.mcp);
     const named = { server: "named-one", tool: long };
     assert.deepEqual(await toolRows(), [named, named], "a saved row, read as a reload reads it");
-    writeFileSync(join(agentDir, "mcp.json"), JSON.stringify({ mcpServers: {} }));
-    await say("third", call(name), { text: "done" });
+    const broken = declared().find((n) => n !== name)!;
+    await say("third", call(broken), { text: "done" });
     assert.equal(results().at(-1)!.isError, true, "a call that failed before the server has no details");
-    assert.deepEqual(await toolRows(), [named, named, named, named], "its row reads the same, hashed name and all");
+    const gone = { server: "gone-one", tool: long };
+    assert.deepEqual(await toolRows(), [named, named, gone, gone], "its row reads the same, hashed name and all");
   });
 });
 

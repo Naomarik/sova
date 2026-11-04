@@ -34,6 +34,7 @@ A static site is one service:
 | `open` | Where a person opens the app | Conformance checks it answers |
 | `deploy` | Where the project ships: its targets, and how each one ships and rolls back | Its own check, `deploy.check`, which proves a recipe offline and runs nothing |
 | `merge` | How branches land | See [below](#merge) |
+| `release` | How the project cuts numbered releases: its playbook (required), tag pattern, version scheme, moving tags, whether a release makes a commit, and extra checks. A release isn't a deploy | Read from the merge queue's target. It counts from the next **Start Release**; a release already started keeps what it captured |
 | `sources` | The files the definition was written from, such as a lockfile or compose file. When one changes, the project reads as stale | Nothing |
 
 Templates write `${…}`, with `$$` for a literal `$`: `${slot}`, `${checkout}`, `${branch}`, `${data}`,

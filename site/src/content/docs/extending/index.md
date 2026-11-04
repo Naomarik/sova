@@ -46,6 +46,7 @@ you need, and it finds the way. These are its topics, in its order.
 |---|---|
 | How your project runs, tests, shares and ships | [The project definition](/docs/extending/project-definition/) |
 | What must pass before a branch reaches your project, and how it lands | The project's Merge Queue tab, Settings → Merge Queue, and the [definition's `merge` section](/docs/extending/project-definition/#merge) |
+| Numbered versions of your project, and how they're cut and published | The project page's Releases tab, and the [definition's `release` section](/docs/extending/project-definition/#what-each-part-is-for) |
 | Recipes you run by hand, or that run by themselves | [Playbooks and schedules](/docs/playbooks-and-schedules/) and [Automation files](/docs/extending/automation-files/) |
 | Buttons, cards and drawings that are your project's own | [Card types](/docs/extending/card-types/), [Drawing kinds](/docs/extending/drawing-kinds/), and offers on the project page's Settings tab |
 | How the Overseers and the Project Assistant watch, act and hold back | [The Overseer](/docs/overseer/), Settings → Overseer, and the project page's Settings tab |

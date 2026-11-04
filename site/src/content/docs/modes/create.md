@@ -48,7 +48,7 @@ following them.
 
 ## The table of contents
 
-Create knows 19 topics in 6 groups. Before it acts on a topic it opens that topic's entry, which says,
+Create knows 20 topics in 6 groups. Before it acts on a topic it opens that topic's entry, which says,
 for each thing the topic covers, what can change, where it lives, who approves it, how it goes live
 and how to check it. An entry is complete on its own, so it works from any project. It holds only
 what has landed in the copy of Sova the chat runs.
@@ -69,6 +69,7 @@ what has landed in the copy of Sova the chat runs.
 | Keep it safe | safety | What agents may touch, and who approves what |
 | Run your project | project | How your project runs, tests, shares and ships |
 | | landing | What must pass before a branch reaches your project, and how it lands |
+| | releases | Numbered versions of your project, and how they're cut and published |
 | | automation | Recipes you run by hand, or that run by themselves |
 | | cards | Buttons, cards and drawings that are your project's own |
 | | overseers | How the Overseers and the Project Assistant watch, act and hold back |

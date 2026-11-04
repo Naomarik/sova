@@ -35,9 +35,6 @@ A Check starts the server for a moment, asks for its tools, and stops it. What i
 chats list. Sova never checks on a timer or when a chat opens, so a server's new tools arrive after
 you press **Check Again**, and only in new chats.
 
-Address servers can be added, checked and signed in to, but they don't run in chats yet. Command
-servers do.
-
 ## What a row says
 
 Each server has one row, with its name, whether it's an address or a command, its tool count, and

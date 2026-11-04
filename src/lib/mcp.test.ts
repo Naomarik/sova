@@ -115,7 +115,6 @@ test("a setup row with no switch says why, naming where to approve it", () => {
   assert.equal(setupOffLine(row({ off: "waiting", source: "project" })), "Waiting for You. Approve it on the project page.");
   assert.equal(setupOffLine(row({ off: "no-check" })), NO_CHECK);
   assert.equal(setupOffLine(row({ off: "sandbox" })), "Address servers stay off while the sandbox is On.");
-  assert.equal(setupOffLine(row({ off: "address-in-chat" })), "Address servers don't run in chats yet.");
 });
 
 test("a profile that takes MCP Servers away, or gives them back, changes the card's key; another capability doesn't", () => {

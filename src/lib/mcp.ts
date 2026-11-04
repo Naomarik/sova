@@ -156,8 +156,6 @@ export function setupOffLine(r: SetupRow): string | null {
       return NO_CHECK;
     case "sandbox":
       return "Address servers stay off while the sandbox is On.";
-    case "address-in-chat":
-      return "Address servers don't run in chats yet.";
     default:
       return null;
   }

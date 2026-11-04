@@ -31,6 +31,12 @@ export const RELEASE_CHIP: Record<ReleaseState, ChipWord> = {
   withdrawn: { word: "Withdrawn", tone: "warn" },
 };
 
+/** A release's chip: its state, except that a failed Publish says so, while the record stays `ready` to be tried again. */
+export function releaseChip(r: Pick<ReleaseRecord, "state" | "steps">): ChipWord {
+  const failed = isOpen(r.state) && r.steps.some((s) => s.id === "publish" && s.state === "failed");
+  return failed ? { word: "Publish failed", tone: "error" } : RELEASE_CHIP[r.state];
+}
+
 /** Open: the queue is frozen on it and only one may be. */
 export { isReleaseOpen as isOpen } from "../../shared/release";
 import { isReleaseOpen as isOpen } from "../../shared/release";

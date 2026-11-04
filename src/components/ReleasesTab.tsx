@@ -15,6 +15,7 @@ import {
   publishConfirmLine,
   publishLabel,
   RELEASE_CHIP,
+  releaseChip,
   releaseName,
   shortSha,
   shownRecord,
@@ -303,7 +304,7 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
       <div class="spread">
         <div class="cluster">
           <h3 class="text-heading-s">{open() ? "Release in progress" : r().state === "withdrawn" ? "Withdrawn, finishing" : "Published, finishing"}</h3>
-          {chip(RELEASE_CHIP[r().state])}
+          {chip(releaseChip(r()))}
         </div>
         <div class="button-row mq-row-act">
           <Show when={r().thread}>
@@ -674,7 +675,7 @@ export function ReleasesCard(props: { projectId: string; poll: Poll<ReleaseView>
       <Show when={v()} fallback={<p class="orgs-empty">{props.poll.error() ? `Couldn't read the releases. ${props.poll.error()}` : "Reading the releases."}</p>}>
         {(x) => (
           <p class="orgs-line cluster">
-            <Show when={x().open}>{(o) => chip(RELEASE_CHIP[o().state])}</Show>
+            <Show when={x().open}>{(o) => chip(releaseChip(o()))}</Show>
             <span>{cardLineOf(x())}</span>
           </p>
         )}

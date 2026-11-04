@@ -302,6 +302,8 @@ describe("the Releases tab", () => {
       try {
         const card = o.page.getByRole("group", { name: "Release in progress" });
         await card.getByText(/^Step \d+ of \d+ · Publish failed/).waitFor();
+        await card.locator(".chip", { hasText: "Publish failed" }).first().waitFor();
+        assert.equal(await card.locator(".chip", { hasText: "Ready to publish" }).count(), 0, "the chip agrees with the failure");
         await card.getByText("origin refused the push: not a fast-forward").waitFor();
         assert.equal(await card.getByRole("button", { name: "Retry Publish" }).count(), 1, "one way to retry, not a step button beside it");
         assert.equal(await card.getByRole("button", { name: /^Publish v/ }).count(), 0);

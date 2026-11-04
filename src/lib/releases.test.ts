@@ -12,6 +12,7 @@ import {
   publishConfirmLine,
   publishLabel,
   releaseAt,
+  releaseChip,
   releaseOfTarget,
   shownRecord,
   setupLiveLine,
@@ -161,4 +162,13 @@ test("a failed Publish offers Retry Publish on the Publish button, never Retry S
   assert.equal(publishLabel(record({ steps: [step("publish", "waiting", "sova")] })), "Publish v0.10.0");
   // The gates' why still holds it: Publish stays refused, so no retry is offered.
   assert.equal(publishBlocked({ gates: { checksPassed: true, stepsDone: true, notes: true, why: ["origin refused the push"] } }, { state: "ready" }), "Not ready to publish: origin refused the push.");
+});
+
+test("the chip says a failed Publish while the record stays ready, and Ready to publish again once the step waits", () => {
+  const failed = record({ state: "ready", steps: [step("publish", "failed", "sova")] });
+  assert.deepEqual(releaseChip(failed), { word: "Publish failed", tone: "error" });
+  assert.equal(failed.state, "ready");
+  assert.equal(releaseChip(record({ state: "ready", steps: [step("publish", "waiting", "sova")] })).word, "Ready to publish");
+  assert.equal(releaseChip(record({ state: "ready", steps: [step("gh", "failed", "after"), step("publish", "waiting", "sova")] })).word, "Ready to publish", "only Publish's own failure");
+  assert.equal(releaseChip(record({ state: "published", steps: [step("publish", "failed", "sova")] })).word, "Published");
 });

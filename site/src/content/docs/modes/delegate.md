@@ -112,7 +112,8 @@ with its transcript and its spend, but not running.
   in the pane says when it stopped: "Not running since a server restart; it was mid-task at…"
 - Nothing starts again by itself. The agent resumes a worker with its `agent_resume` tool, or you can
   type `/agent-resume <id>`. The worker keeps its id and its transcript, rejoins its team, and comes
-  back idle: it waits for new work rather than finishing the interrupted turn.
+  back idle: it waits for new work rather than finishing the interrupted turn. A worker of an archived session
+  isn't resumed: unarchive the session first.
 
 ## Strict
 

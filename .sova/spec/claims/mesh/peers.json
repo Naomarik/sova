@@ -27,7 +27,12 @@
     "code": [
       "server/mesh/index.ts",
       "server/mesh/localapi.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "gabriel",
+      "at": "2026-11-04T21:51Z",
+      "source": "pi-session:e237ba19-181a-471f-bf00-c02ff24a4d0f#a4c43916"
+    }
   },
   "§mesh.peers/grants": {
     "kind": "behavior",
@@ -105,7 +110,12 @@
       "server/mesh/listener.ts",
       "server/mesh/localapi.ts",
       "server/mesh/paths.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "gabriel",
+      "at": "2026-11-04T21:51Z",
+      "source": "pi-session:e237ba19-181a-471f-bf00-c02ff24a4d0f#a4c43916"
+    }
   },
   "§mesh.peers/off": {
     "kind": "behavior",
@@ -169,6 +179,25 @@
       "server/index.ts",
       "server/app.ts"
     ]
+  },
+  "§mesh.peers/tailscale-on-mac": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§mesh.peers/listener"
+    ],
+    "code": [
+      "server/mesh/localapi.ts",
+      "server/mesh/localapi-endpoint.ts",
+      "server/mesh/localapi-endpoint.test.ts",
+      "server/mesh/localapi-endpoint.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "gabriel",
+      "at": "2026-11-04T21:51Z",
+      "source": "pi-session:e237ba19-181a-471f-bf00-c02ff24a4d0f#a4c43916"
+    }
   },
   "§mesh/peers": {
     "kind": "surface",

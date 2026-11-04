@@ -79,6 +79,19 @@ export interface FileChangeView {
   summary: string;
 }
 
+/** One computer in a mesh card's whole access after the change. */
+export interface MeshAccessRow {
+  peer: string;
+  label: string;
+  /** "sessions: presence, sessions, links, llm"; "none yet" for a computer being added. */
+  before: string;
+  /** "removed" for a computer being removed. */
+  after: string;
+  changed: boolean;
+  /** Said plainly on the card: it can run anything here. */
+  shell: boolean;
+}
+
 export type SettingsCardState = "waiting" | "applied" | "dismissed";
 
 /** What a card changes: a project's settings, the Sova-wide settings, or a project's merge queue. */
@@ -95,6 +108,8 @@ export interface SettingsCardView {
   saveWaits?: boolean;
   /** The waiting save failed when its turn came (the queue keeps it, not retried). */
   saveFailed?: string;
+  /** A mesh card: every computer's access to this one as it would be after the change. */
+  access?: MeshAccessRow[];
   /** Applied, but these grants weren't recorded, each in words with where to approve it: it must not read as approved. */
   stillNeeds?: string[];
   state: SettingsCardState;

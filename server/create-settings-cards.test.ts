@@ -443,7 +443,7 @@ describe("Apply and Approve says only what was approved", async () => {
 });
 
 test("what stays on its own screen is refused by name, saying where, in either shape of edit", async () => {
-  const screens: Record<string, RegExp> = { "public-links": /Settings → Public Links, Where links open/, voice: /Settings → Voice, Set Up Voice/, updates: /Settings → General, Update from/, mesh: /Settings → Mesh/ };
+  const screens: Record<string, RegExp> = { "public-links": /Settings → Public Links, Where links open/, voice: /Settings → Voice, Set Up Voice/, updates: /Settings → General, Update from/, "mesh.links": /Settings → Mesh, Links/, "mesh.login-claim": /Settings → Mesh, Logins/, "mesh.internet-relay": /Settings → Mesh, Pairings/, "mesh.resync-recipe": /Settings → Mesh, Resync/ };
   for (const [name, where] of Object.entries(screens)) {
     await assert.rejects(runCreateSettingsTool(chat(null), { op: "propose", why: "x", edits: [{ setting: name, value: 1 }] }), where);
     await assert.rejects(runCreateSettingsTool(chat(null), { op: "propose", why: "x", edits: [{ setting: "sova", id: name, value: 1 }] }), where);

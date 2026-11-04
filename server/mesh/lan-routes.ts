@@ -131,28 +131,40 @@ export function lanRoutes(app: Hono, deps: LanRouteDeps): void {
     local(async (c) => {
       const body = await jsonBody<{ relay?: LanRelayPut }>(c);
       if (!body || !("relay" in body)) return c.json({ error: "Expected JSON body { relay: { host, port, exposure? } | null }" }, 400);
-      // peers.json takes only a local-network address for a LAN relay, any one unicast address for
-      // an internet one (peers.ts checkRelay); saving one also needs it to be this host's, now, and
-      // an internet relay needs its accept process running, now. (Neither is checked on every read:
-      // an interface that comes and goes, or an accept process that crashes, must not turn the mesh off.)
-      if (body.relay && typeof body.relay === "object" && typeof body.relay.host === "string") {
-        const internet = body.relay.exposure === "internet";
-        const at = internet ? relayBindAddress(body.relay.host) : relayAddress(body.relay.host); // anything else is refused below, with its reason
-        if ("address" in at && !(deps.ownAddresses ?? ownAddresses)().includes(at.address.replace(/%.*$/, ""))) {
-          return c.json({ error: `${body.relay.host} is not an address of this host` }, 400);
-        }
-        if ("address" in at && internet && !(deps.acceptorRunning?.() ?? false)) return c.json({ error: ACCEPTOR_NOT_RUNNING }, 409);
-      }
-      const r = deps.updatePeers((config) => {
-        const self = { ...config.self };
-        if (body.relay === null) delete self.relay;
-        else self.relay = body.relay as NonNullable<PeersConfig["self"]["relay"]>;
-        return { ...config, self };
-      });
-      if ("error" in r) return c.json({ error: r.error }, r.status);
-      return c.json(deps.status());
+      const r = applyLanRelay(body.relay as LanRelayPut, deps);
+      return c.json(r.body as object, r.status as 200);
     }),
   );
+}
+
+/** This host as a relay: the route's code, and a Create card's Apply. `dry`: every check, nothing written. */
+export function applyLanRelay(relay: LanRelayPut, deps: LanRouteDeps, opts: { dry?: boolean } = {}): { status: number; body: unknown } {
+  // peers.json takes only a local-network address for a LAN relay, any one unicast address for
+  // an internet one (peers.ts checkRelay); saving one also needs it to be this host's, now, and
+  // an internet relay needs its accept process running, now. (Neither is checked on every read:
+  // an interface that comes and goes, or an accept process that crashes, must not turn the mesh off.)
+  if (relay && typeof relay === "object" && typeof relay.host === "string") {
+    const internet = relay.exposure === "internet";
+    const at = internet ? relayBindAddress(relay.host) : relayAddress(relay.host); // anything else is refused below, with its reason
+    if ("address" in at && !(deps.ownAddresses ?? ownAddresses)().includes(at.address.replace(/%.*$/, ""))) {
+      return { status: 400, body: { error: `${relay.host} is not an address of this host` } };
+    }
+    if ("address" in at && internet && !(deps.acceptorRunning?.() ?? false)) return { status: 409, body: { error: ACCEPTOR_NOT_RUNNING } };
+  }
+  const change = (config: PeersConfig): PeersConfig => {
+    const self = { ...config.self };
+    if (relay === null) delete self.relay;
+    else self.relay = relay as NonNullable<PeersConfig["self"]["relay"]>;
+    return { ...config, self };
+  };
+  // Judged whole, as a save would be; returning the same config writes nothing.
+  const r = deps.updatePeers((config) => {
+    if (!opts.dry) return change(config);
+    const v = validatePeers(change(config));
+    return "error" in v ? v : config;
+  });
+  if ("error" in r) return { status: r.status, body: { error: r.error } };
+  return { status: 200, body: deps.status() };
 }
 
 /** This host's interface addresses, as relayAddress keeps them (IPv4 dotted, IPv6 lower case, no zone). */

@@ -3,7 +3,8 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpat
 import { dirname, join, relative, resolve } from "node:path";
 import type { OutreachPatch } from "../shared/outreach";
 import { CREATE_NO_DEFAULT } from "../shared/profiles";
-import type { KeptChange, SettingsBy, SettingsCardView, SettingsGrant, SovaCardsInfo } from "../shared/project-settings";
+import { MESH_ADAPTERS } from "./sova-mesh-settings";
+import type { KeptChange, MeshAccessRow, SettingsBy, SettingsCardView, SettingsGrant, SovaCardsInfo } from "../shared/project-settings";
 import { isSovaSettingId, SOVA_SETTINGS, type SovaSettingId } from "../shared/sova-settings-reference";
 import { alignSettingsFile, alignSettingsInfo, saveAlignSettingsBody } from "./align-settings";
 import { assistantPickOf, writeAssistantDefault } from "./baton-settings";
@@ -73,11 +74,16 @@ const readJson = (file: string): unknown => {
 interface Adapter {
   /** The files it writes: each is resolved before any write. */
   files(): string[];
-  read(): unknown;
+  /** What it holds now; `value`: of what the card names, for a setting a card changes one part of. */
+  read(value?: unknown): unknown;
   /** Why this value can't be saved, or null. Writes nothing. */
   check(value: unknown): string | null | Promise<string | null>;
   /** Save it; a refusal's words, or null. */
   write(value: unknown): Promise<string | null>;
+  /** Whether this change is a grant, where only some are; absent: the entry's grant always stands. */
+  widens?(before: unknown, value: unknown): boolean;
+  /** Every computer's access after this change: the whole of what it means, not the one change. */
+  access?(value: unknown): Promise<MeshAccessRow[]>;
 }
 
 const agentFile = (name: string) => () => join(agentRoot(), name);
@@ -114,6 +120,7 @@ function favoriteRefs(): string[] {
 const PI_DEFAULT_KEYS = ["defaultProvider", "defaultModel", "defaultThinkingLevel"];
 
 export const SOVA_ADAPTERS: Record<SovaSettingId, Adapter> = {
+  ...MESH_ADAPTERS,
   "models.policy": {
     files: () => [join(agentRoot(), "model-policy.json")],
     read: readModelPolicy,
@@ -432,6 +439,8 @@ interface StoredEdit {
   id: SovaSettingId;
   before: unknown;
   value: unknown;
+  /** What the card showed of every computer's access. */
+  access?: MeshAccessRow[];
 }
 
 interface StoredSovaCard {
@@ -476,7 +485,7 @@ function writeStore(s: Store): void {
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 const fingerprintOf = (edits: StoredEdit[]): string =>
   createHash("sha256")
-    .update(JSON.stringify(edits.map((e) => [e.id, e.before, e.value])))
+    .update(JSON.stringify(edits.map((e) => [e.id, e.before, e.value, e.access ?? null])))
     .digest("hex")
     .slice(0, 32);
 
@@ -500,6 +509,7 @@ const POLICY_LISTS = ["disabledProviders", "disabledModels", "subagentDisabledPr
 function grantOf(e: StoredEdit): string | null {
   const what = SOVA_SETTINGS[e.id].grant;
   if (!what) return null;
+  if (SOVA_ADAPTERS[e.id].widens?.(e.before, e.value) === false) return null;
   if (e.id === "models.policy") {
     const from = e.before as Record<string, string[]>;
     const to = e.value as Record<string, string[]>;
@@ -550,6 +560,7 @@ function cardView(c: StoredSovaCard): SettingsCardView {
     lands: null,
     diff: diffOf(c.edits),
     fingerprint: c.fingerprint,
+    ...(c.edits.some((e) => e.access) ? { access: c.edits.flatMap((e) => e.access ?? []) } : {}),
     ...(c.appliedAt ? { appliedAt: c.appliedAt } : {}),
     ...(c.dismissedAt ? { dismissedAt: c.dismissedAt } : {}),
   };
@@ -577,8 +588,11 @@ export async function proposeSova(input: { edits: unknown[]; why: unknown }, by:
     const problem = await SOVA_ADAPTERS[id].check(raw.value);
     if (problem) refuse(`${SOVA_SETTINGS[id].label}: ${problem}`);
     if (edits.some((e) => e.id === id)) refuse(`Two edits change ${id}: make it one.`);
-    const before = SOVA_ADAPTERS[id].read();
-    if (!same(before, raw.value)) edits.push({ id, before, value: raw.value });
+    const before = SOVA_ADAPTERS[id].read(raw.value);
+    if (!same(before, raw.value)) {
+      const access = await SOVA_ADAPTERS[id].access?.(raw.value);
+      edits.push({ id, before, value: raw.value, ...(access ? { access } : {}) });
+    }
   }
   if (!edits.length) return null;
   const store = readStore();
@@ -601,7 +615,7 @@ export async function applySovaCard(cardId: string, fingerprint: unknown): Promi
   for (const e of c.edits) {
     const link = linkProblem(e.id);
     if (link) throw Object.assign(new SovaSettingsRefusal(link), { status: 409 });
-    if (!same(SOVA_ADAPTERS[e.id].read(), e.before)) throw Object.assign(new SovaSettingsRefusal(`${SOVA_SETTINGS[e.id].label} changed since ${cardId} was made: dismiss it and ask for a new card.`), { status: 409 });
+    if (!same(SOVA_ADAPTERS[e.id].read(e.value), e.before)) throw Object.assign(new SovaSettingsRefusal(`${SOVA_SETTINGS[e.id].label} changed since ${cardId} was made: dismiss it and ask for a new card.`), { status: 409 });
   }
   const by: SettingsBy = { ...c.by, via: "card" };
   for (const e of c.edits) {

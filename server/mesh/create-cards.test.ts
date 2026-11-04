@@ -11,7 +11,6 @@ import { fakeWire } from "./peer-wire-test-fixtures";
 
 const tmp = mkdtempSync(join(tmpdir(), "sova-mesh-cards-"));
 process.env.PI_CODING_AGENT_DIR = join(tmp, "agent");
-process.env.SOVA_AUTH = "off";
 mkdirSync(join(tmp, "agent", "sessions", "live"), { recursive: true });
 
 const { setIdentity } = await import("./localapi");
@@ -19,15 +18,19 @@ setIdentity({
   status: async () => ({
     backendState: "Running",
     self: { nodeId: "nA", name: "a.lab", hostName: "a", os: "linux", online: true, tags: [], login: "me", addresses: ["127.0.0.1"] },
-    peers: [{ nodeId: "nC", name: "c.lab", hostName: "c", os: "linux", online: true, tags: [], addresses: ["127.0.0.2"] }],
+    peers: [{ nodeId: "nC", name: "c.lab", hostName: "c", os: "linux", online: true, tags: [], login: "me", addresses: ["127.0.0.2"] }],
   }),
   whois: async () => null,
 });
 
 const wire = fakeWire();
 const app = await testApp();
-const { stopMesh } = await import("./index");
+const { meshEnabled, meshPeers, meshSelf, readMeshConfig, readMeshSettings, stopMesh } = await import("./index");
+const { allows } = await import("./access");
+const { setMeshCardPort } = await import("./card-port");
+const { OVERSEER_SENDER_HEADER, senderSecret } = await import("../overseer-sender");
 const { ownProtocol } = await import("./hello");
+const { pageHeaders } = await import("../testing/page");
 const { runCreateSettingsTool } = await import("../create-settings-run");
 (await import("./links-transfer")).setTarAvailableForTest(true);
 
@@ -36,13 +39,13 @@ wire.serve(FAKE, () => new Response(JSON.stringify({ mesh: 1, id: "b", label: "B
 
 after(() => {
   stopMesh();
-  wire.restore();
+  // The wire stays up: a settings save wakes sync, whose calls may still be on their way as the file ends.
   rmSync(tmp, { recursive: true, force: true });
 });
 
 const PIN = "ABCDEF0123456789ABCDEF0123456789";
 const chat = { sessionId: "c1", projectId: null, noProject: "No project." };
-const page = (method: string, path: string, body: unknown) => app.request(path, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+const page = (method: string, path: string, body: unknown) => app.request(path, { method, headers: { "content-type": "application/json", ...pageHeaders() }, body: JSON.stringify(body) });
 const get = async () => (await runCreateSettingsTool(chat, { op: "get" })).content[0]!.text;
 
 describe("what a Create chat reads", () => {
@@ -62,5 +65,88 @@ describe("what a Create chat reads", () => {
     assert.match(text, /Sync: /);
     assert.ok(!text.toUpperCase().includes(PIN), "the pin stays out");
     assert.ok(!/fingerprint/i.test(text), "so does this host's own");
+  });
+});
+
+describe("cards, applied only by the person's click", () => {
+  const propose = async (id: string, value: unknown) => (await runCreateSettingsTool(chat, { op: "propose", why: "Asked.", edits: [{ setting: "sova", id, value }] })).details as { card: { id: string; fingerprint: string; grants: unknown[]; access?: { peer: string; before: string; after: string; changed: boolean; shell: boolean }[] } };
+  const asPage = (c: { id: string; fingerprint: string }, headers: Record<string, string> = {}) => app.request("/api/settings/apply", { method: "POST", headers: { "content-type": "application/json", ...(Object.keys(headers).length ? headers : pageHeaders()) }, body: JSON.stringify({ card: c.id, fingerprint: c.fingerprint }) });
+  const notPage: Record<string, string>[] = [{ [OVERSEER_SENDER_HEADER]: senderSecret() }, { "x-sova-token": "x" }, { "x-sova-caller": "k" }];
+
+  test("a narrowing waits too, every other caller is refused, and the card shows the whole access", async () => {
+    assert.ok(allows("nB" as never, "sessions"));
+    const { card } = await propose("mesh.access", { peer: "b", grant: { preset: "presence" } });
+    assert.equal(card.grants.length, 0, "it narrows: no approval, but it still waits");
+    assert.deepEqual(card.access!.map((r) => [r.peer, r.changed]), [["b", true], ["p", false]], "every computer, the changed one marked");
+    assert.equal(card.access![0]!.after, "presence: presence");
+    for (const headers of notPage) assert.equal((await asPage(card, headers)).status, 403);
+    assert.ok(allows("nB" as never, "sessions"), "nothing changed");
+    const r = await asPage(card);
+    assert.equal(r.status, 200, await r.clone().text());
+    assert.equal(allows("nB" as never, "sessions"), false, "it took effect on the next request, no restart");
+  });
+
+  test("a wider grant is one, and `sessions` is said to be shell-level", async () => {
+    const { card } = await propose("mesh.access", { peer: "b", grant: { preset: "sessions" } });
+    assert.equal(card.grants.length, 1);
+    assert.equal(card.access!.find((r) => r.peer === "b")!.shell, true);
+    assert.equal((await asPage(card)).status, 200);
+  });
+
+  test("linking a computer names its access, resolves on the tailnet, and the route's checks hold", async () => {
+    await assert.rejects(propose("mesh.peer-add", { name: "c.lab" }), /Name its access/);
+    await assert.rejects(propose("mesh.peer-add", { name: "nobody.lab", preset: "presence" }), /not a node on this tailnet/);
+    await assert.rejects(propose("mesh.peer-add", { name: "a.lab", preset: "presence" }), /is this host|not a node/);
+    const { card } = await propose("mesh.peer-add", { name: "c.lab", label: "Sea", preset: "presence" });
+    assert.deepEqual(card.access!.at(-1), { peer: "c", label: "Sea", before: "none yet", after: "presence: presence", changed: true, shell: false });
+    assert.equal(card.grants.length, 1);
+    assert.equal(meshPeers().some((p) => p.id === "c"), false, "nothing until Apply");
+    assert.equal((await asPage(card)).status, 200);
+    assert.equal(meshPeers().find((p) => p.id === "c")!.nodeId, "nC");
+    assert.equal(allows("nC" as never, "presence"), true);
+    assert.equal(allows("nC" as never, "sessions"), false);
+  });
+
+  test("a computer keeps its identity, and removing one ends its access at once", async () => {
+    const rows = meshPeers().map((p) => ({ id: p.id }));
+    await assert.rejects(propose("mesh.peers", rows.map((r) => ({ ...r, nodeId: "nX" }))), /keeps its identity/);
+    await assert.rejects(propose("mesh.peers", [...rows, { id: "new" }]), /mesh\.peer-add/);
+    const { card } = await propose("mesh.peers", meshPeers().filter((p) => p.id !== "c").map((p) => ({ id: p.id, ...(p.label ? { label: p.label } : {}), ...(p.url ? { url: p.url } : {}) })));
+    assert.equal(card.access!.find((r) => r.peer === "c")!.after, "removed");
+    assert.equal((await asPage(card)).status, 200);
+    assert.equal(meshPeers().some((p) => p.id === "c"), false);
+    assert.equal(meshEnabled(), true);
+  });
+
+  test("settings go through the route's checks; only more reaching other computers is a grant", async () => {
+    await assert.rejects(propose("mesh.settings", { frontDoorOrder: ["nobody"] }), /not a host here/);
+    await assert.rejects(propose("mesh.settings", { peers: [] }), /can't go on a card/);
+    const off = await propose("mesh.settings", { sync: { settings: false } });
+    assert.equal(off.card.grants.length, 0);
+    assert.equal((await asPage(off.card)).status, 200);
+    assert.equal(readMeshSettings().sync.settings, false);
+    assert.equal((await propose("mesh.settings", { sync: { settings: true } })).card.grants.length, 1);
+  });
+
+  test("device actions: a linked computer only; the relay is this computer's and on the local network", async () => {
+    await assert.rejects(propose("mesh.browser-access", { host: "stranger", on: true }), /a chat can't act on a computer that isn't/);
+    const { card } = await propose("mesh.browser-access", { host: meshSelf().id, on: false });
+    assert.equal((await asPage(card)).status, 200);
+    await assert.rejects(propose("mesh.relay", { host: "203.0.113.5", port: 9000 }));
+    await assert.rejects(propose("mesh.relay", { host: "203.0.113.5", port: 9000, exposure: "internet" }), /internet relay stays on Settings → Mesh, Pairings/);
+    await assert.rejects(propose("mesh.resync", { peer: "stranger" }), /No computer stranger/);
+    await assert.rejects(propose("mesh.resync", { peer: "b" }), /no resync recipe/);
+    const relay = await propose("mesh.relay", { host: "127.0.0.1", port: 9000 });
+    assert.equal(relay.card.grants.length, 1);
+    assert.equal((await asPage(relay.card)).status, 200);
+    assert.equal(readMeshConfig()!.self.relay!.port, 9000);
+    assert.equal((await propose("mesh.relay", null)).card.grants.length, 0, "stopping being a relay opens nothing");
+    // The button starts the recipe that is there, once, on the click.
+    const started: string[] = [];
+    setMeshCardPort({ resyncProblem: async () => null, resync: async (peer) => (started.push(peer), { status: 200, body: {} }) });
+    const resync = await propose("mesh.resync", { peer: "b" });
+    assert.deepEqual(started, [], "nothing until Apply");
+    assert.equal((await asPage(resync.card)).status, 200);
+    assert.deepEqual(started, ["b"]);
   });
 });

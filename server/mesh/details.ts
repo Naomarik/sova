@@ -1,3 +1,4 @@
+import { setMeshCardPort } from "./card-port";
 import { arch, hostname, release } from "node:os";
 import { fileURLToPath } from "node:url";
 import type { Context, Hono } from "hono";
@@ -420,20 +421,20 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     return err ? c.json({ error: err.error }, err.status) : c.json({ ok: true as const });
   });
 
-  app.put("/api/mesh/browser-access", small, async (c) => {
-    if (!mesh.enabled()) return notFound(c);
-    const body = (await c.req.json().catch(() => null)) as { id?: unknown; browserAccess?: unknown } | null;
+  /** Set a host's browser access: the route's code, and a Create card's Apply. */
+  const applyBrowserAccess = async (body: { id?: unknown; browserAccess?: unknown } | null): Promise<{ status: number; body: unknown }> => {
+    if (!mesh.enabled()) return { status: 404, body: { error: "Not found" } };
     const want = body?.browserAccess;
-    if (typeof want !== "boolean") return c.json({ error: "Expected {id, browserAccess}" }, 400);
+    if (typeof want !== "boolean") return { status: 400, body: { error: "Expected {id, browserAccess}" } };
     const config = mesh.config();
-    if (!config) return notFound(c);
+    if (!config) return { status: 404, body: { error: "Not found" } };
     if (body?.id === config.self.id) {
       const err = setSelfBrowser(want);
-      if (err) return c.json({ error: err.error }, err.status);
-      return c.json({ browserAccess: want, told: await announceBrowser() } satisfies HostBrowserAccessResult);
+      if (err) return { status: err.status, body: { error: err.error } };
+      return { status: 200, body: { browserAccess: want, told: await announceBrowser() } satisfies HostBrowserAccessResult };
     }
     const peer = config.peers.find((p) => p.id === body?.id);
-    if (!peer) return c.json({ error: "Unknown host" }, 404);
+    if (!peer) return { status: 404, body: { error: "Unknown host" } };
     let res: Response;
     try {
       res = await mesh.peerFetch(peer.id, "/api/peer/set-browser-access", {
@@ -444,25 +445,30 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
       });
     } catch (err) {
       const e = err as Error & { cause?: { code?: string } };
-      return c.json({ error: `${peer.label} didn't answer: ${e.name === "TimeoutError" ? "no answer in time" : (e.cause?.code ?? e.message)}` }, 502);
+      return { status: 502, body: { error: `${peer.label} didn't answer: ${e.name === "TimeoutError" ? "no answer in time" : (e.cause?.code ?? e.message)}` } };
     }
     if (res.status === 404) {
       await res.body?.cancel();
-      return c.json({ error: `${peer.label} runs an older build: update it to change this from here` }, 501);
+      return { status: 501, body: { error: `${peer.label} runs an older build: update it to change this from here` } };
     }
     if (answerDenied(mesh, peer.id, "admin", res)) {
       await res.body?.cancel();
-      return c.json({ error: `${peer.label} doesn't let this host change its settings` }, 403);
+      return { status: 403, body: { error: `${peer.label} doesn't let this host change its settings` } };
     }
     const got = (await res.json().catch(() => null)) as Partial<HostBrowserAccess> | { error?: string } | null;
     if (!res.ok || !got || !("browserAccess" in got) || typeof got.browserAccess !== "boolean") {
       const why = got && "error" in got && typeof got.error === "string" ? got.error : `answered ${res.status}`;
-      return c.json({ error: `${peer.label} didn't take it: ${why}` }, 502);
+      return { status: 502, body: { error: `${peer.label} didn't take it: ${why}` } };
     }
     // It tells every peer itself (this host included); taking its answer here makes the page right at once.
     const err = learnBrowser(peer.nodeId, got.browserAccess, typeof got.browserAccessAt === "number" && got.browserAccessAt > 0 ? got.browserAccessAt : undefined);
-    if (err) return c.json({ error: err.error }, err.status);
-    return c.json({ browserAccess: got.browserAccess, told: [{ id: peer.id, ok: true }] } satisfies HostBrowserAccessResult);
+    if (err) return { status: err.status, body: { error: err.error } };
+    return { status: 200, body: { browserAccess: got.browserAccess, told: [{ id: peer.id, ok: true }] } satisfies HostBrowserAccessResult };
+  };
+  setMeshCardPort({ browserAccess: applyBrowserAccess });
+  app.put("/api/mesh/browser-access", small, async (c) => {
+    const r = await applyBrowserAccess((await c.req.json().catch(() => null)) as { id?: unknown; browserAccess?: unknown } | null);
+    return c.json(r.body as object, r.status as 200);
   });
 
   app.get("/api/mesh/details", async (c) => {

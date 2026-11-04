@@ -7105,7 +7105,7 @@
       ]
     },
     "create-settings": {
-      "bytes": 2700,
+      "bytes": 2808,
       "tools": [
         {
           "name": "sova_settings",
@@ -7176,7 +7176,14 @@
                   "notifications",
                   "outreach",
                   "modes.default",
-                  "models.favorites"
+                  "models.favorites",
+                  "mesh.settings",
+                  "mesh.peers",
+                  "mesh.peer-add",
+                  "mesh.access",
+                  "mesh.browser-access",
+                  "mesh.resync",
+                  "mesh.relay"
                 ],
                 "description": "reference: the setting."
               },

@@ -1,5 +1,5 @@
-import { MESH_CAPS } from "../../shared/mesh-access";
-import type { MeshCardState } from "../../shared/mesh-access";
+import type { LanRelayPut } from "../../shared/mesh-lan";
+import { MESH_CAPS, type MeshCardState, type MeshGrant } from "../../shared/mesh-access";
 import type { IncomingMessage } from "node:http";
 import { statSync } from "node:fs";
 import { hostname } from "node:os";
@@ -45,7 +45,7 @@ import { ensureLanIdentity, LanRuntime, readLanIdentity } from "./lan";
 import { lanNodeId } from "./lan-cert";
 import { bootBuild } from "./build-id";
 import { cleanBuild } from "./lan-handoff-protocol";
-import { lanRoutes } from "./lan-routes";
+import { applyLanRelay, lanRoutes, type LanRouteDeps } from "./lan-routes";
 import { loginKindsPin } from "../sync/logins-merge";
 
 // The mesh (brief: settled decisions). ON exactly while peers.json lists a peer; OFF, nothing
@@ -601,19 +601,14 @@ function resolveNode(status: TailnetStatus, name: string) {
   );
 }
 
-async function putPeers(c: Context): Promise<Response> {
-  let body: { peers?: unknown; grants?: unknown };
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "Expected JSON body { peers: MeshPeerEntry[] }" }, 400);
-  }
-  if (!Array.isArray(body?.peers)) return c.json({ error: "peers must be an array" }, 400);
+/** Change the peer list, as Settings → Mesh does; a Create card's Apply runs this too. `dry`: every check, nothing written. */
+export async function applyMeshPeers(body: { peers?: unknown; grants?: unknown }, opts: { dry?: boolean } = {}): Promise<MeshResult> {
+  if (!Array.isArray(body?.peers)) return { status: 400, body: { error: "peers must be an array" } };
   const base = baseForWrite();
-  if ("error" in base) return c.json({ error: base.error }, 409);
+  if ("error" in base) return { status: 409, body: { error: base.error } };
   const entries = body.peers as Array<Record<string, unknown>>;
   for (const [i, e] of entries.entries()) {
-    if (typeof e !== "object" || e === null || typeof e.name !== "string" || !e.name.trim()) return c.json({ error: `peers[${i}].name is required` }, 400);
+    if (typeof e !== "object" || e === null || typeof e.name !== "string" || !e.name.trim()) return { status: 400, body: { error: `peers[${i}].name is required` } };
   }
   const unresolved = entries.filter((e) => typeof e.nodeId !== "string" || !e.nodeId);
   let status: TailnetStatus | null = null;
@@ -621,7 +616,7 @@ async function putPeers(c: Context): Promise<Response> {
     try {
       status = await getIdentity().status();
     } catch (err) {
-      return c.json({ error: `can't resolve peer names: ${(err as Error).message}` }, 400);
+      return { status: 400, body: { error: `can't resolve peer names: ${(err as Error).message}` } };
     }
   }
   const peers: unknown[] = [];
@@ -631,8 +626,8 @@ async function putPeers(c: Context): Promise<Response> {
     let dnsName = name;
     if (!nodeId) {
       const n = resolveNode(status!, name);
-      if (!n) return c.json({ error: `peers[${i}]: ${name} is not a node on this tailnet` }, 400);
-      if (n.nodeId === status!.self.nodeId) return c.json({ error: `peers[${i}]: ${name} is this host` }, 400);
+      if (!n) return { status: 400, body: { error: `peers[${i}]: ${name} is not a node on this tailnet` } };
+      if (n.nodeId === status!.self.nodeId) return { status: 400, body: { error: `peers[${i}]: ${name} is this host` } };
       nodeId = n.nodeId;
       dnsName = n.name || name;
     }
@@ -673,13 +668,24 @@ async function putPeers(c: Context): Promise<Response> {
     });
   }
   const v = validatePeers({ ...base.config, peers });
-  if ("error" in v) return c.json({ error: v.error }, 400);
+  if ("error" in v) return { status: 400, body: { error: v.error } };
   const grants = pairingGrants(body.grants, base.config, v.config);
-  if ("error" in grants) return c.json({ error: grants.error }, 400);
+  if ("error" in grants) return { status: 400, body: { error: grants.error } };
+  if (opts.dry) return { status: 200, body: null };
   writePeers(v.config);
   reload();
   applyPairingGrants(grants.set, grants.removed);
-  return c.json(await meshInfo());
+  return { status: 200, body: await meshInfo() };
+}
+
+async function putPeers(c: Context): Promise<Response> {
+  let body: { peers?: unknown; grants?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { peers: MeshPeerEntry[] }" }, 400);
+  }
+  return answer(c, await applyMeshPeers(body));
 }
 
 /**
@@ -719,6 +725,13 @@ function applyPairingGrants(set: Record<string, MeshPreset>, removed: string[]):
   if ("error" in r) console.warn(`[mesh] grants not written: ${r.error}`);
   return r;
 }
+
+/** A mesh write's answer: the route sends it, a Create card's Apply reads it. */
+export interface MeshResult {
+  status: number;
+  body: unknown;
+}
+const answer = (c: Context, r: MeshResult): Response => c.json(r.body as object, r.status as 200);
 
 /** The pairings' view for the Mesh page; also while off (this host's key and relay setting). */
 function lanStatus() {
@@ -786,21 +799,17 @@ function accessView(): MeshAccessView {
   };
 }
 
-async function putAccess(c: Context): Promise<Response> {
-  let body: Partial<MeshAccessPut>;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "Expected JSON body { peer, grant }" }, 400);
-  }
+/** Set one peer's grant, as Settings → Mesh does; a Create card's Apply runs this too. `dry`: every check, nothing written. */
+export function applyMeshAccess(body: Partial<MeshAccessPut>, opts: { dry?: boolean } = {}): MeshResult {
   const peer = typeof body?.peer === "string" ? peerById(body.peer) : undefined;
-  if (!peer) return c.json({ error: "Unknown peer" }, 404);
+  if (!peer) return { status: 404, body: { error: "Unknown peer" } };
   let grant: MeshAccessPut["grant"] = null;
   if (body.grant !== null) {
     const v = validateGrant(body.grant);
-    if ("error" in v) return c.json({ error: v.error }, 400);
+    if ("error" in v) return { status: 400, body: { error: v.error } };
     grant = v.grant;
   }
+  if (opts.dry) return { status: 200, body: null };
   const r = updateAccess((doc) => {
     if (grant) doc.peers[peer.nodeId] = grant;
     // Cleared: a tailnet peer goes back to full; a pairing to presence, never more (§mesh.lan/pairing).
@@ -808,39 +817,43 @@ async function putAccess(c: Context): Promise<Response> {
     else delete doc.peers[peer.nodeId];
     return doc;
   });
-  if ("error" in r) return c.json({ error: r.error }, 409);
-  return c.json(accessView());
+  if ("error" in r) return { status: 409, body: { error: r.error } };
+  return { status: 200, body: accessView() };
 }
 
-async function putSettings(c: Context): Promise<Response> {
-  let body: Partial<MeshLocalSettings>;
+async function putAccess(c: Context): Promise<Response> {
+  let body: Partial<MeshAccessPut>;
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: "Expected JSON body Partial<MeshSettings>" }, 400);
+    return c.json({ error: "Expected JSON body { peer, grant }" }, 400);
   }
-  if (typeof body !== "object" || body === null || Array.isArray(body)) return c.json({ error: "Expected an object" }, 400);
+  return answer(c, applyMeshAccess(body));
+}
+
+/** Change this host's mesh settings, as Settings → Mesh does; a Create card's Apply runs this too. */
+export function applyMeshSettings(body: Partial<MeshLocalSettings>, opts: { dry?: boolean } = {}): MeshResult {
   const base = baseForWrite();
-  if ("error" in base) return c.json({ error: base.error }, 409);
+  if ("error" in base) return { status: 409, body: { error: base.error } };
   if (body.frontDoorOrder !== undefined && body.frontDoorOrder !== null) {
     const hosts = new Set([base.config.self.id, ...base.config.peers.map((p) => p.id)]);
     const unknown = Array.isArray(body.frontDoorOrder) ? body.frontDoorOrder.filter((id) => !hosts.has(id)) : [];
-    if (unknown.length) return c.json({ error: `frontDoorOrder: not a host here: ${unknown.join(", ")}` }, 400);
+    if (unknown.length) return { status: 400, body: { error: `frontDoorOrder: not a host here: ${unknown.join(", ")}` } };
   }
   if (Array.isArray(body.frontDoorExclude) && body.frontDoorExclude.length) {
     const hosts = [base.config.self.id, ...base.config.peers.map((p) => p.id)];
     const unknown = body.frontDoorExclude.filter((id) => !hosts.includes(id));
-    if (unknown.length) return c.json({ error: `frontDoorExclude: not a host here: ${unknown.join(", ")}` }, 400);
-    if (hosts.every((id) => body.frontDoorExclude!.includes(id))) return c.json({ error: "frontDoorExclude: the front door needs at least one host" }, 400);
+    if (unknown.length) return { status: 400, body: { error: `frontDoorExclude: not a host here: ${unknown.join(", ")}` } };
+    if (hosts.every((id) => body.frontDoorExclude!.includes(id))) return { status: 400, body: { error: "frontDoorExclude: the front door needs at least one host" } };
     // Hosts with no browser address are never upstreams, so one with an address must stay in.
     const noBrowser = meshEnabled() ? noBrowserIds(base.config) : new Set<string>();
     const served = hosts.filter((id) => !noBrowser.has(id));
     if (served.length && served.length < hosts.length && served.every((id) => body.frontDoorExclude!.includes(id)))
-      return c.json({ error: "frontDoorExclude: the front door needs at least one host with a browser address" }, 400);
+      return { status: 400, body: { error: "frontDoorExclude: the front door needs at least one host with a browser address" } };
   }
   const pinned = pinnedLoginKinds();
   if (body.loginKinds !== undefined && pinned && (body.loginKinds ?? "all") !== pinned) {
-    return c.json({ error: "loginKinds is pinned by SOVA_SYNC_LOGIN_KINDS on this host" }, 409);
+    return { status: 409, body: { error: "loginKinds is pinned by SOVA_SYNC_LOGIN_KINDS on this host" } };
   }
   const self = { ...base.config.self };
   // A new name is stamped (this host's clock), so peers take it (server/mesh/details.ts) and never an older one.
@@ -860,15 +873,48 @@ async function putSettings(c: Context): Promise<Response> {
   else if (body.frontDoorExclude !== undefined) next.frontDoorExclude = body.frontDoorExclude;
   if (body.loginKinds !== undefined) next.loginKinds = body.loginKinds;
   const v = validatePeers(next);
-  if ("error" in v) return c.json({ error: v.error }, 400);
+  if ("error" in v) return { status: 400, body: { error: v.error } };
+  if (opts.dry) return { status: 200, body: null };
   writePeers(v.config);
   reload();
   const settings = readMeshSettings(v.config);
   runHooks(settingsHooks, settings);
-  return c.json(settings);
+  return { status: 200, body: settings };
+}
+
+async function putSettings(c: Context): Promise<Response> {
+  let body: Partial<MeshLocalSettings>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body Partial<MeshSettings>" }, 400);
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return c.json({ error: "Expected an object" }, 400);
+  return answer(c, applyMeshSettings(body));
 }
 
 // ---- routes -----------------------------------------------------------------------------------
+
+/** The peer list file as it stands, for a card's reads. */
+export const readMeshConfig = (): PeersConfig | null => rt.config;
+
+/** One computer's stored grant, or null: its default. */
+export function meshGrantOf(id: string): MeshGrant | null {
+  const a = access();
+  const peer = peerById(id);
+  return peer && a.kind === "ok" ? (a.file.peers[peer.nodeId] ?? null) : null;
+}
+
+const lanDeps: LanRouteDeps = {
+  status: () => lanStatus(),
+  ensureKey: () => ensureLanIdentity(),
+  updatePeers,
+  applyGrants: applyPairingGrants,
+  acceptorRunning: () => rt.lan?.acceptorRunning() ?? false,
+};
+
+/** This host as a relay, as the Mesh page sets it; a Create card's Apply runs this too. */
+export const applyMeshRelay = (relay: LanRelayPut, opts: { dry?: boolean } = {}): MeshResult => applyLanRelay(relay, lanDeps, opts);
 
 /** Mount the mesh routes; call before the `/api/*` 404. */
 export function meshRoutes(app: Hono): void {
@@ -902,13 +948,7 @@ export function meshRoutes(app: Hono): void {
   app.get("/api/mesh/access", (c) => (localRequest(c) ? c.json(accessView()) : c.json({ error: "Not found" }, 404)));
   app.put("/api/mesh/access", (c) => (localRequest(c) ? putAccess(c) : c.json({ error: "Not found" }, 404)));
   // Dial-out pairings (§mesh.lan/pairing): the same local-browser-only rule.
-  lanRoutes(app, {
-    status: () => lanStatus(),
-    ensureKey: () => ensureLanIdentity(),
-    updatePeers,
-    applyGrants: applyPairingGrants,
-    acceptorRunning: () => rt.lan?.acceptorRunning() ?? false,
-  });
+  lanRoutes(app, lanDeps);
 
   // Peer-only routes: reached through the peer listener alone. On the main listener they are the
   // same 404 as any unknown /api route.

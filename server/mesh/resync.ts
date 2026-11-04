@@ -1,3 +1,4 @@
+import { setMeshCardPort } from "./card-port";
 import { type ChildProcess, spawn } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, readFileSync, type WriteStream } from "node:fs";
 import { join } from "node:path";
@@ -476,6 +477,20 @@ const small = bodyLimit({ maxSize: 1024, onError: (c) => c.json({ error: "Too la
 /** GET /api/mesh/resync and POST /api/mesh/resync/:id (main listener only: /api/mesh/*). */
 export function mountResync(app: Hono, mesh: MeshApi, deps: Partial<ResyncDeps> = {}): ResyncService {
   const service = new ResyncService({ mesh, ...deps });
+  // A Create card's button: the same start, on this host's own boot commit, the only one it takes.
+  setMeshCardPort({
+    async resync(peer) {
+      const commit = (await service.info())?.self.commit;
+      return service.start(peer, { commit }, "application/json");
+    },
+    async resyncProblem(peer) {
+      const info = await service.info();
+      const host = info?.hosts.find((h) => h.id === peer);
+      if (!host) return `No computer ${peer} here.`;
+      if (!host.recipe) return `There's no resync recipe for ${host.label}: recipes stay on Settings → Mesh, Resync.`;
+      return host.recipeProblem ?? (info?.self.blocked ?? null);
+    },
+  });
   app.get("/api/mesh/resync", async (c) => {
     const info = await service.info();
     return info ? c.json(info) : notFound(c);

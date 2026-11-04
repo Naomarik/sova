@@ -31,6 +31,19 @@ Seatbelt filters operations; it cannot remap paths as bwrap's mounts do. So on m
   logging, certificate checks), so pasteboard, Apple events (`osascript`), and the GUI do not
   work.
 - **setuid programs cannot run** (`sudo`, `ps`, `top`): Seatbelt refuses the exec.
+- **Headless browser (`browser`).** Off by default (`"none"`). With `"browser": "headless-shell"`
+  the profile adds two rules (the power-management user client `RootDomainUserClient`, and
+  registering and looking up `org.chromium.Chromium.MachPortRendezvousServer.*`), so Playwright's
+  `chrome-headless-shell` runs inside every confined profile: On sessions and their workers, and
+  write-only worktree workers, which take the value from their parent's policy. Start it with
+  `--no-sandbox` (Playwright's default): Seatbelt cannot nest Chrome's own sandbox. That is the
+  tradeoff: Chrome's renderers then run with the worker's own rights, so a renderer exploit in
+  web content gets what the worker has. Any confined process may also claim a Chromium rendezvous
+  name (a host Chromium could then fail to start). Use only the headless shell (Playwright's
+  `executablePath`, or its default when its revision is installed); never `channel: "chrome"`,
+  Google Chrome.app or the Chrome for Testing bundle: they need the GUI session's services and
+  crash with a "quit unexpectedly" dialog. Under On nothing can listen on a TCP port, so drive
+  the browser over Playwright's default pipe within one `bash` call. The Keychain stays denied.
 - **Claude Code workers** run whole under the same profile, with the CLI's own sandbox off. Their
   private state is linked in rather than bound, because Seatbelt cannot remap paths. A confined
   `claude --version` must succeed before the first one starts; if it fails, the worker is refused,

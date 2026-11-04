@@ -127,6 +127,8 @@ export async function prepareSessionCommand(
 			shadowed: p.shadowed, network, sessionId: input.sessionId,
 			env: p.writeOnly ? hostEnv(process.env) : scrubEnv(process.env, p.envAllow),
 			...(p.writeOnly ? { hostTmp: true } : {}),
+			// The policy's `browser` (a worker: its parent's), as the extension's snapshot() passes it.
+			...(p.browser ? { browser: true } : {}),
 		};
 		const probe = await backend.probe(policy);
 		if (!probe.ok) { await dispose(); return { ok: false, error: probe.reason }; }

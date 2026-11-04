@@ -24,7 +24,7 @@ import { type ExtensionAPI, type ExtensionContext, getAgentDir, SettingsManager 
 import { Text } from "@earendil-works/pi-tui";
 import { backendFor, type Policy } from "./backend.ts";
 import { hostEnv, scrubEnv } from "./env.ts";
-import { canonicalize, loadPolicyFile, narrowScope, type ParentScope, parentScopeOf, parseParentScope, policyFilePath, type ResolvedPolicy, workerCwdRefusal, writeOnlyScope } from "./policy.ts";
+import { canonicalize, loadPolicyFile, narrowScope, type ParentScope, parentBrowser, parentScopeOf, parseParentScope, policyFilePath, type ResolvedPolicy, workerCwdRefusal, writeOnlyScope } from "./policy.ts";
 import { encodeLaunchScope, OWNER_ID } from "./launch.ts";
 import { type ProxyHandle, proxySocketPath, startProxy } from "./proxy.ts";
 import { ensureSessionTmpDir, resolveSessionPolicy } from "./session-policy.ts";
@@ -210,6 +210,8 @@ export default function sandbox(pi: ExtensionAPI) {
 			sessionId,
 			// Write-only: the host's /tmp stays visible, read-only (§chat.worktrees/workers).
 			...(policy.writeOnly ? { hostTmp: true } : {}),
+			// The policy's `browser` (a worker: its parent's): the Seatbelt profile's Chromium rules.
+			...(policy.browser ? { browser: true } : {}),
 		};
 		const probe = await backend.probe(backendPolicy);
 		if (!probe.ok) return { ok: false, reason: probe.reason };
@@ -261,7 +263,9 @@ export default function sandbox(pi: ExtensionAPI) {
 			scope = root ? narrowScope(parent, root) : parent;
 		} else {
 			if (!root) return { kind: "none" };
-			scope = writeOnlyScope(root);
+			// No policy file is read for the worker itself; the browser setting is the parent's (its
+			// file and its cwd's project file). Unreadable: no browser, and the worker still starts.
+			scope = writeOnlyScope(root, { browser: parentBrowser(agentDir(), cwd) });
 		}
 		if (req.backend === "pi") return { kind: "pi", extensionPath: SELF_DIR, flags: { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(scope) } };
 		if (!OWNER_ID.test(req.owner) || req.owner === "." || req.owner === "..") return { kind: "refused", reason: `Sandbox: invalid worker id ${JSON.stringify(req.owner)}; a worker cannot start sandboxed.` };

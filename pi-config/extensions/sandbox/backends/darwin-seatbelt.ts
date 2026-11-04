@@ -18,7 +18,8 @@
  * socket): only sockets under the session tmp and the writable roots can be reached.
  *
  * Mach services are denied by default with a short allowlist; Keychain (securityd) is denied
- * explicitly as well as its files.
+ * explicitly as well as its files. The policy's `browser` adds BROWSER_RULES, for
+ * chrome-headless-shell only.
  */
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -80,6 +81,23 @@ export const MACH_ALLOW: readonly string[] = [
 	// TLS certificate evaluation (Security.framework): curl, git and python https through the proxy.
 	"com.apple.trustd",
 	"com.apple.trustd.agent",
+];
+
+/**
+ * The policy's `browser: "headless-shell"`: what Playwright's chrome-headless-shell needs to run
+ * here, with `--no-sandbox` (Seatbelt refuses Chrome's own nested sandbox_init; Playwright passes
+ * the flag by default). Rendered right after the mach allowlist, so the write layers, the hidden
+ * paths and the Keychain deny below still have the last word. An app-bundle Chrome needs GUI-session
+ * services (LaunchServices, WindowServer, …) and is not supported.
+ */
+export const BROWSER_RULES: readonly string[] = [
+	// IORegisterForSystemPower: without it Chrome's power monitor crashes (SEGV_ACCERR in
+	// IONotificationPortGetRunLoopSource). Sleep/wake notifications and power state; power
+	// assertions stay denied (com.apple.PowerManagement.control is not on the allowlist).
+	'(allow iokit-open-user-client (iokit-user-client-class "RootDomainUserClient"))',
+	// Chromium's MachPortRendezvousServer: the browser registers its per-pid name, its children look
+	// it up. Without it: bootstrap_check_in Permission denied (1100), then "No rendezvous client".
+	'(allow mach-register mach-lookup (global-name-prefix "org.chromium.Chromium.MachPortRendezvousServer."))',
 ];
 
 /** Keychain and the security daemons: denied even if a later edit widened MACH_ALLOW. */
@@ -148,6 +166,8 @@ export interface ProfilePlan {
 	shadowed: Shadow[];
 	/** Network mode "host" (a write-only worker): no network rules at all. */
 	hostNetwork?: boolean;
+	/** The policy's `browser`: BROWSER_RULES are rendered. */
+	browser?: boolean;
 }
 
 /** Keychain files: hidden in every profile, whatever the policy file lists (the service is denied too). */
@@ -187,7 +207,7 @@ export function profilePlan({ policy, relayPort }: ProfileInput): ProfilePlan {
 	// is a mount point under bwrap: here too its entry may not be renamed or removed.
 	for (const w of writable) if (readOnly.some((r) => r !== w && isWithin(w, r))) pins.push(w);
 	const ports = uniq([...(relayPort ? [relayPort] : []), ...(policy.network.localPorts ?? [])]).filter((n) => Number.isInteger(n) && n > 0 && n < 65536);
-	return { writable, readOnly, pins: uniq(pins), hidden, socketRoots: writable.filter((w) => !shadows.some((s) => s.source === w)), ports, shadowed: shadows, hostNetwork: policy.network.mode === "host" };
+	return { writable, readOnly, pins: uniq(pins), hidden, socketRoots: writable.filter((w) => !shadows.some((s) => s.source === w)), ports, shadowed: shadows, hostNetwork: policy.network.mode === "host", ...(policy.browser ? { browser: true } : {}) };
 }
 
 /**
@@ -264,6 +284,7 @@ export function renderProfile(plan: ProfilePlan): string {
   (regex #"^/dev/ttys[0-9]+$") (regex #"^/dev/fd/"))`,
 	);
 	rule("allow mach-lookup", MACH_ALLOW.map((n) => `(global-name ${sbplString(n)})`));
+	if (plan.browser) L.push(';; browser: chrome-headless-shell (run with --no-sandbox); before the hidden paths and the Keychain deny', ...BROWSER_RULES);
 	L.push(";; writable roots and what stays read-only inside them, shallow to deep (the last matching rule wins)");
 	for (const layer of writeLayers(plan)) {
 		rule("allow file-write*", subpaths(layer.allow));

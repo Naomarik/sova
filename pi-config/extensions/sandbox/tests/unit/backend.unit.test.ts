@@ -152,6 +152,9 @@ test("policyKey ignores list order and env values", () => {
 	const b = policyKey(policy({ hidden: ["/a", "/b"], env: { B: "x", A: "y" } }));
 	assert.equal(a, b);
 	assert.notEqual(a, policyKey(policy({ level: "read-only" })));
+	// The browser rules change the profile, so the probe runs again.
+	assert.notEqual(policyKey(policy({ browser: true })), policyKey(policy({})));
+	assert.equal(policyKey(policy({ browser: false })), policyKey(policy({})), "off is the same policy as absent");
 });
 
 const confined: Confined = {

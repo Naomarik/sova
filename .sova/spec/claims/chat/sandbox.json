@@ -155,7 +155,8 @@
       "pi-config/extensions/sandbox/index.ts",
       "pi-config/extensions/sandbox/tests/unit/proxy.unit.test.ts",
       "pi-config/extensions/sandbox/session-policy.ts",
-      "pi-config/extensions/sandbox/README.md"
+      "pi-config/extensions/sandbox/README.md",
+      "pi-config/extensions/sandbox/tests/unit/darwin-seatbelt-browser.integration.test.ts"
     ],
     "agreed": {
       "by": "user",

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -7,8 +7,9 @@ import { fileURLToPath } from "node:url";
 import { backendFor, gitProtectedPaths, shadowSource } from "../backend.ts";
 import { canonicalize, readDenial, resolvePolicy, writeDenial } from "../policy.ts";
 import { mountPlan } from "../backends/linux-bwrap.ts";
+import { BROWSER_RULES, DarwinSeatbeltBackend } from "../backends/darwin-seatbelt.ts";
 import { spawnSync } from "node:child_process";
-import { ensureSessionTmpDir, resolveSessionPolicy, sessionTmpBase, sessionTmpDir } from "../session-policy.ts";
+import { ensureSessionTmpDir, prepareSessionCommand, resolveSessionPolicy, sessionTmpBase, sessionTmpDir } from "../session-policy.ts";
 
 const TEMPLATE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "sandbox-policy");
 
@@ -109,4 +110,33 @@ test("the session tmp path: sanitised id, pid fallback, made 0700 on demand", (t
 	assert.equal(made, sessionTmpDir("s4"));
 	assert.equal(statSync(made).mode & 0o777, 0o700);
 	assert.equal(statSync(sessionTmpBase()).mode & 0o777, 0o700);
+});
+
+test("prepareSessionCommand hands the policy's browser to the backend, as the extension's snapshot does", async (t) => {
+	const { home, agentDir, ws } = rig(t);
+	// read-only: no proxy to start. The real darwin profile is rendered; only the probe (sandbox-exec) is stubbed.
+	const file = join(agentDir, "sandbox-policy", "darwin", "policy.json");
+	const setBrowser = (browser: string) => writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf8")), level: "read-only", browser }));
+	const profileOf = async (parent?: Parameters<typeof prepareSessionCommand>[0]["parent"]) => {
+		const backend = new DarwinSeatbeltBackend({ sandboxExec: process.execPath });
+		const seen: boolean[] = [];
+		backend.probe = async (policy) => {
+			seen.push(policy.browser === true);
+			return { ok: true, enforcement: "full" };
+		};
+		const r = await prepareSessionCommand({ agentDir, cwd: ws, sessionId: "s-browser", home, platform: "darwin", ...(parent ? { parent } : {}) }, ["/bin/true"], { backend });
+		assert.ok(r.ok, r.ok ? "" : r.error);
+		const profile = readFileSync(r.value.argv[r.value.argv.indexOf("-f") + 1]!, "utf8");
+		await r.value.dispose();
+		return { probed: seen[0], rules: BROWSER_RULES.every((rule) => profile.includes(rule)), any: BROWSER_RULES.some((rule) => profile.includes(rule)) };
+	};
+	setBrowser("headless-shell");
+	assert.deepEqual(await profileOf(), { probed: true, rules: true, any: true });
+	setBrowser("none");
+	assert.deepEqual(await profileOf(), { probed: false, rules: false, any: false });
+	// A worker's is its parent's, never its own file's.
+	const scope = { version: 1 as const, level: "read-only" as const, workspaceRoot: ws, writable: [] };
+	assert.deepEqual(await profileOf({ ...scope, browser: true }), { probed: true, rules: true, any: true });
+	setBrowser("headless-shell");
+	assert.deepEqual(await profileOf(scope), { probed: false, rules: false, any: false });
 });

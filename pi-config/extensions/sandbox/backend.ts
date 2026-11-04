@@ -61,6 +61,9 @@ export interface Policy {
 	 * its Unix sockets masked, and TMPDIR names `tmpDir` (writable at its own path) instead of a
 	 * private /tmp. Linux only: macOS never remaps /tmp. */
 	hostTmp?: boolean;
+	/** The policy's `browser: "headless-shell"`: darwin-seatbelt adds its two Chromium rules
+	 * (BROWSER_RULES); linux-bwrap ignores it with a note. */
+	browser?: boolean;
 }
 
 export interface Shadow {
@@ -205,6 +208,7 @@ export function policyKey(policy: Policy): string {
 		shadowed: (policy.shadowed ?? []).map((sh) => `${sh.path}=${sh.source}`).sort(),
 		...(policy.binds?.length ? { binds: policy.binds.map((b) => `${b.path}=${b.source}`).sort() } : {}),
 		...(policy.hostTmp ? { hostTmp: true } : {}),
+		...(policy.browser ? { browser: true } : {}),
 	});
 }
 

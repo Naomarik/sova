@@ -116,6 +116,8 @@ export interface SettingsCardView {
   input?: { field: string; label: string };
   /** A mesh card: every computer's access to this one as it would be after the change. */
   access?: MeshAccessRow[];
+  /** Applied in part: a write was refused and what took effect couldn't be put back; `stillNeeds` names both. */
+  partly?: boolean;
   /** Applied, but these grants weren't recorded, each in words with where to approve it: it must not read as approved. */
   stillNeeds?: string[];
   state: SettingsCardState;

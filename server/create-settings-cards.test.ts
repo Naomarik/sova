@@ -365,6 +365,98 @@ describe("a Sova-wide card", () => {
     assert.equal((await settings.settingsInfo(project.id)).cards.length, 0);
   });
 
+  describe("a card of several settings, when one can't be saved", () => {
+    const priority = join(agentDir, "sova", "settings.json");
+    const limits = join(agentDir, "provider-limits.json");
+    const two = async () => (await runCreateSettingsTool(chat(null), { op: "propose", why: "Both.", edits: [{ setting: "sova", id: "workers.priority", value: 7 }, { setting: "sova", id: "models.limits", value: { limits: { zai: 3 } } }] })).details as { card: { id: string; fingerprint: string } };
+    const text = (f: string) => (existsSync(f) ? readFileSync(f, "utf8") : null);
+    const history = () => (existsSync(join(agentDir, "sova", "sova-settings-history.jsonl")) ? readFileSync(join(agentDir, "sova", "sova-settings-history.jsonl"), "utf8") : "");
+    const stubbing = async (id: "models.limits" | "workers.priority", over: Record<string, unknown>, run: () => Promise<void>) => {
+      const was = { ...sova.SOVA_ADAPTERS[id] };
+      Object.assign(sova.SOVA_ADAPTERS[id], over);
+      try {
+        await run();
+      } finally {
+        for (const k of Object.keys(over)) delete (sova.SOVA_ADAPTERS[id] as unknown as Record<string, unknown>)[k];
+        Object.assign(sova.SOVA_ADAPTERS[id], was);
+      }
+    };
+
+    test("what no longer passes its check at Apply stops the card before anything is written", async () => {
+      const { card } = await two();
+      const before = text(priority);
+      await stubbing("models.limits", { check: () => "No longer allowed." }, async () => {
+        const r = await apply(card);
+        assert.equal(r.status, 409);
+        assert.match(await r.text(), /No longer allowed/);
+      });
+      assert.equal(text(priority), before, "the first edit wasn't written");
+      sova.withdrawSovaCard(card.id);
+    });
+
+    test("a refused second write puts the first back: the card waits, applies later, and the history holds only that", async () => {
+      const { card } = await two();
+      const before = text(priority);
+      const lines = history();
+      await stubbing("models.limits", { write: async () => "The disk said no." }, async () => {
+        const r = await apply(card);
+        assert.equal(r.status, 409);
+        assert.match(await r.text(), /The disk said no.*Nothing changed/);
+      });
+      assert.equal(text(priority), before, "the first edit is back");
+      assert.equal(history(), lines, "no line for what didn't stay");
+      assert.equal((await apply(card)).status, 200, "the card can still be applied");
+      assert.match(text(priority)!, /"workerNice": 7/);
+      assert.match(text(limits)!, /zai/);
+      rmSync(priority);
+      rmSync(limits);
+    });
+
+    test("a write that throws is put back the same way", async () => {
+      const { card } = await two();
+      const before = text(priority);
+      await stubbing("models.limits", { write: async () => { throw new Error("EIO"); } }, async () => {
+        assert.equal((await apply(card)).status, 409);
+      });
+      assert.equal(text(priority), before);
+      sova.withdrawSovaCard(card.id);
+    });
+
+    test("what can't be put back marks the card partly applied, naming what took effect", async () => {
+      const { card } = await two();
+      await stubbing("models.limits", {
+        // The first edit's file can no longer be replaced.
+        write: async () => {
+          rmSync(priority);
+          mkdirSync(priority);
+          return "The disk said no.";
+        },
+      }, async () => {
+        const r = await apply(card);
+        assert.equal(r.status, 200, await r.clone().text());
+        const body = (await r.json()) as { approved: string[]; card: { state: string; partly?: boolean; stillNeeds?: string[] } };
+        assert.equal(body.card.state, "applied");
+        assert.equal(body.card.partly, true);
+        assert.match(body.card.stillNeeds![0]!, /Partly applied: Worker priority took effect\. Requests at once didn't: The disk said no\./);
+      });
+      assert.equal((await apply(card)).status, 409, "it is settled: never applied twice");
+      assert.match(history(), /"field":"workers\.priority"/, "what took effect is in the history");
+      rmSync(priority, { recursive: true });
+    });
+
+    test("an action that already ran can't be put back, and the card says so", async () => {
+      const { card } = await two();
+      await stubbing("workers.priority", { noRestore: true }, () =>
+        stubbing("models.limits", { write: async () => "The disk said no." }, async () => {
+          const body = (await (await apply(card)).json()) as { card: { partly?: boolean; stillNeeds?: string[] } };
+          assert.equal(body.card.partly, true);
+          assert.match(body.card.stillNeeds![0]!, /Worker priority took effect/);
+        }),
+      );
+      rmSync(priority, { force: true });
+    });
+  });
+
   test("rows read as words, never raw JSON", async () => {
     const d = await propose("models.limits", { limits: { zai: 3 } });
     const row = (d.card.kept as { label: string; fromText: string; toText: string }[]);

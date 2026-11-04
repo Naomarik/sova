@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { grantCaps, MESH_CAPS, MESH_PRESETS, presetCaps, type MeshCap, type MeshGrant, type MeshPreset } from "../shared/mesh-access";
 import type { MeshAccessRow } from "../shared/project-settings";
 import type { SovaSettingId } from "../shared/sova-settings-reference";
-import { applyMeshAccess, applyMeshPairing, applyMeshPeers, applyMeshRelay, applyMeshSettings, meshCardState, meshGrantOf, meshPeers, meshSelf, readMeshConfig, readMeshSettings, type MeshResult } from "./mesh";
+import { applyMeshAccess, applyMeshPairing, applyMeshPeers, applyMeshRelay, applyMeshSettings, meshCardState, meshGrantOf, meshPeers, meshSelf, readMeshConfig, reloadMesh, readMeshSettings, type MeshResult } from "./mesh";
 import { accessFile } from "./mesh/access";
 import { meshCardPort } from "./mesh/card-port";
 import { PEER_ID_RE, peersFile } from "./mesh/peers";
@@ -64,8 +64,12 @@ const addBody = (v: Record<string, unknown>) => {
 const asGrant = (v: unknown): MeshGrant | null => (v as { grant: MeshGrant | null }).grant;
 const defaultGrant = (id: string): MeshGrant => ({ preset: meshPeers().find((p) => p.id === id)?.lan ? "presence" : "full" });
 
+/** The running mesh follows peers.json once a card's edit was put back. */
+const meshRestored = (): void => reloadMesh();
+
 export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<SovaSettingId, `mesh.${string}`>> = {
   "mesh.settings": {
+    restored: meshRestored,
     files: () => [peersFile()],
     read(value) {
       const now = readMeshSettings() as unknown as Record<string, unknown>;
@@ -85,6 +89,7 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
     },
   },
   "mesh.peers": {
+    restored: meshRestored,
     files: () => [peersFile()],
     read: () => meshPeers().map(peerRow),
     async check(v) {
@@ -100,6 +105,7 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
     access: (v) => wholeAccess((id) => (namesOf(v as unknown[]).some((r) => r.id === id) ? undefined : "removed")),
   },
   "mesh.peer-add": {
+    restored: meshRestored,
     files: () => [peersFile(), accessFile()],
     read: () => null,
     async check(v) {
@@ -117,6 +123,7 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
     },
   },
   "mesh.access": {
+    restored: meshRestored,
     files: () => [accessFile()],
     read(value) {
       const id = isObj(value) ? value.peer : undefined;
@@ -140,6 +147,7 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
     },
   },
   "mesh.browser-access": {
+    noRestore: true,
     files: () => [peersFile()],
     read(value) {
       const host = isObj(value) ? value.host : undefined;
@@ -159,6 +167,7 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
     widens: (_b, v) => (v as { on: boolean }).on,
   },
   "mesh.resync": {
+    noRestore: true,
     files: () => [],
     read: () => ({ peer: null }),
     async check(v) {
@@ -220,6 +229,7 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
     widens: (_b, v) => (v as { recipe: unknown }).recipe !== null,
   },
   "mesh.pairing": {
+    restored: meshRestored,
     files: () => [peersFile(), accessFile()],
     read: () => null,
     input: { field: "pin", label: "The other computer's fingerprint, from its Mesh page" },
@@ -243,6 +253,7 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
     },
   },
   "mesh.relay": {
+    restored: meshRestored,
     files: () => [peersFile()],
     read: () => readMeshConfig()?.self.relay ?? null,
     check(v) {
@@ -276,6 +287,8 @@ const fileRecipe = (peer: string): unknown => {
 };
 
 interface MeshAdapter {
+  noRestore?: boolean;
+  restored?(before: unknown): Promise<void> | void;
   files(): string[];
   read(value?: unknown): unknown;
   check(value: unknown): string | null | Promise<string | null>;

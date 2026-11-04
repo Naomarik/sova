@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import type { OutreachPatch } from "../shared/outreach";
 import { CREATE_NO_DEFAULT } from "../shared/profiles";
@@ -82,6 +82,10 @@ interface Adapter {
   write(value: unknown, input?: string): Promise<string | null>;
   /** A value the person types into the card's own field at Apply: it never reaches a chat. */
   input?: { field: string; label: string };
+  /** A write that can't be taken back by putting its files back: it acted, here or on another computer. */
+  noRestore?: boolean;
+  /** What the running server does after its files were put back. */
+  restored?(before: unknown): Promise<void> | void;
   /** The value the card holds, when more is pinned than the chat named. */
   prepare?(value: unknown): Promise<unknown>;
   /** What the person should read before Apply, as it stands now. */
@@ -336,6 +340,7 @@ export const SOVA_ADAPTERS: Record<SovaSettingId, Adapter> = {
     write: async (v) => errorOf(writePushSettings(v)),
   },
   outreach: {
+    restored: async (before) => void (await import("./outreach/routes")).applyOutreachPatch(before as OutreachPatch),
     files: () => [outreachFile()],
     read() {
       const file = readOutreach() as unknown as Record<string, unknown>;
@@ -449,6 +454,8 @@ interface StoredEdit {
   access?: MeshAccessRow[];
   /** Read again as the card is read; never part of its fingerprint. */
   notes?: string[];
+  /** What the chat named, where `prepare` pinned more: Apply's check reads this. */
+  asked?: unknown;
 }
 
 interface StoredSovaCard {
@@ -462,6 +469,8 @@ interface StoredSovaCard {
   fingerprint: string;
   appliedAt?: string;
   dismissedAt?: string;
+  /** Applied in part: a write was refused and what took effect couldn't be put back. */
+  partly?: string[];
 }
 
 interface Store {
@@ -617,6 +626,7 @@ function cardView(c: StoredSovaCard): SettingsCardView {
     ...(c.edits.some((e) => e.notes?.length) ? { notes: c.edits.flatMap((e) => e.notes ?? []) } : {}),
     ...(c.edits.some((e) => e.access) ? { access: c.edits.flatMap((e) => e.access ?? []) } : {}),
     ...(c.appliedAt ? { appliedAt: c.appliedAt } : {}),
+    ...(c.partly ? { partly: true, stillNeeds: c.partly } : {}),
     ...(c.dismissedAt ? { dismissedAt: c.dismissedAt } : {}),
   };
 }
@@ -638,6 +648,43 @@ export async function refreshSovaNotes(): Promise<void> {
   const store = readStore();
   for (const c of store.cards) for (const e of c.edits) if (fresh.has(`${c.id}/${e.id}`)) e.notes = fresh.get(`${c.id}/${e.id}`)!;
   writeStore(store);
+}
+
+type Saved = Map<string, { text: string; mode: number } | null>;
+
+/** Each edit's files as they are, before the first write: what a refused card puts back. */
+function snapshot(edits: StoredEdit[]): Saved {
+  const saved: Saved = new Map();
+  for (const file of edits.flatMap((e) => SOVA_ADAPTERS[e.id].files())) {
+    if (!saved.has(file)) saved.set(file, existsSync(file) ? { text: readFileSync(file, "utf8"), mode: statSync(file).mode & 0o777 } : null);
+  }
+  return saved;
+}
+
+/** Put `edits` back, the last first. Answers those that stayed: a file that couldn't be restored, or an action already taken. */
+async function putBack(edits: StoredEdit[], saved: Saved): Promise<Set<StoredEdit>> {
+  const stayed = new Set<StoredEdit>();
+  for (const e of [...edits].reverse()) {
+    const adapter = SOVA_ADAPTERS[e.id];
+    if (adapter.noRestore && e !== edits.at(-1)) {
+      stayed.add(e);
+      continue;
+    }
+    try {
+      for (const file of adapter.files()) {
+        const was = saved.get(file)!;
+        if (was === null) rmSync(file, { force: true });
+        else if ((existsSync(file) ? readFileSync(file, "utf8") : null) !== was.text) {
+          writeFileAtomic(file, was.text);
+          chmodSync(file, was.mode);
+        }
+      }
+      await adapter.restored?.(e.before);
+    } catch {
+      stayed.add(e);
+    }
+  }
+  return stayed;
 }
 
 /** Prepare a card (a Create chat's propose): every edit checked first, a refusal writes nothing. It never applies. */
@@ -664,7 +711,7 @@ export async function proposeSova(input: { edits: unknown[]; why: unknown }, by:
     if (!same(before, value)) {
       const access = await SOVA_ADAPTERS[id].access?.(value);
       const notes = await SOVA_ADAPTERS[id].notes?.(value);
-      edits.push({ id, before, value, ...(access ? { access } : {}), ...(notes ? { notes } : {}) });
+      edits.push({ id, before, value, ...(value !== raw.value ? { asked: raw.value } : {}), ...(access ? { access } : {}), ...(notes ? { notes } : {}) });
     }
   }
   if (!edits.length) return null;
@@ -693,18 +740,37 @@ export async function applySovaCard(cardId: string, fingerprint: unknown, input?
   const by: SettingsBy = { ...c.by, via: "card" };
   const needs = c.edits.find((e) => SOVA_ADAPTERS[e.id].input);
   if (needs && (typeof input !== "string" || !input.trim())) throw Object.assign(new SovaSettingsRefusal(`${SOVA_ADAPTERS[needs.id].input!.label}: fill it in on the card.`), { status: 409 });
+  // Every edit again before the first write: a card applies whole, and what time has ruled out stops it here.
   for (const e of c.edits) {
-    const refused = await SOVA_ADAPTERS[e.id].write(e.value, SOVA_ADAPTERS[e.id].input ? (input as string) : undefined);
-    if (refused) throw Object.assign(new SovaSettingsRefusal(`${SOVA_SETTINGS[e.id].label}: ${refused}`), { status: 409 });
-    mkdirSync(dirname(sovaHistoryFile()), { recursive: true });
-    appendFileSync(sovaHistoryFile(), `${JSON.stringify({ at: new Date().toISOString(), field: e.id, from: e.before ?? null, to: e.value, by, card: c.id })}\n`);
+    const problem = await SOVA_ADAPTERS[e.id].check("asked" in e ? e.asked : e.value);
+    if (problem) throw Object.assign(new SovaSettingsRefusal(`${SOVA_SETTINGS[e.id].label}: ${problem} Nothing changed.`), { status: 409 });
   }
+  const saved = snapshot(c.edits);
+  const written: StoredEdit[] = [];
+  let failed: { edit: StoredEdit; why: string } | null = null;
+  for (const e of c.edits) {
+    const why = await SOVA_ADAPTERS[e.id].write(e.value, SOVA_ADAPTERS[e.id].input ? (input as string) : undefined).catch((err: unknown) => (err instanceof Error ? err.message : String(err)));
+    if (why) {
+      failed = { edit: e, why };
+      break;
+    }
+    written.push(e);
+  }
+  let took = c.edits;
+  if (failed) {
+    const stayed = await putBack([...written, failed.edit], saved);
+    took = c.edits.filter((e) => stayed.has(e));
+    if (!took.length) throw Object.assign(new SovaSettingsRefusal(`${SOVA_SETTINGS[failed.edit.id].label}: ${failed.why} Nothing changed.`), { status: 409 });
+  }
+  mkdirSync(dirname(sovaHistoryFile()), { recursive: true });
+  for (const e of took) appendFileSync(sovaHistoryFile(), `${JSON.stringify({ at: new Date().toISOString(), field: e.id, from: e.before ?? null, to: e.value, by, card: c.id })}\n`);
   const after = readStore();
   const mine = after.cards.find((x) => x.id === cardId)!;
   mine.state = "applied";
   mine.appliedAt = new Date().toISOString();
+  if (failed) mine.partly = [`Partly applied: ${took.map((e) => SOVA_SETTINGS[e.id].label).join(", ")} took effect. ${SOVA_SETTINGS[failed.edit.id].label} didn't: ${failed.why.replace(/\.$/, "")}. Nothing else was saved.`];
   writeStore(after);
-  return { card: cardView(mine), approved: c.edits.filter((e) => grantOf(e)).map((e) => `sova:${e.id}`) };
+  return { card: cardView(mine), approved: took.filter((e) => grantOf(e)).map((e) => `sova:${e.id}`) };
 }
 
 /** Dismiss (the person's), or a Create chat's withdraw of its own card. */

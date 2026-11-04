@@ -152,6 +152,8 @@ function stampOf(file: string): string {
 }
 
 /** Re-read peers.json when it changed on disk since the last read (one stat). */
+export const reloadMesh = (): void => reload();
+
 function reloadIfChanged(): void {
   if (stampOf(peersFile()) !== peersStamp) reload();
 }

@@ -92,10 +92,10 @@ on where the chat is.
 Gathering chats can't use Create, and their mode menu has no Create row. The Overseer, a Project
 Overseer, the Project Assistant and a merge thread have no mode switch at all.
 
-A chat that can do less still offers Create, and tells you so before it offers anything. With the
-sandbox on, that means writing files on this computer, reaching Sova's commands and running project
-tools. On a remote machine, it means project modes and cards, and the chat says so in its first reply
-after the switch.
+A chat that can do less still offers Create, and says what it can't do. With the sandbox on, that means
+writing files on this computer, reaching Sova's commands and running project tools, and it says so before
+it offers a change. On a remote machine, it means project modes and cards, and it says so in its first
+reply after the switch, before it offers anything.
 
 ## Card, Land or your OK
 
@@ -115,8 +115,9 @@ A card can hold:
 - **Project settings**, when the change is one settings file.
 - **Sova-wide settings**: everything Sova keeps for itself or for this computer, those with no screen
   included, such as a custom provider, the image fallback, a remote target, the sandbox policy, worker
-  priority or a summary timeout. Mesh, public links, voice and updates aren't on cards: they stay on their
-  own screens.
+  priority or a summary timeout. Your mesh's stored settings and setup steps go by card or button.
+  Links between computers, claiming a login, an internet relay and a resync recipe stay on their own
+  screens, and so do public links, voice and updates.
 - **Merge queue settings**: what Settings → Merge Queue saves, such as pushing, review and each check's
   limits. Apply there is a save, with its commit and its waits: while a branch is checking, the card
   reads "Saves when the current branch finishes." Check commands, the install step, the target and the
@@ -131,7 +132,8 @@ branch is yours to merge, and with no Git the change is made by hand.
 
 **Your OK** covers files on your computer that aren't settings: themes, personal skills, add-ons,
 rules and personas. Create shows the path and the whole change, then waits. Only your own message in
-that chat counts. Then the chat writes the file, or under strict a worker outside any worktree does.
+that chat counts. Then the chat writes the file. Under strict its instructions send the write to a worker
+outside any worktree. That is an instruction, not a limit: the chat still has `bash`.
 
 ## What only you do
 

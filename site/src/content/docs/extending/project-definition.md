@@ -94,4 +94,4 @@ From a chat, the `project_verbs` tool runs these on your own worktree. From a ch
 
 A chat can read deploy status and check a recipe, but it can't plan, run or roll back a deploy. You ship
 from the project's Deploy panel. A Project Overseer or the Project Assistant can set off the project's own
-deploy only with the `deploy` power on, and it waits the holding period like any act that reaches the code.
+deploy only with the `deploy` power on, and it has the same wait as any act that reaches the code.

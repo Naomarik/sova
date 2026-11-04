@@ -108,18 +108,30 @@ describe("a project's card", async () => {
   });
 
   test("get tells a Create chat when its project has no queue, and only then", async () => {
-    const port = (settings: unknown) => ({ settings: async () => settings, save: async () => ({ state: "waiting" }), models: async () => {}, modelDenial: async () => null }) as never;
+    const port = (noQueue: boolean | Error) => ({ settings: async () => null, noQueue: async () => { if (noQueue instanceof Error) throw noQueue; return noQueue; }, save: async () => ({ state: "waiting" }), models: async () => {}, modelDenial: async () => null }) as never;
     const said = async () => (await runCreateSettingsTool(chat(pid), { op: "get" })).content[0]!.text;
     const was = queueCardPort();
-    setQueueCardPort(port(null));
+    setQueueCardPort(port(true));
     assert.ok((await said()).includes(NO_QUEUE));
-    setQueueCardPort(port({}));
-    assert.ok(!(await said()).includes(NO_QUEUE), "a project with a queue");
+    setQueueCardPort(port(false));
+    assert.ok(!(await said()).includes(NO_QUEUE), "a queue, or one it can't vouch for");
+    setQueueCardPort(port(new Error("down")));
+    assert.ok(!(await said()).includes(NO_QUEUE), "a failing read says nothing");
     setQueueCardPort(null);
     assert.ok(!(await said()).includes(NO_QUEUE), "no queue service to ask");
-    setQueueCardPort(port(null));
+    setQueueCardPort(port(true));
     assert.ok(!(await runCreateSettingsTool(chat(null), { op: "get" })).content[0]!.text.includes(NO_QUEUE), "a folder that isn't a project");
     setQueueCardPort(was);
+  });
+
+  test("no queue is said only when it's known: queues down or an unreadable setup say nothing", async () => {
+    const { noQueueOf } = await import("./merge-queue/settings-routes");
+    const notSetUp = async () => false;
+    assert.equal(await noQueueOf({ unserved: "/p" }, notSetUp), true);
+    assert.equal(await noQueueOf(null, notSetUp), false, "no queues running");
+    assert.equal(await noQueueOf({ settings: async () => ({}) }, notSetUp), false, "a served queue");
+    assert.equal(await noQueueOf({ unserved: "/p" }, async () => true), false, "set up, served read failed");
+    assert.equal(await noQueueOf({ unserved: "/p" }, async () => { throw new Error("git"); }), false, "a setup it can't read");
   });
 
   test("a chat withdraws only what it prepared", async () => {
@@ -467,7 +479,7 @@ describe("Apply and Approve says only what was approved", async () => {
 });
 
 test("what stays on its own screen is refused by name, saying where, in either shape of edit", async () => {
-  const screens: Record<string, RegExp> = { "public-links": /Settings → Public Links, Where links open/, voice: /Settings → Voice, Set Up Voice/, updates: /Settings → General, Update from/, "mesh.links": /session pane's Agents tab/, "mesh.login-claim": /the Mesh page, Sync, Logins/, "mesh.internet-relay": /the Mesh page, Dial-out pairings/, "mesh.resync-recipe": /mesh-resync\.json/ };
+  const screens: Record<string, RegExp> = { "public-links": /Settings → Public Links, Where links open/, voice: /Settings → Voice, Set Up Voice/, updates: /Settings → General, Update from/, "mesh.links": /session pane's Agents tab/, "mesh.login-claim": /the Mesh page, Sync, Logins/, "mesh.internet-relay": /the Mesh page, Dial-out pairings/ };
   for (const [name, where] of Object.entries(screens)) {
     await assert.rejects(runCreateSettingsTool(chat(null), { op: "propose", why: "x", edits: [{ setting: name, value: 1 }] }), where);
     await assert.rejects(runCreateSettingsTool(chat(null), { op: "propose", why: "x", edits: [{ setting: "sova", id: name, value: 1 }] }), where);

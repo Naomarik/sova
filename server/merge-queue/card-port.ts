@@ -7,6 +7,8 @@ import type { MergeQueueSettings, MergeSettingsChange, MergeSettingsSaveResult, 
  */
 export interface QueueCardPort {
   settings(projectId: string): Promise<MergeQueueSettings | null>;
+  /** The project is known to have no queue: queues are running and its setup reads as not done. Anything unknown: false. */
+  noQueue?(projectId: string): Promise<boolean>;
   save(projectId: string, changes: MergeSettingsChange): Promise<MergeSettingsSaveResult>;
   models(projectId: string, patch: { review?: ModelChoice | null; thread?: ModelChoice | null }): Promise<void>;
   /** Why this model can't be picked, or null. */

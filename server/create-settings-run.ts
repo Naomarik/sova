@@ -56,8 +56,7 @@ export async function runCreateSettingsTool(chat: CreateChat, q: Record<string, 
       const got = (await runSettingsTool(chat.projectId, { op: "get" }, false)).content[0]!.text;
       parts.push("", got);
       // Said where the chat learns it: the block alone left Initialize unoffered (§chat.create-mode/where-offered).
-      const port = queueCardPort();
-      if (port && got.includes("is in Git") && !(await port.settings(chat.projectId))) parts.push("", NO_QUEUE);
+      if (got.includes("is in Git") && (await queueCardPort()?.noQueue?.(chat.projectId).catch(() => false))) parts.push("", NO_QUEUE);
     }
     else parts.push("", chat.noProject ?? "");
     return { content: text(parts.join("\n")), details: { project: chat.projectId, cards: waiting.map((c) => c.id) } };

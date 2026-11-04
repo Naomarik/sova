@@ -152,6 +152,12 @@ export async function settingsQueueOf(root: string | null, d: { served: (root: s
   return (await d.served(root)) ? d.queues.get(root) : { unserved: root };
 }
 
+/** Known to have no queue, never a guess: no queues running, or a setup that can't be read, says false. */
+export async function noQueueOf(q: unknown, setUp: (root: string) => Promise<boolean>): Promise<boolean> {
+  if (!q || typeof q !== "object" || !("unserved" in q)) return false;
+  return setUp((q as { unserved: string }).unserved).then((done) => !done, () => false);
+}
+
 /** The live wiring: the server's queues by project id, Settings → Models, the page-only rule. */
 export function registerLiveMergeSettingsRoutes(app: Hono<any>): void {
   const queueOf = async (id: string) => {
@@ -183,6 +189,7 @@ export function registerLiveMergeSettingsRoutes(app: Hono<any>): void {
   };
   setQueueCardPort({
     settings: async (id) => (await (await served(id))?.settings()) ?? null,
+    noQueue: async (id) => noQueueOf(await queueOf(id), async (root) => (await (await import("./served")).servedRule()).setupOf(root).then((s) => s.setUp)),
     save: async (id, changes) => (await servedOrThrow(id)).saveSettings(changes),
     async models(id, patch) {
       const q = await servedOrThrow(id);

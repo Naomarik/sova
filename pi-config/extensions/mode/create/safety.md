@@ -92,6 +92,8 @@ A program holding the token may pass as the person's word for `worktree land`, s
 
 A chat's release refusal stops a chat calling Sova in its normal way, not a program deliberately posing as the person's terminal: Sova can't tell that from the person, the same limit as imitating the page.
 
+A fork takes the sandbox state at its fork point, so a fork from where the branch was Off opens Off, below a new chat's default. It lowers no existing chat.
+
 Restarting and updating Sova are an approval for every chat, but Sova's server can't stop a raw `systemctl`, `launchctl` or `kill` on this computer. You never use those on Sova.
 
 An installed Sova extension's page runs in Sova's own page, so what it does passes as the person's click and installing one is a trust decision: say so before their OK.

@@ -1,6 +1,6 @@
 # automation: recipes you run by hand, or that run by themselves
 
-Recommend a playbook for a recipe the person runs by hand. For one that runs by itself, recommend a schedule on a playbook when an existing profile fits, and an automation file when the run needs its own model, mode or permissions.
+Recommend a playbook for a recipe the person runs by hand. For one that runs by itself, recommend a schedule on a playbook when an existing profile fits, and an automation file when the run needs its own model, mode or permissions. For something that runs by itself after every reply in one project, see Reply hooks in the `modes` topic: no schedule does that.
 
 A project's playbooks, schedules and automation files need a project in Git. In a project with no merge queue the same branch is the person's to merge; in a folder that isn't in Git they're made by hand. In a folder that isn't a project, the person's own playbooks still work, and the project-only things need Add as Project (the `project` topic). A project's playbooks and automations count once they are on its main branch: a branch's copy does nothing.
 

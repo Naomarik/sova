@@ -57,7 +57,8 @@ also update Y" list live in its guide: read the guide of every area your task to
   **Landing**). Uncommitted edits in the live tree block a release.
   One exception: applying a Project Overseer's Settings change card on Sova's own project
   (§app.project-overseer/settings) lands its settings files on master in the live tree as one commit,
-  at the operator's click; Sova refuses it when it would touch anything but settings files.
+  at the operator's click; Sova refuses it when it would touch anything but settings files, and it
+  waits while a branch is checking, landing at the queue's next quiet point.
   Another: a save from Settings → Merge Queue (§app.merge-queue/settings-save) lands the changed values
   of `.sova/project.json`'s `merge` section on master as one commit, at the operator's confirm; it
   waits while a branch is checking and is refused while the project folder has an uncommitted edit.
@@ -117,8 +118,8 @@ also update Y" list live in its guide: read the guide of every area your task to
 - **The exceptions:** a Project Overseer's settings change card on Sova's own project lands its
   settings files on master at your Apply (§app.project-overseer/settings); Save Checks and a save from
   Settings → Merge Queue each land one commit of the project file's `merge` section at your confirm
-  (§app.merge-queue/setup, §app.merge-queue/settings-save). The save waits while a branch is checking,
-  so it never moves master under a run.
+  (§app.merge-queue/setup, §app.merge-queue/settings-save). The card and the save each wait while a
+  branch is checking, so neither moves master under a run.
 
 ## Live server restart
 

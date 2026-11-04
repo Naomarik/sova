@@ -140,6 +140,9 @@ async function spoken(host, stated) {
   await recorded(host, s);
   return s;
 }
+/** A session file as its host reads it: its stat, what owned-writes.json holds, its last entries. */
+const whoWrote = (host, s) =>
+  sh(host, `node -e 'const fs=require("fs"),p=process.argv[1];let o;try{o=JSON.parse(fs.readFileSync(process.env.PI_CODING_AGENT_DIR+"/sova/owned-writes.json","utf8"))[p]}catch{}const t=fs.statSync(p);const tail=fs.readFileSync(p,"utf8").trim().split("\\n").slice(-4).map((l)=>{const e=JSON.parse(l);return [e.type,e.customType,e.timestamp].filter(Boolean).join(" ")});console.log(JSON.stringify({now:Date.now(),size:t.size,mtimeMs:t.mtimeMs,own:o??null,tail}))' '${s.path}'`).out;
 /** Until `host`'s owned-writes.json has the session file as it is now: what lets a restarted host open it
     as a chat (a file written in the last 2 minutes by no one known opens read only). Call before a swap. */
 const recorded = (host, s) =>
@@ -689,9 +692,20 @@ for (const bumped of ["sessions", "peer"]) {
         assert.fail(`${e.message}; a's file: ${readAgentFile(A, "model-favorites.json")}; c's file: ${readAgentFile("c", "model-favorites.json")}; a's sync: ${await sync(A)}; c's sync: ${await sync("c")}`);
       });
       assert.ok(!(readAgentFile(B, "model-favorites.json") ?? "").includes(marker), "no sync while Update needed");
+      console.log(`# ${bumped}: b's member before the swap back: ${whoWrote(B, sb)}`);
       await builds({ a: "base", b: "base", c: "base" });
+      console.log(`# ${bumped}: b's member after the swap back: ${whoWrote(B, sb)}`);
       await waitFor(() => (readAgentFile(B, "model-favorites.json") ?? "").includes(marker), { timeoutMs: 60000, what: "sync resumes once the numbers match" });
-      await call(B, "/api/sessions/configure", { method: "POST", body: { path: sb.path, model: MODEL }, timeoutMs: 60000 });
+      // A host just restarted may refuse a file it can't place for up to 2 minutes (RECENT_WRITE_MS), so
+      // this holds the member only once the host says it does; each answer is printed, the first decides.
+      await waitFor(
+        async () => {
+          const r = await call(B, "/api/sessions/configure", { method: "POST", body: { path: sb.path, model: MODEL }, timeoutMs: 60000 });
+          console.log(`# ${bumped}: hold b's member: ${r.status} ${r.text.slice(0, 200)}`);
+          return r.status === 200;
+        },
+        { timeoutMs: 180000, intervalMs: 5000, what: "b holds its member again" },
+      );
       const again = await send(A, sa.id, "Matching again. No reply needed.");
       assert.notEqual(again.json?.deliveries?.[0]?.state, "refused", JSON.stringify(again.json));
       await unlink(A, made.json.link.id);

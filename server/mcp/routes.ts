@@ -253,6 +253,8 @@ export function registerMcpRoutes(app: Hono<any>): void {
       const b = await body(c);
       if (!isSecretName(name) || typeof b.value !== "string" || !b.value) throw new Refusal("Expected {value} for a named secret.", 400, "invalid");
       saveSecret(ref.owner, ref.name, name, b.value);
+      // A Check runs nothing for a server that isn't approved, so a Waiting row stays unchecked.
+      await checkServer(ref.owner, ref.name);
       return c.json(await liveRow(ref), 200, NO_STORE);
     }),
   );

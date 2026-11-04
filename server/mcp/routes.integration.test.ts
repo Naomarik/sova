@@ -243,6 +243,33 @@ describe("a row's switches, secrets, Edit and Remove", () => {
   });
 });
 
+describe("saving a secret", () => {
+  test("on an approved row a Check follows, and the answer is the row after it", async () => {
+    const log = join(root, "needs-key.log");
+    handWrite({ needsKey: { command: node, args: [STUB, "--name", "k", "--log", log], env: { K: "${LATE_KEY}" } } });
+    const r = await row("needsKey");
+    const failed = (await ask("POST", `/api/mcp/rows/${r.id}/approve`, { version: r.entry.version })).json as McpServerRow;
+    assert.equal(failed.state, "failed");
+    const saved = (await ask("PUT", `/api/mcp/rows/${r.id}/secrets/LATE_KEY`, { value: "the-key" })).json as McpServerRow;
+    assert.equal(saved.state, "connected", JSON.stringify(saved.errors));
+    assert.deepEqual(saved.errors, [], "the unsaved line is gone with the Check");
+    assert.deepEqual(saved.secrets, [{ name: "LATE_KEY", saved: true }]);
+    assert.equal(lines(log).filter((l) => l.event === "start").length, 1);
+    await ask("PUT", `/api/mcp/rows/${r.id}/secrets/LATE_KEY`, { value: "replaced" });
+    assert.equal(lines(log).filter((l) => l.event === "start").length, 2, "replacing one checks again");
+  });
+
+  test("on a Waiting row it runs nothing", async () => {
+    const log = join(root, "waits.log");
+    handWrite({ waits: { command: node, args: [STUB, "--name", "w", "--log", log], env: { K: "${WAIT_KEY}" } } });
+    const r = await row("waits");
+    const saved = (await ask("PUT", `/api/mcp/rows/${r.id}/secrets/WAIT_KEY`, { value: "v" })).json as McpServerRow;
+    assert.equal(saved.state, "waiting");
+    assert.equal(saved.lastCheck, undefined);
+    assert.equal(existsSync(log), false, "a server not approved ran");
+  });
+});
+
 describe("an address server", () => {
   test("Check reads Needs Sign-in; Sign In finishes on its callback, a Check follows; a !value stays literal", async () => {
     const oauth = await startOAuthServer();

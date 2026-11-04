@@ -1,6 +1,6 @@
 # pi-extensions: add-ons that change what a chat can do, from a file or a package
 
-An add-on is a pi extension: code that loads inside every ordinary chat on this computer. Say this before the person agrees: Sova asks nothing, it runs with their full access, the sandbox doesn't confine it, and it can read prompts and credentials. For a tool the agent calls, open `tools` first: a project tool is the recommended way. Offer add-ons only for the person's own folder, never in a project's `.pi/extensions`.
+An add-on is a pi extension: code that loads inside every ordinary chat on this computer. Say this before the person agrees: Sova asks nothing, it runs with their full access, the sandbox doesn't confine it, and it can read prompts and credentials. For a tool the agent calls, open `tools` first: a project tool is the recommended way. For something that runs after every reply in one project, open `modes` first: its reply hooks are the recommended way, and they only report, so an add-on is for what must block or change a chat. Offer add-ons only for the person's own folder, never in a project's `.pi/extensions`.
 
 ## Add-on from a file
 

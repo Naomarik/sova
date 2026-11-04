@@ -187,7 +187,7 @@ test("a rewrite of a draft's file with its time put back is still seen", () => {
   for (const f of [F, "claims/b.md"]) utimesSync(join(dir(wt, "feat"), "spec", f), old, old);
   // ctime can't be set back: a hash taken this soon after the write isn't kept, so the rewrite below can't hide.
   assert.equal(draftCount(wt), 0);
-  writeFileSync(join(dir(wt, "feat"), "spec", "claims/b.md"), "# §b — B\n\nb says other thing.\n");
+  writeFileSync(join(dir(wt, "feat"), "spec", "claims/b.md"), "# §b — B\n\nb says two thing.\n");
   utimesSync(join(dir(wt, "feat"), "spec", "claims/b.md"), old, old);
   assert.deepEqual(unofficialDrafts(wt), ["feat"]);
 });

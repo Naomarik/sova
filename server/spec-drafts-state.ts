@@ -10,17 +10,17 @@ import { draftOfficial } from "../pi-config/extensions/spec/core/official.mjs";
  * it read changes.
  */
 
-/** What the cache compares: the modification time and the size, so a rewrite within one tick still shows. */
+/** What the cache compares: the inode, size and both times, so a rewrite that keeps the size and puts the time back still shows. */
 const stamp = (path: string): string => {
   try {
     const st = statSync(path);
-    return `${st.mtimeMs}:${st.size}`;
+    return `${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
   } catch {
     return "-";
   }
 };
 
-/** The same plus what a file's hash may be reused on: its inode and change time too. */
+/** The same to the nanosecond: what a file's hash may be reused on. */
 const fileStamp = (st: { ino: bigint; size: bigint; mtimeNs: bigint; ctimeNs: bigint }): string => `${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}`;
 
 /** A file written this recently may be written again within one clock tick, unseen by its stat: no hash of it is kept. */

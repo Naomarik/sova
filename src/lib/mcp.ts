@@ -110,9 +110,20 @@ export function editedServer(way: Exclude<AddWay, "paste">, f: AddFields): { add
 
 /** Whether the form can go: a name that isn't reserved (null: Edit, the name is fixed), an entry, and
     a name for a command's secret. */
-export function canSend(way: AddWay, f: AddFields, name: string | null): boolean {
-  if (name !== null && (!name.trim() || isReservedName(name))) return false;
+/** A new server's name another server on this computer has already: the server's 409, said before the press. */
+export function nameTaken(name: string, taken: readonly string[]): string | null {
+  const n = name.trim();
+  return n && taken.includes(n) ? `There's already a server named ${n}.` : null;
+}
+
+/** A secret's name the server refuses (server/mcp/values.ts isSecretName), said before the press; "" is another rule. */
+export const secretNameIssue = (name: string): string | null =>
+  name.trim() && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name.trim()) ? "A secret's name is letters, digits and underscores." : null;
+
+export function canSend(way: AddWay, f: AddFields, name: string | null, taken: readonly string[] = []): boolean {
+  if (name !== null && (!name.trim() || isReservedName(name) || nameTaken(name, taken))) return false;
   if (way === "command" && f.secret && !f.secretName.trim()) return false;
+  if (way === "command" && secretNameIssue(f.secretName)) return false;
   return !!(way === "address" ? f.address : way === "command" ? f.command : f.paste).trim();
 }
 

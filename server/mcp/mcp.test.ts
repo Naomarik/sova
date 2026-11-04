@@ -65,8 +65,14 @@ describe("reading an entry", () => {
 
   test("a repository can't pick where a credential goes: auth in a project's file is refused, and kept in a computer's", () => {
     const raw = { url: "https://e", auth: { provider: "x" } };
-    assert.deepEqual(refusalOf(normalizeEntry("s", raw, "project")), { why: "bad-value", names: ["auth"] });
+    assert.deepEqual(refusalOf(normalizeEntry("s", raw, "project")), { why: "unusable", names: ["auth"] });
     assert.equal(refusalOf(normalizeEntry("s", raw, "computer")), undefined);
+  });
+
+  test("an unusable entry names the field; a value naming no secret stays bad-value", () => {
+    assert.deepEqual(refusalOf(normalizeEntry("s", { type: "sse", url: "https://e" }, "project")), { why: "unusable", names: ["type: sse"] });
+    assert.deepEqual(refusalOf(normalizeEntry("s", {}, "project")), { why: "unusable", names: ["no command or url"] });
+    assert.deepEqual(refusalOf(normalizeEntry("s", { command: "c", env: { K: "${X:-y}" } }, "project")), { why: "bad-value", names: ["X:-y"] });
   });
 
   test("sova is reserved in any case, in a file too, and only that name", () => {

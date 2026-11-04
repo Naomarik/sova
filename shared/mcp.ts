@@ -25,8 +25,8 @@ export interface McpServerRow {
   errors: McpErrorLine[];
   lastCheck?: { at: number; ok: boolean };
   signsIn: boolean;
-  /** Can't run. reserved and bad-value: no Approve, no Check. */
-  refused?: { why: "reserved" } | { why: "bad-value"; names: string[] };
+  /** Can't run: no Approve, no Check. bad-value: a value names something other than a saved secret. unusable: these fields can't be used. */
+  refused?: { why: "reserved" } | { why: "bad-value"; names: string[] } | { why: "unusable"; names: string[] };
   /** What Approve approves; on every row. */
   entry: {
     /** Sent back by Approve. */

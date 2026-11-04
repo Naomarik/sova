@@ -1,6 +1,7 @@
 // A server as it stands on disk now: its entry, version, approval and values. Files only, so a chat's process
 // checks a start with no server to ask.
 import { isAbsolute, resolve } from "node:path";
+import type { McpServerRow } from "../../shared/mcp";
 import { agentRoot } from "../state-root";
 import { readComputerList, readProjectList, reservedName, type McpEntry } from "./config";
 import { versionOf, namedFolders } from "./fingerprint";
@@ -16,13 +17,14 @@ export function currentEntry(owner: McpOwner, name: string): McpEntry | undefine
   return list.entries.find((e) => e.name === name);
 }
 
-export type McpRefused = { why: "reserved" } | { why: "bad-value"; names: string[] };
+export type McpRefused = NonNullable<McpServerRow["refused"]>;
 
 /** Why an entry can't run whatever anyone approves. */
 export function refusalOf(e: McpEntry): McpRefused | undefined {
   if (reservedName(e.name)) return { why: "reserved" };
-  const names = [...(e.problems ?? []), ...namedValues(e).bad];
-  return names.length ? { why: "bad-value", names } : undefined;
+  if (e.problems?.length) return { why: "unusable", names: e.problems };
+  const { bad } = namedValues(e);
+  return bad.length ? { why: "bad-value", names: bad } : undefined;
 }
 
 /**

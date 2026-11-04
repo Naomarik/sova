@@ -1,3 +1,92 @@
 # landing: what must pass before a branch reaches your project, and how it lands
 
-<!-- stub: replace with the entry. Format: shared.md's owner note. -->
+A project's branches go through its merge queue once the project is on Sova's Projects list and its checks are set up. Until then the project has no Land: its chats merge a branch into the main branch themselves when the person says so. In a folder that isn't a project, offer Add as Project first (the `project` topic). In a project with no queue, offer Initialize. In a folder that isn't in Git there's no landing at all.
+
+Landing a branch is always the person's: Land beside the composer, on the project page's Merge Queue tab, or "land it" typed in the branch's own chat. You never land one, and you never send anyone those words. The queue reads the target branch's copy of `.sova/project.json`, never the branch's, so a branch that changes its checks is tested by the old ones, and its own take effect once it lands.
+
+## First setup
+
+- Change: whether the project has a merge queue, and its first checks: a list of checks, one test command, or "no automated tests".
+- Lives: the `merge` section of `.sova/project.json`, created if there's no file yet.
+- Approves: the person alone. First setup is theirs; no card holds it.
+- By: Screen. The project page's Merge Queue tab, Initialize, then Try It, then Save Checks. Save Checks is one commit on the target and is refused while the project folder has uncommitted changes.
+- Live: now. The next branch goes through the queue.
+- Check: the Merge Queue tab shows the queue, and Land appears on the project's branches.
+
+## Push, review and each check's limits
+
+- Change: whether a landing pushes, whether review runs, and for each check its time limit (at most 30 minutes), whether it reruns only the failed files, and whether it always runs or only when the merge thread picks it.
+- Lives: the `merge` section of `.sova/project.json` on the target branch.
+- Approves: the person, by Apply on the card, which stands for the confirm on the Settings tab.
+- By: Card or Screen. The card goes the same way as Save in Settings → Merge Queue, the same commit and the same refusals, and it isn't checked first. Applied while a branch is checking, it reads "Saves when the current branch finishes." It's refused while the project folder has an uncommitted change. On a project that lands by request, it goes out as a request of its own instead.
+- Live: from the next landing, or on a request project once that request merges.
+- Check: Settings → Merge Queue shows the value, tagged Project file, with "From {target} at {sha}".
+
+## How a branch lands
+
+- Change: merge locally, a pull request on GitHub, a merge request on GitLab, or push the branch only. Key: `merge.land`, or a choice kept on this computer, which wins.
+- Lives: the project's file, shared with everyone on the repository, or this computer.
+- Approves: the person alone.
+- By: Screen. Settings → Merge Queue, How it lands. It asks where to keep the choice, and it shows what's suggested from `origin`.
+- Live: from the next approval. A branch already approved keeps the way it had.
+- Check: the row says the way in effect and where it comes from.
+
+## Review and merge thread models
+
+- Change: which model and effort the review and the merge thread run on, for one project.
+- Lives: this computer. They never go in the project's file, and they don't spread.
+- Approves: the person, by Apply.
+- By: Card or Screen. On Settings → Merge Queue each has Change. A model turned off in Settings → Models can't be picked.
+- Live: from the next review, or the next fresh merge thread. One running keeps its model.
+- Check: Settings → Merge Queue shows the model, or "Same as new chats".
+
+## Check commands, install step and target
+
+- Change: what each check runs, adding or removing a check, the offline install, and the branch the queue lands into. Keys: `merge.checks`, `merge.install`, `merge.target`. A check is `{id, label, run, timeout?, rerun?, requires?, optional?}`, 1 to 30 of them, or `"checks": "none"`.
+- Lives: the `merge` section of `.sova/project.json`.
+- Approves: the person, by Land.
+- By: Land. Never a card: a command is changed on a branch, where the queue tests it.
+- Live: after landing, from the next landing.
+- Check: the next landing's run shows each check, tagged Required.
+
+The whole section, beside the file's other keys. `run` is a list of arguments, and it may read `${merge.base}`, `${merge.tip}` and `${merge.target}`:
+
+```json
+{"merge": {"checks": [{"id": "unit", "label": "Unit tests", "run": ["npm", "test"], "timeout": 600}]}}
+```
+
+## Review instructions
+
+- Change: what the reviewer of each landing looks for. Key: `merge.review`, the folder of the project's review kit.
+- Lives: a folder in the project such as `.sova/playbooks/review/`, with its instructions and references. It has no `SKILL.md` and sits in no skills folder, so ordinary chats never load it.
+- Approves: the person, by Land. Review on or off afterwards is the setting above.
+- By: Land.
+- Live: after landing, from the next landing.
+- Check: the next landing shows a review, with its chat. Open Folder in Settings → Merge Queue shows the kit as the target has it.
+
+## The merge thread's instructions
+
+- Change: what the merge thread should know about this project.
+- Lives: `.sova/playbooks/merge-queue/PLAYBOOK.md` in the project.
+- Approves: the person, by Land.
+- By: Land.
+- Live: after landing. The thread reads the project folder's copy.
+- Check: Open Folder on the Merge thread row in Settings → Merge Queue, under "This project's".
+
+## Request instructions
+
+- Change: how a pull or merge request's title and description are written, and the checks they must pass. Key: `merge.request`, the folder of the request kit.
+- Lives: a folder such as `.sova/playbooks/request/`: `PLAYBOOK.md`, a `references` folder, and `check*.mjs` files in a `scripts` folder, run in name order.
+- Approves: the person, by Land.
+- By: Land.
+- Live: after landing, for the next request. A project that lands locally never uses it.
+- Check: the next request's text follows it. Open Folder in Settings → Merge Queue shows the kit.
+
+## Private names
+
+- Change: the names a push must never carry out of the project.
+- Lives: this computer, never committed. It doesn't spread.
+- Approves: the person, by answering the merge thread.
+- By: None. You can't set them. The merge thread asks in the branch's chat, and until they're set up a push is held.
+- Live: from the next push.
+- Check: Settings → Merge Queue reads "Set up · {n} names", never the names.

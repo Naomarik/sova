@@ -63,7 +63,7 @@ Only the person's own click passes these. Sova refuses a chat, a script, an exte
 - Landing a branch: Land.
 - Trusting cards: the Trust button on the card, for a project's or an extension's cards.
 
-Narrowing stays open: turning a power off, raising a sandbox, turning a mode off, and turning on a version already approved need no click. Create still only prepares a card, even for a change that narrows.
+Narrowing stays open: turning a power off, raising a sandbox, turning a mode off, stopping trusting a project's or an extension's cards, and turning on a version already approved need no click. Create still only prepares a card, even for a change that narrows.
 
 What the Overseer keeps: its turning a project mode on counts as its approval of that mode's tools and commands, never its hooks; in a turn the person started it can turn a Project Overseer power on; and it lowers a chat's sandbox only in a turn the person's click on its card opened. No other agent has these.
 

@@ -3530,6 +3530,7 @@ export interface OverseerCaps {
   linksPerTurn: number;       // default 3: links made (sova_link, §app.overseer/links-tools); absent on read → default
   orgWritesPerTurn: number;   // default 20: organization writes (§app.overseer/org-tools); absent on read → default
   gatherPerTurn: number;      // default 3: gathering sessions or offers started (sova_gather start/offer); absent on read → default
+  extRunsPerTurn: number;     // default 5: extension commands run (sova_ext run, §app.overseer/extension-commands); absent on read → default
 }
 
 /** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */
@@ -3555,6 +3556,25 @@ export interface OverseerSettings {
       UniiChat. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. `size`: an older
       file's, kept but ignored (the size is Settings → Memory's for the type). */
   memory?: { on: boolean; type: MemoryType; size?: number };
+}
+
+/** GET /api/overseer/abilities: what the global Overseer can do, for its About panel (§app.overseer/about).
+    `extensions` is the same reading sova_ext uses (server/overseer-abilities.ts): each installed
+    extension that marks commands for it, with whether it is running now. */
+export interface OverseerAbilitiesInfo {
+  /** Its built-in abilities, one short line per area of its own tools. */
+  builtIn: { name: string; text: string }[];
+  /** Its limits now. */
+  caps: OverseerCaps;
+  extensions: {
+    id: string;
+    title: string;
+    /** Its backend answers its health check: the Overseer can run these now. */
+    running: boolean;
+    /** Why it isn't running, when it isn't. */
+    error?: string;
+    commands: { id: string; label: string; summary?: string; description?: string; job: boolean }[];
+  }[];
 }
 
 export interface OverseerSettingsInfo {
@@ -4161,6 +4181,11 @@ export interface ExtensionCommandInfo {
   /** It is an entry of this menu too: "session", the Agents board row's ⋯ menu
       (src/lib/menu-place.ts). Absent: in no menu. */
   menu?: "session";
+  /** ext-contract-v1.18: the extension offers it to the Overseer (the user switches it on in
+      Settings → Overseer, §app.overseer/extension-commands). Absent: not offered. */
+  overseer?: true;
+  /** ext-contract-v1.18: running it starts a job the extension reports on later. */
+  job?: true;
 }
 /** A place on Sova's screens that Sova's own features and extensions both add to: "reply", under a
     delivered message; "row", line 3 of a session row in the sessions pane (src/lib/row-place.ts);

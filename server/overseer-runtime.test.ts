@@ -329,6 +329,8 @@ describe("turns the user did not start are read-only", () => {
     sova_project_overseer: { op: "settings", org: "any", project: "any", watch: false },
     // §app.project-services/callers: every verb but the reads acts.
     sova_project_verbs: { verb: "up", project: agentDir },
+    // §app.overseer/extension-commands: running one acts; listing and a job's state read.
+    sova_ext: { op: "run", command: "ext.probe.launch", params: {} },
   };
   /** Every other op of the organization acts: refused as read-only too, a message to a project overseer included. */
   const ACTING_OPS: [string, Record<string, unknown>][] = [
@@ -367,6 +369,8 @@ describe("turns the user did not start are read-only", () => {
     ["sova_project_git", { project: "no-such-project", command: "log" }],
     ["sova_server_log", { lines: 0 }],
     ["sova_whatsapp", { op: "status", sender: "not an id" }],
+    ["sova_ext", { op: "list" }],
+    ["sova_ext", { op: "job", job: "j1", command: "ext.probe.launch" }],
   ];
 
   test("every Overseer tool is classified: acting, allowed unattended, or a read", () => {

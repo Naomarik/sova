@@ -53,6 +53,7 @@ import type {
   OverseerSettings,
   OverseerSettingsInfo,
   OverseerAction,
+  OverseerAbilitiesInfo,
   OverseerTodosInfo,
   TodoPatch,
   PlaybookCatalog,
@@ -427,6 +428,8 @@ export const patchOverseerIdea = (id: string, patch: IdeaPatch) =>
 
 /** The user's todos, in list order, with the open and done counts. Every write returns the whole list. */
 export const getOverseerTodos = () => request<OverseerTodosInfo>("/api/overseer/todos");
+/** What the Overseer can do, for its About panel (§app.overseer/about). */
+export const getOverseerAbilities = () => request<OverseerAbilitiesInfo>("/api/overseer/abilities");
 export const addOverseerTodo = (text: string) => request<OverseerTodosInfo>("/api/overseer/todos", { method: "POST", body: JSON.stringify({ text }) });
 /** `patch.base` (sent for text edits) = the updatedAt the edit started from: the server refuses (409,
     a TodoConflict carrying the current list in `ApiError.body`) when the todo changed since. */

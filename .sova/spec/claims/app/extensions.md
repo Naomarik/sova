@@ -5,13 +5,14 @@ An extension is a small web app the user installs into Sova: a built UI (a folde
 `index.html`) and a backend the user runs on this machine. Sova shows it as a card on the landing
 page and as a page at `#/ext/<id>`, serves its UI and forwards its API and sockets from Sova's own
 origin, and knows nothing about what it does. The host is generic: no extension is named, special
-cased or shipped by Sova. The interface is `ext-contract-v1.17`; any change to it is a version bump
+cased or shipped by Sova. The interface is `ext-contract-v1.18`; any change to it is a version bump
 agreed with the extensions built on it. v1.15 added what an extension offers (§app.extensions/offers)
 and what it adds under replies (§app.commands/reply-slot). v1.16 added each backend's own key
 (§app.extensions/backend-key), a command's `menu` key (§app.extensions/session-menu), and the `row`
 and `card` places (§app.extensions/row-chips, §app.extensions/card-status). v1.17 added the card
-types and drawing kinds it adds to chat transcripts (§app.extensions/views), additions only. An
-extension that declares none of them sees no change.
+types and drawing kinds it adds to chat transcripts (§app.extensions/views), additions only. v1.18
+added a command's `overseer`, `description` and `job` keys, and the job status route the Overseer
+asks (§app.overseer/extension-commands). An extension that declares none of them sees no change.
 
 ## §app.extensions/manifest — The manifest
 
@@ -63,7 +64,8 @@ backend key file or the key hash file (§app.extensions/backend-key) is a 404 to
 - **HTTP forwarding** (`hono/proxy`). Every request header goes along except `host` (the backend
   sees its own), the hop-by-hop headers and Sova's own credential (every `sova_token_*` cookie,
   `x-sova-token`, which is also where an extension's key rides, a chat's key in `x-sova-caller`,
-  and an `Authorization` carrying the token or any extension's key), plus
+  the Overseer's in-process sender mark `x-sova-overseer` and the card it was opened by,
+  `x-sova-overseer-card`, and an `Authorization` carrying the token or any extension's key), plus
   `X-Forwarded-Host` (the host the browser used) and
   `X-Sova-Origin: http://127.0.0.1:<the port this server listens on>`, which is how a backend
   learns where to call Sova back. The response comes back as the backend sent it: status, headers
@@ -97,8 +99,10 @@ that said they add to it.
 
 - **`offers.commands`**: its valid `commands` (§app.commands/extension-commands' rules: the first 32
   read, a bad one or a second one with a taken name left out alone), each as `{name, label,
-  summary?, menu?}`; `menu` is there only when it names a menu Sova knows (today `session`,
-  §app.extensions/session-menu). `params` stay the command line's.
+  summary?, menu?, overseer?, job?}`; `menu` is there only when it names a menu Sova knows (today `session`,
+  §app.extensions/session-menu); `overseer` and `job` (v1.18) only as `true`, when the command
+  declared them validly (§app.commands/extension-commands). `params` and `description` stay the
+  command line's and the Overseer's.
 - **`offers.screens`**: the places it adds to, from its `screens` list: only names Sova knows
   (today `reply`, §app.commands/reply-place; `row`, §app.extensions/row-chips; and `card`,
   §app.extensions/card-status), each once, the first 16 names read. An unknown name is

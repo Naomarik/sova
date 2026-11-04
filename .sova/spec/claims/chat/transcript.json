@@ -719,12 +719,13 @@
       "pi-config/extensions/explain/store.ts",
       "src/lib/hidden-rows.ts",
       "src/lib/hidden-rows.test.ts",
-      "src/lib/input-count.ts"
+      "src/lib/input-count.ts",
+      "shared/wake.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-23T22:04Z",
-      "source": "pi-session:cb32c74b-7123-4902-acf1-37d2f19c83b9#c86a4620"
+      "by": "user",
+      "at": "2026-10-27T21:10Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
     }
   },
   "§chat.transcript/turn-end-keeps-reader": {

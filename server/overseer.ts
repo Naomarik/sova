@@ -17,6 +17,7 @@ import {
   type OverseerInfo,
   type OverseerSaveResult,
   type OverseerSettings,
+  type OverseerAbilitiesInfo,
   type OverseerSettingsInfo,
   type SessionFeedMessage,
   type SessionSummary,
@@ -116,6 +117,9 @@ import { overseerMemoryOf } from "./memory/settings";
 import { playbookReviews } from "./projects/playbook-review";
 import { tourSignInWaits } from "./tours/sign-in-notice";
 import { deployAttentionItems } from "./project-services/deploy-attention";
+import { extensionHealth, overseerExtCommands } from "./extensions";
+import { abilitiesInfo, extAbilities } from "./overseer-abilities";
+import { extJobTick, noteReported, parseJobStatus, reportedRecently, type StatusAnswer, watchedJobs, watchExtJob, type WatchedJob } from "./overseer-ext-jobs";
 
 /**
  * The Overseer: ONE special Sova session that watches every other session and acts on them
@@ -468,7 +472,8 @@ export async function saveOverseerSettings(body: unknown): Promise<OverseerSaveR
   // The memory switch is its own route's: a settings save keeps the stored one, so a
   // stale copy of the settings never turns it back on or off.
   const { memory: _sent, ...rest } = parsed;
-  const stored = readOverseerSettings().memory;
+  const before = readOverseerSettings();
+  const stored = before.memory;
   writeOverseerSettings({ ...rest, ...(stored ? { memory: stored } : {}) });
   pendingApply = true;
   await applySettingsNow();
@@ -684,6 +689,14 @@ const host: OverseerToolHost = {
     peerPoll.unref?.();
   },
   links: meshLinks,
+  // The commands running extensions mark for it, and their jobs (§app.overseer/extension-commands).
+  ext: {
+    offered: () => overseerExtCommands(),
+    health: (id) => extensionHealth(id),
+    watch: (job) => watchExtJob(job),
+    watched: () => watchedJobs(),
+    noteReported: (ids) => reportSessions(ids),
+  },
   worktrees: archiveWorktrees(readBranch),
   runningStarted: () => countRunning(started, running, promptedAt),
   counted: (path) => countRunning(started.has(path) ? [path] : [], running, promptedAt) > 0,
@@ -855,7 +868,8 @@ export async function runNoteMessage(branch: readonly HEntry[], now = new Date()
   let note: { content: string; details: unknown };
   try {
     const prompted = touchedHere();
-    const states = await sessionsNow(runNoteSessionIds(branch, now.getTime(), prompted));
+    const reported = reportedRecently(now.getTime());
+    const states = await sessionsNow(runNoteSessionIds(branch, now.getTime(), prompted, reported));
     const digest = await attentionDigest();
     const act = digest.items.filter((i) => i.tier === "act");
     note = runNote({
@@ -864,6 +878,8 @@ export async function runNoteMessage(branch: readonly HEntry[], now = new Date()
       act: { keys: new Set(act.map(blockerKey)), complete: act.length >= digest.counts.act },
       session: (id) => states.get(id) ?? null,
       prompted,
+      reported,
+      extJobs: watchedJobs(),
       ...(cardsText ? { cardsText } : {}),
       redact: (t) => serverRedactor().redact(t),
       memory,
@@ -915,7 +931,7 @@ export async function compactNoteMessage(branch: readonly HEntry[], now = Date.n
   const cards = cardsNote(cardsOnBranch(branch), true, sessionActivity());
   let play: string | undefined;
   try {
-    const inPlay = sessionsInPlay(branch, now, touchedHere());
+    const inPlay = sessionsInPlay(branch, now, touchedHere(), reportedRecently(now));
     const states = await sessionsNow(inPlay.map((p) => p.id));
     const text = sessionsInPlayText(inPlay, (id) => states.get(id) ?? null, now);
     play = text ? serverRedactor().redact(text) : undefined;
@@ -1005,10 +1021,28 @@ export function overseerValues(settings: OverseerSettings, now = new Date(), red
     NOTES: notes ? redactor().redact(notes.slice(0, 4000)) : "(none yet)",
     IDEAS: redactor().redact(promptToc(readManifest(), readOverseerState()?.current ?? "")),
     TODOS: promptTodos(readTodos()),
-    CAPS: `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions or explorers, ${c.archivesPerTurn} archive operations, ${c.explorePerTurn} explorers launched, ${c.linksPerTurn} links made, ${c.orgWritesPerTurn} organization writes, ${c.gatherPerTurn} gathering sessions or offers started; at most ${c.concurrentSessions} sessions you started running at once`,
+    CAPS: `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions or explorers, ${c.archivesPerTurn} archive operations, ${c.explorePerTurn} explorers launched, ${c.linksPerTurn} links made, ${c.orgWritesPerTurn} organization writes, ${c.gatherPerTurn} gathering sessions or offers started, ${c.extRunsPerTurn} extension commands run; at most ${c.concurrentSessions} sessions you started running at once`,
     EXTRA: extraInstructions(settings.extraSystemPrompt, redactor).join(""),
     IDS: idRule(settings),
+    EXT: extCommandsText(),
   };
+}
+
+/**
+ * The extension commands offered to the Overseer now (§app.overseer/extension-commands), as the prompt
+ * and the run note's `[changed]` part tell them: every installed command its extension marks for it.
+ * Whether its extension is running is sova_ext list's answer at the time, never part of this text, so
+ * a backend going up and down doesn't change the prompt's parts.
+ */
+export function extCommandsText(): string {
+  const mine = overseerExtCommands();
+  if (!mine.length) return "  (none: no installed extension marks a command for you)";
+  return mine.map((c) => `  - ${c.command.id}: ${c.extension.title} · ${c.command.label}${c.job ? " (starts a job)" : ""}`).join("\n");
+}
+
+/** GET /api/overseer/abilities (§app.overseer/about): the same reading of its extension commands as sova_ext's. */
+export async function overseerAbilities(): Promise<OverseerAbilitiesInfo> {
+  return abilitiesInfo(await extAbilities(overseerExtCommands(), (id) => extensionHealth(id)), readOverseerSettings().caps);
 }
 
 /** The parts of the Overseer's prompt that can change while it runs, from its values. */
@@ -1020,6 +1054,7 @@ export function overseerLiveParts(values: Readonly<Record<string, string>>): Liv
     { key: "TODOS", title: "Todos checklist", text: v("TODOS") },
     { key: "CAPS", title: "Limits per message from the user", text: v("CAPS") },
     { key: "IDS", title: "Ids are copied, never typed", text: v("IDS") },
+    { key: "EXT", title: "Extension commands offered to you", text: v("EXT") },
     { key: "EXTRA", title: "The user's extra instructions for you", text: v("EXTRA").replace(/^# The user's extra instructions for you\n\n/, "") },
   ];
 }
@@ -1042,7 +1077,8 @@ export function renderOverseerPrompt(
     .replaceAll("{{NOTES}}", values.NOTES ?? "")
     .replaceAll("{{NOW}}", values.NOW ?? now.toString())
     .replaceAll("{{HOME}}", homedir())
-    .replaceAll("{{CAPS}}", values.CAPS ?? "");
+    .replaceAll("{{CAPS}}", values.CAPS ?? "")
+    .replaceAll("{{EXT}}", values.EXT ?? extCommandsText());
 }
 
 /** The user's extra instructions (Settings → Overseer) as a prompt part, none when blank. Redacted
@@ -1465,5 +1501,83 @@ export function startOverseerLoop(): void {
       });
   }, TICK_MS);
   timer.unref();
+  // The extension jobs it started (§app.overseer/extension-commands): each asked every 15 s, told once when it ends.
+  const jobs = setInterval(() => {
+    if (extTicking) return;
+    extTicking = true;
+    extJobTick(extJobDeps())
+      .catch((err) => console.warn("[overseer] extension job watch failed:", err instanceof Error ? err.message : String(err)))
+      .finally(() => {
+        extTicking = false;
+      });
+  }, EXT_TICK_MS);
+  jobs.unref();
 }
+
+// ---- extension commands and their jobs (§app.overseer/extension-commands) ---------------------------
+
+const EXT_TICK_MS = 5_000;
+let extTicking = false;
+/** A job's status asked this long at most. */
+const EXT_STATUS_WAIT_MS = 30_000;
+
+/** Sessions a command or job reported: this host's count toward the running-at-once cap from now on
+    (while they run; never a refusal of what reported them), and all stay among the sessions in play. */
+async function reportSessions(ids: readonly string[]): Promise<void> {
+  for (const id of ids) {
+    const path = await pathOfId(id).catch(() => null);
+    if (path) started.add(path);
+  }
+  noteReported(ids, Date.now());
+}
+
+/** A session id as the Overseer names it (§app.overseer/session-names): a link when it is a session here. */
+async function sessionLinks(ids: readonly string[]): Promise<string[]> {
+  const aliases = readAliases();
+  const out: string[] = [];
+  for (const id of ids) {
+    const path = await pathOfId(id).catch(() => null);
+    const s = path ? await getSessionSummary(path).catch(() => null) : null;
+    out.push(s ? `[${sessionName(s, aliases[s.id]).replace(/[[\]]/g, "")}](sova://s/${s.id})` : `${id} (no session here)`);
+  }
+  return out;
+}
+
+/** Ask an extension for one job's state, through the proxy as the Overseer's own call. */
+async function askJob(job: WatchedJob): Promise<StatusAnswer> {
+  const res = await host.request(`/ext/${encodeURIComponent(job.extension)}/api/commands/jobs/${encodeURIComponent(job.job)}`, { method: "GET", signal: AbortSignal.timeout(EXT_STATUS_WAIT_MS) });
+  if (res.status === 404) return { kind: "gone" };
+  let body: unknown = null;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  if (res.status < 200 || res.status > 299) return { kind: "error", why: `HTTP ${res.status}` };
+  const status = parseJobStatus(body);
+  return status ? { kind: "status", status } : { kind: "error", why: "no job state in its answer" };
+}
+
+const extJobDeps = () => ({
+  status: askJob,
+  links: sessionLinks,
+  reported: (ids: readonly string[]) => void reportSessions(ids),
+  busy: () => {
+    const p = overseerPath;
+    const chat = p ? chatHandle(p)?.mirror : undefined;
+    return !!chat && (chat.running || chat.queue.web > 0);
+  },
+  send: async (text: string, key: string) => {
+    const st = readOverseerState();
+    const path = st ? await pathOfId(st.current) : null;
+    if (!path) throw new Error("no Overseer conversation yet");
+    const overseer = await acquireChatHandle(path);
+    // Redacted like a brief; keyed by the job, so a lost answer's retry is the same message, sent once.
+    await overseer.send({ text: serverRedactor().redact(text), origin: "server", checkModel: true, key });
+  },
+  log: (line: string) => console.warn(line),
+});
+
+/** Test only: one pass of the extension job watch now. */
+export const extJobTickForTest = (): Promise<void> => extJobTick(extJobDeps());
 

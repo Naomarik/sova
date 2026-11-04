@@ -108,6 +108,17 @@ describe("manifest", () => {
   });
 });
 
+describe("stripSovaCredentials", () => {
+  test("drops the Overseer's sender mark and card header with Sova's other credentials, and nothing else", async () => {
+    const { stripSovaCredentials, OVERSEER_PROXY_HEADERS } = await import("./extensions");
+    const { OVERSEER_SENDER_HEADER, OVERSEER_CARD_HEADER, senderSecret } = await import("./overseer-sender");
+    assert.deepEqual([...OVERSEER_PROXY_HEADERS], [OVERSEER_SENDER_HEADER, OVERSEER_CARD_HEADER], "the names the Overseer's calls carry");
+    const h = new Headers({ [OVERSEER_SENDER_HEADER]: senderSecret(), [OVERSEER_CARD_HEADER]: '{"sessions":["s1"]}', "x-sova-command": "ext.stub.run", "x-custom": "kept" });
+    stripSovaCredentials(h);
+    assert.deepEqual([...h.keys()].sort(), ["x-custom", "x-sova-command"]);
+  });
+});
+
 describe("GET /api/extensions", () => {
   test("no manifest: an empty list", async () => {
     rmSync(process.env.SOVA_EXTENSIONS_FILE!, { force: true });

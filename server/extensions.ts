@@ -9,13 +9,13 @@ import { getMimeType } from "hono/utils/mime";
 import { WebSocket } from "ws";
 import { cappedWebSocket, cappedWebSocketServer, connectionRefused, errorCode } from "./runtime-quirks";
 import type { ExtensionInfo, ExtensionOffers } from "../shared/protocol";
-import { offersOf } from "../shared/extension-offers";
-import { extCommandsFrom, type ExtCommandEntry } from "../shared/commands-ext";
+import { declaredCommands, offersOf } from "../shared/extension-offers";
+import { extCommandsFrom, extOverseerKeys, type ExtCommandEntry } from "../shared/commands-ext";
 import { stateRoot } from "./state-root";
 import { viewOffersOf } from "./extension-views";
 import { isExtensionKey, sovaToken } from "./auth";
 
-// The generic extension host (ext-contract-v1.17: v1.15 plus each backend's own key, server/extension-keys.ts, and a command's optional `menu` key, src/lib/menu-place.ts, v1.16; card types and drawing kinds in chat transcripts, server/extension-views.ts, v1.17). An extension is a static UI (`dist`) plus a
+// The generic extension host (ext-contract-v1.18: v1.15 plus each backend's own key, server/extension-keys.ts, and a command's optional `menu` key, src/lib/menu-place.ts, v1.16; card types and drawing kinds in chat transcripts, server/extension-views.ts, v1.17; a command's `overseer`, `description` and `job` keys, §app.overseer/extension-commands, v1.18). An extension is a static UI (`dist`) plus a
 // loopback HTTP backend (`api`), both named in a manifest the user installs; Sova never writes it.
 // Sova serves the UI at /ext/<id>/, proxies /ext/<id>/api/* and /ext/<id>/ws/* to the backend,
 // and lists the extensions (with a cached health probe, and what each declares it offers) at
@@ -123,6 +123,46 @@ export function installedExtensionCommands(): ExtCommandEntry[] {
 
 /** Every installed entry with what it offers (its card types and drawing kinds among them): a chat's snapshot reads it. */
 export const readExtensionsWithOffers = (): Array<{ entry: ExtensionEntry; offers?: ExtensionOffers }> => readManifest().map(({ entry, offers }) => (offers ? { entry, offers } : { entry }));
+
+/** An installed command an extension offers the Overseer (`overseer: true`, ext-contract-v1.18). */
+export interface OverseerExtCommand {
+  /** The extension it belongs to, as installed. */
+  extension: { id: string; title: string };
+  /** Its whole catalogue entry (`ext.<id>.<name>`, params included). */
+  command: ExtCommandEntry;
+  /** Its text for a model, when it declared one validly. */
+  description?: string;
+  /** It starts a job (202 {job: {id}}). */
+  job: boolean;
+}
+
+/**
+ * Every installed command its extension offers the Overseer, in manifest order: exactly the
+ * commands the offers mark `overseer`, built whole by the same rule (§app.overseer/extension-commands).
+ * Whether the user switched one on is the caller's question. Reads the manifest, probes nothing.
+ */
+export function overseerExtCommands(): OverseerExtCommand[] {
+  const out: OverseerExtCommand[] = [];
+  for (const { entry, offers, commands } of readManifest()) {
+    const marked = new Map((offers?.commands ?? []).filter((c) => c.overseer).map((c) => [c.name, c]));
+    if (!marked.size) continue;
+    const declared = declaredCommands(entry.id, commands);
+    for (const c of extCommandsFrom(entry.id, commands)) {
+      const name = c.id.slice(`ext.${entry.id}.`.length);
+      const info = marked.get(name);
+      if (!info) continue;
+      const { description } = extOverseerKeys(declared.get(name));
+      out.push({ extension: { id: entry.id, title: entry.title }, command: c, ...(description ? { description } : {}), job: info.job === true });
+    }
+  }
+  return out;
+}
+
+/** The cached health of one installed extension (GET /api/extensions's answer for it). */
+export async function extensionHealth(id: string): Promise<Pick<ExtensionInfo, "status" | "error"> | null> {
+  const entry = findExtension(id);
+  return entry ? health(entry) : null;
+}
 
 /** readExtensions, each entry with what it offers (and its raw `commands`, for the full entries). */
 function readManifest(): Array<{ entry: ExtensionEntry; offers?: ExtensionOffers; commands?: unknown }> {
@@ -348,11 +388,16 @@ const AUTH_COOKIE_RE = /^sova_token(_|$)/;
  * cookie (other cookies stay), `x-sova-token`, and an `Authorization` that carries this install's
  * token or any extension's key (an extension's own Authorization passes). A backend is a separate
  * program; one that calls Sova back sends its own key (docs/customization.md). An extension's key
- * rides in x-sova-token, so it is dropped with it.
+ * rides in x-sova-token, so it is dropped with it. So are the Overseer's in-process sender mark
+ * (`x-sova-overseer`, a per-process secret, server/overseer-sender.ts) and the card it was opened by
+ * (`x-sova-overseer-card`): the Overseer's own call through the proxy (§app.overseer/extension-commands)
+ * never hands a backend the secret that marks a request as the Overseer's.
  */
+export const OVERSEER_PROXY_HEADERS = ["x-sova-overseer", "x-sova-overseer-card"] as const;
 export function stripSovaCredentials(headers: Headers): void {
   headers.delete("x-sova-token");
   headers.delete("x-sova-caller"); // a chat's key (§app.command-audit/keys) never reaches a backend
+  for (const h of OVERSEER_PROXY_HEADERS) headers.delete(h);
   const authorization = headers.get("authorization");
   // The token, or any extension's key (§app.extensions/backend-key): one backend never gets another's.
   if (authorization !== null && (authorization.includes(sovaToken()) || authorization.split(/[\s,]+/).some(isExtensionKey))) headers.delete("authorization");

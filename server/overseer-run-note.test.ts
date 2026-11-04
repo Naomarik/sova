@@ -301,4 +301,22 @@ describe("the sessions in play (§app.overseer/sessions-in-play)", async () => {
     assert.ok(parts.at(-2)!.includes("[Secret [redacted]](sova://s/sent) · sent · idle"), parts.at(-2));
     assert.equal(parts.at(-1), "[cards] none");
   });
+
+  test("an extension command's reported sessions join them, said so; and the jobs Sova still watches get their own part (§app.overseer/extension-commands)", async () => {
+    const { extJobsText } = await import("./overseer-run-note");
+    const play = sessionsInPlay([], now, [{ id: "made", at: now - 30 * min }], [{ id: "launched", at: now - 5 * min }, { id: "made", at: now - 2 * min }, { id: "old", at: now - 25 * 3_600_000 }]);
+    assert.deepEqual(play, [
+      { id: "made", prompted: now - 30 * min, reported: now - 2 * min },
+      { id: "launched", reported: now - 5 * min },
+    ]);
+    const text = sessionsInPlayText(play, (id) => live({ name: id === "made" ? "Made" : "Ticket 42", state: "working" }), now)!;
+    const lines = text.split("\n");
+    assert.equal(lines[0], "[sessions in play] Sessions you created, prompted, were briefed about or an extension command reported in the last 24 hours. Check one with sova_session before saying what it is doing:");
+    assert.equal(lines[2], "- [Ticket 42](sova://s/launched) · launched · working · an extension command reported it 5m ago");
+    assert.equal(extJobsText([], now), undefined);
+    const jobs = [{ n: 3, title: "Acme", label: "Launch Session", job: "j-7", startedAt: now - 12 * min }];
+    assert.equal(extJobsText(jobs, now), "[extension jobs] Jobs you started that Sova still watches. It tells you when each ends (a message tagged [ext_job xN]); don't poll them:\n- x3: Acme · Launch Session, job j-7, started 12m ago");
+    const n = runNote({ now: NOW, branch: [], act: { keys: new Set(), complete: true }, session: () => null, extJobs: jobs, cardsText: "[cards] none" });
+    assert.ok(n.content.includes("\n\n[extension jobs] Jobs you started"), n.content);
+  });
 });

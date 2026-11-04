@@ -140,7 +140,7 @@ describe("overseer settings", () => {
     assert.ok(!("error" in store.parseSettings({ quickActions: s.quickActions }, true)));
     // Reading it never created the file.
     assert.throws(() => readFileSync(join(agentDir, "none.json")));
-    assert.deepEqual(s.caps, { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 10, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3 });
+    assert.deepEqual(s.caps, { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 10, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3, extRunsPerTurn: 5 });
     assert.equal(s.model, null);
   });
 
@@ -160,6 +160,20 @@ describe("overseer settings", () => {
     assert.match((store.parseSettings({ quickActions: [{ label: "", prompt: "x" }] }, true) as { error: string }).error, /label/);
     const ok = store.parseSettings({ model: "p/m", proactivity: "brief", extraSystemPrompt: "Be terse." }, true);
     assert.ok(!("error" in ok) && ok.model === "p/m" && ok.proactivity === "brief" && ok.extraSystemPrompt === "Be terse.");
+  });
+
+  test("an old extCommands list (§app.overseer/extension-commands: every marked command is on, no switches) is ignored, never refused, and the next save drops it", () => {
+    const tolerant = store.parseSettings({ extCommands: ["ext.acme.launch", 7], caps: { extRunsPerTurn: 2 } }, false);
+    assert.ok(!("error" in tolerant) && !("extCommands" in tolerant) && tolerant.caps.extRunsPerTurn === 2);
+    const put = store.parseSettings({ extCommands: "not even a list", proactivity: "brief" }, true);
+    assert.ok(!("error" in put) && !("extCommands" in put) && put.proactivity === "brief", "a PUT that still sends one is not refused for it");
+    // A file an older Sova wrote: it reads, and writing it back leaves the list out.
+    const file = join(agentDir, "old-ext.json");
+    writeFileSync(file, JSON.stringify({ version: 2, proactivity: "badge", extCommands: ["ext.a.b"], caps: { extRunsPerTurn: 3 } }));
+    const read = store.readOverseerSettings(file);
+    assert.ok(!("extCommands" in read) && read.caps.extRunsPerTurn === 3);
+    store.writeOverseerSettings(read, file);
+    assert.ok(!("extCommands" in JSON.parse(readFileSync(file, "utf8"))));
   });
 
   test("the exploratory agent defaults to Claude Code on the catalog's current Opus (Opus 5.5) at medium; a bad one falls back on read and is refused on PUT", () => {

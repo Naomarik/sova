@@ -58,12 +58,14 @@
       "shared/commands-ext.test.ts",
       "scripts/sova.mjs",
       "server/sova-cli.integration.test.ts",
-      "docs/customization.md"
+      "docs/customization.md",
+      "server/extension-offers-overseer.test.ts"
     ],
     "authority": "accepted",
     "agreed": {
       "by": "user",
-      "at": "2026-10-17T17:59Z"
+      "at": "2026-10-27T21:10Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
     },
     "evidence": "verified"
   },

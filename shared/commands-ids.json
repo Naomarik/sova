@@ -201,7 +201,8 @@
     "schedule.list",
     "playbook.list",
     "draft-spec.list",
-    "session.context.view"
+    "session.context.view",
+    "overseer.abilities"
   ],
   "retired": [
     "settings.agents.get",

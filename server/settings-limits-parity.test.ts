@@ -244,6 +244,29 @@ describe("each settings limit: the form and the server agree on both sides of it
       assert.equal(secretNameIssue(n.trim()) === null, isSecretName(n.trim()), `"${n}": the form and the route disagree`);
     }
   });
+  test("Merge Queue: a time limit box's whole minutes are the project file's seconds the save takes, and its cap is the server's (D13)", async () => {
+    const mq = await import("../src/lib/merge-queue-settings");
+    const { parseChange } = await import("./merge-queue/settings-edit");
+    const { HOOK_TIMEOUT_MAX } = await import("../shared/project-contract");
+    const cap = Math.round(HOOK_TIMEOUT_MAX / 60);
+    const server = (sec: number) => {
+      try {
+        parseChange({ checks: { unit: { timeoutSec: sec } } });
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    for (const m of [1, cap]) {
+      assert.equal(mq.parseMinutes(String(m), cap), m, `the form refuses ${m} minutes`);
+      assert.equal(server(m * 60), true, `the save refuses ${m} minutes`);
+    }
+    for (const m of [0, cap + 1]) {
+      assert.equal(mq.parseMinutes(String(m), cap), null, `the form takes ${m} minutes`);
+      assert.equal(server(m * 60), false, `the save takes ${m} minutes`);
+    }
+    for (const t of ["", "-", "1e", "1.", "2.5", "-3", "a5", " ", "99999"]) assert.equal(mq.parseMinutes(t, cap), null, `the form takes "${t}"`);
+  });
   test("a refusal names the field in words, never an internal key (D1's 'caps.concurrentSessions')", async () => {
     const s = ovSettings();
     s.caps.concurrentSessions = 1001;

@@ -103,7 +103,7 @@ describe("what a landing runs", () => {
     const settings = "server/settings-browser.integration.test.ts";
     assert.equal(groupOf(settings)?.name, "settings");
     const run = (changed: string[]) => selectFiles([settings, everyday], changed, { mode: "landing" });
-    for (const f of ["src/components/OverseerSettings.tsx", "src/components/SettingsDialog.tsx", "src/lib/overseer-draft.ts", "src/lib/session-title-settings-form.ts", "src/lib/settings-draft.ts", "server/decide-settings.ts", "server/updates/routes.ts", settings]) {
+    for (const f of ["src/components/OverseerSettings.tsx", "src/components/SettingsDialog.tsx", "src/lib/overseer-draft.ts", "src/lib/session-title-settings-form.ts", "src/lib/settings-draft.ts", "server/decide-settings.ts", "server/updates/routes.ts", "src/components/settings/MergeQueueSettings.tsx", "src/lib/merge-queue-settings.ts", "server/merge-queue/settings-edit.ts", settings]) {
       assert.ok(run([f]).ran.includes("settings"), f);
       assert.ok(run([f]).files.includes(settings), f);
     }

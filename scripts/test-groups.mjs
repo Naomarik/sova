@@ -131,6 +131,9 @@ export const GROUPS = [
     landing: "triggered",
     triggers: [
       "src/components/*Settings*.tsx",
+      "src/components/settings/**",
+      "src/lib/merge-queue-settings*.ts",
+      "server/merge-queue/settings*.ts",
       "src/lib/*-draft.ts",
       "src/lib/*-form.ts",
       "src/lib/settings-*.ts",

@@ -672,3 +672,37 @@ describe("Subagents: every team number inside a profile", () => {
     });
   }
 });
+
+// Settings → Merge Queue's staged edit is a held edit (its own confirm saves it, one commit), not a
+// registry form: a time-limit box whose text isn't a time limit must still hold the dialog's close,
+// and Discard and Close must drop it (D13: the bad text was never unsaved work, so nothing held it).
+const mq = await import("./merge-queue-settings");
+const held = await import("./merge-queue-settings-draft");
+const { heldEdits } = await import("./settings-draft");
+describe("Merge Queue: a bad time-limit box holds the close", () => {
+  const base = {
+    landing: { push: false },
+    review: { on: false },
+    fixed: { checkMaxMin: 30 },
+    checks: { list: [{ id: "unit", label: "Unit tests", timeoutSec: 600, rerun: false, optional: false }] },
+  } as unknown as Parameters<typeof mq.toProjectDraft>[0];
+  for (const bad of ["", "-", "1e", "1.", "2.5", "-3", "abc", " ", "31", "99999"]) {
+    test(`"${bad}" holds the close, names the check, and Discard drops it`, () => {
+      resetAllDrafts();
+      const draft = mq.typedMinutes(mq.toProjectDraft(base, false), "unit", bad, base);
+      held.stageEdit({ project: "prj_test", base, hasOrigin: false, draft });
+      assert.equal(mq.minutesTextOf(draft, "unit", base), bad, "kept as typed");
+      assert.equal(mq.draftProblem(draft, base), "Unit tests: a time limit is whole minutes, 1 to 30.");
+      assert.deepEqual(heldEdits().map((h) => h.label), ["Merge Queue"], "the close-hold doesn't count it");
+      resetAllDrafts();
+      assert.deepEqual(heldEdits(), [], "Discard and Close leaves it held");
+    });
+  }
+  test("a valid time typed back to the saved one holds nothing", () => {
+    resetAllDrafts();
+    const draft = mq.typedMinutes(mq.typedMinutes(mq.toProjectDraft(base, false), "unit", "1e", base), "unit", "10", base);
+    held.stageEdit({ project: "prj_test", base, hasOrigin: false, draft });
+    assert.deepEqual(heldEdits(), []);
+    resetAllDrafts();
+  });
+});

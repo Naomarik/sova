@@ -13,7 +13,7 @@
 // changes. Chrome is found as the tour tests find it (discoverTourBrowser): none installed fails.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { chromium, type Browser, type Page } from "playwright-core";
@@ -40,7 +40,11 @@ before(async () => {
   execFileSync("node", [join(ROOT, "node_modules", "vite", "bin", "vite.js"), "build", "--outDir", dist, "--emptyOutDir", "--logLevel", "error"], { cwd: ROOT, stdio: ["ignore", "ignore", "inherit"] });
   s = await startHermeticServer({ env: { SOVA_DIST: dist } });
   browser = await chromium.launch({ executablePath: discoverTourBrowser(), headless: true, env: { ...process.env, TMPDIR: shortTmp! } });
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: { "x-sova-token": s.token }, serviceWorkers: "block" });
+  // Signed in as the operator's browser is: the server's cookie, never the script header (some
+  // saves, Merge Queue's to master among them, refuse a script).
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 1000 }, serviceWorkers: "block" });
+  const { authCookieName } = await import("./auth");
+  await ctx.addCookies([{ name: authCookieName(s.agentDir), value: s.token, url: s.base }]);
   page = await ctx.newPage();
 }, { timeout: 180_000 });
 after(async () => {
@@ -211,6 +215,48 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     await pct.waitFor({ timeout: 15_000 });
     for (const t of ["", "abc", "1.", "500"]) await refused(pct, t, "Subagents");
     for (const t of ["-3", "2.5"]) await refused(pct, t, "Subagents", true);
+  });
+
+  test("Merge Queue: a bad time limit stays as typed and red, holds Save to master and the close; what's committed is what's on screen (D13)", async () => {
+    // A throwaway project with one declared check (10 min), registered as the operator adds a folder.
+    const repo = join(s.work, "mq-repo");
+    mkdirSync(join(repo, ".sova"), { recursive: true });
+    const git = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: repo, encoding: "utf8" });
+    git("init", "-q", "-b", "master");
+    writeFileSync(join(repo, ".sova", "project.json"), `${JSON.stringify({ version: 1, merge: { target: "master", push: false, checks: [{ id: "unit", label: "Unit tests", run: ["true"], timeout: 600 }] } }, null, 2)}\n`);
+    git("add", "-A");
+    git("commit", "-q", "-m", "init");
+    const res = await fetch(`${s.base}/api/projects`, { method: "POST", headers: { "x-sova-token": s.token, "content-type": "application/json", origin: s.base, "sec-fetch-site": "same-origin" }, body: JSON.stringify({ root: repo }) });
+    assert.equal(res.status, 201, await res.clone().text());
+    const pid = ((await res.json()) as { project: { id: string } }).project.id;
+    await page.goto("about:blank");
+    await page.goto(`${s.base}/#/settings/merge-queue/${pid}`);
+    const minutes = dialog().getByRole("textbox", { name: "Unit tests: time limit in minutes" });
+    await minutes.waitFor({ timeout: 30_000 });
+    assert.equal(await minutes.inputValue(), "10");
+    const saveTo = dialog().getByRole("button", { name: "Save to master…" });
+    const typeIn = async (t: string, keys: boolean) => {
+      await minutes.fill("");
+      if (keys) await minutes.pressSequentially(t);
+      else await minutes.fill(t);
+    };
+    for (const [t, keys] of [["99999", false], ["1e", true], ["1.", true], ["2.5", true], ["-3", true], ["0", false], ["31", false], ["", false], ["-", true]] as const) {
+      await typeIn(t, keys);
+      await until(`"${t}" turns the time limit red`, async () => (await minutes.getAttribute("aria-invalid")) === "true");
+      assert.equal(await minutes.inputValue(), t, `"${t}" isn't kept as typed`);
+      await until(`"${t}": the save row names the check and its range`, async () => /Unit tests: a time limit is whole minutes, 1 to 30\./.test((await dialog().locator("#mqs-save-problem").textContent({ timeout: 500 })) ?? ""), 5_000);
+      assert.equal(await saveTo.isDisabled(), true, `Save to master… is enabled over "${t}"`);
+    }
+    // The bad box is unsaved work: the dialog's close asks first.
+    await dialog().locator(".settings-foot").getByRole("button", { name: /^(Close|Cancel)$/ }).click();
+    await until("closing over a bad time limit asks first", async () => (await page.getByRole("button", { name: "Discard and Close" }).count()) > 0);
+    await page.keyboard.press("Escape");
+    await typeIn("12", false);
+    await until("12 is a time limit", async () => (await minutes.getAttribute("aria-invalid")) !== "true");
+    await saveTo.click();
+    await until("the confirm lists the change on screen", async () => (await dialog().getByText("Unit tests: time limit 12 min").count()) > 0);
+    await dialog().getByRole("button", { name: "Save to master", exact: true }).click();
+    await until("master has the commit", async () => JSON.parse(git("show", "master:.sova/project.json")).merge.checks[0].timeout === 720, 30_000);
   });
 
   test("Alignment: a switch saves and reloads", async () => {

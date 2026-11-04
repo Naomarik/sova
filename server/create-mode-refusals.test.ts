@@ -8,11 +8,13 @@ import { after, describe, test } from "node:test";
 import { CREATE_NO_DEFAULT, createNotNamed, profileFileError } from "../shared/profiles";
 import { parseAutomation } from "../shared/automations";
 import { defaults } from "../pi-config/extensions/mode/state.ts";
-import { defaultPatchOf, mergeMode, modeInfo, parseModePatch, pinEntryFor, readMode, resolveChatMode, writeMode } from "./mode-state";
+import { defaultPatchOf, mergeMode, modeInfo, parseModePatch, typedMajorMode, pinEntryFor, readMode, resolveChatMode, writeMode } from "./mode-state";
 import { WEB_MODE_HOOK } from "../pi-config/extensions/mode/state.ts";
 import { withWebMode } from "./memory/permit";
 import { codingModeChoice, codingModeSwitch, hostDefaultMode } from "./project-coding-mode";
 import { parseConfigure } from "./sessions-configure";
+import { CREATE_INSTRUCTIONS } from "../pi-config/extensions/mode/create/guide.ts";
+import { buildDelegateAlignBridge, buildDelegatePrompt, composePrompt, DEFAULT_ROUTES } from "../pi-config/extensions/mode/prompt.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "create-mode-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
@@ -64,6 +66,24 @@ describe("a chat's switch", () => {
     const back = resolveChatMode([{ type: "custom", customType: pin.customType, data: pin.data }], f);
     assert.equal(back.mode, "create");
     assert.equal(back.lastMode, "delegate");
+  });
+});
+
+describe("the prompt", () => {
+  test("is Delegate's block, the align bridge, then Create's block, in that order; Delegate's own has no Create", () => {
+    const create = composePrompt({ mode: "create", strict: false, minorModes: ["align"] }, DEFAULT_ROUTES)!;
+    const at = [buildDelegatePrompt(DEFAULT_ROUTES), buildDelegateAlignBridge(), CREATE_INSTRUCTIONS].map((block) => create.indexOf(block));
+    assert.ok(at.every((i) => i >= 0), `all three are there: ${at}`);
+    assert.deepEqual([...at].sort((a, b) => a - b), at);
+    assert.ok(!composePrompt({ mode: "delegate", strict: false, minorModes: ["align"] }, DEFAULT_ROUTES)!.includes(CREATE_INSTRUCTIONS));
+    assert.ok(!composePrompt({ mode: "create", strict: false, minorModes: [] }, DEFAULT_ROUTES)!.includes(buildDelegateAlignBridge()), "no bridge once align is off");
+  });
+});
+
+describe("a typed switch", () => {
+  test("reads the three major names, and leaves everything else to the extension", () => {
+    assert.deepEqual(["/mode create", " /mode  delegate ", "/mode normal"].map(typedMajorMode), ["create", "delegate", "normal"]);
+    for (const other of ["/mode", "/mode status", "/mode default", "/mode align on", "/mode strict on", "/mode create now", "mode create", "/modes create"]) assert.equal(typedMajorMode(other), undefined, other);
   });
 });
 

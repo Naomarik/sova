@@ -17,7 +17,7 @@ import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueue
 import { decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { sessionsChanged } from "./list-generation";
-import { appliesAfter, type BranchEntries, chatModeOf, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, saveModeOf, writeMode, type ModePatch, type ModeState } from "./mode-state";
+import { appliesAfter, type BranchEntries, chatModeOf, CREATE_NOT_TAKEN, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, saveModeOf, typedMajorMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
 import { loadDefaults, saveDefaults } from "./web-defaults";
 import { subagentProfilesInfo, requireSubagentProfile, saveSubagentProfileDefault } from "./subagent-profiles";
 import { restorePick, pickEntryFor } from "../pi-config/extensions/subagents/subagent-profiles.ts";
@@ -3406,6 +3406,18 @@ class ChatSession {
           // itself; this is the server's own refusal, so no client can switch it by prompt text.
           if (this.overseer && /^\/mode(\s|$)/.test(String(msg.text ?? "").trim())) {
             fail(new ModeRefusedError());
+            return;
+          }
+          // `/mode normal|delegate|create` typed in a composer is the menu's switch, with its refusals, its permit and
+          // its reply, so no second way in and no mode the server doesn't know about. Nothing reaches the model.
+          const typedMode = msg.images?.length ? undefined : typedMajorMode(String(msg.text ?? ""));
+          if (typedMode) {
+            this.switchMode({ mode: typedMode })
+              .then((result) => {
+                if (typedMode === "create" && result.mode !== "create") throw new ModeRefusedError(CREATE_NOT_TAKEN);
+                this.ackSend(client, clientId, false);
+              })
+              .catch(fail);
             return;
           }
           // A special kind that attributes its composer's messages (a baton session: only while

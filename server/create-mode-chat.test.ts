@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { after, test } from "node:test";
 import { CREATE_NO_DEFAULT, createNotNamed } from "../shared/profiles";
 import type { ChatModeResult } from "../shared/protocol";
+import { MODE } from "./harness/state-kinds";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dir = realpathSync(mkdtempSync(join(tmpdir(), "sova-create-chat-")));
@@ -54,9 +55,64 @@ test("a chat offers Create, takes it through the extension, and align comes on w
   assert.equal(got.saveMode, "delegate");
   const chat = await acquireChat(path);
   // The extension's own entry, so it passed the permit: the server didn't merely note the wish.
-  const entry = chat.extensionBranch().filter((e) => e.type === "custom" && e.customType === "mode").at(-1) as { data?: { active?: { mode?: string; lastMode?: string } } } | undefined;
-  assert.equal(entry?.data?.active?.mode, "create");
-  assert.equal(entry?.data?.active?.lastMode, "delegate");
+  const active = chat.harness.state.branch().latest(MODE)?.data.active;
+  assert.equal(active?.mode, "create");
+  assert.equal(active?.lastMode, "delegate");
+});
+
+/** A client on a chat's socket, as far as a typed send uses it: what it was sent. */
+async function typed(chat: Awaited<ReturnType<typeof acquireChat>>, text: string, id: string): Promise<{ type: string; message?: string }[]> {
+  const sent: { type: string; message?: string }[] = [];
+  const client = { send: (m: { type: string; message?: string }) => void sent.push(m) };
+  chat.attach(client as never);
+  sent.length = 0;
+  chat.handle(client as never, { type: "prompt", text, clientId: id } as never);
+  const end = Date.now() + 10_000;
+  while (!sent.some((m) => m.type === "error" || m.type === "send_ack" || m.type === "ack")) {
+    if (Date.now() > end) throw new Error(`no answer to ${text}: ${JSON.stringify(sent)}`);
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  return sent;
+}
+
+test("`/mode create` typed in a Sova chat is the menu's switch: align on, the lookup, and the server knows", async () => {
+  const path = await newChat();
+  const chat = await acquireChat(path);
+  const sent = await typed(chat, "/mode create", "c1");
+  assert.ok(!sent.some((m) => m.type === "error"), JSON.stringify(sent));
+  const got = await get(path);
+  assert.equal(got.mode, "create", "the menu reads it");
+  assert.equal(got.saveMode, "delegate");
+  assert.deepEqual(got.minorModes, ["align", "vis"]);
+  assert.ok(chat.harness.activeTools().includes("create_guide"));
+  assert.ok(!readFileSync(path, "utf8").includes('"type":"message"'), "nothing reached the model or the transcript");
+});
+
+test("typed /mode delegate and /mode normal reach the server too: the menu never reads a stale mode", async () => {
+  const path = await newChat();
+  const chat = await acquireChat(path);
+  await typed(chat, "/mode normal", "n1");
+  assert.equal((await get(path)).mode, "normal");
+  await typed(chat, "/mode create", "n2");
+  await typed(chat, "/mode delegate", "n3");
+  assert.equal((await get(path)).mode, "delegate");
+  assert.ok(!chat.harness.activeTools().includes("create_guide"));
+});
+
+test("a strict chat in Create, in a real runtime, has lost edit and write, and they come back in normal", async () => {
+  const before = readFileSync(join(dir, "mode.json"), "utf8");
+  writeFileSync(join(dir, "mode.json"), JSON.stringify({ ...JSON.parse(before), strict: true }));
+  const path = await newChat();
+  writeFileSync(join(dir, "mode.json"), before);
+  const chat = await acquireChat(path);
+  assert.equal((await post(path, { mode: "create" })).status, 200);
+  let tools = chat.harness.activeTools();
+  assert.ok(!tools.includes("edit") && !tools.includes("write"), `${tools}`);
+  assert.ok(tools.includes("create_guide"), `${tools}`);
+  assert.equal((await post(path, { mode: "normal" })).status, 200);
+  tools = chat.harness.activeTools();
+  assert.ok(tools.includes("edit") && tools.includes("write"), `${tools}`);
+  assert.ok(!tools.includes("create_guide"), `${tools}`);
 });
 
 test("Save as Default in Create saves the last choice, and the file never holds Create", async () => {

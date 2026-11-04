@@ -110,7 +110,7 @@ import { setSummaryWriter, summaryFromChain } from "./version-summaries";
 import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsInfo, writeSessionTitleSettings } from "./session-titles-settings";
 import type { LlmRuntime } from "./decide-llm";
 import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
-import { chatOnlyModes, modeInfo, parseModeRequest, readMode } from "./mode-state";
+import { chatOnlyModes, CREATE_NOT_TAKEN, modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { defaultMemoryChoice } from "./memory/settings";
 import { registerMemoryRoutes } from "./memory/routes";
 import { parseSandboxBody, sandboxCommand, sandboxLowers } from "./sandbox-state";
@@ -1324,7 +1324,7 @@ export function buildApp(deps: AppDeps) {
       const result = await got.chat.switchMode(patch);
       if (result.needsApproval) return c.json({ error: result.error ?? "Approval needed", needsApproval: result.needsApproval } satisfies ProjectModeApprovalNeeded, 409);
       // A chat on code older than Create keeps its mode, and one open elsewhere takes no switch.
-      if (patch.mode === "create" && result.mode !== "create") return c.json({ error: "This chat can't switch to Create: it runs older code or is open somewhere else. Reload it, then try again." }, 409);
+      if (patch.mode === "create" && result.mode !== "create") return c.json({ error: CREATE_NOT_TAKEN }, 409);
       return c.json(result);
     } catch (err) {
       if (err instanceof ModeRefusedError) return c.json({ error: err.message }, 409);

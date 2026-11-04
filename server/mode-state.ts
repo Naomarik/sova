@@ -37,6 +37,15 @@ export { MINOR_MODES };
 export const MODE_FILE_NAME = "mode.json";
 export const modeFile = () => join(agentRoot(), MODE_FILE_NAME);
 
+/** The refusal when a chat didn't take Create: older code keeps its mode, and one open elsewhere takes no switch. */
+export const CREATE_NOT_TAKEN = "This chat can't switch to Create: it runs older code or is open somewhere else. Reload it, then try again.";
+
+/** The mode `/mode <name>` typed in a chat's composer names, else undefined: a typed switch is the menu's switch. */
+export function typedMajorMode(text: string): ModeState["mode"] | undefined {
+  const named = /^\/mode\s+(\S+)\s*$/.exec(text.trim());
+  return named ? parseMode(named[1]) : undefined;
+}
+
 /** The modes only a chat can pick, for a page that reads a peer's chat through that host's GET /api/mode. */
 export const chatOnlyModes = (): ModeInfo["chatModes"] => MODES.filter((id) => id === "create").map((id) => ({ id, description: MODE_DESCRIPTIONS[id] }));
 

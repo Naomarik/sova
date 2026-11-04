@@ -11,6 +11,7 @@ import type { SessionSummary } from "../shared/protocol";
 import * as c from "./worktree-cleanup";
 import { targetsRoot } from "./targets";
 import { besideGone, goneTreeState, resetRemovedWorktrees, type RemovedWorktree } from "./removed-worktrees";
+import type { GitRunner } from "./worktrees";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-cleanup-test-")));
 const main = join(root, "repo");
@@ -269,4 +270,29 @@ test("off Linux the processes come from lsof: cwd and open files per pid, this p
   const failed = await c.scanProcesses("darwin", async () => ({ code: 1, stdout: "", stderr: "lsof: WARNING: can't stat()\nmore\n" }));
   assert.equal(failed.length, 1);
   assert.match(failed[0]!.unreadable!, /couldn't be read \(lsof: lsof: WARNING: can't stat\(\)\), so it is kept/);
+});
+
+test("readers of one gone tree share a read while it runs; the next read after its lifetime asks git again", async () => {
+  resetRemovedWorktrees();
+  let calls = 0;
+  let release = () => {};
+  const gate = new Promise<void>((go) => { release = go; });
+  const fake: GitRunner = async (args) => {
+    calls++;
+    await gate;
+    return { code: 0, stdout: "aaa\n", stderr: "" };
+  };
+  const t = { path: "/gone/flight", branch: "feat/flight", base: "aaa" };
+  const dirs = [main];
+  const reads = [goneTreeState(t, dirs, { git: fake, now: 1000, ledger: () => [] }), goneTreeState(t, dirs, { git: fake, now: 1000, ledger: () => [] })];
+  const firstCalls = calls;
+  release();
+  assert.deepEqual(await Promise.all(reads), ["empty", "empty"]);
+  assert.equal(firstCalls, 1, "the second reader started no Git");
+  const settled = calls;
+  assert.equal(await goneTreeState(t, dirs, { git: fake, now: 2000, ledger: () => [] }), "empty");
+  assert.equal(calls, settled, "kept");
+  // A branch that moved since: the kept answer ends with its lifetime, and git says so.
+  const moved: GitRunner = async (args) => ({ code: 0, stdout: args.includes("--verify") ? "bbb\n" : "", stderr: "" });
+  assert.equal(await goneTreeState(t, dirs, { git: moved, now: 1000 + 11 * 60_000, ledger: () => [] }), "merged");
 });

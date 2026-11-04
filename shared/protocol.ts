@@ -3,6 +3,7 @@
  * Do not change a shape without telling the other side (team_msg).
  */
 
+import type { McpNote, McpToolName, SetupMcp } from "./mcp";
 import type { WakeInfo } from "./wake";
 import type { BatonMark, BatonSummaryField } from "./baton";
 import type { LinkMessageInfo } from "./link-message";
@@ -410,6 +411,8 @@ export interface TranscriptItem {
       entry of a switch; `text` is its notice. Like the profile row it never counts toward the empty
       state, and the thread draws it where it sits once a message is sent. */
   loginNote?: true;
+  /** kind "info" only: a server's failure in this chat (§app.mcp/in-a-chat), the `sova-mcp-note` entry. */
+  mcpNote?: McpNote;
   /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
   teamEvent?: TeamEvent;
   /** kind "info" only: a /compact-handoff run's `compact-handoff-run` entry
@@ -440,6 +443,8 @@ export interface TranscriptItem {
   facts?: RowFacts;
   /** tool-call and tool-result rows. A lazy tool-result row carries no `text`. */
   tool?: ToolRowInfo;
+  /** tool-call and tool-result rows of a server's tool (§app.mcp/in-a-chat): the row reads these, never the name. */
+  mcp?: McpToolName;
   /** kind "unknown" only: the whole entry, for the card that shows it as JSON (signatures removed). */
   entry?: unknown;
 }
@@ -1476,12 +1481,14 @@ export type SessionSetup =
           server holds the chat, it is local, ordinary, not TUI-live and before its first message.
           Worked out per session on every read, never cached with the folder's lists. */
       toggleable?: boolean;
+      /** The card's MCP Servers group (§chat.transcript/setup-card-toggles); absent: no group. */
+      mcp?: SetupMcp;
       checkedAt: number;
     }
   /** A target session: its cwd is a local placeholder, so its loadout can't be read here. */
-  | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; checkedAt: number }
+  | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; mcp?: SetupMcp; checkedAt: number }
   /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
-  | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
+  | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; mcp?: SetupMcp; checkedAt: number };
 
 // GET /api/sessions/context/file?path=<session file>&file=<listed path> -> SessionSetupFileText
 //                                  (server/session-setup.ts, §chat.transcript/setup-card-open-file:
@@ -1593,7 +1600,7 @@ export type SessionTools =
   /** Not listed: `reason` is the sentence to show. */
   | { state: "unavailable"; reason: string; checkedAt: number };
 
-// POST /api/sessions/loadout {path, offContext, offSkills} -> SessionSetup
+// POST /api/sessions/loadout {path, offContext, offSkills, offMcp, onMcp} -> SessionSetup
 //                                  (§chat.transcript/setup-card-toggles: the session's whole off set
 //                                  — context files by absolute path, skills by name — written as its
 //                                  hidden `sova-loadout` entry; the runtime is rebuilt, open tabs get
@@ -2499,7 +2506,7 @@ export interface HelloLive {
   /** The assistant message still streaming (not yet written): its parts so far, by index. */
   message?: { model?: string; parts: SovaPart[] };
   /** Tool calls of this run started and not ended, each with its latest output. */
-  tools?: { callId: string; name: string; args?: unknown; output: string; images: string[]; parentCallId?: string }[];
+  tools?: { callId: string; name: string; args?: unknown; mcp?: McpToolName; output: string; images: string[]; parentCallId?: string }[];
 }
 
 /**
@@ -4669,7 +4676,37 @@ export interface SessionSummary {
       gains it a moment after it first lists. Absent when the session tracks no worktree of its
       own, before git was first read, and from older servers. */
   readiness?: SessionReadiness;
+  /** The branches its chat's composer status row counts (WorktreesControl): every non-dropped worktree the chat
+      tracks, its own and those inherited from the chat it was forked from, with what that row reads besides
+      `readiness` (joined by path, as the chat joins it). The session list says the chat's headline from them.
+      Read in the background with readiness; each entry's queue state is joined at listing time from the merge
+      queue's newest view. Absent when it tracks none, before the first read, for sessions readiness never covers,
+      and from older servers. Additive. */
+  branches?: SessionBranchRow[];
 }
+
+/** One branch as the chat's worktree row reads it (SessionWorktreeInfo), cut to what its words need. */
+export interface SessionBranchRow {
+  /** Canonical top level (SessionWorktreeInfo.path; readiness trees join on it). */
+  path: string;
+  branch: string;
+  status: "active" | "merged";
+  exists: boolean;
+  /** Inherited from that session (a fork copied the entry): no readiness of this chat's speaks for it. */
+  sharedWith?: string;
+  /** status "active": git finds its branch already merged (SessionWorktreeInfo.mergedInto). */
+  mergedInto?: { target: string; sha: string };
+  /** Its newest merge queue entry, the fields a row's words read. */
+  queue?: SessionBranchQueue;
+  /** Its repo is one the merge queue serves (SessionWorktreeInfo.mergeServed). */
+  mergeServed?: true;
+  /** Its project's merge setup as the ready row words it (SessionWorktreeInfo.mergeProject, cut). */
+  mergeProject?: Pick<import("./merge-queue").WorktreeMergeProject, "target" | "checks" | "invalid">;
+}
+
+/** A branch's merge queue entry as the session list carries it: its state (never a precomputed key, so a new state
+    flows through) and what the row's words read. */
+export type SessionBranchQueue = import("./merge-queue").BranchQueueFacts;
 
 /** One worktree's merge readiness (§chat.worktrees/readiness). */
 /** A chat running in the home folder because its stored local working directory is gone
@@ -5252,8 +5289,31 @@ export interface MonitorSampler {
   startedAt: number;
 }
 
+/** The stall recorder's latest records, one line each; `<stateRoot>/stalls/stalls.jsonl` holds them in full. */
+export interface MonitorStallRecord {
+  kind: "stall" | "stall-open" | "memory";
+  at: number;
+  pid: number;
+  /** A stall: the most it can have lasted. */
+  ms?: number;
+  rssBytes?: number;
+  /** The commonest innermost frame while it lasted. */
+  top?: string;
+  /** The oldest operations in flight. */
+  ops?: string[];
+  /** A stall its process never reported the end of: it died or was killed inside it. */
+  unfinished?: boolean;
+}
+
+export interface MonitorStalls {
+  state: "on" | "off" | "failed";
+  recent: MonitorStallRecord[];
+}
+
 export interface MonitorSnapshot {
   at: number;
+  /** The stall recorder, absent from a snapshot built by a server without it. */
+  stalls?: MonitorStalls;
   platform: string;
   scope: MonitorScope;
   /** `unit` only: the unit name, e.g. "sova-runtime.service". */

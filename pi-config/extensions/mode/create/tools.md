@@ -1,6 +1,6 @@
 # tools: a new tool for the agent to call, and how it gets approved
 
-Recommend a project tool first: it asks before it turns on, stops if its files change, and belongs to one project. Offer an add-on tool only when the person asks for a tool in every chat, and say first that it asks nothing and runs with full access. Don't offer an add-on kept in a project. If they name MCP, say it isn't supported yet and offer a project tool.
+Recommend a project tool first: it asks before it turns on, stops if its files change, and belongs to one project. Offer an add-on tool only when the person asks for a tool in every chat, and say first that it asks nothing and runs with full access. Don't offer an add-on kept in a project. Offer building an MCP server alongside the project tool, still recommending the project tool first: choose the server when the person names MCP, already has a server, or wants the same tools in other programs too.
 
 No tool or add-on you make restarts or updates Sova: that stays the person's click, in Settings → General.
 
@@ -87,14 +87,32 @@ export default function (pi) {
 - Live: that worker, from its start.
 - Check: the worker's view in the Subagents pane.
 
-## MCP servers
+## MCP server
 
-- Change: nothing yet. Sova doesn't support MCP servers, so they don't reach a chat.
-- Lives: nowhere in Sova.
-- Approves: nobody: there's no change to approve.
-- By: None. Say MCP isn't supported yet. The nearest way is a project tool whose program calls the service. Don't suggest an add-on or a setting that tries to load MCP.
-- Live: never, today.
-- Check: there's nothing to check.
+- Change: a server that gives chats more tools: an address the person already has, or a command server you build as a program of the project.
+- Lives: a project's servers in the shared `.mcp.json` at the root of its checkout, under `mcpServers`, in the shape other tools read, so one already written for Claude Code works. This computer's own servers are in `mcp.json` in the agent dir, which Settings → MCP Servers lists. A chat in a worktree reads that worktree's `.mcp.json`. A repository's `.pi/mcp.json` is ignored, and the name `sova` is refused.
+- Approves: the person, with Approve on the server's row: on the project page's Settings tab for a project's server, in Settings → MCP Servers for this computer's. Every caller but the page is refused, you included: you can't approve, check or sign in, so stop and name the click. Approval covers that exact entry and the files of the folder any `./` path in it names; a changed entry, a changed file there or another checkout asks again. Adding or editing a server on the page counts as approving.
+- By: Land for a project's `.mcp.json`, made on a branch. OK for this computer's `mcp.json`: an entry written there reads Waiting for You until approved. Or Screen: the person adds it with Add Server in Settings → MCP Servers, which approves and checks it at once.
+- Live: in new chats, once approved and its row reads Connected. A chat's tools are fixed at its first message, so never promise them in this chat or in any chat already open.
+- Check: you can't see the rows. Read `mcp.servers.list` and `mcp.server.status` through the named commands (`scripts`): each server's state, tool count and tool names, never a secret. If it reads Failed, ask the person for the row's error lines and fix the program from them.
+
+A value never holds a secret. It says `${NAME}`, the row asks for NAME, and the person types it into the row's Secret field, never into a file or this chat. In a project's file `${NAME}` names only a saved secret, never an environment variable. A server gets a clean environment: the basics a program needs and only what its entry names.
+
+Limits to say before they agree: each tool runs with no question asked per call; the row's per-tool switches are the control. In a chat with its sandbox On a command server runs inside the sandbox and may fail there, and address servers stay off. A chat on a remote machine gets none. The Overseer, project overseers, gathering chats and the Project Assistant get none, a profile can take them away, and a worker gets only the servers its chat names when starting it. A `.mcp.json` in a folder that is no project runs nothing.
+
+A command server reads JSON-RPC from standard input and answers on standard output, one message per line: `initialize`, `tools/list` and `tools/call`. Use the project's own MCP library if it has one. A complete entry, `<project>/.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "todo-count": {
+      "command": "node",
+      "args": ["./tools/todo-mcp.mjs"],
+      "env": { "TODO_API_KEY": "${TODO_API_KEY}" }
+    }
+  }
+}
+```
 
 ## Add-on kept in a project
 

@@ -53,7 +53,7 @@ skipped and shown in Settings → Profiles with the exact error. The others stil
 | `label` | yes | The name the picker shows, up to 60 characters |
 | `icon` | no | `grid`, `eye`, `network`, `branch`, `wrench`, `shield`, `search`, `terminal`, `bulb` or `building` (default `wrench`) |
 | `description` | no | One line under the name |
-| `remove` | no | Capabilities it loses (below). Removing anything also removes `workers` |
+| `remove` | no | Capabilities it loses (below). Removing any but `mcp` also removes `workers`; removing only `mcp` leaves Workers alone |
 | `grant` | no | Session powers it gains (below). `sessions.message` and `sessions.all` also grant `sessions.read` |
 | `singleton` | no | `true`: **One at a time**, at most 1 live session per profile (per project for a project's profile). While one runs, its card reads **Active** and opens that session instead |
 | `limits` | no | Any of `hops` (3), `perMessage` (10), `perDay` (40), `targetsPerRun` (5), `perPair` (6): whole numbers from 1 |

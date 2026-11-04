@@ -90,7 +90,12 @@
       "pi-config/sandbox-policy/darwin/CLAUDE.md",
       "pi-config/install.sh",
       "scripts/hermetic-agent-dir.mjs"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T02:27Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+    }
   },
   "§chat.sandbox/project-tightening": {
     "kind": "behavior",
@@ -107,7 +112,8 @@
       "§chat/sandbox",
       "§chat.sandbox/toggle",
       "§chat.sandbox/workers",
-      "§chat.worktrees/workers"
+      "§chat.worktrees/workers",
+      "§app.mcp/sandbox"
     ],
     "authority": "accepted",
     "evidence": "verified",
@@ -126,7 +132,12 @@
       "pi-config/extensions/sandbox/tests/run.mjs",
       "pi-config/extensions/subagents/index.test.ts",
       "pi-config/extensions/claude-code/provider/session-bridge.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T02:27Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+    }
   },
   "§chat.sandbox/toggle": {
     "kind": "behavior",
@@ -165,7 +176,9 @@
   },
   "§chat.sandbox/workers": {
     "kind": "behavior",
-    "requires": [],
+    "requires": [
+      "§app.mcp/sandbox"
+    ],
     "authority": "accepted",
     "evidence": "verified",
     "code": [
@@ -182,8 +195,9 @@
       "pi-config/extensions/sandbox/tests/index.unit.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-12T13:59Z"
+      "by": "user",
+      "at": "2026-11-04T02:28Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
     }
   },
   "§chat/sandbox": {

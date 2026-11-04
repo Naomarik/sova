@@ -36,6 +36,8 @@ workers, team members, the spec writer and the reviewer. Each chat picks one in 
 
 - [Worktrees and changes](/docs/worktrees-and-changes/): work in a separate worktree, and read
   every change as steps before it lands.
+- [MCP servers](/docs/mcp-servers/): give your chats more tools, from an address, a command or a
+  project's `.mcp.json`.
 - [Needs you and phone notifications](/docs/needs-you/): the sessions waiting on you, in the sidebar
   and on your lock screen.
 - [The Overseer](/docs/overseer/): one chat that watches every session and acts for you.

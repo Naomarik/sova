@@ -823,6 +823,8 @@ const FIXTURES: Record<string, Fixture> = {
   "schedule.list": { values: () => ({}), status: 200 },
   "playbook.list": { values: () => ({}), status: 200 },
   "draft-spec.list": { values: () => ({}), status: 200 },
+  "mcp.servers.list": { values: () => ({}), status: 200 },
+  "mcp.server.status": { values: () => ({ id: "no-such-row" }), status: 404 },
 };
 /** A registered project (its overseer's settings read their defaults), made in the set-up. */
 async function newProject(): Promise<string> {

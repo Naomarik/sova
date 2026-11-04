@@ -147,7 +147,8 @@
    "public-links": "computers",
    "outreach": "attention",
    "voice": "computers",
-   "experimental": "computers"
+   "experimental": "computers",
+   "mcp-servers": "tools"
   },
   "definition": {
    "top.release": "releases",
@@ -548,6 +549,8 @@
    "chat.mode-command": "scripts",
    "settings.cards.get": "scripts",
    "settings.cards.withdraw": "scripts",
+   "mcp.servers.list": "tools",
+   "mcp.server.status": "tools",
    "draft-spec.list": "scripts",
    "insights.usage.refresh": "scripts",
    "project.overseer.actions": "scripts",
@@ -608,7 +611,9 @@
    "SOVA_NODE": "computers",
    "SOVA_URL": "computers",
    "SOVA_WA_LOG_LEVEL": "computers",
-   "SOVA_TOUR_BROWSER": "computers"
+   "SOVA_TOUR_BROWSER": "computers",
+   "SOVA_STALL_RECORDER": "computers",
+   "SOVA_STALL_STACKS": "computers"
   }
  }
 }

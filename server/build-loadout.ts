@@ -119,15 +119,22 @@ export function buildSessionPath(sessionId: string): string | null {
 /** Its title: the one given, else the prompt's first line; none with neither (New Coding Session). */
 const titleOf = (d: Record<string, unknown>): string => str(d.title) || (str(d.prompt) ? cleanSessionTitle((str(d.prompt).split("\n")[0] ?? "").slice(0, 80)) ?? "" : "");
 
+/** A build as the statechart alone says it: what a row reads without looking for its session file. */
+export type StatechartBuildRow = Omit<BuildRow, "path">;
+
 function rowOf(configuration: string[], d: Record<string, unknown>): BuildRow {
+  const path = buildSessionPath(str(d.sessionId));
+  return rowFrom(configuration, d, path ? { path } : {});
+}
+
+function rowFrom<Located extends Pick<BuildRow, "path">>(configuration: string[], d: Record<string, unknown>, located: Located): StatechartBuildRow & Located {
   const sessionId = str(d.sessionId);
-  const path = buildSessionPath(sessionId);
   const merged = isObj(d.merged) && typeof d.merged.commit === "string" ? { at: isoOf(d.merged.at), commit: d.merged.commit } : undefined;
   return {
     sessionId,
     kind: d.kind === "operator-coding" ? "operator-coding" : "coding",
     createdAt: isoOf(d.createdAt),
-    ...(path ? { path } : {}),
+    ...located,
     ...(typeof d.branch === "string" && d.branch ? { worktree: { branch: d.branch, base: str(d.base), target: str(d.target), ...(seeded.get(sessionId)?.worktreePath ? { path: seeded.get(sessionId)!.worktreePath } : {}) } } : {}),
     ...(merged ? { merged } : {}),
     ...(d.removedAt != null ? { removed: isoOf(d.removedAt) } : {}),
@@ -161,13 +168,27 @@ export function readBuilds(projectId: string): BuildRow[] {
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-/** Every build an engine holds, with its project. */
-export function readEngineBuilds(engine: string): (BuildRow & { projectId: string })[] {
+/** Every build an engine holds, with its project. No session file: a listing reads this per pass, and
+    finding each row's file would walk the whole index for an answer no reader of these rows wants. */
+export type EngineBuildsReader = (engine: string) => (StatechartBuildRow & { projectId: string })[];
+
+/** `readEngineBuilds` for one listing pass: its project and org lookups share one reading of each
+    engine, gone with the pass: nothing is kept for the next one, so a step is never read late. */
+export function engineBuildsReader(): EngineBuildsReader {
+  const read = new Map<string, (StatechartBuildRow & { projectId: string })[]>();
+  return (engine) => {
+    let rows = read.get(engine);
+    if (!rows) read.set(engine, (rows = readEngineBuilds(engine)));
+    return rows;
+  };
+}
+
+export function readEngineBuilds(engine: string): (StatechartBuildRow & { projectId: string })[] {
   if (!isOrgHostOpen(engine)) return [];
   return hostOf(engine)
     .sessions("build")
     .filter((s) => !s.configuration.includes("not-started") && s.running)
-    .map((s) => ({ ...rowOf(s.configuration, s.data), projectId: str(s.data.projectId) }));
+    .map((s) => ({ ...rowFrom(s.configuration, s.data, {}), projectId: str(s.data.projectId) }));
 }
 
 /** One build of the project, or null. */
@@ -182,9 +203,9 @@ export function readBuild(projectId: string, sessionId: string): BuildRow | null
 /** Its worktree folder on this host: beside the repository's top, named after its branch (as cutWorktree made it); an
     adopted one's is where its session's `worktree` tool made it, as that tool recorded it. `top`: the repository's top
     level when the caller has read it already (one read for a whole list), else read here. */
-export async function withWorktreePath(row: BuildRow, root: string, top?: string): Promise<(BuildRow & { worktree: WorktreeRecord }) | null> {
+export async function withWorktreePath<Row extends StatechartBuildRow>(row: Row, root: string, top?: string): Promise<(Row & { worktree: WorktreeRecord }) | null> {
   if (!row.worktree) return null;
-  if (row.worktree.path) return row as BuildRow & { worktree: WorktreeRecord };
+  if (row.worktree.path) return row as Row & { worktree: WorktreeRecord };
   if (row.adoptedAt) {
     const own = await ownTreeOf(row.sessionId, row.worktree.branch);
     if (own) return { ...row, worktree: { ...row.worktree, path: own.path } };

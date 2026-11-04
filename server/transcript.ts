@@ -1,3 +1,5 @@
+import { MCP_LIST, MCP_NOTE } from "./harness/state-kinds";
+import { mcpNamesOf, mcpToolOfRow, type McpNames } from "./mcp/tool-names";
 import {
   EAGER_TOOLS,
   OVERSEER_DIALOG_ANSWER_ENTRY,
@@ -256,13 +258,19 @@ function slimTool(it: TranscriptItem, h: HEntry | undefined): void {
  * tool rows their `tool`, an unknown row its entry without signatures. Rows made from one entry
  * share it, so a reply's later blocks carry no meta of their own.
  */
-export function slimRows(rows: TranscriptItem[]): TranscriptItem[] {
+export function slimRows(rows: TranscriptItem[], mcpNames?: McpNames): TranscriptItem[] {
   let prev: HEntry | undefined;
   for (const it of rows) {
     const h = sources.get(it);
     if (h && h !== prev) it.meta = factsOf(h);
     prev = h;
-    if (it.kind === "tool-call" || it.kind === "tool-result") slimTool(it, h);
+    if (it.kind === "tool-call" || it.kind === "tool-result") {
+      const name = it.kind === "tool-call" ? it.text : h?.kind === "tool-result" ? h.tool : undefined;
+      const details = h?.kind === "tool-result" ? h.details : undefined;
+      slimTool(it, h);
+      const mcp = mcpToolOfRow(name, details, mcpNames);
+      if (mcp) it.mcp = mcp;
+    }
     else if (it.kind === "unknown" && h) {
       // The Unrecognized entry card shows the entry as the harness wrote it.
       const raw = rawOf(h);
@@ -717,6 +725,15 @@ function claudeLoginRow(id: string, h: StateEntry): TranscriptItem[] {
   return [it];
 }
 
+/** A server's failure in this chat (§app.mcp/in-a-chat): the page draws the words from `mcpNote`. */
+function mcpNoteRow(id: string, h: StateEntry): TranscriptItem[] {
+  const note = MCP_NOTE.parse(h.data);
+  if (!note) return [];
+  const it = item(id, "info", h, `${note.server}: ${note.reason ?? note.how}`.slice(0, 300));
+  it.mcpNote = note;
+  return [it];
+}
+
 /** A subagents team event (handover, retire, pause, resume, wrap-up): one machine row, like a
     model change, in both webapp-owned and watched sessions. Undecodable: nothing. */
 function teamEventRow(id: string, h: StateEntry): TranscriptItem[] {
@@ -729,8 +746,8 @@ function teamEventRow(id: string, h: StateEntry): TranscriptItem[] {
 
 /** A neutral entry's rows (0..n TranscriptItems), as they go over the wire (slimRows); `state` carries the
     running model. An id-less entry's rows are keyed by `fallbackId`. */
-export function rowsOfEntry(h: HEntry, fallbackId = "?", state?: { model?: string }): TranscriptItem[] {
-  return slimRows(entryRows(h, fallbackId, state));
+export function rowsOfEntry(h: HEntry, fallbackId = "?", state?: { model?: string; mcpNames?: McpNames }): TranscriptItem[] {
+  return slimRows(entryRows(h, fallbackId, state), state?.mcpNames);
 }
 
 /** Normalize one parsed pi entry into 0..n TranscriptItems, as they go over the wire (slimRows). The
@@ -837,6 +854,7 @@ function stateRows(id: string, h: StateEntry): TranscriptItem[] {
   if (h.key === OVERSEER_DIALOG_ANSWER_ENTRY) return overseerAnswerRow(id, h);
   if (h.key === TEAM_EVENT_TYPE) return teamEventRow(id, h);
   if (h.key === "claude-login") return claudeLoginRow(id, h);
+  if (h.key === MCP_NOTE.type) return mcpNoteRow(id, h);
   if (BATON_ROWS.has(h.key)) return batonRow(id, h);
   return [];
 }
@@ -844,7 +862,9 @@ function stateRows(id: string, h: StateEntry): TranscriptItem[] {
 /** The rows of a run of history; `line(i)` is the position an id-less entry's rows are keyed by. */
 function historyRows(history: readonly HEntry[], line: (i: number) => number): TranscriptItem[] {
   const out: TranscriptItem[] = [];
-  const state: { model?: string } = {}; // running model change, for assistant rows without their own
+  const state: { model?: string; mcpNames?: McpNames } = {}; // running model change, for assistant rows without their own
+  // A chat's own list says what its tools' names mean, a hashed one too (the newest on this run).
+  for (const h of history) if (h.kind === "state" && h.key === MCP_LIST.type) state.mcpNames = mcpNamesOf(MCP_LIST.parse(h.data));
   // Align-doc entries are revisions of one document: only the newest renders (none if it's cleared).
   let newestAlign = -1;
   history.forEach((h, i) => { if (isAlignDoc(h)) newestAlign = i; });

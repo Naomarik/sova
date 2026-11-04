@@ -6,7 +6,7 @@
  */
 
 /** Removable capabilities, in the order every list shows them. */
-export const REMOVABLE = ["shell", "edit", "workers", "web", "worktrees", "timers"] as const;
+export const REMOVABLE = ["shell", "edit", "workers", "web", "worktrees", "timers", "mcp"] as const;
 export type Removable = (typeof REMOVABLE)[number];
 /** Removal names an older build had, still accepted in a profile file and a session's copy and read
     as if absent: `links` (the link tools are no capability now; only a link member session has them,
@@ -25,6 +25,8 @@ export const CAPABILITY_TOOLS: Record<Removable, readonly string[]> = {
   web: ["web_search", "fetch_content", "get_search_content", "source_check"],
   worktrees: ["worktree"],
   timers: ["wake_nudge"],
+  // No fixed names: it applies where a chat's list is made, so a chat on the profile lists no server (§chat.profiles/capabilities).
+  mcp: [],
 };
 
 /** Every tool the `*` groups hold today (pi-config's subagents extension), so a runtime
@@ -49,6 +51,7 @@ export const CAPABILITY_LABEL: Record<Removable | Grantable, string> = {
   web: "Web",
   worktrees: "Worktrees",
   timers: "Timers",
+  mcp: "MCP Servers",
   "sessions.read": "Read other sessions",
   "sessions.message": "Message other sessions",
   "sessions.all": "See all Sova sessions",
@@ -269,20 +272,23 @@ export const DEFAULT_PROFILE: Profile = {
 
 /**
  * The rules every profile is brought to, whatever made it: grants imply reading, and a profile that
- * removes anything removes Workers & teams too (§chat.profiles/enforcement: a worker would start
- * with every default tool). Returns sorted, deduplicated lists.
+ * removes a tool removes Workers & teams too (§chat.profiles/enforcement: a worker would start with
+ * every default tool). MCP Servers is no such removal: a worker's servers are capped to its chat's,
+ * so one on a chat with none has none. Returns sorted, deduplicated lists.
  */
+const takesWorkers = (cap: Removable): boolean => cap !== "mcp";
+
 export function normalizeCaps(remove: readonly string[], grant: readonly string[]): { remove: Removable[]; grant: Grantable[] } {
   const r = new Set(remove.filter((x): x is Removable => (REMOVABLE as readonly string[]).includes(x)));
   const g = new Set(grant.filter((x): x is Grantable => (GRANTABLE as readonly string[]).includes(x)));
   if (g.has("sessions.message") || g.has("sessions.all")) g.add("sessions.read");
-  if (r.size > 0) r.add("workers");
+  if ([...r].some(takesWorkers)) r.add("workers");
   return { remove: REMOVABLE.filter((x) => r.has(x)), grant: GRANTABLE.filter((x) => g.has(x)) };
 }
 
 /** Why a toggle on the board can't change now, or null. */
 export function lockedReason(cap: Removable | Grantable, remove: readonly Removable[]): string | null {
-  if (cap === "workers" && remove.some((r) => r !== "workers")) return "Workers would get every tool back, so removing anything removes them too.";
+  if (cap === "workers" && remove.some((r) => r !== "workers" && takesWorkers(r))) return "Workers would get every tool back, so removing anything removes them too.";
   return null;
 }
 
@@ -432,7 +438,9 @@ export function profileSentence(p: Pick<Profile, "label" | "remove" | "grant">, 
         ? "reads all Sova sessions"
         : "reads sessions in its project"
       : "";
-  const off = p.remove.filter((r) => r !== "workers" || p.remove.length === 1).map((r) => CAPABILITY_LABEL[r]);
+  // Workers go unsaid only where another removal took them: MCP Servers doesn't, so they were switched off by hand.
+  const took = p.remove.some((r) => r !== "workers" && takesWorkers(r));
+  const off = p.remove.filter((r) => r !== "workers" || !took).map((r) => CAPABILITY_LABEL[r]);
   const tools = kept !== undefined && total !== undefined ? `keeps ${kept} of ${total} tools` : "";
   const withOff = off.length ? ` with ${off.join(", ")} off` : "";
   const parts = [powers, tools ? `${tools}${withOff}` : off.length ? `has ${off.join(", ")} off` : ""].filter(Boolean);

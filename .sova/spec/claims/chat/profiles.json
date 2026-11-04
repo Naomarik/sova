@@ -73,11 +73,17 @@
     "code": [
       "server/chat-manager.ts",
       "shared/profiles.ts",
-      "server/session-profiles-runtime.test.ts"
+      "server/session-profiles-runtime.test.ts",
+      "server/mcp/list.ts"
     ],
     "requires": [
       "§chat.profiles/model"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
   },
   "§chat.profiles/limits": {
     "kind": "behavior",
@@ -129,8 +135,8 @@
     "requires": [],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T15:12Z",
-      "source": "pi-session:2795e843-1adb-4247-bc12-31f6489eb179#7bab1946"
+      "at": "2026-11-04T02:27Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
     }
   },
   "§chat.profiles/picker": {

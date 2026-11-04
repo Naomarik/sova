@@ -1,5 +1,5 @@
 import type { SessionProject } from "../shared/protocol";
-import { buildStartedBy, readEngineBuilds, type BuildRow } from "./build-loadout";
+import { buildStartedBy, readEngineBuilds, type EngineBuildsReader, type StatechartBuildRow } from "./build-loadout";
 import { buildMerged } from "./build-merged";
 import { openEngineIds } from "./org-engine";
 import { readPoMarker, readPoState } from "./project-overseer-store";
@@ -19,14 +19,15 @@ import { dirname, join } from "node:path";
 const CODING_KINDS = new Set(["coding", "operator-coding"]);
 
 export interface ProjectSessionLookup {
-  /** `cwd`: the session's folder (its header's), for the folder fallback; without it only markers and builds count. */
-  of(path: string, id: string, cwd?: string): SessionProject | undefined;
+  /** `cwd`: the session's folder (its header's), for the folder fallback; without it only markers and builds count.
+      `mtimeMs`: the file's mtime as the caller holds it, so the marker check needs no stat. */
+  of(path: string, id: string, cwd?: string, mtimeMs?: number): SessionProject | undefined;
 }
 
 /** Session id → its build, in every open engine. */
-function codingSessions(): Map<string, { projectId: string; row: BuildRow }> {
-  const out = new Map<string, { projectId: string; row: BuildRow }>();
-  for (const engine of openEngineIds()) for (const r of readEngineBuilds(engine)) if (CODING_KINDS.has(r.kind) && !out.has(r.sessionId)) out.set(r.sessionId, { projectId: r.projectId, row: r });
+function codingSessions(builds: EngineBuildsReader = readEngineBuilds): Map<string, { projectId: string; row: StatechartBuildRow }> {
+  const out = new Map<string, { projectId: string; row: StatechartBuildRow }>();
+  for (const engine of openEngineIds()) for (const r of builds(engine)) if (CODING_KINDS.has(r.kind) && !out.has(r.sessionId)) out.set(r.sessionId, { projectId: r.projectId, row: r });
   return out;
 }
 
@@ -34,10 +35,10 @@ function codingSessions(): Map<string, { projectId: string; row: BuildRow }> {
     New Coding Session is empty until the operator writes in it. */
 export const projectCodingIds = (): Set<string> => new Set(codingSessions().keys());
 
-export function projectSessionLookup(): ProjectSessionLookup {
+export function projectSessionLookup(builds?: EngineBuildsReader): ProjectSessionLookup {
   const projects = new Map(listProjects().map((p) => [p.id, p]));
   if (!projects.size) return { of: () => undefined };
-  let coding: Map<string, { projectId: string; row: BuildRow }> | null = null;
+  let coding: Map<string, { projectId: string; row: StatechartBuildRow }> | null = null;
   const currents = new Map<string, string | null>();
   const currentOf = (projectId: string): string | null => {
     if (!currents.has(projectId)) currents.set(projectId, readPoState({ projectId })?.current ?? null);
@@ -51,10 +52,10 @@ export function projectSessionLookup(): ProjectSessionLookup {
   let folderOf: ((cwd: string) => string | null) | null = null;
   const folder = (cwd: string) => (folderOf ??= folderMatcher([...projects.values()].filter((p) => !p.archived), agentRoot()))(cwd);
   return {
-    of(path, id, cwd) {
+    of(path, id, cwd, mtimeMs) {
       // The marker names the project; a file past the state's history cap is still its (cleared) conversation,
       // as long as it sits in the sessions dir of the engine that holds the project.
-      const m = readPoMarker(path);
+      const m = readPoMarker(path, mtimeMs);
       if (m && projects.has(m.projectId)) {
         try {
           if (dirname(canonicalPath(path)) === canonicalPath(join(projectDir(m.projectId), "sessions")))
@@ -63,7 +64,7 @@ export function projectSessionLookup(): ProjectSessionLookup {
           // its engine closed between reads
         }
       }
-      const c = (coding ??= codingSessions()).get(id);
+      const c = (coding ??= codingSessions(builds)).get(id);
       if (c && projects.has(c.projectId)) {
         // A build merged per git is finished.
         const merged = buildMerged(c.row, projects.get(c.projectId)!.root);

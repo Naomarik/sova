@@ -47,13 +47,15 @@ export function optedOut(method: string, path: string, list: readonly string[] =
 }
 
 /** A class over exactly these `METHOD /path` routes, never a prefix: a new route beside them still arrives pending. */
+/** MCP's two catalogue reads; every other MCP route is the page's, a grant (§app.mcp/approval). */
+const MCP_READS: readonly RouteKey[] = ["GET /api/mcp/servers", "GET /api/mcp/rows/:id"];
 const exactly = (routes: readonly RouteKey[]) => (m: string, p: string) => routes.includes(routeKey(m, p));
 
 /** The page's own requests in the core areas: what a view, the composer or a link card asks to draw itself. */
 export const PAGE_PLUMBING: readonly RouteKey[] = [
   "GET /api/attachment", "DELETE /api/attachment", "POST /api/upload", "GET /api/transcript/tool",
   "GET /api/links/:id/thread", "POST /api/links/:id/seen", "GET /api/targets/:name/folders", "GET /api/explanations",
-  "GET /api/sessions/dir",
+  "GET /api/sessions/dir", "GET /api/projects/:pid/mcp",
 ];
 /** Steps of starting a chat, on its empty screen before the first message (`session.create` takes a profile itself). */
 export const CHAT_START: readonly RouteKey[] = ["POST /api/sessions/loadout", "POST /api/sessions/profile"];
@@ -117,8 +119,8 @@ export const ROUTE_CLASSES: readonly RouteClass[] = [
   {
     id: "trust-grants",
     label: "Trust grants",
-    why: "Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.",
-    matches: (m, p) => (m === "POST" && (p === "/api/projects/:pid/offers/approve" || p === "/api/projects/:pid/settings/apply" || p === "/api/session-cards/trust")) || (m === "PUT" && p === "/api/projects/:pid/services/limit") || (m === "GET" && p === "/api/session-cards/trust"),
+    why: "Approving what a project's files may make Sova do (an offers file's run buttons, §chat.offers/approval; a project's transcript cards, §chat.transcript-cards/trust), applying a settings card with its approvals (§app.project-overseer/settings), adding, approving, signing in to and changing an MCP server (§app.mcp/approval) and setting this machine's copy limit, whose raise is a grant (§app.project-services/services-ui; an agent proposes it through sova_settings): the operator's own grant of trust, never an action a script or an agent runs.",
+    matches: (m, p) => (p.startsWith("/api/mcp/") && !MCP_READS.includes(routeKey(m, p))) || (m === "POST" && (p === "/api/projects/:pid/offers/approve" || p === "/api/projects/:pid/settings/apply" || p === "/api/session-cards/trust")) || (m === "PUT" && p === "/api/projects/:pid/services/limit") || (m === "GET" && p === "/api/session-cards/trust"),
   },
   {
     id: "card-box",

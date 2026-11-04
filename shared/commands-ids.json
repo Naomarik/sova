@@ -213,6 +213,8 @@
     "project.verb.release.publish",
     "project.verb.release.abandon",
     "project.verb.release.withdraw",
+    "mcp.servers.list",
+    "mcp.server.status",
     "settings.cards.get",
     "settings.cards.withdraw"
   ],

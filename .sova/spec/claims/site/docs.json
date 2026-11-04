@@ -196,6 +196,35 @@
       "at": "2026-10-11T11:27Z"
     }
   },
+  "§site.docs/mcp-servers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/mcp-servers.md",
+      "site/src/data/docs.ts"
+    ],
+    "requires": [
+      "§app/mcp",
+      "§app.mcp/add-server",
+      "§app.mcp/check",
+      "§app.mcp/rows",
+      "§app.mcp/sign-in",
+      "§app.mcp/project-servers",
+      "§app.mcp/approval",
+      "§app.mcp/secrets",
+      "§app.mcp/this-computer",
+      "§app.mcp/tool-list",
+      "§app.mcp/in-a-chat",
+      "§app.mcp/who-gets",
+      "§app.mcp/sandbox"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T02:28Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+    }
+  },
   "§site.docs/memory": {
     "kind": "behavior",
     "requires": [

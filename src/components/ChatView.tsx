@@ -150,6 +150,7 @@ import { type LoginControl, type SandboxControl, type ThinkingControl, type Undo
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
 import { toolsKeyOf } from "../lib/session-tools";
+import { setupServersKey } from "../lib/mcp";
 import { EmptyWorktrees } from "./EmptyWorktrees";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
@@ -525,6 +526,8 @@ export function ChatView(props: {
   });
   /** The socket's `profile` message (§chat.profiles/applying); null until one arrives. */
   const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
+  /** Picks applied here: the setup card reads again at once, ahead of a chat socket still in its reconnect wait. */
+  const [profilePicks, setProfilePicks] = createSignal(0);
   /** A One at a time race at Send (§chat.profiles/singleton): the session that has it. */
   const [profileRace, setProfileRace] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
   const [sandboxPending, setSandboxPending] = createSignal<SandboxState | null>(null);
@@ -2510,6 +2513,7 @@ export function ChatView(props: {
                       <Show when={profileInfo()?.pickable && !profileInfo()?.locked && profileInfo()}>
                         {(info) => (
                           <ProfilePicker
+                            onApplied={() => setProfilePicks((n) => n + 1)}
                             path={props.path}
                             cwd={props.summary?.()?.cwd ?? null}
                             info={info()}
@@ -2521,7 +2525,7 @@ export function ChatView(props: {
                           />
                         )}
                       </Show>
-                      <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} toolsKey={toolsKey()} />
+                      <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} toolsKey={toolsKey()} serversKey={`${setupServersKey(profileInfo()?.profile, sandbox() ? sandboxStateOf(sandbox()!) : undefined)}:${profilePicks()}`} />
                       <Show when={modeState()?.mode === "create" ? createLimitsHere() : null}>{(limits) => <p class="empty-body">{limits()}</p>}</Show>
                       <p class="empty-body">Your first message becomes its title.</p>
                       <EmptyWorktrees path={props.path} />

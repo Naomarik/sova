@@ -919,7 +919,7 @@ nodeTest("a server's tool keeps its server and tool from the part's start to its
   const [s, set] = store();
   applyEvent(set, { type: "message.start", role: "assistant", parts: [] });
   applyEvent(set, { type: "part.start", index: 0, kind: "toolCall", id: "c1", name: "mcp__slow__wait", mcp });
-  const block = () => s.entries.at(-1)!.blocks[0] as { mcp?: unknown };
+  const block = () => (s.entries.at(-1) as unknown as { blocks: { mcp?: unknown }[] }).blocks[0]!;
   assert.deepEqual(block().mcp, mcp, "from the first event, before tool.start");
   applyEvent(set, { type: "part.end", index: 0, kind: "toolCall", id: "c1", args: {} });
   assert.deepEqual(block().mcp, mcp, "an end that names none keeps it");

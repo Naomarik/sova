@@ -1,6 +1,6 @@
 # computers: your other computers, public links, and this computer's setup
 
-All of this works in any folder. It's about this computer and how it reaches others, so most of it is the person's own to do on a screen. Sessions never move between computers: each is driven by the computer whose disk holds it.
+All of this works in any folder. It's about this computer and how it reaches others, and most of it changes on a screen today. Sessions never move between computers: each is driven by the computer whose disk holds it.
 
 ## Your other computers
 
@@ -43,7 +43,7 @@ All of this works in any folder. It's about this computer and how it reaches oth
 - Change: where read-only links open for people outside: off, this computer as the gateway, or through a peer that is one. Also the public address, the preview address for running copies, the front, the local port, which computers send links here, and visitor logging.
 - Lives: this computer, and environment variables win over it. The front is a web server or tunnel the person runs: Sova shows the steps and never writes its configuration. Sova's own page never goes public.
 - Approves: the person.
-- By: Screen. Settings → Public links, then Verify Address. No card holds these. Running the front is theirs, in a terminal. It doesn't spread.
+- By: Screen. Settings → Public links, then Verify Address. Running the front is theirs, in a terminal. It doesn't spread.
 - Live: now, once saved and the front is up.
 - Check: Verify Address reads "Verified". The chip says `Not listening` when the share port can't open.
 
@@ -70,7 +70,7 @@ All of this works in any folder. It's about this computer and how it reaches oth
 - Change: where updates come from, whether Sova checks by itself, and whether it upgrades by itself.
 - Lives: this computer.
 - Approves: the person, on the page. Upgrading is theirs, unless they've turned Upgrade automatically on.
-- By: Screen. Settings → General, Updates · this machine. No card or command reaches it. /docs/updates goes further.
+- By: Screen. Settings → General, Updates · this machine. /docs/updates goes further.
 - Live: from the next check.
 - Check: the section says what this computer runs and what's newer.
 

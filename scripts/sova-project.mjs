@@ -12,7 +12,8 @@
 //   release (shared/release.ts): release.status; release.logs [--release <rl_…>] [--step <id>]; release.request --why <text>;
 //     release.start [--commit <sha>]; release.continue|retry --release <rl_…> --step <id>; release.publish --release <rl_…>
 //     --confirm; release.abandon --release <rl_…> --why <text> --confirm; release.withdraw --release <rl_…> | --tag <tag>
-//     --why <text> --confirm (refused from a chat's own scripts: the operator's word only)
+//     --why <text> --confirm (refused from a chat's own scripts: the operator's word only); release.note --text <note>
+//     saves the Release Note the next release.start sends its chat (--text "" clears it)
 //   deploy (§app.project-services/deploy): deploy.status [--target <name>]; deploy.logs --target <name> | --deploy <dp_…>;
 //     deploy.check [--ref <ref>]; deploy.plan --target <name> [--commit <ref>] [--override-tests <reason>]
 //     [--override-dirty <reason>]; deploy.run --plan <pl_…> --confirm (answers at once: follow it with deploy.status);

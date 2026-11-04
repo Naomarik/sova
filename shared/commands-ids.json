@@ -217,7 +217,8 @@
     "mcp.server.status",
     "overseer.abilities",
     "settings.cards.get",
-    "settings.cards.withdraw"
+    "settings.cards.withdraw",
+    "project.verb.release.note"
   ],
   "retired": [
     "settings.agents.get",

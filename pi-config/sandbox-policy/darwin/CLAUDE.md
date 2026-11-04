@@ -21,7 +21,8 @@ Seatbelt filters operations; it cannot remap paths as bwrap's mounts do. So on m
 - **`shadowed` caches work through the environment**: the host `~/.cache`, `~/.npm` and `~/.m2`
   are read-only inside, and `XDG_CACHE_HOME`, `npm_config_cache` and `MAVEN_OPTS
   -Dmaven.repo.local` point at the sandbox's private copies. A tool that ignores those variables
-  cannot write its cache.
+  cannot write its cache. The copies are cleaned as on Linux, with the same `caches.json` beside
+  `policy.json` (see the Linux note's "Cache cleanup").
 - **Network**: no DNS and no direct connections; outbound only to one loopback port, a relay to
   the session's allowlisting proxy (`proxy.allow`), through `HTTP(S)_PROXY`. Nothing can listen on
   a TCP port, and Unix sockets only work under the writable roots, so ssh-agent, Docker,

@@ -37,3 +37,26 @@ sandbox off, or edit this file from outside the sandbox.
 
 The platform adds its own lists on top (other credential stores, shell rc files, `/run` with the
 user's D-Bus, systemd and agent sockets, which is always replaced).
+
+## Cache cleanup (`caches.json`)
+
+The `shadowed` copies are cleaned on their own: when a sandboxed chat starts, at most once a day,
+in the background at low priority. Whole entries (`~/.cache/<name>`, `~/.npm/<name>`,
+`~/.m2/<name>` as the sandbox sees them) go once unused for `scratchDays`, or `toolCacheDays` for a
+tool cache; then the least recently used go, scratch first, while the copies are over their limit:
+the smallest of `maxSizeGB`, 5% of the disk and 5% of its free space, never under 2 GB. An entry
+with a file written in the last 24 hours or read in the last 48 is never removed. `/sandbox clean`
+runs it now; `/sandbox clean all` removes everything not used in the last hour; bare `/sandbox`
+says how big the copies are and when they were last cleaned.
+
+Its settings live in `caches.json` beside `policy.json`, never in it. The file is optional (missing:
+the defaults below), and a mistake in it only turns cleanup off, with a notice; it never touches the
+sandbox. A project's `.sova/sandbox.json` cannot set any of it.
+
+| Key | Meaning |
+|---|---|
+| `on` | `false` turns automatic cleanup off (`/sandbox clean` still works). Default `true`. |
+| `maxSizeGB` | The most the copies may take together, in GB. Default `50`. |
+| `scratchDays` | Days unused before a scratch entry goes. Default `7`. |
+| `toolCacheDays` | Days unused before a tool cache goes. Default `30`. |
+| `toolCaches` | The `~/.cache` entry names kept as tool caches (every entry of `~/.npm` and `~/.m2` is one). |

@@ -108,8 +108,7 @@ Static output, no Functions and no adapter. The site is live at https://sova.nao
 Leave Cloudflare Web Analytics off: the page promises no analytics.
 
 The Pages project is not connected to Git: a push to master deploys nothing. The site is Sova's
-deploy target `site` (`deploy.targets.site`; drafted in `.sova/playbooks/release/project-sections.json`,
-it moves into `.sova/project.json` in a follow-up landing, once the running Sova knows releases): after a release is published,
+deploy target `site` (`deploy.targets.site` in `.sova/project.json`): after a release is published,
 the operator ships it with Plan Deploy on the project's Deploy card, which takes only a published,
 not withdrawn, release's commit and keeps the deploy's log and Roll Back. Its recipe, in a fresh
 checkout of that commit:

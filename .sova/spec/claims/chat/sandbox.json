@@ -13,6 +13,34 @@
       "pi-config/extensions/sandbox/tests/unit/backend.unit.test.ts"
     ]
   },
+  "§chat.sandbox/cache-cleanup": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.sandbox/what-on-enforces"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/sandbox/shadow-prune.ts",
+      "pi-config/extensions/sandbox/index.ts",
+      "pi-config/sandbox-policy/linux/caches.json",
+      "pi-config/sandbox-policy/darwin/caches.json",
+      "pi-config/extensions/sandbox/README.md",
+      "pi-config/extensions/sandbox/shadow-prune-run.ts",
+      "pi-config/extensions/sandbox/tests/unit/shadow-prune.unit.test.ts",
+      "pi-config/extensions/sandbox/tests/unit/shadow-prune.integration.test.ts",
+      "pi-config/extensions/sandbox/tests/index.unit.test.ts",
+      "pi-config/sandbox-policy/linux/CLAUDE.md",
+      "pi-config/sandbox-policy/darwin/CLAUDE.md",
+      "pi-config/install.sh",
+      "agents/extensions/sandbox/overview.md"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-30T12:02Z",
+      "source": "pi-session:01a18c63-8f43-7660-9a5a-04b82a0fed6e#73daaccb"
+    }
+  },
   "§chat.sandbox/fail-closed": {
     "kind": "behavior",
     "requires": [],
@@ -57,7 +85,9 @@
     "code": [
       "pi-config/extensions/sandbox/tools.ts",
       "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
-      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts"
+      "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+      "pi-config/extensions/sandbox/shadow-prune.ts",
+      "pi-config/extensions/sandbox/README.md"
     ],
     "about": [
       "§chat.sandbox/what-on-enforces"
@@ -89,7 +119,12 @@
       "pi-config/sandbox-policy/darwin/policy.json",
       "pi-config/sandbox-policy/darwin/CLAUDE.md",
       "pi-config/install.sh",
-      "scripts/hermetic-agent-dir.mjs"
+      "scripts/hermetic-agent-dir.mjs",
+      "pi-config/sandbox-policy/linux/caches.json",
+      "pi-config/sandbox-policy/darwin/caches.json",
+      "pi-config/extensions/sandbox/shadow-prune.ts",
+      "pi-config/extensions/sandbox/README.md",
+      "pi-config/install.test.mjs"
     ],
     "agreed": {
       "by": "user",
@@ -104,7 +139,12 @@
     "evidence": "verified",
     "code": [
       "pi-config/extensions/sandbox/policy.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-30T12:02Z",
+      "source": "pi-session:01a18c63-8f43-7660-9a5a-04b82a0fed6e#73daaccb"
+    }
   },
   "§chat.sandbox/states": {
     "kind": "behavior",
@@ -147,8 +187,16 @@
     "code": [
       "pi-config/extensions/sandbox/index.ts",
       "pi-config/extensions/sandbox/state.ts",
-      "pi-config/extensions/sandbox/tools.ts"
-    ]
+      "pi-config/extensions/sandbox/tools.ts",
+      "pi-config/extensions/sandbox/shadow-prune.ts",
+      "pi-config/extensions/sandbox/README.md",
+      "pi-config/extensions/sandbox/tests/index.unit.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-10-30T12:02Z",
+      "source": "pi-session:01a18c63-8f43-7660-9a5a-04b82a0fed6e#73daaccb"
+    }
   },
   "§chat.sandbox/what-on-enforces": {
     "kind": "behavior",
@@ -167,12 +215,12 @@
       "pi-config/extensions/sandbox/tests/unit/proxy.unit.test.ts",
       "pi-config/extensions/sandbox/session-policy.ts",
       "pi-config/extensions/sandbox/README.md",
-      "pi-config/extensions/sandbox/tests/unit/darwin-seatbelt-browser.integration.test.ts"
+      "pi-config/extensions/sandbox/shadow-prune.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T19:28Z",
-      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#8d8457fc"
+      "at": "2026-11-03T11:41Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
     }
   },
   "§chat.sandbox/workers": {

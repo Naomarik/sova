@@ -14,7 +14,7 @@ worker uses it today. Spec: `§chat/sandbox`, `§chat.sandbox/workers`.
 
 | Surface | Shape |
 |---|---|
-| Command | `/sandbox on`, `/sandbox subagents`, `/sandbox off`, bare `/sandbox` (shows the state). Sova calls the same handler through `extensionRunner.getCommand("sandbox")`. |
+| Command | `/sandbox on`, `/sandbox subagents`, `/sandbox off`, bare `/sandbox` (shows the state, then a second line about the cache copies), `/sandbox clean [all]` (cleans the cache copies now, changes no state); anything else answers `usage: /sandbox on \| subagents \| off \| clean [all]`. Sova calls the same handler through `extensionRunner.getCommand("sandbox")`, only ever with a state. |
 | Flag | `--sandbox on\|subagents\|off`: the initial state of a new runtime. Workers get it from their parent. A session started with `--sandbox on` cannot lower it (a parent's agent could otherwise send `/sandbox off` to its worker). |
 | Entry | `custom` entry `sandbox`: `{version: 1, on, level, backend, enforcement, reasons?, workers?}` (`state.ts` `SandboxActive`; `workers: "off"` only with `on: false` is Off, an entry without it Subagents only, and `on: true` with it reads as On), appended on every change; `restoreActive(branch)` reads the newest. Opening a session writes nothing, except when it comes up **on** without an entry saying so (the flag or `defaultOn`): then the state is pinned so a later default change cannot loosen it. Turning On when the newest entry isn't already On first appends a provisional entry `{on: true, enforcement: "unavailable", reasons: ["starting"]}` (`SANDBOX_STARTING`, `isStarting`) before the confined tools are registered, then the real state after the probe, also when the probe fails or throws: whenever the tools are confined, the newest entry says On. A provisional entry left newest by an interrupted start is not a record, so the next start records the real state. Changes run one at a time. `describeActive` reads it as "Sandbox turning on…". |
 | Workers | Every worker start goes through ONE call, the event's `workerLaunch({cwd, root?, backend, owner})` (`state.ts` `WorkerLaunch`). It returns `{kind: "pi", extensionPath, flags}` for a pi worker (`{sandbox: "on", "sandbox-parent": <ParentScope JSON>}`: the parent's level, writable roots without its session tmp, and its read-only paths inside them, each tracked worktree's `.agent` included), `{kind: "confine", scope}` for any other backend (the opaque serializable scope its whole process would run under, `launch.ts`; the subagents extension refuses such a start), `{kind: "refused", reason}` (the cwd outside the parent's roots, the sandbox unavailable, or partial without `acceptPartial`), or `{kind: "none"}` (Subagents only and no tracked worktree, or Off for every worker; the event then carries `workers: "off"`, and the subagents gate accepts `none` for a worktree's worker only with it). A worker started with `--sandbox-parent` is on, writes exactly where its parent may (its own cwd is never added), and refuses every tool with `Sandbox: worker cwd <x> is outside the parent's sandbox` when its cwd is outside them. A malformed flag fails closed. Grandchildren inherit the same roots. |
@@ -142,6 +142,50 @@ Sova's server gives its chat processes the same file through `writeGitCleanupCon
 
 User-facing notes for macOS: `pi-config/sandbox-policy/darwin/CLAUDE.md`.
 
+## Cache cleanup
+
+The shadowed caches' private copies (`<agentDir>/sova/sandbox/shadow/<name>`, `backend.ts`
+`shadowSource`) are cleaned by `shadow-prune.ts` (builtins only, imports nothing, not even its
+siblings). Spec: §chat.sandbox/cache-cleanup.
+
+- **When.** `session_start` of a chat that comes up On (not remote) calls `startAutoPrune`: at most
+  once per 24 h per agent dir (the stamp's `lastRun`/`lastAttempt`), never awaited, never throws.
+  `/sandbox clean` (mode `clean`) ignores the throttle; `/sandbox clean all` (mode `all`) removes
+  every entry not used in the last hour, tool caches included. Both wait for the result line and are
+  refused (`BUSY_TEXT`) while the lock is held.
+- **Where it runs.** A detached child (`shadow-prune-run.ts`, the runtime that runs the extension:
+  bun, or node with type stripping) under `nice -n 19` and, on Linux, `ionice -c3`, where found, plus
+  `os.setPriority(19)` in the child. The walk never runs in the chat's process.
+- **Units.** Each top-level entry of each shadow dir (`home-.cache/pnpm`, `home-.npm/_cacache`, an
+  older layout's entries). A shadow dir itself is a live bind source and is never removed. Tool
+  caches: every entry of `home-.npm` and `home-.m2`, and the `toolCaches` names in `home-.cache`.
+- **Measure.** `lstat` only, never following a link, never leaving the shadow dir's `st_dev`. Size is
+  `st_blocks * 512`, a hard-linked file counted once (by dev and inode) over the whole scan. Recency
+  is the newest regular file's mtime (protected 24 h) and atime (protected 48 h); directory atimes
+  never count (the walk moves them), and directory and link mtimes count only for an entry holding no
+  regular file.
+- **Plan** (`planPrune`, pure). By age: scratch after `scratchDays` unused, tool caches after
+  `toolCacheDays`. Then by size: while over the cap, least recently used first, every scratch entry
+  before any tool cache. The cap is `max(2 GiB, min(maxSizeGB GiB, 5% of statfs total, 5% of statfs
+  free))`, with the bound that set it (`setting`, `disk`, `free`, `floor`). Protected entries are
+  never removed; `overCap` records that the copies stayed over the cap.
+- **Delete.** Each chosen entry is renamed into `<agentDir>/sova/sandbox/shadow-trash/<ts>-<i>-<name>`
+  (skipped if its own mtime moved since the scan), the stamp is written, the result reported, and
+  only then is the trash deleted. Each run first empties what an earlier one left there.
+- **Lock.** `<agentDir>/sova/sandbox/shadow-prune.lock`, created `O_EXCL`, holding the pid; touched
+  as a heartbeat during the walk and the delete. It stops blocking once older than 2 h or once its pid
+  is gone.
+- **Stamp.** `<agentDir>/sova/sandbox/shadow-prune.json`: `{version: 1, lastRun, lastAttempt, mode,
+  freed, sizeBefore, size, cap, capReason, overCap, removed, errors?}`. Bare `/sandbox` reads its
+  caches line from it (`cachesLine`), never walking the caches.
+- **Settings.** `<agentDir>/sandbox-policy/<platform>/caches.json` (template beside `policy.json` in
+  `pi-config/sandbox-policy/`): `on`, `maxSizeGB`, `scratchDays`, `toolCacheDays`, `toolCaches`.
+  Missing: the defaults. Invalid (not JSON, an unknown key, a wrong value): cleanup off, with the
+  notice `Sandbox: \`caches.json\` is invalid ({error}); cache cleanup is off. The sandbox is
+  unaffected.`; the sandbox never fails closed on it. `policy.json` and its strict validator do not
+  know these keys, and a project's `.sova/sandbox.json` cannot set them (ignored with the usual
+  notice).
+
 ## Session resources
 
 Per session: a tmp at `<os tmpdir>/pi-sandbox-<uid>/<session id>/tmp` (0700, ownership checked)
@@ -158,8 +202,9 @@ tmp, and a host TCP relay to the proxy socket lives until that socket is gone.
 | `policy.ts` | extension | load/validate, tighten-only project file, canonical paths, read/write verdicts |
 | `tools.ts` | extension | `stockDefinitions`, `confinedDefinitions` |
 | `launch.ts` | extension | `encodeLaunchScope`, `decodeLaunchScope`: the `confine` answer's scope |
+| `shadow-prune.ts`, `shadow-prune-run.ts` | extension | the cache copies' cleanup: settings, scan, plan, lock, stamp, the low-priority child and its entry point, the `/sandbox` lines |
 | `backend.ts`, `backends/*`, `env.ts`, `proxy.ts` | backend | the seam, bwrap, Seatbelt, env allowlist and the git cleanup config, proxy |
-| `tests/unit/*.test.ts` | backend | unit tests of the backend files |
+| `tests/unit/*.test.ts` | backend | unit tests of the backend files, and of `shadow-prune.ts` (`shadow-prune.unit.test.ts`, in-process, temp dirs only; its real child process in `shadow-prune.integration.test.ts`) |
 | `tests/*.unit.test.ts` | extension | unit tests of the four files above (`index.unit.test.ts` drives the factory on a fake `pi`) |
 | `tests/*` (other) | red-team | contract and escape suite |
 

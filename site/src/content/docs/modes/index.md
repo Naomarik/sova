@@ -32,10 +32,13 @@ terminal session.
 
 ## Switch in the web app
 
-The mode switch sits at the right end of the composer foot, after the model. It reads the chat's
-major mode, then each minor mode that is on, for example `delegate · align`, with any project modes
-that are on after the built-in ones. Until Sova knows the
-chat's mode it reads just **Mode**.
+The mode switch sits at the right end of the composer foot, after the model. It shows the chat's
+modes as icons: one for the major mode (normal shows a sliders icon), one for each minor mode that is
+on, and, for each project mode that is on, its first letter in a rounded square. Where the composer
+is at least 620px wide, the names follow the icons, for example `delegate · align`; hover it for the
+full wording. When the foot is too tight, the icons fold to the first one and a count, such as
+"+3", before the model's name loses a letter. The menu's rows carry the same icons, so the menu is
+the legend. Until Sova knows the chat's mode it shows the sliders icon alone.
 
 Press it to open the menu. It has these groups:
 

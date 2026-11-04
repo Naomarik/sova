@@ -22,7 +22,7 @@ commands.
 | [normal](/docs/modes/normal/) | Major | Pi as usual. The agent does the work itself, and can still start workers and teams. |
 | [delegate](/docs/modes/delegate/) | Major | The agent plans and routes 4 kinds of work to workers, each on the model your subagent profile names. |
 | [align](/docs/modes/align/) | Minor | The agent agrees with you on what to build first, and records each agreement as an alignment you answer in chat. |
-| [spec](/docs/modes/spec/) | Minor | The agent reads the project's spec before coding, and proposes changes to it in drafts before promoting them. |
+| [spec](/docs/modes/spec/) | Minor | The agent reads the project's spec before coding, and proposes changes to it in drafts that become official when its branch lands. |
 | [vis](/docs/modes/vis/) | Minor | The agent can draw small diagrams and charts in its replies, which Sova renders itself, and record checked tours of a real interface. |
 | [memory](/docs/modes/memory/) | Minor | A cheap model folds the chat's messages into one-line summaries the agent can open back up, so a long chat outgrows its context. Only Sova's mode menu turns it on. |
 | [project modes](/docs/modes/project-modes/) | Minor | A project's own modes, with its instructions, command-line tools, commands and hooks. None is on until someone turns it on in a chat, and only you approve its hooks. |
@@ -34,6 +34,10 @@ workers, team members, the spec writer and the reviewer. Each chat picks one in 
 
 - [Worktrees and changes](/docs/worktrees-and-changes/): work in a separate worktree, and read
   every change as steps before it lands.
+- [Merge queue](/docs/merge-queue/): each branch is merged onto the newest main branch in a copy,
+  checked there, and lands as exactly the commit that was tested.
+- [Releases](/docs/releases/): cut a numbered version from a project's Releases tab, and publish it
+  when you say so.
 - [MCP servers](/docs/mcp-servers/): give your chats more tools, from an address, a command or a
   project's `.mcp.json`.
 - [Needs you and phone notifications](/docs/needs-you/): the sessions waiting on you, in the sidebar

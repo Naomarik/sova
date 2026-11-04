@@ -17,7 +17,7 @@ import {
 } from "../../shared/profiles";
 import type { ChatProfileInfo } from "../../shared/protocol";
 import { approveProfile, fetchProfiles, pickProfile, saveCurrentProfile, type ProfilePickRef } from "../lib/api";
-import { allProfiles, cardUnusable, changeRows, defaultTools, guardrailNote, isMySettings, mySettingsCaptionParts, pickerProfiles, pickRef, profileSettingsLine, type MySettingsState } from "../lib/profiles";
+import { allProfiles, cardUnusable, changeRows, defaultTools, flippedRemove, guardrailNote, isMySettings, mySettingsCaptionParts, pickerProfiles, pickRef, profileSettingsLine, type MySettingsState } from "../lib/profiles";
 import { openSettings } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
 import { PROFILE_GRID_CUSTOM, ProfileGrid } from "./ProfileGrid";
@@ -167,12 +167,7 @@ export function ProfilePicker(props: {
     let remove = [...c.remove] as string[];
     let grant = [...c.grant] as string[];
     if (isGrant) grant = on ? [...grant, cap] : grant.filter((g) => g !== cap && !(cap === "sessions.read" && (g === "sessions.message" || g === "sessions.all")));
-    else if (!on) remove = [...remove, cap];
-    else {
-      remove = remove.filter((r) => r !== cap);
-      // Workers went with the last other removal (§chat.profiles/enforcement), so they come back with it.
-      if (cap !== "workers" && remove.length === 1 && remove[0] === "workers") remove = [];
-    }
+    else remove = flippedRemove(remove, cap as Removable, on);
     const next = normalizeCaps(remove, grant);
     setEdited(next);
     const o = origin();

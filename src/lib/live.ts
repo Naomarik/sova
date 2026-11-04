@@ -596,7 +596,9 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
             entry.reply = event.reply;
             entry.endedAt = new Date().toISOString();
           }
-          const blocks = blocksOf(event.parts);
+          // Authoritative for what was said, not for what a block already knows: a part with no server keeps its own.
+          const known = new Map(entry.blocks.flatMap((b) => (b?.type === "toolCall" && b.mcp ? [[b.id, b.mcp] as const] : [])));
+          const blocks = blocksOf(event.parts).map((b) => (b.type === "toolCall" && !b.mcp && known.has(b.id) ? { ...b, mcp: known.get(b.id)! } : b));
           if (blocks.length) entry.blocks = blocks;
           entry.done = true;
           if (event.stop === "error") entry.error = event.error ?? "The model returned an error";
@@ -627,6 +629,7 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
           const prev = s.tools[id];
           s.tools[id] = {
             name: event.name ?? prev?.name ?? "tool",
+            ...(prev?.mcp ? { mcp: prev.mcp } : {}),
             args: prev?.args ?? event.args,
             status: event.isError ? "error" : "done",
             output: event.output,

@@ -217,7 +217,12 @@
     "mcp.server.status",
     "overseer.abilities",
     "settings.cards.get",
-    "settings.cards.withdraw"
+    "settings.cards.withdraw",
+    "project.coding.start",
+    "project.icon.get",
+    "project.icon.upload",
+    "project.icon.letters",
+    "project.icon.remove"
   ],
   "retired": [
     "settings.agents.get",

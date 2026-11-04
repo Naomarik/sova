@@ -1,0 +1,41 @@
+/* A project's icon (§app.projects/icon): a rounded square, its picture on a sunken tile with a hairline inset so a
+   see-through logo reads in both themes, else two white letters on the project's colour. Token values only, but for
+   the tint, which is the project's own (lib/project-monogram). */
+.project-icon {
+  --project-icon-size: 32px;
+  flex: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--project-icon-size);
+  height: var(--project-icon-size);
+  border-radius: 22%;
+  overflow: hidden;
+  background: var(--project-icon-tint, var(--color-sunken));
+  color: #fff;
+  user-select: none;
+}
+.project-icon-picture { background: var(--color-sunken); }
+.project-icon-picture::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: inset 0 0 0 var(--stroke-thin) var(--color-border);
+  pointer-events: none;
+}
+.project-icon > img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.project-icon-letters {
+  font-family: var(--font-body);
+  font-weight: var(--fw-semibold);
+  font-size: calc(var(--project-icon-size) * 0.4);
+  line-height: 1;
+  letter-spacing: 0;
+  color: #fff;
+}
+
+/* The Settings tab's Icon card (§app.projects/icon). */
+.project-icon-card-row { display: flex; align-items: center; gap: var(--space-3); }
+.project-icon-card-source { overflow-wrap: anywhere; }
+.project-icon-card-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }

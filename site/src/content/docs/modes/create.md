@@ -92,9 +92,10 @@ on where the chat is.
 Gathering chats can't use Create, and their mode menu has no Create row. The Overseer, a Project
 Overseer, the Project Assistant and a merge thread have no mode switch at all.
 
-A chat that can do less still offers Create, and says so in its first reply after the switch, before
-it offers anything. With the sandbox on, that means writing files on this computer, reaching Sova's
-commands and running project tools. On a remote machine, it means project modes and cards.
+A chat that can do less still offers Create, and tells you so before it offers anything. With the
+sandbox on, that means writing files on this computer, reaching Sova's commands and running project
+tools. On a remote machine, it means project modes and cards, and the chat says so in its first reply
+after the switch.
 
 ## Card, Land or your OK
 

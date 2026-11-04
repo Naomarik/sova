@@ -79,7 +79,7 @@ export const CREATE_INSTRUCTIONS = stripOwnerNotes(CREATE_FILES.overview ?? "").
  */
 export function sandboxNote(entries: readonly { type: string; customType?: string; data?: unknown }[]): string | undefined {
 	if (!restoreActive(entries)?.on) return undefined;
-	return "This chat's sandbox is On: you can't write files on this computer, reach Sova's commands or run project tools here. If you haven't told the person, say so first, before you offer anything.";
+	return "This chat's sandbox is On: you can't write files on this computer, reach Sova's commands or run project tools here. If you haven't told the person, say so first, before you offer a change.";
 }
 
 /** What `create_guide {topic}` returns: the shared rules, then that topic's entry. A topic that isn't listed is refused, naming the topics (§design.copy-deck/create-mode). */

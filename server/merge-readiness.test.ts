@@ -196,9 +196,9 @@ test("a failed or missing check: failed keeps it off ready, none is still ready 
   assert.equal(r.CHECK_RE.test("git status"), false);
 });
 
-test("R5: only server-side files ask for a restart; src/, docs and tests never do", () => {
-  for (const f of ["server/index.ts", "shared/protocol.ts", "pi-config/extensions/mode/align.ts", "package.json", "pnpm-lock.yaml"]) assert.ok(r.needsRestart(f), f);
-  for (const f of ["src/components/Sidebar.tsx", "server/README.md", "server/attention.test.ts", ".sova/spec/manifest.json", "e2e/x.mjs"]) assert.equal(r.needsRestart(f), false, f);
+test("R5: only server-side files ask for a restart (the src/ files the server imports among them); the page, docs and tests never do", () => {
+  for (const f of ["server/index.ts", "shared/protocol.ts", "pi-config/extensions/mode/align.ts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "mise.toml", "src/lib/message.ts"]) assert.ok(r.needsRestart(f), f);
+  for (const f of ["src/app.tsx", "src/components/Sidebar.tsx", "server/README.md", "server/attention.test.ts", ".sova/spec/manifest.json", "e2e/x.mjs"]) assert.equal(r.needsRestart(f), false, f);
 });
 
 test("R8: one restart item for the whole server, however many sessions ask", () => {

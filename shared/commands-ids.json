@@ -218,7 +218,8 @@
     "overseer.abilities",
     "settings.cards.get",
     "settings.cards.withdraw",
-    "project.verb.release.note"
+    "project.verb.release.note",
+    "project.verb.merge.hold"
   ],
   "retired": [
     "settings.agents.get",

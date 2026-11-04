@@ -50,6 +50,8 @@ export interface QueueFile {
   /** Open entries in line order first is not implied: order by `seq`. Final ones kept (newest 60). */
   entries: (MergeEntry & { seq: number })[];
   paused?: PauseInfo;
+  /** The merge thread's hold (merge.hold): no new run starts until `until` (epoch ms) or its clear; cleared at start. */
+  hold?: { at: string; until: number };
   intent?: LandIntent;
   /** A publication in flight (request strategies). */
   publish?: PublishIntent;

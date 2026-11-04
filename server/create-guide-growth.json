@@ -441,6 +441,7 @@
    "project.verb.merge.reply": "scripts",
    "project.verb.merge.fresh": "scripts",
    "project.verb.merge.clear": "scripts",
+   "project.verb.merge.hold": "scripts",
    "project.services.view": "scripts",
    "project.overseer.idea.list": "scripts",
    "project.overseer.idea.get": "scripts",

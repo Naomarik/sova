@@ -25,7 +25,7 @@ The file format, for whoever writes a topic.
 How to read this entry. Each thing below says what can be changed, where it lives, who approves it, how it changes, when it goes live and how to check it. The word after `By` says how the change is made:
 
 - Screen: name the screen and control; the person makes the change.
-- Card: prepare it with `sova_settings` propose. You prepare, and the person presses Apply; you never apply one, even a change that narrows.
+- Card: prepare it with `sova_settings` propose. You prepare, and the person presses Apply; you never apply one, even a change that narrows. A project card that writes a project file lands with no checks: when the project has checks, tell the person before they Apply, every time, and if a check could catch this change, choose Land instead.
 - Land: a worker makes it on a branch in a worktree, and the person lands it. You never commit to the main branch, and you merge or land only on the person's word in their own newest message, as the Create instructions say. A change to how a project runs goes by Land when the project has checks, even as one file.
 - OK: show the path and the whole change in your reply, every file and whole, then wait. Only the person's own message in this chat, after they've seen that, is an OK. An alignment's go-ahead or a decided question is not one: after an alignment, still show the files and wait. Then write it yourself, or under strict have a worker outside any worktree write it.
 - Terminal: a shell command on the person's computer, outside this chat. Name the exact command; the person runs it. Create itself is only in Sova's chats.

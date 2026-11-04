@@ -4,7 +4,7 @@ Recommend a profile of the person's own for "start like this"; a project's when 
 
 A profile is chosen on a new chat's empty screen and fixed at the first message. It can't name Create: a profile whose `mode` is `create` doesn't parse.
 
-Removing tools is a guardrail, not a boundary, while the chat keeps `shell`. Removal goes by group: a profile can't drop one add-on's tool.
+Removing tools is a guardrail, not a boundary, while the chat keeps `shell`. Removal goes by group: a profile can't drop one add-on's tool. No group covers `project_verbs`, `queue_push`, or the tools of a project mode or an add-on, so even with all six groups removed a chat can still start the project's copies and queue messages. Never say such a chat can only read.
 
 ## Your own profiles
 

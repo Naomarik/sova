@@ -5,6 +5,8 @@ The major modes are a closed list: Sova can't add one, and a project minor mode 
 
 Spec mode's writer is set in a subagent profile (`workers`). `mode-spec.json` is an older file that only seeds the profile library: don't offer it.
 
+For something that should run by itself after every reply in a project, the way is a reply hook, below.
+
 A project mode lives in the checkout, so a chat in a worktree sees its own branch's modes. It never turns itself on: no default, profile or schedule can name one. Chats on a remote machine have none.
 
 ## What new chats start in
@@ -74,9 +76,20 @@ The frontmatter is `key: value` lines, not YAML, and takes only `description` (r
 
 ## Reply hooks
 
-- Change: a program of a project mode that runs after a reply starts or finishes, in a chat with the mode on. It only reports: it never blocks, delays or changes a reply.
+- Change: a program that runs by itself when a reply starts or ends, in each chat with its project mode on. It only reports: it never blocks, delays or changes a reply, and what it prints never reaches the chat. It's told which chat and when, not what the reply said, and runs at most 10 times in 10 minutes.
 - Lives: the `hooks` key of `<project>/.sova/minor-modes/<id>/MODE.md`, and the program beside it.
-- Approves: the person, by their click in the mode menu.
-- By: Land.
+- Approves: the person, by Approve Hooks in the mode menu. Only their click passes.
+- By: Land. Someone must turn the mode on in each chat: nothing does it for a whole project.
 - Live: after landing and approval, from the next reply.
 - Check: a hook prints nothing into the chat, so have its program write a file, and look for that file after a reply. A failure writes one line to the chat's log. Full guide: /docs/modes/project-modes/.
+
+```markdown
+---
+description: Spell check after each reply
+hooks: [{"on": "turn.ended", "run": ["./check.sh"]}]
+---
+
+The spell check runs after each reply and writes its findings to spelling.log.
+```
+
+`on` is `turn.started` or `turn.ended`, `run` an argv under the rules of a tool's `command` (see `tools`), `timeoutS` optional, 1 to 600, 30 by default. At most 8 hooks.

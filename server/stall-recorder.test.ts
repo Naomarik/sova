@@ -8,10 +8,10 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import {
-  ActivityBoard, CappedLog, foldTraces, frameLabel, lateQuantile, NAME_SLOTS, OTHER_NAME, stallLogDir, StallWatch, summariesOf,
+  ActivityBoard, CappedLog, foldTraces, frameLabel, lateQuantile, NAME_SLOTS, OTHER_NAME, stallClass, stallLogDir, StallWatch, summariesOf,
   type MainSample, type ProcDetail, type StallSummary, type WatchConfig,
 } from "./stall-recorder-core";
-import { opEnd, opStart, opTrack, stallRecorderStatus } from "./stall-recorder";
+import { opEnd, opStart, opTrack, processFlags, profilerClaimed, stallRecorderStatus } from "./stall-recorder";
 import { routeOpName } from "./stall-recorder-route";
 import { stateRoot } from "./state-root";
 
@@ -89,6 +89,8 @@ describe("the board", () => {
     assert.equal(b.memory(1), null);
     b.publishMemory(10, { heapUsed: 5 * 1024 ** 2, heapTotal: 6 * 1024 ** 2, external: 7 * 1024 ** 2, arrayBuffers: 8 * 1024 ** 2 });
     assert.deepEqual(b.memory(30), { ageMs: 2000, heapUsedMb: 5, heapTotalMb: 6, externalMb: 7, arrayBuffersMb: 8 });
+    b.publishMemory(0, { heapUsed: 0, heapTotal: 0, external: 0 });
+    assert.equal(b.memory(1)?.ageMs, 100, "published at the clock's first moment is still published");
   });
 });
 
@@ -148,13 +150,14 @@ function rig(over: Partial<WatchConfig> = {}, earlier: Record<string, unknown>[]
   const io = {
     t: 1000,
     rss: 100,
+    children: 0,
     sample: { state: "R", cpuMs: 0, runQueueMs: 0 } as MainSample,
     threads: { "(main)": 0, HeapHelper: 0 } as Record<string, number>,
     mono() { return this.t; },
     wall() { return 1_000_000 + this.t; },
     rssBytes() { return this.rss; },
     mainSample() { return { ...this.sample }; },
-    detail(): ProcDetail { return { memory: { rssBytes: this.rss }, threads: { ...this.threads } }; },
+    detail(): ProcDetail { return { childrenCpuMs: this.children, memory: { rssBytes: this.rss }, threads: { ...this.threads } }; },
     write: (rec: Record<string, unknown>) => void written.push(rec),
     toMain: (msg: unknown) => void sent.push(msg),
   };
@@ -223,6 +226,38 @@ describe("the watchdog", () => {
     assert.equal(s!.threads[0].name, "HeapHelper", "the collector's threads outspent the main thread here");
     for (let i = 0; i < 5; i++) r.step(true);
     assert.equal(r.of("stall").length, 1, "the watchdog doesn't close it a second time");
+  });
+
+  test("the stall's kind comes from how the thread spent the watched time: the three classes", () => {
+    assert.equal(stallClass(10_000, 9500, 100), "spinning", "pinned on a core");
+    assert.equal(stallClass(10_000, 2500, 6000), "starved", "load 200: runnable, and waiting for a core");
+    assert.equal(stallClass(10_000, 300, 100), "blocked", "off-CPU: a blocking call, the disk, a lock");
+  });
+
+  test("a closed stall carries its class, children's CPU and how many of each op ran in it", () => {
+    const r = rig();
+    r.step(true);
+    const op = r.board.enter("buildSessions", Math.round(r.io.t / 100));
+    for (let i = 0; i < 8; i++) {
+      r.io.sample = { state: "R", cpuMs: i * 950, runQueueMs: i * 10 };
+      r.io.children = i * 100;
+      r.step(false);
+    }
+    r.board.exit(op, Math.round(r.io.t / 100));
+    r.board.exit(r.board.enter("buildSessions", Math.round(r.io.t / 100)), Math.round(r.io.t / 100));
+    r.watch.stallEnded({ gapMs: 9000, atLeastMs: 8000 });
+    const [s] = r.of("stall");
+    assert.equal(s!.class, "spinning");
+    assert.equal(s!.childrenCpuMs, 700 - 200);
+    assert.deepEqual(s!.opsDuring, { buildSessions: 2 });
+  });
+
+  test("a process's flags are on every record", () => {
+    const r = rig({ flags: ["--cpu-prof"] });
+    r.step(true);
+    r.watch.stallEnded({ gapMs: 3100, atLeastMs: 2100 });
+    assert.deepEqual(r.written.map((w) => w.flags), [["--cpu-prof"], ["--cpu-prof"]]);
+    assert.equal(rig().written[0]!.flags, undefined, "a plain start says nothing");
   });
 
   test("a stall the main thread never reports is closed by the watchdog, from what it saw", () => {
@@ -306,6 +341,11 @@ describe("the watchdog", () => {
     assert.deepEqual(msg.list[0]!.ops, ["GET /api/x"]);
   });
 
+  test("a summary's top frame is the innermost with a source, past a native leaf", () => {
+    const [s] = summariesOf([{ t: "stall", at: 1, pid: 7, stacks: [{ samples: 3, frames: ["parse", "existsSync node:fs:224", "readAll server/a.ts:9", "main server/b.ts:1"] }] }], 7);
+    assert.equal(s!.top, "readAll server/a.ts:9");
+  });
+
   test("the running process's own open stall is not called unfinished", () => {
     assert.equal(summariesOf([{ t: "stall-open", at: 1, pid: 7 }], 7)[0]!.unfinished, undefined);
   });
@@ -332,6 +372,22 @@ describe("what may enter a record", () => {
     await app.request("/api/sessions/the-private-name/thing?q=some-secret");
     await app.request("/api/nothing/here/at-all");
     assert.deepEqual(seen, ["GET /api/sessions/:id/thing", "GET (no route)"]);
+  });
+});
+
+describe("the process's flags", () => {
+  test("are names only: a value can be a path", () => {
+    const flags = processFlags(["--cpu-prof", "--cpu-prof-dir=/somewhere/private", "--smol"], ["bun", "server/index.ts", "--port=1", "plain"], {
+      BUN_JSC_sampleInterval: "1", BUN_INSPECT: "ws://x/secret", PATH: "/bin", SOVA_TOKEN: "t",
+    });
+    assert.deepEqual(flags, ["--cpu-prof", "--cpu-prof-dir", "--port", "--smol", "BUN_INSPECT", "BUN_JSC_sampleInterval"]);
+  });
+
+  test("a profiler asked for keeps the one sampler for itself", () => {
+    assert.ok(profilerClaimed(["--cpu-prof"]));
+    assert.ok(profilerClaimed(["--inspect-wait"]));
+    assert.ok(profilerClaimed(["BUN_INSPECT"]));
+    assert.equal(profilerClaimed(["--smol", "BUN_JSC_sampleInterval"]), false);
   });
 });
 

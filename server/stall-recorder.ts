@@ -11,6 +11,8 @@
 //
 // Everything here is best effort. No export throws, and a recorder that fails turns itself off.
 
+import { appendFileSync } from "node:fs";
+import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { Worker } from "node:worker_threads";
 import type { MonitorStalls } from "../shared/protocol";
@@ -28,6 +30,7 @@ const DRAIN_MS = 30_000;
 /** A heap walk costs about 40 ms per 100 MB, all of it on the main thread: above this it is skipped. */
 const HEAP_WALK_MAX_BYTES = 4 * GIB;
 const TYPES_KEPT = 16;
+const LARGE_BYTES = 1024 * 1024;
 
 export interface StallRecorderOptions {
   /** The log's folder, `<stateRoot>/stalls`. */
@@ -63,6 +66,7 @@ interface Recorder {
   lastBeat: number;
   beatMs: number;
   stallMs: number;
+  memoryFirstBytes: number;
   /** The stacks of the last drain, kept for a memory rung that crosses just after it. */
   lastStacks: { samples: number; stacks: FoldedStack[] };
   gauges: { name: string; read: () => number }[];
@@ -82,8 +86,18 @@ const quietly = (step: () => void): void => {
   }
 };
 
-/** A profiler someone attached by hand owns the JS sampler: there is one per process. */
-const debuggerAttached = () => !!process.env.BUN_INSPECT || process.execArgv.some((a) => a.startsWith("--inspect"));
+/** A profiler someone attached or asked for owns the JS sampler: there is one per process. */
+export function profilerClaimed(flags: readonly string[]): boolean {
+  return flags.some((f) => /^(--inspect|--cpu-prof|--heap-prof|BUN_INSPECT)/.test(f));
+}
+
+/** How this process was started, in names: a `--cpu-prof` run explains a memory climb by itself.
+    Flag values and variables' values stay out, since they can be paths. */
+export function processFlags(execArgv: readonly string[], argv: readonly string[], env: NodeJS.ProcessEnv): string[] {
+  const flags = [...execArgv, ...argv.slice(2).filter((a) => a.startsWith("-"))].map((a) => a.split("=")[0]!);
+  const vars = Object.keys(env).filter((k) => /^(BUN_INSPECT|BUN_JSC_|BUN_OPTIONS$|NODE_OPTIONS$)/.test(k));
+  return [...new Set([...flags, ...vars])].sort().slice(0, 32);
+}
 
 /** JSC's sampler at a coarse interval, where the runtime has one. Null anywhere else. */
 async function startSampler(): Promise<{ sampler: Sampler; jsc: Jsc } | null> {
@@ -168,7 +182,22 @@ function memoryDetail(r: Recorder, rungBytes: number): void {
     detail.samples = r.lastStacks.samples;
     detail.stacks = r.lastStacks.stacks;
   });
+  // Past the second rung the sampler goes: whatever is climbing, nothing of ours may be part of it.
+  // Each sample is small and the buffer is emptied, measured flat, but this is the sampler that took
+  // an undrained `--cpu-prof` run to 60 GB. The board and the watchdog go on.
+  if (rungBytes >= r.memoryFirstBytes * 2 && r.sampler) {
+    r.sampler.stop();
+    r.sampler = null;
+    if (r.drainTimer) clearInterval(r.drainTimer);
+    detail.samplerStopped = true;
+  }
   r.worker.postMessage({ k: "memory-detail", detail });
+}
+
+/** The process's last line. The watchdog can't be asked (nothing waits for it now), so this one line
+    is the main thread's own; a stall's end is worth one write at exit. */
+function noteExit(dir: string, code: number): void {
+  if (rec) quietly(() => appendFileSync(join(dir, "stalls.jsonl"), JSON.stringify({ v: 1, at: Date.now(), pid: process.pid, t: "exit", code }) + "\n"));
 }
 
 /** Start the recorder. Off with SOVA_STALL_RECORDER=off; without stacks with SOVA_STALL_STACKS=off. */
@@ -178,17 +207,19 @@ export function startStallRecorder(opts: StallRecorderOptions): void {
     const board = ActivityBoard.create();
     const beatMs = opts.beatMs ?? BEAT_MS;
     const stallMs = opts.stallMs ?? STALL_MS;
+    const memoryFirstBytes = opts.memoryFirstBytes ?? MEMORY_FIRST_BYTES;
+    const flags = processFlags(process.execArgv, process.argv, process.env);
     const worker = new Worker(opts.workerUrl ?? new URL("./stall-recorder-worker.ts", import.meta.url), {
       smol: true,
       workerData: {
         sab: board.sab, dir: opts.dir, mainTid: process.pid, beatMs, stallMs, tickMs: opts.tickMs ?? TICK_MS,
-        memoryFirstBytes: opts.memoryFirstBytes ?? MEMORY_FIRST_BYTES, pid: process.pid, startedAt: opts.startedAt ?? Date.now(),
+        memoryFirstBytes, pid: process.pid, startedAt: opts.startedAt ?? Date.now(), flags,
         mainMono: performance.now(), mainWall: Date.now(),
       },
     } as ConstructorParameters<typeof Worker>[1]);
     worker.unref();
     const r: Recorder = {
-      board, worker, beatMs, stallMs, sampler: null, jsc: null, lastBeat: performance.now(), lastStacks: { samples: 0, stacks: [] }, gauges,
+      board, worker, beatMs, stallMs, memoryFirstBytes, sampler: null, jsc: null, lastBeat: performance.now(), lastStacks: { samples: 0, stacks: [] }, gauges,
       beatTimer: setInterval(() => quietly(() => rec === r && onBeat(r)), beatMs),
     };
     r.beatTimer.unref?.();
@@ -203,7 +234,8 @@ export function startStallRecorder(opts: StallRecorderOptions): void {
         else if (msg.k === "memory" && rec === r) memoryDetail(r, msg.rungBytes ?? 0);
       });
     });
-    if (process.env.SOVA_STALL_STACKS !== "off" && !debuggerAttached()) {
+    process.on("exit", (code) => noteExit(opts.dir, code));
+    if (process.env.SOVA_STALL_STACKS !== "off" && !profilerClaimed(flags)) {
       void startSampler().then(
         (got) => {
           if (!got) return;
@@ -269,9 +301,9 @@ export function opTrack<T>(name: string, fn: () => T, count?: (result: Awaited<T
   return result;
 }
 
-/** Note a large thing by name and size: a read, a frame. It lands in the recent ring. */
-export function opNote(name: string, size: number): void {
-  if (rec) quietly(() => rec?.board.event(name, ds(), size));
+/** Note a thing by name and size in bytes: a read, a frame. Only a large one lands in the recent ring, in KB. */
+export function opNote(name: string, bytes: number): void {
+  if (rec && bytes >= LARGE_BYTES) quietly(() => rec?.board.event(name, ds(), bytes / 1024));
 }
 
 /** A count the board shows, read on the monitor's tick. `read` must be cheap, and may throw. */

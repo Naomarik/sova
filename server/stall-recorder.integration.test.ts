@@ -64,7 +64,8 @@ describe("a stall", () => {
     assert.equal(existsSync(join(h.at, "release")), false, "this record came from the watchdog: the loop is still held");
     assert.equal(open.ops[0].name, "GET /api/fixture/:id");
     assert.equal(open.ops[0].detail, 42);
-    assert.ok(open.recent.some((r: any) => r.name === "large read" && r.detail === 123456), "a named size in the recent ring");
+    assert.ok(open.recent.some((r: any) => r.name === "large read" && r.detail === 4096), "a named size in the recent ring, in KB");
+    assert.ok(!open.recent.some((r: any) => r.name === "small read"), "a small one isn't worth a slot");
     assert.equal(open.gauges["fixture rows"], 2706);
     assert.ok(open.heap.heapUsedMb >= 0, "the last heap figures");
     assert.ok(open.rssBytes > 0);
@@ -83,8 +84,12 @@ describe("a stall", () => {
     assert.ok(s.atLeastMs >= 400, `at least ${s.atLeastMs}`);
     assert.ok(s.atMostMs >= heldAtLeast - 200, `at most ${s.atMostMs}, held ${heldAtLeast}`);
     assert.ok(s.samples > 0);
-    assert.match(s.stacks[0].frames[0], /^blockTheLoopForTest .*stall-recorder\.integration\.fixture\.ts/);
-    if (linux) assert.ok(s.mainCpuMs > 0);
+    assert.ok(s.stacks[0].frames.some((f: string) => /^blockTheLoopForTest .*stall-recorder\.integration\.fixture\.ts:\d+$/.test(f)), s.stacks[0].frames.join(" < "));
+    if (linux) {
+      assert.ok(s.mainCpuMs > 0);
+      assert.ok(s.mainRunQueueMs >= 0);
+      assert.ok(["spinning", "starved"].includes(s.class), `the loop never slept: ${s.class}`);
+    }
     assert.ok(s.memAfter.heapUsedBytes > 0);
 
     assert.equal(await h.exited, 0);
@@ -93,6 +98,8 @@ describe("a stall", () => {
     assert.match(status.recent.at(-1).top, /^blockTheLoopForTest/);
     assert.deepEqual(status.recent.at(-1).ops, ["GET /api/fixture/:id"]);
     assert.ok(!readFileSync(join(h.at, "stalls.jsonl"), "utf8").includes(root), "no record names where it ran");
+    assert.equal(records(h.at).at(-1)!.t, "exit");
+    assert.equal(records(h.at).at(-1)!.code, 0);
   });
 
   test("a process killed inside one leaves its record, and the next one calls it unfinished", async () => {
@@ -123,6 +130,9 @@ describe("a memory rung", () => {
     assert.ok(Array.isArray(m.trail));
     if (linux) assert.ok(m.memory.anonBytes > 0 && m.host.memAvailableBytes > 0);
     const detail = await record(h.at, "memory-detail");
+    const second = await until("the second rung's answer", () => records(h.at).find((r) => r.t === "memory-detail" && r.rungBytes >= 2 * m.rungBytes));
+    assert.equal(second.samplerStopped, true, "past the second rung the sampler is gone");
+    assert.equal(detail.samplerStopped, undefined, "at the first it runs on");
     h.release();
     await h.exited;
     assert.ok(detail.mem.external > 0, "external is what Buffer.alloc grows");
@@ -185,6 +195,8 @@ describe("in the server", () => {
       await server.restart();
       const down = await until("the shutdown record", () => records(log).find((r) => r.t === "shutdown"));
       assert.equal(down.pid, firstPid);
+      const gone = await until("the exit record", () => records(log).find((r) => r.t === "exit" && r.pid === firstPid));
+      assert.ok(gone.at >= down.at, "shutdown's start to the process's end: how long it took");
       await until("the next boot's record", () => records(log).find((r) => r.t === "boot" && r.pid === server.pid));
     } finally {
       await server.stop();

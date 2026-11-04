@@ -28,7 +28,7 @@ import { CHAT_CLOSED_CLOSE_CODE, HAVE_MAX_CHARS, HAVE_PARAM, type WireVersion } 
 import { unsentRefusal } from "../shared/chat-runtime";
 import { draftTexts, HeldSends, type Unsent } from "../shared/held-sends";
 import { putBackDraft } from "./drafts";
-import { stallGauge } from "./stall-recorder";
+import { opNote, stallGauge } from "./stall-recorder";
 
 /** How long a chat socket that closed stays in its chat to hear what became of the messages it
     sent (§chat.transcript/send-while-starting): taken, or refused and put back as the draft. */
@@ -37,7 +37,9 @@ export const GONE_LISTEN_MS = 120_000;
 function sendJson(ws: WebSocket, msg: ChatServerMessage | V2EventFrame | WatchServerMessage | SessionFeedMessage | LlmFeedMessage): void {
   if (ws.readyState !== ws.OPEN) return;
   try {
-    ws.send(JSON.stringify(msg));
+    const json = JSON.stringify(msg);
+    opNote("ws frame", json.length);
+    ws.send(json);
   } catch (err) {
     console.error("[ws] send failed", err);
   }
@@ -47,6 +49,7 @@ function sendJson(ws: WebSocket, msg: ChatServerMessage | V2EventFrame | WatchSe
 function sendRaw(ws: WebSocket, json: string): void {
   if (ws.readyState !== ws.OPEN) return;
   try {
+    opNote("ws frame", json.length);
     ws.send(json);
   } catch (err) {
     console.error("[ws] send failed", err);

@@ -63,6 +63,7 @@ import { WorkerRestorer, workersFromRecords } from "./worker-restore";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { handoverSuccessor, retireReason, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
 import { sessionTokens } from "./session-tokens";
+import { opNote } from "./stall-recorder";
 import { readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE, type WorkerTranscriptAdapters } from "../pi-config/extensions/subagents/worker-transcript.ts";
 
 // Read-only views over what the user's pi extensions leave on disk (sources and shapes:
@@ -956,7 +957,9 @@ async function sessionFacts(path: string): Promise<SessionFacts> {
     const st = await stat(path);
     const hit = factsCache.get(path);
     if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) return hit.facts;
-    const facts = extractFacts(await readFile(path, "utf8"));
+    const text = await readFile(path, "utf8");
+    opNote("sessionFacts read", text.length);
+    const facts = extractFacts(text);
     factsCache.delete(path); // re-insert as most recent
     factsCache.set(path, { mtimeMs: st.mtimeMs, size: st.size, facts });
     while (factsCache.size > FACTS_MAX) {

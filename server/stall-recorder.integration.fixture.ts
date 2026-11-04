@@ -27,7 +27,8 @@ if (mode === "block") {
   await until(() => stallRecorderStatus().state === "on");
   await new Promise((r) => setTimeout(r, 400)); // the sampler's start is asynchronous
   opTrack("finished before", () => 1);
-  opNote("large read", 123456);
+  opNote("small read", 1000);
+  opNote("large read", 4 * 1024 * 1024);
   const op = opStart("GET /api/fixture/:id", 42);
   say({ blocking: true });
   blockTheLoopForTest();

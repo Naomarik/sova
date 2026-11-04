@@ -170,7 +170,7 @@ export class ActivityBoard {
     this.i32[HEAP_TOTAL_MB] = toMb(mem.heapTotal);
     this.i32[EXTERNAL_MB] = toMb(mem.external);
     this.i32[ARRAY_BUFFERS_MB] = toMb(mem.arrayBuffers ?? 0);
-    Atomics.store(this.i32, MEM_AT_DS, nowDs);
+    Atomics.store(this.i32, MEM_AT_DS, nowDs + 1);
   }
 
   /** Set gauge `index`. Beyond GAUGE_SLOTS a gauge is left out. */
@@ -227,7 +227,7 @@ export class ActivityBoard {
     const at = Atomics.load(this.i32, MEM_AT_DS);
     if (!at) return null;
     return {
-      ageMs: Math.max(0, nowDs - at) * 100, heapUsedMb: this.i32[HEAP_USED_MB]!, heapTotalMb: this.i32[HEAP_TOTAL_MB]!,
+      ageMs: Math.max(0, nowDs - (at - 1)) * 100, heapUsedMb: this.i32[HEAP_USED_MB]!, heapTotalMb: this.i32[HEAP_TOTAL_MB]!,
       externalMb: this.i32[EXTERNAL_MB]!, arrayBuffersMb: this.i32[ARRAY_BUFFERS_MB]!,
     };
   }
@@ -397,9 +397,20 @@ export function foldTraces(traces: readonly SampledTrace[], windowMs = Infinity)
 export interface MainSample { state: string; cpuMs: number; runQueueMs?: number; wchan?: string; syscall?: number }
 /** The process and host at one instant: the slower read, taken at the moments that matter. */
 export interface ProcDetail {
+  /** CPU of the children this process has reaped, in ms: the monitor's server figure leaves it out. */
+  childrenCpuMs?: number;
   memory?: { rssBytes?: number; anonBytes?: number; fileBytes?: number; swapBytes?: number; peakBytes?: number };
   threads?: Record<string, number>;
   host?: { load1?: number; memAvailableBytes?: number; swapFreeBytes?: number; pressure?: unknown };
+}
+
+export type StallClass = "spinning" | "starved" | "blocked";
+
+/** What held the thread, from how it spent the time: on a core, waiting for one, or neither (a
+    blocking call, the disk, a lock). The two kinds of stall want different cures. */
+export function stallClass(heldMs: number, cpuMs: number, runQueueMs: number): StallClass {
+  if (runQueueMs >= heldMs * 0.25 && runQueueMs >= cpuMs * 0.5) return "starved";
+  return cpuMs >= heldMs * 0.5 ? "spinning" : "blocked";
 }
 
 /** Per-thread-name CPU ms between two detail reads, largest first. */
@@ -426,6 +437,8 @@ export interface WatchConfig {
   pid: number;
   head?: string;
   startedAt: number;
+  /** The process's flags: on every record, since the log outlives its boot line. Empty on a plain start. */
+  flags?: string[];
 }
 
 export interface WatchIO {
@@ -475,17 +488,20 @@ const HOUR_MS = 3_600_000;
 
 const mb = (bytes: number) => Math.round(bytes / MB);
 
-/** A record that names a stall, or a memory rung: what /api/monitor shows of it. */
+/** A record that names a stall or a memory rung, in the line /api/monitor shows. */
 export function summaryOf(rec: Record<string, unknown>): StallSummary | null {
   const t = rec.t;
   if (t !== "stall" && t !== "stall-open" && t !== "memory") return null;
   const stacks = rec.stacks as FoldedStack[] | undefined;
   const ops = rec.ops as BoardOp[] | undefined;
+  // The innermost frame in a source file: a runtime leaf (existsSync, node:fs) says little alone.
+  const frames = stacks?.[0]?.frames;
+  const top = frames?.find((f) => /\.[cm]?[jt]sx?(:\d+)?$/.test(f)) ?? frames?.[0];
   return {
     kind: t, at: Number(rec.at) || 0, pid: Number(rec.pid) || 0,
     ...(typeof rec.atMostMs === "number" ? { ms: rec.atMostMs } : {}),
     ...(typeof rec.rssBytes === "number" ? { rssBytes: rec.rssBytes } : {}),
-    ...(stacks?.[0]?.frames[0] ? { top: stacks[0].frames[0] } : {}),
+    ...(top ? { top } : {}),
     ...(ops?.length ? { ops: ops.slice(0, 3).map((o) => o.name) } : {}),
   };
 }
@@ -573,7 +589,7 @@ export class StallWatch {
   private emit(rec: Record<string, unknown>): void {
     const stamped = {
       v: VERSION, at: this.io.wall(), pid: this.cfg.pid, uptimeS: Math.round((this.io.wall() - this.cfg.startedAt) / 1000),
-      ...(this.cfg.head ? { head: this.cfg.head } : {}), ...rec,
+      ...(this.cfg.head ? { head: this.cfg.head } : {}), ...(this.cfg.flags?.length ? { flags: this.cfg.flags } : {}), ...rec,
     };
     this.io.write(stamped);
     const s = summaryOf(stamped);
@@ -678,6 +694,8 @@ export class StallWatch {
     const detail = o ? this.io.detail() : null;
     const cpuMs = o?.first && o.last ? o.last.cpuMs - o.first.cpuMs : undefined;
     const runQueueMs = o?.first?.runQueueMs !== undefined && o.last?.runQueueMs !== undefined ? o.last.runQueueMs - o.first.runQueueMs : undefined;
+    const watchedMs = o ? (o.closingAt ?? this.io.mono()) - o.openedMono : 0;
+    const childrenCpuMs = o?.detail?.childrenCpuMs !== undefined && detail?.childrenCpuMs !== undefined ? detail.childrenCpuMs - o.detail.childrenCpuMs : undefined;
     this.emit({
       t: "stall",
       atLeastMs: end?.atLeastMs ?? Math.round(seenMs), atMostMs: end?.gapMs ?? Math.round(seenMs), source: end ? "main" : "watchdog", seenLive: !!o,
@@ -685,11 +703,21 @@ export class StallWatch {
         sinceAt: o.sinceWall, ops: o.rec.ops, opsInFlight: o.rec.opsInFlight, recent: o.rec.recent, gauges: o.rec.gauges, heapBefore: o.rec.heap,
         rssBytes: o.rssAtOpen, rssPeakBytes: o.rssPeak, rssTrailMb: o.rssTrailMb, states: o.states, wchans: o.wchans, workerLagMaxMs: Math.round(o.workerLagMaxMs),
         ...(cpuMs !== undefined ? { mainCpuMs: cpuMs } : {}), ...(runQueueMs !== undefined ? { mainRunQueueMs: runQueueMs } : {}),
+        ...(cpuMs !== undefined && runQueueMs !== undefined && watchedMs > 0 ? { watchedMs: Math.round(watchedMs), class: stallClass(watchedMs, cpuMs, runQueueMs) } : {}),
+        ...(childrenCpuMs !== undefined ? { childrenCpuMs } : {}),
+        opsDuring: this.opsDuring(end?.gapMs ?? seenMs),
         threads: threadDeltas(o.detail?.threads, detail?.threads), ...(o.detail?.host ? { host: o.detail.host } : {}),
       } : {}),
       ...(end?.mem ? { memAfter: { rssBytes: end.mem.rss, heapUsedBytes: end.mem.heapUsed, heapTotalBytes: end.mem.heapTotal, externalBytes: end.mem.external, arrayBuffersBytes: end.mem.arrayBuffers ?? 0 } } : {}),
       ...(end?.stacks ? { samples: end.samples ?? 0, stacks: end.stacks } : {}),
     });
+  }
+
+  /** How many of each operation finished within the last `ms`: a chain of builds reads as one stall. */
+  private opsDuring(ms: number): Record<string, number> {
+    const counts: Record<string, number> = {};
+    for (const r of this.board.recent(this.ds(), 128)) if (r.agoMs <= ms) counts[r.name] = (counts[r.name] ?? 0) + 1;
+    return counts;
   }
 
   /** The main thread's word on a stall that just ended. */

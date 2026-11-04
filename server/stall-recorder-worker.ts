@@ -83,6 +83,11 @@ function statusBytes(text: string, key: string): number | undefined {
 
 function detail(): ProcDetail | null {
   const out: ProcDetail = {};
+  const self = read("/proc/self/stat");
+  if (self) {
+    const f = self.slice(self.lastIndexOf(")") + 2).split(" ");
+    out.childrenCpuMs = ((Number(f[13]) + Number(f[14])) * 1000) / TICK_HZ;
+  }
   const status = read("/proc/self/status");
   if (status) {
     out.memory = {

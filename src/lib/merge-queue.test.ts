@@ -83,8 +83,8 @@ test("review flagged: the review's words, Land Anyway and Send Back", () => {
   assert.equal(r.reason, "Leaves a TODO hack in land.ts.");
 });
 
-test("drafts changed asks for a new Land; needs a fix offers none (al_4)", () => {
-  assert.equal(queueRow(wt({ queue: q({ state: "needs-fix", reason: "unit failed: a.test.ts", run: "mr_1" }) })).action, "none");
+test("drafts changed asks for a new Land; needs a fix offers Land This Commit Again, never Land (al_4, al_1)", () => {
+  assert.equal(queueRow(wt({ queue: q({ state: "needs-fix", reason: "unit failed: a.test.ts", run: "mr_1" }) })).action, "land-this-again");
   const d = queueRow(wt({ queue: q({ state: "drafts-changed" }) }));
   assert.equal(d.label, "Drafts changed");
   assert.equal(d.action, "land");
@@ -230,13 +230,13 @@ const NEW = "b".repeat(40);
 const sentBack = (x: Partial<QueueRowInput> = {}) =>
   wt({ mergeServed: true, mergeProject: { id: "prj_1", root: "/r", target: "main", checks: "declared", review: true }, queue: q({ state: "needs-fix", run: "mr_1" }), ...x });
 
-test("a needs-fix row at its sent-back commit has no Land anywhere: no button, so no ▾ menu either", () => {
+test("a needs-fix row at its sent-back commit has no Land anywhere: no Land button, so no ▾ menu either", () => {
   for (const readiness of [undefined, { ...ready, state: "in-progress" as const, dirtyCount: 2 }, { ...ready, landing: { state: "ready" as const, commit: SHA } }]) {
     const r = queueRow(sentBack({ readiness }));
     assert.equal(r.key, "needs-fix");
     assert.equal(r.label, "Needs a fix");
-    assert.equal(r.action, "none");
-    assert.deepEqual(rowButtons(r, "prj_1"), [], "the Land split (and its menu) draws only with a Land button");
+    assert.equal(r.action, "land-this-again");
+    assert.deepEqual(rowButtons(r, "prj_1"), ["Land This Commit Again", "Remove from Queue"], "no Land split (and so no ▾ menu): its own two buttons");
   }
   assert.equal(queueRow(sentBack()).reason, SENT_BACK_LINE);
   assert.equal(queueRow(sentBack({ queue: q({ state: "needs-fix", reason: "unit failed: a.test.ts" }) })).reason, "unit failed: a.test.ts", "the queue's reason, as today");

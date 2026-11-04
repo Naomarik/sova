@@ -2,7 +2,7 @@
 
 All of this works in any folder. It's about this computer and how it reaches others, and most of it changes on a screen today. Sessions never move between computers: each is driven by the computer whose disk holds it.
 
-You never restart or update Sova, by any command. Name the control below for the person, and never report something you didn't do.
+You never restart or update Sova, by any command, `server.restart` included. Name the control below for the person, and never report something you didn't do.
 
 To link computers, read where things stand with `sova_settings` get (it never shows a key or pin; if it has no mesh state yet, ask what the Mesh page shows), say which step they're on, and go through these in order, one at a time. Each is done by its section below. A computer that isn't linked yet is out of your reach, so give the exact steps to do there. Never put a pairing code, token or secret in chat text.
 

@@ -2498,7 +2498,7 @@ export interface HelloLive {
   /** The assistant message still streaming (not yet written): its parts so far, by index. */
   message?: { model?: string; parts: SovaPart[] };
   /** Tool calls of this run started and not ended, each with its latest output. */
-  tools?: { callId: string; name: string; args?: unknown; output: string; images: string[]; parentCallId?: string }[];
+  tools?: { callId: string; name: string; args?: unknown; mcp?: McpToolName; output: string; images: string[]; parentCallId?: string }[];
 }
 
 /**

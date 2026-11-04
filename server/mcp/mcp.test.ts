@@ -288,6 +288,19 @@ describe("a chat's list", () => {
     assert.equal(setupOf(folder, {}, false)!.notProject, true);
   });
 
+  test("an entry that can't be approved is on no card: reserved, bad-value and unusable alike, and it still takes its name", () => {
+    putComputerEntry(ready(computer, "shadowed", { command: "computer" }));
+    const dir = checkout();
+    list(dir, { sOvA: { command: "x" }, bad: { command: "x", env: { K: "\${X:-y}" } }, odd: { type: "sse", url: "https://e" }, shadowed: { type: "sse", url: "https://e" }, fine: { command: "y" } });
+    const inside = { project: { id: "p", name: "P", root: dir }, checkout: dir };
+    assert.deepEqual(setupOf(inside, {}, false)!.rows.map((r) => [r.name, r.off]), [["fine", "waiting"]]);
+    assert.deepEqual(chatListOf(inside, {}, false).servers, [], "and the computer's doesn't stand in for the project's");
+    rmSync(join(agent, "mcp.json"));
+    const only = checkout();
+    list(only, { SOVA: { command: "x" } });
+    assert.equal(setupOf({ project: { id: "p", name: "P", root: only }, checkout: only }, {}, false), undefined, "nothing else: no group");
+  });
+
   test("no servers and no file: no group", () => assert.equal(setupOf(noProject(), {}, false), undefined));
 
   test("address servers don't reach a chat yet, and say so", () => {

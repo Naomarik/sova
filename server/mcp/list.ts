@@ -29,6 +29,8 @@ export interface McpChoice {
 type Row = SetupMcp["rows"][number];
 
 interface Candidate {
+  /** It can't run and has no Approve, so the card has nothing to offer. */
+  refused: boolean;
   row: Row;
   server?: McpChatServer;
 }
@@ -39,8 +41,9 @@ function candidate(owner: McpOwner, e: McpEntry, choice: McpChoice, sandboxOn: b
   const record = recordOf(row, version);
   const offTools = new Set(row.settings.offTools);
   const tools = record?.tools.filter((t) => !offTools.has(t.name)) ?? [];
+  const refused = !!refusalOf(e);
   const off: Row["off"] =
-    refusalOf(e) || !isApproved(owner, e.name, version)
+    refused || !isApproved(owner, e.name, version)
       ? "waiting"
       : !record
         ? "no-check"
@@ -52,6 +55,7 @@ function candidate(owner: McpOwner, e: McpEntry, choice: McpChoice, sandboxOn: b
   const wanted = row.settings.newChats ? !choice.offMcp?.includes(e.name) : !!choice.onMcp?.includes(e.name);
   const on = !off && wanted;
   return {
+    refused,
     row: {
       name: e.name,
       source: sourceOf(owner),
@@ -80,7 +84,7 @@ export function chatListOf(folder: McpFolder, choice: McpChoice, sandboxOn: bool
 
 /** The setup card's group; undefined when a folder and computer have no servers and nothing to say. */
 export function setupOf(folder: McpFolder, choice: McpChoice, sandboxOn: boolean): SetupMcp | undefined {
-  const rows = candidates(folder, choice, sandboxOn).map((c) => c.row);
+  const rows = candidates(folder, choice, sandboxOn).filter((c) => !c.refused).map((c) => c.row);
   const notProject = !folder.project && readProjectList(folder.checkout).file !== "missing";
   if (!rows.length && !notProject) return undefined;
   return { ...(notProject ? { notProject: true } : {}), rows };

@@ -83,6 +83,56 @@ describe("approval", () => {
     assert.equal(fx.fileAt(fx.head(), ".sova/spec/claims/b/doc.md"), null);
   });
 
+  test("S12c: sent back for its drafts, fixed with no commit: Land comes back at the same commit and lands", async () => {
+    const { fx, h } = await setup();
+    await fx.withSpec();
+    const b = fx.branch("doc", { "README.md": "# doc\n" });
+    // A draft whose note is older than its prose: the spec tool refuses to make it official.
+    fx.draft(b.checkout, "doc", "First words.");
+    fx.editDraft(b.checkout, "doc", "Second words.");
+    const first = await h.add({ branch: b.branch });
+    const back = await h.waitEntry(first.id, settled);
+    assert.equal(back.state, "needs-fix", `${back.state}: ${back.reason}`);
+    assert.match(back.reason ?? "", /drafts don't fit/);
+    assert.equal(back.commit, b.commit);
+    const before = await h.view();
+    assert.ok(!(before.ready ?? []).some((r) => r.branch === b.branch), "no Land at the sent-back commit before its drafts change");
+    // The chat fixes its draft: no commit.
+    fx.noteDraft(b.checkout, "doc");
+    const v = await h.waitView(
+      (x) => (x.ready ?? []).some((r) => r.branch === b.branch && r.commit === b.commit) && x.needsFix.some((e) => e.id === first.id && e.redrafted === true),
+      "the branch reads Ready again at the same commit, its sent-back entry redrafted",
+      30_000,
+    );
+    assert.equal(v.needsFix.find((e) => e.id === first.id)?.sentBackFor, "drafts", "the entry records why it was sent back");
+    // Land This Commit Again: an ordinary new approval of the same commit, with the current drafts.
+    const again = await h.add({ branch: b.branch, commit: b.commit });
+    assert.notEqual(again.id, first.id);
+    const landed = await h.waitEntry(again.id, settled);
+    assert.equal(landed.state, "landed", `${landed.state}: ${landed.reason}`);
+    assert.equal(landed.commit, b.commit);
+    assert.match(fx.fileAt(landed.landed!.sha, ".sova/spec/claims/b/doc.md") ?? "", /Second words/);
+  });
+
+  test("S12d: Remove from Queue on a sent-back entry: cancelled, nothing deleted; the branch reads as itself", async () => {
+    const { fx, h } = await setup();
+    await fx.withSpec();
+    const b = fx.branch("doc", { "README.md": "# doc\n" });
+    fx.draft(b.checkout, "doc", "First words.");
+    fx.editDraft(b.checkout, "doc", "Second words.");
+    const first = await h.add({ branch: b.branch });
+    assert.equal((await h.waitEntry(first.id, settled)).state, "needs-fix");
+    const removed = await h.cancel(first.id);
+    assert.equal(removed.state, "cancelled");
+    assert.equal(removed.reason, "removed by you");
+    assert.ok(existsSync(b.checkout), "the folder stays");
+    assert.ok(existsSync(join(b.checkout, ".sova/spec/drafts/doc")), "the drafts stay");
+    assert.equal(git(fx.project, ["rev-parse", `refs/heads/${b.branch}`]).trim(), b.commit, "the branch stays");
+    assert.ok(existsSync(h.runDir(removed.run!)), "the run's logs stay");
+    const v = await h.view();
+    assert.ok(!v.needsFix.some((e) => e.id === first.id), "no longer sent back");
+  });
+
   test("S13: cancel while queued (never runs) and while checking (run aborted, master unmoved, the next entry runs)", async () => {
     const { fx, h } = await setup();
     const base = fx.head();

@@ -73,7 +73,7 @@ function applyPart(parts: SovaPart[], e: Extract<SovaEvent, { type: "part.start"
   const i = e.index ?? parts.length;
   const cur = parts[i];
   if (e.type === "part.start") {
-    parts[i] = e.kind === "toolCall" ? { kind: "toolCall", id: e.id ?? "", name: e.name ?? "tool" } : { kind: e.kind, text: "" };
+    parts[i] = e.kind === "toolCall" ? { kind: "toolCall", id: e.id ?? "", name: e.name ?? "tool", ...(e.mcp ? { mcp: e.mcp } : {}) } : { kind: e.kind, text: "" };
   } else if (e.type === "part.delta") {
     // A tool call's arguments stream as JSON text: the snapshot has them once the call's part ends.
     if (e.kind === "toolCall") return;
@@ -81,6 +81,6 @@ function applyPart(parts: SovaPart[], e: Extract<SovaEvent, { type: "part.start"
     else parts[i] = { kind: e.kind, text: e.delta };
   } else if (e.kind === "toolCall") {
     const was = cur?.kind === "toolCall" ? cur : undefined;
-    parts[i] = { kind: "toolCall", id: e.id ?? was?.id ?? "", name: e.name ?? was?.name ?? "tool", ...(e.args !== undefined ? { args: e.args } : {}) };
+    parts[i] = { kind: "toolCall", id: e.id ?? was?.id ?? "", name: e.name ?? was?.name ?? "tool", ...(e.mcp ?? was?.mcp ? { mcp: (e.mcp ?? was?.mcp)! } : {}), ...(e.args !== undefined ? { args: e.args } : {}) };
   } else if (e.text !== undefined) parts[i] = { kind: e.kind, text: e.text };
 }

@@ -84,6 +84,9 @@ const nestedIn = (event: Record<string, unknown>): { parentCallId?: string } => 
   return parent ? { parentCallId: parent } : {};
 };
 
+/** A server's tool, as the server put it on the frame. */
+const mcpOf = (event: Record<string, unknown>): { mcp?: { server: string; tool: string } } => (isObj(event.mcp) ? { mcp: event.mcp as { server: string; tool: string } } : {});
+
 // ---- Events
 
 const DELTA_KIND = new Map<unknown, "text" | "thinking" | "toolCall">([["text_delta", "text"], ["thinking_delta", "thinking"], ["toolcall_delta", "toolCall"]]);
@@ -120,7 +123,7 @@ function partEvent(ev: Record<string, unknown>): SovaEvent[] {
     case "toolcall_start": {
       const id = str(ev.id);
       const name = str(ev.toolName);
-      return [{ type: "part.start", ...at, kind: "toolCall", ...(id !== undefined ? { id } : {}), ...(name !== undefined ? { name } : {}) }];
+      return [{ type: "part.start", ...at, kind: "toolCall", ...(id !== undefined ? { id } : {}), ...(name !== undefined ? { name } : {}), ...mcpOf(ev) }];
     }
     case "toolcall_delta":
       return [{ type: "part.delta", ...at, kind: "toolCall", delta }];
@@ -128,7 +131,7 @@ function partEvent(ev: Record<string, unknown>): SovaEvent[] {
       const tc = isObj(ev.toolCall) ? ev.toolCall : {};
       const id = str(tc.id);
       const name = str(tc.name);
-      return [{ type: "part.end", ...at, kind: "toolCall", ...(id !== undefined ? { id } : {}), ...(name !== undefined ? { name } : {}), args: tc.arguments }];
+      return [{ type: "part.end", ...at, kind: "toolCall", ...(id !== undefined ? { id } : {}), ...(name !== undefined ? { name } : {}), args: tc.arguments, ...mcpOf(ev) }];
     }
     default:
       return [];
@@ -188,8 +191,7 @@ export function fromV1(frame: Pick<V1EventFrame, "event" | "entryId" | "reply">)
     }
     case "tool_execution_start": {
       const callId = str(event.toolCallId);
-      const mcp = isObj(event.mcp) ? { mcp: event.mcp as { server: string; tool: string } } : {};
-      return callId ? [{ type: "tool.start", callId, name: str(event.toolName) ?? "tool", args: event.args, ...mcp, ...nestedIn(event) }] : [];
+      return callId ? [{ type: "tool.start", callId, name: str(event.toolName) ?? "tool", args: event.args, ...mcpOf(event), ...nestedIn(event) }] : [];
     }
     case "tool_execution_update": {
       const callId = str(event.toolCallId);

@@ -425,6 +425,13 @@ describe("when a server fails in a chat", () => {
     const live = notes.map((m) => JSON.parse(m)).find((m) => m.event?.type === "tool_execution_start");
     assert.deepEqual(live?.event?.mcp, { server: "named-one", tool: long });
     assert.deepEqual((await import("../../../shared/wire-v1")).fromV1(live)[0], { type: "tool.start", callId: live.event.toolCallId, name, args: { text: "hi" }, mcp: { server: "named-one", tool: long } });
+    const { noteMcpTool } = await import("./mcp-tools");
+    noteMcpTool("mcp__wire__t", { server: "wire", tool: "t" });
+    const { toV1Event } = await import("./wire");
+    const { fromV1 } = await import("../../../shared/wire-v1");
+    const streamed = (name_: string) => fromV1({ type: "event", event: toV1Event({ type: "message_update", message: {}, assistantMessageEvent: { type: "toolcall_start", contentIndex: 0, partial: { content: [{ type: "toolCall", id: "c", name: name_ }] } } }) } as never)[0] as { mcp?: unknown };
+    assert.deepEqual(streamed("mcp__wire__t").mcp, { server: "wire", tool: "t" }, "named as soon as the call streams");
+    assert.equal(streamed("mcp__not__listed").mcp, undefined, "and never guessed");
     const { rowsOf } = await import("../../transcript");
     const { readBranch } = await import("./reader");
     const toolRows = async () => rowsOf(await readBranch(path)).filter((r) => r.kind === "tool-call" || r.kind === "tool-result").map((r) => r.mcp);

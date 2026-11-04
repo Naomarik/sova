@@ -35,7 +35,7 @@ export interface ReplyTiming {
 export type SovaPart =
   | { kind: "text"; text: string }
   | { kind: "thinking"; text: string }
-  | { kind: "toolCall"; id: string; name: string; args?: unknown };
+  | { kind: "toolCall"; id: string; name: string; args?: unknown; mcp?: { server: string; tool: string } };
 
 /**
  * A live event. Optional fields keep the reducer's fallbacks: a part event without an `index`
@@ -54,10 +54,10 @@ export type SovaEvent =
       `images` its images as data URLs. */
   | { type: "message.start"; role: "user"; text: string; images: string[] }
   | { type: "part.start"; index?: number; kind: "text" | "thinking" }
-  | { type: "part.start"; index?: number; kind: "toolCall"; id?: string; name?: string }
+  | { type: "part.start"; index?: number; kind: "toolCall"; id?: string; name?: string; mcp?: { server: string; tool: string } }
   | { type: "part.delta"; index?: number; kind: "text" | "thinking" | "toolCall"; delta: string }
   | { type: "part.end"; index?: number; kind: "text" | "thinking"; text?: string }
-  | { type: "part.end"; index?: number; kind: "toolCall"; id?: string; name?: string; args?: unknown }
+  | { type: "part.end"; index?: number; kind: "toolCall"; id?: string; name?: string; args?: unknown; mcp?: { server: string; tool: string } }
   /** `entryId`: the transcript entry the message was written as, when it was. */
   | { type: "message.end"; role: "user"; entryId?: string }
   /** The message as written, authoritative over what streamed. `parts` empty keeps the streamed

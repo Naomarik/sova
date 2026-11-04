@@ -10,6 +10,7 @@ import { OrgError } from "../org-error";
 import { canonicalPath } from "../paths";
 import { listProjects, readProject } from "../projects/spaces";
 import { projectEngine } from "./routes";
+import { notPageNorProven } from "../mesh/click-proof";
 import { pageOnlyRefusal } from "../page-only";
 import { setCopyLimit } from "../project-settings";
 import { parseMeminfo } from "../resource-monitor-proc";
@@ -246,9 +247,16 @@ export function registerServicesViewRoutes(app: Hono<any>): void {
       const verb = c.req.param("verb") ?? "";
       if (!(SERVICES_UI_VERBS as readonly string[]).includes(verb)) return c.json({ error: `The Branches tab doesn't run ${verb}.` }, 400);
       const root = readProject(c.req.param("pid") ?? "").root;
-      const body = await c.req.json().catch(() => ({}));
+      const raw = await c.req.text().catch(() => "");
+      let body: unknown;
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        body = {};
+      }
       const b = body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : {};
-      const r = await projectEngine().run(verb, { ...b, project: root }, { kind: "operator" });
+      // Your page, here or on another of your computers with its proof (server/mesh/click-proof.ts).
+      const r = await projectEngine().run(verb, { ...b, project: root }, { kind: "operator", ...(verb === "apply" && (await notPageNorProven(c, raw)) ? { notPage: true } : {}) });
       return c.json(r, httpStatusOf(r) as 200, NO_STORE);
     }),
   );

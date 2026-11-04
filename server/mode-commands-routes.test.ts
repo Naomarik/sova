@@ -48,14 +48,15 @@ const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { ensureOverseer } = await import("./overseer");
 const { OVERSEER_SENDER_HEADER, senderSecret } = await import("./overseer-sender");
 const { approvalsOf } = await import("./project-mode-approvals");
+const { pageHeaders } = await import("./testing/page");
 const { accessFile, allows, classifyRequest, resetAccessCache } = await import("./mesh/access");
 after(async () => {
   await disposeAllChats();
 });
 
 const json = { "content-type": "application/json" };
-const post = (path: string, body: unknown, headers: Record<string, string> = {}, env?: Record<string, unknown>) =>
-  app.request(`/api/mode?path=${encodeURIComponent(path)}`, { method: "POST", headers: { ...json, ...headers }, body: JSON.stringify(body) }, env);
+const post = (path: string, body: unknown, headers: Record<string, string> = {}, env?: Record<string, unknown>, page = Object.keys(headers).length === 0 && !env) =>
+  app.request(`/api/mode?path=${encodeURIComponent(path)}`, { method: "POST", headers: { ...json, ...(page ? pageHeaders() : {}), ...headers }, body: JSON.stringify(body) }, env);
 const command = (path: string, body: unknown) => app.request(`/api/mode/command?path=${encodeURIComponent(path)}`, { method: "POST", headers: json, body: typeof body === "string" ? body : JSON.stringify(body) });
 const get = async (path: string) => (await (await app.request(`/api/mode?path=${encodeURIComponent(path)}`)).json()) as ChatModeResult;
 const row = (r: ChatModeResult, id: string) => r.projectMinors!.find((m) => m.id === id)!;
@@ -142,27 +143,37 @@ test("an Overseer turn-on approves the tools and commands, never the hooks: they
   assert.deepEqual(approvalsOf(repo, "hk2").map((r) => r.by), ["user"]);
 });
 
-test("an approval at turn-on from anyone but your own page is a caller's: tools and commands run, hooks wait", async () => {
+test("approving a project tool from anyone but your own page or the Overseer is refused: nothing switches, nothing is recorded (§app.access/your-click)", async () => {
   const path = await newChat();
   const callers: [string, Record<string, string>, Record<string, unknown> | undefined][] = [
     ["a chat's caller key", { "x-sova-caller": "a-chat-key" }, undefined],
     ["a terminal with the operator token", { "x-sova-token": "the-operator-token" }, undefined],
     ["an extension's key", { "x-sova-token": "sova-ext-key" }, undefined],
+    ["a dispatch with no mark", { "x-sova-command": "session.mode.set" }, undefined],
     ["a sessions mesh peer", {}, { meshPeer: { nodeId: "nPeer" } }],
-    ["a relay through a peer", { "X-Sova-Relayed": "1" }, undefined],
+    ["a relay through a peer", { "X-Sova-Relayed": "1" }, { meshPeer: { nodeId: "nPeer" } }],
   ];
   for (const [i, [who, headers, env]] of callers.entries()) {
     const id = `hkc${i}`;
     mode(id, '---\ndescription: With hooks\ntools: [{"name": "status", "description": "S", "command": ["./notify.sh"]}]\nhooks: [{"on": "turn.ended", "run": ["./notify.sh"]}]\n---\nReport.\n', { "notify.sh": "#!/bin/sh\n" });
     const hash = row(await get(path), id).toolsHash;
-    const on = await post(path, { projectModes: [id], approve: [{ id, hash }] }, headers, env);
-    assert.equal(on.status, 200, `${who}: ${await on.clone().text()}`);
-    const info = row((await on.json()) as ChatModeResult, id);
-    assert.equal(info.hooksNeedApproval, true, `${who}: its hooks wait for you`);
-    assert.equal("needsApproval" in info, false, `${who}: its tools and commands are approved, as today`);
-    assert.deepEqual(approvalsOf(repo, id).map((r) => r.by), ["caller"], who);
-    await post(path, { projectModes: [] });
+    const on = await post(path, { projectModes: [id], approve: [{ id, hash }] }, headers, env, false);
+    assert.equal(on.status, 403, `${who}: ${await on.clone().text()}`);
+    const said = (await on.json()) as { error: string; yourClick?: boolean; peer?: boolean };
+    assert.equal(said.yourClick, true, who);
+    assert.match(said.error, env || headers["X-Sova-Relayed"] ? /on the page of the computer it belongs to/ : new RegExp(`turn ${id} on in that chat's mode menu`), who);
+    assert.deepEqual(approvalsOf(repo, id), [], `${who}: nothing recorded`);
+    assert.deepEqual((await get(path)).projectModes ?? [], [], `${who}: nothing switched`);
   }
+});
+
+test("the Overseer's own turn-on keeps counting as its approval; its hooks still wait for you", async () => {
+  const path = await newChat();
+  mode("hko", '---\ndescription: With hooks\ntools: [{"name": "status", "description": "S", "command": ["./notify.sh"]}]\nhooks: [{"on": "turn.ended", "run": ["./notify.sh"]}]\n---\nReport.\n', { "notify.sh": "#!/bin/sh\n" });
+  const on = await post(path, { projectModes: ["hko"] }, { [OVERSEER_SENDER_HEADER]: senderSecret() });
+  assert.equal(on.status, 200, await on.clone().text());
+  assert.deepEqual(approvalsOf(repo, "hko").map((r) => r.by), ["overseer"]);
+  assert.equal(row((await on.json()) as ChatModeResult, "hko").hooksNeedApproval, true);
 });
 
 test("a switch that doesn't say who approved records a caller's approval, never yours (fail closed)", async () => {
@@ -182,7 +193,7 @@ test("approveHooks: a mode with no hooks, a body with more, or no path is refuse
   assert.equal((await post(path, { approveHooks: [{ id: "hk", hash: cmdHash }], projectModes: [] })).status, 400);
   assert.equal((await post(path, { approveHooks: [] })).status, 400);
   assert.equal((await post(path, { approveHooks: [{ id: "hk", hash: "nothex" }] })).status, 400);
-  const noPath = await app.request("/api/mode", { method: "POST", headers: json, body: JSON.stringify({ approveHooks: [{ id: "hk", hash: cmdHash }] }) });
+  const noPath = await app.request("/api/mode", { method: "POST", headers: { ...json, ...pageHeaders() }, body: JSON.stringify({ approveHooks: [{ id: "hk", hash: cmdHash }] }) });
   assert.equal(noPath.status, 400);
 });
 

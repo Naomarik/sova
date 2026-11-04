@@ -442,7 +442,7 @@ export function setCardsTrusted(owner: string, on: boolean, file = cardTrustFile
 /** The trust key of an extension's cards: its id, whatever its manifest entry says later. */
 export const extensionOwner = (id: string): string => `ext:${id}`;
 
-const ownerName = (owner: string): string => (owner.startsWith("ext:") ? (findExtension(owner.slice(4))?.title ?? owner.slice(4)) : basename(owner.replace(/^project:/, "")) || owner);
+export const ownerName = (owner: string): string => (owner.startsWith("ext:") ? (findExtension(owner.slice(4))?.title ?? owner.slice(4)) : basename(owner.replace(/^project:/, "")) || owner);
 
 /** An extension's cards' trust, as its page shows it with Stop Trusting Cards. */
 export const extensionCardsTrust = (id: string): { owner: string; name: string; trusted: boolean } => {

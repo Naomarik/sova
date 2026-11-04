@@ -1,0 +1,354 @@
+{
+  "§chat.create-mode/after-a-change": {
+    "kind": "behavior",
+    "requires": [
+      "§mesh.sync/categories",
+      "§chat.create-mode/entries"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/create/overview.md",
+      "server/sync/spreads.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§chat.create-mode/boundary": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.create-mode/contents",
+      "§app.project-overseer/settings",
+      "§design.copy-deck/create-mode"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/prompt.ts",
+      "pi-config/extensions/mode/create/overview.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§chat.create-mode/card-or-land": {
+    "kind": "behavior",
+    "requires": [
+      "§app.project-overseer/settings",
+      "§app/merge-queue",
+      "§chat.create-mode/where-offered"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/create/project.md",
+      "pi-config/extensions/mode/create/landing.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§chat.create-mode/computer-files": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.worktrees/workers",
+      "§chat.mode-menu/strict"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/create/overview.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§chat.create-mode/contents": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.markdown/visuals"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/create/overview.md",
+      "pi-config/extensions/mode/prompt.ts",
+      "pi-config/extensions/mode/create/guide.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§chat.create-mode/delegate-parity": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/delegate-teams",
+      "§chat.mode-menu/strict",
+      "§chat.mode-menu/workers",
+      "§chat/subagent-profiles",
+      "§chat.mode-menu/minor-toggle-keeps-prompt"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/prompt.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/delegate.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§chat.create-mode/entries": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.create-mode/contents",
+      "§chat.create-mode/settings-cards",
+      "§chat.create-mode/computer-files",
+      "§site.docs/create"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/create-guide-tool.ts",
+      "pi-config/extensions/mode/create/overview.md",
+      "pi-config/extensions/mode/create/appearance.md",
+      "pi-config/extensions/mode/create/attention.md",
+      "pi-config/extensions/mode/create/automation.md",
+      "pi-config/extensions/mode/create/cards.md",
+      "pi-config/extensions/mode/create/computers.md",
+      "pi-config/extensions/mode/create/instructions.md",
+      "pi-config/extensions/mode/create/models.md",
+      "pi-config/extensions/mode/create/modes.md",
+      "pi-config/extensions/mode/create/overseers.md",
+      "pi-config/extensions/mode/create/profiles.md",
+      "pi-config/extensions/mode/create/safety.md",
+      "pi-config/extensions/mode/create/scripts.md",
+      "pi-config/extensions/mode/create/shared.md",
+      "pi-config/extensions/mode/create/skills.md",
+      "pi-config/extensions/mode/create/workers.md",
+      "pi-config/extensions/mode/create/releases.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T00:57Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
+    }
+  },
+  "§chat.create-mode/growth-rule": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.create-mode/contents"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/create/guide.test.ts",
+      "server/create-guide-growth.test.ts",
+      "server/create-guide-growth.json"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§chat.create-mode/minor-modes": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/how-a-switch-reaches-the-chat",
+      "§chat/alignment"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/chat-manager.ts",
+      "server/mode-state.ts",
+      "pi-config/extensions/mode/index.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T00:57Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
+    }
+  },
+  "§chat.create-mode/new-tools": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/project-modes",
+      "§chat.create-mode/entries"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/create/tools.md",
+      "pi-config/extensions/mode/create/pi-extensions.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T12:30Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#78234ec6"
+    }
+  },
+  "§chat.create-mode/per-chat-only": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/menu",
+      "§chat.mode-menu/terminal",
+      "§chat.profiles/model",
+      "§app.overseer/tools",
+      "§app.project-overseer/coding-mode",
+      "§design.copy-deck/create-mode"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/state.ts",
+      "server/mode-state.ts",
+      "server/mode.ts",
+      "shared/profiles.ts",
+      "shared/automations.ts",
+      "server/overseer-tools.ts",
+      "server/project-coding-mode.ts",
+      "server/sessions-configure.ts",
+      "shared/settings-reference.ts",
+      "server/create-mode-refusals.test.ts",
+      "src/lib/mode-save.ts",
+      "server/create-mode-chat.test.ts",
+      "pi-config/extensions/mode/create-mode.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§chat.create-mode/settings-cards": {
+    "kind": "behavior",
+    "requires": [
+      "§app.project-overseer/settings",
+      "§app.merge-queue/settings-save",
+      "§app.access/your-click",
+      "§chat.create-mode/card-or-land",
+      "§app.claude-logins/project-login",
+      "§mesh.ui/settings",
+      "§mesh.peers/grants"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/project-settings-tool.ts",
+      "server/project-settings.ts",
+      "server/project-settings-routes.ts",
+      "server/sova-settings.ts",
+      "server/sova-settings-routes.ts",
+      "shared/sova-settings-reference.ts",
+      "shared/settings-reference.ts",
+      "src/components/SettingsChangeCard.tsx",
+      "src/components/ChatView.tsx",
+      "server/create-settings-tool.ts",
+      "server/merge-queue/card-port.ts",
+      "src/lib/settings-card-live.ts",
+      "src/lib/settings-card-dom.test.ts",
+      "server/create-settings-cards.test.ts",
+      "server/card-refusals.ts",
+      "server/create-settings-run.ts",
+      "server/mesh/create-cards.test.ts",
+      "shared/mesh-access.ts",
+      "server/sova-mesh-settings.ts",
+      "server/mesh/card-port.ts",
+      "server/mesh/index.ts",
+      "server/mesh/lan-routes.ts",
+      "server/mesh/details.ts",
+      "server/mesh/resync.ts",
+      "shared/project-settings.ts",
+      "src/lib/mesh-resync.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:58Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§chat.create-mode/sova-extensions": {
+    "kind": "behavior",
+    "requires": [
+      "§app/extensions"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/create/extensions.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T00:57Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
+    }
+  },
+  "§chat.create-mode/where-offered": {
+    "kind": "behavior",
+    "requires": [
+      "§app/baton",
+      "§app/session-share",
+      "§chat.sandbox/states",
+      "§app/merge-queue"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/mode-state.ts",
+      "server/chat-manager.ts",
+      "src/components/ModeMenu.tsx",
+      "pi-config/extensions/mode/create/overview.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:58Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§chat/create-mode": {
+    "kind": "surface",
+    "requires": [
+      "§chat/mode-menu"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "pi-config/extensions/mode/state.ts",
+      "pi-config/extensions/mode/index.ts",
+      "pi-config/extensions/mode/prompt.ts",
+      "pi-config/extensions/mode/create/guide.ts",
+      "server/mode-state.ts",
+      "src/components/ModeMenu.tsx",
+      "src/lib/mode-menu.ts",
+      "src/lib/create-mode-page.browser.test.ts",
+      "server/create-mode.integration.test.ts"
+    ],
+    "notOwned": [
+      "§chat/mode-menu",
+      "§chat/subagent-profiles",
+      "§app.project-overseer/settings",
+      "§app.access/your-click"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T00:57Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#0390f531"
+    }
+  }
+}

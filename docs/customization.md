@@ -61,7 +61,7 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
   "repeat": "once-per-commit",
   "title": "Merge {branch} into {base}?",
   "buttons": [
-    { "label": "Merge", "about": "Sova merges this branch into main now.", "run": "project.worktree.merge" },
+    { "label": "Merge", "about": "Lands this branch.", "run": "project.worktree.merge" },
     { "label": "Not yet", "about": "Keep working on this branch.", "send": "Not yet, keep going." } ] } } }
 ```
 
@@ -71,14 +71,15 @@ project's main checkout (a branch's own copy is never read, so a branch can't gi
   project whose file has an offer the agent may show; every other chat's tools are unchanged.
 - **Buttons** either `send` a message as you (`{branch}`, `{base}`, `{commit}`, `{project}` are
   filled in) or `run` one of Sova's own actions on the session's branch (today only
-  `project.worktree.merge`, for a coding session a project's overseer tracks). A file with any run
+  `project.worktree.merge`, for a coding session a project's overseer tracks; with a merge queue set up
+  it approves the branch's head in the queue, like **Land**, and otherwise merges it). A file with any run
   button needs your approval on the project page (Settings tab, **Offers**): **Approve Run Buttons**.
   Changing a run button asks again.
 - **Limits**: at most 8 offers and 4 buttons each; `onlyIf` takes `branch-ready`,
   `waiting-for-ok`, `tree-clean`, `no-open-alignment` and `specs-promoted`; `repeat` is
   `once-per-commit` (the default), `once-per-reply` or `once-per-session`. `"disabled": true` turns
   one off; `"shownBy": "another-chat"` keeps it for another chat to show
-  (`sova run session.offers.show --session <path> --offer <name> --from <its own session>`). A
+  (`node scripts/sova.mjs run session.offers.show --session <path> --offer <name> --from <its own session>`). A
   broken offer is listed with its reason on the project page and never hides the others.
 - **The file is the only switch.** Sova reads it again at every show and click, so removing an
   offer stops it at once, in running chats too. A chat's tool keeps the offers it started with: new
@@ -107,7 +108,7 @@ that asks to carry on", "let the Reviewer profile read other sessions").
   **Discard Edits** puts them back.
 - **The Settings tab** lists every project setting under **All settings**, with its state and where
   it is changed or approved, the cards waiting, and the **Settings history** with **Undo**. From a
-  script: `sova run project.settings.get --pid <id>`, `project.settings.history`,
+  script: `node scripts/sova.mjs run project.settings.get --pid <id>`, `project.settings.history`,
   `project.settings.undo`, `project.settings.propose.withdraw` and `project.overseer.settings.set`;
   applying a card is yours, on the page.
 

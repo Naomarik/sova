@@ -84,7 +84,8 @@ export function readModelPolicy(): ModelPolicy {
 }
 
 /** Validate, canonicalize and persist the whole policy (tmp + rename, like web-sessions.json). */
-export function writeModelPolicy(raw: unknown): ModelPolicy | { error: string } {
+/** The policy a body asks for, checked as the save checks it, or why not. Writes nothing. */
+export function parseModelPolicy(raw: unknown): ModelPolicy | { error: string } {
   const data = (raw ?? {}) as Record<string, unknown>;
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return { error: shapeError() };
   const providers = cleanList(data.disabledProviders, "provider");
@@ -92,12 +93,12 @@ export function writeModelPolicy(raw: unknown): ModelPolicy | { error: string } 
   const subProviders = cleanList(data.subagentDisabledProviders, "provider");
   const subModels = cleanList(data.subagentDisabledModels, "model");
   if (!providers || !models || !subProviders || !subModels) return { error: shapeError() };
-  const policy: ModelPolicy = {
-    disabledProviders: providers,
-    disabledModels: models,
-    subagentDisabledProviders: subProviders,
-    subagentDisabledModels: subModels,
-  };
+  return { disabledProviders: providers, disabledModels: models, subagentDisabledProviders: subProviders, subagentDisabledModels: subModels };
+}
+
+export function writeModelPolicy(raw: unknown): ModelPolicy | { error: string } {
+  const policy = parseModelPolicy(raw);
+  if ("error" in policy) return policy;
   mkdirSync(dirname(FILE), { recursive: true });
   const tmp = `${FILE}.${process.pid}.tmp`;
   writeFileSync(tmp, `${JSON.stringify({ version: 1, ...policy }, null, "\t")}\n`);

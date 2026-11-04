@@ -4,6 +4,7 @@
 // ~/.pi or sova-runtime.service: every unit is named sova-trial-*, every chat unit lands in the
 // stand-in slice the caller names.
 import { execFileSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { homedir } from "node:os";
@@ -352,8 +353,14 @@ export async function healthy(base, ms = 150000, gaveUp = () => null) {
 
 export const tokenOf = (agent) => readFileSync(join(agent, "sova", "auth-token"), "utf8").trim();
 
-export function client(base, token) {
+/** The install's cookie, as the page sends it (server/auth.ts authCookieName). */
+export const pageCookie = (agent, token) => `sova_token_${createHash("sha256").update(resolve(agent)).digest("hex").slice(0, 8)}=${token}`;
+
+/** `agent`: its sockets are the page's, by the cookie: a socket showing the token in a header is a script's, and no turn
+    it opens is the user's (§app.access/your-click). The REST calls stay a script's. */
+export function client(base, token, agent) {
   const headers = { "x-sova-token": token };
+  const socketHeaders = agent ? { cookie: pageCookie(agent, token) } : headers;
   const wsBase = base.replace(/^http/, "ws");
   async function api(path, init = {}) {
     const res = await fetch(`${base}${path}`, { ...init, headers: { ...headers, "Content-Type": "application/json", ...(init.headers ?? {}) } });
@@ -363,7 +370,7 @@ export function client(base, token) {
   }
   /** A socket that records every message, parsed, and resolves waits on them. */
   function socket(path) {
-    const ws = new WebSocket(`${wsBase}${path}`, { headers });
+    const ws = new WebSocket(`${wsBase}${path}`, { headers: socketHeaders });
     const got = [];
     const waiters = [];
     ws.on("message", (d) => {

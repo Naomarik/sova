@@ -701,6 +701,7 @@ export class ChatRuntimeHost {
     const client: ChatClient = {
       send: (msg) => out(JSON.stringify(msg)),
       sendRaw: out,
+      ...(f.client.notUser ? { notUser: true as const } : {}),
       ...(f.client.wire ? { wire: f.client.wire } : {}),
       ...(f.client.tail ? { tail: f.client.tail } : {}),
       ...(f.client.pull ? { pull: f.client.pull } : {}),

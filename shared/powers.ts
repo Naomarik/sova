@@ -300,6 +300,21 @@ export function applyPowersPatch(s: StoredPowers, patch: { overseer?: Partial<Po
   return { ...s, overseer, assistant, derivedAutonomy: derivedAutonomy(overseer) };
 }
 
+/** Whether a PATCH …/overseer body, by `powers` or the older `autonomy`, turns On any power that is Off now. A body
+    that names neither, or that isn't valid, turns nothing on (it is refused for what it is). */
+export function powerTurnsOn(s: StoredPowers, body: { powers?: unknown; autonomy?: unknown }): boolean {
+  let overseer = s.overseer;
+  let assistant = s.assistant;
+  if (isLevel(body.autonomy)) overseer = carryOver(body.autonomy);
+  if (body.powers !== undefined) {
+    if (powersPatchProblem(body.powers)) return false;
+    const next = applyPowersPatch({ ...s, overseer }, body.powers as { overseer?: Partial<PowerMap>; assistant?: Partial<PowerMap> });
+    overseer = next.overseer;
+    assistant = next.assistant;
+  }
+  return POWERS.some((p) => (overseer[p] === true && s.overseer[p] !== true) || (assistant[p] === true && s.assistant[p] !== true));
+}
+
 // ---- the wire (GET/PATCH …/overseer, §3 of the design) --------------------------------------------
 
 export interface PowersView {

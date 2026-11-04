@@ -64,6 +64,14 @@
       "src/lib/cost-history.ts"
     ]
   },
+  "§design.copy-deck/create-mode": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§chat/create-mode"
+    ]
+  },
   "§design.copy-deck/gathering-abilities": {
     "kind": "note",
     "authority": "accepted",
@@ -507,6 +515,14 @@
     "about": [
       "§chat.transcript/empty-worktrees",
       "§chat.worktrees/cleanup"
+    ]
+  },
+  "§design.copy-deck/your-click": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§app.access/your-click"
     ]
   },
   "§design/copy-deck": {

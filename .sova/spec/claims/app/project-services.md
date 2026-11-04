@@ -707,7 +707,9 @@ chat, worker and hidden chat runs in a process of its own (§app/chat-processes)
 restarting the server cuts none of them off. Instances of the project's other worktrees
 are not affected: their verbs follow the ordinary rules. When slot 0 adopts a unit
 (§app.project-services/adopt), of this project or any other, the same rule guards its `apply`, and
-`down`, `reset` and `teardown` of it are refused outright.
+`down`, `reset` and `teardown` of it are refused outright. `apply` of this server's own checkout passes
+only on your own page, or a page on another of your computers with its proof, whatever the `confirm`
+(§app.access/your-click): anything else answers `forbidden`, in the refusal of §design.copy-deck/your-click.
 
 ## §app.project-services/adopt — Slot 0 adopts a unit Sova did not start
 

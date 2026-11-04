@@ -152,3 +152,37 @@ test("the release checks' pure parts: the dated changelog entry, the built landi
   assert.equal(sr.sameCommit("abc", "abc"), false);
   assert.equal(sr.sameCommit("abc1234", "abc1235"), false);
 });
+
+test("the Docs step runs every release and finishes on its own; the Release Note is the operator's word, an ask only context", () => {
+  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbooks/release/release.json"), "utf8"));
+  const docs = manifest.steps.find((s) => s.id === "docs");
+  assert.ok(docs);
+  assert.notEqual(docs.held, true, "the docs step is not held");
+  const playbook = readFileSync(join(ROOT, ".sova/playbooks/release/PLAYBOOK.md"), "utf8");
+  const ref = readFileSync(join(ROOT, ".sova/playbooks/release/references/docs.md"), "utf8");
+  const general = readFileSync(join(ROOT, "playbooks/release/PLAYBOOK.md"), "utf8");
+  const docsBullet = playbook.slice(playbook.indexOf("- `docs`:"), playbook.indexOf("- `commit`:"));
+  assert.match(docsBullet, /every release unless the operator's Release Note/);
+  for (const text of [docsBullet, ref]) {
+    assert.doesNotMatch(text, /skipped\*\* unless|only when the start reason|step `held`|End your turn/);
+  }
+  assert.match(ref, /Report the step `done`, never `held`/);
+  assert.match(ref, /new feature, by default/i);
+  // A new page's record is made official on the release branch: promote, then commit the claims by explicit path.
+  assert.match(ref, /sova-spec-draft\.mjs" promote <draft> --all --write/);
+  assert.match(ref, /commit the claims files .* by explicit path\) in a commit of their own, before the page's commit and the release commit/);
+  assert.match(playbook, /Release Note[^\n]*names[^\n]*wins over this rule/);
+  assert.match(playbook, /An ask[^\n]*context only[^\n]*Never take a version from it/);
+  assert.match(general, /operator's Release Note/);
+  // The note is marked by a label only Sova writes, never a bare `---`; an ask is one quoted line.
+  const label = "the line `---` followed by the line `Release Note from the operator (saved on the Releases tab):`";
+  for (const text of [playbook, ref, general]) {
+    assert.ok(text.includes(label), "the note's label is described");
+    assert.match(text, /`Asked by …` line/);
+  }
+  assert.match(playbook, /`---` lines inside it included/);
+  assert.match(general, /`---` lines inside it included[^\n]*no such label means no note/);
+  assert.match(playbook, /No such label: there is no note/);
+  assert.match(playbook, /It never contains the note/);
+  assert.match(general, /ask from a Project Assistant or an overseer is the quoted `Asked by …` line, separate from the note/);
+});

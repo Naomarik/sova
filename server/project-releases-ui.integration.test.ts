@@ -90,6 +90,7 @@ const view = (x: Partial<ReleaseView> = {}): ReleaseView => ({
   gates: null,
   quiet: null,
   deployTargets: ["prod"],
+  note: null,
   ...x,
 });
 const TARGET: DeployTargetView = { name: "prod", about: "the public site", standing: "declared", last: null, verifiedCommit: sha("9"), rollback: "redeploy-previous", request: null };
@@ -104,7 +105,7 @@ interface Opened {
   set(v: ReleaseView): void;
 }
 
-async function open(width: number, hash: string, first: ReleaseView, o: { runtime?: Record<string, unknown>; onboard409?: string } = {}): Promise<Opened> {
+async function open(width: number, hash: string, first: ReleaseView, o: { runtime?: Record<string, unknown>; onboard409?: string; /** A verb's effect on the view release.status answers next. */ react?: (verb: string, body: Record<string, unknown>, v: ReleaseView) => ReleaseView | undefined } = {}): Promise<Opened> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
   const page = await ctx.newPage();
@@ -121,6 +122,7 @@ async function open(width: number, hash: string, first: ReleaseView, o: { runtim
     const verb = /^\/api\/project-services\/((?:release|deploy)\.[a-z-]+)$/.exec(p)?.[1];
     if (verb) {
       calls.push({ verb, body: body() });
+      current = o.react?.(verb, body(), current) ?? current;
       if (verb === "release.status") return route.fulfill(json(ok(verb, { release: { view: current } })));
       if (verb.startsWith("release.")) return route.fulfill(json(ok(verb, { release: { view: current } })));
       if (verb === "deploy.status") return route.fulfill(json(ok(verb, { deploy: { deployHash: "d".repeat(64), targets: [TARGET] } })));
@@ -365,6 +367,89 @@ describe("the Releases tab", () => {
       const deploy = o.page.locator("section", { has: o.page.getByRole("heading", { name: "Deploy", exact: true }) });
       await deploy.getByText(/Runs\s*v0\.9\.0/).waitFor();
       await noSideScroll(o.page);
+    } finally {
+      await o.ctx.close();
+    }
+  });
+});
+
+describe("the Release Note", () => {
+  for (const width of [1280, 390]) {
+    test(`at ${width}px: Release Note opens its editor beside Start Release; Save keeps it, it shows by Start, and Clear Note drops it`, async () => {
+      const react = (verb: string, b: Record<string, unknown>, v: ReleaseView): ReleaseView | undefined =>
+        verb === "release.note" ? { ...v, note: String(b.text) ? { text: String(b.text), at: iso(0) } : null } : undefined;
+      const o = await open(width, TAB, view(), { react });
+      try {
+        const start = o.page.getByRole("button", { name: "Start Release" });
+        const noteBtn = o.page.getByRole("button", { name: "Release Note" });
+        await noteBtn.waitFor();
+        assert.equal(await noteBtn.getAttribute("aria-expanded"), "false");
+        assert.equal(await o.page.getByRole("group", { name: "Release note for the next release" }).count(), 0, "no note shown when none is saved");
+        await noteBtn.click();
+        const editor = o.page.getByRole("group", { name: "Release note", exact: true });
+        const area = editor.getByLabel("Release note", { exact: true });
+        await area.waitFor();
+        assert.equal(await area.evaluate((el) => el === document.activeElement), true, "the editor takes focus");
+        assert.equal(await editor.getByRole("button", { name: "Clear Note" }).count(), 0, "nothing to clear yet");
+        assert.equal(await editor.getByRole("button", { name: "Save Note" }).getAttribute("aria-disabled"), "true", "an empty note has nothing to save");
+        await area.fill("  Release as 0.10.1.\nSkip the docs step.  ");
+        await shot(o.page, `note-editor-${width}`);
+        await editor.getByRole("button", { name: "Save Note" }).click();
+        await called(o, "release.note");
+        assert.deepEqual(lastCall(o, "release.note").body, { project: ROOT_DIR, text: "Release as 0.10.1.\nSkip the docs step." });
+        const saved = o.page.getByRole("group", { name: "Release note for the next release" });
+        await saved.getByText(/Release as 0\.10\.1\.\s+Skip the docs step\./).waitFor();
+        await saved.getByText("Start Release sends this note to the release chat, then clears it.").waitFor();
+        assert.equal(await editor.count(), 0, "Save closes the editor");
+        if (width < 768) await noSideScroll(o.page);
+        await shot(o.page, `note-saved-${width}`);
+        // Cancel leaves the saved note as it was.
+        await noteBtn.click();
+        await editor.getByLabel("Release note", { exact: true }).fill("something else");
+        await editor.getByRole("button", { name: "Cancel" }).click();
+        assert.equal(o.calls.filter((c) => c.verb === "release.note").length, 1, "Cancel saves nothing");
+        await saved.getByText(/Release as 0\.10\.1/).waitFor();
+        // Clear Note sends the empty note.
+        await noteBtn.click();
+        await editor.getByRole("button", { name: "Clear Note" }).click();
+        await until("the note cleared", () => o.calls.filter((c) => c.verb === "release.note").length === 2);
+        assert.deepEqual(lastCall(o, "release.note").body, { project: ROOT_DIR, text: "" });
+        await saved.waitFor({ state: "detached" });
+        await start.waitFor();
+      } finally {
+        await o.ctx.close();
+      }
+    });
+  }
+
+  test("Start Release stays one click with a note saved: it opens nothing and sends no text of its own", async () => {
+    const o = await open(1280, TAB, view({ note: { text: "Release as 0.10.1.", at: iso(5) } }));
+    try {
+      await o.page.getByRole("group", { name: "Release note for the next release" }).getByText("Release as 0.10.1.").waitFor();
+      await o.page.getByRole("button", { name: "Start Release" }).click();
+      await called(o, "release.start");
+      assert.deepEqual(lastCall(o, "release.start").body, { project: ROOT_DIR }, "the server reads the saved note itself");
+      assert.equal(await o.page.getByRole("group", { name: "Release note", exact: true }).count(), 0, "Start opens no editor");
+    } finally {
+      await o.ctx.close();
+    }
+  });
+
+  test("a started release shows the note it got and the ask it received, the ask labelled as theirs", async () => {
+    const r = record({ note: "Release as 0.10.1.", asked: { by: "assistant:prj_rel00001", why: "3 fixes since v0.9.0 wait on a release" } });
+    const o = await open(1280, TAB, view({ open: r, note: { text: "For the one after: skip docs.", at: iso(1) } }));
+    try {
+      const ctx = o.page.getByRole("group", { name: "What this release started with" });
+      await ctx.getByText("Your release note").waitFor();
+      await ctx.getByText("Release as 0.10.1.").waitFor();
+      await ctx.getByText("Asked by the Project Assistant").waitFor();
+      await ctx.getByText("3 fixes since v0.9.0 wait on a release").waitFor();
+      // The saved note waits for the next start while this one is open.
+      const saved = o.page.getByRole("group", { name: "Release note for the next release" });
+      await saved.getByText("For the one after: skip docs.").waitFor();
+      await saved.getByText("The next Start Release sends this note to its release chat, then clears it.").waitFor();
+      assert.equal(await o.page.getByRole("button", { name: "Start Release" }).count(), 0);
+      await shot(o.page, "note-on-record");
     } finally {
       await o.ctx.close();
     }

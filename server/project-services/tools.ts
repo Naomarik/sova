@@ -75,7 +75,8 @@ const PARAMS = paramsOf([...VERBS, ...DEPLOY_VERBS], false);
     (the merger decides who may call which: any chat reads its project's queue; the recorded merge thread notes,
     extends, resolves and retries; a run's reviewer posts merge.review). */
 const SESSION_PARAMS = (() => {
-  const p = paramsOf([...VERBS, ...DEPLOY_VERBS, ...MERGE_VERBS, ...RELEASE_VERBS], false);
+  // release.note is the operator's alone (the Releases tab): no chat's tool lists it.
+  const p = paramsOf([...VERBS, ...DEPLOY_VERBS, ...MERGE_VERBS, ...RELEASE_VERBS.filter((v) => v !== "release.note")], false);
   const merge = VERB_PARAMS.filter((r) => r.tool && (r.mergeOnly || r.releaseOnly));
   return { ...p, properties: { ...p.properties, ...Object.fromEntries(merge.map((r) => [r.tool!.name, toolSchema(r, false)])) } };
 })();

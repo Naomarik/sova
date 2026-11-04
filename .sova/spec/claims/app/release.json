@@ -43,12 +43,13 @@
       "server/project-overseer-tools.ts",
       "server/project-assistant-tools.ts",
       "server/project-services/release.test.ts",
-      "server/project-services/release-e2e.integration.test.ts"
+      "server/project-services/release-e2e.integration.test.ts",
+      "server/project-services/release-power.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
     }
   },
   "§app.release/checks": {
@@ -176,12 +177,13 @@
       "playbooks/release/PLAYBOOK.md",
       "playbooks/release/scripts/release.mjs",
       "server/release-playbooks.test.ts",
-      "server/playbooks-release.integration.test.ts"
+      "server/playbooks-release.integration.test.ts",
+      "server/sova-release-playbook.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
     }
   },
   "§app.release/power": {
@@ -272,9 +274,9 @@
       "server/needs-you-rows-ui.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
     }
   },
   "§app.release/record": {
@@ -291,9 +293,9 @@
       "server/project-services/release.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
     }
   },
   "§app.release/settings": {
@@ -338,9 +340,9 @@
       "site/README.md"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-04T19:06Z",
-      "source": "pi-session:01a1a7b1-62c9-754f-a095-5fcceffc995c#8cdd33e4"
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
     }
   },
   "§app.release/start": {
@@ -362,12 +364,14 @@
       "server/merge-queue/thread.ts",
       "server/project-services/release-publish.integration.test.ts",
       "server/project-services/release-e2e.integration.test.ts",
-      "server/merge-queue/queue.ts"
+      "server/merge-queue/queue.ts",
+      "shared/release.ts",
+      "server/project-services/release-power.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
     }
   },
   "§app.release/steps": {
@@ -417,9 +421,9 @@
       "shared/protocol.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
     }
   },
   "§app.release/verbs": {
@@ -453,9 +457,9 @@
       "server/project-services/release-e2e.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
     }
   },
   "§app.release/withdraw": {

@@ -4,6 +4,41 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.10.1 — 2026-11-04
+
+Create mode, Upgrade in Settings working again, and a Release Note for each release. 270 commits
+since v0.10.0. The highlights:
+
+- **Upgrade works again.** On v0.9.0 and v0.10.0, Upgrade in Settings fails ("Cannot find module")
+  and changes nothing. Run the install command once to reach v0.10.1; from here on, Upgrade in
+  Settings works again.
+- **Create, a third major mode.** Pick **create** in a chat's mode menu and say what you want Sova to
+  do differently. The chat finds the supported way (a setting, a skill, a profile, a tool, an
+  extension, the project's checks or releases, your other computers) and offers it, recommended
+  first, with what it reaches and who approves it. It works like Delegate, with the same subagent
+  profiles, and never changes Sova's own code. Settings changes come as cards you Apply, or go on
+  a branch you Land. The new Extending Sova docs list the same topics, each with a guide.
+- **Cards you Apply.** A Sova-wide settings card applies all or nothing, or says exactly what took
+  effect. Its rows read as words, not raw JSON. A card held by a checking branch or a release says
+  which one. Another computer can be paired, and mesh access set, from a card.
+- **Your click stays yours.** Restarting and updating Sova, trusting cards to act, and going back
+  past a sandbox raise each need your own click in the page. A script or another chat can't stand
+  in for it, and neither can a header relayed from another computer.
+- **Releases.** A **Release Note** button beside Start Release saves instructions for the next
+  release ("Release as 0.10.1", "skip docs"). A started release shows the note it got and who asked
+  for it.
+- **Merge queue.** A settings read during a landing no longer pauses the queue. On the run page,
+  open logs stay open, and actions and checks line up.
+- **Smaller changes.** A drawing's frame is no longer white on a dark theme. A re-run of the
+  installer on macOS leaves the installed Sova app alone. Every chat Sova starts knows its own
+  server's address on any port, so land and merge reach the queue. New Docs pages cover the merge
+  queue and Releases.
+
+Going back to `v0.10.0` (`SOVA_REF=v0.10.0`) hasn't been tested on this release. v0.10.0 doesn't
+know the create mode, so a settings file or profile that names it is refused there, and a saved
+Release Note is ignored. Upgrade in Settings won't bring you forward again from v0.10.0: run the
+install command.
+
 ## v0.10.0 — 2026-11-04
 
 A merge queue that lands every branch, releases cut from Sova, MCP servers for every chat, and a

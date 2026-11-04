@@ -11,6 +11,9 @@ import { showsPushToOrigin } from "../../lib/merge-queue-requests";
 import {
   changeLines,
   changesOf,
+  draftProblem,
+  minutesTextOf,
+  typedMinutes,
   checksCaption,
   minutes,
   modelWords,
@@ -255,6 +258,8 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
     ),
   );
   const changes = createMemo(() => changesOf(draft(), s(), props.hasOrigin));
+  /** A time-limit box that isn't one: the save waits, saying which. */
+  const problem = createMemo(() => draftProblem(draft(), s()));
   const [confirming, setConfirming] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -373,17 +378,9 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
           <For each={shownChecks()}>
             {(c) => {
               const d = () => draft().checks[c.id] ?? { timeoutSec: c.timeoutSec, rerun: c.rerun, optional: c.optional };
-              const [text, setText] = createSignal(String(Math.round(c.timeoutSec / 60)));
-              // A discard or a fresh read moves the value under the field: the field follows, unless it already says it.
-              createEffect(
-                on(
-                  () => d().timeoutSec,
-                  (t) => {
-                    if (parseMinutes(text(), capMin()) !== t / 60) setText(String(Math.round(t / 60)));
-                  },
-                  { defer: true },
-                ),
-              );
+              // What was typed lives in the staged edit (kept across tabs, cleared by a discard or a save),
+              // so a box that isn't a time limit holds the save instead of saving the last good number.
+              const text = () => minutesTextOf(draft(), c.id, s());
               const bad = () => parseMinutes(text(), capMin()) === null;
               return (
                 <Row label={c.label} end={<Tag source="project" />} hint={bad() ? `A time limit is whole minutes, 1 to ${capMin()}.` : undefined}>
@@ -399,9 +396,9 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
                         aria-invalid={bad()}
                         aria-label={`${c.label}: time limit in minutes`}
                         onInput={(e) => {
-                          setText(e.currentTarget.value);
-                          const n = parseMinutes(e.currentTarget.value, capMin());
-                          if (n !== null) editCheck(c.id, { timeoutSec: n * 60 });
+                          setDraft(typedMinutes(draft(), c.id, e.currentTarget.value, s()));
+                          setSaid(null);
+                          setSaidLink(null);
                         }}
                       />
                       <span class="text-caption text-muted">min</span>
@@ -526,10 +523,10 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
         </Row>
       </Group>
 
-      <Show when={changes() || said() || error()}>
+      <Show when={changes() || problem() || said() || error()}>
         <div class="mqs-save" role="region" aria-label="Save to the project file">
           <Show when={error()}>{(e) => <Banner tone="error" title="Couldn't save the queue settings." body={`${e().replace(/[.]$/, "")}. Nothing changed on ${target()}.`} />}</Show>
-          <Show when={said() && !changes()}>
+          <Show when={said() && !changes() && !problem()}>
             <p class="text-caption" role="status">
               {said()}
               <Show when={saidLink()}>
@@ -544,20 +541,37 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
               </Show>
             </p>
           </Show>
-          <Show when={changes()}>
-            {(ch) => (
+          <Show when={changes() || problem()}>
+            {(_) => (
               <Show
-                when={confirming()}
+                when={confirming() && changes() && !problem()}
                 fallback={
                   <div class="spread mqs-save-row">
-                    <span class="text-caption">
-                      {changeLines(ch(), s()).length} change{changeLines(ch(), s()).length === 1 ? "" : "s"} to the project file.
-                    </span>
+                    <Show
+                      when={problem()}
+                      fallback={
+                        <span class="text-caption">
+                          {changeLines(changes()!, s()).length} change{changeLines(changes()!, s()).length === 1 ? "" : "s"} to the project file.
+                        </span>
+                      }
+                    >
+                      {(p) => (
+                        <span class="field-error" id="mqs-save-problem">
+                          {p()}
+                        </span>
+                      )}
+                    </Show>
                     <span class="button-row">
                       <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={() => discardStaged()}>
                         Discard Changes
                       </button>
-                      <button type="button" class="button button-sm button-primary" disabled={locked()} onClick={() => setConfirming(true)}>
+                      <button
+                        type="button"
+                        class="button button-sm button-primary"
+                        disabled={locked() || !!problem() || !changes()}
+                        aria-describedby={problem() ? "mqs-save-problem" : undefined}
+                        onClick={() => setConfirming(true)}
+                      >
                         {byRequest() ? saveVerb() : `Save to ${target()}`}…
                       </button>
                     </span>
@@ -566,10 +580,10 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
               >
                 <div class="mqs-confirm" role="group" aria-label="Confirm the save">
                   <p class="text-body">
-                    Save {changeLines(ch(), s()).length === 1 ? "this change" : "these changes"} to <span class="text-mono">.sova/project.json</span> {viaWords()}?
+                    Save {changeLines(changes()!, s()).length === 1 ? "this change" : "these changes"} to <span class="text-mono">.sova/project.json</span> {viaWords()}?
                   </p>
                   <ul class="mqs-confirm-list">
-                    <For each={changeLines(ch(), s())}>{(l) => <li>{l}</li>}</For>
+                    <For each={changeLines(changes()!, s())}>{(l) => <li>{l}</li>}</For>
                   </ul>
                   <p class="text-caption text-muted">
                     {byRequest() ? `It applies once it's merged into ${target()}.` : "It applies from the next landing and isn't checked first."}
@@ -580,7 +594,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
                     <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={() => setConfirming(false)}>
                       Cancel
                     </button>
-                    <button type="button" class="button button-sm button-primary" disabled={locked()} onClick={() => void save(ch())}>
+                    <button type="button" class="button button-sm button-primary" disabled={locked() || !!problem() || !changes()} onClick={() => { const ch = changes(); if (ch && !problem()) void save(ch); }}>
                       {busy() ? "Saving…" : props.running && !byRequest() ? "Save When It Finishes" : byRequest() ? saveVerb() : `Save to ${target()}`}
                     </button>
                   </div>

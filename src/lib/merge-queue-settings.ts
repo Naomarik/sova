@@ -64,7 +64,37 @@ export interface ProjectDraft {
   push: boolean;
   review: boolean;
   checks: Record<string, { timeoutSec: number; rerun: boolean; optional: boolean }>;
+  /** Each time-limit box as typed, once edited (blank, half-typed, out of range kept as is):
+      never sent; a box whose text isn't a time limit holds the save (draftProblem). */
+  minutesText?: Record<string, string>;
 }
+
+/** The longest time limit a check takes, in whole minutes. */
+const capMinOf = (s: MergeQueueSettings): number => Math.floor(s.fixed.checkMaxMin);
+
+/** A time-limit box typed into: its text kept, and the check's limit when the text is one. Pure. */
+export function typedMinutes(d: ProjectDraft, id: string, text: string, s: MergeQueueSettings): ProjectDraft {
+  const cur = d.checks[id];
+  if (!cur) return d;
+  const n = parseMinutes(text, capMinOf(s));
+  return { ...d, checks: n === null ? d.checks : { ...d.checks, [id]: { ...cur, timeoutSec: n * 60 } }, minutesText: { ...d.minutesText, [id]: text } };
+}
+
+/** What a check's time-limit box shows: what was typed, else the staged minutes. Pure. */
+export const minutesTextOf = (d: ProjectDraft, id: string, s: MergeQueueSettings): string =>
+  d.minutesText?.[id] ?? String(Math.round((d.checks[id]?.timeoutSec ?? s.checks.list.find((c) => c.id === id)?.timeoutSec ?? 0) / 60));
+
+/** Why the staged edit can't be saved (the first box, in the form's order, whose text isn't a time limit), or null. Pure. */
+export function draftProblem(d: ProjectDraft, s: MergeQueueSettings): string | null {
+  for (const c of s.checks.list) {
+    const t = d.minutesText?.[c.id];
+    if (t !== undefined && parseMinutes(t, capMinOf(s)) === null) return `${c.label}: a time limit is whole minutes, 1 to ${capMinOf(s)}.`;
+  }
+  return null;
+}
+
+/** The staged edit is unsaved work: something changed, or a box holds text that isn't a time limit (that holds the close too). Pure. */
+export const draftHolds = (d: ProjectDraft, s: MergeQueueSettings, hasOrigin: boolean): boolean => changesOf(d, s, hasOrigin) !== null || draftProblem(d, s) !== null;
 
 export function toProjectDraft(s: MergeQueueSettings, hasOrigin: boolean): ProjectDraft {
   const checks: ProjectDraft["checks"] = {};
@@ -131,7 +161,9 @@ export function rebaseDraft(d: ProjectDraft, base: ProjectDraft, fresh: ProjectD
     const was = base.checks[id];
     checks[id] = mine && was ? { timeoutSec: pick(mine.timeoutSec, was.timeoutSec, now.timeoutSec), rerun: pick(mine.rerun, was.rerun, now.rerun), optional: pick(mine.optional, was.optional, now.optional) } : { ...now };
   }
-  return { push: pick(d.push, base.push, fresh.push), review: pick(d.review, base.review, fresh.review), checks };
+  // What was typed stays in its box (for checks still there).
+  const kept = Object.entries(d.minutesText ?? {}).filter(([id]) => id in checks);
+  return { push: pick(d.push, base.push, fresh.push), review: pick(d.review, base.review, fresh.review), checks, ...(kept.length ? { minutesText: Object.fromEntries(kept) } : {}) };
 }
 
 /** A refused call's words: the server's `{error: {code, message}}` envelope, a plain `{error}`, or the error's own message. Pure. */

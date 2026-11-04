@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SessionContextView } from "../../shared/protocol";
-import { contextHeadline, contextLines, contextRoom, flatParts, workerReplyKey, type ContextPart, type ContextSizes } from "./context-parts";
+import { contextHeadline, contextLines, contextRoom, flatParts, partLang, workerReplyKey, type ContextPart, type ContextSizes } from "./context-parts";
 
 const parts: ContextPart[] = [
   { id: "file:/p/AGENTS.md", group: "instructions", label: "AGENTS.md", tokens: 3_000, path: "/p/AGENTS.md" },
@@ -23,7 +23,25 @@ describe("the Context tab's lines", () => {
       ["Conversation", "Other", "Tools", "AGENTS.md", "Skills offered", "Rules and docs", "api/AGENTS.md", "Free"],
     );
     assert.equal(lines.find((l) => l.kind === "rules")!.tokens, 1_200);
-    assert.equal(lines.find((l) => l.kind === "skills")!.opens, "skill:a");
+  });
+
+  test("a line of one part opens it; a line of several lists its group; the rest open nothing", () => {
+    const one = contextLines({ ...base, parts: parts.filter((p) => p.id !== "skill:b") });
+    const skills = (ls: typeof one) => ls.find((l) => l.kind === "skills")!;
+    assert.equal(skills(one).opens, "skill:a");
+    assert.equal(skills(one).lists, undefined);
+    const several = contextLines(base);
+    assert.equal(skills(several).opens, undefined);
+    assert.equal(skills(several).lists, "skills");
+    assert.ok(several.find((l) => l.label === "AGENTS.md")!.opens);
+    for (const l of several.filter((x) => ["conversation", "other", "free"].includes(x.kind))) assert.deepEqual([l.opens, l.lists], [undefined, undefined], l.kind);
+  });
+
+  test("a tool shows as JSON, a file by its path, anything else as markdown", () => {
+    assert.equal(partLang({ group: "tools" }), "json");
+    assert.equal(partLang({ group: "skills", path: "/a/SKILL.md" }), "markdown");
+    assert.equal(partLang({ group: "skills", path: "/a/run.mjs" }), "javascript");
+    assert.equal(partLang({ group: "rules" }), "markdown");
   });
 
   test("a subfolder file not yet loaded costs nothing; the lines add up to the window", () => {

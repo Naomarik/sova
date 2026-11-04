@@ -5,6 +5,7 @@
 
 import type { SessionContextView, WorkerInfo } from "../../shared/protocol";
 import { formatPercent, formatTokens } from "./context";
+import { languageForPath } from "./markdown";
 
 export type ContextPartGroup = "instructions" | "subfolder" | "mode" | "rules" | "skills" | "tools";
 
@@ -46,6 +47,13 @@ export function workerReplyKey(w: Pick<WorkerInfo, "turns" | "context" | "endedA
   return `${w.turns ?? ""}:${c}:${w.endedAt ?? ""}`;
 }
 
+/** How the reader shows a part: a tool's declaration is JSON, a file goes by its path, and anything
+    else Sova composed is markdown. Pure. */
+export function partLang(p: Pick<ContextPart, "group" | "path">): string {
+  if (p.group === "tools") return "json";
+  return p.path ? languageForPath(p.path) : "markdown";
+}
+
 /** What the lines are worked out from. */
 export interface ContextSizes {
   parts: readonly ContextPart[];
@@ -63,8 +71,10 @@ export interface ContextLine {
   kind: ContextLineKind;
   label: string;
   tokens: number;
-  /** The part the line opens in the viewer (its first, for a summed line); none for Conversation, Other, Free. */
+  /** The one part the line opens in the reader. */
   opens?: string;
+  /** The group of several parts the line lists instead. Neither for Conversation, Other, Free. */
+  lists?: ContextPartGroup;
 }
 
 /** A part in the window now: every part but a subfolder file not yet loaded. Pure. */
@@ -87,7 +97,7 @@ export function contextLines(s: ContextSizes): ContextLine[] {
     .map((p) => ({ id: p.id, kind: "instructions" as const, label: p.label, tokens: p.tokens, opens: p.id }));
   for (const g of SUMMED) {
     const of = parts.filter((p) => p.group === g.kind);
-    lines.push({ id: g.kind, kind: g.kind, label: g.label, tokens: of.reduce((n, p) => n + p.tokens, 0), opens: of[0]?.id });
+    lines.push({ id: g.kind, kind: g.kind, label: g.label, tokens: of.reduce((n, p) => n + p.tokens, 0), ...(of.length === 1 ? { opens: of[0]!.id } : { lists: g.kind }) });
   }
   lines.push({ id: "conversation", kind: "conversation", label: "Conversation", tokens: s.conversation });
   const shown = lines.filter((l) => l.tokens > 0);

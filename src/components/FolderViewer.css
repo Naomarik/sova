@@ -1,7 +1,5 @@
-/* The read-only folder viewer (FolderViewer.tsx): the files on the left, the picked one on the right;
-   stacked when the viewer itself is under 640px wide (a container query, so it stacks in a narrow pane). */
+/* The read-only folder viewer (FolderViewer.tsx): a list of files; a pressed one opens in the reader. */
 .folder-viewer {
-  container: folder-viewer / inline-size;
   border: 1px solid var(--color-border);
   border-radius: var(--r-lg);
   background: var(--color-surface);
@@ -22,17 +20,6 @@
   line-height: var(--lh-heading-s);
   font-weight: 600;
   margin: 0;
-}
-.folder-viewer-body {
-  display: grid;
-  grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);
-  gap: var(--space-3);
-  min-height: 180px;
-}
-@container folder-viewer (max-width: 640px) {
-  .folder-viewer-body { grid-template-columns: minmax(0, 1fr); }
-  /* Stacked, a long list would push the picked file out of sight: it scrolls on its own. */
-  .folder-viewer-files { max-height: 240px; overflow: auto; }
 }
 .folder-viewer-files {
   display: flex;
@@ -74,31 +61,7 @@
   cursor: pointer;
 }
 .folder-viewer-file:hover { background: var(--color-sunken); }
-.folder-viewer-file.is-on { background: var(--color-accent-tint); }
 .folder-viewer-file:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
 .folder-viewer-file-name { overflow-wrap: anywhere; }
 .folder-viewer-file-detail { margin-left: auto; padding-left: var(--space-2); white-space: nowrap; font-size: var(--fs-micro); }
-.folder-viewer-doc {
-  min-width: 0;
-  max-height: 420px;
-  overflow: auto;
-  background: var(--color-sunken);
-  border-radius: var(--r-sm);
-  padding: var(--space-2) var(--space-3);
-}
-.folder-viewer-doc:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.folder-viewer-path {
-  font-size: var(--fs-micro);
-  color: var(--color-ink-2);
-  margin: 0 0 var(--space-2);
-  overflow-wrap: anywhere;
-}
-.folder-viewer-text {
-  margin: 0;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font-family: var(--font-mono);
-  font-size: var(--fs-mono);
-  line-height: var(--lh-mono);
-}
 .folder-viewer-error { color: var(--status-error); }

@@ -109,6 +109,13 @@
   tab-size: 4;
 }
 
+.md-viewer-note {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+
 @media (max-width: 767px) {
   .md-viewer {
     width: calc(100vw - var(--space-4) * 2);

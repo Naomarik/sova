@@ -13,6 +13,8 @@ export interface FolderItem {
   label?: string;
   /** Shown beside the label in place of the size ("≈1.2k tokens"). */
   detail?: string;
+  /** How the reader shows it when its path can't say: a language word (`json`, `markdown`). */
+  lang?: string;
 }
 
 /** A file's contents as read: always text. `truncated`: the source cut it at its size cap. */
@@ -36,8 +38,7 @@ const MARKDOWN = /\.(?:md|markdown|mdx)$/i;
 
 export type FileKind = "markdown" | "text" | "binary" | "too-large";
 
-/** How a file is shown: markdown rendered, anything else as plain text, never run. The source's own
-    word wins when it gave one. Pure. */
+/** What a file is, as far as its name and contents say; the source's own word wins when it gave one. Pure. */
 export function fileKind(path: string, text?: string, said?: FolderItem["kind"]): FileKind {
   if (said === "binary" || said === "too-large") return said;
   if (text !== undefined && text.includes("\u0000")) return "binary";
@@ -56,15 +57,6 @@ export function sortFiles(files: readonly FolderItem[]): FolderItem[] {
   const depth = (p: string) => p.split("/").length - 1;
   const lead = (p: string) => (/^(?:playbook|readme|skill)\.md$/i.test(p) ? 0 : 1);
   return [...files].sort((a, b) => depth(a.path) - depth(b.path) || lead(a.path) - lead(b.path) || a.path.localeCompare(b.path));
-}
-
-/** The file a viewer opens on: the first group's first file in reading order (or as listed, with `keepOrder`), or null when every group is empty. Pure. */
-export function firstFile(lists: readonly { group: string; files: readonly FolderItem[] }[], keepOrder = false): { group: string; path: string } | null {
-  for (const l of lists) {
-    const f = (keepOrder ? l.files : sortFiles(l.files))[0];
-    if (f) return { group: l.group, path: f.path };
-  }
-  return null;
 }
 
 /** "3 files" — the count a caller's row shows beside a folder. Pure. */

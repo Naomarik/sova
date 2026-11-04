@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { fileCount, fileKind, firstFile, sizeWords, sortFiles, withoutFrontMatter } from "./folder-viewer";
+import { fileCount, fileKind, sizeWords, sortFiles, withoutFrontMatter } from "./folder-viewer";
 
 describe("the folder viewer's model", () => {
   test("markdown is rendered; scripts, JSON and anything else are shown as text", () => {
@@ -21,12 +21,6 @@ describe("the folder viewer's model", () => {
     assert.deepEqual(got, ["PLAYBOOK.md", "alpha.md", "zeta.md", "references/checklist.md", "scripts/verdict.mjs"]);
   });
 
-  test("it opens on the first group's first file; an empty first group passes to the next; none at all is null", () => {
-    assert.deepEqual(firstFile([{ group: "a", files: [] }, { group: "b", files: [{ path: "z.md" }, { path: "README.md" }] }]), { group: "b", path: "README.md" });
-    assert.equal(firstFile([{ group: "a", files: [] }]), null);
-    assert.equal(firstFile([]), null);
-  });
-
   test("front matter goes only from the very start, and only when it closes", () => {
     assert.equal(withoutFrontMatter("---\ntitle: A\nmore: b\n---\n\n# Body\n"), "# Body\n");
     assert.equal(withoutFrontMatter("---\r\ntitle: A\r\n---\r\n# Body"), "# Body", "CRLF");
@@ -43,10 +37,5 @@ describe("the folder viewer's model", () => {
     assert.equal(sizeWords(undefined), null);
     assert.equal(sizeWords(512), "512 B");
     assert.equal(sizeWords(2150), "2.1 KB");
-  });
-  test("keepOrder opens on the first item as listed, not the first in reading order", () => {
-    const lists = [{ group: "g", files: [{ path: "tools/bash" }, { path: "README.md" }] }];
-    assert.deepEqual(firstFile(lists), { group: "g", path: "README.md" });
-    assert.deepEqual(firstFile(lists, true), { group: "g", path: "tools/bash" });
   });
 });

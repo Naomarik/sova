@@ -2,28 +2,18 @@ import { createEffect, createMemo, createResource, createSignal, For, Match, on,
 import type { TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { fetchSessionContextView, fetchSetupFile } from "../lib/api";
 import { formatTokens } from "../lib/context";
-import { approxTokens, contextHeadline, contextLines, contextRoom, flatParts, workerReplyKey, type ContextPart, type ContextPartGroup } from "../lib/context-parts";
-import type { FolderGroup } from "../lib/folder-viewer";
+import { approxTokens, contextHeadline, contextLines, contextRoom, flatParts, partLang, workerReplyKey, type ContextLine, type ContextPart } from "../lib/context-parts";
 import { workerLabel } from "../lib/workers";
-import { FolderViewer } from "./FolderViewer";
+import { FolderViewer, openItem } from "./FolderViewer";
 import { Icon } from "./ui";
 import "./ContextTab.css";
-
-/** The viewer's groups, in the order the window is built. */
-const GROUPS: readonly { id: ContextPartGroup; label: string }[] = [
-  { id: "instructions", label: "Project instructions" },
-  { id: "subfolder", label: "Subfolder instructions" },
-  { id: "mode", label: "Mode" },
-  { id: "rules", label: "Rules and docs" },
-  { id: "skills", label: "Skills offered" },
-  { id: "tools", label: "Tools" },
-];
 
 /**
  * The Context tab: what fills this chat's window (or one of its workers'), as of the last reply.
  * The total is the reply's own usage; each part is an estimate, and Other is what the estimates
- * don't explain. A line opens its part in the folder viewer, read-only. It reads once on open and
- * again on each change to the session's file (`changed`, the pane's insight signal) and, for a
+ * don't explain. A line of one part opens it in the reader; a line of several lists them in the
+ * folder viewer, whose rows open in the reader. An open reader isn't refreshed. It reads once on
+ * open and again on each change to the session's file (`changed`, the pane's insight signal) and, for a
  * picked worker, when one of its replies ends (`workerReplyKey`); never polls.
  */
 export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?: TeamInfo[]; changed: number }) {
@@ -41,11 +31,11 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
     const v = view.latest;
     return v?.state === "ok" ? { ...v, parts: flatParts(v), incomplete: v.nestedIncomplete } : null;
   });
-  const [open, setOpen] = createSignal<string | null>(null);
-  createEffect(on(target, () => setOpen(null), { defer: true }));
+  const [listed, setListed] = createSignal<ContextLine | null>(null);
+  createEffect(on(target, () => setListed(null), { defer: true }));
   let viewerEl: HTMLDivElement | undefined;
-  const show = (partId: string) => {
-    setOpen(partId);
+  const list = (line: ContextLine) => {
+    setListed(line);
     queueMicrotask(() => viewerEl?.scrollIntoView({ block: "nearest" }));
   };
 
@@ -54,29 +44,17 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
     return v ? contextLines(v) : [];
   };
   const subfolder = () => ok()?.parts.filter((p) => p.group === "subfolder") ?? [];
-  const groupOf = (partId: string) => ok()?.parts.find((p) => p.id === partId)?.group;
-  const groups = (): FolderGroup[] => {
-    const v = ok();
-    if (!v) return [];
-    const read = async (id: string) => {
-      const p = v.parts.find((x) => x.id === id);
-      if (!p) throw new Error("That part isn't in this chat's context any more.");
-      if (p.text !== undefined) return { text: p.text };
-      if (!p.path) return { text: "" };
-      return { text: (await fetchSetupFile(target(), p.path)).text };
-    };
-    return GROUPS.flatMap((g) => {
-      const of = v.parts.filter((p) => p.group === g.id);
-      if (of.length === 0) return [];
-      return [
-        {
-          id: g.id,
-          label: g.label,
-          list: async () => of.map((p) => ({ path: p.id, label: p.label, detail: partDetail(p), kind: p.group === "tools" ? ("text" as const) : ("markdown" as const) })),
-          read,
-        },
-      ];
-    });
+  const read = async (id: string) => {
+    const p = ok()?.parts.find((x) => x.id === id);
+    if (!p) throw new Error("That part isn't in this chat's context any more.");
+    if (p.text !== undefined) return { text: p.text };
+    if (!p.path) return { text: "" };
+    return { text: (await fetchSetupFile(target(), p.path)).text };
+  };
+  const item = (p: ContextPart) => ({ path: p.id, label: p.label, detail: approxTokens(p.tokens), lang: partLang(p) });
+  const openPart = (id: string, opener: HTMLElement) => {
+    const p = ok()?.parts.find((x) => x.id === id);
+    if (p) void openItem({ label: p.path === p.label ? "" : (p.path ?? ""), read }, item(p), opener);
   };
 
   return (
@@ -149,13 +127,20 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
                         );
                         return (
                           <li>
-                            <Show when={l.opens} fallback={<div class="list-row">{body()}</div>}>
-                              {(id) => (
-                                <button type="button" class="list-row list-row-interactive" aria-expanded={open() === id()} onClick={() => show(id())}>
+                            <Switch fallback={<div class="list-row">{body()}</div>}>
+                              <Match when={l.opens}>
+                                {(id) => (
+                                  <button type="button" class="list-row list-row-interactive" aria-haspopup="dialog" onClick={(e) => openPart(id(), e.currentTarget)}>
+                                    {body()}
+                                  </button>
+                                )}
+                              </Match>
+                              <Match when={l.lists}>
+                                <button type="button" class="list-row list-row-interactive" aria-expanded={listed()?.id === l.id} onClick={() => list(l)}>
                                   {body()}
                                 </button>
-                              )}
-                            </Show>
+                              </Match>
+                            </Switch>
                           </li>
                         );
                       }}
@@ -164,18 +149,16 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
                 </section>
 
                 <div class="context-viewer-slot" ref={viewerEl}>
-                  <Show when={open()} keyed>
-                    {(id) => (
+                  <Show when={listed()} keyed>
+                    {(l) => (
                       <FolderViewer
                         id="context-viewer"
-                        title="What's in the window"
+                        title={l.label}
                         subtitle="Read-only. Sizes are estimates."
-                        groups={groups()}
+                        groups={[{ id: l.id, label: l.label, list: async () => (ok()?.parts ?? []).filter((p) => p.group === l.lists).map(item), read }]}
                         keepOrder
-                        hideTextNote
                         refreshKey={v().checkedAt}
-                        initial={groupOf(id) ? { group: groupOf(id)!, path: id } : undefined}
-                        onClose={() => setOpen(null)}
+                        onClose={() => setListed(null)}
                       />
                     )}
                   </Show>
@@ -194,7 +177,7 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
                       <For each={subfolder()}>
                         {(p) => (
                           <li>
-                            <button type="button" class="list-row list-row-interactive" aria-expanded={open() === p.id} onClick={() => show(p.id)}>
+                            <button type="button" class="list-row list-row-interactive" aria-haspopup="dialog" onClick={(e) => openPart(p.id, e.currentTarget)}>
                               <span class="list-main">
                                 <span class="list-title">{p.label}</span>
                                 <span class="list-meta">
@@ -216,11 +199,4 @@ export function ContextTab(props: { path: string; workers: WorkerInfo[]; teams?:
       </div>
     </div>
   );
-}
-
-/** A part's size in the viewer's list; a subfolder file says whether it is loaded. */
-function partDetail(p: ContextPart): string {
-  const size = approxTokens(p.tokens);
-  if (p.group !== "subfolder") return size;
-  return `${p.loaded ? "Loaded" : "Not yet"} · ${size}`;
 }

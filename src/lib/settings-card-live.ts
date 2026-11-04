@@ -29,10 +29,14 @@ export async function readCard(details: Pick<SettingsToolDetails, "projectId">, 
 /** A card applied while a branch is checking (§app.merge-queue/settings-save). */
 export const QUEUE_CARD_WAITS = "Saves when the current branch finishes.";
 
+/** A card whose write was refused after an earlier edit took effect: its sentence, in `stillNeeds`, says which. */
+export const PARTLY_APPLIED = "Partly applied";
+
 /** What Apply's answer says happened, and never more: a held card hasn't applied yet, and a grant
     that wasn't recorded isn't approved (the card names each one and where to approve it). */
-export function applyToast(answer: Pick<SettingsCardView, "state" | "stillNeeds" | "saveWords">, card: Pick<SettingsCardView, "id" | "grants">): string {
+export function applyToast(answer: Pick<SettingsCardView, "state" | "stillNeeds" | "saveWords" | "partly">, card: Pick<SettingsCardView, "id" | "grants">): string {
   if (answer.state === "waiting") return answer.saveWords ?? QUEUE_CARD_WAITS;
+  if (answer.partly) return `${PARTLY_APPLIED} ${card.id}: the card says what took effect.`;
   const needs = answer.stillNeeds?.length ?? 0;
   const local = card.id === "local";
   const done = local ? "Landed the folder's settings edits." : card.grants.length && !needs ? `Applied and approved ${card.id}.` : `Applied ${card.id}.`;

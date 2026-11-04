@@ -131,6 +131,11 @@ describe("a card in a Create chat", () => {
     assert.equal(typedInput({}, "abc"), undefined, "a card with no field sends nothing");
   });
 
+  test("a partly applied answer never toasts Applied or approved", () => {
+    const t = applyToast({ state: "applied", partly: true, stillNeeds: ["Partly applied: …"] }, { id: "sw_4", grants: [{ key: "k" }] } as unknown as Pick<SettingsCardView, "id" | "grants">);
+    assert.equal(t, "Partly applied sw_4: the card says what took effect.");
+  });
+
   test("Cancel Save takes the card's own road: the folder's edits are never discarded by it", () => {
     const done: string[] = [];
     const cancels = {

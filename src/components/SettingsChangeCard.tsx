@@ -1,7 +1,7 @@
 import { createContext, createEffect, createSignal, For, Show, useContext } from "solid-js";
 import type { SettingsCardView, SettingsHistoryRow, SettingsToolDetails } from "../../shared/project-settings";
 import { applySettingsCard, applySovaSettingsCard, cancelLocalSettingsSave, cancelMergeSettings, getProjectSettings, getSovaSettingsCards, undoSettingsRow, withdrawSettingsCard, withdrawSovaSettingsCard } from "../lib/api";
-import { applyToast, cancelHeldSave, cardCanAct, createCardLive, heldButton, QUEUE_CARD_WAITS, typedInput, type CardTimer, type SettingsCardScope } from "../lib/settings-card-live";
+import { applyToast, cancelHeldSave, cardCanAct, createCardLive, heldButton, PARTLY_APPLIED, QUEUE_CARD_WAITS, typedInput, type CardTimer, type SettingsCardScope } from "../lib/settings-card-live";
 import { MESH_HREF } from "../lib/mesh";
 import { toast } from "../lib/ui-state";
 
@@ -91,9 +91,9 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
         <h3 class="card-title" title={c().title}>
           {c().title}
         </h3>
-        <span class={stateChip[c().state]}>
+        <span class={c().partly ? "chip chip-warn" : stateChip[c().state]}>
           <span class="chip-dot" aria-hidden="true" />
-          {c().saveFailed ? "Save failed" : held() ? "Waiting to save" : stateWords[c().state]}
+          {c().partly ? PARTLY_APPLIED : c().saveFailed ? "Save failed" : held() ? "Waiting to save" : stateWords[c().state]}
         </span>
       </div>
       <div class="card-body settings-card-body">
@@ -266,7 +266,7 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
         </Show>
       </div>
       <div class="card-foot overseer-card-foot">
-        <Show when={waiting()} fallback={<span class="overseer-confirm-hint">{c().state === "applied" ? `Applied${c().commit ? ` as ${c().commit!.slice(0, 10)}` : ""}.` : "Dismissed: nothing changed."}</span>}>
+        <Show when={waiting()} fallback={<span class="overseer-confirm-hint">{c().partly ? `${PARTLY_APPLIED}: see above.` : c().state === "applied" ? `Applied${c().commit ? ` as ${c().commit!.slice(0, 10)}` : ""}.` : "Dismissed: nothing changed."}</span>}>
           <Show when={props.canAct} fallback={<span class="overseer-confirm-hint">{held() ? saveWords() : project === null ? "Waiting for you: apply it in the chat that prepared it." : "Waiting for the operator: apply it on the project's Settings tab."}</span>}>
             <Show
               when={!held()}

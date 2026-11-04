@@ -131,6 +131,17 @@ test("a card's notes stand before Apply, as given, and go when it ends", () => {
   assert.doesNotMatch(draw(card({ kind: "sova", state: "applied", notes }), null), /Resync copies/);
 });
 
+test("a partly applied card never reads as plainly applied", () => {
+  const why = "Partly applied: Worker priority took effect. Pair a computer didn't: refused. Nothing else was saved.";
+  const html = draw(card({ state: "applied", partly: true, stillNeeds: [why] }), null);
+  assert.match(html, /chip chip-warn/);
+  assert.match(html, /banner-warn/);
+  assert.ok(html.includes("Worker priority took effect"));
+  assert.doesNotMatch(html, /chip-success/);
+  assert.doesNotMatch(html, />\s*(<!--[^>]*-->)?\s*Applied\s*(<!--[^>]*-->)?\s*</, "no plain Applied chip");
+  assert.doesNotMatch(html, /Applied\s*(<!--[^>]*-->)?\s*\./, "no plain Applied. foot");
+});
+
 test("a save that failed when its turn came says why on the card", () => {
   const failed = draw(card({ id: "sc_4", kind: "queue", saveWaits: true, saveFailed: "A newer save took its place." }), "p1");
   assert.match(failed, /A newer save took its place/);

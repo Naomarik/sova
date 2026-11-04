@@ -77,7 +77,7 @@ function wordOf(kind: string, item: string): string | undefined {
   if (kind === "doc") return item.split("/").pop()!.replace(/^settings:/, "");
   if (kind === "definition") {
     const [section, key] = item.split(".") as [string, string];
-    return section === "top" || section === "merge" ? key : undefined;
+    return section === "top" || section === "merge" || section === "release" ? key : undefined;
   }
   return item;
 }

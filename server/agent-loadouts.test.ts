@@ -84,7 +84,7 @@ function families(): Record<string, Decl[]> {
     "project-verbs:project-overseer": [decl(verbs.projectOverseerVerbsTool(engine, { id: () => "o-1", root: () => CWD, act: noop }))],
     "project-verbs:overseer+copies": [decl(verbs.overseerVerbsTool(engine, () => "o-1", (e) => e, noop, copyVerbs))],
     "project-verbs:project-overseer+copies": [decl(verbs.projectOverseerVerbsTool(engine, { id: () => "o-1", root: () => CWD, act: noop, copies: copyVerbs }))],
-    // A Create chat's lookup: its description and the 19 topics it takes (§chat.create-mode/entries).
+    // A Create chat's lookup: its description and the topics it takes (§chat.create-mode/entries).
     "create-guide": [decl(createGuideTool())],
     links: linkTools({
       act: noop,

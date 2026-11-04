@@ -12483,7 +12483,7 @@
       ]
     },
     "create-guide": {
-      "bytes": 725,
+      "bytes": 736,
       "tools": [
         {
           "name": "create_guide",
@@ -12512,6 +12512,7 @@
                   "safety",
                   "project",
                   "landing",
+                  "releases",
                   "automation",
                   "cards",
                   "overseers",

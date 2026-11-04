@@ -1,8 +1,6 @@
 {
  "_": "Which Create topic owns each item of Sova's own lists, by exact name, and the SOVA_* names a user never sets. Held by create-guide-growth.test.ts.",
  "notForUsers": [
-  "SOVA_RELEASE_QUIET_MS",
-  "SOVA_RELEASE_STALL_POLL_MS",
   "SOVA_ACCEPT_BUILD",
   "SOVA_ACCEPT_HANDOFF",
   "SOVA_ACCEPT_STATE",
@@ -83,6 +81,8 @@
   "SOVA_PROJECT_DRIVER",
   "SOVA_PROJECT_TOOLS_FILE",
   "SOVA_RELAY_HANDOFF",
+  "SOVA_RELEASE_QUIET_MS",
+  "SOVA_RELEASE_STALL_POLL_MS",
   "SOVA_REPLAY_DEBUG",
   "SOVA_REPO",
   "SOVA_ROUNDUP_NOW",
@@ -547,7 +547,23 @@
    "chat.reload-code": "scripts",
    "chat.mode-command": "scripts",
    "settings.cards.get": "scripts",
-   "settings.cards.withdraw": "scripts"
+   "settings.cards.withdraw": "scripts",
+   "draft-spec.list": "scripts",
+   "insights.usage.refresh": "scripts",
+   "project.overseer.actions": "scripts",
+   "project.overseer.get": "scripts",
+   "project.overseer.memory.get": "scripts",
+   "playbook.list": "scripts",
+   "schedule.list": "scripts",
+   "session.cleanup": "scripts",
+   "session.context.view": "scripts",
+   "session.diff.summary": "scripts",
+   "session.title.auto": "scripts",
+   "session.title.shorten": "scripts",
+   "session.worktree.cleanup": "scripts",
+   "session.worktree.summary": "scripts",
+   "overseer.get": "overseers",
+   "overseer.memory.get": "overseers"
   },
   "env": {
    "SOVA_PORT": "computers",

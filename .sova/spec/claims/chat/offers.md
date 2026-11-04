@@ -9,7 +9,8 @@ agent never writes the buttons, and Sova enforces every limit the file sets.
 Owns: the offers file and how Sova reads it, the `offer` tool and which chats get it, conditions
 and the repeat guard, send and run buttons, approving run buttons, the card and its states, an
 offer shown by another chat, cards with rows and the project page's Offers list. Branches land through the merge queue
-(§app/merge-queue), never through an offer. Not here:
+(§app/merge-queue): an offer never lands one itself, and on a project the queue serves a
+`project.worktree.merge` run button joins the queue as Land does. Not here:
 the Overseer's decision cards this card looks like (§app.overseer/confirm), alignment cards
 (§chat/alignment), the readiness offers read (§chat.worktrees/readiness), and the asks-you signal
 an open offer feeds (§app.decisions/asks-user).

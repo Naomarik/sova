@@ -539,6 +539,10 @@ after 60 seconds, then the queue pauses. No chat is told. The branch is never bl
 **Skipping it.** "Land without review" (or "land it, skip review") skips it for that approval
 only.
 
+Where the queue shortens the reviewer's text (the review step's detail and a flagged run's reason, to
+200 characters; a review note, to 300), a cut text ends in "…"; the whole verdict is in the review
+step's log.
+
 A verdict holds at most 10 findings, each of a kind: dead code, duplication, hack, missing test,
 naming, or other. The kit is never a registered skill: it has no `SKILL.md`, and it is in no skills
 folder or pi setting.
@@ -792,8 +796,10 @@ is offered only on hover.
 **The run page** (`…/merge-queue/<run>`) shows:
 - the branch and its verdict, the base, the branch's commit and the tested commit, when it started
   and how long it took, its chat, and how it was approved;
-- **View Logs** (every step's log, in order, from the copy's first line), **Open Merge Thread** and
-  **Back to Queue**;
+- one action row: **View Logs** (outlined, opening full width below the row: every step's log, in
+  order, from the copy's first line), **Open Merge Thread** and **Back to Queue** (both borderless,
+  Back to Queue with a back arrow), all on one line (on a phone, Back to Queue wraps below the other
+  two);
 - its review, when it has one: each attempt's reviewer chat, as on the rows
   (§app.merge-queue/chats);
 - "Nothing has merged from this run. {target} moves only once every check passes." while it runs,
@@ -806,7 +812,25 @@ is offered only on hover.
   finished (nothing blamed); or passed, the target moved to exactly the tested commit;
 - for a red run, a "Whose failure is it?" block (machine or setup, already failing on the target,
   flaky), drawn from the reruns (§app.merge-queue/blame);
-- **Checks and why**: every step with its tag and reason, its failures, time and counts, and its log.
+- **Checks and why**, its legend under the title: every step with its tag and reason, its failures,
+  time and counts, and its log. Each row reads, in this order: its status mark, its name with its
+  description under it (the test counts there too, "11496 passed · 5 skipped", a failed count in
+  red), its time in a fixed column aligned right, then **Log**, in the same place on every row. A
+  description shows at most 2 lines and ends in "…" when cut; a path in it that starts at the home
+  folder shows it as `~/` (only where the path starts, never the same folder inside another path),
+  and a commit is in mono. The marks: a check for passed, a cross for failed, a clock for running, a
+  dash for skipped (or setup unchanged since the last run), an empty ring for waiting. A running
+  check's time counts up from its start; a waiting or skipped one shows no time, and a skipped one no
+  "0 passed".
+
+**Open logs stay open.** A log opened on the run page (a check's **Log**, or View Logs) stays open
+until the user closes it. Re-reading the run (every 3 s while it runs, and on each queue change)
+never closes it, and never moves the keyboard focus or the log's scroll. The open log of a check
+still running follows it: it is read again about every 3 s and stops updating once the check ends.
+Whether it follows its bottom is decided when it is opened, not when the page loaded: a check that
+was waiting when the page loaded and is running when its log is opened follows. A log short enough
+to fit its panel counts as at its bottom, and keeps following as it grows past it. Scrolling up
+stops following; scrolling back to the end resumes it.
 
 Every action here is a catalogue command: Land, Land This Commit Again, Cancel, Remove from Queue,
 Pause, Resume, Accept, Send Back, Land Anyway, Start Fresh, Send Answer, Clear and Clear All over the merge verbs (§app.project-services/merge-verbs), Update Local Main and Publish over

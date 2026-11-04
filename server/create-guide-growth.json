@@ -364,6 +364,7 @@
    "project.verb.release.publish": "releases",
    "project.verb.release.abandon": "releases",
    "project.verb.release.withdraw": "releases",
+   "project.verb.release.note": "releases",
    "session.list": "scripts",
    "session.get": "scripts",
    "session.read": "scripts",

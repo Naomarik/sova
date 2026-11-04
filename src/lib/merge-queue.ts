@@ -489,6 +489,79 @@ export function sourceTag(s: RunStep["source"]): { label: string; tone: Tone } |
   }
 }
 
+// ---- the run page's Checks and why ------------------------------------------------------------
+
+/** A step's status mark: a check, a cross, a clock, a plain dash (skipped, or setup unchanged since the last run),
+    or no icon at all (`null`: an empty muted ring, waiting). Nothing here looks like something to expand. */
+export interface StepMark {
+  icon: "check" | "close" | "clock" | "minus" | null;
+  cls: string;
+  word: string;
+}
+const MARKS: Record<RunStep["result"], StepMark> = {
+  passed: { icon: "check", cls: "mq-pass", word: "Passed" },
+  failed: { icon: "close", cls: "mq-fail", word: "Failed" },
+  running: { icon: "clock", cls: "mq-running", word: "Running" },
+  pending: { icon: null, cls: "mq-wait", word: "Waiting" },
+  skipped: { icon: "minus", cls: "mq-skip", word: "Skipped" },
+};
+export const stepMark = (s: Pick<RunStep, "result">): StepMark => MARKS[s.result];
+
+/** A step's time column: "" while waiting or skipped; a running step counts up from its start (`now`); a
+    finished one shows what it took. */
+export function stepTime(s: Pick<RunStep, "result" | "ms" | "startedAt">, now: number): string {
+  if (s.result === "pending" || s.result === "skipped") return "";
+  if (s.result === "running") {
+    const at = s.startedAt ? Date.parse(s.startedAt) : NaN;
+    if (Number.isFinite(at)) return clock(now - at);
+    return s.ms > 0 ? clock(s.ms) : "";
+  }
+  return clock(s.ms);
+}
+
+/** A check's test counts, for its description line ("11496 passed", "5 skipped"; `failed` drawn red). None for a
+    skipped or waiting step, and none when every count is zero or unknown ("0 passed" says nothing). */
+export function stepCounts(s: Pick<RunStep, "result" | "counts">): { text: string; failed?: true }[] {
+  const c = s.counts;
+  if (!c || s.result === "skipped" || s.result === "pending") return [];
+  if (!c.passed && !c.failed && !c.skipped) return [];
+  return [
+    ...(c.passed != null ? [{ text: `${c.passed} passed` }] : []),
+    ...(c.failed ? [{ text: `${c.failed} failed`, failed: true as const }] : []),
+    ...(c.skipped ? [{ text: `${c.skipped} skipped` }] : []),
+  ];
+}
+
+/** Shows every `<home>/…` path inside a line as `~/…`, and the home folder alone as `~`. Only a path that starts
+    there counts: at the line's start or after a space, a quote, a bracket, `=`, `:` or `,` (never inside
+    `/mnt<home>/…`), and only the folder itself (followed by `/`, a space or the end, never `<home>2/…`). */
+export function tildeIn(text: string, home: string | null): string {
+  if (!home) return text;
+  const h = home.replace(/\/+$/, "");
+  if (!h) return text;
+  const esc = h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(`(^|[\\s"'\`([{<=:,])${esc}(?=/|\\s|$)`, "g"), "$1~");
+}
+
+const SHA_RE = /^[0-9a-f]{7,40}$/;
+/** A step's detail with paths shortened (~/…). The queue's own facts (a copy's folder and commit, a merge's commit)
+    come back split, the folder and commit marked `mono`; any other detail is one plain part. */
+export function stepDetail(s: Pick<RunStep, "id" | "kind" | "result" | "detail">, home: string | null): { text: string; mono?: true }[] {
+  if (!s.detail) return [];
+  const text = tildeIn(s.detail, home);
+  const structured = s.result === "passed" && (s.kind === "copy" || s.kind === "merge" || s.id === "rerun-master:copy");
+  if (!structured) return [{ text }];
+  const out: { text: string; mono?: true }[] = [];
+  for (const word of text.split(/(\s+)/)) {
+    if (!word) continue;
+    const mono = SHA_RE.test(word) || word.startsWith("/") || word.startsWith("~");
+    const last = out[out.length - 1];
+    if (!mono && last && !last.mono) last.text += word;
+    else out.push(mono ? { text: word, mono: true } : { text: word });
+  }
+  return out;
+}
+
 /** A definition that doesn't parse, as one sentence: the parser's path and message, then what to do. */
 export const invalidWords = (invalid: string): string => `This project's .sova/project.json doesn't parse: ${invalid.trim().replace(/[.]$/, "")}. Fix it on the target, or land a branch that fixes it; nothing else lands until it parses.`;
 

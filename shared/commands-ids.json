@@ -218,6 +218,7 @@
     "overseer.abilities",
     "settings.cards.get",
     "settings.cards.withdraw",
+    "project.verb.release.note",
     "project.coding.start",
     "project.icon.get",
     "project.icon.upload",

@@ -214,7 +214,14 @@ export interface ReleaseRecord {
   withdrawn?: { at: string; why: string; channelsTo: Record<string, string | null> };
   manifest: ReleaseManifest;
   settings: ReleaseDecl;
+  /** The operator's Release Note this release's start sent its chat (a copy; the saved note is cleared then). */
+  note?: string;
+  /** The assistant's or overseer's pending ask this start consumed and passed to its chat as their context. */
+  asked?: { by: string; why: string };
 }
+
+/** The operator's Release Note: at most this many characters. */
+export const RELEASE_NOTE_MAX = 4000;
 
 /** The full plan from a manifest: prepare steps, Sova's gating checks, check steps, Publish, after-publish steps, then
     the withdraw steps (they stay `waiting` unless the release is withdrawn). */
@@ -281,6 +288,8 @@ export interface ReleaseView {
   gates: ReleaseGates | null;
   /** Set while the queue is frozen and the release chat has been quiet past quietMin. */
   quiet: { minutes: number } | null;
+  /** The operator's saved Release Note, for the next start (release.note); null when none. */
+  note: { text: string; at: string } | null;
 }
 
 export interface ReleaseReport {

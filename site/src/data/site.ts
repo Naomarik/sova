@@ -5,7 +5,7 @@
 // A release sets it in its release commit (and re-verifies every claim on the page against it):
 // .sova/playbooks/release/PLAYBOOK.md.
 
-export const release = "v0.10.0";
+export const release = "v0.10.1";
 export const installRef = "stable";
 export const repo = "https://github.com/Naomarik/sova";
 export const installUrl = `https://raw.githubusercontent.com/Naomarik/sova/${installRef}/scripts/install.sh`;
@@ -24,7 +24,7 @@ export const piConfig = `${repo}/tree/master/pi-config`;
 export const pi = "https://pi.dev";
 
 // The revision and date the page's claims were checked against (derive-website playbook).
-export const verified = { ref: "v0.10.0", rev: "ba95c135", date: "2026-11-04" };
+export const verified = { ref: "v0.10.1", rev: "a91d59ce", date: "2026-11-04" };
 
 // The revision and date the /docs pages were written from Sova's spec and checked against its source.
-export const docsVerified = { rev: "eec308b6", date: "2026-11-04" };
+export const docsVerified = { rev: "4cd05af0", date: "2026-11-04" };

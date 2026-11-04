@@ -91,9 +91,6 @@ test("restarting or updating Sova goes to the entry, never to a command on Sova 
 	for (const words of ["You never update Sova yourself", "You never restart Sova yourself"]) assert.ok(CREATE_FILES.computers!.includes(words), words);
 });
 
-test(CREATE_INSTRUCTIONS), "the rule must not read as if strict stops bash");
-});
-
 test("a header line is `# <topic>: <words>`, and a file whose header names another topic isn't listed", () => {
 	assert.deepEqual(parseHeader("# models: which models\n\nbody"), { topic: "models", line: "which models" });
 	assert.equal(parseHeader("models: which models"), undefined);

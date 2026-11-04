@@ -1,3 +1,4 @@
+import { notPageNorProven } from "../mesh/click-proof";
 import type { Hono } from "hono";
 import { httpStatusOf } from "../../shared/project-contract";
 import { conformer } from "./conform";
@@ -38,10 +39,21 @@ export function projectDeployer(): Deployer {
   return deployer!;
 }
 
+const jsonOf = (raw: string): unknown => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return undefined;
+  }
+};
+
 export function registerProjectServiceRoutes(app: Hono<any>): void {
   app.post("/api/project-services/:verb", async (c) => {
-    const body = await c.req.json().catch(() => undefined);
-    const r = await projectEngine().run(c.req.param("verb"), body, { kind: "operator" });
+    const raw = await c.req.text().catch(() => "");
+    const verb = c.req.param("verb");
+    const body = jsonOf(raw);
+    // Your page, here or on another of your computers with its proof (server/mesh/click-proof.ts).
+    const r = await projectEngine().run(verb, body, { kind: "operator", ...(verb === "apply" && (await notPageNorProven(c, raw)) ? { notPage: true } : {}) });
     return c.json(r, httpStatusOf(r) as 200);
   });
 }

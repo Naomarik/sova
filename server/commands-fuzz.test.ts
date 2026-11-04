@@ -293,7 +293,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "project.merge-queue.land-how.clear": "a valid call needs the server's merge queue started on a git project, which the unit tier's app doesn't start",
   "project.folder.list": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
   "project.folder.read": "a valid call needs a registered project with git history (folder-read.test.ts covers it)",
-  "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the operator's browser or the token may)",
+  "server.restart": "a valid call schedules a restart of the service that runs this server (and in-process it is refused before any body is read: only the user's own page may)",
   "chat.stop": "a valid call on an open chat drives its process; on a closed one it writes nothing, so no effect oracle can read it back",
   "chat.compact": "acquires a chat handle, which starts the chat's process",
   "chat.rewind": "acquires a chat handle, which starts the chat's process",

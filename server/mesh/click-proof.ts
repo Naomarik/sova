@@ -15,7 +15,7 @@ import { CLICK_PROOF_HEADER, PROXIED_HEADER } from "./proxy";
  * peer can't spend it; and it can't be replayed or moved to another schedule or pin. No keys, no clocks between hosts.
  */
 
-const PROVEN_DOORS = new Set(["/api/schedules/approve"]);
+const PROVEN_DOORS = [/^\/api\/schedules\/approve$/, /^\/api\/project-services\/apply$/, /^\/api\/projects\/[^/]+\/services\/apply$/];
 const TTL_MS = 60_000;
 
 interface Minted {
@@ -33,7 +33,7 @@ function forget(now: number): void {
 
 /** A proof for this relayed request: only for a door that takes one, and only from this host's own page. */
 export async function clickProofFor(c: Context, peerId: string, tail: string, now = Date.now()): Promise<string | undefined> {
-  if (c.req.method !== "POST" || !PROVEN_DOORS.has(judgedPath(tail) ?? "") || notPage(c) !== null) return undefined;
+  if (c.req.method !== "POST" || !PROVEN_DOORS.some((d) => d.test(judgedPath(tail) ?? "")) || notPage(c) !== null) return undefined;
   forget(now);
   const id = randomBytes(32).toString("base64url");
   minted.set(id, { peer: peerId, digest: digestOf(await c.req.raw.clone().text()), until: now + TTL_MS });
@@ -69,4 +69,17 @@ export async function peerClickProven(c: Context, body: string, peerFetch: PeerF
   } catch {
     return false;
   }
+}
+
+let askForTest: PeerFetch | null = null;
+/** Tests: stand in for the peer link; null restores it. */
+export function setClickAskForTest(ask: PeerFetch | null): void {
+  askForTest = ask;
+}
+
+/** Whether this request is neither the page here nor a proven click from another of your computers' page. */
+export async function notPageNorProven(c: Context, body: string): Promise<boolean> {
+  if (notPage(c) === null) return false;
+  // Imported here: the mesh's own routes reach the engine.
+  return !(await peerClickProven(c, body, askForTest ?? (await import("./index")).peerFetch));
 }

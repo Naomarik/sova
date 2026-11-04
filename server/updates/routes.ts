@@ -2,11 +2,8 @@ import { spawn } from "node:child_process";
 import { closeSync, mkdirSync, openSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { Context, Hono } from "hono";
-import { showsToken, TOKEN_HEADER } from "../auth";
-import { CALLER_HEADER, callerKeys } from "../caller-keys";
 import { buildId, currentGenerationOf } from "../chat-runtime/generations";
-import { COMMAND_HEADER } from "../command-audit";
-import { OVERSEER_SENDER_HEADER } from "../overseer-sender";
+import { yourClickBody, yourClickRefusal } from "../page-only";
 import { RESTART_DELAY_SEC, scheduleRestart, serverCheckout, serverStart } from "../project-services/self-host";
 import { stateHash } from "../project-services/store";
 import { agentRoot, stateRoot } from "../state-root";
@@ -14,47 +11,24 @@ import { repoUrlOf } from "./check";
 import { firstLine, gitIn, realExec } from "./git";
 import { detectInstall, realProbe, type InstallInfo } from "./install-kind";
 import { diskAheadOf, type DiskAhead } from "./disk-ahead";
-import { UpdatesManager, UpdatesRefusal, type RestartOrigin } from "./manager";
+import { UpdatesManager, UpdatesRefusal } from "./manager";
 import { installRunner, type UpgradePlan } from "./runner";
 import { checksOffIn } from "./state";
 
 /**
- * The Updates routes. Reading is any gated caller's; checking, saving the settings
- * and upgrading are the operator's alone: a request on the main listener
- * that a browser marks same-origin, never an in-process call, the peer listener or the Overseer.
+ * The Updates routes. Reading is any gated caller's; checking, saving the settings, upgrading and
+ * restarting are the user's alone (§app.access/your-click): their own page on this machine, on a
+ * request a browser marks same-origin; never a script, a chat, the peer listener, an in-process
+ * call or the Overseer.
  */
 
-export const OPERATOR_ONLY = "Updates are the operator's: open Settings → General.";
-
-/** Why this request may not act on updates, or null when it is the operator's. */
-export function operatorRefusal(c: Context): string | null {
-  const env = c.env as { incoming?: unknown; meshPeer?: unknown } | undefined;
-  if (!env?.incoming || env.meshPeer) return OPERATOR_ONLY;
-  // The Overseer's in-process calls carry this header; a browser never does, so any value refuses.
-  if (c.req.header(OVERSEER_SENDER_HEADER) !== undefined) return OPERATOR_ONLY;
-  if ((c.req.header("sec-fetch-site") ?? "").toLowerCase() !== "same-origin") return OPERATOR_ONLY;
+/** The 403 of an act on updates, or null when it is the user's own page. */
+export function notOperator(c: Context, door: "restart" | "update"): Response | null {
+  const notYou = yourClickRefusal(c, door);
+  if (notYou) return notYou;
+  const env = c.env as { incoming?: unknown } | undefined;
+  if (!env?.incoming || (c.req.header("sec-fetch-site") ?? "").toLowerCase() !== "same-origin") return c.json(yourClickBody(door, "script"), 403);
   return null;
-}
-
-export const RESTART_REFUSED = "Restart Sova is the operator's: open Settings → General, or run `node scripts/sova.mjs run server.restart` from a Sova checkout on this machine.";
-
-/**
- * Who may restart Sova (POST /api/updates/restart): the operator's browser, as operatorRefusal says,
- * and Sova's command line or a script on this machine showing the install token (x-sova-token, as
- * every catalogued command does). Never the peer listener, the Overseer, an in-process call, or an
- * extension's backend (its key isn't the token). The origin names who asked, for the server log;
- * a token call also leaves its row in the command audit.
- */
-export function restartCaller(c: Context): { origin: RestartOrigin } | { refusal: string } {
-  const env = c.env as { incoming?: unknown; meshPeer?: unknown } | undefined;
-  if (!env?.incoming || env.meshPeer) return { refusal: RESTART_REFUSED };
-  if (c.req.header(OVERSEER_SENDER_HEADER) !== undefined) return { refusal: RESTART_REFUSED };
-  if (showsToken(c.req.header(TOKEN_HEADER))) {
-    const who = callerKeys.callerOf(c.req.header(CALLER_HEADER));
-    return { origin: c.req.header(COMMAND_HEADER)?.trim() === "server.restart" ? `command server.restart (${who})` : `script (${who})` };
-  }
-  if ((c.req.header("sec-fetch-site") ?? "").toLowerCase() !== "same-origin") return { refusal: RESTART_REFUSED };
-  return { origin: "browser" };
 }
 
 let listen = { port: Number(process.env.PORT) || 4800, host: process.env.HOST || "127.0.0.1" };
@@ -192,8 +166,8 @@ export function registerUpdatesRoutes(app: Hono): void {
   app.get("/api/updates", async (c) => c.json(await updates().state()));
 
   app.post("/api/updates/check", async (c) => {
-    const no = operatorRefusal(c);
-    if (no) return c.json({ error: no }, 403);
+    const no = notOperator(c, "update");
+    if (no) return no;
     try {
       await updates().check();
     } catch (err) {
@@ -203,8 +177,8 @@ export function registerUpdatesRoutes(app: Hono): void {
   });
 
   app.put("/api/updates/settings", async (c) => {
-    const no = operatorRefusal(c);
-    if (no) return c.json({ error: no }, 403);
+    const no = notOperator(c, "update");
+    if (no) return no;
     let body: unknown;
     try {
       body = await c.req.json();
@@ -219,15 +193,15 @@ export function registerUpdatesRoutes(app: Hono): void {
     return c.json(await updates().state());
   });
 
-  // Restart Sova (Settings → General, `node scripts/sova.mjs run server.restart`): 202 first, the service restarts a few seconds later.
+  // Restart Sova (Settings → General): 202 first, the service restarts a few seconds later.
   app.post("/api/updates/restart", async (c) => {
-    const who = restartCaller(c);
-    if ("refusal" in who) {
-      console.log(`[updates] restart refused: not the operator's browser or command line`);
-      return c.json({ error: who.refusal }, 403);
+    const no = notOperator(c, "restart");
+    if (no) {
+      console.log(`[updates] restart refused: not the user's page`);
+      return no;
     }
     try {
-      const r = await updates().restart(who.origin);
+      const r = await updates().restart("browser");
       // The startedAt GET /api/health answers (one source, serverStart()): the restart is done once health answers another.
       return c.json({ scheduled: true, startedAt: serverStart().startedAt, inSeconds: r.inSeconds }, 202);
     } catch (err) {
@@ -236,8 +210,8 @@ export function registerUpdatesRoutes(app: Hono): void {
   });
 
   app.post("/api/updates/apply", async (c) => {
-    const no = operatorRefusal(c);
-    if (no) return c.json({ error: no }, 403);
+    const no = notOperator(c, "update");
+    if (no) return no;
     let body: { target?: unknown; confirm?: unknown } = {};
     try {
       body = (await c.req.json()) as typeof body;

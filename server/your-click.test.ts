@@ -26,10 +26,11 @@ const { projectOverseerPaths, readPoSettings } = await import("./project-oversee
 const { OVERSEER_SENDER_HEADER, senderSecret } = await import("./overseer-sender");
 const { offersTrustFile, runFingerprint, runsApproved } = await import("./session-offers-trust");
 const { canonicalRoot, readOffersFile } = await import("./session-offers");
-const { clickProofFor, peerClickProven, takeClick } = await import("./mesh/click-proof");
+const { clickProofFor, peerClickProven, setClickAskForTest, takeClick } = await import("./mesh/click-proof");
 const { trustFile } = await import("./profile-trust");
 const { pageHeaders } = await import("./testing/page");
 const { notPage } = await import("./page-only");
+const { projectEngine } = await import("./project-services/routes");
 const { cardsTrusted, projectOwner, setCardsTrusted } = await import("./transcript-cards");
 const { setExtensionKeyCheck } = await import("./auth");
 const { extensionKeys } = await import("./extension-keys");
@@ -251,6 +252,49 @@ describe("trusting cards to act", async () => {
   test("a bad body is refused for what it is, and trusts nothing", async () => {
     assert.equal((await call("POST", url, { owner, on: "yes" }, pageHeaders())).status, 400);
     assert.equal(cardsTrusted(owner), false);
+  });
+});
+
+describe("applying Sova's own main copy", async () => {
+  const p = await project("apply");
+  test("both routes tell the engine when the caller isn't the page; the engine refuses it on this server's own checkout", async () => {
+    const engine = projectEngine();
+    const real = engine.run;
+    const seen: unknown[] = [];
+    engine.run = (async (_verb: string, _body: unknown, caller: { notPage?: boolean }) => (seen.push(caller.notPage), { v: 1, ok: true })) as never;
+    try {
+      const token = pageHeaders().cookie!.split("=")[1]!;
+      for (const url of ["/api/project-services/apply", `/api/projects/${p.id}/services/apply`]) {
+        for (const headers of [{ [TOKEN]: token }, { "x-sova-caller": "k" }, {}, pageHeaders()]) await call("POST", url, { project: p.dir, confirm: true }, headers);
+      }
+      assert.deepEqual(seen, [true, true, true, undefined, true, true, true, undefined]);
+      // Another computer's page: a proof its host confirms passes; one it doesn't, or a relay with none, is no page.
+      seen.length = 0;
+      const relayed = { "X-Sova-Click-Proof": "p", "X-Forwarded-Host": "h" };
+      const peer = { meshPeer: { id: "other" } };
+      for (const url of ["/api/project-services/apply", `/api/projects/${p.id}/services/apply`]) {
+        setClickAskForTest(async () => Response.json({ ok: true }));
+        await call("POST", url, { project: p.dir, confirm: true }, relayed, peer);
+        setClickAskForTest(async () => Response.json({ ok: false }));
+        await call("POST", url, { project: p.dir, confirm: true }, relayed, peer);
+        setClickAskForTest(async () => Response.json({ ok: true }));
+        await call("POST", url, { project: p.dir, confirm: true }, { "X-Forwarded-Host": "h" }, peer);
+      }
+      assert.deepEqual(seen, [undefined, true, true, undefined, true, true]);
+    } finally {
+      engine.run = real;
+      setClickAskForTest(null);
+    }
+  });
+
+  test("a click on another computer's page mints a proof for Apply and no other verb", async () => {
+    const seen = (r: Request) => ({ req: { method: r.method, raw: r, header: (n: string) => r.headers.get(n) ?? undefined } }) as never;
+    const clicked = () => new Request("http://x/peer/b/api/x", { method: "POST", headers: pageHeaders(), body: "{}" });
+    assert.ok(await clickProofFor(seen(clicked()), "b", "/api/project-services/apply"));
+    assert.ok(await clickProofFor(seen(clicked()), "b", "/api/projects/pid/services/apply"));
+    assert.equal(await clickProofFor(seen(clicked()), "b", "/api/project-services/down"), undefined);
+    assert.equal(await clickProofFor(seen(clicked()), "b", "/api/projects/pid/services/down"), undefined);
+    assert.equal(await clickProofFor(seen(new Request("http://x", { method: "POST", headers: { [TOKEN]: "t" }, body: "{}" })), "b", "/api/project-services/apply"), undefined, "a script gets none");
   });
 });
 

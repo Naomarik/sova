@@ -95,10 +95,12 @@ if [ -n "$SANDBOXED" ] && [ -z "$HEADLESS" ]; then
     exit 1
 fi
 
-# With --headless, prefer Playwright's chrome-headless-shell (no app bundle, so no
-# GUI-session services): the newest numeric revision installed, macOS or Linux.
+# With --headless on macOS or inside a sandbox, prefer Playwright's
+# chrome-headless-shell (no app bundle, so no GUI-session services): the newest
+# numeric revision installed. Unsandboxed Linux keeps Chrome for Testing with
+# --headless=new.
 HEADLESS_SHELL=""
-if [ -z "$CHROMIUM_BIN" ] && [ -n "$HEADLESS" ]; then
+if [ -z "$CHROMIUM_BIN" ] && [ -n "$HEADLESS" ] && { [ -n "$SANDBOXED" ] || [ "$(uname)" = "Darwin" ]; }; then
     CHROMIUM_BIN=$(
         ls -d "$HOME/Library/Caches/ms-playwright/chromium_headless_shell-"*/chrome-headless-shell-mac-*/chrome-headless-shell \
               "$HOME/.cache/ms-playwright/chromium_headless_shell-"*/chrome-headless-shell-linux64/chrome-headless-shell \
@@ -107,7 +109,7 @@ if [ -z "$CHROMIUM_BIN" ] && [ -n "$HEADLESS" ]; then
         while IFS= read -r candidate; do
             [ -x "$candidate" ] && { echo "$candidate"; break; }
         done
-    )
+    ) || true
 fi
 case "$CHROMIUM_BIN" in
     */chrome-headless-shell|*/headless_shell) HEADLESS_SHELL="yes" ;;

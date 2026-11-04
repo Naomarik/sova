@@ -76,7 +76,7 @@ export const DESCRIPTION_MAX = 1000;
 
 /** What a command declares for the Overseer (ext-contract-v1.18, §app.overseer/extension-commands). */
 export interface ExtOverseerKeys {
-  /** `overseer: true`: the Overseer may be given it (the user still switches it on). */
+  /** `overseer: true`: the Overseer may run it while its extension is running (nothing to switch on). */
   overseer?: true;
   /** Text for a model, 1–DESCRIPTION_MAX characters; line breaks allowed, no other control character. */
   description?: string;

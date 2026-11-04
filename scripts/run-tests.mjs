@@ -64,6 +64,11 @@
 // message), and a file that failed with no failing test (a crash, a load error, a kill) counts as an
 // error with the file as its name. On Node (whose output isn't read) only failing files are named.
 // --plan and an empty selection write none.
+// macOS only (Linux is unchanged): a test file's throwaway root (also its TMPDIR) goes under /tmp when
+// the default /var/folders/…/T/ would make Chromium's socket path too long (scripts/test-temp-root.mjs),
+// and those roots are removed when their file ends or at the runner's exit; macBrowserEnv points
+// PLAYWRIGHT_BROWSERS_PATH at the Playwright cache and, with no chrome-headless-shell there, sets
+// SOVA_TOUR_BROWSER to a missing path, so browser tests fail or skip instead of starting the Chrome app.
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import fs from "node:fs";

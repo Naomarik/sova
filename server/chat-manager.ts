@@ -263,7 +263,7 @@ export function alignLaunchOf(state: Pick<SessionState, "branch" | "file">): Ali
 /** The extensions every ordinary session loads beyond pi-config's: resource monitoring, inherited
     fork-cache affinity and the macOS kill guard (server/shell-guard.ts). None changes prompt sections or tool declarations by loading. A caller that passes its own list for an ordinary session
     starts from this one; the special loadouts keep exactly their own (none has bash). */
-const DEFAULT_EXTENSION_FACTORIES = [
+export const DEFAULT_EXTENSION_FACTORIES = [
   { name: "sova-resource-monitor", factory: monitorExtension },
   { name: "sova-fork-cache", factory: forkCacheExtension },
   SHELL_GUARD_FACTORY,

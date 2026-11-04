@@ -4191,8 +4191,8 @@ export interface ExtensionCommandInfo {
   /** It is an entry of this menu too: "session", the Agents board row's ⋯ menu
       (src/lib/menu-place.ts). Absent: in no menu. */
   menu?: "session";
-  /** ext-contract-v1.18: the extension offers it to the Overseer (the user switches it on in
-      Settings → Overseer, §app.overseer/extension-commands). Absent: not offered. */
+  /** ext-contract-v1.18: the extension offers it to the Overseer, which may run it while the
+      extension is running; nothing to switch on (§app.overseer/extension-commands). Absent: not offered. */
   overseer?: true;
   /** ext-contract-v1.18: running it starts a job the extension reports on later. */
   job?: true;

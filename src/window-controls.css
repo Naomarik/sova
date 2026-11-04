@@ -40,7 +40,7 @@
   html .scrim,
   html .drop-overlay,
   html .ext-frame.ext-frame-max { top: var(--wco-height); }
-  html .ext-frame.ext-frame-max { height: auto; }
+  html .ext-frame.ext-frame-max { height: calc(100% - var(--wco-height)); }
   html .lightbox,
   html .tour-viewer {
     top: var(--wco-height);

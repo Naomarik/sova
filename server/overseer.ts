@@ -119,7 +119,7 @@ import { tourSignInWaits } from "./tours/sign-in-notice";
 import { deployAttentionItems } from "./project-services/deploy-attention";
 import { extensionHealth, overseerExtCommands } from "./extensions";
 import { abilitiesInfo, extAbilities } from "./overseer-abilities";
-import { extJobTick, noteReported, parseJobStatus, reportedRecently, type StatusAnswer, watchedJobs, watchExtJob, type WatchedJob } from "./overseer-ext-jobs";
+import { extJobTick, nameLine, noteReported, reportedRecently, type StatusAnswer, statusAnswerOf, watchedJobs, watchExtJob, type WatchedJob } from "./overseer-ext-jobs";
 
 /**
  * The Overseer: ONE special Sova session that watches every other session and acts on them
@@ -474,8 +474,7 @@ export async function saveOverseerSettings(body: unknown): Promise<OverseerSaveR
   // The memory switch is its own route's: a settings save keeps the stored one, so a
   // stale copy of the settings never turns it back on or off.
   const { memory: _sent, ...rest } = parsed;
-  const before = readOverseerSettings();
-  const stored = before.memory;
+  const stored = readOverseerSettings().memory;
   writeOverseerSettings({ ...rest, ...(stored ? { memory: stored } : {}) });
   pendingApply = true;
   await applySettingsNow();
@@ -547,6 +546,13 @@ function overseerRun(): ServerToolRun | undefined {
 
 /** Sessions the Overseer created or prompted, for the running-at-once cap. */
 const started = new Set<string>();
+/** Sessions an extension command or job reported (this host's, by path): they count toward the
+    Overseer's own running-at-once cap (its next start or send), never toward the slots a schedule's
+    fire or an auto-resume takes (freeRunSlots, resumeDeps). The newest REPORTED_PATHS_MAX are kept. */
+const reportedPaths = new Set<string>();
+const REPORTED_PATHS_MAX = 200;
+/** The Overseer's own count: what it started and what its extensions reported, each session once. */
+const overseerCounted = (): Set<string> => new Set([...started, ...reportedPaths]);
 /** When the Overseer last created or prompted each local session (by path), for the sessions in
     play (§app.overseer/sessions-in-play); in memory, beside what its branch's tool results say. */
 const touchedAt = new Map<string, number>();
@@ -700,8 +706,8 @@ const host: OverseerToolHost = {
     noteReported: (ids) => reportSessions(ids),
   },
   worktrees: archiveWorktrees(readBranch),
-  runningStarted: () => countRunning(started, running, promptedAt),
-  counted: (path) => countRunning(started.has(path) ? [path] : [], running, promptedAt) > 0,
+  runningStarted: () => countRunning(overseerCounted(), running, promptedAt),
+  counted: (path) => countRunning(started.has(path) || reportedPaths.has(path) ? [path] : [], running, promptedAt) > 0,
   attended: () => attended(),
   confirmed: () => {
     const run = overseerRun();
@@ -838,7 +844,7 @@ async function overseerEntries(): Promise<{ path: string; branch: readonly HEntr
 /** GET /api/overseer/autonomy: the running count and cap, and every grant and rule. */
 export async function overseerAutonomy(): Promise<OverseerAutonomy> {
   const cap = readOverseerSettings().caps.concurrentSessions;
-  const count = countRunning(started, running, promptedAt);
+  const count = countRunning(overseerCounted(), running, promptedAt);
   const e = await overseerEntries();
   const schedules = await schedulesForWire().catch(() => []);
   return { running: count, cap, permits: e ? foldPermits(e.branch, e.all, Date.now()) : [], ...(schedules.length ? { schedules } : {}) };
@@ -1039,7 +1045,7 @@ export function overseerValues(settings: OverseerSettings, now = new Date(), red
 export function extCommandsText(): string {
   const mine = overseerExtCommands();
   if (!mine.length) return "  (none: no installed extension marks a command for you)";
-  return mine.map((c) => `  - ${c.command.id}: ${c.extension.title} · ${c.command.label}${c.job ? " (starts a job)" : ""}`).join("\n");
+  return mine.map((c) => `  - ${c.command.id}: ${nameLine(c.extension.title)} · ${nameLine(c.command.label, 48)}${c.job ? " (starts a job)" : ""}`).join("\n");
 }
 
 /** GET /api/overseer/abilities (§app.overseer/about): the same reading of its extension commands as sova_ext's. */
@@ -1080,7 +1086,8 @@ export function renderOverseerPrompt(
     .replaceAll("{{NOW}}", values.NOW ?? now.toString())
     .replaceAll("{{HOME}}", homedir())
     .replaceAll("{{CAPS}}", values.CAPS ?? "")
-    .replaceAll("{{EXT}}", values.EXT ?? extCommandsText());
+    // A function, so `$\``, `$'` and `$&` in an extension's title stay as written.
+    .replaceAll("{{EXT}}", () => values.EXT ?? extCommandsText());
 }
 
 /** The user's extra instructions (Settings → Overseer) as a prompt part, none when blank. Redacted
@@ -1446,7 +1453,9 @@ async function sendBrief(body: string): Promise<void> {
 export const tickNowForTest = (o: { ignoreGap?: boolean } = {}): Promise<{ briefed: string[] } | { error: string }> => tick(!!o.ignoreGap);
 
 /** Free slots of the running-at-once cap, for a schedule's fire as for a resume (§chat.schedules/fire). */
-export const freeRunSlots = (): number => readOverseerSettings().caps.concurrentSessions - countRunning(started, running, promptedAt);
+export const freeRunSlots = (isRunning: (path: string) => boolean = running): number => freeSlotsWith(isRunning);
+/** The cap's free slots for a schedule's fire or an auto-resume: what the Overseer started only. */
+const freeSlotsWith = (isRunning: (path: string) => boolean): number => readOverseerSettings().caps.concurrentSessions - countRunning(started, isRunning, promptedAt);
 /** A session a schedule started or woke counts toward that cap, as a resumed one does. */
 export const countStarted = (path: string): void => host.started(path, true);
 /** One brief to the Overseer under Brief Me, nothing otherwise (a schedule found, §chat.schedules/where-shown). */
@@ -1467,7 +1476,7 @@ export function resumeCrashedChat(path: string, since: number, before: (path: st
   timer.unref();
 }
 
-function resumeDeps(): ResumeDeps {
+function resumeDeps(isRunning: (path: string) => boolean = running): ResumeDeps {
   const settings = readOverseerSettings();
   return {
     enabled: settings.autoResume !== false,
@@ -1476,7 +1485,7 @@ function resumeDeps(): ResumeDeps {
       if (!s) return null;
       return { ...s, name: sessionName(s, readAliases()[s.id]), projectOverseer: !!projectOverseerOfPath(path) };
     },
-    freeSlots: () => readOverseerSettings().caps.concurrentSessions - countRunning(started, running, promptedAt),
+    freeSlots: () => freeSlotsWith(isRunning),
     prompt: async (path, text, key) => {
       const r = await promptSession(path, text, readOverseerState()?.current, "followUp", undefined, key);
       if (!r.ok) throw new Error(r.error);
@@ -1523,14 +1532,37 @@ let extTicking = false;
 /** A job's status asked this long at most. */
 const EXT_STATUS_WAIT_MS = 30_000;
 
-/** Sessions a command or job reported: this host's count toward the running-at-once cap from now on
-    (while they run; never a refusal of what reported them), and all stay among the sessions in play. */
+/** Sessions a command or job reported: this host's count toward the Overseer's own running-at-once
+    cap from now on (while they run; never a refusal of what reported them, and never a schedule's or
+    auto-resume's slot), and all stay among the sessions in play. */
 async function reportSessions(ids: readonly string[]): Promise<void> {
   for (const id of ids) {
     const path = await pathOfId(id).catch(() => null);
-    if (path) started.add(path);
+    if (path) noteReportedPath(path);
   }
   noteReported(ids, Date.now());
+}
+
+function noteReportedPath(path: string): void {
+  reportedPaths.delete(path);
+  reportedPaths.add(path);
+  for (const old of reportedPaths) {
+    if (reportedPaths.size <= REPORTED_PATHS_MAX) break;
+    reportedPaths.delete(old);
+  }
+}
+
+/** Test only: the running counts with these sessions reported (by path) and these running: the
+    Overseer's own (its cap), a schedule's free slots and auto-resume's. Clears what it added. */
+export function reportedCountsForTest(paths: readonly string[], isRunning: (path: string) => boolean): { overseer: number; scheduleSlots: number; resumeSlots: number } {
+  const before = new Set(reportedPaths);
+  for (const p of paths) noteReportedPath(p);
+  try {
+    return { overseer: countRunning(overseerCounted(), isRunning, new Map()), scheduleSlots: freeRunSlots(isRunning), resumeSlots: resumeDeps(isRunning).freeSlots() };
+  } finally {
+    reportedPaths.clear();
+    for (const p of before) reportedPaths.add(p);
+  }
 }
 
 /** A session id as the Overseer names it (§app.overseer/session-names): a link when it is a session here. */
@@ -1548,16 +1580,8 @@ async function sessionLinks(ids: readonly string[]): Promise<string[]> {
 /** Ask an extension for one job's state, through the proxy as the Overseer's own call. */
 async function askJob(job: WatchedJob): Promise<StatusAnswer> {
   const res = await host.request(`/ext/${encodeURIComponent(job.extension)}/api/commands/jobs/${encodeURIComponent(job.job)}`, { method: "GET", signal: AbortSignal.timeout(EXT_STATUS_WAIT_MS) });
-  if (res.status === 404) return { kind: "gone" };
-  let body: unknown = null;
-  try {
-    body = await res.json();
-  } catch {
-    body = null;
-  }
-  if (res.status < 200 || res.status > 299) return { kind: "error", why: `HTTP ${res.status}` };
-  const status = parseJobStatus(body);
-  return status ? { kind: "status", status } : { kind: "error", why: "no job state in its answer" };
+  // At most 64 KB read, like a run's answer; the timeout covers a body that stalls.
+  return statusAnswerOf(res);
 }
 
 const extJobDeps = () => ({

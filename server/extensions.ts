@@ -72,6 +72,12 @@ function checkApi(api: unknown): string | null {
   return null;
 }
 
+/** An extension's title, at most this many characters. */
+export const TITLE_MAX = 80;
+/** One line, no control character (U+2028/U+2029 and NEL among them), at most TITLE_MAX: it is written
+    into the Overseer's prompt and into lines Sova writes around an extension's text. */
+const plainTitle = (t: string): boolean => t.length <= TITLE_MAX && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/.test(t);
+
 /** One manifest record → an entry, or the reason it is dropped. Unknown keys are ignored. `offers`
     is what its `commands` and `screens` validly declare (shared/extension-offers.ts), absent when
     nothing; it is kept apart from the entry, which is also what the mesh publishes to peers, so
@@ -85,9 +91,12 @@ export function validateExtension(raw: unknown): { entry: ExtensionEntry; offers
   if (typeof r.dist !== "string" || !isAbsolute(r.dist)) return { error: `${r.id}: dist must be an absolute path` };
   const apiError = checkApi(r.api);
   if (apiError) return { error: `${r.id}: ${apiError}` };
+  // A title is one plain line (like a command's label): a bad one is left out alone, the id stands in.
+  const title = typeof r.title === "string" ? r.title.trim() : "";
+  if (title && !plainTitle(title)) warnOnce(`${r.id}: left out its title (one line of at most ${TITLE_MAX} characters, no control characters)`);
   const entry: ExtensionEntry = {
     id: r.id,
-    title: typeof r.title === "string" && r.title.trim() ? r.title.trim() : r.id,
+    title: title && plainTitle(title) ? title : r.id,
     dist: resolve(r.dist),
     api: r.api as string,
   };
@@ -139,7 +148,8 @@ export interface OverseerExtCommand {
 /**
  * Every installed command its extension offers the Overseer, in manifest order: exactly the
  * commands the offers mark `overseer`, built whole by the same rule (§app.overseer/extension-commands).
- * Whether the user switched one on is the caller's question. Reads the manifest, probes nothing.
+ * There is nothing to switch on: whether its extension is running is the caller's question.
+ * Reads the manifest, probes nothing.
  */
 export function overseerExtCommands(): OverseerExtCommand[] {
   const out: OverseerExtCommand[] = [];

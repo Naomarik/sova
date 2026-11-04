@@ -54,7 +54,8 @@ export function offersOf(extId: string, raw: { commands?: unknown; screens?: unk
           if (isMenuPlace(menu)) info.menu = menu;
           else badMenus++;
         }
-        // ext-contract-v1.18: each key alone; only `true` rides along (a description stays server-side).
+        // ext-contract-v1.18: each key alone; only `true` rides along here (the description is read from the
+        // manifest by overseerExtCommands, for sova_ext and the Overseer's About panel).
         const keys = extOverseerKeys(own);
         if (keys.overseer) info.overseer = true;
         if (keys.job) info.job = true;

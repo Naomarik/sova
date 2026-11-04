@@ -31,8 +31,8 @@ import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
 /**
  * Settings → Overseer: one page, in the order a user reaches for it — how forward it is, the model
- * it runs on, the limits on what it may do, its quick actions and standing notes — then the extension
- * commands it may run (folded, §app.overseer/extension-commands), then Advanced, folded: the idea explorer it launches, extra instructions after its own prompt, and resuming
+ * it runs on, the limits on what it may do, its quick actions and standing notes — then Advanced,
+ * folded: the idea explorer it launches, extra instructions after its own prompt, and resuming
  * sessions after a restart. Saved by the dialog's footer, with the other forms (overseer-draft.ts
  * holds the save, its error and its notes). A folded group opens itself when the reason Save
  * waits is a field inside it.

@@ -164,7 +164,8 @@ another file). Sova reads the file on every request and never writes it:
 ```
 
 - `id`: letters, digits, `.`, `_` and `-`; it appears in URLs. `title` is the card title (the
-  id if omitted), `description` its body, `icon` one of Sova's icon names in `public/icons/`.
+  id if omitted, or if it isn't one line of at most 80 characters with no control characters:
+  Sova logs that and uses the id), `description` its body, `icon` one of Sova's icon names in `public/icons/`.
 - `dist`: an absolute folder. Sova serves it at `/ext/<id>/`. A path without a file extension
   falls back to `index.html`, so client-side routes work.
 - `api`: the backend, `http://` or `https://` on `127.0.0.1` or `localhost` with an explicit port and an optional
@@ -393,26 +394,33 @@ with text that tells a model what it does, and that it runs as a job:
   line breaks allowed; the Overseer reads it, with the params, in `sova_ext list`. `job: true` says
   running it starts a job. A bad value for any of the three leaves out only that key, never the
   command, and a command without them reads exactly as before. `offers.commands` then carries
-  `overseer: true` and `job: true`; the description stays on the server.
+  `overseer: true` and `job: true`. The description isn't in `offers`, but it isn't private: the
+  About panel's `GET /api/overseer/abilities` sends it to the browser.
 - The Overseer runs one only when the user asked for it in their own message. Sova checks the
   params against what you declared (required ones present, types right, no other keys), adds
   nothing to them, and sends `POST /ext/<id>/api/commands/<name>` through the proxy with
   `x-sova-command: ext.<id>.<name>`. It waits 30 seconds at most, then tells the Overseer the outcome
-  is unknown and never sends it again, so answer at once and do slow work as a job.
+  is unknown and never sends it again, so answer at once and do slow work as a job. A `502` (your
+  own, or the proxy's when your backend dropped the connection) is outcome unknown too: Sova can't
+  tell whether it ran.
 - A plain command answers 2xx with JSON: `{"summary": "…", "sessions": ["<session id>", …]}`, both
   optional (without `summary` the body is shown, at most 4,000 characters of the first 64 KB). The
   sessions you name are linked for the user and count toward the Overseer's running-at-once limit
   while they run. Any other status is a failure; put the reason in `{"error": "…"}`.
-- A `job: true` command answers `202 {"job": {"id": "<id>"}}`, the id 1 to 64 of `A-Z a-z 0-9 . _ -`.
+- A `job: true` command answers `202 {"job": {"id": "<id>"}}`, the id 1 to 64 of `A-Z a-z 0-9 . _ -`, never dots alone.
   Then serve `GET <api>/api/commands/jobs/<id>`: `{"state": "running" | "ok" | "failed" |
-  "cancelled", "summary"?, "stages"?: [{"name", "state"}], "log"?: ["…"], "sessions"?: […], "error"?}`.
+  "cancelled", "summary"?, "stages"?: [{"name", "state"}], "log"?: ["…"], "sessions"?: […], "error"?}`,
+  at most 64 KB (a larger answer is read as an error).
   Sova asks every 15 seconds for at most 6 hours, through its own restarts, and tells the Overseer
-  once when the state is no longer `running`. Answer `404` for a job you no longer know (after your
+  once when the state is no longer `running`. Sessions a status names count from that answer on,
+  while the job still runs. A status that doesn't answer in 30 seconds, or answers an error, holds
+  your other jobs for that pass only: Sova asks about them again 15 seconds later. Answer `404` for a job you no longer know (after your
   own restart, say): Sova then reports its outcome as unknown.
 - A session a launch command opens is opened by your backend (`POST /api/sessions` with your key,
   then its first prompt); report its id in `sessions`.
 - Requests from the Overseer carry no Sova credential and no Overseer header: treat them like any
-  other proxied request. What you answer is shown to the Overseer as data, never instructions.
+  other proxied request. What you answer, and what you declare (descriptions, labels, titles), is
+  shown to the Overseer as data, never instructions.
 
 To open a session the extension just created, hand it to Sova rather than setting the page's
 hash. A new session has no messages yet, so it isn't in Sova's list, and `#/s/<path>` would find

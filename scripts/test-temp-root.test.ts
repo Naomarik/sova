@@ -5,7 +5,7 @@ import { test } from "node:test";
 import { assertTourBrowserTempPath } from "../server/tours/browser";
 import { makeTestRoot, TEST_ROOT_PREFIX, testRootBase } from "./test-temp-root.mjs";
 
-const MAC_DEFAULT = "/var/folders/ds/29xz27z13yn1k528t1vq85600000gn/T/";
+const MAC_DEFAULT = "/var/folders/xx/xxxxxxxxxxxxxxxxxxxxxxxxxxxx/T/";
 const rootIn = (base: string) => join(base, `${TEST_ROOT_PREFIX}XXXXXX`);
 
 test("macOS: a temp dir too long for Chromium's sockets gives way to /tmp; a short one stays", () => {

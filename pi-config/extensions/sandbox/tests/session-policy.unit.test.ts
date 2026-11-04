@@ -169,8 +169,11 @@ test("prepareSessionCommand: a caller's own tmp is the attempt's, and goes with 
 test("prepareSessionCommand: a caller's own tmp keeps the attempt's proxy socket beside it, whatever TMPDIR is", async (t) => {
 	const { home, agentDir, ws } = rig(t);
 	let parent: string;
-	// A socket path needs to be short: /tmp, which a sandboxed chat running this test can't write.
-	try { parent = realpathSync(mkdtempSync("/tmp/own-")); } catch { t.skip("/tmp is closed here"); return; }
+	// A socket path needs to be short: /tmp, which a sandboxed chat running this test can't write. On
+	// Linux /dev/shm instead, as proxy.unit.test.ts does: linux-bwrap's hostTmp test, running beside
+	// this one, masks every socket in /tmp, and one removed between its scan and bwrap's start fails it.
+	const shortRoot = process.platform === "linux" && existsSync("/dev/shm") ? "/dev/shm" : "/tmp";
+	try { parent = realpathSync(mkdtempSync(join(shortRoot, "own-"))); } catch { t.skip(`${shortRoot} is closed here`); return; }
 	t.after(() => rmSync(parent, { recursive: true, force: true }));
 	const backend = new DarwinSeatbeltBackend({ sandboxExec: process.execPath });
 	let socket: string | undefined;

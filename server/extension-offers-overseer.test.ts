@@ -2,7 +2,7 @@
 // A command's ext-contract-v1.18 keys (§app.commands/extension-commands, §app.overseer/extension-commands):
 // `overseer: true`, `description` and `job: true`. Each is read on its own: a bad value leaves out
 // only that key, never the command. The offers carry `overseer` and `job` as `true` only; the
-// description stays server-side (overseerExtCommands). A command without them reads exactly as
+// description is read from the manifest (overseerExtCommands), never in the offers. A command without them reads exactly as
 // before, for the offers and for the command line.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";

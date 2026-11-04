@@ -88,12 +88,13 @@ export const cardNotes = (c: Pick<MergeCard, "notes">) => notesOf(c.notes);
  *  fixed (`redrafted`), Land at the same commit in place of the first. Drafts changed: Land (approves the drafts as
  *  they are now). */
 export type CardAction = "cancel" | "accept" | "land-anyway" | "send-back" | "land-again" | "land" | "land-this-again" | "remove";
-export function cardActions(c: Pick<MergeCard, "state" | "newerCommits"> & Partial<Pick<MergeCard, "redrafted">>): CardAction[] {
+export function cardActions(c: Pick<MergeCard, "state" | "newerCommits"> & Partial<Pick<MergeCard, "redrafted" | "settled">>): CardAction[] {
   switch (c.state) {
     case "queued":
       return ["cancel"];
     case "needs-fix":
-      return [c.redrafted ? "land" : "land-this-again", "remove"];
+      // Settled (superseded, already in the target, its branch or folder gone): nothing is left to land or remove.
+      return c.settled ? [] : [c.redrafted ? "land" : "land-this-again", "remove"];
     case "drafts-changed":
       return ["land"];
     case "behaviour-differs":

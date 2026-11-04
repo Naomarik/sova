@@ -36,6 +36,8 @@ test("each state's actions: none of them writes into the chat (all merge verbs)"
   assert.deepEqual(cardActions(card({ state: "needs-fix", redrafted: true })), ["land", "remove"], "its drafts fixed: Land at the same commit");
   assert.deepEqual(cardActions(card({ state: "drafts-changed" })), ["land"]);
   assert.deepEqual(cardActions(card({ state: "cancelled", removed: true })), []);
+  for (const settled of ["superseded", "merged", "gone"] as const)
+    assert.deepEqual(cardActions(card({ state: "needs-fix", settled })), [], `settled ${settled}: nothing the queue would refuse`);
   assert.deepEqual(cardActions(card({ state: "landed" })), []);
   assert.deepEqual(cardActions(card({ state: "landed", newerCommits: 1 })), ["land-again"]);
 });

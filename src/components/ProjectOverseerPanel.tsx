@@ -50,7 +50,7 @@ import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGa
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
 import { land, refusal } from "../lib/merge-queue-client";
-import { queueRow, entryLandBlock } from "../lib/merge-queue";
+import { queueRow, entryLandBlock, landThisAgainOf } from "../lib/merge-queue";
 import { createProjectQueue } from "../lib/project-queue";
 import { QueueChip } from "./WorktreesModal";
 import { LinksBanner, type Links } from "./LinksBanner";
@@ -1131,6 +1131,18 @@ function CodingSessions(props: {
                               }
                               onRun={() => row.worktree && void landRow({ ...row, worktree: row.worktree })}
                             />
+                            <Show when={row.worktree && landThisAgainOf(queue.info(row.branch))}>
+                              {(commit) => (
+                                <menu.Item
+                                  label="Land This Commit Again"
+                                  aria={`Land ${row.branch} at this commit again`}
+                                  icon={<Icon name="branch" small />}
+                                  description={`Approves ${commit().slice(0, 7)} again: every check runs from the start.`}
+                                  disabled={(gestures().merge || undefined) ?? (working() ? "Working" : undefined)}
+                                  onRun={() => row.worktree && void landRow({ ...row, worktree: row.worktree, head: commit() })}
+                                />
+                              )}
+                            </Show>
                           </Show>
                         </Show>
                         <Show when={gestures().remove !== false}>

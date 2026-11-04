@@ -47,9 +47,9 @@ export function noticeText(kind: MergeNoticeKind, e: MergeEntry, extra: { run?: 
       const lines = [`The user sent ${e.branch} back: ${e.reason ?? "it needs another look"}.`];
       if (e.conflict) {
         lines.push(`${e.target}'s side: ${e.conflict.ours}`, `This branch's side: ${e.conflict.theirs}`, `Proposed: ${e.conflict.proposal}`);
-        lines.push(`Merge ${e.target} into ${e.branch}, resolve it the way the user wants, commit, and ask them to land it again.`);
-      } else if (e.review?.text) lines.push(`The review: ${e.review.text}`, "Address it, commit, and ask the user to land it again.");
-      else lines.push("Look at it, commit, and ask the user to land it again.");
+        lines.push(`Merge ${e.target} into ${e.branch}, resolve it the way the user wants, and commit: Land comes back on its row once your fix is committed and finished, or the user can use Land This Commit Again.`);
+      } else if (e.review?.text) lines.push(`The review: ${e.review.text}`, "Address it and commit: Land comes back on its row once your fix is committed and finished, or the user can use Land This Commit Again.");
+      else lines.push("Look at it and commit: Land comes back on its row once your fix is committed and finished, or the user can use Land This Commit Again.");
       return lines.join("\n");
     }
     case "explained": {

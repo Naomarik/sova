@@ -381,6 +381,7 @@ export class MergeCards {
     setOpt(card, "worktree", e.worktree);
     setOpt(card, "redrafted", e.state === "needs-fix" && e.redrafted ? true : undefined);
     setOpt(card, "sentBackFor", e.state === "needs-fix" ? e.sentBackFor : undefined);
+    setOpt(card, "settled", e.state === "needs-fix" ? e.settled : undefined);
     const thread = e.state === "needs-fix" ? e.notes.find((n) => n.kind === "thread") : undefined;
     setOpt(card, "explanation", thread ? { text: thread.text, at: thread.at } : undefined);
     if (run && e.state === "needs-fix") card.failures = failuresOf(run);

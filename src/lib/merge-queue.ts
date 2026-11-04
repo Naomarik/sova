@@ -144,12 +144,18 @@ export const fixedPast = (w: { readiness?: { landing?: { commit: string } } }, s
  *  (`redrafted`: sent back for its drafts, changed since, and Sova's docs check reads clean), then on at the same
  *  commit; with no readiness it can't see a fixed, finished commit, so Land comes back on the rows that can. In line:
  *  off. Drafts changed: on (Land re-approves). */
-export function entryLandBlock(e: Pick<WorktreeQueueInfo, "state" | "redrafted"> | undefined): string | undefined {
+export function entryLandBlock(e: Pick<WorktreeQueueInfo, "state" | "redrafted" | "settled"> | undefined): string | undefined {
   if (!e) return undefined;
-  if (e.state === "needs-fix") return e.redrafted ? undefined : SENT_BACK_LINE;
+  if (e.state === "needs-fix") return e.redrafted || e.settled ? undefined : SENT_BACK_LINE;
   if ((["queued", "checking", "conflict", "behaviour-differs", "review-flagged"] as string[]).includes(e.state)) return "Already in the merge queue.";
   return undefined;
 }
+
+/** The commit Land This Commit Again pins, where an item that knows only the branch's queue entry offers it (the
+ *  Overseer's coding-worktree menu, beside its Land that entryLandBlock turns off): a sent-back entry still needing a
+ *  fix. None once its drafts are fixed (Land is on) or it settled (nothing left to land). */
+export const landThisAgainOf = (e: Pick<WorktreeQueueInfo, "state" | "commit" | "redrafted" | "settled"> | undefined): string | undefined =>
+  e?.state === "needs-fix" && !e.redrafted && !e.settled ? e.commit : undefined;
 
 /** The tab's Sent back list: only entries that still need a fix. One the queue marks settled (a later entry for its
  *  branch, already in the target, its branch or folder removed) leaves it, and so does one whose branch already reads

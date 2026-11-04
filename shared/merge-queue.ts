@@ -650,6 +650,8 @@ export interface MergeCard {
   redrafted?: true;
   /** The user removed it from the queue (Remove from Queue): its last revision, until a new Land moves it on. */
   removed?: true;
+  /** Needs a fix that no longer needs one (the entry's `settled`: superseded, merged, gone): it offers nothing. */
+  settled?: MergeSettled;
   revisions: MergeCardRevision[];
   updatedAt: string;
 }

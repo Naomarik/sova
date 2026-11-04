@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { entryLandBlock, type MergeEntry, type QueueRowInput, queueRow, rowButtons, SENT_BACK_LINE, stillSentBack, type WorktreeQueueInfo } from "./merge-queue";
+import { entryLandBlock, landThisAgainOf, type MergeEntry, type QueueRowInput, queueRow, rowButtons, SENT_BACK_LINE, stillSentBack, type WorktreeQueueInfo } from "./merge-queue";
 
 /**
  * al_4, as al_1 changed it: a branch the queue sent back to its chat (needs-fix) offers no Land until its chat fixes it:
@@ -70,6 +70,14 @@ test("the Overseer's coding-worktree menu (no readiness): Land is off on a sent-
   assert.equal(entryLandBlock(sentBack()), SENT_BACK_LINE);
   assert.equal(SENT_BACK_LINE, "Sent back to its chat. Land comes back once its chat fixes it, or use Land This Commit Again.");
   assert.equal(entryLandBlock(sentBack({ redrafted: true })), undefined, "sent back for its drafts, fixed: Land on");
+  // The menu offers what that line names: Land This Commit Again, at the sent-back commit, while it still needs a fix.
+  assert.equal(landThisAgainOf(sentBack()), SENT);
+  assert.equal(landThisAgainOf(sentBack({ redrafted: true })), undefined, "its drafts fixed: Land is on instead");
+  for (const settled of ["superseded", "merged", "gone"] as const) {
+    assert.equal(landThisAgainOf(sentBack({ settled })), undefined, `settled ${settled}: nothing to land again`);
+    assert.equal(entryLandBlock(sentBack({ settled })), undefined, `settled ${settled}: the row reads as the branch itself`);
+  }
+  for (const state of ["queued", "landed", "drafts-changed"] as const) assert.equal(landThisAgainOf(sentBack({ state })), undefined, state);
   // In line: off as before; nothing in the queue, or Drafts changed (Land re-approves): on.
   for (const state of ["queued", "checking", "conflict", "behaviour-differs", "review-flagged"] as const) assert.equal(entryLandBlock(sentBack({ state })), "Already in the merge queue.", state);
   assert.equal(entryLandBlock(undefined), undefined);

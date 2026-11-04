@@ -4,12 +4,14 @@ import { join } from "node:path";
 import { describe, test } from "node:test";
 import type { SessionSummary } from "../../shared/protocol";
 import { sendQueueWake, type WakeDeps } from "./wake";
-import { type MergeCard, type MergeQueueView } from "../../shared/merge-queue";
+import { type MergeCard, type MergeEntry, type MergeQueueView } from "../../shared/merge-queue";
 import { isMergeQueueText, MERGE_QUEUE_SENT_PREFIX, MERGE_QUEUE_SESSION } from "../../shared/senders";
 import { MERGE_QUEUE_SENDER } from "./wake";
 import { blockedNoteText, docsNudgeText } from "../ready-to-land";
 import { withMergeCardNote, setMergeCardNoteSource } from "./card-note";
 import { MergeCards } from "./cards";
+import { noticeText } from "./notices";
+import { sh } from "./testing/queue-kit";
 import type { QueueDeps } from "./queue";
 import { makeKit, until, untilAborted } from "./testing/queue-kit";
 
@@ -207,6 +209,37 @@ describe("a branch's card in its own chat", () => {
       await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.entry === again.entry.id), "moved on");
       assert.equal(t.cards.cardsOf("s1")[0]!.removed, undefined);
       await q.idle();
+      await t.settle();
+    } finally {
+      await t.k.done();
+    }
+  });
+
+  test("the user's Send Back: its wake names what the user will see (Land back after a committed fix, or Land This Commit Again)", () => {
+    const e = { branch: "feat/x", target: "master", commit: "a".repeat(40), notes: [], reason: "the review flagged it" } as never as MergeEntry;
+    const plain = noticeText("sent-back", e);
+    const review = noticeText("sent-back", { ...e, review: { verdict: "blocking", text: "a TODO" } } as never);
+    const conflict = noticeText("sent-back", { ...e, conflict: { ours: "o", theirs: "t", proposal: "p" } } as never);
+    for (const t of [plain, review, conflict]) {
+      assert.match(t, /Land comes back on its row once your fix is committed and finished, or the user can use Land This Commit Again\./);
+      assert.doesNotMatch(t, /ask (the user|them) to land it again/);
+    }
+  });
+
+  test("a Needs a fix card whose entry settled (its branch and folder gone) says so on the card: nothing left to offer", async () => {
+    const t = cardKit();
+    try {
+      const q = await t.k.q();
+      t.k.run.set(() => ({ verdict: "failed", blame: "branch", why: "unit failed" }));
+      const b = t.k.repo.branch("feat/gone", { "g.txt": "g\n" });
+      const { entry } = await q.add({ branch: "feat/gone", by: "land-button", session: "s1" });
+      await until(async () => (await t.k.entry(entry.id)).state === "needs-fix", "needs-fix");
+      await until(async () => (await t.settle(), t.cards.cardsOf("s1")[0]!.revisions.length === 2), "needs-fix revision");
+      assert.equal(t.cards.cardsOf("s1")[0]!.settled, undefined);
+      sh(t.k.repo.root, "worktree", "remove", "--force", b.path);
+      sh(t.k.repo.root, "branch", "-D", "feat/gone");
+      await t.cards.sync(await q.view({ fresh: true }));
+      assert.equal(t.cards.cardsOf("s1")[0]!.settled, "gone");
       await t.settle();
     } finally {
       await t.k.done();

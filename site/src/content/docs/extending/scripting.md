@@ -117,6 +117,7 @@ refusal says where to click.
 | Lowering a chat's sandbox | The Sandbox rows in that chat's composer. A `/sandbox` sent as a message is refused too |
 | Approving a project tool | **Approve and Turn On** in that chat's mode menu |
 | Trusting a project's or an extension's cards | **Trust {name}'s Cards** on the card |
+| Restarting or updating Sova | **Restart Sova** and the update controls in Settings → General, or Apply on the Sova project's Branches tab |
 
 Only the widening closes. Turning a power off, raising a sandbox, turning a mode off, turning on a mode at
 a version already approved and turning a card owner's trust off stay open to scripts.
@@ -146,6 +147,8 @@ A click relayed through a computer you've linked can't be told from a script goi
 This applies only to computers you've linked.
 
 A chat can't tell another chat's OK from yours.
+
+The server can refuse a restart it's asked for, but it can't stop raw `systemctl`, `launchctl` or `kill`.
 
 A program holding the token may pass as your word for `worktree land`, so a landing recorded from a typed
 word doesn't prove you typed it.

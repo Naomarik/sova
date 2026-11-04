@@ -141,12 +141,15 @@ goes live on `systemctl --user restart sova-runtime.service` (macOS:
   chat at a time and stop at the first chat that fails to start on the new code.
 - After a server-side change, say that it is not live yet and needs that restart. Then confirm with
   `GET /api/health` (`startedAt`, `head`).
-- You may run the restart from inside a chat: your chat is not the server's child. A sandboxed session
-  can't reach the user bus, by design. Never work around that: ask the user.
+- A chat never restarts or updates Sova: it asks the user. Both pass only on the user's own click in
+  the page (§app.access/your-click), and `server.restart` answers with where to click. The server can't
+  stop raw `systemctl`, `launchctl` or `kill`, so this is a rule, not a wall.
+- The operator's ways: **Restart Sova** in Settings → General, Apply on the project's Branches tab, or
+  from their own terminal the raw `systemctl` or `launchctl` line above.
 - The verb form (Sova as its own project, `.sova/project.json`; slot 0 adopts `sova-runtime.service`)
-  is the operator's Apply on the Services tab, or `sova-project apply --checkout ~/webapps/sova
-  --confirm` (`--project` alone is refused, `invalid-request`). It always needs the operator's confirm,
-  then restarts the unit 3 s later. up, down, reset and teardown of slot 0 are refused.
+  is that Apply, which always needs the operator's confirm, then restarts the unit 3 s later. A page on
+  another of the user's computers can press it too. `sova-project apply` of Sova's own slot 0 is refused,
+  confirmed or not. up, down, reset and teardown of slot 0 are refused.
 - Never restart `sova-runtime.service` to test something: tests use hermetic servers and stand-in
   units.
 

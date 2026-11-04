@@ -1,6 +1,7 @@
-import { createContext, createSignal, For, onCleanup, Show, useContext } from "solid-js";
+import { createContext, createSignal, For, Show, useContext } from "solid-js";
 import type { SettingsCardView, SettingsHistoryRow, SettingsToolDetails } from "../../shared/project-settings";
 import { applySettingsCard, applySovaSettingsCard, cancelMergeSettings, getProjectSettings, getSovaSettingsCards, undoSettingsRow, withdrawSettingsCard, withdrawSovaSettingsCard } from "../lib/api";
+import { cardCanAct, createCardLive, type CardTimer, type SettingsCardScope } from "../lib/settings-card-live";
 import { toast } from "../lib/ui-state";
 
 /**
@@ -12,9 +13,7 @@ import { toast } from "../lib/ui-state";
  * without it the card shows its state only.
  */
 
-/** `overseer`: this view may act on any card it draws (the overseer's own chat page). `create`: it may
-    act on a card a Create chat prepared, kept after the chat leaves Create so no card is stranded. */
-export const SettingsCardContext = createContext<{ overseer: boolean; create: boolean }>({ overseer: false, create: false });
+export const SettingsCardContext = createContext<SettingsCardScope>({ overseer: false, create: false });
 
 /** A queue card applied while a branch is checking (§app.merge-queue/settings-save). */
 export const QUEUE_CARD_WAITS = "Saves when the current branch finishes.";
@@ -207,31 +206,17 @@ export function SettingsCard(props: { projectId: string | null; card: SettingsCa
   );
 }
 
+/** The waiting card's timer: a tab nobody is looking at reads nothing. */
+const whileVisible: CardTimer = (run, ms) => {
+  const t = setInterval(() => document.visibilityState === "visible" && run(), ms);
+  return () => clearInterval(t);
+};
+
 /** The card at a sova_settings call in the overseer's chat: its state read live from the project's settings. */
 export function SettingsToolCard(props: { details: SettingsToolDetails }) {
   const scope = useContext(SettingsCardContext);
-  const [live, setLive] = createSignal<SettingsCardView | null>(null);
-  const canAct = () => scope.overseer || (scope.create && !!props.details.create);
-  let timer: ReturnType<typeof setInterval> | undefined;
-  const load = async () => {
-    const id = props.details.card?.id;
-    if (!id || !canAct()) return;
-    try {
-      const projectId = props.details.projectId;
-      const info = projectId === null ? await getSovaSettingsCards() : await getProjectSettings(projectId);
-      const found = [...info.cards, ...info.recent].find((x) => x.id === id);
-      if (found) setLive(found);
-      if (found && found.state !== "waiting" && timer) {
-        clearInterval(timer);
-        timer = undefined;
-      }
-    } catch {
-      // Keep what the transcript carried.
-    }
-  };
-  void load();
-  if (canAct() && props.details.card?.state === "waiting") timer = setInterval(() => document.visibilityState === "visible" && void load(), POLL_MS);
-  onCleanup(() => timer && clearInterval(timer));
+  const canAct = () => cardCanAct(scope, props.details);
+  const { live, load } = createCardLive({ details: props.details, canAct, reads: { project: getProjectSettings, sova: getSovaSettingsCards }, everyMs: POLL_MS, timer: whileVisible });
   return (
     <Show
       when={live() ?? props.details.card}

@@ -39,6 +39,12 @@ export function footNote(m: ShownMode | null): string {
   return m?.mode === "create" ? `${CREATE_FOOT_NOTE} Save as default saves ${modeSummary(savableMode(m))}.` : FOOT_NOTE;
 }
 
+/** The gear a major mode's row carries: Create shares Delegate's settings, so each has one, and the
+    normal mode has none. */
+export function majorGear(id: string): "configure-delegate" | "configure-create" | null {
+  return id === "delegate" ? "configure-delegate" : id === "create" ? "configure-create" : null;
+}
+
 /** What a chat that can do less can't do in Create (§chat.create-mode/where-offered), or null when
     it can do everything: one sentence per reason, shown beside the Create row and on the setup card. */
 export function createLimits(facts: { sandboxOn: boolean; remote: boolean }): string | null {

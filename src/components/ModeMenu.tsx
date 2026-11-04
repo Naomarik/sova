@@ -14,21 +14,19 @@ import {
   bareProgramsNote,
   commandLine,
   filterProfiles,
-  footNote,
-  isDefaultAll,
   isDefaultMode,
+  majorGear,
   modeSummary,
   nextProjectModes,
   noProfileMatch,
   nextSetup,
   projectGroupLabel,
   projectRowState,
-  savableMode,
   savedAnnounce,
   saveLabel,
-  saveTitle,
   type ShownMode,
 } from "../lib/mode-menu";
+import { createModeSave } from "../lib/mode-save";
 import { useHostScope } from "../lib/host-scope";
 import { usePaneId } from "../lib/pane-scope";
 import { openSettings, setSubagentSettingsPath } from "../lib/settings-nav";
@@ -202,7 +200,8 @@ export function ModeMenu(props: { control: ModeControl }) {
     return [
       ...i.modes.flatMap((m) => {
         const row = { kind: "radio" as const, ...m };
-        return m.id === "delegate" ? [row, CONFIGURE_DELEGATE] : m.id === "create" ? [row, CONFIGURE_CREATE] : [row];
+        const gear = majorGear(m.id);
+        return gear ? [row, gear === "configure-create" ? CONFIGURE_CREATE : CONFIGURE_DELEGATE] : [row];
       }),
       ...i.minors.flatMap((m) =>
         m.id === "spec"
@@ -251,18 +250,14 @@ export function ModeMenu(props: { control: ModeControl }) {
     const c = current();
     return c ? shownOf(c) : null;
   };
-  /** What a save would write: this chat's mode, or in Create its last normal or Delegate choice. */
-  const savable = (): ShownMode | null => {
-    const s = shown();
-    return s ? savableMode(s) : null;
-  };
   /**
    * Is what this chat is on already what new sessions start from? Read off the file's own
    * `mode`/`strict`/`minorModes` (`defaultMode`: GET /api/mode on every open, or the save's answer)
    * and the library's own `default`, so the answer is the file's, not a guess from the last press
    * or from a switch's reply.
    */
-  const alreadyDefault = () => isDefaultAll(defaultMode(), savable(), profiles()) && (!memChoice() || sameMemoryType(defaultMemory(), memChoice()));
+  const save = createModeSave({ shown, defaultMode, profiles, alsoSaved: () => !memChoice() || sameMemoryType(defaultMemory(), memChoice()) });
+  const alreadyDefault = save.already;
   const saveState = (): "idle" | "saving" | "done" => (saving() ? "saving" : alreadyDefault() ? "done" : "idle");
 
   const focusItem = (i: number) => {
@@ -529,7 +524,7 @@ export function ModeMenu(props: { control: ModeControl }) {
       setDefaultMemory(memoryOf(written));
       setInfo((i) => i ?? written); // the lists, in case the open-time read failed
       setProfiles(await getSubagentProfiles(props.control.path, host()));
-      announce(savedAnnounce(savable(), profiles()?.current.name ?? null));
+      announce(savedAnnounce(save.savable(), profiles()?.current.name ?? null));
     } catch (err) {
       const why = (err instanceof Error ? err.message : String(err)).replace(/\.$/, "");
       setError({ title: "Couldn't save the default.", body: `${why}.` });
@@ -1102,13 +1097,13 @@ export function ModeMenu(props: { control: ModeControl }) {
 
           <div class="mode-menu-foot">
             <p class="mode-menu-foot-line">
-              <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · {footNote(shown())}
+              <span class="text-mono">strict: {current()?.strict ? "on" : "off"}</span> · {save.note()}
             </p>
             <button
               type="button"
               class="button button-ghost button-sm mode-menu-save"
               aria-disabled={busy() || saving() || alreadyDefault() ? "true" : undefined}
-              title={saveTitle(savable(), alreadyDefault())}
+              title={save.title()}
               onClick={() => void saveAsDefault()}
             >
               <Show when={alreadyDefault() && !saving()}>

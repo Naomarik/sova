@@ -2,7 +2,7 @@
 
 Recommend `AGENTS.md`: for a project in its own folder, for this computer in the agent dir. The base prompt is for the rare rule that must sit above everything else.
 
-A rule reaches new chats only: it can't show in this chat. A Project Overseer reads only the files inside its project, and a gathering chat and the Project Assistant read none. There's no way to give the Project Assistant instructions here.
+A rule at or above a chat's folder reaches new chats only: it can't show in this chat. One in a folder below it loads as the chat works there. A Project Overseer reads only the files inside its project, and a gathering chat and the Project Assistant read none. There's no way to give the Project Assistant instructions here.
 
 ## Rules for a folder
 
@@ -18,6 +18,15 @@ A rule reaches new chats only: it can't show in this chat. A Project Overseer re
 - Run the tests before saying a change is done.
 - Never commit generated files.
 ```
+
+## Rules for one part of a project
+
+- Change: rules that apply only while the agent works in one subfolder.
+- Lives: `<project>/<subfolder>/AGENTS.md` or `CLAUDE.md`. Folders named `node_modules` or starting with `.` are skipped. It's always on: there's no setting.
+- Approves: the person, by Land.
+- By: Land. In a folder that isn't in Git, say the change is made by hand.
+- Live: after landing, the first time a chat or worker reads, edits or creates a file in that folder. Bash, grep, find and ls don't load it. It loads again after a compaction.
+- Check: once it has loaded, the session pane's Context tab lists the file.
 
 ## Rules for this computer
 

@@ -92,9 +92,10 @@ Each server gets a clean environment: the basics a program needs, plus what its 
 own keys and your provider keys never reach it. In a project's file, a command inside a value doesn't
 run, and a value can only name a saved secret.
 
-Sova takes a server's secrets out of its error lines, failed calls and log messages. What a tool answers
-is the server's own, and reaches the chat and the model as it comes, so a server that repeats a key in its
-answer sends that key to them. Give a key only to a server you trust with it.
+Sova takes a server's secrets out of the failures it reports itself, such as a server that exits or a
+request that fails, and out of its error lines and log messages. What a tool answers is the server's own,
+and so is an error the tool returns: both reach the chat and the model as they come, so a server that
+repeats a key in either sends that key to them. Give a key only to a server you trust with it.
 
 ## A project's servers
 

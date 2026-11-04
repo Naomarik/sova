@@ -80,7 +80,7 @@ async function wiredFeed() {
   feed.add((m) => sent.push(m), { rows: true });
   await until("the first comparison", () => sent.some((m) => m.type === "rows_hello"));
   await feed.idle();
-  const upserted = (path: string): SessionSummary | undefined => sent.flatMap((m) => (m.type === "rows" ? m.upsert : [])).findLast((r) => r.path === path);
+  const upserted = (path: string): SessionSummary | undefined => sent.flatMap((m) => (m.type === "rows" ? m.upsert : [])).filter((r) => r.path === path).at(-1);
   stops.push(() => feed.stop());
   return { feed, sent, upserted, note: (path: string | null) => note(path) };
 }

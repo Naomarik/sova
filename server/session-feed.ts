@@ -151,7 +151,7 @@ export interface SessionFeedOptions {
   /** `join`: another caller's build, a moment old, may do: `stamps` says whether it came too early. */
   list: (opts: { join: boolean }) => Promise<SessionSummary[]>;
   /** Tells a list that started after a signal from one that didn't (sessions-index listStamps).
-      Without it `list` never hands back a list older than the re-diff asking. */
+      Without it the feed never asks to join. */
   stamps?: { now(): number; listed(): number };
   /** The safety-net re-diff period while a client listens: for a change no source tells of. */
   intervalMs?: number;
@@ -367,8 +367,9 @@ export class SessionFeed {
     this.diffs++;
     const heard = this.heard;
     const signal = this.signal;
-    // A listener's snapshot is read fresh: no re-diff would follow it (nudge needs a client).
-    const list = await this.opts.list({ join: !force });
+    // A listener's snapshot is read fresh: no re-diff would follow it (nudge needs a client). With
+    // no stamps to tell an early list by, nor is any other.
+    const list = await this.opts.list({ join: !force && !!this.opts.stamps });
     // A shared list that started before the last signal hasn't told that change: compare again (a
     // nudge, so it isn't clean either). The next list is a newer one, so this ends, at the latest at
     // a build of the feed's own.

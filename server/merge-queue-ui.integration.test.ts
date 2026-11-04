@@ -82,7 +82,10 @@ const wt = (branch: string, x: Partial<SessionWorktreeInfo> = {}): SessionWorktr
 
 /** Every state a row can be in. */
 const ALL_ROWS = [
-  wt("feat/composer-drafts"),
+  wt("feat/composer-drafts", {
+    mergeOwner: { session: "s1", path: PATH, title: "Composer drafts survive reload" },
+    mergeSummary: { commit: sha("d"), state: "ready", bullets: ["Keeps a draft through a reload", "Restores the cursor where it was"] },
+  }),
   wt("feat/composer-shortcuts"),
   wt("fix/paste-images", { queue: qi({ id: "me_q", state: "queued", position: 2, eta: { startsInMs: 4 * 60_000, takesMs: 9 * 60_000 }, newerCommits: 1 }) }),
   wt("feat/draft-sync-tabs", { readiness: { path: "", branch: "feat/draft-sync-tabs", state: "in-progress", dirtyCount: 3 } }),
@@ -306,6 +309,10 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
       return route.fulfill(json(p.endsWith("runtime/merge") ? RUNTIME : WORKTREES));
     }
     if (p === "/api/transcript") return route.fulfill(json({ items, context: null }));
+    if (p === `/api/merge-queue/projects/${PID}/branch-summary`) {
+      calls.push({ verb: "branch-summary.retry", body: JSON.parse(route.request().postData() ?? "{}") });
+      return route.fulfill(json({ ok: true, state: "writing" }));
+    }
     if (p === "/api/merge-queue/cards") return route.fulfill(json({ cards: url.searchParams.get("session") === SESSION.id ? (o.cards ?? []) : [] }));
     if (p === "/api/insights/session") return route.fulfill(json({ outline: null, compactions: [], teams: [], workers: [], worktrees: moved ? moved(o.rows ?? ALL_ROWS) : (o.rows ?? ALL_ROWS) }));
     if (p === "/api/projects") return route.fulfill(json({ projects: [PROJECT] }));
@@ -459,9 +466,18 @@ const DIFF_PATCH = "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/
 /** An archived chat of the project, and the three ready rows: its chat known, none found, an archived one. */
 const ARCHIVED = { ...SESSION, id: "c3", path: "/w/sessions/c3.jsonl", title: "Old search", archived: true } as unknown as SessionSummary;
 const READY: MergeQueueView["ready"] = [
-  { branch: "feat/ready-one", worktree: "/w/.worktrees/sova-ready-one", commit: sha("9"), ahead: 3, added: 40, removed: 2, session: "c2" },
-  { branch: "feat/no-chat", worktree: "/w/.worktrees/sova-no-chat", commit: sha("8"), ahead: 1, added: 6, removed: 1 },
-  { branch: "feat/search-ab-with-a-much-longer-branch-name", worktree: "/w/.worktrees/sova-search-ab", commit: sha("7"), ahead: 12, added: 310, removed: 88, session: "c3", sessionArchived: true },
+  {
+    branch: "feat/ready-one",
+    worktree: "/w/.worktrees/sova-ready-one",
+    commit: sha("9"),
+    ahead: 3,
+    added: 40,
+    removed: 2,
+    session: "c2",
+    summary: { commit: sha("9"), state: "ready", bullets: ["Shows what each branch does in a few plain bullets", "Fixes the badge color on a narrow screen, so it no longer wraps onto a second line and overlaps the chat's title"] },
+  },
+  { branch: "feat/no-chat", worktree: "/w/.worktrees/sova-no-chat", commit: sha("8"), ahead: 1, added: 6, removed: 1, summary: { commit: sha("8"), state: "writing" } },
+  { branch: "feat/search-ab-with-a-much-longer-branch-name", worktree: "/w/.worktrees/sova-search-ab", commit: sha("7"), ahead: 12, added: 310, removed: 88, session: "c3", sessionArchived: true, summary: { commit: sha("7"), state: "failed", bullets: ["Searches the archive"], stale: { commit: sha("6") } } },
 ];
 const hashOf = (page: Page) => page.evaluate(() => location.hash);
 const box = async (l: { boundingBox(): Promise<{ x: number; y: number; width: number; height: number } | null> }) => (await l.boundingBox())!;
@@ -487,6 +503,13 @@ for (const width of [1280, 390]) {
       assert.match(await words(modal), /2 ready · 1 queued · 1 landed/);
       // Each live row carries its numbers against master; a landed one doesn't.
       assert.match(await words(modal.locator('[data-branch="feat/composer-drafts"]')), /3 commits · \+40 −2/);
+      // The row's top line: its chat's title (a link), then the branch; no folder; its bullets under the facts.
+      const drafts = modal.locator('[data-branch="feat/composer-drafts"]');
+      assert.match(await words(drafts.locator(".mq-head-line")), /^\s*Composer drafts survive reload\s*feat\/composer-drafts\s*$/);
+      assert.equal(await drafts.getByRole("link", { name: "Composer drafts survive reload" }).count(), 1);
+      assert.deepEqual(await drafts.locator(".mq-summary-bullets li").allInnerTexts(), ["Keeps a draft through a reload", "Restores the cursor where it was"]);
+      const wtFacts = await box(drafts.locator(".wt-queue-facts"));
+      assert.ok((await box(drafts.locator(".mq-summary-bullets"))).y >= wtFacts.y + wtFacts.height - 1, "the bullets under the facts");
       assert.doesNotMatch(await words(modal.locator('[data-branch="feat/composer-hints"]')), /commits ·/);
       assert.match(await words(modal), /Queued · 2nd/);
       assert.match(await words(modal), /starts in ~4 min · takes ~9 min/);
@@ -1086,20 +1109,37 @@ for (const width of [1280, 390]) {
       const ready = tab.locator('[data-branch="feat/ready-one"]');
       await ready.waitFor({ timeout: 20_000 });
       const start = await hashOf(page);
-      // The branch on its own line; the chip first in the facts, with the commit and the numbers; then the chat line.
+      // The top line: the chat's title (a link), then the branch in small mono; no folder, no "Chat" label. The chip
+      // first in the facts, with the commit and the numbers; the branch's bullets under them.
+      const head = ready.locator(".mq-head-line");
+      assert.match(await words(head), /^\s*Fix the badge\s*feat\/ready-one\s*$/);
       assert.equal((await words(ready.locator(".mq-branch"))).trim(), "feat/ready-one");
+      assert.equal(await ready.locator(".mq-folder").count(), 0, "no worktree folder");
+      assert.doesNotMatch(await words(ready), /\bChat\b/);
       const facts = ready.locator(".mq-facts");
       assert.match(await words(facts.locator(":scope > *").first()), /Ready/);
       assert.match(await words(facts), /9999999\s*3 commits ahead · \+40 −2/);
       const chat = ready.getByRole("link", { name: "Fix the badge" });
       assert.equal(await chat.getAttribute("href"), `#/s/${encodeURIComponent(CODING_B.path)}`);
-      // The folder: its full path on a wide screen, its last name on a phone (the full path in its title).
-      const folder = ready.locator(".mq-folder");
-      assert.equal(await folder.getAttribute("title"), "/w/.worktrees/sova-ready-one");
-      assert.equal((await folder.innerText()).trim(), width < 600 ? "sova-ready-one" : "/w/.worktrees/sova-ready-one");
+      // Its bullets, under the facts, in order; the long one wraps, never scrolls sideways.
+      const bullets = ready.locator(".mq-summary-bullets li");
+      assert.equal(await bullets.count(), 2);
+      assert.equal((await words(bullets.first())).trim(), "Shows what each branch does in a few plain bullets");
+      const factsBox = await box(facts);
+      assert.ok((await box(bullets.first())).y >= factsBox.y + factsBox.height - 1, "the bullets under the facts line");
+      assert.equal(await ready.locator(".mq-summary [role=status]").count(), 0);
+      // Writing: "Summarizing…", busy to a screen reader.
+      const writing = tab.locator('[data-branch="feat/no-chat"] .mq-summary-line[aria-busy="true"]');
+      assert.equal((await words(writing)).trim(), "Summarizing…");
       // An archived chat still opens, marked; no chat found says so and isn't a target.
       const archived = tab.locator('[data-branch="feat/search-ab-with-a-much-longer-branch-name"]');
-      assert.match(await words(archived.locator(".mq-chat")), /Chat\s*Old search · archived/);
+      assert.match(await words(archived.locator(".mq-head-line")), /Old search\s*feat\/search-ab-with-a-much-longer-branch-name\s*archived/);
+      // A failure: the line and Try Again (only then), over the earlier commit's bullets, marked.
+      assert.match(await words(archived.locator(".mq-summary")), /Couldn't summarize this branch\.\s*Try Again\s*From an earlier commit\s*Searches the archive/);
+      assert.equal(await ready.getByRole("button", { name: /Try summarizing/ }).count(), 0, "no rewrite on a summary that worked");
+      await archived.getByRole("button", { name: "Try summarizing feat/search-ab-with-a-much-longer-branch-name again" }).click();
+      await until("a retry", () => o.calls.some((c) => c.verb === "branch-summary.retry" && c.body.commit === sha("7") && c.body.branch === "feat/search-ab-with-a-much-longer-branch-name"));
+      assert.equal(await hashOf(page), start, "Try Again doesn't open the chat");
       const none = tab.locator('[data-branch="feat/no-chat"]');
       assert.match(await words(none), /No chat found for this worktree/);
       assert.equal(await none.evaluate((el) => el.classList.contains("mq-tap")), false);
@@ -1142,7 +1182,7 @@ for (const width of [1280, 390]) {
       await noSideScroll(page);
       const r = await box(review);
       const land = await box(ready.getByRole("button", { name: "Land feat/ready-one", exact: true }));
-      const chatLine = await box(ready.locator(".mq-chat"));
+      const chatLine = await box(ready.locator(".mq-summary"));
       assert.ok(r.x < land.x, "Review Changes before Land");
       if (width < 600) {
         assert.ok(r.height >= 44 && land.height >= 44, `44px controls (${r.height}, ${land.height})`);
@@ -1171,7 +1211,7 @@ for (const width of [1280, 390]) {
       for (const b of ["feat/composer-drafts", "fix/paste-images", "feat/draft-sync-tabs", "fix/draft-autosave-race", "fix/conflict-chip", "feat/hack"])
         assert.equal(await modal.getByRole("button", { name: `Review Changes on ${b}` }).count(), 1, b);
       const row = modal.locator('[data-branch="feat/composer-drafts"]');
-      if (width < 600) assert.equal((await row.locator(".wt-queue-path").innerText()).trim(), "sova-composer-drafts");
+      assert.equal(await row.locator(".wt-queue-path").count(), 0, "no worktree folder");
       const review = row.getByRole("button", { name: "Review Changes on feat/composer-drafts" });
       if (width < 600) {
         const r = await box(review);

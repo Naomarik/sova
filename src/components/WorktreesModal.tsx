@@ -4,8 +4,8 @@ import type { SessionWorktreeInfo } from "../../shared/protocol";
 import { modalHead, queueRow, rowButtons, rowsSummary, shownCommit, unclearLine, type MergeProjectInfo, type QueueRow, type WorktreeQueueInfo } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, land, refusal, type LandOptions } from "../lib/merge-queue-client";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
-import { tildePath } from "../lib/format";
-import { announce, home, toast } from "../lib/ui-state";
+import { announce, toast } from "../lib/ui-state";
+import { BranchSummaryView } from "./BranchSummary";
 import { ActionMenu } from "./ActionMenu";
 import type { MergeUnclear } from "../../shared/merge-queue";
 import { Icon, trapFocus } from "./ui";
@@ -14,6 +14,10 @@ import { ReviewChangesButton } from "./ReviewChanges";
 
 /** A tracked worktree with the queue's facts (SessionWorktreeInfo.queue, filled by the server). */
 export type QueueWorktree = SessionWorktreeInfo & { queue?: WorktreeQueueInfo; mergeProject?: MergeProjectInfo };
+
+/** Where the row's owner chat opens: its own route when its file is known, else the id route the app resolves. */
+const ownerHref = (o: NonNullable<SessionWorktreeInfo["mergeOwner"]>, projectId: string | undefined): string =>
+  o.path ? (projectId ? projectSessionHref(projectId, o.path) : `#/s/${encodeURIComponent(o.path)}`) : `#/sid/${encodeURIComponent(o.session)}`;
 
 /** The worktree's project id: its own facts, else its entry's. */
 const projectIdOf = (w: QueueWorktree): string | undefined => w.mergeProject?.id ?? w.queue?.project;
@@ -158,14 +162,26 @@ export function WorktreeQueueRow(props: {
   return (
     <li class="list-row wt-queue-row" data-branch={w().branch} data-state={row().key}>
       <div class="list-main">
-        <p class="list-title text-mono wt-queue-branch" title={w().path}>
-          {w().branch}
-        </p>
-        <Show when={props.showPath !== false}>
-          <p class="list-meta text-mono wt-queue-path" title={w().path}>
-            <span class="wt-queue-path-full">{tildePath(w().path, home())}</span>
-            <span class="wt-queue-path-last">{w().path.replace(/\/+$/, "").split("/").pop() || w().path}</span>
-          </p>
+        {/* The chat that owns the branch first (a link), then the branch in small mono, then "archived"; no folder. */}
+        <Show
+          when={w().mergeOwner}
+          fallback={
+            <p class="list-title text-mono wt-queue-branch" title={w().path}>
+              {w().branch}
+            </p>
+          }
+        >
+          {(o) => (
+            <p class="list-title mq-head-line wt-queue-head-line" title={w().path}>
+              <a class="mq-chat-link" href={ownerHref(o(), projectId())}>
+                {o().title ?? "its chat"}
+              </a>
+              <span class="mq-branch text-mono wt-queue-branch">{w().branch}</span>
+              <Show when={o().archived}>
+                <span class="chip mq-archived">archived</span>
+              </Show>
+            </p>
+          )}
         </Show>
         <div class="wt-queue-facts">
           <QueueChip row={row()} />
@@ -173,6 +189,9 @@ export function WorktreeQueueRow(props: {
           <Show when={row().size}>{(z) => <span class="text-caption text-mono wt-queue-size">{z()}</span>}</Show>
           {props.chips}
         </div>
+        <Show when={w().mergeServed}>
+          <BranchSummaryView summary={w().mergeSummary} projectId={projectId()} branch={w().branch} />
+        </Show>
         <Show when={row().newer}>{(n) => <p class="list-meta wt-queue-reason">{n()}</p>}</Show>
         <Show when={row().reason}>
           {(why) => (

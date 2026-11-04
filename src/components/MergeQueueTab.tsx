@@ -17,8 +17,7 @@ import { notSetUp, takeInitialize } from "../lib/merge-queue-initialize";
 import { Banner, Icon } from "./ui";
 import { LandSpecsConfirm, LandSplit, QueueChip, UnclearChecks } from "./WorktreesModal";
 import type { MergeReady } from "../../shared/merge-queue";
-import { home } from "../lib/ui-state";
-import { tildePath } from "../lib/format";
+import { BranchSummaryView } from "./BranchSummary";
 import type { DiffScope } from "../../shared/protocol";
 import { ReviewChangesButton } from "./ReviewChanges";
 
@@ -151,48 +150,26 @@ export function FromChat(props: { projectId: string; entry: Pick<MergeEntry, "se
   );
 }
 
-/** The worktree folder: its full path on a wide row, its last name on a phone (the full path in its title). */
-function Folder(props: { path: string }) {
-  const full = () => tildePath(props.path, home());
-  const last = () => props.path.replace(/\/+$/, "").split("/").pop() || props.path;
-  return (
-    <span class="mq-folder text-mono" title={props.path}>
-      <span class="mq-folder-full">{full()}</span>
-      <span class="mq-folder-last">{last()}</span>
-    </span>
-  );
-}
-
 /**
- * A row's chat line: "Chat <title>" (a real link; "· archived" after an archived one) and the worktree's folder, or
- * "No chat found for this worktree". `tail`: the row's own facts after it.
+ * A row's top line: the title of the chat that owns the branch (a real link; "No chat found for this worktree" when
+ * none is known), then the branch in small mono, then an "archived" tag when that chat is archived. The row names no
+ * worktree folder and carries no "Chat" label.
  */
-function ChatLine(props: { projectId: string; session?: string; archived?: boolean; worktree?: string; chatOf?: ChatOf; tail?: JSX.Element }) {
+export function RowHead(props: { projectId: string; branch: string; session?: string; archived?: boolean; chatOf?: ChatOf; class?: string }) {
   const chat = () => (props.session ? props.chatOf?.(props.session) : undefined);
   return (
-    <p class="list-meta mq-chat">
-      <Show when={props.session} fallback={<span class="text-muted">No chat found for this worktree</span>}>
+    <p class={`list-title mq-head-line${props.class ? ` ${props.class}` : ""}`}>
+      <Show when={props.session} fallback={<span class="text-muted mq-no-chat">No chat found for this worktree</span>}>
         {(s) => (
-          <>
-            <span class="text-muted">Chat</span>{" "}
-            <a class="mq-chat-link" href={chatHref(props.projectId, s(), props.chatOf)} onClick={keepSelection}>
-              {chat()?.title ?? "its chat"}
-            </a>
-            <Show when={props.archived || chat()?.archived}>
-              <span class="text-muted"> · archived</span>
-            </Show>
-          </>
+          <a class="mq-chat-link" href={chatHref(props.projectId, s(), props.chatOf)} onClick={keepSelection}>
+            {chat()?.title ?? "its chat"}
+          </a>
         )}
       </Show>
-      <Show when={props.worktree}>
-        {(w) => (
-          <>
-            <span class="text-muted"> · </span>
-            <Folder path={w()} />
-          </>
-        )}
+      <span class="mq-branch text-mono">{props.branch}</span>
+      <Show when={props.session && (props.archived || chat()?.archived)}>
+        <span class="chip mq-archived">archived</span>
       </Show>
-      {props.tail}
     </p>
   );
 }
@@ -399,13 +376,14 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
               {(e) => (
                 <li class="list-row mq-row" classList={{ "mq-tap": !!e.session }} data-branch={e.branch} data-state="needs-fix" onClick={rowOpens(() => e.session && chatHref(props.projectId, e.session, props.chatOf))}>
                   <div class="list-main">
-                    <p class="list-title mq-branch text-mono">{e.branch}</p>
+                    <RowHead projectId={props.projectId} branch={e.branch} session={e.session} chatOf={props.chatOf} />
                     <p class="mq-facts">
                       <QueueChip row={{ label: "Needs a fix", tone: "error" }} />
                       <span class="text-mono text-muted">{short(e.commit)}</span>
+                      <span class="text-muted">{relativeTime(e.updatedAt)}</span>
                     </p>
+                    <BranchSummaryView summary={e.summary} projectId={props.projectId} branch={e.branch} />
                     <p class="list-meta">{e.reason ?? "It failed a check that passes on the target."}</p>
-                    <ChatLine projectId={props.projectId} session={e.session} worktree={e.worktree} chatOf={props.chatOf} tail={<span class="text-muted"> · {relativeTime(e.updatedAt)}</span>} />
                     <ReviewerLinks projectId={props.projectId} view={v()} run={e.run} />
                   </div>
                   <div class="button-row mq-row-act">
@@ -432,7 +410,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
               {(l) => (
                 <li class="list-row mq-row" classList={{ "mq-tap": !!l.entry.session }} data-branch={l.entry.branch} data-state="landed" onClick={rowOpens(() => l.entry.session && chatHref(props.projectId, l.entry.session, props.chatOf))}>
                   <div class="list-main">
-                    <p class="list-title mq-branch text-mono">{l.entry.branch}</p>
+                    <RowHead projectId={props.projectId} branch={l.entry.branch} session={l.entry.session} chatOf={props.chatOf} />
                     <p class="mq-facts">
                       <QueueChip row={{ label: l.entry.landed?.via === "host" ? `Merged on ${l.entry.request?.host === "gitlab" ? "GitLab" : "GitHub"}` : "Landed", tone: "success" }} />
                       <Show when={l.entry.landed}>
@@ -445,7 +423,7 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
                         )}
                       </Show>
                     </p>
-                    <ChatLine projectId={props.projectId} session={l.entry.session} worktree={l.entry.worktree} chatOf={props.chatOf} />
+                    <BranchSummaryView summary={l.entry.summary} branch={l.entry.branch} />
                     <ReviewerLinks projectId={props.projectId} view={v()} run={l.entry.run ?? l.run?.id} />
                     <For each={notesOf(l.entry.notes)}>
                       {(n) => (
@@ -523,11 +501,11 @@ function CheckingNow(props: { projectId: string; view: MergeQueueView; chatOf?: 
                 </a>
               </div>
             </div>
-            <p class="mq-branch mq-card-title text-mono">{r().branch}</p>
+            <RowHead projectId={props.projectId} branch={r().branch} session={entry()?.session} chatOf={props.chatOf} class="mq-card-title" />
             <p class="mq-facts">
               <span class="text-mono text-muted">{short(r().commit)}</span>
             </p>
-            <ChatLine projectId={props.projectId} session={entry()?.session} worktree={entry()?.worktree} chatOf={props.chatOf} />
+            <BranchSummaryView summary={entry()?.summary} projectId={props.projectId} branch={r().branch} />
             <ReviewerLinks projectId={props.projectId} view={props.view} run={r().id} />
             <p class="text-caption">
               <span class="text-mono">
@@ -568,7 +546,7 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
               return (
                 <li class="list-row mq-row" classList={{ "mq-tap": !!e.session }} data-branch={e.branch} data-state="queued" onClick={rowOpens(() => e.session && chatHref(props.projectId, e.session, props.chatOf))}>
                   <div class="list-main">
-                    <p class="list-title mq-branch text-mono">{e.branch}</p>
+                    <RowHead projectId={props.projectId} branch={e.branch} session={e.session} chatOf={props.chatOf} />
                     <p class="mq-facts">
                       <QueueChip row={e.release ? { label: "Release", tone: "accent" } : { label: `In line · ${e.position ?? "?"}`, tone: "neutral" }} />
                       <span class="text-mono text-muted">{short(e.commit)}</span>
@@ -578,7 +556,7 @@ function Waiting(props: { projectId: string; view: MergeQueueView; chatOf?: Chat
                         {e.approval.withoutSpecs ? " · without its specs" : ""}
                       </span>
                     </p>
-                    <ChatLine projectId={props.projectId} session={e.session} worktree={e.worktree} chatOf={props.chatOf} />
+                    <BranchSummaryView summary={e.summary} projectId={props.projectId} branch={e.branch} />
                     {/* While a release holds the queue, no estimate holds: the row's reason says what it waits for. */}
                     <Show when={props.view.release && !e.release ? null : e.eta}>
                       {(t) => (
@@ -627,7 +605,7 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
       onClick={rowOpens(() => e().session && chatHref(props.projectId, e().session!, props.chatOf))}
     >
       <div class="list-main">
-        <p class="list-title mq-branch text-mono">{e().branch}</p>
+        <RowHead projectId={props.projectId} branch={e().branch} session={e().session} chatOf={props.chatOf} />
         <p class="mq-facts">
           <QueueChip
             row={
@@ -643,7 +621,15 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
             }
           />
           <span class="text-mono text-muted">{short(e().commit)}</span>
+          <Show when={e().run}>
+            {(r) => (
+              <a href={mergeRunHref(props.projectId, r())} onClick={(ev) => ev.stopPropagation()}>
+                See Why
+              </a>
+            )}
+          </Show>
         </p>
+        <BranchSummaryView summary={e().summary} projectId={props.projectId} branch={e().branch} />
         <Show when={e().state === "behaviour-differs" && e().conflict}>
           {(c) => (
             <dl class="mq-sides">
@@ -675,22 +661,6 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
         <Show when={e().state === "conflict"}>
           <p class="list-meta">{e().reason ?? "The merge thread is judging the conflict. The line moves on meanwhile."}</p>
         </Show>
-        <ChatLine
-          projectId={props.projectId}
-          session={e().session}
-          worktree={e().worktree}
-          chatOf={props.chatOf}
-          tail={
-            <Show when={e().run}>
-              {(r) => (
-                <>
-                  {" · "}
-                  <a href={mergeRunHref(props.projectId, r())}>See Why</a>
-                </>
-              )}
-            </Show>
-          }
-        />
         <Show when={props.view}>{(pv) => <ReviewerLinks projectId={props.projectId} view={pv()} run={e().run} />}</Show>
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
       </div>
@@ -734,7 +704,7 @@ function ReadyRow(props: { projectId: string; root: string; ready: MergeReady; r
   return (
     <li class="list-row mq-row" classList={{ "mq-tap": !!r().session }} data-branch={r().branch} data-state="ready" onClick={rowOpens(() => r().session && chatHref(props.projectId, r().session!, props.chatOf))}>
       <div class="list-main">
-        <p class="list-title mq-branch text-mono">{r().branch}</p>
+        <RowHead projectId={props.projectId} branch={r().branch} session={r().session} archived={r().sessionArchived} chatOf={props.chatOf} />
         <p class="mq-facts">
           <QueueChip row={{ label: "Ready", tone: "success" }} />
           <span class="text-mono text-muted">{short(r().commit)}</span>
@@ -742,7 +712,7 @@ function ReadyRow(props: { projectId: string; root: string; ready: MergeReady; r
             {r().ahead} {r().ahead === 1 ? "commit" : "commits"} ahead{lines()}
           </span>
         </p>
-        <ChatLine projectId={props.projectId} session={r().session} archived={r().sessionArchived} worktree={r().worktree} chatOf={props.chatOf} />
+        <BranchSummaryView summary={r().summary} projectId={props.projectId} branch={r().branch} />
         <Show when={askSpecs()}>
           <LandSpecsConfirm
             branch={r().branch}

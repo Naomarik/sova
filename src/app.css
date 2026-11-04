@@ -1600,7 +1600,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-queue-row { align-items: flex-start; flex-wrap: wrap; row-gap: var(--space-2); }
 .wt-queue-row > .list-main { flex: 1 1 16rem; min-width: 0; }
 .wt-queue-row .list-title { font-weight: var(--fw-medium); white-space: normal; overflow-wrap: anywhere; }
-.wt-queue-path { white-space: normal; overflow-wrap: anywhere; }
 .wt-queue-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin-top: var(--space-1); }
 .wt-queue-reason,
 .wt-queue-note,
@@ -1673,8 +1672,19 @@ html, body { overflow: clip; overscroll-behavior: none; }
    (Review Changes first). The whole row opens its chat (.mq-tap); its buttons and links keep their own action. */
 .mq-branch { margin: 0; font-weight: var(--fw-medium); white-space: normal; overflow-wrap: anywhere; }
 .mq-facts { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin: var(--space-1) 0 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
-.mq-chat .mq-chat-link { font-weight: var(--fw-medium); }
-.mq-folder-last { display: none; }
+/* A row's top line (§app.merge-queue/view): the owner chat's title (a link), the branch in small mono, "archived". */
+.mq-head-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-2); margin: 0; white-space: normal; min-width: 0; }
+.mq-head-line .mq-chat-link { font-weight: var(--fw-medium); overflow-wrap: anywhere; min-width: 0; }
+.mq-head-line .mq-branch { font-size: var(--fs-caption); font-weight: var(--fw-regular); color: var(--color-ink-2); }
+.mq-head-line .mq-archived { align-self: center; }
+/* What the branch does (§app.merge-queue/branch-summary): bullets under the facts line, wrapping on a phone. */
+.mq-summary { margin: var(--space-1) 0 0; min-width: 0; }
+.mq-summary-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); margin: 0; }
+.mq-summary-stale { margin: 0; }
+.mq-summary-bullets { margin: var(--space-1) 0 0; padding-inline-start: var(--space-4); font-size: var(--fs-caption); color: var(--color-ink); }
+.mq-summary-bullets li { white-space: normal; overflow-wrap: anywhere; }
+.mq-summary-bullets li + li { margin-top: 2px; }
+.mq-summary-old { color: var(--color-ink-2); }
 .mq-tap { cursor: pointer; }
 .mq-tap:hover { background: var(--color-sunken); }
 .mq-row-act { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
@@ -1694,17 +1704,12 @@ html, body { overflow: clip; overscroll-behavior: none; }
   .mq-tab .mq-row-act .button,
   .mq-tab .mq-row-act .button-split > .button { min-height: var(--tap-min); }
   .mq-tab .mq-row > .mq-row-act .mq-review { margin-inline-end: auto; }
-  .mq-folder-full { display: none; }
-  .mq-folder-last { display: inline; }
   .wt-queue-modal .wt-queue-row { padding-inline: 12px; }
   .wt-queue-modal .wt-queue-act { flex: 1 1 100%; }
   .wt-queue-modal .wt-queue-act .button,
   .wt-queue-modal .wt-queue-act .button-split > .button { min-height: var(--tap-min); }
   .wt-queue-modal .wt-queue-review { margin-inline-end: auto; }
-  .wt-queue-modal .wt-queue-path-full { display: none; }
-  .wt-queue-modal .wt-queue-path-last { display: inline; }
 }
-.wt-queue-path-last { display: none; }
 .mq-sides { display: grid; gap: var(--space-2); margin: var(--space-2) 0 0; }
 .mq-sides > div { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
 .mq-sides dt { margin: 0 0 var(--space-1); }

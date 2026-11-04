@@ -296,9 +296,13 @@ describe("a Sova-wide card", () => {
 
   test("a parser's refusal writes nothing, and a grant says so", async () => {
     await assert.rejects(propose("models.policy", { disabledModels: "nope" }), /Models turned off/);
-    const d = await propose("models.policy", { disabledProviders: ["zai"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] });
-    assert.equal(d.card.grants.length, 1);
-    sova.withdrawSovaCard(d.card.id);
+    const off = { disabledProviders: ["zai"], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] };
+    const d = await propose("models.policy", off);
+    assert.equal(d.card.grants.length, 0, "turning a model off allows nothing new");
+    assert.equal((await apply(d.card)).status, 200);
+    const back = await propose("models.policy", { ...off, disabledProviders: [] });
+    assert.deepEqual((back.card.grants as { what: string }[]).map((g) => g.what), ["Models turned back on"], "the card adds its own full stop");
+    sova.withdrawSovaCard(back.card.id);
   });
 
   test("a key never goes on a card; a variable's name isn't a key", async () => {

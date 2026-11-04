@@ -494,9 +494,23 @@ const words = (v: unknown): string => {
 };
 const MAX_ROWS = 12;
 
+const POLICY_LISTS = ["disabledProviders", "disabledModels", "subagentDisabledProviders", "subagentDisabledModels"] as const;
+
+/** What a change allows, or null: the setting's own grant, and for the model policy only when a model comes back on. */
+function grantOf(e: StoredEdit): string | null {
+  const what = SOVA_SETTINGS[e.id].grant;
+  if (!what) return null;
+  if (e.id === "models.policy") {
+    const from = e.before as Record<string, string[]>;
+    const to = e.value as Record<string, string[]>;
+    if (!POLICY_LISTS.some((k) => (from[k] ?? []).some((x) => !(to[k] ?? []).includes(x)))) return null;
+  }
+  return what.replace(/\.$/, ""); // The card adds its own full stop.
+}
+
 function rowsOf(e: StoredEdit): KeptChange[] {
   const label = SOVA_SETTINGS[e.id].label;
-  const grant = SOVA_SETTINGS[e.id].grant ?? undefined;
+  const grant = grantOf(e) ?? undefined;
   const a = new Map<string, unknown>();
   const b = new Map<string, unknown>();
   leaves("", e.before, a);
@@ -516,7 +530,10 @@ function placeOf(edits: StoredEdit[]): string {
 }
 
 function cardView(c: StoredSovaCard): SettingsCardView {
-  const grants: SettingsGrant[] = c.edits.flatMap((e) => (SOVA_SETTINGS[e.id].grant ? [{ key: `sova:${e.id}`, setting: e.id, what: SOVA_SETTINGS[e.id].grant! }] : []));
+  const grants: SettingsGrant[] = c.edits.flatMap((e) => {
+    const what = grantOf(e);
+    return what ? [{ key: `sova:${e.id}`, setting: e.id, what }] : [];
+  });
   const labels = c.edits.map((e) => SOVA_SETTINGS[e.id].label);
   return {
     id: c.id,
@@ -598,7 +615,7 @@ export async function applySovaCard(cardId: string, fingerprint: unknown): Promi
   mine.state = "applied";
   mine.appliedAt = new Date().toISOString();
   writeStore(after);
-  return { card: cardView(mine), approved: c.edits.filter((e) => SOVA_SETTINGS[e.id].grant).map((e) => `sova:${e.id}`) };
+  return { card: cardView(mine), approved: c.edits.filter((e) => grantOf(e)).map((e) => `sova:${e.id}`) };
 }
 
 /** Dismiss (the person's), or a Create chat's withdraw of its own card. */

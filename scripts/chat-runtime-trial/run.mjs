@@ -1158,8 +1158,19 @@ async function tyourclick() {
   };
 
   const a = await asks();
+  // What On does to a tool here: it stops the write, enforcing or refusing to run; the page's rewind below lets it land.
+  const outside = join(scratch, `outside-${Date.now()}`);
+  mkdirSync(outside, { recursive: true });
+  const writesOut = async (x, name) => {
+    const r = await turn(x, `[call bash ${JSON.stringify({ command: `touch ${join(outside, name)} && echo WROTE` })}]`);
+    return { wrote: existsSync(join(outside, name)), said: textOfMsg(r[0]?.message).slice(0, 160) };
+  };
+  const onWrite = await writesOut(a, "on");
+  R.check(!onWrite.wrote, `tyourclick: On, a write outside the project doesn't land (${onWrite.said})`);
   const first = users(a)[0].id;
-  const reply = entries(a.path).findLast((e) => e.message?.role === "assistant").id;
+  // The reply before the raise: regenerating a later one goes back past nothing.
+  const reply = entries(a.path).find((e) => e.message?.role === "assistant").id;
+  const usersBefore = users(a).length;
   for (const [who, headers] of [["a script", T], ["a chat", { ...T, "x-sova-caller": "k" }]]) {
     const back = await action(a.path, { type: "rewind", entryId: first }, headers);
     R.check(back.reply?.type === "rewind_refused" && back.reply?.message === WORDS, `tyourclick: ${who}'s rewind past the raise is refused with where to click`, JSON.stringify(back).slice(0, 200));
@@ -1173,10 +1184,10 @@ async function tyourclick() {
   const heard = await script.until((m) => m.type === "rewind_refused", 15000, "the socket's refusal");
   R.check(heard.message === WORDS, "tyourclick: a script's socket gets the same refusal");
   script.close();
-  R.check((await said(a)) === "on" && rewinds(a) === 0 && users(a).length === 1, `tyourclick: the sandbox stayed On and the chat didn't move (${rewinds(a)} rewinds)`);
+  R.check((await said(a)) === "on" && rewinds(a) === 0 && users(a).length === usersBefore, `tyourclick: the sandbox stayed On and the chat didn't move (${rewinds(a)} rewinds)`);
   // Past no raise, nothing is lowered: a script's rewind still runs.
   await turn(a, "say ok again");
-  const second = users(a)[1].id;
+  const second = users(a).at(-1).id;
   const keeps = await action(a.path, { type: "rewind", entryId: second }, T);
   R.check(keeps.reply?.type === "rewound" && (await said(a)) === "on", "tyourclick: a script's rewind that lowers nothing still runs", JSON.stringify(keeps).slice(0, 200));
   // The page's own: it lowers, and every open pane hears the state.
@@ -1185,6 +1196,8 @@ async function tyourclick() {
   await a.s.until((m) => m.type === "rewound", 15000, "the page's rewind", before);
   await a.s.until((m) => m.type === "sandbox" && m.state === "subagents", 15000, "the page hears the state after it", before);
   R.check((await said(a)) === "subagents", "tyourclick: the page's rewind passes, lowers, and the page is told");
+  const offWrite = await writesOut(a, "after");
+  R.check(offWrite.wrote, `tyourclick: the lowering is real: the write On stopped lands (${offWrite.said})`);
 
   const b = await asks();
   const reply2 = entries(b.path).findLast((e) => e.message?.role === "assistant").id;

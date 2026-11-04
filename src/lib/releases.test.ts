@@ -4,6 +4,10 @@ import { test } from "node:test";
 import type { ReleaseHistoryItem, ReleaseRecord, ReleaseStep, ReleaseView } from "../../shared/release";
 import {
   abandonConfirmLine,
+  askerWord,
+  NOTE_MAX,
+  noteDraft,
+  savedNoteLine,
   cardLine,
   countdown,
   previousRelease,
@@ -171,4 +175,21 @@ test("the chip says a failed Publish while the record stays ready, and Ready to 
   assert.equal(releaseChip(record({ state: "ready", steps: [step("publish", "waiting", "sova")] })).word, "Ready to publish");
   assert.equal(releaseChip(record({ state: "ready", steps: [step("gh", "failed", "after"), step("publish", "waiting", "sova")] })).word, "Ready to publish", "only Publish's own failure");
   assert.equal(releaseChip(record({ state: "published", steps: [step("publish", "failed", "sova")] })).word, "Published");
+});
+
+test("the Release Note editor: Save keeps the trimmed text, offers nothing when it changes nothing, and knows the cap", () => {
+  assert.deepEqual(noteDraft("  Release as 0.10.1.  ", null), { text: "Release as 0.10.1.", changed: true, tooLong: false });
+  assert.equal(noteDraft("Skip docs ", "Skip docs").changed, false, "the same note, trimmed, is no change");
+  assert.equal(noteDraft("   ", null).changed, false, "a blank draft over no note changes nothing");
+  assert.equal(noteDraft("", "Skip docs").changed, true, "emptying a saved note is a change (Clear)");
+  assert.equal(noteDraft("x".repeat(NOTE_MAX + 1), null).tooLong, true);
+  assert.equal(NOTE_MAX, 4000);
+});
+
+test("the saved note's line and who asked", () => {
+  assert.match(savedNoteLine(false), /^Start Release sends this note/);
+  assert.match(savedNoteLine(true), /^The next Start Release/);
+  assert.equal(askerWord("assistant:prj_1"), "The Project Assistant");
+  assert.equal(askerWord("overseer:s1"), "The overseer");
+  assert.equal(askerWord("project-overseer:prj_1"), "The overseer");
 });

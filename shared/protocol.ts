@@ -5244,8 +5244,31 @@ export interface MonitorSampler {
   startedAt: number;
 }
 
+/** The stall recorder's latest records, one line each; `<stateRoot>/stalls/stalls.jsonl` holds them in full. */
+export interface MonitorStallRecord {
+  kind: "stall" | "stall-open" | "memory";
+  at: number;
+  pid: number;
+  /** A stall: the most it can have lasted. */
+  ms?: number;
+  rssBytes?: number;
+  /** The commonest innermost frame while it lasted. */
+  top?: string;
+  /** The oldest operations in flight. */
+  ops?: string[];
+  /** A stall its process never reported the end of: it died or was killed inside it. */
+  unfinished?: boolean;
+}
+
+export interface MonitorStalls {
+  state: "on" | "off" | "failed";
+  recent: MonitorStallRecord[];
+}
+
 export interface MonitorSnapshot {
   at: number;
+  /** The stall recorder, absent from a snapshot built by a server without it. */
+  stalls?: MonitorStalls;
   platform: string;
   scope: MonitorScope;
   /** `unit` only: the unit name, e.g. "sova-runtime.service". */

@@ -42,6 +42,7 @@ import { removeMemory } from "./memory/store";
 import { removeSessionTours } from "./tours/lifecycle";
 import { byActivity } from "../src/lib/summary-diff";
 import { queueChatRole } from "../shared/merge-queue";
+import { opTrack } from "./stall-recorder";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -1257,7 +1258,11 @@ async function zeroInputOf(path: string): Promise<boolean> {
 /** Every row. `track`: the file set to list and the files that may have changed since the cached
     summaries were read (only those are stat'ed and read); without it every folder is read and
     every file stat'ed. Returns the rows and the file set they came from. */
-async function buildSessions(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
+function buildSessions(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
+  return opTrack("buildSessions", () => buildSessionsNow(track), (b) => b.rows.length);
+}
+
+async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<string> }): Promise<{ rows: SessionSummary[]; files: string[] }> {
   const files = track ? track.files : await listSessionFiles();
   const live = readLive();
   const own = readOwnLiveRecords();

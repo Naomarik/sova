@@ -21,6 +21,7 @@ import { WORKTREES } from "./harness/state-kinds";
 import { DIRTY_TTL_MS, execGit, gitInputsStamp, type GitRunner, linkedCheckoutOf, worktreeInsights, type WorktreeInsights } from "./worktrees";
 import { goneTreeState, type GoneState } from "./removed-worktrees";
 import { sessionsChanged } from "./list-generation";
+import { opTrack } from "./stall-recorder";
 
 /**
  * Merge readiness (§chat.worktrees/readiness): for each worktree a session tracks and owns, whether
@@ -740,7 +741,11 @@ export async function goneWorkOf(t: TrackedWorktree, dirs: readonly string[]): P
 }
 
 /** A session's readiness now: git, the file's facts and the row. */
-export async function computeReadiness(s: SessionSummary, facts: FileFacts, publishChecks: () => boolean = () => true, fresh = false): Promise<SessionReadiness | undefined> {
+export function computeReadiness(s: SessionSummary, facts: FileFacts, publishChecks: () => boolean = () => true, fresh = false): Promise<SessionReadiness | undefined> {
+  return opTrack("computeReadiness", () => computeReadinessNow(s, facts, publishChecks, fresh));
+}
+
+async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishChecks: () => boolean, fresh: boolean): Promise<SessionReadiness | undefined> {
   const own = facts.trees.filter((t) => t.status !== "dropped" && t.session === s.id);
   if (own.length === 0) {
     if (publishChecks()) { checksBySession.delete(s.path); blockedBySession.delete(s.path); }

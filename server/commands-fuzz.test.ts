@@ -36,6 +36,7 @@ mkdirSync(sessionsDir, { recursive: true });
 mkdirSync(join(agentDir, "sessions", "live"), { recursive: true });
 
 const { testApp } = await import("./mesh/app-test-fixtures");
+const { pageHeaders } = await import("./testing/page");
 const app = await testApp();
 const { addWebSession } = await import("./web-sessions");
 const { canonicalPath } = await import("./paths");
@@ -77,7 +78,7 @@ const outsideState = () => `${treeHash(homedir(), [root, join(homedir(), ".cache
 
 interface Answer { status: number; body: unknown }
 async function sendTo(a: Hono, method: string, url: string, raw?: string): Promise<Answer> {
-  const res = await a.request(url, { method, ...(raw === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: raw }) });
+  const res = await a.request(url, { method, ...(raw === undefined ? {} : { headers: { "Content-Type": "application/json", ...pageHeaders() }, body: raw }) });
   const text = await res.text();
   let body: unknown = text;
   try { body = JSON.parse(text); } catch { /* not JSON: the judge says so */ }

@@ -1,3 +1,4 @@
+import { yourClickRefusal } from "./page-only";
 import type { Hono } from "hono";
 import { QUEUE_CHAT_MODE_REFUSAL } from "../shared/merge-queue";
 import { DEFAULT_PROFILE, keyOf, parseMine, THINKING_LEVELS, type ListedProfile, type Profile, type ProfileMine, type ProfilesListing } from "../shared/profiles";
@@ -257,6 +258,8 @@ export function registerProfileRoutes(app: Hono): void {
   // Approve a project profile's powers (§chat.profiles/trust): the ones the file has now, and only
   // when they are the ones the client was shown.
   app.post("/api/profiles/approve", async (c) => {
+    const notYou = yourClickRefusal(c, "profile");
+    if (notYou) return notYou;
     const body = (await c.req.json().catch(() => null)) as { cwd?: unknown; id?: unknown; grant?: unknown; overseerMayStart?: unknown } | null;
     const cwd = str(body?.cwd);
     const id = str(body?.id);

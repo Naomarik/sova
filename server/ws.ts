@@ -6,6 +6,8 @@ import type { WebSocket } from "ws";
 import { cappedWebSocketServer, streamWebSocketServer } from "./runtime-quirks";
 import type { ChatClientMessage, ChatServerMessage, LlmFeedMessage, SessionFeedMessage, V2EventFrame, WatchServerMessage } from "../shared/protocol";
 import { refuseUpgrade } from "./auth";
+import { type NotPage, notPageSocket, yourClickBody } from "./page-only";
+import { sandboxCommand, sandboxLowers } from "./sandbox-state";
 import { isDirectLocal } from "./compression";
 import { acquireChatHandle, ArchivedError, BusyError, ConfigError, type ChatClient } from "./chat-handle";
 import { normalizeClaudeText, resolveClaudeSession } from "./claude-transcript";
@@ -68,11 +70,27 @@ export function haveOf(params: URLSearchParams, ask: TailAsk): string | undefine
     is not stamped seen and its marks are not nudged. Every other caller leaves it out. */
 interface ChatSocketOpts {
   viewer?: boolean;
+  /** Who this socket is when it isn't the operator's page; only a socket the main listener judged leaves it null. */
+  notPage?: NotPage | null;
 }
 
 async function handleChat(ws: WebSocket, path: string, force: boolean, ask: TailAsk, wire: WireVersion, have?: string, opts: ChatSocketOpts = {}): Promise<void> {
   const id = idOf(path);
   const viewer = opts.viewer !== false;
+  const who: NotPage | null = opts.notPage === undefined ? "local" : opts.notPage;
+  /** One frame into the chat. `/sandbox` typed in the page's composer runs; from anything else a lowering is refused
+      (§app.access/your-click), the send's refusal reaching this socket like any other. */
+  const toChat = (open: NonNullable<typeof chat>, msg: ChatClientMessage) => {
+    const asked = who !== null && (msg.type === "prompt" || msg.type === "steer") ? sandboxCommand(String(msg.text ?? "")) : null;
+    if (!asked) return open.clientMessage(client, msg);
+    open.sandboxInfo().then(
+      (info) => {
+        if (!sandboxLowers(info?.state, asked)) return open.clientMessage(client, msg);
+        client.send({ type: "error", code: "refused", message: yourClickBody("sandbox", who!).error, ...("clientId" in msg && msg.clientId ? { clientId: msg.clientId } : {}) });
+      },
+      (err) => client.send({ type: "error", code: "internal", message: err instanceof Error ? err.message : String(err) }),
+    );
+  };
   // What this socket sent and the chat hasn't answered yet (§chat.transcript/send-while-starting).
   // Once the socket is gone, a refusal can't reach any tab: its text goes back as the draft.
   const held = new HeldSends();
@@ -125,7 +143,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
     }
     sessionsChanged(); // a prompt, abort or rename: the next listing is built afresh
     held.sent(msg);
-    if (chat) chat.clientMessage(client, msg);
+    if (chat) toChat(chat, msg);
     else early.push(msg);
   });
   // Seen: a pane is on screen while its socket is open (server/seen.ts). Stamped at attach and at
@@ -181,7 +199,7 @@ async function handleChat(ws: WebSocket, path: string, force: boolean, ask: Tail
   // Gone or not, the chat takes what the socket sent while it opened, in order, and this socket
   // stays in it until each send is answered (stayToHear).
   chat.attach(client);
-  for (const msg of early.splice(0)) chat.clientMessage(client, msg);
+  for (const msg of early.splice(0)) toChat(chat, msg);
   if (gone) stayToHear();
 }
 
@@ -216,10 +234,10 @@ export const POSTED_FRAMES_MAX = 100;
  * early frames take (handleChat), on a stand-in socket that is already gone: the chat opens, runs
  * them in order, takes each client id once, and a refusal goes back as the session's draft.
  */
-export function deliverFrames(path: string, frames: readonly ChatClientMessage[]): void {
+export function deliverFrames(path: string, frames: readonly ChatClientMessage[], notPage: NotPage | null = "script"): void {
   const gone = Object.assign(new EventEmitter(), { readyState: 3, OPEN: 1, close() {}, send() {} });
   const ws = gone as unknown as WebSocket;
-  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2).catch((err) => console.error("[chat/frames]", err));
+  handleChat(ws, path, false, { tail: true, pull: true, prefetch: false }, 2, undefined, { notPage }).catch((err) => console.error("[chat/frames]", err));
   for (const f of frames) gone.emit("message", JSON.stringify(f));
   gone.emit("close");
 }
@@ -390,6 +408,9 @@ export function upgradeSovaStreamSocket(req: IncomingMessage, socket: Duplex, he
   upgradeWith(streamWss, req, socket, head);
 }
 
+/** What the main listener's upgrade judged of a socket (attachWebSockets). The peer listener's have no entry: not the page. */
+const pageSockets = new WeakMap<IncomingMessage, NotPage | null>();
+
 function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, head: Buffer): void {
   const url = new URL(req.url ?? "/", "http://localhost");
   const route = url.pathname;
@@ -437,7 +458,7 @@ function upgradeWith(server: typeof wss, req: IncomingMessage, socket: Duplex, h
       return;
     }
     if (route === "/ws/chat") {
-      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire, haveOf(url.searchParams, tail)).catch((err) => {
+      handleChat(ws, path, url.searchParams.get("force") === "1", tail, wire, haveOf(url.searchParams, tail), { notPage: pageSockets.get(req) }).catch((err) => {
         console.error("[ws/chat]", err);
         ws.close(4500, "internal");
       });
@@ -464,6 +485,10 @@ export function attachWebSockets(server: Server): void {
     }
     // A session on another host, forwarded to it (server/mesh/proxy.ts); never while the mesh is off.
     if (meshUpgrade(req, socket, head, url)) return;
+    pageSockets.set(req, notPageSocket((n) => {
+      const v = req.headers[n];
+      return Array.isArray(v) ? v.join(n === "cookie" ? "; " : ", ") : v;
+    }));
     upgradeSovaSocket(req, socket, head);
   });
 }

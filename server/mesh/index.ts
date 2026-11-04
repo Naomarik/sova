@@ -35,6 +35,7 @@ import { addressIdentity, identityMode } from "./address-identity";
 import { REFUSED_HEADER } from "./hello";
 import { getIdentity, setIdentity, type TailnetStatus } from "./localapi";
 import { defaultSelfId, nextLabelAt, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
+import { clickProofFor, takeClick } from "./click-proof";
 import { localRequest, PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
 import { fetchPeer, setLanClients } from "./dial";
 import { candidateBase } from "./peer-address";
@@ -880,6 +881,13 @@ export function meshRoutes(app: Hono): void {
   // Peer-only routes: reached through the peer listener alone. On the main listener they are the
   // same 404 as any unknown /api route.
   app.use("/api/peer/*", async (c, next) => (requestPeer(c) ? next() : c.json({ error: "Not found" }, 404)));
+  // A peer asks whether a click it was relayed is this host's page's own (server/mesh/click-proof.ts).
+  app.post("/api/peer/click-proof", async (c) => {
+    const peer = requestPeer(c);
+    if (!peer) return c.json({ error: "Not found" }, 404);
+    const b = (await c.req.json().catch(() => null)) as { proof?: unknown; digest?: unknown } | null;
+    return c.json({ ok: takeClick(b?.proof, peer.id, b?.digest) });
+  });
   app.get("/api/peer/hello", (c) => c.json(ownHello(meshSelf(), rt.self?.nodeId)));
 
   // The proxy. While OFF these paths fall through to exactly what answered them before.
@@ -892,7 +900,7 @@ export function meshRoutes(app: Hono): void {
     if (!peer) return c.json({ error: "Unknown peer" }, 404);
     const tail = proxyTail(peerTail(c));
     // The same 404 as any unknown /api route: never proxied, never distinguishable.
-    return tail ? proxyPeer(c, peer, tail, scrubFor(peer.id)) : c.json({ error: "Not found" }, 404);
+    return tail ? proxyPeer(c, peer, tail, scrubFor(peer.id), await clickProofFor(c, peer.id, tail)) : c.json({ error: "Not found" }, 404);
   });
   app.all("/peer/:id/ws/*", async (c, next) => {
     if (!meshEnabled()) return next();

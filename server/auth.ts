@@ -347,6 +347,9 @@ function presentsToken(a: Asked): boolean {
   return hit;
 }
 
+/** Whether a Cookie header carries this install's token: what the page sends, and a header-token script doesn't. */
+export const presentsPageCookie = (header: string | undefined): boolean => cookieValues(header, AUTH_COOKIE).some(tokenMatches);
+
 /** `scheme://host[:port]` exactly as a browser sends it in Origin, or null. */
 function originOf(value: string): string | null {
   try {

@@ -113,7 +113,7 @@ import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
 import { chatOnlyModes, modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { defaultMemoryChoice } from "./memory/settings";
 import { registerMemoryRoutes } from "./memory/routes";
-import { parseSandboxBody } from "./sandbox-state";
+import { parseSandboxBody, sandboxCommand, sandboxLowers } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
 import { meshApi, meshRoutes } from "./mesh";
 import { registerCommandsRoutes } from "./commands-routes";
@@ -157,7 +157,7 @@ import { sessionsChanged } from "./list-generation";
 import { resourceMonitor } from "./resource-monitor";
 import { authGate, CALLER_HEADER, extensionCaller, isExtensionKey, SERVER_HEADER, TOKEN_HEADER, unlock, pair, revealToken, setExtensionKeyCheck } from "./auth";
 import { localRequest } from "./mesh/proxy";
-import { pageOnlyRefusal } from "./page-only";
+import { notPage, pageOnlyRefusal, yourClickBody, yourClickRefusal } from "./page-only";
 import { registerProjectSettingsRoutes } from "./project-settings-routes";
 import { registerSovaSettingsRoutes } from "./sova-settings-routes";
 import { setSovaSettingsDeps } from "./sova-settings";
@@ -1300,6 +1300,11 @@ export function buildApp(deps: AppDeps) {
     }
     // Only a chat picks Create for itself (§chat.create-mode/per-chat-only); nothing was switched.
     if (request.patch.mode === "create" && overseerSender(c.req.header(OVERSEER_SENDER_HEADER))) return c.json({ error: createNotNamed("the Overseer") }, 409);
+    // Approving a project tool is your click, or the Overseer's own turn-on (§app.access/your-click): nothing switches.
+    if (request.patch.approve?.length) {
+      const notYou = yourClickRefusal(c, { projectTool: request.patch.approve[0]!.id }, { overseerKeeps: true });
+      if (notYou) return notYou;
+    }
     // The merge queue's own chats keep the modes Sova started them with (profiles/system, thread.ts threadMemoryOn).
     if (queueChatRole((await getSessionSummary(path).catch(() => null))?.profile)) return c.json({ error: QUEUE_CHAT_MODE_REFUSAL }, 409);
     const got = await chatFor(path);
@@ -1335,7 +1340,7 @@ export function buildApp(deps: AppDeps) {
     const frames = postedFrames(await c.req.json().catch(() => null));
     if (!frames) return c.json({ error: `Expected { frames: [...] }, 1 to ${POSTED_FRAMES_MAX} objects with a type` }, 400);
     sessionsChanged();
-    deliverFrames(path, frames);
+    deliverFrames(path, frames, notPage(c));
     return c.json({ accepted: frames.length }, 202);
   });
 
@@ -1357,6 +1362,11 @@ export function buildApp(deps: AppDeps) {
     if ("error" in parsed) return c.json({ error: parsed.error }, 400);
     const got = await chatFor(path);
     if ("error" in got) return c.json({ error: got.error }, got.status);
+    // Lowering it is your click; the Overseer's runs only in a turn your click on a card opened (§app.access/your-click).
+    if (sandboxLowers((await got.chat.sandboxInfo())?.state, parsed.state)) {
+      const notYou = yourClickRefusal(c, "sandbox", { overseerKeeps: true });
+      if (notYou) return notYou;
+    }
     return c.json(await got.chat.applySandbox(parsed.state));
   });
 
@@ -1793,6 +1803,14 @@ export function buildApp(deps: AppDeps) {
     const path = resolveSessionPath(typeof body.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path (must be a .jsonl under the pi sessions dir)" }, 400);
     if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
+    // A `/sandbox` that lowers isn't sent by this road, whoever asks: the page's own is typed in its composer
+    // (§app.access/your-click). The chat refuses it too, for every other way a server-side send reaches it.
+    const asked = sandboxCommand(body.text);
+    if (asked) {
+      const got = await chatFor(path);
+      if ("error" in got) return c.json({ error: got.error }, got.status);
+      if (sandboxLowers((await got.chat.sandboxInfo())?.state, asked)) return c.json(yourClickBody("sandbox", notPage(c) ?? "script"), 403);
+    }
     const r = await promptSession(path, body.text, overseerSender(c.req.header(OVERSEER_SENDER_HEADER)), body.delivery);
     return r.ok ? c.json({ ok: true, queued: r.queued, kind: r.kind, ...(r.compacting ? { compacting: true } : {}) }) : c.json({ error: r.error }, r.status);
   });

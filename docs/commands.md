@@ -13,10 +13,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 511 |
+| Routes registered | 512 |
 | Routes a catalogue entry points at | 139 |
 | Catalogue entries | 187 |
-| Class: Peer protocol | 38 |
+| Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
 | Class: Extension proxy | 5 |
@@ -538,7 +538,7 @@ class, leaves it, and a new route never joins it.
 
 ## Not-a-command classes
 
-### Peer protocol (38)
+### Peer protocol (39)
 
 Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer listener's door, never the operator's actions.
 
@@ -551,6 +551,7 @@ Sova-to-Sova calls on the mesh and the relay to a peer's own routes; the peer li
 | `POST /api/peer/claude-pool/doc` | sync.logins |
 | `POST /api/peer/claude-pool/lend` | sync.logins |
 | `POST /api/peer/claude-pool/return` | sync.logins |
+| `POST /api/peer/click-proof` | hello |
 | `GET /api/peer/credentials/entry` | sync.logins |
 | `GET /api/peer/credentials/manifest` | sync.logins |
 | `POST /api/peer/credentials/push` | sync.logins |

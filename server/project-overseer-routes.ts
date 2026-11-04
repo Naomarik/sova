@@ -13,6 +13,8 @@ import { projectOf, projectOverseerPaths, type ProjectOverseerPaths, readPoSetti
 import { overseerMemoryInfo, putOverseerMemorySwitch } from "./memory/routes";
 import { recordKept } from "./project-settings";
 import { TOKEN_HEADER } from "./auth";
+import { yourClickRefusal } from "./page-only";
+import { powerTurnsOn } from "../shared/powers";
 
 /**
  * The operator's routes for project overseers (§app/project-overseer; the list is in
@@ -77,9 +79,15 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   }));
   app.patch(base, handle(async (c) => {
     const p = pathsOf(c);
+    const patch = await body(c);
+    // Turning a power On is your click; the Overseer keeps its own, in a turn you started (§app.access/your-click).
+    if (powerTurnsOn(readPoSettings(p).powers, patch)) {
+      const notYou = yourClickRefusal(c, "power", { overseerKeeps: true });
+      if (notYou) return notYou;
+    }
     // Who changed it, for the settings history (§app.project-overseer/settings): the global Overseer, a script (the token in a header), or the page.
     const by = overseerOf(c) ? ({ kind: "overseer" } as const) : c.req.header(TOKEN_HEADER) !== undefined ? ({ kind: "operator", via: "script" } as const) : ({ kind: "operator", via: "page" } as const);
-    return c.json(await patchProjectOverseer(p.projectId, await body(c), by), 200, NO_STORE);
+    return c.json(await patchProjectOverseer(p.projectId, patch, by), 200, NO_STORE);
   }));
   // Its memory switch: the Overseer's route's shape, its own overseer.json.
   app.get(`${base}/memory`, handle(async (c) => {

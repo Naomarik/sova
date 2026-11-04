@@ -133,6 +133,7 @@
     "GET /api/peer/claude-pool/doc": {"need":"sync.logins","is":"peer"},
     "GET /api/peer/credentials/entry": {"need":"sync.logins","is":"peer"},
     "GET /api/peer/credentials/manifest": {"need":"sync.logins","is":"peer"},
+    "POST /api/peer/click-proof": {"need":"hello","is":"peer"},
     "GET /api/peer/details": {"need":"presence","is":"peer"},
     "GET /api/peer/hello": {"need":"hello","is":"peer"},
     "GET /api/peer/links/:id/offers/:offer/tar": {"need":"links","is":"peer"},

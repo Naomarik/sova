@@ -1,3 +1,6 @@
+import { peerFetch } from "./mesh";
+import { peerClickProven } from "./mesh/click-proof";
+import { yourClickRefusal } from "./page-only";
 import type { Hono } from "hono";
 import { join } from "node:path";
 import { agentRoot, stateRoot } from "./state-root";
@@ -6,7 +9,6 @@ import { defaultClaudeDir, loginDir, readAccountsState, readiness } from "../pi-
 import { chatHandle } from "./chat-handle";
 import { chatClaudeLogin, loginName } from "./claude-login-state";
 import { briefOverseer, countStarted, freeRunSlots } from "./overseer";
-import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer-sender";
 import { promptSession } from "./session-prompt";
 import { listPlaybooks, listProjectPlaybooks, readProjectPlaybook } from "./playbooks";
 import { findProfile } from "./profile-sources";
@@ -95,6 +97,14 @@ function heldBusy(path: string): boolean {
  * Start the keeper: a tick every 30 s, and discovery in the projects of listed sessions every few
  * minutes.
  */
+const parsedBody = (raw: string): { cwd?: unknown; playbook?: unknown; automation?: unknown; pin?: unknown } | null => {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+};
+
 export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
   const tickMs = Number(process.env.SOVA_SCHEDULE_TICK_MS) || DEFAULT_TICK_MS;
   const speed = Math.max(1, Number(process.env.SOVA_SCHEDULE_SPEED) || 1);
@@ -176,8 +186,11 @@ export function registerScheduleRoutes(app: Hono): void {
   });
   // Approve: the user's click only, never the Overseer (§chat.schedules/approval).
   app.post("/api/schedules/approve", async (c) => {
-    if (overseerSender(c.req.header(OVERSEER_SENDER_HEADER))) return c.json({ error: "Only the user approves a schedule, in Sova." }, 403);
-    const body = (await c.req.json().catch(() => null)) as { cwd?: unknown; playbook?: unknown; automation?: unknown; pin?: unknown } | null;
+    const raw = await c.req.text().catch(() => "");
+    // Your click here, or on another of your computers' page with its proof (server/mesh/click-proof.ts).
+    const notYou = yourClickRefusal(c, "schedule");
+    if (notYou && !(await peerClickProven(c, raw, peerFetch))) return notYou;
+    const body = parsedBody(raw);
     const cwd = str(body?.cwd);
     const playbook = str(body?.playbook);
     const automation = str(body?.automation);

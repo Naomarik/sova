@@ -200,3 +200,23 @@ the page waits for you, and that any change asks again; saving a secret; a proje
 that each worktree's copy is approved on its own; what a server costs in tokens and the switches that
 trim it; workers and profiles; and what the sandbox and remote chats change. It says a server stays
 on its computer, and that chats don't ask before a tool runs.
+
+## §site.docs/merge-queue — Merge queue (`/docs/merge-queue/`)
+
+Which projects have a merge queue and that it is the only way a branch reaches their main branch;
+the two ways to land a branch (Land, with its menu, and "land it" typed in the branch's own chat,
+your own words only) and what Land refuses; one branch at a time in approval order; the merge in a
+copy, the checks, the optional review and landing exactly the tested commit, or a pull or merge
+request; the branch's card in its chat; whose failure a red check is and each waiting state (Needs a
+fix, Can't tell whose failure, Conflict and Behaviour differs, Review flagged, Drafts changed) with
+its actions; the Merge Queue tab; the merge thread and the queue's own chats; setting it up and
+Settings → Merge Queue; the freeze while a release is open.
+
+## §site.docs/releases — Releases (`/docs/releases/`)
+
+What a release is and isn't (not a deploy); the release playbook doing the work in a release chat and
+Sova holding what can't be undone; Set Up Releases; Start Release and the frozen merge queue; the
+steps and their states, Continue on a held step, Retry Step, the quiet warning; the release checks
+and that nothing overrides a failed one; Publish, all or nothing, Publish failed and Retry Publish;
+Abandon Release; after-publish steps and Plan Deploy of a release; Withdraw and the numbered tag that
+never moves; the release power and the Project Assistant's ask; the history on the Releases tab.

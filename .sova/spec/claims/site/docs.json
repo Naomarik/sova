@@ -259,6 +259,39 @@
       "site/src/content/docs/modes/memory.md"
     ]
   },
+  "§site.docs/merge-queue": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/merge-queue.md",
+      "site/src/data/docs.ts"
+    ],
+    "requires": [
+      "§app/merge-queue",
+      "§app.merge-queue/served",
+      "§app.merge-queue/approve",
+      "§app.merge-queue/run",
+      "§app.merge-queue/checks",
+      "§app.merge-queue/blame",
+      "§app.merge-queue/land",
+      "§app.merge-queue/push",
+      "§app.merge-queue/review",
+      "§app.merge-queue/conflicts",
+      "§app.merge-queue/setup",
+      "§app.merge-queue/view",
+      "§app.merge-queue/chats",
+      "§app.merge-queue/settings",
+      "§app.merge-queue/strategies",
+      "§chat.worktrees/tool",
+      "§chat.composer/worktrees-control"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T20:20Z",
+      "source": "pi-session:01a1a7b1-62c9-754f-a095-5fcceffc995c#7c5470f2"
+    }
+  },
   "§site.docs/modes": {
     "kind": "behavior",
     "requires": [
@@ -459,6 +492,34 @@
       "at": "2026-10-19T02:40Z"
     },
     "evidence": "reviewed"
+  },
+  "§site.docs/releases": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/releases.md",
+      "site/src/data/docs.ts"
+    ],
+    "requires": [
+      "§app/release",
+      "§app.release/maker",
+      "§app.release/start",
+      "§app.release/steps",
+      "§app.release/checks",
+      "§app.release/publish",
+      "§app.release/abandon",
+      "§app.release/withdraw",
+      "§app.release/quiet",
+      "§app.release/power",
+      "§app.release/tab",
+      "§app.release/deploy"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T20:20Z",
+      "source": "pi-session:01a1a7b1-62c9-754f-a095-5fcceffc995c#7c5470f2"
+    }
   },
   "§site.docs/spec-mode": {
     "kind": "behavior",

@@ -9,11 +9,13 @@ The file format, for whoever writes a topic.
     - Lives: where it lives, as a place on the person's computer or a screen.
     - Approves: who approves it.
     - By: Screen, Card, Land, OK, Terminal or None, then anything that word needs.
-    - Live: when it shows: now, next turn, next tool call, new chat, reload, rebuild, restart, after landing.
+    - Live: when it shows: now, next turn, next tool call, new chat, rebuild, restart, off and on, after landing.
     - Check: how to see that it worked.
 
   `By:` starts with one of those six words, or two joined by " or " ("Card or Land"). A line may run on
-  after its first sentence; nothing but those six lines belongs in the list.
+  after its first sentence; nothing but those six lines belongs in the list. A fenced example may follow
+  the list, inside its section: a minimal one for anything a chat writes for the person.
+  Paths: exact, from a named root: `<agent dir>/sova/themes/<id>.json`, `<project>/.pi/skills/...`.
   An entry stands alone. It names no Sova source file, no spec, no `§` ID and no checkout: a chat in any
   project reads it. It may name the public guide that goes further, by the page's path (/docs/...).
   Only what has landed goes in. Owner notes like this one never reach the model.

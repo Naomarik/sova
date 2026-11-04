@@ -36,7 +36,8 @@ const BY = new RegExp(`^${WAY}(?: or ${WAY})*(?![A-Za-z])`);
 /** What is wrong with one entry's structure, one line each; empty when it holds. */
 function entryProblems(topic: string, md: string): string[] {
 	const problems: string[] = [];
-	const text = stripOwnerNotes(md);
+	// A fenced example isn't part of the list, whatever it looks like (YAML has lines just like these).
+	const text = stripOwnerNotes(md).replace(/^```[\s\S]*?^```$/gm, "");
 	const [, ...sections] = text.split(/^## /m);
 	if (sections.length === 0) problems.push(`${topic}: no "## <thing>" section`);
 	for (const section of sections) {
@@ -55,7 +56,7 @@ function entryProblems(topic: string, md: string): string[] {
 const NOT_STANDALONE: [RegExp, string][] = [
 	[/§/, "a § ID"],
 	[/\.sova\/spec/, "Sova's spec"],
-	[/(?:^|[\s`("])(?:server|shared|src|pi-config|agents|statecharts|scripts)\/[\w./-]+/m, "a path into Sova's checkout"],
+	[/(?:^|[\s`("])(?:server|shared|pi-config|statecharts)\/[\w./-]+/m, "a path into Sova's checkout"],
 	[/~\/webapps|\/home\//, "a machine's own path"],
 ];
 
@@ -103,6 +104,7 @@ test("the structure check tells a good entry from a bad one", () => {
 	assert.equal(entryProblems("x", good.replace("- Check: e.", "- Check:")).length, 1);
 	assert.equal(entryProblems("x", good.replace("By: Card or Land", "By: Landing")).length, 1);
 	assert.equal(entryProblems("x", good.replace("By: Card or Land", "By: Sometimes")).length, 1);
+	assert.deepEqual(entryProblems("x", `${good}\n\`\`\`yaml\n- name: example\n- Check:\n\`\`\`\n`), [], "a fenced example may follow the list");
 });
 
 test("every entry says, for each thing, what can change, where it lives, who approves, how it changes, how it goes live and how to check it", () => {

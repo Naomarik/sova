@@ -9,6 +9,7 @@
 //  - the total and the window: the transcript head's rule (contextOfBranch, resolveContext).
 // The conversation is estimated from the branch's messages since the latest compaction.
 
+import { homedir } from "node:os";
 import { relative, sep } from "node:path";
 import type { HBlock, HEntry, HarnessToolInfo } from "../shared/harness";
 import { CHARS_PER_TOKEN, type SessionContextNested, type SessionContextPart, type SessionContextView, type SessionSetup } from "../shared/protocol";
@@ -56,9 +57,11 @@ async function heldPrompt(path: string): Promise<HeldPrompt | null> {
   }
 }
 
-const labelOf = (cwd: string, path: string): string => {
+/** An instruction file's name: relative inside the chat's folder, else `~/...` under the home folder. */
+export const labelOf = (cwd: string, path: string, home = homedir()): string => {
   const rel = relative(cwd, path);
-  return rel && !rel.startsWith("..") && !rel.startsWith(sep) ? rel : path;
+  if (rel && !rel.startsWith("..") && !rel.startsWith(sep)) return rel;
+  return path.startsWith(home + sep) ? `~${path.slice(home.length)}` : path;
 };
 
 const blockChars = (b: HBlock): number =>

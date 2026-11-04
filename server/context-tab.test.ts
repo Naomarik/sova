@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import type { HEntry } from "../shared/harness";
 import type { SessionSetup } from "../shared/protocol";
-import { conversationTokens, getContextView, type ContextViewDeps } from "./context-tab";
+import { conversationTokens, getContextView, labelOf, type ContextViewDeps } from "./context-tab";
 import { splitSystemPrompt } from "./harness/pi/session";
 import { scratchRoot } from "./test-scratch";
 
@@ -126,4 +126,10 @@ test("subfolder files only where the chat's hook would load them: none with no c
   assert.deepEqual(await nestedOf({ held: held({ noContextFiles: true, append: "none" }) }), []);
   // A confined chat (the project overseer's): a file its allow refuses is left out.
   assert.deepEqual(await nestedOf({ held: held({ append: "none", contextFilesWithin: { root: cwd, out: [join(cwd, "private")] } }) }), ["sub/AGENTS.md"]);
+});
+
+test("an instruction file's name: relative in the chat's folder, ~ under home, whole elsewhere", () => {
+  assert.equal(labelOf("/h/u/p", "/h/u/p/AGENTS.md", "/h/u"), "AGENTS.md");
+  assert.equal(labelOf("/h/u/p", "/h/u/AGENTS.md", "/h/u"), "~/AGENTS.md");
+  assert.equal(labelOf("/h/u/p", "/h/ux/AGENTS.md", "/h/u"), "/h/ux/AGENTS.md");
 });

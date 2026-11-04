@@ -95,6 +95,8 @@ export interface SettingsCardView {
   saveWaits?: boolean;
   /** The waiting save failed when its turn came (the queue keeps it, not retried). */
   saveFailed?: string;
+  /** Applied, but these grants weren't recorded, each in words with where to approve it: it must not read as approved. */
+  stillNeeds?: string[];
   state: SettingsCardState;
   title: string;
   why: string;

@@ -355,6 +355,8 @@ interface StoredCard {
   appliedAt?: string;
   appliedCommit?: string;
   dismissedAt?: string;
+  /** Applied, but what this says wasn't approved: the card must not read as approved. */
+  stillNeeds?: string[];
 }
 
 interface QueueCardPart {
@@ -613,6 +615,7 @@ async function cardView(projectId: string, c: StoredCard, repo: Repo | null): Pr
     ...(c.appliedNow?.length ? { appliedNow: c.appliedNow } : {}),
     ...(c.appliedAt ? { appliedAt: c.appliedAt } : {}),
     ...(c.appliedCommit ? { commit: c.appliedCommit } : {}),
+    ...(c.stillNeeds?.length ? { stillNeeds: c.stillNeeds } : {}),
     ...(c.dismissedAt ? { dismissedAt: c.dismissedAt } : {}),
   };
 }
@@ -1222,9 +1225,9 @@ async function landLocal(projectId: string, view: SettingsCardView): Promise<{ c
   }
   for (const f of files) if (f.text !== null) f.after = await writeBlob(repo, f.text);
   const commit = await landFiles(projectId, repo, files, `Settings: ${titleOf({ kept: [], files })}\n\nLanded from the project folder's uncommitted edits.`, { fromLocal: true });
-  const approved = await recordApprovals(root, grants);
+  const { done: approved, missed } = await recordApprovals(root, grants);
   appendHistory(projectId, files.map((f) => ({ field: `file:${f.rel}`, from: f.before, to: f.after, by, commit, card: "local" })));
-  return { card: { ...view, state: "applied", appliedAt: new Date().toISOString(), commit }, approved, commit };
+  return { card: { ...view, state: "applied", appliedAt: new Date().toISOString(), commit, ...(missed.length ? { stillNeeds: missed } : {}) }, approved, commit };
 }
 
 /** What a card would change now, or the refusal: the grant set must be the card's, and its files as the card knew them. */
@@ -1295,7 +1298,8 @@ async function applyNow(projectId: string, c: StoredCard): Promise<{ card: Setti
   if (now.length) rows.push(...(await applyKept(projectId, now, cardBy, meta)));
   if (c.memory) rows.push(...(await d.memory(projectId, c.memory, cardBy, meta)));
   if (c.name) rows.push(...(await d.rename(projectId, c.name, cardBy, meta)));
-  const approved = [...c.grants.filter((g) => g.key.startsWith("overseer:")).map((g) => g.key), ...(await recordApprovals(root, c.grants.filter((g) => !g.key.startsWith("overseer:"))))];
+  const recorded = await recordApprovals(root, c.grants.filter((g) => !g.key.startsWith("overseer:")));
+  const approved = [...c.grants.filter((g) => g.key.startsWith("overseer:")).map((g) => g.key), ...recorded.done];
   if (c.files.length) appendHistory(projectId, c.files.map((f) => ({ field: `file:${f.rel}`, from: f.before, to: f.after, by: cardBy, commit, card: cardId })));
 
   const after = readStore(projectId);
@@ -1303,6 +1307,7 @@ async function applyNow(projectId: string, c: StoredCard): Promise<{ card: Setti
   mine.state = "applied";
   mine.appliedAt = new Date().toISOString();
   delete mine.held;
+  if (recorded.missed.length) mine.stillNeeds = recorded.missed;
   if (commit) mine.appliedCommit = commit;
   writeStore(projectId, after);
   return { card: await cardView(projectId, mine, repo), approved, ...(commit ? { commit } : {}) };
@@ -1378,8 +1383,13 @@ async function landFiles(projectId: string, repo: Repo, files: StoredFile[], mes
 }
 
 /** Record the approvals of exactly `grants`, from the files as they now are (profiles first: a schedule's approval needs its profile's). */
-async function recordApprovals(root: string, grants: StoredGrant[]): Promise<string[]> {
+/**
+ * Record exactly the card's grants. The commit has landed by now, so what can't be approved doesn't undo it: it goes
+ * in `missed`, in words, and the card says so. Nothing counts as approved unless its approval was written.
+ */
+async function recordApprovals(root: string, grants: StoredGrant[]): Promise<{ done: string[]; missed: string[] }> {
   const done: string[] = [];
+  const missed: string[] = [];
   const order = (g: StoredGrant) => (g.setting === "profile" ? 0 : g.setting === "schedule" ? 2 : 1);
   for (const g of [...grants].sort((a, b) => order(a) - order(b))) {
     const id = g.key.includes("#") ? g.key.slice(g.key.lastIndexOf("#") + 1) : "";
@@ -1390,13 +1400,22 @@ async function recordApprovals(root: string, grants: StoredGrant[]): Promise<str
       done.push(p.key);
     } else if (g.setting === "schedule") {
       const keeper = scheduleKeeper();
-      if (!keeper) continue;
+      const stillNeeds = `The schedule of ${id} still needs approving, in the Playbooks dialog.`;
+      if (!keeper) {
+        missed.push(stillNeeds);
+        continue;
+      }
+      // Just committed, so the keeper's own discovery hasn't seen it yet.
+      await keeper.discover([root], listProjectPlaybooks);
       const pin = (await keeper.list()).find((s) => s.root === root && s.playbook === id)?.pin;
       const shown = g.pin as { when: string; tz: string | null; profile: string | null } | undefined;
       const read = await readProjectPlaybook(root, id);
       const h = read ? scheduleOf(read.fields) : null;
       if (!h || !shown || h.when !== shown.when || (h.tz ?? null) !== shown.tz || (h.profile ?? null) !== shown.profile) throw new OrgError(`The playbook ${id}'s schedule isn't what the card showed any more.`, 409);
-      if (!pin) continue;
+      if (!pin) {
+        missed.push(stillNeeds);
+        continue;
+      }
       const r = await keeper.approve(root, { playbook: id }, pin);
       if (!r.ok) throw new OrgError(r.error, 409);
       done.push(g.key);
@@ -1406,13 +1425,17 @@ async function recordApprovals(root: string, grants: StoredGrant[]): Promise<str
       if ("toolsHash" in snap && snap.toolsHash) {
         recordModeApproval(top, id, snap.toolsHash, "user");
         done.push(g.key);
-      }
+      } else missed.push(`The mode ${id} still needs approving, in a chat's mode menu.`);
     } else if (g.setting === "offers") {
-      if (g.pin !== undefined) approveRuns(root, parseOffersFile(readText(join(root, OFFERS_FILE))), g.pin);
+      if (g.pin === undefined) {
+        missed.push("The project's run buttons still need approving, on the Offers list.");
+        continue;
+      }
+      approveRuns(root, parseOffersFile(readText(join(root, OFFERS_FILE))), g.pin);
       done.push(g.key);
     } else done.push(g.key);
   }
-  return done;
+  return { done, missed };
 }
 
 const readText = (file: string): string | null => {

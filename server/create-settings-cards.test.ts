@@ -404,6 +404,40 @@ describe("the added cards", async () => {
   });
 });
 
+describe("Apply and Approve says only what was approved", async () => {
+  const { project } = await gitProject("sched");
+  const pid = project.id;
+  const { setScheduleKeeper } = await import("./schedules");
+  const scheduled = (id: string) => ({ setting: "playbook", id, text: "---\ntitle: Daily\nwhen: weekdays 09:00\nprofile: reviewer\ntask: go\n---\nDo it.\n" });
+  const cardOf = async (id: string) => ((await runCreateSettingsTool(chat(pid), { op: "propose", why: "Daily.", edits: [scheduled(id)] })).details as { card: { id: string; fingerprint: string; grants: unknown[] } }).card;
+  const applied = (c: { id: string; fingerprint: string }) => post(app(), `/api/projects/${pid}/settings/apply`, { card: c.id, fingerprint: c.fingerprint });
+
+  test("a schedule just committed is found and approved at once", async () => {
+    const known: string[] = [];
+    const approvedFor: string[] = [];
+    setScheduleKeeper({ discover: async () => void known.push("daily"), list: async () => known.map((p) => ({ root: join(root, "sched"), playbook: p, pin: "pin1" })), approve: async (_r: string, ref: { playbook: string }, pin: string) => (approvedFor.push(`${ref.playbook}:${pin}`), { ok: true }) } as never);
+    const c = await cardOf("daily");
+    assert.equal(c.grants.length, 1);
+    const r = await applied(c);
+    assert.equal(r.status, 200, await r.clone().text());
+    const body = (await r.json()) as { approved: string[]; card: { stillNeeds?: string[] } };
+    assert.deepEqual(approvedFor, ["daily:pin1"], "the keeper hadn't seen it before the commit");
+    assert.equal(body.approved.length, 1);
+    assert.equal(body.card.stillNeeds, undefined);
+  });
+
+  test("one that can't be approved is never reported approved, and the card says where", async () => {
+    setScheduleKeeper({ discover: async () => {}, list: async () => [], approve: async () => assert.fail("no pin to approve") } as never);
+    const c = await cardOf("weekly");
+    const body = (await (await applied(c)).json()) as { approved: string[]; card: { state: string; stillNeeds?: string[] } };
+    assert.deepEqual(body.approved, [], "nothing was approved");
+    assert.equal(body.card.state, "applied");
+    assert.match(body.card.stillNeeds![0]!, /weekly still needs approving, in the Playbooks dialog/);
+    assert.deepEqual((await settings.settingsCard(pid, c.id))!.stillNeeds, body.card.stillNeeds, "it stays on the card");
+    setScheduleKeeper(null);
+  });
+});
+
 test("what stays on its own screen is refused by name, saying where, in either shape of edit", async () => {
   const screens: Record<string, RegExp> = { "public-links": /Settings → Public Links, Where links open/, voice: /Settings → Voice, Set Up Voice/, updates: /Settings → General, Update from/, mesh: /Settings → Mesh/ };
   for (const [name, where] of Object.entries(screens)) {

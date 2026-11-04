@@ -38,6 +38,7 @@ export const SOVA_SETTING_IDS = [
   "mesh.browser-access",
   "mesh.resync",
   "mesh.relay",
+  "mesh.pairing",
 ] as const;
 
 export type SovaSettingId = (typeof SOVA_SETTING_IDS)[number];
@@ -94,6 +95,7 @@ export const SOVA_SETTINGS: Record<SovaSettingId, SovaSettingEntry> = {
   "mesh.browser-access": e({ id: "mesh.browser-access", label: "Browser access", file: "~s/peers.json", summary: "Whether a computer in the mesh has a browser address. It runs on this computer, or on a linked one that lets this one change its settings.", value: "{host: a computer's id, on: true|false}", grant: "That computer can be opened in a browser.", sync: null, live: "at once", screen: "Settings → Mesh, a host's details" }),
   "mesh.resync": e({ id: "mesh.resync", label: "Resync", file: "~s/mesh-resync.json (read only)", summary: "Start the recipe kept for a linked computer, to bring it up to this build. The recipe itself stays on its screen.", value: "{peer: its id}", grant: "It runs that computer's resync recipe.", sync: null, live: "at once, as a job on Settings → Mesh", screen: "Settings → Mesh, Resync" }),
   "mesh.relay": e({ id: "mesh.relay", label: "This computer as a relay", file: "~s/peers.json", summary: "Where this computer listens for computers that dial out to it, on the local network. An internet relay stays on its screen.", value: "{host: one of this computer's addresses, port} or null", grant: "Paired computers can reach this one there.", sync: null, live: "at once", screen: "Settings → Mesh, Pairings" }),
+  "mesh.pairing": e({ id: "mesh.pairing", label: "Pair a computer", file: "~s/peers.json", summary: "Pair a computer that isn't on the tailnet. The person types its fingerprint into the card's own field: it never goes through this chat, so never ask for it and never put it in value. Each computer does its half, in its own Sova.", value: "{id, label?, role: \"dial\"|\"accept\", host?, port?, preset} (role dial: its relay's host and port)", grant: "That computer gets the access shown here.", sync: null, live: "at once", screen: "Settings → Mesh, Pairings" }),
 };
 
 /**

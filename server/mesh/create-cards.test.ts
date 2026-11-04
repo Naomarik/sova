@@ -2,7 +2,7 @@
 // Mesh by a Create chat (§chat.create-mode/settings-cards): what `get` reads, and cards that only the person's click
 // applies, through the same code the Mesh page's routes run. A peer's answers come over the test wire.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
@@ -32,6 +32,7 @@ const { OVERSEER_SENDER_HEADER, senderSecret } = await import("../overseer-sende
 const { ownProtocol } = await import("./hello");
 const { pageHeaders } = await import("../testing/page");
 const { runCreateSettingsTool } = await import("../create-settings-run");
+const { sovaCardsInfo } = await import("../sova-settings");
 (await import("./links-transfer")).setTarAvailableForTest(true);
 
 const FAKE = "http://127.0.0.1:47031";
@@ -150,3 +151,47 @@ describe("cards, applied only by the person's click", () => {
     assert.deepEqual(started, ["b"]);
   });
 });
+
+describe("pairing: the fingerprint stays out of every chat", () => {
+  const PAIR = "0123456789ABCDEF0123456789ABCDEF";
+  const propose = (value: unknown) => runCreateSettingsTool(chat, { op: "propose", why: "Pair it.", edits: [{ setting: "sova", id: "mesh.pairing", value }] });
+  const apply = (body: Record<string, unknown>) => app.request("/api/settings/apply", { method: "POST", headers: { "content-type": "application/json", ...pageHeaders() }, body: JSON.stringify(body) });
+  /** Every file under the state folder but the two the Mesh page's pairing writes too (a peer's node id is made from its pin). */
+  const stateTexts = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const p = join(dir, e.name);
+      if (e.isDirectory()) return e.name === "sessions" ? [] : stateTexts(p);
+      return e.name === "peers.json" || e.name === "mesh-access.json" ? [] : [readFileSync(p, "latin1")];
+    });
+
+  test("a chat can't carry one, in any field or shape", async () => {
+    await assert.rejects(propose({ id: "q", role: "accept", preset: "presence", pin: PAIR }), /never goes through a chat/);
+    await assert.rejects(propose({ id: "q", role: "accept", preset: "presence", pin: "short" }), /can't go on a card/);
+    await assert.rejects(propose({ id: "q", role: "accept", preset: "presence", label: PAIR }), /never goes through a chat/);
+    await assert.rejects(propose({ id: "q", role: "accept", preset: "presence", label: PAIR.match(/.{4}/g)!.join("-") }), /never goes through a chat/);
+    await assert.rejects(propose({ id: "q", role: "accept" }), /Name its access/);
+  });
+
+  test("typed on the card only: nothing a chat can read holds it, and the pairing works", async () => {
+    const out = await propose({ id: "q", label: "Far", role: "accept", preset: "presence" });
+    const d = out.details as { card: { id: string; fingerprint: string; input?: { field: string }; access?: { peer: string }[] } };
+    assert.equal(d.card.input?.field, "pin");
+    assert.equal(d.card.access!.at(-1)!.peer, "q");
+    const refused = await apply({ card: d.card.id, fingerprint: d.card.fingerprint });
+    assert.equal(refused.status, 409, "no pin, no pairing");
+    const bad = await apply({ card: d.card.id, fingerprint: d.card.fingerprint, input: "nope" });
+    assert.equal(bad.status, 409);
+    assert.ok(!(await bad.text()).includes("nope"), "a refusal doesn't echo what was typed");
+    for (const headers of [{ "x-sova-token": "x" }, { "x-sova-caller": "k" }] as Record<string, string>[]) assert.equal((await app.request("/api/settings/apply", { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ card: d.card.id, fingerprint: d.card.fingerprint, input: PAIR }) })).status, 403);
+    assert.equal(meshPeers().some((p) => p.id === "q"), false);
+    const r = await apply({ card: d.card.id, fingerprint: d.card.fingerprint, input: PAIR });
+    const answer = await r.text();
+    assert.equal(r.status, 200, answer);
+    assert.equal(meshPeers().find((p) => p.id === "q")!.lan!.pin, PAIR, "the pairing is real");
+    // Everything a chat could read afterwards.
+    const reads = [answer, JSON.stringify(out), await get(), JSON.stringify(sovaCardsInfo()), JSON.stringify((await runCreateSettingsTool(chat, { op: "reference", setting: "mesh.pairing" })).content)];
+    for (const text of reads) assert.ok(!text.toUpperCase().includes(PAIR), text.slice(0, 200));
+    for (const text of stateTexts(join(tmp, "agent", "sova"))) assert.ok(!text.toUpperCase().includes(PAIR), "no other file keeps it");
+  });
+});
+

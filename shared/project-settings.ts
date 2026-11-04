@@ -108,6 +108,8 @@ export interface SettingsCardView {
   saveWaits?: boolean;
   /** The waiting save failed when its turn came (the queue keeps it, not retried). */
   saveFailed?: string;
+  /** A field the person fills at Apply, sent only with it: `POST /api/settings/apply {…, input}`. Its value is never kept, nor shown back. */
+  input?: { field: string; label: string };
   /** A mesh card: every computer's access to this one as it would be after the change. */
   access?: MeshAccessRow[];
   /** Applied, but these grants weren't recorded, each in words with where to approve it: it must not read as approved. */

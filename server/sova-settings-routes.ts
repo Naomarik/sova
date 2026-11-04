@@ -44,7 +44,7 @@ export function registerSovaSettingsRoutes(app: Hono<any>): void {
       if (notYou) return c.json({ error: notYou }, 403);
       const b = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
       if (!b || typeof b.card !== "string" || typeof b.fingerprint !== "string") return c.json({ error: "Expected {card, fingerprint}: the card's id and the fingerprint it showed." }, 400);
-      return c.json(await applySovaCard(b.card, b.fingerprint));
+      return c.json(await applySovaCard(b.card, b.fingerprint, b.input));
     }),
   );
 }

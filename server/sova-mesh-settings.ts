@@ -1,10 +1,10 @@
 import { grantCaps, MESH_CAPS, MESH_PRESETS, presetCaps, type MeshCap, type MeshGrant, type MeshPreset } from "../shared/mesh-access";
 import type { MeshAccessRow } from "../shared/project-settings";
 import type { SovaSettingId } from "../shared/sova-settings-reference";
-import { applyMeshAccess, applyMeshPeers, applyMeshRelay, applyMeshSettings, meshCardState, meshGrantOf, meshPeers, meshSelf, readMeshConfig, readMeshSettings, type MeshResult } from "./mesh";
+import { applyMeshAccess, applyMeshPairing, applyMeshPeers, applyMeshRelay, applyMeshSettings, meshCardState, meshGrantOf, meshPeers, meshSelf, readMeshConfig, readMeshSettings, type MeshResult } from "./mesh";
 import { accessFile } from "./mesh/access";
 import { meshCardPort } from "./mesh/card-port";
-import { peersFile } from "./mesh/peers";
+import { PEER_ID_RE, peersFile } from "./mesh/peers";
 
 /**
  * Mesh by a card (§chat.create-mode/settings-cards): each setting checked and written by the code the Mesh page's
@@ -166,6 +166,29 @@ export const MESH_ADAPTERS: Pick<Record<SovaSettingId, MeshAdapter>, Extract<Sov
       return run ? errorOf(await run((v as { peer: string }).peer)) : "Resync isn't available here.";
     },
   },
+  "mesh.pairing": {
+    files: () => [peersFile(), accessFile()],
+    read: () => null,
+    input: { field: "pin", label: "The other computer's fingerprint, from its Mesh page" },
+    check(v) {
+      if (!isObj(v)) return "Expected {id, role, preset, host?, port?, label?}.";
+      for (const k of Object.keys(v)) if (!["id", "label", "role", "host", "port", "preset"].includes(k)) return `"${k}" can't go on a card: id, label, role, host, port and preset can. The fingerprint goes in the card's own field, typed by the person, and an internet relay stays on Settings → Mesh, Pairings.`;
+      if (typeof v.id !== "string" || !PEER_ID_RE.test(v.id)) return `id must match ${PEER_ID_RE}.`;
+      if (v.role !== "dial" && v.role !== "accept") return 'role is "dial" or "accept".';
+      if (v.role === "dial" && (typeof v.host !== "string" || typeof v.port !== "number")) return "A computer this one dials needs its relay's host and port.";
+      if (!(MESH_PRESETS as readonly unknown[]).includes(v.preset)) return `Name its access, one of ${MESH_PRESETS.join(", ")}: nothing is assumed.`;
+      if (meshPeers().some((p) => p.id === v.id)) return `${v.id} is already linked.`;
+      return null;
+    },
+    async write(v, input) {
+      const { preset, ...rest } = v as Record<string, unknown>;
+      return errorOf(await applyMeshPairing({ ...rest, grant: preset as string, pin: input }));
+    },
+    access(v) {
+      const r = v as Record<string, unknown>;
+      return wholeAccess(() => undefined, { id: String(r.id), label: typeof r.label === "string" ? r.label : String(r.id), preset: r.preset as MeshPreset });
+    },
+  },
   "mesh.relay": {
     files: () => [peersFile()],
     read: () => readMeshConfig()?.self.relay ?? null,
@@ -182,7 +205,9 @@ interface MeshAdapter {
   files(): string[];
   read(value?: unknown): unknown;
   check(value: unknown): string | null | Promise<string | null>;
-  write(value: unknown): Promise<string | null>;
+  write(value: unknown, input?: string): Promise<string | null>;
+  /** A value the person types into the card's own field at Apply: it never reaches a chat. */
+  input?: { field: string; label: string };
   widens?(before: unknown, value: unknown): boolean;
   access?(value: unknown): Promise<MeshAccessRow[]>;
 }

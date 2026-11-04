@@ -53,59 +53,8 @@ export function lanRoutes(app: Hono, deps: LanRouteDeps): void {
     local(async (c) => {
       const body = await jsonBody<Partial<LanPairingAdd>>(c);
       if (!body) return c.json({ error: "Expected JSON body { id, role, pin, host?, port?, internet?, label?, grant? }" }, 400);
-      if (body.internet !== undefined && typeof body.internet !== "boolean") return c.json({ error: "internet must be true or false" }, 400);
-      if (body.internet === true && body.role !== "dial") return c.json({ error: "Only a relay this host dials can be on the internet" }, 400);
-      const id = typeof body.id === "string" ? body.id.trim() : "";
-      if (!PEER_ID_RE.test(id)) return c.json({ error: `id must match ${PEER_ID_RE}` }, 400);
-      if (body.role !== "dial" && body.role !== "accept") return c.json({ error: 'role must be "dial" or "accept"' }, 400);
-      const pin = parsePin(body.pin);
-      if (!pin) return c.json({ error: "That fingerprint isn't 32 hex digits: copy it from the other host's Mesh page" }, 400);
-      const grant = body.grant ?? "presence";
-      if (!(MESH_PRESETS as readonly unknown[]).includes(grant)) return c.json({ error: `grant must be one of ${MESH_PRESETS.join(", ")}` }, 400);
-      const label = typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, LABEL_MAX) : id;
-      const own = deps.ensureKey();
-      if (samePin(own.pin, pin)) return c.json({ error: "That is this host's own fingerprint" }, 400);
-      const nodeId = lanNodeId(pin);
-      const entry: Record<string, unknown> = {
-        id,
-        label,
-        nodeId,
-        pairedAt: Date.now(),
-        lan:
-          body.role === "dial"
-            ? { role: "dial", pin, host: typeof body.host === "string" ? body.host.trim() : body.host, port: body.port, ...(body.internet === true ? { internet: true } : {}) }
-            : { role: "accept", pin },
-      };
-      const add = (config: PeersConfig): PeersConfig | { error: string } => {
-        if (config.peers.some((p) => p.id === id)) return { error: `${id} is already a host here` };
-        if (config.peers.some((p) => p.nodeId === nodeId)) return { error: "A host with that fingerprint is already paired" };
-        return { ...config, peers: [...config.peers, entry as unknown as PeerEntry] };
-      };
-      // Judged whole before anything is written (returning the same config writes nothing), so a
-      // refused pairing never touches a grant, an existing pairing's included.
-      const judged = deps.updatePeers((config) => {
-        const next = add(config);
-        if ("error" in next) return next;
-        const v = validatePeers(next);
-        return "error" in v ? v : config;
-      });
-      if ("error" in judged) return c.json({ error: judged.error }, judged.status);
-      // Then the grant, before the pairing (§mesh.lan/pairing): a pairing never exists without the
-      // grant it was given. If the grant can't be written, nothing is paired; if the pairing then
-      // can't be saved, the grant goes again. (With no entry at all a pairing has presence: access.ts.)
-      const g = deps.applyGrants({ [nodeId]: grant as MeshPreset }, []);
-      if ("error" in g) return c.json({ error: `Not paired: the grant couldn't be written (${g.error})` }, 409);
-      let r: ReturnType<LanRouteDeps["updatePeers"]>;
-      try {
-        r = deps.updatePeers(add);
-      } catch (err) {
-        r = { error: `peers.json couldn't be written (${(err as NodeJS.ErrnoException).code ?? "write failed"})`, status: 409 };
-      }
-      if ("error" in r) {
-        deps.applyGrants({}, [nodeId]);
-        return c.json({ error: r.error }, r.status);
-      }
-      return c.json(deps.status());
+      const r = await applyLanPairing(body, deps);
+      return c.json(r.body as object, r.status as 200);
     }),
   );
 
@@ -135,6 +84,63 @@ export function lanRoutes(app: Hono, deps: LanRouteDeps): void {
       return c.json(r.body as object, r.status as 200);
     }),
   );
+}
+
+/** Add a pairing: the route's code, and a Create card's Apply, whose pin only the person's page sends. */
+export async function applyLanPairing(body: Partial<LanPairingAdd>, deps: LanRouteDeps): Promise<{ status: number; body: unknown }> {
+  if (body.internet !== undefined && typeof body.internet !== "boolean") return { status: 400, body: { error: "internet must be true or false" } };
+  if (body.internet === true && body.role !== "dial") return { status: 400, body: { error: "Only a relay this host dials can be on the internet" } };
+  const id = typeof body.id === "string" ? body.id.trim() : "";
+  if (!PEER_ID_RE.test(id)) return { status: 400, body: { error: `id must match ${PEER_ID_RE}` } };
+  if (body.role !== "dial" && body.role !== "accept") return { status: 400, body: { error: 'role must be "dial" or "accept"' } };
+  const pin = parsePin(body.pin);
+  if (!pin) return { status: 400, body: { error: "That fingerprint isn't 32 hex digits: copy it from the other host's Mesh page" } };
+  const grant = body.grant ?? "presence";
+  if (!(MESH_PRESETS as readonly unknown[]).includes(grant)) return { status: 400, body: { error: `grant must be one of ${MESH_PRESETS.join(", ")}` } };
+  const label = typeof body.label === "string" && body.label.trim() ? body.label.trim().slice(0, LABEL_MAX) : id;
+  const own = deps.ensureKey();
+  if (samePin(own.pin, pin)) return { status: 400, body: { error: "That is this host's own fingerprint" } };
+  const nodeId = lanNodeId(pin);
+  const entry: Record<string, unknown> = {
+    id,
+    label,
+    nodeId,
+    pairedAt: Date.now(),
+    lan:
+      body.role === "dial"
+        ? { role: "dial", pin, host: typeof body.host === "string" ? body.host.trim() : body.host, port: body.port, ...(body.internet === true ? { internet: true } : {}) }
+        : { role: "accept", pin },
+  };
+  const add = (config: PeersConfig): PeersConfig | { error: string } => {
+    if (config.peers.some((p) => p.id === id)) return { error: `${id} is already a host here` };
+    if (config.peers.some((p) => p.nodeId === nodeId)) return { error: "A host with that fingerprint is already paired" };
+    return { ...config, peers: [...config.peers, entry as unknown as PeerEntry] };
+  };
+  // Judged whole before anything is written (returning the same config writes nothing), so a
+  // refused pairing never touches a grant, an existing pairing's included.
+  const judged = deps.updatePeers((config) => {
+    const next = add(config);
+    if ("error" in next) return next;
+    const v = validatePeers(next);
+    return "error" in v ? v : config;
+  });
+  if ("error" in judged) return { status: judged.status, body: { error: judged.error } };
+  // Then the grant, before the pairing (§mesh.lan/pairing): a pairing never exists without the
+  // grant it was given. If the grant can't be written, nothing is paired; if the pairing then
+  // can't be saved, the grant goes again. (With no entry at all a pairing has presence: access.ts.)
+  const g = deps.applyGrants({ [nodeId]: grant as MeshPreset }, []);
+  if ("error" in g) return { status: 409, body: { error: `Not paired: the grant couldn't be written (${g.error})` } };
+  let r: ReturnType<LanRouteDeps["updatePeers"]>;
+  try {
+    r = deps.updatePeers(add);
+  } catch (err) {
+    r = { error: `peers.json couldn't be written (${(err as NodeJS.ErrnoException).code ?? "write failed"})`, status: 409 };
+  }
+  if ("error" in r) {
+    deps.applyGrants({}, [nodeId]);
+    return { status: r.status, body: { error: r.error } };
+  }
+  return { status: 200, body: deps.status() };
 }
 
 /** This host as a relay: the route's code, and a Create card's Apply. `dry`: every check, nothing written. */

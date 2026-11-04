@@ -1,4 +1,4 @@
-import type { LanRelayPut } from "../../shared/mesh-lan";
+import type { LanPairingAdd, LanRelayPut } from "../../shared/mesh-lan";
 import { MESH_CAPS, type MeshCardState, type MeshGrant } from "../../shared/mesh-access";
 import type { IncomingMessage } from "node:http";
 import { statSync } from "node:fs";
@@ -45,7 +45,7 @@ import { ensureLanIdentity, LanRuntime, readLanIdentity } from "./lan";
 import { lanNodeId } from "./lan-cert";
 import { bootBuild } from "./build-id";
 import { cleanBuild } from "./lan-handoff-protocol";
-import { applyLanRelay, lanRoutes, type LanRouteDeps } from "./lan-routes";
+import { applyLanPairing, applyLanRelay, lanRoutes, type LanRouteDeps } from "./lan-routes";
 import { loginKindsPin } from "../sync/logins-merge";
 
 // The mesh (brief: settled decisions). ON exactly while peers.json lists a peer; OFF, nothing
@@ -912,6 +912,9 @@ const lanDeps: LanRouteDeps = {
   applyGrants: applyPairingGrants,
   acceptorRunning: () => rt.lan?.acceptorRunning() ?? false,
 };
+
+/** Add a pairing, as the Mesh page does; a Create card's Apply runs this too, with the pin the person's page sent. */
+export const applyMeshPairing = (body: Partial<LanPairingAdd>): Promise<MeshResult> => applyLanPairing(body, lanDeps);
 
 /** This host as a relay, as the Mesh page sets it; a Create card's Apply runs this too. */
 export const applyMeshRelay = (relay: LanRelayPut, opts: { dry?: boolean } = {}): MeshResult => applyLanRelay(relay, lanDeps, opts);

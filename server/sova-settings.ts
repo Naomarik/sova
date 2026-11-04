@@ -79,7 +79,9 @@ interface Adapter {
   /** Why this value can't be saved, or null. Writes nothing. */
   check(value: unknown): string | null | Promise<string | null>;
   /** Save it; a refusal's words, or null. */
-  write(value: unknown): Promise<string | null>;
+  write(value: unknown, input?: string): Promise<string | null>;
+  /** A value the person types into the card's own field at Apply: it never reaches a chat. */
+  input?: { field: string; label: string };
   /** Whether this change is a grant, where only some are; absent: the entry's grant always stands. */
   widens?(before: unknown, value: unknown): boolean;
   /** Every computer's access after this change: the whole of what it means, not the one change. */
@@ -482,6 +484,9 @@ function writeStore(s: Store): void {
   renameSync(tmp, file);
 }
 
+/** A pin's shape anywhere in a value: 32 hex digits, however grouped. */
+const input32 = (v: unknown): boolean => /(?:[0-9a-f][\s:-]?){32}/i.test(JSON.stringify(v ?? null));
+
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 const fingerprintOf = (edits: StoredEdit[]): string =>
   createHash("sha256")
@@ -560,6 +565,7 @@ function cardView(c: StoredSovaCard): SettingsCardView {
     lands: null,
     diff: diffOf(c.edits),
     fingerprint: c.fingerprint,
+    ...(c.edits.map((e) => SOVA_ADAPTERS[e.id].input).find(Boolean) ? { input: c.edits.map((e) => SOVA_ADAPTERS[e.id].input).find(Boolean)! } : {}),
     ...(c.edits.some((e) => e.access) ? { access: c.edits.flatMap((e) => e.access ?? []) } : {}),
     ...(c.appliedAt ? { appliedAt: c.appliedAt } : {}),
     ...(c.dismissedAt ? { dismissedAt: c.dismissedAt } : {}),
@@ -583,6 +589,8 @@ export async function proposeSova(input: { edits: unknown[]; why: unknown }, by:
     const id = raw.id;
     if (!("value" in raw)) return refuse(`${id} names its value: ${SOVA_SETTINGS[id].value}.`);
     if (credentialProblem(raw.value)) refuse(credentialRefusal(SOVA_SETTINGS[id].screen ?? `the file ${SOVA_SETTINGS[id].file}`, id === "decisions" ? "Its key stays on Settings → Decisions." : undefined));
+    if (input32(raw.value)) refuse("A fingerprint never goes through a chat: the person types it into the card's own field.");
+    if (SOVA_ADAPTERS[id].input && input.edits.length > 1) refuse(`${SOVA_SETTINGS[id].label} goes on a card of its own.`);
     const link = linkProblem(id);
     if (link) refuse(link);
     const problem = await SOVA_ADAPTERS[id].check(raw.value);
@@ -606,7 +614,7 @@ export async function proposeSova(input: { edits: unknown[]; why: unknown }, by:
 }
 
 /** Apply is the person's click on Sova's own page: the route is page-only, as a project's card is. */
-export async function applySovaCard(cardId: string, fingerprint: unknown): Promise<{ card: SettingsCardView; approved: string[] }> {
+export async function applySovaCard(cardId: string, fingerprint: unknown, input?: unknown): Promise<{ card: SettingsCardView; approved: string[] }> {
   const store = readStore();
   const c = store.cards.find((x) => x.id === cardId);
   if (!c) throw Object.assign(new SovaSettingsRefusal(`No settings card ${cardId}.`), { status: 404 });
@@ -618,8 +626,10 @@ export async function applySovaCard(cardId: string, fingerprint: unknown): Promi
     if (!same(SOVA_ADAPTERS[e.id].read(e.value), e.before)) throw Object.assign(new SovaSettingsRefusal(`${SOVA_SETTINGS[e.id].label} changed since ${cardId} was made: dismiss it and ask for a new card.`), { status: 409 });
   }
   const by: SettingsBy = { ...c.by, via: "card" };
+  const needs = c.edits.find((e) => SOVA_ADAPTERS[e.id].input);
+  if (needs && (typeof input !== "string" || !input.trim())) throw Object.assign(new SovaSettingsRefusal(`${SOVA_ADAPTERS[needs.id].input!.label}: fill it in on the card.`), { status: 409 });
   for (const e of c.edits) {
-    const refused = await SOVA_ADAPTERS[e.id].write(e.value);
+    const refused = await SOVA_ADAPTERS[e.id].write(e.value, SOVA_ADAPTERS[e.id].input ? (input as string) : undefined);
     if (refused) throw Object.assign(new SovaSettingsRefusal(`${SOVA_SETTINGS[e.id].label}: ${refused}`), { status: 409 });
     mkdirSync(dirname(sovaHistoryFile()), { recursive: true });
     appendFileSync(sovaHistoryFile(), `${JSON.stringify({ at: new Date().toISOString(), field: e.id, from: e.before ?? null, to: e.value, by, card: c.id })}\n`);

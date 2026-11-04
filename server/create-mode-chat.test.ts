@@ -100,6 +100,29 @@ test("typed /mode delegate and /mode normal reach the server too: the menu never
   assert.ok(!chat.harness.activeTools().includes("create_guide"));
 });
 
+test("other typed /mode arguments are the extension's, and the server reads them back: strict and a minor mode", async () => {
+  const path = await newChat();
+  const chat = await acquireChat(path);
+  await post(path, { mode: "create" });
+  await typed(chat, "/mode strict on", "s1");
+  const until = async (ok: (m: ChatModeResult) => boolean) => {
+    const end = Date.now() + 5_000;
+    while (!ok(await get(path))) {
+      if (Date.now() > end) throw new Error(`stale: ${JSON.stringify(await get(path))}`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  };
+  await until((m) => m.strict === true);
+  assert.ok(!chat.harness.activeTools().includes("edit"));
+  assert.equal((await get(path)).mode, "create", "the read keeps the mode");
+  assert.equal((await get(path)).saveMode, "delegate", "and the last choice");
+  await typed(chat, "/mode align off", "s2");
+  await until((m) => !m.minorModes.includes("align"));
+  await typed(chat, "/mode strict off", "s3");
+  await until((m) => m.strict === false);
+  assert.ok(chat.harness.activeTools().includes("edit"));
+});
+
 test("a chat that doesn't take the typed switch says why, as the route does", async () => {
   const chat = await acquireChat(await newChat());
   const real = chat.switchMode.bind(chat);

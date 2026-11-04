@@ -2223,6 +2223,15 @@ class ChatSession {
     }));
   }
 
+  /** This chat's mode as its branch says, after the extension's own handler changed it (a typed `/mode strict on`). */
+  private readModeBack(): void {
+    if (this.disposed) return;
+    this.modeState = chatModeOf(this.harness.state.branch());
+    this.syncVisCheckTool();
+    this.syncMemoryTools();
+    this.broadcast(this.modeMessage());
+  }
+
   /** Run a command of a project mode on in this chat (POST /api/mode/command, §chat.mode-menu/project-mode-commands). */
   runModeCommand(mode: string, name: string, args: unknown): Promise<ModeCommandOutcome> {
     return this.modeActions.runCommand(mode, name, args);
@@ -3449,7 +3458,8 @@ class ChatSession {
           // The ack goes out NOW, not after the turn: it says whether a queue row exists, and a
           // client that learned that only at turn end would offer Remove for a sent message.
           this.ackSend(client, clientId, queued);
-          turn.catch(fail);
+          // Any other `/mode …` is the extension's own (strict, a minor mode): what it did is read back, so the menu never lags.
+          (/^\/mode(\s|$)/.test(text.trim()) ? turn.then(() => this.readModeBack()) : turn).catch(fail);
           return;
         }
         case "abort":

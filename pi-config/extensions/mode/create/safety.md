@@ -78,7 +78,7 @@ Add-ons, Sova extensions and a project's own add-on files ask nothing, so the pe
 - Live: always.
 - Check: there's nothing to check.
 
-It raises the bar; it isn't a wall. Sova tells its page from a program by how a request carries its token, and that's a heuristic. A chat without the sandbox runs as the person, so nothing here stops an unsandboxed chat that sets out to imitate the page. The refusal stops the ordinary road and tells the chat where to send the person. A chat with the sandbox On can't reach Sova at all. Never try to get past a refusal: ask the person.
+It raises the bar; it isn't a wall. The approvals stop a chat following its instructions, not a program on this computer deliberately posing as the person's browser. The same local route passes every approval on this list, and a chat whose own tools aren't sandboxed, which is the default state, can reach it. So don't tell anyone an approval holds against code running on their computer. The refusal stops the ordinary road and tells the chat where to send the person. A chat with the sandbox On is built to have no road to Sova, but that hasn't been tested against these approvals, so say not tested. Never try to get past a refusal: ask the person.
 
 ## Worker priority
 

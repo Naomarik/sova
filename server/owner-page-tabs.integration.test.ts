@@ -143,7 +143,7 @@ test("390px Home: the order, the card's lines, and a tapped line starts the chat
   assert.deepEqual([...order].sort((a, b) => a - b), order, "greeting, card, requests line, projects");
   const fix = page.getByRole("button", { name: "Get a problem fixed: on its own for RakibaDesigns, the team starts it for Rakiba Shop." });
   assert.equal(await fix.count(), 1);
-  assert.equal(await page.getByRole("button", { name: /^Release a new version\. The team releases it\./ }).count(), 1);
+  assert.equal(await page.getByRole("button", { name: /^Ship the latest version\. The team ships it\./ }).count(), 1);
   assert.equal(await page.getByRole("button", { name: /Try the latest version/ }).count(), 0, "no version listed: no line");
   assert.equal(await page.getByText("You can add photos and screenshots.").count(), 1);
   for (const b of await page.locator(".owner-ability").all()) assert.ok((await b.boundingBox())!.height >= 44);

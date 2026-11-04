@@ -65,7 +65,22 @@ export const sourceRef = (s: UpdateSource): string => (s.kind === "stable" ? "re
 /** The refs one check asks for: the source's, and every numbered release with its peeled commit. */
 export function lsRemoteArgs(repo: string, s: UpdateSource): string[] {
   const ref = sourceRef(s);
-  return ["ls-remote", repo, ref, `${ref}^{}`, "refs/tags/v*"];
+  return ["ls-remote", repo, ref, `${ref}^{}`, "refs/tags/v*", `refs/tags/${WITHDRAWN_PREFIX}*`];
+}
+
+/** A withdrawn release's marker tag (server/merge-queue/release-git.ts): `withdrawn/<tag>` at its commit, the reason
+ *  its message. Numbered tags never move; this is how every copy learns a release was withdrawn. */
+export const WITHDRAWN_PREFIX = "withdrawn/";
+
+/** Whether the source marks `tag` withdrawn. */
+export const isWithdrawn = (refs: Map<string, string>, tag: string): boolean => refs.has(`refs/tags/${WITHDRAWN_PREFIX}${tag}`);
+
+/** The reason and time a fetched marker carries (refs/sova-updates/withdrawn/<tag>). */
+export async function withdrawnNote(git: Git, tag: string): Promise<{ why: string; at: string }> {
+  const r = await git(["for-each-ref", "--format=%(creatordate:iso-strict)%00%(contents)", `refs/sova-updates/${WITHDRAWN_PREFIX}${tag}`]);
+  const [at, ...rest] = (r.code === 0 ? r.stdout : "").split("\0");
+  const why = rest.join("\0").replace(/-----BEGIN PGP SIGNATURE-----[\s\S]*$/, "").trim().split("\n")[0] ?? "";
+  return { why: why || "no reason given", at: (at ?? "").trim() };
 }
 
 /** That release's section of CHANGELOG.md ("## v0.3.3 — …" up to the next "## "), trimmed and capped. */
@@ -146,7 +161,7 @@ export interface CheckOutcome {
 export async function fetchPrivate(git: Git, repo: string, ref: string): Promise<void> {
   const shallow = (await git(["rev-parse", "--is-shallow-repository"])).stdout.trim() === "true";
   const r = await git(
-    ["-c", "fetch.writeFetchHEAD=false", "fetch", "--quiet", "--no-tags", "--no-auto-gc", ...(shallow ? ["--unshallow"] : []), repo, `+${ref}:refs/sova-updates/target`, "+refs/tags/v*:refs/sova-updates/tags/v*"],
+    ["-c", "fetch.writeFetchHEAD=false", "fetch", "--quiet", "--no-tags", "--no-auto-gc", ...(shallow ? ["--unshallow"] : []), repo, `+${ref}:refs/sova-updates/target`, "+refs/tags/v*:refs/sova-updates/tags/v*", `+refs/tags/${WITHDRAWN_PREFIX}*:refs/sova-updates/${WITHDRAWN_PREFIX}*`],
     { timeoutMs: 600_000 },
   );
   if (r.code !== 0) throw new Error(`Couldn't fetch from Sova's repository: ${firstLine(r)}.`);
@@ -198,6 +213,12 @@ export async function checkForUpdate(input: CheckInput): Promise<CheckOutcome> {
 
   // Two numbered releases: the numbers decide, whatever the history says.
   const running = releaseAt(refs, head);
+  // What runs was withdrawn (its channel moved back): said so, with the reason, never "ahead" (a8).
+  const runningTag = running ?? (await describeRunning(git, refs)).version;
+  if (source.kind === "stable" && runningTag && isWithdrawn(refs, runningTag)) {
+    const w = await withdrawnNote(git, runningTag);
+    return { result: { state: "withdrawn", tag: runningTag, why: w.why, at: w.at, target, message: `${runningTag} was withdrawn: ${w.why}. ${name} is back on ${label}.` }, refs };
+  }
   if (source.kind === "stable" && running && version) {
     if (compareVersions(version, running) <= 0) return { result: ahead, refs };
   }
@@ -221,4 +242,4 @@ export async function checkForUpdate(input: CheckInput): Promise<CheckOutcome> {
 
 /** Whether a check's result offers an upgrade on a copy of `kind`: an update, or a rewritten source on an installed copy. */
 export const offersUpgrade = (r: UpdateCheckResult | undefined, kind: InstallKind): r is Extract<UpdateCheckResult, { target: UpdateTarget }> =>
-  !!r && (r.state === "available" || (r.state === "diverged" && kind === "installer"));
+  !!r && (r.state === "available" || ((r.state === "diverged" || r.state === "withdrawn") && kind === "installer"));

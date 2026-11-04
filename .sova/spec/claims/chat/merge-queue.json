@@ -72,12 +72,13 @@
       "server/merge-queue/cards.test.ts",
       "server/git-diff.test.ts",
       "server/commands-fuzz.test.ts",
-      "server/merge-queue/notices.ts"
+      "server/merge-queue/notices.ts",
+      "server/merge-card-page.integration.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:30Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-03T20:00Z",
+      "source": "pi-session:f7abf7a7-3c8a-4801-a5d7-0e26b8fc21c6#019641ba"
     }
   },
   "§chat.merge-queue/chat-turns": {

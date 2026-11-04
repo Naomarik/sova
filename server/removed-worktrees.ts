@@ -120,6 +120,8 @@ export function besideGone(path: string, max = 4): string[] {
 const KNOWN_TTL_MS = 10 * 60_000;
 const UNKNOWN_TTL_MS = 60_000;
 const goneCache = new Map<string, { at: number; value: GoneState }>();
+/** Reads under way: a reader that comes while one runs takes its answer, which is the one it would keep. */
+const goneFlights = new Map<string, Promise<GoneState>>();
 
 /**
  * A tracked worktree whose folder is gone: merged when git, read from one of `dirs` (the session's
@@ -138,6 +140,18 @@ export async function goneTreeState(
   const key = `${t.path}\0${t.branch}\0${t.base}\0${dirs.join("\0")}`;
   const hit = goneCache.get(key);
   if (hit && now - hit.at < (hit.value ? KNOWN_TTL_MS : UNKNOWN_TTL_MS)) return hit.value;
+  const flying = goneFlights.get(key);
+  if (flying) return flying;
+  const flight = readGoneState(t, dirs, git, opts.ledger ?? readLedger).then((value) => {
+    goneCache.set(key, { at: now, value });
+    if (goneCache.size > 500) goneCache.delete(goneCache.keys().next().value!);
+    return value;
+  }).finally(() => goneFlights.delete(key));
+  goneFlights.set(key, flight);
+  return flight;
+}
+
+async function readGoneState(t: Pick<TrackedWorktree, "path" | "branch" | "base">, dirs: readonly string[], git: GitRunner, ledger: () => readonly RemovedWorktree[]): Promise<GoneState> {
   let value: GoneState = null;
   for (const cwd of [...new Set([...dirs, ...besideGone(t.path)])]) {
     if (!cwd || !existsSync(cwd)) continue;
@@ -170,16 +184,15 @@ export async function goneTreeState(
     break;
   }
   if (value === null) {
-    const removed = [...(opts.ledger ?? readLedger)()].reverse().find((e) => e.path === t.path && e.branch === t.branch);
+    const removed = [...ledger()].reverse().find((e) => e.path === t.path && e.branch === t.branch);
     if (removed) value = removed.merged === "empty" ? "empty" : "merged";
   }
-  goneCache.set(key, { at: now, value });
-  if (goneCache.size > 500) goneCache.delete(goneCache.keys().next().value!);
   return value;
 }
 
 /** Tests: forget cached answers. */
 export function resetRemovedWorktrees(): void {
   goneCache.clear();
+  goneFlights.clear();
   cached = null;
 }

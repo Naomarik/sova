@@ -1,10 +1,11 @@
 // The server's startup: builds the app (server/app.ts), listens, and boots everything that runs
 // in the background (mesh, share listener, loops, the usage helper child). `bun server/index.ts`.
+import "./stall-recorder-boot"; // first, so it sees the rest load
 import { rmSync } from "node:fs";
 import type { Server } from "node:http";
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
-import { buildApp, SERVER_RUNTIME } from "./app";
+import { buildApp, SERVER_HEAD, SERVER_RUNTIME } from "./app";
 import { statingOwnNumber } from "./wire-gate";
 import { readBranch } from "./harness/pi/reader";
 import { extensionEntries } from "./harness/pi/state";
@@ -30,6 +31,7 @@ import { acquireChatHandle, chatHandle, chatHandles, disposeAllChats, onAgentSet
 import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { stateRoot } from "./state-root";
+import { noteStallHead, noteStallShutdown, stallGauge } from "./stall-recorder";
 import { cappedWebSocket } from "./runtime-quirks";
 import { decodeWorkers, teamDuties, invalidateUsageMemo, recordUsage, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
@@ -37,7 +39,7 @@ import { usageHistory } from "./usage-history";
 import { readCache } from "../pi-config/extensions/usage-status/fetch.ts";
 import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/client";
 import { wireRequestChats } from "./owner-request-chat";
-import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
+import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, listStamps, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
 import { detachChatHost, startChatHost, stopWorkersOf } from "./chat-host";
@@ -213,6 +215,8 @@ setCardsDispatch(internalRequest);
 startOverseerLoop();
 startProjectOverseerLoop();
 startScheduleKeeper(internalRequest);
+noteStallHead(SERVER_HEAD);
+stallGauge("chat processes", () => chatHandles().length);
 // Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
 startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
@@ -245,7 +249,8 @@ let feedChanged: (() => void) | null = null;
 onOrgChange(() => feedChanged?.());
 configureSessionFeed({
   // Re-reads only the session files the watch named since the last build (with a full sweep).
-  list: () => listSessionsTracked().then(events.seeList),
+  list: (opts) => listSessionsTracked(opts).then(events.seeList),
+  stamps: listStamps,
   watch: (changed) => {
     feedChanged = changed;
     const tracked = trackSessionFiles();
@@ -318,6 +323,7 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) process.exit(1);
   shuttingDown = true;
+  noteStallShutdown();
   // Whatever a step below waits on, the process ends.
   setTimeout(() => {
     console.error("[server] shutdown took over 20 s; exiting");

@@ -54,6 +54,11 @@ const SWEEP: Record<string, [string, string]> = {
   "project.overseer.todo.remove": ["DELETE", "/api/projects/:pid/overseer/todo"],
   "project.overseer.todo.reorder": ["PUT", "/api/projects/:pid/overseer/todos/order"],
   "project.overseer.todo.clear-done": ["DELETE", "/api/projects/:pid/overseer/todos/done"],
+  "overseer.get": ["GET", "/api/overseer"],
+  "overseer.memory.get": ["GET", "/api/overseer/memory"],
+  "project.overseer.get": ["GET", "/api/projects/:pid/overseer"],
+  "project.overseer.actions": ["GET", "/api/projects/:pid/overseer/actions"],
+  "project.overseer.memory.get": ["GET", "/api/projects/:pid/overseer/memory"],
 };
 
 let pn = 0;

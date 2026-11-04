@@ -101,7 +101,8 @@
       "server/chat-manager.ts",
       "server/extensions.ts",
       "server/resource-monitor.ts",
-      "pi-config/extensions/claude-code/tests/hermetic-env.mjs"
+      "pi-config/extensions/claude-code/tests/hermetic-env.mjs",
+      "server/stall-recorder.ts"
     ],
     "requires": [
       "§app.server-runtime/choice",

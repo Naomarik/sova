@@ -16,15 +16,54 @@ export const routeKey = (method: string, path: string): RouteKey => `${method} $
 
 /**
  * The declared not-a-command classes: doors the operator keeps closed, transport, test-only routes,
- * assets and middleware. A route matching one is never a command and never a baseline row. Order
- * matters only for the docs; a route matching two classes is a failure of its own.
+ * assets and middleware, and the areas left as is by choice. A route matching one is never a baseline
+ * row, and never a command unless the class says `entriesWin`. Order matters only for the docs; a
+ * route matching two classes is a failure of its own.
  */
 export interface RouteClass {
   id: string;
   label: string;
   why: string;
   matches: (method: string, path: string) => boolean;
+  /** A catalogue entry on one of its routes makes that route a command, and is no problem. */
+  entriesWin?: boolean;
 }
+
+/**
+ * The areas the user chose not to make scriptable: a bare name is every route under `/api/<name>`, a
+ * `METHOD /path` is that one route. Taking an area back is removing its name: its routes then turn
+ * pending, which `pendingGrowth` refuses, so the same change converts them or lists each one still
+ * left as is here. Adding a name is the user's decision, never a way to pass a test.
+ */
+export const OPTED_OUT: readonly string[] = [
+  "orgs", "outreach", "mesh", "session-shares", "public-links", "previews", "shares-overview", "tours", "voice",
+  "settings", "claude", "profiles", "push", "updates", "themes", "visitor-logging", "baton", "monitor",
+  "provider-limits", "services",
+];
+
+/** Whether a route is on `list` (OPTED_OUT's form): under one of its areas, or one of its routes. */
+export function optedOut(method: string, path: string, list: readonly string[] = OPTED_OUT): boolean {
+  return list.some((e) => (e.includes(" ") ? e === routeKey(method, path) : path === `/api/${e}` || path.startsWith(`/api/${e}/`)));
+}
+
+/** A class over exactly these `METHOD /path` routes, never a prefix: a new route beside them still arrives pending. */
+const exactly = (routes: readonly RouteKey[]) => (m: string, p: string) => routes.includes(routeKey(m, p));
+
+/** The page's own requests in the core areas: what a view, the composer or a link card asks to draw itself. */
+export const PAGE_PLUMBING: readonly RouteKey[] = [
+  "GET /api/attachment", "DELETE /api/attachment", "POST /api/upload", "GET /api/transcript/tool",
+  "GET /api/links/:id/thread", "POST /api/links/:id/seen", "GET /api/targets/:name/folders", "GET /api/explanations",
+  "GET /api/sessions/dir",
+];
+/** Steps of starting a chat, on its empty screen before the first message (`session.create` takes a profile itself). */
+export const CHAT_START: readonly RouteKey[] = ["POST /api/sessions/loadout", "POST /api/sessions/profile"];
+/** Lists that print live capability links. */
+export const CAPABILITY_LINKS: readonly RouteKey[] = ["GET /api/projects/:pid/previews"];
+/** Approvals, permits and grants, and their revoke: what any chat running a command could otherwise grant itself. */
+export const GRANTS: readonly RouteKey[] = [
+  "POST /api/schedules/approve", "POST /api/schedules/revoke", "GET /api/overseer/autonomy", "POST /api/overseer/autonomy/revoke",
+  "POST /api/projects/:pid/draft-specs/:sid/approve",
+];
 
 export const ROUTE_CLASSES: readonly RouteClass[] = [
   {
@@ -93,6 +132,37 @@ export const ROUTE_CLASSES: readonly RouteClass[] = [
     why: "`app.use` gates and the `/api` not-found answer: they run around routes, they are not routes.",
     matches: (m, p) => m === "ALL" && (p === "/*" || p === "/api/*"),
   },
+  {
+    id: "opted-out",
+    label: "Left as is, by choice",
+    why: "Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.",
+    matches: (m, p) => optedOut(m, p),
+    entriesWin: true,
+  },
+  {
+    id: "page-plumbing",
+    label: "Page plumbing",
+    why: "Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name). Exactly these routes (`PAGE_PLUMBING`).",
+    matches: exactly(PAGE_PLUMBING),
+  },
+  {
+    id: "chat-start",
+    label: "Steps of starting a chat",
+    why: "The new chat's setup card toggles and profile pick, refused once a message is sent; `session.create` takes a profile itself. Exactly these routes (`CHAT_START`).",
+    matches: exactly(CHAT_START),
+  },
+  {
+    id: "capability-links",
+    label: "Live capability links",
+    why: "A list that prints live preview links, which open a project's port to whoever holds one. Exactly these routes (`CAPABILITY_LINKS`).",
+    matches: exactly(CAPABILITY_LINKS),
+  },
+  {
+    id: "grants",
+    label: "Approvals and grants",
+    why: "Approving a schedule or a draft spec, the Overseer's permits and their revoke: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).",
+    matches: exactly(GRANTS),
+  },
 ];
 
 /** A regex over concrete paths for a Hono pattern (`:name` is one segment, `*` the rest). */
@@ -159,10 +229,11 @@ export function inventoryRoutes(
     const sp = k.indexOf(" ");
     const method = k.slice(0, sp);
     const path = k.slice(sp + 1);
-    const classes = ROUTE_CLASSES.filter((c) => c.matches(method, path)).map((c) => c.id);
+    const matched = ROUTE_CLASSES.filter((c) => c.matches(method, path));
+    const classes = matched.map((c) => c.id);
     if (classes.length > 1) problems.push(`${k} is in two classes: ${classes.join(", ")}`);
     const cmd = ids.get(k);
-    if (cmd && classes.length) problems.push(`${k} is class ${classes[0]} but catalogue entries point at it: ${cmd.join(", ")}`);
+    if (cmd && classes.length && !matched[0]!.entriesWin) problems.push(`${k} is class ${classes[0]} but catalogue entries point at it: ${cmd.join(", ")}`);
     const need = needOf(method === "ALL" ? "GET" : method, concretePath(path));
     rows[k] = cmd ? { need, is: "command", ids: [...cmd].sort() } : { need, is: classes[0] ?? "pending" };
   }
@@ -489,7 +560,7 @@ export function compareInventory(base: Inventory, now: Inventory): string[] {
   const out: string[] = [];
   for (const [k, row] of Object.entries(now.routes)) {
     const was = base.routes[k];
-    if (!was) out.push(`route ${k} is new (${row.is}${row.ids ? `: ${row.ids.join(", ")}` : ""}, need ${row.need})${row.is === "pending" ? ": give it a catalogue entry; the pending list never grows" : ""}`);
+    if (!was) out.push(`route ${k} is new (${row.is}${row.ids ? `: ${row.ids.join(", ")}` : ""}, need ${row.need})${row.is === "pending" ? `: give it a catalogue entry; ${PENDING_NEVER_GROWS}` : ""}`);
     else {
       if (was.need !== row.need) out.push(`route ${k}: mesh need ${was.need} → ${row.need} (classifyRequest changed what it takes to reach it)`);
       if (was.is !== row.is) out.push(`route ${k}: ${was.is} → ${row.is}${was.is === "pending" ? ": drop its pending row (the baseline shrinks)" : ""}`);
@@ -508,6 +579,11 @@ export function compareInventory(base: Inventory, now: Inventory): string[] {
   }
   return out;
 }
+
+/** What a new pending route is told, after "give it a catalogue entry". */
+export const PENDING_NEVER_GROWS =
+  "the pending list never grows. OPTED_OUT in server/commands-inventory/scan.ts is an alternative only for an area already on it " +
+  "(or one being taken back, its remaining routes listed one by one); adding an area is the user's decision, never a fix for this check.";
 
 /** Pending rows in `now` that `before` didn't have pending: the growth the HEAD guard refuses. */
 export function pendingGrowth(before: Inventory, now: Inventory): string[] {

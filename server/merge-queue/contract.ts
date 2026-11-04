@@ -39,6 +39,9 @@ export interface RunInput {
   draftsDir?: string;
   /** The checks the merge thread added for this entry (merge.extend), on top of required + triggers. */
   picks: CheckPick[];
+  /** A release entry: the release's own gating checks (its `release.checks`, captured at the release's start), run
+   *  after the merge set. Absent: not a release entry. */
+  releaseChecks?: import("../../shared/project-contract").MergeCheckDecl[];
   /** The project's private names file (store.ts namesFileOf): the leak scan reads it (`--names` / SOVA_LEAK_NAMES).
    *  Absent: none yet (pushes are held until the merge thread's interview writes it). */
   namesFile?: string;

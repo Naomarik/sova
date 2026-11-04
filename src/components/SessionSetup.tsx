@@ -114,7 +114,7 @@ export function SessionSetupCard(props: { path: string; editable?: boolean; tool
   const openFile = async (name: string, file: string) => {
     try {
       const r = await fetchSetupFile(path(), file);
-      openMarkdown({ title: name, subtitle: r.path, markdown: r.text });
+      openMarkdown({ title: name, subtitle: r.path, name: r.path, markdown: r.text });
     } catch (err) {
       toast(`${OPEN_FILE_FAILED} ${(err as Error).message}`);
     }

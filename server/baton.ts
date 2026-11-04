@@ -32,7 +32,7 @@ import { readBatonSettings } from "./baton-settings";
 import { heldAt, hostOf, isOrgHostOpen, refusalError, type ActResult, type OrgHostApi, type SessionInfo } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { envelopeFor } from "./org-engine";
-import { effectiveHoursOf, isoOf, onOrgAttached, operatorEnvelope, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, placementSid, readProjects, readRoster, setOpenBatonCounter, shortId, type OperatorBy } from "./orgs";
+import { effectiveHoursOf, isoOf, onOrgAttached, operatorEnvelope, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, placementSid, readProjects, readRoster, setOpenBatonCounter, shortId, type OperatorBy, type OrgOfSessionPath } from "./orgs";
 import { baseAbilities, operatorAbilities } from "./gathering-abilities";
 import { canonicalPath } from "./paths";
 import { contributeProjectPart } from "./projects/contributions";
@@ -274,8 +274,8 @@ const idOfFile = (path: string): string => {
 };
 
 /** The row of a session file, when it lives in an attached org's workspace and is a baton session. */
-export function batonOfPath(path: string): { row: BatonSession; dir: string } | null {
-  const org = orgOfSessionPath(path);
+export function batonOfPath(path: string, orgOf: OrgOfSessionPath = orgOfSessionPath): { row: BatonSession; dir: string } | null {
+  const org = orgOf(path);
   if (!org) return null;
   const hit = batonById(idOfFile(path));
   return hit && hit.row.orgId === org.orgId ? hit : null;
@@ -975,8 +975,8 @@ export function linkTimes(row: BatonSession): Record<string, string> {
 // ---- the session list and the digest ---------------------------------------------------------------------------
 
 /** `SessionSummary.baton` for a listed file, or undefined when it is not a baton session. */
-export function batonSummaryField(path: string): BatonSummaryField | undefined {
-  const hit = batonOfPath(path);
+export function batonSummaryField(path: string, orgOf?: OrgOfSessionPath): BatonSummaryField | undefined {
+  const hit = batonOfPath(path, orgOf);
   if (!hit) return undefined;
   const row = hit.row;
   const last = row.handoffs[row.handoffs.length - 1];

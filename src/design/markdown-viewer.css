@@ -70,6 +70,12 @@
   align-items: center;
   gap: var(--space-1);
 }
+/* On a phone the buttons take their own row, above the title, so a file's name keeps the full width. */
+@media (max-width: 767px) {
+  .md-viewer-head { flex-wrap: wrap; }
+  .md-viewer-titles { flex-basis: 100%; }
+  .md-viewer-actions { order: -1; margin-left: auto; }
+}
 
 .md-viewer-scroll {
   flex: 1 1 auto;
@@ -107,6 +113,13 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   tab-size: 4;
+}
+
+.md-viewer-note {
+  margin: 0 0 var(--space-3);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
 }
 
 @media (max-width: 767px) {

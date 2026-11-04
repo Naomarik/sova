@@ -29,7 +29,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { homedir, tmpdir } from "node:os";
-import { dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { readWorkerManifests, WORKER_MANIFEST_ENTRY_TYPE } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import type { SessionWorktrees, WorktreeStatus, WorktreesInsight } from "../shared/protocol";
 import { headerOf } from "./harness/pi/reader";
@@ -42,8 +42,10 @@ const MAX_CONCURRENT = 4;
 export const DIRTY_TTL_MS = 10_000;
 /** A comparison not asked for in this long is dropped. */
 const UNSEEN_MS = 60 * 60 * 1000;
-/** Most comparisons (and session readings) kept, oldest-seen dropped first. */
-const MAX_CACHED = 512;
+/** Most comparisons (and session readings) kept, oldest-seen dropped first. A tree holds about 8, and
+ * a machine with more trees than fit reads them all round and round, so that none is ever reused: past
+ * this bound every read of every tree runs its Git again. */
+export const MAX_CACHED = 8192;
 /** numstat of a very large branch; past this the counts are an error, not a guess. */
 const MAX_BUFFER = 16 * 1024 * 1024;
 
@@ -134,37 +136,85 @@ export interface Layout { top: string; linked: boolean; commonDir: string; gitDi
  * folders (repo-relative, "" the top) whose `.gitattributes` Git may read for it. */
 interface MergePin { commands: string[]; dirs: string[] }
 
+/** Tokens one read asks for many times over: while a read runs (`shareTokens`), each is worked out
+ * once. Gone at the next Git start or finish and after one turn of the event loop, so a token is
+ * never older than that, and the answer of a read that shares them is the one it would give with
+ * every token read at that turn's start; a token is only ever compared, so an older one can miss
+ * a move for one turn, never certify it. */
+let shared: Map<string, unknown> | null = null;
+function shareTokens(): void {
+  const mine = new Map<string, unknown>();
+  shared = mine;
+  setImmediate(() => { if (shared === mine) shared = null; });
+}
+function sharedToken<T>(key: string, read: () => T): T {
+  if (!shared) return read();
+  if (shared.has(key)) return shared.get(key) as T;
+  const value = read();
+  shared.set(key, value);
+  return value;
+}
+
+/** Tests: dependency files read from disk, not reused. */
+export const dependencyWork = { reads: 0, walks: 0, /** A file written this recently may be written again within one clock tick, unseen by its stat. */ settledMs: 2_000 };
+
+const CONTENT_KEPT_BYTES = 64 * 1024;
+const MAX_CONTENTS = 4096;
+/** A small dependency file's bytes while its stat stands: it is hashed into a token often and changes rarely. */
+const contents = new Map<string, { stamp: string; content: string }>();
+function contentOf(path: string, st: { dev: bigint; ino: bigint; size: bigint; mtimeNs: bigint; ctimeNs: bigint }): string {
+  const stamp = `${st.dev}:${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}`;
+  const hit = contents.get(path);
+  if (hit?.stamp === stamp) return hit.content;
+  dependencyWork.reads++;
+  const content = readFileSync(path, "latin1"); // a byte per character: any two files that differ still do
+  const now = Date.now();
+  if (content.length <= CONTENT_KEPT_BYTES && now - Number(st.mtimeNs / 1_000_000n) > dependencyWork.settledMs && now - Number(st.ctimeNs / 1_000_000n) > dependencyWork.settledMs) {
+    if (contents.size >= MAX_CONTENTS) contents.clear();
+    contents.set(path, { stamp, content });
+  } else contents.delete(path);
+  return content;
+}
+
 /** These are dependency checks, not ref resolution: only Git supplies answers. A full loose-ref
  * inventory also covers symbolic chains and previously absent higher-priority bases. Large or
  * unreadable inventories are deliberately unsupported, and are read by Git instead. */
 function dependencies(paths: readonly string[], recursive: readonly string[] = []): string | null {
-  const hash = createHash("sha256");
+  return sharedToken(`dependencies:${paths.join("\0")}\n${recursive.join("\0")}`, () => readDependencies(paths, recursive));
+}
+
+function readDependencies(paths: readonly string[], recursive: readonly string[]): string | null {
+  dependencyWork.walks++;
+  // One hash over one string: most of a walk's cost was thousands of small hash updates.
+  const parts: string[] = [];
   let files = 0;
   let bytes = 0;
-  const visit = (path: string, descend: boolean): void => {
-    hash.update(path).update("\0");
+  // A folder's entry that isn't a link is its real path plus its name: no need to resolve it again.
+  const visit = (path: string, descend: boolean, real?: string): void => {
+    parts.push(path);
     let st;
     try { st = statSync(path, { bigint: true }); } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === "ENOENT") { hash.update("absent\0"); return; }
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") { parts.push("absent"); return; }
       throw err;
     }
-    hash.update(`${realpathSync(path)}:${st.dev}:${st.ino}:${st.birthtimeNs}\0`);
+    const at = real ?? realpathSync(path);
+    parts.push(`${at}:${st.dev}:${st.ino}:${st.birthtimeNs}`);
     if (st.isDirectory()) {
-      if (descend) for (const name of readdirSync(path).sort()) visit(join(path, name), true);
+      if (descend) for (const e of readdirSync(path, { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) visit(join(path, e.name), true, e.isSymbolicLink() ? undefined : join(at, e.name));
     } else {
-      hash.update(`${st.mtimeNs}:${st.ctimeNs}\0`);
+      parts.push(`${st.mtimeNs}:${st.ctimeNs}`);
       if (++files > 2048 || (bytes += Number(st.size)) > 2 * 1024 * 1024) throw new Error("large Git dependencies");
-      const content = readFileSync(path);
+      const content = contentOf(path, st);
       // Git permits unusual symbolic targets outside the ref inventory. Such chains are not
       // proven by this snapshot, so leave them to Git on every requested read.
-      if (descend && content.toString("utf8").startsWith("ref: ") && !/^ref: refs\/[^\r\n]+\r?\n?$/.test(content.toString("utf8"))) throw new Error("unknown symbolic ref dependency");
-      hash.update(content).update("\0");
+      if (descend && content.startsWith("ref: ") && !/^ref: refs\/[^\r\n]+\r?\n?$/.test(content)) throw new Error("unknown symbolic ref dependency");
+      parts.push(content);
     }
   };
   try {
     for (const path of paths) visit(path, false);
     for (const path of recursive) visit(path, true);
-    return hash.digest("hex");
+    return createHash("sha256").update(parts.join("\0"), "latin1").digest("hex");
   } catch { return null; }
 }
 
@@ -216,6 +266,10 @@ function configsOf(layout: Layout): string[] | null {
  * Reuse of HEAD, refs, logs and ancestry. Merge drivers and attributes don't change history, so
  * they are the merge token's business (§app/idle-git-cache). */
 export function historyToken(layout: Layout): string | null {
+  return sharedToken(`history:${layout.commonDir}\0${layout.gitDir}`, () => readHistoryToken(layout));
+}
+
+function readHistoryToken(layout: Layout): string | null {
   // Custom namespaces/files and injected configuration may name dependencies outside this
   // inventory. Unsupported inputs are delegated to Git, never assigned an indefinite token.
   if (process.env.GIT_REPLACE_REF_BASE || process.env.GIT_SHALLOW_FILE || process.env.GIT_CONFIG_COUNT || process.env.GIT_CONFIG_PARAMETERS) return null;
@@ -233,10 +287,12 @@ const xdgAttributes = () => join(process.env.XDG_CONFIG_HOME ?? join(homedir(), 
 /** A file's change stamp, read without its content: inode, size, mtime and ctime (any write moves
  * ctime). "absent" for nothing there, "dir" for a folder. */
 function statStamp(path: string): string {
-  try {
-    const st = statSync(path, { bigint: true });
-    return st.isDirectory() ? "dir" : `${st.dev}:${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}:${st.mode}`;
-  } catch { return "absent"; }
+  return sharedToken(`stat:${path}`, () => {
+    try {
+      const st = statSync(path, { bigint: true });
+      return st.isDirectory() ? "dir" : `${st.dev}:${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}:${st.mode}`;
+    } catch { return "absent"; }
+  });
 }
 
 /** A merge driver's command as the shell would split it: words, single and double quotes. null
@@ -335,6 +391,10 @@ export function driverStamp(commands: readonly string[], top: string, execPath: 
  * every working-tree `.gitattributes` on the changed paths' folders, which Git reads from the
  * worktree it runs in) and the merge drivers' code. null: unsupported, no reuse. */
 function mergeToken(layout: Layout, pin: MergePin, execPath: string | null): { token: string; perTree: boolean } | null {
+  return sharedToken(`merge:${layout.top}\0${execPath}\0${JSON.stringify(pin)}`, () => readMergeToken(layout, pin, execPath));
+}
+
+function readMergeToken(layout: Layout, pin: MergePin, execPath: string | null): { token: string; perTree: boolean } | null {
   if (process.env.GIT_ATTR_SOURCE || process.env.GIT_ATTR_SYSTEM || process.env.GIT_ATTR_GLOBAL) return null;
   const history = historyToken(layout);
   const configs = configsOf(layout);
@@ -353,6 +413,10 @@ function mergeToken(layout: Layout, pin: MergePin, execPath: string | null): { t
 }
 
 function refsToken(layout: Layout, head: boolean): string | null {
+  return sharedToken(`refs:${layout.commonDir}\0${layout.gitDir}\0${head}`, () => readRefsToken(layout, head));
+}
+
+function readRefsToken(layout: Layout, head: boolean): string | null {
   // reftable and included configuration have dependencies we cannot prove complete here.
   try {
     const config = readFileSync(join(layout.commonDir, "config"), "utf8");
@@ -368,8 +432,9 @@ function refsToken(layout: Layout, head: boolean): string | null {
   try {
     if (layout.gitDir !== layout.commonDir && existsSync(localRefs) && readdirSync(localRefs).length > 0) privateRefs = [localRefs];
   } catch { return null; }
-  const refs = dependencies([join(layout.commonDir, "packed-refs"), ...(head ? [layout.gitDir, join(layout.gitDir, "HEAD")] : [])], [join(layout.commonDir, "refs"), ...privateRefs]);
-  return history && refs ? `${history}:${refs}` : null;
+  const named = dependencies([join(layout.commonDir, "packed-refs"), ...(head ? [layout.gitDir, join(layout.gitDir, "HEAD")] : [])]);
+  const loose = dependencies([], [join(layout.commonDir, "refs"), ...privateRefs]);
+  return history && named && loose ? `${history}:${named}:${loose}` : null;
 }
 
 /** What a dirty reading depends on besides its folders: the index, HEAD and the branch HEAD names,
@@ -412,11 +477,22 @@ function plainLayout(dir: string): Layout | "gone" | null {
   }
 }
 
+/** The main checkout of a linked worktree's top folder, read from its `.git` without Git (the
+ * answer `project-root.ts` gets from `rev-parse`); null for anything else, which that reads. */
+export function linkedCheckoutOf(dir: string): string | null {
+  const layout = plainLayout(dir);
+  if (!layout || layout === "gone" || !layout.linked || basename(layout.commonDir) !== ".git") return null;
+  try {
+    return statSync(join(layout.commonDir, "HEAD")) && statSync(layout.gitDir) && realpathSync(dirname(layout.commonDir));
+  } catch {
+    return null;
+  }
+}
+
 /** A worktree's index, HEAD and branch ref as stat stamps, read without Git: any commit, add,
  * checkout or branch switch there changes it (§app/idle-git-cache). "gone" for a missing folder;
  * null when its Git layout can't be named. */
-export function worktreeStamp(dir: string): string | null {
-  const layout = plainLayout(dir);
+export function worktreeStamp(dir: string, layout = plainLayout(dir)): string | null {
   if (layout === null || layout === "gone") return layout;
   try {
     return `${dir}\0${dirtyStamp(layout)}`;
@@ -432,10 +508,9 @@ export function worktreeStamp(dir: string): string | null {
  * folder; null when its layout can't be named. The session feed's readiness watch compares it
  * every few seconds (§app.decisions/push). */
 export function gitInputsStamp(dir: string, baseBranch?: string): string | null {
-  const tree = worktreeStamp(dir);
-  if (tree === null || tree === "gone") return tree;
   const layout = plainLayout(dir);
-  if (!layout || layout === "gone") return tree;
+  const tree = worktreeStamp(dir, layout);
+  if (tree === null || tree === "gone" || !layout || layout === "gone") return tree;
   const stat = (path: string): string => {
     try {
       const st = statSync(path, { bigint: true });
@@ -494,6 +569,9 @@ export class WorktreeInsights {
   private readonly driverCommands = new Map<string, { commands: string[]; seenAt: number }>();
   private running = 0;
   private readonly waiting: (() => void)[] = [];
+  private sweptAt = 0;
+  /** Reads under way that share tokens (`sharingTokens`). */
+  private readers = 0;
 
   constructor(deps: WorktreeDeps = {}) {
     this.run = deps.run ?? execGit;
@@ -560,14 +638,28 @@ export class WorktreeInsights {
   private async git(cwd: string, args: readonly string[], env?: Record<string, string>): Promise<GitResult> {
     if (this.running >= MAX_CONCURRENT) await new Promise<void>((go) => this.waiting.push(go));
     else this.running++;
+    shared = null;
     try {
       return await this.run(args, { cwd, env });
     } catch (err) {
       return { code: null, stdout: "", stderr: (err as Error).message || "git failed" };
     } finally {
+      if (this.readers > 0) shareTokens();
+      else shared = null;
       const next = this.waiting.shift();
       if (next) next(); // transfer this occupied slot, rather than allowing another caller to steal it
       else this.running--;
+    }
+  }
+
+  /** One read that asks for the same tokens many times: see `shared`. */
+  private async sharingTokens<T>(read: () => Promise<T>): Promise<T> {
+    this.readers++;
+    shareTokens();
+    try {
+      return await read();
+    } finally {
+      if (--this.readers === 0) shared = null;
     }
   }
 
@@ -593,7 +685,11 @@ export class WorktreeInsights {
    * subjects of its commits past the base (newest first, at most 50). null when the folder is gone
    * or is not a linked worktree.
    */
-  async treeStatus(dir: string): Promise<(WorktreeStatus & { head?: string; headAt?: number; subjects?: string[] }) | null> {
+  treeStatus(dir: string): Promise<(WorktreeStatus & { head?: string; headAt?: number; subjects?: string[] }) | null> {
+    return this.sharingTokens(() => this.readTreeStatus(dir));
+  }
+
+  private async readTreeStatus(dir: string): Promise<(WorktreeStatus & { head?: string; headAt?: number; subjects?: string[] }) | null> {
     const layout = await this.layout(dir);
     if (!layout || layout === "gone" || !layout.linked) return null;
     const metadata = await this.metadata(layout);
@@ -782,11 +878,24 @@ export class WorktreeInsights {
    * ref; the base branch's refs; the configuration and attribute files; and the code of the merge
    * drivers its last check found. "gone" for a missing folder. null when it can't be named: the
    * folder isn't a worktree, its refs are in a reftable, or no check has read its drivers yet.
-   * An uncommitted edit leaves it as it is (the dirty reading's business).
+   * An uncommitted edit leaves it as it is (the dirty reading's business). `together` is a map a
+   * caller keeps for one synchronous pass over many trees: what they have in common (the repository's
+   * refs and setup, the driver's program) is stat'ed once in it. Its stamps are as old as the pass.
    */
-  quietStamp(dir: string): string | null {
-    const tree = worktreeStamp(dir);
+  quietStamp(dir: string, together?: Map<string, unknown>): string | null {
+    if (!together) return this.readQuietStamp(dir);
+    const outer = shared;
+    shared = together;
+    try {
+      return this.readQuietStamp(dir);
+    } finally {
+      shared = outer;
+    }
+  }
+
+  private readQuietStamp(dir: string): string | null {
     const layout = plainLayout(dir);
+    const tree = worktreeStamp(dir, layout);
     if (tree === null || tree === "gone" || !layout || layout === "gone") return tree === "gone" ? "gone" : null;
     try {
       const known = this.driverCommands.get(realpathSync(layout.gitDir));
@@ -885,9 +994,13 @@ export class WorktreeInsights {
 
   /** Drop what hasn't been asked for in an hour, then the oldest past MAX_CACHED. */
   private prune(): void {
-    const cutoff = this.now() - UNSEEN_MS;
+    const now = this.now();
+    const cutoff = now - UNSEEN_MS;
+    // The hour's edge needs no finer than a minute, and a look through every entry runs after every read.
+    const sweep = now - this.sweptAt >= 60_000;
+    if (sweep) this.sweptAt = now;
     for (const m of [this.sessions, this.observations, this.dirtyLifetimes, this.driverCommands] as Map<string, { seenAt: number }>[]) {
-      for (const [k, v] of m) if (v.seenAt < cutoff) m.delete(k);
+      if (sweep) for (const [k, v] of m) if (v.seenAt < cutoff) m.delete(k);
       while (m.size > MAX_CACHED) {
         const oldest = [...m].reduce<[string, { seenAt: number }] | undefined>((a, b) => !a || b[1].seenAt < a[1].seenAt ? b : a, undefined)?.[0];
         if (oldest === undefined) break;

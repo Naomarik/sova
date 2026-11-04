@@ -304,4 +304,14 @@ describe("PiHarnessSession (§app.harness/session)", () => {
       { name: "echo", description: "Echo.\n\nOrch: `orch` calls it too.", parameters: params, source: "extension", origin: "echo" },
     ]);
   });
+
+  test("promptSections: pi's own prompt splits back into the sections it renders, and they join back into it", async () => {
+    const chat = await acquireChat(sessionFile("01b1-sections"), true);
+    const text = (piSession(chat) as any).systemPrompt as string;
+    const sections = chat.harness.promptSections();
+    for (const name of ["preamble", "tools", "rules", "docs", "cwd"]) assert.ok(sections[name], `pi renders its ${name} section`);
+    assert.equal(sections.rest, undefined, "nothing left over");
+    const joined = Object.entries(sections).map(([name, body]) => (name === "preamble" ? body : `<${name}>\n${body}\n</${name}>`)).join("\n\n");
+    assert.equal(joined, text);
+  });
 });

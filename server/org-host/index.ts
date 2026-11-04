@@ -250,9 +250,51 @@ function message(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+const byId = (a: { id: string }, b: { id: string }): number => a.id.localeCompare(b.id);
+
 function outcomeEvent(type: string, outcome: string): string {
   const name = type.includes("/") ? type.slice(type.indexOf("/") + 1) : type;
   return `${name}/${outcome}`;
+}
+
+/** Every engine method by what it does to what a read sees. A method added to the engine fails the
+    typecheck here until someone says which it is, so no call can change sessions behind `warmReads`. */
+export const ENGINE_CALLS = {
+  // can change a session, its generation or the set of sessions: every reading is dropped
+  start: "changes",
+  send: "changes",
+  setState: "changes",
+  resume: "changes",
+  renotify: "changes",
+  fireDue: "changes",
+  load: "changes",
+  unload: "changes",
+  setAside: "changes",
+  // runs the real call, then puts everything back: readings stay, but one made during it would be mid-call
+  trial: "rolls-back",
+  configuration: "reads",
+  running: "reads",
+  data: "reads",
+  statechartOf: "reads",
+  explain: "reads",
+  enabledEvents: "reads",
+  coldSessions: "reads",
+  peek: "reads",
+  holds: "reads",
+  nextDueAt: "reads",
+  dueSessions: "reads",
+  dump: "reads",
+  sessions: "reads",
+  generation: "reads",
+} as const satisfies Record<keyof Statecharts, "changes" | "rolls-back" | "reads">;
+
+/** Frozen all the way down: a reading is shared by every reader until the next step. */
+function frozen<T>(value: T): T {
+  if (value && typeof value === "object" && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const v of Object.values(value)) frozen(v);
+  }
+  return value;
 }
 
 export class OrgHost {
@@ -287,6 +329,15 @@ export class OrgHost {
   private sweeper: ReturnType<typeof setInterval> | null = null;
   private lastRowAt = 0;
   private readonly peeks = new Map<string, { mtime: number; peek: SnapshotPeek }>();
+  /** Warm sessions as last read, converted from the engine once: lists read a whole engine many times
+      a second and it rarely steps. Only the engine holds them and only its calls change them, so
+      `watched` drops these at each call and nothing else can make them stale. Cold sessions aren't
+      here: `peek` follows their files. */
+  private readonly warmReads = new Map<string, SessionInfo>();
+  /** The sorted warm rows per statechart ("": all of them), made of `warmReads`. */
+  private readonly warmLists = new Map<string, readonly SessionInfo[]>();
+  /** Engine calls under way: a read from inside one (a stamp) sees that call's state, so it's never kept. */
+  private engineCalls = 0;
   private closed = false;
   /** The org's history: its events go in each step's own journal. */
   readonly history: OrgHistory;
@@ -352,15 +403,39 @@ export class OrgHost {
     this.paths = hostPaths(opts.orgId, opts.workspaceDir, opts.stateDir);
     this.durable = opts.durable ?? true;
     this.clock = opts.clock ?? Date.now;
-    this.engine = createStatecharts({
-      statecharts: opts.statecharts,
-      loadCold: (sid) => this.loadCold(sid),
-      stamp: (sid, event, payload, ctx) => (opts.stamp ? (opts.stamp(sid, event, payload, ctx, this) as JsonObject) : {}),
-    });
+    this.engine = this.watched(
+      createStatecharts({
+        statecharts: opts.statecharts,
+        loadCold: (sid) => this.loadCold(sid),
+        stamp: (sid, event, payload, ctx) => (opts.stamp ? (opts.stamp(sid, event, payload, ctx, this) as JsonObject) : {}),
+      }),
+    );
     for (const c of statechartVersions()) this.storage.set(c.name, c.storage ?? "portable");
     for (const [name, c] of Object.entries(opts.statecharts ?? {})) this.storage.set(name, ((c as { storage?: string }).storage as "host-local") ?? "portable");
     this.history = new OrgHistory(opts.orgId, opts.workspaceDir, opts.stateDir, this.clock);
     this.composer = opts.historyComposer ?? null;
+  }
+
+  /** The engine with its calls marked (ENGINE_CALLS). */
+  private watched(engine: Statecharts): Statecharts {
+    const out = { ...engine } as Record<string, unknown>;
+    for (const [name, kind] of Object.entries(ENGINE_CALLS)) {
+      if (kind === "reads") continue;
+      const call = (engine as unknown as Record<string, (...args: unknown[]) => unknown>)[name]!;
+      out[name] = (...args: unknown[]) => {
+        this.engineCalls++;
+        try {
+          return call(...args);
+        } finally {
+          this.engineCalls--;
+          if (kind === "changes") {
+            this.warmReads.clear();
+            this.warmLists.clear();
+          }
+        }
+      };
+    }
+    return out as unknown as Statecharts;
   }
 
   /** The capture adapters' composer (server/org-history-capture.ts), called inside every commit. */
@@ -1135,7 +1210,7 @@ export class OrgHost {
       const mtime = statSync(entry.file).mtimeMs;
       const have = this.peeks.get(sid);
       if (have && have.mtime === mtime) return have.peek;
-      const peek = this.engine.peek(readFileSync(entry.file, "utf8"));
+      const peek = frozen(this.engine.peek(readFileSync(entry.file, "utf8")));
       this.peeks.set(sid, { mtime, peek });
       return peek;
     } catch {
@@ -1143,13 +1218,36 @@ export class OrgHost {
     }
   }
 
-  /** Warm sessions from the engine; cold ones (unloaded by retention) from their snapshot, read-only. */
+  /** A warm session's reading (frozen unless an engine call is under way); null when it isn't loaded. */
+  private warmRead(sid: string): SessionInfo | null {
+    const have = this.engineCalls ? null : this.warmReads.get(sid);
+    if (have) return have;
+    const statechart = this.engine.statechartOf(sid);
+    if (statechart == null) return null;
+    const info = { id: sid, statechart, configuration: this.engine.configuration(sid) ?? [], data: this.engine.data(sid) ?? {}, running: this.engine.running(sid) };
+    if (this.engineCalls) return info;
+    this.warmReads.set(sid, frozen(info));
+    return info;
+  }
+
+  /** The warm sessions of `statechart` (all of them when ""), sorted by id. */
+  private warmList(statechart: string): readonly SessionInfo[] {
+    const have = this.engineCalls ? null : this.warmLists.get(statechart);
+    if (have) return have;
+    const ids = this.engine.sessions().filter((sid) => !statechart || this.engine.statechartOf(sid) === statechart);
+    const list = ids.map((sid) => this.warmRead(sid)!).sort(byId);
+    if (!this.engineCalls) this.warmLists.set(statechart, list);
+    return list;
+  }
+
+  /** Warm sessions from the engine; cold ones (unloaded by retention) from their snapshot, read-only.
+      What these and `sessions` hand out may be shared: never change it (it's frozen, so that throws). */
   configuration(sid: string): string[] | null {
-    return this.engine.configuration(sid) ?? this.peek(sid)?.configuration ?? null;
+    return this.warmRead(sid)?.configuration ?? this.peek(sid)?.configuration ?? null;
   }
 
   data(sid: string): Record<string, unknown> | null {
-    return this.engine.data(sid) ?? this.peek(sid)?.data ?? null;
+    return this.warmRead(sid)?.data ?? this.peek(sid)?.data ?? null;
   }
 
   statechartOf(sid: string): string | null {
@@ -1164,18 +1262,16 @@ export class OrgHost {
       ones from their snapshots (lists keep settled batons, builds, decisions). Broken ones are not
       listed (they are in `problems()`). */
   sessions(statechart?: string, opts: { warmOnly?: boolean } = {}): SessionInfo[] {
-    const warm = new Set(this.engine.sessions());
-    const out: SessionInfo[] = [...warm]
-      .filter((sid) => !statechart || this.engine.statechartOf(sid) === statechart)
-      .map((id) => ({ id, statechart: this.engine.statechartOf(id) ?? "", configuration: this.engine.configuration(id) ?? [], data: this.engine.data(id) ?? {}, running: this.engine.running(id) }));
+    const warm = this.warmList(statechart ?? "");
+    const out = [...warm];
     if (!opts.warmOnly) {
       for (const [id, entry] of this.index) {
-        if (warm.has(id) || (statechart && entry.statechart !== statechart)) continue;
+        if ((statechart && entry.statechart !== statechart) || this.engine.statechartOf(id) != null) continue;
         const p = this.peek(id);
         if (p) out.push({ id, statechart: p.statechart, configuration: p.configuration, data: p.data, running: p.running });
       }
     }
-    return out.sort((a, b) => a.id.localeCompare(b.id));
+    return out.length > warm.length ? out.sort(byId) : out;
   }
 
   holds(): Hold[] {

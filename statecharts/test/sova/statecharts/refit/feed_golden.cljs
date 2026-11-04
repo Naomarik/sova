@@ -8,6 +8,7 @@
    ["watch" ":watch" [":operator/powers-set"] "[]" 0] :feed
    ["project" ":project" [":services/reset"] "[]" 0] :feed
    ["project" ":project" [":deploy/run"] "[]" 0] :feed
+   ["project" ":project" [":release/run"] "[]" 0] :feed
    ["item" ":driving" [] "[]" 7] :feed
    ["item" ":driving" [] "[]" 6] :quiet
    ["item" ":driving" [] "[]" 5] :feed

@@ -133,6 +133,30 @@ The server runs on Bun (`bun server/index.ts`, Bun 1.4.2, pinned in `mise.toml`)
   (`vite build --mode share`); `SOVA_SHARE_DIST=<dir>` names another build, read per request (tests
   point it at a stub page). With no built page it answers 503.
 
+### The stall recorder
+
+`server/stall-recorder*.ts` keeps the record of a long stall or a memory spike, for afterwards. It
+starts first (`server/stall-recorder-boot.ts` is `server/index.ts`'s first import, so it may import
+nothing heavy) and writes `<state root>/stalls/stalls.jsonl`, 1 MiB then rotated to `stalls.1.jsonl`;
+`/api/monitor`'s `stalls` is its last few records in a line each.
+
+- **Nothing on a stalled main thread runs**, so what must be seen during a stall is a thread's job
+  (`stall-recorder-worker.ts`, the log's writer) or already in shared memory (the board in
+  `stall-recorder-core.ts`, written with plain Int32 stores). The main thread only beats once a
+  second and answers afterwards.
+- **Stacks reach the log when a stall ends.** They come from JSC's sampling profiler at 10 Hz, which
+  only the main thread can read: a process killed inside a stall leaves the board and the watchdog's
+  /proc readings instead. It is the sampler behind `bun --cpu-prof`, whose unread buffer took a live
+  run to 60 GB: this one is drained every 30 s and stops itself at the second memory rung. **Never
+  raise its rate or stop its drain.** One sampler per process: `--cpu-prof`, `--inspect` and
+  `BUN_INSPECT` keep it for themselves, and the recorder runs without stacks.
+- **A name on the board is a route pattern or fixed text**, never a value from a request, session
+  or file. `opTrack("name", fn)` names an operation; `opNote(name, bytes)` a large read or frame;
+  `stallGauge(name, read)` a count read on the monitor's tick. Each is cheap and can't throw.
+- `SOVA_STALL_RECORDER=off` turns it off, `SOVA_STALL_STACKS=off` keeps it without the sampler.
+- The watcher follows imports, and `stall-recorder-worker.ts` is loaded by URL: the dev watcher
+  doesn't restart on an edit to it alone.
+
 ### Mesh areas (§mesh/compatibility)
 
 - `shared/wire-areas.ts` and `.json` hold one version number per area. Hosts match on an area only when
@@ -151,7 +175,6 @@ The server runs on Bun (`bun server/index.ts`, Bun 1.4.2, pinned in `mise.toml`)
   entry with its shape and a note, or a raised `version` with the old format's code removed and the
   area's saved samples (`src/lib/wire-samples/`) replaced. A new type on an area goes in `AREA_ROOTS`.
 
-## When you change X, also update Y
 ## When you change X, also update Y
 
 | You change | Also |

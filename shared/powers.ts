@@ -26,7 +26,7 @@ export const POWERS = [
   "promote", "bookkeeping", // spec
   "codingStart", "codingPrompt", "onboard", "markMerged", // code
   "copiesRun", "copiesReset", // copies
-  "share", "deploy", // release
+  "share", "deploy", "release", // release
 ] as const;
 export type PowerId = (typeof POWERS)[number];
 export const isPowerId = (v: unknown): v is PowerId => typeof v === "string" && (POWERS as readonly string[]).includes(v);
@@ -61,6 +61,7 @@ export const POWER_INFO: Record<PowerId, PowerInfo> = {
   copiesReset: { group: "copies", oldLevel: "L3", assistant: false, label: "Reset or tear down running copies" },
   share: { group: "release", oldLevel: "L1", assistant: false, label: "Share a version to try" },
   deploy: { group: "release", oldLevel: null, assistant: true, label: "Deploy (the project's own recipe)" },
+  release: { group: "release", oldLevel: null, assistant: false, label: "Release (the project's release playbook; may publish after its waiting period)" },
 };
 
 export const POWER_GROUP_LABEL: Record<PowerGroup, string> = { people: "People", spec: "Spec", code: "Code", copies: "Running copies", release: "Release" };
@@ -77,6 +78,7 @@ export const ALWAYS_PHRASES: readonly string[] = [
   "stopping a running copy",
   "taking a share link back",
   "asking you to deploy",
+  "asking you to release",
 ];
 
 export const powersOfGroup = (g: PowerGroup): PowerId[] => POWERS.filter((p) => POWER_INFO[p].group === g);

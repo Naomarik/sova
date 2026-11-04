@@ -1165,6 +1165,9 @@ time. Both kinds of approval come only from the user's click on a card option th
   a hidden custom entry to the Overseer's file (`overseer-grant` or `overseer-rule`: id, the card and
   option it came from, the sessions, the deadline or the rule's text and acts). Typed text, however
   it reads, writes nothing. Grants and rules are numbered per conversation and never reused.
+- **Read without the conversation.** Reading the approvals (the panel's read every 15 s, a revoke, a
+  `/clear`) carries their own entries over the chat's socket, and a click's approval only those and
+  what the click needs of the branch, so neither grows with the conversation.
 - **`/clear` carries live rules, never approvals.** When `/clear` starts a new conversation
   (§app.overseer/identity-and-clear), the server copies each rule still live in the old one into
   the new file as an `overseer-rule` entry of its own: the same id, text, acts and sessions, the same
@@ -1408,6 +1411,11 @@ feed's last list while nothing has changed since it was built, and builds a list
   failed: …", "… was interrupted: …"; "Rollback of …" for a rollback), until a later deploy of that
   target; and `deploy-request`, one per overseer's open request to deploy, "Deploy {commit7} to
   {target}? {why}", until the operator plans that target or dismisses it. Never a phone notification.
+- **Needs you, a release** (§app.release/quiet): items of no session, linking to the project's Releases
+  tab: `release-ready` ("Ready to publish · {tag}"), `release-held` (a step held for the operator),
+  `release-failed` (a step or the gating checks failed; a failed Publish, "{tag}: Publish failed: {why}",
+  replaces `release-ready`), `release-quiet` ("No word from the release chat for {n} min") and `release-request` ("The overseer asks you to release: {why}"), each until
+  what it says no longer holds. Never a phone notification.
 - **Needs you, a tour sign-in** (§app.tours/sites): `tour-sign-in` on the owning chat while one of its tour
   recordings waits for a sign-in, "Sign in to {origin} on the tour card." (for a one-time code: "Enter the
   sign-in code for {origin} on the tour card."), dated by when it began waiting. It comes from the server's

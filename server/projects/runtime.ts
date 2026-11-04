@@ -3,7 +3,8 @@ import type { InstanceSummary, ServiceView, VerbResult } from "../../shared/proj
 import type { ProjectRuntimeView, RuntimeOrphan, RuntimePlaybook, RuntimePlaybookState, RuntimeProof, RuntimeService, RuntimeStanding } from "../../shared/project-runtime";
 import { buildSessionPath, readBuild, probeBuild, withWorktreePath } from "../build-loadout";
 import type { Envelope } from "../org-envelope";
-import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "../org-engine";
+import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi, type SessionInfo } from "../org-engine";
+import { isArchived } from "../archived-sessions";
 import { OrgError } from "../org-error";
 import { branchFacts, observeRuntime, type BranchFacts, type ProofFact, type RuntimeFacts } from "../project-services/observe";
 import { onMergeNotes, startOnMergeTick, withOnMerge } from "../project-services/on-merge";
@@ -13,7 +14,7 @@ import { landThroughQueue, mergeCodingWorktree, startOnboardSession, type Starte
 import { projectRootOf } from "../project-root";
 import { readWorktree } from "../project-worktrees";
 import { onboardStart } from "./onboard";
-import { branchReview, DEFAULT_PLAYBOOK_LABEL, memoryIn, playbookReviewOf, runLive } from "./playbook-review";
+import { branchReview, DEFAULT_PLAYBOOK_LABEL, memoryIn, playbookReviewOf, proposesOf, runLive } from "./playbook-review";
 import { runtimeFeed, type FeedRow } from "./runtime-feed";
 import { engineOf, engineOrThrow, listProjects, operatorEnvelopeOf, projectArchived, readProject, runtimeSid } from "./spaces";
 
@@ -58,7 +59,7 @@ export function observedPayload(f: RuntimeFacts): Record<string, unknown> {
 }
 
 export function branchPayload(b: BranchFacts): Record<string, unknown> {
-  return { ref: b.ref, commit: b.commit, def: b.def, proof: proofFact(b.proof), deploy: b.deploy };
+  return { ref: b.ref, commit: b.commit, def: b.def, proof: proofFact(b.proof), deploy: b.deploy, release: b.release };
 }
 
 /** The payload last sent per project (only a change is sent). */
@@ -281,14 +282,15 @@ function playbookView(host: OrgHostApi, d: Record<string, unknown>): RuntimePlay
   const bf = obj(pb.branchFacts);
   const bdef = obj(bf.def);
   const path = buildSessionPath(str(pb.sessionId));
-  // A deploy-setup run proposes its deploy recipe, with a hash of its own (§app.project-runtime/verb-playbooks).
-  const deploy = pb.proposes === "deploy" ? obj(bf.deploy) : null;
+  // A deploy-setup run proposes its deploy recipe, a release-setup run its release setup, each with a hash of its own.
+  const proposes = proposesOf(pb.proposes);
+  const deploy = proposes === "deploy" ? obj(bf.deploy) : proposes === "release" ? obj(bf.release) : null;
   const build = obj(host.data(str(pb.sid)));
   return {
     sessionId: str(pb.sessionId),
     playbookId: str(pb.playbookId) || "project-verbs",
     label: str(pb.label) || DEFAULT_PLAYBOOK_LABEL,
-    proposes: pb.proposes === "deploy" ? "deploy" : "definition",
+    proposes,
     ...(d.playbookState === "waiting" && typeof pb.questions === "number" && pb.questions > 0 ? { questions: pb.questions } : {}),
     ...(path ? { path } : {}),
     ...(str(pb.title) ? { title: str(pb.title) } : str(host.data(str(pb.sid))?.title) ? { title: str(host.data(str(pb.sid))?.title) } : {}),
@@ -315,10 +317,33 @@ async function withRun(pb: RuntimePlaybook | null, state: string, root: string):
   const live = await runLive(pb.path);
   const review =
     state === "proposed" && pb.branch
-      ? await branchReview(root, pb.branch, pb.branchProof ?? null, pb.proposes === "deploy").catch(() => undefined)
+      ? await branchReview(root, pb.branch, pb.branchProof ?? null, pb.proposes === "deploy", undefined, pb.proposes === "release").catch(() => undefined)
       : undefined;
   return { ...pb, ...(live ? { live } : {}), ...(review ? { review } : {}) };
 }
+
+/**
+ * An onboard build of the project whose run is still open, whatever the runtime's playbook region says: its turn
+ * working, its turn ended on open alignment questions, or its branch holding commits not merged; never one merged,
+ * removed, retired, not started or archived. The runtime can lose a run it still has (a turn's end heard twice, the
+ * first without its questions, ends it as "no change"), and a second start would then hide this one's proposal. A
+ * build that ended with no change but whose chat is still open (not archived, its worktree there, not merged) holds a
+ * new start too (`ended: true`): its interview may be asking in plain chat, and only archiving it starts over. Pure.
+ */
+export function openOnboardRun(builds: readonly SessionInfo[], projectId: string, archived: (sessionId: string) => boolean): { sessionId: string; title: string; ended?: true } | null {
+  const closed = ["merged", "tree-removed", "retired", "not-started"];
+  for (const b of builds) {
+    const d = b.data;
+    if (!b.running || d.kind !== "onboard" || d.projectId !== projectId) continue;
+    if (b.configuration.some((c) => closed.includes(c)) || archived(str(d.sessionId))) continue;
+    const live = d.turn === "working" || (typeof d.questions === "number" && d.questions > 0) || b.configuration.includes("unmerged") || b.configuration.includes("new-since-merge");
+    return { sessionId: str(d.sessionId), title: str(d.title) || str(d.sessionId), ...(live ? {} : { ended: true as const }) };
+  }
+  return null;
+}
+
+/** The refusal while an earlier run's chat is still open after it ended with no change: how to unblock it. */
+export const STILL_OPEN = (title: string) => `The last setup run, "${title}", ended with no change but its chat is still open: open that chat to carry on, or archive it to start over.`;
 
 /** The live title of a running playbook (the "already running" refusal), or null. */
 function liveRun(host: OrgHostApi, d: Record<string, unknown>): string | null {
@@ -349,8 +374,9 @@ export async function readRuntime(projectId: string, opts: { observe?: boolean }
   const { services, orphans } = joinLive(Array.isArray(d.software) ? (d.software as Record<string, unknown>[]) : [], instances, proof);
   const def = obj(d.def);
   const reg = obj(d.registered);
-  const running = liveRun(at.host, d);
-  const onboardWhy = running ? ALREADY_RUNNING(running) : projectArchived(projectId) ? `${readProject(projectId).name} is archived. Unarchive it first.` : undefined;
+  const open = openOnboardRun(at.host.sessions("build"), projectId, isArchived);
+  const running = liveRun(at.host, d) ?? (open && !open.ended ? open.title : null);
+  const onboardWhy = running ? ALREADY_RUNNING(running) : open?.ended ? STILL_OPEN(open.title) : projectArchived(projectId) ? `${readProject(projectId).name} is archived. Unarchive it first.` : undefined;
   const rows = at.host.log.rows({ session: at.sid }) as unknown as FeedRow[];
   return {
     projectId,
@@ -390,6 +416,7 @@ export class RuntimeRefusal extends Error {
 export const NO_RUN_PROPOSED = "No playbook run is proposed.";
 const CHANGED_SINCE = "The definition changed since it was shown: look again.";
 const DEPLOY_CHANGED_SINCE = "The deploy recipe changed since it was shown: look again.";
+const RELEASE_CHANGED_SINCE = "The release setup changed since it was shown: look again.";
 
 /** What Merge Branch answers: the registry, read again; on a refused merge, `refused` says why. */
 export interface MergeRunOutcome {
@@ -409,7 +436,7 @@ export async function mergeRun(projectId: string, hash: string, commit?: string)
   const review = playbookReviewOf(projectId);
   if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
   // Never main's hash by mistake: only the one the branch proposes now.
-  if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : CHANGED_SINCE, 409);
+  if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : review.proposes === "release" ? RELEASE_CHANGED_SINCE : CHANGED_SINCE, 409);
   try {
     // Once the project's merge queue is set up, Merge Branch is Land: approved at the branch head in the queue.
     // It pins the tip the proposal was read at (the screen's, else the review's), never a later one.
@@ -427,9 +454,13 @@ export async function onboardStamp(projectId: string, input: OnboardInput) {
   const start = await onboardStart(projectId, input);
   const at = runtimeOf(projectId);
   const d = at ? obj(at.host.data(at.sid)) : {};
-  const running = at ? liveRun(at.host, d) : null;
+  const engine = engineOf(projectId);
+  const builds = engine && isOrgHostOpen(engine) ? hostOf(engine).sessions("build") : [];
+  const open = openOnboardRun(builds, projectId, isArchived);
+  const running = (at ? liveRun(at.host, d) : null) ?? (open && !open.ended ? open.title : null);
+  const ended = !running && open?.ended ? open.title : null;
   const standing = at ? ((["unregistered", "conforming", "registered", "stale", "failed"] as const).find((s) => (at.host.configuration(at.sid) ?? []).includes(s)) ?? null) : null;
-  const invalid = start.invalid || (running ? ALREADY_RUNNING(running) : "");
+  const invalid = start.invalid || (running ? ALREADY_RUNNING(running) : ended ? STILL_OPEN(ended) : "");
   // The verb playbook the run is keyed by (§app.project-runtime/verb-playbooks).
   const who = { playbookId: start.playbookId, label: start.label, proposes: start.proposes };
   return { start, extra: { ...who, ...(input.why?.trim() ? { why: input.why.trim() } : {}), ...(invalid ? { invalid, invalidStatus: 409 } : {}), ...(standing ? { runtimeStanding: standing } : {}) } };
@@ -482,7 +513,7 @@ export function softwareLines(v: ProjectRuntimeView): string[] {
   if (v.proof) out.push(`Proven: ${v.proof.pass ? "passed" : "failed"} at ${h(v.proof.hash)} (suite v${v.proof.suite}), ${v.proof.at}.`);
   if (v.playbook)
     out.push(
-      `${v.playbook.label} playbook: ${v.playbookState === "idle" ? `last run ${v.playbook.result ?? "ended"}` : v.playbookState === "proposed" ? `proposes ${v.playbook.proposes === "deploy" ? "a deploy recipe" : "a definition"} on ${v.playbook.branch ?? "its branch"} (the operator merges it)` : v.playbookState === "waiting" ? "waits on the operator's answers to its open questions" : "running"} (session ${v.playbook.sessionId}, started by ${v.playbook.startedBy}).`,
+      `${v.playbook.label} playbook: ${v.playbookState === "idle" ? `last run ${v.playbook.result ?? "ended"}` : v.playbookState === "proposed" ? `proposes ${v.playbook.proposes === "deploy" ? "a deploy recipe" : v.playbook.proposes === "release" ? "a release setup" : "a definition"} on ${v.playbook.branch ?? "its branch"} (the operator merges it)` : v.playbookState === "waiting" ? "waits on the operator's answers to its open questions" : "running"} (session ${v.playbook.sessionId}, started by ${v.playbook.startedBy}).`,
     );
   if (["unregistered", "stale", "failed"].includes(v.standing) && v.playbookState === "idle") out.push("At L3 you may start the playbook once: sova_project_verbs onboard {why}. Never merge.");
   return out;

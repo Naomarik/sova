@@ -69,7 +69,9 @@
       "server/tours/sweep.ts",
       "server/tours/sweep.test.ts",
       "server/index.ts",
-      "server/tours/sweep-startup.integration.test.ts"
+      "server/tours/sweep-startup.integration.test.ts",
+      "server/app.ts",
+      "server/cleanup-dry-run.test.ts"
     ]
   },
   "§app.session-list/archive-org-guard": {
@@ -314,7 +316,8 @@
       "server/project-overseer-store.ts",
       "src/lib/summary-diff.ts",
       "server/sessions-index-tracked.test.ts",
-      "server/sessions-index-real.parity.test.ts"
+      "server/sessions-index-real.parity.test.ts",
+      "server/session-feed-join.test.ts"
     ],
     "requires": [
       "§app/session-list",
@@ -349,7 +352,12 @@
       "src/lib/org-region.ts",
       "src/components/PlaybookReview.tsx",
       "server/tours/sign-in-notice.ts",
-      "server/tours/sign-in-notice.test.ts"
+      "server/tours/sign-in-notice.test.ts",
+      "src/lib/org-region.test.ts",
+      "src/lib/needs-you-row.ts",
+      "src/lib/needs-you-row.test.ts",
+      "src/components/NeedsYouRow.tsx",
+      "server/needs-you-rows-ui.integration.test.ts"
     ],
     "requires": [
       "§app.overseer/attention-digest",
@@ -360,8 +368,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-24T09:23Z",
-      "source": "pi-session:01a16c33-7e87-7753-a545-666b1e9f7f6f#9bc439b4"
+      "at": "2026-11-03T20:13Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.session-list/ordinary-surfaces": {
@@ -414,12 +422,16 @@
       "src/lib/built-once.browser.test.ts",
       "src/lib/section-reveal.ts",
       "src/lib/section-reveal.test.ts",
-      "src/lib/section-reveal.browser.test.ts"
+      "src/lib/section-reveal.browser.test.ts",
+      "src/lib/needs-you-row.ts",
+      "src/lib/needs-you-row.test.ts",
+      "src/components/NeedsYouRow.tsx",
+      "server/needs-you-rows-ui.integration.test.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-23T23:10Z",
-      "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+      "by": "user",
+      "at": "2026-11-04T00:57Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.session-list/recent": {

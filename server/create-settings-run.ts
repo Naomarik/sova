@@ -4,6 +4,7 @@ import { isSovaSettingId, SCREEN_ONLY_SETTINGS, sovaReferenceText, sovaSettingsI
 import type { MeshCardState } from "../shared/mesh-access";
 import type { CreateSettingsHost } from "./create-settings-tool";
 import { meshCardState } from "./mesh";
+import { queueCardPort } from "./merge-queue/card-port";
 import { OrgError } from "./org-error";
 import { folderMatcher } from "./project-folder";
 import { proposeSettings, SettingsRefusal, withdrawCard } from "./project-settings";
@@ -28,6 +29,9 @@ function meshWords(m: MeshCardState): string[] {
   ];
 }
 
+/** What a Create chat reads in a project in Git with no merge queue. */
+export const NO_QUEUE = "This project has no merge queue, so it has no Land. Tell the person now, in this reply, and offer Initialize on the project page's Merge Queue tab.";
+
 /** The chat a Create card is prepared from. */
 export interface CreateChat {
   sessionId: string;
@@ -48,7 +52,13 @@ export async function runCreateSettingsTool(chat: CreateChat, q: Record<string, 
     const parts = [`Sova-wide settings (each changes by a card, {setting: "sova", id, value}):`, sovaSettingsIndex(), "", "On their own screens, no card:", ...Object.values(SCREEN_ONLY_SETTINGS).map((w) => `- ${w}`)];
     if (waiting.length) parts.push("", "Sova-wide cards waiting for the person:", ...waiting.map(cardWords));
     parts.push("", ...meshWords(await meshCardState()));
-    if (chat.projectId) parts.push("", (await runSettingsTool(chat.projectId, { op: "get" }, false)).content[0]!.text);
+    if (chat.projectId) {
+      const got = (await runSettingsTool(chat.projectId, { op: "get" }, false)).content[0]!.text;
+      parts.push("", got);
+      // Said where the chat learns it: the block alone left Initialize unoffered (§chat.create-mode/where-offered).
+      const port = queueCardPort();
+      if (port && got.includes("is in Git") && !(await port.settings(chat.projectId))) parts.push("", NO_QUEUE);
+    }
     else parts.push("", chat.noProject ?? "");
     return { content: text(parts.join("\n")), details: { project: chat.projectId, cards: waiting.map((c) => c.id) } };
   }

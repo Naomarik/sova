@@ -28,13 +28,13 @@ const { registerProjectIn } = await import("./projects/spaces");
 const { readPoSettings, projectOverseerPaths } = await import("./project-overseer-store");
 const { OVERSEER_SENDER_HEADER, senderSecret } = await import("./overseer-sender");
 const { disposeAllChats } = await import("./chat-manager");
-const { runCreateSettingsTool } = await import("./create-settings-run");
+const { NO_QUEUE, runCreateSettingsTool } = await import("./create-settings-run");
 const { createSettingsTool } = await import("./create-settings-tool");
 const sova = await import("./sova-settings");
 const { SOVA_SETTING_IDS, SOVA_SETTINGS } = await import("../shared/sova-settings-reference");
 const { settingsDocs } = await import("./sync/docs");
 const { setSettingsSpreadProbe } = await import("./sync/spreads");
-const { setQueueCardPort } = await import("./merge-queue/card-port");
+const { queueCardPort, setQueueCardPort } = await import("./merge-queue/card-port");
 const { readModelPolicy } = await import("./model-policy");
 const { readWebSettings } = await import("./web-settings");
 const { settled } = await import("./workspace-git");
@@ -105,6 +105,21 @@ describe("a project's card", async () => {
     assert.equal(r.status, 200, await r.clone().text());
     const row = (await settings.settingsCard(pid, c.id))!.kept.find((k) => k.field === "project.name")!;
     assert.deepEqual([row.fromText, row.toText], ["narrow", "Corner Shop"]);
+  });
+
+  test("get tells a Create chat when its project has no queue, and only then", async () => {
+    const port = (settings: unknown) => ({ settings: async () => settings, save: async () => ({ state: "waiting" }), models: async () => {}, modelDenial: async () => null }) as never;
+    const said = async () => (await runCreateSettingsTool(chat(pid), { op: "get" })).content[0]!.text;
+    const was = queueCardPort();
+    setQueueCardPort(port(null));
+    assert.ok((await said()).includes(NO_QUEUE));
+    setQueueCardPort(port({}));
+    assert.ok(!(await said()).includes(NO_QUEUE), "a project with a queue");
+    setQueueCardPort(null);
+    assert.ok(!(await said()).includes(NO_QUEUE), "no queue service to ask");
+    setQueueCardPort(port(null));
+    assert.ok(!(await runCreateSettingsTool(chat(null), { op: "get" })).content[0]!.text.includes(NO_QUEUE), "a folder that isn't a project");
+    setQueueCardPort(was);
   });
 
   test("a chat withdraws only what it prepared", async () => {

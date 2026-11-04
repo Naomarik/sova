@@ -23,9 +23,9 @@ type Entry = { type: string; customType?: string; data?: unknown; message?: unkn
 type Handler = (event: unknown, ctx: unknown) => unknown;
 
 /** A pi as far as the mode extension uses it, with the file tools a strict chat loses. */
-function fakePi(entries: Entry[]) {
+function fakePi(entries: Entry[], flags: Record<string, string> = {}) {
 	const handlers = new Map<string, Handler[]>();
-	const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>();
+	const commands = new Map<string, { handler: (args: string, ctx: unknown) => Promise<void>; getArgumentCompletions?: (prefix: string) => { value: string }[] | null }>();
 	const tools = new Map<string, { name: string }>();
 	let active: string[] = ["read", "bash", "edit", "write"];
 	const notes: { text: string; level: string }[] = [];
@@ -33,8 +33,8 @@ function fakePi(entries: Entry[]) {
 		on: (name: string, fn: Handler) => handlers.set(name, [...(handlers.get(name) ?? []), fn]),
 		events: { on: () => () => {}, emit: () => {} },
 		registerFlag: () => {},
-		getFlag: () => undefined,
-		registerCommand: (name: string, command: { handler: (args: string, ctx: unknown) => Promise<void> }) => commands.set(name, command),
+		getFlag: (name: string) => flags[name],
+		registerCommand: (name: string, command: { handler: (args: string, ctx: unknown) => Promise<void>; getArgumentCompletions?: (prefix: string) => { value: string }[] | null }) => commands.set(name, command),
 		registerShortcut: () => {},
 		registerEntryRenderer: () => {},
 		registerTool: (tool: { name: string }) => tools.set(tool.name, tool),
@@ -66,6 +66,7 @@ function fakePi(entries: Entry[]) {
 		activeTools: () => [...active],
 		start: (reason = "startup") => fire("session_start", { reason }),
 		mode: (args: string) => commands.get("mode")!.handler(args, ctx),
+		completions: (prefix: string) => (commands.get("mode")!.getArgumentCompletions?.(prefix) ?? []).map((item) => item.value),
 		async prompt(): Promise<string | undefined> {
 			entries.push({ type: "message", message: { role: "user" } });
 			const sections: Record<string, string> = {};
@@ -191,6 +192,24 @@ test("a terminal has no Create: /mode create is refused and changes nothing", as
 	assert.equal(entries.filter((e) => e.customType === "mode").length, 0, "no entry");
 	assert.ok(!p.activeTools().includes("create_guide"));
 	assert.ok(p.notes.some((n) => n.level === "warning" && n.text.includes("mode menu")), JSON.stringify(p.notes));
+});
+
+test("a terminal's `--major create` doesn't start in Create, and `--major delegate` still does", async () => {
+	const flagged = async (major: string) => {
+		const entries: Entry[] = [];
+		const p = fakePi(entries, { major });
+		await p.start();
+		return p.prompt();
+	};
+	assert.equal(await flagged("create"), undefined, "normal: no mode section");
+	assert.ok((await flagged("delegate"))?.includes("# Mode: delegate"));
+});
+
+test("`/mode` completions leave Create out, and keep the modes a terminal has", async () => {
+	const p = fakePi([]);
+	await p.start();
+	assert.deepEqual(p.completions("cre"), []);
+	assert.ok(p.completions("").includes("delegate") && !p.completions("").includes("create"));
 });
 
 test("a Sova chat that isn't applying a switch can't type its way in: the hook says no", async () => {

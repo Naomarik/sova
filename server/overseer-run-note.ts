@@ -1,7 +1,7 @@
 import type { HBlock, HEntry } from "../shared/harness";
 import { OVERSEER_BRIEF_PREFIX, type SessionReadiness } from "../shared/protocol";
 import type { OpeningDetails } from "./overseer-opening";
-import type { WatchedJob } from "./overseer-ext-jobs";
+import { nameLine, type WatchedJob } from "./overseer-ext-jobs";
 import { MEMORY_ZOOM_TOOL } from "../shared/memory";
 import { CARD_TOOL, CARDS_NOTE_MESSAGE, foldCardDetails, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../shared/overseer-card";
 
@@ -211,7 +211,7 @@ export function extJobsText(jobs: readonly Pick<WatchedJob, "title" | "label" | 
   if (!jobs.length) return undefined;
   return [
     "[extension jobs] Jobs you started that Sova still watches. It tells you when each ends (a message tagged [ext_job xN]); don't poll them:",
-    ...jobs.map((j) => `- x${j.n}: ${j.title} · ${j.label}, job ${j.job}, started ${ago(j.startedAt, now)}`),
+    ...jobs.map((j) => `- x${j.n}: ${nameLine(j.title)} · ${nameLine(j.label, 48)}, job ${j.job}, started ${ago(j.startedAt, now)}`),
   ].join("\n");
 }
 

@@ -214,8 +214,8 @@ export function extTools(d: ExtToolDeps): Tool[] {
     const bad = paramsRefusal(c, params?.params);
     if (bad) throw d.refusal(bad);
     const h = await d.health(c.extension.id).catch(() => null);
-    if (!h) throw d.refusal(`${c.extension.title} is not installed now. Nothing was sent.`);
-    if (h.status !== "ok") throw d.refusal(`${c.extension.title} is down (${h.error ?? "its backend didn't answer its health check"}). Nothing ran; tell the user.`);
+    if (!h) throw d.refusal(`${nameLine(c.extension.title)} is not installed now. Nothing was sent.`);
+    if (h.status !== "ok") throw d.refusal(`${nameLine(c.extension.title)} is down (${h.error ?? "its backend didn't answer its health check"}). Nothing ran; tell the user.`);
     const capped = d.take();
     if (capped) throw d.refusal(capped);
     const name = c.command.id.slice(`ext.${c.extension.id}.`.length);
@@ -235,8 +235,8 @@ export function extTools(d: ExtToolDeps): Tool[] {
     // Sent: a 502 now (the proxy's, after the request reached the backend or not, or the backend's own)
     // can't say whether it ran, so it is outcome unknown, like no answer; the budget stays taken.
     if (r.status === 502)
-      throw new Error(`${c.command.id}: ${c.extension.title} answered HTTP 502 (its backend may be down), so the outcome is unknown. It may have run; Sova won't send it again, and you shouldn't without asking the user.`);
-    if (r.status === 404 && (body as { error?: unknown })?.error === "Unknown extension") throw d.refusal(`${c.extension.title} is not installed now (Sova's proxy answered "Unknown extension"); tell the user.`);
+      throw new Error(`${c.command.id}: ${nameLine(c.extension.title)} answered HTTP 502 (its backend may be down), so the outcome is unknown. It may have run; Sova won't send it again, and you shouldn't without asking the user.`);
+    if (r.status === 404 && (body as { error?: unknown })?.error === "Unknown extension") throw d.refusal(`${nameLine(c.extension.title)} is not installed now (Sova's proxy answered "Unknown extension"); tell the user.`);
     if (r.status < 200 || r.status > 299) throw new Error(wrap(c, [`${c.command.id} failed (HTTP ${r.status}): ${shown(errorOf(body, r.body))}`]));
     // A job: 202 {job: {id}} from a command marked job.
     const jobId = (body as { job?: { id?: unknown } } | undefined)?.job?.id;
@@ -245,8 +245,8 @@ export function extTools(d: ExtToolDeps): Tool[] {
       return {
         content: text(
           n === null
-            ? `${c.extension.title} · ${c.command.label} started job ${jobId}. Sova is watching too many jobs to watch this one: check it with sova_ext job (job "${jobId}", command "${c.command.id}") when the user asks.`
-            : `${c.extension.title} · ${c.command.label} started job ${jobId}. Sova watches it and tells you when it ends (a message tagged [ext_job x${n}]), so don't poll; sova_ext job shows its state now if the user asks.`,
+            ? `${nameLine(c.extension.title)} · ${nameLine(c.command.label, 48)} started job ${jobId}. Sova is watching too many jobs to watch this one: check it with sova_ext job (job "${jobId}", command "${c.command.id}") when the user asks.`
+            : `${nameLine(c.extension.title)} · ${nameLine(c.command.label, 48)} started job ${jobId}. Sova watches it and tells you when it ends (a message tagged [ext_job x${n}]), so don't poll; sova_ext job shows its state now if the user asks.`,
         ),
         details: { op: "run", command: c.command.id, status: r.status, job: jobId } satisfies SovaExtDetails,
       };
@@ -270,12 +270,12 @@ export function extTools(d: ExtToolDeps): Tool[] {
     const c = w ? d.offered().find((x) => x.command.id === w.command) : named(params?.command);
     if (!c) throw d.refusal(`The command that started job ${id} (${w?.command}) is no longer offered to you.`);
     const r = await ask("GET", `/ext/${encodeURIComponent(c.extension.id)}/api/commands/jobs/${encodeURIComponent(id)}`);
-    if ("unknown" in r) throw new Error(`${c.extension.title} didn't answer about job ${id} in ${Math.round(waitMs / 1000)} s.`);
-    if (r.status === 502) throw d.refusal(`${c.extension.title} is down (its backend didn't answer).`);
+    if ("unknown" in r) throw new Error(`${nameLine(c.extension.title)} didn't answer about job ${id} in ${Math.round(waitMs / 1000)} s.`);
+    if (r.status === 502) throw d.refusal(`${nameLine(c.extension.title)} is down (its backend didn't answer).`);
     const body = parseJson(r.body);
-    if (r.status === 404) return { content: text(`${c.extension.title} no longer knows job ${id}: whether it finished is unknown.`), details: { op: "job", command: c.command.id, job: id, unknown: true } satisfies SovaExtDetails };
+    if (r.status === 404) return { content: text(`${nameLine(c.extension.title)} no longer knows job ${id}: whether it finished is unknown.`), details: { op: "job", command: c.command.id, job: id, unknown: true } satisfies SovaExtDetails };
     const status = r.status >= 200 && r.status <= 299 ? parseJobStatus(body) : null;
-    if (!status) throw new Error(wrap(c, [`Job ${id}: ${c.extension.title} answered HTTP ${r.status} without a job state: ${shown(errorOf(body, r.body))}`]));
+    if (!status) throw new Error(wrap(c, [`Job ${id}: ${nameLine(c.extension.title)} answered HTTP ${r.status} without a job state: ${shown(errorOf(body, r.body))}`]));
     const links = status.sessions?.length ? await d.links(status.sessions).catch(() => status.sessions!) : [];
     return {
       content: text([wrap(c, [`Job ${id} of ${c.command.id}:`, ...statusLines(status).map((l) => shown(l))]), ...(links.length ? [`Sessions it reported: ${links.join(", ")}`] : [])].join("\n")),

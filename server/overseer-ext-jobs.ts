@@ -54,8 +54,9 @@ export interface WatchedJob {
   polledAt?: number;
   /** The last state it reported. */
   last?: ExtJobState;
-  /** The message to send, once the watch ended (kept until it is sent). */
-  ended?: { outcome: ExtJobOutcome; text: string; key: string; sessions: string[] };
+  /** The message to send, once the watch ended (kept until it is sent). `format` is END_FORMAT for a
+      text written by this version's endMessage; a text without it is rebuilt before it is sent. */
+  ended?: { outcome: ExtJobOutcome; text: string; key: string; sessions: string[]; format?: number };
 }
 
 export interface ExtJobsDoc {
@@ -66,6 +67,10 @@ export interface ExtJobsDoc {
   /** Sessions a command or job reported, by id, with when. */
   reported: { id: string; at: number }[];
 }
+
+/** The end message's format: 2 keeps every word of the extension's inside the untrusted wrapper. */
+export const END_FORMAT = 2;
+const OUTCOMES: readonly ExtJobOutcome[] = ["ok", "failed", "cancelled", "unknown", "timeout"];
 
 const empty = (): ExtJobsDoc => ({ version: 1, next: 1, jobs: [], reported: [] });
 
@@ -91,7 +96,13 @@ export function readExtJobs(file = extJobsFile()): ExtJobsDoc {
     if (typeof j.last === "string" && (EXT_JOB_STATES as readonly string[]).includes(j.last)) job.last = j.last as ExtJobState;
     const e = j.ended;
     if (isObj(e) && typeof e.outcome === "string" && typeof e.text === "string" && typeof e.key === "string")
-      job.ended = { outcome: e.outcome as ExtJobOutcome, text: e.text, key: e.key, sessions: Array.isArray(e.sessions) ? e.sessions.filter((x): x is string => typeof x === "string") : [] };
+      job.ended = {
+        outcome: (OUTCOMES as readonly string[]).includes(e.outcome) ? (e.outcome as ExtJobOutcome) : "unknown",
+        text: e.text,
+        key: e.key,
+        sessions: sessionIdsOf(e.sessions),
+        ...(e.format === END_FORMAT ? { format: END_FORMAT } : {}),
+      };
     out.jobs.push(job);
   }
   for (const r of Array.isArray(raw.reported) ? raw.reported : []) if (isObj(r) && typeof r.id === "string" && typeof r.at === "number") out.reported.push({ id: r.id, at: r.at });
@@ -332,8 +343,9 @@ export const EXT_JOB_LANES = 4;
  *
  * Extensions are asked side by side (one lane each, at most EXT_JOB_LANES at once), each one's jobs in
  * turn; once an extension's answer is an error (down, too slow, unreadable) its other due jobs this pass
- * take that answer unasked, so a hung backend costs one wait per pass, never one per job, and the other
- * extensions' answers don't wait behind it.
+ * take that answer unasked, so a hung backend costs one wait per pass, never one per job. Each lane's
+ * answers are written, and an end told, as soon as that lane is done: a slow extension holds up
+ * neither the other extensions' answers nor their end messages.
  */
 export async function extJobTick(deps: ExtJobWatchDeps): Promise<void> {
   const file = deps.file ?? extJobsFile();
@@ -345,16 +357,25 @@ export async function extJobTick(deps: ExtJobWatchDeps): Promise<void> {
     if (job.ended || (job.polledAt !== undefined && now - job.polledAt < EXT_JOB_POLL_MS)) continue;
     lanes.set(job.extension, [...(lanes.get(job.extension) ?? []), job]);
   }
+  // One send per pass, and never two at once: each lane's finish asks, in turn, until one went.
+  let sent = false;
+  let sending: Promise<void> = Promise.resolve();
+  const trySend = (): Promise<void> =>
+    (sending = sending.then(async () => {
+      if (!sent) sent = await sendDue(file, deps);
+    }));
   const queue = [...lanes.values()];
   const lane = async (): Promise<void> => {
     for (let jobs = queue.shift(); jobs; jobs = queue.shift()) {
       let failed: StatusAnswer | null = null;
       for (const job of jobs) failed = (await pollOne(deps, job, now, failed)) ?? failed;
+      // This extension's answers are recorded, and an end told, without waiting for the other lanes.
+      finishPass(file, jobs, now);
+      await trySend();
     }
   };
   await Promise.all(Array.from({ length: Math.min(EXT_JOB_LANES, queue.length) }, lane));
-  finishPass(file, doc, now);
-  await sendDue(file, deps);
+  await trySend();
 }
 
 /** Ask about one job (or take its extension's earlier error this pass) and record its end. The error
@@ -390,15 +411,15 @@ async function pollOne(deps: ExtJobWatchDeps, job: WatchedJob, now: number, fail
   const errored = answer.kind === "error" ? answer : null;
   if (outcome) {
     const links = await deps.links(sessions).catch(() => [...sessions]);
-    job.ended = { outcome, text: endMessage(job, outcome, status, now, links), key: `ext-job:${job.extension}:${job.job}:x${job.n}`, sessions };
+    job.ended = { outcome, text: endMessage(job, outcome, status, now, links), key: `ext-job:${job.extension}:${job.job}:x${job.n}`, sessions, format: END_FORMAT };
   }
   return errored;
 }
 
 /** Write what this pass learned onto the file's current jobs (a job added meanwhile is kept). */
-function finishPass(file: string, doc: ExtJobsDoc, now: number): void {
+function finishPass(file: string, jobs: readonly WatchedJob[], now: number): void {
   const changed = new Map<number, Pick<WatchedJob, "polledAt" | "last" | "ended">>();
-  for (const job of doc.jobs) if (job.polledAt === now || job.ended) changed.set(job.n, { polledAt: job.polledAt, last: job.last, ended: job.ended });
+  for (const job of jobs) if (job.polledAt === now || job.ended) changed.set(job.n, { polledAt: job.polledAt, last: job.last, ended: job.ended });
   update(file, (d) => {
     for (const j of d.jobs) {
       const c = changed.get(j.n);
@@ -410,18 +431,27 @@ function finishPass(file: string, doc: ExtJobsDoc, now: number): void {
   });
 }
 
-/** Send the oldest ended job's message, once the Overseer is idle. */
-async function sendDue(file: string, deps: ExtJobWatchDeps): Promise<void> {
+/** Send the oldest ended job's message, once the Overseer is idle: whether it went. A text saved by an
+    older version (no END_FORMAT, its extension's words outside the wrapper) is rebuilt from the saved
+    outcome and sessions first; its report isn't saved, so the rebuilt one has none. */
+async function sendDue(file: string, deps: ExtJobWatchDeps): Promise<boolean> {
   // Held while the Overseer works: never queued behind its turn.
   const due = readExtJobs(file).jobs.find((j) => j.ended);
-  if (!due || deps.busy()) return;
+  if (!due || deps.busy()) return false;
+  const ended = due.ended!;
+  let text = ended.text;
+  if (ended.format !== END_FORMAT) {
+    const links = await deps.links(ended.sessions).catch(() => [...ended.sessions]);
+    text = endMessage(due, ended.outcome, null, due.polledAt ?? due.startedAt, links);
+  }
   try {
-    await deps.send(due.ended!.text, due.ended!.key);
+    await deps.send(text, ended.key);
   } catch (err) {
     deps.log?.(`[overseer] extension job x${due.n} not told yet: ${err instanceof Error ? err.message : String(err)}`);
-    return;
+    return false;
   }
   update(file, (d) => {
     d.jobs = d.jobs.filter((j) => j.n !== due.n);
   });
+  return true;
 }

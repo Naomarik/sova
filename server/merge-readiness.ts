@@ -515,7 +515,7 @@ export interface ReadinessDeps {
   gone: (t: TrackedWorktree, dirs: readonly string[]) => Promise<GoneState>;
   /** What a tree's readiness rests on besides the session, read without Git (WorktreeInsights.quietStamp):
       "gone" for a missing folder, null when it can't be read. */
-  treeStamp?: (dir: string) => string | null;
+  treeStamp?: (dir: string, together?: Map<string, unknown>) => string | null;
   /** The Git inputs a tree's readiness reads, as stat stamps (worktrees.ts gitInputsStamp): the
       session feed's readiness watch compares them (checkReadinessInputs). */
   inputsStamp?: (dir: string, baseBranch?: string) => string | null;
@@ -565,7 +565,7 @@ const defaultDeps = (): ReadinessDeps => ({
   now: Date.now,
   asksUser: (id) => asksUserOf(id),
   gone: (t, dirs) => goneTreeState(t, dirs),
-  treeStamp: (dir) => worktreeInsights.quietStamp(dir),
+  treeStamp: (dir, together) => worktreeInsights.quietStamp(dir, together),
   inputsStamp: gitInputsStamp,
   finished: finishedOf,
   drafts: (dir) => unofficialDrafts(dir),
@@ -898,8 +898,8 @@ let draining: Promise<void> | null = null;
     0 when the file or row moved or someone looked, 5 minutes for an idle session's merged, clean
     tree, else DIRTY_TTL_MS. */
 /** The trees' stamps, or undefined when one can't be read: that session keeps the 20 s cadence. */
-function stampsOf(paths: readonly string[]): string | undefined {
-  const parts = paths.map((p) => deps.treeStamp?.(p) ?? null);
+function stampsOf(paths: readonly string[], together?: Map<string, unknown>): string | undefined {
+  const parts = paths.map((p) => deps.treeStamp?.(p, together) ?? null);
   return parts.some((p) => p === null) ? undefined : parts.join("\n");
 }
 
@@ -1111,6 +1111,17 @@ function drain(): Promise<void> {
   return draining;
 }
 
+/** What one listing's rows have in common stat'ed once (WorktreeInsights.quietStamp): a listing checks its rows in one
+    synchronous run, and this goes with it, so a listing's stamps are as old as its start and no older. */
+let oneListing: Map<string, unknown> | null = null;
+function listingStats(): Map<string, unknown> {
+  if (!oneListing) {
+    oneListing = new Map();
+    queueMicrotask(() => { oneListing = null; });
+  }
+  return oneListing;
+}
+
 /**
  * A row's readiness as last computed; queues a fresh read when the file or the row's state moved,
  * or (for a file that tracks worktrees) the answer is older than READINESS_TTL_MS: git moves on
@@ -1128,7 +1139,7 @@ export function readinessOverlay(s: SessionSummary): SessionReadiness | undefine
   }
   // An idle answer stands IDLE_TTL_MS while its trees' stamps stay put.
   const idleHit = !!hit?.stamps && !runningNow(s);
-  const treesMoved = idleHit && stampsOf(hit!.value?.trees.map((t) => t.path) ?? []) !== hit!.stamps;
+  const treesMoved = idleHit && stampsOf(hit!.value?.trees.map((t) => t.path) ?? [], listingStats()) !== hit!.stamps;
   if (treesMoved) forced.add(s.path);
   const moved = !hit || hit.key !== input.key || hit.file !== input.file || treesMoved;
   const aged = !parked(s) && !!hit?.scan?.found && deps.now() - hit.at >= (idleHit ? IDLE_TTL_MS : READINESS_TTL_MS);

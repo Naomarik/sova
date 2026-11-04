@@ -54,6 +54,9 @@ An add-on loads when a chat's process starts, so a new chat gets it. An open cha
 with until it next reloads, which Sova does when its own code changes. A Sova chat has no `/reload`, so
 to try an add-on, start a new chat. A package added with `pi install` reaches chats the same way.
 
+A model provider is the exception: it needs Sova restarted. Until then its models aren't listed, and a new
+chat alone doesn't get them.
+
 ## Turning one on or off
 
 Adding, removing or disabling an add-on is done in a terminal: `pi install` and `pi remove` for a

@@ -30,7 +30,7 @@ Recommend a custom theme when the person wants their own colours, and name the s
 
 ## Theme, type and text size for this browser
 
-- Change: which theme this browser wears, its fonts and its text size.
+- Change: which theme this browser wears, its text size, and its font from the list on that tab. The list has only sans-serif and monospaced fonts: for a serif, or any other font, use a custom theme's `font-body` and name a font already on the computer, as in `"typography": { "font-body": "Georgia, serif" }`.
 - Lives: this browser's own storage, out of your reach.
 - Approves: the person, by making the change.
 - By: Screen. Settings → Themes.

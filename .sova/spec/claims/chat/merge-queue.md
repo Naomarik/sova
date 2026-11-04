@@ -161,7 +161,7 @@ approved: after what was then the transcript's last row. It follows the chat by 
 follow card does (§chat.transcript-cards/placement):
 - **In place** while the branch waits and is checked: its place in line ("Queued · 2nd"), the
   estimate, "Checking · 4 of 7 steps". These updates change the card where it stands and never move
-  it.
+  it or the rows above it: it is never rebuilt, so the chat never shifts.
 - **A new revision at the bottom** at each outcome: Landed, Needs a fix, Behaviour differs, Review
   flagged, Can't tell whose failure, Drafts changed, Sent back, and on the host Request ready,
   Requested, Pushed and Closed. A request's host state changes in place. A conflict the merge thread is still judging stays in

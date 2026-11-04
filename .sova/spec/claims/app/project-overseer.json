@@ -349,7 +349,9 @@
       "server/overseer-opening.ts",
       "server/overseer-run-note.ts",
       "server/project-overseer-opening.test.ts",
-      "server/other-project-dirs.ts"
+      "server/other-project-dirs.ts",
+      "server/chat-special.ts",
+      "server/harness/pi/deeper-context.ts"
     ],
     "requires": [
       "§app.overseer/hosting",

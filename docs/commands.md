@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 508 |
-| Routes a catalogue entry points at | 137 |
-| Catalogue entries | 185 |
+| Routes registered | 509 |
+| Routes a catalogue entry points at | 153 |
+| Catalogue entries | 201 |
 | Class: Peer protocol | 38 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -27,7 +27,12 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Trust grants | 5 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Pending (not yet a command) | 304 |
+| Class: Left as is, by choice | 248 |
+| Class: Page plumbing | 9 |
+| Class: Steps of starting a chat | 2 |
+| Class: Live capability links | 1 |
+| Class: Approvals and grants | 5 |
+| Pending (not yet a command) | 24 |
 | Chat socket frame types | 12 |
 | Document/window keydown listeners | 9 |
 | Hand-written tool specs | 127 |
@@ -58,6 +63,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.workers.checks` | Show Worker Report Checks | looks | `GET /api/sessions/worker-checks` | sessions |
 | `session.context` | Show Session Context | looks | `GET /api/sessions/context` | sessions |
 | `session.context.file` | Read Context File | looks | `GET /api/sessions/context/file` | sessions |
+| `session.context.view` | Show Context Window | looks | `GET /api/sessions/context-view` | sessions |
 | `session.group.list` | List Groups | looks | `GET /api/session-groups` | sessions |
 | `session.group.create` | New Group | changes | `POST /api/session-groups` | sessions |
 | `session.group.rename` | Rename Group | changes | `PATCH /api/session-groups/:id` | sessions |
@@ -75,6 +81,12 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `session.card.get` | Session Cards | looks | `GET /api/session-cards` | sessions |
 | `session.merge-cards` | Merge Queue Cards | looks | `GET /api/merge-queue/cards` | sessions |
 | `session.card.answer` | Answer Card | changes | `POST /api/session-cards/answer` | admin |
+| `session.cleanup` | Clean Up Sessions | changes | `POST /api/sessions/cleanup` | sessions |
+| `session.title.auto` | Name Sessions | changes | `POST /api/sessions/auto-title` | sessions |
+| `session.title.shorten` | Shorten Long Titles | changes | `POST /api/sessions/shorten-titles` | sessions |
+| `session.worktree.summary` | Count Merged Worktrees | looks | `GET /api/worktrees/summary` | sessions |
+| `session.worktree.cleanup` | Clean Up Worktrees | changes | `POST /api/worktrees/cleanup` | sessions |
+| `session.diff.summary` | Show Changes | looks | `GET /api/diff/summary` | sessions |
 | `project.verb.create` | Project create | changes | `POST /api/project-services/create` | admin |
 | `project.verb.up` | Project up | changes | `POST /api/project-services/up` | admin |
 | `project.verb.down` | Project down | changes | `POST /api/project-services/down` | admin |
@@ -123,6 +135,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `project.overseer.todo.remove` | Remove Project To-do | changes | `DELETE /api/projects/:pid/overseer/todo` | admin |
 | `project.overseer.todo.reorder` | Reorder Project To-dos | changes | `PUT /api/projects/:pid/overseer/todos/order` | admin |
 | `project.overseer.todo.clear-done` | Clear Done Project To-dos | changes | `DELETE /api/projects/:pid/overseer/todos/done` | admin |
+| `project.overseer.get` | Show Project Overseer | looks | `GET /api/projects/:pid/overseer` | sessions |
+| `project.overseer.actions` | List Project Overseer Actions | looks | `GET /api/projects/:pid/overseer/actions` | sessions |
+| `project.overseer.memory.get` | Show Project Overseer Memory | looks | `GET /api/projects/:pid/overseer/memory` | sessions |
 | `project.list` | List Projects | looks | `GET /api/projects` | sessions |
 | `project.get` | Show Project | looks | `GET /api/projects/:pid` | sessions |
 | `project.create` | Add Project | changes | `POST /api/projects` | admin |
@@ -166,6 +181,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `overseer.idea.update` | Update Idea | changes | `PATCH /api/overseer/idea` | admin |
 | `overseer.notes.get` | Show Standing Notes | looks | `GET /api/overseer/notes` | sessions |
 | `overseer.notes.set` | Set Standing Notes | changes | `PUT /api/overseer/notes` | admin |
+| `overseer.get` | Show Overseer | looks | `GET /api/overseer` | sessions |
+| `overseer.memory.get` | Show Overseer Memory | looks | `GET /api/overseer/memory` | sessions |
 | `models.list` | List Models | looks | `GET /api/models` | sessions |
 | `extensions.list` | List Extensions | looks | `GET /api/extensions` | sessions |
 | `targets.list` | List Remote Targets | looks | `GET /api/targets` | sessions |
@@ -182,6 +199,10 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `usage.prices.refresh` | Refresh Prices | changes | `POST /api/usage/prices/refresh` | admin |
 | `insights.usage` | Usage Limits | looks | `GET /api/insights/usage` | sessions |
 | `insights.usage.history` | Usage History | looks | `GET /api/insights/usage/history` | sessions |
+| `insights.usage.refresh` | Refresh Usage Limits | changes | `POST /api/insights/usage/refresh` | sessions |
+| `schedule.list` | List Schedules | looks | `GET /api/schedules` | sessions |
+| `playbook.list` | List Playbooks | looks | `GET /api/playbooks` | sessions |
+| `draft-spec.list` | List Draft Specs | looks | `GET /api/draft-specs` | full |
 | `insights.agents` | Agents Board | looks | `GET /api/insights/agents` | sessions |
 | `insights.worktrees` | Session Worktrees | looks | `GET /api/insights/worktrees` | sessions |
 | `insights.session.workers` | Hidden Workers | looks | `GET /api/insights/session/workers` | sessions |
@@ -229,310 +250,30 @@ class, leaves it, and a new route never joins it.
 
 | Route | Mesh need |
 | --- | --- |
-| `DELETE /api/attachment` | sessions |
-| `GET /api/attachment` | sessions |
-| `GET /api/baton` | sessions |
-| `POST /api/baton` | sessions |
-| `POST /api/baton/:sid/abilities` | sessions |
-| `POST /api/baton/:sid/close` | sessions |
-| `POST /api/baton/:sid/extend` | sessions |
-| `POST /api/baton/:sid/handoff` | sessions |
-| `GET /api/baton/:sid/link` | sessions |
-| `POST /api/baton/:sid/offer` | sessions |
-| `POST /api/baton/:sid/offer/withdraw` | sessions |
-| `GET /api/baton/:sid/outreach` | sessions |
-| `POST /api/baton/:sid/owner` | sessions |
-| `POST /api/baton/:sid/revoke` | sessions |
-| `POST /api/baton/:sid/send-link` | sessions |
-| `POST /api/baton/:sid/take` | sessions |
-| `GET /api/baton/:sid/told` | sessions |
-| `POST /api/baton/:sid/wrapup/retry` | sessions |
-| `GET /api/baton/settings` | sessions |
-| `PUT /api/baton/settings` | sessions |
-| `GET /api/claude/accounts` | sessions |
-| `DELETE /api/claude/accounts/:id` | admin |
-| `PATCH /api/claude/accounts/:id` | admin |
-| `POST /api/claude/accounts/:id/clear` | admin |
-| `DELETE /api/claude/accounts/flow` | admin |
-| `POST /api/claude/accounts/flow` | admin |
-| `POST /api/claude/accounts/flow/code` | admin |
-| `PUT /api/claude/accounts/order` | admin |
-| `PATCH /api/claude/pool/:id` | admin |
-| `POST /api/claude/pool/:id/return` | admin |
-| `PUT /api/claude/pool/keeper` | admin |
-| `PUT /api/claude/pool/order` | admin |
 | `GET /api/diff/patch` | sessions |
-| `GET /api/diff/summary` | sessions |
-| `GET /api/draft-specs` | full |
-| `GET /api/explanations` | sessions |
-| `POST /api/insights/usage/refresh` | sessions |
-| `POST /api/links/:id/seen` | sessions |
-| `GET /api/links/:id/thread` | sessions |
 | `GET /api/memory` | sessions |
 | `GET /api/memory/open` | sessions |
-| `GET /api/mesh` | full |
-| `GET /api/mesh/access` | full |
-| `PUT /api/mesh/access` | full |
-| `PUT /api/mesh/browser-access` | full |
-| `GET /api/mesh/candidates` | full |
-| `GET /api/mesh/details` | full |
-| `GET /api/mesh/front-door` | full |
-| `GET /api/mesh/hello` | full |
-| `PUT /api/mesh/label` | full |
-| `GET /api/mesh/lan` | full |
-| `POST /api/mesh/lan/key` | full |
-| `POST /api/mesh/lan/pairings` | full |
-| `DELETE /api/mesh/lan/pairings/:id` | full |
-| `PUT /api/mesh/lan/relay` | full |
-| `GET /api/mesh/links` | full |
-| `POST /api/mesh/links` | full |
-| `POST /api/mesh/links/:id/end` | full |
-| `GET /api/mesh/links/inbox` | full |
-| `GET /api/mesh/links/offers` | full |
-| `POST /api/mesh/links/offers` | full |
-| `POST /api/mesh/links/offers/:offer/accept` | full |
-| `POST /api/mesh/links/offers/:offer/decline` | full |
-| `POST /api/mesh/links/send` | full |
-| `GET /api/mesh/logins` | full |
-| `POST /api/mesh/logins/claim` | full |
-| `PUT /api/mesh/peers` | full |
-| `GET /api/mesh/resync` | full |
-| `POST /api/mesh/resync/:id` | full |
-| `GET /api/mesh/sessions` | full |
-| `GET /api/mesh/settings` | full |
-| `PUT /api/mesh/settings` | full |
-| `GET /api/monitor` | sessions |
-| `GET /api/monitor/history` | sessions |
-| `GET /api/orgs` | sessions |
-| `POST /api/orgs` | admin |
-| `DELETE /api/orgs/:id` | admin |
-| `GET /api/orgs/:id` | sessions |
-| `PATCH /api/orgs/:id` | admin |
-| `POST /api/orgs/:id/about/revert` | admin |
-| `GET /api/orgs/:id/changes` | sessions |
-| `POST /api/orgs/:id/commit` | admin |
-| `GET /api/orgs/:id/conversations/:session/tours` | sessions |
-| `DELETE /api/orgs/:id/conversations/:session/tours/:handle` | admin |
-| `GET /api/orgs/:id/costs` | sessions |
-| `GET /api/orgs/:id/history` | sessions |
-| `GET /api/orgs/:id/history/events/:eid` | sessions |
-| `POST /api/orgs/:id/history/events/:eid/annotate` | admin |
-| `GET /api/orgs/:id/history/events/:eid/chain` | sessions |
-| `POST /api/orgs/:id/history/events/:eid/correct` | admin |
-| `GET /api/orgs/:id/history/events/:eid/evidence/:n` | sessions |
-| `POST /api/orgs/:id/history/events/:eid/purge` | admin |
-| `GET /api/orgs/:id/history/packet` | sessions |
-| `PUT /api/orgs/:id/hours` | admin |
-| `POST /api/orgs/:id/hours/revert` | admin |
-| `PUT /api/orgs/:id/owner` | admin |
-| `GET /api/orgs/:id/owner/assistant` | sessions |
-| `PUT /api/orgs/:id/owner/assistant` | admin |
-| `POST /api/orgs/:id/owner/assistant/open` | admin |
-| `GET /api/orgs/:id/owner/link` | sessions |
-| `GET /api/orgs/:id/owner/preview` | sessions |
-| `GET /api/orgs/:id/owner/preview/c/:conversation/tours/:handle` | sessions |
-| `GET /api/orgs/:id/owner/preview/c/:conversation/tours/:handle/assets/:file` | sessions |
-| `POST /api/orgs/:id/owner/revoke` | admin |
-| `POST /api/orgs/:id/people` | admin |
-| `GET /api/orgs/:id/people/:pid` | sessions |
-| `PATCH /api/orgs/:id/people/:pid` | admin |
-| `POST /api/orgs/:id/people/:pid/approve` | admin |
-| `POST /api/orgs/:id/people/:pid/decline` | admin |
-| `GET /api/orgs/:id/people/:pid/history` | sessions |
-| `POST /api/orgs/:id/people/:pid/links/revoke` | admin |
-| `GET /api/orgs/:id/people/:pid/preview` | sessions |
-| `GET /api/orgs/:id/people/:pid/preview/tours/:session/:handle` | sessions |
-| `GET /api/orgs/:id/people/:pid/preview/tours/:session/:handle/assets/:file` | sessions |
-| `POST /api/orgs/:id/people/:pid/revert` | admin |
-| `POST /api/orgs/:id/projects` | admin |
-| `GET /api/orgs/:id/projects/:pid/conflicts` | sessions |
-| `POST /api/orgs/:id/projects/:pid/conflicts/:cid/resolve` | admin |
-| `POST /api/orgs/:id/projects/:pid/conflicts/:cid/route` | admin |
-| `GET /api/orgs/:id/projects/:pid/decisions` | sessions |
-| `PATCH /api/orgs/:id/projects/:pid/decisions/:did` | admin |
-| `POST /api/orgs/:id/projects/:pid/decisions/:did/text` | admin |
-| `POST /api/orgs/:id/projects/:pid/draft` | admin |
-| `POST /api/orgs/:id/projects/:pid/items/send` | admin |
-| `GET /api/orgs/:id/projects/:pid/pipeline` | sessions |
-| `POST /api/orgs/:id/projects/:pid/pipeline/:itemId/hold` | admin |
-| `POST /api/orgs/:id/projects/:pid/pipeline/:itemId/resume` | admin |
-| `GET /api/orgs/:id/projects/:pid/pipeline/:itemId/timeline` | sessions |
-| `PATCH /api/orgs/:id/projects/:pid/placement` | admin |
-| `POST /api/orgs/:id/projects/:pid/promote` | admin |
-| `POST /api/orgs/:id/projects/:pid/reconcile` | admin |
-| `GET /api/orgs/:id/projects/:pid/spec` | sessions |
-| `PATCH /api/orgs/:id/projects/:pid/spec` | admin |
-| `GET /api/orgs/:id/projects/:pid/updates` | sessions |
-| `POST /api/orgs/:id/projects/:pid/updates/:uid/withdraw` | admin |
-| `POST /api/orgs/:id/projects/import` | admin |
-| `POST /api/orgs/:id/reload` | admin |
-| `PUT /api/orgs/:id/remote` | admin |
-| `POST /api/orgs/attach` | admin |
-| `PUT /api/orgs/operator` | admin |
-| `GET /api/outreach` | sessions |
-| `PUT /api/outreach` | admin |
-| `GET /api/outreach/orgs/:orgId` | sessions |
-| `PUT /api/outreach/orgs/:orgId` | admin |
-| `POST /api/outreach/send` | admin |
-| `GET /api/outreach/sender/link` | sessions |
-| `POST /api/outreach/sender/link` | admin |
-| `POST /api/outreach/sender/link/cancel` | admin |
-| `POST /api/outreach/sender/pause` | admin |
-| `POST /api/outreach/sender/reconnect` | admin |
-| `POST /api/outreach/sender/start` | admin |
-| `POST /api/outreach/sender/unlink` | admin |
-| `GET /api/outreach/senders` | sessions |
-| `GET /api/overseer` | sessions |
-| `GET /api/overseer/autonomy` | sessions |
-| `POST /api/overseer/autonomy/revoke` | admin |
 | `POST /api/overseer/clear` | admin |
-| `GET /api/overseer/memory` | sessions |
 | `PUT /api/overseer/memory` | admin |
-| `GET /api/playbooks` | sessions |
-| `GET /api/previews` | sessions |
-| `POST /api/previews` | admin |
-| `POST /api/previews/:id/extend` | admin |
-| `GET /api/profiles` | sessions |
-| `POST /api/profiles/approve` | admin |
-| `POST /api/profiles/hidden` | admin |
-| `POST /api/profiles/save-current` | admin |
-| `POST /api/projects/:pid/draft-specs/:sid/approve` | full |
 | `POST /api/projects/:pid/draft-specs/:sid/build` | full |
 | `DELETE /api/projects/:pid/files/:id` | admin |
 | `GET /api/projects/:pid/files/:id` | sessions |
 | `POST /api/projects/:pid/held/:holdId/cancel` | admin |
-| `GET /api/projects/:pid/overseer` | sessions |
 | `POST /api/projects/:pid/overseer` | admin |
-| `GET /api/projects/:pid/overseer/actions` | sessions |
 | `POST /api/projects/:pid/overseer/clear` | admin |
 | `POST /api/projects/:pid/overseer/coding` | admin |
 | `POST /api/projects/:pid/overseer/items/code` | admin |
-| `GET /api/projects/:pid/overseer/memory` | sessions |
 | `PUT /api/projects/:pid/overseer/memory` | admin |
 | `POST /api/projects/:pid/overseer/message` | admin |
 | `POST /api/projects/:pid/overseer/run` | admin |
-| `GET /api/projects/:pid/previews` | sessions |
 | `GET /api/projects/:pid/runtime` | sessions |
 | `POST /api/projects/:pid/runtime/merge` | admin |
 | `POST /api/projects/:pid/services/:verb` | admin |
 | `POST /api/projects/:pid/verbs/onboard` | admin |
-| `GET /api/provider-limits/waiting` | sessions |
-| `GET /api/public-links` | sessions |
-| `PUT /api/public-links` | admin |
-| `POST /api/public-links/verify` | admin |
-| `GET /api/push` | sessions |
-| `PUT /api/push/settings` | admin |
-| `DELETE /api/push/subscribe` | admin |
-| `POST /api/push/subscribe` | admin |
-| `GET /api/schedules` | sessions |
-| `POST /api/schedules/approve` | admin |
-| `POST /api/schedules/revoke` | admin |
-| `GET /api/services` | sessions |
-| `GET /api/session-shares` | sessions |
-| `POST /api/session-shares` | admin |
-| `PATCH /api/session-shares/:id` | admin |
-| `GET /api/session-shares/:id/activity` | sessions |
-| `POST /api/session-shares/:id/extend` | admin |
-| `GET /api/session-shares/:id/preview` | sessions |
-| `GET /api/session-shares/:id/preview/img/:n` | sessions |
-| `POST /api/session-shares/:id/recipients` | admin |
-| `POST /api/session-shares/:id/recipients/:rid/relink` | admin |
-| `POST /api/session-shares/:id/recipients/:rid/revoke` | admin |
-| `POST /api/session-shares/:id/stop` | admin |
-| `POST /api/session-shares/:id/update` | admin |
-| `GET /api/session-shares/preview` | sessions |
-| `GET /api/session-shares/preview/img/:n` | sessions |
-| `POST /api/sessions/auto-title` | sessions |
 | `GET /api/sessions/by-id/:id` | sessions |
-| `POST /api/sessions/cleanup` | sessions |
 | `POST /api/sessions/connect` | sessions |
-| `GET /api/sessions/dir` | sessions |
 | `GET /api/sessions/git` | sessions |
-| `POST /api/sessions/loadout` | sessions |
-| `POST /api/sessions/profile` | sessions |
-| `POST /api/sessions/shorten-titles` | sessions |
-| `PUT /api/settings` | admin |
-| `GET /api/settings/claude-status` | sessions |
-| `GET /api/settings/decisions` | sessions |
-| `PUT /api/settings/decisions` | admin |
-| `DELETE /api/settings/decisions/key` | admin |
-| `PUT /api/settings/decisions/key` | admin |
-| `GET /api/settings/decisions/options` | sessions |
-| `POST /api/settings/decisions/probe` | admin |
-| `PUT /api/settings/delegate` | admin |
-| `GET /api/settings/delegate/options` | sessions |
-| `PUT /api/settings/memory` | admin |
-| `GET /api/settings/memory/options` | sessions |
-| `PUT /api/settings/models` | admin |
-| `PUT /api/settings/overseer` | admin |
-| `PUT /api/settings/provider-limits` | admin |
-| `GET /api/settings/session-titles` | sessions |
-| `PUT /api/settings/session-titles` | admin |
-| `PUT /api/settings/spec` | admin |
-| `GET /api/settings/spec/options` | sessions |
-| `PUT /api/settings/subagents` | admin |
-| `PUT /api/settings/subagents/default` | admin |
-| `POST /api/settings/subagents/restore` | admin |
-| `PUT /api/settings/summarizer` | admin |
-| `PUT /api/settings/team` | admin |
-| `GET /api/settings/team/options` | sessions |
-| `GET /api/shares-overview` | sessions |
 | `POST /api/subagents` | sessions |
-| `GET /api/targets/:name/folders` | sessions |
-| `GET /api/themes` | sessions |
-| `ALL /api/tours/*` | full |
-| `GET /api/tours/:sessionId/:tourId` | full |
-| `DELETE /api/tours/:sessionId/:tourId/accounts` | full |
-| `DELETE /api/tours/:sessionId/:tourId/approvals` | full |
-| `GET /api/tours/:sessionId/:tourId/editions/:editionId` | sessions |
-| `GET /api/tours/:sessionId/:tourId/editions/:editionId/assets/:file` | sessions |
-| `GET /api/tours/:sessionId/:tourId/editions/:editionId/binding-destinations` | admin |
-| `POST /api/tours/:sessionId/:tourId/editions/:editionId/binding-preview` | admin |
-| `GET /api/tours/:sessionId/:tourId/editions/:editionId/bindings` | admin |
-| `POST /api/tours/:sessionId/:tourId/editions/:editionId/bindings` | admin |
-| `DELETE /api/tours/:sessionId/:tourId/editions/:editionId/bindings/:handle` | admin |
-| `GET /api/tours/:sessionId/:tourId/editions/:editionId/destinations` | full |
-| `GET /api/tours/:sessionId/:tourId/editions/:editionId/progress` | sessions |
-| `PUT /api/tours/:sessionId/:tourId/editions/:editionId/progress` | sessions |
-| `POST /api/tours/:sessionId/:tourId/editions/:editionId/share-preview` | admin |
-| `POST /api/tours/:sessionId/:tourId/editions/:editionId/shares` | admin |
-| `DELETE /api/tours/:sessionId/:tourId/editions/:editionId/shares/:id` | admin |
-| `POST /api/tours/:sessionId/:tourId/re-record` | full |
-| `GET /api/tours/:sessionId/jobs/:jobId` | full |
-| `POST /api/tours/:sessionId/jobs/:jobId/account` | full |
-| `POST /api/tours/:sessionId/jobs/:jobId/approve` | full |
-| `POST /api/tours/:sessionId/jobs/:jobId/approve-all` | full |
-| `POST /api/tours/:sessionId/jobs/:jobId/cancel` | full |
-| `POST /api/tours/:sessionId/jobs/:jobId/sign-in` | full |
-| `GET /api/transcript/tool` | sessions |
-| `GET /api/updates` | full |
-| `POST /api/updates/apply` | full |
-| `POST /api/updates/check` | full |
-| `PUT /api/updates/settings` | full |
-| `POST /api/upload` | sessions |
-| `GET /api/visitor-logging` | sessions |
-| `PUT /api/visitor-logging` | admin |
-| `DELETE /api/voice` | admin |
-| `GET /api/voice` | sessions |
-| `POST /api/voice/calibration/apply` | admin |
-| `DELETE /api/voice/calibration/clips` | admin |
-| `DELETE /api/voice/calibration/clips/:n` | admin |
-| `PUT /api/voice/calibration/clips/:n` | admin |
-| `POST /api/voice/calibration/revert` | admin |
-| `POST /api/voice/calibration/run` | admin |
-| `POST /api/voice/calibration/stop` | admin |
-| `DELETE /api/voice/devices/:id` | admin |
-| `POST /api/voice/install` | admin |
-| `POST /api/voice/install/cancel` | admin |
-| `DELETE /api/voice/models/:id` | admin |
-| `POST /api/voice/models/:id/download` | admin |
-| `POST /api/voice/models/:id/use` | admin |
-| `POST /api/voice/models/cancel` | admin |
-| `POST /api/voice/repair` | admin |
-| `POST /api/voice/transcribe` | admin |
-| `POST /api/voice/warm` | admin |
-| `POST /api/worktrees/cleanup` | sessions |
-| `GET /api/worktrees/summary` | sessions |
 
 ## Not-a-command classes
 
@@ -678,6 +419,306 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
+### Left as is, by choice (248)
+
+Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
+
+| Route | Mesh need |
+| --- | --- |
+| `GET /api/baton` | sessions |
+| `POST /api/baton` | sessions |
+| `POST /api/baton/:sid/abilities` | sessions |
+| `POST /api/baton/:sid/close` | sessions |
+| `POST /api/baton/:sid/extend` | sessions |
+| `POST /api/baton/:sid/handoff` | sessions |
+| `GET /api/baton/:sid/link` | sessions |
+| `POST /api/baton/:sid/offer` | sessions |
+| `POST /api/baton/:sid/offer/withdraw` | sessions |
+| `GET /api/baton/:sid/outreach` | sessions |
+| `POST /api/baton/:sid/owner` | sessions |
+| `POST /api/baton/:sid/revoke` | sessions |
+| `POST /api/baton/:sid/send-link` | sessions |
+| `POST /api/baton/:sid/take` | sessions |
+| `GET /api/baton/:sid/told` | sessions |
+| `POST /api/baton/:sid/wrapup/retry` | sessions |
+| `GET /api/baton/settings` | sessions |
+| `PUT /api/baton/settings` | sessions |
+| `GET /api/claude/accounts` | sessions |
+| `DELETE /api/claude/accounts/:id` | admin |
+| `PATCH /api/claude/accounts/:id` | admin |
+| `POST /api/claude/accounts/:id/clear` | admin |
+| `DELETE /api/claude/accounts/flow` | admin |
+| `POST /api/claude/accounts/flow` | admin |
+| `POST /api/claude/accounts/flow/code` | admin |
+| `PUT /api/claude/accounts/order` | admin |
+| `PATCH /api/claude/pool/:id` | admin |
+| `POST /api/claude/pool/:id/return` | admin |
+| `PUT /api/claude/pool/keeper` | admin |
+| `PUT /api/claude/pool/order` | admin |
+| `GET /api/mesh` | full |
+| `GET /api/mesh/access` | full |
+| `PUT /api/mesh/access` | full |
+| `PUT /api/mesh/browser-access` | full |
+| `GET /api/mesh/candidates` | full |
+| `GET /api/mesh/details` | full |
+| `GET /api/mesh/front-door` | full |
+| `GET /api/mesh/hello` | full |
+| `PUT /api/mesh/label` | full |
+| `GET /api/mesh/lan` | full |
+| `POST /api/mesh/lan/key` | full |
+| `POST /api/mesh/lan/pairings` | full |
+| `DELETE /api/mesh/lan/pairings/:id` | full |
+| `PUT /api/mesh/lan/relay` | full |
+| `GET /api/mesh/links` | full |
+| `POST /api/mesh/links` | full |
+| `POST /api/mesh/links/:id/end` | full |
+| `GET /api/mesh/links/inbox` | full |
+| `GET /api/mesh/links/offers` | full |
+| `POST /api/mesh/links/offers` | full |
+| `POST /api/mesh/links/offers/:offer/accept` | full |
+| `POST /api/mesh/links/offers/:offer/decline` | full |
+| `POST /api/mesh/links/send` | full |
+| `GET /api/mesh/logins` | full |
+| `POST /api/mesh/logins/claim` | full |
+| `PUT /api/mesh/peers` | full |
+| `GET /api/mesh/resync` | full |
+| `POST /api/mesh/resync/:id` | full |
+| `GET /api/mesh/sessions` | full |
+| `GET /api/mesh/settings` | full |
+| `PUT /api/mesh/settings` | full |
+| `GET /api/monitor` | sessions |
+| `GET /api/monitor/history` | sessions |
+| `GET /api/orgs` | sessions |
+| `POST /api/orgs` | admin |
+| `DELETE /api/orgs/:id` | admin |
+| `GET /api/orgs/:id` | sessions |
+| `PATCH /api/orgs/:id` | admin |
+| `POST /api/orgs/:id/about/revert` | admin |
+| `GET /api/orgs/:id/changes` | sessions |
+| `POST /api/orgs/:id/commit` | admin |
+| `GET /api/orgs/:id/conversations/:session/tours` | sessions |
+| `DELETE /api/orgs/:id/conversations/:session/tours/:handle` | admin |
+| `GET /api/orgs/:id/costs` | sessions |
+| `GET /api/orgs/:id/history` | sessions |
+| `GET /api/orgs/:id/history/events/:eid` | sessions |
+| `POST /api/orgs/:id/history/events/:eid/annotate` | admin |
+| `GET /api/orgs/:id/history/events/:eid/chain` | sessions |
+| `POST /api/orgs/:id/history/events/:eid/correct` | admin |
+| `GET /api/orgs/:id/history/events/:eid/evidence/:n` | sessions |
+| `POST /api/orgs/:id/history/events/:eid/purge` | admin |
+| `GET /api/orgs/:id/history/packet` | sessions |
+| `PUT /api/orgs/:id/hours` | admin |
+| `POST /api/orgs/:id/hours/revert` | admin |
+| `PUT /api/orgs/:id/owner` | admin |
+| `GET /api/orgs/:id/owner/assistant` | sessions |
+| `PUT /api/orgs/:id/owner/assistant` | admin |
+| `POST /api/orgs/:id/owner/assistant/open` | admin |
+| `GET /api/orgs/:id/owner/link` | sessions |
+| `GET /api/orgs/:id/owner/preview` | sessions |
+| `GET /api/orgs/:id/owner/preview/c/:conversation/tours/:handle` | sessions |
+| `GET /api/orgs/:id/owner/preview/c/:conversation/tours/:handle/assets/:file` | sessions |
+| `POST /api/orgs/:id/owner/revoke` | admin |
+| `POST /api/orgs/:id/people` | admin |
+| `GET /api/orgs/:id/people/:pid` | sessions |
+| `PATCH /api/orgs/:id/people/:pid` | admin |
+| `POST /api/orgs/:id/people/:pid/approve` | admin |
+| `POST /api/orgs/:id/people/:pid/decline` | admin |
+| `GET /api/orgs/:id/people/:pid/history` | sessions |
+| `POST /api/orgs/:id/people/:pid/links/revoke` | admin |
+| `GET /api/orgs/:id/people/:pid/preview` | sessions |
+| `GET /api/orgs/:id/people/:pid/preview/tours/:session/:handle` | sessions |
+| `GET /api/orgs/:id/people/:pid/preview/tours/:session/:handle/assets/:file` | sessions |
+| `POST /api/orgs/:id/people/:pid/revert` | admin |
+| `POST /api/orgs/:id/projects` | admin |
+| `GET /api/orgs/:id/projects/:pid/conflicts` | sessions |
+| `POST /api/orgs/:id/projects/:pid/conflicts/:cid/resolve` | admin |
+| `POST /api/orgs/:id/projects/:pid/conflicts/:cid/route` | admin |
+| `GET /api/orgs/:id/projects/:pid/decisions` | sessions |
+| `PATCH /api/orgs/:id/projects/:pid/decisions/:did` | admin |
+| `POST /api/orgs/:id/projects/:pid/decisions/:did/text` | admin |
+| `POST /api/orgs/:id/projects/:pid/draft` | admin |
+| `POST /api/orgs/:id/projects/:pid/items/send` | admin |
+| `GET /api/orgs/:id/projects/:pid/pipeline` | sessions |
+| `POST /api/orgs/:id/projects/:pid/pipeline/:itemId/hold` | admin |
+| `POST /api/orgs/:id/projects/:pid/pipeline/:itemId/resume` | admin |
+| `GET /api/orgs/:id/projects/:pid/pipeline/:itemId/timeline` | sessions |
+| `PATCH /api/orgs/:id/projects/:pid/placement` | admin |
+| `POST /api/orgs/:id/projects/:pid/promote` | admin |
+| `POST /api/orgs/:id/projects/:pid/reconcile` | admin |
+| `GET /api/orgs/:id/projects/:pid/spec` | sessions |
+| `PATCH /api/orgs/:id/projects/:pid/spec` | admin |
+| `GET /api/orgs/:id/projects/:pid/updates` | sessions |
+| `POST /api/orgs/:id/projects/:pid/updates/:uid/withdraw` | admin |
+| `POST /api/orgs/:id/projects/import` | admin |
+| `POST /api/orgs/:id/reload` | admin |
+| `PUT /api/orgs/:id/remote` | admin |
+| `POST /api/orgs/attach` | admin |
+| `PUT /api/orgs/operator` | admin |
+| `GET /api/outreach` | sessions |
+| `PUT /api/outreach` | admin |
+| `GET /api/outreach/orgs/:orgId` | sessions |
+| `PUT /api/outreach/orgs/:orgId` | admin |
+| `POST /api/outreach/send` | admin |
+| `GET /api/outreach/sender/link` | sessions |
+| `POST /api/outreach/sender/link` | admin |
+| `POST /api/outreach/sender/link/cancel` | admin |
+| `POST /api/outreach/sender/pause` | admin |
+| `POST /api/outreach/sender/reconnect` | admin |
+| `POST /api/outreach/sender/start` | admin |
+| `POST /api/outreach/sender/unlink` | admin |
+| `GET /api/outreach/senders` | sessions |
+| `GET /api/previews` | sessions |
+| `POST /api/previews` | admin |
+| `POST /api/previews/:id/extend` | admin |
+| `GET /api/profiles` | sessions |
+| `POST /api/profiles/approve` | admin |
+| `POST /api/profiles/hidden` | admin |
+| `POST /api/profiles/save-current` | admin |
+| `GET /api/provider-limits/waiting` | sessions |
+| `GET /api/public-links` | sessions |
+| `PUT /api/public-links` | admin |
+| `POST /api/public-links/verify` | admin |
+| `GET /api/push` | sessions |
+| `PUT /api/push/settings` | admin |
+| `DELETE /api/push/subscribe` | admin |
+| `POST /api/push/subscribe` | admin |
+| `GET /api/services` | sessions |
+| `GET /api/session-shares` | sessions |
+| `POST /api/session-shares` | admin |
+| `PATCH /api/session-shares/:id` | admin |
+| `GET /api/session-shares/:id/activity` | sessions |
+| `POST /api/session-shares/:id/extend` | admin |
+| `GET /api/session-shares/:id/preview` | sessions |
+| `GET /api/session-shares/:id/preview/img/:n` | sessions |
+| `POST /api/session-shares/:id/recipients` | admin |
+| `POST /api/session-shares/:id/recipients/:rid/relink` | admin |
+| `POST /api/session-shares/:id/recipients/:rid/revoke` | admin |
+| `POST /api/session-shares/:id/stop` | admin |
+| `POST /api/session-shares/:id/update` | admin |
+| `GET /api/session-shares/preview` | sessions |
+| `GET /api/session-shares/preview/img/:n` | sessions |
+| `PUT /api/settings` | admin |
+| `GET /api/settings/claude-status` | sessions |
+| `GET /api/settings/decisions` | sessions |
+| `PUT /api/settings/decisions` | admin |
+| `DELETE /api/settings/decisions/key` | admin |
+| `PUT /api/settings/decisions/key` | admin |
+| `GET /api/settings/decisions/options` | sessions |
+| `POST /api/settings/decisions/probe` | admin |
+| `PUT /api/settings/delegate` | admin |
+| `GET /api/settings/delegate/options` | sessions |
+| `PUT /api/settings/memory` | admin |
+| `GET /api/settings/memory/options` | sessions |
+| `PUT /api/settings/models` | admin |
+| `PUT /api/settings/overseer` | admin |
+| `PUT /api/settings/provider-limits` | admin |
+| `GET /api/settings/session-titles` | sessions |
+| `PUT /api/settings/session-titles` | admin |
+| `PUT /api/settings/spec` | admin |
+| `GET /api/settings/spec/options` | sessions |
+| `PUT /api/settings/subagents` | admin |
+| `PUT /api/settings/subagents/default` | admin |
+| `POST /api/settings/subagents/restore` | admin |
+| `PUT /api/settings/summarizer` | admin |
+| `PUT /api/settings/team` | admin |
+| `GET /api/settings/team/options` | sessions |
+| `GET /api/shares-overview` | sessions |
+| `GET /api/themes` | sessions |
+| `ALL /api/tours/*` | full |
+| `GET /api/tours/:sessionId/:tourId` | full |
+| `DELETE /api/tours/:sessionId/:tourId/accounts` | full |
+| `DELETE /api/tours/:sessionId/:tourId/approvals` | full |
+| `GET /api/tours/:sessionId/:tourId/editions/:editionId` | sessions |
+| `GET /api/tours/:sessionId/:tourId/editions/:editionId/assets/:file` | sessions |
+| `GET /api/tours/:sessionId/:tourId/editions/:editionId/binding-destinations` | admin |
+| `POST /api/tours/:sessionId/:tourId/editions/:editionId/binding-preview` | admin |
+| `GET /api/tours/:sessionId/:tourId/editions/:editionId/bindings` | admin |
+| `POST /api/tours/:sessionId/:tourId/editions/:editionId/bindings` | admin |
+| `DELETE /api/tours/:sessionId/:tourId/editions/:editionId/bindings/:handle` | admin |
+| `GET /api/tours/:sessionId/:tourId/editions/:editionId/destinations` | full |
+| `GET /api/tours/:sessionId/:tourId/editions/:editionId/progress` | sessions |
+| `PUT /api/tours/:sessionId/:tourId/editions/:editionId/progress` | sessions |
+| `POST /api/tours/:sessionId/:tourId/editions/:editionId/share-preview` | admin |
+| `POST /api/tours/:sessionId/:tourId/editions/:editionId/shares` | admin |
+| `DELETE /api/tours/:sessionId/:tourId/editions/:editionId/shares/:id` | admin |
+| `POST /api/tours/:sessionId/:tourId/re-record` | full |
+| `GET /api/tours/:sessionId/jobs/:jobId` | full |
+| `POST /api/tours/:sessionId/jobs/:jobId/account` | full |
+| `POST /api/tours/:sessionId/jobs/:jobId/approve` | full |
+| `POST /api/tours/:sessionId/jobs/:jobId/approve-all` | full |
+| `POST /api/tours/:sessionId/jobs/:jobId/cancel` | full |
+| `POST /api/tours/:sessionId/jobs/:jobId/sign-in` | full |
+| `GET /api/updates` | full |
+| `POST /api/updates/apply` | full |
+| `POST /api/updates/check` | full |
+| `PUT /api/updates/settings` | full |
+| `GET /api/visitor-logging` | sessions |
+| `PUT /api/visitor-logging` | admin |
+| `DELETE /api/voice` | admin |
+| `GET /api/voice` | sessions |
+| `POST /api/voice/calibration/apply` | admin |
+| `DELETE /api/voice/calibration/clips` | admin |
+| `DELETE /api/voice/calibration/clips/:n` | admin |
+| `PUT /api/voice/calibration/clips/:n` | admin |
+| `POST /api/voice/calibration/revert` | admin |
+| `POST /api/voice/calibration/run` | admin |
+| `POST /api/voice/calibration/stop` | admin |
+| `DELETE /api/voice/devices/:id` | admin |
+| `POST /api/voice/install` | admin |
+| `POST /api/voice/install/cancel` | admin |
+| `DELETE /api/voice/models/:id` | admin |
+| `POST /api/voice/models/:id/download` | admin |
+| `POST /api/voice/models/:id/use` | admin |
+| `POST /api/voice/models/cancel` | admin |
+| `POST /api/voice/repair` | admin |
+| `POST /api/voice/transcribe` | admin |
+| `POST /api/voice/warm` | admin |
+
+### Page plumbing (9)
+
+Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name). Exactly these routes (`PAGE_PLUMBING`).
+
+| Route | Mesh need |
+| --- | --- |
+| `DELETE /api/attachment` | sessions |
+| `GET /api/attachment` | sessions |
+| `GET /api/explanations` | sessions |
+| `POST /api/links/:id/seen` | sessions |
+| `GET /api/links/:id/thread` | sessions |
+| `GET /api/sessions/dir` | sessions |
+| `GET /api/targets/:name/folders` | sessions |
+| `GET /api/transcript/tool` | sessions |
+| `POST /api/upload` | sessions |
+
+### Steps of starting a chat (2)
+
+The new chat's setup card toggles and profile pick, refused once a message is sent; `session.create` takes a profile itself. Exactly these routes (`CHAT_START`).
+
+| Route | Mesh need |
+| --- | --- |
+| `POST /api/sessions/loadout` | sessions |
+| `POST /api/sessions/profile` | sessions |
+
+### Live capability links (1)
+
+A list that prints live preview links, which open a project's port to whoever holds one. Exactly these routes (`CAPABILITY_LINKS`).
+
+| Route | Mesh need |
+| --- | --- |
+| `GET /api/projects/:pid/previews` | sessions |
+
+### Approvals and grants (5)
+
+Approving a schedule or a draft spec, the Overseer's permits and their revoke: any chat can run catalogue actions with the operator's token, so none of these is one. Exactly these routes (`GRANTS`).
+
+| Route | Mesh need |
+| --- | --- |
+| `GET /api/overseer/autonomy` | sessions |
+| `POST /api/overseer/autonomy/revoke` | admin |
+| `POST /api/projects/:pid/draft-specs/:sid/approve` | full |
+| `POST /api/schedules/approve` | admin |
+| `POST /api/schedules/revoke` | admin |
+
 ## Routes catalogue entries point at
 
 | Route | Mesh need | Entries |
@@ -685,6 +726,8 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `GET /api/audit` | full | `audit.list` |
 | `POST /api/chat/action` | sessions | `chat.compact`, `chat.queue.remove`, `chat.regenerate`, `chat.reload-code`, `chat.rewind`, `chat.stop` |
 | `GET /api/cwds` | sessions | `cwds.list` |
+| `GET /api/diff/summary` | sessions | `session.diff.summary` |
+| `GET /api/draft-specs` | full | `draft-spec.list` |
 | `GET /api/extensions` | sessions | `extensions.list` |
 | `GET /api/files` | sessions | `files.list` |
 | `GET /api/folders` | sessions | `folders.list` |
@@ -697,6 +740,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `GET /api/insights/session/workers` | sessions | `insights.session.workers` |
 | `GET /api/insights/usage` | sessions | `insights.usage` |
 | `GET /api/insights/usage/history` | sessions | `insights.usage.history` |
+| `POST /api/insights/usage/refresh` | sessions | `insights.usage.refresh` |
 | `GET /api/insights/worktrees` | sessions | `insights.worktrees` |
 | `GET /api/merge-queue/cards` | sessions | `session.merge-cards` |
 | `POST /api/merge-queue/entries/:id/publish` | admin | `project.merge-queue.request.publish` |
@@ -718,10 +762,12 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `POST /api/orgs/:id/owner/requests/:rid/chat` | admin | `org.owner.request.chat` |
 | `GET /api/orgs/:id/projects/:pid/versions` | sessions | `org.project.versions` |
 | `PUT /api/orgs/:id/projects/:pid/versions/:instance` | admin | `org.project.version.automatic`, `org.project.version.hide`, `org.project.version.rewrite`, `org.project.version.show` |
+| `GET /api/overseer` | sessions | `overseer.get` |
 | `GET /api/overseer/attention` | sessions | `overseer.attention` |
 | `GET /api/overseer/idea` | sessions | `overseer.idea.get` |
 | `PATCH /api/overseer/idea` | admin | `overseer.idea.update` |
 | `GET /api/overseer/ideas` | sessions | `overseer.idea.list` |
+| `GET /api/overseer/memory` | sessions | `overseer.memory.get` |
 | `GET /api/overseer/notes` | sessions | `overseer.notes.get` |
 | `PUT /api/overseer/notes` | admin | `overseer.notes.set` |
 | `DELETE /api/overseer/todo` | admin | `overseer.todo.remove` |
@@ -730,6 +776,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `POST /api/overseer/todos` | admin | `overseer.todo.add` |
 | `DELETE /api/overseer/todos/done` | admin | `overseer.todo.clear-done` |
 | `PUT /api/overseer/todos/order` | admin | `overseer.todo.reorder` |
+| `GET /api/playbooks` | sessions | `playbook.list` |
 | `POST /api/previews/:id/off` | admin | `project.preview.off` |
 | `POST /api/project-services/:verb` | admin | `project.verb.apply`, `project.verb.conform`, `project.verb.create`, `project.verb.deploy.check`, `project.verb.deploy.logs`, `project.verb.deploy.plan`, `project.verb.deploy.request`, `project.verb.deploy.rollback`, `project.verb.deploy.run`, `project.verb.deploy.status`, `project.verb.doctor`, `project.verb.down`, `project.verb.logs`, `project.verb.merge.add`, `project.verb.merge.answer`, `project.verb.merge.ask`, `project.verb.merge.cancel`, `project.verb.merge.clear`, `project.verb.merge.extend`, `project.verb.merge.fresh`, `project.verb.merge.logs`, `project.verb.merge.note`, `project.verb.merge.pause`, `project.verb.merge.reply`, `project.verb.merge.resolve`, `project.verb.merge.resume`, `project.verb.merge.retry`, `project.verb.merge.review`, `project.verb.merge.setup`, `project.verb.merge.status`, `project.verb.reset`, `project.verb.revoke`, `project.verb.share`, `project.verb.status`, `project.verb.teardown`, `project.verb.test`, `project.verb.up` |
 | `GET /api/projects` | sessions | `project.list` |
@@ -743,11 +790,14 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `GET /api/projects/:pid/costs` | sessions | `project.costs` |
 | `GET /api/projects/:pid/files` | sessions | `project.files.list` |
 | `GET /api/projects/:pid/offers` | sessions | `project.offers.list` |
+| `GET /api/projects/:pid/overseer` | sessions | `project.overseer.get` |
 | `PATCH /api/projects/:pid/overseer` | admin | `project.overseer.settings.set` |
+| `GET /api/projects/:pid/overseer/actions` | sessions | `project.overseer.actions` |
 | `GET /api/projects/:pid/overseer/idea` | sessions | `project.overseer.idea.get` |
 | `PATCH /api/projects/:pid/overseer/idea` | admin | `project.overseer.idea.update` |
 | `GET /api/projects/:pid/overseer/ideas` | sessions | `project.overseer.idea.list` |
 | `POST /api/projects/:pid/overseer/ideas` | admin | `project.overseer.idea.add` |
+| `GET /api/projects/:pid/overseer/memory` | sessions | `project.overseer.memory.get` |
 | `DELETE /api/projects/:pid/overseer/todo` | admin | `project.overseer.todo.remove` |
 | `PATCH /api/projects/:pid/overseer/todo` | admin | `project.overseer.todo.update` |
 | `GET /api/projects/:pid/overseer/todos` | sessions | `project.overseer.todo.list` |
@@ -765,6 +815,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `POST /api/projects/:pid/unarchive` | admin | `project.unarchive` |
 | `POST /api/push/test` | admin | `push.test` |
 | `POST /api/sandbox` | sessions | `session.sandbox.set` |
+| `GET /api/schedules` | sessions | `schedule.list` |
 | `GET /api/session-cards` | sessions | `session.card.get` |
 | `POST /api/session-cards/answer` | admin | `session.card.answer` |
 | `POST /api/session-cards/post` | admin | `session.card.post` |
@@ -783,13 +834,17 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `POST /api/sessions` | sessions | `session.create` |
 | `GET /api/sessions/align-triage` | sessions | `session.align.triage` |
 | `POST /api/sessions/archive` | sessions | `session.archive`, `session.unarchive` |
+| `POST /api/sessions/auto-title` | sessions | `session.title.auto` |
+| `POST /api/sessions/cleanup` | sessions | `session.cleanup` |
 | `POST /api/sessions/configure` | sessions | `session.configure` |
 | `GET /api/sessions/context` | sessions | `session.context` |
+| `GET /api/sessions/context-view` | sessions | `session.context.view` |
 | `GET /api/sessions/context/file` | sessions | `session.context.file` |
 | `GET /api/sessions/draft` | sessions | `session.draft.get` |
 | `PUT /api/sessions/draft` | sessions | `session.draft.set` |
 | `POST /api/sessions/fork` | sessions | `session.fork` |
 | `POST /api/sessions/prompt` | sessions | `session.send` |
+| `POST /api/sessions/shorten-titles` | sessions | `session.title.shorten` |
 | `GET /api/sessions/summary` | sessions | `session.get` |
 | `POST /api/sessions/tags` | sessions | `session.tags.set` |
 | `POST /api/sessions/title` | sessions | `session.title.reset`, `session.title.set` |
@@ -819,6 +874,8 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `POST /api/usage/sessions` | admin | `usage.sessions` |
 | `GET /api/usage/today` | sessions | `usage.today` |
 | `POST /api/workers/resume` | sessions | `worker.resume` |
+| `POST /api/worktrees/cleanup` | sessions | `session.worktree.cleanup` |
+| `GET /api/worktrees/summary` | sessions | `session.worktree.summary` |
 
 ## Chat socket frames
 

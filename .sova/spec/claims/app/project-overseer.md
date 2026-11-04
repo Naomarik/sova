@@ -46,7 +46,9 @@ which is also its live view: its tool calls render as tool cards as they happen.
   host-local, in its watch statechart.
 - **Loadout.** No pi-config extension, skill or prompt template loads (no mode; a mode switch is
   refused); the project's own context files do, and only those inside the project root: never the
-  agent dir's or a folder's above the root (the home folder's `AGENTS.md`). Its tools
+  agent dir's or a folder's above the root (the home folder's `AGENTS.md`). An instruction file in a
+  folder below the root loads as its file tools work there (§chat/subfolder-instructions), never a
+  secret one. Its tools
   (§app.project-overseer/tools), memory's `zoom` and `date` while its memory is on
   (§chat.memory/overseer), plus read-only `read`, `grep`, `find` and `ls` **anywhere on the host
   but other clients' work, Sova's and pi's own state, and secrets**: every path, as written (`..`,

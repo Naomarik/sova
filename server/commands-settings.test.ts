@@ -63,7 +63,7 @@ describe("the area", () => {
     for (const c of OTHER_ENTRIES) assert.ok(COMMANDS.includes(c), c.id);
     const writes = OTHER_ENTRIES.filter((c) => c.id.startsWith("settings.") && c.effect === "changes").map((c) => c.id).sort();
     assert.deepEqual(writes, ["settings.align.set", "settings.assistant-default.set"]);
-    const forbidden = /\/api\/(profiles|schedules|claude|auth|settings\/decisions|settings\/claude-status)(\/|$)|approve|login/;
+    const forbidden = /\/api\/(profiles|schedules\/(?:approve|revoke)|claude|auth|settings\/decisions|settings\/claude-status)(\/|$)|approve|login/;
     // Which login a project or an org's projects start on (§app.claude-logins/project-login): they name a login
     // id and never touch a credential or an account; each is named here, so no other path slips through.
     const ASSIGNS_A_LOGIN = new Set(["project.claude-login.get", "project.claude-login.set", "org.claude-login.get", "org.claude-login.set"]);

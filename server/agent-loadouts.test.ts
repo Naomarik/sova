@@ -24,6 +24,7 @@ const { linkTools } = await import("./overseer-link-tools");
 const { overseerFileTools } = await import("./overseer-file-tools");
 const guards = await import("./session-guards");
 const { GAP_PARAM } = await import("./overseer-org-part");
+const { createGuideTool } = await import("../pi-config/extensions/mode/create-guide-tool.ts");
 
 const SNAPSHOT = new URL("./agent-loadouts.snapshot.json", import.meta.url);
 const CWD = "/work/project";
@@ -80,6 +81,8 @@ function families(): Record<string, Decl[]> {
     "project-verbs:project-overseer": [decl(verbs.projectOverseerVerbsTool(engine, { id: () => "o-1", root: () => CWD, act: noop }))],
     "project-verbs:overseer+copies": [decl(verbs.overseerVerbsTool(engine, () => "o-1", (e) => e, noop, copyVerbs))],
     "project-verbs:project-overseer+copies": [decl(verbs.projectOverseerVerbsTool(engine, { id: () => "o-1", root: () => CWD, act: noop, copies: copyVerbs }))],
+    // A Create chat's lookup: its description and the 19 topics it takes (§chat.create-mode/entries).
+    "create-guide": [decl(createGuideTool())],
     links: linkTools({
       act: noop,
       read: noop,

@@ -11969,6 +11969,50 @@
         }
       ]
     },
+    "create-guide": {
+      "bytes": 725,
+      "tools": [
+        {
+          "name": "create_guide",
+          "label": "create guide",
+          "description": "Open one topic of Create's table of contents before acting on it: returns the rules every topic shares, then what the topic covers, each thing with what can be changed, where it lives, who approves it, how it changes, how it goes live and how to check it.",
+          "parameters": {
+            "type": "object",
+            "required": [
+              "topic"
+            ],
+            "properties": {
+              "topic": {
+                "type": "string",
+                "enum": [
+                  "appearance",
+                  "models",
+                  "workers",
+                  "instructions",
+                  "skills",
+                  "modes",
+                  "profiles",
+                  "tools",
+                  "extensions",
+                  "pi-extensions",
+                  "scripts",
+                  "safety",
+                  "project",
+                  "landing",
+                  "automation",
+                  "cards",
+                  "overseers",
+                  "attention",
+                  "computers"
+                ],
+                "description": "The topic, as Create's table of contents lists it"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
     "links": {
       "bytes": 2400,
       "tools": [

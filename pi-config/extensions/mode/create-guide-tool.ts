@@ -19,8 +19,8 @@ export const CREATE_GUIDE_PARAMETERS = Type.Object(
 	{ additionalProperties: false },
 );
 
-export function registerCreateGuideTool(pi: ExtensionAPI): void {
-	pi.registerTool({
+export function createGuideTool() {
+	return {
 		name: CREATE_GUIDE_TOOL,
 		label: "create guide",
 		description: CREATE_GUIDE_DESCRIPTION,
@@ -31,5 +31,9 @@ export function registerCreateGuideTool(pi: ExtensionAPI): void {
 			const topic = String(params.topic);
 			return { content: [{ type: "text" as const, text: createGuide(topic) }], details: { topic } };
 		},
-	});
+	};
+}
+
+export function registerCreateGuideTool(pi: ExtensionAPI): void {
+	pi.registerTool(createGuideTool());
 }

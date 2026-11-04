@@ -118,6 +118,7 @@
   "SOVA_VOICE_PATH",
   "SOVA_VOICE_TRANSCRIBE_BIN",
   "SOVA_VOICE_WHISPER_BIN",
+  "SOVA_VOICE_WHISPER_GPU",
   "SOVA_WA_FAKE_ABSENT",
   "SOVA_WA_FAKE_ME",
   "SOVA_WA_FAKE_QR_MS",
@@ -542,7 +543,7 @@
    "SOVA_PRICES_FETCH": "computers",
    "SOVA_CHAT_IDLE_MIN": "computers",
    "SOVA_CHAT_CLAUDE_IDLE_MAX": "computers",
-   "SOVA_WORKER_NICE": "computers",
+   "SOVA_WORKER_NICE": "safety",
    "SOVA_SCRIPT_NICE": "computers",
    "SOVA_BATON_UPLOADS_MAX_MB": "computers",
    "SOVA_BATON_UPLOADS_FREE_MB": "computers",
@@ -561,8 +562,7 @@
    "SOVA_NODE": "computers",
    "SOVA_URL": "computers",
    "SOVA_WA_LOG_LEVEL": "computers",
-   "SOVA_TOUR_BROWSER": "computers",
-   "SOVA_VOICE_WHISPER_GPU": "computers"
+   "SOVA_TOUR_BROWSER": "computers"
   }
  }
 }

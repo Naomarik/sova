@@ -212,6 +212,8 @@ export interface McpExtensionHooks {
   list(cwd: string, sandboxOn: boolean): Promise<McpChatList | null>;
   /** A worker's failure, for the chat that started it. Absent in an ordinary chat. */
   tellParent?(note: McpNote): void;
+  /** What a worker is called, in its failure's note and row line. Absent: the chat's own name. */
+  label?: string;
   /** Each copy's status as it changes. */
   onStatus?(status: McpServerStatus): void;
 }
@@ -328,7 +330,7 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
       // Before pi's own handlers below: what pi connects at session_start is what is registered by then.
       pi.on("session_start", async (_event, ctx) => {
         sessionId = ctx.sessionManager.getSessionId();
-        chatName = pi.getSessionName() ?? "";
+        chatName = hooks.label ?? pi.getSessionName() ?? "";
         pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
         const branch = ctx.sessionManager.getBranch() as { type?: string; customType?: string; data?: unknown; message?: { role?: string } }[];
         const kept = branch.filter((e) => e.type === "custom" && e.customType === MCP_LIST_ENTRY).map((e) => normalizeChatList(e.data)).filter((l) => l !== null).pop();

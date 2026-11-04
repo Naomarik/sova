@@ -787,7 +787,7 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
   return [
     ...files,
     ...(mcp?.servers.length
-      ? [mcpExtension({ list: async () => mcp, tellParent: (note) => (chatHosts.mcpTell ?? mcpTellHere)(w.parent?.path ?? "", note) })]
+      ? [mcpExtension({ list: async () => mcp, ...(w.parent ? { label: w.parent.workerId } : {}), tellParent: (note) => (chatHosts.mcpTell ?? mcpTellHere)(w.parent?.path ?? "", note) })]
       : []),
     servedDecls
       ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))

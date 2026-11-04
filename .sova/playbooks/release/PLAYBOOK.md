@@ -31,10 +31,13 @@ Sova is 0.x. The previous release is `node .sova/playbooks/release/scripts/sova-
 ## After publishing
 - `release-page`: the GitHub release page, made only now that Publish pushed the tag:
   ```sh
-  node .sova/playbooks/release/scripts/sova-release.mjs notes-out --version X.Y.Z --out ~/.cache/sova-release-notes-vX.Y.Z.md
-  gh release create vX.Y.Z --verify-tag --title "Sova vX.Y.Z" --notes-file ~/.cache/sova-release-notes-vX.Y.Z.md --latest
+  notes="${TMPDIR:-/tmp}/sova-release-notes-vX.Y.Z.md"
+  node .sova/playbooks/release/scripts/sova-release.mjs notes-out --version X.Y.Z --out "$notes"
+  gh release create vX.Y.Z --verify-tag --title "Sova vX.Y.Z" --notes-file "$notes" --latest
+  rm "$notes"
   gh release view vX.Y.Z --json url,isLatest
   ```
+  The notes file is throwaway, so it goes in the temp dir, never `~/.cache` (inside the sandbox that is a private copy nobody else sees).
   `--verify-tag` refuses when the tag isn't on GitHub: report `failed` with that, never make the tag. Done: `url=<the page>`. A project copy without `gh`'s login: `failed`, "gh is not logged in", for the operator.
 - `outside-checks`: offer these, run none on your own, report the step `held` with the list; the operator says in the chat which to run (or Continues to skip them all), and you report what each showed in your final reply:
   - a clean install from the public command, after GitHub's cache of the raw script expires (5 minutes, or append `?nocache=<n>`), in fresh containers (Debian, Fedora, Alpine with `apk add bash`; git, curl, unzip and Node ≥ 22.19 installed): `curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/install.sh | bash -s -- --no-service --no-app-entry`, then start `sova` and read `/api/health`: its `head` is the release commit. Never against this machine's real home;

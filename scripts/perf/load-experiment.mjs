@@ -11,7 +11,7 @@
 //        [--nice 10] [--weight 1000] [--port 4867] [--inspect 9267] [--out <dir>]
 //        [--agent-dir <dir>] [--transcript <file name part>]
 //   node scripts/perf/load-experiment.mjs --summarize <out dir>   # tables from saved samples
-//   node scripts/perf/load-experiment.mjs --cleanup               # stop sova-perf-* scopes, free the ports
+//   node scripts/perf/load-experiment.mjs --cleanup               # stop sova-perf-* scopes, free the ports, remove .cache/sova-perf
 //
 // Variants (load = scripts/perf/load-standin.mjs: node --test suites, tsc and vite builds):
 //   nice0       the load starts as the server's child (spawned from inside the server through the
@@ -27,12 +27,16 @@
 // variant); without it every server is a plain child and the scope variants are refused. Builtins only (the global WebSocket for the inspector).
 
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync, appendFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, appendFileSync } from "node:fs";
 import { getPriority, homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 import { ROOT, shown } from "./paths.mjs";
+
+/** The stand-in load's scratch: the repo's gitignored .cache, never ~/.cache (inside the sandbox a
+ *  private copy nobody else sees). --cleanup removes it. */
+const PERF_SCRATCH = join(ROOT, ".cache", "sova-perf");
 const args = process.argv.slice(2);
 const has = (name) => args.includes(`--${name}`);
 const opt = (name, fallback) => {
@@ -135,7 +139,7 @@ if (has("summarize")) {
 // ── cleanup: everything a run (or an interrupted one) may have left ─────────────────────────────
 
 /** Stop every sova-perf-* scope, and anything still holding the experiment's ports. */
-function cleanup() {
+function cleanup({ scratch = false } = {}) {
   try {
     execFileSync("sh", ["-c", "systemctl --user stop 'sova-perf-*.scope' 2>/dev/null; true"], { stdio: "inherit", timeout: 30_000 });
   } catch {}
@@ -144,11 +148,12 @@ function cleanup() {
       execFileSync("sh", ["-c", `fuser -k -TERM ${port}/tcp 2>/dev/null; true`], { stdio: "inherit", timeout: 10_000 });
     } catch {}
   }
+  if (scratch) rmSync(PERF_SCRATCH, { recursive: true, force: true });
 }
 
 if (has("cleanup")) {
-  cleanup();
-  console.log(`stopped sova-perf-* scopes and whatever held ports ${PORT} and ${INSPECT}`);
+  cleanup({ scratch: true });
+  console.log(`stopped sova-perf-* scopes and whatever held ports ${PORT} and ${INSPECT}; removed ${shown(PERF_SCRATCH)}`);
   process.exit(0);
 }
 
@@ -399,7 +404,7 @@ async function oneRun(variant, rep, bigPath) {
     await sleep(T.idle * 1000);
     phase = "ramp";
     const standin = join(ROOT, "scripts", "perf", "load-standin.mjs");
-    const standinArgs = ["--mix", MIX, "--max-secs", String(T.ramp + T.load + 30), "--out", join(homedir(), ".cache", "sova-perf", runId)];
+    const standinArgs = ["--mix", MIX, "--max-secs", String(T.ramp + T.load + 30), "--out", join(PERF_SCRATCH, runId)];
     if (variant === "ext" || variant === "weight-ext") {
       const argv = [...scopeArgv(`sova-perf-load-${runId}`), process.execPath, standin, ...standinArgs];
       extLoad = spawn(argv[0], argv.slice(1), { cwd: ROOT, stdio: "ignore", detached: true });

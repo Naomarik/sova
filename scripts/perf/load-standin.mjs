@@ -12,7 +12,6 @@
 
 import { spawn } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
-import { homedir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..", "..");
@@ -28,7 +27,7 @@ const mix = Object.fromEntries(
     .map(([k, v]) => [k, Number(v)]),
 );
 const maxSecs = Number(opt("max-secs", "600"));
-const out = resolve(opt("out", join(homedir(), ".cache", "sova-perf", "standin")));
+const out = resolve(opt("out", join(ROOT, ".cache", "sova-perf", "standin")));
 mkdirSync(out, { recursive: true });
 
 // The test command as package.json has it, minus any priority wrapper in front of `tsx`.

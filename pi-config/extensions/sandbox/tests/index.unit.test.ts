@@ -27,6 +27,15 @@ mkdirSync(join(agentDir, "sandbox-policy"), { recursive: true });
 cpSync(join(HERE, "..", "..", "..", "sandbox-policy"), join(agentDir, "sandbox-policy"), { recursive: true });
 process.env.PI_CODING_AGENT_DIR = agentDir;
 const { default: sandbox } = await import("../index.ts");
+// The cache cleanup runs in-process here (the unit tier starts no process): the same runPrune the
+// child runs, its result returned as the child would report it. shadow-prune.integration.test.ts
+// covers the real child.
+const { pruneRunner, runPrune } = await import("../shadow-prune.ts");
+pruneRunner.start = async (o) => {
+	let out: Awaited<ReturnType<typeof pruneRunner.start>> = { kind: "error", error: "no result" };
+	runPrune({ agentDir: o.agentDir, mode: o.mode, settings: o.settings, onResult: (r) => (out = r) });
+	return o.wait ? out : { kind: "skipped" };
+};
 /** Every started instance, stopped at the end even when a test failed before its own stop(). */
 const started: (() => Promise<void>)[] = [];
 test.after(async () => {
@@ -261,8 +270,96 @@ test("three states (§chat.sandbox/states): Off lifts every worker, Subagents on
 	// No tool was ever registered: Off and Subagents only both leave the session's own tools pi's.
 	assert.equal(s.tools.size, 0);
 	await s.command("sideways");
-	assert.equal(s.notes.at(-1), "usage: /sandbox on | subagents | off");
+	assert.equal(s.notes.at(-1), "usage: /sandbox on | subagents | off | clean [all]");
+	await s.command("clean everything");
+	assert.equal(s.notes.at(-1), "usage: /sandbox on | subagents | off | clean [all]");
 	await s.stop();
+});
+
+/** Wait for a condition, never a fixed sleep. */
+async function until(what: string, ok: () => boolean, ms = 20_000): Promise<void> {
+	const end = Date.now() + ms;
+	while (!ok()) {
+		if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+		await new Promise((r) => setTimeout(r, 20));
+	}
+}
+
+/** A fresh agent dir (policy templates copied in) for the duration of `fn`: its own cache copies. */
+async function withAgentDir(fn: (dir: string) => Promise<void>): Promise<void> {
+	const dir = realpathSync(mkdtempSync(join(root, "agent-")));
+	cpSync(join(HERE, "..", "..", "..", "sandbox-policy"), join(dir, "sandbox-policy"), { recursive: true });
+	const before = process.env.PI_CODING_AGENT_DIR;
+	process.env.PI_CODING_AGENT_DIR = dir;
+	try {
+		await fn(dir);
+	} finally {
+		process.env.PI_CODING_AGENT_DIR = before;
+	}
+}
+
+/** An entry of the ~/.cache copy, last used `days` ago. */
+function oldEntry(dir: string, name: string, days: number): string {
+	const e = join(dir, "sova", "sandbox", "shadow", "home-.cache", name);
+	mkdirSync(e, { recursive: true });
+	writeFileSync(join(e, "f"), "x".repeat(4096));
+	const t = new Date(Date.now() - days * 24 * 3600_000);
+	utimesSync(join(e, "f"), t, t);
+	return e;
+}
+
+test("cache cleanup: bare /sandbox adds the caches line; /sandbox clean runs now, refused while another holds the lock", async () => {
+	await withAgentDir(async (dir) => {
+		const { a } = dirs();
+		const s = await start(a, {});
+		await s.command("");
+		assert.equal(s.notes.at(-1), "Sandbox subagents only · workers in tracked worktrees write only there\nCaches: not cleaned yet");
+		const old = oldEntry(dir, "scratch-x", 9);
+		// Another cleanup holds the lock (this live process, fresh): refused, nothing removed.
+		const lock = join(dir, "sova", "sandbox", "shadow-prune.lock");
+		writeFileSync(lock, `${process.pid}\n`);
+		await s.command("clean");
+		assert.equal(s.notes.at(-1), "Caches: a cleanup is already running. Nothing was removed; try again later.");
+		assert.ok(existsSync(old));
+		rmSync(lock);
+		await s.command("clean");
+		assert.match(s.notes.at(-1)!, /^Caches cleaned: freed up to \d+ KB; \d+ KB left of \d+(\.\d)? GB$/);
+		assert.ok(!existsSync(old));
+		await until("the cleanup to end", () => !existsSync(lock));
+		await s.command("status");
+		assert.match(s.notes.at(-1)!.split("\n")[1]!, /^Caches \d+ KB of \d+(\.\d)? GB \((your maxSizeGB setting|5% of the disk|5% of free space|the 2 GB minimum)\) · cleaned just now, freed up to \d+ KB$/);
+		// clean all: a tool cache unused for two hours goes too.
+		const pnpm = oldEntry(dir, "pnpm", 2 / 24);
+		await s.command("clean all");
+		assert.match(s.notes.at(-1)!, /^Caches cleared: freed up to \d+ KB; kept only what was used in the last hour$/);
+		assert.ok(!existsSync(pnpm));
+		await until("the cleanup to end", () => !existsSync(lock));
+		assert.equal(s.tools.size, 0, "cleaning changes no state");
+		await s.stop();
+	});
+});
+
+test("cache cleanup: a sandboxed chat's start runs it in the background; an invalid caches.json turns it off with a notice", async () => {
+	await withAgentDir(async (dir) => {
+		const { a } = dirs();
+		const old = oldEntry(dir, "scratch-y", 9);
+		const s = await start(a, { sandbox: "on" });
+		await until("the automatic cleanup", () => !existsSync(old) && existsSync(join(dir, "sova", "sandbox", "shadow-prune.json")));
+		await until("the cleanup to end", () => !existsSync(join(dir, "sova", "sandbox", "shadow-prune.lock")));
+		await s.stop();
+	});
+	await withAgentDir(async (dir) => {
+		const { a } = dirs();
+		writeFileSync(join(dir, "sandbox-policy", process.platform, "caches.json"), "{ not json");
+		const s = await start(a, { sandbox: "on" });
+		const notice = "Sandbox: `caches.json` is invalid (not valid JSON); cache cleanup is off. The sandbox is unaffected.";
+		// Shown once the start's handler has returned (the cleanup is started after it).
+		await until("the notice", () => s.notes.includes(notice));
+		assert.equal(s.last().on, true, "the sandbox itself is unaffected");
+		await s.command("");
+		assert.equal(s.notes.at(-1)!.split("\n")[1], "Caches: automatic cleanup off");
+		await s.stop();
+	});
 });
 
 test("the --sandbox flag takes the three states", async () => {

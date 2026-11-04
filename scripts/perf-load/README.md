@@ -69,10 +69,15 @@ Everything written lands under `<tree>/.agent`.
 Build a baseline from master (the buggy code) and point the same harness at it:
 
 ```sh
-git archive master | tar -x -C ~/.cache/sova-perf/baseline
-cd ~/.cache/sova-perf/baseline && mise trust . && pnpm install --frozen-lockfile
-node /path/to/worktree/scripts/perf-load/run.mjs --tree ~/.cache/sova-perf/baseline --port 4842
+mkdir -p .cache/sova-perf/baseline
+git archive master | tar -x -C .cache/sova-perf/baseline
+(cd .cache/sova-perf/baseline && mise trust . && pnpm install --frozen-lockfile)
+node scripts/perf-load/run.mjs --tree .cache/sova-perf/baseline --port 4842
+rm -rf .cache/sova-perf/baseline   # when done
 ```
+
+Run from the worktree; the baseline sits in its gitignored `.cache/`, never `~/.cache` (inside the
+sandbox that is a private copy nobody else sees).
 
 The harness runs from this worktree; `--tree` may be this worktree or any archive. Same numbers
 before and after a fix are the point.

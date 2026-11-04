@@ -257,6 +257,7 @@ if (existsSync(policySrc)) {
       assertOutsideHomePi(dst);
       if (check) {
         if (isLink(dst)) problem(`is a symlink, want a copy: ${dst}`);
+        else if (!existsSync(dst) && name === "caches.json") console.log(`missing (optional, its defaults apply): ${dst}`);
         else if (!existsSync(dst)) problem(`missing: ${dst}`);
         else if (readFileSync(dst, "utf8") !== readFileSync(src, "utf8")) console.log(`differs from the template (kept): ${dst}`);
         continue;

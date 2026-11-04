@@ -405,13 +405,13 @@ describe("when a server fails in a chat", () => {
   test("a failure reaches the row's error lines with the chat's name, and the note links to the row", async () => {
     approve([{ ...server("lined", join(root, "lined.log")), command: join(root, "no-such-program") }]);
     const { say, path } = await open(project("lined"));
-    await say("first", call("mcp__lined__echo"), { text: "done" });
+    await say("name this chat", call("mcp__lined__echo"), { text: "done" });
     const [note] = custom(path, MCP_NOTE_ENTRY);
     assert.equal(note.how, "failed");
     assert.deepEqual(note.link.to, "settings");
     const lines_ = chatLines(computer, "lined");
     assert.ok(lines_.length > 0);
-    assert.ok(lines_[0]!.chat);
+    assert.equal(lines_[0]!.chat, "name this chat", "a failure on the first turn still names the chat");
   });
 
   test("a tool row reads its server and tool, hashed names too, saved and live", async () => {

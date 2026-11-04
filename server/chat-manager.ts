@@ -787,7 +787,7 @@ export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtin
   return [
     ...files,
     ...(mcp?.servers.length
-      ? [mcpExtension({ list: async () => mcp, ...(w.parent ? { label: w.parent.workerId } : {}), tellParent: (note) => (chatHosts.mcpTell ?? mcpTellHere)(w.parent?.path ?? "", note) })]
+      ? [mcpExtension({ list: async () => mcp, label: () => w.parent?.workerId ?? "A worker", tellParent: (note) => (chatHosts.mcpTell ?? mcpTellHere)(w.parent?.path ?? "", note) })]
       : []),
     servedDecls
       ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
@@ -4480,6 +4480,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
               ...DEFAULT_EXTENSION_FACTORIES,
               // Its MCP servers (§app/mcp); a profile may remove them (§chat.profiles/capabilities).
               mcpExtension({
+                label: () => titleOf(read.branch()),
                 list: async (cwd, sandboxOn) =>
                   snap?.remove.includes("mcp") || nothingDeclared(cwd) ? NO_MCP : (chatHosts.mcpList ?? mcpListHere)({ path, cwd, sandboxOn, offMcp: loadout.data?.offMcp ?? [], onMcp: loadout.data?.onMcp ?? [] }),
               }),

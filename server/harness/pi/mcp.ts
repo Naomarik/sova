@@ -212,8 +212,9 @@ export interface McpExtensionHooks {
   list(cwd: string, sandboxOn: boolean): Promise<McpChatList | null>;
   /** A worker's failure, for the chat that started it. Absent in an ordinary chat. */
   tellParent?(note: McpNote): void;
-  /** What a worker is called, in its failure's note and row line. Absent: the chat's own name. */
-  label?: string;
+  /** What this chat is called now, in a failure's row line and a worker's refusal: read when it's needed, since a
+      chat's title comes after its first turn starts. */
+  label(): string;
   /** Each copy's status as it changes. */
   onStatus?(status: McpServerStatus): void;
 }
@@ -230,7 +231,6 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
     factory: (pi: PiExtensionAPI) => {
       let sandbox: SandboxState = { on: false };
       let sessionId = "";
-      let chatName = "";
       let list: McpChatList = NO_MCP;
       let settled = false;
       const transports = new Set<SnapshotTransport>();
@@ -261,14 +261,14 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
           const where: McpErrorLine["where"] = how === "sandbox" || how === "write-only" ? how : undefined;
           for (const line of clean.split("\n").filter(Boolean).slice(0, 6)) {
             try {
-              addChatLine(server.owner, server.name, { line, ...(chatName ? { chat: chatName } : { chat: "a chat" }), ...(where ? { where } : {}) });
+              addChatLine(server.owner, server.name, { line, chat: hooks.label(), ...(where ? { where } : {}) });
             } catch {
               // a line that can't be kept never fails the chat
             }
           }
         }
         // Write-only: the chat that started the worker reads it; a worker's own transcript has nobody reading.
-        if (how === "write-only") hooks.tellParent?.({ ...note, worker: chatName || "a worker" });
+        if (how === "write-only") hooks.tellParent?.({ ...note, worker: hooks.label() });
         else pi.appendEntry(MCP_NOTE_ENTRY, note);
       };
 
@@ -330,7 +330,6 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
       // Before pi's own handlers below: what pi connects at session_start is what is registered by then.
       pi.on("session_start", async (_event, ctx) => {
         sessionId = ctx.sessionManager.getSessionId();
-        chatName = hooks.label ?? pi.getSessionName() ?? "";
         pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
         const branch = ctx.sessionManager.getBranch() as { type?: string; customType?: string; data?: unknown; message?: { role?: string } }[];
         const kept = branch.filter((e) => e.type === "custom" && e.customType === MCP_LIST_ENTRY).map((e) => normalizeChatList(e.data)).filter((l) => l !== null).pop();
@@ -370,7 +369,7 @@ export function mcpExtension(hooks: McpExtensionHooks): { name: string; factory:
       // Workers take theirs from this chat's list (server/mcp/list.ts workerListOf).
       pi.events?.on(MCP_WORKERS_EVENT, (data: unknown) => {
         const ask = data as { version?: unknown; names?: string[]; reply?: (answer: { list: McpChatList } | { refused: string }) => void } | undefined;
-        if (ask?.version === 1) ask.reply?.(workerListOf(list, ask.names ?? [], chatName || "This chat"));
+        if (ask?.version === 1) ask.reply?.(workerListOf(list, ask.names ?? [], hooks.label()));
       });
 
       inner(tapped(pi, (name, tool) => {

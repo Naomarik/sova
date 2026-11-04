@@ -846,7 +846,9 @@ export function ChatView(props: {
             setNewFrom(msg.after !== undefined ? firstHeld : (msg.items[0]?.id ?? null));
             setHelloed(true);
             setWait(waitOnHello(untrack(wait)));
-            setFeed(feedOnHello);
+            const helloStep = feedOnHello(untrack(feed));
+            setFeed(helloStep.feed);
+            sayFeed(helloStep.says);
             setHellos((n) => n + 1);
             // A client that connects mid-compaction shows it, as the compaction_start it missed would.
             setLive(reconcile({ ...emptyLive(), running: msg.isStreaming, activity: msg.isCompacting ? "Compacting context" : null }));
@@ -1174,8 +1176,9 @@ export function ChatView(props: {
               if (live.stopping) setLive("stopping", false);
               // Only a refused send has a clientId; a refused Stop or model pick leaves the running turn alone.
               if (msg.clientId && !live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
-              // Before this connection's hello it is the chat failing to open (its retry included,
-              // server/ws.ts): quiet here, said by the start failure that follows (lib/error-feed).
+              // Before this connection's hello it is usually the chat failing to open (its retry
+              // included, server/ws.ts): quiet here, said by the start failure that follows, or by
+              // the hello when the chat opens after all, as on a version refusal (lib/error-feed).
               const step = feedOnRefused(untrack(feed), { message: msg.message, beforeHello: unopened, back: taken.length });
               setFeed(step.feed);
               sayFeed(step.says);

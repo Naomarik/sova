@@ -332,6 +332,16 @@ describe("a Sova-wide card", () => {
     sova.withdrawSovaCard(back.card.id);
   });
 
+  test("rows read as words, never raw JSON", async () => {
+    const d = await propose("models.limits", { limits: { zai: 3 } });
+    const row = (d.card.kept as { label: string; fromText: string; toText: string }[]);
+    assert.deepEqual(row.map((k) => [k.label, k.fromText, k.toText]), [["Requests at once: zai", "not set", "3 at once"]]);
+    sova.withdrawSovaCard(d.card.id);
+    const off = await propose("models.policy", { ...readModelPolicy(), subagentDisabledModels: ["a/one", "b/two"] });
+    assert.deepEqual((off.card.kept as { label: string; fromText: string; toText: string }[]).map((k) => [k.fromText, k.toText]), [["none", "a/one, b/two"]]);
+    sova.withdrawSovaCard(off.card.id);
+  });
+
   test("a change deep in a long list reads as that field, not as the list", async () => {
     const list = (model: string) => [...Array(30).keys()].map((n) => ({ name: `target-${n}`, kind: "docker", docker: { container: n === 7 ? model : `c${n}` } }));
     writeFileSync(join(agentDir, "targets.json"), JSON.stringify({ version: 1, targets: list("old") }));

@@ -502,6 +502,8 @@ const fingerprintOf = (edits: StoredEdit[]): string =>
 
 /** Each value that differs, by its path: what a card says row by row. */
 function leaves(path: string, v: unknown, out: Map<string, unknown>): void {
+  // An empty object below the top says nothing of its own: what fills it reads as its own rows.
+  if (isObj(v) && !Object.keys(v).length && path) return;
   if (isObj(v) && Object.keys(v).length) for (const [k, x] of Object.entries(v)) leaves(path ? `${path}.${k}` : k, x, out);
   // A list of records goes by each one's id, so one changed field reads as that field, not as the whole list.
   else if (Array.isArray(v) && v.length && v.every(isObj)) v.forEach((x, i) => leaves(`${path}[${String(x.id ?? x.name ?? i)}]`, x, out));
@@ -511,7 +513,9 @@ const words = (v: unknown): string => {
   if (v === undefined || v === null) return "not set";
   if (v === true) return "on";
   if (v === false) return "off";
-  const t = typeof v === "string" ? v : JSON.stringify(v);
+  if (Array.isArray(v) && !v.length) return "none";
+  if (isObj(v) && !Object.keys(v).length) return "none";
+  const t = typeof v === "string" ? v : Array.isArray(v) && v.every((x) => typeof x === "string") ? v.join(", ") : JSON.stringify(v);
   return t.length > 80 ? `${t.slice(0, 79)}…` : t;
 };
 const MAX_ROWS = 12;
@@ -538,9 +542,19 @@ function rowsOf(e: StoredEdit): KeptChange[] {
   const b = new Map<string, unknown>();
   leaves("", e.before, a);
   leaves("", e.value, b);
-  const changed = [...new Set([...a.keys(), ...b.keys()])].filter((k) => !same(a.get(k), b.get(k)));
+  const found = [...new Set([...a.keys(), ...b.keys()])].filter((k) => !same(a.get(k), b.get(k)));
+  // Only empty objects differ: the change still shows.
+  const changed = found.length ? found : [""];
+  if (!found.length) {
+    a.set("", e.before);
+    b.set("", e.value);
+  }
+  // Requests at once read by provider, in the Models tab's words.
+  const limits = e.id === "models.limits";
+  const key = (k: string) => (limits ? k.replace(/^limits\./, "") : k);
+  const said = (v: unknown) => (limits && typeof v === "number" ? `${v} at once` : words(v));
   // One change allows one thing: its grant is said once, on its first row.
-  const rows: KeptChange[] = changed.slice(0, MAX_ROWS).map((k, i) => ({ field: `${e.id}${k ? `.${k}` : ""}`, label: k ? `${label}: ${k}` : label, from: a.get(k) ?? null, to: b.get(k) ?? null, fromText: words(a.get(k)), toText: words(b.get(k)), ...(grant && i === 0 ? { grant } : {}) }));
+  const rows: KeptChange[] = changed.slice(0, MAX_ROWS).map((k, i) => ({ field: `${e.id}${k ? `.${k}` : ""}`, label: k ? `${label}: ${key(k)}` : label, from: a.get(k) ?? null, to: b.get(k) ?? null, fromText: said(a.get(k)), toText: said(b.get(k)), ...(grant && i === 0 ? { grant } : {}) }));
   if (changed.length > MAX_ROWS) rows.push({ field: `${e.id}.more`, label, from: null, to: null, fromText: "", toText: `${changed.length - MAX_ROWS} more changes (Show File Changes)`, ...(grant ? { grant } : {}) });
   return rows;
 }

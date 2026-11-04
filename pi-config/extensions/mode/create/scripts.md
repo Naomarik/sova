@@ -20,12 +20,12 @@ node "$SOVA/scripts/sova.mjs" describe session.send
 node "$SOVA/scripts/sova.mjs" run session.send --session <id or path> --text "Run the tests"
 ```
 
-It reaches this computer's Sova only, on port 4800 or at `--url` or `$SOVA_URL`. `run --host <peer>` runs a command on another computer through this one.
+It reaches this computer's Sova only: `--url`, else `$SOVA_URL`, else `http://127.0.0.1:$SOVA_PORT`, else port 4800. `run --host <peer>` runs a command on another computer through this one.
 
 ## Your own program
 
 - Change: nothing. Call Sova's requests from any language.
-- Lives: `http://127.0.0.1:4800`. The token sits in `<agent dir>/sova/auth-token`, and `sova token` prints it. Send it as the `x-sova-token` header: `Authorization: Bearer` doesn't count.
+- Lives: this computer's Sova, at `$SOVA_URL`, else `http://127.0.0.1:$SOVA_PORT`, else port 4800. Never assume 4800 in a chat: this Sova may be on another port. The token sits in `<agent dir>/sova/auth-token`, and `sova token` prints it. Send it as the `x-sova-token` header: `Authorization: Bearer` doesn't count.
 - Approves: holding the token is acting as the person, except for what passes only on the person's click.
 - By: Terminal.
 - Live: now.
@@ -40,7 +40,8 @@ import { join } from "node:path";
 
 const agentDir = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi/agent");
 const token = readFileSync(join(agentDir, "sova/auth-token"), "utf8").trim();
-const res = await fetch("http://127.0.0.1:4800/api/sessions", { headers: { "x-sova-token": token } });
+const url = process.env.SOVA_URL ?? `http://127.0.0.1:${process.env.SOVA_PORT ?? 4800}`;
+const res = await fetch(`${url}/api/sessions`, { headers: { "x-sova-token": token } });
 for (const session of await res.json()) console.log(session.title);
 ```
 

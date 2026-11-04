@@ -251,9 +251,11 @@ user row.
   - **Running copies**: `copiesRun` create, start and update running copies; `copiesReset` reset or
     tear them down.
   - **Release**: `share` share a version to try (preview links, shared copies); `deploy` deploy through
-    the project's own recipe (§app.project-services/deploy-callers).
+    the project's own recipe (§app.project-services/deploy-callers); `release` release through the
+    project's release playbook, and publish a release whose every gate passed after its waiting period
+    (§app.release/power).
   The Project Assistant column exists only for `gather`, `codingStart`, `codingPrompt`, `copiesRun`
-  and `deploy`; every other power is always Off there, and a patch turning one On is refused (400).
+  and `deploy` (never `release`: the assistant only asks for a release); every other power is always Off there, and a patch turning one On is refused (400).
   There, `copiesRun` means starting a copy the owner's versions list holds (`start_version`,
   §app.project-assistant/tools); it never makes or updates a copy. And `gather` means opening a
   feature request chat with the owner (`start_feature_chat`, §app.project-assistant/feature-chats):
@@ -264,7 +266,7 @@ user row.
   keeping notes, filing ideas and gaps, asking with a card, planning a gathering for later, sorting
   decisions into drafts (the reconciler), writing requirements into a spec draft, cancelling a held
   act, stopping a running copy, taking a share link back and asking the operator to deploy
-  (`deploy.request`). **The operator's only, ever:** the to-do list, a free set-state, deleting a file
+  (`deploy.request`) or to release (`release.request`). **The operator's only, ever:** the to-do list, a free set-state, deleting a file
   a person sent, writing files in a run the operator did not start, deploy overrides, rollback,
   merging a branch. Every tool, every op of a tool that acts per op and every statechart drive maps
   to exactly one power, "always" or "operator"; a test enumerates them.
@@ -479,7 +481,9 @@ user row.
   (power `share`, held, refused while the project is archived, §app.project-overseer/previews); `revoke` is no
   act: it is always allowed, in any run, never held, since it only takes something away. `deploy.request`
   is always allowed; `deploy.plan` and `deploy.run` run only as the project's deploy act (power `deploy`,
-  §app.project-services/deploy-callers).
+  §app.project-services/deploy-callers). Of the release verbs it carries only `release.status`,
+  `release.logs`, `release.request` (always allowed), and `release.start` and `release.publish`, which
+  run only as the project's release act (`release/run`, power `release`, held, §app.release/power).
 - `sova_promote` asks the reconciler as the overseer (`by: "overseer"`): a decision made outside its
   author's decision area (they don't own that area, §app.requirements/promotion: neither its
   roster owner nor, for an area no one owns, the main stakeholder) is refused for it in every turn,

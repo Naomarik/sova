@@ -237,7 +237,7 @@ The owner is never the operator: nothing an owner writes is operator identity, w
 - **By the project's Project Assistant column** (§app.project-overseer/autonomy-levels):
   `Get a problem fixed` (Start coding sessions), `Try the latest version` (Create, start and update
   running copies; listed only while some shown project lists a version the owner could open, or
-  could have its Current version's copy made, §app.project-assistant/versions), `Release a new version` (Deploy) and `Plan something new with
+  could have its Current version's copy made, §app.project-assistant/versions), `Ship the latest version` (Deploy; it never means a numbered release, §app/release) and `Plan something new with
   you` (Open feature request chats with the owner, §app.project-assistant/feature-chats). While
   some shown project would open a feature request chat (`now`), `Plan something new with you` takes
   the place of `Ask for something new`; while none would, `Ask for something new` shows as it
@@ -262,7 +262,7 @@ The owner is never the operator: nothing an owner writes is operator identity, w
   a feature are never held. Unclear is `team`: it never promises what then goes to the team.
 - **The tools ask it too** (§app.project-assistant/tools), so a line that says the team handles it
   is a tool that answers it went to the team: Deploy On while the engine or a brake refuses
-  `deploy/run` reads "The team releases it" and `deploy` answers `started: false`. The page always
+  `deploy/run` reads "The team ships it" and `deploy` answers `started: false`. The page always
   asks as the owner (unattended), and so do the assistant's prompt, its tool list and its acts,
   in the operator's turns too (§app.project-assistant/offers).
 - **Several projects.** When every shown project the line covers gives the same answer, the line

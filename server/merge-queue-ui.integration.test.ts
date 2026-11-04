@@ -343,6 +343,32 @@ const shot = async (page: Page, name: string) => {
   await page.screenshot({ path: join(dir, `${name}.png`), fullPage: false });
 };
 
+/** Every row action in `scope` (the rows' actions and an open confirm's two): Land's size, button-sm's height, at
+ *  its label's width, never stretched or lifted to 44px, on every width and pointer. The ▾ is checked for height. */
+async function rowActionsSized(scope: Locator, what: string) {
+  const r = await scope.evaluate((root) => {
+    const sm = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-sm"));
+    const bad: string[] = [];
+    let n = 0;
+    for (const el of root.querySelectorAll<HTMLElement>(":is(.wt-queue-act, .mq-row-act, .wt-queue-confirm-act) .button")) {
+      if (!el.getClientRects().length) continue;
+      n++;
+      const b = el.getBoundingClientRect();
+      const name = el.getAttribute("aria-label") ?? el.textContent?.trim() ?? "?";
+      if (Math.abs(b.height - sm) > 0.5) bad.push(`${name}: ${b.height}px tall, not ${sm}`);
+      if (el.getAttribute("aria-haspopup") === "menu") continue;
+      const cs = getComputedStyle(el);
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const natural = range.getBoundingClientRect().width + [cs.paddingLeft, cs.paddingRight, cs.borderLeftWidth, cs.borderRightWidth].reduce((s, v) => s + parseFloat(v), 0);
+      if (b.width > natural + 1.5) bad.push(`${name}: ${b.width}px wide, its label needs ${natural}`);
+    }
+    return { bad, n };
+  });
+  assert.ok(r.n > 0, `${what}: row actions found`);
+  assert.deepEqual(r.bad, [], `${what}: every row action at Land's size`);
+}
+
 async function until(what: string, ok: () => boolean | Promise<boolean>, ms = 10_000) {
   const t0 = Date.now();
   while (!(await ok())) {
@@ -548,6 +574,7 @@ for (const width of [1280, 390]) {
       assert.match(text, /Master retries the save twice\./);
       assert.match(text, /Leaves a workaround in land\.ts/);
       await shot(page, `${width}-modal-all`);
+      await rowActionsSized(modal, "the modal");
 
       // The branch moves after the page read it: Land still pins the commit the row showed.
       o.move((rows) => rows.map((r) => ({ ...r, mergeStats: { ahead: 4, added: 41, removed: 2, head: sha("e") } as SessionWorktreeInfo["mergeStats"] })));
@@ -564,6 +591,7 @@ for (const width of [1280, 390]) {
       assert.match(await words(ask), /3 commits go to the merge queue; master moves once checks pass\./);
       assert.deepEqual(await ask.getByRole("button").allTextContents(), ["Not Yet", "Land 3 Commits"], "Not Yet left, the action rightmost");
       assert.equal(await draftsRow.locator(".wt-queue-act").count(), 0, "the confirm replaces the row's actions");
+      await rowActionsSized(draftsRow, "the modal's confirm");
       await until("focus on Land 3 Commits", () => ask.getByRole("button", { name: "Land 3 Commits" }).evaluate((el) => el === document.activeElement));
       await shot(page, `${width}-modal-land-confirm`);
       await ask.getByRole("button", { name: "Not Yet" }).click();
@@ -633,6 +661,7 @@ for (const width of [1280, 390]) {
       await modal.waitFor();
       assert.match(await words(modal), /The queue is paused: the project folder has uncommitted edits\./);
       assert.equal(await modal.getByRole("link", { name: "Set Up Queue" }).getAttribute("href"), `#/projects/${PID}/merge-queue`);
+      await rowActionsSized(modal, "Set Up Queue");
       assert.equal(await modal.getByRole("button", { name: "Land feat/other", exact: true }).count(), 0);
       // Listed, not set up: it merges plainly (al_1 a5).
       assert.match(await words(modal.locator('[data-branch="feat/other"]')), /Ready to merge.*Say “land it” in the chat to merge it into main[.]/);
@@ -685,6 +714,7 @@ for (const width of [1280, 390]) {
       await confirmLand(o, section, "feat/composer-drafts", "Land 3 Commits");
       await called(o, "merge.add");
       assert.equal(await section.getByRole("link", { name: "View Merge Queue" }).getAttribute("href"), `#/projects/${PID}/merge-queue`);
+      await rowActionsSized(section, "the pane");
       await noRestartOrLive(page, ".wt-queue-list");
       await shot(page, `${width}-pane`);
       await o.ctx.close();
@@ -710,6 +740,7 @@ for (const width of [1280, 390]) {
       assert.match(text, /Sent back to its chat/);
       assert.match(text, new RegExp(NOTE.replace(/[.;]/g, "\\$&")));
       await shot(page, `${width}-queue`);
+      await rowActionsSized(tab, "the tab");
       await tab.getByRole("button", { name: "Pause Queue" }).click();
       await called(o, "merge.pause");
       await tab.getByRole("button", { name: "Cancel landing feat/replay-timeouts" }).click();
@@ -1216,11 +1247,12 @@ for (const width of [1280, 390]) {
       await readyAsk.locator(".wt-queue-confirm-line").click();
       assert.equal(await hashOf(page), start, "a tap on the confirm doesn't open the chat");
       await shot(page, `${width}-queue-land-confirm`);
+      await rowActionsSized(ready, "the tab's confirm");
       await readyAsk.getByRole("button", { name: "Land 3 Commits" }).click();
       await until("a land", () => o.calls.some((c) => c.verb === "merge.add" && c.body.branch === "feat/ready-one"));
       assert.equal(await hashOf(page), start, "Land doesn't open the chat");
 
-      // A phone: no sideways scroll; the actions on their own line, Review Changes left of Land, both 44px tall.
+      // A phone: no sideways scroll; the actions on their own line, Review Changes left of Land, at Land's size.
       await noSideScroll(page);
       const r = await box(review);
       const land = await box(ready.getByRole("button", { name: "Land feat/ready-one", exact: true }));
@@ -1228,13 +1260,13 @@ for (const width of [1280, 390]) {
       // Unfolded: the actions a column at the row's top right, Review Changes over Land; folded, one line.
       // Land and its ▾ keep their own size: never taller than Review Changes, never stretched to its width.
       const split = await box(ready.locator(".wt-queue-split"));
-      assert.ok(land.height <= r.height + 0.5 && split.height <= r.height + 0.5, `Land no taller than Review Changes (${land.height}, ${split.height}, ${r.height})`);
+      assert.ok(Math.abs(land.height - r.height) <= 0.5 && Math.abs(split.height - r.height) <= 0.5, `Land as tall as Review Changes (${land.height}, ${split.height}, ${r.height})`);
+      await rowActionsSized(tab, "the tab's rows");
       if (width >= 768) {
         assert.ok(r.y < land.y && Math.abs(r.x + r.width - (split.x + split.width)) < 2, "Review Changes over Land, one column, right edges together");
         assert.ok(split.width < r.width - 8, `the split at its own width, not stretched (${split.width} vs ${r.width})`);
       } else assert.ok(r.x < land.x, "Review Changes before Land");
       if (width < 600) {
-        assert.ok(r.height >= 44 && land.height >= 44, `44px controls (${r.height}, ${land.height})`);
         assert.ok(r.y >= chatLine.y + chatLine.height - 1 && Math.abs(r.y - land.y) < 2, "the actions on their own line, together");
         const row = await box(ready);
         assert.ok(land.x + land.width > row.x + row.width - 64, "Land at the row's right");
@@ -1265,7 +1297,7 @@ for (const width of [1280, 390]) {
       if (width < 600) {
         const r = await box(review);
         const land = await box(row.getByRole("button", { name: "Land feat/composer-drafts", exact: true }));
-        assert.ok(r.height >= 44 && land.height >= 44, "44px controls");
+        assert.ok(Math.abs(r.height - land.height) <= 0.5, `Review Changes as tall as Land (${r.height}, ${land.height})`);
         assert.ok(r.x < land.x && Math.abs(r.y - land.y) < 2, "Review Changes left of Land on one line");
       }
       await shot(page, `${width}-modal-review-row`);

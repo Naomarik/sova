@@ -1617,13 +1617,12 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .wt-queue-confirm-line { margin-top: 2px !important; color: var(--color-ink-2); }
 .wt-queue-confirm-act { justify-content: flex-end; flex-wrap: wrap; margin-top: var(--space-2); }
 /* Land and its ▾ at their own size: Land as wide as its word, the ▾ a narrow tab, both as tall as the row's other
-   buttons (button-sm's height; the coarse-pointer and phone rules below lift all of them to 44px together). */
+   buttons. Every row action (and a confirm's two) is one size everywhere: button-sm's height at its label's width,
+   on desktop, the Fold, a phone and a touch pointer alike; the coarse-pointer 44px is not applied to them. */
 :where(.wt-queue-split) > .button.button-icon { width: 32px; min-width: 32px; min-height: var(--control-sm); padding: 0; }
 /* Folded: the actions on a line of their own under the bullets, at its end. */
 .wt-queue-row > .wt-queue-act { flex: 1 1 100%; justify-content: flex-end; }
 @media (pointer: coarse) {
-  .wt-queue-act .button,
-  .mq-row .button,
   .mq-step-end .button,
   .mq-step-log .button { min-height: var(--tap-min); }
 }
@@ -1704,7 +1703,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-row-act { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .mq-card .mq-row-act { flex: none; }
 /* A phone: no outer card and no inner box, rows split by hairlines with 12px sides, the folder's last name,
-   and the actions on a line of their own: Review Changes left, the row's own on the right, 44px tall. */
+   and the actions on a line of their own: Review Changes left, the row's own on the right, at their own size. */
 @media (max-width: 599px) {
   /* The page's own side padding (.insights-inner) is given back: the rows' hairlines reach the screen's edges. */
   .card.mq-tab { border: 0; border-radius: 0; background: none; box-shadow: none; overflow: visible; margin-inline: calc(-1 * var(--space-4)); padding: var(--space-3) 12px; }
@@ -1715,23 +1714,19 @@ html, body { overflow: clip; overscroll-behavior: none; }
   .mq-tab .mq-row > .list-main { flex: none; }
   .mq-tab .mq-row-act { width: 100%; }
   .mq-tab .mq-card .spread .mq-row-act { width: auto; }
-  .mq-tab .mq-row-act .button,
-  .mq-tab .mq-row-act .button-split > .button { min-height: var(--tap-min); }
   .mq-tab .mq-row > .mq-row-act .mq-review { margin-inline-end: auto; }
   .wt-queue-modal .wt-queue-row { padding-inline: 12px; }
   .wt-queue-modal .wt-queue-act { flex: 1 1 100%; }
-  .wt-queue-modal .wt-queue-act .button,
-  .wt-queue-modal .wt-queue-act .button-split > .button { min-height: var(--tap-min); }
   .wt-queue-modal .wt-queue-review { margin-inline-end: auto; }
 }
-/* Unfolded: a row is two columns, its words left and its actions a stretched column at the top right; an open
+/* Unfolded: a row is two columns, its words left and its actions a column at the top right, each button at its own
+   width against the right edge; an open
    confirm spans the row and sits at its right. The modal asks the window (it is no pane's); the pane's and the
    tab's rows ask their pane too, so a narrow pane keeps the folded layout. */
 @media (min-width: 768px) {
   .wt-queue-modal .wt-queue-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-1) var(--space-4); align-items: start; }
   .wt-queue-modal .wt-queue-row > .list-main { grid-column: 1; grid-row: 1; }
-  .wt-queue-modal .wt-queue-row > .wt-queue-act { grid-column: 2; grid-row: 1; flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
-  .wt-queue-modal .wt-queue-row > .wt-queue-act .button-split { align-self: flex-end; }
+  .wt-queue-modal .wt-queue-row > .wt-queue-act { grid-column: 2; grid-row: 1; flex-direction: column; flex-wrap: nowrap; align-items: flex-end; }
   .wt-queue-modal .wt-queue-row > .wt-queue-act .button-destructive { margin-left: 0; margin-top: var(--space-2); }
   .wt-queue-modal .wt-queue-row > .wt-queue-confirm { grid-column: 1 / -1; justify-self: end; width: 100%; max-width: 420px; }
   @container (min-width: 30rem) {
@@ -1740,9 +1735,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
     .wt-queue-list .wt-queue-row > .list-main,
     .mq-tab .mq-row-grid > .list-main { grid-column: 1; grid-row: 1; }
     .wt-queue-list .wt-queue-row > .wt-queue-act,
-    .mq-tab .mq-row-grid > .mq-row-act { grid-column: 2; grid-row: 1; width: auto; flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
-    .wt-queue-list .wt-queue-row > .wt-queue-act .button-split,
-    .mq-tab .mq-row-grid > .mq-row-act .button-split { align-self: flex-end; }
+    .mq-tab .mq-row-grid > .mq-row-act { grid-column: 2; grid-row: 1; width: auto; flex-direction: column; flex-wrap: nowrap; align-items: flex-end; }
     .wt-queue-list .wt-queue-row > .wt-queue-act .button-destructive,
     .mq-tab .mq-row-grid > .mq-row-act .button-destructive { margin-left: 0; margin-top: var(--space-2); }
     .wt-queue-list .wt-queue-row > .wt-queue-confirm,

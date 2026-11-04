@@ -65,6 +65,9 @@ no state confines the main thread and leaves its workers loose.
   Subagents only both leave the session's own tools pi's own, and the state lives only in the
   plain `sandbox` entry, never in a prompt, a message or a tool description, so a change never
   busts the prompt cache or restarts a Claude-backed session's CLI.
+- **MCP servers.** Under On a chat's command servers run inside its sandbox and its address
+  servers stay off. A change to or from On keeps the chat's tool list, stops its running copies
+  and applies from the next call (§app.mcp/sandbox).
 - **Off unconfines writes too.** Under Off a worker in a worktree can write wherever the user
   can: the main checkout, sibling worktrees, the agent dir, other branches' refs. The worktree
   start gate (§chat.worktrees/workers) still decides where a worker may start, not where it
@@ -255,6 +258,8 @@ is the workspace. `install.sh --check` reports drift from the template and never
 - **The template hides the WhatsApp sender's home**, `$AGENT_DIR/sova/whatsapp` (its linked
   device's credentials, §app.outreach/secrets), beside `$AGENT_DIR/auth.json`. A policy seeded
   before that keeps its own list: `install.sh --check` reports the drift.
+- **The template hides MCP's secrets and sign-ins**, `$AGENT_DIR/sova/secrets/mcp` and
+  `$AGENT_DIR/mcp-auth.json` (§app.mcp/secrets, §app.mcp/sign-in), the same way.
 - **Re-read on every tool call.** An edit applies to the next tool call of every session.
 - **Never writable from inside.** The whole agent directory is read-only (it holds sessions,
   settings and extensions that pi runs later outside the sandbox), `<agentDir>/sandbox-policy/`
@@ -296,6 +301,10 @@ A Claude Code worker is a pi worker on the Claude Code provider
 (§app.subagents-pane/claude-code-workers), so it inherits exactly as above: its `claude` runs with
 no built-in tools, and every tool it calls is pi's, confined per call like any pi worker's. The
 same holds for a session whose model is Claude (the chat provider).
+
+A worker's MCP servers (§app.mcp/who-gets) follow §app.mcp/sandbox: a worker under the session's
+sandbox runs its command servers inside it and has no address servers, and a worker under write-only
+confinement runs its command servers under that same confinement.
 
 Any worker whose enforcement is `partial` refuses to start unattended unless the policy sets
 `acceptPartial`.

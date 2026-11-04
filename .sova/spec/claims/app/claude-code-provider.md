@@ -12,6 +12,8 @@ that exchange. How the bridge launches a child, and what happens across a server
 Pi owns the conversation and the tools; the Claude CLI is only the model. The chat's child is
 launched with no built-in tools (`--tools ''`), so every tool the model can call is one of pi's,
 served through Sova's in-process MCP server (`sdkMcpServers: ["sova"]`, `provider/mcp-host.ts`).
+A chat's MCP servers (§app/mcp) reach the model the same way: their tools are pi's tools like any
+other, and the CLI never starts, connects to or reads a server of its own.
 Each call's history is the one pi hands the provider after its extensions' `context` hooks have
 run, so whatever an extension adds to a chat (tools, rewritten context, modes) reaches Claude Code
 chats too. Claude Code workers run the same way: each is a pi worker on this provider, so the tools

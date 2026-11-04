@@ -1,0 +1,64 @@
+/* ---- THE INSTALLED WINDOW WITHOUT A TITLE BAR (§app.shell/window-controls-overlay).
+   `display-mode: window-controls-overlay`: the installed app hides the browser's title bar (how the
+   installer leaves it on macOS; the browser's toggle anywhere). The window's buttons (the traffic
+   lights) and the browser's cluster (its title-bar toggle and ⋮) stay where the title bar was, so
+   Sova draws its own title band there: `.title-band` (index.html), the window's full width, as tall
+   as the title-bar area the browser reports (env(titlebar-area-height), never a fixed number), in
+   --color-surface, which is what <meta name="theme-color"> always holds (lib/theme.ts
+   setMetaThemeColor), so the browser paints its cluster in the same colour, in every theme, live.
+   The band is the window's drag region and holds nothing; the shell and every window-covering
+   overlay start below it, so no head needs an inset and the sessions pane keeps its own width.
+   With the title bar shown again this whole block stops matching: no band, the ordinary layout.
+   These rules live here, not in design/base.css, which is the designer's. ------------------- */
+
+.title-band { display: none; }
+
+@media (display-mode: window-controls-overlay) {
+  :root { --wco-height: env(titlebar-area-height, 0px); }
+
+  .title-band {
+    display: block;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--wco-height);
+    background: var(--color-surface);
+    /* A shadow, not a border: it falls just below the band, where the browser's cluster (drawn
+       over the band's full height) can't cut it short. */
+    box-shadow: 0 var(--stroke-thin) 0 var(--color-border);
+    z-index: 70;
+    -webkit-app-region: drag;
+    app-region: drag;
+  }
+
+  /* The shell starts under the band; its other insets (base.css .app) stay as they are. */
+  html .app { padding-top: calc(env(safe-area-inset-top, 0px) + var(--wco-height)); }
+
+  /* What covers the window covers the part under the band. `html` outranks the component
+     stylesheets that load after this one (TourViewer.css, extensions.css, mesh.css). */
+  html .scrim,
+  html .drop-overlay,
+  html .ext-frame.ext-frame-max { top: var(--wco-height); }
+  html .ext-frame.ext-frame-max { height: auto; }
+  html .lightbox,
+  html .tour-viewer {
+    top: var(--wco-height);
+    height: calc(100dvh - var(--wco-height));
+  }
+  html .stale-tab { top: calc(var(--space-3) + var(--wco-height)); }
+  html .skip-link { top: calc(var(--space-2) + var(--wco-height)); }
+  @media (min-width: 768px) {
+    html .modal {
+      top: calc(50% + var(--wco-height) / 2);
+      max-height: calc(100dvh - var(--wco-height) - var(--space-8));
+    }
+  }
+
+  /* A top-layer dialog or popover that still reaches into the band stays clickable there: a
+     drag region swallows the clicks of whatever lies over it unless that is carved back out. */
+  :is(dialog, [popover], .modal) {
+    -webkit-app-region: no-drag;
+    app-region: no-drag;
+  }
+}

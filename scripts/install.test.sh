@@ -145,7 +145,10 @@ printf '[tools]\nnode = "25.2.1"\nbun = "1.4.2"\n' > "$seed/mise.toml"
 mkdir -p "$seed/public/icons"
 printf 'not really a png\n' > "$seed/public/icons/pwa-512.png"
 # fetch-bun.sh <dir>: a <dir>/bin/bun that reports the pinned version, kept when it already does;
-# every call logged to $BUN_LOG, and BUN_FAIL=1 fails it.
+# every call logged to $BUN_LOG, and BUN_FAIL=1 fails it. Run on scripts/mac-app.ts (the seed's is
+# a placeholder), the bun logs that call to $MAC_APP_LOG and answers as FAKE_MAC_<CHECK|INSTALL|OPEN>
+# say: by default check says "already installed" (0, so a real browser some case finds on this Mac
+# starts nothing), install succeeds (0), open says "not installed" (10).
 cat > "$seed/scripts/fetch-bun.sh" <<'STUB'
 #!/bin/sh
 [ -z "${BUN_LOG:-}" ] || printf 'fetch %s\n' "$1" >> "$BUN_LOG"
@@ -153,7 +156,22 @@ cat > "$seed/scripts/fetch-bun.sh" <<'STUB'
 if [ "$("$1/bin/bun" --version 2>/dev/null)" != 1.4.2 ]; then
 	[ -z "${BUN_LOG:-}" ] || printf 'download\n' >> "$BUN_LOG"
 	mkdir -p "$1/bin"
-	printf '#!/bin/sh\n[ "$1" = --version ] && { echo 1.4.2; exit 0; }\necho "bun stub: $*"\n' > "$1/bin/bun"
+	cat > "$1/bin/bun" <<'BUN'
+#!/bin/sh
+[ "$1" = --version ] && { echo 1.4.2; exit 0; }
+case "$1" in
+	*/scripts/mac-app.ts)
+		shift
+		[ -z "${MAC_APP_LOG:-}" ] || printf '%s\n' "$*" >> "$MAC_APP_LOG"
+		case "$1" in
+			check) exit "${FAKE_MAC_CHECK:-0}" ;;
+			install) echo "mac-app stub: installed"; exit "${FAKE_MAC_INSTALL:-0}" ;;
+			open) exit "${FAKE_MAC_OPEN:-10}" ;;
+		esac
+		exit 2 ;;
+esac
+echo "bun stub: $*"
+BUN
 	chmod 755 "$1/bin/bun"
 fi
 printf '%s\n' "$1/bin/bun"
@@ -163,6 +181,7 @@ cat > "$seed/scripts/start-server.sh" <<'STUB'
 #!/bin/sh
 printf 'start-server stub ran: SOVA_BUN=%s args=%s PORT=%s\n' "${SOVA_BUN:-}" "$*" "${PORT:-}"
 STUB
+printf '// placeholder: the stub bun answers for it\n' > "$seed/scripts/mac-app.ts"
 chmod 755 "$seed/scripts/fetch-bun.sh" "$seed/scripts/start-server.sh"
 # pi-config: two extensions (a directory and a single file), a non-extension file, and the
 # personal config the installer must not install.
@@ -225,6 +244,8 @@ pi_untouched() {
 	[ "$(pi_files)" = "$pi_before" ]
 }
 
+# One command only: in `yes_if A && B` the verdict is A's and B's result is lost. For several clauses:
+# "$({ A && B; } && echo true || echo false)".
 yes_if() { if "$@"; then echo true; else echo false; fi; }
 said() { printf '%s' "$out" | grep -qF "$1"; }
 
@@ -881,6 +902,109 @@ start_cmd FAKE_UNAME=Darwin SOVA_APP_WAIT=1
 check "$(yes_if grep -qE 'launchctl kickstart gui/[0-9]+/io.github.naomarik.sova' "$case_dir/svc.log")" "server down, launchd agent: kickstarted"
 check "$(yes_if [ "$lstatus" -ne 0 ] && grep -qF 'Library/Logs/sova.log' "$case_dir/notified")" \
 	"server down, launchd agent, no answer: osascript notifies, naming its log"
+
+# 33. macOS, Sova as an app of its own: with a browser for `sova app`, the installer runs
+#     `sova app --install --auto` after the rest (the helper on the install's Bun, with the
+#     browser, the profile, the port and the token file), closing a running window only when it
+#     has a terminal; a helper that finds it installed starts nothing; a failure is said and the
+#     install still succeeds; --no-app-entry runs none of it. `sova app` opens the installed app
+#     when the helper does, and the bare window when it says there is none (case 31).
+mac_app_case() {    # mac_app_case <case name> [args...]: a Mac with a default browser of ours, server up
+	local name=$1; shift
+	fresh_home "$name"
+	mac_app_bin=$tmp/$name/bin
+	mkdir -p "$mac_app_bin"
+	browsed=$tmp/$name/browsed
+	mk_browser "$home/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
+	# Brave as the default: a stand-in in ~/Applications, where no real one is in /Applications.
+	cat > "$mac_app_bin/defaults" <<'STUB'
+#!/usr/bin/env bash
+case "$*" in
+	*launchservices.secure*LSHandlers)
+		cat <<'OUT'
+(
+        {
+        LSHandlerRoleAll = "com.brave.browser";
+        LSHandlerURLScheme = https;
+    }
+)
+OUT
+		;;
+	*) exit 1 ;;
+esac
+STUB
+	chmod 755 "$mac_app_bin/defaults"
+	mkdir -p "$home/.pi/agent/sova"
+	printf 'tok-pwa\n' > "$home/.pi/agent/sova/auth-token"
+	mac_log=$tmp/$name/mac-app.log
+	FAKE_MAC_CHECK=1 FAKE_UNAME=Darwin FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" CASE_PATH="$mac_tools:$mac_app_bin:$up:$sandbox" inst --no-service "$@"
+}
+brave_exe="Brave Browser.app/Contents/MacOS/Brave Browser"
+mac_app_case app-pwa
+mac_profile="$home/Library/Application Support/sova-browser"
+check "$(yes_if [ "$status" -eq 0 ])" "app, mac: exits 0"
+check "$(yes_if grep -qxF "check --browser $home/Applications/$brave_exe --profile $mac_profile --port 4800 --auto" "$mac_log")" \
+	"app, mac: asks the helper first, with the browser, the profile and the port"
+check "$(yes_if grep -qxF "install --browser $home/Applications/$brave_exe --profile $mac_profile --port 4800 --token-file $home/.pi/agent/sova/auth-token --auto" "$mac_log")" \
+	"app, mac: installs through the helper, unlocked by the token file; no terminal, so a running window is left open"
+check "$({ said 'mac-app stub: installed' && said 'app: Sova is an app of its own'; } && echo true || echo false)" "app, mac: passes on what the helper says, and says what it is now"
+check "$(yes_if [ -x "$home/Applications/Sova.app/Contents/MacOS/sova-app" ])" "app, mac: Sova.app is still the app entry (it starts the server, then opens the app)"
+printf 'a terminal\n' > "$tmp/app-pwa/tty"
+: > "$mac_log"
+CASE_TTY="$tmp/app-pwa/tty" FAKE_MAC_CHECK=1 FAKE_UNAME=Darwin FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" CASE_PATH="$mac_tools:$mac_app_bin:$up:$sandbox" inst --no-service
+check "$(yes_if grep -q -- '^install .* --auto --close-running$' "$mac_log")" "app, mac, with a terminal: may close Sova's open window"
+# The terminal an upgrade from Settings hands the installer (server/updates/runner.ts): /dev/null
+# opens, but no one is there, so Sova's window stays open. A missing path can't catch this.
+: > "$mac_log"
+CASE_TTY=/dev/null FAKE_MAC_CHECK=1 FAKE_UNAME=Darwin FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" CASE_PATH="$mac_tools:$mac_app_bin:$up:$sandbox" inst --no-service
+check "$({ grep -q -- '^check .* --auto$' "$mac_log" && grep -q -- '^install .* --auto$' "$mac_log" && ! grep -q -- '--close-running' "$mac_log"; } && echo true || echo false)" \
+	"app, mac, an upgrade from Settings (SOVA_TTY=/dev/null): never closes Sova's open window"
+: > "$mac_log"
+rm -f "$home/.pi/agent/sova/app-server.log"
+FAKE_MAC_CHECK=0 FAKE_UNAME=Darwin MAC_APP_LOG="$mac_log" CASE_PATH="$mac_tools:$mac_app_bin:$up:$sandbox" inst --no-service
+check "$({ [ "$status" -eq 0 ] && grep -q '^check ' "$mac_log" && ! grep -q '^install ' "$mac_log"; } && echo true || echo false)" "app, mac rerun, already installed: no install"
+check "$(yes_if [ ! -e "$home/.pi/agent/sova/app-server.log" ])" "app, mac rerun, already installed: no server started for it"
+: > "$mac_log"
+FAKE_MAC_CHECK=1 FAKE_MAC_INSTALL=1 FAKE_UNAME=Darwin FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" CASE_PATH="$mac_tools:$mac_app_bin:$up:$sandbox" inst --no-service
+check "$({ [ "$status" -eq 0 ] && said "couldn't install Sova as an app"; } && echo true || echo false)" "app, mac, the helper fails: said, and the install still succeeds"
+: > "$mac_log"
+mac_app_case app-pwa-no-entry --no-app-entry
+check "$({ [ "$status" -eq 0 ] && [ ! -s "$mac_log" ] && [ ! -e "$home/Applications/Sova.app" ]; } && echo true || echo false)" "app, mac, --no-app-entry: no helper run, no bundle"
+# ... and `sova app` doesn't install it later: the helper is told never to, and the bare window opens.
+set +e
+launch=$(env -u PI_CODING_AGENT_DIR -u PORT FAKE_UNAME=Darwin HOME="$home" FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" \
+	PATH="$mac_app_bin:$up:$sandbox" "$home/.local/bin/sova" app 2>&1)
+lstatus=$?
+set -e
+wait_for "$browsed" || true
+check "$({ [ "$lstatus" -eq 0 ] && grep -q -- '^open .* --no-install$' "$mac_log"; } && echo true || echo false)" "app, mac, --no-app-entry: sova app tells the helper never to install"
+check "$(yes_if grep -qxF -- "--app=http://127.0.0.1:4800/#t=tok-pwa" "$browsed")" "app, mac, --no-app-entry: sova app opens the bare window"
+# Asked for by name, it still installs (the opt-out only stops it happening unasked).
+: > "$mac_log"
+set +e
+launch=$(env -u PI_CODING_AGENT_DIR -u PORT FAKE_MAC_CHECK=1 FAKE_UNAME=Darwin HOME="$home" FAKE_UP="$tmp/up.always" MAC_APP_LOG="$mac_log" \
+	PATH="$mac_app_bin:$up:$sandbox" "$home/.local/bin/sova" app --install 2>&1)
+lstatus=$?
+set -e
+check "$({ [ "$lstatus" -eq 0 ] && grep -q '^install ' "$mac_log"; } && echo true || echo false)" "app, mac, --no-app-entry: sova app --install still installs"
+# `sova app` when the helper opens the installed app: no bare window as well.
+mac_app_case app-pwa-open
+: > "$mac_log"
+set +e
+launch=$(env -u PI_CODING_AGENT_DIR -u PORT FAKE_UNAME=Darwin HOME="$home" FAKE_UP="$tmp/up.always" FAKE_MAC_OPEN=0 MAC_APP_LOG="$mac_log" \
+	PATH="$mac_app_bin:$up:$sandbox" "$home/.local/bin/sova" app 2>&1)
+lstatus=$?
+set -e
+sleep 0.5
+check "$({ [ "$lstatus" -eq 0 ] && grep -qxF "open --browser $home/Applications/$brave_exe --profile $home/Library/Application Support/sova-browser --port 4800 --url http://127.0.0.1:4800/#t=tok-pwa --token-file $home/.pi/agent/sova/auth-token" "$mac_log"; } && echo true || echo false)" \
+	"sova app, mac, installed: the helper opens the app, unlocked"
+check "$(yes_if [ ! -e "$browsed" ])" "sova app, mac, installed: no bare window as well"
+# On Linux there is no such step.
+set +e
+launch=$(env -u PI_CODING_AGENT_DIR HOME="$home" PATH="$sandbox" "$home/.local/bin/sova" app --install 2>&1)
+lstatus=$?
+set -e
+check "$({ [ "$lstatus" -eq 2 ] && printf '%s' "$launch" | grep -qF 'is for macOS'; } && echo true || echo false)" "sova app --install elsewhere: refused, says it is for macOS"
 
 # 25. The ref: one that is neither a tag, a branch nor a commit stops the install before anything
 #     is written; the default branch is never installed in its place; the summary names the ref.

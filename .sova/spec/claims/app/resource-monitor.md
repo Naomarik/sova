@@ -63,7 +63,8 @@ is.
   When the server stops (SIGTERM, SIGINT or exit), the 30s window in progress is written at once,
   best effort, so a restart loses at most what that last write missed. Files older than **3 days** are deleted at startup and once a day. Nothing is ever written into
   a session file or a live record.
-- **Serving.** `GET /api/monitor` returns the latest `MonitorSnapshot`. `GET
+- **Serving.** `GET /api/monitor` returns the latest `MonitorSnapshot`, with the stall recorder's
+  state and latest records in `stalls` (§app.resource-monitor/stall-recorder). `GET
   /api/monitor/history?since=<ms>&res=5s|30s` returns points since then: `5s` from the ring, `30s`
   from the disk log, with the labels for every group once in `groups`.
 - **Client polling.** The modal polls `GET /api/monitor` every 5s **only while it is open**, and
@@ -248,6 +249,18 @@ button, focus returning to the opener. Under 768px the same markup is a sheet wi
   buffer, in batches of 48 that yield between them. Reads that can hang on a stuck process (argv,
   environment, `cwd`) are asynchronous. The event-loop delay is sampled at 200 ms resolution: by the runtime's histogram where it measures
   whole timer intervals, else by a timer-drift sampler (§app.server-runtime/quirks).
+- **The stall recorder runs under this budget too** (§app.resource-monitor/stall-recorder). On the
+  main thread it costs a beat a second and a JS sampler at 10 Hz, emptied every 30 s; its log and
+  `/proc` reads are on a thread of its own, but for the one `exit` line, and it reads no `smaps` or
+  PSS either. Its one long wait
+  is on purpose: answering a memory rung, it walks the JS heap on the main thread, 320 ms on an
+  800 MB heap, and only at 4 GiB of heap or less, so by that rate at most about 1.6 s per rung.
+  **Measured, idle, on a hermetic server** (3 interleaved pairs of 40 s windows): the main thread
+  +0.19 ms/s, 0.02% of one core, within the spread of the runs without it, the watchdog thread
+  0.44–0.52 ms/s, the sampler's thread 0.2 ms/s, and about 5 MB more RSS. In a bare process, with
+  nothing else running, all of it adds about 1.35 ms/s: a worker also doubles the runtime's
+  HeapHelper. A sample costs 26 µs; under load the throughput cost didn't resolve above the noise,
+  so that figure, 0.31 ms/s, is the bound. The sampler has run for minutes, never days.
 - **Measured cost:** at 131 processes, an average tick of **3.6–4.0 ms**, and the whole server
   at **~0.12% ± 0.03 of one core** over an idle baseline, across 6 runs. Own memory (the `statm`
   read) adds about **0.3 ms a tick at 180 processes** (≈2 µs a process, fewer for idle ones),
@@ -257,3 +270,65 @@ button, focus returning to the opener. Under 768px the same markup is a sheet wi
   reports the sampler's own cost (`sampler.lastTickMs`, `avgTickMs`), and the screen shows it.
 - **Client:** no polling while the modal is closed; no new dependency anywhere.
 - **When the budget is tight, cosmetic features are cut first — never attribution.**
+
+## §app.resource-monitor/stall-recorder — The stall recorder
+
+Nothing on a stalled main thread can run, the monitor's own tick included
+(§app.resource-monitor/sampling-and-history), so the server keeps a record of a long stall or a
+memory spike from a thread of its own, for reading afterwards. It starts with the server's process,
+before the server's other modules run, and covers that process only, never a chat's. A stall while
+those modules load is recorded too, and can have no stacks: the sampler starts asynchronously.
+
+- **A stall** is a once-a-second beat that comes **2 s or more past its time**: 3 s or more between
+  beats. The watchdog also looks once a second, so it sees a stall live about 3 to 4 s after the
+  last beat and writes `stall-open` then, while the stall is still happening, with what the main
+  thread had in flight and recently finished, the last heap figures and the gauges. `stall-progress`
+  follows at each doubling of the hold. `stall` closes it, with the bounds (`atLeastMs`, `atMostMs`);
+  if the main thread never reports the end, the watchdog closes it from what it saw.
+- **What only a watched stall has.** The operations, RSS trail, CPU per thread and, on Linux, how
+  the main thread spent the time (`class`: `spinning`, `starved` or `blocked`) come from the
+  watchdog. A stall that ends before it looks gets a `stall` line from the main thread alone:
+  bounds, memory after and stacks. Where there is no `/proc` the watchdog has the board and RSS.
+- **Stacks** are the commonest JS stacks of the stall, from the runtime's sampler at 10 Hz where the
+  runtime has one, and they reach the log **only after the stall ends**: only the main thread can
+  read them.
+- **A memory rung** is RSS reaching **3 GiB, then each doubling** (6, 12, 24, 48 GiB and on), read
+  once a second. One `memory` line names the rung with the climb behind it, and the main thread
+  answers with `memory-detail`: its heap, object types and stacks, when it is free to. RSS jumping
+  several rungs at once writes one line, naming the highest crossed; the ladder starts over when RSS is
+  under 2.25 GiB at least 10 minutes after the last crossing. At 3 GiB or more, `mem` follows each
+  5% move, at most one per 5 s.
+- **Also on the log:** `boot`, `head` (the commit), `hour` (one line per hour of uptime: beat
+  lateness p50, p99 and max, stalls, peak RSS), `shutdown` when the server's shutdown begins, and
+  `exit`, the process's last line, which the main thread writes itself.
+- **The log is capped.** `<stateRoot>/stalls/stalls.jsonl` stops at **1 MiB** and moves to
+  `stalls.1.jsonl`, replacing the older one, so about 2 MiB at most; only a final `exit` line can
+  sit past 1 MiB, until the next write moves the file. A line stops at **32 KiB**:
+  over that it gives up its long lists and says `truncated`, and one that still doesn't fit is left
+  out. On the board, 64 operations in flight (more are counted), 128 recent, 32 gauges and 1024 names.
+- **It holds no session content, secrets or file bodies**, only names, sizes, counts, durations and
+  times: route patterns, never URLs; fixed operation names; function names with a source path cut
+  at `server/`, `shared/`, `src/`, `pi-config/` or `node_modules/`, else to its file name; thread
+  names; kernel state and wait names; flag and variable names, never their values.
+- **Reading it.** From the monitor's first sample, `GET /api/monitor`'s `stalls` gives `state` (`on`,
+  `off` or `failed`) and `recent`, the latest 8 `stall`, `stall-open` and `memory` records in a line
+  each; the log holds the detail.
+  After a restart `recent` comes from the end of the newest file, and a `stall-open` with no close
+  from another pid reads `unfinished`. No screen draws it.
+- **Turning it off.** `SOVA_STALL_RECORDER=off` starts nothing and `stalls.state` is `off`.
+  `SOVA_STALL_STACKS=off` keeps the record without the sampler, so without stacks, heap walk or
+  object types. A process started with `--cpu-prof`, `--heap-prof`, `--inspect` or `BUN_INSPECT`
+  gets the same: there is one sampler per process, and the profiler keeps it. One attached later
+  isn't noticed.
+- **The sampler stands down.** It stops for good, until the next start, when the main thread answers
+  a `memory` line naming 6 GiB or more, so RSS jumping past 6 GiB from under 3 GiB stops it at once.
+  A stall still delays that answer. Once it has stopped, a stall has no stacks.
+- **When it fails, the server goes on.** A watchdog that can't start, errors or exits stops the
+  recorder: `failed`. A write that throws, as on a full disk, says `failed` for the rest of the run;
+  the watchdog goes on trying, unless it was the first line, and the beat and sampler go on. A
+  watchdog that hangs still says `on`.
+- **What it can't do.** A process killed inside a stall leaves only the watchdog's record, no
+  stacks. A stall under 2 s has no line of its own, only its share of the hour's lateness. Heap
+  figures come from the monitor's last tick, so during a stall they are as old as that tick; the
+  record says how old. A received SIGTERM isn't seen, only the handler starting. A main thread that never
+  comes back leaves the sampler's buffer growing, slowly and unemptied, with no measured figure.

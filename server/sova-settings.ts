@@ -535,6 +535,23 @@ function grantOf(e: StoredEdit): string | null {
   return what.replace(/\.$/, ""); // The card adds its own full stop.
 }
 
+const ORDINAL = ["first", "second", "third", "fourth", "fifth"];
+const seconds = (ms: number): string => (ms >= 60_000 && ms % 60_000 === 0 ? `${ms / 60_000} min` : `${ms / 1000} s`);
+
+/** A card's rows for settings whose keys and units are the file's, not the person's. */
+const ROW_WORDS: Partial<Record<SovaSettingId, { key(path: string): string; value(path: string, v: number): string }>> = {
+  "models.limits": { key: (k) => k.replace(/^limits\./, ""), value: (_k, v) => `${v} at once` },
+  "summaries.limits": {
+    key(k) {
+      const m = /^\[(\d+)\]\.(timeoutMs|maxBudgetUsd)$/.exec(k);
+      if (!m) return k;
+      const n = Number(m[1]);
+      return `${ORDINAL[n] ?? `number ${n + 1}`} summarizer's ${m[2] === "timeoutMs" ? "timeout" : "spending limit"}`;
+    },
+    value: (k, v) => (k.endsWith("timeoutMs") ? seconds(v) : `$${v}`),
+  },
+};
+
 function rowsOf(e: StoredEdit): KeptChange[] {
   const label = SOVA_SETTINGS[e.id].label;
   const grant = grantOf(e) ?? undefined;
@@ -549,12 +566,11 @@ function rowsOf(e: StoredEdit): KeptChange[] {
     a.set("", e.before);
     b.set("", e.value);
   }
-  // Requests at once read by provider, in the Models tab's words.
-  const limits = e.id === "models.limits";
-  const key = (k: string) => (limits ? k.replace(/^limits\./, "") : k);
-  const said = (v: unknown) => (limits && typeof v === "number" ? `${v} at once` : words(v));
+  const plain = ROW_WORDS[e.id];
+  const key = (k: string) => plain?.key(k) ?? k;
+  const said = (k: string, v: unknown) => (typeof v === "number" ? plain?.value(k, v) : undefined) ?? words(v);
   // One change allows one thing: its grant is said once, on its first row.
-  const rows: KeptChange[] = changed.slice(0, MAX_ROWS).map((k, i) => ({ field: `${e.id}${k ? `.${k}` : ""}`, label: k ? `${label}: ${key(k)}` : label, from: a.get(k) ?? null, to: b.get(k) ?? null, fromText: said(a.get(k)), toText: said(b.get(k)), ...(grant && i === 0 ? { grant } : {}) }));
+  const rows: KeptChange[] = changed.slice(0, MAX_ROWS).map((k, i) => ({ field: `${e.id}${k ? `.${k}` : ""}`, label: k ? `${label}: ${key(k)}` : label, from: a.get(k) ?? null, to: b.get(k) ?? null, fromText: said(k, a.get(k)), toText: said(k, b.get(k)), ...(grant && i === 0 ? { grant } : {}) }));
   if (changed.length > MAX_ROWS) rows.push({ field: `${e.id}.more`, label, from: null, to: null, fromText: "", toText: `${changed.length - MAX_ROWS} more changes (Show File Changes)`, ...(grant ? { grant } : {}) });
   return rows;
 }

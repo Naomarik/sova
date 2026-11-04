@@ -337,6 +337,15 @@ describe("a Sova-wide card", () => {
     const row = (d.card.kept as { label: string; fromText: string; toText: string }[]);
     assert.deepEqual(row.map((k) => [k.label, k.fromText, k.toText]), [["Requests at once: zai", "not set", "3 at once"]]);
     sova.withdrawSovaCard(d.card.id);
+    writeFileSync(join(agentDir, "topic-outline.json"), JSON.stringify({ summarizers: [{ backend: "pi", model: "a/b", timeoutMs: 120000 }, { backend: "claude-code", model: "c", timeoutMs: 45000, maxBudgetUsd: 0.05 }] }));
+    const lim = await propose("summaries.limits", [{ timeoutMs: 180000 }, { timeoutMs: 90000, maxBudgetUsd: 0.1 }]);
+    assert.deepEqual((lim.card.kept as { label: string; fromText: string; toText: string }[]).map((k) => [k.label.split(": ")[1], k.fromText, k.toText]), [
+      ["first summarizer's timeout", "2 min", "3 min"],
+      ["second summarizer's timeout", "45 s", "90 s"],
+      ["second summarizer's spending limit", "$0.05", "$0.1"],
+    ]);
+    sova.withdrawSovaCard(lim.card.id);
+    rmSync(join(agentDir, "topic-outline.json"));
     const off = await propose("models.policy", { ...readModelPolicy(), subagentDisabledModels: ["a/one", "b/two"] });
     assert.deepEqual((off.card.kept as { label: string; fromText: string; toText: string }[]).map((k) => [k.fromText, k.toText]), [["none", "a/one, b/two"]]);
     sova.withdrawSovaCard(off.card.id);

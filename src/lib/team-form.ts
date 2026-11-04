@@ -44,7 +44,9 @@ export function sameTeam(a: TeamDefaults | TeamDraft, b: TeamDefaults | TeamDraf
 }
 
 /** A number field's value: blank (or not a number) is NaN, which no bound accepts. */
-export const numberOf = (text: string): number => (text.trim() === "" ? Number.NaN : Number(text));
+/** A typed number: digits, an optional minus and an optional fraction with digits after its
+    point. Anything half-typed ("1.", "1e", "-") or not a plain number is NaN, so it waits. */
+export const numberOf = (text: string): number => (/^\s*-?\d+(\.\d+)?\s*$/.test(text) ? Number(text) : Number.NaN);
 
 /** The number fields and what each accepts: whole numbers in [min, max]. */
 export const TEAM_NUMBER_BOUNDS = {
@@ -59,7 +61,8 @@ export type TeamNumberField = keyof typeof TEAM_NUMBER_BOUNDS;
 /** Why a number field's value can't be saved, or null. */
 export function numberIssue(field: TeamNumberField, value: number): string | null {
   const { min, max } = TEAM_NUMBER_BOUNDS[field];
-  if (Number.isNaN(value)) return "Enter a number.";
+  // Not a number at all: NaN, or the null a JSON clone of the draft makes of it.
+  if (typeof value !== "number" || Number.isNaN(value)) return "Enter a number.";
   if (!Number.isInteger(value)) return "Use a whole number.";
   if (value < min || value > max) return `Use ${min} to ${max}.`;
   return null;

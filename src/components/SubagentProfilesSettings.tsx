@@ -1,4 +1,4 @@
-import { createEffect, createResource, createSignal, For, on, Show, untrack, type JSX } from "solid-js";
+import { batch, createEffect, createResource, createSignal, For, on, Show, untrack, type JSX } from "solid-js";
 import type { SubagentProfile, SubagentProfilesInfo, TeamsSetting } from "../../shared/subagent-profiles";
 import type { WorkerChoice } from "../../shared/protocol";
 import { getDelegateOptions, getDelegateSettings, getSubagentProfiles, getTeamDefaults, restoreSubagentProfiles } from "../lib/api";
@@ -294,8 +294,13 @@ export function SubagentProfilesSettings() {
       </Show>
     </button>
   );
-  const number = (field: TeamNumberField, value: () => number, update: (n: number) => void) => {
+  const number = (field: TeamNumberField, raw: () => number, update: (n: number) => void) => {
     const id = `subagents-${editing()}-${field}`;
+    // The draft is cloned through JSON, which keeps a NaN as null: either is "no number".
+    const value = () => {
+      const v = raw();
+      return typeof v === "number" ? v : Number.NaN;
+    };
     const issue = () => numberIssue(field, value());
     // The box shows what was typed ("", "-", "1e"), red, while it reads as the draft's number; the
     // draft's own number otherwise (a load, a discard). A number box would hand back "" and wipe it.
@@ -322,8 +327,13 @@ export function SubagentProfilesSettings() {
             aria-describedby={`${id}-hint`}
             disabled={store.saving()}
             onInput={(e) => {
-              setTyped(e.currentTarget.value);
-              update(numberOf(e.currentTarget.value));
+              // Read once, and set both together: setting the text alone redraws the box from the
+              // draft's old number before the draft takes the new one.
+              const text = e.currentTarget.value;
+              batch(() => {
+                setTyped(text);
+                update(numberOf(text));
+              });
             }}
           />
           <span class={issue() ? "field-error" : "field-hint"} id={`${id}-hint`}>

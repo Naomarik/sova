@@ -75,3 +75,13 @@ test("save waits for names, rows and numbers, and refuses a fallback equal to it
   shared.monitor.role = "Coordinator";
   assert.match(teamDraftConflict(shared)!, /different role names/);
 });
+
+test("a half-typed number is no number (Settings QA D14): '1.', '1e', '-' and letters all wait as 'Enter a number.'", () => {
+  for (const half of ["1.", "1e", "-", ".", "abc", "1e2", "0x10", " "]) assert.ok(Number.isNaN(numberOf(half)), half);
+  assert.equal(numberOf(" 60 "), 60);
+  assert.equal(numberOf("-3"), -3, "a whole number, refused by its range");
+  assert.equal(numberOf("2.5"), 2.5, "a number, refused as not whole");
+  assert.equal(numberIssue("contextPct", numberOf("1.")), "Enter a number.");
+  // A draft cloned through JSON holds null where it held NaN: still "Enter a number.", never "null".
+  assert.equal(numberIssue("contextPct", null as unknown as number), "Enter a number.");
+});

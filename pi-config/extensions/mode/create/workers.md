@@ -14,6 +14,10 @@ The older files `mode-delegate.json`, `mode-spec.json` and `team-defaults.json` 
 - Live: next turn and next team action. A running worker keeps its model. Each profile reaches their other computers with sync on.
 - Check: its row in Settings → Subagents shows the models it routes to.
 
+Each profile in the library is `{id, name, delegate, teams, members, specWriter, reviewer, alignment}`. `delegate` holds `planning`, `investigation`, `routine` and `complex`. Each of those, and `specWriter` and `reviewer`, is `{primary, fallback}`. Each of those is a worker, `{"backend": "claude-code", "model": "claude-haiku-5-5", "effort": "low"}`, or for `fallback`, `null`; on the `pi` backend `model` is `provider/model`. `members` is a worker or `null`. `specWriter` and `reviewer` are `null` for none, and `teams` for no standing coordinator and monitor. To change one role, read the library with `get`, change that key on the profile, and leave the rest as it was.
+
+The reviewer is the worker that does adversarial review: a read-only check of the plan and the diff of risky work in align chats. It runs only while Adversarial review is on under Settings → Alignment (`modes`), so a reviewer set while that's off does nothing yet: say so.
+
 ## Which profile a chat uses
 
 - Change: the profile for one chat, or this computer's default for chats that haven't picked one.

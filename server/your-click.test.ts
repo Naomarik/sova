@@ -34,6 +34,7 @@ after(() => disposeAllChats());
 
 const json = { "content-type": "application/json" };
 const TOKEN = "x-sova-token";
+const SCHEDULE_PEER = "This computer couldn't confirm your click with the one the schedule is on. Try Approve again, or approve it on that computer's page. Nothing was approved.";
 const PEER = "Only the user approves this, on the page of the computer it belongs to. Open Sova on that computer. Nothing changed.";
 
 /** Everyone who isn't the page. The token in a header is the real token: having it proves nothing. */
@@ -54,13 +55,13 @@ const peers = (): [string, Record<string, string>, Record<string, unknown> | und
 const call = (method: string, url: string, body: unknown, headers: Record<string, string>, env?: Record<string, unknown>) =>
   app.request(url, { method, headers: { ...json, ...headers }, body: JSON.stringify(body) }, env);
 
-async function refuses(door: () => Response | Promise<Response>, words: RegExp, who: string, peer = false) {
+async function refuses(door: () => Response | Promise<Response>, words: RegExp, who: string, peer: boolean | string = false) {
   const r = await door();
   assert.equal(r.status, 403, `${who}: ${await r.clone().text()}`);
   const b = (await r.json()) as { error: string; yourClick?: boolean; peer?: boolean };
   assert.equal(b.yourClick, true, who);
   assert.equal(b.peer, peer ? true : undefined, who);
-  if (peer) assert.equal(b.error, PEER, who);
+  if (peer) assert.equal(b.error, peer === true ? PEER : peer, who);
   else assert.match(b.error, words, who);
 }
 
@@ -136,8 +137,8 @@ describe("a schedule", () => {
     const before = await (await app.request("/api/schedules")).text();
     const all = [...notTheUser(), ["the Overseer", { [OVERSEER_SENDER_HEADER]: senderSecret() }, undefined] as (typeof notTheUser extends () => (infer T)[] ? T : never)];
     for (const [who, headers, env] of all) await refuses(() => call("POST", "/api/schedules/approve", body, headers, env), /Approve in the Playbooks dialog/, who);
-    for (const [who, headers, env] of peers()) await refuses(() => call("POST", "/api/schedules/approve", body, headers, env), /./, who, true);
-    await refuses(() => call("POST", "/api/schedules/approve", body, { "X-Sova-Click-Proof": "invented", "X-Forwarded-Host": "h" }, { meshPeer: { id: "other" } }), /./, "a proof nobody minted", true);
+    for (const [who, headers, env] of peers()) await refuses(() => call("POST", "/api/schedules/approve", body, headers, env), /./, who, SCHEDULE_PEER);
+    await refuses(() => call("POST", "/api/schedules/approve", body, { "X-Sova-Click-Proof": "invented", "X-Forwarded-Host": "h" }, { meshPeer: { id: "other" } }), /./, "a proof nobody minted", SCHEDULE_PEER);
     assert.equal(await (await app.request("/api/schedules")).text(), before);
   });
 
@@ -219,6 +220,27 @@ describe("a click on this page that approves on another computer", () => {
     assert.equal((await asked("b", "{\"pin\":\"z\"}")).ok, false, "another body");
     assert.equal((await asked("b", body, Date.now() + 120_000)).ok, false, "too late");
     assert.equal(takeClick("invented", "b", "x"), false);
+  });
+
+  test("after a failed proof a fresh click works: it gets a new proof, and the used and expired ones stay refused", async () => {
+    const body = "{\"pin\":\"a\"}";
+    const { createHash } = await import("node:crypto");
+    const digest = createHash("sha256").update(body).digest("hex");
+    const click = async () => (await clickProofFor(seen(relayed(pageHeaders(), body)), "b", TAIL))!;
+    // The same click spent: its check failed part-way (a wrong body here), and that spent it.
+    const failed = await click();
+    assert.equal(takeClick(failed, "b", "not-the-body"), false);
+    assert.equal(takeClick(failed, "b", digest), false, "a failed proof isn't good a second time, even with the right body");
+    // Approve again: a new click, a different proof, and it passes.
+    const retry = await click();
+    assert.notEqual(retry, failed);
+    assert.equal(takeClick(retry, "b", digest), true);
+    assert.equal(takeClick(retry, "b", digest), false, "used");
+    // One past its minute is refused, and a fresh click after that passes too.
+    const late = await click();
+    assert.equal(takeClick(late, "b", digest, Date.now() + 61_000), false, "expired");
+    assert.equal(takeClick(late, "b", digest), false, "and it stays refused");
+    assert.equal(takeClick(await click(), "b", digest), true);
   });
 
   test("the other computer asks the host the request came from, and any doubt is no", async () => {

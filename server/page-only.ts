@@ -76,12 +76,15 @@ export type YourClickDoor = keyof typeof DOORS | { projectTool: string };
 
 const THROUGH_A_PEER = "Only the user approves this, on the page of the computer it belongs to. Open Sova on that computer. Nothing changed.";
 
+const SCHEDULE_THROUGH_A_PEER = "This computer couldn't confirm your click with the one the schedule is on. Try Approve again, or approve it on that computer's page. Nothing was approved.";
+
 const doorWords = (door: YourClickDoor): string =>
   typeof door === "object" ? `Approving a project mode's tools needs the user's own click. Ask them to turn ${door.projectTool} on in that chat's mode menu. Nothing was turned on.` : DOORS[door];
 
 /** A refusal's words and body, for whoever isn't the page. */
 export function yourClickBody(door: YourClickDoor, who: NotPage): { error: string; yourClick: true; peer?: true } {
-  return who === "local" ? { error: THROUGH_A_PEER, yourClick: true, peer: true } : { error: doorWords(door), yourClick: true };
+  // A schedule is the one door a click on another computer's page can pass, so it never says that page can't.
+  return who === "local" ? { error: door === "schedule" ? SCHEDULE_THROUGH_A_PEER : THROUGH_A_PEER, yourClick: true, peer: true } : { error: doorWords(door), yourClick: true };
 }
 
 /** The 403 of a door, or null when this is the page. `overseerKeeps`: what the Overseer can do stays its own. */

@@ -350,6 +350,8 @@ export function ModeMenu(props: { control: ModeControl }) {
     if (!host()) {
       try {
         const read = await getChatMode(props.control.path);
+        // Which major modes this chat offers is the chat's own answer (§chat.create-mode/where-offered).
+        setInfo((i) => (i ? { ...i, modes: read.modes } : read));
         if (read.projectMinors) setFreshProject({ project: read.project, projectMinors: read.projectMinors });
       } catch {
         // Keep the mode message's rows: they are older, never wrong about what is on.

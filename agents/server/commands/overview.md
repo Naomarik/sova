@@ -130,7 +130,8 @@ When a rule changes, change its test in the same change; a rule without a test i
   profile and schedule approvals, logins, keys, decisions settings, mesh grants, an offers
   file's run-button approval (`POST /api/projects/:pid/offers/approve`) and applying a project's
   Settings change card or landing its folder's settings edits (`POST /api/projects/:pid/settings/apply`,
-  §app.project-overseer/settings), the inventory's Trust grants class. The project overseer's own settings
+  §app.project-overseer/settings) or a Sova-wide one (`POST /api/settings/apply`,
+  §chat.create-mode/settings-cards), the inventory's Trust grants class. The project overseer's own settings
   PATCH is a command (`project.overseer.settings.set`): it is the page's and a script's plain write, and what
   the overseer widens reaches it only through a card the operator applies. A plain preference
   a person sets (`settings.align.set`, the Overseer's own notes `overseer.notes.set`) is a command.

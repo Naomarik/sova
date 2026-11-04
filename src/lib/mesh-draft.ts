@@ -2,6 +2,7 @@ import type { MeshSettings, SyncCategory } from "../../shared/protocol";
 import { fetchMesh, putMeshSettings } from "./api";
 import { setMeshState } from "./mesh";
 import { createDraftStore } from "./settings-draft";
+import { frontDoorIssue, hostLabelIssue } from "../../shared/mesh-settings-checks";
 
 /**
  * Settings → Mesh's unsaved edits (settings-draft.ts: module state, held on close, forgotten once
@@ -45,8 +46,17 @@ export function meshChanges(d: MeshDraft, s: MeshSettings): Partial<MeshSettings
 
 export const sameMesh = (d: MeshDraft, s: MeshSettings): boolean => Object.keys(meshChanges(d, s)).length === 0;
 
-/** Why the draft can't be saved, one sentence, or null. */
-export const meshDraftIssue = (d: MeshDraft): string | null => (d.hostLabel.trim() ? null : "This host needs a name.");
+/** Each typed field's problem, in the server's own words (shared/mesh-settings-checks.ts), or null. */
+export const meshFieldIssues = (d: MeshDraft): { hostLabel: string | null; frontDoor: string | null } => ({
+  hostLabel: hostLabelIssue(d.hostLabel),
+  frontDoor: frontDoorIssue(d.frontDoor),
+});
+
+/** Why the draft can't be saved, one sentence, or null (page order: the name, then the front door). */
+export const meshDraftIssue = (d: MeshDraft): string | null => {
+  const f = meshFieldIssues(d);
+  return f.hostLabel ?? f.frontDoor;
+};
 
 const store = createDraftStore<MeshDraft, MeshSettings>({
   tab: "mesh",

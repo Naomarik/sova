@@ -44,6 +44,7 @@ import { bootBuild } from "./build-id";
 import { cleanBuild } from "./lan-handoff-protocol";
 import { lanRoutes } from "./lan-routes";
 import { loginKindsPin } from "../sync/logins-merge";
+import { frontDoorIssue, hostLabelIssue } from "../../shared/mesh-settings-checks";
 
 // The mesh (brief: settled decisions). ON exactly while peers.json lists a peer; OFF, nothing
 // here listens, polls, calls Tailscale or dials a peer, and every pre-existing route and socket
@@ -804,6 +805,16 @@ async function putSettings(c: Context): Promise<Response> {
     const served = hosts.filter((id) => !noBrowser.has(id));
     if (served.length && served.length < hosts.length && served.every((id) => body.frontDoorExclude!.includes(id)))
       return c.json({ error: "frontDoorExclude: the front door needs at least one host with a browser address" }, 400);
+  }
+  // The form's own checks and words (shared/mesh-settings-checks.ts), ahead of the file's validation,
+  // whose refusals name raw keys ("self.label must be …").
+  if (body.hostLabel !== undefined) {
+    const why = typeof body.hostLabel === "string" ? hostLabelIssue(body.hostLabel) : "This host needs a name.";
+    if (why) return c.json({ error: why }, 400);
+  }
+  if (typeof body.frontDoor === "string") {
+    const why = frontDoorIssue(body.frontDoor);
+    if (why) return c.json({ error: why }, 400);
   }
   const pinned = pinnedLoginKinds();
   if (body.loginKinds !== undefined && pinned && (body.loginKinds ?? "all") !== pinned) {

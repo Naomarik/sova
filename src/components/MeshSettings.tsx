@@ -1,7 +1,7 @@
 import { createEffect, createResource, For, Show } from "solid-js";
 import { getMeshSettings } from "../lib/api";
 import { meshOn, SYNC_CATEGORIES, type SyncCategory } from "../lib/mesh";
-import { meshDraft as draft, meshDraftIssue, meshSaveError, meshSaving as saving, setMeshDraft, setMeshSaved, type MeshDraft } from "../lib/mesh-draft";
+import { meshDraft as draft, meshFieldIssues, meshSaveError, meshSaving as saving, setMeshDraft, setMeshSaved, type MeshDraft } from "../lib/mesh-draft";
 import { SYNC_LABEL } from "../lib/mesh-details";
 import { Banner } from "./ui";
 import { sentence } from "./WorkerSlotRow";
@@ -35,10 +35,12 @@ export function MeshSettingsSection() {
     if (!d) return;
     setMeshDraft({ ...d, ...patch });
   };
-  const issue = () => {
+  const fieldIssues = () => {
     const d = draft();
-    return d ? meshDraftIssue(d) : null;
+    return d ? meshFieldIssues(d) : { hostLabel: null, frontDoor: null };
   };
+  const issue = () => fieldIssues().hostLabel;
+  const doorIssue = () => fieldIssues().frontDoor;
   /** "api-keys": this host neither takes nor offers subscription sign-ins; only API keys move. */
   const subscriptionsOn = () => draft()?.loginKinds !== "api-keys";
 
@@ -132,11 +134,12 @@ export function MeshSettingsSection() {
           placeholder="https://sova.tail1234.ts.net"
           value={draft()?.frontDoor ?? ""}
           disabled={!draft() || saving()}
+          aria-invalid={doorIssue() ? "true" : undefined}
           aria-describedby="mesh-front-door-hint"
           onInput={(e) => edit({ frontDoor: e.currentTarget.value })}
         />
-        <span class="field-hint" id="mesh-front-door-hint">
-          One address that reaches whichever host is up. Leave it empty if you open each host by its own address.
+        <span class={doorIssue() ? "field-error" : "field-hint"} id="mesh-front-door-hint">
+          {doorIssue() ?? "One address that reaches whichever host is up. Leave it empty if you open each host by its own address."}
         </span>
       </div>
 

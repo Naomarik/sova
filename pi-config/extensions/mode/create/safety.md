@@ -2,6 +2,8 @@
 
 Sandbox states limit what a chat's tools can do to this computer. Approvals are the person's decisions that let something act later without asking. You never give one: stop, say what it allows, and name where they click.
 
+To stop a tool call in every ordinary chat on this computer, such as reading `.env` files, a guard add-on is a way too: open `pi-extensions`. It works only on the calls it checks, and workers don't load it. Offer it beside the sandbox's `hidden` paths, which cover `bash` but only when the sandbox is On.
+
 ## Chat sandbox
 
 - Change: how confined one chat and its workers are.

@@ -15,7 +15,7 @@ Workers, Project Overseers, gathering chats and the Project Assistant don't load
 
 What works in a Sova chat: tools, slash commands, events, and the dialogs `select`, `confirm`, `input` and `editor`, with `notify` and `setStatus`. Widgets, footers, headers, custom overlays and editor components do nothing in Sova.
 
-A complete example, `<agent dir>/extensions/no-env-read.ts`, which stops the agent reading `.env` files:
+A complete example, `<agent dir>/extensions/no-env-read.ts`, which stops the agent's `read` tool opening `.env` files. It doesn't stop `bash`, unless the add-on checks that too:
 
 ```js
 export default function (pi) {

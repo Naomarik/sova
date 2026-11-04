@@ -181,6 +181,7 @@ function LiveToolRow(props: LiveKindViewProps<LiveCallBlock>) {
         fallback={
           <ToolCard
             name={b.name}
+            mcp={tool()?.mcp}
             summary={tourEarlier()}
             args={b.args ?? tool()?.args}
             argsText={b.argsText}

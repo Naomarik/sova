@@ -4,6 +4,7 @@
 // run.settled the chat view refetches the normalized transcript and resets this.
 
 import { produce, type SetStoreFunction } from "solid-js/store";
+import type { McpToolName } from "../../shared/mcp";
 import type { SovaEvent, SovaPart } from "../../shared/harness-wire";
 import type { ReplyTiming } from "../../shared/usage/perf";
 import { isLinkMessage } from "../../shared/link-message";
@@ -149,6 +150,8 @@ export type LiveEntry =
 
 export interface LiveTool {
   name: string;
+  /** A server's tool (§app.mcp/in-a-chat): the row reads these, never the name. */
+  mcp?: McpToolName;
   args?: unknown;
   status: "running" | "done" | "error";
   output: string;
@@ -599,7 +602,7 @@ export function applyEvent(set: SetStoreFunction<LiveState>, event: LiveEvent, v
         // caller's updates and result record it.
         case "tool.start":
           if (event.parentCallId) break;
-          if (event.callId) s.tools[event.callId] = { name: event.name, args: event.args, status: "running", output: "", images: [] };
+          if (event.callId) s.tools[event.callId] = { name: event.name, ...(event.mcp ? { mcp: event.mcp } : {}), args: event.args, status: "running", output: "", images: [] };
           break;
         case "tool.update": {
           if (event.parentCallId) break;

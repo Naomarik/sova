@@ -11,6 +11,7 @@ import {
   mcpFlips,
   mcpToolWords,
   newServer,
+  noteOnHost,
   NO_CHECK,
   projectGroups,
   refusedLines,
@@ -118,6 +119,14 @@ test("a chat's note reads each way a server can fail", () => {
   assert.equal(chatNoteText(n({ how: "address-under-on" })), "docs is off while the sandbox is On.");
   assert.equal(chatNoteText(n({ how: "changed" })), "docs changed and is waiting for your approval.");
   assert.equal(chatNoteText(n({ how: "other-computer", host: "desk" })), "docs failed on desk. Check it in Sova on desk.");
+});
+
+test("a note in a peer's chat names that computer and links nowhere; a note here is left as it came", () => {
+  const n: McpNote = { server: "docs", how: "sandbox", link: { to: "settings", id: "x" } };
+  assert.equal(noteOnHost(n, null), n);
+  const there = noteOnHost(n, "desk");
+  assert.equal(chatNoteText(there), "docs failed on desk. Check it in Sova on desk.");
+  assert.equal(there.link, undefined);
 });
 
 test("a server's tool row reads its server and its tool", () => {

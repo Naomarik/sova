@@ -17,7 +17,8 @@ import { OwnerRequestNote } from "./OwnerRequestNote";
 import { profileIconName } from "../lib/profiles";
 import { useThreadRows } from "./thread-rows";
 import type { McpNote } from "../../shared/mcp";
-import { chatNoteText, NOTE_LINK } from "../lib/mcp";
+import { chatNoteText, NOTE_LINK, noteOnHost } from "../lib/mcp";
+import { hostLabel } from "../lib/mesh";
 import { openMcpRow } from "../lib/mcp-link";
 import { AssistantText, Thinking, UserTurn } from "./MessageRows";
 import { modelLabel, modelMismatch } from "../lib/format";
@@ -97,12 +98,15 @@ function HandoffRunRow(props: { run: HandoffRunInfo; text: string }) {
 
 /** A server failed in this chat (§app.mcp/in-a-chat): the note names it and links to its row. */
 function McpNoteRow(props: { note: McpNote }) {
-  const link = () => props.note.link;
+  const rows = useThreadRows();
+  const host = () => rows.toolSource()?.host;
+  const note = () => noteOnHost(props.note, host() ? hostLabel(host()!) : null);
+  const link = () => note().link;
   return (
     <div class="info-row" role="note">
       <span class="info-row-text">
         <Icon name="info" small />
-        <span>{chatNoteText(props.note)}</span>
+        <span>{chatNoteText(note())}</span>
         <Show when={link()}>
           {(l) => (
             <button type="button" class="button button-sm button-ghost" onClick={() => openMcpRow(l())}>

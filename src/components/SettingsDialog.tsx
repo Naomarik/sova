@@ -57,7 +57,6 @@ import { DecisionSettingsSection } from "./DecisionSettings";
 import { SubagentProfilesSettings } from "./SubagentProfilesSettings";
 import { MeshSettingsSection } from "./MeshSettings";
 import { AccountsSettingsSection } from "./AccountsSettings";
-import { MCP_TITLE } from "../lib/mcp";
 import { McpSettingsSection } from "./McpSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { PublicLinksSettingsSection } from "./PublicLinksSettings";
@@ -83,7 +82,7 @@ export const TABS = [
   { id: "general", label: "General", icon: "settings" as const },
   { id: "models", label: "Models", icon: "sliders" as const },
   { id: "accounts", label: "Accounts", icon: "refresh" as const },
-  { id: "mcp-servers", label: MCP_TITLE, icon: "grid" as const },
+  { id: "mcp-servers", label: "MCP Servers", icon: "grid" as const },
   { id: "subagents", label: "Subagents", icon: "worker" as const },
   { id: "alignment", label: "Alignment", icon: "check" as const },
   { id: "profiles", label: "Profiles", icon: "wrench" as const },

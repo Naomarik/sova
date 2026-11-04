@@ -184,6 +184,14 @@ export function chatNoteText(n: McpNote): string {
       return `${n.server} failed: ${(n.reason ?? "").replace(/\.$/, "")}.`;
   }
 }
+/** A note in a peer's chat: the server only ever sees its own computer's chats, so the page names the
+    peer, and a row there is that computer's to open. */
+export function noteOnHost(n: McpNote, host: string | null): McpNote {
+  if (!host) return n;
+  const { link: _link, ...rest } = n;
+  return { ...rest, how: "other-computer", host };
+}
+
 /** A tool row's name. */
 export const mcpToolWords = (t: McpToolName): string => `${t.server} · ${t.tool}`;
 export const NOTE_LINK = "Open Its Settings";

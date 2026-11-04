@@ -1,6 +1,6 @@
 # modes: what new chats start in, how planning behaves, and modes your project ships
 
-<!-- Ids are shared/sova-settings-reference.ts's. mode.json has no id: Save as default is its only way. -->
+<!-- Ids are shared/sova-settings-reference.ts's. -->
 The major modes are a closed list: Sova can't add one, and a project minor mode is the nearest way. Create itself is chosen per chat and can't be a default.
 
 Spec mode's writer is set in a subagent profile (`workers`). `mode-spec.json` is an older file that only seeds the profile library: don't offer it.
@@ -9,11 +9,11 @@ A project mode lives in the checkout, so a chat in a worktree sees its own branc
 
 ## What new chats start in
 
-- Change: the default major mode (normal or Delegate), strict, the minor modes and the subagent profile new chats start with.
+- Change: the major mode (normal or Delegate), strict and the minor modes new chats start with. Save as default also saves the subagent profile.
 - Lives: `<agent dir>/mode.json`. There's no default per project: coding sessions use this one too.
-- Approves: the person, by pressing it.
-- By: Screen. Set a chat up as wanted, then press Save as default in its mode menu. In Create that saves the chat's last normal or Delegate choice, so tell the person to set it from a normal or Delegate chat.
-- Live: new chat. Reaches their other computers with sync on, except the subagent profile default, which stays on this computer.
+- Approves: the person, by Apply or by pressing it.
+- By: Card or Screen. Card `modes.default`, with all three of `{mode, strict, minorModes}`; `mode` is `normal` or `delegate`, and Create is refused because no default holds it. It doesn't set the subagent profile: that's `workers`. Screen: set a chat up as wanted, then press Save as default in its mode menu. In Create that saves the chat's last normal or Delegate choice, so the person should do it from a normal or Delegate chat.
+- Live: new chat. The modes reach their other computers with sync on; the subagent profile default stays on this computer.
 - Check: open a new chat and read its mode menu.
 
 ## How planning behaves

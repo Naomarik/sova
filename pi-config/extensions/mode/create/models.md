@@ -27,8 +27,8 @@ Sign-ins never pass through you: name the screen or the command, and the person 
 
 - Change: which models are starred in the model picker.
 - Lives: `<agent dir>/model-favorites.json`.
-- Approves: the person, by clicking.
-- By: Screen. The star on a model in the picker.
+- Approves: the person, by Apply or by clicking.
+- By: Card or Screen. Card `models.favorites`, whose value is the whole list, `["provider/id", …]`. Screen: the star on a model in the picker.
 - Live: now. Reaches their other computers with sync on.
 - Check: the star stays lit when the picker reopens.
 

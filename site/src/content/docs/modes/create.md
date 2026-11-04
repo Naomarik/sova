@@ -118,7 +118,8 @@ A card can hold:
   priority or a summary timeout. Your mesh's stored settings and setup steps go by card or button. To pair a
   computer that isn't on the tailnet, you type its fingerprint into the card's own field, so it never
   passes through the chat.
-  Links between computers, claiming a login, an internet relay and a resync recipe stay on their own
+  A resync recipe goes by card too, but one derived from a deploy script's `local.env`
+  stays as it is. Links between computers, claiming a login and an internet relay stay on their own
   screens, and so do public links, voice and updates.
 - **Merge queue settings**: what Settings → Merge Queue saves, such as pushing, review and each check's
   limits. Apply there is a save, with its commit and its waits: while a branch is checking, the card

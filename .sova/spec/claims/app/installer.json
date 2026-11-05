@@ -35,7 +35,12 @@
       "scripts/install.test.sh",
       "scripts/fetch-bun.sh",
       "scripts/bun-release.txt"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:51Z",
+      "source": "pi-session:01a1a986-422f-73b2-b89b-dac66fa60b1a#327cb08f"
+    }
   },
   "§app.installer/claude-code-provider": {
     "kind": "behavior",
@@ -136,6 +141,22 @@
       "docs/running-as-a-service.md"
     ]
   },
+  "§app.installer/version-managers": {
+    "kind": "behavior",
+    "requires": [
+      "§app/installer"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/install.sh"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:51Z",
+      "source": "pi-session:01a1a986-422f-73b2-b89b-dac66fa60b1a#327cb08f"
+    }
+  },
   "§app/installer": {
     "kind": "surface",
     "authority": "accepted",
@@ -147,7 +168,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-14T15:54Z"
+      "at": "2026-11-05T02:51Z",
+      "source": "pi-session:01a1a986-422f-73b2-b89b-dac66fa60b1a#327cb08f"
     },
     "notOwned": [
       "§app/access",

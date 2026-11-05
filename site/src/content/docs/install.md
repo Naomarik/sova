@@ -13,11 +13,13 @@ The install script is safe to pipe from `curl`, needs no `sudo`, and installs no
 - bash (Alpine has none until you `apk add bash`)
 - Git
 - Node.js 22.19 or later
-- pnpm, or npx to run the pnpm Sova pins
+- pnpm, or npx to run the pnpm Sova pins when yours doesn't run
 - curl
 - unzip or python3
 
 The server runs on Bun, and so does every chat and worker, each in a process of its own. The installer downloads the Bun version Sova pins into Sova's own folder and checks it against a recorded checksum; if it can't, it stops and changes nothing. It doesn't install a version manager or edit your shell profile.
+
+If your Node or pnpm comes through mise, the versions your own mise configuration names are the ones used. The installer and the launcher tell mise to ignore the `mise.toml` in Sova's folders, so nothing it pins is downloaded and your list of trusted folders doesn't change. A pnpm that doesn't run there, such as one with no version set, is passed over for npx.
 
 ## Install
 

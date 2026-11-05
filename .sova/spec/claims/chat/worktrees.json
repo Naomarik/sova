@@ -256,7 +256,9 @@
       "server/worktrees-refs-stamp.test.ts",
       "server/merge-queue/wire-unserved.integration.test.ts",
       "server/restart-paths.ts",
-      "server/restart-paths.test.ts"
+      "server/restart-paths.test.ts",
+      "server/merge-queue/scenarios-landed-drafts.integration.test.ts",
+      "server/merge-queue/scenarios-landed-drafts-edges.integration.test.ts"
     ],
     "requires": [
       "§chat.worktrees/entry",
@@ -266,8 +268,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T22:57Z",
-      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
+      "at": "2026-11-05T10:48Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#7ee12135"
     }
   },
   "§chat.worktrees/ready-to-land": {
@@ -291,7 +293,8 @@
       "server/docs-preview.ts",
       "server/merge-queue/queue.test.ts",
       "server/merge-queue/testing/harness.ts",
-      "server/session-branches.test.ts"
+      "server/session-branches.test.ts",
+      "server/merge-queue/scenarios-landed-drafts.integration.test.ts"
     ],
     "requires": [
       "§chat.worktrees/readiness",
@@ -300,8 +303,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T14:54Z",
-      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
+      "at": "2026-11-05T10:48Z",
+      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#7ee12135"
     }
   },
   "§chat.worktrees/sandbox": {

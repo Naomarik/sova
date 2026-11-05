@@ -484,7 +484,7 @@ describe("a merge run", () => {
     expect(r2.out.verdict).toBe("passed");
   });
 
-  test("Try It on Main: the declared checks on the target itself, nothing merged; red is the project's own", async () => {
+  test("merge.setup dry run: the declared checks on the target itself, nothing merged; red is the project's own", async () => {
     const fx = fixture();
     const before = fx.head();
     const ok = await run(fx, { branch: fx.target, commit: before }, { tryOnly: true });

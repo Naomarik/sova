@@ -45,7 +45,7 @@ export interface RunInput {
   /** The project's private names file (store.ts namesFileOf): the leak scan reads it (`--names` / SOVA_LEAK_NAMES).
    *  Absent: none yet (pushes are held until the merge thread's interview writes it). */
   namesFile?: string;
-  /** Try It on Main (merge.setup dryRun): reset to `base`, set up, run `project.def`'s checks there; no merge, no
+  /** A dry run (merge.setup dryRun): reset to `base`, set up, run `project.def`'s checks there; no merge, no
    *  docs, no reruns, no review. The entry is a stand-in (its branch is the target). */
   tryOnly?: true;
   /** A trial (merge.try) of this branch or commit: the try runs on it, not on the target, and its words say so. */

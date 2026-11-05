@@ -1134,7 +1134,7 @@ describe("setting up the checks", () => {
     }
   });
 
-  test("Try It on Main runs the answer's checks on the target alone, merging nothing, and saves nothing", async () => {
+  test("A dry run (merge.setup dryRun) runs the answer's checks on the target alone, merging nothing, and saves nothing", async () => {
     const k = makeKit({ checks: "unset" });
     try {
       k.repo.commitOn(k.repo.root, { ".sova/project.json": DEF_TEXT }, "definition");
@@ -1163,7 +1163,7 @@ describe("setting up the checks", () => {
     }
   });
 
-  test("Try It on Main never runs beside a landing run in the same copy", async () => {
+  test("A dry run never runs beside a landing run in the same copy", async () => {
     const k = makeKit();
     try {
       k.repo.commitOn(k.repo.root, { ".sova/project.json": DEF_TEXT }, "definition");

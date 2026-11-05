@@ -268,7 +268,7 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   const calls: Opened["calls"] = [];
-  /** Try It on Main: each dryRun starts a run; the view's tryRun ends it, failing the first time, passing after. */
+  /** merge.setup dry runs: each starts a run; the view's tryRun ends it, failing the first time, passing after. */
   let tries = 0;
   /** Set by a test: what the server answers from now on (a branch that moved after the page read it). */
   let moved: ((rows: SessionWorktreeInfo[]) => SessionWorktreeInfo[]) | undefined;

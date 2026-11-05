@@ -165,7 +165,7 @@ async function forgetSetup(copy: string): Promise<void> {
 export function makeRunMerge(deps: RunDeps = {}): RunMerge {
   // Services a check needs start through the server's project engine unless the caller gives another way.
   const withServices: RunDeps = { services: lazyEngineServices(), ...deps };
-  // RunInput.tryOnly (Try It on Main): nothing merged (tryOnce).
+  // RunInput.tryOnly (a dry run or a trial): nothing merged (tryOnce).
   return (input, hooks) => (input.tryOnly ? tryOnce(input, hooks, withServices) : runOnce(input, hooks, withServices)).catch((err): RunOutcome => {
     // Never a throw: anything unexpected is the machine's, never the branch's.
     return { verdict: "machine", why: `the run stopped: ${err instanceof Error ? err.message : String(err)}`, notes: [], checks: [] };
@@ -538,7 +538,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
 }
 
 /**
- * Try It on Main (onboarding; RunInput.tryOnly): the checks a project is about to declare, run on the target itself,
+ * A dry run (merge.setup dryRun; RunInput.tryOnly): the checks a project is about to declare, run on the target itself,
  * merging nothing. The copy reset to `base`, setup, then the checks `input.project.def` declares (the user's unsaved
  * answer), each failure run once more (a pass then is noted flaky). No docs, no review, no attribution: a red here is
  * the project's own, never a branch's. Outcome: passed (noChecks when "none"), failed with the failing step's label,

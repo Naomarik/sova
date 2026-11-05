@@ -537,7 +537,7 @@ export class ProjectQueue {
 
   /**
    * Save a settings change (push, review on or off, each check's time limit, rerun and optional) as one commit on the
-   * target, after the user's confirm. Never under a branch being checked: while a run (or Try It on Main, or a
+   * target, after the user's confirm. Never under a branch being checked: while a run (or a dry run, or a
    * landing) holds the target it waits (`pendingSave`, kept in queue.json) and is made at the next quiet point.
    */
   saveSettings(changes: MergeSettingsChange): Promise<MergeSettingsSaveResult> {
@@ -1280,7 +1280,7 @@ export class ProjectQueue {
 
   /**
    * merge.setup: the onboarding answer (one test command, a list of checks "Label: command", or no automated tests).
-   * `dryRun` (Try It on Main) runs those checks on the target alone in the merge copy and answers the run (it goes on in
+   * `dryRun` (a dry run) runs those checks on the target alone in the merge copy and answers the run (it goes on in
    * the background; merge.logs reads it); a failure there is the project's, never a branch's. Without `dryRun` the
    * answer is written into the definition's `merge` section on the target, as one commit the queue moves the target to
    * (the main folder fast-forwarded with it, never forced).
@@ -1334,7 +1334,7 @@ export class ProjectQueue {
         const runId = newId("mr");
         const runDir = this.store.runDir(runId);
         mkdirSync(runDir, { recursive: true });
-        const run: MergeRun = { id: runId, entry: "setup", project: this.id, branch: this.q.target, base: head, commit: head, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: "Try It on Main" };
+        const run: MergeRun = { id: runId, entry: "setup", project: this.id, branch: this.q.target, base: head, commit: head, steps: [], checks: [], verdict: "running", startedAt: this.iso(), why: "A dry run of the checks on the target" };
         this.store.writeRun(run);
         const ac = new AbortController();
         const stand: MergeEntry = { id: "setup", project: this.id, target: this.q.target, branch: this.q.target, commit: head, approval: { by: "land-button", at: this.iso(), commit: head }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: this.iso(), updatedAt: this.iso() };
@@ -1559,7 +1559,7 @@ export class ProjectQueue {
     });
   }
 
-  /** Tests: the Try It on Main run in flight, if any. */
+  /** Tests: the dry run in flight, if any. */
   tryingNow(): Promise<void> | null {
     return this.trying?.done ?? null;
   }

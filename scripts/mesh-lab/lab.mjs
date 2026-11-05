@@ -876,6 +876,15 @@ function restartSova(n) {
   docker(["exec", container(n), "sh", "-c", KILL_SOVA], { allowFail: true, quiet: true });
 }
 
+/** The binding a host's Sova checks peers.json against (server/mesh/index.ts checkHome): its state root's
+    real path and machine id. A peers.json with none in a non-default agent dir, as every lab host has, is
+    "unbound" and keeps the mesh off; Sova only binds a default root by itself. A build from before the
+    binding ignores the field. */
+function homeOf(n) {
+  const out = docker(["exec", container(n), "node", "-e", `const fs=require("fs");const d=process.env.PI_CODING_AGENT_DIR+"/sova";fs.mkdirSync(d,{recursive:true});const p=fs.realpathSync(d);let m;try{m=fs.readFileSync("/etc/machine-id","utf8").trim()}catch{}console.log(JSON.stringify({path:p,...(m?{machine:m}:{})}))`]).out;
+  return JSON.parse(out);
+}
+
 async function cmdPair(args) {
   const cfg = requireConfig();
   const noRestart = args.includes("--no-restart");
@@ -889,7 +898,9 @@ async function cmdPair(args) {
     try {
       prev = cur ? JSON.parse(cur) : {};
     } catch {}
-    writeAgentFile(h, "sova/peers.json", JSON.stringify({ ...prev, ...peersJsonFor(cfg, h, members) }, null, 2) + "\n");
+    const doc = { ...prev, ...peersJsonFor(cfg, h, members) };
+    doc.self.home = homeOf(h);
+    writeAgentFile(h, "sova/peers.json", JSON.stringify(doc, null, 2) + "\n");
     console.log(`${h}: peers.json -> ${members.filter((m) => m !== h).join(", ")}`);
   }
   if (!noRestart) {

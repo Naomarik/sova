@@ -8,6 +8,7 @@ import { serve } from "@hono/node-server";
 import { buildApp, SERVER_HEAD, SERVER_RUNTIME } from "./app";
 import { readBranch } from "./harness/pi/reader";
 import { extensionEntries } from "./harness/pi/state";
+import { startModelCheck } from "./harness/pi/model-sync";
 import { markShutdown } from "./wrapup-recovery";
 import { startBudgetRecount } from "./baton-recount";
 import { listProjects, openRegisteredProjects } from "./projects/spaces";
@@ -182,6 +183,8 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   void startMergeQueue({ request: (path, init) => app.request(path, init) }).catch((err) => console.error("[merge-queue] start failed:", err instanceof Error ? err.message : err));
   // Updates: the daily check, on the schedule updates.json keeps across restarts.
   startUpdates(info.port, HOST);
+  // Ollama Cloud's model list: the daily check, and the model list re-applied whenever its file changes (§app.model-levels/server-check).
+  startModelCheck();
 }) as Server;
 server.on("error", (err) => {
   // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler

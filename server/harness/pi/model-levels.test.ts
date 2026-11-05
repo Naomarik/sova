@@ -77,6 +77,39 @@ test("boot: the cached levels over pi's composed models keep the provider's comp
   assert.deepEqual(applyModelLevelsAtBoot(runtime as never, dir, false), [], "applied twice: nothing to change");
 });
 
+test("a model the server's check discovered joins the list; models.json wins; retired stays hidden (F1)", async () => {
+  const cachePath = join(dir, "model-levels.json");
+  const cache = JSON.parse(readFileSync(join(EXT, "tests/fixture-cache.json"), "utf8"));
+  cache.providers[PROVIDER].baseUrl = baseUrl;
+  cache.providers[PROVIDER].fetchedAt = Date.now();
+  cache.providers[PROVIDER].models["glm-9-new"] = { source: "ollama", values: [false, "low", "high"], capabilities: ["completion", "thinking", "vision"] };
+  cache.providers[PROVIDER].discovered = {
+    "glm-9-new": { firstSeenAt: Date.now(), contextWindow: 202752, maxTokens: 65536, input: ["text", "image"] },
+    // models.json lists this id: its entry is the model, whatever the check recorded.
+    "glm-5.3": { firstSeenAt: Date.now(), contextWindow: 7, maxTokens: 7, input: ["text"] },
+  };
+  rmSync(cachePath, { force: true });
+  writeFileSync(cachePath, JSON.stringify(cache));
+  const runtime = await ModelRuntime.create({ modelsPath: join(dir, "models.json"), authPath: join(dir, "auth.json") });
+  assert.deepEqual(applyModelLevelsAtBoot(runtime as never, dir, false), [PROVIDER]);
+  assert.deepEqual(applyModelLevelsAtBoot(runtime as never, dir, false), [], "applied twice: nothing to change");
+  const fresh = runtime.getModel(PROVIDER, "glm-9-new");
+  assert.ok(fresh, "the discovered model is registered");
+  assert.equal(fresh!.name, "glm-9-new (Ollama Cloud)");
+  assert.equal(fresh!.contextWindow, 202752);
+  assert.equal(fresh!.maxTokens, 65536);
+  assert.deepEqual(fresh!.input, ["text", "image"]);
+  assert.equal((fresh!.compat as any).supportsDeveloperRole, false, "the provider's settings");
+  assert.deepEqual(supportedThinkingLevels(fresh as never), ["off", "low", "high"]);
+  assert.equal(runtime.getModel(PROVIDER, "glm-5.1"), undefined, "retired: still hidden");
+  const glm = runtime.getModel(PROVIDER, "glm-5.3")!;
+  const listed = models.providers[PROVIDER].models.find((m: { id: string }) => m.id === "glm-5.3");
+  assert.equal(glm.contextWindow, listed.contextWindow, "models.json's fields win over the discovered record");
+  assert.equal(glm.name, listed.name ?? listed.id, "not the `(Ollama Cloud)` name the check would give");
+  assert.deepEqual(supportedThinkingLevels(glm as never), ["low", "high", "max"], "levels still apply to a models.json model");
+  rmSync(cachePath, { force: true });
+});
+
 test("boot fetches follow PI_OFFLINE, SOVA_MODELS_FETCH and the test-process rule", () => {
   assert.equal(modelFetchEnabled({}), true);
   assert.equal(modelFetchEnabled({ PI_OFFLINE: "1", SOVA_MODELS_FETCH: "on" }), false);

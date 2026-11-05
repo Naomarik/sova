@@ -1309,6 +1309,34 @@ export interface ModelInfo {
   contextWindow?: number;
 }
 
+// GET  /api/settings/models/check -> ModelCheckStatus (Settings → Models' line under Ollama Cloud)
+// POST /api/settings/models/check -> ModelCheckStatus once the check it runs at once has finished
+//                                    (409 when checks are off on this server)
+/** The server's check of Ollama Cloud's model list (§app.model-levels/server-check, /settings-line). */
+export interface ModelCheckStatus {
+  /** The provider checked: `ollama-cloud`. */
+  provider: string;
+  /** False with PI_OFFLINE or SOVA_MODELS_FETCH=off: nothing is checked. */
+  enabled: boolean;
+  /** A check is running now. */
+  checking: boolean;
+  /** The last check; absent before any. */
+  last?: {
+    at: number;
+    ok: boolean;
+    /** Why it failed (ok false). */
+    error?: string;
+    /** When the server tries again on its own after a failure. */
+    retryAt?: number;
+    /** Model ids new to the list at that check. */
+    added: string[];
+    /** Model ids that check found retired. */
+    retired: string[];
+  };
+  /** Models the check added in the last week (the New mark), as provider/id refs. */
+  newModels: { ref: string; firstSeenAt: number }[];
+}
+
 /** One folder's subfolders (GET /api/folders). Directories only, never files: a symlink is listed
     when its target is a directory; dangling and unreadable entries are left out. Dot folders only
     with hidden=1. Sorted by name, case-insensitive. */

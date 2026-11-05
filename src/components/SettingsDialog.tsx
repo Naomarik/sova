@@ -1,6 +1,6 @@
-import { createEffect, createMemo, createResource, createSignal, For, on, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import type { ThemeInfo } from "../../shared/protocol";
-import { getClaudeCliStatus, getProviderLimits, getThemes, getWebSettings } from "../lib/api";
+import { getClaudeCliStatus, getModelCheck, getProviderLimits, getThemes, getWebSettings, runModelCheck } from "../lib/api";
 import { clockTime, tildePath } from "../lib/format";
 import {
   CLAUDE_CODE_PROVIDER,
@@ -18,7 +18,8 @@ import {
   setProviderSubagents,
   type ModelPolicy,
 } from "../lib/model-policy";
-import { ensureModels } from "../lib/models";
+import { ensureModels, loadModels, modelList } from "../lib/models";
+import { checkLine, newRefs } from "../lib/model-check";
 import { providerGrouper, type ProviderGroup } from "../lib/provider-groups";
 import { createPoll } from "../lib/poll";
 import {
@@ -571,7 +572,9 @@ function GeneralPanel() {
  * same Save Changes into provider-limits.json (provider-limits-draft.ts).
  */
 function ModelsPanel() {
-  const [models] = createResource(() => ensureModels());
+  const [loaded] = createResource(() => ensureModels());
+  /** The shared list once loaded, so a finished check's reload (below) updates the rows in place. */
+  const models = () => modelList() ?? loaded();
   const [source, { refetch }] = createResource(() => loadModelPolicy());
   /** The policy as the user has set it: the saved policy, then every staged switch move. */
   const policy = policyDraft;
@@ -605,6 +608,31 @@ function ModelsPanel() {
   const loweredNote = (provider: string) => {
     const l = limitsInfo()?.lowered?.[provider];
     return l ? `lowered to ${l.limit} until ${clockTime(l.until)}` : undefined;
+  };
+
+  // Ollama Cloud's model list check (§app.model-levels/settings-line): its line under the provider,
+  // Check Now, and the New marks. A finished check reloads the shared model list (picker included).
+  const [checkSource, { mutate: setCheck }] = createResource(() => getModelCheck().catch(() => undefined));
+  const [checking, setChecking] = createSignal(false);
+  const [checkError, setCheckError] = createSignal<string | null>(null);
+  const [now, setNow] = createSignal(Date.now());
+  const tick = setInterval(() => setNow(Date.now()), 30_000);
+  onCleanup(() => clearInterval(tick));
+  const checkStatus = () => checkSource();
+  const fresh = createMemo(() => newRefs(checkStatus(), now()));
+  const checkNow = async () => {
+    if (checking()) return;
+    setChecking(true);
+    setCheckError(null);
+    try {
+      setCheck(await runModelCheck());
+      await loadModels().catch(() => undefined);
+    } catch (e) {
+      setCheckError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setChecking(false);
+      setNow(Date.now());
+    }
   };
 
   /** A switch moved: staged, written by Save Changes. */
@@ -696,7 +724,7 @@ function ModelsPanel() {
           </div>
         </div>
         <Show
-          when={policy() && models() && !models.loading}
+          when={policy() && models() && !loaded.loading}
           fallback={
             <div aria-hidden="true">
               <div class="skeleton skeleton-row" />
@@ -784,6 +812,22 @@ function ModelsPanel() {
                               onInput={(e) => editLimit(group.provider, e.currentTarget.value)}
                             />
                           </div>
+                          <Show when={checkStatus()?.provider === group.provider ? checkStatus() : undefined}>
+                            {(status) => (
+                              <div class="model-policy-check" aria-live="polite">
+                                <span class="model-policy-check-line">{checkError() ? `Couldn't check: ${sentence(checkError()!)}` : checkLine(status(), now(), checking())}</span>
+                                <button
+                                  type="button"
+                                  class="button button-sm"
+                                  disabled={checking() || status().checking || !status().enabled}
+                                  title={status().enabled ? `Check ${group.provider}'s model list now` : "Model checks are off on this server (PI_OFFLINE or SOVA_MODELS_FETCH=off)"}
+                                  onClick={() => void checkNow()}
+                                >
+                                  Check Now
+                                </button>
+                              </div>
+                            )}
+                          </Show>
                           <Show when={group.models.length > 0 && isOpen(group.provider)}>
                             <ul class="model-policy-models" id={`models-${group.provider}`}>
                               <For each={group.models}>
@@ -791,6 +835,10 @@ function ModelsPanel() {
                                   <li class="model-policy-row model-policy-model">
                                     <span class="model-policy-model-name" title={m.ref}>
                                       {m.id}
+                                      <Show when={fresh().has(m.ref)}>
+                                        {" "}
+                                        <span class="chip chip-info" title="Added from Ollama Cloud's list in the last week">New</span>
+                                      </Show>
                                     </span>
                                     <label class="toggle toggle-switch model-policy-switch">
                                       <input

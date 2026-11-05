@@ -13,9 +13,9 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 544 |
-| Routes a catalogue entry points at | 166 |
-| Catalogue entries | 227 |
+| Routes registered | 546 |
+| Routes a catalogue entry points at | 168 |
+| Catalogue entries | 229 |
 | Class: Peer protocol | 39 |
 | Class: Auth | 4 |
 | Class: Share pages | 0 |
@@ -235,6 +235,8 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | `server.restart` | Restart Sova | changes | `POST /api/updates/restart` | full |
 | `settings.sova.get` | Sova's Own Settings | looks | `GET /api/settings` | sessions |
 | `settings.models.get` | Model Policy | looks | `GET /api/settings/models` | sessions |
+| `settings.models.check.status` | Model List Check | looks | `GET /api/settings/models/check` | sessions |
+| `settings.models.check` | Check Model List Now | changes | `POST /api/settings/models/check` | admin |
 | `settings.provider-limits.get` | Provider Limits | looks | `GET /api/settings/provider-limits` | sessions |
 | `settings.align.get` | Alignment Settings | looks | `GET /api/settings/align` | sessions |
 | `settings.delegate.get` | Delegate Settings | looks | `GET /api/settings/delegate` | sessions |
@@ -917,6 +919,8 @@ Approving a schedule or a draft spec, the Overseer's permits and their revoke: a
 | `GET /api/settings/delegate` | sessions | `settings.delegate.get` |
 | `GET /api/settings/memory` | sessions | `settings.memory.get` |
 | `GET /api/settings/models` | sessions | `settings.models.get` |
+| `GET /api/settings/models/check` | sessions | `settings.models.check.status` |
+| `POST /api/settings/models/check` | admin | `settings.models.check` |
 | `GET /api/settings/overseer` | sessions | `settings.overseer.get` |
 | `PUT /api/settings/project-assistant` | admin | `settings.assistant-default.set` |
 | `GET /api/settings/provider-limits` | sessions | `settings.provider-limits.get` |

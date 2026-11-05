@@ -100,7 +100,7 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import { WIRE_PARAM } from "../../shared/protocol";
+import { WIRE_PARAM, type ModelCheckStatus } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
@@ -269,6 +269,9 @@ export const getModelPolicy = (host?: string | null) => request<ModelPolicy>(hos
 export const putModelPolicy = (policy: ModelPolicy) =>
   request<ModelPolicy>("/api/settings/models", { method: "PUT", body: JSON.stringify(policy) });
 /** How many of each provider's requests may run at once on this device (§app.provider-limits/setting). */
+/** Ollama Cloud's model list check (§app.model-levels/settings-line): its status, and Check now (answers once done). */
+export const getModelCheck = () => request<ModelCheckStatus>("/api/settings/models/check");
+export const runModelCheck = () => request<ModelCheckStatus>("/api/settings/models/check", { method: "POST" });
 export const getProviderLimits = () => request<ProviderLimitsInfo>("/api/settings/provider-limits");
 export const putProviderLimits = (limits: ProviderLimits) =>
   request<ProviderLimitsInfo>("/api/settings/provider-limits", { method: "PUT", body: JSON.stringify({ limits }) });

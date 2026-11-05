@@ -8,6 +8,9 @@
  *   background when a provider's copy is over a day old.
  * - Overlay: a covered provider's models as pi composed them (provider compat included), with only
  *   those three fields filled in, retired models left out, and the user's own fields kept.
+ * - Server check (SERVER_CHECKED, today only `ollama-cloud`): no chat process fetches such a provider;
+ *   Sova's server lists it (`/api/tags`, `/api/show` per model) on its own timer, records the models
+ *   models.json lacks as `discovered`, and the overlay registers them beside models.json's.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -32,6 +35,18 @@ export const RETRY_MS = 60 * 60 * 1000;
 export const LOCK_STALE_MS = 2 * 60 * 1000;
 export const FETCH_TIMEOUT_MS = 4000;
 export const MODELS_DEV_URL = "https://models.dev/api.json";
+/** The server checks a provider's list this often while it runs. */
+export const CHECK_EVERY_MS = 24 * 60 * 60 * 1000;
+/** A discovered model's output limit when models.dev doesn't know the model. */
+export const DEFAULT_MAX_TOKENS = 32768;
+/** How long Settings → Models marks a discovered model New. */
+export const NEW_FOR_MS = 7 * 24 * 60 * 60 * 1000;
+/**
+ * Providers only Sova's server fetches (its check, checkListedProvider), by their display name: no
+ * chat process's refreshStale fetches them, and models their list names that models.json lacks join as
+ * `<id> (<name>)`. Every other provider keeps the per-process fetch and exactly models.json's list.
+ */
+export const SERVER_CHECKED: Readonly<Record<string, string>> = { "ollama-cloud": "Ollama Cloud" };
 
 const EFFORTS = new Set<string>(LEVELS.filter((l) => l !== "off"));
 
@@ -95,14 +110,39 @@ export interface CachedModel {
 	reasoning?: boolean;
 	options?: unknown[];
 }
+/** A model the server's check found on the provider's list that models.json lacks. */
+export interface DiscoveredModel {
+	/** When a check first listed it (Settings → Models' New mark). */
+	firstSeenAt: number;
+	contextWindow: number;
+	maxTokens: number;
+	input: ("text" | "image")[];
+}
 export interface CachedProvider {
 	fetchedAt: number;
 	baseUrl: string;
 	models: Record<string, CachedModel>;
+	/** SERVER_CHECKED providers only: models the list names that models.json lacks. */
+	discovered?: Record<string, DiscoveredModel>;
+}
+/** How the server's last check of a provider went. */
+export interface CheckRecord {
+	at: number;
+	ok: boolean;
+	/** Why it failed (ok false). */
+	error?: string;
+	/** When the server tries again on its own after a failure. */
+	retryAt?: number;
+	/** Models new to the list this check (ok true). */
+	added?: string[];
+	/** Models this check found retired that weren't before (ok true). */
+	retired?: string[];
 }
 export interface LevelsCache {
 	v: 1;
 	providers: Record<string, CachedProvider>;
+	/** The server's last check per SERVER_CHECKED provider. */
+	checks?: Record<string, CheckRecord>;
 }
 
 export function levelsOf(entry: CachedModel | undefined): ModelLevels | undefined {
@@ -113,6 +153,7 @@ export function levelsOf(entry: CachedModel | undefined): ModelLevels | undefine
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
+const positive = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v > 0;
 
 export function readCache(agentDir: string): LevelsCache | undefined {
 	try {
@@ -125,9 +166,27 @@ export function readCache(agentDir: string): LevelsCache | undefined {
 			for (const [mid, m] of Object.entries(p.models)) {
 				if (isRecord(m) && (m.source === "ollama" || m.source === "models.dev")) models[mid] = m as unknown as CachedModel;
 			}
-			providers[id] = { fetchedAt: p.fetchedAt, baseUrl: p.baseUrl, models };
+			const provider: CachedProvider = { fetchedAt: p.fetchedAt, baseUrl: p.baseUrl, models };
+			if (isRecord(p.discovered)) {
+				const discovered: Record<string, DiscoveredModel> = {};
+				for (const [mid, d] of Object.entries(p.discovered)) {
+					if (!isRecord(d) || typeof d.firstSeenAt !== "number" || !positive(d.contextWindow) || !positive(d.maxTokens)) continue;
+					const input = Array.isArray(d.input) && d.input.includes("image") ? (["text", "image"] as const) : (["text"] as const);
+					discovered[mid] = { firstSeenAt: d.firstSeenAt, contextWindow: d.contextWindow, maxTokens: d.maxTokens, input: [...input] };
+				}
+				provider.discovered = discovered;
+			}
+			providers[id] = provider;
 		}
-		return { v: 1, providers };
+		const cache: LevelsCache = { v: 1, providers };
+		if (isRecord(parsed.checks)) {
+			const checks: Record<string, CheckRecord> = {};
+			for (const [id, c] of Object.entries(parsed.checks)) {
+				if (isRecord(c) && typeof c.at === "number" && typeof c.ok === "boolean") checks[id] = c as unknown as CheckRecord;
+			}
+			cache.checks = checks;
+		}
+		return cache;
 	} catch {
 		return undefined;
 	}
@@ -190,7 +249,9 @@ export interface ComposedModel {
 const BASE = Symbol.for("sova:model-levels.base");
 /** The overlay a model carries, to tell a registration that would change nothing. */
 const SIG = Symbol.for("sova:model-levels.sig");
-type Marked = ComposedModel & { [BASE]?: ComposedModel; [SIG]?: string };
+/** On a base built from the check's discovered record, not from pi or models.json. */
+const DISC = Symbol.for("sova:model-levels.discovered");
+type Marked = ComposedModel & { [BASE]?: ComposedModel; [SIG]?: string; [DISC]?: true };
 
 const has = (o: unknown, key: string) => isRecord(o) && Object.prototype.hasOwnProperty.call(o, key);
 
@@ -229,22 +290,45 @@ export interface Overlay {
 	changed: boolean;
 }
 
+/** A discovered model as a models.json entry would make it: `<id> (<provider name>)`, the provider's settings. */
+function fromDiscovered(raw: RawProvider, id: string, d: DiscoveredModel, label: string, siblingApi: string | undefined): ComposedModel | undefined {
+	const base = fromRaw(raw, { id, name: `${id} (${label})`, contextWindow: d.contextWindow, maxTokens: d.maxTokens, input: [...d.input] }, siblingApi);
+	if (base) (base as Marked)[DISC] = true;
+	return base;
+}
+
 /**
  * One provider's overlay, or undefined when it isn't covered: no metadata, or a provider with a
- * built-in base (pi lists a model models.json doesn't define).
+ * built-in base (pi lists a model neither models.json nor the check's discovered list names).
+ * `label` (SERVER_CHECKED's name) lets the cache's discovered models join, after models.json's; a
+ * models.json entry with the same id always wins.
  */
-export function overlayProvider(raw: RawProvider, composed: ComposedModel[], cached: CachedProvider | undefined): Overlay | undefined {
+export function overlayProvider(raw: RawProvider, composed: ComposedModel[], cached: CachedProvider | undefined, label?: string): Overlay | undefined {
 	if (!cached || !raw.models?.length || composed.length === 0) return undefined;
 	const rawIds = new Set(raw.models.map((m) => m.id));
-	if (composed.some((m) => !rawIds.has(m.id))) return undefined;
+	const discovered = label ? Object.entries(cached.discovered ?? {}).filter(([id]) => !rawIds.has(id)) : [];
+	const known = new Set([...rawIds, ...discovered.map(([id]) => id)]);
+	// A model this overlay registered from a discovered record is ours too, even once the record is gone.
+	if (composed.some((m) => !known.has(m.id) && !((m as Marked)[BASE] as Marked | undefined)?.[DISC])) return undefined;
 	const byId = new Map(composed.map((m) => [m.id, ((m as Marked)[BASE] ?? m) as ComposedModel]));
-	const siblingApi = composed.find((m) => typeof m.api === "string")?.api;
+	const siblingApi = composed.find((m) => typeof m.api === "string" && !((m as Marked)[BASE] as Marked | undefined)?.[DISC])?.api ?? composed.find((m) => typeof m.api === "string")?.api;
+	const entries: { entry: RawModel; base: () => ComposedModel | undefined }[] = [
+		...raw.models.map((entry) => ({
+			entry,
+			base: () => {
+				const prior = byId.get(entry.id);
+				// A model registered from the check's record is rebuilt from models.json once it lists the id.
+				return prior && !(prior as Marked)[DISC] ? prior : fromRaw(raw, entry, siblingApi);
+			},
+		})),
+		...discovered.map(([id, d]) => ({ entry: { id } as RawModel, base: () => fromDiscovered(raw, id, d, label!, siblingApi) })),
+	];
 	const models: Record<string | symbol, unknown>[] = [];
 	const sig: unknown[] = [];
-	for (const entry of raw.models) {
+	for (const { entry, base: baseOf } of entries) {
 		const meta = cached.models[entry.id];
 		if (meta?.retired) continue;
-		const base = byId.get(entry.id) ?? fromRaw(raw, entry, siblingApi);
+		const base = baseOf();
 		if (!base) continue;
 		const { provider: _provider, headers: _headers, ...def } = base as Marked;
 		const out: Record<string | symbol, unknown> = { ...def };
@@ -260,7 +344,14 @@ export function overlayProvider(raw: RawProvider, composed: ComposedModel[], cac
 		}
 		out[BASE] = base;
 		models.push(out);
-		sig.push([entry.id, out.reasoning ?? null, out.thinkingLevelMap ?? null, (out.compat as Record<string, unknown> | undefined)?.supportsReasoningEffort ?? null]);
+		sig.push([
+			entry.id,
+			out.reasoning ?? null,
+			out.thinkingLevelMap ?? null,
+			(out.compat as Record<string, unknown> | undefined)?.supportsReasoningEffort ?? null,
+			// What a discovered model's record decides, so a re-check that learned more registers again.
+			(base as Marked)[DISC] ? [out.name, out.contextWindow, out.maxTokens, out.input] : null,
+		]);
 	}
 	const signature = JSON.stringify(sig);
 	for (const m of models) m[SIG] = signature;
@@ -296,6 +387,7 @@ export function applyModelLevels(target: LevelsTarget, opts: ApplyOptions): stri
 			config,
 			all.filter((m) => m.provider === provider),
 			cache.providers[provider],
+			SERVER_CHECKED[provider],
 		);
 		if (!overlay) continue;
 		const current = opts.current?.provider === provider ? (opts.current as Marked) : undefined;
@@ -341,7 +433,21 @@ async function timed<T>(ms: number, run: (signal: AbortSignal) => Promise<T>): P
 
 /** One model's `/api/show`: its record, `retired`, or undefined when the answer says nothing usable. */
 async function showModel(fetchFn: Fetch, origin: string, id: string): Promise<CachedModel | undefined> {
-	return timed(FETCH_TIMEOUT_MS, async (signal) => {
+	return (await showModelFull(fetchFn, origin, id))?.entry;
+}
+
+/** The context size an `/api/show` answer names (`model_info["<arch>.context_length"]`), if any. */
+function contextOf(body: Record<string, unknown>): number | undefined {
+	const info = isRecord(body.model_info) ? body.model_info : undefined;
+	if (!info) return undefined;
+	for (const [key, value] of Object.entries(info)) if (key.endsWith(".context_length") && positive(value)) return value;
+	return undefined;
+}
+
+/** `/api/show` with the context size it names. */
+async function showModelFull(fetchFn: Fetch, origin: string, id: string): Promise<{ entry: CachedModel; context?: number } | undefined> {
+	let context: number | undefined;
+	const entry = await timed(FETCH_TIMEOUT_MS, async (signal): Promise<CachedModel | undefined> => {
 		const res = await fetchFn(`${origin}/api/show`, {
 			method: "POST",
 			headers: { "content-type": "application/json" },
@@ -359,8 +465,10 @@ async function showModel(fetchFn: Fetch, origin: string, id: string): Promise<Ca
 		if (Array.isArray(thinking?.values)) out.values = thinking.values.filter((v) => typeof v === "string" || typeof v === "boolean");
 		if (typeof thinking?.default === "string" || typeof thinking?.default === "boolean") out.default = thinking.default;
 		if (Array.isArray(body.capabilities)) out.capabilities = body.capabilities.filter((c): c is string => typeof c === "string");
+		context = contextOf(body);
 		return out;
 	});
+	return entry ? { entry, ...(context ? { context } : {}) } : undefined;
 }
 
 async function inBatches<T>(items: T[], width: number, run: (item: T) => Promise<void>): Promise<void> {
@@ -430,6 +538,153 @@ export async function fetchProvider(
 	// A model no source answered for this time keeps what it had.
 	for (const id of ids) if (!models[id] && previous?.models[id]) models[id] = previous.models[id];
 	return { fetchedAt: deps.now, baseUrl, models };
+}
+
+// ---------------------------------------------------------------- the server's check
+
+export interface CheckResult {
+	provider: CachedProvider;
+	/** Models new to the list (now in `discovered`). */
+	added: string[];
+	/** Models found retired that weren't before. */
+	retired: string[];
+}
+
+/**
+ * Sova's server check of a SERVER_CHECKED provider (`label` its name): Ollama's list (`/api/tags`), then
+ * `/api/show` for every model models.json lists, the list names or an earlier check discovered; models.dev
+ * for the levels Ollama leaves open and a new model's limits. A listed model models.json lacks joins
+ * `discovered` when it completes text and some source gives its context size; its output limit is
+ * models.dev's, else DEFAULT_MAX_TOKENS. Throws, with a reason a person can read, when Ollama can't be
+ * reached or answers with an error, so the caller keeps the last list.
+ */
+export async function checkListedProvider(
+	raw: RawProvider,
+	previous: CachedProvider | undefined,
+	deps: { fetch: Fetch; now: number; modelsDev: () => Promise<unknown> },
+): Promise<CheckResult> {
+	const baseUrl = raw.baseUrl ?? "";
+	const origin = ollamaOrigin(baseUrl);
+	if (!origin) throw new Error("its address isn't an Ollama server");
+	const host = new URL(origin).host;
+	const tags = await timed(FETCH_TIMEOUT_MS, (signal) => deps.fetch(`${origin}/api/tags`, { signal })).catch(() => {
+		throw new Error(`couldn't reach ${host}`);
+	});
+	if (!tags.ok) throw new Error(`${host} answered ${tags.status}`);
+	const body = (await tags.json().catch(() => undefined)) as Record<string, unknown> | undefined;
+	if (!isRecord(body) || !Array.isArray(body.models)) throw new Error(`${host} sent a list Sova can't read`);
+	const listed = [...new Set(body.models.map((m) => (isRecord(m) && typeof m.name === "string" ? m.name.trim() : "")).filter(Boolean))];
+
+	const rawIds = new Set((raw.models ?? []).map((m) => m.id));
+	const before = previous?.discovered ?? {};
+	const ids = [...new Set([...rawIds, ...listed, ...Object.keys(before)])];
+	const shows: Record<string, { entry: CachedModel; context?: number }> = {};
+	await inBatches(ids, 4, async (id) => {
+		const got = await showModelFull(deps.fetch, origin, id).catch(() => undefined);
+		if (got) shows[id] = got;
+	});
+	const models: Record<string, CachedModel> = {};
+	for (const [id, s] of Object.entries(shows)) models[id] = s.entry;
+
+	const candidates = listed.filter((id) => !rawIds.has(id) && !(id in before) && shows[id] && !shows[id].entry.retired && shows[id].entry.capabilities?.includes("completion"));
+	const open = ids.filter((id) => {
+		const m = models[id];
+		return !m || (!m.retired && !m.values?.length && (!m.capabilities || m.capabilities.includes("thinking")));
+	});
+	let listedByDev: Record<string, unknown> | undefined;
+	if (open.length > 0 || candidates.length > 0) {
+		const catalog = await deps.modelsDev().catch(() => undefined);
+		if (isRecord(catalog)) {
+			const provider = Object.values(catalog).find((p) => isRecord(p) && sameUrl(p.api, baseUrl)) as Record<string, unknown> | undefined;
+			listedByDev = isRecord(provider?.models) ? provider.models : undefined;
+		}
+	}
+	for (const id of open) {
+		const m = listedByDev?.[id];
+		if (!isRecord(m)) continue;
+		models[id] = {
+			source: "models.dev",
+			...(typeof m.reasoning === "boolean" ? { reasoning: m.reasoning } : {}),
+			...(Array.isArray(m.reasoning_options) ? { options: m.reasoning_options } : {}),
+		};
+	}
+	// A model no source answered for this time keeps what it had.
+	for (const id of ids) if (!models[id] && previous?.models[id]) models[id] = previous.models[id];
+
+	const discovered: Record<string, DiscoveredModel> = {};
+	// Once models.json lists an id, that entry is the model: its record is dropped.
+	for (const [id, d] of Object.entries(before)) if (!rawIds.has(id)) discovered[id] = d;
+	const added: string[] = [];
+	for (const id of candidates) {
+		const dev = listedByDev?.[id];
+		const limit = isRecord(dev) && isRecord(dev.limit) ? dev.limit : undefined;
+		const contextWindow = shows[id]?.context ?? (positive(limit?.context) ? limit.context : undefined);
+		// No known context size: not added yet; the next check tries again.
+		if (!contextWindow) continue;
+		discovered[id] = {
+			firstSeenAt: deps.now,
+			contextWindow,
+			maxTokens: positive(limit?.output) ? limit.output : DEFAULT_MAX_TOKENS,
+			input: shows[id]!.entry.capabilities?.includes("vision") ? ["text", "image"] : ["text"],
+		};
+		added.push(id);
+	}
+	const retired = [...new Set([...rawIds, ...Object.keys(discovered)])].filter((id) => models[id]?.retired && !previous?.models[id]?.retired);
+	return { provider: { fetchedAt: deps.now, baseUrl, models, discovered }, added, retired };
+}
+
+export interface ServerCheckOptions {
+	agentDir: string;
+	/** A SERVER_CHECKED provider id. */
+	provider: string;
+	modelsPath?: string;
+	now?: () => number;
+	fetch?: Fetch;
+	modelsDev?: () => Promise<unknown>;
+}
+
+/** A models.dev catalog loader that fetches at most once per call site. */
+function modelsDevLoader(fetchFn: Fetch): () => Promise<unknown> {
+	let catalog: Promise<unknown> | undefined;
+	return () =>
+		(catalog ??= timed(10_000, async (signal) => {
+			const res = await fetchFn(MODELS_DEV_URL, { signal });
+			if (!res.ok) throw new Error(`models.dev ${res.status}`);
+			return res.json();
+		}));
+}
+
+/**
+ * Run the server's check of one provider and record it in the cache file: on success the provider's
+ * new metadata and what changed; on failure only the failure (the last list stays). Tells the
+ * listeners either way. Never throws; resolves to the record written.
+ */
+export async function checkServerProvider(opts: ServerCheckOptions): Promise<CheckRecord> {
+	const now = (opts.now ?? Date.now)();
+	let result: CheckResult | undefined;
+	let error: string | undefined;
+	try {
+		const raw = readModelsJson(opts.modelsPath ?? path.join(opts.agentDir, "models.json"))?.[opts.provider];
+		if (!raw) throw new Error(`models.json defines no ${opts.provider} models`);
+		const fetchFn = opts.fetch ?? (globalThis.fetch as unknown as Fetch);
+		const previous = readCache(opts.agentDir)?.providers[opts.provider];
+		result = await checkListedProvider(raw, previous, { fetch: fetchFn, now, modelsDev: opts.modelsDev ?? modelsDevLoader(fetchFn) });
+	} catch (e) {
+		error = e instanceof Error && e.message ? e.message : String(e);
+	}
+	const record: CheckRecord = result
+		? { at: now, ok: true, added: result.added, retired: result.retired }
+		: { at: now, ok: false, error, retryAt: now + RETRY_MS };
+	try {
+		// Merge over the newest file: another process may have written other providers meanwhile.
+		const latest = readCache(opts.agentDir) ?? { v: 1, providers: {} };
+		const providers = result ? { ...latest.providers, [opts.provider]: result.provider } : latest.providers;
+		writeCache(opts.agentDir, { ...latest, providers, checks: { ...latest.checks, [opts.provider]: record } });
+	} catch (e) {
+		return { at: now, ok: false, error: `couldn't save the result: ${e instanceof Error ? e.message : String(e)}`, retryAt: now + RETRY_MS };
+	}
+	notify();
+	return record;
 }
 
 // ---------------------------------------------------------------- background refresh
@@ -512,6 +767,8 @@ export function refreshStale(opts: RefreshOptions): Promise<string[]> {
 		if (!raw) return [];
 		const cache = readCache(opts.agentDir) ?? { v: 1, providers: {} };
 		const due = Object.entries(raw).filter(([id, p]) => {
+			// Only Sova's server fetches these (checkServerProvider); every process applies what the file holds.
+			if (id in SERVER_CHECKED) return false;
 			if (now - (s.failedAt.get(id) ?? -Infinity) < RETRY_MS) return false;
 			return typeof p.baseUrl === "string" && isStale(p, cache.providers[id], now);
 		});
@@ -520,15 +777,7 @@ export function refreshStale(opts: RefreshOptions): Promise<string[]> {
 		if (!release) return [];
 		try {
 			const fetchFn = opts.fetch ?? (globalThis.fetch as unknown as Fetch);
-			let catalog: Promise<unknown> | undefined;
-			const modelsDev =
-				opts.modelsDev ??
-				(() =>
-					(catalog ??= timed(10_000, async (signal) => {
-						const res = await fetchFn(MODELS_DEV_URL, { signal });
-						if (!res.ok) throw new Error(`models.dev ${res.status}`);
-						return res.json();
-					})));
+			const modelsDev = opts.modelsDev ?? modelsDevLoader(fetchFn);
 			const updated: Record<string, CachedProvider> = {};
 			for (const [id, p] of due) {
 				try {
@@ -542,7 +791,7 @@ export function refreshStale(opts: RefreshOptions): Promise<string[]> {
 			if (names.length === 0) return [];
 			// Another process may have written other providers meanwhile: merge over the newest file.
 			const latest = readCache(opts.agentDir) ?? { v: 1, providers: {} };
-			writeCache(opts.agentDir, { v: 1, providers: { ...latest.providers, ...updated } });
+			writeCache(opts.agentDir, { ...latest, providers: { ...latest.providers, ...updated } });
 			return names;
 		} finally {
 			release();
@@ -552,14 +801,19 @@ export function refreshStale(opts: RefreshOptions): Promise<string[]> {
 		.catch(() => [] as string[])
 		.then((names) => {
 			s.inflight = null;
-			if (names.length > 0) for (const fn of [...s.listeners]) {
-				try {
-					fn();
-				} catch {
-					// One listener's failure never stops the others.
-				}
-			}
+			if (names.length > 0) notify();
 			return names;
 		});
 	return s.inflight;
+}
+
+/** Tell every listener fresh metadata landed. */
+function notify(): void {
+	for (const fn of [...state().listeners]) {
+		try {
+			fn();
+		} catch {
+			// One listener's failure never stops the others.
+		}
+	}
 }

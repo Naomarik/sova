@@ -675,6 +675,10 @@ export function usageGlance(u: UsageInsight | undefined, now: number, loginId?: 
       const exact = money(p.balance.total, p.balance.currency);
       return [{ id: p.id, abbr, amount, high: !p.balance.available, stale, full: `${name} balance ${exact}` }];
     }
+    if (p.id === "ollama" && p.credits) {
+      const g = ollamaGlance(p, now, stale);
+      return g ? [{ id: p.id, abbr, bars: [g.bar], high: false, stale, full: g.full }] : [];
+    }
     const others = p.id === "claude" && u.claudeLogins ? otherAccounts(u, now, login) : [];
     const withOthers = others.length ? { others } : {};
     const g = glanceBars(p, now, stale);
@@ -687,6 +691,38 @@ export function usageGlance(u: UsageInsight | undefined, now: number, loginId?: 
     }
     return [];
   });
+}
+
+/**
+ * Ollama Cloud's included-credit meter (§app.insights/ollama-glance): the share of the period's
+ * included credits used, with the period's tick. Null without a current reading (currentIncluded:
+ * at most 10 minutes old, its period not ended, a meaningful used share). Activity never counts.
+ */
+function ollamaGlance(p: UsageProvider, now: number, stale: boolean): { bar: PaceBar; full: string } | null {
+  if (!currentIncluded(p, now)) return null;
+  const c = p.credits!.data!;
+  const inc = c.included!;
+  const used = includedCreditPct(c)!;
+  const balance = inc.balance_usd!, allowance = inc.allowance_usd!;
+  const period = inc.period!;
+  const w: UsageWindow = { label: "month", pct: used, resetsAt: period.until, startsAt: period.from };
+  const pace = windowPace(w, now);
+  const elapsed = pace?.elapsed ?? null;
+  const tail = [pace?.progress, `resets ${stampTime(Date.parse(period.until), now)}`].filter(Boolean) as string[];
+  const purchased = c.purchased?.balance_usd;
+  const knownPurchased = typeof purchased === "number" && Number.isFinite(purchased) && purchased >= 0;
+  const name = `${PROVIDER_NAME.ollama} included credits:`;
+  // Exact, as money() is, but a whole amount without ".00": "$299.95 of $300 left".
+  const usd = (n: number) => money(n, "USD").replace(/\.00$/, "");
+  if (balance === 0 && knownPurchased && purchased > 0) {
+    return {
+      bar: { pct: 100, elapsed, tone: stale ? null : "error" },
+      full: [`${PROVIDER_NAME.ollama} included credits used up; purchased ${usd(purchased)} left`, ...tail].join(" \u00b7 "),
+    };
+  }
+  const words = [`${name} ${Math.round(used)}% used`, `${usd(balance)} of ${usd(allowance)} left`, ...tail];
+  if (knownPurchased) words.push(`purchased ${usd(purchased)}`);
+  return { bar: { pct: Math.round(used), elapsed, tone: stale ? null : paceTone(used, elapsed) }, full: words.join(" \u00b7 ") };
 }
 
 /** Every line the glance says, each provider's then Claude's other accounts. */

@@ -182,6 +182,16 @@ export function Toggle(props: {
   );
 }
 
+/** One radio button, for a group whose rows hold more than an option (buttons, a box between them):
+    give each the group's `name`. A plain list of options is a Choice. */
+export const Radio = (props: { name: string; value?: string; checked: boolean; label: JSX.Element; onChange(): void; disabled?: boolean; class?: string }) => (
+  <label class={cls("toggle", props.class)}>
+    <input type="radio" name={props.name} value={props.value} checked={props.checked} disabled={props.disabled} onChange={() => props.onChange()} />
+    <span class="toggle-box" aria-hidden="true" />
+    {props.label}
+  </label>
+);
+
 /** One of a few, as radio buttons; each option's hint follows its label (`cards`: a bordered card
     per option, its label bold and its hint under it). Named by `label`, or by the element `labelledBy`. */
 export function Choice(props: {
@@ -204,16 +214,8 @@ export function Choice(props: {
             <Show
               when={props.cards}
               fallback={
-                <label class="toggle">
-                  {input}
-                  <span class="toggle-box" aria-hidden="true" />
-                  <span>
-                    {o.label}
-                    <Show when={o.hint}>
-                      <span class="field-hint"> · {o.hint}</span>
-                    </Show>
-                  </span>
-                </label>
+                <Radio name={name} value={o.value} checked={props.value === o.value} disabled={props.disabled} onChange={() => props.onChange(o.value)}
+                  label={<span>{o.label}<Show when={o.hint}><span class="field-hint"> · {o.hint}</span></Show></span>} />
               }
             >
               <label class="mq-choice">

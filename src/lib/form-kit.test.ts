@@ -84,6 +84,7 @@ describe("fields", () => {
     const ch = html(() => kit.Choice({ label: "Proactivity", value: "b", options: [{ value: "a", label: "A" }, { value: "b", label: "B", hint: "Badge" }], onChange() {} }));
     assert.match(ch, /role="radiogroup" aria-label="Proactivity"/);
     assert.equal((ch.match(/checked/g) ?? []).length, 1);
+    assert.match(html(() => kit.Radio({ name: "g", checked: true, class: "row", label: "Local", onChange() {} })), /<label class="toggle row"><input type="radio" name="g" checked[^>]*><span class="toggle-box" aria-hidden="true"><\/span>Local<\/label>/);
     const search = html(() => kit.SearchField({ label: "Search sessions", value: "", onInput() {} }));
     assert.equal(attr(search, "input", "type"), "search");
     assert.match(search, /<div class="search"><input[^>]*><span class="icon"/);

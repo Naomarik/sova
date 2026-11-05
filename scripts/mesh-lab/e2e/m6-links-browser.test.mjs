@@ -15,7 +15,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { chaos, hostUrl, lab, labTokenHeaders, readAgentFile, requireLab, waitFor, writeAgentFile } from "./lib.mjs";
+import { chaos, hostUrl, lab, labTokenHeaders, readAgentFile, requireLab, unlockPage, waitFor, writeAgentFile } from "./lib.mjs";
 import { api, byId, link, newSession, prompt, releaseLock, send, takeLock, unlink, waitIdle, waitInbox } from "./links-lib.mjs";
 
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
@@ -82,6 +82,7 @@ before(async () => {
   const ctx = await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: labTokenHeaders() });
   page = await ctx.newPage();
   page.on("websocket", (ws) => sockets.push(ws.url()));
+  await unlockPage(page, A);
   await takeLock("frontend");
   peersA = JSON.parse(readAgentFile(A, "sova/peers.json") ?? "null");
   assert.ok(peersA?.peers?.some((p) => p.id === C), `${A} lists ${C} (lab pair ${cfg.hosts.slice(0, 3).join(",")})`);

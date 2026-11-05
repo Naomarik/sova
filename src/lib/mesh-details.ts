@@ -7,6 +7,7 @@ import type { HostDetails, MeshHostDetails } from "../../shared/mesh-details";
 import type { SyncCategory } from "../../shared/protocol";
 import type { PeerStateView as PeerState, PeerStatusView as PeerStatus } from "../../shared/mesh-access";
 import { duration, relativeTime, shortDate } from "./format";
+import type { HostReading } from "./mesh-compat";
 
 export type { HostBrowserAccessResult, HostDetails, HostRenameResult, MeshDetails, MeshHostDetails } from "../../shared/mesh-details";
 
@@ -37,28 +38,34 @@ export function connectedCount(peers: readonly Pick<PeerStatus, "state">[]): { u
   return { up: 1 + peers.filter((p) => p.state === "up" || p.state === "skewed" || p.state === "hidden").length, total: 1 + peers.length };
 }
 
-/** A host's dot in the host menu: its tone, and the word said beside it (none when it is up). */
-export function hostTone(state: PeerState | "self"): { tone: "up" | "skewed" | "down"; word: string | null } {
-  if (state === "up" || state === "self") return { tone: "up", word: null };
-  if (state === "skewed") return { tone: "skewed", word: "other version" };
-  if (state === "hidden") return { tone: "skewed", word: "hidden" };
-  return { tone: "down", word: state === "refused" ? "refused" : "down" };
+/** Each reading's word (§mesh.compatibility/marks): the one table every screen says it from. */
+const READING_WORD: Record<HostReading, string | null> = {
+  works: null,
+  "read-only": "read only",
+  display: "display may be wrong",
+  update: "update needed",
+  hidden: "hidden",
+  refused: "refused",
+  down: "down",
+};
+
+/** A host's dot: its tone, and the word said beside it (none when it works fully). Amber (`skewed`,
+    the dot's class) means something is lost; red that the host can't be used at all. */
+export function hostTone(reading: HostReading | "self"): { tone: "up" | "skewed" | "down"; word: string | null } {
+  if (reading === "works" || reading === "self") return { tone: "up", word: null };
+  return { tone: reading === "down" || reading === "refused" ? "down" : "skewed", word: READING_WORD[reading] };
 }
 
-/**
- * A peer session row's host word and its tone, in the host menu's words; null for a plain up peer.
- * An up peer that keeps its sessions from this host reads "hidden".
- */
-export function rowHostState(state: PeerState, sessionsHidden: boolean): { word: string; tone: "warn" | "error" } | null {
-  if (state === "up") return sessionsHidden ? { word: "hidden", tone: "warn" } : null;
-  const { tone, word } = hostTone(state);
-  return { word: word ?? state, tone: tone === "down" ? "error" : "warn" };
+/** A peer session row's host word and its tone, in the host menu's words; null for a host that works fully. */
+export function rowHostState(reading: HostReading): { word: string; tone: "warn" | "error" } | null {
+  const { tone, word } = hostTone(reading);
+  return word ? { word, tone: tone === "down" ? "error" : "warn" } : null;
 }
 
 /** A peer session's head mark: its dot tone and the words its title says; null while the state is unknown. */
-export function hostMark(name: string, state: PeerState | undefined, unavailable: string | null): { tone: "up" | "skewed" | "down"; title: string } | null {
-  if (!state) return null;
-  const { tone, word } = hostTone(state);
+export function hostMark(name: string, reading: HostReading | null, unavailable: string | null): { tone: "up" | "skewed" | "down"; title: string } | null {
+  if (!reading) return null;
+  const { tone, word } = hostTone(reading);
   return { tone, title: `This session lives on ${name} · ${unavailable ?? word ?? "up"}` };
 }
 
@@ -116,15 +123,17 @@ export function unavailableText(h: Pick<MeshHostDetails, "unavailable" | "label"
 }
 
 /** The state word beside the dot: never the colour alone. */
-export function stateWord(h: Pick<MeshHostDetails, "state">): string {
-  return h.state === "self" ? "this host" : h.state === "up" ? "up" : h.state === "skewed" ? "other version" : h.state === "refused" ? "refused" : h.state === "hidden" ? "hidden" : "down";
+export function stateWord(h: Pick<MeshHostDetails, "state">, reading?: HostReading | null): string {
+  if (h.state === "self") return "this host";
+  if (reading) return hostTone(reading).word ?? "up";
+  return h.state === "up" ? "up" : h.state === "skewed" ? "update needed" : h.state === "refused" ? "refused" : h.state === "hidden" ? "hidden" : "down";
 }
 
 /** "up for 3h 12m" / "down for 40s" / "" when unknown. */
 export function sinceLine(h: Pick<MeshHostDetails, "state" | "stateSince">, now = Date.now()): string {
   if (h.stateSince === null) return "";
   const span = duration(now - h.stateSince);
-  return h.state === "up" || h.state === "self" || h.state === "hidden" ? `up for ${span}` : `not answering for ${span}`;
+  return h.state === "up" || h.state === "self" || h.state === "hidden" || h.state === "skewed" ? `up for ${span}` : `not answering for ${span}`;
 }
 
 /** When it was paired, or that nobody wrote it down. */

@@ -138,7 +138,6 @@ export function resyncKit(h: History, start: (s: Script) => ChildProcess) {
       buildChecked: async () => w.build,
       probe: async (p) => w.probes[p.id]!,
       hello: async (p) => w.probes[p.id]!,
-      protocol: () => PROTO,
       recipes: () => ({ recipes: w.recipes }),
       logDir: () => logDir,
       exists: () => true,

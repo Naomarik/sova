@@ -76,7 +76,8 @@ links". When nothing answers in time, it replies with the state as it stands.
   when that pin is valid; the pin never makes a host a gateway by itself.
 - Only a gateway advertises itself, in its hello, as an optional field outside the fingerprint:
   `shareGateway: {publicUrl}`. That is discovery only. Another host lists it as a choice when the
-  peer answers `up` and the URL is exactly a bare `https` origin.
+  peer answers `up`, that host doesn't read it as Update needed (§mesh.compatibility/host-acts), and
+  the URL is exactly a bare `https` origin.
 - `acceptFrom` is `"all"` or a list of StableIDs. `GET /api/peer/share-gateway/info` tells the
   calling peer `{publicUrl, accepting, seq}` (`seq`: the last snapshot stored for it, null when not
   accepting); a host that is no gateway answers 404 `{error: "not-gateway"}`. Asked with

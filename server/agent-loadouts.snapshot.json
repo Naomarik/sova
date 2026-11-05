@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 92335,
+      "bytes": 92353,
       "tools": [
         {
           "name": "sova_attention",
@@ -1661,7 +1661,7 @@
         {
           "name": "sova_link",
           "label": "Link sessions",
-          "description": "Link two or more sessions on different mesh hosts, so their agents can message each other (link_send, link_inbox, link_members in those sessions). Each member is a session id and its host (a peer id from the Mesh page; leave host out for this host), one member per host. Any existing session can be a member, running or idle; one without the link tools gets them at its next step (a Claude Code chat restarts for that), so a session you create only to link is cheaper created with sova_create_session and link: true, linked, then given its task. Refused for a terminal-owned, archived, subagent, baton, project-overseer or other organization session, your own, a host that is down or on another protocol, and two sessions on one host. Linking changes no session and sends nothing. Counts against the per-turn link cap. You are never a member, and you never send into a link: to tell a local member something, sova_send it.",
+          "description": "Link two or more sessions on different mesh hosts, so their agents can message each other (link_send, link_inbox, link_members in those sessions). Each member is a session id and its host (a peer id from the Mesh page; leave host out for this host), one member per host. Any existing session can be a member, running or idle; one without the link tools gets them at its next step (a Claude Code chat restarts for that), so a session you create only to link is cheaper created with sova_create_session and link: true, linked, then given its task. Refused for a terminal-owned, archived, subagent, baton, project-overseer or other organization session, your own, a host that is down or needs an update to work with this one, and two sessions on one host. Linking changes no session and sends nothing. Counts against the per-turn link cap. You are never a member, and you never send into a link: to tell a local member something, sova_send it.",
           "promptSnippet": "link sessions on different mesh hosts (one per host) so their agents can message each other",
           "parameters": {
             "type": "object",
@@ -2899,7 +2899,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 98120,
+      "bytes": 98138,
       "tools": [
         {
           "name": "sova_attention",
@@ -4643,7 +4643,7 @@
         {
           "name": "sova_link",
           "label": "Link sessions",
-          "description": "Link two or more sessions on different mesh hosts, so their agents can message each other (link_send, link_inbox, link_members in those sessions). Each member is a session id and its host (a peer id from the Mesh page; leave host out for this host), one member per host. Any existing session can be a member, running or idle; one without the link tools gets them at its next step (a Claude Code chat restarts for that), so a session you create only to link is cheaper created with sova_create_session and link: true, linked, then given its task. Refused for a terminal-owned, archived, subagent, baton, project-overseer or other organization session, your own, a host that is down or on another protocol, and two sessions on one host. Linking changes no session and sends nothing. Counts against the per-turn link cap. You are never a member, and you never send into a link: to tell a local member something, sova_send it.",
+          "description": "Link two or more sessions on different mesh hosts, so their agents can message each other (link_send, link_inbox, link_members in those sessions). Each member is a session id and its host (a peer id from the Mesh page; leave host out for this host), one member per host. Any existing session can be a member, running or idle; one without the link tools gets them at its next step (a Claude Code chat restarts for that), so a session you create only to link is cheaper created with sova_create_session and link: true, linked, then given its task. Refused for a terminal-owned, archived, subagent, baton, project-overseer or other organization session, your own, a host that is down or needs an update to work with this one, and two sessions on one host. Linking changes no session and sends nothing. Counts against the per-turn link cap. You are never a member, and you never send into a link: to tell a local member something, sova_send it.",
           "promptSnippet": "link sessions on different mesh hosts (one per host) so their agents can message each other",
           "parameters": {
             "type": "object",
@@ -12607,12 +12607,12 @@
       ]
     },
     "links": {
-      "bytes": 2400,
+      "bytes": 2418,
       "tools": [
         {
           "name": "sova_link",
           "label": "Link sessions",
-          "description": "Link two or more sessions on different mesh hosts, so their agents can message each other (link_send, link_inbox, link_members in those sessions). Each member is a session id and its host (a peer id from the Mesh page; leave host out for this host), one member per host. Any existing session can be a member, running or idle; one without the link tools gets them at its next step (a Claude Code chat restarts for that), so a session you create only to link is cheaper created with sova_create_session and link: true, linked, then given its task. Refused for a terminal-owned, archived, subagent, baton, project-overseer or other organization session, your own, a host that is down or on another protocol, and two sessions on one host. Linking changes no session and sends nothing. Counts against the per-turn link cap. You are never a member, and you never send into a link: to tell a local member something, sova_send it.",
+          "description": "Link two or more sessions on different mesh hosts, so their agents can message each other (link_send, link_inbox, link_members in those sessions). Each member is a session id and its host (a peer id from the Mesh page; leave host out for this host), one member per host. Any existing session can be a member, running or idle; one without the link tools gets them at its next step (a Claude Code chat restarts for that), so a session you create only to link is cheaper created with sova_create_session and link: true, linked, then given its task. Refused for a terminal-owned, archived, subagent, baton, project-overseer or other organization session, your own, a host that is down or needs an update to work with this one, and two sessions on one host. Linking changes no session and sends nothing. Counts against the per-turn link cap. You are never a member, and you never send into a link: to tell a local member something, sova_send it.",
           "promptSnippet": "link sessions on different mesh hosts (one per host) so their agents can message each other",
           "parameters": {
             "type": "object",

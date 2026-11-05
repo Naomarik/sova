@@ -1,0 +1,26 @@
+[
+  {
+    "id": "019a7f00-0000-7000-8000-000000000001",
+    "path": "/home/sample/.pi/agent/sessions/--home-sample-app--/2026-11-01T09-00-00-000Z_019a7f00-0000-7000-8000-000000000001.jsonl",
+    "cwd": "/home/sample/app",
+    "title": "Fix the login redirect",
+    "createdAt": "2026-11-01T09:00:00.000Z",
+    "lastActiveAt": "2026-11-03T10:30:00.000Z",
+    "model": "zai/glm-5.3",
+    "outlineGist": "Login redirect loses the return address",
+    "outlineNow": "Running the auth tests",
+    "groupId": "grp_sample",
+    "live": null,
+    "archived": false
+  },
+  {
+    "id": "019a7f00-0000-7000-8000-000000000002",
+    "path": "/home/sample/.pi/agent/sessions/--home-sample-app--/2026-11-02T09-00-00-000Z_019a7f00-0000-7000-8000-000000000002.jsonl",
+    "cwd": "/home/sample/app",
+    "title": "Tidy the release notes",
+    "createdAt": "2026-11-02T09:00:00.000Z",
+    "lastActiveAt": "2026-11-03T11:30:00.000Z",
+    "model": null,
+    "live": null
+  }
+]

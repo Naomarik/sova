@@ -50,7 +50,7 @@
       "§app/tours"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/share/registry.ts",
       "server/share/gateway-routes.ts",

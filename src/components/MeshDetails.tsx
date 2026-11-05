@@ -1,7 +1,7 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import { fetchMesh, fetchMeshDetails, putHostBrowserAccess, putHostLabel } from "../lib/api";
-import { isMeshHash, MESH_HREF, SELF_FILTER, setMeshState } from "../lib/mesh";
+import { isMeshHash, MESH_HREF, readingOf, SELF_FILTER, setMeshState } from "../lib/mesh";
 import { createPoll } from "../lib/poll";
 import {
   askHostFilter,
@@ -12,6 +12,7 @@ import {
   labelProblem,
   type MeshHostDetails,
   renameRefusal,
+  hostTone,
   stateWord,
   unavailableText,
 } from "../lib/mesh-details";
@@ -191,9 +192,9 @@ function HostSection(props: { host: MeshHostDetails; ownProtocol: string | undef
     <section class="mesh-details-host" aria-labelledby={titleId()}>
       <div class="mesh-details-host-head">
         <h3 class="mesh-details-host-title" id={titleId()}>
-          <span class="chip-dot" classList={{ "host-filter-up": up(), "host-filter-down": !up() }} />
+          <span class={`chip-dot host-filter-${h().self ? "up" : hostTone(readingOf(h().id) ?? (up() ? "works" : "down")).tone}`} />
           <span class="mesh-details-host-name">{h().label}</span>
-          <span class="mesh-details-host-state">{stateWord(h())}</span>
+          <span class="mesh-details-host-state">{stateWord(h(), readingOf(h().id))}</span>
         </h3>
         <Show when={!naming()}>
           <div class="mesh-details-actions">

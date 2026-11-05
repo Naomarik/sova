@@ -4,7 +4,8 @@
 // each key did before this table existed (Alt+O in App, Ctrl/⌘+P in ComposerMenu, Ctrl/⌘+B and "/"
 // in Sidebar). Ctrl/⌘+K (the command palette) and "?" (the shortcut sheet) came after, both owned
 // by App (§app/command-palette). Keys scoped to a widget (GroupView, ChangesViewer, InsightStrip,
-// VoiceInput, a chart's Escape) stay with their widget and are not here.
+// VoiceInput, a chart's Escape, the message box's Escape in Composer) stay with their widget and
+// are not here.
 //
 // Scope words:
 // - `textEntry`: "ignored" means a keydown whose target is a caret-bearing field (lib/text-entry)

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createPressTracker, enterSends, notePress, refocusAfterSend } from "./input-mode";
+import { stopButton } from "./compact";
+import { createPressTracker, enterSends, escStops, notePress, refocusAfterSend, type EscKey } from "./input-mode";
 
 const key = (k: string, mods: Partial<{ shiftKey: boolean; ctrlKey: boolean; metaKey: boolean; isComposing: boolean }> = {}) =>
   ({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, isComposing: false, ...mods });
@@ -38,6 +39,60 @@ test("no other key sends, Ctrl held or not", () => {
     assert.equal(enterSends(key("Tab"), touch), false);
     assert.equal(enterSends(key("a", { ctrlKey: true }), touch), false);
   }
+});
+
+const esc = (over: Partial<EscKey> = {}): EscKey => ({
+  key: "Escape",
+  shiftKey: false,
+  ctrlKey: false,
+  altKey: false,
+  metaKey: false,
+  isComposing: false,
+  repeat: false,
+  defaultPrevented: false,
+  keyCode: 27,
+  ...over,
+});
+const noPopover = () => false;
+const run = { running: true, compacting: false, readOnly: false, stopping: false, stopBlocked: false };
+
+test("a plain Esc stops while Stop is usable: a reply or a compaction", () => {
+  assert.equal(escStops(esc(), stopButton(run), noPopover), true);
+  assert.equal(escStops(esc(), stopButton({ ...run, running: false, compacting: true }), noPopover), true);
+});
+
+test("Esc with any modifier never stops", () => {
+  for (const mod of ["shiftKey", "ctrlKey", "altKey", "metaKey"] as const)
+    assert.equal(escStops(esc({ [mod]: true }), "usable", noPopover), false, mod);
+});
+
+test("an Esc something else took never stops: IME, a held key, a menu that prevented it", () => {
+  assert.equal(escStops(esc({ isComposing: true }), "usable", noPopover), false);
+  assert.equal(escStops(esc({ keyCode: 229 }), "usable", noPopover), false); // Safari's composition-ending key
+  assert.equal(escStops(esc({ repeat: true }), "usable", noPopover), false);
+  assert.equal(escStops(esc({ defaultPrevented: true }), "usable", noPopover), false);
+});
+
+test("with a popover open, Esc is the popover's", () => {
+  assert.equal(escStops(esc(), "usable", () => true), false);
+});
+
+test("Esc does nothing where Stop is missing or aria-disabled", () => {
+  const cases = {
+    "not running": { ...run, running: false },
+    "read only": { ...run, readOnly: true },
+    stopping: { ...run, stopping: true },
+    "socket not open": { ...run, stopBlocked: true },
+  };
+  for (const [name, s] of Object.entries(cases)) assert.equal(escStops(esc(), stopButton(s), noPopover), false, name);
+});
+
+test("no other key stops, and the popover is read only for an Esc that would", () => {
+  let asked = 0;
+  const popover = () => (asked++, false);
+  for (const key of ["Enter", "Tab", "Backspace", "q"]) assert.equal(escStops(esc({ key }), "usable", popover), false, key);
+  assert.equal(escStops(esc(), "disabled", popover), false);
+  assert.equal(asked, 0);
 });
 
 test("a key send, with no press, returns focus to the textarea", () => {

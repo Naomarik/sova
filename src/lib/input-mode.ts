@@ -1,4 +1,5 @@
 import { createSignal, type Accessor } from "solid-js";
+import type { StopButton } from "./compact";
 import { keyboardIsUp } from "./voice/keyboard";
 
 /** The fields of a keydown that decide whether Enter sends. */
@@ -13,6 +14,23 @@ export function enterSends(e: EnterKey, touch: boolean): boolean {
   if (e.ctrlKey || e.metaKey) return true;
   if (e.shiftKey) return false;
   return !touch;
+}
+
+/** The fields of a keydown that decide whether Esc stops the reply. */
+export type EscKey = EnterKey & { altKey: boolean; repeat: boolean; defaultPrevented: boolean; keyCode: number };
+
+/**
+ * Whether this keydown in the message box stops the reply, as pressing Stop does: a plain Esc
+ * (no modifier) while Stop is usable. An Esc something else took first never stops: a handler
+ * that already prevented its default, an IME composition (Safari's composition-ending key arrives
+ * with keyCode 229 and isComposing false), an open popover Esc closes, and a held key repeats
+ * without stopping again. `popoverOpen` is read last, only for an Esc that would otherwise stop.
+ * The / and @ menus need no check here: the composer gives them the key before it asks this.
+ */
+export function escStops(e: EscKey, stop: StopButton, popoverOpen: () => boolean): boolean {
+  if (e.key !== "Escape" || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return false;
+  if (e.isComposing || e.keyCode === 229 || e.repeat || e.defaultPrevented) return false;
+  return stop === "usable" && !popoverOpen();
 }
 
 /**

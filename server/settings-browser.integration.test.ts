@@ -17,7 +17,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { before, describe, test } from "node:test";
 import type { Page } from "playwright-core";
-import { formsBrowser, isRed, typeInto, until as untilSeen } from "./forms-browser.test.helper";
+import { assertOwnRepo, formsBrowser, isRed, keepsFocus, typeInto, until as untilSeen } from "./forms-browser.test.helper";
 
 const h = formsBrowser("sova-settings-browser-");
 const skip = h.skip;
@@ -216,6 +216,8 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     await setSwitch("Add a monitor to new teams", true);
     const pct = box("#subagents-my-setup-contextPct");
     await pct.waitFor({ timeout: 15_000 });
+    for (const f of ["contextPct", "everyMinutes"]) await keepsFocus(box(`#subagents-my-setup-${f}`), `Teams' ${f}`);
+    await keepsFocus(box("#subagents-name"), "Subagents' name");
     for (const t of ["", "abc", "1.", "500"]) await refused(pct, t, "Subagents");
     for (const t of ["-3", "2.5"]) await refused(pct, t, "Subagents", true);
   });
@@ -229,6 +231,7 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     writeFileSync(join(repo, ".sova", "project.json"), `${JSON.stringify({ version: 1, merge: { target: "master", push: false, checks: [{ id: "unit", label: "Unit tests", run: ["true"], timeout: 600 }] } }, null, 2)}\n`);
     git("add", "-A");
     git("commit", "-q", "-m", "init");
+    assertOwnRepo(repo);
     const res = await fetch(`${s.base}/api/projects`, { method: "POST", headers: { "x-sova-token": s.token, "content-type": "application/json", origin: s.base, "sec-fetch-site": "same-origin" }, body: JSON.stringify({ root: repo }) });
     assert.equal(res.status, 201, await res.clone().text());
     const pid = ((await res.json()) as { project: { id: string } }).project.id;
@@ -237,6 +240,7 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     const minutes = dialog().getByRole("textbox", { name: "Unit tests: time limit in minutes" });
     await minutes.waitFor({ timeout: 30_000 });
     assert.equal(await minutes.inputValue(), "10");
+    await keepsFocus(minutes, "Merge Queue's time limit", "1x2");
     const saveTo = dialog().getByRole("button", { name: "Save to master…" });
     const typeIn = async (t: string, keys: boolean) => {
       await minutes.fill("");
@@ -321,6 +325,26 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     await save("Memory");
     await open("memory", size);
     assert.equal(await size().inputValue(), "32");
+  });
+
+  test("every box this file drives keeps its element and focus while typed key by key (a rebuilt box loses every key after the first: W1-D1)", async () => {
+    const boxes: [string, string, () => ReturnType<Page["locator"]>][] = [
+      ["overseer", "Running at once", () => box("#overseer-cap-concurrentSessions")],
+      ["overseer", "Standing notes", () => box("#overseer-notes")],
+      ["models", "zai's At once", () => dialog().getByLabel("Requests at once for zai", { exact: true })],
+      ["general", "Sessions in Recent", () => box("#recent-count")],
+      ["decisions", "Exclusions", () => box("#decisions-exclusions")],
+      ["summaries", "Session titles' minutes", () => box("#session-titles-interval")],
+      ["mesh", "the host's name", () => box("#mesh-host-label")],
+    ];
+    for (const [tab, what, get] of boxes) {
+      await open(tab, get);
+      await keepsFocus(get(), what);
+    }
+    // Organizations: each number box, the photo boxes (W1-D1) included.
+    const labels = ["Message limit", "Per message", "Largest photo (MB)", "Per conversation", "Largest file (MB)"];
+    await open("organizations", () => dialog().getByRole("textbox", { name: /^Message limit/ }));
+    for (const l of labels) await keepsFocus(dialog().getByRole("textbox", l === "Message limit" ? { name: /^Message limit/ } : { name: l, exact: true }), `Organizations' ${l}`, "12");
   });
 
   test("Organizations: the message limit saves; out of range is red as typed", async () => {

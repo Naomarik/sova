@@ -6,8 +6,9 @@
 // Not a test file: each area's *browser.integration.test.ts imports it.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, realpathSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve, sep } from "node:path";
 import { after, before } from "node:test";
 import { chromium, type Browser, type Locator, type Page } from "playwright-core";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
@@ -86,20 +87,53 @@ export async function typeInto(box: Locator, text: string, how: "fill" | "keys" 
 export async function isRed(box: Locator, text: string, what: string): Promise<string> {
   await until(`${what}: "${text}" turns its box red`, async () => (await box.getAttribute("aria-invalid")) === "true");
   assert.equal(await box.inputValue(), text, `${what}: the box doesn't keep "${text}" as typed`);
-  const ids = ((await box.getAttribute("aria-describedby")) ?? "").split(/\s+/).filter(Boolean);
-  const page = box.page();
-  const messages: string[] = [];
-  for (const id of ids) {
-    const el = page.locator(`[id="${id}"]`);
-    if ((await el.count()) === 0 || !(await el.isVisible())) continue;
-    if (!(await el.evaluate((n) => n.classList.contains("field-error")))) continue;
-    const t = ((await el.textContent()) ?? "").replace(/\s+/g, " ").trim();
-    // A count ("12 / 48") turns red over its most, but is not a sentence.
-    if (t && !COUNT.test(t)) messages.push(t);
+  // One read of the page at a time (the box, its describedby targets, its field), polled until it settles.
+  const read = () =>
+    box.evaluate((el, countRe) => {
+      const count = new RegExp(countRe);
+      const vis = (n: Element | null): n is HTMLElement => !!n && n.getClientRects().length > 0;
+      const ids = (el.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean);
+      const text = (n: Element) => (n.textContent ?? "").replace(/\s+/g, " ").trim();
+      const named = ids.map((id) => document.getElementById(id)).filter(vis).filter((n) => n.classList.contains("field-error")).map(text).filter((t) => t && !count.test(t));
+      const field = el.closest(".field");
+      const shown = field ? [...field.querySelectorAll(".field-error")].filter(vis).map(text).filter((t) => t && !count.test(t)) : named;
+      return { invalid: el.getAttribute("aria-invalid"), named, shown, ids, html: (field ?? el.parentElement)?.outerHTML.slice(0, 1500) ?? "" };
+    }, COUNT.source);
+  let r = await read();
+  const end = Date.now() + 5_000;
+  while ((r.invalid !== "true" || r.named.length !== 1 || JSON.stringify(r.shown) !== JSON.stringify(r.named)) && Date.now() < end) {
+    await new Promise((res) => setTimeout(res, 100));
+    r = await read();
   }
-  assert.equal(messages.length, 1, `${what}: "${text}" names ${messages.length} red sentences (${JSON.stringify(messages)}), want one`);
-  const inField = await box.locator("xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' field ')][1]").locator(".field-error:visible").allTextContents();
-  const shown = inField.map((t) => t.replace(/\s+/g, " ").trim()).filter((t) => t && !COUNT.test(t));
-  assert.deepEqual(shown, messages, `${what}: "${text}" shows other red sentences in its field`);
-  return messages[0]!;
+  assert.equal(r.invalid, "true", `${what}: "${text}" went back to not red`);
+  assert.equal(r.named.length, 1, `${what}: "${text}" names ${r.named.length} red sentences (${JSON.stringify(r.named)}), want one; describedby ${JSON.stringify(r.ids)}; field ${r.html}`);
+  assert.deepEqual(r.shown, r.named, `${what}: "${text}" shows other red sentences in its field`);
+  return r.named[0]!;
+}
+
+/** Types three characters key by key into `box` and asserts it is the same element afterwards, still
+    attached and still focused: a box rebuilt by a keystroke (a reactive read in the call that draws it)
+    loses focus and every key after the first, whatever caused the rebuild. Leaves `text` typed. */
+export async function keepsFocus(box: Locator, what: string, text = "123"): Promise<void> {
+  await box.fill("");
+  await box.focus();
+  const before = await box.elementHandle();
+  assert.ok(before, `${what}: no box`);
+  await box.page().keyboard.type(text, { delay: 30 });
+  assert.equal(await before.evaluate((el) => el.isConnected), true, `${what}: typing rebuilt the box (the element it started in is gone)`);
+  assert.equal(await before.evaluate((el) => document.activeElement === el), true, `${what}: the box lost focus while typing`);
+  assert.equal(await before.evaluate((el) => (el as HTMLInputElement).value), text, `${what}: the box kept "${await before.evaluate((el) => (el as HTMLInputElement).value)}" of "${text}"`);
+  await before.dispose();
+}
+
+/** Before any project registration: `root` is a scratch folder (under the temp dir) holding its own
+    repository, so neither the server nor its conform runs can reach a parent's .git (a folder inside a
+    worktree resolves to that repository's main checkout). Throws otherwise. */
+export function assertOwnRepo(root: string): void {
+  const real = realpathSync(root);
+  const tmp = realpathSync(process.env.TMPDIR ?? tmpdir());
+  assert.ok(real.startsWith(tmp + sep), `refusing to register ${real}: not under the temp dir ${tmp}`);
+  assert.ok(existsSync(join(real, ".git")), `refusing to register ${real}: it has no .git of its own`);
+  const top = execFileSync("git", ["-C", real, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).trim();
+  assert.equal(realpathSync(top), real, `refusing to register ${real}: git resolves it to ${top}`);
 }

@@ -46,6 +46,22 @@ test("a save sends only what the user changed: an absent push stays absent", () 
   assert.deepEqual(changesOf({ ...d, push: false }, s, true), { push: false });
 });
 
+test("Reuse passes from identical code: on unless the file says false; a save sends only a change of it", () => {
+  const s = settings();
+  const d = toProjectDraft(s, true);
+  assert.equal(d.reuse, true, "absent reads On");
+  assert.equal(changesOf({ ...d, reuse: true }, s, true), null);
+  const ch = changesOf({ ...d, reuse: false }, s, true)!;
+  assert.deepEqual(ch, { reuse: false });
+  assert.deepEqual(changeLines(ch, s), ["Reuse passes from identical code: off"]);
+  const off = { ...s, reuse: false };
+  assert.equal(toProjectDraft(off, true).reuse, false);
+  assert.deepEqual(changesOf({ ...toProjectDraft(off, true), reuse: true }, off, true), { reuse: true });
+  // A draft staged before the switch existed (no reuse) changes nothing.
+  const { reuse: _drop, ...old } = d;
+  assert.equal(changesOf(old as typeof d, s, true), null);
+});
+
 test("time limits are whole minutes up to the cap", () => {
   assert.equal(parseMinutes("25", 30), 25);
   for (const bad of ["0", "31", "2.5", "", "x", "-3"]) assert.equal(parseMinutes(bad, 30), null, bad);

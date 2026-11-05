@@ -119,10 +119,15 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   review kit, relative to the checkout (§app.merge-queue/review); `land` (optional: `local`,
   `github-pr`, `gitlab-mr` or `push-branch`; absent: `local`), the project's way of landing, which
   this computer's own choice overrides (§app.merge-queue/strategies); and `request` (optional): the
-  folder of the project's request kit (§app.merge-queue/request-kit). With no `merge` section the queue
+  folder of the project's request kit (§app.merge-queue/request-kit); and `reuse` (optional boolean,
+  absent: true): whether checks may reuse passes from identical code (§app.merge-queue/checks),
+  `false` making every check run every file. With no `merge` section the queue
   uses `test` (§app.merge-queue/checks); with neither, the project's queue isn't set up
   (§app.merge-queue/setup). A check runs with `SOVA_VERB=merge`, `SOVA_STEP` (its id), `SOVA_OUT`,
-  `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths).
+  `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths),
+  and either `SOVA_FRESH=1` (a rerun that places the blame, a release's check, or reuse turned off:
+  run every file, reuse nothing) or `SOVA_REUSE_SAMPLE` (the share of reusable files to re-check,
+  0.05).
 - **`release`** (optional): how the project releases numbered versions, outside the definition's
   hash: `playbook`, `tag`, `scheme`, `channels`, `commit`, `checks` and `quietMin`
   (§app.release/settings). Absent, the project's releases aren't set up.
@@ -387,7 +392,8 @@ test command") and nothing changes. Otherwise test holds the instance's lock (§
 brings up the services `test.requires` names, with what they require, as up does
 (§app.project-services/up, on-demand ones included) and waits for their readiness, then runs `run`
 with the selectors appended as its last arguments (none: whatever the command runs with no
-arguments, which for Sova's own runner is the unit tier), in the instance's
+arguments, which for Sova's own runner is the unit tier; that runner reuses passes from identical
+code as it does anywhere, §app.server-runtime/test-reuse, and counts a reused file as passed), in the instance's
 checkout, as one waited-for unit `sova-hook-<state hash>-<instance>-test` with the instance's env
 plus `SOVA_VERB=test`, `SOVA_TEST_SELECT` (the selectors as a JSON array) and `SOVA_OUT`. At its
 timeout, or when the caller aborts (a cancelled tool call), the unit is killed whole. It runs

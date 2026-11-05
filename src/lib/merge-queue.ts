@@ -2,8 +2,10 @@
 // session pane's Worktrees rows and the project's Merge Queue tab, so the four always agree. Pure: no
 // Solid, no DOM. The shapes are the queue's (shared/merge-queue.ts); the verb calls live in
 // merge-queue-client.ts.
-import type { SessionWorktreeInfo } from "../../shared/protocol";
-import { newerWords, ordinal, type LandHow } from "../../shared/merge-queue";
+import type { SessionSummary, SessionWorktreeInfo, WorktreeReadiness } from "../../shared/protocol";
+import { newerWords, ordinal, type LandHow, type MergeReady } from "../../shared/merge-queue";
+import { clockTime, relativeTime } from "../../pi-config/extensions/stamp/format.ts";
+import { readinessChip } from "./worktrees";
 import type { MergeEntry, MergeNote, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo } from "./merge-queue-types";
 import { requestChip, requestReason } from "./merge-queue-requests";
 
@@ -75,6 +77,8 @@ export interface QueueRow {
   newer?: string;
   /** The branch against the target's head: "3 commits · +40 −2". */
   size?: string;
+  /** When the branch last changed (its head's committer date), drawn after the size: "2d ago". */
+  when?: HeadWhen;
   /** Notes on it (the merge thread's first), each with what kind it is. */
   notes: { label: string; text: string }[];
   action: RowAction;
@@ -125,6 +129,57 @@ export const PLAIN_MERGE_LINE = "Say “land it” in the chat to merge it into 
 /** "3 commits · +40 −2": the branch's side against the target's head. */
 export const sizeWords = (s: { ahead: number; added: number; removed: number } | undefined): string | undefined =>
   s ? `${s.ahead} ${s.ahead === 1 ? "commit" : "commits"} · +${s.added} −${s.removed}` : undefined;
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** When a branch last changed, as a row draws it in a <time>: `iso` its datetime, `text` relative ("2h ago",
+    "yesterday", "3d ago", "Nov 2" past a week: Sova's relativeTime), `full` the date and time for hover and screen
+    readers ("Nov 2, 2026, 1:43 PM"). Undefined when there's no date or it doesn't parse. */
+export interface HeadWhen {
+  iso: string;
+  text: string;
+  full: string;
+}
+export function headWhen(headAt: string | undefined, now = Date.now()): HeadWhen | undefined {
+  const ms = headAt ? Date.parse(headAt) : NaN;
+  if (!Number.isFinite(ms)) return undefined;
+  const d = new Date(ms);
+  return { iso: headAt!, text: relativeTime(ms, now), full: `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}, ${clockTime(ms)}` };
+}
+
+/** A Ready to land, not approved row's facts: "da69caa · 3 commits ahead · +1497 −309", then its date apart. */
+export const readyFactsWords = (r: Pick<MergeReady, "ahead" | "added" | "removed">): string =>
+  `${r.ahead} ${r.ahead === 1 ? "commit" : "commits"} ahead${r.added !== undefined && r.removed !== undefined ? ` · +${r.added} −${r.removed}` : ""}`;
+
+/** The chip on a Ready to land, not approved row: its chat's own readiness reading of the branch, in the words and
+    colour a Worktrees row's readiness chip uses (worktrees.ts readinessChip: Ready to land, In progress, Waiting for
+    your OK…), with a conflict said as such ("Conflicts with master"). No chat: a neutral "No chat". A chat whose
+    reading Sova doesn't have (it doesn't track the worktree, or isn't on the page's list): a neutral "No reading". */
+export interface ReadyChip {
+  label: string;
+  tone: Tone;
+  title: string;
+}
+export function readyRowChip(r: Pick<MergeReady, "session" | "sessionArchived" | "worktree" | "branch">, trees: readonly WorktreeReadiness[] | undefined): ReadyChip {
+  if (!r.session) return { label: "No chat", tone: "neutral", title: "No chat works on this branch: nothing reads it as finished or not." };
+  const t = trees?.find((x) => x.path === r.worktree) ?? trees?.find((x) => x.branch === r.branch);
+  if (!t) return { label: "No reading", tone: "neutral", title: `Sova has no reading of this branch from its chat${r.sessionArchived ? " (archived)" : ""}.` };
+  const conflict = t.reason && /^Conflicts with /.test(t.reason) ? t.reason.split(" · ")[0]! : null;
+  if (conflict) return { label: conflict, tone: "warn", title: `${t.reason}.` };
+  const chip = readinessChip({ readiness: t });
+  if (!chip) return { label: "Merged", tone: "success", title: "Its chat reads this branch as merged." };
+  return { label: chip.label, tone: chip.tone, title: chip.title };
+}
+
+/** The readiness readings a chat recorded by id holds (a worker's, then its top chat's), among `sessions`. */
+export function chatTreesOf(id: string | undefined, sessions: readonly Pick<SessionSummary, "id" | "path" | "readiness" | "workerSession" | "workerOf">[] | undefined): WorktreeReadiness[] | undefined {
+  if (!id) return undefined;
+  const all = sessions ?? [];
+  const s = all.find((x) => x.id === id || x.path === id);
+  if (!s) return undefined;
+  const top = s.workerSession && s.workerOf ? all.find((x) => x.path === s.workerOf!.path || x.id === s.workerOf!.id) : undefined;
+  return [...(s.readiness?.trees ?? []), ...(top?.readiness?.trees ?? [])];
+}
 
 /** The commit a Land pins: the head the row's numbers were read at, else the one readiness found finished. */
 export const shownCommit = (w: Partial<Pick<SessionWorktreeInfo, "readiness" | "mergeStats">>): string | undefined =>
@@ -227,8 +282,10 @@ export const rowKeyOf = (w: RowKeyInput): RowKey => entryKeyOf(w) ?? treeKeyOf(w
 /** The words for one worktree, from its tracked state, its readiness and its queue entry. */
 export function queueRow(w: QueueRowInput): QueueRow {
   const r = queueRowOf(w);
-  const size = SIZED.includes(r.key) ? sizeWords(w.mergeStats) : undefined;
-  return size ? { ...r, size } : r;
+  if (!SIZED.includes(r.key)) return r;
+  const size = sizeWords(w.mergeStats);
+  const when = headWhen(w.mergeStats?.headAt);
+  return { ...r, ...(size ? { size } : {}), ...(when ? { when } : {}) };
 }
 function queueRowOf(w: QueueRowInput): QueueRow {
   const e = w.queue;

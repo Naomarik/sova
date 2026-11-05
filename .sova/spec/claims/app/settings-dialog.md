@@ -238,7 +238,10 @@ medium, fallback `claude-opus-5-5` (Opus 5.5) high; Investigation `claude-opus-5
 The seventh tab: which model writes the summary line under each session's title
 (§app.session-list/content-rules, "Row line 2"), as the `topic-outline` extension's chain — a
 **Primary** and an optional **Fallback**, each a row of two native selects, Backend (`Claude Code`,
-`pi`) and Model, laid out like a Delegate row without Effort. The chain is not a list you edit
+`pi`) and Model, laid out like a Delegate row without Effort. The same chain writes the merge queue's branch
+summaries (§app.merge-queue/branch-summary), and a line in the section says so: "This model also
+writes the merge queue's branch summaries."; a saved change applies to the next branch summary
+written. The chain is not a list you edit
 here: a primary and a fallback are the choices that matter, and timeouts and budgets stay in the
 file.
 

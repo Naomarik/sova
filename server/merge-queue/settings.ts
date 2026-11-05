@@ -91,6 +91,7 @@ export function buildSettings(a: SettingsInput): MergeQueueSettings {
     ...(a.pendingSave ? { pendingSave: structuredClone(a.pendingSave) } : {}),
     landing: { target: a.target, push: typeof m?.push === "boolean" ? m.push : null, names: { ...a.names } },
     checks: { mode: a.checks, list },
+    reuse: m?.reuse !== false,
     setup: { steps: (a.def?.setup ?? []).map((s) => ({ id: s.id })) },
     ...(m?.install ? { install: { inputs: [...m.install.inputs], timeoutSec: m.install.timeout } } : {}),
     review: {

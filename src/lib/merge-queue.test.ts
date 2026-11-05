@@ -350,3 +350,69 @@ test("a sent-back entry superseded by a later cancelled one no longer reads Need
   assert.notEqual(queueRow(wt({ queue: info, mergeServed: true })).key, "needs-fix");
   assert.equal(queueRow(wt({ queue: { ...info!, settled: undefined }, mergeServed: true })).key, "needs-fix", "unsettled, it still would");
 });
+
+test("a live row's size carries when the branch last changed; a landed or merged row has no date", async () => {
+  const { headWhen } = await import("./merge-queue");
+  const at = new Date(Date.now() - 2 * 24 * 3600_000).toISOString();
+  const stats = { head: SHA, ahead: 3, added: 40, removed: 2, headAt: at };
+  for (const x of [wt({ readiness: ready, mergeServed: true, mergeStats: stats }), wt({ readiness: { ...ready, state: "in-progress", dirtyCount: 1 }, mergeStats: stats }), wt({ queue: q({ state: "checking" }), mergeStats: stats }), wt({ queue: q({ state: "needs-fix" }), mergeStats: stats })]) {
+    const r = queueRow(x);
+    assert.equal(r.size, "3 commits · +40 −2", r.key);
+    assert.deepEqual(r.when, headWhen(at), r.key);
+    assert.equal(r.when?.text, "2d ago");
+    assert.equal(r.when?.iso, at);
+  }
+  for (const x of [wt({ queue: q({ state: "landed" }), mergeStats: stats }), wt({ status: "merged", mergeStats: stats }), wt({ exists: false, mergeStats: stats })]) {
+    const r = queueRow(x);
+    assert.equal(r.when, undefined, r.key);
+    assert.equal(r.size, undefined, r.key);
+  }
+  // No date read: the size alone.
+  assert.equal(queueRow(wt({ readiness: ready, mergeServed: true, mergeStats: { head: SHA, ahead: 1, added: 1, removed: 0 } })).when, undefined);
+});
+
+test("the date reads relative, then a date past a week; in full for hover and screen readers", async () => {
+  const { headWhen } = await import("./merge-queue");
+  const now = Date.parse("2026-11-05T15:00:00");
+  assert.equal(headWhen(new Date(now - 2 * 3600_000).toISOString(), now)?.text, "2h ago");
+  assert.equal(headWhen(new Date(now - 24 * 3600_000).toISOString(), now)?.text, "yesterday");
+  assert.equal(headWhen(new Date(now - 3 * 24 * 3600_000).toISOString(), now)?.text, "3d ago");
+  const old = headWhen("2026-10-02T13:43:00", now)!;
+  assert.equal(old.text, "Oct 2");
+  assert.equal(old.full, "Oct 2, 2026, 1:43 PM");
+  assert.equal(headWhen(undefined, now), undefined);
+  assert.equal(headWhen("not a date", now), undefined);
+});
+
+test("a Ready row's facts: commits ahead, lines, the date apart", async () => {
+  const { readyFactsWords } = await import("./merge-queue");
+  assert.equal(readyFactsWords({ ahead: 3, added: 1497, removed: 309 }), "3 commits ahead · +1497 −309");
+  assert.equal(readyFactsWords({ ahead: 1 }), "1 commit ahead");
+});
+
+test("a Ready row's chip is its chat's readiness reading, in the Worktrees rows' words; no chat says so", async () => {
+  const { readyRowChip, chatTreesOf } = await import("./merge-queue");
+  const { readinessChip } = await import("./worktrees");
+  const r = { branch: "feat/x", worktree: "/w", commit: SHA };
+  assert.deepEqual(readyRowChip(r, undefined), { label: "No chat", tone: "neutral", title: "No chat works on this branch: nothing reads it as finished or not." });
+  assert.equal(readyRowChip({ ...r, session: "s1" }, []).label, "No reading");
+  const tree = (x: object) => [{ path: "/w", branch: "feat/x", state: "ready" as const, ...x }];
+  const landing = tree({ landing: { state: "ready", commit: SHA } });
+  // Every state the Worktrees readiness chip has: the same label and tone.
+  for (const t of [landing, tree({}), tree({ state: "in-progress" }), tree({ state: "waiting-approval" }), tree({ state: "blocked" }), tree({ landing: { state: "specs", commit: SHA, drafts: ["d"] } })]) {
+    const want = readinessChip({ readiness: t[0] as never })!;
+    const got = readyRowChip({ ...r, session: "s1" }, t as never);
+    assert.deepEqual([got.label, got.tone], [want.label, want.tone]);
+  }
+  assert.equal(readyRowChip({ ...r, session: "s1" }, landing as never).label, "Ready to land");
+  assert.equal(readyRowChip({ ...r, session: "s1" }, tree({ state: "in-progress" }) as never).label, "In progress");
+  const conflict = readyRowChip({ ...r, session: "s1" }, tree({ state: "in-progress", why: "conflicts with master: 2 files", reason: "Conflicts with master · 2 files", conflicts: 2 }) as never);
+  assert.deepEqual([conflict.label, conflict.tone], ["Conflicts with master", "warn"]);
+  // Matched by its worktree, else its branch; a worker's chat reads its top chat's readings too.
+  const sessions = [
+    { id: "top", path: "/s/top.jsonl", readiness: { trees: [{ path: "/w", branch: "feat/x", state: "waiting-approval" }], since: 0 } },
+    { id: "wk", path: "/s/wk.jsonl", workerSession: true, workerOf: { id: "top", path: "/s/top.jsonl" } },
+  ] as never;
+  assert.equal(readyRowChip({ ...r, session: "wk" }, chatTreesOf("wk", sessions)).label, "Waiting for your OK");
+  assert.equal(chatTreesOf("nobody", sessions), undefined);
+});

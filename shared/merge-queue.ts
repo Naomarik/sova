@@ -294,6 +294,9 @@ export interface RunStep {
   log: string;
   counts?: { passed: number | null; failed: number | null; skipped: number | null } | null;
   failures?: { file?: string; name?: string; message?: string; blame?: Blame }[];
+  /** check: how many of its test files already passed on identical code (the re-checked ones too); the step's log
+   *  lists each and its source run. Its time says nothing about the check's full length (the estimate skips it). */
+  reused?: number;
 }
 
 export type RunVerdict =

@@ -1,6 +1,7 @@
 /**
  * How long a run takes, from this project's run history: the median of its last 9 runs that passed (start to end),
- * else a first guess from the median of each check's own passing steps, else null (never timed). "Starts in" for an
+ * else a first guess from the median of each check's own passing steps, else null (never timed). A run or step that
+ * reused passes from identical code (RunStep.reused) teaches nothing: its time isn't the checks'. "Starts in" for an
  * entry is the sum over the entries ahead of it plus what is left of the run now checking.
  */
 import type { MergeRun } from "../../shared/merge-queue";
@@ -21,7 +22,7 @@ const span = (r: Pick<MergeRun, "startedAt" | "endedAt">): number | null => {
 /** A run's expected length (ms) from `runs` (any order), or null when none passed yet. */
 export function estimateFromRuns(runs: readonly MergeRun[]): number | null {
   const passed = runs
-    .filter((r) => r.verdict === "passed" && r.endedAt)
+    .filter((r) => r.verdict === "passed" && r.endedAt && !r.steps.some((s) => s.reused))
     .sort((a, b) => Date.parse(b.endedAt!) - Date.parse(a.endedAt!))
     .slice(0, 9)
     .map(span)
@@ -29,7 +30,7 @@ export function estimateFromRuns(runs: readonly MergeRun[]): number | null {
   if (passed.length) return median(passed);
   // No whole run passed yet: the sum of each step kind's median over the steps that passed.
   const byStep = new Map<string, number[]>();
-  for (const r of runs) for (const s of r.steps) if (s.result === "passed" && s.ms > 0) byStep.set(s.id, [...(byStep.get(s.id) ?? []), s.ms]);
+  for (const r of runs) for (const s of r.steps) if (s.result === "passed" && s.ms > 0 && !s.reused) byStep.set(s.id, [...(byStep.get(s.id) ?? []), s.ms]);
   if (!byStep.size) return null;
   let sum = 0;
   for (const xs of byStep.values()) sum += median(xs.slice(-9))!;

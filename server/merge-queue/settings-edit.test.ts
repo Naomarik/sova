@@ -63,6 +63,20 @@ describe("editing Sova's own project file in place", () => {
     assert.equal(on, SOVA);
   });
 
+  test("Reuse passes from identical code: off writes merge.reuse false, on removes it (the default): the round trip is the same bytes", () => {
+    const off = editSettingsText(SOVA, { reuse: false });
+    assert.equal(JSON.parse(off).merge.reuse, false);
+    assert.deepEqual(JSON.parse(off), applyToData(JSON.parse(SOVA), { reuse: false }));
+    assert.deepEqual(lineDiff(SOVA, off).removed, []);
+    assert.equal(editSettingsText(off, { reuse: true }), SOVA);
+    assert.equal(editSettingsText(SOVA, { reuse: true }), SOVA, "on is the default: nothing written");
+    assert.equal(JSON.parse(editSettingsText('{\n  "version": 1\n}\n', { reuse: false })).merge.reuse, false);
+    assert.deepEqual(parseChange({ reuse: false }), { reuse: false });
+    assert.throws(() => parseChange({ reuse: "off" }), SettingsEditError);
+    assert.equal(changeWords({ reuse: false }), "reuse passes from identical code off");
+    assert.equal(isEmptyChange({ reuse: true }), false);
+  });
+
   test("How it lands (al_3): github-pr adds merge.land, local removes it: the round trip is the same bytes", () => {
     const pr = editSettingsText(SOVA, { land: "github-pr" });
     assert.equal(JSON.parse(pr).merge.land, "github-pr");

@@ -19,6 +19,7 @@ const at = (p: Page) => (page === p ? "page" : undefined);
       {home ? <a href="#features">Features</a> : <a href="/">← Back to Sova</a>}
       {home && <a class="nav-link-extra" href="#teams">Teams</a>}
       {home && <a class="nav-link-extra" href="#landing">Merge Queue</a>}
+      {home && <a class="nav-link-extra" href="#usage">Usage</a>}
       <a class="nav-link-keep" href="/docs/" aria-current={at("docs")}>Docs</a>
       {page !== "mesh" && <a class="nav-link-extra" href="/mesh">Mesh</a>}
       {page !== "orgs" && <a class="nav-link-extra" href="/orgs">Organizations</a>}

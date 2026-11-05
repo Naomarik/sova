@@ -1,6 +1,6 @@
 // Run: pnpm test:int -- server/settings-browser.integration.test.ts
 // The harness (build, throwaway server, Chrome, short temp dir, cookie sign-in) is
-// forms-browser.integration.fixture.ts, shared by every area file of the "forms" group.
+// forms-browser.test.helper.ts, shared by every area file of the "forms" group.
 // Settings in a real browser (§app.settings-dialog/save-bar), against a throwaway server
 // (server/testing/hermetic-server.ts) serving this tree's frontend, built fresh into the scratch root
 // (a stale dist/ would test old code). Per tab: the dialog opens clean; an edit says "Unsaved: <form>";
@@ -17,7 +17,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { before, describe, test } from "node:test";
 import type { Page } from "playwright-core";
-import { formsBrowser, isRed, typeInto, until as untilSeen } from "./forms-browser.integration.fixture";
+import { formsBrowser, isRed, typeInto, until as untilSeen } from "./forms-browser.test.helper";
 
 const h = formsBrowser("sova-settings-browser-");
 const skip = h.skip;
@@ -106,7 +106,7 @@ describe("Settings in a browser: edit, save, reload, invalid, reset", { timeout:
     await open("overseer", cap);
     for (const [t, how] of [["a5", "keys"], ["-", "keys"], ["1e", "fill"], ["", "fill"], ["1001", "paste"]] as const) {
       await typeInto(cap(), t, how);
-      assert.equal(await isRed(cap(), t, "Running at once"), "Running at once must be a whole number from 0 to 1000.");
+      assert.equal(await isRed(cap(), t, "Running at once"), "Running at once must be a whole number from 0 to 1,000.");
       assert.equal(await saveButton().isDisabled(), true, `Save Changes is enabled over "${t}"`);
     }
     await typeInto(cap(), "12", "keys");

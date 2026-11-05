@@ -44,10 +44,10 @@ environment every runner starts in, and the hermetic dev server.
   processes** (`trial`, `server/chat-runtime/trial-*.integration.test.ts`) and **Tours** (`tours`,
   the `server/tours/*.integration.test.ts` files that drive Chrome), **Merge queue** (`merge-queue`) and
   **Forms in a browser** (`forms`, `server/settings-browser.integration.test.ts` and one
-  `server/forms-*browser.integration.test.ts` per area, helpers in a `*browser.integration.fixture.ts`:
+  `server/forms-*browser.integration.test.ts` per area, helpers in `server/forms-browser.test.helper.ts`:
   Sova's forms in Chrome, triggered by form code only (the form kit, its limits, each migrated
   surface), run at landing when triggered; it picks its own
-  short temp dir for Chrome's sockets, `server/settings-browser-temp.ts`, and skips saying why only
+  short temp dir for Chrome's sockets, `server/settings-browser-temp.test.helper.ts`, and skips saying why only
   when none is writable). Each lists its triggers: the
   areas whose change can break it (chats, workers, teams, the Overseer, batons, Claude Code and their
   extensions, the harness; tour code), any package or toolchain change, the test setup this guide
@@ -138,7 +138,9 @@ environment every runner starts in, and the hermetic dev server.
   integration tier's load too. Each browser launch costs seconds: split a growing Chrome file by
   scenario (as `runner-signin`, `-landed` and `-inplace` are) rather than raising its test timeouts.
 - Shared stand-in sites and probes are `*.integration.fixture.ts` beside the tests (not test files, so
-  no glob matches them). Test credentials are short fakes (`fake-pw-01`): the merge queue's leak scan
+  no glob matches them). Test code shared by test files is a `*.test.helper.ts`: no glob runs it, the
+  product line count leaves it out, and `server/test-helpers.test.ts` fails if a product file imports
+  one. Test credentials are short fakes (`fake-pw-01`): the merge queue's leak scan
   flags any `password`/`token`/`secret`/`apiKey` assigned a literal of 16+ characters with no space. A test that needs
   a long value builds it at runtime (`"x".repeat(17)`, `"fake-copy-token".padEnd(48, "x")`).
 

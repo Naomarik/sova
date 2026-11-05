@@ -1,10 +1,10 @@
 // Run: pnpm test -- server/settings-browser-temp.test.ts
-// The browser test's temp directory chooser (settings-browser-temp.ts): a short candidate is used as
+// The browser test's temp directory chooser (settings-browser-temp.test.helper.ts): a short candidate is used as
 // is, a long one is passed over for the next, an unwritable one too, and with none left it skips
 // naming each reason. `make` stands in for mkdtemp, so no real directory decides the outcome.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chooseBrowserTemp, socketFits } from "./settings-browser-temp";
+import { chooseBrowserTemp, socketFits } from "./settings-browser-temp.test.helper";
 
 const long = `/${"d".repeat(90)}`;
 const made: string[] = [];

@@ -134,8 +134,8 @@ export const GROUPS = [
       "src/components/form/**",
       "shared/form-rules*",
       "shared/*-limits.ts",
-      "server/*browser.integration.fixture.ts",
-      "server/settings-browser-temp.ts",
+      "server/forms-browser.test.helper.ts",
+      "server/settings-browser-temp.test.helper.ts",
       "src/components/*Settings*.tsx",
       // Settings' own parts whose names don't say so (wave 1 of the form kit).
       "src/components/HoursFields.tsx",

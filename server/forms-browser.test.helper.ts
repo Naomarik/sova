@@ -2,7 +2,7 @@
 // area file against a throwaway server (server/testing/hermetic-server.ts) serving this tree's frontend,
 // built fresh into the scratch root (a stale dist/ would test old code), signed in by the server's
 // cookie as the operator's browser is (some saves refuse a script header). Chrome's sockets need a
-// short temp dir: it picks its own (settings-browser-temp.ts); with no short writable one it skips.
+// short temp dir: it picks its own (settings-browser-temp.test.helper.ts); with no short writable one it skips.
 // Not a test file: each area's *browser.integration.test.ts imports it.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -12,7 +12,7 @@ import { after, before } from "node:test";
 import { chromium, type Browser, type Locator, type Page } from "playwright-core";
 import { startHermeticServer, type HermeticServer } from "./testing/hermetic-server";
 import { discoverTourBrowser } from "./tours/browser";
-import { chooseBrowserTemp } from "./settings-browser-temp";
+import { chooseBrowserTemp } from "./settings-browser-temp.test.helper";
 import { scratchRoot } from "./test-scratch";
 
 const ROOT = resolve(import.meta.dirname, "..");

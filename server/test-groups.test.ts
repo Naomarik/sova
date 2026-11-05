@@ -104,7 +104,7 @@ describe("what a landing runs", () => {
     assert.equal(groupOf(settings)?.name, "forms");
     assert.equal(groupOf("server/forms-project-browser.integration.test.ts")?.name, "forms", "an area's Chrome file is in the group");
     const run = (changed: string[]) => selectFiles([settings, everyday], changed, { mode: "landing" });
-    for (const f of ["src/components/OverseerSettings.tsx", "src/components/SettingsDialog.tsx", "src/lib/overseer-draft.ts", "src/lib/session-title-settings-form.ts", "src/lib/settings-draft.ts", "server/decide-settings.ts", "server/updates/routes.ts", "src/components/settings/MergeQueueSettings.tsx", "src/lib/merge-queue-settings.ts", "server/merge-queue/settings-edit.ts", "src/components/form/TextField.tsx", "src/components/HoursFields.tsx", "src/components/McpAddServer.tsx", "src/components/ProfilePicker.tsx", "shared/form-rules.ts", "shared/overseer-limits.ts", "server/forms-browser.integration.fixture.ts", settings]) {
+    for (const f of ["src/components/OverseerSettings.tsx", "src/components/SettingsDialog.tsx", "src/lib/overseer-draft.ts", "src/lib/session-title-settings-form.ts", "src/lib/settings-draft.ts", "server/decide-settings.ts", "server/updates/routes.ts", "src/components/settings/MergeQueueSettings.tsx", "src/lib/merge-queue-settings.ts", "server/merge-queue/settings-edit.ts", "src/components/form/TextField.tsx", "src/components/HoursFields.tsx", "src/components/McpAddServer.tsx", "src/components/ProfilePicker.tsx", "shared/form-rules.ts", "shared/overseer-limits.ts", "server/forms-browser.test.helper.ts", "server/settings-browser-temp.test.helper.ts", settings]) {
       assert.ok(run([f]).ran.includes("forms"), f);
       assert.ok(run([f]).files.includes(settings), f);
     }

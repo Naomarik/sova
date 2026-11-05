@@ -19,8 +19,8 @@ import "./sw-register";
  * `#000000` passes the grammar (the ground rules check shape, not whether you can read the result), and it
  * paints the Themes picker in the same ink as its own background — so the one control that would
  * switch you back is the control the theme just erased. `?theme=default` always lands on the
- * built-in dark, whatever is cached, which makes an unreadable theme recoverable with a URL
- * instead of devtools.
+ * starting setup — Dark mode, the built-in Dark and Light picks — whatever is cached, which makes
+ * an unreadable theme recoverable with a URL instead of devtools, whichever pick it was.
  *
  * It is a one-way reset, not theme-by-URL: `default` and `dark` name the same built-in default,
  * and every other value is ignored rather than applied. The param is stripped straight after, so
@@ -36,9 +36,9 @@ function themeResetRequested(): boolean {
   return true;
 }
 
-// Before first paint, synchronously: the cached theme goes on the document now, or a reload of a
-// themed window flashes the default first. App.tsx reconciles the
-// cache against /api/themes once it's up.
+// Before first paint, synchronously: the cached theme goes on the document now (under Auto, the
+// one the system's setting asks for), or a reload of a themed window flashes the other first.
+// App.tsx reconciles the cache against /api/themes once it's up.
 // The escape hatch takes the font pick and the text size off too: one URL that lands on the
 // built-in dark in the built-in faces at the built-in size, whatever was cached.
 if (themeResetRequested()) {

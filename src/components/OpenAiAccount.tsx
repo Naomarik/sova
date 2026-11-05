@@ -140,10 +140,11 @@ export function OpenAiAccountSection() {
       /* the link is still there to open */
     }
   };
-  const Link = (props: { url: string }) => (
+  /** `label`: a long link (the browser route's authorize address) reads as words; Copy Link still copies it whole. */
+  const Link = (props: { url: string; label?: string }) => (
     <p class="accounts-flow-url">
-      <a href={props.url} target="_blank" rel="noopener noreferrer" class="text-mono">
-        {props.url}
+      <a href={props.url} target="_blank" rel="noopener noreferrer" class={props.label ? undefined : "text-mono"}>
+        {props.label ?? props.url}
       </a>
       <button type="button" class="button button-sm button-ghost" onClick={() => void copyUrl(props.url)}>
         {copied() ? "Copied" : "Copy Link"}
@@ -262,7 +263,7 @@ export function OpenAiAccountSection() {
                         <>
                           <Show when={b().refused}>{(r) => <p class="field-hint">{sentence(r())}</p>}</Show>
                           <p class="field-hint">Open this link, sign in, then paste the address the page ends on.</p>
-                          <Link url={b().url} />
+                          <Link url={b().url} label="Open OpenAI's sign-in page" />
                           <label class="field">
                             <span class="field-label">Address after signing in</span>
                             <input

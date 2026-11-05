@@ -155,7 +155,6 @@ export const GROUPS = [
       "src/lib/public-links.ts",
       "src/lib/outreach.ts",
       "src/lib/provider-limits.ts",
-      "shared/mesh-settings-checks.ts",
       "server/*-settings.ts",
       "server/overseer-store.ts",
       "server/provider-limits.ts",

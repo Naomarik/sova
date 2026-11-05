@@ -46,7 +46,7 @@ const NO_SETUP: SetupStatus = { chat: null, setUp: { merge: false, release: fals
 /** The Setup chat proposes on its branch; `trial`: the trial of its head, or none yet. */
 function setupProposed(trial: "passed" | null): SetupStatus {
   const t = trial ? { id: "mr_trial1", commit: SETUP_HEAD, at: "2026-11-05T05:00:00.000Z", pass: true, state: "passed" as const, checks: [{ name: "Tests", kind: "merge" as const, state: "passed" as const, durationMs: 1200, run: "mr_trial1", step: "check:tests" }] } : null;
-  const proposal = { branch: SETUP_BRANCH, target: "master", commit: SETUP_HEAD, served: false, hash: "sha256:setup", services: [], merge: { checks: [{ id: "tests", label: "Tests", run: ["sh", "test/run.sh"], timeoutSec: 60, optional: false, requires: [] }], target: "master", push: false, land: "local" }, trial: t, land: trial ? { can: true } : { can: false, why: "This setup branch has no passing trial at 5e7c0de: run a trial of it first." } } as unknown as SetupProposal;
+  const proposal = { branch: SETUP_BRANCH, target: "master", commit: SETUP_HEAD, served: false, hash: "sha256:setup", services: [], files: [{ path: ".sova/project.json", status: "M", setup: true }, { path: "docs/x.md", status: "A", setup: false }], merge: { checks: [{ id: "tests", label: "Tests", run: ["sh", "test/run.sh"], timeoutSec: 60, optional: false, requires: [] }], target: "master", push: false, land: "local" }, trial: t, land: trial ? { can: true } : { can: false, why: "This setup branch has no passing trial at 5e7c0de: run a trial of it first." } } as unknown as SetupProposal;
   return { chat: { sessionId: "s-setup", title: "Setup · sova", state: "proposed", startedAt: "2026-11-05T04:50:00.000Z", branch: SETUP_BRANCH, proposal, setUp: { merge: false, release: false, deploy: false } }, setUp: { merge: false, release: false, deploy: false }, can: { open: true }, history: [] };
 }
 const PATH = "/w/sessions/s1.jsonl";
@@ -312,6 +312,10 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
     if (p === "/api/diff/summary" || p === "/api/diff/patch") {
       diffs.push({ kind: p.endsWith("summary") ? "summary" : "patch", query: url.searchParams });
       return route.fulfill(json(p.endsWith("summary") ? { ...DIFF_SUMMARY, scope: Object.fromEntries(url.searchParams) } : { path: url.searchParams.get("file"), status: "M", patch: DIFF_PATCH, base: DIFF_SUMMARY.base, head: DIFF_SUMMARY.head }));
+    }
+    if (p === `/api/projects/${PID}/setup/merge`) {
+      calls.push({ verb: "setup.merge", body: JSON.parse(route.request().postData() ?? "{}") });
+      return route.fulfill(json({ queued: false, setup: o.setup ? o.setup() : NO_SETUP }));
     }
     if (p === `/api/projects/${PID}/setup`) {
       if (route.request().method() === "POST") {
@@ -1200,9 +1204,13 @@ for (const width of [1280, 390]) {
       await page.reload();
       await card.waitFor({ timeout: 20_000 });
       assert.match(await words(card), /Trial of 5e7c0de: passed/);
+      assert.match(await words(card), /Changes 2 files against master; 1 outside the setup, which Merge Branch brings in too\./);
+      assert.equal(await card.getByText("Outside the setup", { exact: true }).count(), 1, "one file marked outside the setup");
       await card.getByRole("button", { name: `Merge Branch ${SETUP_BRANCH}` }).click();
-      await until("Merge Branch", () => o.calls.some((c) => c.verb === "runtime.merge"));
-      assert.deepEqual(lastCall(o, "runtime.merge").body, { hash: "sha256:setup", commit: SETUP_HEAD });
+      await until("Merge Branch", () => o.calls.some((c) => c.verb === "setup.merge"));
+      assert.deepEqual(lastCall(o, "setup.merge").body, { hash: "sha256:setup", commit: SETUP_HEAD });
+      assert.equal(o.calls.filter((c) => c.verb === "runtime.merge").length, 0, "the Setup proposal merges through /setup/merge");
+      await page.getByText("Merged the setup into master.").first().waitFor();
       await shot(page, `${width}-setup-proposal`);
       await noSideScroll(page);
       await o.ctx.close();

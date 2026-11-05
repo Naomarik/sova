@@ -193,7 +193,7 @@ describe("Merge Branch on the Setup proposal (mergeSetup)", () => {
 });
 
 describe("POST /api/projects/:pid/setup/merge: the user's own page only", () => {
-  test("a chat's key, a token or no page at all is refused 403 with its words and nothing merged; the page itself reaches the proposal's own checks", async () => {
+  test("the Overseer, a chat's key, a token or no page at all is refused 403 with its words and nothing merged; the page itself reaches the proposal's own checks", async () => {
     const { Hono } = await import("hono");
     const { registerProjectRoutes } = await import("./routes");
     const { SETUP_MERGE_WORDS } = await import("./runtime-routes");
@@ -209,6 +209,8 @@ describe("POST /api/projects/:pid/setup/merge: the user's own page only", () => 
       const r = await app.request(`/api/projects/${a.id}/setup/merge`, { method: "POST", headers: { "content-type": "application/json", ...(page ? { cookie } : {}), ...headers }, body: JSON.stringify({ hash: "sha256:x" }) });
       return { status: r.status, error: ((await r.json()) as { error?: string }).error };
     };
+    const { OVERSEER_SENDER_HEADER, senderSecret } = await import("../overseer-sender");
+    assert.deepEqual(await post({ [OVERSEER_SENDER_HEADER]: senderSecret() }, true), { status: 403, error: SETUP_MERGE_WORDS.overseer }, "the Overseer, even with the page cookie");
     assert.deepEqual(await post({ "x-sova-caller": "k" }), { status: 403, error: SETUP_MERGE_WORDS.chat });
     assert.deepEqual(await post({ "x-sova-caller": "k" }, true), { status: 403, error: SETUP_MERGE_WORDS.chat }, "a chat's process holding the cookie is still a chat");
     assert.deepEqual(await post({ "x-sova-token": "t" }, true), { status: 403, error: SETUP_MERGE_WORDS.script });

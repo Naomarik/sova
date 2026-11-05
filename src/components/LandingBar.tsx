@@ -25,14 +25,15 @@ function Chip(props: { chip: LandingChip }) {
 }
 
 /** The step track: one rounded segment per step; the review's marker beside it, never a segment. */
-function Track(props: { bar: LandingProjectBar }) {
+function Track(props: { bar: LandingProjectBar; chips: JSX.Element; hasChips: boolean }) {
   return (
-    <Show when={props.bar.segments.length > 0 || props.bar.review}>
-      <span class="landing-track-row" aria-hidden="true">
-        <span class="landing-track">
+    <Show when={props.bar.segments.length > 0 || props.bar.review || props.hasChips}>
+      <span class="landing-track-row">
+        <span class="landing-track" aria-hidden="true">
           <For each={props.bar.segments}>{(s: LandingSegment) => <span class={`landing-seg landing-seg-${s.state}`} style={s.progress !== undefined ? { "--landing-progress": `${Math.round(s.progress * 100)}%` } : undefined} title={s.label} />}</For>
         </span>
-        <Show when={props.bar.review}>{(r) => <span class={`landing-review landing-review-${r().state}`}>{r().label}</span>}</Show>
+        <Show when={props.bar.review}>{(r) => <span class={`landing-review landing-review-${r().state}`} aria-hidden="true">{r().label}</span>}</Show>
+        {props.chips}
       </span>
     </Show>
   );
@@ -49,14 +50,20 @@ function Face(props: { model: LandingBarModel; open: boolean; chevron?: false })
       <span class="landing-lines">
         <span class="landing-head">
           <span class="landing-title">{top().title}</span>
-          <span class="landing-chips">
-            <Show when={top().needsChip}>{(c) => <Chip chip={c()} />}</Show>
-            <Show when={top().chip}>{(c) => <Chip chip={c()} />}</Show>
-            <Show when={props.model.moreChip}>{(c) => <Chip chip={c()} />}</Show>
-          </span>
         </span>
         <span class="landing-sub">{top().sub}</span>
-        <Track bar={top()} />
+        {/* The chips sit on the track's row, so the title and sub line keep the bar's full width. */}
+        <Track
+          bar={top()}
+          hasChips={!!(top().needsChip || top().chip || props.model.moreChip)}
+          chips={
+            <span class="landing-chips" aria-hidden="true">
+              <Show when={top().needsChip}>{(c) => <Chip chip={c()} />}</Show>
+              <Show when={top().chip}>{(c) => <Chip chip={c()} />}</Show>
+              <Show when={props.model.moreChip}>{(c) => <Chip chip={c()} />}</Show>
+            </span>
+          }
+        />
       </span>
       <Show when={props.chevron !== false}>
         <span class={`landing-chevron${props.open ? " landing-chevron-open" : ""}`} aria-hidden="true">
@@ -206,6 +213,22 @@ export function LandingBarRow(props: { model: LandingBarModel }) {
   );
 }
 
+/** While `el` is open: focus goes into it on every open (once its portal has put it in the page), and Escape closes
+    it wherever focus is (a tap may leave focus on the page, not inside). Call from its ref. */
+function holdFocus(el: HTMLElement, close: () => void): void {
+  const key = (e: KeyboardEvent) => {
+    if (e.key !== "Escape") return;
+    e.stopPropagation();
+    close();
+  };
+  document.addEventListener("keydown", key, true);
+  onCleanup(() => document.removeEventListener("keydown", key, true));
+  requestAnimationFrame(() => {
+    if (!el.isConnected || el.contains(document.activeElement)) return;
+    (el.querySelector<HTMLElement>("a[href], button:not([disabled])") ?? el).focus();
+  });
+}
+
 /** A bottom sheet or a popover, trapped, closing on the scrim, Escape or a link; focus goes back to its opener. */
 function Overlay(props: { label: string; class: string; onClose: () => void; children: JSX.Element; style?: JSX.CSSProperties; scrim: boolean }) {
   return (
@@ -219,12 +242,9 @@ function Overlay(props: { label: string; class: string; onClose: () => void; chi
         aria-modal={props.scrim ? "true" : undefined}
         aria-label={props.label}
         style={props.style}
-        ref={(el) => trapFocus(el)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.stopPropagation();
-            props.onClose();
-          }
+        ref={(el) => {
+          trapFocus(el);
+          holdFocus(el, () => props.onClose());
         }}
       >
         {props.children}
@@ -288,17 +308,12 @@ export function LandingSpineButton(props: { model: LandingBarModel; class?: stri
               ref={(el) => {
                 pop = el;
                 trapFocus(el);
+                holdFocus(el, close);
               }}
               class="popover landing-popover"
               role="dialog"
               aria-label={props.model.top.title}
               style={{ left: `${p().left}px`, bottom: `${p().bottom}px` }}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  e.stopPropagation();
-                  close();
-                }
-              }}
             >
               <div class="landing-popover-head">
                 <Face model={props.model} open chevron={false} />

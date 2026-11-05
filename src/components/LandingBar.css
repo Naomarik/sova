@@ -40,12 +40,20 @@
 
 .landing-lines { flex: 1; min-width: 0; display: grid; gap: 2px; }
 .landing-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+/* Up to two lines each in the desktop row, then an ellipsis: a long branch, a pause's reason or a release's
+   "Step 4 of 7 · Gating checks · check 4 of 11 · …" stays readable in a 300px pane. */
+.landing-title,
+.landing-sub {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .landing-title {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: var(--fs-caption);
   line-height: var(--lh-caption);
   font-weight: var(--fw-semibold);
@@ -53,9 +61,6 @@
 .landing-chips { flex: none; display: inline-flex; gap: var(--space-1); }
 .landing-sub {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: 12px;
   line-height: var(--lh-caption);
   color: var(--color-ink-muted);
@@ -65,6 +70,8 @@
 
 /* ---- the step track: 4px segments, 3px apart, rounded; the review's marker beside it ------------- */
 .landing-track-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin-top: 3px; }
+/* With no segments (paused, needs you), the chips stand alone at the row's start. */
+.landing-track:empty { display: none; }
 .landing-track { flex: 1; min-width: 0; display: flex; gap: 3px; }
 .landing-seg {
   flex: 1 1 0;
@@ -128,17 +135,25 @@
 .landing-other-link { flex: none; }
 
 /* ---- phone: its own strip directly above the foot bar, and the sheet ---------------------------- */
+/* Exactly 44px: the title and the sub line share one line (each ellipsized), the track under them. */
 .landing-strip {
   flex: none;
   align-items: center;
-  min-height: var(--tap-min);
-  padding-block: var(--space-1);
+  height: var(--tap-min);
+  min-height: 0;
+  padding-block: 0;
   border-top: var(--stroke-thin) solid var(--color-border);
   background: var(--color-surface);
 }
 .landing-strip .landing-icon { margin-top: 0; }
-.landing-strip .landing-lines { gap: 0; }
-.landing-strip .landing-track-row { margin-top: 2px; }
+.landing-strip .landing-lines { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-1); row-gap: 0; }
+.landing-strip .landing-head { flex: 0 1 auto; max-width: 70%; }
+.landing-strip .landing-title,
+.landing-strip .landing-sub { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+.landing-strip .landing-sub { flex: 1 1 0; }
+.landing-strip .landing-sub::before { content: "· "; }
+.landing-strip .landing-track-row { flex: 0 0 100%; margin-top: 3px; }
+.landing-strip .landing-chip { padding-block: 0; }
 .landing-sheet { padding-bottom: env(safe-area-inset-bottom); }
 .landing-sheet-head,
 .landing-popover-head { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-4); }

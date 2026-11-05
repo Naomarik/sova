@@ -342,7 +342,8 @@ function mergeNeedsBar(p: LandingProjectInput, q: LandingQueueCut, needs: MergeE
     sub: `${e.branch}${e.reason ? ` · ${stripDot(e.reason)}` : ""}`,
     ...(rest > 0 ? { chip: { label: `+${rest} more`, tone: "warn" as const } } : {}),
     segments: [],
-    lines: [...needs.map((x) => needsLine(x, p.id)), ...conflictsOf(q).map((x) => ({ text: `${x.branch} · conflict being judged` })), ...nextLines(q)],
+    // The face says the first one already: the detail lists the others.
+    lines: [...needs.slice(1).map((x) => needsLine(x, p.id)), ...conflictsOf(q).map((x) => ({ text: `${x.branch} · conflict being judged` })), ...nextLines(q)],
     actions: [...needsActions(e, p.id), ...(e.session ? [{ kind: "link" as const, label: "Open Branch Chat", href: chatIdHref(e.session) }] : []), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
     oneLine: `${p.name} · ${e.branch} · ${stripDot(entryStateWords(e))}`,
   };
@@ -364,7 +365,8 @@ function pausedBar(p: LandingProjectInput, q: LandingQueueCut): LandingProjectBa
     sub: why ? stripDot(why) : q.waiting.length ? `${plural(q.waiting.length, "branch", "branches")} in line` : "Nothing in line",
     chip: waitingChip(q),
     segments: [],
-    lines: [...(why ? [{ text: why }] : []), ...nextLines(q), ...needsYouOf(q).map((e) => needsLine(e, p.id))],
+    // The reason is the sub line already; the detail adds the rest only when the face cuts it.
+    lines: [...nextLines(q), ...needsYouOf(q).map((e) => needsLine(e, p.id))],
     // A definition that doesn't parse can't be resumed: it runs again once it is fixed.
     actions: [...(invalid ? [] : [{ kind: "resume" as const, label: "Resume Queue" as const, root: p.root }]), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
     oneLine: `${p.name} · ${title}`,
@@ -646,7 +648,8 @@ export function reduceLanding(projects: readonly LandingProjectInput[], now: num
   const bars: LandingProjectBar[] = [];
   for (const p of projects) {
     const b = projectBar(p, now, seen, out);
-    if (b) bars.push(b);
+    // Each line once: the detail never repeats the face's title or sub line.
+    if (b) bars.push({ ...b, lines: b.lines.filter((l) => stripDot(l.text) !== b.title && stripDot(l.text) !== b.sub) });
   }
   // Stable: equal kinds keep the projects' own order.
   const all = bars.map((b, i) => ({ b, i })).sort((x, y) => RANK[x.b.kind] - RANK[y.b.kind] || x.i - y.i).map((x) => x.b);

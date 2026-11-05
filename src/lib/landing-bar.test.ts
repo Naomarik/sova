@@ -163,6 +163,7 @@ test("merge needs-you with nothing running takes the whole bar, in the tab's wor
   assert.equal(b.top.tone, "warn");
   assert.equal(b.top.title, "Behaviour differs · waiting for you");
   assert.equal(b.top.sub, "feat/flag");
+  assert.ok(!b.top.lines.some((l) => l.text.startsWith("feat/flag")), "the detail doesn't repeat the face");
   const labels = b.top.actions.map((a) => a.label);
   assert.deepEqual(labels.slice(0, 2), ["Accept", "Send Back"]);
   for (const a of b.top.actions) assert.equal(a.kind, "link");
@@ -184,6 +185,9 @@ test("paused: always shown, even with nothing in line, with Resume Queue", () =>
   assert.equal(b.top.title, "Paused by you");
   assert.ok(b.top.actions.some((a) => a.kind === "resume" && a.root === "/r/a"));
   assert.ok(b.top.actions.some((a) => a.label === "Open Queue"));
+  const moved = bar([proj({ queue: queue({ state: "paused", paused: { kind: "master-moved", why: "master moved outside the queue: the run was voided", at: iso(0) } }) })])!;
+  assert.equal(moved.top.sub, "master moved outside the queue: the run was voided");
+  assert.ok(!moved.top.lines.some((l) => l.text.includes("the run was voided")), "the reason is said once");
 });
 
 test("definition-invalid: its own words, Open Queue only, no Resume", () => {

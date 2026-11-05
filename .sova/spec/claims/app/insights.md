@@ -1319,7 +1319,10 @@ usage fetch reads (Claude Code's `~/.claude/.credentials.json`, pi's `auth.json`
 Codex CLI's `~/.codex/auth.json`), re-read only when a file changes; on macOS a Claude login with no
 credentials file is read from its keychain item instead, for the fetch and for these numbers
 (§app.claude-logins/macos-keychain), and then carries no `refreshedAt`. It carries numbers, enums and
-booleans only: no string from a credential file ever leaves the server. Claude's
+booleans only: no string from a credential file ever leaves the server, with one named exception:
+OpenAI's sign-in through pi (`openai-codex`) also carries the signed-in account's `email`, read on
+the server from the access token's own claims (§app.openai-login/section); never the token or any
+other string from it. Claude's
 `refreshedAt` is the credentials file's modification time, and only while that time agrees (to
 within 10 minutes) with an 8-hour token lifetime ending at `expiresAt`; otherwise it is left out
 rather than guessed. OpenAI signed in through pi has an expiry and no renewal time; signed in only
@@ -1331,6 +1334,9 @@ when Claude Code itself runs; the Usage page says so (§app.insights/usage-cards
 renewing it. The one exception is Settings → Accounts (§app.claude-logins/add-remove): at the
 user's request Sova runs Claude Code's own `claude auth login` and `claude auth logout` in an added
 login's directory, and deletes that directory on removal. Claude Code writes those credentials.
+The second is OpenAI in Settings → Accounts (§app.openai-login/sign-in, §app.openai-login/sign-out):
+at the user's request Sova runs pi's own sign-in and sign-out for `openai-codex`, which save the
+sign-in to, and remove it from, pi's `auth.json`. pi renews it while chats use it; Sova never does.
 
 **Every Claude login's usage.** Claude Code's own credentials are read from its own directory
 (`$CLAUDE_CONFIG_DIR` when set, else `~/.claude`), as its spawns use it. Each other Claude login

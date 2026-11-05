@@ -7,6 +7,8 @@ import { RetryButton, sentence } from "./WorkerSlotRow";
 
 const message = (err: unknown) => sentence(err instanceof Error ? err.message : String(err));
 const POLL_MS = 2000;
+const USAGE_TRIES = 6;
+const USAGE_TRY_MS = 2500;
 
 /**
  * Settings → Accounts, below the Claude logins (§app.openai-login/section): this device's one
@@ -17,7 +19,22 @@ export function OpenAiAccountSection() {
   const [info, { mutate, refetch }] = createResource(getOpenAiAccount);
   const loaded = () => (info.error ? undefined : info());
   /** OpenAI's latest usage reading: its plan, and whether the sign-in stopped working. */
-  const [usage, { refetch: refetchUsage }] = createResource(() => fetchUsage().then((u) => u.providers.find((p) => p.id === "openai")).catch(() => undefined));
+  const readUsage = () => fetchUsage().then((u) => u.providers.find((p) => p.id === "openai")).catch(() => undefined);
+  const [usage, { mutate: setUsage }] = createResource(readUsage);
+  /**
+   * After a sign-in the server asks for a usage reading but answers before it lands, so read it
+   * again until it no longer says "not signed in" (a few tries, then the next open of the tab).
+   */
+  let usageTry: ReturnType<typeof setTimeout> | undefined;
+  const followUsage = (left = USAGE_TRIES) => {
+    if (usageTry) clearTimeout(usageTry);
+    usageTry = setTimeout(async () => {
+      const p = await readUsage();
+      if (p) setUsage(p);
+      if (left > 1 && (!p || p.state === "nologin")) followUsage(left - 1);
+    }, USAGE_TRY_MS);
+  };
+  onCleanup(() => usageTry && clearTimeout(usageTry));
   const reading = () => (usage.error ? undefined : usage());
   const [flow, setFlow] = createSignal<OpenAiLoginFlow | null>(null);
   const [answer, setAnswer] = createSignal("");
@@ -40,7 +57,7 @@ export function OpenAiAccountSection() {
     if (next?.state === "done") {
       // The ChatGPT models join the model menu, and the usage reading names the plan.
       void loadModels().catch(() => {});
-      void refetchUsage();
+      followUsage();
     }
   };
 

@@ -1,6 +1,6 @@
 # landing: what must pass before a branch reaches your project, and how it lands
 
-A project's branches go through its merge queue once the project is on Sova's Projects list and its checks are set up. Until then the project has no Land, so don't promise it: a branch is the person's own to merge, and you merge it only on their own word in this chat. In a folder that isn't a project, offer Add as Project first (the `project` topic). In a project with no queue, offer Initialize. In a folder that isn't in Git there's no landing at all.
+A project's branches go through its merge queue once the project is on Sova's Projects list and its checks are set up. Until then the project has no Land, so don't promise it: a branch is the person's own to merge, and you merge it only on their own word in this chat. In a folder that isn't a project, offer Add as Project first (the `project` topic). In a project with no queue, offer Set Up with a Chat. In a folder that isn't in Git there's no landing at all.
 
 Landing a branch is always the person's: Land beside the composer, on the project page's Merge Queue tab, or "land it" typed in the branch's own chat. When they type it, you record it with `worktree land` and the queue does the rest; you never touch the main branch yourself, and you never send anyone those words. The queue reads the target branch's copy of `.sova/project.json`, never the branch's, so a branch that changes its checks is tested by the old ones, and its own take effect once it lands.
 
@@ -10,10 +10,19 @@ A card lands on the main branch with no checks, so a change that fails one turns
 
 - Change: whether the project has a merge queue, and its first checks: a list of checks, one test command, or "no automated tests".
 - Lives: the `merge` section of `.sova/project.json`, created if there's no file yet.
-- Approves: the person alone. First setup is theirs; no card holds it.
-- By: Screen. The project page's Merge Queue tab, Initialize, then Try It, then Save Checks. Save Checks is one commit on the target and is refused while the project folder has uncommitted changes.
-- Live: now. The next branch goes through the queue.
+- Approves: the person alone: their answers to the project's Setup chat, then Merge Branch on its branch. First setup is theirs; no card holds it.
+- By: Screen. Set Up with a Chat on the project page's Merge Queue tab (or in Settings → Merge Queue) opens the project's Setup chat: it reads the project, measures its commands, asks what it can't find out, draws the plan, writes it on its own branch and runs a trial of that branch's checks. Merge Branch is offered once a trial of the branch's head passed. You never write the section yourself for a first setup: send them to that chat.
+- Live: once the branch is merged. The next branch goes through the queue.
 - Check: the Merge Queue tab shows the queue, and Land appears on the project's branches.
+
+## Changing the setup
+
+- Change: anything about how branches land, how releases go or how the project ships, beyond the values in the next section.
+- Lives: `.sova/project.json` (`merge`, `release`, `deploy`) and the folders they name.
+- Approves: the person: Change Setup, their answers, then Land on the Setup chat's branch.
+- By: Screen. Change Setup on the Merge Queue tab, the Releases tab or Settings → Merge Queue reopens the same Setup chat; it draws the current setup, marks what changes, trial-runs it, and proposes it on a branch. Land is offered once a trial of that branch's head passed, since the queue checks a branch with the target's checks, not the branch's.
+- Live: after landing, from the next landing.
+- Check: the Merge Queue tab shows the new checks on the next run.
 
 ## Push, review and each check's limits
 

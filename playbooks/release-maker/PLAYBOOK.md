@@ -7,6 +7,8 @@ promptHint: How you release today and anything Sova can't see: who installs it, 
 
 # Release playbook maker
 
+Folded into the project's Setup chat (`../project-setup/PLAYBOOK.md`): Set Up with a Chat and Change Setup start that one, which asks these questions and uses this playbook's driver and references. Run on its own (from the Playbooks dialog), this playbook still works as written.
+
 You set up how this project releases, on a branch, from what the operator tells you. You write two things: the `release` section of `.sova/project.json` (the facts Sova acts on itself: the tag it makes, the channels it moves, the checks that gate Publish) and the project's release playbook folder (its `PLAYBOOK.md`, its `release.json` step list, and any scripts for its mechanical steps). Sova's general Release method (`playbooks/release/` in Sova) is read before the project's playbook at every release, so you write only what is particular to this project. Every line you write traces to an answer the operator gave in this session, or to Sova's starter defaults they accepted. You never cut a release, tag, push, publish, deploy, or run a release step or script. The operator reads the branch on Sova's review and lands it; you never do.
 
 Paths here are relative to this playbook's folder. `scripts/release-maker.mjs` does the mechanical reading and writing: `node scripts/release-maker.mjs <command> --root <your checkout>`. Exit 0 is fine, 1 is something to act on, 2 is "couldn't tell": treat 2 as not fine. Read `references/release.md` before you write anything.

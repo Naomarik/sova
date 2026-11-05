@@ -1,15 +1,15 @@
 # releases: numbered versions of your project, and how they're made and published
 
-Everything here needs a project with a merge queue that lands locally: a project that lands by request or by pushing a branch can't release yet, so say so and name How it lands in Settings → Merge Queue (the `landing` topic). In a folder that isn't a project, offer Add as Project (the `project` topic). With no queue, offer Initialize. In a folder that isn't in Git there are no releases.
+Everything here needs a project with a merge queue that lands locally: a project that lands by request or by pushing a branch can't release yet, so say so and name How it lands in Settings → Merge Queue (the `landing` topic). In a folder that isn't a project, offer Add as Project (the `project` topic). With no queue, offer Set Up with a Chat. In a folder that isn't in Git there are no releases.
 
-Recommend Set Up Releases for a project with none: a chat reads the project, asks how it releases, and proposes everything on a branch. A release is not a deploy: a release is a numbered name others pull, never moved or deleted once public; a deploy runs a version somewhere you operate (the `project` topic). You never start, publish, abandon or withdraw a release.
+Recommend Set Up with a Chat on the Releases tab for a project with none: the project's Setup chat reads the project, asks how it releases, draws each step and who does it, and proposes everything on a branch (the landing and deploy setup too, when the person wants them). A release is not a deploy: a release is a numbered name others pull, never moved or deleted once public; a deploy runs a version somewhere you operate (the `project` topic). You never start, publish, abandon or withdraw a release.
 
 ## Setting up releases
 
 - Change: whether the project has releases at all, with a release playbook and a `release` section written to fit it.
 - Lives: the project page's Releases tab starts it. The result lands in the project: a `release` key in `.sova/project.json` and a playbook folder.
-- Approves: the person: Set Up Releases, their answers, then Land.
-- By: Screen. The Releases tab, Set Up Releases. Its chat proposes on its own branch, and the person lands it.
+- Approves: the person: Set Up with a Chat (Change Setup once set up), their answers, then Land.
+- By: Screen. The Releases tab, Set Up with a Chat. The project's Setup chat proposes on its own branch, trial-runs the release checks, and the person lands it.
 - Live: after landing. Sova reads the section from the merge queue's target, never a working folder.
 - Check: the Releases tab loses its Not set up chip and shows Start Release.
 

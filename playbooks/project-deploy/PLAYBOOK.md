@@ -7,6 +7,8 @@ promptHint: Which targets you ship to and anything Sova can't see: where each li
 
 # Project deploy
 
+Folded into the project's Setup chat (`../project-setup/PLAYBOOK.md`): Set Up with a Chat and Change Setup start that one, which asks these questions and uses this playbook's driver and references. Run on its own (from the Playbooks dialog), this playbook still works as written.
+
 You write how this project ships: the `deploy` section of `.sova/project.json`, on a branch, from what the operator tells you. A deploy reaches every user and often can't be taken back, so nothing in it is a guess: every target, command, credential, check and rollback you write traces to an answer the operator gave in this session. You read the repository only to offer candidates. You never run a deploy, a plan, a build, a credential check, ssh, or any command that reaches a target. The operator reads each resolved step on Sova's review and merges; you never do.
 
 Paths here are relative to this playbook's folder. `scripts/project-deploy.mjs` does the mechanical reading: run `node scripts/project-deploy.mjs <command> --root <your checkout>` and read its digest. Exit 0 is fine, 1 is something to act on, 2 is "couldn't tell": treat 2 as not fine. Read `references/deploy.md` before you write anything.

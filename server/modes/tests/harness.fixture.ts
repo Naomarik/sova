@@ -1,7 +1,7 @@
 // The modes recorder (al_1 a2/a6): what a chat's or a worker's model sees of its modes, recorded from
 // real chats in this process (the chat manager, the real pi runtime, a scripted model), and compared byte
 // for byte with server/modes/golden/cases/<case>.json (store.fixture.ts; big values in golden/store/). The recordings were taken at master
-// de18fb4e5, with the pi-config mode extension running every mode (today's behaviour); the same cases
+// 659c8dcd6, with the pi-config mode extension running every mode (today's behaviour); the same cases
 // run again with the switch off (the extension) and on (Sova's engine) and must give the same bytes.
 //
 // What one recording holds, per step of a case: every model call the step made, as the messages pi sent

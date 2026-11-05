@@ -1840,8 +1840,6 @@ async function t18() {
   await nextServer();
 }
 
-// T18b: kill -9 of the parent mid-run while its worker runs: the parent's crash resume reopens it;
-// the worker keeps its process; its completion arrives and is announced once.
 async function tmodes() {
   const putModes = (on) => c.api("/api/settings", { method: "PUT", body: JSON.stringify({ experimental: { sovaModes: on } }) });
   await putModes(true);
@@ -1875,6 +1873,9 @@ async function tmodes() {
   s2.close();
   await putModes(true);
 }
+
+// T18b: kill -9 of the parent mid-run while its worker runs: the parent's crash resume reopens it;
+// the worker keeps its process; its completion arrives and is announced once.
 async function t18b() {
   const { path, s } = await newChat();
   // Held by the mock until the parent's crash and resume are checked: the worker runs through them

@@ -4,16 +4,15 @@
 // The engine is loaded IN THE SLOT the pi-config `mode` extension had, never beside it: with the
 // Experimental switch "Sova runs chat modes" on, the loader's resolve() rewrite (own-code.ts) answers
 // the discovered `…/extensions/mode` with modes-entry.ts, and a worker's listed mode paths are rewritten
-// the same way (modesEntryFor). So the tools register in the same order, the `mode` section keeps its
-// place among the prompt's sections, and every hook chains where it did: what the model sees is the
+// the same way (own-code.ts modesEntries, modeFileOf, workerModePaths). So the tools register in the
+// same order, the `mode` section keeps its place among the prompt's sections, and every hook chains where it did: what the model sees is the
 // extension's, byte for byte. With the switch off nothing is rewritten and the extension runs as before.
 //
 // The tools are registered with the extension's own registrars (align-tool.ts, vis-guide-tool.ts,
 // create-guide-tool.ts): the same names, descriptions, schemas and renderers. Raw branch reads and entry
 // writes happen here only, through the extension's readers (state.ts, align.ts, spec-guard.ts).
 import { getAgentDir, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { basename, dirname, join, resolve, sep } from "node:path";
-import { realpathSync } from "node:fs";
+import { join } from "node:path";
 import { foldAlignments } from "../../../pi-config/extensions/mode/align.ts";
 import { registerAlignTool } from "../../../pi-config/extensions/mode/align-tool.ts";
 import { registerCreateGuideTool } from "../../../pi-config/extensions/mode/create-guide-tool.ts";
@@ -239,44 +238,3 @@ export function modesBridgeExtension(onHandle: (handle: ModesHandle) => void) {
     },
   };
 }
-
-// ── The in-place rewrite: which Sova module stands in for a mode extension path ──
-
-const HERE = import.meta.dirname;
-/** The engine (a chat's, or a worktree-config worker's whole mode extension). */
-export const MODES_ENTRY = join(HERE, "modes-entry.ts");
-/** A pi worker's spec census (in place of mode/spec-worker.ts). */
-export const MODES_SPEC_WORKER = join(HERE, "modes-spec-worker.ts");
-/** A pi worker's project mode tools (in place of mode/project-tools-worker.ts). */
-export const MODES_PROJECT_TOOLS_WORKER = join(HERE, "modes-project-tools-worker.ts");
-
-const realOr = (p: string): string => {
-  try {
-    return realpathSync(p);
-  } catch {
-    return resolve(p);
-  }
-};
-
-/**
- * The Sova module that stands in for `path` when it names the mode extension or one of its worker files,
- * else null: an `extensions/mode` directory, or `mode/index.ts`, `mode/spec-worker.ts` or
- * `mode/project-tools-worker.ts` inside one (any copy: the checkout's, a generation's, a worktree's
- * `.agent` link). Matched on the real path's last segments, so a link into a checkout matches too.
- */
-export function modesEntryFor(path: string): string | null {
-  if (/^[a-z]+:/.test(path)) return null; // npm:, git:, builtin: sources
-  const p = realOr(path);
-  const parts = p.split(sep);
-  const last = parts.at(-1) ?? "";
-  const dir = parts.at(-2) ?? "";
-  if (last === "mode" && parts.at(-2) === "extensions") return MODES_ENTRY;
-  if (dir !== "mode" || parts.at(-3) !== "extensions") return null;
-  if (last === "index.ts") return MODES_ENTRY;
-  if (last === "spec-worker.ts") return MODES_SPEC_WORKER;
-  if (last === "project-tools-worker.ts") return MODES_PROJECT_TOOLS_WORKER;
-  return null;
-}
-
-/** Whether `path` (already rewritten or not) is the engine entry. */
-export const isModesEntry = (path: string): boolean => realOr(path) === realOr(MODES_ENTRY) || basename(path) === "modes-entry.ts" && dirname(realOr(path)) === realOr(HERE);

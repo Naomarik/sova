@@ -4866,7 +4866,6 @@ export async function acquireChat(path: string, force = false, onStep: (step: st
   return p;
 }
 
-/** Every fully opened runtime this server holds. Each keeps its own mode; there is no fan-out. */
 /**
  * A save that changed "Sova runs chat modes" (§chat.mode-menu/sova-runs-modes), for the chats held in this
  * process (in-process chats: tests, a server with no supervisor). Each held chat a mode owner applies to and
@@ -4906,6 +4905,7 @@ function modesReloadIfQuiet(path: string): void {
   void disposeHeldChat(path, "Sova runs chat modes changed: reconnect").catch((err) => console.error("[chat] modes reload failed", err));
 }
 
+/** Every fully opened runtime this server holds. Each keeps its own mode; there is no fan-out. */
 export const heldChats = (): ChatSession[] => [...held.values()].filter((c) => !c.disposed);
 
 /** The open chat for a session file (already through resolveSessionPath), for POST /api/mode?path=. */

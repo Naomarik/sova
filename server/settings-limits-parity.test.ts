@@ -76,6 +76,7 @@ const batonLimits = await import("../shared/baton-limits");
 const titleLimits = await import("../shared/session-title-limits");
 const decisionLimits = await import("../shared/decision-limits");
 const providerLimitRules = await import("../shared/provider-limits");
+const accountLimits = await import("../shared/account-limits");
 const { firstIssue, problemOf } = await import("../shared/form-rules");
 /** A rule's edges: the values at it (taken) and just past it (refused). */
 function ruled(rule: Rule): Pick<Limit, "name" | "rule" | "takes" | "refuses"> {
@@ -174,6 +175,15 @@ const LIMITS: Limit[] = [
     ...ruled(providerLimitRules.LIMIT_RULE),
     client: (v) => providerLimits.limitsProblem({ zai: String(v) }),
     server: (v) => putStatus("/api/settings/provider-limits", { limits: { zai: v } }),
+  },
+  {
+    ...ruled(accountLimits.LOGIN_NAME_RULE),
+    // The rename box shows exactly its rule's sentence. A label the rule takes reaches the login lookup (404 for this unknown id); one it refuses is a 400 first.
+    client: (v) => problemOf(accountLimits.LOGIN_NAME_RULE, v),
+    server: async (v) => {
+      const res = await app.request("/api/claude/accounts/no-such-login", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ label: v }) });
+      return res.status === 400 ? { ok: false, error: ((await res.json()) as { error?: string }).error } : { ok: true };
+    },
   },
   ...(["messagesMax", "perMessage", "mb", "perConversation", "fileMb"] as const).map((key): Limit => {
     const { assistant: _, ...file } = fresh.baton;

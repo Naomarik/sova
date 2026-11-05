@@ -130,12 +130,13 @@ function SetupChatLine(props: { projectId: string; chat: SetupChatView; poll: Se
     setBusy(true);
     setError(null);
     try {
-      await openSetupChat(props.projectId, { fresh: true });
-      const done = "Archived the setup chat. The next Change Setup starts a new one.";
+      const out = await openSetupChat(props.projectId, { fresh: true });
+      const done = "Started a fresh setup chat.";
       toast(done);
       announce(done);
       setConfirm(false);
       props.poll.refetch();
+      location.hash = projectSessionHref(props.projectId, out.path);
     } catch (err) {
       setError(errText(err));
     } finally {
@@ -182,8 +183,8 @@ function SetupChatLine(props: { projectId: string; chat: SetupChatView; poll: Se
         <div class="mq-confirm" role="group" aria-label="Start a fresh setup chat">
           <p class="field-hint">
             {props.chat.proposal
-              ? `This chat is archived, and what it learned goes with it. Its proposal on ${props.chat.proposal.branch} stays open: the next Change Setup starts a new chat that carries on in that branch.`
-              : "This chat is archived, and what it learned goes with it. The next Set Up with a Chat or Change Setup starts a new chat."}
+              ? `This chat is archived and a new one starts now; what it learned goes with it. Its proposal on ${props.chat.proposal.branch} stays open, and the new chat carries on in that branch.`
+              : "This chat is archived and a new one starts now, on a new branch; what it learned goes with it."}
           </p>
           <span class="button-row">
             <button type="button" class="button button-sm button-ghost" onClick={() => setConfirm(false)}>

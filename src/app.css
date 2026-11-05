@@ -1869,7 +1869,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-chat-card .mq-card-sides { margin: var(--space-1) 0; }
 .mq-card-failures { margin: 0; padding-left: var(--space-4); }
 .mq-card-failures li { overflow-wrap: anywhere; }
-.mq-card-actions { flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
+.mq-card-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-1); }
 .mq-card-actions .button-destructive { margin-left: var(--space-2); }
 @media (pointer: coarse) { .mq-card-actions .button { min-height: var(--tap-min); } }
 .mq-card-folded .disclosure-label { overflow-wrap: anywhere; }

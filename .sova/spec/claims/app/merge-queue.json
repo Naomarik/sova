@@ -347,8 +347,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T09:00Z",
-      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#59b1a0ac"
+      "at": "2026-11-05T12:51Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f26ee75a"
     }
   },
   "§app.merge-queue/landing-bar-detail": {
@@ -372,8 +372,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T09:00Z",
-      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#59b1a0ac"
+      "at": "2026-11-05T13:06Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f7922f69"
     }
   },
   "§app.merge-queue/landing-bar-states": {
@@ -397,8 +397,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T09:00Z",
-      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#59b1a0ac"
+      "at": "2026-11-05T13:06Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f7922f69"
     }
   },
   "§app.merge-queue/master-moved": {

@@ -4,7 +4,7 @@
 import type { RunStep } from "../../shared/merge-queue";
 import type { ProjectGlance, ProjectGlanceQueue, ProjectGlanceRelease } from "../../shared/projects";
 import type { ReleaseRecord } from "../../shared/release";
-import { runChecks, runSegments, type SegmentState } from "./landing-bar";
+import { runSegments, type SegmentState } from "./landing-bar";
 import { mins } from "./merge-queue";
 import { bytesWord } from "./project-software";
 import { releaseChip, visibleSteps } from "./releases";
@@ -94,11 +94,14 @@ function landingRow(q: ProjectGlanceQueue, now: number): ProgressRow | null {
   const l = q.landing;
   if (!l) return null;
   const run = { steps: l.steps as unknown as RunStep[], checks: l.checks as unknown as { id: string; label: string; source: "required" }[], startedAt: l.startedAt };
-  const checks = runChecks(run);
-  const running = l.steps.filter((s) => s.result === "running" && s.kind !== "review" && s.kind !== "notice");
-  const cur = running[running.length - 1];
-  const curCheck = cur ? checks.findIndex((c) => c.id === cur.id.replace(/^(check|rerun-tip|rerun-master):/, "")) : -1;
-  const place = curCheck >= 0 ? `check ${curCheck + 1} of ${checks.length}` : cur ? cur.label : checks.length ? `check 1 of ${checks.length}` : "starting";
+  // Counted as the landing bar counts (runNow): every segment the meter draws, so N of M matches the meter.
+  const segs = runSegments(run);
+  let i = segs.map((s) => s.state).lastIndexOf("running");
+  if (i < 0) {
+    const last = segs.reduce((n, s, k) => (s.state !== "waiting" && s.state !== "skipped" ? k : n), -1);
+    i = last < 0 ? -1 : segs.findIndex((s, k) => k > last && s.state === "waiting");
+  }
+  const place = i >= 0 ? `step ${i + 1} of ${segs.length}` : "starting";
   const left = l.takesMs !== null ? l.takesMs - (now - Date.parse(l.startedAt)) : NaN;
   const parts = [`started ${ago(l.startedAt, now)}`];
   if (l.takesMs !== null) parts.push(`takes ~${mins(l.takesMs)}`);
@@ -111,7 +114,7 @@ function landingRow(q: ProjectGlanceQueue, now: number): ProgressRow | null {
     text: `${l.branch} · ${place}`,
     meta: Number.isFinite(left) && left > 0 ? `~${mins(left)} left` : null,
     chip: null,
-    segments: runSegments(run).map((s) => s.state),
+    segments: segs.map((s) => s.state),
     detail: parts.join(" · "),
   };
 }

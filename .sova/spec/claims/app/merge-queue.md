@@ -1026,12 +1026,12 @@ the foot is as before. It covers this computer's projects only, never a peer's.
 <!-- in .sidebar-foot, before the host filter row; one 44px row, the same at every width -->
 <div class="landing-bar landing-bar-landing">
   <button type="button" class="landing-face landing-row" aria-expanded="false" aria-haspopup="dialog"
-          aria-label="Landing feat/mesh-bar. check 4 of 11 · test:int · ~3 min left. 2 in line">
+          aria-label="Landing feat/mesh-bar. step 6 of 13 · test:int · ~3 min left. 2 in line">
     <span class="landing-icon landing-tone-accent" aria-hidden="true">…</span> <!-- status icon, tinted by tone: carries the meaning -->
     <span class="landing-lines">
       <span class="landing-line1">
         <span class="landing-title">Landing feat/mesh-bar</span>   <!-- semibold, one line, ellipsis -->
-        <span class="landing-sub">check 4 of 11 · test:int · ~3 min left</span> <!-- muted, inline after "· ", ellipsis; yields first -->
+        <span class="landing-sub">step 6 of 13 · test:int · ~3 min left</span> <!-- muted, inline after "· ", ellipsis; yields first -->
         <span class="chip landing-count" aria-hidden="true">+2</span> <!-- at most one short count, never cut -->
       </span>
       <span class="landing-track-row" aria-hidden="true"><span class="landing-track"> <!-- a thin line under the words, inside the row -->
@@ -1048,7 +1048,7 @@ wrapping. In it, left to right: a **status icon** tinted by the bar's tone, the 
 short **sub line** inline after it, each on one line and cut off with an ellipsis when they don't
 fit (the sub line yields before the title); after them, at most one short **count**, and a
 **chevron** at the row's end. Under the words, inside the same row, runs the **step track** as a
-thin line: one segment per step, coloured passed, running, failed, waiting, skipped or held. The
+thin line: one segment per step, coloured passed, running, failed, waiting, skipped (a short dash) or held. The
 row never carries a note or a reason in full: those are cut short, and the status icon carries the
 meaning (done, running, waiting for you, failed, paused). The count is its only chip: never a
 "needs you" chip, never a review marker.
@@ -1103,13 +1103,16 @@ Releases tab's own words (§app.merge-queue/view, §app.release/tab). The row sh
 and a short sub line, cut with an ellipsis where they don't fit; a note or reason is cut short there,
 shows to about two lines in the hover card and in full in the detail:
 
-- **Landing** (a run checking): "Landing {branch}", sub line "check {N} of {M} · {check} · ~{n} min
-  left" ("left" only when the queue has an estimate, never a negative one), the count "+{n}" while
-  others wait in line. The track has one segment per check and per fixed step of the run (copy, merge, setup,
-  install, docs, land, main checkout, push), in their order; a step the run never needs reads
-  skipped. A check that is rerun (on the tip or on the target alone, §app.merge-queue/blame) pulses
-  its own segment again and never adds one; a check the merge thread adds mid-run adds its segment
-  and the total grows. The review runs beside the checks, so it is never a segment; its state is in
+- **Landing** (a run checking): "Landing {branch}", sub line "step {N} of {M} · {step} · ~{n} min
+  left" ("left" only when the queue has an estimate, never a negative one), {N} the running step's
+  place on the track and {M} the number of segments the track draws; the hover card and the detail
+  use the same numbers. The count "+{n}" while others wait in line. The track has one segment per
+  check and per fixed step of the run (copy, merge, setup, install, docs, land, main checkout, push),
+  in their order. Every step keeps its place for every project, and none is treated specially: a
+  step that didn't run (Install dependencies, Spec docs, or Push with no remote) is drawn as a short
+  dash, never like a step still to come. A check that is rerun (on the tip or on the target alone,
+  §app.merge-queue/blame) pulses its own segment again and never adds one; a check the merge thread
+  adds mid-run adds its segment and {M} grows by one. The review runs beside the checks, so it is never a segment; its state is in
   the detail. A project that opens a pull or merge request, or only pushes the
   branch, shows its own steps the same way (§app.merge-queue/strategies).
 - **Needs you** (warn tone): an entry waiting for the user (Behaviour differs, Review flagged, Can't
@@ -1125,12 +1128,13 @@ shows to about two lines in the hover card and in full in the detail:
   A request that is open and waiting on its host never keeps the bar.
 - **Paused** (warn tone, the stop icon): the pause's title in the tab's plain words, its reason as the
   sub line ("Nothing in line" or "{n} branches in line" when it gives none), with **Resume Queue** and
-  **Open Queue** in the detail. It shows the whole time the queue is paused, even with nothing in line. A queue whose settings don't
-  read says "Queue settings are broken: nothing runs until they are fixed" (error tone), with Open
+  **Queue** in the detail. It shows the whole time the queue is paused, even with nothing in line. A queue whose settings don't
+  read says "Queue settings are broken: nothing runs until they are fixed" (error tone), with
   Queue only and no Resume.
 - **Releasing**: "Releasing {tag}" ("Releasing a new version" before a version is picked), sub line
-  "Step {i} of {n} · {label}", and while the gating checks run, the queue run's own "check {N} of {M} ·
-  …". The track has one segment per release step in plan order, a held step in warn; withdraw steps
+  "Step {i} of {n} · {label}", and while the gating checks run, the queue run's current step after it,
+  without a count of its own ("Step 4 of 7 · Gating checks · build · ~3 min left"): the track shows the
+  release's steps, so the run's own count would match nothing on screen. The track has one segment per release step in plan order, a held step in warn; withdraw steps
   never show. The release and the landings it freezes are **one bar**: the gating checks segment
   carries the queue run's progress, and the count "+{n}" is the landings frozen until it ends
   (§app.release/checks).
@@ -1154,10 +1158,17 @@ you while a landing runs (its branch and why, with a link that opens the Merge Q
 which shows nowhere else in the bar. For a landing: "{target} {base} + branch →
 {tip}", the current step and how long it has run, the review's state (with its attempt, and a link to
 the reviewer's chat while it runs), the next three branches in line with when each should start,
-**Open Branch Chat**, **View Checks** (the run page,
-`#/projects/<pid>/merge-queue/<run>`) and **Open Queue** (`#/projects/<pid>/merge-queue`). For a
+**Branch Chat**, **Checks** (the run page,
+`#/projects/<pid>/merge-queue/<run>`) and **Queue** (`#/projects/<pid>/merge-queue`); a request just
+opened adds **On GitHub** (or **On GitLab**), the request's page. For a
 release: its base and commit, the release chat's last report, each step's one-line summary, why
-Publish isn't offered yet, **Open Release Chat** and **Open Releases**.
+Publish isn't offered yet, **Release Chat** and **Releases**.
+
+**Links and buttons.** In the floating panel, the phone sheet and the collapsed popover alike, the
+places to go (Branch Chat, Checks, Queue, Release Chat, Releases, On GitHub or On GitLab) are plain
+links on one row, which never runs past the panel's edge. The things that do something (Land Anyway,
+Accept, Send Back, Land, Resume Queue, Continue, Retry Step) are buttons on their own row above the
+links, drawn only when there are any.
 
 **Actions in place, or the tab.** Resume Queue, Retry Step and Continue act right there, through the
 same catalogue commands the tabs use (the verbs `merge.resume`, `release.retry` and `release.continue`,

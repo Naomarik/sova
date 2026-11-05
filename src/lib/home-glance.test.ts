@@ -51,7 +51,7 @@ test("memory: chats plus copies, the bar its share of the machine", () => {
   assert.equal(r.slots!.pips.filter(Boolean).length, 3);
 });
 
-test("landing: check n of m, time left, the meter, and who waits", () => {
+test("landing: step n of m (the meter's segments), time left, the meter, and who waits", () => {
   const q = queue({
     inLine: 3,
     waiting: 2,
@@ -74,7 +74,8 @@ test("landing: check n of m, time left, the meter, and who waits", () => {
   });
   const [row] = cardRuntime(glance({ queue: q }), null, NOW).progress;
   assert.equal(row!.kind, "landing");
-  assert.equal(row!.text, "feat/plan-cards · check 2 of 3");
+  assert.equal(row!.text, "feat/plan-cards · step 7 of 11"); // every segment the meter draws, as the landing bar counts
+  assert.equal(row!.segments.length, 11);
   assert.equal(row!.meta, "~6 min left");
   assert.equal(row!.detail, "started 5 min ago · takes ~11 min · 2 in line");
   assert.ok(row!.segments.includes("running") && row!.segments.includes("passed"));

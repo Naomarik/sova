@@ -56,7 +56,21 @@ export type LandingAction =
   | { kind: "resume"; label: "Resume Queue"; root: string }
   | { kind: "continue"; label: "Continue"; root: string; release: string; step: string; stepLabel: string }
   | { kind: "retry"; label: "Retry Step"; root: string; release: string; step: string; stepLabel: string }
-  | { kind: "link"; label: string; href: string; primary?: true };
+  | { kind: "link"; label: string; href: string; primary?: true; place?: true; aria?: string };
+
+/** A place to go: a link that only navigates (drawn as a text link on the places row, never a button). */
+const place = (label: string, href: string, aria: string): LandingAction => ({ kind: "link", label, href, place: true, aria });
+const branchChat = (session: string) => place("Branch Chat", chatIdHref(session), "Open the branch chat");
+const checks = (root: string, run: string) => place("Checks", queueHref(root, run), "View the checks");
+const queue = (root: string) => place("Queue", queueHref(root), "Open the merge queue");
+/** The things that do something (buttons, first), then the places to go (links), as the detail draws them. */
+export function splitActions(actions: LandingAction[]): { doing: LandingAction[]; places: Extract<LandingAction, { kind: "link" }>[] } {
+  const isPlace = (a: LandingAction): a is Extract<LandingAction, { kind: "link" }> => a.kind === "link" && !!a.place;
+  return { doing: actions.filter((a) => !isPlace(a)), places: actions.filter(isPlace) };
+}
+const HOST_NAME = { github: "GitHub", gitlab: "GitLab" } as const;
+const hostLink = (url: string, host: keyof typeof HOST_NAME | undefined) =>
+  place(`On ${host ? HOST_NAME[host] : "Host"}`, url, `Open on ${host ? HOST_NAME[host] : "the host"}`);
 
 export interface LandingProjectBar {
   /** The project's id and name. */
@@ -205,37 +219,22 @@ function foldedSteps(run: Pick<MergeRun, "steps" | "checks">): LandingSegment[] 
   return segs;
 }
 
-/** The run's checks, in order: every check step and every check in the run's list (a check added mid-run counts). */
-export function runChecks(run: Pick<MergeRun, "steps" | "checks">): { id: string; label: string; step?: RunStep }[] {
-  const out: { id: string; label: string; step?: RunStep }[] = [];
-  const seen = new Set<string>();
-  for (const s of run.steps)
-    if (s.kind === "check") {
-      const id = s.id.replace(/^check:/, "");
-      seen.add(id);
-      out.push({ id, label: s.label, step: s });
-    }
-  for (const c of run.checks) if (!seen.has(c.id)) out.push({ id: c.id, label: c.label });
-  return out;
-}
-
-/** What the run is doing now, in the sub line's words: "check 4 of 11 · test:int · ~3 min left", or the step. */
-export function runNow(run: Pick<MergeRun, "steps" | "checks" | "startedAt">, eta: MergeEntry["eta"] | undefined, now: number): string {
-  const checks = runChecks(run);
-  const running = run.steps.filter((s) => s.result === "running" && s.kind !== "review" && s.kind !== "notice");
-  // A rerun running counts as its check.
-  const cur = running[running.length - 1];
+/** What the run is doing now, in the sub line's words: "step 7 of 11 · test:int · ~3 min left". It counts every
+    segment the track draws (runSegments, same options): N is the running one's place, or between steps the next
+    waiting one's; a segment joining mid-run grows M. */
+export function runNow(run: Pick<MergeRun, "steps" | "checks" | "startedAt">, eta: MergeEntry["eta"] | undefined, now: number, o: { landsLocally?: boolean; push?: boolean; counted?: boolean } = {}): string {
+  const segs = runSegments(run, o);
   const left = eta && eta.takesMs > 0 ? eta.takesMs - (now - at(run.startedAt)) : NaN;
   const tail = Number.isFinite(left) && left > 0 ? ` · ~${mins(left)} left` : "";
-  if (cur) {
-    const t = cur.kind === "check" ? cur.id.replace(/^check:/, "") : cur.kind === "rerun-tip" || cur.kind === "rerun-master" ? rerunTarget(cur)?.replace(/^check:/, "") : null;
-    const i = t ? checks.findIndex((c) => c.id === t) : -1;
-    if (i >= 0) return `check ${i + 1} of ${checks.length} · ${checks[i]!.label}${tail}`;
-    return `${cur.label}${tail}`;
+  let i = segs.map((s) => s.state).lastIndexOf("running");
+  if (i < 0) {
+    const last = segs.reduce((n, s, k) => (s.state !== "waiting" && s.state !== "skipped" ? k : n), -1);
+    i = last < 0 ? -1 : segs.findIndex((s, k) => k > last && s.state === "waiting");
   }
-  const next = checks.findIndex((c) => !c.step || c.step.result === "pending");
-  if (next >= 0 && run.steps.some((s) => s.kind === "check")) return `check ${next + 1} of ${checks.length} · ${checks[next]!.label}${tail}`;
-  return `Starting${tail}`;
+  if (i < 0) return `Starting${tail}`;
+  // Inside a release the track draws the release's steps, so the queue run's own count would match nothing shown.
+  if (o.counted === false) return `${segs[i]!.label}${tail}`;
+  return `step ${i + 1} of ${segs.length} · ${segs[i]!.label}${tail}`;
 }
 
 /** The review's state, for the detail and the hover card (never the row): running, or its verdict. */
@@ -293,6 +292,7 @@ function nextLines(q: LandingQueueCut): LandingLine[] {
 
 function landingBar(p: LandingProjectInput, q: LandingQueueCut, run: MergeRun, now: number): LandingProjectBar {
   const entry = q.checking.find((e) => e.id === run.entry);
+  const segOpts = { landsLocally: (entry?.approval.how ?? "local") === "local" && !entry?.approval.via, push: q.heads.hasOrigin !== false };
   const needs = needsYouOf(q);
   const lines: LandingLine[] = [
     { text: `${q.target} ${short(run.base)} + ${run.branch} → ${short(run.tip ?? run.mergeSha ?? run.commit)}`, mono: true },
@@ -303,9 +303,9 @@ function landingBar(p: LandingProjectInput, q: LandingQueueCut, run: MergeRun, n
     ...conflictsOf(q).map((e) => ({ text: `${e.branch} · conflict being judged` })),
   ];
   const actions: LandingAction[] = [
-    ...(entry?.session ? [{ kind: "link" as const, label: "Open Branch Chat", href: chatIdHref(entry.session) }] : []),
-    { kind: "link", label: "View Checks", href: queueHref(p.id, run.id) },
-    { kind: "link", label: "Open Queue", href: queueHref(p.id) },
+    ...(entry?.session ? [branchChat(entry.session)] : []),
+    checks(p.id, run.id),
+    queue(p.id),
   ];
   return {
     project: p.id,
@@ -314,9 +314,9 @@ function landingBar(p: LandingProjectInput, q: LandingQueueCut, run: MergeRun, n
     tone: "accent",
     icon: "branch",
     title: `Landing ${run.branch}`,
-    sub: runNow(run, entry?.eta, now),
+    sub: runNow(run, entry?.eta, now, segOpts),
     count: waitingCount(q),
-    segments: runSegments(run, { landsLocally: (entry?.approval.how ?? "local") === "local" && !entry?.approval.via, push: q.heads.hasOrigin !== false }),
+    segments: runSegments(run, segOpts),
     lines,
     // The review is never in the row: the detail says it (reviewLine), and the hover card.
     peek: [...(currentStepLine(run, now) ? [{ text: currentStepLine(run, now)!, mono: true as const }] : []), ...(reviewLine(q, run) ? [{ text: reviewLine(q, run)!.text }] : []), ...nextLines(q).slice(0, 1)],
@@ -348,7 +348,7 @@ function mergeNeedsBar(p: LandingProjectInput, q: LandingQueueCut, needs: MergeE
     // The face says the first one already: the detail lists the others.
     lines: [...needs.slice(1).map((x) => needsLine(x, p.id)), ...conflictsOf(q).map((x) => ({ text: `${x.branch} · conflict being judged` })), ...nextLines(q)],
     peek: [...(rest > 0 ? [{ text: `${rest} more need${rest === 1 ? "s" : ""} you`, tone: "warn" as const }] : []), ...nextLines(q).slice(0, 1)],
-    actions: [...needsActions(e, p.id), ...(e.session ? [{ kind: "link" as const, label: "Open Branch Chat", href: chatIdHref(e.session) }] : []), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
+    actions: [...needsActions(e, p.id), ...(e.session ? [branchChat(e.session)] : []), queue(p.id)],
     oneLine: `${p.name} · ${e.branch} · ${stripDot(entryStateWords(e))}`,
   };
 }
@@ -373,7 +373,7 @@ function pausedBar(p: LandingProjectInput, q: LandingQueueCut): LandingProjectBa
     // The reason is the sub line already; the detail adds the rest only when the face cuts it.
     lines: [...nextLines(q), ...needsYouOf(q).map((e) => needsLine(e, p.id))],
     // A definition that doesn't parse can't be resumed: it runs again once it is fixed.
-    actions: [...(invalid ? [] : [{ kind: "resume" as const, label: "Resume Queue" as const, root: p.root }]), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
+    actions: [...(invalid ? [] : [{ kind: "resume" as const, label: "Resume Queue" as const, root: p.root }]), queue(p.id)],
     oneLine: `${p.name} · ${title}`,
   };
 }
@@ -411,7 +411,7 @@ function doneBar(p: LandingProjectInput, q: LandingQueueCut, now: number, seen: 
       segments: [],
       lines: [],
       peek: [],
-      actions: [...(r?.url ? [{ kind: "link" as const, label: "Open on Host", href: r.url }] : []), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
+      actions: [...(r?.url ? [hostLink(r.url, r.host ?? (r.how === "gitlab-mr" ? "gitlab" : r.how === "github-pr" ? "github" : undefined))] : []), queue(p.id)],
       oneLine: `${p.name} · ${title}`,
     };
   }
@@ -441,7 +441,7 @@ function doneBar(p: LandingProjectInput, q: LandingQueueCut, now: number, seen: 
     // The merge thread's note, word for word.
     lines: notes.map((n) => ({ text: n.text })),
     peek: notes.slice(0, 1).map((n) => ({ text: n.text })),
-    actions: [...(l.run ? [{ kind: "link" as const, label: "View Checks", href: queueHref(p.id, l.run.id) }] : []), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
+    actions: [...(l.run ? [checks(p.id, l.run.id)] : []), queue(p.id)],
     oneLine: `${p.name} · Landed ${l.entry.branch}`,
   };
 }
@@ -507,7 +507,7 @@ function releaseLines(rv: LandingReleaseCut, r: ReleaseRecord, now: number): Lan
 }
 
 function releaseActions(p: LandingProjectInput, r: ReleaseRecord, extra: LandingAction[] = []): LandingAction[] {
-  return [...extra, ...(r.thread ? [{ kind: "link" as const, label: "Open Release Chat", href: chatIdHref(r.thread.session) }] : []), { kind: "link", label: "Open Releases", href: releasesHref(p.id) }];
+  return [...extra, ...(r.thread ? [place("Release Chat", chatIdHref(r.thread.session), "Open the release chat")] : []), place("Releases", releasesHref(p.id), "Open releases")];
 }
 
 /** A release that needs the user: the first reason, in a8's words; null when none. */
@@ -537,7 +537,7 @@ function openReleaseBar(p: LandingProjectInput, rv: LandingReleaseCut, r: Releas
   let sub = `Step ${idx} of ${plan.length}${cur ? ` · ${cur.label}` : ""}`;
   if (cur?.id === "checks" && run) {
     const entry = q?.checking.find((e) => e.id === run.entry);
-    sub += ` · ${runNow(run, entry?.eta, now)}`;
+    sub += ` · ${runNow(run, entry?.eta, now, { landsLocally: false, counted: false })}`;
   }
   const needs = releaseNeeds(rv, r, now);
   const base = {
@@ -576,7 +576,7 @@ function openReleaseBar(p: LandingProjectInput, rv: LandingReleaseCut, r: Releas
     icon: "progress",
     title,
     sub,
-    actions: releaseActions(p, r, run ? [{ kind: "link", label: "View Checks", href: queueHref(p.id, run.id) }] : []),
+    actions: releaseActions(p, r, run ? [checks(p.id, run.id)] : []),
     oneLine: `${p.name} · ${title}`,
   };
 }

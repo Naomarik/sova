@@ -352,7 +352,8 @@ test("a model service that didn't answer: one automatic retry after the cool-dow
   assert.equal(t.s.summaryOf("/r", "feat/x", sha(201))?.state, "failed");
   assert.equal(t.s.summaryOf("/r", "feat/y", sha(202))?.state, "failed");
   const rec = readSummaryFile(t.file);
-  assert.deepEqual([rec[sha(201)] && "failed" in rec[sha(201)]! ? rec[sha(201)]!.cause : null, rec[sha(202)] && "failed" in rec[sha(202)]! ? rec[sha(202)]!.cause : null], ["unavailable", "unusable"]);
+  const causeOf = (r: (typeof rec)[string] | undefined) => (r && "failed" in r ? r.cause : null);
+  assert.deepEqual([causeOf(rec[sha(201)]), causeOf(rec[sha(202)])], ["unavailable", "unusable"]);
   // Before the cool-down: nothing.
   assert.equal(t.s.autoRetry("/r", "feat/x", sha(201), 60_000).result, "no-retry");
   t.tick(61_000);

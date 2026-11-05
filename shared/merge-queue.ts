@@ -447,7 +447,7 @@ export interface MergeQueueView {
   /** Ready, not approved: this project's worktree branches with commits the target hasn't, a clean tree, a head that
    *  isn't TEMP, and no entry in line or landed at that commit (the view's Land list). */
   ready?: MergeReady[];
-  /** Try It on Main (merge.setup dryRun): the run in flight, or the last one. */
+  /** A merge.setup dry run (the operator's, from the CLI): the run in flight, or the last one. */
   tryRun?: MergeRun;
   /** merge.try: the setup branches' trials, newest first (at most MERGE_TRIALS_KEPT), each pinned to its commit. */
   trials?: MergeTrial[];

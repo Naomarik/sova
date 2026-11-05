@@ -1289,7 +1289,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1354,7 +1354,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1419,7 +1419,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1484,7 +1484,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1549,7 +1549,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1614,7 +1614,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1679,7 +1679,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1744,7 +1744,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1809,7 +1809,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1874,7 +1874,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -1939,7 +1939,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2004,7 +2004,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2069,7 +2069,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2134,7 +2134,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2199,7 +2199,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2264,7 +2264,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2329,7 +2329,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2394,7 +2394,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
@@ -2459,7 +2459,7 @@ export interface CommandParams {
     "takes-min"?: number;
     /** merge.setup: services that must start first, comma-separated */
     "requires"?: string[];
-    /** merge.setup: Try It on Main, saving nothing */
+    /** merge.setup: run the checks on the target in the merge copy, saving nothing */
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;

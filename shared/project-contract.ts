@@ -117,7 +117,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "none", type: "boolean", mergeOnly: true, cli: { flag: "none", description: "merge.setup: the project has no automated tests" } },
   { wire: "takesMin", type: "integer", mergeOnly: true, cli: { flag: "takes-min", description: "merge.setup: about how many minutes the tests take" } },
   { wire: "requires", type: "list", mergeOnly: true, cli: { flag: "requires", description: "merge.setup: services that must start first, comma-separated" } },
-  { wire: "dryRun", type: "boolean", mergeOnly: true, cli: { flag: "dry-run", description: "merge.setup: Try It on Main, saving nothing" } },
+  { wire: "dryRun", type: "boolean", mergeOnly: true, cli: { flag: "dry-run", description: "merge.setup: run the checks on the target in the merge copy, saving nothing" } },
   { wire: "text", type: "string", mergeOnly: true, tool: { name: "text", description: "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; release.notes: the release notes, in full." }, cli: { flag: "text", description: "Text" } },
   { wire: "action", type: "string", mergeOnly: true, tool: { name: "action", description: "merge.hold (the merge thread's): set | clear. set holds every new run for 5 minutes (set again renews it); a run already checking goes on." }, cli: { flag: "action", description: "merge.hold: set | clear" } },
   { wire: "ask", type: "string", mergeOnly: true, tool: { name: "ask", description: "merge.reply: the merge thread's question you relay the user's answer to, by its id (ak_…, in the merge queue's message)." }, cli: { flag: "ask", description: "A merge thread question id" } },

@@ -15,6 +15,9 @@ type PiEvent =
   | { type: "auth_url"; url: string }
   | { type: "progress" | "info"; message: string };
 
+/** pi's error when OpenAI answers the code request with 404: the code route isn't offered (quirk P37). */
+export const PI_CODE_REFUSED = /device code login is not enabled/i;
+
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
 /** A throwaway model runtime on the store at `authPath`: no models file, no network, nothing refreshed at start. */
@@ -24,7 +27,7 @@ function runtimeFor(authPath: string): Promise<ModelRuntime> {
 
 /**
  * pi's AuthInteraction for one sign-in. `shown` turns true once the user has something to act on
- * (a code or a link); a code route that fails before that was refused by the provider.
+ * (a code or a link); a code route that fails before that with pi's 404 text was refused by the provider.
  */
 export function piInteraction(method: SignInMethod, handlers: SignInHandlers, signal: AbortSignal, shown: { value: boolean }) {
   return {
@@ -74,7 +77,7 @@ export function piProviderSignIn(authPath: () => string): ProviderSignIn {
         // Stored, but this throwaway runtime's own model list failed to follow: the sign-in is saved.
         if (error instanceof CredentialSynchronizationError) return { ok: true };
         if (signal.aborted) return { ok: false, error: "Cancelled", cancelled: true };
-        if (method === "code" && !shown.value) return { ok: false, error: message(error), refused: true };
+        if (method === "code" && !shown.value && PI_CODE_REFUSED.test(message(error))) return { ok: false, error: message(error), refused: true };
         return { ok: false, error: message(error) };
       }
     },

@@ -1261,7 +1261,7 @@ describe("pi contract", () => {
     session.dispose();
   });
 
-  test("P37 openai-codex-login: the login asks a method menu with device_code and browser first, and a refused code route fails before any code is shown", async () => {
+  test("P37 openai-codex-login: the login asks a method menu with device_code and browser first, and a refused code route fails before any code is shown, with the not-enabled text", async () => {
     // The browser route's half (its link's state, the paste-back prompt's signal, localhost:1455 freed
     // on abort) listens on a port: server/harness/pi/sign-in.integration.test.ts.
     const authPath = join(dir, "p37-auth.json");
@@ -1272,6 +1272,7 @@ describe("pi contract", () => {
     let menu: string[] = [];
     // OpenAI answers the code request with 404: device code sign-in not enabled.
     globalThis.fetch = (async () => new Response("", { status: 404 })) as typeof fetch;
+    const { PI_CODE_REFUSED } = await import("./sign-in.ts");
     try {
       await assert.rejects(runtime.login("openai-codex", "oauth", {
         async prompt(p: any) {
@@ -1280,7 +1281,7 @@ describe("pi contract", () => {
           throw new Error("unexpected prompt");
         },
         notify(e: any) { events.push(e.type); },
-      }));
+      }), (error: Error) => PI_CODE_REFUSED.test(error.message), "a 404 is refused with the text sign-in.ts reads");
     } finally {
       globalThis.fetch = realFetch;
     }

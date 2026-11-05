@@ -42,9 +42,11 @@ export function TopicCard(props: { batch: TopicBatchInfo; time?: string }) {
       <div class="toolcard-body">
         <Show when={props.batch.pair}>
           {(p) => (
-            <p class="text-muted toolcard-section">
+            <div class="toolcard-section">
+              <p class="text-muted">
               Notes from this chat's paired chat, "{p().partner}". It may act on them, with your requests first. Its replies go to <code>{p().reply}</code>.
-            </p>
+              </p>
+            </div>
           )}
         </Show>
         <For each={props.batch.notes}>

@@ -59,7 +59,9 @@ export function PairedLines(props: { sessionId: string | undefined }) {
             icon="network"
             title={
               <>
-                Paired with <a href={`#/s/${encodeURIComponent(line().partner.path)}`}>{line().partner.title}</a>
+                <span class="paired-line-title">
+                  Paired with <a href={`#/s/${encodeURIComponent(line().partner.path)}`} title={line().partner.title}>{line().partner.title}</a>
+                </span>
               </>
             }
             body={

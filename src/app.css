@@ -1877,3 +1877,10 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .mq-unclear { margin: var(--space-1) 0 0; padding-left: var(--space-4); }
 .mq-unclear li { overflow-wrap: anywhere; }
 .mq-unattributed .mq-unclear { margin-bottom: var(--space-2); }
+
+/* A chat's pairing lines sit above the transcript in their own space (§app.overseer/pairs): one row
+   each, the partner's title cut with an ellipsis so Unpair stays on the row at any width. */
+.transcript-header { flex: none; display: grid; gap: var(--space-2); padding: var(--space-3) var(--space-4) 0; }
+.transcript-header .banner { flex-wrap: nowrap; width: 100%; max-width: calc(var(--measure) + var(--space-9) - var(--space-6)); margin: 0 auto; }
+.transcript-header .banner-main { flex: 1 1 0; min-width: 0; }
+.transcript-header .banner-title { margin: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

@@ -841,6 +841,8 @@ export function holdReaderAcrossSwap(path: string): void {
 export function ThreadScroller(props: {
   children: JSX.Element;
   banner?: JSX.Element;
+  /** Lines above the scroll region: they take their own height, never covering a row. */
+  header?: JSX.Element;
   /** Number of rendered entries, for the "N new" count. */
   count: number;
   resume?: number;
@@ -867,6 +869,7 @@ export function ThreadScroller(props: {
   const [away, setAway] = createSignal<number | null>(null); // count when the user scrolled away
   // Resolve once: reading a JSX prop twice would build its DOM twice.
   const banner = children(() => props.banner);
+  const header = children(() => props.header);
 
   /** How far the view was from the end when last read: 0 right after a scroll to the bottom. */
   let lastGap = 0;
@@ -1456,6 +1459,9 @@ export function ThreadScroller(props: {
 
   return (
     <div class="transcript-wrap">
+      <Show when={header()}>
+        <div class="transcript-header">{header()}</div>
+      </Show>
       <section
         class="transcript pane"
         id={paneId("transcript")}

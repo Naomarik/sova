@@ -52,9 +52,9 @@ export function pairView(p: PairRecord, titleOf: (sessionId: string) => string |
 export function pairIntro(p: PairRecord, mine: "a" | "b", partnerTitle: string): string {
   const me = mine === "a" ? p.a : p.b;
   const other = mine === "a" ? p.b : p.a;
-  const title = partnerTitle.replace(/[\r\n]+/g, " ").replace(/[[\]]/g, "").trim() || "your partner";
+  const title = partnerTitle.replace(/[\r\n]+/g, " ").replace(/"/g, "'").trim() || "your partner";
   return [
-    `You are now paired with [${title}](sova://s/${other.sessionId}), another chat on this machine, so the two of you can work together.`,
+    `You are now paired with "${title}" (chat id ${other.sessionId}), another chat on this machine, so the two of you can work together.`,
     `Its job, in the Overseer's words: ${other.job}`,
     `To send it a note, use queue_push with topic ${other.topic}. Its notes reach you between turns, as one queue batch on your topic ${me.topic}; to wait for a reply, end your turn and the batch starts your next one.`,
     `Limits: each note at most ${TOPIC_TEXT_MAX.toLocaleString("en-US")} characters, at most ${PUSHES_PER_WINDOW} notes every 10 minutes, and ${PAIR_NOTES_EACH_WAY} notes each way; then that direction pauses until your user or the Overseer resumes it.`,

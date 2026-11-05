@@ -2261,14 +2261,16 @@ export function ChatView(props: {
             )}
           </Show>
         }
+        header={
+          /* The Overseer's pairings this chat is in: one line each, above the transcript. */
+          <Show when={!props.overseer && !archivedPane()}>
+            <PairedLines sessionId={props.summary?.()?.id} />
+          </Show>
+        }
         banner={
           <div class="stack-2">
             <Show when={!archivedPane()}>
               <ConnectionBanner socket={socket} />
-            </Show>
-            {/* The Overseer's pairings this chat is in (§app.overseer/pairs): one line each. */}
-            <Show when={!props.overseer && !archivedPane()}>
-              <PairedLines sessionId={props.summary?.()?.id} />
             </Show>
             {/* A reload onto new code that didn't start: the chat keeps working on older code. */}
             <Show when={codeFailure(code())}>

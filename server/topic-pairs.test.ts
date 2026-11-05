@@ -210,7 +210,10 @@ describe("who can be paired, and what each chat is told", () => {
   test("the introduction and the reminder name the partner, its job, the topic to push to and the user first", () => {
     const p = topicStore().openPair({ ...chat("a"), job: "Builds the API." }, { ...chat("b"), job: "Writes the docs." }).pair;
     const intro = pairIntro(p, "a", "Docs");
-    assert.match(intro, /\[Docs\]\(sova:\/\/s\/sess-b\)/);
+    // Shown to the user as plain text: the title in quotes and the id in words, no markdown link.
+    assert.ok(intro.startsWith('You are now paired with "Docs" (chat id sess-b), '));
+    assert.doesNotMatch(intro, /\]\(sova:/);
+    assert.ok(pairIntro(p, "a", 'Say "hi"\n[now]').includes(`"Say 'hi' [now]" (chat id sess-b)`));
     assert.match(intro, /Writes the docs\./);
     assert.ok(intro.includes(`queue_push with topic ${p.b.topic}`));
     assert.match(intro, /40 notes each way/);

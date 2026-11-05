@@ -1,40 +1,170 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SessionContextView } from "../../shared/protocol";
-import { contextHeadline, contextLines, contextRoom, flatParts, partLang, workerReplyKey, type ContextPart, type ContextSizes } from "./context-parts";
+import {
+  clockOf,
+  contextHeadline,
+  contextLayout,
+  contextRoom,
+  fileFolder,
+  flatParts,
+  meterShares,
+  partLang,
+  partMeta,
+  partNote,
+  partOpens,
+  partSubtitle,
+  shareOf,
+  workerReplyKey,
+  type ContextPart,
+  type ContextSizes,
+} from "./context-parts";
 
 const parts: ContextPart[] = [
-  { id: "file:/p/AGENTS.md", group: "instructions", label: "AGENTS.md", tokens: 3_000, path: "/p/AGENTS.md" },
-  { id: "sub:/p/api/AGENTS.md", group: "subfolder", label: "api/AGENTS.md", tokens: 800, folder: "api", loaded: true },
-  { id: "sub:/p/web/AGENTS.md", group: "subfolder", label: "web/AGENTS.md", tokens: 5_000, folder: "web", loaded: false },
-  { id: "section:rules", group: "rules", label: "Rules", tokens: 700, text: "r" },
-  { id: "section:docs", group: "rules", label: "Docs", tokens: 500, text: "d" },
-  { id: "skill:a", group: "skills", label: "a", tokens: 1_500 },
-  { id: "skill:b", group: "skills", label: "b", tokens: 500 },
-  { id: "tool:read", group: "tools", label: "read", tokens: 9_000, text: "{}" },
+  { id: "instructions:file:/p/AGENTS.md", group: "instructions", label: "AGENTS.md", tokens: 3_000, path: "/p/AGENTS.md" },
+  { id: "instructions:file:/h/AGENTS.md", group: "instructions", label: "~/AGENTS.md", tokens: 400, path: "/h/AGENTS.md" },
+  { id: "subfolder:/p/api/AGENTS.md", group: "subfolder", label: "api/AGENTS.md", tokens: 800, path: "/p/api/AGENTS.md", folder: "api", loaded: true },
+  { id: "subfolder:/p/web/AGENTS.md", group: "subfolder", label: "web/AGENTS.md", tokens: 5_000, path: "/p/web/AGENTS.md", folder: "web", loaded: false },
+  { id: "rules:section:rules", group: "rules", label: "Rules", tokens: 700, text: "r" },
+  { id: "rules:section:docs", group: "rules", label: "Docs", tokens: 500, text: "d" },
+  { id: "skills:skill:a", group: "skills", label: "a", tokens: 1_500, path: "/s/a/SKILL.md", detail: "Does a.", read: true },
+  { id: "skills:skill:b", group: "skills", label: "b", tokens: 500, path: "/s/b/SKILL.md", read: false },
+  { id: "tools:tool:read", group: "tools", label: "read", tokens: 9_000, text: "{}" },
+  { id: "conversation:toolResults", group: "conversation", label: "Tool results", tokens: 12_000, count: 9 },
+  { id: "conversation:replies", group: "conversation", label: "Replies", tokens: 5_000, count: 4 },
+  { id: "conversation:user", group: "conversation", label: "Your messages", tokens: 1_000, count: 4 },
+  { id: "conversation:summary", group: "conversation", label: "Compaction summary", tokens: 2_000, text: "# Summary", at: "2026-11-05T14:06:00" },
 ];
 const base: ContextSizes = { parts, conversation: 20_000, total: 50_000, window: 200_000 };
 
-describe("the Context tab's lines", () => {
-  test("one line per instruction file in the window, the other groups summed, biggest first, Free last", () => {
-    const lines = contextLines(base);
+describe("the Context tab's groups", () => {
+  test("every top line is a group, biggest first; Free is no line, Other stands apart", () => {
+    const l = contextLayout(base);
     assert.deepEqual(
-      lines.map((l) => l.label),
-      ["Conversation", "Other", "Tools", "AGENTS.md", "Skills offered", "Rules and docs", "api/AGENTS.md", "Free"],
+      l.lines.map((x) => x.label),
+      ["Conversation", "Tools", "Instruction files", "Skills offered", "Rules and docs"],
     );
-    assert.equal(lines.find((l) => l.kind === "rules")!.tokens, 1_200);
+    assert.equal(l.lines.find((x) => x.kind === "rules")!.tokens, 1_200);
+    assert.equal(l.lines.some((x) => (x.kind as string) === "free" || (x.kind as string) === "other"), false);
   });
 
-  test("a line of one part opens it; a line of several lists its group; the rest open nothing", () => {
-    const one = contextLines({ ...base, parts: parts.filter((p) => p.id !== "skill:b") });
-    const skills = (ls: typeof one) => ls.find((l) => l.kind === "skills")!;
-    assert.equal(skills(one).opens, "skill:a");
-    assert.equal(skills(one).lists, undefined);
-    const several = contextLines(base);
-    assert.equal(skills(several).opens, undefined);
-    assert.equal(skills(several).lists, "skills");
-    assert.ok(several.find((l) => l.label === "AGENTS.md")!.opens);
-    for (const l of several.filter((x) => ["conversation", "other", "free"].includes(x.kind))) assert.deepEqual([l.opens, l.lists], [undefined, undefined], l.kind);
+  test("a group lists its parts whatever their count: one part is still a group", () => {
+    const one = contextLayout({ ...base, parts: parts.filter((p) => p.id !== "skills:skill:b") });
+    const skills = one.lines.find((x) => x.kind === "skills")!;
+    assert.deepEqual(skills.parts.map((p) => p.id), ["skills:skill:a"]);
+    assert.equal(skills.meta, "1 skill · 1 read");
+  });
+
+  test("Instruction files holds every file once: loaded ones biggest first, then the ones not yet loaded, which cost nothing", () => {
+    const files = contextLayout(base).lines.find((x) => x.kind === "instructions")!;
+    assert.deepEqual(files.parts.map((p) => p.label), ["AGENTS.md", "api/AGENTS.md", "~/AGENTS.md", "web/AGENTS.md"]);
+    assert.equal(files.notLoadedFrom, 3);
+    assert.equal(files.tokens, 3_000 + 400 + 800);
+    assert.equal(files.meta, "3 loaded · 1 not yet loaded");
+    // A group of only files not yet loaded still shows, at 0.
+    const only = contextLayout({ ...base, conversation: 0, parts: parts.filter((p) => p.id === "subfolder:/p/web/AGENTS.md") }).lines;
+    assert.deepEqual(only.map((x) => [x.label, x.tokens, x.meta]), [["Instruction files", 0, "0 loaded · 1 not yet loaded"]]);
+    assert.equal(contextLayout({ ...base, parts: parts.filter((p) => p.group === "instructions") }).lines.find((x) => x.kind === "instructions")!.meta, "2 loaded");
+  });
+
+  test("Conversation lists its counts biggest first, then the kept summary; its size is the server's estimate", () => {
+    const talk = contextLayout(base).lines.find((x) => x.kind === "conversation")!;
+    assert.deepEqual(talk.parts.map((p) => p.label), ["Tool results", "Replies", "Your messages", "Compaction summary"]);
+    assert.equal(talk.tokens, 20_000);
+    assert.equal(talk.meta, "Since the last compaction · 17 messages");
+    const fresh = contextLayout({ ...base, parts: parts.filter((p) => p.id !== "conversation:summary") }).lines.find((x) => x.kind === "conversation")!;
+    assert.equal(fresh.meta, "17 messages");
+    // An older server sends no counts: the line stays, with nothing to list.
+    const old = contextLayout({ ...base, parts: parts.filter((p) => p.group !== "conversation") }).lines.find((x) => x.kind === "conversation")!;
+    assert.deepEqual([old.meta, old.parts.length], ["", 0]);
+  });
+
+  test("each group's short line", () => {
+    const l = contextLayout({ ...base, parts: [...parts, { id: "mode:section:mode", group: "mode", label: "Mode", tokens: 100, text: "m" }] });
+    const meta = Object.fromEntries(l.lines.map((x) => [x.kind, x.meta]));
+    assert.deepEqual(meta, {
+      conversation: "Since the last compaction · 17 messages",
+      tools: "1 tool",
+      instructions: "3 loaded · 1 not yet loaded",
+      skills: "2 skills · 1 read",
+      rules: "2 sections",
+      mode: "Mode",
+    });
+  });
+
+  test("the groups and Other add up to the total; Free is the window less it", () => {
+    const l = contextLayout(base);
+    const known = l.lines.reduce((n, x) => n + x.tokens, 0);
+    assert.equal(l.other, 50_000 - known);
+    assert.equal(known + l.other!, 50_000);
+    assert.equal(l.free, 150_000);
+  });
+
+  test("Other is floored at 0 when the estimates overshoot the reported total", () => {
+    assert.equal(contextLayout({ ...base, total: 10_000 }).other, 0);
+  });
+
+  test("before the first reply: the estimates alone, no Other and no room left", () => {
+    const l = contextLayout({ ...base, total: null });
+    assert.deepEqual([l.other, l.free], [null, null]);
+    assert.equal(contextHeadline(null, 200_000), "Nothing sent yet");
+    assert.equal(contextRoom(null, 200_000), null);
+    assert.deepEqual(meterShares(l, 200_000), []);
+  });
+
+  test("the fill bar: a share per group then Other, never past the whole window", () => {
+    const l = contextLayout(base);
+    const shares = meterShares(l, 200_000);
+    assert.deepEqual(shares.map((s) => s.id), [...l.lines.map((x) => x.id), "other"]);
+    assert.ok(Math.abs(shares.reduce((n, s) => n + s.pct, 0) - 25) < 1e-9);
+    const over = meterShares(contextLayout({ ...base, total: 400_000 }), 200_000);
+    assert.ok(over.reduce((n, s) => n + s.pct, 0) <= 100 + 1e-9);
+    assert.deepEqual(meterShares(l, null), []);
+  });
+
+  test("a row's share bar: none without a window or for a file not yet loaded; a sliver for a tiny part", () => {
+    assert.equal(shareOf(1, 200_000), 0.5);
+    assert.equal(shareOf(100_000, 200_000), 50);
+    assert.equal(shareOf(0, 200_000), 0);
+    assert.equal(shareOf(100, null), null);
+    assert.equal(shareOf(100, 200_000, false), null);
+  });
+});
+
+describe("a part's row and reading", () => {
+  const get = (id: string) => parts.find((p) => p.id === id)!;
+
+  test("what opens: a file or a text; a conversation count doesn't", () => {
+    assert.equal(partOpens(get("instructions:file:/p/AGENTS.md")), true);
+    assert.equal(partOpens(get("tools:tool:read")), true);
+    assert.equal(partOpens(get("conversation:summary")), true);
+    assert.equal(partOpens(get("conversation:replies")), false);
+  });
+
+  test("short lines: a file's folder and Loaded, a skill's description and Read or Not read yet, a count's words", () => {
+    assert.deepEqual(partMeta(get("instructions:file:/p/AGENTS.md")), { chip: { word: "Loaded", done: true }, text: "This chat's folder" });
+    assert.deepEqual(partMeta(get("instructions:file:/h/AGENTS.md")), { chip: { word: "Loaded", done: true }, text: "Your home folder" });
+    assert.deepEqual(partMeta(get("subfolder:/p/api/AGENTS.md")), { chip: { word: "Loaded", done: true }, text: "api/" });
+    assert.deepEqual(partMeta(get("subfolder:/p/web/AGENTS.md")), { text: "web/" });
+    assert.deepEqual(partMeta(get("skills:skill:a")), { chip: { word: "Read", done: true }, text: "Does a." });
+    assert.deepEqual(partMeta(get("skills:skill:b")), { chip: { word: "Not read yet", done: false }, text: "" });
+    assert.deepEqual(partMeta(get("conversation:toolResults")), { text: "9 results" });
+    assert.deepEqual(partMeta({ ...get("conversation:replies"), count: 1 }), { text: "1 reply" });
+    assert.deepEqual(partMeta(get("conversation:user")), { text: "4 messages" });
+    assert.deepEqual(partMeta(get("conversation:summary")), { text: `Kept from the compaction at ${clockOf("2026-11-05T14:06:00")}` });
+    assert.equal(clockOf("2026-11-05T14:06:00"), "14:06");
+    assert.equal(clockOf(undefined), "");
+    assert.equal(fileFolder({ group: "instructions", label: "~/.pi/agent/AGENTS.md" }), "~/.pi/agent/");
+    assert.equal(fileFolder({ group: "instructions", label: "/etc/AGENTS.md" }), "/etc/");
+  });
+
+  test("the subtitle is the full path for a file or a skill, else the group's name; the notes", () => {
+    assert.equal(partSubtitle(get("skills:skill:a"), { label: "Skills offered" }), "/s/a/SKILL.md");
+    assert.equal(partSubtitle(get("tools:tool:read"), { label: "Tools" }), "Tools");
+    assert.match(partNote(get("subfolder:/p/web/AGENTS.md"))!, /^Not counted yet\. It loads the first time the agent reads, edits or writes a file in web\.$/);
+    assert.equal(partNote(get("subfolder:/p/api/AGENTS.md")), null);
+    assert.match(partNote(get("skills:skill:b"))!, /only what the model is offered/);
+    assert.equal(partNote(get("tools:tool:read")), null);
   });
 
   test("a tool shows as JSON, a file by its path, anything else as markdown", () => {
@@ -42,39 +172,27 @@ describe("the Context tab's lines", () => {
     assert.equal(partLang({ group: "skills", path: "/a/SKILL.md" }), "markdown");
     assert.equal(partLang({ group: "skills", path: "/a/run.mjs" }), "javascript");
     assert.equal(partLang({ group: "rules" }), "markdown");
+    assert.equal(partLang({ group: "conversation" }), "markdown");
   });
+});
 
-  test("a subfolder file not yet loaded costs nothing; the lines add up to the window", () => {
-    const lines = contextLines(base);
-    assert.equal(lines.some((l) => l.label === "web/AGENTS.md"), false);
-    assert.equal(lines.find((l) => l.kind === "other")!.tokens, 50_000 - (3_000 + 800 + 1_200 + 2_000 + 9_000 + 20_000));
-    assert.equal(lines.find((l) => l.kind === "free")!.tokens, 150_000);
-    assert.equal(lines.reduce((n, l) => n + l.tokens, 0), 200_000);
-  });
-
-  test("Other is floored at 0 when the estimates overshoot the reported total", () => {
-    assert.equal(contextLines({ ...base, total: 10_000 }).find((l) => l.kind === "other")!.tokens, 0);
-  });
-
-  test("before the first reply: the estimates alone, no Other and no Free", () => {
-    const lines = contextLines({ ...base, total: null });
-    assert.equal(lines.some((l) => l.kind === "other" || l.kind === "free"), false);
-    assert.equal(contextHeadline(null, 200_000), "Nothing sent yet");
-    assert.equal(contextRoom(null, 200_000), null);
-  });
-
-  test("the server's read flattens into parts with group-unique ids, nested files carrying their state", () => {
+describe("the server's read", () => {
+  test("flattens into parts with group-unique ids: nested files with their state, skills with description and read state, the conversation's counts", () => {
     const v: Extract<SessionContextView, { state: "ok" }> = {
       state: "ok", cwd: "/p", window: 1000, total: 10, prompt: true, conversation: 5, checkedAt: 0,
       instructions: [{ id: "x", label: "AGENTS.md", tokens: 3, path: "/p/AGENTS.md" }],
       mode: { id: "x", label: "Mode", tokens: 2, text: "m" },
-      rules: [], skills: [], tools: [{ id: "read", label: "read", tokens: 4, text: "{}" }],
+      rules: [], skills: [{ id: "skill:pdf", label: "pdf", detail: "Read PDFs.", path: "/s/pdf/SKILL.md", tokens: 9, read: false }], tools: [{ id: "read", label: "read", tokens: 4, text: "{}" }],
       nested: [{ path: "api/AGENTS.md", abs: "/p/api/AGENTS.md", folder: "api", tokens: 1, loaded: false }],
+      talk: { user: { count: 2, tokens: 3 }, replies: { count: 1, tokens: 2 }, toolResults: { count: 0, tokens: 0 }, other: { count: 0, tokens: 0 }, summary: { text: "S", tokens: 1, at: "2026-01-01T00:00:00Z" } },
     };
     const ps = flatParts(v);
-    assert.deepEqual(ps.map((p) => p.group), ["instructions", "subfolder", "mode", "tools"]);
+    assert.deepEqual(ps.map((p) => p.group), ["instructions", "subfolder", "mode", "skills", "tools", "conversation", "conversation", "conversation"]);
     assert.equal(new Set(ps.map((p) => p.id)).size, ps.length);
     assert.deepEqual(ps[1], { id: "subfolder:/p/api/AGENTS.md", group: "subfolder", label: "api/AGENTS.md", tokens: 1, path: "/p/api/AGENTS.md", folder: "api", loaded: false });
+    assert.deepEqual(ps[3], { id: "skills:skill:pdf", group: "skills", label: "pdf", tokens: 9, path: "/s/pdf/SKILL.md", detail: "Read PDFs.", read: false });
+    assert.deepEqual(ps.slice(5).map((p) => [p.label, p.count, p.tokens, p.text]), [["Replies", 1, 2, undefined], ["Your messages", 2, 3, undefined], ["Compaction summary", undefined, 1, "S"]]);
+    assert.deepEqual(flatParts({ ...v, talk: undefined }).filter((p) => p.group === "conversation"), []);
   });
 
   test("a worker's reply-end key moves when a reply ends, and not while one streams", () => {
@@ -92,6 +210,6 @@ describe("the Context tab's lines", () => {
     assert.equal(contextHeadline(50_000, 200_000), "50,000 of 200,000 tokens · 25%");
     assert.equal(contextRoom(50_000, 200_000), "150k left");
     assert.equal(contextHeadline(50_000, null), "50,000 tokens · this model's limit is unknown");
-    assert.equal(contextLines({ ...base, window: null }).some((l) => l.kind === "free"), false);
+    assert.equal(contextLayout({ ...base, window: null }).free, null);
   });
 });

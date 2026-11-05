@@ -3,16 +3,14 @@
 // shapes are the queue's (shared/merge-queue.ts) and the release's (shared/release.ts); the store that feeds this is
 // lib/landing-bar-store.ts, the drawing components/LandingBar.tsx.
 import { WAITING_FOR_USER, entryStateWords, type MergeEntry, type MergeQueueView, type MergeRun, type RunStep } from "../../shared/merge-queue";
-import type { ReleaseRecord, ReleaseStep, ReleaseView } from "../../shared/release";
+import type { ReleaseRecord, ReleaseStep } from "../../shared/release";
+import type { LandingQueueCut, LandingReleaseCut } from "../../shared/merge-queue";
 import { mins, pausedTitle, short } from "./merge-queue";
 
 // ---- the inputs -----------------------------------------------------------------------------------
 
-/** The queue fields the bar reads: a full view (the `merge_queue` frame) or the summary read's cut. */
-export type LandingQueueCut = Pick<MergeQueueView, "project" | "root" | "target" | "state" | "paused" | "invalid" | "served" | "current" | "checking" | "waiting" | "needsYou" | "recent" | "release" | "reviewing" | "heads" | "at"> &
-  Partial<Pick<MergeQueueView, "waitingOnHost">>;
-/** The release fields the bar reads: a full view (the `release` frame) or the summary read's cut. */
-export type LandingReleaseCut = Pick<ReleaseView, "project" | "initialized" | "open" | "last" | "gates" | "quiet" | "target" | "remote">;
+/** The queue and release fields the bar reads: a full view (the feed's frames) or the summary read's cut. */
+export type { LandingQueueCut, LandingReleaseCut };
 
 /** One project as the bar reads it: its id (for addresses), its main checkout, its name, and the two views. */
 export interface LandingProjectInput {

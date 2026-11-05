@@ -87,7 +87,7 @@ export function BatonSettingsSection() {
         <Toggle switch label="People can send photos" checked={batonDraft()?.photosOn ?? true} disabled={saving()} onChange={(on) => edit({ photosOn: on })} />
         <div class="orgs-fields" role="group" aria-labelledby="settings-orgs-photos">
           {box("perMessage", "Per message", { off: !batonDraft()?.photosOn })}
-          {box("mb", "Largest photo, MB", { off: !batonDraft()?.photosOn })}
+          {box("mb", "Largest photo (MB)", { off: !batonDraft()?.photosOn })}
           {box("perConversation", "Per conversation", { off: !batonDraft()?.photosOn })}
         </div>
         <p class="field-hint">Applies to every gathering session on this host, from its next message.</p>
@@ -95,7 +95,7 @@ export function BatonSettingsSection() {
           Files in gathering chats
         </h4>
         <div class="orgs-fields" role="group" aria-labelledby="settings-orgs-files">
-          {box("fileMb", "Largest file, MB")}
+          {box("fileMb", "Largest file (MB)")}
         </div>
         <p class="field-hint">Applies to gathering sessions that take files, from the next upload.</p>
         <h4 class="settings-type-title" id="settings-orgs-assistant">

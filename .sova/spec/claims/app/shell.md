@@ -102,20 +102,33 @@ restart) and not only after the keyboard has opened once.
 - **At 768px and up nothing changes.** The overview (§chat.transcript/landing-page) is the
   main column while no session is open, beside the list. `#/overview` shows the same page, and there
   is no Overview button.
-- **Below 768px `#/` is still the list**, and a phone's first screen. The list's head row (the
+- **Below 768px `#/` is still the list**, unchanged. The list's head row (the
   `sova` brand, `New Session`) gets one more control, right after the brand: an icon-only
   `button-icon button-ghost` button (`grid`: four squares; `aria-label` and
   `title` "Overview") that opens `#/overview`, one history entry above the list.
+- **Opening Sova on a phone lands on the overview.** Below 768px, a fresh launch (opening the app,
+  or Sova's plain address in a new tab) at no hash, `#` or `#/` opens `#/overview` one history entry
+  above the list, before any route is read, so the first screen is the overview with its projects
+  first (§app.projects/home-cards). Back from it reaches the list, unchanged, and Back from the list
+  leaves it there: it never bounces to the overview. A reload keeps you where you were: a tab's
+  first load, at any width and on any route, sets `sessionStorage["sova:launched"]`, and no later
+  load in that tab lands on the overview (with no storage every load counts as a launch). It is
+  read once, before routes are, and never on a hash change: every later move to the list (Back
+  from a chat, a "Back to Sessions" link, the Sessions card) still goes to the list. Opening any
+  other route (a session, a page) opens it, as before; at 768px and up nothing is pushed.
 - **`#/overview` on a phone keeps the head.** The main column shows the same head row the list has
   (`.sidebar-head.overview-bar`: the brand, then `New Session`; no Overview button) above the
-  overview. The brand is a link to `#/`, the list, as it is in the list. Back returns to the list.
+  overview. The brand leads to `#/`, the list, as it is in the list; a plain click on it there goes
+  back to the list as the Sessions card does (below), so the list is never stacked twice. Back
+  returns to the list.
 - **Leaving by the Sessions card.** On a phone the card goes back to the list: `history.back()`
-  when the list's Overview button opened the overview in this tab (so the list isn't stacked twice and
-  Forward returns here), otherwise a new `#/` entry (a reload or a typed `#/overview`).
+  when the list's Overview button or the launch opened the overview in this tab (so the list isn't
+  stacked twice and Forward returns here), otherwise a new `#/` entry (a reload or a typed
+  `#/overview`).
 - **Everything else is as on master.** Every page's back link and "Back to Sessions" still goes to
   `#/`, the list. Organizations is reached only from the overview's Organizations card, its last
   section (§app/organizations).
-  On a phone the overview holds the Start card (New Session), the Sessions card,
+  On a phone the overview holds the Projects section, the Start card (New Session), the Sessions card,
   Mesh, Extensions, the Explanations card (the way to `#/explanations`), the Shares card (the way
   to `#/shares`) and the Organizations card; the list holds New Session in its head
   and Usage, Agents and Settings in its foot, with no Shares.
@@ -355,9 +368,12 @@ opens in its own window with no browser bar. On a Mac or Linux desktop where Sov
 with the installer, its app-launcher entry already opens Sova that way, unlocked, with no step in
 the browser (§app.installer/app-entry).
 
-- **The manifest** (`public/manifest.webmanifest`, linked from `index.html`) names it `sova`, starts
-  at `/` with the whole origin in scope, asks for `display: standalone`, and carries 192px and 512px
-  icons, each also in a maskable form. `index.html` adds the iOS Home Screen tags (capable, a black
+- **The manifest** (`public/manifest.webmanifest`, linked from `index.html`) names it `sova`, gives
+  it the id `/` (so its identity is the origin, not where it starts), starts at `/` with the whole
+  origin in scope, asks for `display: standalone`, offers `window-controls-overlay` first
+  (`display_override`), so a desktop window may hide its title bar
+  (§app.shell/window-controls-overlay) while `standalone` stays the fallback, and carries 192px and
+  512px icons, each also in a maskable form. `index.html` adds the iOS Home Screen tags (capable, a black
   status bar, the title `sova`, an apple-touch icon) and a theme colour.
 - **The service worker** (`public/sw.js`), registered in production builds only (never under the
   Vite dev server), keeps the shell working offline: it seeds `/` and the hashed bundles it names on
@@ -368,3 +384,35 @@ the browser (§app.installer/app-entry).
   Screen.
 - **Being installed changes nothing else.** The installed app is the same page at the same
   address, behind the same gate (§app/access).
+
+## §app.shell/window-controls-overlay — The installed window without a title bar
+
+When the installed app's window hides its title bar (`display-mode: window-controls-overlay`: how
+the installer leaves it on macOS, §app.installer/app-entry, or the browser's own toggle anywhere),
+Sova draws a title band of its own in its place.
+
+- **One band, the window's width.** A band runs across the whole top of the window, as tall as the
+  title-bar area the browser reports (`env(titlebar-area-height)`, never a fixed number), in the
+  surface colour (`--color-surface`) with a hairline under it. The window's buttons (the traffic
+  lights) sit in it on the left and the browser's own cluster (its title-bar toggle and ⋮ menu) on
+  the right. It holds nothing of Sova's.
+- **It matches the browser's cluster.** The browser paints that cluster in the page's theme colour,
+  which is always the worn theme's surface (§design.ground-rules/theme), dark or light, and changes
+  with it the moment the theme changes; band and cluster read as one strip.
+- **It moves the window.** The whole band is the window's drag region (`app-region: drag`):
+  dragging it moves the window as a title bar does.
+- **Everything else starts below it.** The shell begins under the band, so no page (the overview
+  included), head or pane runs under the window's controls, and every head keeps its ordinary
+  padding; the sessions pane keeps its usual width and floor
+  (§app.shell/resizing-the-sessions-pane). Overlays that cover the window (the dialog scrim, the
+  lightbox, a guided tour, a maximized extension, the drop overlay) and the stale-tab notice start
+  below it too, and a centred dialog centres in the space under it. A maximized extension fills
+  the whole window below the band, down to its bottom edge. A dialog that still reaches into
+  the band stays clickable there (`app-region: no-drag`).
+- **Showing the title bar again** (the browser's toggle) gives back the ordinary layout at once:
+  the band goes and the shell starts at the window's top edge; hiding it brings the band back. An
+  app installed before the band existed gets it the next time it loads Sova: the band is the page's
+  own styling, and nothing in the browser's record of the app changes.
+- **Still the installed app.** A window without a title bar counts as the installed app wherever
+  Sova asks, as a standalone window does: the Home Screen check before phone notifications
+  (§app/notifications) and the voice device's "(app)" label (§chat.voice/decoding).

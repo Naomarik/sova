@@ -16,23 +16,44 @@ function changedLines(a: string, b: string): string[] {
   return out;
 }
 
+/** The lines a minimal (longest-common-subsequence) diff removes from `a` and adds in `b`, trimmed, a trailing comma dropped (JSON needs it or not by position). */
+function lineDiff(a: string, b: string): { removed: string[]; added: string[] } {
+  const norm = (t: string) => t.split("\n").map((l) => l.trim().replace(/,$/, ""));
+  const x = norm(a);
+  const y = norm(b);
+  const n = x.length;
+  const m = y.length;
+  const L: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i]![j] = x[i] === y[j] ? L[i + 1]![j + 1]! + 1 : Math.max(L[i + 1]![j]!, L[i]![j + 1]!);
+  const removed: string[] = [];
+  const added: string[] = [];
+  let i = 0;
+  let j = 0;
+  while (i < n && j < m) {
+    if (x[i] === y[j]) (i++, j++);
+    else if (L[i + 1]![j]! >= L[i]![j + 1]!) removed.push(x[i++]!);
+    else added.push(y[j++]!);
+  }
+  return { removed: [...removed, ...x.slice(i)], added: [...added, ...y.slice(j)] };
+}
+
 describe("editing Sova's own project file in place", () => {
   test("a check's time limit changes only that number on that line", () => {
     const out = editSettingsText(SOVA, { checks: { unit: { timeoutSec: 1200 } } });
-    assert.deepEqual(changedLines(SOVA, out), [SOVA.split("\n").find((l) => l.includes('"id": "unit"'))!.replace('"timeout": 1500', '"timeout": 1200')]);
+    const lines = SOVA.split("\n");
+    const at = lines.findIndex((l, i) => l.includes('"timeout": 1500') && i >= lines.findIndex((x) => x.includes('"id": "unit"')));
+    assert.deepEqual(changedLines(SOVA, out), [lines[at]!.replace('"timeout": 1500', '"timeout": 1200')]);
   });
 
   test("push off, review off, a check made optional and another's rerun dropped: every other byte stays", () => {
     const out = editSettingsText(SOVA, { push: false, review: false, checks: { build: { optional: true }, unit: { rerun: false } } });
     const raw = JSON.parse(SOVA);
     assert.deepEqual(JSON.parse(out), applyToData(raw, { push: false, review: false, checks: { build: { optional: true }, unit: { rerun: false } } }));
-    const changed = changedLines(SOVA, out.replace(/"install": (\{.*\})\n/, '"install": $1,\n'));
-    // push's line, the build and unit lines, the install line (it lost its trailing comma) and review's line (gone)
-    assert.ok(changed.some((l) => l.includes('"push": false')));
-    assert.ok(changed.some((l) => l.includes('"id": "build"') && l.endsWith('"timeout": 900, "optional": true},')));
-    assert.ok(changed.some((l) => l.includes('"id": "unit"') && !l.includes("rerun")));
-    assert.equal(out.split("\n").length, SOVA.split("\n").length - 1);
+    // push's value, unit's rerun gone, build's optional added, review's line gone; nothing else but the commas JSON needs
+    // (the data check above says which check each one is in).
+    assert.deepEqual(lineDiff(SOVA, out), { removed: ['"push": true', '"rerun": true', '"review": ".sova/playbooks/review"'], added: ['"push": false', '"optional": true'] });
     assert.equal(out.slice(0, out.indexOf('"merge"')), SOVA.slice(0, SOVA.indexOf('"merge"')));
+    assert.equal(out.slice(out.indexOf('\n  "release"')), SOVA.slice(SOVA.indexOf('\n  "release"')), "what follows the merge section stays");
   });
 
   test("review back on restores the kit folder; on and off round-trip to the same bytes", () => {

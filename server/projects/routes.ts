@@ -14,6 +14,7 @@ import { projectLoginView, setProjectLogin } from "./claude-login";
 import { cloneRepo, overseerRepoProblem } from "./clone";
 import { reservedRoots } from "./contributions";
 import { RegistryError, reservedRootProblem } from "./registry";
+import { registerIconRoutes } from "./icon-routes";
 import { registerRuntimeRoutes } from "./runtime-routes";
 import { editProject, listProjects, readProject, registerProjectIn, setProjectArchived, type OperatorBy } from "./spaces";
 
@@ -168,6 +169,8 @@ export function registerProjectRoutes(app: Hono<any>): void {
       return c.json({ ok: true });
     }),
   );
+  // Its icon (§app.projects/icon): an upload, a found app icon, or letters.
+  registerIconRoutes(app);
   // Its software registry and the Project verbs playbook (§app/project-runtime).
   registerRuntimeRoutes(app);
 }

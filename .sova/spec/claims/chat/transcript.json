@@ -236,7 +236,8 @@
       "src/lib/explanations.ts",
       "src/components/OverviewSharesCard.tsx",
       "src/lib/session-shares.ts",
-      "src/lib/session-shares.test.ts"
+      "src/lib/session-shares.test.ts",
+      "src/components/OverviewProjects.tsx"
     ],
     "requires": [
       "§app.organizations/org-cards",
@@ -244,8 +245,14 @@
       "§app.session-list/needs-you",
       "§app.session-list/recent",
       "§mesh.ui/card",
-      "§app.extensions/cards"
-    ]
+      "§app.extensions/cards",
+      "§app.projects/home-cards"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T22:53Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+    }
   },
   "§chat.transcript/live-watch": {
     "kind": "behavior",
@@ -499,11 +506,14 @@
       "src/design/base.css",
       "src/lib/profile-cards.test.ts",
       "server/session-tools.ts",
-      "server/session-tools.test.ts"
+      "server/session-tools.test.ts",
+      "src/components/ChatView.tsx",
+      "src/lib/mcp.ts"
     ],
     "agreed": {
-      "by": "user (al_3 go-ahead)",
-      "at": "2026-10-14T16:11Z"
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
     }
   },
   "§chat.transcript/setup-card-context": {
@@ -625,14 +635,22 @@
       "server/session-loadout.test.ts",
       "server/session-loadout-runtime.test.ts",
       "server/session-setup.test.ts",
-      "src/lib/session-setup.test.ts"
+      "src/lib/session-setup.test.ts",
+      "server/mcp/chat.ts",
+      "src/lib/mcp.ts"
     ],
     "requires": [
       "§chat.transcript/setup-card",
       "§chat.transcript/setup-card-context",
       "§chat.transcript/setup-card-skills",
-      "§chat.profiles/applying"
-    ]
+      "§chat.profiles/applying",
+      "§app.mcp/tool-list"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
   },
   "§chat.transcript/slim-rows": {
     "kind": "behavior",
@@ -676,12 +694,13 @@
       "src/App.tsx",
       "src/lib/older-rows-view.ts",
       "src/lib/error-feed.ts",
-      "src/lib/error-feed.test.ts"
+      "src/lib/error-feed.test.ts",
+      "src/components/OverviewProjects.tsx"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-19T21:14Z",
-      "source": "pi-session:398db362-660a-4f63-967c-d28758e5179f#fb5aff13"
+      "by": "user",
+      "at": "2026-11-04T22:53Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
     }
   },
   "§chat.transcript/streaming": {
@@ -719,12 +738,13 @@
       "pi-config/extensions/explain/store.ts",
       "src/lib/hidden-rows.ts",
       "src/lib/hidden-rows.test.ts",
-      "src/lib/input-count.ts"
+      "src/lib/input-count.ts",
+      "shared/wake.ts"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-23T22:04Z",
-      "source": "pi-session:cb32c74b-7123-4902-acf1-37d2f19c83b9#c86a4620"
+      "by": "user",
+      "at": "2026-10-27T21:10Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
     }
   },
   "§chat.transcript/turn-end-keeps-reader": {

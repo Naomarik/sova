@@ -63,8 +63,9 @@ How readily alignments open and how the agent writes them is set in **Settings â
   lost) as a product question, and puts the technical detail in the technical notes. **Simplified**
   uses short sentences in everyday words and fewer items. **Technical** keeps files, code and
   technical trade-offs in the plan. A change reaches open chats at their next message.
-- **Visuals.** With **Draw when it helps** on, the agent can draw a wireframe or a flow on the
-  card when a picture explains faster than words, at most 3 per alignment. It applies to sessions
+- **Visuals.** With **Draw when it helps** on, the agent can draw on the card when a picture
+  explains faster than words: a wireframe for a simple screen or a flow across screens, a clickable
+  prototype for a screen beyond a simple one, or a flow for a change in behaviour, at most 3 per alignment. It applies to sessions
   you start after saving.
 - **Review.** **Adversarial review** has a read-only reviewer check the plan and the diff of risky
   work. See [Adversarial review](/docs/modes/align/review/).

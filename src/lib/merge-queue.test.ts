@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeEntry, MergeRun, RunStep, WorktreeQueueInfo } from "../../shared/merge-queue";
-import { entryLandBlock, SENT_BACK_LINE, stillSentBack, rowButtons, attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
+import { entryLandBlock, SENT_BACK_LINE, stillSentBack, rowButtons, attribution, clock, controlWords, mins, notesOf, pausedTitle, pushedWords, queueRow, queueStateChip, rowsSummary, runProgress, sourceTag, stepCounts, stepDetail, stepMark, stepTime, tildeIn, verdictChip, waitingHead, type QueueRowInput } from "./merge-queue";
 
 const SHA = "a".repeat(40);
 const wt = (x: Partial<QueueRowInput> = {}): QueueRowInput => ({ status: "active", exists: true, branch: "feat/x", readiness: undefined, ...x });
@@ -83,8 +83,8 @@ test("review flagged: the review's words, Land Anyway and Send Back", () => {
   assert.equal(r.reason, "Leaves a TODO hack in land.ts.");
 });
 
-test("drafts changed asks for a new Land; needs a fix offers none (al_4)", () => {
-  assert.equal(queueRow(wt({ queue: q({ state: "needs-fix", reason: "unit failed: a.test.ts", run: "mr_1" }) })).action, "none");
+test("drafts changed asks for a new Land; needs a fix offers Land This Commit Again, never Land (al_4, al_1)", () => {
+  assert.equal(queueRow(wt({ queue: q({ state: "needs-fix", reason: "unit failed: a.test.ts", run: "mr_1" }) })).action, "land-this-again");
   const d = queueRow(wt({ queue: q({ state: "drafts-changed" }) }));
   assert.equal(d.label, "Drafts changed");
   assert.equal(d.action, "land");
@@ -225,18 +225,68 @@ test("can't tell whose failure: its words, the queue's why, Land Anyway and Send
   assert.equal(rowsSummary([{ key: "unattributed" }]), "1 can't tell whose failure");
 });
 
+// ---- the run page's Checks and why ----
+
+const runStep = (x: Partial<RunStep>): RunStep => ({ id: "check:unit", kind: "check", label: "Unit tests", result: "passed", ms: 75_000, log: "check-unit.log", ...x });
+
+test("a step's time: a finished one shows what it took; a running one counts up from its start; waiting and skipped show none", () => {
+  const now = Date.parse("2026-11-03T10:01:42Z");
+  assert.equal(stepTime(runStep({}), now), "1:15");
+  assert.equal(stepTime(runStep({ result: "failed", ms: 57_000 }), now), "0:57");
+  assert.equal(stepTime(runStep({ result: "running", ms: 0, startedAt: "2026-11-03T10:00:00Z" }), now), "1:42", "not 0:00");
+  assert.equal(stepTime(runStep({ result: "running", ms: 0 }), now), "", "no start known: no made-up time");
+  assert.equal(stepTime(runStep({ result: "pending", ms: 0 }), now), "");
+  assert.equal(stepTime(runStep({ result: "skipped", ms: 3 }), now), "");
+});
+
+test("a check's counts go with its description: none on a skipped check, none when every count is zero; a failed count is marked", () => {
+  assert.deepEqual(stepCounts(runStep({ counts: { passed: 11496, failed: 0, skipped: 5 } })), [{ text: "11496 passed" }, { text: "5 skipped" }]);
+  assert.deepEqual(stepCounts(runStep({ result: "failed", counts: { passed: 10, failed: 2, skipped: null } })), [{ text: "10 passed" }, { text: "2 failed", failed: true }]);
+  assert.deepEqual(stepCounts(runStep({ result: "skipped", counts: { passed: 0, failed: 0, skipped: 0 } })), [], "no stray '0 passed'");
+  assert.deepEqual(stepCounts(runStep({ counts: { passed: 0, failed: null, skipped: null } })), []);
+  assert.deepEqual(stepCounts(runStep({ counts: null })), []);
+});
+
+test("status marks: nothing that looks like it expands; skipped and unchanged setup get a dash, waiting an empty ring", () => {
+  assert.equal(stepMark(runStep({ result: "passed" })).icon, "check");
+  assert.equal(stepMark(runStep({ result: "failed" })).icon, "close");
+  assert.equal(stepMark(runStep({ result: "running" })).icon, "clock");
+  assert.equal(stepMark(runStep({ result: "skipped", kind: "setup", detail: "unchanged since the last run" })).icon, "minus");
+  assert.deepEqual(stepMark(runStep({ result: "pending" })), { icon: null, cls: "mq-wait", word: "Waiting" });
+  for (const r of ["passed", "failed", "running", "pending", "skipped"] as const) assert.notEqual(stepMark(runStep({ result: r })).icon, "chevron-right");
+});
+
+test("a step's detail: the home folder shortened, the copy's folder and commits in mono, anything else plain", () => {
+  const home = "/home/me";
+  assert.deepEqual(stepDetail(runStep({ id: "copy", kind: "copy", detail: "/home/me/webapps/.worktrees/x-merge at 0123abc" }), home), [{ text: "~/webapps/.worktrees/x-merge", mono: true }, { text: " at " }, { text: "0123abc", mono: true }]);
+  assert.deepEqual(stepDetail(runStep({ id: "merge", kind: "merge", detail: "89abcde" }), home), [{ text: "89abcde", mono: true }]);
+  assert.deepEqual(stepDetail(runStep({ result: "failed", detail: "exit 1: added /home/me/a.ts" }), home), [{ text: "exit 1: added ~/a.ts" }], "free text stays one plain part");
+  assert.deepEqual(stepDetail(runStep({ detail: undefined }), home), []);
+  assert.equal(tildeIn("/home/me2/x and /home/me/y", home), "/home/me2/x and ~/y", "only the home folder itself");
+  assert.equal(tildeIn("/mnt/home/me/x", home), "/mnt/home/me/x", "a home path inside another path stays");
+  assert.equal(tildeIn("copy /mnt/home/me/x to /home/me/x", home), "copy /mnt/home/me/x to ~/x");
+  assert.equal(tildeIn("/home/me", home), "~", "the bare home folder, alone");
+  assert.equal(tildeIn("cd /home/me && ls", home), "cd ~ && ls", "the bare home folder before a space");
+  assert.equal(tildeIn("/home/me.bak/x", home), "/home/me.bak/x", "a sibling folder stays");
+  assert.equal(tildeIn(`at "/home/me/a" (/home/me/b) cwd=/home/me/c PATH=/bin:/home/me/d, /home/me/e`, home), `at "~/a" (~/b) cwd=~/c PATH=/bin:~/d, ~/e`, "after a quote, bracket, =, : or comma");
+  assert.equal(tildeIn("/home/me/x/home/me/y", home), "~/x/home/me/y", "only where a path starts");
+  assert.equal(tildeIn("/home/me/x", "/home/me/"), "~/x", "a trailing slash on home is ignored");
+  assert.equal(tildeIn("/a+b/x", "/a+b"), "~/x", "regex characters in home are literal");
+  assert.equal(tildeIn("/aab/x", "/a+b"), "/aab/x");
+});
+
 // al_4: no Land at all while a sent-back branch is being fixed; the fixed, finished commit brings Land back.
 const NEW = "b".repeat(40);
 const sentBack = (x: Partial<QueueRowInput> = {}) =>
   wt({ mergeServed: true, mergeProject: { id: "prj_1", root: "/r", target: "main", checks: "declared", review: true }, queue: q({ state: "needs-fix", run: "mr_1" }), ...x });
 
-test("a needs-fix row at its sent-back commit has no Land anywhere: no button, so no ▾ menu either", () => {
+test("a needs-fix row at its sent-back commit has no Land anywhere: no Land button, so no ▾ menu either", () => {
   for (const readiness of [undefined, { ...ready, state: "in-progress" as const, dirtyCount: 2 }, { ...ready, landing: { state: "ready" as const, commit: SHA } }]) {
     const r = queueRow(sentBack({ readiness }));
     assert.equal(r.key, "needs-fix");
     assert.equal(r.label, "Needs a fix");
-    assert.equal(r.action, "none");
-    assert.deepEqual(rowButtons(r, "prj_1"), [], "the Land split (and its menu) draws only with a Land button");
+    assert.equal(r.action, "land-this-again");
+    assert.deepEqual(rowButtons(r, "prj_1"), ["Land This Commit Again", "Remove from Queue"], "no Land split (and so no ▾ menu): its own two buttons");
   }
   assert.equal(queueRow(sentBack()).reason, SENT_BACK_LINE);
   assert.equal(queueRow(sentBack({ queue: q({ state: "needs-fix", reason: "unit failed: a.test.ts" }) })).reason, "unit failed: a.test.ts", "the queue's reason, as today");

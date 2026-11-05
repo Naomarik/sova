@@ -24,7 +24,9 @@ const { commandAudit } = await import("../command-audit");
 const { OVERSEER_SENDER_HEADER, senderSecret } = await import("../overseer-sender");
 const { gitIn } = await import("./git");
 const { RESTART_DURING_UPGRADE, RESTART_NO_SERVICE, UpdatesManager } = await import("./manager");
-const { registerUpdatesRoutes, RESTART_REFUSED, setUpdatesForTest } = await import("./routes");
+const { registerUpdatesRoutes, setUpdatesForTest } = await import("./routes");
+const RESTART_WORDS = "Only the user restarts Sova. Ask them to press Restart Sova in Settings → General. Nothing was restarted.";
+const PEER_WORDS = "Only the user approves this, on the page of the computer it belongs to. Open Sova on that computer. Nothing changed.";
 type ServiceUnit = import("./install-kind").ServiceUnit;
 
 const port = 47_919;
@@ -102,17 +104,13 @@ test("the operator's browser: 202 with exactly the startedAt GET /api/health ans
   assert.deepEqual(scheduled, [{ manager: "systemd", name: "sova-runtime.service" }]);
 });
 
-test("the command line (the token, sova run's command header): 202, and its row in the audit names the command", async () => {
-  await commandAudit.flush();
-  const r = await send(CLI);
-  assert.equal(r.status, 202);
-  assert.equal(scheduled.length, 1);
-  await commandAudit.flush();
-  const row = (await commandAudit.list({ command: "server.restart" })).rows[0];
-  assert.deepEqual(row && { caller: row.caller, method: row.method, route: row.route, status: row.status }, { caller: "no-key", method: "POST", route: "/api/updates/restart", status: 202 });
-  // A script with the token and no command name: let in too.
-  fresh();
-  assert.equal((await send({ "x-sova-token": token })).status, 202);
+test("the command line and a script are refused, with the token and the words that say where to click (§app.access/your-click)", async () => {
+  for (const headers of [CLI, { "x-sova-token": token }, { ...BROWSER, "x-sova-token": token }, { ...BROWSER, "x-sova-caller": "k" }] as Record<string, string>[]) {
+    const r = await send(headers);
+    assert.equal(r.status, 403, JSON.stringify(Object.keys(headers)));
+    assert.deepEqual(r.body, { error: RESTART_WORDS, yourClick: true });
+  }
+  assert.equal(scheduled.length, 0, "nothing scheduled");
 });
 
 test("refused, scheduling nothing: the Overseer's mark, a cross-site page, a page with no site mark, a wrong token", async () => {
@@ -142,7 +140,8 @@ test("the route itself: refused for the peer listener and an in-process call, wi
   ] as const) {
     const r = await call(headers, env);
     assert.equal(r.status, 403, why);
-    assert.deepEqual(await r.json(), { error: RESTART_REFUSED }, why);
+    const peer = why.startsWith("peer");
+    assert.deepEqual(await r.json(), peer ? { error: PEER_WORDS, yourClick: true, peer: true } : { error: RESTART_WORDS, yourClick: true }, why);
   }
   assert.equal(scheduled.length, 0);
 });
@@ -155,6 +154,6 @@ test("refused by the manager: a running upgrade (409), no service (409), each wi
   rmSync(jobsDir, { recursive: true, force: true });
   unit = null;
   fresh();
-  assert.deepEqual(await send(CLI), { status: 409, body: { error: RESTART_NO_SERVICE } });
+  assert.deepEqual(await send(BROWSER), { status: 409, body: { error: RESTART_NO_SERVICE } });
   assert.equal(scheduled.length, 0);
 });

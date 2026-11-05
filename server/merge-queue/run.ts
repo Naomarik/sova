@@ -44,6 +44,8 @@ export interface RunDeps extends ReviewDeps {
 
 const now = () => new Date().toISOString();
 const short = (sha: string) => sha.slice(0, 7);
+/** At most `n` characters; a cut text ends in "…" (the full text is in the step's log). */
+export const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 const tail = (s: string, n = 1) => s.trim().split("\n").slice(-n).join(" ").slice(0, 300);
 
 /** The steps of one run: each with its own log file from its first line, every change reported to the queue. */
@@ -325,7 +327,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   const docs = await makeDocs({ input, copy, steps, ident, deps, signal });
   if (signal.aborted) return voided("aborted");
   if (docs.kind === "machine") return out({ verdict: "machine", why: docs.why, copy, mergeSha });
-  if (docs.kind === "refused") return out({ verdict: "failed", blame: "branch", why: docs.why, copy, mergeSha });
+  if (docs.kind === "refused") return out({ verdict: "failed", blame: "branch", cause: "drafts", why: docs.why, copy, mergeSha });
   if (docs.kind === "made") {
     tip = docs.sha;
     const more = (await gitProc(copy, ["diff", "--name-only", `${mergeSha}..${tip}`])).out.split("\n").filter(Boolean);
@@ -636,8 +638,8 @@ function reviewed(r: ReviewResult | null, o: RunOutcome): RunOutcome {
   if (!r.ok) return { ...o, verdict: "machine", blame: "reviewer", why: `the review couldn't finish: ${r.why}` };
   const v = r.verdict;
   if (v.verdict === "ok") return { ...o, review: v };
-  if (v.verdict === "notes") return { ...o, review: v, notes: [...o.notes, { kind: "review", text: (v.text ?? "review notes").slice(0, 300), at: v.at }] };
-  return { ...o, review: v, verdict: "review-flagged", why: `review flagged: ${(v.text ?? "").slice(0, 200)}` };
+  if (v.verdict === "notes") return { ...o, review: v, notes: [...o.notes, { kind: "review", text: clip(v.text ?? "review notes", 300), at: v.at }] };
+  return { ...o, review: v, verdict: "review-flagged", why: `review flagged: ${clip(v.text ?? "", 200)}` };
 }
 
 type ReviewResult = { ok: true; verdict: ReviewVerdict } | { ok: false; why: string };
@@ -655,7 +657,7 @@ function startReview(o: { input: RunInput; copy: string; tip: string; steps: Ste
       return { ok: true as const, verdict: { verdict: "ok" as const, commit: o.tip, at: now(), text: "no review kit" } };
     }
     const r = await reviewStep({ awaitReview: o.input.awaitReview, runId: o.input.runId, projectId: o.input.project.id, root: o.input.project.root, copy: o.copy, base: o.input.base, commit: o.tip, branch: o.input.entry.branch, kit, target: o.input.project.target, log: st.log, signal: ctl.signal }, o.deps);
-    if (r.ok) st.end(r.verdict.verdict === "blocking" ? "failed" : "passed", { detail: `${r.verdict.verdict}${r.verdict.text ? `: ${r.verdict.text.slice(0, 200)}` : ""}` });
+    if (r.ok) st.end(r.verdict.verdict === "blocking" ? "failed" : "passed", { detail: `${r.verdict.verdict}${r.verdict.text ? `: ${clip(r.verdict.text, 200)}` : ""}` });
     else st.end("failed", { detail: r.why });
     return r;
   })().finally(() => {
@@ -810,7 +812,7 @@ async function landDrafts(o: { input: RunInput; copy: string; ident: Record<stri
   if (j.exit !== 0 || !j.written) {
     const f = (j.findings ?? []).slice(0, 6).map((x) => `${x.id ?? x.draft ?? ""} ${x.code ?? ""}: ${x.message ?? ""}`.trim());
     st.end("failed", { detail: `drafts don't fit: ${f.join("; ").slice(0, 300)}` });
-    return { kind: "refused", why: `your spec drafts don't fit, so nothing was made official: ${f.join("; ").slice(0, 400)}. Fix them in your drafts (no commit needed) and approve again.` };
+    return { kind: "refused", why: `your spec drafts don't fit, so nothing was made official: ${f.join("; ").slice(0, 400)}. Fix them in your drafts (no commit needed); Land comes back here, or type "land it" in this chat.` };
   }
   const paths = (j.paths ?? []).filter((x): x is string => typeof x === "string" && x.startsWith(".sova/spec/") && !x.startsWith(".sova/spec/drafts/"));
   if (!paths.length) {

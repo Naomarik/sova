@@ -144,6 +144,7 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
     ...(e.run ? { run: e.run } : {}),
     ...(e.request ? { request: e.request } : {}),
     ...(e.settled ? { settled: e.settled } : {}),
+    ...(e.state === "needs-fix" && e.redrafted ? { redrafted: true as const } : {}),
     ...(view.review ? { reviewKit: true } : {}),
   };
 }

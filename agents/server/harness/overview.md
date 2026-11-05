@@ -246,8 +246,11 @@ found so far (pi 1.0.3).
   `agent-session.js:1680`); `PiHarnessSession.steer` drops it and stays `Promise<void>`.
 - pi 1.0's built-in extensions (`builtin:codemode`, `builtin:tool-search`, `builtin:mcp`,
   `builtin:llama.cpp`, `<pi>/dist/extensions/index.js`) load only in the CLI (`<pi>/dist/main.js` adds them); SDK
-  runtimes such as Sova's do not get them (`<pi>/docs/sdk.md` "codemode-mcp"), so no MCP, tool_search or
-  llama.cpp provider in webapp-owned sessions unless Sova adds the factories; Sova adds none. A call
+  runtimes such as Sova's do not get them (`<pi>/docs/sdk.md` "codemode-mcp"), so no tool_search or
+  llama.cpp provider in webapp-owned sessions unless Sova adds the factories. Sova adds one:
+  `createMcpExtension`, for ordinary chats and the workers a chat names servers for, through `server/harness/pi/mcp.ts`, which supplies
+  the list and every transport itself (quirks P30, P31, P34, P36, §app/mcp): an address server runs on `StreamableHttpTransport` from `@earendil-works/pi-mcp`, a direct dependency pinned with pi (`server/harness/pi/mcp-http.ts`). A Check and a sign-in of an address server use
+  pi's own HTTP client in a short-lived process (`server/harness/pi/mcp-check.ts`, quirks P14, P32). A call
   another tool makes carries `parentToolCallId` (`HarnessEvent` `nested`, `SovaEvent` `parentCallId`)
   and is no row or live tool.
 - **pi reads the host's context files into a recording.** A session reads every `AGENTS.md`/`CLAUDE.md`

@@ -7,9 +7,11 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Confined, Policy } from "../../backend.ts";
 import {
+	BROWSER_RULES,
 	DarwinSeatbeltBackend,
 	linkBind,
 	MACH_ALLOW,
+	MACH_DENY_PREFIXES,
 	profilePlan,
 	renderProfile,
 	runCapture,
@@ -23,6 +25,8 @@ import {
 } from "../../backends/darwin-seatbelt.ts";
 
 const onMac = process.platform === "darwin" && existsSync("/usr/bin/sandbox-exec");
+/** Seatbelt cannot nest: inside a sandbox (an agent's own confined bash) every sandbox-exec fails at sandbox_apply. */
+const nested = onMac && spawnSync("/usr/bin/sandbox-exec", ["-p", "(version 1)(allow default)", "/usr/bin/true"]).status !== 0;
 
 /** A workspace (a git repo), a session tmp, a secret and an outside dir, all under one private root. */
 function setup(t: { after: (fn: () => void) => void }) {
@@ -92,6 +96,39 @@ test("the profile: deny by default, mach allowlist, Keychain denied after it, ne
 	assert.ok(text.indexOf(`(subpath ${sbplString(join(ws, ".git", "hooks"))})`) > text.indexOf("(allow file-write*\n"));
 	assert.ok(text.includes(`(literal ${sbplString(join(ws, ".git"))})`), ".git itself is pinned (no rename)");
 	assert.match(text, new RegExp(`\\(deny file-read\\* file-write\\*\\n  \\(subpath ${sbplString(secret).replace(/[.*+?^${}()|[\]\\/]/g, "\\$&")}\\)`));
+});
+
+test("browser off: the profile has neither Chromium rule", (t) => {
+	const { policy } = setup(t);
+	for (const p of [policy, { ...policy, browser: false }, { ...policy, network: { mode: "host" as const } }]) {
+		const text = renderProfile(profilePlan({ policy: p }));
+		assert.ok(!text.includes("RootDomainUserClient"));
+		assert.ok(!text.includes("MachPortRendezvousServer"));
+	}
+});
+
+test("browser on: each rule once, after the mach allowlist and before the hidden paths and the Keychain deny, which stays the last mach rule", (t) => {
+	const { policy, secret } = setup(t);
+	assert.ok(!BROWSER_RULES.some((r) => /secur|keychain/i.test(r)), "the browser rules name no security service");
+	for (const network of [{ mode: "none" as const }, { mode: "host" as const }]) {
+		const text = renderProfile(profilePlan({ policy: { ...policy, network, browser: true } }));
+		for (const r of BROWSER_RULES) assert.equal(text.split(r).length - 1, 1, r);
+		assert.equal(text.split("RootDomainUserClient").length - 1, 1);
+		assert.equal(text.split("MachPortRendezvousServer").length - 1, 1);
+		const allowMach = text.indexOf("(allow mach-lookup");
+		const iokit = text.indexOf(BROWSER_RULES[0]!);
+		const rendezvous = text.indexOf(BROWSER_RULES[1]!);
+		const firstWrite = text.indexOf("(allow file-write*\n");
+		const hidden = text.indexOf(";; hidden");
+		const denyKeychain = text.indexOf('(global-name-prefix "com.apple.SecurityServer")');
+		assert.ok(allowMach >= 0 && iokit > allowMach && rendezvous > allowMach, "after the allowlist");
+		assert.ok(iokit < firstWrite && rendezvous < firstWrite, "before the write layers");
+		assert.ok(rendezvous < hidden && hidden < text.indexOf(`(subpath ${sbplString(secret)})`), "before the hidden paths");
+		assert.ok(denyKeychain > rendezvous, "the Keychain deny comes after the browser rules");
+		const lastMach = Math.max(...[...text.matchAll(/\((allow|deny) mach-[a-z-]+( mach-[a-z-]+)*/g)].map((m) => m.index!));
+		assert.equal(lastMach, text.lastIndexOf("(deny mach-lookup"), "the Keychain deny is the last mach rule");
+		for (const n of MACH_DENY_PREFIXES) assert.ok(text.indexOf(`(global-name-prefix ${sbplString(n)})`) > rendezvous, n);
+	}
 });
 
 test("writeLayers: the deeper path comes later, so it wins; for the identical path read-only wins", () => {
@@ -215,6 +252,19 @@ test("under sandbox-exec: a linked worktree commits, while the common dir's hook
 test("under sandbox-exec: hidden paths are neither read nor listed; Keychain files and service are refused", { skip: !onMac }, async (t) => {
 	const { policy, secret } = setup(t);
 	const r = await sh(policy, `cat '${secret}/key'; ls '${secret}'; /usr/bin/security find-generic-password -s sova-sandbox-test-nonexistent; echo "sec=$?"`);
+	assert.ok(!r.output.includes("SECRET"));
+	assert.match(r.output, /Operation not permitted/);
+	assert.doesNotMatch(r.output, /sec=0/);
+});
+
+test("under sandbox-exec, browser on: hidden paths and the Keychain files and service are still refused", { skip: !onMac ? "macOS only" : nested ? "already inside a sandbox: sandbox-exec cannot nest" : false }, async (t) => {
+	const { policy, secret, ws } = setup(t);
+	const on = { ...policy, browser: true };
+	assert.ok(renderProfile(profilePlan({ policy: on })).includes(BROWSER_RULES[0]!));
+	const r = await sh(on, `echo applied > ok.txt; cat '${secret}/key'; ls '${secret}'; ls "$HOME/Library/Keychains" /Library/Keychains; /usr/bin/security find-generic-password -s sova-sandbox-test-nonexistent; echo "sec=$?"`);
+	// The profile did apply (a write in the workspace landed), so the refusals below are its own.
+	assert.equal(readFileSync(join(ws, "ok.txt"), "utf8"), "applied\n", r.output);
+	assert.doesNotMatch(r.output, /sandbox_apply|sandbox-exec:/);
 	assert.ok(!r.output.includes("SECRET"));
 	assert.match(r.output, /Operation not permitted/);
 	assert.doesNotMatch(r.output, /sec=0/);

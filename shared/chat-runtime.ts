@@ -7,6 +7,7 @@
 //   - a state mirror (`ChatStateMirror`) the server reads synchronously instead of asking the chat;
 //   - lifecycle events (`ChatLifecycleEvent`) numbered per runtime, for reconnecting `since` a seq;
 //   - browser frames (`ChatClientFrame`), passed through without the server parsing a reply.
+import type { McpNote } from "./mcp";
 import type { ModeState } from "../pi-config/extensions/mode/state";
 import type { SandboxState } from "../pi-config/extensions/sandbox/state";
 import type { HEntry } from "./harness-history";
@@ -86,6 +87,8 @@ export interface ChatLoadoutChoice {
   v: 1;
   offContext: string[];
   offSkills: string[];
+  offMcp?: string[];
+  onMcp?: string[];
 }
 
 /** A mode switch, merged into the chat's own mode by the chat (server/mode-state.ts ModePatch). */
@@ -330,6 +333,7 @@ export interface ChatMethods {
   appendNote: { args: { noteType: string; text: string; details?: unknown }; result: boolean };
   writeProfile: { args: { data: ProfileEntryData }; result: null };
   writeLoadout: { args: { data: ChatLoadoutChoice }; result: null };
+  noteMcp: { args: { note: McpNote }; result: null };
   flushDeferredAppends: { args: Record<string, never>; result: null };
   /** Run the write guard now: true when another writer touched the file. */
   checkWrites: { args: Record<string, never>; result: boolean };
@@ -408,6 +412,8 @@ export type ChatReply<M extends ChatMethod = ChatMethod> =
 /** A browser on `/ws/chat`, as the chat sees it: which wire it reads and how it wants the transcript. */
 export interface ChatClientInfo {
   clientId: string;
+  /** Not the user's socket (ChatClient.notUser): what it sends runs, and no turn it opens is attended. */
+  notUser?: true;
   wire?: 2;
   tail?: boolean;
   pull?: { prefetch: boolean };

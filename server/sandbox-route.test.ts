@@ -28,6 +28,7 @@ await import("./testing/in-process-chats"); // chats open in this process (the s
 const { buildApp } = await import("./app");
 const { app } = buildApp({ extensionEntriesOf: async () => [] });
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
+const { pageHeaders } = await import("./testing/page");
 after(async () => {
   await disposeAllChats();
   rmSync(dir, { recursive: true, force: true });
@@ -35,7 +36,7 @@ after(async () => {
 });
 
 const post = (path: string, body: unknown) =>
-  app.request(`/api/sandbox?path=${encodeURIComponent(path)}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  app.request(`/api/sandbox?path=${encodeURIComponent(path)}`, { method: "POST", headers: { "content-type": "application/json", ...pageHeaders() }, body: JSON.stringify(body) });
 
 async function openChat() {
   const res = await app.request("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd }) });

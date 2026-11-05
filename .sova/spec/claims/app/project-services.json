@@ -454,8 +454,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "at": "2026-11-04T22:57Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
     },
     "code": [
       "server/merge-queue/routes.ts",
@@ -472,7 +472,10 @@
       "server/merge-queue/wire.ts",
       "server/merge-queue/asks.test.ts",
       "src/card-toolkit/commands.gen.ts",
-      "docs/commands.md"
+      "docs/commands.md",
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/queue.test.ts",
+      "server/merge-queue/scenarios-approval.integration.test.ts"
     ]
   },
   "§app.project-services/on-merge": {
@@ -591,8 +594,9 @@
       "server/project-services/adopt.integration.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-13T02:18Z"
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§app.project-services/services-ui": {

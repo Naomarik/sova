@@ -1,6 +1,6 @@
 {
   "sessions": { "version": 1, "shape": "085e96b643407f8c", "compatible": [{ "shape": "a7d57e979dab5d59", "note": "SessionSummary.branches (master, chat worktree rows): optional and additive; an older page ignores it, and a page reading a host without it shows the row as before" }] },
-  "transcript": { "version": 1, "shape": "3ca5c768de00de78", "compatible": [] },
+  "transcript": { "version": 1, "shape": "3ca5c768de00de78", "compatible": [{ "shape": "0a8bce1e15d16e11", "note": "master: optional mcp {server, tool} on tool calls and their events, optional mcpNote on a transcript row, optional WakeInfo.extJob; all additive: an older page draws the same rows and leaves the MCP name and note out" }] },
   "composer": { "version": 1, "shape": "631b4efdd48eb550", "compatible": [] },
   "peer": { "version": 1, "shape": "d13d48635cf78b61", "compatible": [] }
 }

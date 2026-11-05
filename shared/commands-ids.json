@@ -212,7 +212,20 @@
     "project.verb.release.retry",
     "project.verb.release.publish",
     "project.verb.release.abandon",
-    "project.verb.release.withdraw"
+    "project.verb.release.withdraw",
+    "mcp.servers.list",
+    "mcp.server.status",
+    "overseer.abilities",
+    "settings.cards.get",
+    "settings.cards.withdraw",
+    "project.verb.release.note",
+    "project.merge-queue.branch-summary.retry",
+    "project.coding.start",
+    "project.icon.get",
+    "project.icon.upload",
+    "project.icon.letters",
+    "project.icon.remove",
+    "project.verb.merge.hold"
   ],
   "retired": [
     "settings.agents.get",

@@ -37,6 +37,10 @@ Any drawing can **mark** up to 8 items, each with a tone and a short numbered no
 the drawing. Colour is never the only signal: a marked item is also heavier, and carries its
 note's number.
 
+A project or an installed extension can add drawing kinds of its own, written with a dotted name
+such as `vis project.gantt`. A chat that has them knows them from its start; they never replace
+or change one of Sova's kinds.
+
 There is an example of every kind at the end of this page, under [Examples](#examples).
 
 ## Recorded tours

@@ -9,7 +9,8 @@ agent never writes the buttons, and Sova enforces every limit the file sets.
 Owns: the offers file and how Sova reads it, the `offer` tool and which chats get it, conditions
 and the repeat guard, send and run buttons, approving run buttons, the card and its states, an
 offer shown by another chat, cards with rows and the project page's Offers list. Branches land through the merge queue
-(§app/merge-queue), never through an offer. Not here:
+(§app/merge-queue): an offer never lands one itself, and on a project the queue serves a
+`project.worktree.merge` run button joins the queue as Land does. Not here:
 the Overseer's decision cards this card looks like (§app.overseer/confirm), alignment cards
 (§chat/alignment), the readiness offers read (§chat.worktrees/readiness), and the asks-you signal
 an open offer feeds (§app.decisions/asks-user).
@@ -155,7 +156,8 @@ extension offers (§app.extensions/offers) and baton offers. The screen says Off
   (**Approve Run Buttons**), or with **Apply and Approve** on a project overseer's Settings change card
   that grants the file's run buttons (§app.project-overseer/settings: the fingerprint the card showed).
   `POST /api/projects/:pid/offers/approve {fingerprint}` is refused when
-  the file's run buttons changed since you looked: what you approve is what you saw. It is a trust
+  the file's run buttons changed since you looked: what you approve is what you saw. From anything
+  but your own page it is refused too (§app.access/your-click). It is a trust
   grant, so it is no catalogue command (the commands inventory classes it as a trust grant), and no
   agent tool reaches it.
 - Offers with only send buttons never need approval. A click on a run button checks the approval

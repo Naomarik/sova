@@ -84,7 +84,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-14T15:54Z"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§app.updates/reload-note": {
@@ -144,7 +145,12 @@
       "server/updates/disk-ahead.test.ts",
       "server/updates/install-kind.test.ts",
       "src/lib/restart.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T22:57Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
+    }
   },
   "§app.updates/running": {
     "kind": "behavior",
@@ -207,6 +213,7 @@
     "code": [
       "server/updates/runner.ts",
       "server/updates/runner.test.ts",
+      "server/updates/runner.integration.test.ts",
       "server/updates/manager.ts",
       "server/updates/manager.test.ts",
       "src/components/UpdatesSettings.tsx",

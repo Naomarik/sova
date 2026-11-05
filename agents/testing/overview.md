@@ -1,5 +1,5 @@
 ---
-watches: ["scripts/run-tests.mjs", "scripts/test-groups.mjs", "scripts/test-tier-guard.mjs", "scripts/test-changed.mjs", "scripts/test-sentinel.mjs", "scripts/hermetic-agent-dir.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "server/test-scratch.ts", "scripts/sova-scenario.mjs", "server/testing/hermetic-server.ts"]
+watches: ["scripts/run-tests.mjs", "scripts/test-groups.mjs", "scripts/test-tier-guard.mjs", "scripts/test-changed.mjs", "scripts/test-sentinel.mjs", "scripts/test-temp-root.mjs", "scripts/hermetic-agent-dir.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "server/test-scratch.ts", "scripts/sova-scenario.mjs", "server/testing/hermetic-server.ts"]
 alsoUpdate: ["agents/testing/overview.md"]
 ---
 # Testing
@@ -108,11 +108,26 @@ environment every runner starts in, and the hermetic dev server.
 
 - `server/tours/*.integration.test.ts` drive a real Chrome or Chromium through `playwright-core`: one
   found on PATH (`chromium`, `google-chrome-stable`, …) or named by `SOVA_TOUR_BROWSER`; nothing is
-  ever downloaded. They don't skip when none is installed: they fail.
+  ever downloaded. They don't skip when none is installed: they fail. On macOS `discoverTourBrowser`
+  takes Playwright's `chrome-headless-shell` first (`PLAYWRIGHT_BROWSERS_PATH`, else
+  `~/Library/Caches/ms-playwright`), ahead of PATH and `/Applications`. The runner's throwaway HOME hides
+  that cache, so on macOS `scripts/run-tests.mjs` names it in `PLAYWRIGHT_BROWSERS_PATH`. With no shell
+  installed (`npx playwright install chromium-headless-shell`) it points `SOVA_TOUR_BROWSER` at a path
+  that isn't there and warns, so a test run never starts the Google Chrome app (crash and Keychain
+  dialogs): browser tests fail saying so, and the confined cases in `sandbox.integration.test.ts` and
+  `sandbox-runtime.integration.test.ts` skip (`macConfinedBrowserSkip`). A test that only needs the
+  server's choice stands in a file of its own (`runner.test.ts`).
+- `scripts/install.test.sh` sets `SOVA_APP_SYSTEM_APPS` to an empty folder of its own, so its Darwin
+  cases never pick the Mac's `/Applications` browsers; keep it exported for any new Darwin case.
 - Chrome puts named Unix sockets under `TMPDIR`, and `assertTourBrowserTempPath`
   (`server/tours/browser.ts`) refuses a base whose socket path would pass 100 bytes. Run them with a
   short temp dir outside any repository, e.g. `TMPDIR=/dev/shm/q` (create it first); a sandboxed
-  session's long `TMPDIR` fails them.
+  session's long `TMPDIR` fails them. On macOS the runner does this itself: when `TMPDIR` is too long
+  for those sockets (the default is), each file's root goes under `/tmp` (`scripts/test-temp-root.mjs`),
+  with its group set to the runner's own (a folder under `/tmp` otherwise takes its group, wheel, and
+  `server/mesh/lan-handoff.ts` refuses it), removed when the file ends or the runner stops. A runner killed by SIGKILL leaves its roots
+  (`/tmp/sova-test-home-*`) until macOS clears `/tmp`. If `/tmp` can't be written, the long `TMPDIR`
+  stays, and those tests are refused.
 - The runner kills any one file after 300 s (`TEST_FILE_LIMIT_MS`), the per-file cap, under the
   integration tier's load too. Each browser launch costs seconds: split a growing Chrome file by
   scenario (as `runner-signin`, `-landed` and `-inplace` are) rather than raising its test timeouts.

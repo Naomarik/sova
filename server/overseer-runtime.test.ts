@@ -329,6 +329,8 @@ describe("turns the user did not start are read-only", () => {
     sova_project_overseer: { op: "settings", org: "any", project: "any", watch: false },
     // §app.project-services/callers: every verb but the reads acts.
     sova_project_verbs: { verb: "up", project: agentDir },
+    // §app.overseer/extension-commands: running one acts; listing and a job's state read.
+    sova_ext: { op: "run", command: "ext.probe.launch", params: {} },
   };
   /** Every other op of the organization acts: refused as read-only too, a message to a project overseer included. */
   const ACTING_OPS: [string, Record<string, unknown>][] = [
@@ -367,6 +369,8 @@ describe("turns the user did not start are read-only", () => {
     ["sova_project_git", { project: "no-such-project", command: "log" }],
     ["sova_server_log", { lines: 0 }],
     ["sova_whatsapp", { op: "status", sender: "not an id" }],
+    ["sova_ext", { op: "list" }],
+    ["sova_ext", { op: "job", job: "j1", command: "ext.probe.launch" }],
   ];
 
   test("every Overseer tool is classified: acting, allowed unattended, or a read", () => {
@@ -443,6 +447,42 @@ describe("a message the user sent is theirs whatever its text became; nothing el
     await userSends(chat, "/mk TPL");
     assert.equal(last().text, "Create one empty session titled TPL.");
     assert.equal(last().attended, true);
+  });
+
+  test("a socket that isn't the user: its prompt, steer, queued follow-up and regenerate all run, and none is attended (§app.access/your-click)", async () => {
+    const script = { ...client, notUser: true as const };
+    const chat = await overseerChat();
+    entered = [];
+    await chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} x`, undefined, "server").turn;
+    const sends = async (msg: Parameters<typeof chat.handle>[1], c: typeof client = script) => {
+      const n = entered.length;
+      chat.handle(c, msg);
+      await until(() => entered.length > n);
+      await settled(chat);
+      return last();
+    };
+    assert.deepEqual(await sends({ type: "prompt", text: "from a script" }), { text: "from a script", attended: false });
+    assert.equal(await create(), "readonly", "an acting tool refuses, as in a brief");
+    assert.deepEqual(await sends({ type: "steer", text: "steered by a script" }), { text: "steered by a script", attended: false });
+    assert.equal(await create(), "readonly");
+    // Waiting behind a run, it keeps the mark through the queue.
+    let release!: () => void;
+    const held = new Promise<void>((r) => (release = r));
+    modelCalls.push(() => held);
+    chat.handle(client, { type: "prompt", text: "the user's run" });
+    await until(() => piSession(chat).isStreaming && last().text === "the user's run");
+    assert.equal(last().attended, true, "the page's client is the control");
+    chat.handle(script, { type: "prompt", text: "queued by a script" });
+    release();
+    await until(() => last().text === "queued by a script");
+    await settled(chat);
+    assert.equal(last().attended, false);
+    const reply = [...chat.harness.branch()].reverse().find((e) => e.kind === "assistant");
+    assert.ok(reply, JSON.stringify(chat.harness.branch().slice(-3)));
+    assert.deepEqual(await sends({ type: "regenerate", id: "r1", entryId: reply.id! }), { text: "queued by a script", attended: false });
+    // A regenerate from the page is the user's, so the mark is what differs.
+    const again = [...chat.harness.branch()].reverse().find((e) => e.kind === "assistant");
+    assert.deepEqual(await sends({ type: "regenerate", id: "r2", entryId: again!.id! }, client), { text: "queued by a script", attended: true });
   });
 
   test("a brief or an extension's message never counts, even with the text of a user message still on its way", async () => {

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { noRecipeReason, type ResyncHost, type ResyncSelf } from "../../shared/mesh-resync";
-import { jobText, resyncNote, resyncView, sheetText, tailLines } from "./mesh-resync";
+import { cardSheet, jobText, resyncNote, resyncView, sheetText, tailLines } from "./mesh-resync";
 
 const self: ResyncSelf = { id: "desk", label: "Desk", commit: "c".repeat(40) };
 const host = (over: Partial<ResyncHost> = {}): ResyncHost => ({
@@ -84,4 +84,21 @@ test("job words and the output tail", () => {
   assert.equal(jobText({ ...job, state: "done" }, "VPS"), "VPS runs ccccccc now.");
   assert.equal(jobText({ ...job, state: "failed", error: "The deploy script stopped with exit 1." }, "VPS"), "The deploy script stopped with exit 1.");
   assert.equal(tailLines("a\n\nb\nc\n", 2), "b\nc");
+});
+
+test("a Create card shows the confirm sheet's own sentences for the commit it pins, or why it can't start", () => {
+  const info = (over = {}, me = self) => ({ self: me, hosts: [host(over)] });
+  const ok = cardSheet(info(), host().id);
+  assert.ok("commit" in ok);
+  assert.equal(ok.commit, self.commit);
+  const s = sheetText(host(), self);
+  assert.deepEqual(ok.lines, [s.what, s.running, s.job]);
+  const problem = (over: object, me = self) => (cardSheet(info(over, me), host().id) as { problem: string }).problem;
+  assert.match(problem({ recipe: null }), /No resync recipe/);
+  assert.match(problem({ recipeProblem: "local.env is missing" }), /can't run: local.env is missing/);
+  assert.match(problem({ state: "up" }), /already runs/);
+  assert.match(problem({ state: "down" }), /isn't answering/);
+  assert.match(problem({ relation: "ahead" }), /newer build/);
+  assert.match(problem({}, { ...self, blocked: "a dirty tree" }), /a dirty tree/);
+  assert.match((cardSheet(info(), "stranger") as { problem: string }).problem, /No computer stranger/);
 });

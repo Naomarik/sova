@@ -7,7 +7,7 @@ import { openSettings } from "../../lib/settings-nav";
 export function QueueSummaryLine(props: { view: MergeQueueView }) {
   return (
     <Show when={props.view.settings}>
-      {(s) => <p class="text-caption text-muted mq-summary">{summaryLine(s(), props.view.heads.hasOrigin ?? !!props.view.heads.pushed)}</p>}
+      {(s) => <p class="text-caption text-muted mq-queue-summary">{summaryLine(s(), props.view.heads.hasOrigin ?? !!props.view.heads.pushed)}</p>}
     </Show>
   );
 }

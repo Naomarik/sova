@@ -16,7 +16,7 @@ import {
 } from "../shared/profiles";
 import { stateViewOf } from "./harness/pi/state-view-of";
 import { PROFILE } from "./harness/state-kinds";
-import { findProfile, type ProfilePick } from "./profile-sources";
+import { findProfile, profileRefusedWhy, type ProfilePick } from "./profile-sources";
 import { approvalRefusal } from "./profile-trust";
 
 /**
@@ -82,7 +82,7 @@ export async function resolveChoice(choice: ProfileChoice, cwd?: string | null):
     const id = typeof choice === "string" ? choice : choice.id;
     if (id === DEFAULT_PROFILE_ID && (typeof choice === "string" || choice.source === "sova")) return { ok: true, profile: null };
     const p = await findProfile(choice, cwd);
-    if (!p) return { ok: false, error: `No profile "${id}" for this folder. It may have been deleted, or it belongs to another project.` };
+    if (!p) return { ok: false, error: (await profileRefusedWhy(id, cwd)) ?? `No profile "${id}" for this folder. It may have been deleted, or it belongs to another project.` };
     if (p.approval === "needed") return { ok: false, error: approvalRefusal(p), approval: true };
     return { ok: true, profile: snapshotOf(p), listed: p };
   }

@@ -87,3 +87,15 @@ test("a snapshot is a copy: later events don't change one already sent", () => {
   tail.apply({ type: "part.delta", index: 1, kind: "text", delta: "!" });
   assert.equal(snap?.message?.parts[1]?.kind === "text" && snap.message.parts[1].text, "Hel");
 });
+
+test("a server's tool keeps its server and tool in the snapshot, so a tab rejoining mid-call reads them", () => {
+  const tail = new LiveTail();
+  const mcp = { server: "docs", tool: "search" };
+  tail.apply({ type: "message.start", role: "assistant", parts: [] });
+  tail.apply({ type: "part.start", index: 0, kind: "toolCall", id: "m1", name: "mcp__docs__search", mcp });
+  assert.deepEqual(tail.snapshot()?.message?.parts[0], { kind: "toolCall", id: "m1", name: "mcp__docs__search", mcp }, "from the moment the call streams");
+  tail.apply({ type: "part.end", index: 0, kind: "toolCall", args: {} });
+  assert.deepEqual((tail.snapshot()?.message?.parts[0] as { mcp?: unknown }).mcp, mcp, "and past its end");
+  tail.apply({ type: "tool.start", callId: "m1", name: "mcp__docs__search", mcp });
+  assert.deepEqual(tail.snapshot()?.tools?.[0]?.mcp, mcp);
+});

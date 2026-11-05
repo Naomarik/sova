@@ -64,6 +64,14 @@
       "src/lib/cost-history.ts"
     ]
   },
+  "§design.copy-deck/create-mode": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§chat/create-mode"
+    ]
+  },
   "§design.copy-deck/gathering-abilities": {
     "kind": "note",
     "authority": "accepted",
@@ -120,6 +128,26 @@
     "authority": "migrated",
     "evidence": "unreviewed"
   },
+  "§design.copy-deck/mcp-servers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/components/McpServerRow.tsx",
+      "src/components/ProjectMcpCard.tsx",
+      "src/components/SessionSetup.tsx",
+      "src/components/McpAddServer.tsx",
+      "src/lib/mcp.ts"
+    ],
+    "requires": [
+      "§app/mcp"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T06:51Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#a35da9e8"
+    }
+  },
   "§design.copy-deck/merge-queue": {
     "kind": "note",
     "authority": "accepted",
@@ -145,7 +173,8 @@
       "server/merge-queue/run.ts",
       "server/merge-queue/wake.ts",
       "src/lib/merge-queue-chats.ts",
-      "src/lib/merge-queue-settings.ts"
+      "src/lib/merge-queue-settings.ts",
+      "server/merge-queue/notices.ts"
     ]
   },
   "§design.copy-deck/merge-queue-chats": {
@@ -317,11 +346,13 @@
       "server/sandbox-state.ts",
       "pi-config/extensions/subagents/index.ts",
       "server/app.ts",
-      "server/quiet-close-actions.test.ts"
+      "server/quiet-close-actions.test.ts",
+      "pi-config/extensions/sandbox/shadow-prune.ts"
     ],
     "agreed": {
       "by": "naomarik",
-      "at": "2026-10-14T13:46Z"
+      "at": "2026-10-30T12:02Z",
+      "source": "pi-session:01a18c63-8f43-7660-9a5a-04b82a0fed6e#73daaccb"
     }
   },
   "§design.copy-deck/session-share": {
@@ -484,6 +515,14 @@
     "about": [
       "§chat.transcript/empty-worktrees",
       "§chat.worktrees/cleanup"
+    ]
+  },
+  "§design.copy-deck/your-click": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§app.access/your-click"
     ]
   },
   "§design/copy-deck": {

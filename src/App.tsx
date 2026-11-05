@@ -65,7 +65,7 @@ import { createPoll } from "./lib/poll";
 import { homeFromSessionPath } from "./lib/format";
 import { reconcileTheme } from "./lib/theme";
 import { rememberedWidth, setSpine, spine, spineWidth } from "./lib/spine";
-import { isOverviewHash, leaveOverview } from "./lib/overview-route";
+import { isOverviewHash, launchHome, leaveOverview } from "./lib/overview-route";
 import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
 import { closeSettings, openSettings, settingsOpenAt, settingsProjectFromHash, settingsTabFromHash } from "./lib/settings-nav";
@@ -81,6 +81,7 @@ import { ExplanationsCard, ExplanationsView } from "./components/ExplanationsVie
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { HomeSessionsCard } from "./components/HomeSessionsCard";
 import { OverviewActions } from "./components/OverviewActions";
+import { OverviewProjects } from "./components/OverviewProjects";
 import { AccessPage } from "./components/AccessPage";
 import { OverviewOrgsCard } from "./components/OverviewOrgsCard";
 import { OverviewSharesCard } from "./components/OverviewSharesCard";
@@ -385,6 +386,21 @@ export function App() {
 
   redirectLegacyInsights();
   openSettingsFromHash();
+  // A fresh launch on a phone or a folded Fold lands on Home, the list one Back below it (§app.shell/overview): once per
+  // tab, before any route is read; never on a hashchange.
+  launchHome({
+    hash: location.hash,
+    narrow: folded(),
+    storage: (() => {
+      try {
+        return sessionStorage;
+      } catch {
+        return null;
+      }
+    })(),
+    replace: (h) => history.replaceState(history.state, "", h),
+    push: (h) => history.pushState(null, "", h),
+  });
   /** `#/overview`: the overview as a phone's own page (§app.shell/overview); wide, it is the
       empty main column as always. */
   const [overviewRoute, setOverviewRoute] = createSignal(isOverviewHash(location.hash));
@@ -486,6 +502,13 @@ export function App() {
     return items && items.length > 0 ? items : null;
   });
   const [creating, setCreating] = createSignal(false);
+  /** A folder New Session opens set to (a Home project card's New Chat…); cleared when the dialog closes. */
+  const [newSessionPrefill, setNewSessionPrefill] = createSignal<string | null>(null);
+  const newSessionIn = (root: string) => {
+    setNewSessionPrefill(root);
+    setCreating(true);
+  };
+  createEffect(on(creating, (open) => !open && setNewSessionPrefill(null), { defer: true }));
   /** The palette is open: by the key, or by a composer's "+" (commands/palette-open.ts). */
   const paletteOpen = () => paletteRequest() !== null;
   const [shortcutsOpen, setShortcutsOpen] = createSignal(false);
@@ -979,6 +1002,13 @@ export function App() {
     queueMicrotask(() => document.getElementById("session-search")?.focus());
   };
 
+  /** The sova brand over a phone's Home: back to the list beneath it, like the Sessions card (never a new entry). */
+  const leaveHomeToList = (e: MouseEvent) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    leaveOverview();
+  };
+
   // ---- Subagents pane: open for one session path, closed whenever the route changes ----------
   /** `board`: opened in place from the Agents board, for a session with no view on screen. */
   const [subagents, setSubagents] = createSignal<{ path: string; selected: string | null; board?: boolean } | null>(null);
@@ -1379,7 +1409,7 @@ export function App() {
                     brand back to the list, and New Session. */}
                 <Show when={!unfolded()}>
                   <div class="sidebar-head overview-bar">
-                    <BrandLink />
+                    <BrandLink onClick={leaveHomeToList} />
                     <span class="sidebar-spacer" />
                     <button type="button" class="button" onClick={() => setCreating(true)}>
                       <Icon name="plus" />
@@ -1392,6 +1422,14 @@ export function App() {
                     {/* A plain title at every width: the Sessions card below is where the count lives. */}
                     <h1 class="overview-title">Overview</h1>
                   </div>
+                  {/* Projects first (§app.projects/home-cards): this host's projects, needs you first. */}
+                  <OverviewProjects
+                    sessions={list()}
+                    digest={attention.data()}
+                    proactivity={overseer.data()?.proactivity}
+                    now={now()}
+                    onNewSessionIn={newSessionIn}
+                  />
                   {/* Ways to start something. */}
                   <OverviewActions onNewSession={() => setCreating(true)} />
                   <HomeSessionsCard glance={sessionsGlance(list() ?? [], attention.data(), overseer.data()?.proactivity)} now={now()} onOpenList={openSessionList} />
@@ -1442,7 +1480,7 @@ export function App() {
       <Show when={creating()}>
         <Portal>
           <NewSessionDialog
-            prefill={newSessionCwd(summary(), list() ?? [], (cwd) => offersCwd(cwd, showHiddenFolders()), pageProjectRoot()) ?? ""}
+            prefill={newSessionPrefill() ?? newSessionCwd(summary(), list() ?? [], (cwd) => offersCwd(cwd, showHiddenFolders()), pageProjectRoot()) ?? ""}
             knownCwds={[...new Set((list() ?? []).filter((s) => !s.overseer && !s.org).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}

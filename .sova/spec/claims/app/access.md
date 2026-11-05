@@ -194,7 +194,8 @@ Every caller keeps working with no new step for the person:
   runtime without the flag sends none, as before.
 - **Extension UIs** served at `/ext` are the same origin as the app and ride the same cookie.
 - **Extension backends** never see it: a request proxied to one loses every `sova_token_*`
-  cookie, `x-sova-token`, a chat's key in `x-sova-caller`, and an `Authorization` that carries
+  cookie, `x-sova-token`, a chat's key in `x-sova-caller`, the Overseer's sender mark
+  `x-sova-overseer` and its card header `x-sova-overseer-card`, and an `Authorization` that carries
   the token, while its other cookies and headers (an extension's own `Authorization` included,
   unless it carries an extension's key) pass through. A backend that calls this server back sends
   its own key (§app.extensions/backend-key), and every such call is recorded as its extension's;
@@ -208,13 +209,15 @@ Every caller keeps working with no new step for the person:
   them with `SOVA_TOKEN`, or reads each server's file. From a chat Sova runs, the same helper also
   sends the chat's key in `x-sova-caller`, beside the token and never instead of it: the key only
   says which chat called (§app.command-audit/attribution), and a request carrying it can't approve
-  a project mode's hooks (§chat.mode-menu/project-mode-hooks).
+  a project mode's hooks (§chat.mode-menu/project-mode-hooks) or give any approval of
+  §app.access/your-click.
 - **`sova token` and `sova open`** are the installed launcher's: `token` prints the token from the
   agent dir (`$PI_CODING_AGENT_DIR`, else the one the install used), and before the server ever
   minted a token says to start it once and exits nonzero; it never starts the server. `open` is
   `sova app`, what the app entry runs (§app.installer/app-entry): it starts the server when nothing
   answers on the port, then opens `http://127.0.0.1:<PORT, else the install's port>/#t=<token>` in
-  a bare app window of a Chromium-family browser, or as a tab of the default browser when there is
+  a bare app window of a Chromium-family browser (on macOS, Sova's installed app of its own when
+  there is one, §app.installer/mac-app), or as a tab of the default browser when there is
   none. Plain `sova` serves on that same port. With neither such a browser nor a browser opener
   (`open` on macOS, `xdg-open`), `open` says to paste the token from `sova token` into the page
   and exits nonzero.
@@ -230,6 +233,108 @@ Every caller keeps working with no new step for the person:
   pin a known one; neither is honoured by the installed service unless the person sets it.
 - **Another host** is never given this token: a request proxied to a peer, or from one, carries
   no cookie from this side.
+
+## §app.access/your-click — What only your own click passes
+
+Nine approvals pass only on what Sova takes for the person's own click in its page on this machine, but
+for what the Overseer keeps and a schedule on another computer (both below). Each one lets something
+act later without asking, so the ordinary roads of a chat, a script or another computer are refused.
+This stops a chat following its instructions, not a program on this computer posing as your browser
+(How strong this is, below). This holds in
+every chat, not only Create, and it ships before Create does.
+
+| Approval | Request | Where you click |
+|---|---|---|
+| A project's run buttons | `POST /api/projects/:pid/offers/approve` | **Approve Run Buttons** on the project page's Offers list |
+| A profile's powers | `POST /api/profiles/approve` | **Approve** in Settings → Profiles or on the profile picker |
+| A schedule | `POST /api/schedules/approve` | **Approve** in the Playbooks dialog or the Overseer's Approvals & Schedules |
+| Turning on a Project Overseer power | `PATCH /api/projects/:pid/overseer`, by `powers` or `autonomy` | The power's switch on the project page's Settings tab |
+| Lowering a chat's sandbox | `POST /api/sandbox` | The Sandbox rows in that chat's composer |
+| Approving a project tool | `POST /api/mode` with `projectModes` and `approve` | **Approve and Turn On** in that chat's mode menu |
+| Trusting a project's or an extension's cards | `POST /api/session-cards/trust` with `on: true` | **Trust {name}'s Cards** on one of its cards |
+| Restarting Sova | `POST /api/updates/restart`, or Apply of Sova's own checkout (`POST /api/project-services/apply`, `POST /api/projects/:pid/services/apply`) | **Restart Sova** in Settings → General, or **Apply** on the Branches tab of Sova's project page |
+| Updating Sova | `POST /api/updates/check`, `POST /api/updates/apply`, `PUT /api/updates/settings` | Settings → General |
+
+- **Who is refused.** A request with the Overseer's sender mark, a chat's key, the token in a header
+  (a script, a chat's terminal, a tool), an extension's key, a mesh peer, or a request with no mark at
+  all, such as a transcript card's or an offer's button: 403, and nothing changes, but for what the
+  Overseer keeps (below) and a schedule on another computer (below). The page has to show itself, by
+  the install's cookie on the main listener, so a new caller is refused until it is shown to be the page.
+  This is the test a project mode's hooks already pass (§chat.mode-menu/project-mode-hooks).
+  A mesh peer is known only by the peer listener. The relay header proves nothing on the main listener: a
+  request carrying it is judged by what else it shows, so a chat's key with it is a chat, whose card click
+  is refused and whose turns aren't attended.
+- **Each refusal says where to click,** in the words of §design.copy-deck/your-click, so a chat can
+  tell the person what to do.
+- **Restarting and updating Sova.** This holds for every chat, and only for this server's own checkout:
+  another project's adopted unit is unchanged. One written exception: Sova's own merge thread restarts
+  Sova after landings that change its server code, by its project playbook's instruction
+  (§chat.merge-queue/sova-restart). It takes the raw road below, never these doors, which still refuse
+  it. It holds for your own terminal too: the road there is raw
+  `systemctl`, or **Restart Sova** in the page. `server.restart` stays a command, and answers this refusal
+  for anything but the page (§app.commands/catalogue). Refused Apply is the verb's own answer: 409
+  `forbidden`, with no `yourClick`.
+- **Only the widening closes.** Turning a power Off, raising a sandbox, turning a mode off, turning
+  on a mode at a version already approved, and turning a card owner's trust off stay open to whoever
+  could do them. So
+  `session.sandbox.set` and `project.overseer.settings.set` stay commands, and answer a lowering or a
+  power turned On with this refusal (§app.commands/catalogue).
+- **The same act by another road.** A `/sandbox` that lowers, sent through `POST /api/sessions/prompt`
+  (`session.send`, or the Overseer's `sova_send`), `POST /api/chat/frames`, a `/ws/chat` socket that
+  isn't the page, or any `chat.send` the server makes, and not typed in the page's composer, is refused
+  the same way. So is a click on an Overseer's or a project overseer's card sent by a script, a chat or an
+  extension, by a socket or `POST /api/chat/frames`: it opens a turn that may act on what the card names,
+  and it never reaches the chat. A rewind or regenerate that would lower the sandbox, because it goes back past a
+  raise, is refused to anything but the page, a linked computer included, and the chat doesn't move: it answers
+  `rewind_refused` or `regenerate_refused`, reason `cancelled`, not a 403 body. One that lowers nothing still runs.
+  A prompt, steer or regenerate from a script's, a chat's or an extension's
+  socket, `POST /api/chat/frames` or `POST /api/chat/action` still runs, but no turn it opens is yours, in the queue and through a
+  compaction hold too (§app.overseer/tools). The page's socket and a linked computer's are unchanged, and
+  so is the Overseer's own message into a project overseer. A running chat
+  picks this up at its next reload.
+- **What still passes.** **Apply and Approve** on a Settings change card is your click
+  (§app.project-overseer/settings). A rewind or regenerate in the page past a raise still lowers the
+  sandbox (§chat.sandbox/toggle). A fork opens at its fork point's sandbox state, so from an Off point it opens
+  Off; it lowers no existing chat. The Overseer's lowering of a sandbox runs only in a turn your click
+  on a card opened, by its exact-click test (§app.overseer/tools).
+- **What the Overseer keeps.** None of this takes away anything the Overseer can do today. Project
+  tool approval is closed to every caller but your page and the Overseer: the Overseer turning a
+  project mode on still counts as the approval of that mode's tools and commands, never its hooks
+  (§app.overseer/tools), with no limit to versions already approved, and in a turn you started it can
+  still turn a Project Overseer power On (§app.overseer/org-project-overseers).
+- **Another computer.** A schedule on another of your computers can be approved from this page, and an
+  Apply of that computer's own Sova pressed here, with proof of your click carried across the link between the computers. This computer mints the proof
+  only for its own page's click, one time, for that computer and that exact request. It lasts 60 seconds,
+  kept in memory, and the first check spends it: the other computer asks over the peer link
+  (`POST /api/peer/click-proof`, need `hello`). Any caller on another computer whose proof fails or is
+  missing gets the door's own refusal, a schedule's saying to try again: a fresh click gets a fresh proof.
+  Anything else that belongs to another of your computers is approved on that computer's own page: a
+  click here reaches it as a mesh peer, and is refused like one. The refusal says so.
+- **Another chat's message.** A chat can't tell another chat's OK from the person's: a message sent to it
+  reads the same. So an OK a chat waits for in its transcript, such as Create's on a file
+  (§chat.create-mode/computer-files), is an instruction, not one of these doors.
+- **Raw commands.** The server can't stop raw `systemctl`, `launchctl` or `kill`: a chat whose tools reach
+  them can restart or stop Sova without any door. `down`, `reset` and `teardown` of a self checkout that
+  isn't adopted also stay open to a token script with `--confirm`.
+- **A chat's release refusal** stops a chat using its normal caller key, not one that leaves it out: Sova
+  can't tell a program posing as your terminal from you.
+- **`worktree land`.** A program holding the token may pass as the person's word: a message it sends
+  reads as their own newest one, so a landing recorded from a typed word doesn't prove the person typed it.
+- **A click through a linked computer.** A card's click relayed by a linked computer still passes, so a
+  page on another computer keeps working, and it can't be told from a script going through that computer.
+  This applies only to computers you've linked. The proof above covers a schedule's single request only.
+- **An installed extension's page.** An extension's page passes as your click, by the same
+  origin and cookie: its script can reach every door above without you, so installing one is a trust
+  decision.
+- **How strong this is.** The approvals stop a chat following its instructions. They don't stop a
+  program on this computer deliberately posing as your browser. Telling your page from a program is a
+  heuristic: a local request made to look like a browser's navigation gets the install's cookie from
+  Sova, with no token and no file read, and that cookie is what the page shows. The same local route
+  passes every door above, since a door can't tell that cookie from the page's; a lab applied a settings card
+  with it. A chat whose own tools aren't sandboxed, the default state, can reach it. A chat with its sandbox On at
+  full enforcement can't, because its network doesn't reach Sova's port (§chat.sandbox/what-on-enforces). Under
+  partial enforcement, its reasons say what isn't enforced. The refusal stops the ordinary road and gives the chat the words to send you to the page;
+  it does not stop a chat determined to imitate the page.
 
 ## §app.access/devices — Bring a device in with a code
 

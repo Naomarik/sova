@@ -996,7 +996,7 @@ export function codingModeNowWords(now = codingModeNow()): string {
 /** The Overseer's mode request on a start (POST …/items/code): its mode, or a 400 before anything is taken. */
 function itemCodeMode(body: ModeRequest): ProjectCodingMode | undefined {
   if (body.mode === undefined && body.minor_modes === undefined && body.subagent_profile === undefined) return undefined;
-  const c = checkedCodingModeChoice(body);
+  const c = checkedCodingModeChoice({ ...body, by: "the Overseer" });
   if ("error" in c) throw new OrgError(c.error, 400);
   return c.mode;
 }

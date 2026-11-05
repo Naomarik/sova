@@ -6,6 +6,7 @@
 //   const cfg = requireLab();            // skips the whole file with a message if no lab is up
 
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { join } from "node:path";
 import { container, containerState, DOMAIN, LAB_DIR, labToken, labTokenHeaders, loadConfig, PEER_PORT, PORTS, SERVE_PORT, SOVA_PORT, sovaNodes, STATE, tailnetNodes, tsStatus } from "../lab.mjs";
 
@@ -73,6 +74,10 @@ export function curlFrom(node, url, { method = "GET", body, headers = {}, timeou
 }
 
 /** HTTP from the laptop to a lab node's published port (`a`…`h`, `plain`, `frontdoor`). */
+/** The headers of a request as the page makes it: the install's cookie, no token header (server/page-only.ts). The
+    cookie's name is authCookieName of the nodes' agent dir. */
+export const labPageHeaders = () => ({ cookie: `sova_token_${createHash("sha256").update("/sova/.agent").digest("hex").slice(0, 8)}=${labToken()}` });
+
 export async function laptopFetch(node, path, init = {}) {
   const port = node === "plain" ? PORTS.plain : node === "frontdoor" ? PORTS.frontdoor : PORTS.host(node);
   const go = () => fetch(`http://127.0.0.1:${port}${path}`, { ...init, headers: { ...labTokenHeaders(), ...init.headers }, signal: AbortSignal.timeout(init.timeoutMs ?? 10000) });

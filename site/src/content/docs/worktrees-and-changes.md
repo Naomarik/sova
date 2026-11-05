@@ -5,7 +5,7 @@ group: Features
 order: 10
 ---
 
-You manage the list by asking the agent, workers start only where it allows, and each merge the session makes shows up in the transcript as a card. The diff opens in a read-only viewer.
+You manage the list by asking the agent, workers start only where it allows, and a branch reaches your main branch through the project's [merge queue](/docs/merge-queue/) when you press **Land** or type "land it". The diff opens in a read-only viewer.
 
 It works the same in pi's terminal UI and in Sova.
 
@@ -16,12 +16,13 @@ There's no button and no command for worktrees: you ask the agent, and it uses i
 - **Create** a worktree on a new branch, `feat/<name>`. By default the folder is `.worktrees/<repo>-<name>` beside your main checkout, based on the commit your session's folder is on. That branch is kept as the worktree's base branch: when a merge happens outside the tool, it's the first place Sova looks for the worktree's commits.
 - **Attach** a worktree that already exists, including one another session created. It has to be the worktree's top folder, on a branch.
 - **Detach** a worktree. It's marked dropped and stays in the list as history. Nothing is deleted on disk.
-- **Merge** a worktree's branch into its target, `master` (or `main` in a repository without `master`) unless you name another, whatever branch the worktree was based on. Where the target is checked out, that checkout must have no uncommitted changes to tracked files. Git fast-forwards when it can and makes a merge commit when it can't. A conflict stops the merge and is reported, and nothing changes. Where the target isn't checked out, only a fast-forward is done.
+- **Merge** a worktree's branch into its target, `master` (or `main` in a repository without `master`) unless you name another, whatever branch the worktree was based on. Where the target is checked out, that checkout must have no uncommitted changes to tracked files. Git fast-forwards when it can and makes a merge commit when it can't. A conflict stops the merge and is reported, and nothing changes. Where the target isn't checked out, only a fast-forward is done. In a project whose merge queue is set up, a merge into the main branch is refused: branches reach it only through the queue.
+- **Land** a branch when you type "land it" (or "merge it") in its own chat. The agent commits what's left and lands the branch at its head commit: through the merge queue where the project has one, else as a plain merge into the main branch. Only your own typed words count; a message the Overseer or another session sent never does. "land it without its specs" and "land it, skip review" are taken as said.
 - **List** the worktrees with their status.
 
 Only the session's own agent has this tool. Workers and team members never do, and a session whose tools run on a remote target refuses it.
 
-With the session's sandbox on, the agent asks you before it creates, attaches, or merges, naming the path and the branch. If you decline, nothing changes. While the sandbox is on, every active worktree is a folder the session and its workers may write to.
+With the session's sandbox on, the agent asks you before it creates, attaches, or merges (a plain merge by "land it" included), naming the path and the branch. If you decline, nothing changes. While the sandbox is on, every active worktree is a folder the session and its workers may write to.
 
 ## Where workers may start
 
@@ -41,29 +42,35 @@ A worktree the session created or attached also gets a readiness chip, worked ou
 
 | Chip | Means |
 |---|---|
-| Ready to merge | At least 1 commit ahead, and nothing below holds it back. |
+| Ready | At least 1 commit ahead, and nothing below holds it back. In a project with no merge queue it reads Ready to merge. |
 | Waiting for your OK | Ready, and the session's last reply asks you something, like whether to merge. |
 | In progress | A turn or a worker is running, it has 3 or more uncommitted files, it has no commits yet, it conflicts with its base, a commit on it is marked unfinished (`WIP`, `TEMP`, `fixup!` and the like), or the last test, typecheck, or build failed. |
 | Blocked | The session waits on your answers to open questions. |
 | Stale | Merged, but the folder has uncommitted changes and nothing is running. |
 
-Under the chips, one line gives the reason in words, such as "Ready to merge · checks passed · 19 commits ahead" or "Conflicts with master · 17 files". It wraps on a phone instead of hiding behind a tooltip.
+Under the chips, one line gives the reason in words, such as "Ready to land · 19 commits ahead · docs: 2 new, 1 changed" or "Conflicts with master · 17 files". It wraps on a phone instead of hiding behind a tooltip.
+
+Once a branch is in the merge queue, its chip reads the queue's state instead: Queued · 2nd (with when it starts and how long it takes), Checking, Conflict, Behaviour differs, Review flagged, Can't tell whose failure, Drafts changed, Needs a fix, or Landed with its commit and notes. "1 newer commit not included" shows when the branch moved past the commit you approved. Each row has the action its state calls for: **Land** (with Land Without Review and Land Without Its Specs… in its menu), **Cancel**, **Accept** or **Send Back**, **Land Anyway**, **Land This Commit Again** and **Remove from Queue**, and **Review Changes** first. While the queue's review of the branch runs, the row shows it with **Open Reviewer Chat**. **View Merge Queue** opens the project's queue.
+
+The same rows, actions and states are in the composer's **worktrees control**, beside "N inputs": it shows the most useful fact with a count, such as "2 ready" or "1 needs a fix", and opens a Worktrees dialog. In a project whose queue isn't set up yet, a ready row offers **Set Up Queue** instead of Land, and the line says to type "land it" in the chat to merge it.
 
 ## A card for each merge
 
-When the session merges a worktree, with the tool or with plain git during one of its turns, a **merge card** lands in the transcript. It shows the folder, the branch, the target branch, the resulting commit, how many commits and lines came in, and whether it was a fast-forward or a merge commit. A merge spotted after a turn says "seen after the turn". A merge another session made gets no card here, though the Session tab still shows that worktree as merged.
+When the session merges a worktree, with the tool or with plain git during one of its turns, a **merge card** lands in the transcript. It shows the folder, the branch, the target branch, the resulting commit, how many commits and lines came in, and whether it was a fast-forward or a merge commit. A merge spotted after a turn says "seen after the turn". A merge another session made gets no card here, though the Session tab still shows that worktree as merged. A branch that lands through the merge queue gets the queue's own card in its chat instead.
 
 ## Removing merged worktrees
 
-Sova never removes a worktree on its own, and the `worktree` tool's merge leaves the folder in place. A new session's empty screen shows a line like "4 worktrees · 2 merged · 1 empty" for its repository (empty ones are leftovers with no commits of their own), with a **Clean Up Merged** button when some merged or empty ones can go. When the Overseer archives a session, it can remove that session's own worktrees too, with the same checks.
+Sova never removes a worktree on its own: the `worktree` tool's merge and the merge queue's landing both leave the folder in place. A new session's empty screen shows a line like "4 worktrees · 2 merged · 1 empty" for its repository (empty ones are leftovers with no commits of their own), with a **Clean Up Merged** button when some merged or empty ones can go. When the Overseer archives a session, it can remove that session's own worktrees too, with the same checks.
 
 The button checks first and shows you what goes and what stays, each kept folder with its reason: not merged, uncommitted files, a session still running there, and so on. Only the folders you confirmed are removed, and only if they're still safe to remove at that moment. Git removes them without force, so it refuses a folder that changed. A branch that git finds in your main branch is deleted too; the others keep their commits.
 
 ## Reviewing what changed
 
-The **changes viewer** shows what a session changed on disk. It only reads: it never writes to your working tree and never runs a git command that changes anything. It shows one comparison: the session's uncommitted changes, a worktree's branch, or one commit. It opens from 3 places:
+The **changes viewer** shows what a session changed on disk. It only reads: it never writes to your working tree and never runs a git command that changes anything. It shows one comparison: the session's uncommitted changes, a worktree's branch, or one commit. It opens from these places:
 
-- The Session tab: **Review Changes** beside "Uncommitted changes" shows them against your last commit, and **Review Changes** on an active worktree's row shows its branch against where it started (or, once merged, what the merge brought in).
+- The Session tab: **Review Changes** beside "Uncommitted changes" shows them against your last commit, and **Review Changes** on an active worktree's row shows its branch as it is now against the branch it lands on (or, once merged, what the merge brought in). The worktree's uncommitted files are included and marked "uncommitted", and the counts say how many, since Land takes commits only.
+- The composer's Worktrees dialog: each live row's **Review Changes**, the same comparison. Closing the viewer leaves the dialog open.
+- The project's Merge Queue view: every row's **Review Changes**, such as a queued branch's approved commit, or what a landing brought in.
 - A merge card's **Review Changes**, for what that merge brought in.
 - The agent's `show_changes` card. Ask the agent to show you the changes and it opens the viewer instead of pasting a diff, and replies in a sentence or two.
 

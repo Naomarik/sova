@@ -93,6 +93,16 @@ export interface MeshAccessView {
   logins: Array<{ key: string; provider: string; kind?: "oauth" | "api_key" }>;
 }
 
+/** Where the mesh stands, as a Create chat reads it. Holds no key and no pin. */
+export interface MeshCardState {
+  enabled: boolean;
+  self: { id: string; label: string };
+  peers: Array<{ id: string; label: string; state: string; preset: MeshPreset | null; caps: MeshCap[]; pairing?: { role: "dial" | "accept"; internet?: true } }>;
+  sync: Record<string, boolean>;
+  frontDoor: string | null;
+  relay?: { host: string; port: number; exposure: string; listening: boolean };
+}
+
 /** PUT /api/mesh/access {peer, grant}: one peer's grant (by peer id); grant null removes it (= full),
     or for a dial-out pairing sets presence. */
 export interface MeshAccessPut {

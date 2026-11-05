@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -15,28 +15,30 @@ import { formatText } from "../playbooks/project-verbs/scripts/project-verbs.mjs
 import * as sr from "../.sova/playbooks/release/scripts/sova-release.mjs";
 
 /**
- * Sova's own release setup: its `release` section and `site` deploy target (project-sections.json beside the playbook,
- * until a follow-up landing moves them into .sova/project.json), its project release
+ * Sova's own release setup: its `release` section and `site` deploy target (in .sova/project.json), its project release
  * playbook (.sova/playbooks/release) and that playbook's driver, scripts/sova-release.mjs. Scratch repositories in a temp
  * dir; nothing here tags, pushes, deploys or runs a release check. The cases that run the driver as a program:
  * sova-release-playbook.integration.test.ts.
  */
 
 const ROOT = join(import.meta.dirname, "..");
-const FRAGMENT = ".sova/playbooks/release/project-sections.json";
+const DEFINITION = ".sova/project.json";
 const dir = mkdtempSync(join(tmpdir(), "sova-release-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-c", "user.email=t@example.com", "-c", "user.name=t", "-c", "init.defaultBranch=master", "-c", "tag.gpgSign=false", ...a], { cwd, stdio: "pipe", encoding: "utf8" });
 
-/** Sova's current definition with the fragment that waits beside its release playbook merged in (a follow-up landing moves it). */
-const merged = () => ({ ...JSON.parse(readFileSync(join(ROOT, ".sova/project.json"), "utf8")), ...JSON.parse(readFileSync(join(ROOT, FRAGMENT), "utf8")) });
+/** Sova's definition as committed, its `release` and `deploy` sections included. */
+const definitionText = () => readFileSync(join(ROOT, DEFINITION), "utf8");
 
-test("Sova's release settings and site target wait in a fragment; merged in, they parse and leave the definition's hash as it was", () => {
-  const current = parseDefinition(readFileSync(join(ROOT, ".sova/project.json"), "utf8"));
-  assert.equal(current.release, undefined, "not in .sova/project.json until the running Sova knows the section");
-  assert.equal(current.deploy, undefined);
-  assert.deepEqual(Object.keys(JSON.parse(readFileSync(join(ROOT, FRAGMENT), "utf8"))), ["deploy", "release"]);
-  const def = parseDefinition(JSON.stringify(merged()));
+/** The definition without `release` and `deploy`: what Sova's copies hashed before the sections moved in. */
+const withoutReleaseSections = () => {
+  const { release: _r, deploy: _d, ...rest } = JSON.parse(definitionText());
+  return parseDefinition(JSON.stringify(rest));
+};
+
+test("Sova's release settings and site target are in .sova/project.json, parse, and leave the definition's hash as it was", () => {
+  assert.equal(existsSync(join(ROOT, ".sova/playbooks/release/project-sections.json")), false, "the waiting fragment is gone");
+  const def = parseDefinition(definitionText());
   assert.equal(def.release?.playbook, ".sova/playbooks/release");
   assert.deepEqual(def.release?.channels, ["stable"]);
   assert.equal(def.release?.commit, true);
@@ -47,7 +49,7 @@ test("Sova's release settings and site target wait in a fragment; merged in, the
   assert.deepEqual(site.requires, { tests: "none" });
   // No host names: an unset one would fail every copy's doctor and conform, and `host` is inside the hash.
   assert.deepEqual(def.host, []);
-  assert.equal(defHashOf(def), defHashOf(current), "the release and deploy sections stay outside the definition's hash");
+  assert.equal(defHashOf(def), defHashOf(withoutReleaseSections()), "the release and deploy sections stay outside the definition's hash");
   let base: string | null = null;
   try {
     base = git(ROOT, "show", "5ea4b141f:.sova/project.json");
@@ -55,8 +57,8 @@ test("Sova's release settings and site target wait in a fragment; merged in, the
   if (base !== null) assert.equal(defHashOf(def), defHashOf(parseDefinition(base)));
 });
 
-test("every sova-release.mjs subcommand the fragment names exists, and the release check passes on Sova's setup merged in", async () => {
-  const def = merged();
+test("every sova-release.mjs subcommand Sova's definition names exists, and the release check passes on Sova's setup", async () => {
+  const def = JSON.parse(definitionText());
   const runs: string[][] = [
     ...def.release.checks.map((c: { run: string[] }) => c.run),
     ...Object.values(def.deploy.targets as Record<string, { build?: { run: string[] }[]; steps: { run: string[] }[]; credentials?: { check: string[] }[] }>).flatMap((t) => [...(t.build ?? []).map((s) => s.run), ...t.steps.map((s) => s.run), ...(t.credentials ?? []).map((c) => c.check)]),
@@ -68,11 +70,12 @@ test("every sova-release.mjs subcommand the fragment names exists, and the relea
   const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbooks/release/release.json"), "utf8"));
   const prepare = manifest.steps.filter((s) => s.phase === "prepare").map((s) => s.id);
   assert.equal(prepare.at(-1), "commit", "the commit step is the last prepare step");
-  // A scratch repository with Sova's playbook folder and the merged definition, in canonical form.
+  // The committed definition is in canonical form; a scratch repository holds it and Sova's playbook folder.
+  assert.equal(formatText(definitionText()), definitionText(), "run release-maker fmt on .sova/project.json");
   const r = mkdtempSync(join(dir, "check-"));
   git(r, "init", "-q");
   cpSync(join(ROOT, ".sova/playbooks/release"), join(r, ".sova/playbooks/release"), { recursive: true });
-  writeFileSync(join(r, ".sova/project.json"), formatText(JSON.stringify(def)));
+  writeFileSync(join(r, ".sova/project.json"), definitionText());
   const out = await maker.check(r);
   assert.deepEqual(out.problems, []);
   assert.equal(out.ok, true);
@@ -148,4 +151,38 @@ test("the release checks' pure parts: the dated changelog entry, the built landi
   assert.equal(sr.sameCommit("abc1234def", "abc1234"), true);
   assert.equal(sr.sameCommit("abc", "abc"), false);
   assert.equal(sr.sameCommit("abc1234", "abc1235"), false);
+});
+
+test("the Docs step runs every release and finishes on its own; the Release Note is the operator's word, an ask only context", () => {
+  const manifest = parseReleaseManifest(readFileSync(join(ROOT, ".sova/playbooks/release/release.json"), "utf8"));
+  const docs = manifest.steps.find((s) => s.id === "docs");
+  assert.ok(docs);
+  assert.notEqual(docs.held, true, "the docs step is not held");
+  const playbook = readFileSync(join(ROOT, ".sova/playbooks/release/PLAYBOOK.md"), "utf8");
+  const ref = readFileSync(join(ROOT, ".sova/playbooks/release/references/docs.md"), "utf8");
+  const general = readFileSync(join(ROOT, "playbooks/release/PLAYBOOK.md"), "utf8");
+  const docsBullet = playbook.slice(playbook.indexOf("- `docs`:"), playbook.indexOf("- `commit`:"));
+  assert.match(docsBullet, /every release unless the operator's Release Note/);
+  for (const text of [docsBullet, ref]) {
+    assert.doesNotMatch(text, /skipped\*\* unless|only when the start reason|step `held`|End your turn/);
+  }
+  assert.match(ref, /Report the step `done`, never `held`/);
+  assert.match(ref, /new feature, by default/i);
+  // A new page's record is made official on the release branch: promote, then commit the claims by explicit path.
+  assert.match(ref, /sova-spec-draft\.mjs" promote <draft> --all --write/);
+  assert.match(ref, /commit the claims files .* by explicit path\) in a commit of their own, before the page's commit and the release commit/);
+  assert.match(playbook, /Release Note[^\n]*names[^\n]*wins over this rule/);
+  assert.match(playbook, /An ask[^\n]*context only[^\n]*Never take a version from it/);
+  assert.match(general, /operator's Release Note/);
+  // The note is marked by a label only Sova writes, never a bare `---`; an ask is one quoted line.
+  const label = "the line `---` followed by the line `Release Note from the operator (saved on the Releases tab):`";
+  for (const text of [playbook, ref, general]) {
+    assert.ok(text.includes(label), "the note's label is described");
+    assert.match(text, /`Asked by …` line/);
+  }
+  assert.match(playbook, /`---` lines inside it included/);
+  assert.match(general, /`---` lines inside it included[^\n]*no such label means no note/);
+  assert.match(playbook, /No such label: there is no note/);
+  assert.match(playbook, /It never contains the note/);
+  assert.match(general, /ask from a Project Assistant or an overseer is the quoted `Asked by …` line, separate from the note/);
 });

@@ -309,15 +309,16 @@ export async function liveCheck(commit, origin = "http://localhost:4800") {
 export async function siteVideo(checkout) {
   const dir = process.env.SOVA_SITE_VIDEO_DIR;
   if (!dir) {
-    console.log("site-video: SOVA_SITE_VIDEO_DIR is not set: the site ships without its hero video (the poster still shows)");
-    return 0;
+    console.error("site-video: SOVA_SITE_VIDEO_DIR is not set: the deploy stops rather than ship the site without its hero video");
+    return 1;
   }
   const { addVideo } = await import(join(resolve(checkout), "site", "scripts", "screens", "add-video.mjs"));
   try {
     const names = addVideo(resolve(checkout), resolve(dir));
     console.log(`site-video: copied ${names.length} video(s)`);
   } catch (err) {
-    console.log(`site-video: ${err.message}; the site ships without its hero video (the poster still shows)`);
+    console.error(`site-video: ${err.message}; the deploy stops rather than ship the site without its hero video`);
+    return 1;
   }
   return 0;
 }

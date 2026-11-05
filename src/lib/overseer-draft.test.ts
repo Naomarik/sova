@@ -20,6 +20,7 @@ import {
   runningNowLine,
   PER_MESSAGE_CAP_KEYS,
   CAP_KEYS,
+  CAP_LABEL,
   resetOverseerDraft,
   setOverseerDraft,
   setOverseerSaved,
@@ -33,7 +34,7 @@ const settings = (): OverseerSettings => ({
   extraSystemPrompt: "",
   proactivity: "badge",
   quickActions: [{ id: "attention", label: "What Needs Me", description: "Sessions waiting on you.", prompt: "What needs my attention?" }],
-  caps: { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3 },
+  caps: { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3, extRunsPerTurn: 5 },
   explorer: { backend: "claude-code", model: "opus[1m]", effort: "medium" },
 });
 
@@ -230,9 +231,10 @@ test("the explorer's model lists: the shipped default is known, Claude Opus 5 is
   assert.equal(explorerOptions(undefined, info, shipped), undefined);
 });
 
-test("Per-message limits: all eight limits are on the page, seven folded, and the head counts the ones off their default", () => {
-  assert.deepEqual([...PER_MESSAGE_CAP_KEYS, "concurrentSessions"].sort(), [...CAP_KEYS].sort(), "Running at once plus the folded seven is every limit");
-  assert.equal(PER_MESSAGE_CAP_KEYS.length, 7);
+test("Per-message limits: all nine limits are on the page, eight folded, and the head counts the ones off their default", () => {
+  assert.deepEqual([...PER_MESSAGE_CAP_KEYS, "concurrentSessions"].sort(), [...CAP_KEYS].sort(), "Running at once plus the folded eight is every limit");
+  assert.equal(PER_MESSAGE_CAP_KEYS.length, 8);
+  assert.equal(CAP_LABEL.extRunsPerTurn.label, "Extension commands run");
   const defaults = settings().caps;
   assert.equal(capsChangedFromDefault(defaults, defaults), 0);
   assert.equal(perMessageSummary(0), "All at default");

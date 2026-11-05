@@ -59,6 +59,8 @@ class FakeChat {
   detaches = 0;
   onAttach: (c: ChatClient) => void = (c) => c.send(hello());
   onMessage: (c: ChatClient, m: ChatClientMessage & { id?: string; clientId?: string }) => void = () => {};
+  sandboxInfo = async () => null;
+  branch = async () => [];
   attach(c: ChatClient) {
     this.clients.add(c);
     this.onAttach(c);
@@ -178,6 +180,7 @@ test("wait 0: handed over, then 202 unknown at once", async () => {
   const [path] = session();
   const t = clock();
   const a = await runAction(path, { type: "rewind", entryId: "e1" }, 0, t.deps);
+  await new Promise((r) => setTimeout(r, 0)); // a rewind reads the chat's sandbox first (§app.access/your-click)
   assert.equal(a.status, 202);
   assert.equal(chat.got.length, 1);
   assert.equal(t.pending(), 0);

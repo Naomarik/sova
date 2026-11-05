@@ -7,7 +7,11 @@ import { createPoll, type Poll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
 import {
   abandonConfirmLine,
+  askerWord,
   cardLine as cardLineOf,
+  NOTE_MAX,
+  noteDraft,
+  savedNoteLine,
   countdown,
   previousRelease,
   progressLine,
@@ -115,6 +119,9 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
   const shown = () => shownRecord(v());
   const canStart = () => v().initialized && !v().problem && !v().open && !props.archived;
   const start = () => void head.run("start", () => runReleaseVerb(v().project, "release.start"), "Started a release. Its chat follows the release playbook.");
+  // The Release Note: offered wherever a release could start later (it is for the next start, open release or not).
+  const canNote = () => v().initialized && !v().problem && !props.archived;
+  const [editing, setEditing] = createSignal(false);
   return (
     <div class="stack mq-body rel-body">
       <div class="spread mq-head">
@@ -124,12 +131,35 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
           </h2>
           <Show when={!v().initialized}>{chip({ word: "Not set up", tone: "warn" })}</Show>
         </div>
-        <Show when={canStart()}>
-          <button type="button" class="button button-sm button-primary" aria-disabled={head.busy() ? "true" : undefined} onClick={start}>
-            {head.busy() === "start" ? "Starting…" : "Start Release"}
-          </button>
-        </Show>
+        <div class="cluster rel-head-act">
+          <Show when={canNote()}>
+            <button type="button" class="button button-sm" aria-expanded={editing() ? "true" : "false"} aria-controls="rel-note-editor" onClick={() => setEditing(!editing())}>
+              <Icon name="pencil" small />
+              Release Note
+            </button>
+          </Show>
+          <Show when={canStart()}>
+            <button type="button" class="button button-sm button-primary" aria-disabled={head.busy() ? "true" : undefined} onClick={start}>
+              {head.busy() === "start" ? "Starting…" : "Start Release"}
+            </button>
+          </Show>
+        </div>
       </div>
+      <Show when={canNote() && editing()}>
+        <NoteEditor project={v().project} saved={v().note} onClose={() => setEditing(false)} />
+      </Show>
+      <Show when={canNote() && !editing() && v().note}>
+        {(n) => (
+          <div class="rel-saved-note" role="group" aria-label="Release note for the next release">
+            <p class="cluster text-caption">
+              <span class="text-eyebrow">Release note</span>
+              <span class="text-muted">saved {relativeTime(n().at)}</span>
+            </p>
+            <p class="rel-note-text">{n().text}</p>
+            <p class="text-caption text-muted">{savedNoteLine(!!v().open)}</p>
+          </div>
+        )}
+      </Show>
       <div class="mq-strip rel-strip" role="group" aria-label="Latest release">
         <div class="mq-cell">
           <p class="text-eyebrow">Latest release</p>
@@ -160,6 +190,67 @@ function ReleasesBody(props: { projectId: string; name: string; archived: boolea
         </p>
       </Show>
       <History projectId={props.projectId} view={v()} archived={props.archived} targets={props.targets} />
+    </div>
+  );
+}
+
+/**
+ * The Release Note's editor: the operator's instructions for the next release chat (a version, pages to skip). Save keeps
+ * it on the server until a Start Release sends it; Clear Note drops it; an empty note changes nothing about Start.
+ */
+function NoteEditor(props: { project: string; saved: { text: string; at: string } | null; onClose: () => void }) {
+  const act = useAct();
+  const [draft, setDraft] = createSignal(props.saved?.text ?? "");
+  const d = () => noteDraft(draft(), props.saved?.text);
+  const save = async (text: string, done: string) => {
+    if (await act.run(text ? "save" : "clear", () => runReleaseVerb(props.project, "release.note", { text }), done)) props.onClose();
+  };
+  let area: HTMLTextAreaElement | undefined;
+  queueMicrotask(() => area?.focus());
+  return (
+    <div class="deploy-confirm rel-note-editor" id="rel-note-editor" role="group" aria-label="Release note">
+      <label class="field">
+        <span class="field-label">Release note</span>
+        <textarea
+          ref={area}
+          class="input textarea"
+          rows={4}
+          maxlength={NOTE_MAX}
+          aria-describedby="rel-note-hint"
+          placeholder="Release as 0.10.1. Skip the docs step."
+          value={draft()}
+          onInput={(e) => setDraft(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") props.onClose();
+          }}
+        />
+      </label>
+      <p class="field-hint" id="rel-note-hint">
+        The next release chat reads it as your instructions. Start Release sends it, then clears it.
+      </p>
+      <Show when={act.error()}>{(m) => <p class="text-caption mq-error" role="alert">{m()}</p>}</Show>
+      <div class="deploy-actions">
+        <button
+          type="button"
+          class="button button-sm button-primary"
+          aria-disabled={act.busy() || !d().changed || !d().text ? "true" : undefined}
+          title={!d().text ? "Write a note first." : !d().changed ? "No change to save." : undefined}
+          onClick={() => d().changed && d().text && void save(d().text, "Saved the release note.")}
+        >
+          {act.busy() === "save" ? "Saving…" : "Save Note"}
+        </button>
+        <Show when={props.saved}>
+          <button type="button" class="button button-sm button-destructive" aria-disabled={act.busy() ? "true" : undefined} onClick={() => void save("", "Cleared the release note.")}>
+            {act.busy() === "clear" ? "Clearing…" : "Clear Note"}
+          </button>
+        </Show>
+        <button type="button" class="button button-sm button-ghost" onClick={props.onClose}>
+          Cancel
+        </button>
+        <span class="text-caption text-muted rel-note-count">
+          {draft().length} of {NOTE_MAX}
+        </span>
+      </div>
     </div>
   );
 }
@@ -329,6 +420,27 @@ function InProgress(props: { projectId: string; view: ReleaseView; record: Relea
         </span>
       </p>
       <p class="text-caption mq-now">{progressLine(r())}</p>
+      <Show when={r().note || r().asked}>
+        <div class="rel-start-context" role="group" aria-label="What this release started with">
+          <Show when={r().note}>
+            {(n) => (
+              <div class="rel-saved-note">
+                <p class="text-eyebrow">Your release note</p>
+                <p class="rel-note-text">{n()}</p>
+              </div>
+            )}
+          </Show>
+          <Show when={r().asked}>
+            {(a) => (
+              <div class="rel-saved-note">
+                <p class="text-eyebrow">Asked by {askerWord(a().by)}</p>
+                <p class="rel-note-text">{a().why}</p>
+                <p class="text-caption text-muted">Passed to the chat as background, not as your instructions.</p>
+              </div>
+            )}
+          </Show>
+        </div>
+      </Show>
       <Show when={open()}>
         <p class="text-caption text-muted">Other landings wait in the queue until {name()} is published or abandoned.</p>
       </Show>

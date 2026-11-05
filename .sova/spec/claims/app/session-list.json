@@ -173,12 +173,14 @@
       "server/index.ts",
       "server/worktrees.ts",
       "server/worktrees-refs-stamp.test.ts",
-      "server/merge-queue/wire-unserved.integration.test.ts"
+      "server/merge-queue/wire-unserved.integration.test.ts",
+      "shared/merge-queue.ts",
+      "src/lib/session-row.snapshot.json"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T16:04Z",
-      "source": "pi-session:01a1a1b7-c99c-75b6-8a92-b66649ed6742#43572b80"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     }
   },
   "§app.session-list/drop-overlay": {

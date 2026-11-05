@@ -11,12 +11,13 @@
       "server/session-offers.test.ts"
     ],
     "requires": [
-      "§chat.offers/buttons"
+      "§chat.offers/buttons",
+      "§app.access/your-click"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§chat.offers/buttons": {

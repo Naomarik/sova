@@ -114,6 +114,8 @@ export interface WebQueueItem {
   /** A person typed it outside this session's composer (a group batch the user sent): its input
       source is `user` although Sova queued it (inputSourceOf). */
   byPerson?: true;
+  /** It came from a client that isn't the user (ChatClient.notUser): the turn it opens is unattended. */
+  notUser?: true;
   /** The Overseer only: a click on the confirm card of this tool call (§app.overseer/org-people-facing). */
   confirm?: string;
   /** The key it was sent under (a worker's steer or follow-up): kept to its hand-off, where the message the
@@ -354,6 +356,7 @@ export class WebQueue {
     baton?: WebQueueItem["baton"];
     session?: WebQueueItem["session"];
     byPerson?: true;
+    notUser?: true;
     confirm?: WebQueueItem["confirm"];
     key?: string;
   }): string {
@@ -367,6 +370,7 @@ export class WebQueue {
       ...(input.baton ? { baton: input.baton } : {}),
       ...(input.session ? { session: input.session } : {}),
       ...(input.byPerson ? { byPerson: true as const } : {}),
+      ...(input.notUser ? { notUser: true as const } : {}),
       // A confirm card's click keeps its mark while it waits (§app.overseer/org-people-facing).
       ...(input.confirm ? { confirm: input.confirm } : {}),
       ...(input.key !== undefined ? { key: input.key } : {}),

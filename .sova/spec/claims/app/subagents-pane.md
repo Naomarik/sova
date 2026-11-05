@@ -716,7 +716,8 @@ pi worker's, and it is recorded with backend `pi`. What the spawn asks for maps 
 - **Tools.** Claude's names map to Sova's: `Read` → `read`, `Bash` → `bash`, `Edit` → `edit`,
   `Write` → `write`, `Grep` → `grep`, `Glob` → `find`, `LS` → `ls`; Sova's own names are accepted
   as they are. Any other name (`WebFetch`, `Task`, …) is refused at spawn with that list. With no
-  `tools`, the worker gets all seven.
+  `tools`, the worker gets all seven. MCP servers are no `tools` name: a worker's servers travel
+  in a list of their own (§app.mcp/who-gets), so this refusal never touches them.
 - **`backendOptions`.** `permissionMode` `bypassPermissions` or `dontAsk` change nothing (the
   worker has exactly the tools it was given, with no approval step); `plan` leaves it only `read`,
   `grep`, `find` and `ls`. `acceptEdits` and `manual`, `allowedTools` and `maxBudgetUsd` are refused

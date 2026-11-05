@@ -1,3 +1,4 @@
+import { queueQuietWork } from "./card-port";
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { join } from "node:path";
@@ -19,6 +20,7 @@ import {
   type PushState,
   type ReviewVerdict,
   type RunStep,
+  type SentBackFor,
 } from "../../shared/merge-queue";
 import { HOOK_TIMEOUT_MAX, parseDefinition, type ProjectDef } from "../../shared/project-contract";
 import type { ChecksOf, EstimateRun, RunInput, RunMerge, RunOutcome, WakeThread } from "./contract";
@@ -33,7 +35,7 @@ import { isFinal, newId, type QueueFile, QueueStore } from "./store";
 import { hasOrigin, publishGit, revertCommit, withdrawGit } from "./release-git";
 import type { MergeCheckDecl } from "../../shared/project-contract";
 import { settledFacts } from "./settled";
-import { buildView } from "./view";
+import { buildView, superseded } from "./view";
 import { type MergeQueueSettings, type MergeSettingsChange, type MergeSettingsSaveResult, SETTINGS_DIRTY_WORDS } from "../../shared/merge-queue-settings";
 import { effectiveModel, type ModelCheck, readModels } from "./models";
 import { buildSettings, fixedValues, playbookDiffers } from "./settings";
@@ -61,6 +63,10 @@ export const invalidWords = (error: string): string => `The project's .sova/proj
 /** heads.pushWhy while the checks' setup commit waits for the next landing's push. */
 export const PUSH_WAITS_NEXT_LANDING = "not pushed yet: goes out with the next landing";
 export const PUSH_HELD_NAMES = "push held: private names not set up yet";
+/** How long the merge thread's hold (merge.hold) lasts unless it is set again or cleared. */
+export const HOLD_MS = 5 * 60_000;
+/** The reason a waiting entry shows while the merge thread holds the queue. */
+export const HOLD_WORDS = "Waiting: Sova is restarting";
 
 export class MergeFailure extends Error {
   constructor(
@@ -94,6 +100,13 @@ export interface QueueDeps {
   ownerOf?: (root: string, branch: string, worktree: string | undefined) => Promise<string | { session: string; archived?: boolean } | null>;
   /** The worktree's spec drafts hash (server/spec-drafts-state.ts draftsHash). */
   draftsHash?: (dir: string) => { hash: string; names: string[]; each?: Record<string, string> } | undefined;
+  /** Sova's docs check of a worktree's drafts at a commit (server/docs-preview.ts previewDocs, cached by tree, commit
+   *  and drafts hash): the problems that would keep them from landing, or "pending" while it runs (`done` is called
+   *  when it ends). Absent: no check (every redrafted entry reads clean). */
+  docsCheck?: (dir: string, commit: string, hash: string, done: () => void) => { problems: string[] } | "pending";
+  /** A content hash of the worktree's whole drafts folder, notes included (spec-drafts-state.ts draftsFingerprint):
+   *  kept at a drafts hand-back, so a fix that only records a note reads as a change. */
+  draftsFingerprint?: (dir: string) => string | undefined;
   now?: () => number;
   /** A machine failure's retry waits this long (default 60 s). */
   retryDelayMs?: number;
@@ -119,6 +132,10 @@ export interface QueueDeps {
   log?: (line: string) => void;
   /** A release entry moved (landed, handed back, waits for the user, cancelled): the releaser follows its release. */
   releaseEvent?: (ev: ReleaseQueueEvent) => void;
+  /** What a branch does (branch-summaries.ts), for a row at a commit; never starts a write. */
+  summaryOf?: (root: string, branch: string, commit: string) => import("../../shared/merge-queue").BranchSummary | undefined;
+  /** Drop the summaries no row needs: `live` branches have a ref and haven't landed at it; `shown` commits a row shows. */
+  pruneSummaries?: (root: string, live: ReadonlySet<string>, shown: ReadonlySet<string>) => void;
   /** The review and thread models' check: the new-chat default and why a pick can't be used (models.ts
    *  liveModelCheck; default: no default read, every pick usable). */
   modelCheck?: ModelCheck;
@@ -191,6 +208,11 @@ export class ProjectQueue {
   private current: Current | null = null;
   private chain: Promise<unknown> = Promise.resolve();
   private holdUntil = 0;
+  /** The entry whose run started or that was cancelled last since the thread was last told the queue went idle
+   *  (wakeIdle); null: nothing to tell. */
+  private idleOwed: string | null = null;
+  /** The merge thread's hold has its expiry kick armed. */
+  private holdKick = false;
   private timers = new Set<ReturnType<typeof setTimeout>>();
   private conflictTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private reviewWaiters = new Map<string, { resolve: (v: ReviewVerdict) => void; reject: (e: Error) => void }>();
@@ -328,7 +350,8 @@ export class ProjectQueue {
       else delete e.newerCommits;
     }
     const takes = this.deps.estimate ? this.deps.estimate(this.id, this.root) : this.estimateFromHistory();
-    const ready = await this.readyList(head);
+    const redrafted = await this.redraftedFacts();
+    const ready = await this.readyList(head, redrafted);
     const thread = this.deps.threadOf?.(this.root) ?? null;
     const tryRun = this.trying?.run ?? (this.lastTry ? this.store.readRun(this.lastTry) : null);
     const origin = await this.originFacts();
@@ -346,6 +369,12 @@ export class ProjectQueue {
       origin,
       settled,
     });
+    // Why each was sent back (an entry from before it was kept: inferred once), and which may land again as they are.
+    for (const e of v.needsFix) {
+      const cause = this.causeOf(e);
+      if (cause) e.sentBackFor = cause;
+      if (!e.settled && redrafted.has(e.id)) e.redrafted = true;
+    }
     const settings = head ? await this.settings().catch((err) => (this.log(`settings unreadable: ${err instanceof Error ? err.message : err}`), null)) : null;
     // Landing by request or push (al_3): what waits on the host, and how far local main is behind origin's.
     const weekAgo = new Date(this.now() - 7 * 24 * 3600_000).toISOString();
@@ -376,7 +405,44 @@ export class ProjectQueue {
     // An entry the hold keeps waiting has no start time: it starts once the release is published or abandoned.
     if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
     const chats = this.deps.chatsOf?.(this.root) ?? {};
-    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(ready.length ? { ready } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
+    const readyRows = this.attachSummaries(v, ready);
+    return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
+  }
+
+  /** The view is read again and published (a branch summary started, was written or failed). */
+  republish(): void {
+    this.viewCache = null;
+    this.schedulePublish();
+  }
+
+  private summariesPrunedAt = 0;
+  /** Each row's branch summary (branch-summaries.ts): Ready rows at their head, entries at their approved commit
+   *  (landed rows keep the one they had). Every 10 minutes at most, the summaries no row needs are dropped. */
+  private attachSummaries(v: MergeQueueView, ready: MergeReady[]): MergeReady[] {
+    const of = this.deps.summaryOf;
+    if (!of) return ready;
+    const entries = [...v.checking, ...v.waiting, ...v.needsYou, ...v.needsFix, ...(v.waitingOnHost ?? []), ...v.recent.map((l) => l.entry)];
+    const rows = ready.map((r) => {
+      const s = of(this.root, r.branch, r.commit);
+      return s ? { ...r, summary: s } : r;
+    });
+    for (const e of entries) {
+      const s = of(this.root, e.branch, e.commit);
+      if (s) e.summary = s;
+    }
+    if (this.deps.pruneSummaries && this.now() - this.summariesPrunedAt > 10 * 60_000) {
+      this.summariesPrunedAt = this.now();
+      const prune = this.deps.pruneSummaries;
+      const shown = new Set([...rows.map((r) => r.commit), ...rows.map((r) => r.summary?.stale?.commit).filter((c): c is string => !!c), ...entries.map((e) => e.commit), ...entries.map((e) => e.summary?.stale?.commit).filter((c): c is string => !!c)]);
+      void (async () => {
+        const refs = await this.git(["for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads/"], this.root);
+        if (refs.code !== 0) return;
+        const landedAt = new Set(this.q.entries.filter((e) => e.state === "landed").map((e) => `${e.branch} ${e.commit}`));
+        const live = new Set(refs.stdout.split("\n").filter((l) => l && !landedAt.has(l)).map((l) => l.slice(0, l.lastIndexOf(" "))));
+        prune(this.root, live, shown);
+      })().catch((err) => this.log(`summaries prune failed: ${err instanceof Error ? err.message : err}`));
+    }
+    return rows;
   }
 
   /** Whether the project has origin, and origin's copy of the target as last fetched (its remote-tracking ref; never a fetch). */
@@ -495,6 +561,59 @@ export class ProjectQueue {
       if (pub?.state === "pushed") return { state: "pushed" as const, commit, branch: pub.branch };
       return { state: "saved" as const, commit, pushed: false as const };
     });
+  }
+
+  /** The release holding the target, as shown, or undefined. */
+  heldByRelease(): string | undefined {
+    return this.q.release ? this.releaseName() : undefined;
+  }
+
+  /** Busy for a commit on the target: a branch or a release holds it, or it moved from outside and waits for the resume. */
+  private async targetHeld(): Promise<boolean> {
+    if (this.current || this.trying || this.landing || this.q.release) return true;
+    const head = await this.targetHead();
+    return !!this.q.knownTarget && head !== null && head !== this.q.knownTarget;
+  }
+
+  /** After a commit made at a quiet point: it is the queue's own, so it raises no "moved outside the queue". */
+  private async ownTargetMove(): Promise<void> {
+    const head = await this.targetHead();
+    if (!head || head === this.q.knownTarget) return;
+    this.q.knownTarget = head;
+    this.save();
+    this.settingsChanged();
+  }
+
+  /**
+   * Run `fn`, a commit a settings card makes on `branch`, at a moment nothing holds the target (in the queue's own
+   * order, so no run starts under it). False: a branch checks, or the target waits for a resume; nothing ran.
+   */
+  runWhenQuiet(branch: string, fn: () => Promise<void>): Promise<boolean> {
+    return this.serial(async () => {
+      if (branch !== this.q.target) {
+        await fn();
+        return true;
+      }
+      if (await this.targetHeld()) return false;
+      try {
+        await fn();
+      } finally {
+        await this.ownTargetMove();
+      }
+      return true;
+    });
+  }
+
+  /** The cards held for this quiet point (§app.merge-queue/master-moved): each settles itself, a failure stays on its card. */
+  private async quietCards(): Promise<void> {
+    const work = queueQuietWork();
+    if (!work || (await this.targetHeld())) return;
+    try {
+      await work(this.root);
+    } catch (err) {
+      this.log(`a held settings card failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    await this.ownTargetMove();
   }
 
   /** Cancel a save waiting for the current branch; false: none waits. */
@@ -634,8 +753,8 @@ export class ProjectQueue {
 
   private readyCache: { at: number; head: string; list: MergeReady[] } | null = null;
   /** Ready, not approved (the view's Land list), re-read at most every 15 s or when the target moves. */
-  private async readyList(head: string): Promise<MergeReady[]> {
-    if (this.readyCache && this.readyCache.head === head && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list);
+  private async readyList(head: string, redrafted: ReadonlySet<string> = new Set()): Promise<MergeReady[]> {
+    if (this.readyCache && this.readyCache.head === head && this.now() - this.readyCache.at < 15_000) return this.filterReady(this.readyCache.list, redrafted);
     const out: MergeReady[] = [];
     for (const w of await worktreesOf(this.git, this.root)) {
       if (!w.branch || !w.head || w.path === this.root || w.branch === this.q.target || w.branch === "master" || w.branch === "main" || !existsSync(w.path)) continue;
@@ -652,11 +771,75 @@ export class ProjectQueue {
       out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
     }
     this.readyCache = { at: this.now(), head, list: out };
-    return this.filterReady(out);
+    return this.filterReady(out, redrafted);
   }
-  private filterReady(list: MergeReady[]): MergeReady[] {
-    // A branch sent back (needs-fix) is Ready again only at a newer commit: never Land at the commit it was sent back at.
-    return list.filter((r) => !this.q.entries.some((e) => e.branch === r.branch && (ENTRY_OPEN.includes(e.state) || ((e.state === "landed" || e.state === "needs-fix") && e.commit === r.commit))));
+  /** A branch sent back (needs-fix) is Ready again at a newer commit, or at the same commit once it was sent back for
+   *  its drafts and they are fixed (`redrafted`: changed since the approval, and Sova's docs check reads clean). */
+  filterReady(list: MergeReady[], redrafted: ReadonlySet<string> = new Set()): MergeReady[] {
+    return list.filter((r) => !this.q.entries.some((e) => e.branch === r.branch && (ENTRY_OPEN.includes(e.state) || ((e.state === "landed" || (e.state === "needs-fix" && !redrafted.has(e.id))) && e.commit === r.commit))));
+  }
+
+  /** Why a sent-back entry was sent back: as stored, else inferred once from its last run (a failed docs step: its
+   *  drafts), else unknown (read as not the drafts'). */
+  private causeMemo = new Map<string, SentBackFor | null>();
+  causeOf(e: Pick<Entry, "id" | "state" | "sentBackFor" | "run">): SentBackFor | undefined {
+    if (e.state !== "needs-fix") return undefined;
+    if (e.sentBackFor) return e.sentBackFor;
+    if (!this.causeMemo.has(e.id)) {
+      let run: MergeRun | null = null;
+      try {
+        run = e.run ? this.store.readRun(e.run) : null;
+      } catch {
+        run = null;
+      }
+      this.causeMemo.set(e.id, run?.verdict === "failed" && run.steps.some((st) => st.kind === "docs" && st.result === "failed") ? "drafts" : null);
+    }
+    return this.causeMemo.get(e.id) ?? undefined;
+  }
+
+  /** The last redrafted set the view read: a change publishes the view (a drafts edit makes no save). */
+  private redraftedKey = "";
+  /**
+   * Sent-back entries that may land again at the same commit: sent back for their drafts, the branch still at that
+   * commit with its worktree there, its drafts changed since the approval pinned them, and Sova's docs check of them
+   * finding no problem (none left counts as clean). A check still running counts as not yet; its end publishes.
+   */
+  async redraftedFacts(): Promise<Set<string>> {
+    const out = new Set<string>();
+    if (this.deps.draftsHash) {
+      for (const e of this.q.entries) {
+        if (e.state !== "needs-fix" || this.causeOf(e) !== "drafts" || superseded(this.q.entries, e)) continue;
+        if (!e.approval.drafts || e.approval.withoutSpecs || !e.worktree || !existsSync(e.worktree)) continue;
+        if ((await revParse(this.git, this.root, `refs/heads/${e.branch}`)) !== e.commit) continue;
+        let now: { hash: string; names: string[] } | undefined;
+        try {
+          now = await this.branchDrafts(e.worktree, e.commit);
+        } catch {
+          continue;
+        }
+        // Changed since the hand-back (the whole folder, notes included); an entry from before that was kept: since the
+        // approval pinned its drafts.
+        const print = this.deps.draftsFingerprint?.(e.worktree);
+        if (e.sentBackDrafts !== undefined && print !== undefined ? print === e.sentBackDrafts : now?.hash === e.approval.drafts.hash) continue;
+        if (now && this.deps.docsCheck) {
+          const r = this.deps.docsCheck(e.worktree, e.commit, print ?? this.deps.draftsHash(e.worktree)?.hash ?? "", () => this.docsChecked());
+          if (r === "pending" || r.problems.length) continue;
+        }
+        out.add(e.id);
+      }
+    }
+    const key = [...out].sort().join(",");
+    if (key !== this.redraftedKey) {
+      this.redraftedKey = key;
+      this.viewCache = null;
+      this.schedulePublish();
+    }
+    return out;
+  }
+  /** A docs check ended: the view is read again, and published when what it found moves an entry. */
+  private docsChecked(): void {
+    this.viewCache = null;
+    void this.redraftedFacts().catch((err) => this.log(`docs check: ${err instanceof Error ? err.message : err}`));
   }
 
   private estimateCache: { at: number; ms: number | null } | null = null;
@@ -837,7 +1020,20 @@ export class ProjectQueue {
   cancel(entryId: string, note?: string): Promise<MergeEntry> {
     return this.serial(async () => {
       const e = this.mustEntry(entryId);
+      // Remove from Queue: a sent-back entry leaves the queue; nothing of the branch's is deleted (its folder, commits,
+      // drafts and run logs stay), and its chat's card gets a Removed revision.
+      if (e.state === "needs-fix") {
+        e.state = "cancelled";
+        e.reason = "removed by you";
+        e.updatedAt = this.iso();
+        if (note !== undefined) this.setNote(e, note, "thread");
+        this.save();
+        this.deps.notify?.("removed", e, { root: this.root });
+        this.releaseEvent(e, "cancelled");
+        return e;
+      }
       if (isFinal(e)) throw new MergeFailure("invalid-request", `${e.branch} is ${e.state === "landed" ? "landed" : e.state === "cancelled" ? "already cancelled" : "handed back already"}`);
+      this.idleOwed = e.id;
       if (this.current?.entry === e.id) {
         this.current.voidWhy = "cancelled";
         this.current.ac.abort();
@@ -977,6 +1173,7 @@ export class ProjectQueue {
         this.clearConflictTimer(e.id);
         const was = e.state;
         e.state = "needs-fix";
+        e.sentBackFor = "user";
         e.reason = why?.trim() || (was === "unattributed" ? `a check failed on the merge and on ${e.target} alone, and couldn't say whose failure it is${e.reason ? ` (${e.reason})` : ""}` : was === "review-flagged" ? `the review flagged it: ${e.review?.text ?? ""}`.trim() : was === "drafts-changed" ? "its spec drafts changed since you approved" : was === "request-review" || was === "requested" ? `its request needs another look${e.request?.facts?.checks === "fail" ? ": the host's checks failed" : e.request?.facts?.review === "changes-requested" ? ": changes were requested on the host" : e.request?.facts?.mergeable === "conflicts" ? `: it conflicts with ${e.target} on the host` : ""}` : `conflicts with ${e.target}${e.conflict?.files.length ? ` in ${e.conflict.files.join(", ")}` : ""}`);
         e.updatedAt = this.iso();
         this.save();
@@ -1048,6 +1245,8 @@ export class ProjectQueue {
         if (e.state !== "needs-fix" && e.state !== "queued") throw new MergeFailure("invalid-request", `${e.branch} is ${e.state}: nothing to retry`);
         if (note !== undefined) this.setNote(e, note, "thread");
         delete e.reason;
+        delete e.sentBackFor;
+        delete e.sentBackDrafts;
         this.toFront(e);
       }
       if (this.q.paused && this.q.paused.kind !== "main-checkout-dirty") {
@@ -1256,11 +1455,100 @@ export class ProjectQueue {
   }
 
   private async startNext(): Promise<void> {
+    await this.startNextRun();
+    this.wakeIdle();
+  }
+
+  /** Nothing left to check and nothing running: the thread hears it once per busy stretch (`idle`). An entry waiting for
+   *  the user (a judgement, a review) is not checked by the queue and doesn't keep it busy; a conflict waiting for the
+   *  thread's judgement does. */
+  private wakeIdle(): void {
+    if (!this.idleOwed || this.stopped || this.current || this.trying || this.landing) return;
+    if (this.q.entries.some((e) => e.state === "queued" || e.state === "checking" || e.state === "conflict")) return;
+    const last = this.entry(this.idleOwed);
+    this.idleOwed = null;
+    if (!last) return;
+    const landed = this.newestLanded();
+    this.wake("idle", last, undefined, {
+      ...(landed ? { lastLanded: { id: landed.id, branch: landed.branch, sha: landed.landed!.sha } } : {}),
+      ...(this.q.knownTarget ? { head: this.q.knownTarget } : {}),
+    });
+  }
+
+  /** The queue's newest landing, if any. */
+  private newestLanded(): Entry | undefined {
+    return this.q.entries.filter((e) => e.state === "landed" && e.landed).sort((a, b) => (a.landed!.at < b.landed!.at ? 1 : a.landed!.at > b.landed!.at ? -1 : 0))[0];
+  }
+
+  // ---- the merge thread's hold (merge.hold) -------------------------------------------------------
+
+  /** Whether the thread's hold keeps new runs from starting now; an expired one is lifted here. */
+  private held(): boolean {
+    const h = this.q.hold;
+    if (!h) return false;
+    if (h.until <= this.now()) {
+      this.liftHold();
+      this.log("the merge thread's hold expired");
+      return false;
+    }
+    let changed = false;
+    for (const e of this.queued()) {
+      if (e.reason === HOLD_WORDS) continue;
+      e.reason = HOLD_WORDS;
+      changed = true;
+    }
+    if (changed) this.save();
+    if (!this.holdKick) {
+      this.holdKick = true;
+      this.later(Math.max(0, h.until - this.now()) + 10, () => {
+        this.holdKick = false;
+        this.kickSoon();
+      });
+    }
+    return true;
+  }
+
+  private liftHold(): boolean {
+    if (!this.q.hold) return false;
+    delete this.q.hold;
+    for (const e of this.queued()) if (e.reason === HOLD_WORDS) delete e.reason;
+    this.save();
+    return true;
+  }
+
+  /** merge.hold (the merge thread's): `set` holds every new run for HOLD_MS (set again: renewed); `clear` lifts it.
+   *  A run already checking or landing goes on. Answers whether anything changed and the hold now. */
+  hold(action: "set" | "clear"): Promise<{ changed: boolean; hold: { at: string; until: string } | null }> {
+    return this.serial(async () => {
+      let changed: boolean;
+      if (action === "set") {
+        this.q.hold = { at: this.iso(), until: this.now() + HOLD_MS };
+        this.save();
+        this.log("held by the merge thread");
+        changed = true;
+      } else {
+        changed = this.liftHold();
+        if (changed) this.log("the merge thread lifted its hold");
+      }
+      this.kickSoon();
+      return { changed, hold: this.holdNow() };
+    });
+  }
+
+  /** The thread's hold as the verb answers it, or null. */
+  holdNow(): { at: string; until: string } | null {
+    const h = this.q.hold;
+    return h && h.until > this.now() ? { at: h.at, until: new Date(h.until).toISOString() } : null;
+  }
+
+  private async startNextRun(): Promise<void> {
     if (this.stopped || this.current || this.trying || this.landing) return;
-    // A settings save that waited for the branch just checked goes first, before the next branch starts on the target.
+    // A settings card held for the branch just checked, then a settings save, go before the next branch starts on the target.
+    await this.quietCards();
     if (this.q.pendingSave) await this.applyPendingSave();
     if (this.q.paused) return;
     if (this.holdUntil > this.now()) return;
+    if (this.held()) return;
     const head = await this.targetHead();
     if (!head) return;
     const line = this.releaseLine(this.queued());
@@ -1352,6 +1640,7 @@ export class ProjectQueue {
 
   /** `own`: the branch's own definition, when the target's doesn't parse and this branch fixes it. */
   private async startRun(e: Entry, base: string, own?: ProjectDef, localBase: string = base): Promise<void> {
+    this.idleOwed = e.id;
     const declared = await this.declared();
     const d = own ? { ...declared, def: own, review: (this.deps.hasReviewKit ?? ((x) => !!x?.merge?.review))(own, this.root) } : declared;
     const runId = newId("mr");
@@ -1535,7 +1824,7 @@ export class ProjectQueue {
         this.store.writeRun(run);
         if (e.release) {
           // A release's commit was cut from the frozen target: a conflict is a fault of the release, never judged.
-          this.handBack(e, run, `the release commit conflicts with ${this.q.target}${out.conflict?.files?.length ? ` in ${out.conflict.files.slice(0, 3).join(", ")}` : ""}`);
+          this.handBack(e, run, `the release commit conflicts with ${this.q.target}${out.conflict?.files?.length ? ` in ${out.conflict.files.slice(0, 3).join(", ")}` : ""}`, "conflict");
           this.kickSoon();
           return;
         }
@@ -1547,7 +1836,7 @@ export class ProjectQueue {
         e.updatedAt = this.iso();
         this.save();
         const asked = this.wake("conflict", e, run.id, { files });
-        if (!asked) this.handBack(e, run, `${e.reason}; no merge thread is there to judge it`);
+        if (!asked) this.handBack(e, run, `${e.reason}; no merge thread is there to judge it`, "conflict");
         else this.armConflictTimer(e, run);
         this.kickSoon();
         return;
@@ -1562,7 +1851,7 @@ export class ProjectQueue {
           e.updatedAt = this.iso();
           this.save();
         } else {
-          this.handBack(e, run, out.why ?? "a check failed with your branch and passes on the target");
+          this.handBack(e, run, out.why ?? "a check failed with your branch and passes on the target", out.cause ?? "checks");
           this.wake("failed", e, run.id, { why: out.why ?? "failed" });
         }
         delete this.q.machineTries[e.id];
@@ -1631,9 +1920,13 @@ export class ProjectQueue {
     for (const n of notes ?? []) if (!e.notes.some((x) => x.kind === n.kind && x.text === n.text)) e.notes.push({ ...n, text: n.text.slice(0, NOTE_MAX) });
   }
 
-  private handBack(e: Entry, run: MergeRun | undefined, why: string): void {
+  private handBack(e: Entry, run: MergeRun | undefined, why: string, cause: SentBackFor): void {
     this.clearConflictTimer(e.id);
     e.state = "needs-fix";
+    e.sentBackFor = cause;
+    const print = cause === "drafts" && e.worktree && existsSync(e.worktree) ? this.deps.draftsFingerprint?.(e.worktree) : undefined;
+    if (print !== undefined) e.sentBackDrafts = print;
+    else delete e.sentBackDrafts;
     e.reason = why;
     e.updatedAt = this.iso();
     this.save();
@@ -1648,7 +1941,7 @@ export class ProjectQueue {
       this.conflictTimers.delete(e.id);
       void this.serial(async () => {
         const x = this.entry(e.id);
-        if (x?.state === "conflict") this.handBack(x, run, `${x.reason ?? "a conflict"}; the merge thread didn't judge it in time`);
+        if (x?.state === "conflict") this.handBack(x, run, `${x.reason ?? "a conflict"}; the merge thread didn't judge it in time`, "conflict");
       });
     }, ms);
     t.unref?.();
@@ -1859,7 +2152,7 @@ export class ProjectQueue {
       case "refused":
         drop();
         if (out.blame === "branch") {
-          this.handBack(e, run ?? undefined, out.why);
+          this.handBack(e, run ?? undefined, out.why, "host");
           return;
         }
         e.state = "request-review";
@@ -2069,7 +2362,12 @@ export class ProjectQueue {
     await this.push(head, (await this.declared()).def);
   }
 
-  private wake(kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names", e: Entry, run?: string, extra: { files?: string[]; why?: string; namesFile?: string } = {}): boolean {
+  private wake(
+    kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "idle",
+    e: Entry,
+    run?: string,
+    extra: { files?: string[]; why?: string; namesFile?: string; lastLanded?: { id: string; branch: string; sha: string }; head?: string } = {},
+  ): boolean {
     if (!this.deps.thread) return false;
     // What the thread diffs against: the run's base, else the target as the queue last saw it.
     const runBase = run ? (this.current?.run.id === run ? this.current.run.base : this.store.readRun(run)?.base) : undefined;
@@ -2219,6 +2517,8 @@ export class ProjectQueue {
     for (const e of this.queued()) if (this.isWaitingWords(e.reason)) delete e.reason;
     if (this.q.pendingSave) this.settingsChanged();
     this.log(`hold of release ${h.id} lifted`);
+    // The thread hears Idle again once the line is quiet: what it put off during the release (a restart) is owed now.
+    this.idleOwed = this.newestLanded()?.id ?? this.idleOwed;
     this.kickSoon();
   }
 
@@ -2400,6 +2700,11 @@ export class ProjectQueue {
   /** At load: reconcile a landing intent left by a stop, requeue runs a stop interrupted, re-arm conflict waits. */
   async recover(): Promise<string[]> {
     const did: string[] = [];
+    // The merge thread's hold is for a restart of the server: this start is its end.
+    if (this.q.hold) {
+      this.liftHold();
+      did.push("lifted the merge thread's hold");
+    }
     const head = await this.targetHead();
     const intent = this.q.intent;
     if (intent) {

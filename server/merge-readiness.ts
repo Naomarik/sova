@@ -1,4 +1,3 @@
-import { execFile } from "node:child_process";
 import { createHash, type Hash } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { open } from "node:fs/promises";
@@ -14,6 +13,8 @@ import { stateRoot } from "./state-root";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
 import { type DraftsHash, draftsHash, unofficialDrafts } from "./spec-drafts-state";
+import { previewDocs, previewOf } from "./docs-preview";
+export { previewOf };
 import { blockedNoteText, type DocsPreview, docsNudgeText, type Finished, fileLandingStore, finishedOf, type LandingBlocker, landingBlockers, type LandingDocs, landingLive, landingOf, landingReason, type LandingStore, specsWhyOf } from "./ready-to-land";
 import { atLineStart, BranchScan, lineHead, lineMay, lineNeedle, toHEntry } from "./harness/pi/reader";
 import { stateViewOf } from "./harness/pi/state";
@@ -22,6 +23,7 @@ import { DIRTY_TTL_MS, execGit, gitInputsStamp, gitRefsStamp, type GitRunner, li
 import { goneTreeState, type GoneState } from "./removed-worktrees";
 import { sessionsChanged } from "./list-generation";
 import { opTrack } from "./stall-recorder";
+import { needsRestart } from "./restart-paths";
 
 /**
  * Merge readiness (§chat.worktrees/readiness): for each worktree a session tracks and owns, whether
@@ -199,9 +201,9 @@ const MERGE_ASK_RE =
 export const replyBody = (reply: string): string => reply.replace(/(?:\n\s*(?:(?:Also changes|Deferred|Plumbing|Spec check override):|Also updates\b)[^\n]*)+\s*$/i, "").trimEnd();
 export const asksToMerge = (reply: string): boolean => MERGE_ASK_RE.test(replyBody(reply).slice(-ASK_TAIL));
 
-/** A changed file that needs the server restarted: server-side code, never src/, docs or tests. */
-export const needsRestart = (file: string): boolean =>
-  (/^(?:server|shared|pi-config)\//.test(file) && !/\.md$|\.test\.[cm]?[jt]sx?$/.test(file)) || file === "package.json" || file === "pnpm-lock.yaml";
+/** A changed file that needs the server restarted (restart-paths.ts): server-side code, the src/ files the server
+ *  imports, the packages and the toolchain; never the page alone, docs or tests. */
+export { needsRestart };
 
 /** The session's routine and judged follow-ups, as the badge and digest read them. */
 export interface MergeFlags {
@@ -568,6 +570,9 @@ export interface ReadinessDeps {
   docsPreview?: (dir: string, head: string, hash: string, done: () => void) => DocsPreview | "pending";
   /** The heads kept Ready to land. */
   landing: LandingStore;
+  /** A served tree read Ready to land at a commit (each reading; the listener dedupes): the merge queue writes its
+      branch summary (server/merge-queue/branch-summaries.ts). Absent: nothing is told. */
+  readyToLand?: (t: { path: string; branch: string; commit: string }) => void;
   /** Sova's message to a session (the specs nudge); absent: never sent. */
   nudge?: (sessionPath: string, text: string) => Promise<void>;
   /** The branches the merge queue landed for a chat (its Landed cards), by session id. */
@@ -826,6 +831,7 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
         if (blockers?.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers });
       }
       if (writes) {
+        if (landing?.state === "ready") deps.readyToLand?.({ path: t.path, branch: tf.branch, commit: landing.commit });
         if (landing) deps.landing.hold(s.id, t.path, { branch: tf.branch, commit: landing.commit, at: deps.now() });
         else if (held && (tf.merged || (tf.readable && tf.head !== held.commit))) deps.landing.drop(s.id, t.path);
       }
@@ -1269,44 +1275,7 @@ function requeue(path: string): void {
 
 // ---- Sova's try of a head's drafts (§chat.worktrees/ready-to-land) --------------------------------------
 
-const DRAFT_TOOL = join(dirname(fileURLToPath(import.meta.url)), "..", "pi-config", "extensions", "spec", "core", "sova-spec-draft.mjs");
-const PREVIEW_TIMEOUT_MS = 60_000;
-const previews = new Map<string, { result?: DocsPreview; waiters: (() => void)[] }>();
-
-/** The draft tool's `land --commit <head>` without writing, in a process of its own (at most a minute), cached per
-    tree, head and drafts hash; a tool that fails or gives no answer is a problem, so a head never lands untried. */
-function previewDocs(dir: string, head: string, hash: string, done: () => void): DocsPreview | "pending" {
-  const key = `${dir}\n${head}\n${hash}`;
-  const hit = previews.get(key);
-  if (hit?.result) return hit.result;
-  if (hit) {
-    hit.waiters.push(done);
-    return "pending";
-  }
-  const entry: { result?: DocsPreview; waiters: (() => void)[] } = { waiters: [done] };
-  previews.set(key, entry);
-  if (previews.size > 300) previews.delete(previews.keys().next().value as string);
-  execFile(process.execPath, [DRAFT_TOOL, "land", "--commit", head, "--by", "Sova's try at readiness", "--verification", "readiness preview", "--root", dir, "--json"],
-    { timeout: PREVIEW_TIMEOUT_MS, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, NO_COLOR: "1" } }, (err, stdout) => {
-      entry.result = previewOf(String(stdout ?? ""), err);
-      for (const w of entry.waiters.splice(0)) {
-        try { w(); } catch {}
-      }
-    });
-  return "pending";
-}
-
-/** land's JSON answer → what would land, or why not. */
-export function previewOf(stdout: string, err?: unknown): DocsPreview {
-  let j: { exit?: number; drafts?: { name?: string; added?: string[]; changed?: string[]; removed?: string[] }[]; findings?: { draft?: string | null; id?: string | null; code?: string; message?: string }[] } | null = null;
-  try { j = JSON.parse(stdout); } catch {}
-  if (!j || typeof j.exit !== "number") return { drafts: [], added: [], changed: [], problems: [`Sova couldn't try the drafts (${err instanceof Error ? err.message.split("\n")[0] : "the draft tool gave no answer"})`] };
-  const drafts = (j.drafts ?? []).map((d) => String(d.name));
-  const added = (j.drafts ?? []).flatMap((d) => d.added ?? []);
-  const changed = (j.drafts ?? []).flatMap((d) => [...(d.changed ?? []), ...(d.removed ?? [])]);
-  const problems = j.exit === 0 ? [] : (j.findings ?? []).map((f) => `${f.id ?? (f.draft ? `draft ${f.draft}` : f.code ?? "a draft")}${f.draft && f.id ? ` (draft ${f.draft})` : ""}: ${f.message ?? f.code ?? "refused"}`);
-  return { drafts, added, changed, problems: j.exit !== 0 && !problems.length ? ["the draft tool refused the landing"] : problems };
-}
+// previewDocs and previewOf live in docs-preview.ts (the merge queue's sent-back entries use the same check).
 
 function drain(): Promise<void> {
   draining ??= (async () => {

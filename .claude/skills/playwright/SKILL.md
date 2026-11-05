@@ -35,6 +35,8 @@ PW_PORT=9481 $SK/pw.sh type e3 "hello world"
 PW_PORT=9481 $SK/stop-browser.sh
 ```
 
+Inside a sandbox, use `--headless` and save screenshots under `$TMPDIR` (not `/tmp`).
+
 ## Concurrency — read this before anything else
 
 Several agents routinely run in the same working directory at the same time.

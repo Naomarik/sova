@@ -14,8 +14,9 @@
       "index.html"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-11T11:27Z"
+      "by": "user",
+      "at": "2026-11-03T20:41Z",
+      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#42b7b210"
     }
   },
   "§app.shell/missing-folder-home": {
@@ -51,7 +52,7 @@
   "§app.shell/overview": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "src/App.tsx",
       "src/lib/overview-route.ts",
@@ -64,12 +65,21 @@
       "src/components/ui.tsx",
       "src/design/base.css",
       "src/components/NewSessionDialog.tsx",
-      "server/extensions.ts"
+      "server/extensions.ts",
+      "server/sidebar-scroll.integration.test.ts",
+      "server/sidebar-guide-lines.integration.test.ts",
+      "server/needs-you-rows-ui.integration.test.ts"
     ],
     "requires": [
       "§chat.transcript/landing-page",
-      "§app.session-list/anatomy"
-    ]
+      "§app.session-list/anatomy",
+      "§app.projects/home-cards"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T22:53Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+    }
   },
   "§app.shell/remote-session-chips": {
     "kind": "behavior",
@@ -131,6 +141,27 @@
       "by": "naomarik",
       "at": "2026-10-22T00:49Z",
       "source": "pi-session:aaa55e42-efea-4624-8d25-f08fbba7fb25#e92e5471"
+    }
+  },
+  "§app.shell/window-controls-overlay": {
+    "kind": "behavior",
+    "requires": [
+      "§app.shell/installable",
+      "§app.shell/viewport",
+      "§design.ground-rules/theme"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "src/window-controls.css",
+      "index.html",
+      "src/main.tsx",
+      "src/lib/push.ts"
+    ],
+    "agreed": {
+      "by": "Omar",
+      "at": "2026-11-04T12:24Z",
+      "source": "pi-session:01a1a628-48c2-7136-a762-464d5bf0599f#d0ac6d72"
     }
   },
   "§app/shell": {

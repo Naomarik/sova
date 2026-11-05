@@ -8,6 +8,9 @@ names an action Sova already has and points at the route that already does it. T
 line (`scripts/sova.mjs`) lists, describes and runs those entries from a terminal, and streams what
 changes in the session list. Extensions add actions of their own under `ext.`. Nothing in the
 catalogue intercepts, vetoes or rewrites one of Sova's actions: an entry only adds a way to reach it.
+Being listed opens nothing to an agent: an agent gets an action only when it is opened on purpose. A
+chat in Create is one such opening: its `sova_settings`, which only prepares a card, and its
+`create_guide` are tools and no entries (§chat.create-mode/settings-cards, §chat.create-mode/entries).
 The running server serves the catalogue, with its installed extensions' own entries, at `GET /api/commands` (§app/served-commands), and the command line reads it there.
 
 ## §app.commands/catalogue — The catalogue
@@ -73,7 +76,9 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `project.verb.release.status`, `project.verb.release.logs`, `project.verb.release.request`,
   `project.verb.release.start`, `project.verb.release.step`, `project.verb.release.notes`,
   `project.verb.release.continue`, `project.verb.release.retry`, `project.verb.release.publish`,
-  `project.verb.release.abandon`, `project.verb.release.withdraw`.
+  `project.verb.release.abandon`, `project.verb.release.withdraw`, `mcp.servers.list`,
+  `mcp.server.status`, `project.verb.release.note`, `project.coding.start`, `project.icon.get`,
+  `project.icon.upload`, `project.icon.letters`, `project.icon.remove`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).
@@ -84,15 +89,24 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   Assistant's default model (§app.project-assistant/models). The `session.offers.*` entries read
   a session's offer cards, show one from another chat, click a button, and set or clear Not Now;
   `project.offers.list` is the project page's Offers list (§chat/offers). Approving an offers
-  file's run buttons is a trust grant and no entry (§chat.offers/approval). The `project.settings.*`
+  file's run buttons, a profile's powers or a schedule is a trust grant and no entry
+  (§chat.offers/approval, §chat.profiles/trust, §chat.schedules/approval). `session.sandbox.set`
+  and `project.overseer.settings.set` stay entries, and answer a lowering or a power turned On with
+  their route's refusal, as `server.restart` does for anything but the page (§app.access/your-click). The `project.settings.*`
   entries read a project's settings and their history, undo a change and dismiss a Settings change card;
   `project.overseer.settings.set` is the project overseer's settings PATCH (§app.project-overseer/settings).
-  Applying a card is a trust grant and no entry. The `*.claude-login.*` entries read and set the
+  Applying a card is a trust grant and no entry, a Sova-wide card's `POST /api/settings/apply` included;
+  `settings.cards.get` and `settings.cards.withdraw` read and withdraw Sova-wide cards. The `*.claude-login.*` entries read and set the
   Claude login a project's, or an organization's projects', new chats start on
   (§app.claude-logins/project-login). The `session.card.*` entries raise or update a transcript
   card, read a session's cards and answer one (§chat.transcript-cards/raise-command), and
   `project.cards.list` is the project page's Cards section (§chat.transcript-cards/files); trusting a
   project's or an extension's cards is a trust grant and no entry (§chat.transcript-cards/trust).
+  `mcp.servers.list` and `mcp.server.status` read the MCP server list and one server's status
+  (§app.mcp/reads); approving, adding or editing a server and signing in to one are the page's and
+  no entry (§app.mcp/approval). `project.coding.start` starts a chat in a project, a home card's
+  New Chat, and the `project.icon.*` entries read and set a project's icon
+  (§app.project-commands/projects-sweep, §app.projects/icon).
 - **Its mesh reach is its route's.** Each entry's `meshNeed` is the capability the peer listener's
   classifier gives its method and path (§mesh.peers/grants), and a test fails when they differ.
 - **Never a door the operator keeps closed.** No entry targets the peer routes (`/api/peer`,
@@ -118,12 +132,14 @@ streams changes (§app.commands/watch).
 - **Run from a checkout**, as `node scripts/sova.mjs`. The installed launcher named `sova`
   (§app.access/callers) is a different program and doesn't run these commands.
 - **This machine only.** The server is `--url`, else `$SOVA_URL`, else
-  `http://127.0.0.1:$SOVA_PORT` (4800). Any host but `127.0.0.1`, `localhost` or `::1` is refused
+  `http://127.0.0.1:$SOVA_PORT` (4800); a chat Sova runs has `$SOVA_URL` set to its own server
+  (§app.chat-processes/supervision). Any host but `127.0.0.1`, `localhost` or `::1` is refused
   before a request is made. It sends the token as `x-sova-token`, read as every script reads it
   (§app.access/callers), and in a chat Sova runs the chat's own key beside it as `x-sova-caller`.
   `run` names its command on the entry's request as `x-sova-command: <id>`; both headers only say
   who ran what (§app.command-audit/attribution), except that a request carrying `x-sova-caller`
-  can't approve a project mode's hooks (§chat.mode-menu/project-mode-hooks). `run --host <peer>` (or `sova --host <peer> run
+  can't approve a project mode's hooks (§chat.mode-menu/project-mode-hooks) or give any approval of
+  §app.access/your-click. `run --host <peer>` (or `sova --host <peer> run
   <id>`) runs the command on a mesh peer through this machine (§mesh.peers/remote-commands).
 - **Sessions by id or path.** `--session` takes either. Where the route takes a path, an id is
   turned into one through `GET /api/sessions/summary?id=`; where it takes an id, a path is turned
@@ -164,6 +180,13 @@ with `effect: changes`. Its optional `menu` key puts it in a menu of Sova's too
   object of `{type, description?, required?}` with `type` one of `string`, `number`, `integer`,
   `boolean`, `array` or `object`. A command that isn't valid is left out alone, and so is a second
   one with the same name; the rest of the extension stays.
+- Since ext-contract-v1.18 a command may also carry, for the Overseer
+  (§app.overseer/extension-commands): `overseer: true` (the Overseer may be given it), `description`
+  (text for a model, 1–1,000 characters, line breaks allowed, no other control characters) and
+  `job: true` (running it starts a job the extension reports on later). A bad value for any of
+  them leaves out only that key, never the command. Nothing else changes for a command that
+  carries them: the command line lists and runs it as before, and a command without them reads
+  exactly as before.
 - Its id is always under `ext.<extension id>.`, so an extension can never name, replace or shadow
   one of Sova's own entries.
 - Running one is `POST /ext/<id>/api/commands/<name>` with the params as a JSON object, through

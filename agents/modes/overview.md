@@ -4,7 +4,7 @@ alsoUpdate: ["pi-config/extensions/mode/README.md"]
 ---
 # Modes
 
-The `mode` extension: the per-session major mode (normal ↔ Delegate) and the minor modes (`align`, `spec`, `vis`,
+The `mode` extension: the per-session major mode (normal, Delegate or Create) and the minor modes (`align`, `spec`, `vis`,
 `memory`), plus a project's own minor modes from `.sova/minor-modes/<id>/MODE.md`
 (§chat.mode-menu/project-modes). Sova imports more of it than of any other extension, and the dev watcher watches all of it.
 This page is the extension's guide; each mode has its own below.
@@ -13,9 +13,9 @@ This page is the extension's guide; each mode has its own below.
 
 - [`pi-config/extensions/mode/README.md`](../../pi-config/extensions/mode/README.md) (usage, minor modes, alignments,
   Delegate routing, writing style and Visuals, the spec writer, workers, verification). The user-facing pages are
-  `site/src/content/docs/modes/` (`index.md`, `delegate.md`, `spec.md`, `vis.md`,
+  `site/src/content/docs/modes/` (`index.md`, `delegate.md`, `create.md`, `spec.md`, `vis.md`,
   `project-modes.md`, `align/`).
-- Guides: [delegate](delegate/overview.md), [align](align/overview.md), [spec](spec/overview.md),
+- Guides: [delegate](delegate/overview.md), [create](create/overview.md), [align](align/overview.md), [spec](spec/overview.md),
   [vis](vis/overview.md), [memory](memory/overview.md).
 - Tests: the `mode` line of `pi-config/README.md` "Tests" (`cd pi-config/extensions/mode && node --test index.test.ts …`;
   the README's Verification section says what each file covers).

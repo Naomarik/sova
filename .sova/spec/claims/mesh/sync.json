@@ -63,7 +63,12 @@
       "server/sync/logins.test.ts",
       "server/sync/logins.integration.test.ts",
       "server/sync/index.test.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:14Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#2783ea91"
+    }
   },
   "§mesh.sync/profile-library": {
     "kind": "behavior",
@@ -95,6 +100,11 @@
       "§chat.subagent-profiles/file",
       "§mesh.peers/grants",
       "§app.claude-logins/pool"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T02:28Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#8fb59837"
+    }
   }
 }

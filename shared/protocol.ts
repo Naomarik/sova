@@ -3,6 +3,7 @@
  * Do not change a shape without telling the other side (team_msg).
  */
 
+import type { McpNote, McpToolName, SetupMcp } from "./mcp";
 import type { WakeInfo } from "./wake";
 import type { BatonMark, BatonSummaryField } from "./baton";
 import type { LinkMessageInfo } from "./link-message";
@@ -410,6 +411,8 @@ export interface TranscriptItem {
       entry of a switch; `text` is its notice. Like the profile row it never counts toward the empty
       state, and the thread draws it where it sits once a message is sent. */
   loginNote?: true;
+  /** kind "info" only: a server's failure in this chat (§app.mcp/in-a-chat), the `sova-mcp-note` entry. */
+  mcpNote?: McpNote;
   /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
   teamEvent?: TeamEvent;
   /** kind "info" only: a /compact-handoff run's `compact-handoff-run` entry
@@ -440,6 +443,8 @@ export interface TranscriptItem {
   facts?: RowFacts;
   /** tool-call and tool-result rows. A lazy tool-result row carries no `text`. */
   tool?: ToolRowInfo;
+  /** tool-call and tool-result rows of a server's tool (§app.mcp/in-a-chat): the row reads these, never the name. */
+  mcp?: McpToolName;
   /** kind "unknown" only: the whole entry, for the card that shows it as JSON (signatures removed). */
   entry?: unknown;
 }
@@ -1476,12 +1481,14 @@ export type SessionSetup =
           server holds the chat, it is local, ordinary, not TUI-live and before its first message.
           Worked out per session on every read, never cached with the folder's lists. */
       toggleable?: boolean;
+      /** The card's MCP Servers group (§chat.transcript/setup-card-toggles); absent: no group. */
+      mcp?: SetupMcp;
       checkedAt: number;
     }
   /** A target session: its cwd is a local placeholder, so its loadout can't be read here. */
-  | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; checkedAt: number }
+  | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; mcp?: SetupMcp; checkedAt: number }
   /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
-  | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
+  | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; mcp?: SetupMcp; checkedAt: number };
 
 // GET /api/sessions/context/file?path=<session file>&file=<listed path> -> SessionSetupFileText
 //                                  (server/session-setup.ts, §chat.transcript/setup-card-open-file:
@@ -1593,7 +1600,7 @@ export type SessionTools =
   /** Not listed: `reason` is the sentence to show. */
   | { state: "unavailable"; reason: string; checkedAt: number };
 
-// POST /api/sessions/loadout {path, offContext, offSkills} -> SessionSetup
+// POST /api/sessions/loadout {path, offContext, offSkills, offMcp, onMcp} -> SessionSetup
 //                                  (§chat.transcript/setup-card-toggles: the session's whole off set
 //                                  — context files by absolute path, skills by name — written as its
 //                                  hidden `sova-loadout` entry; the runtime is rebuilt, open tabs get
@@ -1789,10 +1796,15 @@ export interface BatchPromptResult {
     new sessions** (~/.pi/agent/mode.json), never one chat's state. `strict` is shown, never
     changed here. `modes`/`minors` list what exists. */
 export interface ModeInfo {
-  mode: string; // "normal" | "delegate"
+  mode: string; // "normal" | "delegate" | "create"
   minorModes: string[]; // canonical order
   strict: boolean;
+  /** Only in Create: the mode Save as Default saves, the chat's last normal or Delegate choice (§chat.create-mode/per-chat-only). */
+  saveMode?: string;
   modes: { id: string; description: string }[];
+  /** Only in GET /api/mode with no path: modes a default can't hold but a chat here can pick (Create). A peer's chat
+      has no ?path= read, so its menu adds these to `modes`; a gathering chat has no menu at all. Absent: an older host. */
+  chatModes?: { id: string; description: string }[];
   minors: { id: string; description: string }[];
   /** The memory minor mode's choice (§chat/memory): in GET /api/mode the saved default new chats
       start from (Settings' memory file), in a ChatModeResult that chat's own. Absent from older servers. */
@@ -1923,6 +1935,9 @@ export interface HeldChatState {
     The same values reach every client of that chat as a "mode" server message. */
 export interface ChatModeResult extends ModeInfo, ChatProjectModes {
   applies: ModeApplies;
+  /** The mode Save as default writes, while it isn't `mode`: in Create, this chat's last normal or
+      Delegate choice (§chat.create-mode/per-chat-only). */
+  saveMode?: string;
 }
 
 // ---- Project minor modes (§chat.mode-menu/project-modes) ----------------------------------------
@@ -2491,7 +2506,7 @@ export interface HelloLive {
   /** The assistant message still streaming (not yet written): its parts so far, by index. */
   message?: { model?: string; parts: SovaPart[] };
   /** Tool calls of this run started and not ended, each with its latest output. */
-  tools?: { callId: string; name: string; args?: unknown; output: string; images: string[]; parentCallId?: string }[];
+  tools?: { callId: string; name: string; args?: unknown; mcp?: McpToolName; output: string; images: string[]; parentCallId?: string }[];
 }
 
 /**
@@ -2556,7 +2571,7 @@ export type ChatServerMessage =
   | { type: "append"; items: TranscriptItem[] }
   /** THIS chat's own mode, and how the last switch applies to it. Sent after hello and after
       every switch of this chat. No other chat's switch, and no write of the default, sends one. */
-  | ({ type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice } & ChatProjectModes)
+  | ({ type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice; saveMode?: string } & ChatProjectModes)
   /** THIS chat's memory (§chat/memory): sent after hello while memory is on, and on every change once
       it was on; never from a runtime without the memory engine. None received: memory is off. */
   | { type: "memory_status"; status: MemoryStatus }
@@ -3428,6 +3443,13 @@ export interface SessionWorktreeInfo {
   /** Its branch against the project's merge target (commits ahead, lines +/−), for a registered project's worktree.
       Additive. */
   mergeStats?: import("./merge-queue").WorktreeMergeStats;
+  /** What its branch does, in a few bullets (§ the merge queue's branch summaries), once anything is known: at its
+      entry's commit while it has an open or landed entry, else at its head. Only where the queue serves the repo.
+      Additive. */
+  mergeSummary?: import("./merge-queue").BranchSummary;
+  /** The chat that owns its branch (server/merge-queue/owners.ts), for the row's title link. Only where the queue
+      serves the repo. Additive. */
+  mergeOwner?: { session: string; path?: string; title?: string; archived?: true };
   /** Present only when its repo is one the merge queue serves (on the Projects list and its merge setup done): Land,
       "Ready to land" and "Landing specs" key on it, never on `mergeProject` being missing. Absent: the repo merges
       plainly (the chat merges it into main). Additive. */
@@ -3535,6 +3557,7 @@ export interface OverseerCaps {
   linksPerTurn: number;       // default 3: links made (sova_link, §app.overseer/links-tools); absent on read → default
   orgWritesPerTurn: number;   // default 20: organization writes (§app.overseer/org-tools); absent on read → default
   gatherPerTurn: number;      // default 3: gathering sessions or offers started (sova_gather start/offer); absent on read → default
+  extRunsPerTurn: number;     // default 5: extension commands run (sova_ext run, §app.overseer/extension-commands); absent on read → default
 }
 
 /** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */
@@ -3560,6 +3583,25 @@ export interface OverseerSettings {
       UniiChat. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. `size`: an older
       file's, kept but ignored (the size is Settings → Memory's for the type). */
   memory?: { on: boolean; type: MemoryType; size?: number };
+}
+
+/** GET /api/overseer/abilities: what the global Overseer can do, for its About panel (§app.overseer/about).
+    `extensions` is the same reading sova_ext uses (server/overseer-abilities.ts): each installed
+    extension that marks commands for it, with whether it is running now. */
+export interface OverseerAbilitiesInfo {
+  /** Its built-in abilities, one short line per area of its own tools. */
+  builtIn: { name: string; text: string }[];
+  /** Its limits now. */
+  caps: OverseerCaps;
+  extensions: {
+    id: string;
+    title: string;
+    /** Its backend answers its health check: the Overseer can run these now. */
+    running: boolean;
+    /** Why it isn't running, when it isn't. */
+    error?: string;
+    commands: { id: string; label: string; summary?: string; description?: string; job: boolean }[];
+  }[];
 }
 
 export interface OverseerSettingsInfo {
@@ -4171,6 +4213,11 @@ export interface ExtensionCommandInfo {
   /** It is an entry of this menu too: "session", the Agents board row's ⋯ menu
       (src/lib/menu-place.ts). Absent: in no menu. */
   menu?: "session";
+  /** ext-contract-v1.18: the extension offers it to the Overseer, which may run it while the
+      extension is running; nothing to switch on (§app.overseer/extension-commands). Absent: not offered. */
+  overseer?: true;
+  /** ext-contract-v1.18: running it starts a job the extension reports on later. */
+  job?: true;
 }
 /** A place on Sova's screens that Sova's own features and extensions both add to: "reply", under a
     delivered message; "row", line 3 of a session row in the sessions pane (src/lib/row-place.ts);
@@ -4204,6 +4251,8 @@ export type ScreenPlace = "reply" | "row" | "card";
 //                                  "expired" one can be claimed: it spreads once refreshed. 400 bad
 //                                  body or unknown key, 409 nothing here to claim (logged out or dead)
 //                                  or the logins switch is off, 404 while OFF)
+// POST /api/mesh/home          -> MeshInfo   (bind peers.json to this folder and machine; this host's
+//                                  browser only. 409 when its home is a copy's original, still in use)
 // GET  /api/mesh/hello          -> MeshHello   (this host's own, for the SPA's stale-tab check: id,
 //                                  version, protocol, build. Cheap (a stat), and answered with the
 //                                  mesh off too, no Tailscale call; nodeId only while on)
@@ -4295,6 +4344,9 @@ export interface MeshInfo {
   frontDoor: string | null;
   /** peers.json exists but can't be used (the mesh is OFF because of it). */
   error?: string;
+  /** peers.json belongs to another folder or machine (a copy, a move, unbound): the mesh is OFF.
+      POST /api/mesh/home (this host's browser only) rebinds it here, except for "copied". */
+  homeMismatch?: "copied" | "moved" | "other-machine" | "unbound";
 }
 
 export interface MeshPeerEntry {

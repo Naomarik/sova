@@ -60,6 +60,8 @@ export function InsightsPage(props: {
   titleRef(el: HTMLHeadingElement): void;
   /** Beside the title (a status chip), wrapping under it when narrow; not part of the h1's name. */
   titleAfter?: JSX.Element;
+  /** Before the title, after the back arrow (a project's icon); decorative. */
+  lead?: JSX.Element;
   /** Where the back arrow goes, and its name; default the session list. */
   back?: { href: string; label: string };
   /** Page-specific class on the head and the pane, for a page that lays out its own width. */
@@ -74,6 +76,7 @@ export function InsightsPage(props: {
         <a class="button button-icon button-ghost app-back" href={props.back?.href ?? "#/"} aria-label={props.back?.label ?? "Back to Sessions"} title={props.back?.label}>
           <Icon name="chevron-left" />
         </a>
+        {props.lead}
         <div class="session-head-main">
           <Show
             when={props.titleAfter}

@@ -106,6 +106,17 @@ describe("readPeers / writePeers", () => {
     assert.equal(bad.ok, false);
     assert.equal(!bad.ok && bad.missing, undefined);
   });
+
+  test("self.home round-trips; a malformed one is an error", () => {
+    const home = { path: "/srv/agent/sova", machine: "m1" };
+    const v = validatePeers({ self: { id: "a", home }, peers: [b] });
+    assert.ok("config" in v);
+    writePeers(v.config);
+    const r = readPeers();
+    assert.ok(r.ok);
+    assert.deepEqual(r.config.self.home, home);
+    assert.ok("error" in validatePeers({ self: { id: "a", home: { machine: "m1" } } }));
+  });
 });
 
 describe("LocalAPI parsers", () => {

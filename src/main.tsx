@@ -2,6 +2,7 @@ import { render } from "solid-js/web";
 import "./design/tokens.css";
 import "./design/base.css";
 import "./app.css";
+import "./window-controls.css";
 import { App } from "./App";
 import { AuthShell } from "./components/Unlock";
 import { unlockFromFragment } from "./lib/auth";

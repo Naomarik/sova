@@ -1174,9 +1174,9 @@ function VelocityScrubCard(props: { reading: VelocityColumnReading; x: number; y
 
 /** The sova wordmark, a link to the list (`#/`): the list's head, and the overview's head on a
     phone (§app.shell/overview). */
-export function BrandLink() {
+export function BrandLink(props: { onClick?(e: MouseEvent): void } = {}) {
   return (
-    <a class="brand" href="#/">
+    <a class="brand" href="#/" onClick={(e) => props.onClick?.(e)}>
       <span class="icon" style={{ "--icon": "url(/icons/sova-mark.svg)" }} aria-hidden="true" />
       sova
     </a>

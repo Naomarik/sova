@@ -108,15 +108,15 @@ Static output, no Functions and no adapter. The site is live at https://sova.nao
 Leave Cloudflare Web Analytics off: the page promises no analytics.
 
 The Pages project is not connected to Git: a push to master deploys nothing. The site is Sova's
-deploy target `site` (`deploy.targets.site`; drafted in `.sova/playbooks/release/project-sections.json`,
-it moves into `.sova/project.json` in a follow-up landing, once the running Sova knows releases): after a release is published,
+deploy target `site` (`deploy.targets.site` in `.sova/project.json`): after a release is published,
 the operator ships it with Plan Deploy on the project's Deploy card, which takes only a published,
 not withdrawn, release's commit and keeps the deploy's log and Roll Back. Its recipe, in a fresh
 checkout of that commit:
 
 1. `video`: copies the hero videos (gitignored, so a checkout has none) from `$SOVA_SITE_VIDEO_DIR`
-   (`site/scripts/screens/add-video.mjs`). When that variable is unset or misses a video, the site
-   ships without the video and the step says so: the hero shows its poster.
+   (`site/scripts/screens/add-video.mjs`), one of the target's env credentials. When that value is
+   unset the plan fails its credential check, and a folder that misses a video fails the step: a
+   deploy never ships the site without its hero video.
 2. `install` and `site`: `pnpm install --frozen-lockfile`, then the build with
    `SOVA_SITE_URL=https://sova.naomarik.com/` (so `og:image` is absolute); the build runs the docs
    leak check.
@@ -126,9 +126,9 @@ checkout of that commit:
 4. Verify: the address answers 200.
 
 What it needs on the deploying machine, set by the operator and never in the repository: wrangler
-logged in (`wrangler whoami`), and `SOVA_SITE_PAGES_PROJECT` (the Pages project's name) in Sova's
-host values for the project. Deploy check names what is missing without running anything. A known
-gap: a deploy's steps get a fixed environment (`PATH`, `HOME` and a few more) plus the target's env
-credentials, so `SOVA_SITE_VIDEO_DIR` doesn't reach the `video` step today and the site ships with
-the hero's poster alone. Declaring it a credential would make every deploy refuse without it. Then check the live pages: the landing names `/stable/scripts/install.sh`
+logged in (`wrangler whoami`), and in Sova's host values for the project `SOVA_SITE_PAGES_PROJECT`
+(the Pages project's name) and `SOVA_SITE_VIDEO_DIR` (the main checkout's `site/public/video`).
+Deploy check names what is missing without running anything. A deploy's steps get a fixed
+environment (`PATH`, `HOME` and a few more) plus the target's env credentials, which is why the
+video folder is declared as one. Then check the live pages: the landing names `/stable/scripts/install.sh`
 and links `/releases/tag/vX.Y.Z`, and `/docs/install/` shows the `stable` command.

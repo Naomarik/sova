@@ -2,7 +2,8 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 While the mesh is on, hosts share settings, themes, extensions and logins, each category behind its
-own toggle. Sessions never sync. Device-bound keys (Tailscale, ssh) never sync. The subagent
+own toggle. Sessions never sync. Device-bound keys (Tailscale, ssh) never sync. MCP servers, their
+approvals, secrets and sign-ins never sync (§app.mcp/this-computer). The subagent
 profile library merges profile by profile (§mesh.sync/profile-library), and a host keeps the
 settings it had whenever another host's copy replaces them (§mesh.sync/kept-copies).
 
@@ -90,6 +91,10 @@ A host is never sent a login, secret or logout for a store it doesn't keep. Clau
 store (`~/.claude`) is not synced: each device keeps its own login there as its last resort, and
 added Claude logins move one device at a time through the pool (§app.claude-logins/pool), never
 through this sync.
+Deleting pi's `auth.json` is not a logout: no tombstone is made, and its logins come back from other
+hosts. A file that turns up empty after being missing, is found empty when Sova starts, or is an empty
+new file in the old one's place counts the same as a deleted one. Removing a login from the file while
+Sova runs (pi's own logout rewrites it in place) is a logout and spreads as above.
 Every local write takes the owning program's own lock and replaces the file atomically at mode 0600. Claude Code's credentials name no account, so a new entry that
 replaces one with more than 10 minutes left is a login (a re-login or another account), not a refresh. Known gap:
 a Claude Code re-login made in the last 10 minutes of a pre-sync login's access token is taken for a

@@ -206,6 +206,8 @@ export interface Classified {
 // Peer-only routes, by their judged path.
 const PEER_RULES: Array<[RegExp, Need]> = [
   [/^\/api\/peer\/hello$/, "hello"],
+  // A one-time random id checked and burnt: it shows the peer nothing, and a grant must not stop your click.
+  [/^\/api\/peer\/click-proof$/, "hello"],
   [/^\/api\/peer\/details$/, "presence"],
   [/^\/api\/peer\/(?:label|browser-access)$/, "presence"],
   [/^\/api\/peer\/(?:rename|set-browser-access)$/, "admin"],
@@ -288,8 +290,9 @@ const READ_PREFIXES = [
 // updates (whose writes refuse the peer listener outright), and conversations' draft specs (the
 // operator's private review, §app.requirements/draft-specs).
 // `commands`: the catalogue a script reads (server/commands-routes.ts), this machine's own door only.
+// `mcp`: this computer's servers (§app.mcp/this-computer): a peer's own page is where they're read and changed.
 // `audit`: the record of who ran what (server/command-audit.ts): the operator's, never below `full`.
-const FULL_PREFIXES = ["auth", "h", "i", "s", "t", "updates", "commands", "audit", "draft-specs"];
+const FULL_PREFIXES = ["auth", "h", "i", "s", "t", "updates", "commands", "audit", "draft-specs", "mcp"];
 // A project mode's command (§chat.mode-menu/project-mode-commands) runs one of the project's own programs: `full`,
 // whatever method, though it sits under `mode`, which stays `sessions`.
 const MODE_COMMAND_PATH = "/api/mode/command";

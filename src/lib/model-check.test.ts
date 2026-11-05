@@ -36,3 +36,13 @@ test("New marks: a week from the check that first listed the model", () => {
   assert.deepEqual([...newRefs(s, now)], ["ollama-cloud/a"]);
   assert.equal(newRefs(undefined, now).size, 0);
 });
+
+test("the line names a refused or unchecked API key from the same round, and says nothing of an accepted one", () => {
+  const now = Date.UTC(2026, 10, 5, 12);
+  const at = now - 2 * 60_000;
+  const status = (key?: { result: "accepted" | "refused" | "unreachable" }, ok = true) =>
+    ({ provider: "ollama-cloud", enabled: true, checking: false, newModels: [], last: { at, ok, added: [], retired: [], ...(ok ? {} : { error: "couldn't reach ollama.com" }), ...(key ? { key } : {}) } }) as never;
+  assert.equal(checkLine(status({ result: "accepted" }), now), "Checked 2 minutes ago · no changes");
+  assert.equal(checkLine(status({ result: "refused" }), now), "Checked 2 minutes ago · no changes · the API key was refused");
+  assert.equal(checkLine(status({ result: "unreachable" }, false), now), "Last check failed 2 minutes ago: couldn't reach ollama.com. The API key couldn't be checked.");
+});

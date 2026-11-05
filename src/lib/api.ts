@@ -100,7 +100,7 @@ import type {
   PushTestResult,
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
-import { WIRE_PARAM, type ModelCheckStatus } from "../../shared/protocol";
+import { WIRE_PARAM, type ModelCheckStatus, type ProviderKeyRow, type ProviderKeysInfo, type ProviderKeyWrite } from "../../shared/protocol";
 import { LIST_VERSION_HEADER, parseListVersion } from "./summary-diff";
 import type { LanPairingAdd, LanRelayPut, LanStatus } from "../../shared/mesh-lan";
 import type {
@@ -339,6 +339,13 @@ export const getOpenAiLogin = () => request<OpenAiLoginFlow | null>("/api/settin
 export const sendOpenAiLoginAnswer = (text: string) =>
   request<OpenAiLoginFlow>("/api/settings/accounts/openai/login/answer", { method: "POST", body: JSON.stringify({ text }) });
 export const cancelOpenAiLogin = () => request<OpenAiAccountInfo>("/api/settings/accounts/openai/login", { method: "DELETE" });
+/** Settings → Accounts' API keys (§app/provider-keys): the rows (never a key), save (checked first), remove, Test, and the reveal. */
+export const getProviderKeys = () => request<ProviderKeysInfo>("/api/settings/accounts/keys");
+const keyUrl = (provider: string, tail = "") => `/api/settings/accounts/keys/${encodeURIComponent(provider)}${tail}`;
+export const saveProviderKey = (provider: string, key: string) => request<ProviderKeyWrite>(keyUrl(provider), { method: "PUT", body: JSON.stringify({ key }) });
+export const removeProviderKey = (provider: string) => request<ProviderKeyWrite>(keyUrl(provider), { method: "DELETE" });
+export const testProviderKey = (provider: string) => request<ProviderKeyRow>(keyUrl(provider, "/test"), { method: "POST" });
+export const revealProviderKey = (provider: string) => request<{ key: string }>(keyUrl(provider, "/reveal"), { method: "POST" });
 export const setClaudePoolKeeper = (device: string) =>
   request<ClaudePoolInfo>("/api/claude/pool/keeper", { method: "PUT", body: JSON.stringify({ device }) });
 export const pinClaudePoolLogin = (id: string, pin: string | null) =>

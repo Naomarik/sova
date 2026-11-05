@@ -31,10 +31,17 @@ export function checkLine(status: ModelCheckStatus | undefined, now: number, che
   if (checking || status?.checking) return "Checking…";
   const last = status?.last;
   if (!last) return "Not checked yet";
-  if (last.ok) return `Checked ${agoWords(last.at, now)} · ${changesWords(last.added.length, last.retired.length)}`;
+  if (last.ok) return `Checked ${agoWords(last.at, now)} · ${changesWords(last.added.length, last.retired.length)}${keyWords(last.key)}`;
   const reason = (last.error ?? "unknown error").replace(/[.\s]+$/, "");
   const retry = status?.enabled && last.retryAt ? ` Retrying at ${clockTime(last.retryAt)}.` : "";
-  return `Last check failed ${agoWords(last.at, now)}: ${reason}.${retry}`;
+  return `Last check failed ${agoWords(last.at, now)}: ${reason}.${keyWords(last.key, true)}${retry}`;
+}
+
+/** The same round's key check, as Settings → Accounts' Ollama Cloud tab reads it; nothing while the key was accepted. */
+function keyWords(key: NonNullable<ModelCheckStatus["last"]>["key"], sentence = false): string {
+  if (!key || key.result === "accepted") return "";
+  const what = key.result === "refused" ? "the API key was refused" : "the API key couldn't be checked";
+  return sentence ? ` ${what[0]!.toUpperCase()}${what.slice(1)}.` : ` · ${what}`;
 }
 
 /** The refs Settings → Models marks New: added by a check less than a week ago. */

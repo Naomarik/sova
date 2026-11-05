@@ -137,6 +137,14 @@ export interface CheckRecord {
 	added?: string[];
 	/** Models this check found retired that weren't before (ok true). */
 	retired?: string[];
+	/** The provider's API key, checked in the same round (Sova's Settings → Accounts reads this one record). */
+	key?: CheckedKey;
+}
+/** What the same round's key check came to; `fp` names which key (a hash prefix, never the key). */
+export interface CheckedKey {
+	result: "accepted" | "refused" | "unreachable";
+	reason?: string;
+	fp: string;
 }
 export interface LevelsCache {
 	v: 1;
@@ -641,6 +649,8 @@ export interface ServerCheckOptions {
 	now?: () => number;
 	fetch?: Fetch;
 	modelsDev?: () => Promise<unknown>;
+	/** Check the provider's key in the same round; undefined when there is none. Its outcome joins the one record. */
+	checkKey?: () => Promise<CheckedKey | undefined>;
 }
 
 /** A models.dev catalog loader that fetches at most once per call site. */
@@ -661,6 +671,7 @@ function modelsDevLoader(fetchFn: Fetch): () => Promise<unknown> {
  */
 export async function checkServerProvider(opts: ServerCheckOptions): Promise<CheckRecord> {
 	const now = (opts.now ?? Date.now)();
+	const keyCheck = opts.checkKey ? opts.checkKey().catch(() => undefined) : Promise.resolve(undefined);
 	let result: CheckResult | undefined;
 	let error: string | undefined;
 	try {
@@ -672,16 +683,18 @@ export async function checkServerProvider(opts: ServerCheckOptions): Promise<Che
 	} catch (e) {
 		error = e instanceof Error && e.message ? e.message : String(e);
 	}
-	const record: CheckRecord = result
-		? { at: now, ok: true, added: result.added, retired: result.retired }
-		: { at: now, ok: false, error, retryAt: now + RETRY_MS };
+	const key = await keyCheck;
+	const record: CheckRecord = {
+		...(result ? { at: now, ok: true, added: result.added, retired: result.retired } : { at: now, ok: false, error, retryAt: now + RETRY_MS }),
+		...(key ? { key } : {}),
+	};
 	try {
 		// Merge over the newest file: another process may have written other providers meanwhile.
 		const latest = readCache(opts.agentDir) ?? { v: 1, providers: {} };
 		const providers = result ? { ...latest.providers, [opts.provider]: result.provider } : latest.providers;
 		writeCache(opts.agentDir, { ...latest, providers, checks: { ...latest.checks, [opts.provider]: record } });
 	} catch (e) {
-		return { at: now, ok: false, error: `couldn't save the result: ${e instanceof Error ? e.message : String(e)}`, retryAt: now + RETRY_MS };
+		return { at: now, ok: false, error: `couldn't save the result: ${e instanceof Error ? e.message : String(e)}`, retryAt: now + RETRY_MS, ...(key ? { key } : {}) };
 	}
 	notify();
 	return record;

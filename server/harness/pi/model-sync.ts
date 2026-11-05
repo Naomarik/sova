@@ -8,6 +8,7 @@ import { join } from "node:path";
 import {
   CACHE_FILE,
   CHECK_EVERY_MS,
+  type CheckedKey,
   type CheckRecord,
   checkServerProvider,
   modelFetchEnabled,
@@ -134,13 +135,25 @@ export function watchLevelsFile(agentDir: string, apply: () => void, intervalMs 
 
 let check: ModelCheck | null = null;
 let stopWatch: (() => void) | null = null;
+/** Settings → Accounts' check of the provider's key, run in the same round (§app.provider-keys/key-tab). */
+let keyCheck: (() => Promise<CheckedKey | undefined>) | null = null;
+
+/** The key check every round runs too, so the round's one record covers the key and the list. */
+export function setModelCheckKey(fn: (() => Promise<CheckedKey | undefined>) | null): void {
+  keyCheck = fn;
+}
+
+/** The last round's record as written (the key's fingerprint included), for Settings → Accounts. */
+export function lastModelCheck(): CheckRecord | undefined {
+  return readCache(agentRoot())?.checks?.[CHECKED_PROVIDER];
+}
 
 /** The server's check, made on first use (the routes, or startup's startModelCheck). */
 export function modelCheck(): ModelCheck {
   const agentDir = agentRoot();
   check ??= createModelCheck({
     enabled: modelFetchEnabled(process.env),
-    run: () => checkServerProvider({ agentDir, provider: CHECKED_PROVIDER }),
+    run: () => checkServerProvider({ agentDir, provider: CHECKED_PROVIDER, ...(keyCheck ? { checkKey: keyCheck } : {}) }),
     last: () => readCache(agentDir)?.checks?.[CHECKED_PROVIDER],
   });
   return check;
@@ -165,7 +178,7 @@ export function modelCheckStatus(now = Date.now()): ModelCheckStatus {
     provider: CHECKED_PROVIDER,
     enabled: modelFetchEnabled(process.env),
     checking: c.checking(),
-    ...(last ? { last: { at: last.at, ok: last.ok, ...(last.error ? { error: last.error } : {}), ...(last.retryAt ? { retryAt: last.retryAt } : {}), added: last.added ?? [], retired: last.retired ?? [] } } : {}),
+    ...(last ? { last: { at: last.at, ok: last.ok, ...(last.error ? { error: last.error } : {}), ...(last.retryAt ? { retryAt: last.retryAt } : {}), added: last.added ?? [], retired: last.retired ?? [], ...(last.key ? { key: { result: last.key.result, ...(last.key.reason ? { reason: last.key.reason } : {}) } } : {}) } } : {}),
     newModels,
   };
 }

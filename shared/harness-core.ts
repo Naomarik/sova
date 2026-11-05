@@ -59,3 +59,24 @@ export interface ProviderSignIn {
   /** Remove `provider`'s stored sign-in. */
   signOut(provider: string): Promise<void>;
 }
+
+/** What a harness's store holds for one provider, as far as an API key goes. The key itself only for `key`. */
+export type StoredProviderKey =
+  | { kind: "none" }
+  | { kind: "key"; key: string }
+  /** A key the store resolves by running a command (device config): never read back, checked or sent. */
+  | { kind: "command" }
+  /** A sign-in of another kind (a subscription's OAuth) under the provider's id. */
+  | { kind: "other" };
+
+/** A harness's pay-as-you-go API keys, stored where its chats read them, under its own lock (§app/provider-keys). */
+export interface ProviderKeyStore {
+  /** Store `key` as `provider`'s API key, replacing a stored key (never a sign-in of another kind). */
+  setApiKey(provider: string, key: string): Promise<void>;
+  /** Remove `provider`'s stored API key: a logout of it in the store. */
+  removeApiKey(provider: string): Promise<void>;
+  /** What the store holds for `provider` now. */
+  storedKey(provider: string): StoredProviderKey;
+  /** Every provider that takes an API key, by id and display name. */
+  apiKeyProviders(): Promise<{ id: string; name: string }[]>;
+}

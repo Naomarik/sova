@@ -57,8 +57,7 @@ import { announce, home } from "../lib/ui-state";
 import { DecisionSettingsSection } from "./DecisionSettings";
 import { SubagentProfilesSettings } from "./SubagentProfilesSettings";
 import { MeshSettingsSection } from "./MeshSettings";
-import { AccountsSettingsSection } from "./AccountsSettings";
-import { OpenAiAccountSection } from "./OpenAiAccount";
+import { AccountsPanel } from "./ProviderKeys";
 import { McpSettingsSection } from "./McpSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { PublicLinksSettingsSection } from "./PublicLinksSettings";
@@ -233,9 +232,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
               and closing Settings cancels a sign-in still waiting for its code. */}
           <Show when={tab() === "accounts"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-accounts" aria-labelledby="settings-tab-accounts">
-              <AccountsSettingsSection />
-              <ClaudeCliStatusLine />
-              <OpenAiAccountSection />
+              <AccountsPanel claudeCli={() => <ClaudeCliStatusLine />} />
             </div>
           </Show>
           {/* Mounted only while its tab is: it reads its servers while it shows, and saves on its own. */}
@@ -384,7 +381,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
 }
 
 /**
- * Settings → Accounts' last line (§app.claude-logins/cli-status): whether the Claude Code CLI was
+ * Accounts → Claude's line under its sign-ins (§app.claude-logins/cli-status): whether the Claude Code CLI was
  * found, and how many of its models the picker has. A line, not a control — the provider is always
  * on. Read when the tab opens (the panel is mounted only while its tab is): the probe spawns
  * `claude --version` on the server.

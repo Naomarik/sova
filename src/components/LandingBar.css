@@ -1,8 +1,9 @@
 /* The landing bar (al_1, components/LandingBar.tsx): a step-track row in the sidebar foot, a 44px strip
    above the phone's foot bar, and an icon with a status dot in the spine's foot. Theme tokens only. */
 
-/* ---- the face: icon, title + chips, sub line, the track; chevron at the end ---------------------- */
-.landing-bar { flex: none; border-bottom: var(--stroke-thin) solid var(--color-border); }
+/* ---- the face: icon, one line (title · sub · count), the track under it; chevron at the end ------ */
+/* The desktop row's divider is an inset line, so the row is exactly the face's 44px. */
+.landing-bar { flex: none; box-shadow: inset 0 calc(-1 * var(--stroke-thin)) var(--color-border); }
 .landing-face,
 .landing-strip {
   display: flex;
@@ -39,37 +40,49 @@
 .landing-icon > .icon { width: 12px; height: 12px; }
 
 .landing-lines { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.landing-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-/* Up to two lines each in the desktop row, then an ellipsis: a long branch, a pause's reason or a release's
-   "Step 4 of 7 · Gating checks · check 4 of 11 · …" stays readable in a 300px pane. */
-.landing-title,
-.landing-sub {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-}
+/* The heads (the sheet's, the popover's): every word, wrapping; the count in words under them. */
+.landing-line1 { display: grid; gap: 2px; min-width: 0; }
+.landing-line1 > .landing-count { justify-self: start; }
 .landing-title {
-  flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
   font-size: var(--fs-caption);
   line-height: var(--lh-caption);
   font-weight: var(--fw-semibold);
 }
-/* The sub line and the chips: the sub takes what is left, at least 140px, else the chips wrap under it. */
-.landing-subrow { display: flex; flex-wrap: wrap; align-items: center; gap: 2px var(--space-2); min-width: 0; }
-.landing-subrow > .landing-sub { flex: 1 1 140px; }
-.landing-chips { flex: none; display: inline-flex; flex-wrap: wrap; gap: var(--space-1); }
 .landing-sub {
   min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 12px;
   line-height: var(--lh-caption);
   color: var(--color-ink-muted);
 }
+.landing-count { flex: none; padding-block: 0; font-variant-numeric: tabular-nums; }
 .landing-chevron { flex: none; align-self: center; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
 .landing-chevron-open { transform: rotate(180deg); }
+
+/* ---- the row: the desktop's and the phone's, one form, exactly 44px, never wrapping ---------------- */
+/* "Title · sub +2" on one line, the track under it. The title shrinks only after the sub line has gone
+   (the sub's basis is 0), and the count is never cut; every word is in the hover card and the detail. */
+.landing-row {
+  flex: none;
+  align-items: center;
+  height: var(--tap-min);
+  min-height: 0;
+  padding-block: 0;
+  overflow: hidden;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.landing-row .landing-icon { margin-top: 0; }
+.landing-row .landing-lines { gap: 0; }
+.landing-row .landing-line1 { display: flex; align-items: baseline; gap: var(--space-1); white-space: nowrap; }
+.landing-row .landing-title { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+/* At least "· …": never a sliver of a letter. */
+.landing-row .landing-sub { flex: 1 1 0; min-width: 1.6em; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+.landing-row .landing-sub::before { content: "· "; }
+.landing-row .landing-count { margin-left: auto; }
+.landing-strip { border-top: var(--stroke-thin) solid var(--color-border); background: var(--color-surface); }
 
 /* ---- the step track: 4px segments, 3px apart, rounded; the review's marker beside it ------------- */
 .landing-track-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin-top: 3px; }
@@ -111,7 +124,7 @@
 .landing-review-passed  { color: var(--status-success); }
 .landing-review-failed  { color: var(--status-error); }
 
-/* ---- the detail: under the face (desktop), in the sheet (phone), in the popover (spine) ---------- */
+/* ---- the detail: floating above the row (desktop), in the sheet (phone), in the popover (spine) ---- */
 .landing-detail {
   display: grid;
   gap: var(--space-2);
@@ -136,34 +149,7 @@
 .landing-other-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .landing-other-link { flex: none; }
 
-/* ---- phone: its own strip directly above the foot bar, and the sheet ---------------------------- */
-/* Exactly 44px: the title and the sub line share one line (each ellipsized), the track under them. */
-.landing-strip {
-  flex: none;
-  align-items: center;
-  height: var(--tap-min);
-  min-height: 0;
-  padding-block: 0;
-  border-top: var(--stroke-thin) solid var(--color-border);
-  background: var(--color-surface);
-}
-.landing-strip .landing-icon { margin-top: 0; }
-/* One line, "Title · sub [chip]", the track under it. A grid, so the title (then the sub) ellipsizes first: the
-   title's column gives way only after the sub has, and the chip is never cut (the strip shows its
-   first chip only, the warn one when there is one; the sheet and the accessible name carry them all). */
-.landing-strip .landing-lines { display: grid; grid-template-columns: minmax(0, auto) minmax(min-content, 1fr); align-items: baseline; column-gap: var(--space-1); row-gap: 0; }
-.landing-strip .landing-head { min-width: 0; }
-.landing-strip .landing-title,
-.landing-strip .landing-sub { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
-.landing-strip .landing-subrow { min-width: 0; flex-wrap: nowrap; }
-/* width 0: the column sizes by the chip, never by the sub line's whole text; the sub takes what the title leaves
-   (the title says what it is: "Releasing v1.4.0", "Ready to publish · v1.4.0"). */
-.landing-strip .landing-subrow > .landing-sub { flex: 1 1 0; width: 0; min-width: 0; }
-.landing-strip .landing-sub::before { content: "· "; }
-.landing-strip .landing-chips { flex: none; flex-wrap: nowrap; }
-.landing-strip .landing-chips > .landing-chip:not(:first-child) { display: none; }
-.landing-strip .landing-track-row { grid-column: 1 / -1; margin-top: 3px; }
-.landing-strip .landing-chip { padding-block: 0; }
+/* ---- phone: the sheet ---------------------------------------------------------------------------- */
 .landing-sheet { padding-bottom: env(safe-area-inset-bottom); }
 .landing-sheet-head,
 .landing-popover-head { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-4); }
@@ -195,3 +181,39 @@
   padding: 0;
 }
 .landing-popover .landing-detail { background: transparent; border-top: var(--stroke-thin) solid var(--color-border); }
+
+/* ---- desktop: the detail floats above the row, over the session list; nothing in the sidebar moves -- */
+.landing-float {
+  position: fixed;
+  z-index: 60;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+.landing-float .landing-detail { background: transparent; padding-top: var(--space-3); }
+
+/* ---- the hover card: the floating card, neutral edge, above the row --------------------------------- */
+.landing-peek { position: fixed; top: 0; left: 0; z-index: 66; pointer-events: none; will-change: transform; }
+.landing-peek-card {
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+  transform-origin: bottom center;
+}
+.landing-peek-below .landing-peek-card { transform-origin: top center; }
+.landing-peek-title { font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
+.landing-peek-sub { color: var(--color-ink-muted); overflow-wrap: anywhere; }
+/* A note may be long: two lines, then an ellipsis. */
+.landing-peek-line {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}

@@ -39,9 +39,10 @@ export interface LandingSegment {
 export type LandingKind = "release-needs" | "merge-needs" | "release" | "landing" | "paused" | "done";
 const RANK: Record<LandingKind, number> = { "release-needs": 0, "merge-needs": 1, release: 2, landing: 3, paused: 4, done: 5 };
 
-export interface LandingChip {
+/** The one short count at the row's end: "+2", read out as its label ("2 in line", "2 waiting for the release"). */
+export interface LandingCount {
+  text: string;
   label: string;
-  tone: LandingTone | "neutral";
 }
 /** One line of the detail. `mono`: a machine fact (commits, step times). `href`: the line is a link. */
 export interface LandingLine {
@@ -66,14 +67,15 @@ export interface LandingProjectBar {
   icon: "branch" | "progress" | "alert-circle" | "check-circle" | "clock" | "stop";
   title: string;
   sub: string;
-  /** The right chip ("+2 in line", "Frozen · 2 waiting"). */
-  chip?: LandingChip;
-  /** "1 needs you": merge entries waiting for the user while a landing runs (q9). */
-  needsChip?: LandingChip;
+  /** The one count at the row's end: branches in line, or waiting for the release. */
+  count?: LandingCount;
   segments: LandingSegment[];
   /** The review step's own marker beside the track (never a segment). */
   review?: { label: string; state: SegmentState };
   lines: LandingLine[];
+  /** The hover card's few lines under the title and sub line: the step and its elapsed time, the next in line, the
+      note (the card cuts it at two lines). */
+  peek: LandingLine[];
   actions: LandingAction[];
   /** The one-line form the detail lists other busy projects by. */
   oneLine: string;
@@ -84,9 +86,9 @@ export interface LandingBarModel {
   top: LandingProjectBar;
   /** Every busy project, the top one first (the detail lists them, one line each). */
   all: LandingProjectBar[];
-  /** "+1 project": the other busy projects. */
-  moreChip?: LandingChip;
-  /** The bar's accessible name: title and sub line. */
+  /** How many other projects are busy (the detail and the hover card list them; the row shows no count for them). */
+  more: number;
+  /** The bar's accessible name: title, sub line and the count in words. */
   name: string;
 }
 
@@ -281,7 +283,10 @@ function needsActions(e: MergeEntry, pid: string): LandingAction[] {
   }
 }
 
-const waitingChip = (q: LandingQueueCut): LandingChip | undefined => (q.waiting.length ? { label: `+${q.waiting.length} in line`, tone: "neutral" } : undefined);
+const waitingCount = (q: LandingQueueCut | null): LandingCount | undefined => {
+  const n = q?.waiting.length ?? 0;
+  return n ? { text: `+${n}`, label: `${n} in line` } : undefined;
+};
 
 /** Next branches in line with their estimates (a3). */
 function nextLines(q: LandingQueueCut): LandingLine[] {
@@ -312,11 +317,11 @@ function landingBar(p: LandingProjectInput, q: LandingQueueCut, run: MergeRun, n
     icon: "branch",
     title: `Landing ${run.branch}`,
     sub: runNow(run, entry?.eta, now),
-    chip: waitingChip(q),
-    ...(needs.length ? { needsChip: { label: `${needs.length} need${needs.length === 1 ? "s" : ""} you`, tone: "warn" as const } } : {}),
+    count: waitingCount(q),
     segments: runSegments(run, { landsLocally: (entry?.approval.how ?? "local") === "local" && !entry?.approval.via, push: q.heads.hasOrigin !== false }),
     review: reviewMarker(run, q.reviewing?.run === run.id),
     lines,
+    peek: [...(currentStepLine(run, now) ? [{ text: currentStepLine(run, now)!, mono: true as const }] : []), ...nextLines(q).slice(0, 1)],
     actions,
     oneLine: `${p.name} · Landing ${run.branch}`,
   };
@@ -340,10 +345,11 @@ function mergeNeedsBar(p: LandingProjectInput, q: LandingQueueCut, needs: MergeE
     icon: "alert-circle",
     title: stripDot(entryStateWords(e)),
     sub: `${e.branch}${e.reason ? ` · ${stripDot(e.reason)}` : ""}`,
-    ...(rest > 0 ? { chip: { label: `+${rest} more`, tone: "warn" as const } } : {}),
+    ...(rest > 0 ? { count: { text: `+${rest}`, label: `${rest} more need${rest === 1 ? "s" : ""} you` } } : {}),
     segments: [],
     // The face says the first one already: the detail lists the others.
     lines: [...needs.slice(1).map((x) => needsLine(x, p.id)), ...conflictsOf(q).map((x) => ({ text: `${x.branch} · conflict being judged` })), ...nextLines(q)],
+    peek: [...(rest > 0 ? [{ text: `${rest} more need${rest === 1 ? "s" : ""} you`, tone: "warn" as const }] : []), ...nextLines(q).slice(0, 1)],
     actions: [...needsActions(e, p.id), ...(e.session ? [{ kind: "link" as const, label: "Open Branch Chat", href: chatIdHref(e.session) }] : []), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
     oneLine: `${p.name} · ${e.branch} · ${stripDot(entryStateWords(e))}`,
   };
@@ -363,8 +369,9 @@ function pausedBar(p: LandingProjectInput, q: LandingQueueCut): LandingProjectBa
     icon: invalid ? "alert-circle" : "stop",
     title,
     sub: why ? stripDot(why) : q.waiting.length ? `${plural(q.waiting.length, "branch", "branches")} in line` : "Nothing in line",
-    chip: waitingChip(q),
+    count: waitingCount(q),
     segments: [],
+    peek: nextLines(q).slice(0, 1),
     // The reason is the sub line already; the detail adds the rest only when the face cuts it.
     lines: [...nextLines(q), ...needsYouOf(q).map((e) => needsLine(e, p.id))],
     // A definition that doesn't parse can't be resumed: it runs again once it is fixed.
@@ -405,6 +412,7 @@ function doneBar(p: LandingProjectInput, q: LandingQueueCut, now: number, seen: 
       sub: host.state === "pushed" ? `on origin · opens into ${r?.base ?? host.target}` : `${host.branch} → ${r?.base ?? host.target}`,
       segments: [],
       lines: [],
+      peek: [],
       actions: [...(r?.url ? [{ kind: "link" as const, label: "Open on Host", href: r.url }] : []), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
       oneLine: `${p.name} · ${title}`,
     };
@@ -434,6 +442,7 @@ function doneBar(p: LandingProjectInput, q: LandingQueueCut, now: number, seen: 
     segments: [],
     // The merge thread's note, word for word.
     lines: notes.map((n) => ({ text: n.text })),
+    peek: notes.slice(0, 1).map((n) => ({ text: n.text })),
     actions: [...(l.run ? [{ kind: "link" as const, label: "View Checks", href: queueHref(p.id, l.run.id) }] : []), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
     oneLine: `${p.name} · Landed ${l.entry.branch}`,
   };
@@ -472,9 +481,22 @@ function releaseSegments(r: ReleaseRecord, run: MergeRun | null): LandingSegment
 const currentStep = (plan: ReleaseStep[]): ReleaseStep | undefined =>
   plan.find((s) => s.state === "running" || s.state === "held" || s.state === "failed") ?? plan.find((s) => s.state === "waiting");
 
-function frozenChip(q: LandingQueueCut | null): LandingChip {
+/** Landings frozen while the release runs: "+2", "2 waiting for the release". */
+function frozenCount(q: LandingQueueCut | null): LandingCount | undefined {
   const n = q?.waiting.length ?? 0;
-  return { label: n ? `Frozen · ${n} waiting` : "Frozen", tone: "neutral" };
+  return n ? { text: `+${n}`, label: `${n} waiting for the release` } : undefined;
+}
+
+/** The hover card's lines for a release: the step running and how long since it started, and that landings wait
+    (the count says how many when there are some). */
+function releasePeek(r: ReleaseRecord, q: LandingQueueCut | null, now: number): LandingLine[] {
+  const cur = currentStep(releasePlan(r));
+  const since = at(cur?.at);
+  const n = q?.waiting.length ?? 0;
+  return [
+    ...(cur?.state === "running" ? [{ text: `${cur.label}${Number.isFinite(since) ? ` · ${clockOf(now - since)}` : ""}`, mono: true as const }] : []),
+    ...(n ? [] : [{ text: "Landings wait until it publishes" }]),
+  ];
 }
 
 function releaseLines(rv: LandingReleaseCut, r: ReleaseRecord, now: number): LandingLine[] {
@@ -523,10 +545,11 @@ function openReleaseBar(p: LandingProjectInput, rv: LandingReleaseCut, r: Releas
   const base = {
     project: p.id,
     name: p.name,
-    chip: frozenChip(q),
+    count: frozenCount(q),
     segments: releaseSegments(r, run),
     ...(run ? { review: reviewMarker(run, q?.reviewing?.run === run.id) } : {}),
     lines: releaseLines(rv, r, now),
+    peek: releasePeek(r, q, now),
   };
   if (needs) {
     const step = needs.step;
@@ -570,7 +593,7 @@ function publishedBar(p: LandingProjectInput, rv: LandingReleaseCut, r: ReleaseR
   const pubAt = at(r.publish?.at);
   const segments = releaseSegments(r, null);
   const sub = r.publish?.pushed === "pushed" ? "pushed to origin" : "on this machine only";
-  const base = { project: p.id, name: p.name, segments, lines: releaseLines(rv, r, now) };
+  const base = { project: p.id, name: p.name, segments, lines: releaseLines(rv, r, now), peek: [] as LandingLine[] };
   if (failed)
     return {
       ...base,
@@ -661,8 +684,8 @@ export function reduceLanding(projects: readonly LandingProjectInput[], now: num
     bar: {
       top,
       all,
-      ...(more > 0 ? { moreChip: { label: `+${plural(more, "project")}`, tone: "neutral" as const } } : {}),
-      name: [top.title, top.sub, top.needsChip?.label, top.chip?.label, more > 0 ? `+${plural(more, "project")}` : null].filter(Boolean).join(". "),
+      more,
+      name: [top.title, top.sub, top.count?.label, more > 0 ? `${plural(more, "more project")} busy` : null].filter(Boolean).join(". "),
     },
     ...out,
   };

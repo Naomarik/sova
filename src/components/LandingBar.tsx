@@ -1,10 +1,13 @@
 // The sidebar's landing bar (al_1): the merge queue's landing or a release, as one step-track row in the foot. Three
-// forms read one model (lib/landing-bar.ts, fed by lib/landing-bar-store.ts): the desktop row above the foot's rows,
-// whose detail opens in place under it; the phone's 44px strip above the foot bar, whose detail is a bottom sheet;
-// and the collapsed spine's icon with a status dot, whose detail is a popover beside it.
-import { createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
+// forms read one model (lib/landing-bar.ts, fed by lib/landing-bar-store.ts): the desktop row above the foot's rows
+// and the phone's strip above the foot bar, both one 44px row (a hover or a press-and-hold shows a small card with a
+// little more; a click opens the detail, floating above the row on the desktop, a bottom sheet on the phone); and
+// the collapsed spine's icon with a status dot, whose detail is a popover beside it.
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, type JSX } from "solid-js";
 import { Portal } from "solid-js/web";
-import type { LandingAction, LandingBarModel, LandingChip, LandingProjectBar, LandingSegment } from "../lib/landing-bar";
+import { FLOAT_GAP_MOUSE, FLOAT_GAP_TOUCH, floatAbove } from "../lib/float-card";
+import { createHoldGesture } from "../lib/hold-select";
+import type { LandingAction, LandingBarModel, LandingProjectBar, LandingSegment } from "../lib/landing-bar";
 import { refusal, resumeQueue } from "../lib/merge-queue-client";
 import { noteReleaseChanged, releaseRefusal, runReleaseVerb } from "../lib/releases-client";
 import { announce, toast } from "../lib/ui-state";
@@ -28,19 +31,6 @@ function stable<T>(list: () => readonly T[]): () => T[] {
   });
 }
 
-const CHIP_TONE: Record<LandingChip["tone"], string> = { neutral: "", accent: " chip-accent", warn: " chip-warn", success: " chip-success", error: " chip-error" };
-
-function Chip(props: { chip: LandingChip }) {
-  return (
-    <span class={`chip landing-chip${CHIP_TONE[props.chip.tone]}`}>
-      <Show when={props.chip.tone !== "neutral"}>
-        <i class="chip-dot" aria-hidden="true" />
-      </Show>
-      {props.chip.label}
-    </span>
-  );
-}
-
 /** The step track: one rounded segment per step; the review's marker beside it, never a segment. */
 function Track(props: { bar: LandingProjectBar }) {
   const segments = stable(() => props.bar.segments);
@@ -56,8 +46,10 @@ function Track(props: { bar: LandingProjectBar }) {
   );
 }
 
-/** The bar's face: icon, title, sub line, chips, chevron, and the track under the lines. */
-function Face(props: { model: LandingBarModel; open: boolean; chevron?: false }) {
+/** The bar's face: icon, then one line (title · sub line · the count), the track under it; chevron at the end. The
+    row's form cuts every part to that one line; `full` (the sheet's and the popover's head) lets the words wrap whole
+    and says the count in words. */
+function Face(props: { model: LandingBarModel; open: boolean; chevron?: false; full?: true }) {
   const top = () => props.model.top;
   return (
     <>
@@ -65,19 +57,15 @@ function Face(props: { model: LandingBarModel; open: boolean; chevron?: false })
         <Icon name={top().icon} small />
       </span>
       <span class="landing-lines">
-        <span class="landing-head">
+        <span class="landing-line1">
           <span class="landing-title">{top().title}</span>
-        </span>
-        {/* The chips share the sub line's row and wrap under it when they don't fit, so the title keeps the
-            bar's width and the track stays full width under both. */}
-        <span class="landing-subrow">
           <span class="landing-sub">{top().sub}</span>
-          <Show when={top().needsChip || top().chip || props.model.moreChip}>
-            <span class="landing-chips" aria-hidden="true">
-              <Show when={top().needsChip}>{(c) => <Chip chip={c()} />}</Show>
-              <Show when={top().chip}>{(c) => <Chip chip={c()} />}</Show>
-              <Show when={props.model.moreChip}>{(c) => <Chip chip={c()} />}</Show>
-            </span>
+          <Show when={top().count}>
+            {(c) => (
+              <span class="chip landing-count" aria-hidden="true">
+                {props.full ? c().label : c().text}
+              </span>
+            )}
           </Show>
         </span>
         <Track bar={top()} />
@@ -89,6 +77,105 @@ function Face(props: { model: LandingBarModel; open: boolean; chevron?: false })
       </Show>
     </>
   );
+}
+
+/** The hover card: the whole title and sub line, the step and its time, the next in line, the note (two lines at
+    most), the other busy projects. The drag ghost's floating card with a neutral edge (lib/float-card.ts), above the
+    row. `aria-hidden`: the row's own name and its detail carry every fact. */
+function PeekCard(props: { model: LandingBarModel; x: number; y: number; touch: boolean }) {
+  let el: HTMLDivElement | undefined;
+  const top = () => props.model.top;
+  const [size, setSize] = createSignal({ width: 0, height: 0 });
+  createEffect(() => {
+    void JSON.stringify(props.model);
+    if (el) setSize({ width: el.offsetWidth, height: el.offsetHeight });
+  });
+  const at = createMemo(() => floatAbove({ x: props.x, y: props.y }, size(), { width: innerWidth, height: innerHeight }, props.touch ? FLOAT_GAP_TOUCH : FLOAT_GAP_MOUSE));
+  return (
+    <Portal>
+      <div ref={el} class="landing-peek" classList={{ "landing-peek-below": at().y > props.y }} style={{ transform: `translate3d(${at().x}px, ${at().y}px, 0)` }} aria-hidden="true">
+        <div class="float-card float-card-neutral landing-peek-card">
+          <span class="landing-peek-title">{top().title}</span>
+          <span class="landing-peek-sub">{top().sub}</span>
+          <For each={top().peek}>{(l) => <span class={`landing-peek-line${l.mono ? " landing-line-mono" : ""}${l.tone ? ` landing-line-${l.tone}` : ""}`}>{l.text}</span>}</For>
+          <Show when={top().count}>{(c) => <span class="landing-peek-line">{c().label[0]!.toUpperCase() + c().label.slice(1)}</span>}</Show>
+          <Show when={props.model.more > 0}>
+            <span class="landing-peek-line">Also busy: {props.model.all.slice(1).map((b) => b.name).join(", ")}</span>
+          </Show>
+        </div>
+      </div>
+    </Portal>
+  );
+}
+
+/** How long a mouse rests on the row before its card shows. */
+const PEEK_DELAY_MS = 350;
+
+/** The row's hover card: a mouse resting on it, or a thumb or pen held on it 500ms (the session rows' hold, whose click
+    and context menu are swallowed). Gone on leaving, letting go, a click, Escape, or while `suppress()`. */
+function usePeek(suppress: () => boolean) {
+  const [peek, setPeek] = createSignal<{ x: number; y: number; touch: boolean } | null>(null);
+  let el: HTMLElement | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let last = { x: 0, y: 0 };
+  const stopTimer = () => timer !== undefined && (clearTimeout(timer), (timer = undefined));
+  const hide = () => {
+    stopTimer();
+    setPeek(null);
+  };
+  const hold = createHoldGesture({
+    onHold: () => {
+      if (suppress() || !el) return;
+      navigator.vibrate?.(10);
+      const r = el.getBoundingClientRect();
+      setPeek({ x: r.left + r.width / 2, y: last.y, touch: true });
+    },
+  });
+  createEffect(() => suppress() && hide());
+  createEffect(() => {
+    if (!peek()) return;
+    const key = (e: KeyboardEvent) => e.key === "Escape" && hide();
+    document.addEventListener("keydown", key);
+    onCleanup(() => document.removeEventListener("keydown", key));
+  });
+  onCleanup(hide);
+  const bind = {
+    ref: (e: HTMLElement) => (el = e),
+    onPointerEnter: (e: PointerEvent) => {
+      if (e.pointerType !== "mouse" || suppress()) return;
+      stopTimer();
+      timer = setTimeout(() => {
+        timer = undefined;
+        if (!el || suppress()) return;
+        const r = el.getBoundingClientRect();
+        setPeek({ x: r.left + r.width / 2, y: r.top, touch: false });
+      }, PEEK_DELAY_MS);
+    },
+    onPointerLeave: (e: PointerEvent) => e.pointerType === "mouse" && hide(),
+    onPointerDown: (e: PointerEvent) => {
+      if (e.pointerType === "mouse") return hide();
+      last = { x: e.clientX, y: e.clientY };
+      hold.start(last);
+    },
+    onPointerMove: (e: PointerEvent) => {
+      if (e.pointerType === "mouse") return;
+      last = { x: e.clientX, y: e.clientY };
+      hold.move(last);
+    },
+    onPointerUp: (e: PointerEvent) => {
+      if (e.pointerType === "mouse") return;
+      hold.finish();
+      if (peek()?.touch) setPeek(null);
+    },
+    onPointerCancel: () => {
+      hold.cancel();
+      if (peek()?.touch) setPeek(null);
+    },
+    onContextMenu: (e: MouseEvent) => hold.suppressed() && e.preventDefault(),
+  };
+  /** A click the hold left behind: swallowed. */
+  const echo = () => hold.suppressed();
+  return { peek, hide, bind, echo };
 }
 
 /** One action: in place (Resume Queue, Continue, Retry Step) or a link to the tab that takes it. */
@@ -200,33 +287,77 @@ function useDismiss(open: () => boolean, within: () => (HTMLElement | undefined)
   });
 }
 
-/** Desktop: the row above the foot's rows; a click (or Enter) opens the detail in place under it. */
+/** Desktop: one 44px row above the foot's rows; a click (or Enter) opens the detail floating above it, over the
+    session list, so nothing in the sidebar moves. Escape or a click away closes it and focus goes back to the row. */
 export function LandingBarRow(props: { model: LandingBarModel }) {
-  const [open, setOpen] = createSignal(false);
+  const [open, setOpen] = createSignal<{ left: number; width: number; bottom: number; maxHeight: number } | null>(null);
   let wrap: HTMLDivElement | undefined;
   let btn: HTMLButtonElement | undefined;
+  let panel: HTMLDivElement | undefined;
+  const { peek, hide, bind, echo } = usePeek(() => !!open());
+  const place = () => {
+    const r = wrap!.getBoundingClientRect();
+    return { left: r.left + 4, width: r.width - 8, bottom: Math.max(8, innerHeight - r.top + 4), maxHeight: Math.max(120, r.top - 12) };
+  };
   const close = (refocus = false) => {
-    setOpen(false);
+    setOpen(null);
     if (refocus) btn?.focus();
   };
-  useDismiss(open, () => [wrap], () => close());
+  useDismiss(() => !!open(), () => [wrap, panel], () => close());
+  onMount(() => {
+    const moved = () => open() && setOpen(place());
+    addEventListener("resize", moved);
+    onCleanup(() => removeEventListener("resize", moved));
+  });
   const id = `landing-detail-${Math.random().toString(36).slice(2, 8)}`;
   return (
-    <div
-      ref={wrap}
-      class={`landing-bar landing-bar-${props.model.top.kind}`}
-      onKeyDown={(e) => {
-        if (e.key === "Escape" && open()) {
-          e.stopPropagation();
-          close(true);
-        }
-      }}
-    >
-      <button ref={btn} type="button" class="landing-face" aria-expanded={open()} aria-controls={id} aria-label={props.model.name} title={props.model.name} onClick={() => setOpen(!open())}>
-        <Face model={props.model} open={open()} />
+    <div ref={wrap} class={`landing-bar landing-bar-${props.model.top.kind}`}>
+      <button
+        ref={(e) => {
+          btn = e;
+          bind.ref(e);
+        }}
+        type="button"
+        class="landing-face landing-row"
+        aria-expanded={!!open()}
+        aria-controls={id}
+        aria-haspopup="dialog"
+        aria-label={props.model.name}
+        onPointerEnter={bind.onPointerEnter}
+        onPointerLeave={bind.onPointerLeave}
+        onPointerDown={bind.onPointerDown}
+        onPointerMove={bind.onPointerMove}
+        onPointerUp={bind.onPointerUp}
+        onPointerCancel={bind.onPointerCancel}
+        onContextMenu={bind.onContextMenu}
+        onClick={(e) => {
+          if (echo()) return e.preventDefault();
+          hide();
+          setOpen(open() ? null : place());
+        }}
+      >
+        <Face model={props.model} open={!!open()} />
       </button>
+      <Show when={peek()}>{(p) => <PeekCard model={props.model} x={p().x} y={p().y} touch={p().touch} />}</Show>
       <Show when={open()}>
-        <LandingDetail model={props.model} id={id} onNavigate={() => close()} />
+        {(o) => (
+          <Portal>
+            <div
+              ref={(el) => {
+                panel = el;
+                trapFocus(el);
+                holdFocus(el, () => close(true));
+              }}
+              id={id}
+              class="popover landing-float"
+              role="dialog"
+              aria-label={props.model.top.title}
+              style={{ left: `${o().left}px`, width: `${o().width}px`, bottom: `${o().bottom}px`, "max-height": `${o().maxHeight}px` }}
+            >
+              <LandingDetail model={props.model} onNavigate={() => close()} />
+            </div>
+          </Portal>
+        )}
       </Show>
     </div>
   );
@@ -280,16 +411,40 @@ export function LandingStrip(props: { model: LandingBarModel }) {
     setOpen(false);
     btn?.focus();
   };
+  const { peek, hide, bind, echo } = usePeek(open);
   return (
     <>
-      <button ref={btn} type="button" class={`landing-strip landing-bar-${props.model.top.kind}`} aria-haspopup="dialog" aria-expanded={open()} aria-label={props.model.name} onClick={() => setOpen(true)}>
+      <button
+        ref={(e) => {
+          btn = e;
+          bind.ref(e);
+        }}
+        type="button"
+        class={`landing-strip landing-row landing-bar-${props.model.top.kind}`}
+        aria-haspopup="dialog"
+        aria-expanded={open()}
+        aria-label={props.model.name}
+        onPointerEnter={bind.onPointerEnter}
+        onPointerLeave={bind.onPointerLeave}
+        onPointerDown={bind.onPointerDown}
+        onPointerMove={bind.onPointerMove}
+        onPointerUp={bind.onPointerUp}
+        onPointerCancel={bind.onPointerCancel}
+        onContextMenu={bind.onContextMenu}
+        onClick={(e) => {
+          if (echo()) return e.preventDefault();
+          hide();
+          setOpen(true);
+        }}
+      >
         <Face model={props.model} open={open()} />
       </button>
+      <Show when={peek()}>{(p) => <PeekCard model={props.model} x={p().x} y={p().y} touch={p().touch} />}</Show>
       <Show when={open()}>
         <Overlay label={props.model.top.title} class="modal landing-sheet" onClose={close} scrim>
           <div class="sheet-grip" aria-hidden="true" />
           <div class="landing-sheet-head">
-            <Face model={props.model} open chevron={false} />
+            <Face model={props.model} open chevron={false} full />
           </div>
           <LandingDetail model={props.model} onNavigate={() => setOpen(false)} />
         </Overlay>
@@ -335,7 +490,7 @@ export function LandingSpineButton(props: { model: LandingBarModel; class?: stri
               style={{ left: `${p().left}px`, bottom: `${p().bottom}px` }}
             >
               <div class="landing-popover-head">
-                <Face model={props.model} open chevron={false} />
+                <Face model={props.model} open chevron={false} full />
               </div>
               <LandingDetail model={props.model} onNavigate={() => setAt(null)} />
             </div>

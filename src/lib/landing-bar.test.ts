@@ -87,7 +87,11 @@ test("a landing running: title, check N of M, time left, +N in line", () => {
   const b = bar([proj({ queue: q })])!;
   assert.equal(b.top.title, "Landing feat/mesh-bar");
   assert.equal(b.top.sub, "check 2 of 3 · test:int · ~3 min left");
-  assert.equal(b.top.chip?.label, "+2 in line");
+  assert.deepEqual(b.top.count, { text: "+2", label: "2 in line" });
+  // The hover card: the step running now (with its time when it has a start) and the next in line.
+  assert.equal(b.top.peek.length, 2);
+  assert.ok(b.top.peek[0]!.text.startsWith("test:int"), b.top.peek[0]!.text);
+  assert.equal(b.top.peek[1]!.text, "Next: feat/y");
   assert.deepEqual(
     b.top.segments.map((s) => `${s.id}:${s.state}`),
     ["copy:passed", "merge:passed", "setup:skipped", "install:skipped", "docs:skipped", "check:unit:passed", "check:test:int:running", "check:build:waiting", "land:waiting", "main-checkout:waiting", "push:waiting"],
@@ -146,13 +150,15 @@ test("a check added mid-run adds a segment and grows the total", () => {
   assert.equal(checkSegs(started).length, 2);
 });
 
-test("merge needs-you while a landing runs: a warn chip on the running bar, listed in the detail", () => {
+test("merge needs-you while a landing runs: no chip and no count on the running bar, listed only in the detail", () => {
   const r = run([step("check:unit", "check", "running")]);
   const q = queue({ state: "running", current: r, needsYou: [entry({ id: "me_9", branch: "feat/flag", state: "review-flagged", reason: "the reviewer said blocking" })] });
   const b = bar([proj({ queue: q })])!;
   assert.equal(b.top.kind, "landing");
-  assert.equal(b.top.needsChip?.label, "1 needs you");
-  assert.equal(b.top.needsChip?.tone, "warn");
+  assert.equal(b.top.count, undefined);
+  assert.ok(!("needsChip" in b.top));
+  assert.ok(!b.name.includes("needs you"), b.name);
+  assert.ok(!b.top.peek.some((l) => l.text.includes("feat/flag")));
   assert.ok(b.top.lines.some((l) => l.text.startsWith("feat/flag · Review flagged")));
 });
 
@@ -170,12 +176,20 @@ test("merge needs-you with nothing running takes the whole bar, in the tab's wor
   assert.ok(b.top.actions.some((a) => a.kind === "link" && a.href === "#/projects/prj_a/merge-queue/mr_7"));
 });
 
+test("several merge needs-you with nothing running: the first takes the bar, the rest one short count", () => {
+  const q = queue({ needsYou: [entry({ id: "me_8", branch: "feat/a", state: "drafts-changed" }), entry({ id: "me_9", branch: "feat/b", state: "review-flagged" })] });
+  const b = bar([proj({ queue: q })])!;
+  assert.equal(b.top.kind, "merge-needs");
+  assert.equal(b.top.icon, "alert-circle");
+  assert.deepEqual(b.top.count, { text: "+1", label: "1 more needs you" });
+});
+
 test("a conflict the thread is judging is not needs-you: at most a detail line", () => {
   const q = queue({ needsYou: [entry({ branch: "feat/c", state: "conflict" })] });
   assert.equal(bar([proj({ queue: q })]), null);
   const r = run([step("check:unit", "check", "running")]);
   const b = bar([proj({ queue: queue({ state: "running", current: r, needsYou: [entry({ branch: "feat/c", state: "conflict" })] }) })])!;
-  assert.equal(b.top.needsChip, undefined);
+  assert.equal(b.top.count, undefined);
   assert.ok(b.top.lines.some((l) => l.text === "feat/c · conflict being judged"));
 });
 
@@ -206,6 +220,8 @@ test("just landed: ~1 minute, pushed or not, the thread's note word for word; go
   assert.equal(b.top.sub, "as 9b81e44 · pushed");
   assert.equal(b.top.tone, "success");
   assert.deepEqual(b.top.lines.map((l) => l.text), ["changes server code; restart Sova to pick it up"]);
+  assert.deepEqual(b.top.peek.map((l) => l.text), ["changes server code; restart Sova to pick it up"], "the hover card carries the note");
+  assert.equal(b.top.count, undefined);
   const np = bar([proj({ queue: landed("not-pushed", 10_000, "held for a release") })])!;
   assert.equal(np.top.sub, "as 9b81e44 · not pushed: held for a release");
   assert.equal(np.top.tone, "warn");
@@ -249,13 +265,17 @@ const plan = (states: Partial<Record<string, ReleaseStep["state"]>> = {}): Relea
   rstep("unpublish", "waiting", { phase: "withdraw" }),
 ];
 
-test("release running: its step track in plan order, withdraw steps never; Step N of M; Frozen chip", () => {
+test("release running: its step track in plan order, withdraw steps never; Step N of M; the frozen count", () => {
   const rel = release({ open: record({ steps: plan() }) });
   const b = bar([proj({ queue: queue({ waiting: [entry({ id: "w1" }), entry({ id: "w2" })] }), release: rel })])!;
   assert.equal(b.top.kind, "release");
   assert.equal(b.top.title, "Releasing v1.4.0");
   assert.equal(b.top.sub, "Step 2 of 7 · Changelog");
-  assert.equal(b.top.chip?.label, "Frozen · 2 waiting");
+  assert.deepEqual(b.top.count, { text: "+2", label: "2 waiting for the release" });
+  assert.ok(!b.top.peek.some((l) => l.text.includes("wait")), "the count says it, once");
+  const alone = bar([proj({ release: rel })])!;
+  assert.equal(alone.top.count, undefined, "nothing waiting: no count");
+  assert.ok(alone.top.peek.some((l) => l.text === "Landings wait until it publishes"));
   assert.deepEqual(b.top.segments.map((s) => s.id), ["version", "changelog", "commit", "checks", "tryout", "publish", "announce"]);
   assert.ok(b.top.actions.some((a) => a.label === "Open Releases" && a.kind === "link" && a.href === "#/projects/prj_a/releases"));
   assert.ok(b.top.actions.some((a) => a.label === "Open Release Chat"));
@@ -321,9 +341,11 @@ test("priority across projects: release needs-you > merge needs-you > release > 
   assert.deepEqual(kinds, ["p_rn", "p_mn", "p_rel", "p_land", "p_pause", "p_done"]);
   const two = bar([landed, landing])!;
   assert.equal(two.top.project, "p_land");
-  assert.equal(two.moreChip?.label, "+1 project");
+  assert.equal(two.more, 1);
+  assert.equal(two.top.count, undefined, "the other projects are no count on the row");
+  assert.ok(two.name.endsWith("1 more project busy"), two.name);
   assert.deepEqual(two.all.map((b) => b.project), ["p_land", "p_done"]);
-  assert.equal(bar([landed, landing, paused])!.moreChip?.label, "+2 projects");
+  assert.equal(bar([landed, landing, paused])!.more, 2);
 });
 
 test("a release takes its project's bar over the queue's landing (q4)", () => {
@@ -338,5 +360,5 @@ test("the accessible name says the title and the sub line", () => {
   assert.equal(b.name, "Paused by you. Nothing in line");
   const r = run([step("check:unit", "check", "running")], { checks: [{ id: "unit", label: "unit", source: "required" }] });
   const l = bar([proj({ queue: queue({ state: "running", current: r, waiting: [entry({ id: "w" })] }) })])!;
-  assert.equal(l.name, "Landing feat/mesh-bar. check 1 of 1 · unit. +1 in line");
+  assert.equal(l.name, "Landing feat/mesh-bar. check 1 of 1 · unit. 1 in line");
 });

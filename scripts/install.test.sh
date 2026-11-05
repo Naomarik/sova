@@ -799,7 +799,8 @@ check "$(yes_if [ "$lstatus" -eq 0 ] && grep -qxF 'http://127.0.0.1:4811/#t=tok-
 check "$(yes_if [ ! -e "$browsed" ])" "sova app, no such browser: no browser started"
 
 # 31. macOS: the default https handler when it is one of them, else the first bundle found; the
-#     bundle's own executable, with the macOS profile folder; `open` as the tab fallback.
+#     bundle started through `open -n -a`, with the macOS profile folder, and directly when `open`
+#     fails or isn't there; `open` as the tab fallback.
 FAKE_UNAME=Darwin run_install app-mac --no-service
 mkdir -p "$home/.pi/agent/sova"
 printf 'tok-mac\n' > "$home/.pi/agent/sova/auth-token"
@@ -831,7 +832,22 @@ OUT
 	*) exit 1 ;;
 esac
 STUB
-printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\n' "$tmp/app-mac/opened" > "$mac/open"
+# The launcher's `open -n -a <bundle> --args ...`: logged one argument per line, then as macOS would,
+# the bundle's executable runs, unless open-no-start is there; open-fail fails it, starting nothing.
+# Anything else is the tab fallback.
+cat > "$mac/open" <<STUB
+#!/usr/bin/env bash
+if [ "\${1:-}" = -n ]; then
+	printf '%s\\n' "\$@" > "$tmp/app-mac/launched"
+	[ ! -e "$tmp/app-mac/open-fail" ] || exit 1
+	[ ! -e "$tmp/app-mac/open-no-start" ] || exit 0
+	bundle=\$3
+	shift 4
+	exe=\$(basename "\$bundle" .app)
+	exec "\$bundle/Contents/MacOS/\$exe" "\$@"
+fi
+printf '%s\\n' "\$*" >> "$tmp/app-mac/opened"
+STUB
 chmod 755 "$mac/defaults" "$mac/open"
 mac_cmd() { set +e; rm -f "$browsed"; launch=$(env -u PI_CODING_AGENT_DIR -u PORT FAKE_UNAME=Darwin HOME="$home" FAKE_UP="$tmp/up.always" PATH="$1" "$home/.local/bin/sova" app 2>&1); lstatus=$?; set -e; }
 mac_cmd "$mac:$up:$sandbox"
@@ -839,6 +855,27 @@ wait_for "$browsed" || true
 check "$(yes_if [ "$lstatus" -eq 0 ] && [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$home/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" ])" \
 	"sova app, mac: the default https handler's bundle executable"
 check "$(yes_if grep -qxF -- "--user-data-dir=$home/Library/Application Support/sova-browser" "$browsed")" "sova app, mac: the macOS profile folder"
+check "$(yes_if [ "$(sed -n 1,3p "$tmp/app-mac/launched" 2>/dev/null | tr '\n' '|')" = "-n|-a|$home/Applications/Brave Browser.app|" ] && [ "$(sed -n 4p "$tmp/app-mac/launched")" = --args ])" \
+	"sova app, mac: the window starts through macOS's launcher, a new instance of the browser's bundle"
+check "$(yes_if grep -qxF -- '--app=http://127.0.0.1:4800/#t=tok-mac' "$tmp/app-mac/launched" && grep -qxF -- '--no-first-run' "$tmp/app-mac/launched" && grep -qxF -- '--no-default-browser-check' "$tmp/app-mac/launched" && grep -qxF -- "--user-data-dir=$home/Library/Application Support/sova-browser" "$tmp/app-mac/launched")" \
+	"sova app, mac: the launcher gets the unlocked URL, the profile and the no-prompt flags"
+# open answered, and nothing else starts it: a direct start would be a second one.
+touch "$tmp/app-mac/open-no-start"
+mac_cmd "$mac:$up:$sandbox"
+check "$(yes_if [ "$lstatus" -eq 0 ])" "sova app, mac: exits 0 once open has answered"
+sleep 0.5
+check "$(yes_if [ ! -e "$browsed" ])" "sova app, mac: no direct start as well"
+rm "$tmp/app-mac/open-no-start"
+touch "$tmp/app-mac/open-fail"
+mac_cmd "$mac:$up:$sandbox"
+wait_for "$browsed" || true
+check "$(yes_if [ "$lstatus" -eq 0 ] && [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$home/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" ] && grep -qxF -- '--app=http://127.0.0.1:4800/#t=tok-mac' "$browsed")" \
+	"sova app, mac, open fails: the bundle's executable, directly, with the same window"
+rm "$tmp/app-mac/open-fail"
+mac_cmd "$up:$sandbox"
+wait_for "$browsed" || true
+check "$(yes_if [ "$(head -n 1 "$browsed" 2>/dev/null)" = "$home/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ])" \
+	"sova app, mac, no open at all: the executable, directly"
 rm "$mac/defaults"
 mac_cmd "$mac:$up:$sandbox"
 wait_for "$browsed" || true

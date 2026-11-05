@@ -284,7 +284,8 @@ While a release is open, the project's merge queue is **frozen** for it (§app.m
 The **release entry** is added by Sova, approved `by: release`, without review, first in line. It must
 be cut from the release's base. It runs the merge's required checks and then the release's gating
 checks in order (a check the merge set already runs fully runs once; a project whose merge checks are
-`none` still runs them), and lands its commit on the target **without a push**. A conflict hands it
+`none` still runs them), every one of them fresh (`SOVA_FRESH=1`): a release reuses no earlier pass
+(§app.server-runtime/test-reuse), so it catches what reuse at landings could hide. It lands its commit on the target **without a push**. A conflict hands it
 straight back. Its outcome reaches the release: running, then **Done** ("passed; {sha} is on {target}
 (not pushed until Publish)") with the release commit recorded, or **Failed** with why, after which the
 operator may Retry Step (the entry runs again) or abandon. A **tag-only** release has no commit: once

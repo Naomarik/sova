@@ -214,7 +214,8 @@ run's own folder, so a failure at any step, the first included, has its log.
    of the branch's own").
 6. **Checks.** The checks run on that commit, in order (§app.merge-queue/checks), with the review
    (§app.merge-queue/review) alongside them.
-7. **Reruns.** A red check is rerun to place the blame (§app.merge-queue/blame).
+7. **Reruns.** A red check is rerun to place the blame (§app.merge-queue/blame), always fresh:
+   a rerun reuses no earlier pass.
 8. **Land** the way the approval pinned (§app.merge-queue/strategies): under Merge locally, land
    (§app.merge-queue/land), then **push** (§app.merge-queue/push); otherwise publish the branch to
    its host (§app.merge-queue/publish) and, for a request, open it (§app.merge-queue/requests).
@@ -308,6 +309,28 @@ the run's checks start; otherwise the run uses the required checks and their tri
 
 Each also shows its time, its counts when it writes them (`SOVA_OUT`), and its log.
 
+**Passes already had.** A test file that already passed on identical code isn't run again
+(§app.server-runtime/test-reuse): Sova's type check, unit tier and integration set reuse passes from
+any run on this computer, a chat's or a worker's included, and the queue's own earlier runs, so
+retrying an entry on an unchanged target runs only what didn't pass.
+- **A random re-check.** At each landing every test check runs a random sample of the files it
+  would reuse, about 1 in 20 and at least 1 (`SOVA_REUSE_SAMPLE`, 0.05). A sampled file that fails
+  is a failure like any other, blamed as usual, and the run says a reused pass didn't hold, naming
+  the run it came from; every other file the check reused from that run is run again as well.
+- **What it reads.** A check that reused passes reads "Passed · 412 ran, 568 already passed on
+  identical code (28 re-checked)": "ran" counts the files with no earlier pass, "already passed"
+  the reused ones, the re-checked among them, and "(… re-checked)" is left out when none were. Only a
+  check whose every file was reused and none re-checked, such as the type check, reads Skipped, with
+  the check's own words: "Skipped · already passed on identical code at 14:02 (feat/x's chat)". The
+  check's log says which way it ran ("[passes from identical code may stand; 5% of them re-checked
+  (SOVA_REUSE_SAMPLE=0.05)]" or "[fresh: every test file runs (SOVA_FRESH=1)]") and lists each
+  reused file with when it passed and the run it came from (§app.merge-queue/view).
+- **Always fresh.** The reruns that place the blame (§app.merge-queue/blame), every check of a
+  release (§app.release/checks), and every check when the project turns reuse off (Settings →
+  Merge Queue, "Reuse passes from identical code", on by default, §app.merge-queue/settings) run
+  every file, with `SOVA_FRESH=1`; Try It on the target follows the same rule. A fresh run still
+  keeps its passes. Setup and install steps get neither variable.
+
 **What a check sees.** It runs in the copy with the instance's own ports and variables, through an
 allow-list that passes no chat or secret variable. It is told the run's base, tip and target, the
 changed files, and the project's private-names file. When the names aren't set up yet, the leak scan
@@ -316,14 +339,14 @@ and the push is held" (§app.merge-queue/push). Services a check requires start 
 engine in the copy's own slot and ports, and stop after the checks.
 
 **Estimates.** "Starts in" and "takes" come from the project's own run history: each check's
-recent passing times. "Starts in" adds up the time of the entries ahead. With no timed run yet,
+recent passing times, never a run that reused passes. "Starts in" adds up the time of the entries ahead. With no timed run yet,
 a row shows no estimate rather than a guess; with timed steps but no passing run, each step's
 median time is summed.
 
 ## §app.merge-queue/blame — Whose failure it is
 
 A red check is never blamed on the branch until the same check has passed on the target alone,
-in the same copy.
+in the same copy. Every rerun below runs fresh (§app.merge-queue/checks).
 
 - **Named failing test files.** The failing files are rerun alone on the merge commit. Every rerun
   of named files, there and on the target, asks for exactly those files: a check that is the
@@ -894,7 +917,9 @@ Land's size. Nothing is offered only on hover.
   such as **Required**, held to the name's last word: only the name wraps, and the tag drops under it
   only when that word and the tag can't share a line at all) with its
   description under it (the test counts there too, "11496 passed · 5 skipped", a failed count in
-  red), its time in a fixed column aligned right, then **Log**, in the same place on every row. A
+  red; a check that reused passes says so, "412 ran, 568 already passed on identical code (28
+  re-checked)", and its **Log** lists the reused files with the run each came from,
+  §app.merge-queue/checks), its time in a fixed column aligned right, then **Log**, in the same place on every row. A
   description shows at most 2 lines and ends in "…" when cut; a path in it that starts at the home
   folder shows it as `~/` (only where the path starts, never the same folder inside another path),
   and a commit is in mono. The marks: a check for passed, a cross for failed, a clock for running, a
@@ -1093,7 +1118,11 @@ queue uses."
   names" or "Not set up", never the names themselves.
 - **Checks**: "{n} always, {m} when the merge thread picks them", then each check with its time
   limit, whether it reruns failed files, and whether it always runs or only when picked
-  (§app.merge-queue/checks), and "Longest a check runs: 30 min" (Set by Sova).
+  (§app.merge-queue/checks), "Reuse passes from identical code" (On or Off, Project file, on by
+  default; not shown when the project declares no checks), with "A test file that already passed
+  on exactly this code isn't run again; a few are re-checked at each landing. Reruns and releases
+  always run in full." while on and "Every check runs in full." while off
+  (§app.server-runtime/test-reuse), and "Longest a check runs: 30 min" (Set by Sova).
 - **Before the checks**: Setup (its steps), Install (when it runs, offline, its time limit), and "A
   failed setup: tried again once after 60 s" (Set by Sova).
 - **Review**: Review each landing (on or off), Instructions (the kit's folder and file count,
@@ -1114,7 +1143,8 @@ queue uses."
 - review on or off: off takes the kit's folder out of the definition, and on puts it back, offered
   only while that folder is on the target;
 - each check's time limit (at most 30 min), whether it reruns failed files, and whether it always
-  runs or only when the merge thread picks it.
+  runs or only when the merge thread picks it;
+- reuse of passes from identical code on or off.
 
 Everything else is read only: check commands, setup, install, the kit's folder, and every value
 Set by Sova. A command is changed in a branch, where the queue tests it.
@@ -1156,8 +1186,10 @@ and "It applies from the next landing and isn't checked first." These saves are 
 not Settings' Save Changes (§app.settings-dialog/save-bar). This is the second exception, with Save
 Checks, to the rule that everything reaches the target through the queue: the change itself is not
 checked first.
-- Only the changed values of the `merge` section are rewritten (`push`; `review`; each check's
-  `timeout`, `rerun` and `optional`, a switch turned off removing its key); every other byte of
+- Only the changed values of the `merge` section are rewritten (`push`; `review`; `reuse`, written
+  `false` when turned off and its key removed when turned back on, listed as "Reuse passes from
+  identical code: off" and titled "reuse passes from identical code off"; each check's `timeout`, `rerun`
+  and `optional`, a switch turned off removing its key); every other byte of
   `.sova/project.json` stays as it was. The result must parse as a definition with exactly those
   changes, or nothing is saved.
 - The commit is titled "Merge queue settings: {what changed}" ("Merge queue settings: push off;

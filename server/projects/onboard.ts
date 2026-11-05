@@ -21,9 +21,10 @@ export const ONBOARD_PLAYBOOK_ID = "project-verbs";
 export const SETUP_PLAYBOOK_ID = "project-setup";
 /** The setup playbooks folded into the Setup chat: a start by their id opens the Setup chat (old ids still resolve). */
 export const FOLDED_PLAYBOOKS: readonly string[] = FOLDED_SETUP_PLAYBOOKS;
-/** The Setup chat's mode: normal with align only, whatever this host's coding default adds (spec, visuals…). Its
-    work is the project's pipeline settings, never Sova's spec procedure for the project. */
-export const SETUP_MODE = { mode: "normal", minorModes: ["align"] } as const;
+/** The Setup chat's mode: normal with align and vis (it draws the plan with vis fences and vis_guide), spec off and
+    nothing else, whatever this host's coding default adds. Its work is the project's pipeline settings, configuration
+    rather than a product change, so never Sova's spec procedure for the project. */
+export const SETUP_MODE = { mode: "normal", minorModes: ["align", "vis"] } as const;
 
 /** The mode a verb playbook run of `playbookId` is pinned to: the Setup chat's; undefined (every other run): the
     host's coding default, with align added (project-coding-mode.ts playbookRunMode). Pure. */

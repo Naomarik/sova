@@ -45,14 +45,18 @@ describe("the Setup chat's first message", () => {
     assert.match(t, /\/w\/\.worktrees\/x\) on its branch setup\/x/);
   });
 
-  test("a Setup chat starts with spec off (normal + align); the project's other runs keep the host's default", () => {
-    const hostDefault: ProjectCodingMode = { mode: "normal", minorModes: ["spec", "visuals"] };
+  test("a Setup chat starts normal with align and vis, spec off; the project's other runs keep the host's default", () => {
+    const hostDefault: ProjectCodingMode = { mode: "normal", minorModes: ["spec", "memory"] };
     const run = (id: string) => playbookRunMode(onboardRunMode(id) ?? hostDefault);
-    assert.deepEqual(run(SETUP_PLAYBOOK_ID), { mode: "normal", minorModes: ["align"] });
-    assert.equal(run(SETUP_PLAYBOOK_ID).minorModes.includes("spec"), false);
+    const setup = run(SETUP_PLAYBOOK_ID);
+    assert.equal(setup.mode, "normal");
+    assert.deepEqual([...setup.minorModes].sort(), ["align", "vis"], "align and vis, nothing else");
+    assert.equal(setup.minorModes.includes("spec"), false);
     assert.ok(run("project-verbs").minorModes.includes("spec"), "another playbook run keeps spec");
     assert.ok(run("project-verbs").minorModes.includes("align"));
-    assert.deepEqual(SETUP_MODE.minorModes, ["align"]);
+    // The Start Fresh carry-on chat switches to the same SETUP_MODE (runtime-routes.ts startChat).
+    assert.deepEqual([...SETUP_MODE.minorModes].sort(), ["align", "vis"]);
+    assert.equal(SETUP_MODE.mode, "normal");
   });
 
   test("its title, and the folded playbooks open it", () => {

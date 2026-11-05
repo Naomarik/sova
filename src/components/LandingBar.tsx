@@ -7,7 +7,7 @@ import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show, 
 import { Portal } from "solid-js/web";
 import { FLOAT_GAP_MOUSE, FLOAT_GAP_TOUCH, floatAbove } from "../lib/float-card";
 import { createHoldGesture } from "../lib/hold-select";
-import type { LandingAction, LandingBarModel, LandingProjectBar, LandingSegment } from "../lib/landing-bar";
+import { splitActions, type LandingAction, type LandingBarModel, type LandingProjectBar, type LandingSegment } from "../lib/landing-bar";
 import { refusal, resumeQueue } from "../lib/merge-queue-client";
 import { noteReleaseChanged, releaseRefusal, runReleaseVerb } from "../lib/releases-client";
 import { announce, toast } from "../lib/ui-state";
@@ -208,7 +208,7 @@ function Action(props: { action: LandingAction; onDone?: () => void }) {
   const a = props.action;
   if (a.kind === "link")
     return (
-      <a class={`button button-sm${a.primary ? " button-primary" : ""}`} href={a.href} onClick={() => props.onDone?.()} {...(a.href.startsWith("http") ? { target: "_blank", rel: "noopener" } : {})}>
+      <a class={a.place ? "landing-place" : `button button-sm${a.primary ? " button-primary" : ""}`} href={a.href} aria-label={a.aria} onClick={() => props.onDone?.()} {...(a.href.startsWith("http") ? { target: "_blank", rel: "noopener" } : {})}>
         {a.label}
       </a>
     );
@@ -248,9 +248,16 @@ export function LandingDetail(props: { model: LandingBarModel; onNavigate?: () =
           </For>
         </ul>
       </Show>
-      <div class="landing-actions">
-        <For each={actions()}>{(a) => <Action action={a} onDone={props.onNavigate} />}</For>
-      </div>
+      <Show when={splitActions(actions()).doing.length > 0}>
+        <div class="landing-actions">
+          <For each={splitActions(actions()).doing}>{(a) => <Action action={a} onDone={props.onNavigate} />}</For>
+        </div>
+      </Show>
+      <Show when={splitActions(actions()).places.length > 0}>
+        <nav class="landing-places" aria-label="Go to">
+          <For each={splitActions(actions()).places}>{(a) => <Action action={a} onDone={props.onNavigate} />}</For>
+        </nav>
+      </Show>
       <Show when={others().length > 0}>
         <ul class="landing-detail-others" aria-label="Other busy projects">
           <For each={others()}>

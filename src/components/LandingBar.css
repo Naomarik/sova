@@ -134,6 +134,12 @@
 .landing-line-error { color: var(--status-error); }
 .landing-line a { color: inherit; }
 .landing-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.landing-places { display: flex; flex-wrap: nowrap; gap: var(--space-3); min-width: 0; overflow: hidden; }
+.landing-place {
+  flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--fs-caption); color: var(--color-accent); text-decoration: none;
+}
+.landing-place:hover { text-decoration: underline; }
 .landing-detail-others { padding-top: var(--space-2); border-top: var(--stroke-thin) solid var(--color-border); }
 .landing-other { display: flex; align-items: center; gap: var(--space-2); min-width: 0; min-height: 28px; }
 .landing-other-dot { flex: none; width: 8px; height: 8px; border-radius: var(--r-full); background: currentColor; }

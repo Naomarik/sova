@@ -56,7 +56,21 @@ export type LandingAction =
   | { kind: "resume"; label: "Resume Queue"; root: string }
   | { kind: "continue"; label: "Continue"; root: string; release: string; step: string; stepLabel: string }
   | { kind: "retry"; label: "Retry Step"; root: string; release: string; step: string; stepLabel: string }
-  | { kind: "link"; label: string; href: string; primary?: true };
+  | { kind: "link"; label: string; href: string; primary?: true; place?: true; aria?: string };
+
+/** A place to go: a link that only navigates (drawn as a text link on the places row, never a button). */
+const place = (label: string, href: string, aria: string): LandingAction => ({ kind: "link", label, href, place: true, aria });
+const branchChat = (session: string) => place("Branch Chat", chatIdHref(session), "Open the branch chat");
+const checks = (root: string, run: string) => place("Checks", queueHref(root, run), "View the checks");
+const queue = (root: string) => place("Queue", queueHref(root), "Open the merge queue");
+/** The things that do something (buttons, first), then the places to go (links), as the detail draws them. */
+export function splitActions(actions: LandingAction[]): { doing: LandingAction[]; places: Extract<LandingAction, { kind: "link" }>[] } {
+  const isPlace = (a: LandingAction): a is Extract<LandingAction, { kind: "link" }> => a.kind === "link" && !!a.place;
+  return { doing: actions.filter((a) => !isPlace(a)), places: actions.filter(isPlace) };
+}
+const HOST_NAME = { github: "GitHub", gitlab: "GitLab" } as const;
+const hostLink = (url: string, host: keyof typeof HOST_NAME | undefined) =>
+  place(`On ${host ? HOST_NAME[host] : "Host"}`, url, `Open on ${host ? HOST_NAME[host] : "the host"}`);
 
 export interface LandingProjectBar {
   /** The project's id and name. */
@@ -287,9 +301,9 @@ function landingBar(p: LandingProjectInput, q: LandingQueueCut, run: MergeRun, n
     ...conflictsOf(q).map((e) => ({ text: `${e.branch} · conflict being judged` })),
   ];
   const actions: LandingAction[] = [
-    ...(entry?.session ? [{ kind: "link" as const, label: "Open Branch Chat", href: chatIdHref(entry.session) }] : []),
-    { kind: "link", label: "View Checks", href: queueHref(p.id, run.id) },
-    { kind: "link", label: "Open Queue", href: queueHref(p.id) },
+    ...(entry?.session ? [branchChat(entry.session)] : []),
+    checks(p.id, run.id),
+    queue(p.id),
   ];
   return {
     project: p.id,
@@ -332,7 +346,7 @@ function mergeNeedsBar(p: LandingProjectInput, q: LandingQueueCut, needs: MergeE
     // The face says the first one already: the detail lists the others.
     lines: [...needs.slice(1).map((x) => needsLine(x, p.id)), ...conflictsOf(q).map((x) => ({ text: `${x.branch} · conflict being judged` })), ...nextLines(q)],
     peek: [...(rest > 0 ? [{ text: `${rest} more need${rest === 1 ? "s" : ""} you`, tone: "warn" as const }] : []), ...nextLines(q).slice(0, 1)],
-    actions: [...needsActions(e, p.id), ...(e.session ? [{ kind: "link" as const, label: "Open Branch Chat", href: chatIdHref(e.session) }] : []), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
+    actions: [...needsActions(e, p.id), ...(e.session ? [branchChat(e.session)] : []), queue(p.id)],
     oneLine: `${p.name} · ${e.branch} · ${stripDot(entryStateWords(e))}`,
   };
 }
@@ -357,7 +371,7 @@ function pausedBar(p: LandingProjectInput, q: LandingQueueCut): LandingProjectBa
     // The reason is the sub line already; the detail adds the rest only when the face cuts it.
     lines: [...nextLines(q), ...needsYouOf(q).map((e) => needsLine(e, p.id))],
     // A definition that doesn't parse can't be resumed: it runs again once it is fixed.
-    actions: [...(invalid ? [] : [{ kind: "resume" as const, label: "Resume Queue" as const, root: p.root }]), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
+    actions: [...(invalid ? [] : [{ kind: "resume" as const, label: "Resume Queue" as const, root: p.root }]), queue(p.id)],
     oneLine: `${p.name} · ${title}`,
   };
 }
@@ -395,7 +409,7 @@ function doneBar(p: LandingProjectInput, q: LandingQueueCut, now: number, seen: 
       segments: [],
       lines: [],
       peek: [],
-      actions: [...(r?.url ? [{ kind: "link" as const, label: "Open on Host", href: r.url }] : []), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
+      actions: [...(r?.url ? [hostLink(r.url, r.host ?? (r.how === "gitlab-mr" ? "gitlab" : r.how === "github-pr" ? "github" : undefined))] : []), queue(p.id)],
       oneLine: `${p.name} · ${title}`,
     };
   }
@@ -425,7 +439,7 @@ function doneBar(p: LandingProjectInput, q: LandingQueueCut, now: number, seen: 
     // The merge thread's note, word for word.
     lines: notes.map((n) => ({ text: n.text })),
     peek: notes.slice(0, 1).map((n) => ({ text: n.text })),
-    actions: [...(l.run ? [{ kind: "link" as const, label: "View Checks", href: queueHref(p.id, l.run.id) }] : []), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],
+    actions: [...(l.run ? [checks(p.id, l.run.id)] : []), queue(p.id)],
     oneLine: `${p.name} · Landed ${l.entry.branch}`,
   };
 }
@@ -491,7 +505,7 @@ function releaseLines(rv: LandingReleaseCut, r: ReleaseRecord, now: number): Lan
 }
 
 function releaseActions(p: LandingProjectInput, r: ReleaseRecord, extra: LandingAction[] = []): LandingAction[] {
-  return [...extra, ...(r.thread ? [{ kind: "link" as const, label: "Open Release Chat", href: chatIdHref(r.thread.session) }] : []), { kind: "link", label: "Open Releases", href: releasesHref(p.id) }];
+  return [...extra, ...(r.thread ? [place("Release Chat", chatIdHref(r.thread.session), "Open the release chat")] : []), place("Releases", releasesHref(p.id), "Open releases")];
 }
 
 /** A release that needs the user: the first reason, in a8's words; null when none. */
@@ -560,7 +574,7 @@ function openReleaseBar(p: LandingProjectInput, rv: LandingReleaseCut, r: Releas
     icon: "progress",
     title,
     sub,
-    actions: releaseActions(p, r, run ? [{ kind: "link", label: "View Checks", href: queueHref(p.id, run.id) }] : []),
+    actions: releaseActions(p, r, run ? [checks(p.id, run.id)] : []),
     oneLine: `${p.name} · ${title}`,
   };
 }

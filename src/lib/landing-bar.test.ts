@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeEntry, MergeRun, RunStep } from "../../shared/merge-queue";
 import type { ReleaseRecord, ReleaseStep } from "../../shared/release";
-import { INVALID_TITLE, reduceLanding, runSegments, runNow, SHOWN_MS, type LandingProjectInput, type LandingQueueCut, type LandingReleaseCut } from "./landing-bar";
+import { INVALID_TITLE, reduceLanding, splitActions, runSegments, runNow, SHOWN_MS, type LandingProjectInput, type LandingQueueCut, type LandingReleaseCut } from "./landing-bar";
 
 const NOW = Date.parse("2026-11-05T12:00:00Z");
 const iso = (msAgo: number) => new Date(NOW - msAgo).toISOString();
@@ -97,8 +97,8 @@ test("a landing running: title, step N of M, time left, +N in line", () => {
     ["copy:passed", "merge:passed", "setup:skipped", "install:skipped", "docs:skipped", "check:unit:passed", "check:test:int:running", "check:build:waiting", "land:waiting", "main-checkout:waiting", "push:waiting"],
   );
   assert.equal(b.top.lines[0]!.text, "master 3f2a1c0 + feat/mesh-bar → 9b81e44");
-  assert.ok(b.top.actions.some((a) => a.kind === "link" && a.label === "View Checks" && a.href === "#/projects/prj_a/merge-queue/mr_1"));
-  assert.ok(b.top.actions.some((a) => a.kind === "link" && a.label === "Open Queue" && a.href === "#/projects/prj_a/merge-queue"));
+  assert.ok(b.top.actions.some((a) => a.kind === "link" && a.label === "Checks" && a.href === "#/projects/prj_a/merge-queue/mr_1"));
+  assert.ok(b.top.actions.some((a) => a.kind === "link" && a.label === "Queue" && a.href === "#/projects/prj_a/merge-queue"));
 });
 
 test("no eta, or an eta already passed: no 'left'", () => {
@@ -176,6 +176,10 @@ test("merge needs-you with nothing running takes the whole bar, in the tab's wor
   assert.deepEqual(labels.slice(0, 2), ["Accept", "Send Back"]);
   for (const a of b.top.actions) assert.equal(a.kind, "link");
   assert.ok(b.top.actions.some((a) => a.kind === "link" && a.href === "#/projects/prj_a/merge-queue/mr_7"));
+  const { doing, places } = splitActions(b.top.actions);
+  assert.deepEqual(doing.map((a) => a.label), ["Accept", "Send Back"], "the things that do something: buttons, their own row");
+  assert.deepEqual(places.map((a) => a.label), ["Queue"], "the places to go: one row of links");
+  assert.ok(places.every((a) => a.aria?.startsWith("Open")), "each place keeps a full accessible name");
 });
 
 test("several merge needs-you with nothing running: the first takes the bar, the rest one short count", () => {
@@ -200,18 +204,18 @@ test("paused: always shown, even with nothing in line, with Resume Queue", () =>
   assert.equal(b.top.kind, "paused");
   assert.equal(b.top.title, "Paused by you");
   assert.ok(b.top.actions.some((a) => a.kind === "resume" && a.root === "/r/a"));
-  assert.ok(b.top.actions.some((a) => a.label === "Open Queue"));
+  assert.ok(b.top.actions.some((a) => a.label === "Queue"));
   const moved = bar([proj({ queue: queue({ state: "paused", paused: { kind: "master-moved", why: "master moved outside the queue: the run was voided", at: iso(0) } }) })])!;
   assert.equal(moved.top.sub, "master moved outside the queue: the run was voided");
   assert.ok(!moved.top.lines.some((l) => l.text.includes("the run was voided")), "the reason is said once");
 });
 
-test("definition-invalid: its own words, Open Queue only, no Resume", () => {
+test("definition-invalid: its own words, Queue only, no Resume", () => {
   const q = queue({ state: "paused", invalid: "$.merge: unknown key", paused: { kind: "definition-invalid", why: "x", at: iso(0) } });
   const b = bar([proj({ queue: q })])!;
   assert.equal(b.top.title, INVALID_TITLE);
   assert.equal(b.top.title, "Queue settings are broken: nothing runs until they are fixed");
-  assert.deepEqual(b.top.actions.map((a) => a.label), ["Open Queue"]);
+  assert.deepEqual(b.top.actions.map((a) => a.label), ["Queue"]);
 });
 
 test("just landed: ~1 minute, pushed or not, the thread's note word for word; gone after", () => {
@@ -250,6 +254,9 @@ test("PR projects: 'Pull request opened · #N' for the minute; an open request w
   assert.equal(bar([proj({ queue: queue({ waitingOnHost: [old] }) })]), null);
   // A host check bumping updatedAt later doesn't bring it back: the first sight starts its minute.
   assert.equal(bar([proj({ queue: queue({ waitingOnHost: [req] }) })], new Map([["host:me_p:requested", NOW - SHOWN_MS - 1]])), null);
+  assert.deepEqual(splitActions(b.top.actions).places.map((a) => a.label), ["On GitHub", "Queue"]);
+  const mr = entry({ ...req, id: "me_m", request: { how: "gitlab-mr", branch: "feat/pr", base: "main", url: "https://gitlab.example/o/r/-/merge_requests/3" } });
+  assert.equal(bar([proj({ queue: queue({ waitingOnHost: [mr] }) })])!.top.actions[0]!.label, "On GitLab");
   const pushed = entry({ id: "me_q", branch: "feat/q", state: "pushed", updatedAt: iso(1_000), request: { how: "push-branch", branch: "feat/q", base: "main" } });
   const pb = bar([proj({ queue: queue({ waitingOnHost: [pushed] }) })])!;
   assert.equal(pb.top.title, "Pushed feat/q");
@@ -279,8 +286,8 @@ test("release running: its step track in plan order, withdraw steps never; Step 
   assert.equal(alone.top.count, undefined, "nothing waiting: no count");
   assert.ok(alone.top.peek.some((l) => l.text === "Landings wait until it publishes"));
   assert.deepEqual(b.top.segments.map((s) => s.id), ["version", "changelog", "commit", "checks", "tryout", "publish", "announce"]);
-  assert.ok(b.top.actions.some((a) => a.label === "Open Releases" && a.kind === "link" && a.href === "#/projects/prj_a/releases"));
-  assert.ok(b.top.actions.some((a) => a.label === "Open Release Chat"));
+  assert.ok(b.top.actions.some((a) => a.label === "Releases" && a.kind === "link" && a.href === "#/projects/prj_a/releases"));
+  assert.ok(b.top.actions.some((a) => a.label === "Release Chat"));
   const unnamed = bar([proj({ release: release({ open: record({ version: null, tag: null, steps: plan({ version: "running", changelog: "waiting" }) }) }) })])!;
   assert.equal(unnamed.top.title, "Releasing a new version");
 });

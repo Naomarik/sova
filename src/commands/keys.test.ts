@@ -31,6 +31,7 @@ const CHORD: Record<KeyId, KeyLike[]> = {
   "palette.open": [ev({ key: "k", code: "KeyK", ctrlKey: true }), ev({ key: "k", code: "KeyK", metaKey: true }), ev({ key: "K", code: "KeyK", ctrlKey: true })],
   "shortcuts.open": [ev({ key: "?", code: "Slash", shiftKey: true }), ev({ key: "?", code: "Minus", shiftKey: true })], // shift+ß on a German layout
   "compose.type": [ev({ key: "a", code: "KeyA" }), ev({ key: "A", code: "KeyA", shiftKey: true }), ev({ key: "7", code: "Digit7" }), ev({ key: "@", code: "Digit2", shiftKey: true })],
+  "menu.context": [ev({ key: "F10", code: "F10", shiftKey: true }), ev({ key: "ContextMenu", code: "ContextMenu" })],
 };
 
 /** What each key did before the table, written out here rather than read from it. */
@@ -42,6 +43,7 @@ const TODAY: Record<KeyId, { inField: boolean; composingStops?: true }> = {
   "palette.open": { inField: true }, // fires in text entry (the composer opens the palette, as Ctrl/⌘+P opens the picker there); composing: fires (a composing keydown is "Process"); modal: fires
   "shortcuts.open": { inField: false }, // ignored in text entry ("?" types in a field); composing: fires (a composing keydown is "Process"); modal: fires
   "compose.type": { inField: false, composingStops: true }, // new: a character in a field is the field's, and an input method's keys are its own
+  "menu.context": { inField: false }, // new with the right-click menu: in a text field both keys stay the browser's (§app.context-menus/keyboard)
 };
 
 for (const row of KEYS) {
@@ -76,17 +78,18 @@ for (const row of KEYS) {
 test("keys stay where they were: Alt+O on the window, the rest on the document; a typed character on the window, after every widget", () => {
   assert.deepEqual(
     KEYS.map((r) => [r.id, r.target]),
-    [["overseer.open", "window"], ["model.picker", "document"], ["sidebar.toggle", "document"], ["sidebar.search", "document"], ["palette.open", "document"], ["shortcuts.open", "document"], ["compose.type", "window"]],
+    [["overseer.open", "window"], ["model.picker", "document"], ["sidebar.toggle", "document"], ["sidebar.search", "document"], ["palette.open", "document"], ["shortcuts.open", "document"], ["compose.type", "window"], ["menu.context", "document"]],
   );
 });
 
 test("conflict: no keydown fires two rows, in any target, on a Mac or not", () => {
-  const keys = [..."abcdefghijklmnopqrstuvwxyz0123456789/?.,;'[]-=`\\@é", "Process", "Escape", "Enter", "ø", "Dead", " ", "Tab", "ArrowLeft"];
+  const keys = [..."abcdefghijklmnopqrstuvwxyz0123456789/?.,;'[]-=`\\@é", "Process", "Escape", "Enter", "ø", "Dead", " ", "Tab", "ArrowLeft", "F10", "ContextMenu"];
   const targets = [button, field, checkbox, editable, null];
   for (const mac of [false, true])
     onPlatform(mac, () => {
       let seen = 0;
       const typed = new Set<string>();
+      const menuKeys = new Set<string>();
       for (const key of keys)
         for (let m = 0; m < 16; m++)
           for (const target of targets)
@@ -98,10 +101,12 @@ test("conflict: no keydown fires two rows, in any target, on a Mac or not", () =
               assert.ok(all.length <= 1, `mac=${mac} ${JSON.stringify(e)} fires ${all.map((r) => r.id).join(" and ")}`);
               seen += all.length;
               if (all[0]?.id === "compose.type" && !e.altKey && !e.ctrlKey && !e.metaKey) typed.add(k); // plain or Shift: an AltGr "/" is a character
+              if (all[0]?.id === "menu.context") menuKeys.add(`${e.shiftKey ? "Shift+" : ""}${k}`);
             }
       assert.ok(seen > 0); // the sweep reached the chords at all
+      assert.deepEqual([...menuKeys].sort(), ["ContextMenu", "Shift+F10"], `mac=${mac}: the sweep reached the right-click menu's keys`);
       assert.ok(typed.has("a") && typed.has("A") && typed.has("@") && typed.has("Dead"), `mac=${mac}: the sweep reached typed characters`);
-      for (const own of ["/", "?", " ", "Tab", "ArrowLeft", "Enter", "Escape", "Process"]) assert.equal(typed.has(own), false, `mac=${mac}: ${own} is not a typed character`);
+      for (const own of ["/", "?", " ", "Tab", "ArrowLeft", "Enter", "Escape", "Process", "F10", "ContextMenu"]) assert.equal(typed.has(own), false, `mac=${mac}: ${own} is not a typed character`);
     });
 });
 
@@ -113,6 +118,18 @@ test("compose.type: /, ? and Alt+O keep their own rows, on a Mac or not", () => 
           assert.equal(fires(id, e), true, `mac=${mac} ${id}`);
           assert.equal(fires("compose.type", e), false, `mac=${mac} ${JSON.stringify(e)} stays ${id}'s`);
         }
+    });
+});
+
+test("compose.type: Shift+F10 and the Menu key stay the right-click menu's, never a typed character, on a Mac or not", () => {
+  for (const mac of [false, true])
+    onPlatform(mac, () => {
+      for (const e of CHORD["menu.context"]) {
+        assert.equal(fires("menu.context", e), true, `mac=${mac} ${JSON.stringify(e)}`);
+        assert.equal(fires("compose.type", e), false, `mac=${mac} ${JSON.stringify(e)} stays menu.context's`);
+        // With Option, AltGr or Shift added the key is still no character, so a typed character never takes it.
+        for (const over of [{ altKey: true }, { ctrlKey: true, altKey: true }, { shiftKey: !e.shiftKey }]) assert.equal(fires("compose.type", { ...e, ...over }), false, `mac=${mac} ${JSON.stringify({ ...e, ...over })}`);
+      }
     });
 });
 
@@ -185,7 +202,7 @@ test("dispatch: a typed character reaches its owner on the window, which decline
 });
 
 test("the six keys before a typed character have exactly their old scope", () => {
-  const before = KEYS.filter((r) => r.id !== "compose.type").map(({ chord: _c, ...r }) => r);
+  const before = KEYS.filter((r) => r.id !== "compose.type" && r.id !== "menu.context").map(({ chord: _c, ...r }) => r);
   assert.deepEqual(
     before.map((r) => [r.id, r.target, r.textEntry, r.composing, r.modal]),
     [

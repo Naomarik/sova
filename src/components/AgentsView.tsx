@@ -41,20 +41,19 @@ import { browserZone, costsHref, type CostsQuery, DEFAULT_COSTS_QUERY } from "..
 import { agentsHref, teamKey } from "../lib/insights";
 import { hostOf } from "../lib/mesh";
 import { createPoll, type Poll } from "../lib/poll";
-import { renameSession } from "../lib/session-actions";
-import { archiveBlockReason } from "../lib/archive-block";
+import { sessionArchiveRow } from "../lib/session-menu";
 import { quoted } from "../lib/session-groups";
 import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
 import { home, localRunning, sessionContext } from "../lib/ui-state";
 import { capTitle } from "../lib/workers";
 import "../agents-board.css";
-import { RowMenu } from "./SessionRowMenu";
+import { closeContextMenuOf } from "./ContextMenu";
+import { openSessionMenu, RowMenu } from "./SessionRowMenu";
 import { ContextRing } from "./ContextRing";
 import { CostsTab } from "./CostsTab";
 import { PerformanceTab } from "./PerformanceTab";
 import { DEFAULT_PERF_QUERY, type PerfQuery, perfHref } from "../lib/perf";
 import { InsightsPage, ListSkeleton } from "./InsightsPage";
-import { TitleField } from "./TitleField";
 import { sessionHref } from "./Sidebar";
 import { Chip, CountChip, Icon } from "./ui";
 
@@ -65,8 +64,6 @@ interface BoardCtx {
   treesOf(path: string): WorktreeStatus[] | undefined;
   expanded(path: string): boolean;
   toggle(path: string): void;
-  renaming(path: string): boolean;
-  setRenaming(path: string | null): void;
   onRefresh(): void;
   onArchiveChanged(path: string, archived: boolean): void;
   onOpenSubagents(path: string): void;
@@ -264,27 +261,21 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
   const detailsOpen = () => props.ctx.detailsPath === s().path;
   const gist = () => summaryLineOf(s());
   /** Archive/Unarchive: only for what you started in Sova, or already archived; the reason when it can't. */
-  const archive = () => {
-    const x = s();
-    if (!x.archived && x.origin !== "web") return null;
-    const reason = archiveBlockReason({ ...x, busy: busyOf(x) });
-    return { label: x.archived ? "Unarchive" : "Archive", blocked: reason ? `Can't archive: ${reason}.` : null };
-  };
-  const saveTitle = async (title: string | null) => {
-    props.ctx.setRenaming(null);
-    if (await renameSession(s(), title)) props.ctx.onRefresh();
-  };
+  const archive = () => sessionArchiveRow(s(), localRunning());
+  let shell: HTMLLIElement | undefined;
+  let titleLink: HTMLAnchorElement | undefined;
+  onCleanup(() => closeContextMenuOf(shell));
   /**
    * A click anywhere on the row that isn't a control opens the session, as Open does. Controls
-   * keep their own action, the rename field and its hint never open it, and neither does a click
-   * that ends a text selection in the row, one with a modifier, or one on a menu panel the row
-   * owns (a popover: it paints in the top layer but stays in the row's DOM).
+   * keep their own action, and neither does a click that ends a text selection in the row, one
+   * with a modifier, or one on a menu panel the row owns (a popover: it paints in the top layer
+   * but stays in the row's DOM).
    */
   const onRowClick = (e: MouseEvent & { currentTarget: HTMLLIElement }) => {
     if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     const target = e.target as Element;
     if (!e.currentTarget.contains(target)) return;
-    if (target.closest("a, button, input, textarea, select, label, form, summary, [role=menuitem], [popover], .board-rename")) return;
+    if (target.closest("a, button, input, textarea, select, label, form, summary, [role=menuitem], [popover]")) return;
     const sel = window.getSelection();
     if (sel && !sel.isCollapsed && sel.anchorNode && e.currentTarget.contains(sel.anchorNode)) return;
     location.hash = sessionHref(s().path);
@@ -303,7 +294,17 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
   };
 
   return (
-    <li class="board-row" id={`board-row-${s().id}`} data-state={r().state} classList={{ "board-row-open": open() && hasDetail() }} onClick={onRowClick}>
+    <li
+      ref={shell}
+      class="board-row"
+      id={`board-row-${s().id}`}
+      data-state={r().state}
+      classList={{ "board-row-open": open() && hasDetail() }}
+      onClick={onRowClick}
+      // Anywhere on the row, as its ⋯ (§app.insights/team-cards "Right-click"); its team chips and
+      // a selection keep the browser's menu (lib/context-menu).
+      onContextMenu={(e) => titleLink && openSessionMenu(e, { el: e.currentTarget, link: titleLink }, s, props.ctx, archive)}
+    >
       <div class="board-line">
         <div class="board-cell board-session">
           <span class="board-rail" aria-hidden="true" />
@@ -321,37 +322,19 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
             </button>
           </Show>
           <div class="board-session-main">
-            <Show
-              when={props.ctx.renaming(s().path)}
-              fallback={
-                <p class="board-title-line">
-                  <a
-                    class="board-title"
-                    href={sessionHref(s().path)}
-                    title={s().originalTitle ? `${s().title}\nOriginally ${quoted(s().originalTitle!)}` : s().title}
-                    onClick={onTitleClick}
-                  >
-                    {s().title}
-                  </a>
-                  {/* The rail and the group heading show the state; this says it to a screen reader. */}
-                  <span class="visually-hidden">, {r().word}</span>
-                </p>
-              }
-            >
-              <div class="board-rename">
-                <TitleField
-                  initial={s().title}
-                  label={`Rename ${quoted(s().title)}`}
-                  describedBy={`board-rename-hint-${s().id}`}
-                  blurSaves
-                  onDone={(t) => void saveTitle(t)}
-                  onCancel={() => props.ctx.setRenaming(null)}
-                />
-                <p class="text-caption text-muted" id={`board-rename-hint-${s().id}`}>
-                  Kept in Sova only. Empty restores {quoted(s().originalTitle ?? s().title)}.
-                </p>
-              </div>
-            </Show>
+            <p class="board-title-line">
+              <a
+                ref={titleLink}
+                class="board-title"
+                href={sessionHref(s().path)}
+                title={s().originalTitle ? `${s().title}\nOriginally ${quoted(s().originalTitle!)}` : s().title}
+                onClick={onTitleClick}
+              >
+                {s().title}
+              </a>
+              {/* The rail and the group heading show the state; this says it to a screen reader. */}
+              <span class="visually-hidden">, {r().word}</span>
+            </p>
             <Show when={gist()} fallback={<p class="board-gist board-gist-path text-mono">{tildePath(s().cwd, home())}</p>}>
               <p class="board-gist" title={summaryTitleOf(s())}>
                 {gist()}
@@ -539,7 +522,6 @@ export function AgentsView(props: {
   const [query, setQuery] = createSignal("");
   const [limit, setLimit] = createSignal(BOARD_PAGE);
   const [open, setOpen] = createSignal<ReadonlySet<string>>(new Set());
-  const [renaming, setRenaming] = createSignal<string | null>(null);
   const [trees, setTrees] = createSignal<ReadonlyMap<string, WorktreeStatus[]>>(new Map());
   const treesOf = (path: string) => trees().get(path);
 
@@ -692,8 +674,6 @@ export function AgentsView(props: {
         if (!next.delete(p)) next.add(p);
         return next;
       }),
-    renaming: (p) => renaming() === p,
-    setRenaming,
     onRefresh: () => props.onRefresh(),
     onArchiveChanged: (p, a) => props.onArchiveChanged(p, a),
     onOpenSubagents: (p) => props.onOpenSubagents(p),

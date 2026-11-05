@@ -3,8 +3,10 @@
 // Each row is one chord with the rules for where it fires. The first four rules are exactly what
 // each key did before this table existed (Alt+O in App, Ctrl/⌘+P in ComposerMenu, Ctrl/⌘+B and "/"
 // in Sidebar). Ctrl/⌘+K (the command palette) and "?" (the shortcut sheet) came after, both owned
-// by App (§app/command-palette). A typed character (compose.type) came last, owned by App too: it
-// starts the message in the chat's message box (lib/type-anywhere). Keys scoped to a widget
+// by App (§app/command-palette). A typed character (compose.type) came next, owned by App too: it
+// starts the message in the chat's message box (lib/type-anywhere). Shift+F10 / the Menu key
+// (menu.context: the right-click menu, owned by components/ContextMenu.tsx, §app.context-menus/keyboard)
+// came last. Keys scoped to a widget
 // (GroupView, ChangesViewer, InsightStrip, VoiceInput, a chart's Escape, the message box's Escape in
 // Composer) stay with their widget and
 // are not here.
@@ -24,11 +26,12 @@
 //
 // This file stays DOM-free at import: listeners attach on the first `bindKey`.
 
+import { isContextMenuKey } from "../lib/context-menu";
 import { isOverseerShortcut } from "../lib/overseer";
 import { isTextEntry } from "../lib/text-entry";
 import { typesCharacter } from "../lib/type-anywhere";
 
-export type KeyId = "overseer.open" | "model.picker" | "sidebar.toggle" | "sidebar.search" | "palette.open" | "shortcuts.open" | "compose.type";
+export type KeyId = "overseer.open" | "model.picker" | "sidebar.toggle" | "sidebar.search" | "palette.open" | "shortcuts.open" | "compose.type" | "menu.context";
 
 export interface KeyLike {
   key: string;
@@ -134,6 +137,16 @@ export const KEYS: readonly KeyRow[] = [
     modal: "ignored",
     // Any key that types a character, except another row's: "/", "?" and Alt+O (ø on a Mac) keep theirs.
     chord: (e) => typesCharacter(e) && !KEYS.some((r) => r.id !== "compose.type" && r.chord(e)),
+  },
+  {
+    id: "menu.context",
+    label: "Shift+F10 · Menu key",
+    does: "Opens the focused session's, group's, pane's or message's menu, as a right-click does. In a text field they stay the browser's.",
+    target: "document",
+    textEntry: "ignored",
+    composing: "fires",
+    modal: "fires",
+    chord: (e) => isContextMenuKey(e),
   },
 ];
 

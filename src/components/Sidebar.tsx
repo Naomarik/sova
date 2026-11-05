@@ -3,7 +3,7 @@ import type { ArchiveMutation } from "../lib/optimistic-archive";
 import { profileIconName } from "../lib/profiles";
 import { builtOnceOpen } from "../lib/built-once";
 import { projectSummaryKey, remember } from "../lib/page-cache";
-import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch, useContext } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, AttentionItem, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
@@ -75,6 +75,10 @@ import { reuseUnchanged } from "../lib/summary-diff";
 import { FOLDERS_KEY, readKey, removeKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
 import { ARCHIVE_TILE, createRowPress, type DragInfo, dropAction, dropTiles, type TileId } from "../lib/drag-overlay";
+import { holdOwns, startsPress } from "../lib/context-menu";
+import { sessionArchiveRow } from "../lib/session-menu";
+import { closeContextMenuOf } from "./ContextMenu";
+import { openSessionMenu, SidebarSessionMenu } from "./SessionRowMenu";
 import { bindKey } from "../commands/keys";
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
@@ -406,6 +410,16 @@ export function SessionRow(props: {
   onCleanup(() => shell?.removeEventListener("touchmove", holdStill));
   /** The rail's own controls (the state pills) are pressed, not held. */
   const onOwnControl = (e: PointerEvent) => e.target instanceof Element && !!e.target.closest("button, input, label");
+  /** The session menu (§app.session-list/accessibility "The session menu"): the board's ⋯ rows, from a right-click or Shift+F10. */
+  const menuCtx = useContext(SidebarSessionMenu);
+  let link: HTMLAnchorElement | undefined;
+  onCleanup(() => closeContextMenuOf(shell));
+  const onContextMenu = (e: MouseEvent & { currentTarget: HTMLLIElement }) => {
+    // The long-press menu, and a drag's, belong to the hold, not to the browser or to Sova's menu.
+    const holds = holdOwns({ suppressed: press.suppressed(), dragging: !!draggingPath(), phase: press.phase(), pointerKind });
+    if (!menuCtx || !link) return holds && e.preventDefault();
+    openSessionMenu(e, { el: e.currentTarget, link, holds }, s, menuCtx, () => sessionArchiveRow(s(), localRunning()));
+  };
 
   return (
     <li
@@ -417,7 +431,7 @@ export function SessionRow(props: {
         "session-row-lifted": lifted(),
       }}
       onPointerDown={(e) => {
-        if (e.pointerType === "mouse" && e.button !== 0) return; // right-click is not a hold
+        if (!startsPress(e)) return; // a right-click (a Mac's Ctrl+click too) is not a hold
         if (onOwnControl(e) || draggingPath()) return;
         pointerId = e.pointerId;
         pointerKind = e.pointerType;
@@ -436,8 +450,7 @@ export function SessionRow(props: {
       // belonging to this press will never arrive. A drag that took the capture has already
       // ended the press, so this changes nothing for it.
       onLostPointerCapture={() => press.phase() !== "idle" && cancelPress()}
-      // The long-press context menu belongs to the hold, not to the browser.
-      onContextMenu={(e) => (press.suppressed() || draggingPath()) && e.preventDefault()}
+      onContextMenu={onContextMenu}
     >
       <div class="session-rail">
         {/* At most one state: live wins over busy. TUI is a static word; Busy is a pulsing dot. */}
@@ -483,6 +496,7 @@ export function SessionRow(props: {
         </Show>
       </div>
       <a
+        ref={link}
         class="list-row list-row-interactive session-row"
         href={sessionHref(s().path)}
         draggable={false}

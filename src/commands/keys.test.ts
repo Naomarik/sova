@@ -19,6 +19,7 @@ const CHORD: Record<KeyId, KeyLike[]> = {
   "sidebar.search": [ev({ key: "/", code: "Slash" }), ev({ key: "/", code: "Digit7", shiftKey: true })], // shift+7 on a German layout
   "palette.open": [ev({ key: "k", code: "KeyK", ctrlKey: true }), ev({ key: "k", code: "KeyK", metaKey: true }), ev({ key: "K", code: "KeyK", ctrlKey: true })],
   "shortcuts.open": [ev({ key: "?", code: "Slash", shiftKey: true }), ev({ key: "?", code: "Minus", shiftKey: true })], // shift+ß on a German layout
+  "menu.context": [ev({ key: "F10", code: "F10", shiftKey: true }), ev({ key: "ContextMenu", code: "ContextMenu" })],
 };
 
 /** What each key did before the table, written out here rather than read from it. */
@@ -29,6 +30,7 @@ const TODAY: Record<KeyId, { inField: boolean }> = {
   "sidebar.search": { inField: false },
   "palette.open": { inField: true }, // fires in text entry (the composer opens the palette, as Ctrl/⌘+P opens the picker there); composing: fires (a composing keydown is "Process"); modal: fires
   "shortcuts.open": { inField: false }, // ignored in text entry ("?" types in a field); composing: fires (a composing keydown is "Process"); modal: fires
+  "menu.context": { inField: false }, // new with the right-click menu: in a text field both keys stay the browser's (§app.context-menus/keyboard)
 };
 
 for (const row of KEYS) {
@@ -62,12 +64,12 @@ for (const row of KEYS) {
 test("keys stay where they were: Alt+O on the window, the rest on the document", () => {
   assert.deepEqual(
     KEYS.map((r) => [r.id, r.target]),
-    [["overseer.open", "window"], ["model.picker", "document"], ["sidebar.toggle", "document"], ["sidebar.search", "document"], ["palette.open", "document"], ["shortcuts.open", "document"]],
+    [["overseer.open", "window"], ["model.picker", "document"], ["sidebar.toggle", "document"], ["sidebar.search", "document"], ["palette.open", "document"], ["shortcuts.open", "document"], ["menu.context", "document"]],
   );
 });
 
 test("conflict: no keydown fires two rows, in any target", () => {
-  const keys = [..."abcdefghijklmnopqrstuvwxyz0123456789/?.,;'[]-=`\\", "Process", "Escape", "Enter", "ø"];
+  const keys = [..."abcdefghijklmnopqrstuvwxyz0123456789/?.,;'[]-=`\\", "Process", "Escape", "Enter", "ø", "F10", "ContextMenu"];
   const targets = [button, field, checkbox, editable, null];
   let seen = 0;
   for (const key of keys)

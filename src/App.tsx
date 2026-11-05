@@ -100,6 +100,9 @@ import { SessionPane, type PaneInsight, type TabId } from "./components/SessionP
 import { SessionView } from "./components/SessionView";
 import { startTimeSpent } from "./lib/time-spent";
 import { BrandLink, sessionHref, Sidebar } from "./components/Sidebar";
+import { ContextMenuHost } from "./components/ContextMenu";
+import { SidebarSessionMenu } from "./components/SessionRowMenu";
+import { sidebarSessionMenuCtx } from "./lib/session-menu";
 import { SidebarResizer } from "./components/SidebarResizer";
 import { UsageView } from "./components/UsageView";
 import { GlobalRegions, Icon } from "./components/ui";
@@ -1127,6 +1130,24 @@ export function App() {
     batch(onHash);
     if (!paneOn(path, "agents")) openPane(path, "agents");
   };
+  /** The session menu from a sidebar row (lib/session-menu): Session Details and Open Subagents
+      open the session with its pane, on the Session or the Agents tab. */
+  const sidebarMenu = sidebarSessionMenuCtx({
+    route: (path) => {
+      location.hash = sessionHref(path);
+      batch(onHash);
+    },
+    paneOn,
+    openPane,
+    closePane: closeSubagents,
+    detailsOnSession: () => {
+      const p = subagents()?.board ? null : subagentsPath();
+      return p && activeTab(p) === "session" ? p : null;
+    },
+    onRefresh: () => refresh(),
+    onArchiveChanged: (p, a) => onArchived(p, a),
+  });
+
   /**
    * The Timeline's "Inputs Only" filter: the path whose pane has it on, else null. In memory, and
    * only while the pane is open — it goes off whenever the pane closes, however it closes — so the
@@ -1211,6 +1232,7 @@ export function App() {
         data-focus={focusView() ? "on" : undefined}
         data-focus-moving={focusMoving() ? "" : undefined}
       >
+        <SidebarSessionMenu.Provider value={sidebarMenu}>
         <Sidebar
           unfolded={unfolded()}
           sessions={sidebarSessions()}
@@ -1231,6 +1253,7 @@ export function App() {
           overseerOpen={!!overseerRoute()}
           attention={attention.data()}
         />
+        </SidebarSessionMenu.Provider>
 
         {/* The workspace takes the whole second column, so it IS the main: no session head, and
             its own head instead. */}
@@ -1562,6 +1585,9 @@ export function App() {
         <ShortcutSheet onClose={() => setShortcutsOpen(false)} />
       </Show>
       <GlobalRegions />
+      {/* The page's one right-click menu (§app/context-menus), inside the extension list's
+          provider: the session menu draws what extensions add. */}
+      <ContextMenuHost />
     </ExtensionsContext.Provider>
   );
 }

@@ -173,7 +173,14 @@ profile in its mode menu; new chats start on the default."
   default first. A chat whose pick is deleted follows the default.
 - **The editor** (Edit, or a new profile) replaces the list in the tab. Its head is a back
   control, **Subagent profiles**, that returns to the list, then the profile's name field with the
-  saved footprint under it ("Not saved yet" for a new one). Below are four collapsible sections,
+  saved footprint under it ("Not saved yet" for a new one). Every box in the editor is the form
+  kit's (§design/forms), its limits one table the server's save reads too
+  (`shared/subagent-limits.ts`). A name longer than 48 characters is kept whole, never cut, and a
+  count "{n} / 48" under the field turns red past it. While a name holds Save, its field is red
+  with the one sentence that says why: "Profile name can't be empty.", "Profile name can be at
+  most 48 characters.", "Profile name must be one line, with no spaces at either end.", "Profile
+  name can't be "Off", the built-in profile's." or, on both of two with the same name, "Another
+  profile has this name."; the footer says "Subagents: {that sentence}". Below are four collapsible sections,
   five while adversarial review is switched on, each a header that shows, while closed, a one-line
   summary of what is inside:
   - **Delegate routing**, open when the editor opens; its summary is the routes' distinct primary
@@ -182,12 +189,18 @@ profile in its mode menu; new chats start on the default."
   - **Teams**; its summary names the standing roles and the members default ("Coordinator +
     monitor · members on opus"; "No standing roles · members on the lead's model"). **Coordinator**
     and **Monitor** each have one switch and, while on, their worker row and fallback, and an
-    **Instructions** fold holding the role name and the role's extra instructions. Turning the
+    **Instructions** fold holding the role name and the role's extra instructions: a role name is
+    1 to 64 characters after trimming, never cut ("Name the role.", "Coordinator role name can be
+    at most 64 characters."), and instructions at most 4,000, with a count "{n} / 4,000", kept
+    whole and red past it ("Coordinator instructions can be at most 4,000 characters."). Turning the
     coordinator off stores no standing roles (`teams: null`); turning it on again restores the
     profile's saved roles, else the legacy team defaults. The monitor reports to the coordinator, so
     its switch waits for one. The monitor's own settings sit under it: wrap-up context %, check
     interval, and the pause near a usage limit with its resume margin. The retire timeout is a
-    **Handover** line under both roles. **Members default** is one switch and one worker row.
+    **Handover** line under both roles. These five are number boxes, each hint under its box, that
+    keep what was typed (§app.settings-dialog/number-boxes): Wrap-up context % and Pause usage % are
+    1 to 100, Check every (minutes) and Retire timeout (minutes) 1 to 1,440, Resume margin (minutes)
+    0 to 1,440, each refused as "{label} must be a whole number from {min} to {max}.". **Members default** is one switch and one worker row.
   - **Spec writer**, one heading and one switch ("Use a spec writer while spec is on"); its summary
     is the writer's model, or "Off · the session writes it".
   - **Reviewer**, only while adversarial review is switched on (§chat.alignment-review/route): one
@@ -206,7 +219,10 @@ profile in its mode menu; new chats start on the default."
   that the policy denies saves with a note. The dialog's Save Changes saves the library; unsaved
   edits hold a close. Going back keeps them: the list then offers only that profile's Edit, so
   another profile can't be opened over them, and Save Changes frees the rest (Cancel discards them and closes the dialog).
-- A save reaches every chat on that profile from its next turn or team action.
+- A save reaches every chat on that profile from its next turn or team action. The server's save
+  (`PUT /api/settings/subagents`) refuses a bad name, role name, instructions or team number in the
+  editor's own sentence, before the library's own checks; a key the request leaves out is still
+  the file's default.
 
 ## §chat.subagent-profiles/replaced — When another device's copy changed the library
 

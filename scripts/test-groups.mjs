@@ -123,6 +123,52 @@ export const GROUPS = [
       ...SELF,
     ],
   },
+  {
+    name: "forms",
+    title: "Forms in a browser",
+    // Sova's forms driven in Chrome, one file per area (Settings first): every box's valid, half-typed,
+    // too-long and pasted text, its red state and message, save, reload and Reset to Defaults. Form
+    // code only: the form kit and its limits, each migrated surface, their drafts and checks, and the
+    // routes and stores they save through (decision q4 of the settings QA: not every package bump).
+    files: ["server/settings-browser.integration.test.ts", "server/forms-*browser.integration.test.ts"],
+    except: [],
+    landing: "triggered",
+    triggers: [
+      "src/components/form/**",
+      "shared/form-rules*",
+      "shared/*-limits.ts",
+      "server/forms-browser.test.helper.ts",
+      "server/settings-browser-temp.test.helper.ts",
+      "src/components/*Settings*.tsx",
+      // Settings' own parts whose names don't say so (wave 1 of the form kit).
+      "src/components/HoursFields.tsx",
+      "src/components/WorkerSlotRow.tsx",
+      "src/components/TypographySection.tsx",
+      "src/components/VoiceSetup.tsx",
+      "src/components/ProfileGrid.tsx",
+      "src/components/ProfilePicker.tsx",
+      "src/components/McpAddServer.tsx",
+      "src/components/McpServerRow.tsx",
+      "src/components/settings/**",
+      "src/lib/merge-queue-settings*.ts",
+      "server/merge-queue/settings*.ts",
+      "src/lib/*-draft.ts",
+      "src/lib/*-form.ts",
+      "src/lib/settings-*.ts",
+      "src/lib/public-links.ts",
+      "src/lib/outreach.ts",
+      "src/lib/provider-limits.ts",
+      "server/*-settings.ts",
+      "server/overseer-store.ts",
+      "server/provider-limits.ts",
+      "server/push-routes.ts",
+      "server/push-store.ts",
+      "server/updates/routes.ts",
+      "server/tours/browser.ts",
+      ...TEST_SETUP,
+      ...SELF,
+    ],
+  },
 ];
 
 /** The name of the everyday set: every integration file in no group. */

@@ -11,6 +11,7 @@
 // the bottom is this tab's copy of the preference, shared by the sidebar and the Settings dialog.
 
 import { createSignal } from "solid-js";
+import type { WholeRule } from "../../shared/form-rules";
 import type { SessionSummary } from "../../shared/protocol";
 import { isOperatorBuild, isOrdinarySession } from "./regions";
 import { readKey, writeKey } from "./storage-keys";
@@ -29,6 +30,8 @@ export const DEFAULT_RECENT_COUNT = 5;
 export const MIN_RECENT_COUNT = 3;
 /** The ceiling is practical, not principled: past this the shortcut is just the list again. */
 export const MAX_RECENT_COUNT = 20;
+/** Settings → General's box: red with this sentence while it holds anything else (repaired on leave). */
+export const RECENT_RULE: WholeRule = { kind: "whole", label: "Sessions in Recent", min: MIN_RECENT_COUNT, max: MAX_RECENT_COUNT };
 
 /**
  * The whole number a stored or typed value states, or null when it states none.
@@ -54,6 +57,18 @@ export function normalizeRecentCount(raw: unknown): number {
   const n = parseRecentCount(raw);
   if (n === null) return DEFAULT_RECENT_COUNT;
   return Math.min(MAX_RECENT_COUNT, Math.max(MIN_RECENT_COUNT, n));
+}
+
+/**
+ * What leaving Sessions in Recent makes of what was typed: the nearest count that works. A number
+ * rounds (7.5 → 8) and clamps to the range (0 → the fewest, 999 → the most); only text with no
+ * number at all (blank, letters) means the default. Pure.
+ */
+export function repairRecentCount(text: string): number {
+  const t = text.trim();
+  const n = t === "" ? Number.NaN : Number(t);
+  if (Number.isNaN(n)) return DEFAULT_RECENT_COUNT;
+  return Math.min(MAX_RECENT_COUNT, Math.max(MIN_RECENT_COUNT, Math.round(n)));
 }
 
 /**

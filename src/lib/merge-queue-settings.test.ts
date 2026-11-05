@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeQueueSettings } from "../../shared/merge-queue-settings";
-import { changeLines, changesOf, freshChatWords, rebaseDraft, checksCaption, minutes, modelWords, parseMinutes, savedWords, summaryLine, toProjectDraft } from "./merge-queue-settings";
+import { check as checkRule } from "../../shared/form-rules";
+import { changeLines, changesOf, draftHolds, draftProblem, freshChatWords, minutesTextOf, rebaseDraft, typedMinutes, checksCaption, minutes, modelWords, minutesRule, savedWords, summaryLine, toProjectDraft } from "./merge-queue-settings";
 
 const SHA = "97927e0c0a92041da839da63093e474719f83837";
 const check = (id: string, optional = false) => ({ id, label: id[0]!.toUpperCase() + id.slice(1), timeoutSec: 600, rerun: false, optional });
@@ -63,8 +64,8 @@ test("Reuse passes from identical code: on unless the file says false; a save se
 });
 
 test("time limits are whole minutes up to the cap", () => {
-  assert.equal(parseMinutes("25", 30), 25);
-  for (const bad of ["0", "31", "2.5", "", "x", "-3"]) assert.equal(parseMinutes(bad, 30), null, bad);
+  assert.deepEqual(checkRule(minutesRule(30), "25"), { ok: true, value: 25 });
+  for (const bad of ["0", "31", "2.5", "", "x", "-3"]) assert.equal(checkRule(minutesRule(30), bad).ok, false, bad);
   assert.equal(minutes(600), "10 min");
   assert.equal(minutes(90), "1 min 30 s");
   assert.equal(minutes(45), "45 s");
@@ -151,4 +152,28 @@ test("the Merge thread's Fresh chat row: one endless thread with memory, never a
   assert.equal(w, "One endless thread with memory (UniiChat). A new one only when it's gone, open in a terminal, keeps refusing messages or past half of its context, or when you press Start Fresh.");
   assert.doesNotMatch(w, /24 h|After \d/);
   assert.match(freshChatWords({ threadMaxContext: 0.6 }), /past 60% of its context/);
+});
+
+test("a time limit box keeps what was typed; a bad one holds the save and says why, never the last good number (Settings QA D13)", () => {
+  const s = settings();
+  const d0 = toProjectDraft(s, true);
+  for (const bad of ["1e", "99999", "1.", "2.5", "-3", "a5", "0", "31", "", "-"]) {
+    let d = typedMinutes(d0, "c1", "1", s);
+    d = typedMinutes(d, "c1", bad, s);
+    assert.equal(minutesTextOf(d, "c1", s), bad, `${JSON.stringify(bad)} stays as typed`);
+    assert.equal(draftProblem(d, s), "C1: the time limit in minutes must be a whole number from 1 to 30.", JSON.stringify(bad));
+    assert.equal(draftHolds(d, s, true), true, `${JSON.stringify(bad)} is an unsaved edit (it holds the close)`);
+    // What would be saved never carries the old prefix: the save itself waits on the problem.
+    assert.equal(changesOf(d, s, true)?.checks?.c1?.timeoutSec, 60, "the last good number is still staged, so the save must wait");
+  }
+  const good = typedMinutes(d0, "c1", "12", s);
+  assert.equal(draftProblem(good, s), null);
+  assert.deepEqual(changesOf(good, s, true), { checks: { c1: { timeoutSec: 720 } } });
+  assert.equal(minutesTextOf(good, "c1", s), "12");
+  assert.equal(minutesTextOf(d0, "c1", s), "10", "untouched: the saved minutes");
+  // Typed back to the saved number: no change, nothing held.
+  assert.equal(draftHolds(typedMinutes(good, "c1", "10", s), s, true), false);
+  // A newer read of master keeps the typed text.
+  const rebased = rebaseDraft(typedMinutes(d0, "c2", "x", s), d0, toProjectDraft(s, true));
+  assert.equal(minutesTextOf(rebased, "c2", s), "x");
 });

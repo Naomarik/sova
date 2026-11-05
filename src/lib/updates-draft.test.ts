@@ -4,6 +4,7 @@ import type { UpdatesState } from "../../shared/protocol";
 import { gatedForms } from "./settings-draft";
 import { resultLine, runningLine, upgradeLabel } from "./updates";
 import { fromUpdatesDraft, rebaseUpdates, sameUpdates, toUpdatesDraft, updatesProblem } from "./updates-draft";
+import { validBranchName } from "../../shared/branch-name";
 
 /** The Updates form and the section's words: what runs, what a check found. */
 
@@ -60,4 +61,12 @@ test("settings saved elsewhere move the fields you left alone, never the ones yo
   assert.equal(sameUpdates(untouched, fresh), true, "a draft nobody edited is the server's again");
   const edited = rebaseUpdates({ ...toUpdatesDraft(base), autoUpgrade: true }, base, fresh);
   assert.deepEqual(edited, { source: "branch", branch: "feat/x", autoCheck: false, autoUpgrade: true });
+});
+
+test("a branch name git won't take holds Save in the form, with the server's sentence (Settings QA D6)", () => {
+  const d = toUpdatesDraft({ source: { kind: "branch", branch: "feat/x" }, autoCheck: true, autoUpgrade: false });
+  for (const bad of ["my branch", "feat..x", "-x", "x.lock", "a:b", "feat/", "~x"]) assert.equal(updatesProblem({ ...d, branch: bad }), `Updates: ${bad} isn't a branch name git takes.`, bad);
+  assert.equal(updatesProblem({ ...d, branch: " feat/x " }), null, "trimmed, as the server trims");
+  assert.equal(validBranchName("feat/settings-forms-qa"), true);
+  assert.equal(validBranchName("my branch"), false);
 });

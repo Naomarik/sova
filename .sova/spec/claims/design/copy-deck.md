@@ -630,7 +630,7 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Section heading button (small, ghost) | Reset to Defaults — Summaries only; it fills the draft and saves nothing |
 | Dialog footer (every tab) | {status line} · Save Changes (Saving…) · Cancel (discards and closes) — with nothing unsaved: {status line} · Close. The one Save for every Save-gated form on every tab (§app.settings-dialog/save-bar) |
 | Footer status line (first match; the outcome of a save is also announced in the same words) | Saving… · {why Save waits} · Saved {forms}; {forms} failed. · {forms} failed. · Unsaved: {Form}, {Form} · Saved {forms}. · (nothing) — {forms} joined with commas and "and", "Unsaved:" with commas only |
-| Why Save waits (footer status, error; Save Changes disabled) | Subagents: {name}'s {section} rows each need a model and an effort. · Subagents: {name}'s {section} fallback is its primary; choose another worker, or none. · Subagents: {name}'s members default needs a model and an effort. · Subagents needs unique, single-line names of at most 48 characters (never "Off"). · Subagents: {name}: {threshold issue}. · Subagents: {name}'s coordinator and monitor need different role names. Other forms retain their own problem sentences (§app.settings-dialog/save-bar) |
+| Why Save waits (footer status, error; Save Changes disabled) | Subagents: {name}'s {section} rows each need a model and an effort. · Subagents: {name}'s {section} fallback is its primary; choose another worker, or none. · Subagents: {name}'s members default needs a model and an effort. · Subagents: {a name, role, instructions or team box's sentence} (§chat.subagent-profiles/settings) · Subagents: {name}'s coordinator and monitor need different role names. Other forms retain their own problem sentences (§app.settings-dialog/save-bar) |
 | Discarded (announced only) | Discarded your {forms} changes. |
 | Changed by another device (banner-info, list only, §chat.subagent-profiles/replaced) | **Replaced by {device}'s copy at {stamp}.** or **{device}'s copy added {names} at {stamp}.** {Added {names}; changed {names}; removed {names}.} Your previous library is kept on this device. [Restore Previous Library] (Restoring… while it runs) |
 | Restore failed (banner-error) | **Couldn't restore your previous library.** {reason}. Your library is unchanged. |
@@ -668,6 +668,22 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Save failed (banner-error at the end of the form; the unsaved changes stay) | **Couldn't save the decision settings.** {reason}. Your saved settings are unchanged. |
 | Footnote | Stored in `~/.pi/agent/sova/decisions.json`. The key is stored separately, readable by you only. |
 
+## §design.copy-deck/forms — Forms · the shared sentences (§design/forms)
+
+One sentence per rule, the same under the box, in a Save's status line ("{Form}: {sentence}") and
+in the server's refusal. {Label} is the field's label, or the form's own name for one of many
+("Quick action 2's label"). Every number in a sentence, a range's ends included, is written with
+en-US separators ("from 0 to 1,000", "at most 8,000 characters").
+
+| Rule | Copy |
+|---|---|
+| A whole number (blank, half-typed "1e", "1.", "-3", a fraction, or out of range) | {Label} must be a whole number from {min} to {max}. |
+| Text, blank where it's needed | {Label} can't be empty. · or the form's own sentence ("This host needs a name.") |
+| Text, too short · too long | {Label} must be at least {n} characters. · {Label} can be at most {n} characters. |
+| A fixed set of values | {Label} must be one of {a}, {b}. |
+| A time of day | {Label} must be a time from 00:00 to 23:59. |
+| The count under a limited text box | `{n} / {max}` · grey, red past the most |
+
 ## §design.copy-deck/settings-overseer — Settings · Overseer and Notifications (§app.settings-dialog/overseer, §app.notifications/settings)
 
 | Where | Copy |
@@ -682,14 +698,17 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Per-message fields (label · hint) | Sessions created · New sessions it may create, per message you send. — Prompts to other sessions · Messages it may send to other sessions, per message you send. — Sessions archived · Sessions it may archive, per message you send. — Ideas explored · Idea explorers it may launch, per message you send. — Links made · Sessions it may link across hosts, per message you send. — Organization changes · Changes it may make to organizations, projects, rosters and project overseers, per message you send. — Gathering sessions started · Gathering sessions and offers it may start, per message you send. — Extension commands run · Extension commands it may run, per message you send. |
 | Quick actions hint | The Quick Actions button in the Overseer's composer foot lists these. Picking one sends its prompt. |
 | Quick action line | {label} · {description} (none: No description) · `Edit` / `Done` · opened: Label · Description · Prompt · `Move Up` · `Move Down` · `Remove` · a blank label reads Untitled action |
-| Quick actions buttons | `Add Quick Action` (under the list) · `Reset to Defaults` (head row) |
+| Quick actions buttons | `Add Quick Action` (under the list, beside it {n} of at most 12.; disabled at 12) · `Reset to Defaults` (head row) |
+| Counts (Standing notes · Extra instructions, under the hint) | `{n} / 8,000` · `{n} / 8,000`; red past the most |
 | Standing notes hint | The Overseer reads these every turn and can add to them. They survive /clear. |
 | Advanced (folded head · summary) | Advanced · Idea explorer, extra instructions, resume after a restart |
 | Idea explorer (legend · hint) | Idea explorer · When you keep working on an idea, the Overseer can launch an agent to plan it with you. It reads, never edits a repository, and reports back to the Overseer. |
 | Extra instructions (label · hint) | Extra instructions · Added after the Overseer's own prompt. Applies from its next run. |
 | After a restart (switch · hint) | Resume interrupted sessions · A session whose turn the server's restart cut off gets one message to continue. Sessions a usage limit or you stopped stay stopped. |
-| Reset buttons (Limits, Quick actions, Idea explorer; small ghost, at the end of the group's head row) | `Reset to Defaults` — fills the draft, saves nothing |
-| Why Save waits (footer, "Overseer: {issue}") | {limit} must be a whole number from 0 to 1000. · Quick action {n} needs a label and a prompt. · The idea explorer needs a model and an effort. |
+| Reset buttons (Limits, Quick actions, Idea explorer; small ghost, at the end of the group's head row) | `Reset to Defaults` — fills the draft, saves nothing; disabled while the group already shows the defaults |
+| Counts (a quick action's Label · Description · Prompt, under each box) | `{n} / 40` · `{n} / 120` · `{n} / 2,000`; red past the most |
+| Why Save waits (under the box, and the footer's "Overseer: {issue}", first in page order; the explorer's under the Idea explorer row) | {limit} must be a whole number from 0 to 1,000. · There can be at most 12 quick actions. · Quick action {n}'s label can't be empty. · Quick action {n}'s prompt can't be empty. · Quick action {n}'s label can be at most 40 characters. · Quick action {n}'s description can be at most 120 characters. · Quick action {n}'s prompt can be at most 2,000 characters. · Standing notes can be at most 8,000 characters. · The idea explorer needs a model and an effort. · Extra instructions can be at most 8,000 characters. |
+| Save refused by the server (the strict PUT's reason) | the same sentence as the box's, word for word: {limit label} must be a whole number from 0 to 1,000. (never `caps.{key}`) · Quick action {n}'s label can't be empty. · Quick action {n}'s label can be at most 40 characters. · … (every line of Why Save waits but the explorer's) |
 | Footnote | Stored in `~/.pi/agent/sova/overseer.json`. |
 
 ## §design.copy-deck/settings-models — Settings · Models (§app.settings-dialog/models)
@@ -712,7 +731,7 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Computer row replaced in a project | "Replaced in {project} by that project's {name}." (several: one line each) |
 | Remove (inline confirm) | "Remove {name}? Its approval, secrets and sign-in go with it." · Remove · Keep |
 | Add Server | title Add Server · tabs Address · Command · Paste from Another Tool · fields Name · Address · Command · Secret · Secret's Name (Command only) · Secret hint: "Saved on this computer only. Never shown again and never copied to your other computers." · Cancel · Add and Check · after Add and Check: Close |
-| Add Server refused | "Give the server a name." · "Give the server's address, starting with https://." · "Give the command that starts the server." · "That isn't an entry Sova can read: {reason}" · "This paste has {names}, and none is named {name}. Use one of those names." · "There's already a server named {name}." · "A secret's name is letters, digits and underscores." |
+| Add Server refused (the last two also under their field before the press, the press disabled) | "Give the server a name." · "Give the server's address, starting with https://." · "Give the command that starts the server." · "That isn't an entry Sova can read: {reason}" · "This paste has {names}, and none is named {name}. Use one of those names." · "There's already a server named {name}." · "A secret's name is letters, digits and underscores." |
 | Edit | title Edit {name} · Cancel · Save and Check |
 | Reserved name (field error, and a file entry's row) | "The name sova is Sova's own. Pick another." · in a file: "This entry uses the name sova, which is Sova's own, so it won't run." |
 | Check failed | "{name} didn't start." · its error lines · Check Again |
@@ -735,7 +754,8 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Where | Copy |
 |---|---|
 | Load failed (banner-error) | **Couldn't read the mesh settings.** Nothing was changed. {message} |
-| Host name hint · issue (replaces the hint, blocks Save; the footer: "Mesh: This host needs a name.") | Shown beside its sessions on every host, and in New Session's Host field. · This host needs a name. |
+| Host name hint · issue (replaces the hint, blocks Save; the footer: "Mesh: This host needs a name.") | Shown beside its sessions on every host, and in New Session's Host field. · This host needs a name. · This host's name can be at most 80 characters. |
+| Front door issue (replaces its hint, blocks Save; the footer "Mesh: {issue}"; the server's 400 says the same) | The front door must be a web address, like https://sova.example.ts.net. · The front door must start with http:// or https://. · The front door is a scheme, host and port only, with no path. |
 | Buttons | none in the tab — the dialog footer's Save Changes · Cancel (§design.copy-deck/settings-modes-delegate); Enter in a field does nothing |
 | Save failed (banner-error at the end of the tab; the unsaved changes stay) | **Couldn't save the mesh settings.** {reason}. Your saved settings are unchanged. |
 
@@ -1008,7 +1028,7 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Lightbox buttons | Close Photo · Previous Photo · Next Photo · counter {i} / {n} |
 | Owner page, Preview as, overseer reads (count instead of pixels) | 1 photo · {n} photos |
 | Operator's strip and the project page's gathering-model picker, a model without vision | This model can't see photos: people won't get an attach button. |
-| Settings → Organizations, section | Photos in gathering chats · `People can send photos` · `Per message` (1–8) · `Largest photo, MB` (1–10) · `Per conversation` (1–200) · hint "Applies to every gathering session on this host, from its next message." · invalid: "Organizations needs photo limits within their ranges." |
+| Settings → Organizations, section | Photos in gathering chats · `People can send photos` · `Per message` (1–8) · `Largest photo (MB)` (1–10) · `Per conversation` (1–200) · hint "Applies to every gathering session on this host, from its next message." · invalid (under the box; the footer "Organizations: {sentence}"): "Photos per message must be a whole number from 1 to 8." · "Largest photo (MB) must be a whole number from 1 to 10." · "Photos per conversation must be a whole number from 1 to 200." |
 
 ## §design.copy-deck/gathering-files — Files from people (§app/file-intake, §app.baton/files, §app.organizations/files-card)
 
@@ -1025,7 +1045,7 @@ The words of an opened model row, the same on the Costs tab's By model table and
 | Announce: added | {n} files attached. (1: "1 file attached.") |
 | Thread, a sent file's row `aria-label` | File {name}, {size} |
 | Strip, ability checkbox | Receive files |
-| Settings → Organizations, section | Files in gathering chats · `Largest file, MB` (1–25) · hint "Applies to gathering sessions that take files, from the next upload." · invalid: "Organizations needs a largest file from 1 to 25 MB." |
+| Settings → Organizations, section | Files in gathering chats · `Largest file (MB)` (1–25) · hint "Applies to gathering sessions that take files, from the next upload." · invalid (under the box; the footer "Organizations: {sentence}"): "Largest file (MB) must be a whole number from 1 to 25." |
 | Project page, card heading | Files |
 | Files card, empty | Nothing yet. Files people send in a gathering session with files on list here. |
 | Files card, row meta | from {person} · {gathering title} · {time} · {size} |
@@ -1181,7 +1201,7 @@ page never names a host or a person.
 | Routed hosts | heading "Hosts sending links here" · row `{n} links` (`1 link`) · `Last push {time}` / `Never pushed` · `Up` / `Down` / `Not accepted` · none: "No other host sends its links here yet." |
 | Through | "Links open only while {gateway} is on. Keep a client's organization on an always-on host." · Ingress port |
 | Gateway behind (warn banner, §mesh.public/share-protocol) | **{gateway} runs an older version of public links.** Some pages of this host's links may not open until {gateway} is updated. · `Resync` (the host menu's, §mesh.peers/resync; disabled with its reason) |
-| Field errors | Enter the public address. · The public address must start with https://. · Enter the public address as https://share.example.com. · The public address is a host only, with no path. · The local port is a whole number from 1 to 65535. · Pick the gateway. · The ingress port is a whole number from 1 to 65535. (the save bar: "Public links: {error}") |
+| Field errors | Enter the public address. · The public address must start with https://. · Enter the public address as https://share.example.com. · The public address is a host only, with no path. · The local port must be a whole number from 1 to 65,535. · Pick the gateway. · The ingress port must be a whole number from 1 to 65,535. (under each field; the save bar: "Public links: {first}"; the server says the same) |
 | Read and save failures (error banner) | **Couldn't read the public links setting.** Nothing was changed. {reason} · **Couldn't save the public links setting.** {reason} Your saved setting is unchanged. |
 | Mesh card chip (§mesh.ui/card) | `Public links: gateway` · `Public links: through {gateway}` |
 

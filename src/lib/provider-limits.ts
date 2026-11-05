@@ -1,4 +1,5 @@
-import type { ProviderLimits } from "../../shared/provider-limits";
+import { check, firstIssue } from "../../shared/form-rules";
+import { LIMIT_RULE, type ProviderLimits } from "../../shared/provider-limits";
 
 /**
  * Settings → Models' "At once" fields (§app.provider-limits/setting), pure. The draft is each
@@ -8,16 +9,10 @@ import type { ProviderLimits } from "../../shared/provider-limits";
  */
 export type LimitsDraft = Record<string, string>;
 
-export const LIMIT_MIN = 1;
-export const LIMIT_MAX = 999;
-
 /** A field's value: a limit, null for none (empty), or "invalid". */
 export function parseLimitField(text: string): number | null | "invalid" {
-  const t = text.trim();
-  if (!t) return null;
-  if (!/^\d+$/.test(t)) return "invalid";
-  const n = Number(t);
-  return n >= LIMIT_MIN && n <= LIMIT_MAX ? n : "invalid";
+  const r = check(LIMIT_RULE, text);
+  return r.ok ? r.value : "invalid";
 }
 
 export const limitsDraftOf = (limits: ProviderLimits): LimitsDraft => Object.fromEntries(Object.entries(limits).map(([p, n]) => [p, String(n)]));
@@ -56,8 +51,8 @@ export function rebaseLimits(draft: LimitsDraft, base: ProviderLimits, fresh: Pr
   return out;
 }
 
+/** One "At once" box per provider, each with its rule (the draft store's `fields`). */
+export const limitsFields = (draft: LimitsDraft) => Object.entries(draft).map(([p, text]) => ({ rule: LIMIT_RULE, value: text, label: `${p}'s At once` }));
+
 /** Why the draft can't be saved, naming the provider, or null. */
-export function limitsProblem(draft: LimitsDraft): string | null {
-  const parsed = limitsOfDraft(draft);
-  return "invalid" in parsed ? `Request limits: ${parsed.invalid}'s At once must be a whole number from ${LIMIT_MIN} to ${LIMIT_MAX}, or empty for no limit.` : null;
-}
+export const limitsProblem = (draft: LimitsDraft): string | null => firstIssue(limitsFields(draft))?.message ?? null;

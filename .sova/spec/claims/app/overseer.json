@@ -166,7 +166,7 @@
   "§app.overseer/caps": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "code": [
       "server/overseer-tools.ts",
       "server/overseer-store.ts",
@@ -185,13 +185,14 @@
       "src/design/base.css",
       "server/overseer-prompt.md",
       "server/overseer-card-apply.test.ts",
-      "server/overseer-ext-counts.test.ts"
+      "server/overseer-ext-counts.test.ts",
+      "shared/overseer-limits.ts"
     ],
     "requires": [],
     "agreed": {
-      "by": "Omar",
-      "at": "2026-11-04T12:24Z",
-      "source": "pi-session:01a1a628-48c2-7136-a762-464d5bf0599f#d0ac6d72"
+      "by": "naomarik",
+      "at": "2026-11-04T21:15Z",
+      "source": "pi-session:01a1a855-6f5f-72d2-b9d3-59fb661e925b#0f628483"
     }
   },
   "§app.overseer/card-partial-apply": {

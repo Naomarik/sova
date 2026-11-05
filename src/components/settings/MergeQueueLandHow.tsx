@@ -1,4 +1,5 @@
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, Show } from "solid-js";
+import { Choice } from "../form";
 import { HOW_HINT, HOW_LABEL, HOW_SHORT, inEffectWords, LAND_HOWS, landHowWaitingWords, signInWords, suggestionWords, type LandHow, type LandHowSetting } from "../../lib/merge-queue-requests";
 import { clearLandHowOverride, saveLandHow } from "../../lib/merge-queue-requests-client";
 import { short } from "../../lib/merge-queue";
@@ -83,50 +84,35 @@ export function MergeQueueLandHow(props: { project: string; target: string; sett
           </button>
         </Show>
       </div>
-      <div role="radiogroup" aria-labelledby={`${name()}-label`} class="mq-landhow-choices">
-        <For each={LAND_HOWS}>
-          {(how) => (
-            <label class="mq-choice" data-how={how}>
-              <input
-                type="radio"
-                name={name()}
-                value={how}
-                checked={chosen() === how}
-                disabled={busy()}
-                onChange={() => {
-                  setPicked(how === s().effective ? null : how);
-                  setError(null);
-                  setSaid(null);
-                }}
-              />
-              <span>
-                <strong>{HOW_LABEL[how]}</strong>
-                <span class="text-caption mq-choice-desc">{HOW_HINT[how]}</span>
-              </span>
-            </label>
-          )}
-        </For>
-      </div>
+      <Choice
+        cards
+        labelledBy={`${name()}-label`}
+        class="mq-landhow-choices"
+        value={chosen()}
+        options={LAND_HOWS.map((how) => ({ value: how, label: HOW_LABEL[how], hint: HOW_HINT[how] }))}
+        disabled={busy()}
+        onChange={(how) => {
+          setPicked(how === s().effective ? null : (how as LandHow));
+          setError(null);
+          setSaid(null);
+        }}
+      />
       <Show when={suggestion()}>{(w) => <p class="text-caption text-muted mq-landhow-suggest">{w()}</p>}</Show>
       <Show when={signIn()}>{(w) => <p class="text-caption mq-landhow-warn" role="note">{w()}</p>}</Show>
       <Show when={changed()}>
         <div class="mq-landhow-save" role="group" aria-label="Where to keep it">
-          <div role="radiogroup" aria-label="Keep it" class="mq-landhow-where">
-            <label class="mq-choice">
-              <input type="radio" name={`${name()}-where`} checked={where() === "computer"} disabled={busy()} onChange={() => setWhere("computer")} />
-              <span>
-                <strong>This computer only</strong>
-                <span class="text-caption mq-choice-desc">Applies at once and wins over the project file. Nothing is committed.</span>
-              </span>
-            </label>
-            <label class="mq-choice">
-              <input type="radio" name={`${name()}-where`} checked={where() === "project"} disabled={busy()} onChange={() => setWhere("project")} />
-              <span>
-                <strong>Project file</strong>
-                <span class="text-caption mq-choice-desc">Shared with everyone who runs Sova on this repo. Saved as one commit on {props.target}.</span>
-              </span>
-            </label>
-          </div>
+          <Choice
+            cards
+            label="Keep it"
+            class="mq-landhow-where"
+            value={where()}
+            options={[
+              { value: "computer", label: "This computer only", hint: "Applies at once and wins over the project file. Nothing is committed." },
+              { value: "project", label: "Project file", hint: `Shared with everyone who runs Sova on this repo. Saved as one commit on ${props.target}.` },
+            ]}
+            disabled={busy()}
+            onChange={(w) => setWhere(w as "computer" | "project")}
+          />
           <Show when={projectBlocked()}>{(m) => <p class="text-caption mq-landhow-warn">{m()}</p>}</Show>
           <div class="button-row">
             <button type="button" class="button button-sm button-primary" disabled={busy() || !!projectBlocked()} aria-busy={busy() ? "true" : undefined} onClick={() => void save()}>

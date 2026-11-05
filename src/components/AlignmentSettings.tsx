@@ -1,4 +1,4 @@
-import { createEffect, createResource, For, Show } from "solid-js";
+import { createEffect, createResource, Show } from "solid-js";
 import {
   ALIGN_EAGERNESS_OPTIONS,
   ALIGN_STYLE_OPTIONS,
@@ -11,6 +11,7 @@ import {
   type AlignmentSettings,
 } from "../lib/alignment-draft";
 import { sentence } from "./WorkerSlotRow";
+import { Choice, Toggle } from "./form";
 import { Banner } from "./ui";
 
 /**
@@ -37,87 +38,53 @@ export function AlignmentSettings() {
       <p class="settings-intro">How the align mode plans with you.</p>
 
       <fieldset class="settings-delegate-profile">
-        <legend class="settings-delegate-legend" id="align-eagerness-label">
-          Eagerness
-        </legend>
-        <div role="radiogroup" aria-labelledby="align-eagerness-label" aria-describedby="align-eagerness-hint">
-          <For each={ALIGN_EAGERNESS_OPTIONS}>
-            {(o) => (
-              <label class="toggle public-links-choice">
-                <input type="radio" name="align-eagerness" checked={alignmentDraft()?.eagerness === o.id} disabled={off()} onChange={() => edit({ eagerness: o.id })} />
-                <span class="toggle-box" aria-hidden="true" />
-                <span class="public-links-choice-main">
-                  <span class="public-links-choice-name">{o.label}</span>
-                  <span class="public-links-choice-meta">{o.description}</span>
-                </span>
-              </label>
-            )}
-          </For>
-        </div>
-        <p class="field-hint settings-delegate-desc" id="align-eagerness-hint">
-          Either way, nothing is built until you confirm a card. Reaches open chats at their next message.
-        </p>
+        <legend class="settings-delegate-legend">Eagerness</legend>
+        <Choice
+          label="Eagerness"
+          value={alignmentDraft()?.eagerness ?? ""}
+          options={ALIGN_EAGERNESS_OPTIONS.map((o) => ({ value: o.id, label: o.label, hint: o.description }))}
+          disabled={off()}
+          onChange={(v) => edit({ eagerness: v as AlignmentSettings["eagerness"] })}
+        />
+        <p class="field-hint settings-delegate-desc">Either way, nothing is built until you confirm a card. Reaches open chats at their next message.</p>
       </fieldset>
 
       <fieldset class="settings-delegate-profile">
-        <legend class="settings-delegate-legend" id="align-style-label">
-          Writing style
-        </legend>
-        <div role="radiogroup" aria-labelledby="align-style-label" aria-describedby="align-style-hint">
-          <For each={ALIGN_STYLE_OPTIONS}>
-            {(o) => (
-              <label class="toggle public-links-choice">
-                <input type="radio" name="align-style" checked={alignmentDraft()?.style === o.id} disabled={off()} onChange={() => edit({ style: o.id })} />
-                <span class="toggle-box" aria-hidden="true" />
-                <span class="public-links-choice-main">
-                  <span class="public-links-choice-name">{o.label}</span>
-                  <span class="public-links-choice-meta">{o.description}</span>
-                </span>
-              </label>
-            )}
-          </For>
-        </div>
-        <p class="field-hint settings-delegate-desc" id="align-style-hint">
-          Reaches open chats at their next message.
-        </p>
+        <legend class="settings-delegate-legend">Writing style</legend>
+        <Choice
+          label="Writing style"
+          value={alignmentDraft()?.style ?? ""}
+          options={ALIGN_STYLE_OPTIONS.map((o) => ({ value: o.id, label: o.label, hint: o.description }))}
+          disabled={off()}
+          onChange={(v) => edit({ style: v as AlignmentSettings["style"] })}
+        />
+        <p class="field-hint settings-delegate-desc">Reaches open chats at their next message.</p>
       </fieldset>
 
       <fieldset class="settings-delegate-profile">
         <legend class="settings-delegate-legend">Visuals</legend>
-        <label class="toggle toggle-switch settings-team-enable">
-          <span>Draw when it helps</span>
-          <input
-            type="checkbox"
-            checked={alignmentDraft()?.visuals ?? false}
-            disabled={off()}
-            aria-describedby="align-visuals-hint"
-            onChange={(e) => edit({ visuals: e.currentTarget.checked })}
-          />
-          <span class="toggle-box" />
-        </label>
-        <p class="field-hint settings-delegate-desc" id="align-visuals-hint">
-          The align mode draws a wireframe or a flow on the alignment card when a picture explains faster than words. Applies to sessions you start after saving.
-        </p>
+        <Toggle
+          switch
+          class="settings-team-enable"
+          label="Draw when it helps"
+          checked={alignmentDraft()?.visuals ?? false}
+          disabled={off()}
+          onChange={(on) => edit({ visuals: on })}
+          hint="The align mode draws a wireframe or a flow on the alignment card when a picture explains faster than words. Applies to sessions you start after saving."
+        />
       </fieldset>
 
       <fieldset class="settings-delegate-profile">
         <legend class="settings-delegate-legend">Review</legend>
-        <label class="toggle toggle-switch settings-team-enable">
-          <span>
-            Adversarial review
-          </span>
-          <input
-            type="checkbox"
-            checked={alignmentDraft()?.review ?? false}
-            disabled={off()}
-            aria-describedby="align-review-hint"
-            onChange={(e) => edit({ review: e.currentTarget.checked })}
-          />
-          <span class="toggle-box" />
-        </label>
-        <p class="field-hint settings-delegate-desc" id="align-review-hint">
-          In align sessions, a read-only reviewer checks the plan and the diff of risky work, at most once each per alignment. Applies to sessions you start after saving.
-        </p>
+        <Toggle
+          switch
+          class="settings-team-enable"
+          label="Adversarial review"
+          checked={alignmentDraft()?.review ?? false}
+          disabled={off()}
+          onChange={(on) => edit({ review: on })}
+          hint="In align sessions, a read-only reviewer checks the plan and the diff of risky work, at most once each per alignment. Applies to sessions you start after saving."
+        />
       </fieldset>
 
       <p class="field-hint settings-delegate-desc">A subagent profile can set its own eagerness, writing style and visuals (Settings → Subagents).</p>

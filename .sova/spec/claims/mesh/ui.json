@@ -46,7 +46,11 @@
       "server/mesh/index.ts",
       "src/lib/settings-nav.ts",
       "src/lib/settings-nav.test.ts",
-      "src/lib/settings-draft.test.ts"
+      "src/lib/settings-draft.test.ts",
+      "shared/mesh-limits.ts",
+      "src/lib/mesh-draft.test.ts",
+      "server/mesh/mesh.test.ts",
+      "src/components/form/index.tsx"
     ]
   },
   "§mesh/ui": {

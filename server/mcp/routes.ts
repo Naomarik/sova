@@ -16,6 +16,7 @@ import { pasteAddress, signInState, startSignIn, stopSignIn } from "./sign-in";
 import { changeRow, forgetRow } from "./store";
 import { approve, forgetApprovals, type McpOwner } from "./trust";
 import { isSecretName, namedValues } from "./values";
+import { SECRET_NAME_RULE, SERVER_NAME_RULE } from "../../shared/mcp-limits";
 import { computerServers, projectServers, rowOf } from "./view";
 import { forgetSignIn } from "./forget-sign-in";
 
@@ -24,7 +25,8 @@ const words = (what: string): PageOnlyWords => ({ overseer: what, local: what, c
 const APPROVE_ONLY = words("Only you can approve a server, on the page.");
 const SIGN_IN_ONLY = words("Only you can sign in to a server, on the page.");
 const CHANGE_ONLY = words("Only you can change a server, on the page.");
-export const RESERVED = "The name sova is Sova's own. Pick another.";
+export const RESERVED = SERVER_NAME_RULE.issue("sova")!;
+const SECRET_NAME_BAD = SECRET_NAME_RULE.issue("-")!;
 export const CHANGED = "This server changed since you looked. Check what it runs, then approve it again.";
 
 class Refusal extends Error {
@@ -120,13 +122,13 @@ function pastedEntry(name: string, text: unknown): McpEntry {
   return entry;
 }
 
-function entryOfNew(b: Partial<McpNewServer> & Record<string, unknown>): { entry: McpEntry; secret?: { name: string; value: string } } {
+export function entryOfNew(b: Partial<McpNewServer> & Record<string, unknown>): { entry: McpEntry; secret?: { name: string; value: string } } {
   const name = filledName(b.name);
   const secret = typeof b.secret === "string" && b.secret ? b.secret : undefined;
   if (b.way === "address") return { entry: addressEntry(name, b.address, !!secret), ...(secret ? { secret: { name: SECRET_NAME, value: secret } } : {}) };
   if (b.way === "command") {
     const given = typeof b.secretName === "string" && b.secretName.trim() ? b.secretName.trim() : secret ? SECRET_NAME : undefined;
-    if (given && !isSecretName(given)) throw new Refusal("A secret's name is letters, digits and underscores.", 400, "invalid");
+    if (given && !isSecretName(given)) throw new Refusal(SECRET_NAME_BAD, 400, "invalid");
     return { entry: commandEntry(name, b.command, given), ...(secret ? { secret: { name: given!, value: secret } } : {}) };
   }
   if (b.way === "paste") return { entry: pastedEntry(name, b.text) };
@@ -205,7 +207,7 @@ export function registerMcpRoutes(app: Hono<any>): void {
       const b = await body(c);
       const value = typeof b.secret === "string" && b.secret ? b.secret : undefined;
       const given = typeof b.secretName === "string" && b.secretName.trim() ? b.secretName.trim() : undefined;
-      if (given && !isSecretName(given)) throw new Refusal("A secret's name is letters, digits and underscores.", 400, "invalid");
+      if (given && !isSecretName(given)) throw new Refusal(SECRET_NAME_BAD, 400, "invalid");
       const { entry, secretName } = editedEntry(was, b, given, !!value);
       const saved = await saveApproved(entry, value ? { name: secretName!, value } : undefined);
       if (entry.url !== was.url) forgetSignIn(was);

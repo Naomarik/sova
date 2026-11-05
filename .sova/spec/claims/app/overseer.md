@@ -1110,8 +1110,10 @@ fetched down to, then lands.
   too, from when a result or any job status names them (a running job's included), but toward the
   Overseer's own next start or send and its running count only: a schedule's fire and an auto-resume
   find their free slots from the sessions it started alone (§app.overseer/extension-commands). All nine are
-  configurable in Settings → Overseer; a settings file without the newer ones reads them as their
-  defaults.
+  configurable in Settings → Overseer, each a whole number from 0 to 1,000, the same range in the
+  form, in what a save accepts and in what a read of the file keeps; a save with one outside it is refused naming the limit by its
+  Settings label ("Sessions created must be a whole number from 0 to 1,000."), never by its field
+  name. A settings file without the newer ones reads them as their defaults.
 - **The running count shows.** While any Overseer-started session counts as running, the
   Overseer's composer shows "3 of 10 running" in its run-status row, from the same count the cap
   checks, and the refusal and the prompt name Settings → Overseer → Limits. The text is a button

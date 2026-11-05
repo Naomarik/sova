@@ -49,8 +49,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:20Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#d05bfb13"
+      "at": "2026-11-05T03:57Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
     },
     "code": [
       "server/merge-queue/attribute.ts",
@@ -178,8 +178,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-05T03:57Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
     },
     "code": [
       "server/merge-queue/checks.ts",
@@ -197,7 +197,13 @@
       "server/merge-queue/run.ts",
       "server/merge-queue/scenarios-blame.integration.test.ts",
       "server/project-services/env-allow.ts",
-      "server/project-services/env-allow.test.ts"
+      "server/project-services/env-allow.test.ts",
+      "server/merge-queue/run.integration.test.ts",
+      "server/merge-queue/estimate.ts",
+      "server/merge-queue/estimate.test.ts",
+      "shared/merge-queue.ts",
+      "server/merge-queue/testing/repo.ts",
+      "server/test-cache-guard.test.ts"
     ]
   },
   "§app.merge-queue/conflicts": {
@@ -306,6 +312,90 @@
       "server/merge-queue/guard.ts",
       "server/merge-queue/guard.test.ts"
     ]
+  },
+  "§app.merge-queue/landing-bar": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/landing-bar-states",
+      "§app.merge-queue/landing-bar-detail",
+      "§app.merge-queue/view",
+      "§app.release/tab",
+      "§app.insights/sidebar-foot",
+      "§app/commands"
+    ],
+    "code": [
+      "src/lib/landing-bar.ts",
+      "src/lib/landing-bar-store.ts",
+      "src/components/LandingBar.tsx",
+      "src/components/Sidebar.tsx",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/queue.ts",
+      "server/project-services/release.ts",
+      "shared/merge-queue.ts",
+      "src/components/LandingBar.css",
+      "src/lib/landing-bar.test.ts",
+      "server/merge-queue/landing-summary.integration.test.ts",
+      "src/lib/api.ts",
+      "src/lib/session-feed.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T09:00Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#59b1a0ac"
+    }
+  },
+  "§app.merge-queue/landing-bar-detail": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/view",
+      "§app.release/tab",
+      "§app.insights/sidebar-foot-phone",
+      "§app.session-list/spine",
+      "§app.project-services/merge-verbs",
+      "§app.release/verbs"
+    ],
+    "code": [
+      "src/components/LandingBar.tsx",
+      "src/components/Sidebar.tsx",
+      "src/lib/landing-bar-store.ts",
+      "src/components/LandingBar.css",
+      "src/lib/landing-bar.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T09:00Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#59b1a0ac"
+    }
+  },
+  "§app.merge-queue/landing-bar-states": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/view",
+      "§app.merge-queue/blame",
+      "§app.merge-queue/strategies",
+      "§app.merge-queue/requests",
+      "§app.release/tab",
+      "§app.release/checks",
+      "§app.release/quiet",
+      "§app.release/power"
+    ],
+    "code": [
+      "src/lib/landing-bar.ts",
+      "src/components/LandingBar.tsx",
+      "src/lib/landing-bar.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T09:00Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#59b1a0ac"
+    }
   },
   "§app.merge-queue/master-moved": {
     "kind": "behavior",
@@ -564,8 +654,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T22:57Z",
-      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
+      "at": "2026-11-05T03:57Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
     },
     "code": [
       "server/merge-queue/run.ts",
@@ -656,9 +746,9 @@
       "src/lib/merge-queue-initialize.test.ts"
     ],
     "agreed": {
-      "by": "Omar",
-      "at": "2026-11-05T02:42Z",
-      "source": "pi-session:ca4bcdc5-a6ff-4dbd-bf8b-509ecc177885#bcd45c06"
+      "by": "user",
+      "at": "2026-11-05T03:58Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
     }
   },
   "§app.merge-queue/settings-save": {
@@ -684,12 +774,13 @@
       "server/merge-queue/strategy-run.test.ts",
       "server/merge-queue/store.ts",
       "server/merge-queue/queue-settings.test.ts",
-      "server/merge-queue/settings-routes.ts"
+      "server/merge-queue/settings-routes.ts",
+      "shared/merge-queue-settings.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T06:59Z",
-      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+      "at": "2026-11-05T03:58Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
     }
   },
   "§app.merge-queue/setup": {
@@ -815,7 +906,9 @@
       "src/lib/merge-run.ts",
       "src/lib/merge-run.browser.test.ts",
       "src/components/ui.tsx",
-      "src/components/BranchSummary.tsx"
+      "src/components/BranchSummary.tsx",
+      "server/merge-queue/run.ts",
+      "server/merge-queue/checks.ts"
     ]
   },
   "§app/merge-queue": {

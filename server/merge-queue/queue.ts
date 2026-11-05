@@ -7,6 +7,7 @@ import {
   type CheckPick,
   type ChecksDeclared,
   ENTRY_OPEN,
+  type LandingQueueCut,
   type MergeAnswer,
   type MergeApproval,
   type MergeEntry,
@@ -418,6 +419,51 @@ export class ProjectQueue {
     const chats = this.deps.chatsOf?.(this.root) ?? {};
     const readyRows = this.attachSummaries(v, ready);
     return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(this.q.trials?.length ? { trials: structuredClone(this.q.trials) } : {}), ...(settings ? { settings } : {}) };
+  }
+
+  /**
+   * The landing bar's starting picture (GET /api/merge-queue/landing-summary): the queue's own records and its current
+   * run, with none of view()'s Git reads past the target's head (no Ready list, no newer-commit counts, no settled,
+   * origin or settings reads). `recentMax`: the newest landed entries kept, and of what waits on the host.
+   */
+  async landingCut(recentMax = 5): Promise<LandingQueueCut> {
+    const d = await this.declared();
+    const head = d.head || (await this.targetHead()) || "";
+    const takes = this.deps.estimate ? this.deps.estimate(this.id, this.root) : this.estimateFromHistory();
+    const landed = this.q.entries.filter((e) => e.state === "landed").sort((a, b) => (b.landed?.at ?? b.updatedAt).localeCompare(a.landed?.at ?? a.updatedAt));
+    const keep = new Set(landed.slice(0, recentMax).map((e) => e.id));
+    const q = { ...this.q, entries: this.q.entries.filter((e) => e.state !== "landed" || keep.has(e.id)) };
+    const v = buildView({ q, root: this.root, current: this.current?.run ?? null, checks: d.checks, review: d.review, head, takesMs: takes, now: this.now(), readRun: (id) => this.store.readRun(id) });
+    const served = (this.deps.listed?.(this.root) ?? true) && setUpOf(d.checks, d.invalid);
+    const hold = this.q.release ? (({ checks: _c, ...h }) => h)(this.q.release) : undefined;
+    if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
+    const { reviewing } = this.deps.chatsOf?.(this.root) ?? {};
+    // What waits on the host (a request open, closed or pushed this week), as view() keeps it: the newest few.
+    const weekAgo = new Date(this.now() - 7 * 24 * 3600_000).toISOString();
+    const onHost = this.q.entries
+      .filter((e) => e.state === "requested" || ((e.state === "closed" || e.state === "pushed") && e.updatedAt >= weekAgo))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, recentMax)
+      .map(({ seq: _seq, ...rest }) => structuredClone(rest) as MergeEntry);
+    return {
+      project: v.project,
+      root: v.root,
+      target: v.target,
+      state: v.state,
+      ...(v.paused ? { paused: v.paused } : {}),
+      ...(d.invalid ? { invalid: d.invalid } : {}),
+      served,
+      ...(v.current ? { current: v.current } : {}),
+      checking: v.checking,
+      waiting: v.waiting,
+      needsYou: v.needsYou,
+      recent: v.recent,
+      ...(onHost.length ? { waitingOnHost: onHost } : {}),
+      ...(hold ? { release: structuredClone(hold) } : {}),
+      ...(reviewing ? { reviewing } : {}),
+      heads: v.heads,
+      at: v.at,
+    };
   }
 
   /** The view is read again and published (a branch summary started, was written or failed). */

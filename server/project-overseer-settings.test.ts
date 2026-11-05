@@ -98,26 +98,26 @@ describe("powers: the migration of the six real settings shapes (al_3 t12, copie
   };
 
   for (const [name, raw] of Object.entries(SHAPES))
-    test(`${name}: within its level On, the rest Off, the assistant all Off, a one-time note; the hold kept`, () => {
+    test(`${name}: within its level On, the rest Off, the assistant all Off, no note; the hold kept`, () => {
       const s = parsePoSettings(raw);
       const level = raw.autonomy as "L1" | "L3";
       assert.deepEqual(onOf(s.powers.overseer), onAt(level));
       assert.equal(s.powers.overseer.deploy, false, "no level ever deployed");
       assert.deepEqual(onOf(s.powers.assistant), []);
       assert.equal(s.autonomy, level, "the derived level is the level it had");
-      assert.deepEqual([s.powers.note?.kind, s.powers.note?.from, s.powers.note?.seen], ["carried-over", level, false]);
+      assert.equal(s.powers.note, null);
       assert.equal(s.holdMin, 10);
       assert.equal(s.confirmKinds, undefined, "the checklist is read and ignored");
     });
 
   test("al_3 t16, stated: every ticked kind becomes On (within the level) and goes ahead after its hold alone", () => {
     // Before: a held act of a ticked kind waited for the overseer's approval. Now nothing does (q2): the envelope
-    // carries no confirm list, and the one-time note says so on the page.
+    // carries no confirm list.
     const s = parsePoSettings(SHAPES["mamluk-archery"]);
     for (const k of ["gather", "ownerUpdates", "whatsapp", "share"]) assert.equal(s.powers.overseer[k as "gather"], true, k);
   });
 
-  test("saved: autonomy and powers.derivedAutonomy agree, no confirmKinds written, read back the same with no note change", () => {
+  test("saved: autonomy and powers.derivedAutonomy agree, no confirmKinds written, read back the same with no note", () => {
     const p = pathsIn(join(root, "migrate-save"));
     patchPoSettings(p, { holdMin: 5 });
     writeFileSync(p.settings, JSON.stringify(SHAPES.motorsaif));
@@ -128,7 +128,7 @@ describe("powers: the migration of the six real settings shapes (al_3 t12, copie
     assert.equal("confirmKinds" in file, false);
     assert.equal("confirmKindsKnown" in file, false);
     assert.deepEqual(onOf(readPoSettings(p).powers.overseer), onAt("L3"));
-    assert.equal(readPoSettings(p).powers.note?.kind, "carried-over", "kept until seen");
+    assert.equal(readPoSettings(p).powers.note, null);
   });
 });
 
@@ -155,7 +155,7 @@ describe("powers: the level written for older readers is never looser", () => {
 });
 
 describe("powers: a level written by an older Sova re-derives the switches (al_3 t15)", () => {
-  test("switches saved, then an old client writes another level: overseer = carry-over of it, assistant kept, a note", () => {
+  test("switches saved, then an old client writes another level: overseer = carry-over of it, assistant kept, no note", () => {
     const p = pathsIn(join(root, "old-writer"));
     patchPoSettings(p, { powers: { overseer: { codingStart: true, share: false }, assistant: { codingStart: true } } });
     const saved = JSON.parse(readFileSync(p.settings, "utf8"));
@@ -165,11 +165,11 @@ describe("powers: a level written by an older Sova re-derives the switches (al_3
     const s = readPoSettings(p);
     assert.deepEqual(onOf(s.powers.overseer), onAt("L2"));
     assert.equal(s.powers.assistant.codingStart, true, "the assistant column is kept");
-    assert.deepEqual([s.powers.note?.kind, s.powers.note?.from], ["rederived", "L2"]);
+    assert.equal(s.powers.note, null);
     // An old Sova that drops unknown keys: no powers at all, so the carry-over.
     writeFileSync(p.settings, JSON.stringify({ version: 1, autonomy: "L3", holdMin: 10 }));
     assert.deepEqual(onOf(readPoSettings(p).powers.overseer), onAt("L3"));
-    assert.equal(readPoSettings(p).powers.note?.kind, "carried-over");
+    assert.equal(readPoSettings(p).powers.note, null);
   });
 
   test("an older Sova rewriting the same level is told by confirmKindsKnown, never by the level's value: the column re-derives", () => {
@@ -178,7 +178,7 @@ describe("powers: a level written by an older Sova re-derives the switches (al_3
     const r = readStoredPowers(old);
     assert.equal(r.overseer.codingStart, false, "codingStart Off: L1's carry-over");
     assert.deepEqual(onOf(r.overseer), onAt("L1"));
-    assert.deepEqual([r.note?.kind, r.note?.from], ["rederived", "L1"]);
+    assert.equal(r.note, null);
     // either key alone is the sign
     const { confirmKinds: _k, ...knownOnly } = old;
     assert.equal(readStoredPowers(knownOnly).overseer.codingStart, false);
@@ -206,7 +206,7 @@ describe("powers: a level written by an older Sova re-derives the switches (al_3
     writeFileSync(p.settings, JSON.stringify({ ...again, model: "zai/glm-5.3" }));
     const s = readPoSettings(p);
     assert.equal(s.powers.overseer.codingStart, false, "re-derived from L1");
-    assert.equal(s.powers.note?.kind, "rederived");
+    assert.equal(s.powers.note, null);
     // and an edit of the switches themselves outside this Sova
     writeFileSync(p.settings, JSON.stringify({ ...again, powers: { ...again.powers, overseer: { ...again.powers.overseer, deploy: true } } }));
     assert.equal(readPoSettings(p).powers.overseer.deploy, false);
@@ -223,7 +223,7 @@ describe("powers: a level written by an older Sova re-derives the switches (al_3
 });
 
 describe("powers: the patch", () => {
-  test("a partial column patch sets only its keys; the note can be marked seen; the old level maps by carry-over", () => {
+  test("a partial column patch sets only its keys; the old level maps by carry-over", () => {
     const p = pathsIn(join(root, "patch"));
     patchPoSettings(p, { powers: { overseer: { promote: true } } });
     assert.equal(readPoSettings(p).powers.overseer.promote, true);

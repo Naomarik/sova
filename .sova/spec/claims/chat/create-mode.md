@@ -200,7 +200,7 @@ included.
 - **The default mode** goes by a card that offers normal or Delegate, never Create
   (§chat.create-mode/per-chat-only).
 - **Merge queue settings.** A card can hold what Save holds (§app.merge-queue/settings-save): `push`,
-  `review`, and each check's limits. Apply is a Save, with its commit, its refusals and its waits: a
+  `review`, `reuse` (reuse passes from identical code), and each check's limits. Apply is a Save, with its commit, its refusals and its waits: a
   card applied while a branch is checking waits as Save does, saying so on the card, with **Cancel
   Save** in place of Apply and Dismiss. A held Save that then fails says so, with its reason, and keeps
   Cancel Save. A held card settles when the Save is made: Applied, or Dismissed if it is cancelled, on

@@ -490,6 +490,11 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
     const status = r.code === "not-found" ? 404 : r.code === "busy" ? 409 : r.code === "unsupported" ? 501 : 400;
     return c.json({ error: { code: r.code, message: r.message } }, status);
   });
+  // The landing bar's starting picture: every project's queue and releases in one quick read (wire.ts landingSummary).
+  app.get("/api/merge-queue/landing-summary", async (c) => {
+    const { landingSummary } = await import("./wire");
+    return c.json(await landingSummary());
+  });
   app.get("/api/merge-queue/cards", async (c) => {
     const raw = (c.req.query("path") ?? c.req.query("session"))?.trim();
     if (!raw) return c.json({ error: "name the session (its file path or id)" }, 400);

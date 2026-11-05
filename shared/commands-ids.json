@@ -226,6 +226,7 @@
     "project.icon.letters",
     "project.icon.remove",
     "project.verb.merge.hold",
+    "project.merge-queue.landing-summary",
     "project.verb.merge.try",
     "project.setup.get",
     "project.setup.open",

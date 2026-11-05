@@ -553,11 +553,11 @@ describe("al_3: the Project Assistant's column, the brakes and an older Sova's l
     assert.equal(info.settings.powers.assistant.gather, true, "the assistant column is kept");
     const file = JSON.parse(readFileSync(p.settings, "utf8"));
     assert.deepEqual([file.autonomy, file.powers.derivedAutonomy, "confirmKinds" in file], ["L2", "L2", false]);
-    // An older Sova that keeps unknown keys writes L3 beside them: the next read re-derives, with a note.
+    // An older Sova that keeps unknown keys writes L3 beside them: the next read re-derives (no note).
     writeFileSync(p.settings, JSON.stringify({ ...file, autonomy: "L3" }));
     const again = await po.projectOverseerInfo(project.id);
     assert.equal(again.settings.powers.overseer.codingStart, true);
-    assert.deepEqual([again.settings.powers.note?.kind, again.settings.powers.note?.from], ["rederived", "L3"]);
+    assert.equal(again.settings.powers.note, null);
     await settings({ autonomy: "L1" });
   });
 });

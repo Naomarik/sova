@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { LANDING_FILE_NAME } from "../../pi-config/extensions/worktrees/landing.ts";
 import { stateRoot } from "../state-root";
-import { type BranchSummary, branchQueueOf, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
+import { type BranchSummary, branchQueueOf, type LandingSummary, type LandingSummaryProject, type MergeQueueView, type WorktreeMergeProject, type WorktreeMergeStats, type WorktreeQueueInfo } from "../../shared/merge-queue";
 import type { RunMerge, ThreadEvent, WakeThread } from "./contract";
 import { type IngestDeps, startIngest } from "./ingest";
 import { setLandingNoteSource, setMergeCardNoteSource } from "./card-note";
@@ -932,6 +932,48 @@ export async function startMergeQueue(
       refused: (session, text) => mc.addLine(session, `refused:${Date.now()}`, text),
     }),
   );
+}
+
+type LandingListed = { id: string; root: string; name: string; archived?: unknown };
+let landingList: (() => LandingListed[]) | null = null;
+/** Tests only: the Projects list the landing summary names projects from (null: listProjects). */
+export function setLandingListForTest(f: (() => LandingListed[]) | null): void {
+  landingList = f;
+}
+
+/**
+ * GET /api/merge-queue/landing-summary: every listed project's queue cut (ProjectQueue.landingCut, loaded queues that
+ * serve it) and release cut (Releaser.landingCut), one answer, no Ready-list or tag-history reads. A project with
+ * neither is left out; one whose read fails has null there. Empty while the queue isn't started.
+ */
+export async function landingSummary(): Promise<LandingSummary> {
+  const at = new Date().toISOString();
+  const q = queues;
+  if (!q) return { projects: [], at };
+  const [{ listProjects }, { releaser }] = await Promise.all([import("../projects/spaces"), import("../project-services/release-wire")]);
+  const listed = new Map(
+    (landingList ?? listProjects)()
+      .filter((p) => !p.archived)
+      .map((p) => [servedKey(p.root), p] as const),
+  );
+  const loaded = new Map((await q.loaded().catch(() => [])).map((pq) => [servedKey(pq.root), pq] as const));
+  const r = releaser();
+  const releaseRoots = new Map((r?.roots() ?? []).map((root) => [servedKey(root), root] as const));
+  const keys = [...new Set([...loaded.keys(), ...releaseRoots.keys()])].filter((k) => listed.has(k));
+  const warn = (what: string, root: string) => (err: unknown) => (console.warn(`[merge-queue] ${root}: landing summary ${what}: ${err instanceof Error ? err.message : err}`), null);
+  const projects = await Promise.all(
+    keys.map(async (key): Promise<LandingSummaryProject | null> => {
+      const p = listed.get(key)!;
+      const pq = loaded.get(key);
+      const relRoot = releaseRoots.get(key);
+      const [queue, release] = await Promise.all([
+        pq ? pq.landingCut().then((c) => (c.served ? c : null), warn("queue", key)) : Promise.resolve(null),
+        r && relRoot ? r.landingCut(relRoot).catch(warn("release", key)) : Promise.resolve(null),
+      ]);
+      return queue || release ? { id: p.id, root: p.root, name: p.name || p.id, queue, release } : null;
+    }),
+  );
+  return { projects: projects.filter((x): x is LandingSummaryProject => !!x), at };
 }
 
 /** Try Again on a branch summary that failed (POST /api/merge-queue/projects/:project/branch-summary). */

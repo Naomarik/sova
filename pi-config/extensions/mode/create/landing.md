@@ -26,7 +26,7 @@ A card lands on the main branch with no checks, so a change that fails one turns
 
 ## Push, review and each check's limits
 
-- Change: whether a landing pushes, whether review runs, and for each check its time limit (at most 30 minutes), whether it reruns only the failed files, and whether it always runs or only when the merge thread picks it.
+- Change: whether a landing pushes, whether review runs, whether checks reuse passes from identical code (key `reuse`, on unless false; off, every check runs in full), and for each check its time limit (at most 30 minutes), whether it reruns only the failed files, and whether it always runs or only when the merge thread picks it.
 - Lives: the `merge` section of `.sova/project.json` on the target branch.
 - Approves: the person, by Apply on the card, which stands for the confirm on the Settings tab.
 - By: Card or Screen. `{setting: "merge-queue", changes}`, on a card of its own. The card goes the same way as Save in Settings → Merge Queue, the same commit and the same refusals, and it isn't checked first. Applied while a branch is checking, it reads "Saves when the current branch finishes." It's refused while the project folder has an uncommitted change. On a project that lands by request, it goes out as a request of its own instead.

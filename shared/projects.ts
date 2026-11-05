@@ -111,7 +111,10 @@ export interface ProjectGlanceRelease {
 /** One project card's runtime figures (§app.projects/home-glance). */
 export interface ProjectGlance {
   projectId: string;
-  /** null: the merge queue doesn't serve the project, or has kept no view of it yet (the card reads "—"). */
+  /** Whether the merge queue serves the project: `served` (its kept view is `queue`), `reading` (it serves it, its
+   *  first view is being read: the card reads "…"), `unserved` (the card reads "—"). */
+  merge: "served" | "reading" | "unserved";
+  /** The kept view's cut while `merge` is `served`; null otherwise. */
   queue: ProjectGlanceQueue | null;
   /** null: the project has no project file (no copies). `running` excludes the main checkout's and conformance's. */
   slots: { running: number; cap: number } | null;

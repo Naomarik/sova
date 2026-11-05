@@ -6,10 +6,11 @@ import type { ReleaseRecord } from "../../shared/release";
 
 /**
  * The project cards' runtime figures (§app.projects/home-glance): for every listed project at once, Ready to merge and
- * what is in line or landing from the merge queue's newest kept view, its release from the releaser's kept records,
+ * what is in line or landing from the merge queue's newest kept view (a served project's first view read once, in the
+ * background, then kept), its release from the releaser's kept records,
  * Running slots from the copies' records and the copy limit, and the memory its chats and running copies use now.
- * It only gathers what Sova keeps: it builds no queue view, makes no queue, runs no git, spawns nothing and probes no
- * service. `buildGlance` is pure over its deps; `readGlance` wires the server's and shares one answer for 10 s.
+ * It gathers what Sova keeps: past that one first view of a served project it builds no queue view, makes no queue for a
+ * project the queue doesn't serve, runs no git, spawns nothing and probes no service. `buildGlance` is pure over its deps; `readGlance` wires the server's and shares one answer for 10 s.
  */
 
 /** One copy's record, as the registry keeps it (only what the glance reads). */
@@ -25,8 +26,8 @@ export interface GlanceDeps {
   projects: readonly Pick<ProjectSummary, "id" | "root" | "archived">[];
   /** The same folder, whatever its spelling (a symlink, a trailing slash). */
   sameRoot(a: string, b: string): boolean;
-  /** The queue's kept cut of a project's newest view: null when it keeps none (unserved, or no view yet). */
-  queueOf(root: string): ProjectGlanceQueue | null;
+  /** The queue's state for a project: served with its kept view's cut, its first view being read, or unserved. */
+  queueOf(root: string): { state: "served"; cut: ProjectGlanceQueue } | { state: "reading" | "unserved" };
   /** The releaser's kept records of a root: undefined when it keeps none. */
   releaseOf(root: string): { open: ReleaseRecord | null; last: ReleaseRecord | null } | undefined;
   /** The project's own file at its root (the unit its main checkout adopts, and for which service), or null: none. */
@@ -97,9 +98,11 @@ export function buildGlance(d: GlanceDeps): ProjectGlanceList {
         seen.add(pid);
         copiesBytes += d.ownMemory(pid) ?? 0;
       }
+    const q = d.queueOf(p.root);
     return {
       projectId: p.id,
-      queue: d.queueOf(p.root),
+      merge: q.state,
+      queue: q.state === "served" ? q.cut : null,
       slots: def ? { running: mine.filter(countsAsRunning).length, cap: d.capOf(p.root) } : null,
       memory: { chatsBytes: chats.get(p.id) ?? 0, copiesBytes },
       release: releaseGlanceOf(d.releaseOf(p.root)),
@@ -143,7 +146,7 @@ export function readGlance(now = Date.now()): Promise<ProjectGlanceList> {
 }
 
 async function gatherGlance(): Promise<ProjectGlanceList> {
-  const [{ listProjects }, { queueGlanceNow }, { keptReleases }, { readRegistry, stateHash }, { copyLimitOf }, { machineCopyLimit }, drivers, { resourceMonitor }, { lastListedRows }, { canonicalPath }, os] = await Promise.all([
+  const [{ listProjects }, { queueGlanceState }, { keptReleases }, { readRegistry, stateHash }, { copyLimitOf }, { machineCopyLimit }, drivers, { resourceMonitor }, { lastListedRows }, { canonicalPath }, os] = await Promise.all([
     import("./spaces"),
     import("../merge-queue/wire"),
     import("../project-services/release-wire"),
@@ -172,7 +175,7 @@ async function gatherGlance(): Promise<ProjectGlanceList> {
   return buildGlance({
     projects: listProjects(),
     sameRoot: (a, b) => c(a) === c(b),
-    queueOf: (root) => queueGlanceNow(root),
+    queueOf: (root) => queueGlanceState(root),
     releaseOf: (root) => keptReleases(root),
     definitionOf: (root) => definitionAtRoot(root),
     capOf: (root) => copyLimitOf(c(root), { machine: machineCopyLimit(c(root)) }).cap,

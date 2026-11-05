@@ -10,10 +10,14 @@ import { bytesWord } from "./project-software";
 import { releaseChip, visibleSteps } from "./releases";
 
 export const DASH = "—";
+/** A served project's Ready while its queue's first view is being read. */
+export const READING = "…";
 
 export interface ReadyRow {
-  /** "2", "0", or "—" (unserved, or the glance not read yet). */
+  /** "2", "0", "…" (served, its first view being read), or "—" (unserved, or the glance not read yet). */
   count: string;
+  /** It opens the Merge Queue tab: only while the queue serves the project. */
+  link: boolean;
   /** "· 1 in line", while approved branches wait or are checked. */
   inLine: string | null;
   /** The success dot: while above 0. */
@@ -69,7 +73,7 @@ export interface CardRuntime {
 
 const UNREAD: CardRuntime = {
   caption: "",
-  ready: { count: DASH, inLine: null, dot: false, muted: true },
+  ready: { count: DASH, link: false, inLine: null, dot: false, muted: true },
   slots: null,
   memory: { text: DASH, share: null, muted: true },
   hasSetup: false,
@@ -154,9 +158,10 @@ export function releaseRow(r: ProjectGlanceRelease): ProgressRow {
 export function cardRuntime(g: ProjectGlance | undefined, hostTotalBytes: number | null, now: number): CardRuntime {
   if (!g) return UNREAD;
   const q = g.queue;
-  const ready: ReadyRow = q
-    ? { count: String(q.ready), inLine: q.inLine > 0 ? `· ${q.inLine} in line` : null, dot: q.ready > 0, muted: q.ready === 0 }
-    : { count: DASH, inLine: null, dot: false, muted: true };
+  const ready: ReadyRow =
+    g.merge === "served" && q
+      ? { count: String(q.ready), link: true, inLine: q.inLine > 0 ? `· ${q.inLine} in line` : null, dot: q.ready > 0, muted: q.ready === 0 }
+      : { count: g.merge === "reading" ? READING : DASH, link: g.merge === "reading", inLine: null, dot: false, muted: true };
   const slots: SlotsRow | null = g.slots
     ? { pips: Array.from({ length: g.slots.cap }, (_, i) => i < g.slots!.running), text: `${g.slots.running} of ${g.slots.cap}`, muted: g.slots.running === 0 }
     : null;

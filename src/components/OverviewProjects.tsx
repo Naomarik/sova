@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store";
 import type { AttentionDigest, OverseerProactivity, SessionSummary } from "../../shared/protocol";
 import { getProjectGlance, getSessionSummaryById, listProjects, startProjectCoding } from "../lib/api";
 import { relativeTime, stampTime } from "../lib/format";
-import { cardRuntime, DASH } from "../lib/home-glance";
+import { cardRuntime, DASH, type ReadyRow } from "../lib/home-glance";
 import { cardLimitAt, freezeOrder, showsFilter, projectCards, shortFolder, visibleCards, type ProjectCard } from "../lib/home-projects";
 import { startInProject } from "../lib/new-session";
 import { ForKey } from "../lib/for-key";
@@ -21,8 +21,25 @@ const PROJECTS_POLL_MS = 30_000;
 
 const errText = (err: unknown): string => String(err instanceof Error ? err.message : err).replace(/[.\s]+$/, "");
 
+/** The Ready to merge row: a link to the Merge Queue tab only while the queue serves the project (§app.projects/home-cards). */
+export function ReadyToMerge(props: { ready: ReadyRow; href: string }) {
+  return (
+    <RuntimeRow href={props.ready.link ? props.href : undefined} label="Ready to merge">
+      <span class="overview-project-card-val text-num" classList={{ "overview-project-card-muted": props.ready.muted }}>
+        <Show when={props.ready.dot}>
+          <i class="overview-project-card-dot" aria-hidden="true" />
+        </Show>
+        {props.ready.count}
+        <Show when={props.ready.inLine}>
+          <span class="overview-project-card-muted"> {props.ready.inLine}</span>
+        </Show>
+      </span>
+    </RuntimeRow>
+  );
+}
+
 /** A Runtime row: a link with a chevron where it has a place to open, else plain (no hover, no chevron). */
-function RuntimeRow(props: { href: string | undefined; label: string; children: JSX.Element }) {
+export function RuntimeRow(props: { href: string | undefined; label: string; children: JSX.Element }) {
   return (
     <Show
       when={props.href}
@@ -216,19 +233,7 @@ export function OverviewProjects(props: {
                           <span>Runtime</span>
                           <span class="overview-project-card-cap-note text-num">{rt().caption}</span>
                         </p>
-                        <a class="overview-project-card-row overview-project-card-link" href={tab("merge-queue")}>
-                          <span class="overview-project-card-key">Ready to merge</span>
-                          <span class="overview-project-card-val text-num" classList={{ "overview-project-card-muted": rt().ready.muted }}>
-                            <Show when={rt().ready.dot}>
-                              <i class="overview-project-card-dot" aria-hidden="true" />
-                            </Show>
-                            {rt().ready.count}
-                            <Show when={rt().ready.inLine}>
-                              <span class="overview-project-card-muted"> {rt().ready.inLine}</span>
-                            </Show>
-                          </span>
-                          <Icon name="chevron-right" small class="overview-project-card-chev" />
-                        </a>
+                        <ReadyToMerge ready={rt().ready} href={tab("merge-queue")} />
                         <RuntimeRow href={rt().slots ? tab("branches") : undefined} label="Running slots">
                           <Show when={rt().slots} fallback={<span class="overview-project-card-val overview-project-card-muted">{DASH}</span>}>
                             {(sl) => (

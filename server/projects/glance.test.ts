@@ -15,7 +15,7 @@ const deps = (x: Partial<GlanceDeps> = {}): GlanceDeps => ({
     { id: "prj_old", root: "/w/old", archived: { at: "2026-01-01T00:00:00.000Z" } },
   ],
   sameRoot: (a, b) => a.replace(/\/$/, "") === b.replace(/\/$/, ""),
-  queueOf: () => null,
+  queueOf: () => ({ state: "unserved" }),
   releaseOf: () => undefined,
   definitionOf: (root) => (root === "/w/a" ? { adoptedUnit: null, adoptedService: null } : null),
   capOf: () => 4,
@@ -95,11 +95,12 @@ test("copies' memory: every running unit of the project (slot 0's adopted unit, 
   assert.ok(!asked.includes("sova-svc-abc-main-web.service"), "the adopted unit stands for slot 0's service");
 });
 
-test("ready to merge: the queue's kept cut; a project the queue doesn't serve, or one with no view kept, is null", () => {
+test("ready to merge: the queue's kept cut while served; reading and unserved are told apart, neither with a cut", () => {
   const cut = { ready: 1, inLine: 0, waiting: 0, target: "main", at: "x" };
-  const g = buildGlance(deps({ queueOf: (root) => (root === "/w/a" ? cut : null) }));
-  assert.equal(g.glances[0]!.queue, cut);
-  assert.equal(g.glances[1]!.queue, null);
+  const g = buildGlance(deps({ queueOf: (root) => (root === "/w/a" ? { state: "served", cut } : { state: "reading" }) }));
+  assert.deepEqual([g.glances[0]!.merge, g.glances[0]!.queue], ["served", cut]);
+  assert.deepEqual([g.glances[1]!.merge, g.glances[1]!.queue], ["reading", null]);
+  assert.equal(buildGlance(deps()).glances[1]!.merge, "unserved");
   // The real reader: no view kept for a root (unserved, a clean branch never read) → null, and nothing is built.
   assert.equal(queueGlanceNow("/nowhere/never-served"), null);
 });

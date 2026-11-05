@@ -262,6 +262,23 @@ export function queueGlanceNow(root: string): ProjectGlanceQueue | null {
   return latestViews.get(servedKey(root))?.glance ?? null;
 }
 
+/**
+ * A project card's queue state (§app.projects/home-glance): `served` with the kept view's cut; `reading` for a root the
+ * queue serves (listed and set up, as the served writer last named them) whose view isn't kept yet, which starts that
+ * view's one read here (deduped with any read in flight; once kept, the list's watch maintains it like every kept
+ * view); `unserved` otherwise, which reads nothing and makes no queue. Synchronous: the first read of a served root is
+ * the only one that leads to Git, and it runs in the background.
+ */
+export function queueGlanceState(root: string): { state: "served"; cut: ProjectGlanceQueue } | { state: "reading" | "unserved" } {
+  const key = servedKey(root);
+  const kept = latestViews.get(key)?.glance;
+  if (kept) return { state: "served", cut: kept };
+  if (!servedNow.has(key)) return { state: "unserved" };
+  const d = listDeps;
+  if (d && !viewing.has(key)) void readView(d, key, lookAt(d, key, [], [])).catch((err) => console.warn(`[merge-queue] ${key}: glance view failed: ${err instanceof Error ? err.message : err}`));
+  return { state: "reading" };
+}
+
 /** A branch's newest entry in its queue's newest view: undefined when it has none there, null when no view of that
  *  queue has been seen yet (the caller keeps what its last read found). Synchronous, no Git. */
 export function branchQueueNow(root: string, branch: string): SessionBranchQueue | undefined | null {

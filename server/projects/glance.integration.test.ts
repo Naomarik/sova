@@ -107,7 +107,8 @@ test("the glance: shape, Ready from the served queue's kept view, null for the u
   assert.equal(s.queue?.ready, 1, "the served queue's Ready list: feat/ready");
   assert.equal(s.queue?.inLine, 0);
   assert.deepEqual(s.slots, { running: 0, cap: 4 }, "a project file, no copies: 0 of the default 4");
-  assert.equal(p.queue, null, "the queue doesn't serve the plain repo: —");
+  assert.equal(s.merge, "served");
+  assert.deepEqual([p.merge, p.queue], ["unserved", null], "the queue doesn't serve the plain repo: —");
   assert.equal(p.slots, null, "no project file: no slots");
   for (const x of [s, p]) {
     assert.deepEqual(Object.keys(x.memory).sort(), ["chatsBytes", "copiesBytes"]);
@@ -148,4 +149,27 @@ test("control: the watch sees a git run (sync and async) and a queue's view read
   });
   assert.ok(w.spawned.filter((x) => /git/.test(x)).length >= 2, JSON.stringify(w.spawned));
   assert.ok(w.asked.some((a) => a.startsWith("get ")) && w.asked.includes("cachedView"), JSON.stringify(w.asked));
+});
+
+test("after a restart (no view kept): a served project reads `reading`, unlike an unserved one; its view is built once, in the background, then kept; a later read runs no git", async () => {
+  const wire = await import("../merge-queue/wire");
+  const { resetGlanceForTest } = await import("./glance");
+  wire.resetQueueViewsForTest(); // what a restart leaves: no kept view
+  resetGlanceForTest();
+  const first = (await call("/api/projects/glance")).json as ProjectGlanceList;
+  const by = (g: ProjectGlanceList, id: string) => g.glances.find((x) => x.projectId === id)!;
+  assert.deepEqual([by(first, ids.served!).merge, by(first, ids.served!).queue], ["reading", null]);
+  assert.equal(by(first, ids.plain!).merge, "unserved");
+  // No Merge Queue tab visit: the glance's own one read of the served view lands, and the count appears.
+  const shown = await until(async () => {
+    resetGlanceForTest();
+    const g = by((await call("/api/projects/glance")).json as ProjectGlanceList, ids.served!);
+    return g.merge === "served" ? g : null;
+  }, "the served project's first view kept");
+  assert.ok((shown.queue?.ready ?? 0) >= 1, JSON.stringify(shown));
+  resetGlanceForTest();
+  const again = await watching(() => call("/api/projects/glance"));
+  assert.deepEqual(again.spawned, [], "a read once the view is kept runs no git");
+  assert.deepEqual(again.asked, []);
+  assert.ok(!(await wire.mergeQueues()!.loaded()).some((q) => q.root === plain.root), "still no queue for the unserved repo");
 });

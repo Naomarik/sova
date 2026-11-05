@@ -404,7 +404,7 @@ export class ProjectQueue {
   /**
    * The landing bar's starting picture (GET /api/merge-queue/landing-summary): the queue's own records and its current
    * run, with none of view()'s Git reads past the target's head (no Ready list, no newer-commit counts, no settled,
-   * origin or settings reads). `recentMax`: the newest landed entries kept.
+   * origin or settings reads). `recentMax`: the newest landed entries kept, and of what waits on the host.
    */
   async landingCut(recentMax = 5): Promise<LandingQueueCut> {
     const d = await this.declared();
@@ -418,6 +418,13 @@ export class ProjectQueue {
     const hold = this.q.release ? (({ checks: _c, ...h }) => h)(this.q.release) : undefined;
     if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
     const { reviewing } = this.deps.chatsOf?.(this.root) ?? {};
+    // What waits on the host (a request open, closed or pushed this week), as view() keeps it: the newest few.
+    const weekAgo = new Date(this.now() - 7 * 24 * 3600_000).toISOString();
+    const onHost = this.q.entries
+      .filter((e) => e.state === "requested" || ((e.state === "closed" || e.state === "pushed") && e.updatedAt >= weekAgo))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+      .slice(0, recentMax)
+      .map(({ seq: _seq, ...rest }) => structuredClone(rest) as MergeEntry);
     return {
       project: v.project,
       root: v.root,
@@ -431,6 +438,7 @@ export class ProjectQueue {
       waiting: v.waiting,
       needsYou: v.needsYou,
       recent: v.recent,
+      ...(onHost.length ? { waitingOnHost: onHost } : {}),
       ...(hold ? { release: structuredClone(hold) } : {}),
       ...(reviewing ? { reviewing } : {}),
       heads: v.heads,

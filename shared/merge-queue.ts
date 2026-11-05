@@ -433,8 +433,8 @@ export interface MergeQueueView {
 }
 
 /** A project's queue as the landing bar starts from it (GET /api/merge-queue/landing-summary): the view's fields the bar
- *  reads, `recent` cut to the newest few. A whole MergeQueueView (the `merge_queue` feed frame) is one too. */
-export type LandingQueueCut = Pick<MergeQueueView, "project" | "root" | "target" | "state" | "paused" | "invalid" | "served" | "current" | "checking" | "waiting" | "needsYou" | "recent" | "release" | "reviewing" | "heads" | "at">;
+ *  reads, `recent` and `waitingOnHost` cut to the newest few. A whole MergeQueueView (the `merge_queue` feed frame) is one too. */
+export type LandingQueueCut = Pick<MergeQueueView, "project" | "root" | "target" | "state" | "paused" | "invalid" | "served" | "current" | "checking" | "waiting" | "needsYou" | "recent" | "waitingOnHost" | "release" | "reviewing" | "heads" | "at">;
 
 /** A project's releases as the landing bar starts from them: the open record and the last one (steps without their
  *  `detail`), with Publish's gates and the quiet watch. `project` is the root, as in ReleaseView; a whole ReleaseView

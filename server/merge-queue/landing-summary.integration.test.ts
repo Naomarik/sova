@@ -72,7 +72,7 @@ test("a paused queue with a branch in line, then its landing: each project's cut
   assert.equal(c1.target, "master");
   assert.equal(c1.heads.target, repo.head("master"));
   // The cut carries none of the view's heavy parts.
-  for (const k of ["ready", "settings", "needsFix", "chats", "tryRun", "thread", "waitingOnHost"]) assert.equal(k in c1, false, `no ${k} in the cut`);
+  for (const k of ["ready", "settings", "needsFix", "chats", "tryRun", "thread"]) assert.equal(k in c1, false, `no ${k} in the cut`);
 
   await q.resume();
   await until(async () => (await summary()).projects[0]?.queue?.recent.some((r) => r.entry.branch === "feat/a"), "landed in the summary", 120_000);
@@ -82,6 +82,7 @@ test("a paused queue with a branch in line, then its landing: each project's cut
   const landed = c2.recent.find((r) => r.entry.branch === "feat/a")!;
   assert.equal(landed.entry.landed?.sha, repo.head("master"), "the landed info rides along");
   assert.ok(landed.run?.id, "with its run's summary");
+  assert.equal("waitingOnHost" in c2, false, "a project landing on its own target has nothing on the host");
 });
 
 test("recent keeps the 5 newest landings; a project off the list is left out", async () => {

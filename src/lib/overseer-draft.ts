@@ -57,28 +57,18 @@ export function completeInfo<T extends { settings: OverseerSettings; defaults: {
   return { ...info, settings: completeCaps(info.settings, defaults), defaults: { ...info.defaults, caps: defaults } };
 }
 
-/** The form as a fresh copy of what's saved: each limit shown as text. */
-export const toOverseerForm = (d: OverseerDraft): OverseerForm => {
+/** A copy with every limit mapped by `f`. */
+const mapCaps = <T extends OverseerDraft | OverseerForm, V extends CapEntry>(d: T, f: (v: CapEntry) => V) => {
   const c = cloneOverseer(d);
-  const caps = {} as FormCaps;
-  for (const [k, v] of Object.entries(c.settings.caps)) caps[k as keyof OverseerCaps] = String(v);
-  return { ...c, settings: { ...c.settings, caps } };
+  return { ...c, settings: { ...c.settings, caps: Object.fromEntries(Object.entries(c.settings.caps).map(([k, v]) => [k, f(v)])) } };
 };
-
-/** The form as the saved shape: each limit its number (only for a form with no problem). */
-export function formToDraft(f: OverseerForm): OverseerDraft {
-  const c = cloneOverseer(f);
-  const caps = {} as OverseerCaps;
-  for (const [k, v] of Object.entries(c.settings.caps)) caps[k as keyof OverseerCaps] = capOf(v) ?? Number.NaN;
-  return { ...c, settings: { ...c.settings, caps } };
-}
+/** The form as a fresh copy of what's saved: each limit shown as text. */
+export const toOverseerForm = (d: OverseerDraft): OverseerForm => mapCaps(d, String) as OverseerForm;
+/** The form as the saved shape: each limit its number (NaN for a box that holds none). */
+export const formToDraft = (f: OverseerDraft | OverseerForm): OverseerDraft => mapCaps(f, (v) => capOf(v) ?? Number.NaN) as unknown as OverseerDraft;
 
 /** Whether a box's entry says the same as a saved number (the number typed back, "5" for 5). */
-const capSame = (a: CapEntry | undefined, b: CapEntry | undefined): boolean => {
-  if (Object.is(a, b)) return true;
-  const x = capOf(a);
-  return x !== null && x === capOf(b);
-};
+const capSame = (a: CapEntry | undefined, b: CapEntry | undefined): boolean => Object.is(a, b) || (capOf(a) ?? Number.NaN) === capOf(b);
 
 /** A deep copy (works for the form as well as the saved shape). */
 export function cloneOverseer<T extends OverseerDraft | OverseerForm>(d: T): T;
@@ -107,13 +97,7 @@ export function sameValue(a: unknown, b: unknown): boolean {
 
 /** Every field, the notes included: a field added to OverseerSettings later is compared too. A
     limit compares by its value, so the saved number typed back is no change. */
-export function sameOverseer(a: OverseerDraft | OverseerForm, b: OverseerDraft | OverseerForm): boolean {
-  const ca = a.settings.caps as Record<string, CapEntry>;
-  const cb = b.settings.caps as Record<string, CapEntry>;
-  const keys = new Set([...Object.keys(ca), ...Object.keys(cb)]);
-  for (const k of keys) if (!capSame(ca[k], cb[k])) return false;
-  return sameValue({ ...a, settings: { ...a.settings, caps: null } }, { ...b, settings: { ...b.settings, caps: null } });
-}
+export const sameOverseer = (a: OverseerDraft | OverseerForm, b: OverseerDraft | OverseerForm): boolean => sameValue(formToDraft(a), formToDraft(b));
 
 const trimEnd = (t: string) => t.replace(/\s*$/, "");
 

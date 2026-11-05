@@ -751,9 +751,18 @@ for (const width of [1280, 390]) {
       await until("a send-back", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "send-back" && c.body.entry === "me_b"));
       await tab.getByRole("button", { name: "Land feat/hack anyway" }).click();
       await until("a land-anyway", () => o.calls.some((c) => c.verb === "merge.answer" && c.body.answer === "land-anyway"));
-      // The head's and the Merge thread card's (al_7).
-      assert.equal(await tab.getByRole("link", { name: "Open Merge Thread" }).count(), 2);
-      assert.equal(await tab.locator(".mq-head").getByRole("link", { name: "Open Merge Thread" }).count(), 1);
+      // Once, in the Merge thread card; the head has Queue Settings and Pause Queue only.
+      assert.equal(await tab.getByRole("link", { name: "Open Merge Thread" }).count(), 1);
+      assert.equal(await tab.locator(".mq-thread-card").getByRole("link", { name: "Open Merge Thread" }).count(), 1);
+      assert.equal(await tab.locator(".mq-head").getByRole("link", { name: "Open Merge Thread" }).count(), 0);
+      // The head's buttons and the card's links: an even gap, on one centre line.
+      for (const scope of [".mq-head .button-row", ".mq-thread-card .button-row"]) {
+        const b = await tab.locator(scope).first().evaluate((row) => [...row.children].map((c) => c.getBoundingClientRect()).map((r) => ({ l: r.left, r: r.right, mid: r.top + r.height / 2 })));
+        for (let i = 1; i < b.length; i++) {
+          assert.ok(b[i]!.l - b[i - 1]!.r >= 7.5, `${scope}: a gap between buttons ${i - 1} and ${i}`);
+          assert.ok(Math.abs(b[i]!.mid - b[0]!.mid) < 1, `${scope}: button ${i} on the first one's centre line`);
+        }
+      }
       // Ready to land, not approved: Land and its ▾, on the queue's own page.
       const ready = tab.locator('[data-branch="feat/ready-one"]');
       assert.match(await words(ready), /3 commits ahead/);
@@ -1099,6 +1108,27 @@ for (const width of [1280, 390]) {
       assert.match(text, /The branch changes statecharts\/merge\.ts\./);
       assert.match(text, /skipped: no change to its paths/);
       assert.match(text, /Nothing has merged from this run\./);
+      // Back to Queue is the arrow before the page's path; the actions are View Logs and Open Merge Thread, one line.
+      const back = page.locator(".mq-crumbs").getByRole("link", { name: "Back to Queue" });
+      assert.equal(await back.getAttribute("href"), `#/projects/${PID}/merge-queue`);
+      assert.equal(await page.locator(".mq-run-actions").getByRole("link", { name: "Back to Queue" }).count(), 0);
+      const acts = await page.locator(".mq-run-actions").evaluate((row) => [...row.children].map((c) => c.getBoundingClientRect().top));
+      assert.ok(acts.every((t) => Math.abs(t - acts[0]!) < 1), `the run's actions on one line (${acts})`);
+      // A tag stays on its step name's line, held to its last word: it drops under only when that word and it
+      // can't share a line of the name's column at all (a long tag at phone width).
+      const tagLines = await page.locator(".mq-run-steps .mq-step-tail").evaluateAll((tails) =>
+        tails.map((t) => {
+          const chip = t.querySelector(".chip")!.getBoundingClientRect();
+          const range = document.createRange();
+          range.selectNodeContents(t.firstChild!);
+          const word = range.getBoundingClientRect();
+          const room = t.closest(".mq-step-name")!.getBoundingClientRect().width;
+          const gap = parseFloat(getComputedStyle(t).columnGap) || 0;
+          return { word: word.top + word.height / 2, chip: chip.top + chip.height / 2, fits: word.width + gap + chip.width <= room, w: t.textContent };
+        }),
+      );
+      assert.ok(tagLines.some((l) => l.fits), "tagged steps found");
+      for (const l of tagLines) if (l.fits) assert.ok(Math.abs(l.word - l.chip) < 6, `${l.w}: its tag on its name's last line`);
       await page.getByRole("button", { name: "Show the log of Setup" }).click();
       await until("the setup log", async () => /log of setup/.test(await words(page.locator(".mq-steps"))));
       assert.equal(lastCall(o, "merge.logs").body.step, "setup");

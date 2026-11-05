@@ -91,6 +91,9 @@ const subLimits = await import("../shared/subagent-limits");
 const profileLimits = await import("../shared/profile-limits");
 const meshLimits = await import("../shared/mesh-limits");
 const pushLimits = await import("../shared/push-limits");
+const linkLimits = await import("../shared/public-links-limits");
+const linkClient = (patch: Json) => links.draftIssue({ ...links.publicLinksDraftOf(fresh.links.file), route: "self", publicUrl: "https://share.example.com", ...patch })?.text ?? null;
+const linkServer = (patch: Json) => putStatus("/api/public-links", { route: "self", gateway: { publicUrl: "https://share.example.com", front: "vhost", sharePort: 4802, acceptFrom: "all", ...patch } });
 const { addProfile } = await import("./profiles-store");
 const teamSeed = (await get("/api/settings/team")).defaults;
 /** Subagents profile 0 with its teams on (on Claude Code picks, which this process can verify), edited by `edit`. */
@@ -217,11 +220,30 @@ const LIMITS: Limit[] = [
     server: (v) => putStatus("/api/push/settings", { ...fresh.push.settings, contact: v === "" ? null : v }),
   },
   {
-    name: "Public links share port (1 to 65535)",
-    takes: [1, 65535],
-    refuses: [0, 65536],
-    client: (v) => links.draftIssue({ ...links.publicLinksDraftOf(fresh.links.file), route: "self", publicUrl: "https://share.example.com", sharePort: String(v) })?.text ?? null,
-    server: (v) => putStatus("/api/public-links", { route: "self", gateway: { publicUrl: "https://share.example.com", front: "vhost", sharePort: v, acceptFrom: "all" } }),
+    ...ruled(linkLimits.SHARE_PORT_RULE),
+    client: (v) => linkClient({ sharePort: String(v) }),
+    server: (v) => linkServer({ sharePort: v }),
+  },
+  {
+    ...ruled(linkLimits.INGRESS_PORT_RULE),
+    client: (v) => links.draftIssue({ ...links.publicLinksDraftOf(fresh.links.file), route: "via", viaNodeId: "n1", ingressPort: String(v) })?.text ?? null,
+    server: (v) => putStatus("/api/public-links", { route: { via: { nodeId: "n1" } }, ingressPort: v }),
+  },
+  {
+    name: "Public links public address (https://, a host only)",
+    rule: linkLimits.PUBLIC_URL_RULE,
+    takes: ["https://share.example.com", "https://share.example.com/"],
+    refuses: ["", "http://share.example.com", "https://share.example.com/x", "https://u:p@share.example.com"],
+    client: (v) => linkClient({ publicUrl: v as string }),
+    server: (v) => linkServer({ publicUrl: v }),
+  },
+  {
+    name: "Public links preview address (https://*.domain)",
+    rule: linkLimits.PREVIEW_URL_RULE,
+    takes: ["https://*.example.com", "https://*.preview.example.com:8443"],
+    refuses: ["https://example.com", "https://*.example.com/x", "http://*.example.com"],
+    client: (v) => linkClient({ previewUrl: v as string }),
+    server: (v) => linkServer({ previewUrl: v }),
   },
   {
     ...ruled(meshLimits.HOST_LABEL_RULE),

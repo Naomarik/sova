@@ -6,7 +6,7 @@
  * only shared modules.
  */
 import { canonicalWhen, parseWhen, validZone, type Trigger } from "./schedules";
-import { DEFAULT_LIMITS, GRANTABLE, LIMIT_KEYS, PROFILE_MINOR_MODES, REMOVABLE, THINKING_LEVELS, normalizeCaps, type Grantable, type ProfileLimits, type ProfileMinorMode, type Removable, type ThinkingLevel } from "./profiles";
+import { createNotNamed, DEFAULT_LIMITS, GRANTABLE, LIMIT_KEYS, PROFILE_MINOR_MODES, REMOVABLE, THINKING_LEVELS, normalizeCaps, type Grantable, type ProfileLimits, type ProfileMinorMode, type Removable, type ThinkingLevel } from "./profiles";
 import { MEMORY_SIZES, MEMORY_TYPES } from "./memory";
 import type { MemoryType } from "./protocol";
 
@@ -114,6 +114,7 @@ function parseSettings(v: unknown): AutomationSettings | { error: string } {
     out.thinking = v.thinking as ThinkingLevel;
   }
   if (v.mode !== undefined) {
+    if (v.mode === "create") return { error: `"settings.mode": ${createNotNamed("an automation")}` };
     if (v.mode !== "normal" && v.mode !== "delegate") return { error: `"settings.mode" must be "normal" or "delegate".` };
     out.mode = v.mode;
   }

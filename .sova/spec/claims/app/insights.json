@@ -700,7 +700,8 @@
       "server/usage-helper/query.ts",
       "server/usage-helper/records.ts",
       "server/usage-helper/service.ts",
-      "server/app.ts"
+      "server/app.ts",
+      "server/merge-queue/branch-summaries.ts"
     ],
     "requires": [
       "§app.insights/llm-inflight",

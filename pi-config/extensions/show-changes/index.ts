@@ -82,8 +82,8 @@ export interface ShowChangesOptions {
 
 /**
  * The agent dir of the Sova server hosting this chat, the one the viewer's check uses. A chat runs
- * with the server's agent dir, except a worker given its own: Sova then names the server's state
- * root (<agent dir>/sova) in SOVA_CHAT_STATE_ROOT. Outside Sova, pi's own.
+ * with the server's agent dir, except a worker given its own: Sova names the server's state root
+ * (<agent dir>/sova) in SOVA_CHAT_STATE_ROOT for every chat. Outside Sova, pi's own.
  */
 export function serverAgentDir(env: NodeJS.ProcessEnv = process.env): string {
 	return env.SOVA_CHAT_STATE_ROOT ? dirname(env.SOVA_CHAT_STATE_ROOT) : getAgentDir();

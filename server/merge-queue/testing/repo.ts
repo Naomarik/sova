@@ -63,7 +63,9 @@ const GIT_ENV = {
 };
 
 export function git(cwd: string, args: string[], opts: { allowFail?: boolean } = {}): string {
-  const r = spawnSync("git", ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", ...args], {
+  // No background cleanup: a commit's detached `git rerere gc` (or maintenance) could write into a worktree's admin
+  // folder while a following `git worktree remove` deletes it.
+  const r = spawnSync("git", ["-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null", "-c", "maintenance.auto=false", "-c", "gc.auto=0", ...args], {
     cwd,
     encoding: "utf8",
     env: { ...process.env, ...GIT_ENV },

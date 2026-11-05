@@ -359,7 +359,7 @@ test("the project's own playbook is read after the method; without one the metho
 
 test("each event names the verbs it is answered with, all of them merge verbs the contract lists", async () => {
   const { MERGE_VERBS } = await import("../../shared/project-contract");
-  const evs: ThreadEvent[] = [queued(), { kind: "conflict", entry: entry(), run: "mr_1", files: ["a.ts"] }, { kind: "failed", entry: entry(), run: "mr_1", summary: "unit" }, { kind: "paused", why: "x" }, { kind: "names", file: "/s/names.json", target: "main" }];
+  const evs: ThreadEvent[] = [queued(), { kind: "conflict", entry: entry(), run: "mr_1", files: ["a.ts"] }, { kind: "failed", entry: entry(), run: "mr_1", summary: "unit" }, { kind: "paused", why: "x" }, { kind: "names", file: "/s/names.json", target: "main" }, { kind: "idle", entry: entry() }];
   for (const ev of evs) {
     const verbs = [...eventText(ev).matchAll(/\bmerge\.[a-z]+/g)].map((m) => m[0]);
     for (const v of verbs) assert.ok((MERGE_VERBS as readonly string[]).includes(v), `${ev.kind} names ${v}, not a merge verb`);
@@ -368,6 +368,17 @@ test("each event names the verbs it is answered with, all of them merge verbs th
     const text = readFileSync(join(DEFAULT_PLAYBOOK_DIR, f), "utf8");
     for (const m of text.matchAll(/`(merge\.[a-z]+)/g)) assert.ok((MERGE_VERBS as readonly string[]).includes(m[1]!), `${f} names ${m[1]}, not a merge verb`);
   }
+});
+
+test("idle: the queue is quiet; the newest landing and the target's head are named; the playbook decides, merge.hold is offered", () => {
+  const text = eventText({ kind: "idle", entry: entry("mq_9"), lastLanded: { id: "mq_8", branch: "feat/x", sha: "c".repeat(40) }, head: "d".repeat(40) });
+  assert.match(text, /^Idle: the queue has nothing left to check and nothing running \(the last change: entry mq_9 · /);
+  assert.match(text, /The newest landing: entry mq_8 · feat\/x as ccccccc\. master is at ddddddd\./);
+  assert.match(text, /"When the queue is idle"/);
+  assert.match(text, /merge\.hold \{action: "set"\}/);
+  assert.match(text, /Otherwise nothing is needed: end your turn\./);
+  const bare = eventText({ kind: "idle", entry: entry("mq_9") });
+  assert.doesNotMatch(bare, /newest landing|is at/);
 });
 
 test("queued: the diff and the picks read from the base the entry was queued against, so a landed branch still shows its changes", () => {

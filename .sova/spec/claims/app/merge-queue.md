@@ -17,6 +17,7 @@ fast-forwards the target to exactly the commit it tested (§app.merge-queue/land
 (§app.merge-queue/push); a project may instead open a pull request on GitHub or a merge request on
 GitLab (§app.merge-queue/requests), or only push the branch (§app.merge-queue/publish).
 Every setting the queue uses shows in Settings → Merge Queue (§app.merge-queue/settings).
+Each branch's row says what the branch does, in a few bullets (§app.merge-queue/branch-summary).
 A failure goes to the branch's chat only once the same check passed on the target alone
 (§app.merge-queue/blame).
 
@@ -34,7 +35,10 @@ The queue knows nothing about any one project. It reads only the project's defin
 (`.sova/project.json`) and the existing verbs, so it works the same for every project: Sova's own
 repository, a site with one test command, a project that has no tests. The queue models no "live"
 or "not live" state anywhere and has no Restart Server control. Restarting stays where it is
-(§app.updates/restart and the operator's Apply verb).
+(§app.updates/restart and the operator's Apply verb), with one exception that is no queue feature:
+Sova's own merge thread restarts Sova after landings that change its server code
+(§chat.merge-queue/sova-restart). The queue's part is generic: it tells the thread when nothing is
+left to check, and holds new starts while the thread asks it to (§app.merge-queue/empty).
 
 Batching ("test up to N branches together") is a per-project setting fixed at 1 and not shown.
 There is no trial phase and no switch: a served project's queue is how its branches land.
@@ -62,8 +66,9 @@ answer in `<state root>/merge-served.json`: each served repository's main checko
 It writes the file at every start, before it takes any typed go-ahead, and again whenever the
 answer changes (a project added to the list, removed or archived, a setup saved, a target whose
 definition changed). A chat reads it afresh at each merge or "land it", never once at its start,
-so a project listed or set up while the chat is open takes effect at its next merge. A chat Sova
-doesn't run treats every repository as not served. A chat Sova runs that finds the file missing or
+so a project listed or set up while the chat is open takes effect at its next merge. Every chat Sova
+starts is told its server's state root. A chat Sova doesn't run treats every repository as not served. A
+chat Sova runs with no state root reads as served, and one that finds the file missing or
 damaged treats the repository as served, so a served project never merges around its queue. When
 the server can't read its Projects list, it serves nothing until it can.
 
@@ -88,7 +93,8 @@ it go-aheads, and leaves the file as it is.
   with `worktree land` (§chat.worktrees/tool). That action refuses any message the user didn't type
   themselves (§chat.worktrees/land-own-word).
 
-Both approve the same thing, with no second confirm. Nothing else approves: not the merge thread,
+Both approve the same thing. The Land button asks once, on the row itself, before it approves
+(§chat.composer/land-confirm); a typed "land it" asks nothing more. Nothing else approves: not the merge thread,
 not an Overseer card, not another chat. The one entry no person approves is a release's own (its
 release commit, or the revert of an abandoned one): Sova adds it itself, approved `by: release`,
 without review (§app.release/checks).
@@ -227,6 +233,9 @@ merge included, has a run page with each step's log (§app.merge-queue/view).
 release's entries, first in line; every other entry waits with "waits for {tag} to be published or
 abandoned", and a run of another branch checking when the release starts is voided and goes back to
 the front of the line, never blamed.
+
+**Held for a restart.** While the merge thread holds new starts (§app.merge-queue/empty), no
+waiting entry starts, each saying "Waiting: Sova is restarting"; a run already checking finishes.
 
 **Stopping.** A run that times out, is killed, or loses its server mid-way is **void**: it is
 rerun from the start for the same entry, which keeps its place, and is never blamed.
@@ -469,7 +478,7 @@ retry pushes what was held.
 
 Each entry may carry **notes**: short free text about what is worth knowing after it lands. The
 merge thread's note is one text of at most 300 characters, for example "changes server code;
-restart Sova to pick it up", or "regenerated the lockfile". Sova adds its own beside it:
+Sova restarts itself once the queue is idle", or "regenerated the lockfile". Sova adds its own beside it:
 - the review's notes;
 - flaky tests;
 - tests already failing on the target;
@@ -538,6 +547,10 @@ after 60 seconds, then the queue pauses. No chat is told. The branch is never bl
 **Skipping it.** "Land without review" (or "land it, skip review") skips it for that approval
 only.
 
+Where the queue shortens the reviewer's text (the review step's detail and a flagged run's reason, to
+200 characters; a review note, to 300), a cut text ends in "…"; the whole verdict is in the review
+step's log.
+
 A verdict holds at most 10 findings, each of a kind: dead code, duplication, hack, missing test,
 naming, or other. The kit is never a registered skill: it has no `SKILL.md`, and it is in no skills
 folder or pi setting.
@@ -598,6 +611,9 @@ recorded, and a host merge never pauses the line.
 - **During a run**, the run is voided and the queue pauses: "master moved outside the queue ({old} →
   {new}) while {branch} was checking: that run was voided; resume once that is intended".
 - **While Sova was stopped**, with entries in line, the queue starts paused the same way.
+- **A settings card doesn't do this.** Its commit waits (§app.project-overseer/settings' held Apply) and
+  applies at the queue's next quiet point as the queue's own move, so no run voids and the queue doesn't
+  pause.
 
 **Resume** accepts the new head, and waiting entries run on it.
 
@@ -606,6 +622,39 @@ in a chat Sova runs (§chat.worktrees/tool), the project page's and a proposed r
 Land (§app.project-overseer/coding-worktrees, §app.project-runtime/merge), and any other direct merge
 of a coding branch into it, whoever asks, is refused: "{target} takes branches only through the
 merge queue: Land the branch instead (nothing was merged)."
+
+## §app.merge-queue/empty — When nothing is left to check, and holding new starts
+
+Two things every project's queue does for its merge thread (§chat.merge-queue/thread), whatever
+the project. What the thread makes of them is its playbook's business; Sova's own uses them to
+restart Sova (§chat.merge-queue/sova-restart).
+
+- **Telling the thread the queue is idle.** When the queue has nothing left to check and nothing
+  running after it was busy, it tells its merge thread so, once (**Idle**). That happens when a run
+  ends (it landed, was handed back for a failure, or waits for the user after a judged conflict, a
+  flagged review or a failure whose owner can't be told) and nothing else is in line, when a cancel
+  takes out the last entry in line or checking, and when a release's hold of the queue lifts at its
+  Publish or Abandon. "Nothing left to check" means no entry checking or in line, and no conflict
+  waiting for the thread's judgement; entries waiting for the user, on the host or sent back to
+  their chat don't count. The message names the entry that changed last, the queue's newest landing
+  with its commit, and the target's head. It is sent again only after the queue was busy again (or
+  a release's hold lifted). Like every other call to the thread, it is fire-and-forget, never holds
+  the line, and a thread that is missing or fails changes nothing. The Merge thread card reads it as
+  "Told the queue is idle" (§app.merge-queue/chats).
+- **Holding new starts.** `merge.hold {action: "set"}` holds the queue's new starts for 5 minutes,
+  and `{action: "clear"}` lifts the hold (§app.project-services/merge-verbs). The project's merge
+  thread may call it, for its own project, and the operator may too. Setting it again renews the 5
+  minutes from then. While held, no waiting entry starts a run, a release's included; a run already
+  checking or landing goes on to its end, and approvals are still taken into the line. Each waiting
+  entry's reason says "Waiting: Sova is restarting", in the Merge Queue view and in `merge.status`
+  (§app.merge-queue/view), over any other wait it had. A hold ends at the first of:
+  - a clear;
+  - Sova's server starting again (the hold is saved with the queue, and a start lifts it);
+  - 5 minutes after it was last set.
+
+  Then the hold's words go and waiting entries start as before. A hold is not a pause: the queue's
+  state stays what it was, Resume doesn't end it, and nothing records it as the user's. `merge.pause`
+  and `merge.resume` stay the user's alone (§app.merge-queue/run); the thread can call neither.
 
 ## §app.merge-queue/setup — A project not set up yet
 
@@ -677,16 +726,16 @@ shows, top to bottom:
   "Not pushed yet: goes out with the next landing." When a check is red on the target alone, a line
   says so: "Red on {target} alone: {check}". Nothing about live state, and no Restart control.
 - **The queue's head**: its state (Idle, Running, Paused, Not set up, Definition invalid; **Frozen for a
-  release** while a release holds it and it isn't paused), **Pause Queue** or **Resume
-  Queue**, **Queue Settings**, and **Open Merge Thread** when the project has one. While a review
-  runs, **Review running · {branch} · Open** sits beside it (§app.merge-queue/chats). One summary line
+  release** while a release holds it and it isn't paused), **Queue Settings**, and **Pause Queue** or
+  **Resume Queue**. Open Merge Thread is not in the head: it is only in the Merge thread card. While a
+  review runs, **Review running · {branch} · Open** sits beside them (§app.merge-queue/chats). One summary line
   is always shown under it: the checks, the review and its model, and how it lands ("11 checks ·
   review on, Opus 5.5 · pushes to origin"; "opens pull requests on GitHub"). **Queue Settings**
   opens Settings at its Merge Queue tab, on this project (§app.merge-queue/settings). The queue is described as "One branch
   at a time, in order. Each is merged onto {target} in a separate copy and checked there; {target}
   then moves to exactly that commit."
 - **The Merge thread card**, under the head: the thread's state, a question waiting on the user,
-  **Open Merge Thread** and **Start Fresh…**, or a line saying no thread runs now
+  **Open Merge Thread** (the tab's only one) and **Start Fresh…**, or a line saying no thread runs now
   (§app.merge-queue/chats).
 - **Paused**, when paused: the reason in plain words (by you; the target moved outside the queue;
   setup failed on the target itself, twice; the project folder has uncommitted edits; the reviewer failed twice; a landing in flight at a stop needs a look), the
@@ -703,7 +752,9 @@ shows, top to bottom:
   state chip ("In line · 2"), its branch and commit, its chat, when it was approved and how (the Land button, or typed in its chat), its
   options (without review, without its specs), "starts in ~N min · takes ~N min", newer commits not
   included, and **Cancel Landing**. A release's own entry reads **Release** as its chip; while a
-  release holds the queue, the other entries show no estimate and say why they wait.
+  release holds the queue, the other entries show no estimate and say why they wait. While the
+  merge thread holds new starts (§app.merge-queue/empty), each waiting entry says "Waiting: Sova is
+  restarting" instead.
 - **Needs you**: entries waiting for the user, in full words:
   - **Behaviour differs · waiting for you**, with the target's side, the branch's side and the merge
     thread's proposal, and Accept and Send Back;
@@ -741,8 +792,21 @@ shows, top to bottom:
   at the same commit once they changed and fit, or once removed from the queue,
   §chat.composer/worktrees-control;
   the list is read at most every 15 seconds, so that row may take that long to appear).
-  Each shows its branch, commit, Ready chip, its chat, worktree and "{n} commits ahead · +{a} −{d}",
+  Each shows its chat and branch, then its chip, commit and "{n} commits ahead · +{a} −{d} · {when}",
   and **Land** with the same menu as the modal's (Land Without Review, Land Without Its Specs…).
+  {when} is when the branch last changed, its head commit's committer date, said relative to now
+  ("2h ago", "yesterday", "3d ago", then the day, "Nov 2", after a week), with the full date and time
+  as its hover and for a screen reader. The chip is the readiness reading (§chat.worktrees/readiness)
+  that the row's chat holds for the branch's worktree (a worker's chat: its own, then its top chat's),
+  with its reason as its hover: **Ready to land** or **Ready to merge** or **Waiting for your OK**
+  (success), **Landing specs** (info, or warn when it can't land them), **In progress** (neutral),
+  **Conflicts with {target}** or **Blocked** or **Stale** (warn), **Merged** (success). A branch with
+  no known chat shows a neutral **No chat**; one whose chat holds no reading of it (the chat works in
+  it without tracking it, or isn't among the chats Sova lists) a neutral **No reading**. The chip
+  only reports: the row stays on this list, and Land and its menu are offered as before, whatever it
+  says.
+  Land here asks once as the modal's does, its confirmation right-aligned under the row
+  (§chat.composer/land-confirm), and only Land {n} Commits queues the branch.
   Land there names no chat: the queue records the branch's owner by the same rule the row shows
   (§app.merge-queue/owner), so the chat the row shows is the one the queue records and tells.
 - **History**, at the bottom: every chat the queue has had for the project, each opening its chat,
@@ -751,13 +815,17 @@ shows, top to bottom:
 
 **Every row's chat.** Every row of Checking now, Waiting, Needs you, Sent back, Recent and Ready to
 land names its chat by title: a row in the line or landed names the chat its entry recorded; a
-Ready row names the branch's owner (§app.merge-queue/owner). A click or tap anywhere on the row
+Ready row names the branch's owner (§app.merge-queue/owner). The row's top line is that chat's
+title first, then the branch name in small mono, then an "archived" tag when the chat is archived;
+its second line is its state chip, its short commit and "{n} commits ahead · +{a} −{d}" (or the
+row's own facts; a Ready row's end with " · {when}", above); its branch summary sits under that (§app.merge-queue/branch-summary). A row
+names no worktree folder and carries no "Chat" label. A click or tap anywhere on the row
 outside its buttons, links and menus opens that chat; a click with a modifier key, or one that ends
 a text selection, does nothing. The chat's title is also a real link to it, so it opens in a new
 tab too, and it is never wrapped around the row's buttons. The chat opens whatever form its
 recorded id takes (the link reaches the chat, never an empty "not found" view). An archived chat
-still opens, with "archived" after its title. A row with no known chat reads "No chat found for
-this worktree", opens nothing when tapped, and keeps its buttons. A row whose chat is a worker
+still opens, with its "archived" tag. A row with no known chat leads with "No chat found for this
+worktree" in place of the title, opens nothing when tapped, and keeps its buttons. A row whose chat is a worker
 never uses the worker's first message (its instructions) as a title: it reads "Worker {name} of
 “{chat title}”" ("Worker of “…”" with no name), naming and linking the chat that runs it, up to the
 top chat when workers run workers; when no such chat is known it reads "A worker's chat" and links
@@ -776,20 +844,39 @@ viewer shows the files alone. What it compares, read by the server from the queu
   one on the branch, against its merge-base with the target;
 - **Recent**: what that landing brought in, from the target before it to the landed commit.
 
-**On a phone** (a screen narrower than 600px) the sections lose their outer card frame and inner
-box: rows are split by hairlines, with 12px side padding. Each row stacks: the branch on its own
-line, wrapping anywhere; a facts line led by the state chip, then the commit and "{n} commits ahead
-· +{a} −{d}" (or the row's own facts); the chat line, where the worktree is named by its folder's
-last name, with the full path as its `title`; and an actions line, Review Changes on the left and
-Land ▾ (or the row's other actions) on the right, every control at least 44px tall. Nothing scrolls
-sideways at 390px. Wider screens keep the actions at the row's end and show the full path. Nothing
-is offered only on hover.
+**Its layout follows the queue's own room**, the width the project page gives the tab, never the
+screen's: a phone, the Fold with the sidebar open and a narrow window read alike, and opening or
+closing the sidebar can change it.
+- **Under about 600px of room** the tab loses its outer card frame, and the strip, the Merge thread
+  card, Checking now, the lists and the run page's cards run edge to edge, split by hairlines, with
+  12px side padding. Banners stay boxed, their button under their words. Each row stacks: the
+  chat's title and the branch, wrapping anywhere; a facts line led by the state chip, then the
+  commit and "{n} commits ahead · +{a} −{d}" (or the row's own facts), wrapping; the summary's
+  bullets, wrapping; and the row's actions
+  (Review Changes, Land ▾ or the row's other actions) on their own line under it, Review Changes at
+  the line's left and the row's other actions at its right, each button the same size as with room.
+  A card's head (Checking now, the Merge thread, History) puts its buttons on their own line under
+  its title. Nothing scrolls sideways at 360px.
+- **With room**, every row of the tab alike (Checking now, Waiting, Needs you, Ready to land, Sent
+  back, Recent and History) puts its actions in a column at its top right,
+  each button at its own width; an open Land confirmation spans the row, at its right. A card's head
+  keeps its title and its buttons on one line.
+
+Where a row's actions sit is decided by the room alone, never by how long the row's words are.
+**Buttons**: every group of buttons on the tab, the run page and the Merge thread card has one even
+gap between buttons and holds them on one centre line, wrapping as a group; a borderless button that
+starts a line lines up with the words above it. On a touch screen the head's, the Merge thread
+card's, banners', History's and the run page's buttons are 44px tall; a row's own actions keep
+Land's size. Nothing is offered only on hover.
 
 **The run page** (`…/merge-queue/<run>`) shows:
+- its path, "Merge queue › {branch}", led by a back arrow named **Back to Queue** that opens the
+  tab (44px square on a touch screen);
 - the branch and its verdict, the base, the branch's commit and the tested commit, when it started
   and how long it took, its chat, and how it was approved;
-- **View Logs** (every step's log, in order, from the copy's first line), **Open Merge Thread** and
-  **Back to Queue**;
+- one action row: **View Logs** (outlined, opening full width below the row: every step's log, in
+  order, from the copy's first line) and **Open Merge Thread** (borderless), on one line at every
+  width; Back to Queue is the path's arrow, never a third action;
 - its review, when it has one: each attempt's reviewer chat, as on the rows
   (§app.merge-queue/chats);
 - "Nothing has merged from this run. {target} moves only once every check passes." while it runs,
@@ -802,18 +889,94 @@ is offered only on hover.
   finished (nothing blamed); or passed, the target moved to exactly the tested commit;
 - for a red run, a "Whose failure is it?" block (machine or setup, already failing on the target,
   flaky), drawn from the reruns (§app.merge-queue/blame);
-- **Checks and why**: every step with its tag and reason, its failures, time and counts, and its log.
+- **Checks and why**, its legend under the title: every step with its tag and reason, its failures,
+  time and counts, and its log. Each row reads, in this order: its status mark, its name (its tag,
+  such as **Required**, held to the name's last word: only the name wraps, and the tag drops under it
+  only when that word and the tag can't share a line at all) with its
+  description under it (the test counts there too, "11496 passed · 5 skipped", a failed count in
+  red), its time in a fixed column aligned right, then **Log**, in the same place on every row. A
+  description shows at most 2 lines and ends in "…" when cut; a path in it that starts at the home
+  folder shows it as `~/` (only where the path starts, never the same folder inside another path),
+  and a commit is in mono. The marks: a check for passed, a cross for failed, a clock for running, a
+  dash for skipped (or setup unchanged since the last run), an empty ring for waiting. A running
+  check's time counts up from its start; a waiting or skipped one shows no time, and a skipped one no
+  "0 passed".
+
+**Open logs stay open.** A log opened on the run page (a check's **Log**, or View Logs) stays open
+until the user closes it. Re-reading the run (every 3 s while it runs, and on each queue change)
+never closes it, and never moves the keyboard focus or the log's scroll. The open log of a check
+still running follows it: it is read again about every 3 s and stops updating once the check ends.
+Whether it follows its bottom is decided when it is opened, not when the page loaded: a check that
+was waiting when the page loaded and is running when its log is opened follows. A log short enough
+to fit its panel counts as at its bottom, and keeps following as it grows past it. Scrolling up
+stops following; scrolling back to the end resumes it.
 
 Every action here is a catalogue command: Land, Land This Commit Again, Cancel, Remove from Queue,
-Pause, Resume, Accept, Send Back, Land Anyway, Start Fresh, Send Answer, Clear and Clear All over the merge verbs (§app.project-services/merge-verbs), Update Local Main and Publish over
-the queue's own routes, which the merge thread can't call. Queue Settings and Open on GitHub only
+Pause, Resume, Accept, Send Back, Land Anyway, Start Fresh, Send Answer, Clear and Clear All over the merge verbs (§app.project-services/merge-verbs), Update Local Main, Publish and a
+branch summary's Try Again over the queue's own routes, which the merge thread can't call. Queue Settings and Open on GitHub only
 open a place. The view follows the queue live,
 from the session feed's merge-queue frames, at desktop and phone widths.
+
+## §app.merge-queue/branch-summary — What a branch does, in a few bullets
+
+**Each branch row of a project the merge queue serves (§app.merge-queue/served) says what the
+branch does in up to 5 short bullets, written in the background for every branch on the Ready to
+land, not approved list (§app.merge-queue/view) once its chat is idle, and for every branch
+approved at a commit.** A repository the queue doesn't serve gets no bullets.
+
+- **What they say.** Plain words, most important first: what the branch adds, changes or fixes.
+  They never name files or commit ids. A small branch may get 1 or 2.
+- **Who writes them.** The summary-line model of Settings → Summaries
+  (§app.settings-dialog/summaries): its Primary, then its Fallback when the Primary can't run or
+  gives nothing usable; never the Session titles model. Settings → Models' switch applies as it
+  does to the summary line: a model turned off there is skipped.
+- **When.** Every branch on the Ready to land, not approved list gets bullets for its commit once
+  the chat that owns it (§app.merge-queue/owner) is idle; a branch with no known chat, or whose chat
+  is archived, counts as idle. Not at every commit: while its chat works, the row keeps the bullets
+  it has. A sweep in the background does it, whether or not anyone is looking: about 30 seconds
+  after Sova starts, then at least every 5 minutes, and within about a minute of the target moving
+  or of a branch's chat being read idle. Its first run after Sova starts writes every branch
+  already on the list, those with no chat included. A branch that reads Ready to land
+  (§chat.worktrees/ready-to-land) or is approved at a commit gets bullets for that commit too.
+  Writes go one at a time on this computer, whatever started them and across every project; an
+  approved branch's and a Try Again go ahead of the ones waiting (the one being written finishes
+  first), and a waiting one already reads "Summarizing…". A commit is written at most once at a
+  time. Opening or refreshing a view never starts a write, and a finished write
+  doesn't start the next one by being shown. Once written, every view shows them at once.
+- **What they're written from.** The branch's commit messages and the parts it changed, with
+  lines added and removed, against the target; never the code change itself. On a large branch
+  the newest messages are read in full and older ones by their subject only, and the list of parts
+  is capped, so a summary costs about the same however large the branch is; when commits were left
+  out, the ask says so ("the newest 200 of {n} commits").
+- **Where.** Always shown, with no switch to hide them, under the row's facts line: on every row of
+  a branch not yet landed on the Merge Queue tab (Ready to land, In line, Checking, Needs you, Sent
+  back; §app.merge-queue/view) and on the Worktrees rows, in the composer's modal and the session
+  pane (§chat.composer/worktrees-control, §chat.worktrees/pane). A landed row under Recent keeps
+  the bullets it had. On a phone they wrap; nothing scrolls sideways.
+- **While writing**, the row says "Summarizing…", busy to a screen reader.
+- **A newer commit.** The bullets of an earlier commit stay up, marked "From an earlier commit",
+  until new ones are written for the new commit.
+- **When it fails**, the row says "Couldn't summarize this branch" with **Try Again**, which writes
+  it again for the same commit. Try Again shows only after a failure: a summary that worked offers no
+  rewrite. Nothing else on the row changes, and Land works as before. Try Again is a catalogue
+  command (§app/commands). A failure because no model answered (none could run or was signed in, a
+  timeout, the model service failing) is tried once more by the sweep, by itself, about 10 minutes
+  later, while the branch is still on the list with its chat idle; a failure whose models answered
+  with nothing usable (a reply that isn't bullets) never is. After that one retry it waits for Try
+  Again.
+- **Kept** per project and commit on this computer, so a restart doesn't write them again; a
+  failure is kept too, with whether its retry was spent, and waits as above. Once
+  the branch has landed or is gone they are dropped, unless a queue row still shows them; a live
+  branch keeps only its newest few.
+- **Spend.** Each write's calls are recorded in the usage ledger (§app.insights/usage-ledger) as
+  one-shots under a purpose of their own, `git-branch-summary`, with the project set, so they are
+  never counted as a conversation's `branch-summary`.
 
 ## §app.merge-queue/owner — Which chat owns a branch
 
 One rule says which chat owns a worktree's branch, and Sova uses it everywhere the queue needs a
-chat it wasn't told: the chat a Ready row names and opens (§app.merge-queue/view), and the chat an
+chat it wasn't told: the chat a Ready row names and opens (§app.merge-queue/view), the chat a
+Worktrees row names first (§chat.composer/worktrees-control), and the chat an
 approval records, hears about its outcomes and shows its queue card (§chat.merge-queue/chat-card).
 The owner is, the first that holds:
 1. the chat that created the worktree and still tracks it (its own record, not dropped;
@@ -866,14 +1029,15 @@ The project's Merge Queue tab (§app.merge-queue/view) is where they are found, 
 **The Merge thread card**, under the queue's head: "Merge thread" with its state chip (**Idle**,
 **Working** while its turn runs, **Asking you** while a question is open), its memory type
 ("UniiChat"; "No memory" when it runs without), when it started, and its last event ("last: Read a
-queued branch · {branch}, {when}"). It has **Open Merge Thread** and **Start Fresh…**, which asks
+queued branch · {branch}, {when}"). It has **Open Merge Thread**, the tab's only one, and **Start
+Fresh…**, on one line, which asks
 first ("This thread is archived once its turn ends, and its memory of past landings goes with it.
 The next event starts a new one. The old thread stays readable in History.", **Cancel** /
 **Start Fresh**). A question it asks shows on the card (§chat.merge-queue/asks). With no thread:
 "No merge thread now: the next event starts one (it reads each branch as it is queued)."
 
-**A running review.** While a review runs, a button beside Open Merge Thread at the top of the
-tab reads "Review running · {branch} · Open" (" (attempt {n})" after the branch on a retry) and
+**A running review.** While a review runs, a button in the queue's head, beside Queue Settings and
+Pause Queue, reads "Review running · {branch} · Open" (" (attempt {n})" after the branch on a retry) and
 opens that reviewer's chat; it goes away when the review ends.
 
 **History**, at the bottom of the tab when the queue has had any chat: every one, the current
@@ -903,7 +1067,10 @@ that is refused leaves the row as it was. Both are catalogue commands over `merg
 Every setting a project's merge queue uses shows in one place: the **Merge Queue** tab of the
 Settings dialog (§app/settings-dialog). **Queue Settings** on a project's Merge Queue tab
 (§app.merge-queue/view) opens it already showing that project. The tab shows one project at a
-time, picked in its head from the projects that aren't archived (opened any other way, the first).
+time, picked in its head from the projects that aren't archived (opened any other way, the first);
+the heading stays on one line beside the picker at every width, the picker giving way. A row's tag
+(**Project file**, **This computer**, **Set by Sova**) is a small tag at its own width: at the row's
+end, or under its value once a narrow screen stacks the row, never stretched across it.
 A project the queue doesn't serve yet (its merge setup isn't done) shows, in place of the groups, the
 Merge Queue tab's own words, "No merge queue settings are set up for this project" and "Until they
 are, its chats merge branches into {target} themselves when you ask.", with **Initialize**, and under
@@ -1047,6 +1214,11 @@ a branch pushed to origin") and "It applies once it's merged into {target}.", wi
 at once, even while a branch is checking; after it, "Opened PR #{n} for the settings
 change. It applies once it's merged into {target}." with **Open PR** (GitLab: "MR !{n}", **Open
 MR**), or "Pushed the settings change as {branch}. It applies once it's merged into {target}."
+
+**From a Create card.** A chat in Create can prepare these same changes on a Settings change card
+(§chat.create-mode/settings-cards). The card's Apply stands for the confirm and goes this same way,
+with the same commit, refusals and waits: while a branch is checking the card reads "Saves when the
+current branch finishes." and has **Cancel Save**, and a chat never applies one.
 
 ## §app.merge-queue/models — The review and merge-thread models, per project
 

@@ -454,6 +454,12 @@ export function overseerSettingsInfo(): OverseerSettingsInfo {
  * yet: the provider may simply not be registered), then applied to the held Overseer at once when
  * it is idle, else at its next turn boundary.
  */
+/** Why a save of `body` would be refused by its shape, or null. Writes nothing. */
+export const overseerSettingsProblem = (body: unknown): string | null => {
+  const parsed = parseSettings(body, true);
+  return "error" in parsed ? parsed.error : null;
+};
+
 export async function saveOverseerSettings(body: unknown): Promise<OverseerSaveResult | { error: string }> {
   const parsed = parseSettings(body, true);
   if ("error" in parsed) return parsed;

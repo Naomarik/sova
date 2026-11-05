@@ -760,10 +760,11 @@ test("mode helpers", () => {
 	assert.ok(isMode("normal"));
 	assert.ok(isMode("delegate"));
 	assert.ok(!isMode("build"));
-	assert.deepEqual(MODES, ["normal", "delegate"]);
+	assert.deepEqual(MODES, ["normal", "delegate", "create"]);
 	assert.deepEqual(Object.keys(MODE_DESCRIPTIONS), [...MODES], "one description per canonical mode, nothing else");
 	assert.equal(toggleMode("normal"), "delegate");
 	assert.equal(toggleMode("delegate"), "normal");
+	assert.equal(toggleMode("create"), "normal", "the terminal has no Create to cycle to");
 	assert.equal(parseShortcut(DEFAULT_MODE_SHORTCUT), "alt+m");
 	assert.equal(parseShortcut("ctrl+shift+p"), "ctrl+shift+p");
 	assert.equal(parseShortcut("shift+tab"), "shift+tab");

@@ -1,4 +1,4 @@
-import type { IdeaRecord, IdeaStatus, IdeasToc } from "../../shared/protocol";
+import { IDEA_STATUSES, type IdeaRecord, type IdeaStatus, type IdeasToc } from "../../shared/protocol";
 
 /**
  * The Overseer page's Ideas panel, as data: the chip each status draws, the ToC as rows, and the
@@ -17,6 +17,12 @@ export const IDEA_STATUS_CHIP: Record<IdeaStatus, { label: string; tone: string 
 
 /** A status the ToC hides unless asked: the idea is finished with. */
 export const settled = (s: IdeaStatus) => s === "done" || s === "dropped";
+
+/** The count the Overseer head's Ideas button shows: the ideas still in play (open, exploring,
+    started); settled ones (done and dropped) leave. The server counts each idea once, in its
+    namespace, so this is the total less each namespace's settled. */
+export const headIdeasCount = (toc: IdeasToc) =>
+  toc.total - toc.namespaces.reduce((n, ns) => n + IDEA_STATUSES.filter(settled).reduce((m, s) => m + ns.counts[s], 0), 0);
 
 /** Words for a count of ideas: "1 idea", "3 ideas". */
 export const ideasCount = (n: number) => `${n} ${n === 1 ? "idea" : "ideas"}`;

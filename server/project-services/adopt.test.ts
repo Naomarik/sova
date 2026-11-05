@@ -29,6 +29,7 @@ let unit: AdoptedStatus = { state: "active", pid: process.pid, startedAt: "2026-
 const scheduled: string[] = [];
 let scheduleFails: string | null = null;
 let engine: ProjectEngine;
+let self = "/not/this/project";
 const op: Caller = { kind: "operator" };
 const taken: VerbAct = async () => undefined;
 
@@ -53,7 +54,7 @@ before(async () => {
   host.listen(BASE, process.pid, project);
   engine = new ProjectEngine(
     host.deps({
-      selfCheckout: () => "/not/this/project",
+      selfCheckout: () => self,
       adoptedStatus: async () => unit,
       scheduleRestart: async (u) => {
         if (scheduleFails) return scheduleFails;
@@ -107,6 +108,26 @@ test("up, down, reset and teardown of an adopted slot 0 are refused for everyone
   assert.equal((await engine.run("up", { project }, op)).error?.code, "refused-slot0", "up of the main checkout by project");
   assert.equal(scheduled.length, 0);
   assert.ok(readRegistry().instances.some((i) => i.id === main), "slot 0 stays");
+});
+
+test("apply of this server's own adopted slot 0 from anything but the page is refused, confirmed or not; another project's is as it was", async () => {
+  const script: Caller = { kind: "operator", notPage: true };
+  self = project;
+  for (const confirm of [true, false]) {
+    const r = await engine.run("apply", { instance: main, ...(confirm ? { confirm } : {}) }, script);
+    assert.equal(r.error?.code, "forbidden");
+    assert.equal(r.error?.message, "Only the user restarts Sova. Ask them to press Apply on the Branches tab of Sova's project page. Nothing was restarted.");
+  }
+  assert.deepEqual(scheduled, [], "nothing scheduled");
+  const page = await engine.run("apply", { instance: main, confirm: true }, op);
+  assert.equal(page.ok, true, page.error?.message);
+  assert.deepEqual(scheduled, [UNIT], "the page's own passes");
+  scheduled.length = 0;
+  self = "/not/this/project";
+  const other = await engine.run("apply", { instance: main, confirm: true }, script);
+  assert.equal(other.ok, true, other.error?.message);
+  assert.deepEqual(scheduled, [UNIT], "only Sova's own restart is the user's click");
+  scheduled.length = 0;
 });
 
 test("apply of an adopted slot 0: the operator, confirmed, whatever the chats are doing; then 'restart scheduled' 3 s out", async () => {

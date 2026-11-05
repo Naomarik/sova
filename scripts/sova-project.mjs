@@ -12,7 +12,8 @@
 //   release (shared/release.ts): release.status; release.logs [--release <rl_…>] [--step <id>]; release.request --why <text>;
 //     release.start [--commit <sha>]; release.continue|retry --release <rl_…> --step <id>; release.publish --release <rl_…>
 //     --confirm; release.abandon --release <rl_…> --why <text> --confirm; release.withdraw --release <rl_…> | --tag <tag>
-//     --why <text> --confirm (refused from a chat's own scripts: the operator's word only)
+//     --why <text> --confirm (refused from a chat's own scripts: the operator's word only); release.note --text <note>
+//     saves the Release Note the next release.start sends its chat (--text "" clears it)
 //   deploy (§app.project-services/deploy): deploy.status [--target <name>]; deploy.logs --target <name> | --deploy <dp_…>;
 //     deploy.check [--ref <ref>]; deploy.plan --target <name> [--commit <ref>] [--override-tests <reason>]
 //     [--override-dirty <reason>]; deploy.run --plan <pl_…> --confirm (answers at once: follow it with deploy.status);
@@ -27,7 +28,7 @@ import { resolve } from "node:path";
 import { exitOf } from "../shared/project-contract.ts";
 import { tokenHeaders } from "./sova-token.mjs";
 
-const VALUE = new Set(["project", "ask", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty", "entry", "run", "step", "note", "chat", "via", "checks", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "takes-min", "requires", "release", "tag", "state", "summary", "detail", "facts"]);
+const VALUE = new Set(["project", "ask", "instance", "checkout", "branch", "from", "slot", "services", "lines", "resources", "ref", "select", "endpoint", "days", "link", "url", "target", "commit", "plan", "deploy", "why", "override-tests", "override-dirty", "entry", "run", "step", "note", "chat", "via", "checks", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "takes-min", "requires", "action", "release", "tag", "state", "summary", "detail", "facts"]);
 const FLAG = new Set(["restart", "keep-data", "confirm", "dismiss", "without-specs", "without-review", "none", "dry-run"]);
 const PATHS = new Set(["project", "checkout"]);
 
@@ -96,6 +97,7 @@ if (verb.startsWith("merge.")) {
     takesMin: num("takes-min"),
     requires: list(opts.requires),
     dryRun: opts["dry-run"],
+    action: opts.action,
   };
   for (const k of Object.keys(body)) if (body[k] === undefined) delete body[k];
 } else if (verb.startsWith("release.")) {

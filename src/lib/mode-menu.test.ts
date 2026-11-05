@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { APPROVAL_FOOT, approvalLead, barePrograms, bareProgramsNote, commandLine, filterProfiles, FOOT_NOTE, nextProjectModes, projectGroupLabel, projectRowState, isDefaultAll, isDefaultMode, modeSummary, nextSetup, noProfileMatch, SAVE_LABEL, SAVED_LABEL, saveLabel, saveTitle, savedAnnounce, SAVING_LABEL } from "./mode-menu";
+import { APPROVAL_FOOT, approvalLead, barePrograms, bareProgramsNote, commandLine, createLimits, filterProfiles, FOOT_NOTE, footNote, nextProjectModes, projectGroupLabel, projectRowState, isDefaultAll, isDefaultMode, modeSummary, nextSetup, noProfileMatch, SAVE_LABEL, SAVED_LABEL, savableMode, saveLabel, saveTitle, savedAnnounce, SAVING_LABEL } from "./mode-menu";
 
 const def = (mode: string, minorModes: string[], strict = false) => ({ mode, minorModes, strict });
 
@@ -172,4 +172,25 @@ test("the approval says it covers the whole folder, and names the machine's own 
   assert.equal(bareProgramsNote([t("python3", "./tool.py")]), "python3 is this machine's own program, so the approval doesn't cover it.");
   assert.equal(bareProgramsNote([t("node", "./a.js"), t("sh", "./b.sh")]), "node and sh are this machine's own programs, so the approval doesn't cover them.");
   assert.equal(bareProgramsNote([t("node"), t("sh"), t("bun")]), "node, sh, and bun are this machine's own programs, so the approval doesn't cover them.");
+});
+
+test("Create is never a default: a save writes the chat's last other mode, and the foot says which", () => {
+  const inCreate = (saveMode?: string) => ({ mode: "create", minorModes: ["align"], strict: true, ...(saveMode ? { saveMode } : {}) });
+  assert.equal(savableMode(inCreate("delegate")).mode, "delegate");
+  assert.equal(savableMode(inCreate()).mode, "normal", "a chat that has been in no other mode saves normal");
+  assert.equal(savableMode({ mode: "delegate", minorModes: [], strict: false }).mode, "delegate");
+  assert.equal(isDefaultMode({ mode: "delegate", minorModes: ["align"], strict: true }, savableMode(inCreate("delegate"))), true, "compared by what a save writes");
+  assert.equal(isDefaultMode({ mode: "create", minorModes: ["align"], strict: true }, savableMode(inCreate("delegate"))), false);
+  assert.equal(footNote(inCreate("delegate")), "Create is chosen in each chat, so no default holds it. Save as default saves delegate · strict · align.");
+  assert.equal(footNote({ mode: "normal", minorModes: [], strict: false }), FOOT_NOTE);
+  assert.equal(footNote(null), FOOT_NOTE);
+  assert.ok(!saveTitle(savableMode(inCreate("delegate")), false).includes("create"), "the button never names Create");
+});
+
+test("what a chat that can do less can't do in Create: nothing when it can do everything", () => {
+  assert.equal(createLimits({ sandboxOn: false, remote: false }), null);
+  assert.match(createLimits({ sandboxOn: true, remote: false })!, /write files on this computer, reach Sova's commands, or run project tools/);
+  assert.match(createLimits({ sandboxOn: false, remote: true })!, /project modes or cards/);
+  const both = createLimits({ sandboxOn: true, remote: true })!;
+  assert.ok(both.includes("sandbox On") && both.includes("remote machine"), "both reasons");
 });

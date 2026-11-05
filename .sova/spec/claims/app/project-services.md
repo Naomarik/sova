@@ -667,20 +667,24 @@ the one result shape with its own `merge` key (§app.project-services/result).
   `merge.extend` (an entry, the check ids it adds and why; never removes one), `merge.resolve` (an
   entry, its judgement, no behaviour change or behaviour differs, the files, both sides and the
   proposal in plain words, and the commit of its resolution), `merge.retry` (a project or entry
-  paused for the machine) and `merge.ask` (the question for the user, and the entry it is about:
-  §chat.merge-queue/asks). Each takes an optional `note`, recorded on the entry.
+  paused for the machine), `merge.ask` (the question for the user, and the entry it is about:
+  §chat.merge-queue/asks) and `merge.hold` (a project and `action`: `set` holds the queue's new
+  starts for 5 minutes, set again renewing them, and `clear` lifts the hold; it answers the hold
+  now: §app.merge-queue/empty). Each but `merge.hold`, which names no entry, takes an optional
+  `note`, recorded on the entry.
 - **The review step's**: `merge.review` (a run, its verdict `ok`, `notes` or `blocking`, and the
   reviewer's text).
 
 **Callers.**
 - The operator (the routes, the CLI, the Land and Cancel controls) calls the user's verbs (add,
-  cancel, pause, resume, answer, reply, fresh, clear, setup) and the reads, and may write a note.
+  cancel, pause, resume, answer, reply, fresh, clear, setup) and the reads, and may write a note
+  or hold the queue (`merge.hold`).
   Only the operator calls the user's verbs, with one exception: the chat a merge thread's question
   was asked in may call `merge.reply` for that question only, to pass on the user's answer.
 - A typed "land it" reaches `merge.add` as the user's approval through `worktree land`
   (§chat.worktrees/tool); no session can call `merge.add` as a tool.
 - The project's merge thread (§chat.merge-queue/thread) calls the reads and its own verbs (note,
-  extend, resolve, retry, ask), for its own project only.
+  extend, resolve, retry, ask, hold), for its own project only.
 - A review step's reviewer calls `merge.review` for its own run only (§app.merge-queue/review).
 - Any other chat reads its own project's queue; anything else is `forbidden`.
 
@@ -707,7 +711,9 @@ chat, worker and hidden chat runs in a process of its own (§app/chat-processes)
 restarting the server cuts none of them off. Instances of the project's other worktrees
 are not affected: their verbs follow the ordinary rules. When slot 0 adopts a unit
 (§app.project-services/adopt), of this project or any other, the same rule guards its `apply`, and
-`down`, `reset` and `teardown` of it are refused outright.
+`down`, `reset` and `teardown` of it are refused outright. `apply` of this server's own checkout passes
+only on your own page, or a page on another of your computers with its proof, whatever the `confirm`
+(§app.access/your-click): anything else answers `forbidden`, in the refusal of §design.copy-deck/your-click.
 
 ## §app.project-services/adopt — Slot 0 adopts a unit Sova did not start
 

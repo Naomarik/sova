@@ -1,3 +1,4 @@
+import { setSettingsSpreadProbe } from "./spreads";
 import { join } from "node:path";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -122,6 +123,7 @@ export function mountSync(app: Hono, mesh: MeshApi, paths: SyncPaths = defaultPa
   const categoryOn = (c: SyncCategory) => mesh.settings().sync[c];
   // This host's grant to each peer (§mesh.peers/grants): who each exchange runs with at all, and
   // within it, which logins and which document categories. Without mesh-access.json, everyone and everything.
+  setSettingsSpreadProbe(() => categoryOn("settings") && mesh.peers().some((p) => sharesWith(mesh, p.id, "sync.settings")));
   const loginPeers = () => mesh.peers().filter((p) => sharesWith(mesh, p.id, "sync.logins"));
   const docPeers = () => mesh.peers().filter((p) => sharesWith(mesh, p.id, "sync.settings") || sharesWith(mesh, p.id, "sync.themes"));
   const extensionPeers = () => mesh.peers().filter((p) => sharesWith(mesh, p.id, "sync.extensions"));

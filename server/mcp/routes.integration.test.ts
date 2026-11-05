@@ -26,7 +26,9 @@ after(() => rmSync(root, { recursive: true, force: true }));
 
 const STUB = join(import.meta.dirname, "..", "harness", "pi", "testing", "mcp-stub.fixture.mjs");
 const node = process.execPath.includes("bun") ? "node" : process.execPath;
-const page = { "content-type": "application/json", host: "127.0.0.1:4800" };
+const { pageHeaders } = await import("../testing/page");
+// The operator's own page shows itself with the install's cookie (server/page-only.ts).
+const page = { "content-type": "application/json", host: "127.0.0.1:4800", ...pageHeaders() };
 const ask = async (method: string, path: string, body?: unknown, headers: Record<string, string> = {}) => {
   const res = await app.request(path, { method, headers: { ...page, ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
   const text = await res.text();
@@ -173,6 +175,7 @@ describe("only the page changes a server", () => {
   const callers: [string, Record<string, string>][] = [
     ["a script holding the token", { "x-sova-token": "t" }],
     ["a chat", { "x-sova-caller": "c" }],
+    ["a call that doesn't show the page", { cookie: "" }],
   ];
   const APPROVE = "Only you can approve a server, on the page.";
   const SIGN_IN = "Only you can sign in to a server, on the page.";

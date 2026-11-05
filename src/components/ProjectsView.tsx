@@ -9,10 +9,12 @@ import { placementOf, sortProjects } from "../lib/projects";
 import { createPoll } from "../lib/poll";
 import { projectHref, projectSessionHref, projectTabHref, type ProjectsRoute, type ProjectTab } from "../lib/projects-route";
 import { adoptedLine, copyChip, copyName, entryHref, entryTitle, memoryOf, openEntry, refusalLine, SERVICE_CHIP } from "../lib/services-view";
+import { projectHostOf } from "../lib/mesh";
 import { announce, toast } from "../lib/ui-state";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { InsightsPage } from "./InsightsPage";
 import { createProjectOrgPart } from "./ProjectOrgPart";
+import { ProjectIcon } from "./ProjectIcon";
 import { ProjectPage } from "./ProjectPage";
 import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
@@ -179,7 +181,7 @@ function ProjectRow(props: { project: ProjectSummary }) {
   return (
     <li>
       <a class="list-row list-row-interactive orgs-row orgs-project-row" href={projectHref(p().id)}>
-        <Icon name="folder" />
+        <ProjectIcon project={p()} size={24} local={!projectHostOf(p().id)} />
         <span class="list-main">
           <span class="list-title">{p().name}</span>
           <span class="list-meta orgs-mono" title={p().root}>

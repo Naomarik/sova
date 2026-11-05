@@ -162,7 +162,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   in; `minor_modes` names built-in modes only). The Overseer turning a project mode on counts as the
   user's approval of its tools and commands: nothing waits, and the approval is recorded as the
   Overseer's. It never approves the mode's hooks, which stay inactive until the user approves them
-  (§chat.mode-menu/project-mode-hooks). `project_modes` is the
+  (§chat.mode-menu/project-mode-hooks). `mode` can't be `create`, which only a chat picks for itself
+  (§chat.create-mode/per-chat-only). `project_modes` is the
   whole set to have on (`[]` turns them all off); `sova_create_session` refuses it with `host`
   ("project_modes can't be given with host. No session was created."). An unknown mode, minor
   mode or project mode, or a broken project mode, refuses
@@ -202,7 +203,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   ends. Queued messages go in the order they were sent: follow-ups one at a time, and every steer
   waiting while the turn runs together, each its own message at the agent's next step; a steer sent
   after a follow-up waits for that follow-up. A
-  leading `/` runs that session's command, as in the composer. The tool's result says which
+  leading `/` runs that session's command, as in the composer, but for a `/sandbox` that lowers and
+  `/mode create`, each refused to the sender (§app.access/your-click, §chat.create-mode/per-chat-only). The tool's result says which
   happened: sent, queued behind the turn, queued as a steer, or held for the compaction. Never a
   terminal-owned, archived or worker session, and never the Overseer's own; nor a project's session
   whose alignment questions are the user's alone while it waits on them (a verb playbook's run, or
@@ -236,7 +238,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   click**: below the state the session is in (`sova_set_session`), or, for a new session, below
   the state it would start in (`sova_create_session`: Subagents only, or On when the policy's
   `defaultOn` is true). It runs only in a turn the user opened by clicking a card
-  (§app.overseer/confirm), by the exact-click test of §app.overseer/org-people-facing: for
+  (§app.overseer/confirm), the one lowering the route takes from the Overseer
+  (§app.access/your-click), by the exact-click test of §app.overseer/org-people-facing: for
   `sova_set_session`, a card that lists that session; for `sova_create_session`, any card, since
   the session does not exist yet (the prompt tells the Overseer that card must say the session
   starts with its sandbox lowered, and how far). Anywhere else (a typed "yes", an unattended run,
@@ -331,7 +334,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   confirm-card click, a steer, a regenerate), with or without images and whatever its text became on
   the way in, enters it. A brief, a fired `wake_nudge`, an extension's message that starts a run (an
   `/explain` result, a subagent's or team member's report: `sendMessage(…, {triggerTurn: true})`),
-  a run with no message at all, or any message of unknown origin is **unattended**, and so is a
+  a run with no message at all, a message of unknown origin, or a prompt, steer or regenerate from a
+  script's, a chat's or an extension's socket, `POST /api/chat/frames` or `POST /api/chat/action` (§app.access/your-click) is
+  **unattended**, and so is a
   fresh runtime after a restart: it fails closed.
   - **Foreign input ends the user's part of a run.** Once the model has replied to the user's
     message, any other input entering the context (a wake-up or a worker's report queued into the
@@ -839,6 +844,7 @@ jumps to it (§app.overseer/links).
   - The card's state comes from the fold, never from later messages: open (live buttons);
     answered ("You chose b — Archive all", or "Answered: <the user's words>"); "Replaced by c_7",
     a link to that card; dropped, with its reason. An item decided shows its choice or words.
+- **A click from a script, a chat or an extension** never reaches the chat (§app.access/your-click).
 - **Clicks compose a message.** An option's click sends "c_4 b: <its reply, else its label>" as the
   user's next message, marked as a click on c_4 (§app.overseer/org-people-facing). While the turn
   it started runs, the card shows "Sent: b" and its buttons wait; if the turn ends without an answer
@@ -2159,7 +2165,10 @@ for that idea that plans with the user and edits nothing.
 
 An **Ideas** button in the Overseer page's head, with the idea count, opens a panel: beside the
 chat on a wide window, over it on a narrow one. Below a 660px head the button is its icon with
-the count as a corner badge, so the head still fits (§app.overseer/head-layout).
+the count as a corner badge, so the head still fits (§app.overseer/head-layout). The count, in
+the chip, the badge and the button's label ("Ideas, 2"), counts only ideas still in play (open,
+exploring, started) and leaves done and dropped ones out: a backlog of two ideas, one done and one
+dropped, reads 0. The panel's own counts still count every idea.
 
 - **Table of contents** grouped by namespace, with counts, one row per idea (sub-entries under their
   main entry) and a status chip each.
@@ -2506,7 +2515,8 @@ organization write (§app.overseer/caps); a refusal takes nothing.
 - **Behind a confirm card, enforced.** These ops act on people or end something, and run only in a
   turn the user opened by clicking a card (§app.overseer/confirm) that lists every person, project,
   session, folder and org the call acts on: the run's opening message is a click on that card, its text exactly
-  the message the click composes, and the card was open when it arrived. A card-level option approves
+  the message the click composes, it wasn't sent by a script, a chat or an extension
+  (§app.access/your-click), and the card was open when it arrived. A card-level option approves
   every item on the card; a per-item Apply approves only the items it gave a choice. The click's mark
   travels with it: a click the chat holds before handing it to the model (queued behind a running
   turn, or put back in the queue because a compaction was starting) keeps its mark, and that it was

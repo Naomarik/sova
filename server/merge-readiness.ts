@@ -23,6 +23,7 @@ import { DIRTY_TTL_MS, execGit, gitInputsStamp, gitRefsStamp, type GitRunner, li
 import { goneTreeState, type GoneState } from "./removed-worktrees";
 import { sessionsChanged } from "./list-generation";
 import { opTrack } from "./stall-recorder";
+import { needsRestart } from "./restart-paths";
 
 /**
  * Merge readiness (§chat.worktrees/readiness): for each worktree a session tracks and owns, whether
@@ -200,9 +201,9 @@ const MERGE_ASK_RE =
 export const replyBody = (reply: string): string => reply.replace(/(?:\n\s*(?:(?:Also changes|Deferred|Plumbing|Spec check override):|Also updates\b)[^\n]*)+\s*$/i, "").trimEnd();
 export const asksToMerge = (reply: string): boolean => MERGE_ASK_RE.test(replyBody(reply).slice(-ASK_TAIL));
 
-/** A changed file that needs the server restarted: server-side code, never src/, docs or tests. */
-export const needsRestart = (file: string): boolean =>
-  (/^(?:server|shared|pi-config)\//.test(file) && !/\.md$|\.test\.[cm]?[jt]sx?$/.test(file)) || file === "package.json" || file === "pnpm-lock.yaml";
+/** A changed file that needs the server restarted (restart-paths.ts): server-side code, the src/ files the server
+ *  imports, the packages and the toolchain; never the page alone, docs or tests. */
+export { needsRestart };
 
 /** The session's routine and judged follow-ups, as the badge and digest read them. */
 export interface MergeFlags {
@@ -569,6 +570,12 @@ export interface ReadinessDeps {
   docsPreview?: (dir: string, head: string, hash: string, done: () => void) => DocsPreview | "pending";
   /** The heads kept Ready to land. */
   landing: LandingStore;
+  /** A served tree read Ready to land at a commit (each reading; the listener dedupes): the merge queue writes its
+      branch summary (server/merge-queue/branch-summaries.ts). Absent: nothing is told. */
+  readyToLand?: (t: { path: string; branch: string; commit: string }) => void;
+  /** A served tree read with its chat idle (each reading; the listener dedupes): the merge queue's summaries sweep
+      looks at its project again (server/merge-queue/summary-sweep.ts). Absent: nothing is told. */
+  treeIdle?: (t: { path: string; branch: string }) => void;
   /** Sova's message to a session (the specs nudge); absent: never sent. */
   nudge?: (sessionPath: string, text: string) => Promise<void>;
   /** The branches the merge queue landed for a chat (its Landed cards), by session id. */
@@ -827,6 +834,8 @@ async function computeReadinessNow(s: SessionSummary, facts: FileFacts, publishC
         if (blockers?.length) blocked.push({ path: t.path, branch: tf.branch, commit: tf.head, blockers });
       }
       if (writes) {
+        if (landing?.state === "ready") deps.readyToLand?.({ path: t.path, branch: tf.branch, commit: landing.commit });
+        if (!running && tf.branch) deps.treeIdle?.({ path: t.path, branch: tf.branch });
         if (landing) deps.landing.hold(s.id, t.path, { branch: tf.branch, commit: landing.commit, at: deps.now() });
         else if (held && (tf.merged || (tf.readable && tf.head !== held.commit))) deps.landing.drop(s.id, t.path);
       }

@@ -2,8 +2,10 @@
 // session pane's Worktrees rows and the project's Merge Queue tab, so the four always agree. Pure: no
 // Solid, no DOM. The shapes are the queue's (shared/merge-queue.ts); the verb calls live in
 // merge-queue-client.ts.
-import type { SessionWorktreeInfo } from "../../shared/protocol";
-import { newerWords, ordinal } from "../../shared/merge-queue";
+import type { SessionSummary, SessionWorktreeInfo, WorktreeReadiness } from "../../shared/protocol";
+import { newerWords, ordinal, type LandHow, type MergeReady } from "../../shared/merge-queue";
+import { clockTime, relativeTime } from "../../pi-config/extensions/stamp/format.ts";
+import { readinessChip } from "./worktrees";
 import type { MergeEntry, MergeNote, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo } from "./merge-queue-types";
 import { requestChip, requestReason } from "./merge-queue-requests";
 
@@ -75,6 +77,8 @@ export interface QueueRow {
   newer?: string;
   /** The branch against the target's head: "3 commits · +40 −2". */
   size?: string;
+  /** When the branch last changed (its head's committer date), drawn after the size: "2d ago". */
+  when?: HeadWhen;
   /** Notes on it (the merge thread's first), each with what kind it is. */
   notes: { label: string; text: string }[];
   action: RowAction;
@@ -125,6 +129,57 @@ export const PLAIN_MERGE_LINE = "Say “land it” in the chat to merge it into 
 /** "3 commits · +40 −2": the branch's side against the target's head. */
 export const sizeWords = (s: { ahead: number; added: number; removed: number } | undefined): string | undefined =>
   s ? `${s.ahead} ${s.ahead === 1 ? "commit" : "commits"} · +${s.added} −${s.removed}` : undefined;
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** When a branch last changed, as a row draws it in a <time>: `iso` its datetime, `text` relative ("2h ago",
+    "yesterday", "3d ago", "Nov 2" past a week: Sova's relativeTime), `full` the date and time for hover and screen
+    readers ("Nov 2, 2026, 1:43 PM"). Undefined when there's no date or it doesn't parse. */
+export interface HeadWhen {
+  iso: string;
+  text: string;
+  full: string;
+}
+export function headWhen(headAt: string | undefined, now = Date.now()): HeadWhen | undefined {
+  const ms = headAt ? Date.parse(headAt) : NaN;
+  if (!Number.isFinite(ms)) return undefined;
+  const d = new Date(ms);
+  return { iso: headAt!, text: relativeTime(ms, now), full: `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}, ${clockTime(ms)}` };
+}
+
+/** A Ready to land, not approved row's facts: "da69caa · 3 commits ahead · +1497 −309", then its date apart. */
+export const readyFactsWords = (r: Pick<MergeReady, "ahead" | "added" | "removed">): string =>
+  `${r.ahead} ${r.ahead === 1 ? "commit" : "commits"} ahead${r.added !== undefined && r.removed !== undefined ? ` · +${r.added} −${r.removed}` : ""}`;
+
+/** The chip on a Ready to land, not approved row: its chat's own readiness reading of the branch, in the words and
+    colour a Worktrees row's readiness chip uses (worktrees.ts readinessChip: Ready to land, In progress, Waiting for
+    your OK…), with a conflict said as such ("Conflicts with master"). No chat: a neutral "No chat". A chat whose
+    reading Sova doesn't have (it doesn't track the worktree, or isn't on the page's list): a neutral "No reading". */
+export interface ReadyChip {
+  label: string;
+  tone: Tone;
+  title: string;
+}
+export function readyRowChip(r: Pick<MergeReady, "session" | "sessionArchived" | "worktree" | "branch">, trees: readonly WorktreeReadiness[] | undefined): ReadyChip {
+  if (!r.session) return { label: "No chat", tone: "neutral", title: "No chat works on this branch: nothing reads it as finished or not." };
+  const t = trees?.find((x) => x.path === r.worktree) ?? trees?.find((x) => x.branch === r.branch);
+  if (!t) return { label: "No reading", tone: "neutral", title: `Sova has no reading of this branch from its chat${r.sessionArchived ? " (archived)" : ""}.` };
+  const conflict = t.reason && /^Conflicts with /.test(t.reason) ? t.reason.split(" · ")[0]! : null;
+  if (conflict) return { label: conflict, tone: "warn", title: `${t.reason}.` };
+  const chip = readinessChip({ readiness: t });
+  if (!chip) return { label: "Merged", tone: "success", title: "Its chat reads this branch as merged." };
+  return { label: chip.label, tone: chip.tone, title: chip.title };
+}
+
+/** The readiness readings a chat recorded by id holds (a worker's, then its top chat's), among `sessions`. */
+export function chatTreesOf(id: string | undefined, sessions: readonly Pick<SessionSummary, "id" | "path" | "readiness" | "workerSession" | "workerOf">[] | undefined): WorktreeReadiness[] | undefined {
+  if (!id) return undefined;
+  const all = sessions ?? [];
+  const s = all.find((x) => x.id === id || x.path === id);
+  if (!s) return undefined;
+  const top = s.workerSession && s.workerOf ? all.find((x) => x.path === s.workerOf!.path || x.id === s.workerOf!.id) : undefined;
+  return [...(s.readiness?.trees ?? []), ...(top?.readiness?.trees ?? [])];
+}
 
 /** The commit a Land pins: the head the row's numbers were read at, else the one readiness found finished. */
 export const shownCommit = (w: Partial<Pick<SessionWorktreeInfo, "readiness" | "mergeStats">>): string | undefined =>
@@ -227,8 +282,10 @@ export const rowKeyOf = (w: RowKeyInput): RowKey => entryKeyOf(w) ?? treeKeyOf(w
 /** The words for one worktree, from its tracked state, its readiness and its queue entry. */
 export function queueRow(w: QueueRowInput): QueueRow {
   const r = queueRowOf(w);
-  const size = SIZED.includes(r.key) ? sizeWords(w.mergeStats) : undefined;
-  return size ? { ...r, size } : r;
+  if (!SIZED.includes(r.key)) return r;
+  const size = sizeWords(w.mergeStats);
+  const when = headWhen(w.mergeStats?.headAt);
+  return { ...r, ...(size ? { size } : {}), ...(when ? { when } : {}) };
 }
 function queueRowOf(w: QueueRowInput): QueueRow {
   const e = w.queue;
@@ -379,8 +436,29 @@ export function modalHead(rows: Pick<QueueRowInput, "mergeServed" | "mergeProjec
   if (!served) return { intro: null, paused: null };
   const p = rows.find((w) => w.mergeServed && w.mergeProject)?.mergeProject;
   return {
-    intro: `Land queues a branch. It's merged onto ${p?.target ?? "the target branch"}, checked there on its own, and lands as exactly the commit that was tested.`,
+    intro: "Land queues a branch; it lands as the commit that was tested.",
     paused: p?.paused ? `The queue is paused: ${p.paused}. Land still takes your approval; it's checked once the queue resumes.` : null,
+  };
+}
+
+/** What Land's confirm says: the branch, how many commits go to the queue (the row's own count, else none named) and
+    what moves once the checks pass, by the way of landing when the caller knows it (else the target moves). */
+export function landConfirmWords(branch: string, ahead: number | undefined, target: string | undefined, how?: LandHow): { title: string; line: string; confirm: string } {
+  const n = typeof ahead === "number" && ahead > 0 ? ahead : undefined;
+  const to = target ?? "the target branch";
+  const go = n === undefined ? "Its commits go" : `${n} ${n === 1 ? "commit goes" : "commits go"}`;
+  const after =
+    how === "github-pr"
+      ? "a pull request opens on GitHub once checks pass."
+      : how === "gitlab-mr"
+        ? "a merge request opens on GitLab once checks pass."
+        : how === "push-branch"
+          ? "the branch is pushed once checks pass."
+          : `${to} moves once checks pass.`;
+  return {
+    title: `Land ${branch}?`,
+    line: `${go} to the merge queue; ${after}`,
+    confirm: n === undefined ? "Land Branch" : `Land ${n} ${n === 1 ? "Commit" : "Commits"}`,
   };
 }
 
@@ -487,6 +565,79 @@ export function sourceTag(s: RunStep["source"]): { label: string; tone: Tone } |
     default:
       return null;
   }
+}
+
+// ---- the run page's Checks and why ------------------------------------------------------------
+
+/** A step's status mark: a check, a cross, a clock, a plain dash (skipped, or setup unchanged since the last run),
+    or no icon at all (`null`: an empty muted ring, waiting). Nothing here looks like something to expand. */
+export interface StepMark {
+  icon: "check" | "close" | "clock" | "minus" | null;
+  cls: string;
+  word: string;
+}
+const MARKS: Record<RunStep["result"], StepMark> = {
+  passed: { icon: "check", cls: "mq-pass", word: "Passed" },
+  failed: { icon: "close", cls: "mq-fail", word: "Failed" },
+  running: { icon: "clock", cls: "mq-running", word: "Running" },
+  pending: { icon: null, cls: "mq-wait", word: "Waiting" },
+  skipped: { icon: "minus", cls: "mq-skip", word: "Skipped" },
+};
+export const stepMark = (s: Pick<RunStep, "result">): StepMark => MARKS[s.result];
+
+/** A step's time column: "" while waiting or skipped; a running step counts up from its start (`now`); a
+    finished one shows what it took. */
+export function stepTime(s: Pick<RunStep, "result" | "ms" | "startedAt">, now: number): string {
+  if (s.result === "pending" || s.result === "skipped") return "";
+  if (s.result === "running") {
+    const at = s.startedAt ? Date.parse(s.startedAt) : NaN;
+    if (Number.isFinite(at)) return clock(now - at);
+    return s.ms > 0 ? clock(s.ms) : "";
+  }
+  return clock(s.ms);
+}
+
+/** A check's test counts, for its description line ("11496 passed", "5 skipped"; `failed` drawn red). None for a
+    skipped or waiting step, and none when every count is zero or unknown ("0 passed" says nothing). */
+export function stepCounts(s: Pick<RunStep, "result" | "counts">): { text: string; failed?: true }[] {
+  const c = s.counts;
+  if (!c || s.result === "skipped" || s.result === "pending") return [];
+  if (!c.passed && !c.failed && !c.skipped) return [];
+  return [
+    ...(c.passed != null ? [{ text: `${c.passed} passed` }] : []),
+    ...(c.failed ? [{ text: `${c.failed} failed`, failed: true as const }] : []),
+    ...(c.skipped ? [{ text: `${c.skipped} skipped` }] : []),
+  ];
+}
+
+/** Shows every `<home>/…` path inside a line as `~/…`, and the home folder alone as `~`. Only a path that starts
+    there counts: at the line's start or after a space, a quote, a bracket, `=`, `:` or `,` (never inside
+    `/mnt<home>/…`), and only the folder itself (followed by `/`, a space or the end, never `<home>2/…`). */
+export function tildeIn(text: string, home: string | null): string {
+  if (!home) return text;
+  const h = home.replace(/\/+$/, "");
+  if (!h) return text;
+  const esc = h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(`(^|[\\s"'\`([{<=:,])${esc}(?=/|\\s|$)`, "g"), "$1~");
+}
+
+const SHA_RE = /^[0-9a-f]{7,40}$/;
+/** A step's detail with paths shortened (~/…). The queue's own facts (a copy's folder and commit, a merge's commit)
+    come back split, the folder and commit marked `mono`; any other detail is one plain part. */
+export function stepDetail(s: Pick<RunStep, "id" | "kind" | "result" | "detail">, home: string | null): { text: string; mono?: true }[] {
+  if (!s.detail) return [];
+  const text = tildeIn(s.detail, home);
+  const structured = s.result === "passed" && (s.kind === "copy" || s.kind === "merge" || s.id === "rerun-master:copy");
+  if (!structured) return [{ text }];
+  const out: { text: string; mono?: true }[] = [];
+  for (const word of text.split(/(\s+)/)) {
+    if (!word) continue;
+    const mono = SHA_RE.test(word) || word.startsWith("/") || word.startsWith("~");
+    const last = out[out.length - 1];
+    if (!mono && last && !last.mono) last.text += word;
+    else out.push(mono ? { text: word, mono: true } : { text: word });
+  }
+  return out;
 }
 
 /** A definition that doesn't parse, as one sentence: the parser's path and message, then what to do. */

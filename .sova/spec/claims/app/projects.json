@@ -60,6 +60,69 @@
       "source": "pi-session:01a1735d-d92b-70d4-a656-e4521f0fd84f#d9c4dc3f"
     }
   },
+  "§app.projects/home-cards": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/OverviewProjects.tsx",
+      "src/lib/home-projects.ts",
+      "src/lib/home-projects.test.ts",
+      "src/home.css",
+      "src/App.tsx",
+      "src/components/ProjectIcon.tsx",
+      "src/lib/home-projects-keyed.browser.test.ts"
+    ],
+    "requires": [
+      "§chat.transcript/landing-page",
+      "§app.projects/list",
+      "§app.projects/icon",
+      "§app.projects/folder-sessions",
+      "§app.session-list/needs-you",
+      "§app/new-session-dialog",
+      "§app.project-overseer/new-coding-session",
+      "§app.projects/registration",
+      "§app.organizations/project-page",
+      "§app.merge-queue/approve"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T22:53Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+    }
+  },
+  "§app.projects/icon": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/projects/icon.ts",
+      "server/projects/icon.test.ts",
+      "server/projects/icon-routes.ts",
+      "server/projects/icon-routes.test.ts",
+      "server/projects/routes.ts",
+      "server/projects/spaces.ts",
+      "shared/projects.ts",
+      "src/lib/project-monogram.ts",
+      "src/lib/project-monogram.test.ts",
+      "src/components/ProjectIcon.tsx",
+      "src/components/ProjectIconCard.tsx",
+      "src/lib/project-icon-upload.ts",
+      "src/lib/project-icon-upload.test.ts",
+      "src/project-icon.css",
+      "src/lib/api.ts"
+    ],
+    "requires": [
+      "§app.projects/list",
+      "§app.projects/seam",
+      "§app.organizations/project-page"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T22:53Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+    }
+  },
   "§app.projects/import": {
     "kind": "behavior",
     "authority": "accepted",
@@ -110,15 +173,18 @@
       "src/components/SessionDetails.tsx",
       "src/lib/section-reveal.ts",
       "src/lib/section-reveal.test.ts",
-      "src/lib/section-reveal.browser.test.ts"
+      "src/lib/section-reveal.browser.test.ts",
+      "src/components/ProjectIcon.tsx",
+      "server/projects/spaces.ts"
     ],
     "requires": [
-      "§app.session-list/organizations"
+      "§app.session-list/organizations",
+      "§app.projects/icon"
     ],
     "agreed": {
-      "by": "omar",
-      "at": "2026-10-23T23:10Z",
-      "source": "pi-session:3f2248f5-f2ff-4447-a7d5-c7b38e115af6#b8fd14ae"
+      "by": "user",
+      "at": "2026-11-04T22:53Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
     }
   },
   "§app.projects/placement": {
@@ -205,12 +271,19 @@
       "src/lib/projects-route.test.ts",
       "src/components/ProjectsView.tsx",
       "src/App.tsx",
-      "src/lib/api.ts"
+      "src/lib/api.ts",
+      "src/components/OverviewProjects.tsx",
+      "src/components/ProjectIcon.tsx"
     ],
     "notOwned": [
       "§app.session-list/organizations",
       "§app/organizations",
       "§app/project-services"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T23:28Z",
+      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+    }
   }
 }

@@ -276,8 +276,11 @@ worktree tracked active whose folder is gone counted as its status chip reads), 
 worktree in recorded order, dropped and merged ones included. When the branch tracks none the
 section stays, with one line: "This session tracks no worktrees." While the insight's first load
 is out the section shows its heading over a placeholder line as tall as that sentence (most
-sessions track none), never the sentence itself. A row
-names the branch and the path, and carries a status chip — Active, Dropped, or Merged with "into
+sessions track none), never the sentence itself. A row is
+the modal's row (§chat.composer/worktrees-control): the title of the chat that owns the branch,
+as a link, then the branch, then "archived" when that chat is archived; it names no worktree
+folder. Under its facts it shows the branch's summary once written
+(§app.merge-queue/branch-summary). It carries a status chip — Active, Dropped, or Merged with "into
 <target> at <sha>" — plus, when true, `.agent`, the number of
 this session's workers with a live process inside it, and "Shared with session <id>" linking the
 session it was inherited from. An active worktree whose branch git finds already in its target
@@ -304,7 +307,9 @@ its entry's state instead, in the words the composer's worktrees control uses
 Conflict, Behaviour differs, Review flagged, Can't tell whose failure, Drafts changed, Needs a fix, and Landed with its commit
 and its notes (§app.merge-queue/note) under it, plus "1 newer commit not included" when the branch
 moved past the approved commit. **The row's action** is the modal's, from the same row: Land (with
-its menu) on Ready or Drafts changed (on Needs a fix only once its chat has fixed it: at the same
+its menu), which asks once before it queues anything, its confirmation right-aligned under the row
+(§chat.composer/land-confirm), laid out as the modal's rows are (§chat.composer/worktrees-control, "Row
+layout"), on Ready or Drafts changed (on Needs a fix only once its chat has fixed it: at the same
 commit for a branch sent back for its drafts once they fit, else at a newer commit,
 §chat.composer/worktrees-control), Land This Commit Again and Remove from Queue on every Needs a fix
 row, Cancel on a queued row, Accept and Send Back on Behaviour differs, Land Anyway and Send Back on
@@ -320,7 +325,7 @@ uncommitted files included and marked as uncommitted; a merged branch shows what
 Ready, Landing specs or a queue state and offers no Land: a ready branch reads Ready to merge, and
 its line ends "Say “land it” in the chat to merge it into main.". A project on the Projects list
 whose merge setup isn't done keeps **Set Up Queue** on such a row, which opens its Merge Queue tab
-(§app.merge-queue/setup). The section's **View Merge Queue** shows, as the modal's does, only for
+(§app.merge-queue/setup). The section's **View Merge Queue** shows, as the modal's Merge Queue link does, only for
 a repository on the Projects list (§chat.composer/worktrees-control). The pane, the composer's control and the Merge Queue view read the same
 state and stay in sync; nothing in the section shows live state or offers a restart. Under the facts, one visible
 muted line gives the reason, so a phone gets it without hover: the readiness's `reason` ("Ready to
@@ -390,9 +395,14 @@ working now", "Merged", "Merged · still tracked active", "Merged · cleaned up"
 Routine follow-ups, also mechanical:
 
 - **restart pending** — a merge this session made (a merge card) landed in the branch this
-  server's own checkout runs, changed a file under `server/`, `shared/` or `pi-config/` (or
-  `package.json`, `pnpm-lock.yaml`), and happened after this server process started. A merge of
-  only `src/` or docs never asks for a restart. The next start clears it.
+  server's own checkout runs, changed a file the server runs, and happened after this server
+  process started. The files the server runs are the ones Sova's merge thread restarts for
+  (§chat.merge-queue/sova-restart): code under `server/`, `shared/` or `pi-config/` but not tests
+  or Markdown docs, a `src/` file the server itself imports, and `package.json`, `pnpm-lock.yaml`,
+  `pnpm-workspace.yaml` and `mise.toml`. A merge of only other `src/` files, tests or docs never
+  asks for a restart. It reads file names only, so a release commit, whose `package.json` changes
+  only its version, still asks for one, though the merge thread doesn't restart for it. The next
+  start clears it.
 - **not pushed** — the merge's commit is not yet on the target's `origin` branch. Said in the
   badge's `title`, never counted as a follow-up.
 - **cleanup** — merged worktrees still tracked active.
@@ -462,7 +472,8 @@ once the turn ends (§chat.offers/conditions).
 "merged {sha7} · pushed (or not pushed) · live (or restart owed) · spec promoted (or {n} spec
 draft(s) not promoted)". Merged and the commit come from the merge card; pushed from the target's
 `origin` branch (left out when there is no `origin`); live when this server already runs the
-merge (it started after it, or the merge changed no server file), else restart owed; spec from
+merge (it started after it, or the merge changed no file the server runs, the set above), else
+restart owed; spec from
 the merged worktree's own `.sova/spec/drafts/`, while that folder still exists: a draft counts as
 promoted when it is official (§tools.spec/draft-official), the one rule the merge queue's docs
 step reads too; a draft that rule can't read counts as not promoted. The

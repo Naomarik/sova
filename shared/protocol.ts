@@ -1796,10 +1796,15 @@ export interface BatchPromptResult {
     new sessions** (~/.pi/agent/mode.json), never one chat's state. `strict` is shown, never
     changed here. `modes`/`minors` list what exists. */
 export interface ModeInfo {
-  mode: string; // "normal" | "delegate"
+  mode: string; // "normal" | "delegate" | "create"
   minorModes: string[]; // canonical order
   strict: boolean;
+  /** Only in Create: the mode Save as Default saves, the chat's last normal or Delegate choice (§chat.create-mode/per-chat-only). */
+  saveMode?: string;
   modes: { id: string; description: string }[];
+  /** Only in GET /api/mode with no path: modes a default can't hold but a chat here can pick (Create). A peer's chat
+      has no ?path= read, so its menu adds these to `modes`; a gathering chat has no menu at all. Absent: an older host. */
+  chatModes?: { id: string; description: string }[];
   minors: { id: string; description: string }[];
   /** The memory minor mode's choice (§chat/memory): in GET /api/mode the saved default new chats
       start from (Settings' memory file), in a ChatModeResult that chat's own. Absent from older servers. */
@@ -1930,6 +1935,9 @@ export interface HeldChatState {
     The same values reach every client of that chat as a "mode" server message. */
 export interface ChatModeResult extends ModeInfo, ChatProjectModes {
   applies: ModeApplies;
+  /** The mode Save as default writes, while it isn't `mode`: in Create, this chat's last normal or
+      Delegate choice (§chat.create-mode/per-chat-only). */
+  saveMode?: string;
 }
 
 // ---- Project minor modes (§chat.mode-menu/project-modes) ----------------------------------------
@@ -2563,7 +2571,7 @@ export type ChatServerMessage =
   | { type: "append"; items: TranscriptItem[] }
   /** THIS chat's own mode, and how the last switch applies to it. Sent after hello and after
       every switch of this chat. No other chat's switch, and no write of the default, sends one. */
-  | ({ type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice } & ChatProjectModes)
+  | ({ type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice; saveMode?: string } & ChatProjectModes)
   /** THIS chat's memory (§chat/memory): sent after hello while memory is on, and on every change once
       it was on; never from a runtime without the memory engine. None received: memory is off. */
   | { type: "memory_status"; status: MemoryStatus }
@@ -3435,6 +3443,13 @@ export interface SessionWorktreeInfo {
   /** Its branch against the project's merge target (commits ahead, lines +/−), for a registered project's worktree.
       Additive. */
   mergeStats?: import("./merge-queue").WorktreeMergeStats;
+  /** What its branch does, in a few bullets (§ the merge queue's branch summaries), once anything is known: at its
+      entry's commit while it has an open or landed entry, else at its head. Only where the queue serves the repo.
+      Additive. */
+  mergeSummary?: import("./merge-queue").BranchSummary;
+  /** The chat that owns its branch (server/merge-queue/owners.ts), for the row's title link. Only where the queue
+      serves the repo. Additive. */
+  mergeOwner?: { session: string; path?: string; title?: string; archived?: true };
   /** Present only when its repo is one the merge queue serves (on the Projects list and its merge setup done): Land,
       "Ready to land" and "Landing specs" key on it, never on `mergeProject` being missing. Absent: the repo merges
       plainly (the chat merges it into main). Additive. */
@@ -4236,6 +4251,8 @@ export type ScreenPlace = "reply" | "row" | "card";
 //                                  "expired" one can be claimed: it spreads once refreshed. 400 bad
 //                                  body or unknown key, 409 nothing here to claim (logged out or dead)
 //                                  or the logins switch is off, 404 while OFF)
+// POST /api/mesh/home          -> MeshInfo   (bind peers.json to this folder and machine; this host's
+//                                  browser only. 409 when its home is a copy's original, still in use)
 // GET  /api/mesh/hello          -> MeshHello   (this host's own, for the SPA's stale-tab check: id,
 //                                  version, protocol, build. Cheap (a stat), and answered with the
 //                                  mesh off too, no Tailscale call; nodeId only while on)
@@ -4327,6 +4344,9 @@ export interface MeshInfo {
   frontDoor: string | null;
   /** peers.json exists but can't be used (the mesh is OFF because of it). */
   error?: string;
+  /** peers.json belongs to another folder or machine (a copy, a move, unbound): the mesh is OFF.
+      POST /api/mesh/home (this host's browser only) rebinds it here, except for "copied". */
+  homeMismatch?: "copied" | "moved" | "other-machine" | "unbound";
 }
 
 export interface MeshPeerEntry {

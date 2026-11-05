@@ -64,6 +64,14 @@
       "src/lib/cost-history.ts"
     ]
   },
+  "§design.copy-deck/create-mode": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§chat/create-mode"
+    ]
+  },
   "§design.copy-deck/gathering-abilities": {
     "kind": "note",
     "authority": "accepted",
@@ -166,7 +174,9 @@
       "server/merge-queue/wake.ts",
       "src/lib/merge-queue-chats.ts",
       "src/lib/merge-queue-settings.ts",
-      "server/merge-queue/notices.ts"
+      "server/merge-queue/notices.ts",
+      "src/components/BranchSummary.tsx",
+      "src/components/SummarizerSettings.tsx"
     ]
   },
   "§design.copy-deck/merge-queue-chats": {
@@ -507,6 +517,14 @@
     "about": [
       "§chat.transcript/empty-worktrees",
       "§chat.worktrees/cleanup"
+    ]
+  },
+  "§design.copy-deck/your-click": {
+    "kind": "note",
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "about": [
+      "§app.access/your-click"
     ]
   },
   "§design/copy-deck": {

@@ -67,6 +67,8 @@ async function open(width: number, scheme: "light" | "dark", o: { items?: Attent
   const ctx = await browser.newContext({ viewport: { width, height: 1000 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce", colorScheme: scheme });
   // Sova wears dark unless a stored theme stands on light: the operating system's scheme doesn't choose.
   if (scheme === "light") await ctx.addInitScript(() => localStorage.setItem("sova:theme", JSON.stringify({ id: "plain-light", base: "light", tokens: {} })));
+  // This tab has been opened before: a phone's first launch would land on Home, one Back above the list (§app.shell/overview).
+  await ctx.addInitScript(() => sessionStorage.setItem("sova:launched", "1"));
   const page = await ctx.newPage();
   const calls: string[] = [];
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });

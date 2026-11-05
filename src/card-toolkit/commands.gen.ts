@@ -86,6 +86,7 @@ export type CommandId =
   | "project.verb.merge.reply"
   | "project.verb.merge.fresh"
   | "project.verb.merge.clear"
+  | "project.verb.merge.hold"
   | "project.verb.release.status"
   | "project.verb.release.logs"
   | "project.verb.release.request"
@@ -97,6 +98,7 @@ export type CommandId =
   | "project.verb.release.publish"
   | "project.verb.release.abandon"
   | "project.verb.release.withdraw"
+  | "project.verb.release.note"
   | "project.services.view"
   | "project.overseer.idea.list"
   | "project.overseer.idea.get"
@@ -117,6 +119,11 @@ export type CommandId =
   | "project.update"
   | "project.claude-login.get"
   | "project.claude-login.set"
+  | "project.coding.start"
+  | "project.icon.get"
+  | "project.icon.upload"
+  | "project.icon.letters"
+  | "project.icon.remove"
   | "project.archive"
   | "project.unarchive"
   | "project.preview.off"
@@ -142,6 +149,7 @@ export type CommandId =
   | "project.merge-queue.request.publish"
   | "project.merge-queue.land-how.set"
   | "project.merge-queue.land-how.clear"
+  | "project.merge-queue.branch-summary.retry"
   | "overseer.attention"
   | "overseer.abilities"
   | "overseer.todo.list"
@@ -197,6 +205,8 @@ export type CommandId =
   | "settings.memory.get"
   | "settings.subagents.get"
   | "settings.align.set"
+  | "settings.cards.get"
+  | "settings.cards.withdraw"
   | "settings.assistant-default.set"
   | "push.test"
   | "audit.list"
@@ -1279,6 +1289,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.logs, as the operator (sova-project merge.logs). (only looks; needs the card's owner trusted) */
   "project.verb.merge.logs": {
@@ -1342,6 +1354,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.add, as the operator (sova-project merge.add). (changes something; needs the card's owner trusted) */
   "project.verb.merge.add": {
@@ -1405,6 +1419,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.cancel, as the operator (sova-project merge.cancel). (changes something; needs the card's owner trusted) */
   "project.verb.merge.cancel": {
@@ -1468,6 +1484,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.pause, as the operator (sova-project merge.pause). (changes something; needs the card's owner trusted) */
   "project.verb.merge.pause": {
@@ -1531,6 +1549,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.resume, as the operator (sova-project merge.resume). (changes something; needs the card's owner trusted) */
   "project.verb.merge.resume": {
@@ -1594,6 +1614,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.note, as the operator (sova-project merge.note). (changes something; needs the card's owner trusted) */
   "project.verb.merge.note": {
@@ -1657,6 +1679,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.extend, as the operator (sova-project merge.extend). (changes something; needs the card's owner trusted) */
   "project.verb.merge.extend": {
@@ -1720,6 +1744,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.resolve, as the operator (sova-project merge.resolve). (changes something; needs the card's owner trusted) */
   "project.verb.merge.resolve": {
@@ -1783,6 +1809,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.answer, as the operator (sova-project merge.answer). (changes something; needs the card's owner trusted) */
   "project.verb.merge.answer": {
@@ -1846,6 +1874,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.review, as the operator (sova-project merge.review). (changes something; needs the card's owner trusted) */
   "project.verb.merge.review": {
@@ -1909,6 +1939,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.retry, as the operator (sova-project merge.retry). (changes something; needs the card's owner trusted) */
   "project.verb.merge.retry": {
@@ -1972,6 +2004,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.setup, as the operator (sova-project merge.setup). (changes something; needs the card's owner trusted) */
   "project.verb.merge.setup": {
@@ -2035,6 +2069,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.ask, as the operator (sova-project merge.ask). (changes something; needs the card's owner trusted) */
   "project.verb.merge.ask": {
@@ -2098,6 +2134,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.reply, as the operator (sova-project merge.reply). (changes something; needs the card's owner trusted) */
   "project.verb.merge.reply": {
@@ -2161,6 +2199,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.fresh, as the operator (sova-project merge.fresh). (changes something; needs the card's owner trusted) */
   "project.verb.merge.fresh": {
@@ -2224,6 +2264,8 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb merge.clear, as the operator (sova-project merge.clear). (changes something; needs the card's owner trusted) */
   "project.verb.merge.clear": {
@@ -2287,6 +2329,73 @@ export interface CommandParams {
     "dry-run"?: boolean;
     /** A merge thread question id */
     "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
+  };
+  /** The project verb merge.hold, as the operator (sova-project merge.hold). (changes something; needs the card's owner trusted) */
+  "project.verb.merge.hold": {
+    /** The project's root */
+    "project"?: string;
+    /** A branch name */
+    "branch"?: string;
+    /** A checkout's path */
+    "checkout"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** A merge queue entry id */
+    "entry"?: string;
+    /** A merge run id */
+    "run"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** A note on the entry */
+    "note"?: string;
+    /** Land without its spec drafts */
+    "without-specs"?: boolean;
+    /** Land without the review step */
+    "without-review"?: boolean;
+    /** The chat the approval was given in */
+    "chat"?: string;
+    /** merge.add: github-pr | gitlab-mr: open a pull or merge request for this landing (typed "open a PR") */
+    "via"?: string;
+    /** Check ids, comma-separated */
+    "checks"?: string[];
+    /** Test selectors, comma-separated */
+    "select"?: string[];
+    /** Why */
+    "why"?: string;
+    /** A verdict */
+    "verdict"?: string;
+    /** Files, comma-separated */
+    "files"?: string[];
+    /** The target's side, in plain words */
+    "ours"?: string;
+    /** The branch's side, in plain words */
+    "theirs"?: string;
+    /** The proposed resolution, in plain words */
+    "proposal"?: string;
+    /** accept | send-back | land-anyway */
+    "answer"?: string;
+    /** Text */
+    "text"?: string;
+    /** merge.setup: the project's one test command */
+    "command"?: string;
+    /** merge.setup: its checks, each "Label: command", comma-separated */
+    "commands"?: string[];
+    /** merge.setup: the project has no automated tests */
+    "none"?: boolean;
+    /** merge.setup: about how many minutes the tests take */
+    "takes-min"?: number;
+    /** merge.setup: services that must start first, comma-separated */
+    "requires"?: string[];
+    /** merge.setup: Try It on Main, saving nothing */
+    "dry-run"?: boolean;
+    /** A merge thread question id */
+    "ask"?: string;
+    /** merge.hold: set | clear */
+    "action"?: string;
   };
   /** The project verb release.status, as the operator (sova-project release.status). (only looks; needs the card's owner trusted) */
   "project.verb.release.status": {
@@ -2629,6 +2738,37 @@ export interface CommandParams {
     /** Dismiss the request */
     "dismiss"?: boolean;
   };
+  /** The project verb release.note, as the operator (sova-project release.note). (changes something; needs the card's owner trusted) */
+  "project.verb.release.note": {
+    /** The project's root */
+    "project"?: string;
+    /** A release id */
+    "release"?: string;
+    /** A release's numbered tag */
+    "tag"?: string;
+    /** A run step id */
+    "step"?: string;
+    /** A step's state */
+    "state"?: string;
+    /** A step's one-line summary */
+    "summary"?: string;
+    /** A step's detail */
+    "detail"?: string;
+    /** A step's facts, key=value, comma-separated */
+    "facts"?: string[];
+    /** Text */
+    "text"?: string;
+    /** A commit */
+    "commit"?: string;
+    /** Why */
+    "why"?: string;
+    /** How many log lines */
+    "lines"?: number;
+    /** The operator's confirm */
+    "confirm"?: boolean;
+    /** Dismiss the request */
+    "dismiss"?: boolean;
+  };
   /** A project's Branches tab: its copies, their services and the supervisor. (only looks; needs the card's owner trusted) */
   "project.services.view": {
     /** The project's id */
@@ -2782,6 +2922,45 @@ export interface CommandParams {
     /** A login id (default: this computer's own), org, or none */
     "login": string;
   };
+  /** Start a coding chat in a project: in its root (or a folder inside it), on the project's coding model and mode; with worktree later it cuts its own branch once the work has a name. (changes something; needs the card's owner trusted) */
+  "project.coding.start": {
+    /** The project's id */
+    "pid": string;
+    /** Names the chat (and, with worktree now, its branch) */
+    "title"?: string;
+    /** Its model (provider/model); absent: the project's coding model */
+    "model"?: string;
+    /** Its thinking level */
+    "thinking"?: string;
+    /** now: cut its worktree at the start; later: start in the root, adopt the first worktree it makes */
+    "worktree"?: "now" | "later";
+    /** Where it starts: the root, a folder inside it, or one inside its worktrees (default: the root) */
+    "cwd"?: string;
+  };
+  /** What a project's icon is: an uploaded picture, one found in its folder, or letters (rescans the folder). (only looks; needs the card's owner trusted) */
+  "project.icon.get": {
+    /** The project's id */
+    "pid": string;
+  };
+  /** Set a project's icon to a picture: a square PNG of 64 to 1024 px, at most 1 MB, base64. Kept on this computer only. (changes something; needs the card's owner trusted) */
+  "project.icon.upload": {
+    /** The project's id */
+    "pid": string;
+    /** The picture: a square PNG, base64 */
+    "png": string;
+  };
+  /** Show a project's letters instead of its picture (true), or its picture again (false). (changes something; needs the card's owner trusted) */
+  "project.icon.letters": {
+    /** The project's id */
+    "pid": string;
+    /** true: letters; false: the uploaded or found picture */
+    "letters": boolean;
+  };
+  /** Remove a project's uploaded picture: back to the icon found in its folder, or letters. (changes something; needs the card's owner trusted) */
+  "project.icon.remove": {
+    /** The project's id */
+    "pid": string;
+  };
   /** Archive a project; refused while anything in it is open. (changes something; needs the card's owner trusted) */
   "project.archive": {
     /** The project's id */
@@ -2856,6 +3035,8 @@ export interface CommandParams {
     "card": string;
     /** local only: the fingerprint the card showed */
     "fingerprint"?: string;
+    /** local only: cancel a held Land and keep the edits */
+    "cancel-save"?: boolean;
   };
   /** Change a project overseer's settings: Watch, powers, models, limits, pace, the hold, extra instructions. (changes something; needs the card's owner trusted) */
   "project.overseer.settings.set": {
@@ -2970,6 +3151,15 @@ export interface CommandParams {
   "project.merge-queue.land-how.clear": {
     /** The project's id */
     "project": string;
+  };
+  /** Write a branch's summary again after it failed, for the same commit; refused for a summary that worked. (changes something; needs the card's owner trusted) */
+  "project.merge-queue.branch-summary.retry": {
+    /** The project's id */
+    "project": string;
+    /** The branch */
+    "branch": string;
+    /** The full commit id the row shows */
+    "commit": string;
   };
   /** What needs the user now, as the Overseer's digest has it. (only looks; needs the card's owner trusted) */
   "overseer.attention": Record<string, never>;
@@ -3212,6 +3402,13 @@ export interface CommandParams {
     "visuals"?: unknown;
     /** The Eagerness: "careful", or omitted for Eager */
     "eagerness"?: unknown;
+  };
+  /** The Sova-wide settings cards a Create chat prepared: waiting, and recently applied or dismissed. (only looks; needs the card's owner trusted) */
+  "settings.cards.get": Record<string, never>;
+  /** Dismiss a Sova-wide settings card a Create chat prepared. Nothing changes. (changes something; needs the card's owner trusted) */
+  "settings.cards.withdraw": {
+    /** The card's id (sw_…) */
+    "card": string;
   };
   /** Set or clear the model and thinking every organization's Project Assistant uses unless it picks its own. (changes something; needs the card's owner trusted) */
   "settings.assistant-default.set": {
@@ -3462,6 +3659,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.verb.merge.reply": "changes",
   "project.verb.merge.fresh": "changes",
   "project.verb.merge.clear": "changes",
+  "project.verb.merge.hold": "changes",
   "project.verb.release.status": "looks",
   "project.verb.release.logs": "looks",
   "project.verb.release.request": "changes",
@@ -3473,6 +3671,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.verb.release.publish": "changes",
   "project.verb.release.abandon": "changes",
   "project.verb.release.withdraw": "changes",
+  "project.verb.release.note": "changes",
   "project.services.view": "looks",
   "project.overseer.idea.list": "looks",
   "project.overseer.idea.get": "looks",
@@ -3493,6 +3692,11 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.update": "changes",
   "project.claude-login.get": "looks",
   "project.claude-login.set": "changes",
+  "project.coding.start": "changes",
+  "project.icon.get": "looks",
+  "project.icon.upload": "changes",
+  "project.icon.letters": "changes",
+  "project.icon.remove": "changes",
   "project.archive": "changes",
   "project.unarchive": "changes",
   "project.preview.off": "changes",
@@ -3518,6 +3722,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.merge-queue.request.publish": "changes",
   "project.merge-queue.land-how.set": "changes",
   "project.merge-queue.land-how.clear": "changes",
+  "project.merge-queue.branch-summary.retry": "changes",
   "overseer.attention": "looks",
   "overseer.abilities": "looks",
   "overseer.todo.list": "looks",
@@ -3573,6 +3778,8 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "settings.memory.get": "looks",
   "settings.subagents.get": "looks",
   "settings.align.set": "changes",
+  "settings.cards.get": "looks",
+  "settings.cards.withdraw": "changes",
   "settings.assistant-default.set": "changes",
   "push.test": "changes",
   "audit.list": "looks",

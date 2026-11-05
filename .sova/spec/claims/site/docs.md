@@ -12,7 +12,7 @@ change to a claim names the pages it reaches (`impact`) and a page names the cla
 
 Every `/docs/` page is one Markdown file in the docs collection (`src/content/docs/`); its path is
 its URL under `/docs/`, and an `index.md` is its folder's own page. Each file's front matter gives
-a title, a description, a group (Start, Modes, Features or Setup), an optional subgroup (Major or
+a title, a description, a group (Start, Modes, Features, Extending or Setup), an optional subgroup (Major or
 Minor, under Modes) and an order. Pages are listed by group in that order, then a group's own pages
 before each subgroup, then by `order`; the sidebar and Previous/Next follow that sequence. The
 Modes group holds only pages about modes, and only a page about a mode sits in a subgroup (Major or
@@ -38,14 +38,16 @@ and the site's fonts and colour tokens.
 
 ## §site.docs/index — Sova docs (`/docs/`)
 
-The front page: what a mode is, a table with a row per major and minor mode (memory among them, a
-project's own modes as one row), and links to the feature and setup pages.
+The front page: what a mode is, a table with a row per major and minor mode (Create and memory among
+them, a project's own modes as one row), and links to the feature, extending and setup pages.
 
 ## §site.docs/modes — Modes (`/docs/modes/`)
 
-The major and minor modes side by side, switching them per chat from the composer's mode menu,
-the default for new sessions (memory's type with it), strict, a short memory section that
-links to its own page (§site.docs/memory), the terminal's commands, what workers get (spec, and each
+The major and minor modes side by side, the three major modes in the mode menu's words, switching
+them per chat from the composer's mode menu,
+the default for new sessions (memory's type with it; never Create, which is chosen per chat),
+strict, a short memory section that
+links to its own page (§site.docs/memory), the terminal's commands, which offer no Create, what workers get (spec, and each
 project mode that says so), and the sessions that choose their own mode, and a project's own minor modes (§site.docs/project-modes).
 
 ## §site.docs/normal — Normal (`/docs/modes/normal/`)
@@ -58,7 +60,8 @@ always runs in it.
 ## §site.docs/delegate — Delegate (`/docs/modes/delegate/`)
 
 The orchestrating major mode: the four kinds of work and where each is routed, fallbacks and Off,
-teams, watching workers, and workers after a restart.
+teams, watching workers, and workers after a restart. Create (§site.docs/create) does all of this
+and shares these settings.
 
 ## §site.docs/subagent-profiles — Subagent profiles (`/docs/subagent-profiles/`)
 
@@ -120,9 +123,10 @@ style reaches the page only when the generator runs again.
 
 Writing a project's own minor mode: the `.sova/minor-modes/<id>/` folder and its `MODE.md`, which
 checkout a chat reads it from, the instructions and reference files, declaring a tool and the
-program it runs, declaring a command (`sova run mode.<id>.<name>`) and a hook (what runs after a
-reply, its event and environment, its bounds), approval and when it is asked again, who approves
-hooks, the copy a chat keeps once a mode is on, what
+program it runs, declaring a command (run from a checkout with `node scripts/sova.mjs run
+mode.<id>.<name>`, never the installed `sova`, §app.commands/cli) and a hook (what runs after a
+reply, its event and environment, its bounds), approval and when it is asked again, that only your own click in the mode menu or the Overseer's turn-on approves a tool, who
+approves hooks, the copy a chat keeps once a mode is on, what
 workers get, the menu's states, turning one on from a terminal, what makes a folder broken, and
 one worked example of a mode with a tool, a command and a hook.
 
@@ -143,8 +147,8 @@ once you press Land or type "land it" in its chat, through the project's merge q
 The session that reads every other session and acts on them through Sova: what it is, what it may
 do (organizations and cross-host links included) and when it asks first, the files it writes only in
 turns you start, its memory switch, its notes, ideas and to-dos, and its settings. Its news of branches
-ready to land points to Land; it never lands a branch itself. Turning a project's own mode on for you counts as your approval
-of its tools.
+ready to land points to Land; it never lands a branch itself. When it turns on a project's own mode, that
+counts as the approval of the mode's tools and commands, never its hooks.
 
 ## §site.docs/playbooks-and-schedules — Playbooks and schedules (`/docs/playbooks-and-schedules/`)
 
@@ -191,6 +195,54 @@ runs and the kind of copy, the source (stable, master or a branch), checking and
 the dot on Settings, upgrading with the previous version kept until the new one answers and put back
 when it doesn't, Upgrade automatically, the banner a page open across an upgrade
 shows ("A newer Sova is available.", mesh or not), and that only the operator can update.
+
+## §site.docs/create — Create (`/docs/modes/create/`)
+
+The major mode for configuring and extending Sova, in the Modes group's Major subgroup: that it does
+everything Delegate does and shares its settings, strict included; that it never changes Sova's own
+code and starts from what you need; the table of contents; where it is offered and what a chat that
+can do less says; cards, Land and your OK, and which one a change takes; what Apply means and what
+only you can do; choosing it per chat, and why no default holds it; new tools; when a change appears,
+and what spreads to your other computers; and the limit of the check that keeps its entries complete.
+
+## §site.docs/extending — Extending Sova (`/docs/extending/`)
+
+The front page of the Extending group: every way to make Sova yours, by what you want to do, in the
+order and words of Create's table of contents, each linking to its guide or naming the screen. It
+says plainly what has no supported way today, and what is nearest.
+
+## §site.docs/project-definition — The project definition (`/docs/extending/project-definition/`)
+
+`.sova/project.json` as a whole: services, ports, setup, data, tests, share endpoints, deploy recipes
+and the `release` and `merge` sections, what each is for, what a change to each needs, and how to check one.
+
+## §site.docs/card-types — Card types (`/docs/extending/card-types/`)
+
+A project's own transcript cards: the `.sova/cards/<name>/` folder, what a view can do, trust, and when
+a new or changed card reaches a chat.
+
+## §site.docs/drawing-kinds — Drawing kinds (`/docs/extending/drawing-kinds/`)
+
+A project's or an extension's own drawing kinds: the `.sova/drawings/<name>/` folder, how a chat learns
+one, and when it reaches a chat.
+
+## §site.docs/automation-files — Automation files (`/docs/extending/automation-files/`)
+
+`.sova/automations/<id>.json`: what one holds, how it differs from a playbook's schedule, what it can
+and can't name (Create among them), approving it, and when it runs.
+
+## §site.docs/scripting — Scripting Sova (`/docs/extending/scripting/`)
+
+Driving Sova from your own program: the commands with `node scripts/sova.mjs` from a checkout, and
+that the installed `sova` launcher runs no commands (it starts the server); the token; the event
+stream; sending to a chat and raising a card; who ran what; and what no script can do, the
+approvals only your click passes among them, and how far that holds.
+
+## §site.docs/add-ons — Add-ons in a Sova chat (`/docs/extending/add-ons/`)
+
+Which features of a pi add-on work in a Sova chat and which don't: tools, commands, events, providers
+and dialogs; what reaches workers; when an add-on reaches a chat; and that enabling or disabling one
+is done in a terminal.
 
 ## §site.docs/mcp-servers — MCP servers (`/docs/mcp-servers/`)
 

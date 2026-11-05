@@ -9,7 +9,7 @@ Fedora and Alpine; Alpine has no bash until you `apk add bash`. You need:
 
 - bash, Git, `curl`, and `unzip` or `python3`
 - Node.js ≥22.19
-- pnpm; without it, the installer runs the version Sova pins through npx
+- pnpm; without one that runs, the installer runs the version Sova pins through npx
 
 The server runs on Bun: the installer downloads the version Sova pins into the install directory
 and checks its checksum. Then:
@@ -166,7 +166,7 @@ experimenting with configuration. Never commit credentials, transcripts, or pers
 ## Reinstall or remove
 
 Running the install command again updates to the newest stable release (or the latest of the
-`SOVA_REF` you set; `SOVA_REF=v0.10.0` stays on that release). An install already at that commit isn't rebuilt;
+`SOVA_REF` you set; `SOVA_REF=v0.10.2` stays on that release). An install already at that commit isn't rebuilt;
 `--reinstall` rebuilds it anyway. Pass the same options again: without `--port`, a re-run goes back
 to 4800. The installer stages the build before replacing the installation and refuses tracked
 local changes. Don't store your own files in the install directory: untracked files do not prevent

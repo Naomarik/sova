@@ -365,6 +365,7 @@ export class RemoteChatHandle extends ChatHandle {
       clientId,
       client: {
         clientId,
+        ...(client.notUser ? { notUser: true as const } : {}),
         ...(client.wire ? { wire: client.wire } : {}),
         ...(client.tail ? { tail: true } : {}),
         ...(client.pull ? { pull: client.pull } : {}),

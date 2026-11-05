@@ -31,6 +31,14 @@ until you publish or abandon, the project's [merge queue](/docs/merge-queue/) is
 release: only the release's own commit lands, nothing is pushed, and every other branch waits in
 line ("waits for v0.10.0 to be published or abandoned").
 
+**Release Note**, beside Start Release, saves your instructions for the next release ("Release as
+0.10.1", "skip docs"), up to 4,000 characters. While a note is saved the tab shows it under its
+head. Start Release stays one click: it sends the note to the release chat as your instructions,
+then clears it, and a version it names wins over the playbook's own rule. When the Overseer, the
+project's overseer or the Project Assistant asked for the release, the chat gets their reason too,
+as background only: it never picks the version or skips a step. A started release shows the note it
+got and who asked.
+
 The tab lists the release's steps in order, each with its state (Waiting, Running, Done, Failed,
 Skipped, **Held for you**) and the chat's one-line summary. Sova checks what it can see for itself,
 such as that the version's tag doesn't exist yet or that the commit is on the release branch, and

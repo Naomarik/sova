@@ -8,8 +8,9 @@ order: 0
 ## Modes, in one paragraph
 
 Every chat has one **major mode** and any set of **minor modes**. The major mode decides how the
-agent works: **normal** is pi as usual, and **delegate** has the agent route its work to subagents
-(workers) instead of doing it all itself. Minor modes add one thing each on top of that, such as
+agent works: **normal** is pi as usual, **delegate** has the agent route its work to subagents
+(workers) instead of doing it all itself, and **create** does the same while it configures and extends
+Sova for you. Minor modes add one thing each on top of that, such as
 agreeing on a plan before building (**align**) or working from the project's spec (**spec**). You
 switch them per chat from the mode menu in the composer, and a switch applies from that chat's next
 message. [How modes work](/docs/modes/) covers the menu, the default for new chats, and the terminal
@@ -21,6 +22,7 @@ commands.
 |---|---|---|
 | [normal](/docs/modes/normal/) | Major | Pi as usual. The agent does the work itself, and can still start workers and teams. |
 | [delegate](/docs/modes/delegate/) | Major | The agent plans and routes 4 kinds of work to workers, each on the model your subagent profile names. |
+| [create](/docs/modes/create/) | Major | Everything Delegate does, plus every way to make Sova yours. You say what you need, and it makes the change on a card, by Land, or with your OK. |
 | [align](/docs/modes/align/) | Minor | The agent agrees with you on what to build first, and records each agreement as an alignment you answer in chat. |
 | [spec](/docs/modes/spec/) | Minor | The agent reads the project's spec before coding, and proposes changes to it in drafts that become official when its branch lands. |
 | [vis](/docs/modes/vis/) | Minor | The agent can draw small diagrams and charts in its replies, which Sova renders itself, and record checked tours of a real interface. |
@@ -48,6 +50,15 @@ workers, team members, the spec writer and the reviewer. Each chat picks one in 
   models, and Focus on the conversation.
 - [Playbooks and schedules](/docs/playbooks-and-schedules/): written recipes an agent runs, by hand or
   on a schedule you approve.
+
+## Extending
+
+- [Extending Sova](/docs/extending/): every way to make Sova yours, by what you want to do.
+- [The project definition](/docs/extending/project-definition/), [Card types](/docs/extending/card-types/),
+  [Drawing kinds](/docs/extending/drawing-kinds/) and [Automation files](/docs/extending/automation-files/):
+  what your project can declare.
+- [Scripting Sova](/docs/extending/scripting/): drive Sova from your own program.
+- [Add-ons in a Sova chat](/docs/extending/add-ons/): which features of a pi add-on work in a chat.
 
 ## Set up
 

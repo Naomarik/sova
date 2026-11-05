@@ -241,7 +241,8 @@ user row.
   what the statecharts start by themselves, §app.project-overseer/drive) and one for **the Project
   Assistant from a client** (what an owner's message to the project's Project Assistant may set off).
   The columns are separate: turning a power On for the overseer never lets a client's message trigger
-  it. The powers, in five groups (`shared/powers.ts`, `POWER_INFO`):
+  it. Turning one On, in either column, is your own click on the project page's Settings tab, Apply
+  on a Settings change card, or the Overseer's act in a turn you started (§app.access/your-click). The powers, in five groups (`shared/powers.ts`, `POWER_INFO`):
   - **People**: `gather` start, offer and close gatherings; `whatsapp` message people on WhatsApp;
     `ownerUpdates` post owner updates; `roster` approve or decline proposed people.
   - **Spec**: `promote` promote decisions into the spec; `bookkeeping` fix the pipeline's bookkeeping
@@ -519,7 +520,7 @@ user row.
   project's coding sessions only, and an ordinary session whose folder is inside the project root,
   which is the project's own act: counted as a prompt, held like one; never a
   gathering session; an optional `mode`, `minor_modes` and `subagent_profile` too). Both take any
-  mode, minor modes and subagent profile; only unknown names, and the alignment refusals, are
+  mode but Create, any minor modes and any subagent profile; only Create, unknown names and the alignment refusals are
   refused (§app.project-overseer/coding-mode).
   `copiesRun`: `sova_project_verbs` create, up, apply, test and conform; `copiesReset`: its reset and
   teardown (always: its `down`, `revoke`, status, logs and doctor; `share`: its `share`, held; above).
@@ -629,7 +630,8 @@ user row.
   uncommitted settings edits in the project folder; `reference {setting}` gives one setting's full
   entry (its keys, what each means, what needs your approval); `propose {why, edits}` makes a
   change; `withdraw {card}` drops one of its cards. Its prompt carries the settings' short index.
-  No other chat, worker or the Project Assistant gets the tool or the knowledge.
+  A chat in Create gets the tool and knowledge of its own, to prepare only
+  (§chat.create-mode/settings-cards). No other chat, worker or the Project Assistant gets either.
 - **The reference comes from the parsers.** Each entry is generated from the key lists the
   parsers accept (the services contract, the profile file, a playbook's frontmatter and schedule,
   `MODE.md`, the offers file, the overseer's settings patch, the project's own patch, the placement
@@ -660,7 +662,8 @@ user row.
   spec frozen, the project hidden from the owner's page, the main stakeholder changed)
   applies at once and its result says so, each with **Undo**. Everything else goes on a **Settings
   change card**: grants, and every change to the project's files. In a run the operator did not start
-  (a look, Run Now, a wake-up) nothing applies: it only prepares a card.
+  (a look, Run Now, a wake-up) nothing applies: it only prepares a card. A chat in Create only ever
+  prepares one, in any turn (§chat.create-mode/settings-cards).
 - **The card.** Under its reply in the overseer's chat, and on the project page's Settings tab while
   it waits, the card `sc_<n>` says each setting in plain words with its before and after and where it
   lands (Sova, or the file on the project's branch), marks each grant with what it allows, and shows
@@ -679,9 +682,31 @@ user row.
   project, Sova's own included (the live checkout's master), and only settings files: a commit that
   would touch anything else is refused. Then it records the approvals of exactly the card's grants:
   each profile's powers as `project:<root>#<id>` (§chat.profiles/trust), each schedule's pin, each
-  mode's version as your own approval, the offers file's run-button fingerprint. A file that changed
+  mode's version as your own approval, the offers file's run-button fingerprint. A schedule the commit
+  just added is discovered first, then approved. A grant that can't be recorded doesn't undo the commit
+  and is never reported approved: the card reads applied, and names where to approve what's left. A file that changed
   on the branch since the card was made, a folder on no branch, or a grant set that differs from the
   card's now (the settings changed since) is refused with a plain sentence and nothing applies.
+- **A held Apply.** Every card that commits files waits while a branch or a release holds the target or
+  the target waits for a resume, whoever prepared it: an overseer's card, a Create chat's, and **Land** on the
+  uncommitted edits' card below. It says "Saves when the current branch finishes." or "Saves once release {version} is published or
+  abandoned.", with **Cancel Save**.
+  It applies at the queue's next quiet point, before the next branch starts
+  (§app.merge-queue/master-moved). A run that fails meanwhile doesn't stop it, and a branch landing on
+  files the card doesn't touch doesn't fail it.
+  - A hold is tied to one click and that exact card. It can't be replayed, and it is gone once it is
+    Cancelled or settled. Only your Cancel Save cancels it; a chat's or an overseer's withdraw can't.
+  - It loosens nothing of §app.access/your-click: the click is still your own, on your own page.
+  - A file changed while it is held fails it with its reason; it never applies over the change.
+  - Grants are compared when it lands. Any difference from what you saw and clicked, wider or narrower,
+    fails it with its reason.
+  - A restart while one is held settles it where you can see it: it resumes at the queue's next quiet
+    point, applies and shows its commit, or fails with its reason if the queue no longer serves the project.
+  - Each failure says what changed and that nothing was saved, is never retried, and the card can be
+    prepared again.
+  - **Land** on the uncommitted edits' card holds for the edits that click saw: changed edits fail it, and
+    Cancel Save keeps them.
+  - A card that commits no files, Sova-wide or Sova-kept only, applies at once.
 - **Uncommitted edits in the project folder.** Settings files edited in the project folder and not
   committed (the overseer's own `write`/`edit`, or anyone's) show as one waiting card, "Uncommitted
   settings edits in the project folder", with **Land** (commit them as they are, approving the
@@ -707,14 +732,16 @@ user row.
   Sova-kept and in the project's files (the **Copy limit**, its value and "set on this machine" or
   "from the project's file", linking to the Branches tab; services, profiles, playbooks and their schedules, modes,
   offers; the **Merge queue**, linking to Settings → Merge Queue on this project, §app.merge-queue/settings,
-  which `sova_settings` refuses to change), with its state (on, off, set, not set, broken, needs approval, approved) and a link to
+  which the project overseer's `sova_settings` refuses to change; a Create chat's card can,
+  §chat.create-mode/settings-cards), with its state (on, off, set, not set, broken, needs approval, approved) and a link to
   where it is changed or approved (its section on the tab, Settings → Profiles, the Playbooks dialog,
   a chat's mode menu, the Offers list, the Branches tab; a section of the tab itself scrolls into view).
   The Offers list is one of its sections.
 - **Commands.** `project.settings.get`, `project.settings.history`, `project.settings.undo`,
   `project.settings.propose.withdraw` (Dismiss; on the uncommitted edits' card it is Discard), and
-  `project.overseer.settings.set` (the existing `PATCH /api/projects/:pid/overseer`). Apply and Land
-  are trust grants, never commands.
+  `project.overseer.settings.set` (the existing `PATCH /api/projects/:pid/overseer`, where only your
+  own click or the Overseer turns a power On, §app.access/your-click). Apply and Land are trust grants,
+  never commands.
 
 ## §app.project-overseer/coding-mode — The mode its coding sessions run in
 
@@ -753,12 +780,14 @@ user row.
   chat's mode menu changes it."), `{mode}` in mono: the mode and its minor modes joined by " · ",
   `vis` said as "visuals". `GET …/overseer` answers it as `codingModeNow` `{mode, minorModes,
   subagents: {id, name} | null}`, and the overseer's prompt names it.
-- **Any mode, for both Overseers.** The project overseer's `sova_create_session` and `sova_send`,
+- **Any mode but Create, for both Overseers.** The project overseer's `sova_create_session` and `sova_send`,
   and the Overseer's `sova_project_overseer` `code` (§app.overseer/org-project-overseers), take
   `mode` (`normal` or `delegate`), `minor_modes` (the whole set on: any of `align`, `spec`, `vis`,
   never `memory` (§chat.memory/where); `[]` turns them all off) and `subagent_profile` (an id in this computer's subagent
   profiles, or `off`; the project overseer's `sova_list_subagent_profiles` lists them). There is no
-  ceiling but spec (above): any mode, any minor modes with `spec` among them and any profile are taken. On a start, what the call names
+  ceiling but spec (above) and Create, which only a chat picks for itself
+  (§chat.create-mode/per-chat-only): any other mode, any minor modes with `spec` among them and any
+  profile are taken. On a start, what the call names
   replaces that part of this computer's default and the rest is the default's, except that a start
   without `already_agreed` also gets align on (§app.project-overseer/confirm-brief); a named profile is
   picked for that session only. Only an unknown name is refused: "Unknown mode {x}: use normal or
@@ -938,6 +967,10 @@ judgement.
   with Merge Branch and Remove Worktree… both disabled, "Reading its branch": no branch gesture
   acts on a state the page hasn't read. Once they arrive the menu is as above. Merge Branch and Remove Worktree
   answer the branch read's shape, and the page reads the overseer's state again after either.
+  A refresh (either read again, or any chat changing) updates the rows in place, each matched by
+  its session, and never rebuilds the list: an open **⋯** menu stays open and the page keeps its
+  scroll position and keyboard focus, while a row's text, chips and menu entries still change as
+  they arrive, and a menu entry acts on what its row shows when it is chosen.
 - **Merge Branch** is the operator's gesture; the overseer has no tool for it. It merges
   `sova/<name>` into `target` in the project root's checkout, which must have `target` checked
   out, no tracked changes and no merge, rebase or cherry-pick in progress: a fast-forward when
@@ -1250,7 +1283,8 @@ judgement.
   the same coding settings, mode and pin. It gets no `sova-coding-worktree` note and no commit
   paragraph at start; the conversation names its worktree later, with the session's own
   `worktree` tool, and the project adopts it then (§app.project-overseer/coding-worktrees,
-  **Adopted later**). The answer carries no `worktree`. A request's Start Chat on the org's Requests tab
+  **Adopted later**). The answer carries no `worktree`. A project card's New Chat on the overview
+  sends exactly what the Project tab sends (§app.projects/home-cards). A request's Start Chat on the org's Requests tab
   starts the same session with `"later"` and the request's title (§app.project-assistant/request-chat). The project page's New Coding Session
   button, Start Coding Session and the overseers' starts never send it: they cut the worktree at
   create, as above. In a project root that can't have worktrees (§app.project-overseer/coding-worktrees,

@@ -9,7 +9,7 @@ Recommend Set Up with a Chat on the Releases tab for a project with none: the pr
 - Change: whether the project has releases at all, with a release playbook and a `release` section written to fit it.
 - Lives: the project page's Releases tab starts it. The result lands in the project: a `release` key in `.sova/project.json` and a playbook folder.
 - Approves: the person: Set Up with a Chat (Change Setup once set up), their answers, then Land.
-- By: Screen. The Releases tab, Set Up with a Chat. The project's Setup chat proposes on its own branch, trial-runs the release checks, and the person lands it.
+- By: Screen. The Releases tab, Set Up with a Chat. The project's Setup chat proposes on its own branch, trial-runs the release checks it adds or changes, and the person lands it.
 - Live: after landing. Sova reads the section from the merge queue's target, never a working folder.
 - Check: the Releases tab loses its Not set up chip and shows Start Release.
 
@@ -33,7 +33,7 @@ Beside the file's other keys:
 - Change: the project's own steps: picking the number, notes, bumps, the release commit, a live try-out, after-publish steps.
 - Lives: the folder `release.playbook` names: `PLAYBOOK.md`, its scripts, and `release.json`, the steps. A step is `{id, label, phase, held?, artifact?}`; `phase` is `prepare`, `check`, `after` or `withdraw`, in that order. `commit`, when there, is the last prepare step, and `version` reports the version. Sova's own ids (`checks`, `publish`, `withdraw`, `abandon`) are refused. A step must never push, tag or move a branch: Sova does that at Publish.
 - Approves: the person, by Land.
-- By: Land. A card can't carry the folder.
+- By: Land, through Change Setup on the Releases tab: the project's Setup chat changes the folder on its own branch. A card can't carry the folder.
 - Live: after landing, from the next Start Release.
 - Check: Start Release shows the plan, with Sova's `checks` and `publish` among the steps.
 

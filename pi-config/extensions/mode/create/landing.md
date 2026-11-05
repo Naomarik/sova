@@ -56,7 +56,7 @@ A card lands on the main branch with no checks, so a change that fails one turns
 - Change: what each check runs, adding or removing a check, the offline install, and the branch the queue lands into. Keys: `merge.checks`, `merge.install`, `merge.target`. A check is `{id, label, run, timeout?, rerun?, requires?, optional?}`, 1 to 30 of them, or `"checks": "none"`.
 - Lives: the `merge` section of `.sova/project.json`.
 - Approves: the person, by Land.
-- By: Land. Never a card: a command is changed on a branch, where the queue tests it.
+- By: Land, through Change Setup. Never a card: the project's Setup chat changes the command on its own branch and runs a trial of it, and Land is offered once a trial of that branch's head passed, since the queue checks a branch with the target's checks, not its own.
 - Live: after landing, from the next landing.
 - Check: the next landing's run shows each check, tagged Required.
 

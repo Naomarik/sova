@@ -219,6 +219,7 @@ In this order, every time, before you commit:
 3. Commit by explicit path.
 4. Prove each part the way it runs:
    - merge checks and release checks: a trial of the branch's head, `merge.try`
-     (`behaviour.md`, "Trials"), until it passes;
+     (`behaviour.md`, "Trials"), until it passes. It runs every merge check, but a release check only
+     when it is new or changed against the target's, or named in the trial's `checks`;
    - deploy: `deploy.check {ref: <your branch>}` (at most 3 runs);
    - services you changed: `conform {ref: <your branch>}` (the Project verbs method's limits).

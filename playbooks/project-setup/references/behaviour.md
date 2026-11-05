@@ -8,7 +8,7 @@ rule here is the server's; where your words and Sova's facts disagree, Sova's fa
 | Yours | What for |
 |---|---|
 | `project_verbs` reads: `status`, `logs`, `doctor`, `merge.status`, `merge.logs`, `release.status`, `release.logs`, `deploy.status`, `deploy.logs` | the current state, every run's and trial's log |
-| `merge.try {branch?}` | a **trial**: the merge checks and the `release.checks` of your branch's head, run in the merge copy, saving nothing (below) |
+| `merge.try {branch?, checks?}` | a **trial**: every merge check of your branch's head, plus its release checks that are new or changed (or named in `checks`), run in the merge copy, saving nothing (below) |
 | `deploy.check {ref: <your branch>}` | proves a deploy recipe offline: it parses, every program resolves, every host value and env credential is set on this host (by presence). Runs nothing on a target. At most 3 per change |
 | `create` / `up` / `apply` / `test` / `down` on your own worktree's copy, `conform {ref}` | measuring commands with the project's services running; proving a services change |
 | `node scripts/project-setup.mjs …` and the folded-in drivers | investigation, drawing, formatting, checking |
@@ -87,13 +87,19 @@ the operator's tool, not yours; everything you change goes on your branch.
 ## Trials (`merge.try`)
 
 A trial is your rehearsal of a setup, and the only proof a setup branch gets before it lands.
-`merge.try {branch?}` (default: your worktree's branch; or `commit`) answers at once with the trial
-and its run (`mr_…`) and goes on in the background.
+`merge.try {branch?, checks?}` (default: your worktree's branch; or `commit`) answers at once with the
+trial and its run (`mr_…`) and goes on in the background.
 - It resets the merge copy to **that commit** (nothing merged, nothing moved), reads that commit's
   own `.sova/project.json`, runs its `setup` steps (a failing one once more), starts the services
   any check `requires` in the copy's own slot, then runs **every** merge check, required and
-  optional, then each `release.checks` entry, in order. A failed check is rerun once: a pass then is
-  noted flaky. No install step, no spec land, no review, no blame.
+  optional. Release-only checks are long, so it runs a `release.checks` entry only when it is **new
+  or changed** against the target's release section, or **named** in the trial's `checks`
+  (`merge.try {checks: ["release-site"]}`); every other one is reported "Not run (unchanged)". A
+  failed check is rerun once: a pass then is noted flaky. No install step, no spec land, no review,
+  no blame.
+- So a setup that changes what a release check depends on without changing the check itself (its
+  script, a service it requires, a setup step) names that check for the trial. Never name every
+  release check by habit: each can take up to 30 minutes and holds the merge copy.
 - In a trial the changed-paths list (`SOVA_MERGE_CHANGED`) is empty and `${merge.base}` is the
   commit itself, so a check that skips when its paths didn't change **skips** (shown as skipped, with
   its reason). Prove such a check by running it in your worktree against the target

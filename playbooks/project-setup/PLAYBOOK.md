@@ -105,7 +105,9 @@ the releases and the deploys **fresh** each time you start a change.
    credentials are the user's to set, listed in your report). Commit by explicit path (`git add
    .sova/project.json <each file>`), message `Setup: <what>`.
 8. **Trial.** `merge.try` on your branch (`references/behaviour.md`, "Trials"): it runs the head's
-   own checks (optional ones too) and release checks in the merge copy and saves nothing. Start it,
+   own merge checks (optional ones too) in the merge copy, and the release-only checks that are new
+   or changed against the target's (name an unchanged one in `checks` when your change touches what
+   it runs: its script, a service, a setup step), and saves nothing. Start it,
    then end your turn: Sova wakes you with each step's result. A check that skips when its paths
    didn't change skips in a trial: prove it by hand in your worktree. Read each failed check's log
    (`merge.logs`), fix the cause on your branch (a command, a missing setup step, a service, a time

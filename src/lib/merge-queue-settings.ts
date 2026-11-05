@@ -71,7 +71,7 @@ export interface ProjectDraft {
 }
 
 /** The longest time limit a check takes, in whole minutes. */
-export const capMinOf = (s: MergeQueueSettings): number => Math.floor(s.fixed.checkMaxMin);
+const capMinOf = (s: MergeQueueSettings): number => Math.floor(s.fixed.checkMaxMin);
 
 /** A time-limit box typed into: its text kept, and the check's limit when the text is one. Pure. */
 export function typedMinutes(d: ProjectDraft, id: string, text: string, s: MergeQueueSettings): ProjectDraft {

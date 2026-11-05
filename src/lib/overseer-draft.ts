@@ -259,7 +259,6 @@ export const setOverseerDraft = store.setDraft;
  * the draft the saved copy.
  */
 export const setOverseerSaved = (next: OverseerDraft, opts?: { replaceDraft?: boolean }): void => store.setSaved(cloneOverseer(next), opts);
-export const acceptOverseerSave = (next: OverseerDraft): void => store.acceptSave(cloneOverseer(next));
 export const overseerDirty = store.dirty;
 export const overseerSaving = store.saving;
 /** Why the dialog's Save waits for this form ("Overseer: …"), or null. */

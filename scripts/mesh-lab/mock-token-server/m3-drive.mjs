@@ -24,6 +24,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { freshFetch } from "../e2e/fresh-fetch.mjs";
 import { DOMAIN, PEER_PORT, PORTS } from "../lab.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -109,7 +110,7 @@ const mock = async (path) => {
   const url = new URL(path, MOCK);
   let res;
   try {
-    res = await fetch(url);
+    res = await freshFetch(url); // a fresh socket: this process blocks its loop in spawnSync between calls
   } catch (e) {
     throw new Error(`mock GET ${url}: ${e?.cause?.code ?? e?.cause?.message ?? e?.message} at ${new Date().toISOString()}`);
   }
@@ -429,7 +430,7 @@ async function h11() {
 // ---- pre-sync conflict (first pairing), settled from the Mesh page's routes ----------------------
 
 const mainApi = async (host, path, init) => {
-  const res = await fetch(`http://127.0.0.1:${PORTS.host(host)}${path}`, { ...init, signal: AbortSignal.timeout(10_000) });
+  const res = await freshFetch(`http://127.0.0.1:${PORTS.host(host)}${path}`, { ...init, signal: AbortSignal.timeout(10_000) });
   return { status: res.status, text: await res.text() };
 };
 const loginRow = async (host, key) => JSON.parse((await mainApi(host, "/api/mesh/logins")).text).entries.find((e) => e.key === key);

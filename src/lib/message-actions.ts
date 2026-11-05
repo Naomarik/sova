@@ -5,7 +5,9 @@
 // without a browser.
 
 import type { TranscriptItem } from "../../shared/protocol";
+import type { MessageActionItem } from "../components/MessageActions";
 import { entryIdOf } from "./jump";
+import { shareHref } from "./share-slice";
 
 export type MessageActionKind = "copy" | "share" | "rewind" | "regenerate" | "fork" | "remove";
 
@@ -118,6 +120,23 @@ export const ACTION_LABEL: Record<MessageActionKind, string> = {
   regenerate: "Regenerate this reply",
   fork: "Fork from here",
   remove: "Remove this queued message",
+};
+
+/** Each action's row in the message's right-click menu (§app/context-menus): Title Case menu words.
+    The row's accessible name stays the strip's (ACTION_LABEL). */
+export const MENU_LABEL: Record<LandedActionKind, string> = {
+  copy: "Copy",
+  share: "Share From Here",
+  rewind: "Rewind…",
+  regenerate: "Regenerate…",
+  fork: "Fork From Here",
+};
+
+/** The menu's one row of its own, right after Copy: the message as it reads, without Markdown's marks. */
+export const COPY_PLAIN = {
+  label: "Copy as Plain Text",
+  aria: "Copy message as plain text",
+  done: "Copied message as plain text.",
 };
 
 /** The strip's own accessible name, so a screen reader knows whose message these act on. */
@@ -256,6 +275,49 @@ export const copyable = (strip: Pick<MessageStrip, "text">): boolean => strip.te
 
 /** What the toast says once the clipboard has it. */
 export const COPIED = "Copied message.";
+
+/** A view's side of its strips (a chat, a watch): what it knows, and the requests it can make. */
+export interface MessageItemsView {
+  /** The session's id once the view knows it: Share needs it. */
+  shareId(): string | undefined;
+  /** The peer that holds the session; null: this host. */
+  host(): string | null;
+  /** What the view says about itself, with the strip's own turn start (Regenerate's refusals). */
+  state(wake: boolean, link: boolean, topic: boolean, tourNotice: boolean): ActionState;
+  copy(text: string, done: string): Promise<unknown>;
+  /** Go to the share page. */
+  open(href: string): void;
+  /** A chat's requests. A watch has none: its state refuses each, with the reason. */
+  fork?(entryId: string): void | Promise<void>;
+  rewind?(entryId: string): void | Promise<void>;
+  regenerate?(entryId: string): void | Promise<void>;
+}
+
+/**
+ * What one strip offers in a view, as buttons: the list the strip draws and the message's
+ * right-click menu draws too (components/MessageMenu.tsx), so the two can't drift. Every action
+ * the view can't run now carries its reason; Copy only takes text already on screen.
+ */
+export function messageItems(strip: MessageStrip, view: MessageItemsView): MessageActionItem[] {
+  return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
+    switch (kind) {
+      case "copy":
+        return { kind, reason: null, run: async () => void (await view.copy(strip.text, COPIED)) };
+      case "share": {
+        const id = view.shareId();
+        return { kind, reason: id ? null : SHARE_WAIT_REASON, run: () => void (id && view.open(shareHref(id, { host: view.host(), from: strip.entryId }))) };
+      }
+      default: {
+        const act = view[kind];
+        return {
+          kind,
+          reason: actionReason(kind, view.state(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic, !!strip.fromTourNotice)),
+          run: () => act?.(strip.entryId),
+        };
+      }
+    }
+  });
+}
 
 /**
  * Why a message left the outgoing queue, as the server broadcasts it (`queue_item_gone`) to every

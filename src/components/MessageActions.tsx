@@ -4,7 +4,8 @@ import { acquireMessageReveal } from "../lib/message-reveal";
 import { confirmActivate } from "../lib/confirm-step";
 import { Icon, type IconName } from "./ui";
 
-const ICON: Record<MessageActionKind, IconName> = {
+/** Each action's icon: the strip's buttons, and the message menu's rows (MessageMenu.tsx). */
+export const ACTION_ICON: Record<MessageActionKind, IconName> = {
   copy: "copy",
   share: "share",
   rewind: "undo",
@@ -187,7 +188,7 @@ export function MessageActions(props: {
                     if (current) press(current);
                   }}
                 >
-                  <Icon name={kind === "copy" && copied() ? "check" : ICON[kind]} small />
+                  <Icon name={kind === "copy" && copied() ? "check" : ACTION_ICON[kind]} small />
                   <Show when={reason()}>
                     <span class="visually-hidden" id={describe(kind)}>
                       {reason()}

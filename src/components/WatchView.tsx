@@ -18,16 +18,7 @@ import { HostSendNotice } from "./HostStateNotices";
 import { ChangesSession } from "./ChangesViewer";
 import { HistoryItems, ThreadScroller, ToolSourceContext, TranscriptSkeleton } from "./Thread";
 import { type ReplyPlace, useReplyAdditions } from "../lib/reply-place";
-import type { MessageActionItem } from "./MessageActions";
-import {
-  actionReason,
-  actionsFor,
-  COPIED,
-  copyable,
-  type ActionState,
-  SHARE_WAIT_REASON,
-} from "../lib/message-actions";
-import { shareHref } from "../lib/share-slice";
+import { type ActionState, messageItems, type MessageItemsView } from "../lib/message-actions";
 import { Banner } from "./ui";
 import { createMergeCards } from "../lib/merge-cards";
 import { createOutsideCardRows } from "../lib/outside-card-rows";
@@ -157,21 +148,16 @@ export function WatchView(props: {
   /** What extensions add under its replies: asked once when the view opens (a watch has no run
       of its own to end; lib/reply-place). */
   const additions = useReplyAdditions({ session: () => props.sessionId, local: createMemo(() => !hostOf(props.path)), running: () => false });
+  /** No requests of its own: watchState refuses Rewind, Regenerate and Fork, each with its reason. */
+  const watchItems: MessageItemsView = {
+    shareId: () => props.sessionId,
+    host: () => hostOf(props.path),
+    state: watchState,
+    copy: copyText,
+    open: (href) => (location.hash = href),
+  };
   const watchActions: ReplyPlace = {
-    builtIns: [{ id: "sova.message-actions", items(strip) {
-      return actionsFor(strip.role, { copyable: copyable(strip) }).map((kind): MessageActionItem => {
-        switch (kind) {
-          case "copy":
-            return { kind, reason: null, run: async () => void (await copyText(strip.text, COPIED)) };
-          case "share": {
-            const id = props.sessionId;
-            return { kind, reason: id ? null : SHARE_WAIT_REASON, run: () => void (id && (location.hash = shareHref(id, { host: hostOf(props.path), from: strip.entryId }))) };
-          }
-          default:
-            return { kind, reason: actionReason(kind, watchState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic, !!strip.fromTourNotice)), run: () => {} };
-        }
-      });
-    } }],
+    builtIns: [{ id: "sova.message-actions", items: (strip) => messageItems(strip, watchItems) }],
     added: additions.added,
     runChip: additions.runChip,
   };

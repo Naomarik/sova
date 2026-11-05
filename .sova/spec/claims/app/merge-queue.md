@@ -940,7 +940,9 @@ Every action here is a catalogue command: Land, Land This Commit Again, Cancel, 
 Pause, Resume, Accept, Send Back, Land Anyway, Start Fresh, Send Answer, Clear and Clear All over the merge verbs (§app.project-services/merge-verbs), Update Local Main, Publish and a
 branch summary's Try Again over the queue's own routes, which the merge thread can't call. Queue Settings and Open on GitHub only
 open a place. The view follows the queue live,
-from the session feed's merge-queue frames, at desktop and phone widths.
+from the session feed's merge-queue frames, at desktop and phone widths. The same frames, every served
+project's, also drive the sidebar's landing bar, which opens this tab at an entry for the actions it
+doesn't take in place (§app.merge-queue/landing-bar).
 
 ## §app.merge-queue/branch-summary — What a branch does, in a few bullets
 
@@ -996,6 +998,167 @@ approved at a commit.** A repository the queue doesn't serve gets no bullets.
 - **Spend.** Each write's calls are recorded in the usage ledger (§app.insights/usage-ledger) as
   one-shots under a purpose of their own, `git-branch-summary`, with the project set, so they are
   never counted as a conversation's `branch-summary`.
+
+## §app.merge-queue/landing-bar — The landing bar in the sidebar foot
+
+While a merge queue or an open release on **this computer** has something to show, the sidebar foot
+carries one **landing bar**, directly above its other rows (above the host filter row while the mesh
+is on, else above Usage, §app.insights/sidebar-foot). With nothing to show it is not drawn at all, and
+the foot is as before. It covers this computer's projects only, never a peer's.
+
+```html
+<!-- in .sidebar-foot, before the host filter row; one 44px row, the same at every width -->
+<div class="landing-bar landing-bar-landing">
+  <button type="button" class="landing-face landing-row" aria-expanded="false" aria-haspopup="dialog"
+          aria-label="Landing feat/mesh-bar. check 4 of 11 · test:int · ~3 min left. 2 in line">
+    <span class="landing-icon landing-tone-accent" aria-hidden="true">…</span> <!-- status icon, tinted by tone: carries the meaning -->
+    <span class="landing-lines">
+      <span class="landing-line1">
+        <span class="landing-title">Landing feat/mesh-bar</span>   <!-- semibold, one line, ellipsis -->
+        <span class="landing-sub">check 4 of 11 · test:int · ~3 min left</span> <!-- muted, inline after "· ", ellipsis; yields first -->
+        <span class="chip landing-count" aria-hidden="true">+2</span> <!-- at most one short count, never cut -->
+      </span>
+      <span class="landing-track-row" aria-hidden="true"><span class="landing-track"> <!-- a thin line under the words, inside the row -->
+        <span class="landing-seg landing-seg-passed"></span> … <span class="landing-seg landing-seg-running"></span> …
+      </span></span>
+    </span>
+    <span class="landing-chevron" aria-hidden="true">…</span>     <!-- turns over while the detail is open -->
+  </button>
+</div>
+```
+
+**What it shows.** The bar is **one size everywhere**: a single 44px row, never taller and never
+wrapping. In it, left to right: a **status icon** tinted by the bar's tone, the **title**, and a
+short **sub line** inline after it, each on one line and cut off with an ellipsis when they don't
+fit (the sub line yields before the title); after them, at most one short **count**, and a
+**chevron** at the row's end. Under the words, inside the same row, runs the **step track** as a
+thin line: one segment per step, coloured passed, running, failed, waiting, skipped or held. The
+row never carries a note or a reason in full: those are cut short, and the status icon carries the
+meaning (done, running, waiting for you, failed, paused). The count is its only chip: never a
+"needs you" chip, never a review marker.
+
+**The count.** At most one, short: "+{n}", the branches waiting in line behind a running landing
+(or a paused queue), or, during a release, the landings waiting for it; when several entries wait
+for you with nothing running, the others beyond the one the bar names. With none there is no count.
+The words are cut before the count, so the count always shows whole. The accessible name says the
+title, the sub line and the count in words ("2 in line", "2 waiting for the release", "1 more needs
+you"); the sheet's and the floating detail's heads show the count in those words too.
+
+**Hover card.** Hovering the bar with a mouse, or a press-and-hold on touch, shows a small floating
+card above the bar with a bit more: the full title, the sub line, the current step and how long it
+has run, the review's state (a landing, or a release's gating checks), the next branch in line (when
+one waits), the count in words, and the note or reason cut to about two lines. A mouse shows it after
+resting on the bar a moment; a hold, after about half a second. Its look is the
+card over the token chart's (§app.insights/velocity-scrub): surface fill, large radius, raised
+shadow, a neutral edge, never the accent; it stays inside the window, never takes the pointer and is
+hidden from assistive tech (the bar's accessible name and the detail carry the same words). Leaving
+the bar, lifting the finger, Escape or opening the detail hides it; a hold that shows it never opens
+the detail.
+
+**The detail.** A click (or Enter) opens the full detail as a floating panel over the session list,
+directly above the bar; the sidebar and its rows never move.
+
+Its states are §app.merge-queue/landing-bar-states; its detail, its actions and its phone and
+collapsed forms are §app.merge-queue/landing-bar-detail.
+
+**Which state wins.** One bar shows one state, in this order: a release that needs you; a landing
+that needs you (only while nothing runs; while a landing runs it shows only in the detail); a release
+in progress; a running landing; a paused queue; then just landed or published.
+
+**About a minute.** Just landed, Pull request opened, Pushed and Published each stay **about a minute**,
+for every landing and release, a landing with a note too; then the bar goes. They go at once when the
+project's next run starts. A landing or release once shown that way is remembered by this browser, so
+a reload doesn't show it again.
+
+**Several projects.** One bar, for the project whose state ranks first by the order above. The other
+busy projects add no count to the row: the hover card says "{n} more project busy" ("{n} more
+projects busy"), and the detail lists every busy project, one line each.
+
+**Right at page open.** The bar is right the moment the page opens and after every reconnect: the page
+reads one small summary of every served project's queue and open release from the server (catalogue
+entry `project.merge-queue.landing-summary`, `GET /api/merge-queue/landing-summary`, effect `looks`),
+then follows the session feed's merge-queue and release frames for every project
+(§app.merge-queue/view, §app.release/tab).
+
+## §app.merge-queue/landing-bar-states — What the landing bar says
+
+Each state the landing bar (§app.merge-queue/landing-bar) can show, in the Merge Queue tab's and the
+Releases tab's own words (§app.merge-queue/view, §app.release/tab). The row shows each state's title
+and a short sub line, cut with an ellipsis where they don't fit; a note or reason is cut short there,
+shows to about two lines in the hover card and in full in the detail:
+
+- **Landing** (a run checking): "Landing {branch}", sub line "check {N} of {M} · {check} · ~{n} min
+  left" ("left" only when the queue has an estimate, never a negative one), the count "+{n}" while
+  others wait in line. The track has one segment per check and per fixed step of the run (copy, merge, setup,
+  install, docs, land, main checkout, push), in their order; a step the run never needs reads
+  skipped. A check that is rerun (on the tip or on the target alone, §app.merge-queue/blame) pulses
+  its own segment again and never adds one; a check the merge thread adds mid-run adds its segment
+  and the total grows. The review runs beside the checks, so it is never a segment; its state is in
+  the detail. A project that opens a pull or merge request, or only pushes the
+  branch, shows its own steps the same way (§app.merge-queue/strategies).
+- **Needs you** (warn tone): an entry waiting for the user (Behaviour differs, Review flagged, Can't
+  tell whose failure, Drafts changed since you approved, Review the request), its branch and one line
+  of why, in the tab's words. A conflict the merge thread is judging is not one: at most the detail
+  says "{branch} · conflict being judged". While a landing runs, a waiting entry does not take the bar
+  and adds nothing to it (no chip, no count): it appears only in the detail. With nothing running,
+  the waiting entry takes the bar, with the warn icon.
+- **Just landed** (success tone): "Landed {branch}", "as {sha} · pushed" ("as {sha} · pushing" until the
+  push is known, "as {sha} · on this machine only" with no remote) or, in warn tone, "as {sha} · not
+  pushed: {why}", and the merge thread's note (cut short in the row, word for word in the detail). A request project reads "Pull request opened ·
+  #{n}" (or the merge request's words, §app.merge-queue/requests), a push-only one "Pushed {branch}".
+  A request that is open and waiting on its host never keeps the bar.
+- **Paused** (warn tone, the stop icon): the pause's title in the tab's plain words, its reason as the
+  sub line ("Nothing in line" or "{n} branches in line" when it gives none), with **Resume Queue** and
+  **Open Queue** in the detail. It shows the whole time the queue is paused, even with nothing in line. A queue whose settings don't
+  read says "Queue settings are broken: nothing runs until they are fixed" (error tone), with Open
+  Queue only and no Resume.
+- **Releasing**: "Releasing {tag}" ("Releasing a new version" before a version is picked), sub line
+  "Step {i} of {n} · {label}", and while the gating checks run, the queue run's own "check {N} of {M} ·
+  …". The track has one segment per release step in plan order, a held step in warn; withdraw steps
+  never show. The release and the landings it freezes are **one bar**: the gating checks segment
+  carries the queue run's progress, and the count "+{n}" is the landings frozen until it ends
+  (§app.release/checks).
+- **Release needs you** (warn tone): "Ready to publish · {tag}"; "{step} is held for you" with
+  **Continue** in the detail; "{step} failed" with **Retry Step** in the detail; "Publish failed: {why}"; "No word from the release
+  chat for {n} min"; and while the release power waits, "Publishes in {m:ss}" (§app.release/quiet,
+  §app.release/power).
+- **Published** (success tone): "Published {tag}", "pushed to origin" or "on this machine only"; while
+  its after-publish steps run, "Published, finishing · {step}"; an after step that fails is Release
+  needs you.
+
+## §app.merge-queue/landing-bar-detail — The landing bar's detail, actions, phone and spine forms
+
+**The detail.** A click on the landing bar (§app.merge-queue/landing-bar), or Enter, opens its full
+detail as a **floating panel** over the session list, directly above the bar. The sidebar never moves:
+nothing in it is pushed, resized or scrolled by the panel. A second click on the bar, Escape or a
+click anywhere outside the panel closes it; after Escape, focus returns to the bar. Its head repeats
+the full title, sub line and count in words. The panel holds everything
+the row cuts short: the full title and sub line, the full note or reason, and each entry waiting for
+you while a landing runs (its branch and why, with a link that opens the Merge Queue tab at it),
+which shows nowhere else in the bar. For a landing: "{target} {base} + branch →
+{tip}", the current step and how long it has run, the review's state (with its attempt, and a link to
+the reviewer's chat while it runs), the next three branches in line with when each should start,
+**Open Branch Chat**, **View Checks** (the run page,
+`#/projects/<pid>/merge-queue/<run>`) and **Open Queue** (`#/projects/<pid>/merge-queue`). For a
+release: its base and commit, the release chat's last report, each step's one-line summary, why
+Publish isn't offered yet, **Open Release Chat** and **Open Releases**.
+
+**Actions in place, or the tab.** Resume Queue, Retry Step and Continue act right there, through the
+same catalogue commands the tabs use (the verbs `merge.resume`, `release.retry` and `release.continue`,
+§app.project-services/merge-verbs, §app.release/verbs). Land Anyway,
+Send Back, Accept and Land open the Merge Queue tab at that entry; Publish and Abandon open the
+Releases tab. Neither Publish nor Abandon is ever in the bar.
+
+**On a phone (<768px).** The bar is the same 44px row, directly above the foot bar
+(§app.insights/sidebar-foot-phone), shown only while there is something to show. A tap opens a bottom
+sheet with the detail and its actions, not the floating panel; the scrim and Escape close it, focus
+is trapped inside and returns to the bar. A press-and-hold shows the hover card instead
+(§app.merge-queue/landing-bar).
+
+**Collapsed (the spine).** One icon with a status dot in the spine's foot, above Usage
+(§app.session-list/spine); its accessible name and `title` are the bar's (title, sub line and the
+count in words), and it opens the same detail as a popover beside the spine, which Escape or a click
+outside closes.
 
 ## §app.merge-queue/owner — Which chat owns a branch
 

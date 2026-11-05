@@ -37,6 +37,9 @@ import { type MessageStrip, sameStrip, stripsByRow } from "../lib/message-action
 import { backWords } from "../lib/error-feed";
 import type { ReplyPlace } from "../lib/reply-place";
 import { ReplyPlaceView } from "./ReplyPlace";
+import { closeContextMenuOf } from "./ContextMenu";
+import { openMessageMenu } from "./MessageMenu";
+import { stripBlocks } from "../lib/message-menu";
 import { InfoRow } from "./InfoRow";
 import { TranscriptKindRow } from "./TranscriptKind";
 import { kindOf, liveBlockInput, liveEndsOf, liveKindOf, outsideWork, sameHit, type KindContext, type KindHit, type LiveBlockFacts, type LiveInput } from "../lib/transcript-kinds";
@@ -551,6 +554,14 @@ export function HistoryItems(props: {
             data-chain-folded={foldedRun(chain()) ? "" : undefined}
             data-entry={item.id}
             style={{ "--entry-est": rowEst() }}
+            ref={(el) => onCleanup(() => closeContextMenuOf(el))}
+            onContextMenu={(e) => {
+              // A message with a strip opens its actions as a menu (components/MessageMenu.tsx); what
+              // extensions add under it and a work run's fold are not the message.
+              const s = strip();
+              if (!s || (e.target instanceof Element && e.target.closest(".reply-slot, .chain-fold"))) return;
+              openMessageMenu(e, { el: e.currentTarget, place: props.actions!, strip: s, blocks: () => stripBlocks(rows(), s) });
+            }}
           >
             <Show when={foldable(chain()) ? chain() : null}>{(run) => <ChainFold run={run()} />}</Show>
             <Switch fallback={<Unknown raw={item.entry} />}>

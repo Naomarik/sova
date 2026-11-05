@@ -1531,6 +1531,10 @@ export const getSetupChat = (projectId: string) =>
     there). `fresh`: Start Fresh (this chat is archived once its turn ends; the next open starts a new one). */
 export const openSetupChat = (projectId: string, opts: { from?: "merge-queue" | "releases" | "deploy" | "settings"; fresh?: boolean } = {}) =>
   request<import("../../shared/setup-chat").SetupOpened>(`${projectPath(projectId)}/setup`, jsonInit("POST", { ...(opts.from ? { from: opts.from } : {}), ...(opts.fresh ? { fresh: true } : {}) }));
+/** Land or Merge Branch on the Setup chat's proposal (the user's own page only): the hash and commit the card read.
+    `queued`: the branch joined the merge queue (a served project); else it was merged. A 409 says why not. */
+export const mergeSetupProposal = (projectId: string, hash: string, commit: string) =>
+  request<{ queued: boolean; setup: import("../../shared/setup-chat").SetupStatus }>(`${projectPath(projectId)}/setup/merge`, jsonInit("POST", { hash, commit }));
 /** Run the Project verbs playbook on the project: a coding session on its own branch. */
 export const runProjectVerbsPlaybook = (projectId: string, why?: string) =>
   request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", why ? { why } : {}));

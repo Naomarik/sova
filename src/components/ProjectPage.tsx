@@ -29,7 +29,7 @@ import { ProjectIconCard } from "./ProjectIconCard";
 import { createProjectSettings, ProjectAllSettings, ProjectSettingsChanges, ProjectSettingsHistory } from "./ProjectSettingsCards";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
-import { createSetupPoll } from "./SetupChat";
+import { createSetupPoll, SetupProposalBanner } from "./SetupChat";
 import "../orgs.css";
 import "../projects.css";
 
@@ -255,6 +255,8 @@ export function ProjectPage(props: {
       <ArchiveConfirm from="head" />
       {/* A verb playbook run waits on Merge Branch (§app.project-runtime/review), on every tab. */}
       <PlaybookReviewBanner projectId={projectId} runtime={runtime.data()} onDone={(view) => (view ? runtime.set(view) : runtime.refetch())} />
+      {/* The Setup chat's proposal: read from the Setup read (it is not a verb playbook run). */}
+      <SetupProposalBanner projectId={projectId} poll={setup} />
       <Show when={archived()}>
         {(a) => (
           <div class="project-archive-confirm">

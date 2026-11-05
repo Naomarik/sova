@@ -1,7 +1,7 @@
 import { createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
-import { ApiError, getSetupChat, mergeProjectRun, openSetupChat } from "../lib/api";
+import { ApiError, getSetupChat, mergeSetupProposal, openSetupChat } from "../lib/api";
 import { relativeTime } from "../lib/format";
-import { landBranch, refusal, trySetupBranch } from "../lib/merge-queue-client";
+import { refusal, trySetupBranch } from "../lib/merge-queue-client";
 import { queueRow } from "../lib/merge-queue";
 import { createPoll, type Poll } from "../lib/poll";
 import { createProjectQueue } from "../lib/project-queue";
@@ -427,16 +427,16 @@ export function SetupLandButton(props: { projectId: string; proposal: SetupPropo
     setError(null);
     try {
       let done: string;
-      if (action === "merge") {
-        if (!p().hash) throw new Error("The proposal's hash isn't read yet. Try again in a moment.");
-        await mergeProjectRun(props.projectId, p().hash!, p().commit);
-        done = `Merged the setup into ${p().target}.`;
-      } else {
+      if (action === "trial") {
         const root = queue.root();
         if (!root) throw new Error("The project's queue isn't read yet. Try again in a moment.");
-        const no = refusal(action === "land" ? await landBranch(root, p().branch, { commit: p().commit }) : await trySetupBranch(root, p().branch, p().commit));
+        const no = refusal(await trySetupBranch(root, p().branch, p().commit));
         if (no) throw new Error(no);
-        done = action === "land" ? `Queued ${p().branch} to land on ${p().target}.` : `Started a trial of ${p().commit.slice(0, 7)}.`;
+        done = `Started a trial of ${p().commit.slice(0, 7)}.`;
+      } else {
+        if (!p().hash) throw new Error("The proposal has nothing valid to merge. Read its report.");
+        const out = await mergeSetupProposal(props.projectId, p().hash!, p().commit);
+        done = out.queued ? `Queued ${p().branch} to land on ${p().target}.` : `Merged the setup into ${p().target}.`;
       }
       toast(done);
       announce(done);
@@ -489,5 +489,40 @@ export function SetupLandButton(props: { projectId: string; proposal: SetupPropo
       </Show>
       <Show when={error()}>{(e) => <span class="field-error" role="status">{e()}</span>}</Show>
     </span>
+  );
+}
+
+/**
+ * The project page's banner while the Setup chat proposes a setup: what it proposes and on which branch, then the
+ * proposal card's own button (Run Trial with its reason until a trial of the head passed, then Land or Merge Branch)
+ * and Read Report. Read from the Setup read, never the runtime view.
+ */
+export function SetupProposalBanner(props: { projectId: string; poll: SetupPoll }) {
+  const chat = () => props.poll.data()?.chat ?? null;
+  return (
+    <Show when={chat()?.proposal ? { chat: chat()!, proposal: chat()!.proposal! } : null}>
+      {(x) => (
+        <div class="project-archive-confirm setup-banner">
+          <Banner
+            tone="warn"
+            icon="branch"
+            title={`The Setup chat proposes the project's setup on ${x().proposal.branch}.`}
+            body={landState(x().proposal).action === "trial" || landState(x().proposal).action === "wait" ? `Read it before it reaches ${x().proposal.target}.` : x().proposal.served ? `Read it, then land it: it's checked on ${x().proposal.target} first.` : `Read it, then merge it into ${x().proposal.target}.`}
+            action={
+              <span class="playbook-banner-actions">
+                <Show when={x().chat.path}>
+                  {(path) => (
+                    <a class="button button-sm" href={projectSessionHref(props.projectId, path())}>
+                      Read Report
+                    </a>
+                  )}
+                </Show>
+                <SetupLandButton projectId={props.projectId} proposal={x().proposal} onDone={() => props.poll.refetch()} />
+              </span>
+            }
+          />
+        </div>
+      )}
+    </Show>
   );
 }

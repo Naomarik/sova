@@ -6,7 +6,7 @@ import { createReconnectingSocket } from "../lib/socket";
 import { landExplainJump } from "../lib/jump";
 import { newestOnly, newRows } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
-import { hostOf, sessionViewKey } from "../lib/mesh";
+import { hostOf, sendingOff, sessionViewKey } from "../lib/mesh";
 import { cachedTranscript, cacheItems, cacheSpot, keptOlder, transcripts } from "../lib/transcript-cache";
 import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
 import { usePaneAnnounce } from "../lib/pane-scope";
@@ -14,6 +14,7 @@ import { visibleCount } from "../lib/hidden-rows";
 import type { WorkerTally, WorkingSplit } from "../lib/workers";
 import { Composer, type ComposerReason } from "./Composer";
 import { ConnectionBanner } from "./ConnectionBanner";
+import { HostSendNotice } from "./HostStateNotices";
 import { ChangesSession } from "./ChangesViewer";
 import { HistoryItems, ThreadScroller, ToolSourceContext, TranscriptSkeleton } from "./Thread";
 import { type ReplyPlace, useReplyAdditions } from "../lib/reply-place";
@@ -264,21 +265,28 @@ export function WatchView(props: {
           )}
         </Show>
       </ThreadScroller>
-        <Composer
-          path={props.path}
-          readOnly={props.readOnly}
-          running={false}
-          stopping={false}
-          detail={null}
-          workersWorking={props.workersWorking}
-          workersTotal={props.workersTotal}
-          workersTally={props.workersTally}
-          workersSplit={props.workersSplit}
-          onShowWorkers={props.onShowWorkers}
-          workersOpen={props.workersOpen}
-          onSend={() => false}
-          onAbort={() => {}}
-        />
+      <Show
+        when={sendingOff(props.path)}
+        fallback={
+          <Composer
+            path={props.path}
+            readOnly={props.readOnly}
+            running={false}
+            stopping={false}
+            detail={null}
+            workersWorking={props.workersWorking}
+            workersTotal={props.workersTotal}
+            workersTally={props.workersTally}
+            workersSplit={props.workersSplit}
+            onShowWorkers={props.onShowWorkers}
+            workersOpen={props.workersOpen}
+            onSend={() => false}
+            onAbort={() => {}}
+          />
+        }
+      >
+        {(r) => <HostSendNotice host={hostOf(props.path)!} reading={r()} />}
+      </Show>
     </>
   );
 }

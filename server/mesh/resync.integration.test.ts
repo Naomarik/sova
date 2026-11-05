@@ -61,8 +61,8 @@ describe("the service with a real deploy child", () => {
     assert.equal((r.body as ResyncJob).state, "running");
     assert.deepEqual(w.spawned, [[join(repo, "scripts/mesh-vps/deploy.sh"), "--rev", C]]);
     await until(() => s.job("vps")!.state === "waiting");
-    // the peer comes back on this host's protocol
-    w.probes.vps = { state: "up", hello: { ...skewed().hello!, protocol: PROTO } };
+    // the peer comes back on this host's boot commit
+    w.probes.vps = { state: "up", hello: { ...skewed(C).hello!, protocol: PROTO } };
     await until(() => s.job("vps")!.state === "done");
     const job = s.job("vps")!;
     assert.match(job.tail, /deploying/);

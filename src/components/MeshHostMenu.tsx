@@ -1,7 +1,8 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { fetchMeshResync } from "../lib/api";
 import { connectedCount, hostTone, openMeshDetails } from "../lib/mesh-details";
-import { meshPeers, meshState, peerUnavailable, SELF_FILTER, type PeerState } from "../lib/mesh";
+import { meshPeers, meshState, peerReading, peerUnavailable, SELF_FILTER } from "../lib/mesh";
+import type { HostReading } from "../lib/mesh-compat";
 import { jobRunning, type MeshResync, RESYNC_POLL_MS, resyncNote, resyncView } from "../lib/mesh-resync";
 import { MeshResyncSheet } from "./MeshResyncSheet";
 import { Icon } from "./ui";
@@ -10,8 +11,8 @@ interface Option {
   /** The stored value; null is All. */
   value: string | null;
   label: string;
-  /** Its host's state; undefined for All, which is no host. */
-  state?: PeerState | "self";
+  /** Its host's reading; undefined for All, which is no host. */
+  state?: HostReading | "self";
   /** Why it doesn't, for the title. */
   why?: string;
 }
@@ -27,9 +28,9 @@ const TRIGGER_GAP = 4;
  * The session pane's host row, the first row of its foot (above the usage row): `All hosts ▾` with
  * `2/3 connected` at its right end, the whole row the menu's trigger. The menu picks one host's sessions (or All) — the choice is the filter — and ends with
  * "Mesh details…". Only rendered while the mesh is on with a peer (the caller decides), so with
- * one host the pane is unchanged. A host on another version says, under its name, where its build
- * sits against this host's, and one that is behind has Resync beside it (§mesh.peers/resync):
- * /api/mesh/resync is read when the menu opens with a skewed host, and again while a job runs.
+ * one host the pane is unchanged. A host on another build, in any state, says under its name where
+ * its build sits against this host's, and one that is behind has Resync beside it (§mesh.peers/resync):
+ * /api/mesh/resync is read when the menu opens with a host that answers, and again while a job runs.
  */
 export function MeshHostMenu(props: { value: string | null; onChange(value: string | null): void }) {
   let trigger!: HTMLButtonElement;
@@ -42,7 +43,7 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
   const options = (): Option[] => [
     { value: null, label: "All hosts" },
     { value: SELF_FILTER, label: selfName(), state: "self" },
-    ...meshPeers().map((p): Option => ({ value: p.id, label: p.label || p.id, state: p.state, why: peerUnavailable(p) ?? undefined })),
+    ...meshPeers().map((p): Option => ({ value: p.id, label: p.label || p.id, state: peerReading(p), why: peerUnavailable(p) ?? undefined })),
   ];
   const current = () => options().find((o) => o.value === props.value) ?? options()[0]!;
   const count = () => connectedCount(meshPeers());
@@ -53,7 +54,7 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
   onCleanup(() => clearTimeout(resyncTimer));
   const readResync = () => {
     clearTimeout(resyncTimer);
-    if (!meshPeers().some((p) => p.state === "skewed") && !resync()?.hosts.some((h) => jobRunning(h.job))) return;
+    if (!meshPeers().some((p) => p.state === "up" || p.state === "skewed") && !resync()?.hosts.some((h) => jobRunning(h.job))) return;
     fetchMeshResync().then(
       (r) => {
         setResync(r);
@@ -190,7 +191,7 @@ export function MeshHostMenu(props: { value: string | null; onChange(value: stri
             {(o) => {
               const view = () => viewOf(o.value);
               return (
-                <div class="host-menu-row">
+                <div class="host-menu-row" data-testid="host-menu-row" data-host-id={o.value ?? undefined} data-host-state={o.state}>
                   <div
                     class="popover-item host-menu-option"
                     classList={{ "popover-item-detail": !!view().line }}

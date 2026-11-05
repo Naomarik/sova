@@ -55,6 +55,7 @@ import { extCommandsOf } from "../shared/commands-ext.ts";
 import { diffSessions, fromStreamFrame, indexSessions, parseCursor, STREAM_WATCH_EVENTS } from "../shared/commands-watch.ts";
 import { EVENTS_PATH } from "../shared/events.ts";
 import { ERROR_CODES, exitOf } from "../shared/project-contract.ts";
+import { COMPOSER_HEADER, WIRE_AREAS } from "../shared/wire-areas.ts";
 import { tokenFile, tokenHeaders } from "./sova-token.mjs";
 
 /** The header a run names its command in (server/command-audit.ts): attribution only. */
@@ -315,7 +316,8 @@ async function entriesFor(base, env) {
 async function call(base, method, url, body, extra, chatAction = url.startsWith(CHAT_ACTION_ROUTE)) {
   let res;
   try {
-    res = await send(base, method, url, body, undefined, extra);
+    // A send states this host's writing number (§mesh.compatibility/every-send-states-a-version).
+    res = await send(base, method, url, body, undefined, { [COMPOSER_HEADER]: String(WIRE_AREAS.composer), ...extra });
   } catch (err) {
     // An in-chat action whose connection opened and then broke: it may have reached the chat (exit 5).
     if (chatAction && err && err.opened === true) throw new CliError(`${UNKNOWN_LINE} (${err instanceof Error ? err.message : err})`, EXIT.unknown);

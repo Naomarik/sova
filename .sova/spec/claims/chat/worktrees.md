@@ -276,8 +276,11 @@ worktree tracked active whose folder is gone counted as its status chip reads), 
 worktree in recorded order, dropped and merged ones included. When the branch tracks none the
 section stays, with one line: "This session tracks no worktrees." While the insight's first load
 is out the section shows its heading over a placeholder line as tall as that sentence (most
-sessions track none), never the sentence itself. A row
-names the branch and the path, and carries a status chip — Active, Dropped, or Merged with "into
+sessions track none), never the sentence itself. A row is
+the modal's row (§chat.composer/worktrees-control): the title of the chat that owns the branch,
+as a link, then the branch, then "archived" when that chat is archived; it names no worktree
+folder. Under its facts it shows the branch's summary once written
+(§app.merge-queue/branch-summary). It carries a status chip — Active, Dropped, or Merged with "into
 <target> at <sha>" — plus, when true, `.agent`, the number of
 this session's workers with a live process inside it, and "Shared with session <id>" linking the
 session it was inherited from. An active worktree whose branch git finds already in its target

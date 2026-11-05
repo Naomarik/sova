@@ -222,14 +222,17 @@ describe("what the branch's chat is told", () => {
 void writeFileSync;
 
 describe("the worktree row's numbers", () => {
-  test("commits ahead and lines +/− of the branch's side, against the target's head", async () => {
+  test("commits ahead and lines +/− of the branch's side, against the target's head, and when the branch last changed", async () => {
     const { statsOf } = await import("./wire");
     const repo = makeRepo({ prefix: "mq-stats-" });
     try {
       const b = repo.branch("feat/s", { "n.txt": "1\n2\n3\n" });
       repo.commitOn(b.path, { "a.txt": "one\n" }, "second");
       repo.commitOn(repo.root, { "m.txt": "master only\n" }, "on master");
-      assert.deepEqual(await statsOf(repo.root, repo.head(), "feat/s"), { head: sh(repo.root, "rev-parse", "feat/s"), ahead: 2, added: 3, removed: 2 });
+      // The date is the head's committer date (the Ready rows' own), not the author date.
+      sh(b.path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "--amend", "--no-edit", "--date=2020-01-02T03:04:05Z");
+      assert.deepEqual(await statsOf(repo.root, repo.head(), "feat/s"), { head: sh(repo.root, "rev-parse", "feat/s"), ahead: 2, added: 3, removed: 2, headAt: sh(repo.root, "log", "-1", "--format=%cI", "feat/s") });
+      assert.notEqual(sh(repo.root, "log", "-1", "--format=%cI", "feat/s").slice(0, 4), "2020", "the committer date, not the author's");
       assert.equal(await statsOf(repo.root, repo.head(), "feat/none"), null);
     } finally {
       repo.done();

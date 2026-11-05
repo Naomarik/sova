@@ -9,7 +9,7 @@ Fedora and Alpine; Alpine has no bash until you `apk add bash`. You need:
 
 - bash, Git, `curl`, and `unzip` or `python3`
 - Node.js ≥22.19
-- pnpm; without it, the installer runs the version Sova pins through npx
+- pnpm; without one that runs, the installer runs the version Sova pins through npx
 
 The server runs on Bun: the installer downloads the version Sova pins into the install directory
 and checks its checksum. Then:

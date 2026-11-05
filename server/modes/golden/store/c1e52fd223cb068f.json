@@ -112,7 +112,7 @@
    "type": "string"
   },
   "maxItems": 50,
-  "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+  "description": "@396de6a3d44cee18"
  },
  "endpoint": {
   "type": "string",
@@ -197,7 +197,7 @@
   "items": {
    "type": "string"
   },
-  "description": "merge.extend: check ids from the project's merge section to add to this entry's run (never removes one)."
+  "description": "merge.extend {entry, checks, why, select}: check ids from the project's merge section to add to this entry's run (never removes one); send each pick's select with it."
  },
  "verdict": {
   "type": "string",

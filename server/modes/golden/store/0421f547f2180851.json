@@ -474,7 +474,7 @@
   "description": "@92bd36452c3a5ac1",
   "parameters": {
    "type": "object",
-   "properties": "@48b6ab0a99401413",
+   "properties": "@c1e52fd223cb068f",
    "required": [
     "verb"
    ],
@@ -500,6 +500,33 @@
     "topic",
     "text"
    ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "align",
+  "description": "@10b18c09da2ac44c",
+  "parameters": {
+   "type": "object",
+   "required": [
+    "ops"
+   ],
+   "properties": {
+    "doc": {
+     "type": "string",
+     "minLength": 1,
+     "description": "The alignment to change, e.g. \"al_2\". Required while more than one alignment is open; omit for create, import, exempt and change_request.",
+     "pattern": "^al_[1-9][0-9]*$"
+    },
+    "ops": {
+     "type": "array",
+     "items": {
+      "anyOf": "@2e5962457ad766ec"
+     },
+     "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
+     "minItems": 1
+    }
+   },
    "additionalProperties": false
   }
  },
@@ -598,6 +625,48 @@
    },
    "required": [
     "tourId"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "zoom",
+  "description": "@9fb1f34e406e16f8",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "The line's first message id"
+    },
+    "n": {
+     "type": "integer",
+     "minimum": 1,
+     "description": "How many messages the line covers (a power of 2)"
+    }
+   },
+   "required": [
+    "id",
+    "n"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "date",
+  "description": "The date and time of message id in the memory view.",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "id": {
+     "type": "integer",
+     "minimum": 0,
+     "description": "The message id"
+    }
+   },
+   "required": [
+    "id"
    ],
    "additionalProperties": false
   }

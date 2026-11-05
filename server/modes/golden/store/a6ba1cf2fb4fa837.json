@@ -126,13 +126,7 @@
    "required": [
     "id"
    ],
-   "properties": {
-    "id": {
-     "type": "string",
-     "pattern": "^ag_\\d+$",
-     "description": "Exact worker ID (ag_NN)."
-    }
-   },
+   "properties": {},
    "additionalProperties": false
   }
  },
@@ -183,10 +177,6 @@
     "id"
    ],
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "full": {
      "type": "boolean"
     },
@@ -214,10 +204,6 @@
     "message"
    ],
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "message": {
      "type": "string",
      "minLength": 1
@@ -238,10 +224,6 @@
   "parameters": {
    "type": "object",
    "properties": {
-    "id": {
-     "type": "string",
-     "minLength": 1
-    },
     "group": {
      "type": "string",
      "minLength": 1
@@ -474,7 +456,7 @@
   "description": "@92bd36452c3a5ac1",
   "parameters": {
    "type": "object",
-   "properties": "@48b6ab0a99401413",
+   "properties": "@c1e52fd223cb068f",
    "required": [
     "verb"
    ],
@@ -504,79 +486,100 @@
   }
  },
  {
-  "name": "align",
-  "description": "@10b18c09da2ac44c",
+  "name": "vis_guide",
+  "description": "@4e03995211272eb1",
   "parameters": {
    "type": "object",
    "required": [
-    "ops"
+    "kind"
    ],
    "properties": {
-    "doc": {
-     "type": "string",
-     "minLength": 1,
-     "description": "The alignment to change, e.g. \"al_2\". Required while more than one alignment is open; omit for create, import, exempt and change_request.",
-     "pattern": "^al_[1-9][0-9]*$"
-    },
-    "ops": {
-     "type": "array",
-     "items": {
-      "anyOf": "@2e5962457ad766ec"
-     },
-     "description": "Operations, applied in order. change_request, when given, comes before every other op; create or import comes next (else first) and appears once.",
-     "minItems": 1
-    }
-   },
-   "additionalProperties": false
-  }
- },
- {
-  "name": "create_guide",
-  "description": "@d8d27a6f2379e44a",
-  "parameters": {
-   "type": "object",
-   "required": [
-    "topic"
-   ],
-   "properties": {
-    "topic": {
+    "kind": {
      "type": "string",
      "enum": [
-      "appearance",
-      "models",
-      "workers",
-      "instructions",
-      "skills",
-      "modes",
-      "profiles",
-      "tools",
-      "extensions",
-      "pi-extensions",
-      "scripts",
-      "safety",
-      "project",
-      "landing",
-      "releases",
-      "automation",
-      "cards",
-      "overseers",
-      "attention",
-      "computers"
+      "flow",
+      "sequence",
+      "state",
+      "layers",
+      "tree",
+      "chart",
+      "timeline",
+      "steps",
+      "wireframe",
+      "matrix",
+      "code",
+      "html",
+      "svg",
+      "tour",
+      "tour-signin",
+      "tour-sites",
+      "tour-sova",
+      "tour-sharing"
      ],
-     "description": "The topic, as Create's table of contents lists it"
+     "description": "The drawing kind or tool-backed tour entry, as the vis minor mode lists it, or a part the tour guide names"
     }
    },
    "additionalProperties": false
   }
  },
  {
-  "name": "sova_settings",
-  "description": "@33a84d06d908f213",
+  "name": "vis_check",
+  "description": "@2327d56265ca0751",
   "parameters": {
    "type": "object",
-   "properties": "@d2075d1e687bf90b",
+   "properties": {
+    "kind": {
+     "type": "string",
+     "enum": [
+      "html",
+      "svg",
+      "wireframe"
+     ],
+     "description": "The fence's kind: html, svg or wireframe"
+    },
+    "source": {
+     "type": "string",
+     "description": "The fence body, without the ``` lines"
+    }
+   },
+   "required": [
+    "kind",
+    "source"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "record_tour",
+  "description": "@f2a84afb9f865e94",
+  "parameters": {
+   "type": "object",
+   "properties": "@852078159a752148",
    "required": [
     "op"
+   ],
+   "additionalProperties": false
+  }
+ },
+ {
+  "name": "show_tour",
+  "description": "Present one complete checked tour edition from this chat. Record and visually check it first; never records on display. Read vis_guide with tour for the workflow.",
+  "parameters": {
+   "type": "object",
+   "properties": {
+    "tourId": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 100
+    },
+    "editionId": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 100
+    }
+   },
+   "required": [
+    "tourId"
    ],
    "additionalProperties": false
   }

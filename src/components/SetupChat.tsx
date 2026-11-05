@@ -1,4 +1,4 @@
-import { createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
+import { createEffect, createSignal, createUniqueId, For, type JSX, on, Show } from "solid-js";
 import { ApiError, getSetupChat, mergeSetupProposal, openSetupChat } from "../lib/api";
 import { relativeTime } from "../lib/format";
 import { refusal, trySetupBranch } from "../lib/merge-queue-client";
@@ -7,7 +7,7 @@ import { createPoll, type Poll } from "../lib/poll";
 import { createProjectQueue } from "../lib/project-queue";
 import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
 import { requestListRefresh } from "../lib/list-refresh";
-import { changedFiles, changesHead, chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, trialChip, trialLine, trialStale, type SetupChatView, type SetupProposal, type SetupSurface } from "../lib/setup-chat";
+import { changedFiles, changesHead, chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, trialChip, trialLine, trialStale, type SetupChatView, type SetupProposal, type SetupStatus, type SetupSurface } from "../lib/setup-chat";
 import { announce, toast } from "../lib/ui-state";
 import { DeployRecipeSteps } from "./ProjectDeployPanel";
 import { ReleaseSetupSteps } from "./ReleasesTab";
@@ -22,7 +22,24 @@ const POLL_MS = 5000;
 export type SetupPoll = Poll<Awaited<ReturnType<typeof getSetupChat>>>;
 
 /** One read of a project's Setup chat, shared by every surface of its page through the page cache. */
-export const createSetupPoll = (projectId: string): SetupPoll => createPoll(() => getSetupChat(projectId), POLL_MS, { cacheKey: `project:${projectId}:setup` });
+export function createSetupPoll(projectId: string): SetupPoll {
+  const poll = createPoll(() => getSetupChat(projectId), POLL_MS, { cacheKey: `project:${projectId}:setup` });
+  // A Land, Merge Branch, trial or Start Fresh anywhere on the page: every read of that project's setup follows at once
+  // (the banner, the tabs, a Needs-you row), with the answer the action returned when it has one.
+  createEffect(
+    on(setupChanged, (c) => {
+      if (!c || c.project !== projectId) return;
+      if (c.status) poll.set(c.status);
+      else poll.refetch();
+    }, { defer: true }),
+  );
+  return poll;
+}
+
+const [setupChanged, setSetupChanged] = createSignal<{ project: string; status?: SetupStatus; n: number } | null>(null);
+let changes = 0;
+/** Tell every Setup read of `project` that it changed, with its new status when the action returned it. */
+export const noteSetupChanged = (project: string, status?: SetupStatus) => setSetupChanged({ project, ...(status ? { status } : {}), n: ++changes });
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
@@ -132,6 +149,7 @@ function SetupChatLine(props: { projectId: string; chat: SetupChatView; poll: Se
     setError(null);
     try {
       const out = await openSetupChat(props.projectId, { fresh: true });
+      noteSetupChanged(props.projectId);
       const done = "Started a fresh setup chat.";
       toast(done);
       announce(done);
@@ -434,9 +452,11 @@ export function SetupLandButton(props: { projectId: string; proposal: SetupPropo
         const no = refusal(await trySetupBranch(root, p().branch, p().commit));
         if (no) throw new Error(no);
         done = `Started a trial of ${p().commit.slice(0, 7)}.`;
+        noteSetupChanged(props.projectId);
       } else {
         if (!p().hash) throw new Error("The proposal has nothing valid to merge. Read its report.");
         const out = await mergeSetupProposal(props.projectId, p().hash!, p().commit);
+        noteSetupChanged(props.projectId, out.setup);
         done = out.queued ? `Queued ${p().branch} to land on ${p().target}.` : `Merged the setup into ${p().target}.`;
       }
       toast(done);

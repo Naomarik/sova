@@ -401,7 +401,8 @@ function doneBar(p: LandingProjectInput, q: LandingQueueCut, now: number, seen: 
       tone: "success",
       icon: "check-circle",
       title,
-      sub: `${host.branch} → ${r?.base ?? host.target}`,
+      // A pushed branch names itself in the title already.
+      sub: host.state === "pushed" ? `on origin · opens into ${r?.base ?? host.target}` : `${host.branch} → ${r?.base ?? host.target}`,
       segments: [],
       lines: [],
       actions: [...(r?.url ? [{ kind: "link" as const, label: "Open on Host", href: r.url }] : []), { kind: "link", label: "Open Queue", href: queueHref(p.id) }],

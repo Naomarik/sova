@@ -233,7 +233,9 @@ test("PR projects: 'Pull request opened · #N' for the minute; an open request w
   // A host check bumping updatedAt later doesn't bring it back: the first sight starts its minute.
   assert.equal(bar([proj({ queue: queue({ waitingOnHost: [req] }) })], new Map([["host:me_p:requested", NOW - SHOWN_MS - 1]])), null);
   const pushed = entry({ id: "me_q", branch: "feat/q", state: "pushed", updatedAt: iso(1_000), request: { how: "push-branch", branch: "feat/q", base: "main" } });
-  assert.equal(bar([proj({ queue: queue({ waitingOnHost: [pushed] }) })])!.top.title, "Pushed feat/q");
+  const pb = bar([proj({ queue: queue({ waitingOnHost: [pushed] }) })])!;
+  assert.equal(pb.top.title, "Pushed feat/q");
+  assert.equal(pb.top.sub, "on origin · opens into main");
 });
 
 const plan = (states: Partial<Record<string, ReleaseStep["state"]>> = {}): ReleaseStep[] => [

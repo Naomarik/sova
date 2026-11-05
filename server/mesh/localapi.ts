@@ -1,5 +1,5 @@
 import { type RequestOptions, request } from "node:http";
-import { type Endpoint, EndpointError, forgetLocalApiEndpoint, localApiEndpoint, onMac } from "./localapi-endpoint";
+import { discoversOnMac, type Endpoint, EndpointError, forgetLocalApiEndpoint, localApiEndpoint } from "./localapi-endpoint";
 
 // Tailscale LocalAPI, plain node:http, no dependency: over tailscaled's unix socket on Linux, and on a
 // Mac over whichever install answers (localapi-endpoint.ts: the app's port on 127.0.0.1 with its key,
@@ -43,14 +43,16 @@ export interface Identity {
   whois(addr: string): Promise<WhoisResult | null>;
 }
 
-/** Why a Mac can't ask its Tailscale; each has its own words there (Linux keeps tailscaled's). */
-type Trouble = "missing" | "not-running" | "not-admin" | "refused" | "slow";
+/** Why a Mac can't ask its Tailscale, when it is one a person can act on; each has its own words there.
+    Every other failure (Linux, SOVA_TAILSCALE_SOCKET, a reset connection, an answer) keeps tailscaled's. */
+type Trouble = "missing" | "not-running" | "not-admin" | "refused" | "refused-daemon" | "slow";
 
 const ON_A_MAC: Record<Trouble, string> = {
   missing: "Sova can't find Tailscale on this Mac. Install the Tailscale app from tailscale.com and sign in.",
   "not-running": "Tailscale isn't running on this Mac. Open the Tailscale app and connect.",
   "not-admin": "Only an administrator account on this Mac can ask Tailscale who's connected. Run Sova from an administrator account.",
   refused: "Tailscale on this Mac refused Sova's request. Quit and reopen the Tailscale app.",
+  "refused-daemon": "Tailscale (tailscaled) on this Mac refused Sova's request. Restart tailscaled.",
   slow: "Tailscale on this Mac didn't answer in time. Try again.",
 };
 
@@ -67,7 +69,7 @@ class LocalApiError extends Error {
 
 let connectForTest: RequestOptions["createConnection"] | null = null;
 /** Tests only: open each LocalAPI connection in-process (node:http's createConnection) instead of
-    dialing its endpoint; returns the undo. */
+    dialing its endpoint; returns the undo. Never set outside tests. */
 export function setLocalApiConnectForTest(connect: RequestOptions["createConnection"] | null): () => void {
   const before = connectForTest;
   connectForTest = connect;
@@ -113,22 +115,34 @@ function once(at: Endpoint, path: string): Promise<unknown> {
   });
 }
 
-/** Why a request failed to reach Tailscale, or null for an answer (whois's 404, a 500, not JSON). */
-function trouble(err: unknown): Trouble | null {
-  if (!(err instanceof LocalApiError)) return null;
-  if (err.status === 401 || err.status === 403) return "refused";
-  if (err.status !== undefined || err.code === undefined) return null;
+/** Whether a failure says the endpoint may be gone or wrong (a connection error, or a refused key):
+    it is then forgotten, so the next request looks again, whatever the failure's words. */
+const unreachable = (err: unknown): err is LocalApiError =>
+  err instanceof LocalApiError && (err.status === 401 || err.status === 403 || (err.status === undefined && err.code !== undefined));
+
+/** The Mac words for a failure at an endpoint, or null to keep its own (technical) message. */
+function trouble(err: unknown, at: Endpoint): Trouble | null {
+  if (!unreachable(err)) return null;
+  if (err.status !== undefined) return at.kind === "socket" ? "refused-daemon" : "refused";
+  if (err.code === "ENOENT") return "missing";
+  if (err.code === "ECONNREFUSED") return "not-running";
   if (err.code === "ETIMEDOUT") return "slow";
-  return err.code === "ENOENT" ? "missing" : "not-running";
+  return null; // ECONNRESET, EPIPE, EACCES on a socket, no code: tailscaled's own words
 }
 
 const onAMac = (why: Trouble): LocalApiError => new LocalApiError(ON_A_MAC[why]);
+/** A failure as said on a Mac: its Mac words, or the failure itself. */
+const said = (err: unknown, at: Endpoint): unknown => {
+  const why = trouble(err, at);
+  return why ? onAMac(why) : err;
+};
 
 /** GET /localapi/v0/<path> → parsed JSON, from this host's own Tailscale. On a Mac, a refused
     connection or key at the app's port means one fresh look (the app may have restarted on a new
-    port and key, or left its files behind) and one retry; what it can't reach is said for a Mac. */
+    port and key, or left its files behind) and one retry; what a person can act on is said for a Mac.
+    With SOVA_TAILSCALE_SOCKET set, a Mac does as Linux. */
 async function localApi(path: string): Promise<unknown> {
-  if (!onMac()) return once(await localApiEndpoint(), path);
+  if (!discoversOnMac()) return once(await localApiEndpoint(), path);
   let at: Endpoint;
   try {
     at = await localApiEndpoint();
@@ -138,24 +152,22 @@ async function localApi(path: string): Promise<unknown> {
   try {
     return await once(at, path);
   } catch (err) {
-    const why = trouble(err);
-    if (!why) throw err;
+    if (!unreachable(err)) throw err;
     forgetLocalApiEndpoint();
-    const retry = at.kind === "tcp" && (why === "refused" || (err as LocalApiError).code === "ECONNREFUSED");
-    if (!retry) throw onAMac(why);
+    const retry = at.kind === "tcp" && (err.status !== undefined || err.code === "ECONNREFUSED");
+    if (!retry) throw said(err, at);
     let next: Endpoint;
     try {
       next = await localApiEndpoint(at);
     } catch (e) {
-      throw onAMac(e instanceof EndpointError && e.reason === "not-admin" ? "not-admin" : why);
+      throw e instanceof EndpointError && e.reason === "not-admin" ? onAMac("not-admin") : said(err, at);
     }
     try {
       return await once(next, path);
     } catch (e) {
-      const again = trouble(e);
-      if (!again) throw e;
+      if (!unreachable(e)) throw e;
       forgetLocalApiEndpoint();
-      throw onAMac(again);
+      throw said(e, next);
     }
   }
 }

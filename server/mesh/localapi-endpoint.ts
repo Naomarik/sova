@@ -1,5 +1,6 @@
 import { execFile as execFileCb } from "node:child_process";
-import { lstat, readFile, readlink } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, readlink } from "node:fs/promises";
 
 // Where this host's own Tailscale LocalAPI answers, found with no setting (Node builtins only):
 // - SOVA_TAILSCALE_SOCKET, when set: that socket, on every platform, and nothing else is looked at.
@@ -9,14 +10,16 @@ import { lstat, readFile, readlink } from "node:fs/promises";
 //   1. Tailscale's app from tailscale.com: /Library/Tailscale/ipnport, a symlink whose text is the
 //      port on 127.0.0.1, and sameuserproof-<port>, the key. Both must be root's, and the key file a
 //      plain file nobody else may write, so another account can neither point Sova at a port of its
-//      choosing nor plant a key. Read again for every request: the app writes a new port and key when
-//      it restarts. A key this account can't read (EACCES) means it isn't an administrator.
+//      choosing nor plant a key. The key file is checked and read through one open handle (never
+//      following a link), so it can't be swapped between the check and the read. Read again for
+//      every request: the app writes a new port and key when it restarts. A key this account can't read (EACCES) means it isn't an administrator.
 //   2. The App Store app: its port and key from lsof over this account's own IPNExtension processes
 //      (the sameuserproof-<port>-<key> file they hold open), as Tailscale's own CLI finds it outside
 //      its sandbox. Never the app's group container itself: reading that can raise macOS's "access
 //      data from other apps" prompt.
 //   3. Homebrew or open-source tailscaled: the socket /var/run/tailscaled.socket.
 //   What 2 or 3 found is kept in memory until a request through it fails (forgetLocalApiEndpoint).
+//   Lookups at the same moment share one lsof run; each still applies its own passOver to its result.
 //   The app's files outlive the app, so a caller whose request to the app's port was refused asks
 //   again passing that endpoint over (localApiEndpoint(passOver)), and the next kind is tried.
 // Nothing here runs at import, at boot or on a timer: only when a LocalAPI request asks (localapi.ts).
@@ -43,13 +46,21 @@ export interface FileInfo {
   isSocket(): boolean;
 }
 
+/** An open file: its own fstat, read and close (the key file is checked and read through one). */
+export interface OpenFile {
+  stat(): Promise<FileInfo>;
+  read(): Promise<string>;
+  close(): Promise<void>;
+}
+
 interface Deps {
   platform: string;
   env: Record<string, string | undefined>;
   uid: () => number;
   lstat: (path: string) => Promise<FileInfo>;
   readlink: (path: string) => Promise<string>;
-  readFile: (path: string) => Promise<string>;
+  /** Open for reading without following a symlink (ELOOP for one) and without blocking on a FIFO. */
+  open: (path: string) => Promise<OpenFile>;
   /** The program's stdout when it exits 0; rejects otherwise (lsof exits 1 when nothing matches). */
   execFile: (file: string, args: string[], opts: { timeout: number }) => Promise<string>;
   /** Homebrew's tailscaled socket. */
@@ -62,14 +73,18 @@ const defaults: Deps = {
   uid: () => process.getuid?.() ?? -1,
   lstat: (path) => lstat(path),
   readlink: (path) => readlink(path),
-  readFile: (path) => readFile(path, "utf8"),
+  open: async (path) => {
+    const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+    return { stat: () => handle.stat(), read: () => handle.readFile("utf8"), close: () => handle.close() };
+  },
   execFile: (file, args, opts) =>
     new Promise((resolve, reject) => execFileCb(file, args, { ...opts, encoding: "utf8" }, (err, stdout) => (err ? reject(err) : resolve(stdout)))),
   brewSocket: "/var/run/tailscaled.socket",
 };
 let deps: Deps = defaults;
 
-/** Tests: replace some dependencies; returns the undo. */
+/** Tests only: replace some of discovery's dependencies (platform, environment, files, lsof); returns
+    the undo. */
 export function setLocalApiEndpointDeps(partial: Partial<Deps>): () => void {
   const before = deps;
   deps = { ...deps, ...partial };
@@ -78,8 +93,9 @@ export function setLocalApiEndpointDeps(partial: Partial<Deps>): () => void {
   };
 }
 
-/** Whether this host is a Mac (its LocalAPI errors are then worded for a Mac, localapi.ts). */
-export const onMac = (): boolean => deps.platform === "darwin";
+/** Whether this host finds its Tailscale as a Mac does: macOS with no SOVA_TAILSCALE_SOCKET (its
+    LocalAPI errors are then worded for a Mac, localapi.ts). With the setting, as on Linux. */
+export const discoversOnMac = (): boolean => deps.platform === "darwin" && !deps.env.SOVA_TAILSCALE_SOCKET;
 
 let remembered: Endpoint | null = null;
 
@@ -106,18 +122,37 @@ async function appEndpoint(): Promise<Endpoint | "not-admin" | null> {
     const text = await deps.readlink(`${APP_DIR}/ipnport`);
     const port = portOf(text);
     if (port === null) return null;
-    const keyFile = `${APP_DIR}/sameuserproof-${text}`;
-    const key = await deps.lstat(keyFile);
-    if (!key.isFile() || key.uid !== 0 || (key.mode & 0o022) !== 0) return null;
-    const token = (await deps.readFile(keyFile)).trim();
-    return token ? { kind: "tcp", port, token, source: "app" } : null;
+    const file = await deps.open(`${APP_DIR}/sameuserproof-${text}`);
+    try {
+      const key = await file.stat();
+      if (!key.isFile() || key.uid !== 0 || (key.mode & 0o022) !== 0) return null;
+      const token = (await file.read()).trim();
+      return token ? { kind: "tcp", port, token, source: "app" } : null;
+    } finally {
+      await file.close().catch(() => {});
+    }
   } catch (err) {
     return (err as NodeJS.ErrnoException | null)?.code === "EACCES" ? "not-admin" : null;
   }
 }
 
-/** The App Store app's port and key, from the key file its IPNExtension holds open; null when none. */
-async function appStoreEndpoint(): Promise<Endpoint | null> {
+let appStoreLook: Promise<Endpoint | null> | null = null;
+
+/** The App Store app's port and key, from the key file its IPNExtension holds open; null when none.
+    Callers at the same moment share the one lsof run in flight; the next call after it settles runs
+    lsof again. */
+function appStoreEndpoint(): Promise<Endpoint | null> {
+  if (appStoreLook) return appStoreLook;
+  const look = findAppStoreEndpoint();
+  appStoreLook = look;
+  const clear = () => {
+    if (appStoreLook === look) appStoreLook = null;
+  };
+  look.then(clear, clear);
+  return look;
+}
+
+async function findAppStoreEndpoint(): Promise<Endpoint | null> {
   let out: string;
   try {
     out = await deps.execFile(LSOF, ["-n", "-a", `-u${deps.uid()}`, "-c", "IPNExtension", "-F"], { timeout: 2000 });

@@ -30,6 +30,7 @@ const MAC = {
   notRunning: "Tailscale isn't running on this Mac. Open the Tailscale app and connect.",
   notAdmin: "Only an administrator account on this Mac can ask Tailscale who's connected. Run Sova from an administrator account.",
   refused: "Tailscale on this Mac refused Sova's request. Quit and reopen the Tailscale app.",
+  refusedDaemon: "Tailscale (tailscaled) on this Mac refused Sova's request. Restart tailscaled.",
   slow: "Tailscale on this Mac didn't answer in time. Try again.",
 };
 
@@ -43,7 +44,9 @@ const B_ADDR = "100.64.0.2:41641";
 interface Api {
   /** The key a request must carry (TCP, as the Mac app); none: a socket, as tailscaled's. */
   key?: string;
-  mode: "ok" | "slow" | "refuse" | "whois-fails" | "error-answer" | "not-json";
+  mode: "ok" | "slow" | "refuse" | "forbid" | "whois-fails" | "error-answer" | "not-json";
+  /** The connection fails with this code instead (ECONNRESET, EACCES…). */
+  failCode?: string;
   seen: Array<{ url: string; host?: string; authorization?: string }>;
 }
 const byPort = new Map<number, Api>();
@@ -73,6 +76,7 @@ const server = createServer((req, res) => {
   };
   if (req.headers.host !== "local-tailscaled.sock") return send(400, "bad Host");
   if (api.key !== undefined && req.headers.authorization !== basic(api.key)) return send(401, "auth required\n");
+  if (api.mode === "forbid") return send(403, "forbidden\n");
   const url = new URL(req.url ?? "/", "http://x");
   if (api.mode === "error-answer") return send(500, "boom");
   if (api.mode === "not-json") return send(200, "<html>");
@@ -95,8 +99,8 @@ function connect(opts: { socketPath?: string; port?: number | string }): Duplex 
   connections.push(where);
   onConnect?.(where);
   const api = opts.socketPath !== undefined ? bySocket.get(opts.socketPath) : byPort.get(Number(opts.port));
-  if (!api || api.mode === "refuse") {
-    const code = opts.socketPath !== undefined && !api ? "ENOENT" : "ECONNREFUSED";
+  if (!api || api.mode === "refuse" || api.failCode) {
+    const code = api?.failCode ?? (opts.socketPath !== undefined && !api ? "ENOENT" : "ECONNREFUSED");
     queueMicrotask(() => client.destroy(Object.assign(new Error(`connect ${code} ${where}`), { code, syscall: "connect" })));
     return client;
   }
@@ -117,6 +121,8 @@ interface AppFiles {
   key: string;
   linkUid?: number;
   linkKind?: "link" | "file";
+  /** What the key file is: a symlink fails to open (O_NOFOLLOW's ELOOP); a directory opens. */
+  keyKind?: "file" | "link" | "dir";
   keyUid?: number;
   keyMode?: number;
   keyError?: "EACCES";
@@ -127,6 +133,8 @@ interface MacState {
   lsof?: string;
   /** Whether Homebrew's tailscaled socket exists. */
   brew?: boolean;
+  /** lsof answers only once this settles. */
+  lsofHeld?: Promise<void>;
 }
 let mac: MacState = {};
 const BREW = "/var/run/tailscaled.socket";
@@ -134,7 +142,7 @@ const BREW = "/var/run/tailscaled.socket";
 const calls: string[] = [];
 const count = (kind: string) => calls.filter((c) => c.startsWith(`${kind} `)).length;
 
-const info = (kind: "link" | "file" | "socket", uid: number, mode: number) => ({ uid, mode, isFile: () => kind === "file", isSymbolicLink: () => kind === "link", isSocket: () => kind === "socket" });
+const info = (kind: "link" | "file" | "socket" | "dir", uid: number, mode: number) => ({ uid, mode, isFile: () => kind === "file", isSymbolicLink: () => kind === "link", isSocket: () => kind === "socket" });
 const fsError = (code: string, p: string) => Object.assign(new Error(`${code}: lstat '${p}'`), { code });
 const keyFile = (app: AppFiles) => `/Library/Tailscale/sameuserproof-${app.port}`;
 
@@ -144,7 +152,6 @@ const fakeMac = {
     calls.push(`lstat ${p}`);
     const app = mac.app;
     if (app && p === "/Library/Tailscale/ipnport") return info(app.linkKind ?? "link", app.linkUid ?? 0, 0o120755);
-    if (app && p === keyFile(app)) return info("file", app.keyUid ?? 0, app.keyMode ?? 0o100640);
     if (mac.brew && p === BREW) return info("socket", 0, 0o140666);
     throw fsError("ENOENT", p);
   },
@@ -153,21 +160,36 @@ const fakeMac = {
     if (mac.app && p === "/Library/Tailscale/ipnport") return mac.app.port;
     throw fsError("ENOENT", p);
   },
-  readFile: async (p: string) => {
-    calls.push(`readFile ${p}`);
+  open: async (p: string) => {
+    calls.push(`open ${p}`);
     const app = mac.app;
     if (!app || p !== keyFile(app)) throw fsError("ENOENT", p);
     if (app.keyError) throw fsError(app.keyError, p);
-    return `${app.key}\n`;
+    if (app.keyKind === "link") throw fsError("ELOOP", p);
+    const kind = app.keyKind ?? "file";
+    return {
+      stat: async () => {
+        calls.push(`fstat ${p}`);
+        return info(kind, app.keyUid ?? 0, app.keyMode ?? (kind === "dir" ? 0o040755 : 0o100640));
+      },
+      read: async () => {
+        calls.push(`read ${p}`);
+        return `${app.key}\n`;
+      },
+      close: async () => void calls.push(`close ${p}`),
+    };
   },
   execFile: async (file: string, args: string[], opts: { timeout: number }) => {
     calls.push(`execFile ${file} ${args.join(" ")} timeout=${opts.timeout}`);
+    lsofStarted?.();
+    await mac.lsofHeld;
     if (mac.lsof === undefined) throw Object.assign(new Error("Command failed: lsof"), { code: 1 });
     return mac.lsof;
   },
   brewSocket: BREW,
 };
 
+let lsofStarted: (() => void) | null = null;
 const undo: Array<() => void> = [];
 const asMac = (env: Record<string, string | undefined> = {}) => undo.push(setLocalApiEndpointDeps({ platform: "darwin", env, ...fakeMac }));
 const asLinux = (env: Record<string, string | undefined> = {}) => undo.push(setLocalApiEndpointDeps({ platform: "linux", env, ...fakeMac }));
@@ -179,6 +201,7 @@ beforeEach(() => {
   byPort.clear();
   bySocket.clear();
   onConnect = null;
+  lsofStarted = null;
   forgetLocalApiEndpoint();
   undo.push(setLocalApiConnectForTest(connect as never));
 });
@@ -199,7 +222,7 @@ const failure = async (p: Promise<unknown>): Promise<string> => {
   throw new Error("expected a failure");
 };
 const key = () => `key-${randomUUID().slice(0, 8)}`;
-const APP_CALLS = (app: AppFiles) => ["lstat /Library/Tailscale/ipnport", "readlink /Library/Tailscale/ipnport", `lstat ${keyFile(app)}`, `readFile ${keyFile(app)}`];
+const APP_CALLS = (app: AppFiles) => ["lstat /Library/Tailscale/ipnport", "readlink /Library/Tailscale/ipnport", ...["open", "fstat", "read", "close"].map((c) => `${c} ${keyFile(app)}`)];
 const LSOF_CALL = "execFile /usr/sbin/lsof -n -a -u501 -c IPNExtension -F timeout=2000";
 
 // ---- Linux, and the override ---------------------------------------------------------------------
@@ -243,12 +266,16 @@ describe("Linux and SOVA_TAILSCALE_SOCKET", () => {
     mac = { app: { port: "61001", key: key() }, lsof: "", brew: true };
     serveTcp(61001, mac.app!.key);
     assert.deepEqual(await localApiEndpoint(), { kind: "socket", path: override });
-    assert.equal(await failure(localApiIdentity.status()), MAC.missing, "on a Mac, a Mac's words");
+    const missing = await failure(localApiIdentity.status());
+    assert.equal(missing, `tailscaled unreachable: connect ENOENT ${override}`, "on a Mac too, Linux's words naming the path");
+    assert.ok(!missing.includes("Install"), "no advice to install the app");
     serveSocket(override, "refuse");
-    assert.equal(await failure(localApiIdentity.status()), MAC.notRunning);
+    assert.equal(await failure(localApiIdentity.status()), `tailscaled unreachable: connect ECONNREFUSED ${override}`);
+    serveSocket(override, "forbid");
+    assert.equal(await failure(localApiIdentity.status()), "tailscaled status: 403 forbidden");
     serveSocket(override);
     assert.equal((await localApiIdentity.status()).self.nodeId, "nSelfA1CNTRL");
-    assert.deepEqual(connections, [override, override, override], "never the app's port, and no retry");
+    assert.deepEqual(connections, [override, override, override, override], "never the app's port, and no retry");
     assert.deepEqual(calls, []);
   });
 });
@@ -305,6 +332,8 @@ describe("Tailscale's app from tailscale.com", () => {
     const cases: Array<[string, Partial<AppFiles>]> = [
       ["link not root's", { linkUid: 501 }],
       ["ipnport not a link", { linkKind: "file" }],
+      ["key a symlink", { keyKind: "link" }],
+      ["key a directory", { keyKind: "dir" }],
       ["key not root's", { keyUid: 501 }],
       ["key group-writable", { keyMode: 0o100660 }],
       ["key world-writable", { keyMode: 0o100642 }],
@@ -323,7 +352,8 @@ describe("Tailscale's app from tailscale.com", () => {
         (e: unknown) => e,
       );
       assert.ok(err instanceof EndpointError && err.reason === "missing", what);
-      assert.equal(count("readFile"), 0, `${what}: the key is never read`);
+      assert.equal(count("read"), 0, `${what}: the key is never read`);
+      assert.equal(count("close"), count("fstat"), `${what}: every handle opened is closed`);
       assert.ok(calls.includes(LSOF_CALL) && calls.includes(`lstat ${BREW}`), `${what}: the next kinds are tried`);
       assert.equal(await failure(localApiIdentity.status()), MAC.missing, what);
       mac.brew = true;
@@ -418,7 +448,7 @@ describe("when the app isn't answering, the next kind", () => {
 
   test("the App Store app: its port and key from lsof, kept until a request fails", async () => {
     asMac();
-    const storeKey = ["2ae2ec9e", "0aa20057", "84f1"].join("");
+    const storeKey = key();
     const lsof = (port: number, k: string) =>
       ["p4242", "cIPNExtension", "f5", "n/dev/null", `n/Users/x/Library/Group Containers/ABCDE12345.io.tailscale.ipn.macos/sameuserproof-${port}-${k}`, ""].join("\n");
     mac = { lsof: lsof(61577, storeKey) };
@@ -448,6 +478,75 @@ describe("when the app isn't answering, the next kind", () => {
       const err = await localApiEndpoint().catch((e: unknown) => e);
       assert.ok(err instanceof EndpointError && err.reason === "missing", JSON.stringify(out));
     }
+  });
+});
+
+// ---- what a Mac is told, and what is forgotten --------------------------------------------------------
+
+describe("other failures on a Mac keep tailscaled's words, and still forget the endpoint", () => {
+  const lsofFor = (port: number, k: string) => `n/x.io.tailscale.ipn.macos/sameuserproof-${port}-${k}\n`;
+
+  test("a reset connection at a remembered App Store endpoint: technical words, and the next request runs lsof again", async () => {
+    asMac();
+    const k = key();
+    mac = { lsof: lsofFor(61577, k) };
+    const api = serveTcp(61577, k);
+    assert.equal((await localApiIdentity.status()).self.nodeId, "nSelfA1CNTRL");
+    assert.equal(count("execFile"), 1);
+    api.failCode = "ECONNRESET";
+    assert.equal(await failure(localApiIdentity.status()), "tailscaled unreachable: connect ECONNRESET 127.0.0.1:61577");
+    assert.equal(count("execFile"), 1, "no retry after a reset");
+    api.failCode = undefined;
+    assert.equal((await localApiIdentity.status()).self.nodeId, "nSelfA1CNTRL");
+    assert.equal(count("execFile"), 2, "forgotten: lsof runs again");
+    assert.deepEqual(connections, ["127.0.0.1:61577", "127.0.0.1:61577", "127.0.0.1:61577"]);
+  });
+
+  test("EACCES on Homebrew's socket: technical words naming it, no Mac advice", async () => {
+    asMac();
+    mac = { brew: true };
+    const api = serveSocket(BREW);
+    api.failCode = "EACCES";
+    assert.equal(await failure(localApiIdentity.status()), `tailscaled unreachable: connect EACCES ${BREW}`);
+    assert.equal(count(`lstat`), 2, "one look: the app, then Homebrew's socket");
+    api.failCode = undefined;
+    assert.equal((await localApiIdentity.status()).self.nodeId, "nSelfA1CNTRL");
+    assert.equal(count("execFile"), 2, "forgotten: looked for again");
+    assert.deepEqual(connections, [BREW, BREW]);
+  });
+
+  test("a 403 from Homebrew's tailscaled: its own advice, no retry, and forgotten", async () => {
+    asMac();
+    mac = { brew: true };
+    serveSocket(BREW, "forbid");
+    assert.equal(await failure(localApiIdentity.status()), MAC.refusedDaemon);
+    assert.deepEqual(connections, [BREW], "no retry at a socket");
+    assert.equal(count("execFile"), 1);
+    serveSocket(BREW);
+    assert.equal((await localApiIdentity.status()).self.nodeId, "nSelfA1CNTRL");
+    assert.equal(count("execFile"), 2, "forgotten: looked for again");
+  });
+
+  test("two lookups at once share one lsof run, and the one passing an endpoint over never gets it back", async () => {
+    asMac();
+    const stale = { kind: "tcp", port: 61577, token: key(), source: "appstore" } as const;
+    let release!: () => void;
+    const started = new Promise<void>((done) => (lsofStarted = done));
+    mac = { lsof: lsofFor(stale.port, stale.token), brew: true, lsofHeld: new Promise<void>((done) => (release = done)) };
+    const first = localApiEndpoint();
+    const second = localApiEndpoint(stale);
+    await started;
+    // Let the second lookup reach the App Store step while lsof is still held.
+    await new Promise<void>((done) => setImmediate(done));
+    release();
+    assert.deepEqual(await first, stale);
+    assert.deepEqual(await second, { kind: "socket", path: BREW }, "the endpoint passed over is skipped, even from the shared run");
+    assert.equal(count("execFile"), 1, "lsof ran once");
+    assert.equal(calls.filter((c) => c === `lstat ${BREW}`).length, 1, "only the second looked further");
+    forgetLocalApiEndpoint();
+    mac.lsofHeld = undefined;
+    assert.deepEqual(await localApiEndpoint(), stale);
+    assert.equal(count("execFile"), 2, "once settled, the next lookup runs lsof again");
   });
 });
 

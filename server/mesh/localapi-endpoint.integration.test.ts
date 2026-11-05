@@ -91,7 +91,6 @@ beforeEach(() => {
       uid: () => 501,
       lstat: async (p) => {
         if (app && p === "/Library/Tailscale/ipnport") return fakeInfo(true);
-        if (app && p === `/Library/Tailscale/sameuserproof-${app.port}`) return fakeInfo(false);
         if (p === brewSocket) return lstat(p); // a real socket, or ENOENT
         throw enoent(p);
       },
@@ -99,9 +98,10 @@ beforeEach(() => {
         if (app && p === "/Library/Tailscale/ipnport") return String(app.port);
         throw enoent(p);
       },
-      readFile: async (p) => {
-        if (app && p === `/Library/Tailscale/sameuserproof-${app.port}`) return `${app.key}\n`;
-        throw enoent(p);
+      open: async (p) => {
+        if (!app || p !== `/Library/Tailscale/sameuserproof-${app.port}`) throw enoent(p);
+        const text = `${app.key}\n`;
+        return { stat: async () => fakeInfo(false), read: async () => text, close: async () => {} };
       },
       execFile: async () => {
         throw Object.assign(new Error("Command failed: lsof"), { code: 1 });

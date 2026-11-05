@@ -1452,7 +1452,8 @@ export function Sidebar(props: {
    * Recent. A shortcut like Recent — every row is still where it lives — and built from `hits()`
    * too, so the search narrows it and its count is always its rows. The open session stays listed.
    */
-  const needsYou = createMemo(() => needsYouRows(props.attention, ordinaryHits()));
+  // A project's own session joins only for a proposal waiting on you (its Setup chat's): the row with its button.
+  const needsYou = createMemo(() => needsYouRows(props.attention, ordinaryHits(), hits().filter((s) => !isOrdinarySession(s) && here(s))));
   /** Its items of no session: a project's failed deploy or an overseer's request to deploy (§app.project-services/deploy-status). */
   const needsYouProject = createMemo(() => needsYouItems(props.attention, query()));
   const needsYouCount = () => needsYou().length + needsYouProject().length;

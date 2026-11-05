@@ -13,8 +13,6 @@ the project's files is the **Release Note**, for the next release only.
 **Set Up Releases**, on the project's Releases tab, writes both for you: a chat reads the project,
 asks how it releases, and proposes them on a branch you review and Land.
 
-<!-- screen: settings-releases | A project's Releases tab before releases are set up: what a set-up does, and Set Up Releases. -->
-
 ## The `release` section
 
 The `release` section of the project's `.sova/project.json` holds only the facts Sova acts on

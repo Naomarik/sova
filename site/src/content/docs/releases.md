@@ -52,6 +52,8 @@ ordinary chat you can talk to.
 - **Quiet.** When the release chat goes quiet for too long, Needs you says "No word from the release
   chat for {n} min".
 
+<!-- screen: release-in-progress | A release in progress: v0.4.0 at step 5 of 9, its version, notes, release commit and gating checks done, Try it on the staging copy held for you with Continue, a failed smoke test with Retry Step, a docs check running, Publish waiting, and Abandon Release. -->
+
 ## The release checks
 
 The release commit goes through the merge queue first in line. It runs the project's usual checks,
@@ -67,8 +69,6 @@ confirm, does it all or nothing: it makes the numbered tag at the release commit
 its message, moves the channel (such as `stable`) to it, and pushes the main branch, the tag and the
 channel to `origin` in one step. A project with no `origin` tags and moves its channel on this
 machine only.
-
-<!-- screen: release-publish | Publish's confirm on the Releases tab: what goes out to origin in one step, and that the numbered tag is never moved or deleted. -->
 
 If Publish fails, every local change is put back, the release stays Ready, and the step reads
 **Publish failed** with why. **Retry Publish** tries again. Publish lifts the freeze: the waiting

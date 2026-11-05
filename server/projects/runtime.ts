@@ -14,7 +14,7 @@ import { landThroughQueue, mergeCodingWorktree, startOnboardSession, type Starte
 import { projectRootOf } from "../project-root";
 import { realGit } from "../project-services/engine";
 import { readWorktree } from "../project-worktrees";
-import { onboardStart } from "./onboard";
+import { onboardStart, SETUP_MODE, SETUP_PLAYBOOK_ID } from "./onboard";
 import { branchReview, DEFAULT_PLAYBOOK_LABEL, memoryIn, playbookReviewOf, proposesOf, runLive } from "./playbook-review";
 import { runtimeFeed, type FeedRow } from "./runtime-feed";
 import { engineOf, engineOrThrow, listProjects, operatorEnvelopeOf, projectArchived, readProject, runtimeSid } from "./spaces";
@@ -494,7 +494,9 @@ export interface OnboardInput {
  */
 export async function startOnboard(projectId: string, input: OnboardInput, envelope?: Envelope): Promise<StartedCoding> {
   const { start, extra } = await onboardStamp(projectId, input);
-  return startOnboardSession(projectId, { prompt: start.prompt, title: start.title, model: start.model, thinking: start.thinking, envelope: envelope ?? operatorEnvelopeOf(projectId), extra });
+  // The Setup chat runs normal + align only, never the host's other minor modes (spec would set it to spec the project).
+  const mode = start.playbookId === SETUP_PLAYBOOK_ID ? { mode: SETUP_MODE.mode, minorModes: [...SETUP_MODE.minorModes] } : undefined;
+  return startOnboardSession(projectId, { prompt: start.prompt, title: start.title, model: start.model, thinking: start.thinking, envelope: envelope ?? operatorEnvelopeOf(projectId), extra, ...(mode ? { mode } : {}) });
 }
 
 /** The registered project whose root holds `path` (the global Overseer names a project by a path in it), or a 404. */

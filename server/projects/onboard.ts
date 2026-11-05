@@ -20,6 +20,10 @@ export const ONBOARD_PLAYBOOK_ID = "project-verbs";
 export const SETUP_PLAYBOOK_ID = "project-setup";
 /** The setup playbooks folded into the Setup chat: a start by their id opens the Setup chat (old ids still resolve). */
 export const FOLDED_PLAYBOOKS: readonly string[] = FOLDED_SETUP_PLAYBOOKS;
+/** The Setup chat's mode: normal with align only, whatever this host's coding default adds (spec, visuals…). Its
+    work is the project's pipeline settings, never Sova's spec procedure for the project. */
+export const SETUP_MODE = { mode: "normal", minorModes: ["align"] } as const;
+
 /** The playbook a start by `id` runs: a folded one's is the Setup chat's. Pure. */
 export const resolvePlaybookId = (id: string): string => (FOLDED_PLAYBOOKS.includes(id) ? SETUP_PLAYBOOK_ID : id);
 

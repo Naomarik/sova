@@ -4,7 +4,7 @@ import { OrgError } from "../org-error";
 import { OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerSender } from "../overseer-sender";
 import { mergeRun, readRuntime, RuntimeRefusal, startOnboard, startRuntimeTick } from "./runtime";
 import { operatorEnvelopeOf, type OperatorBy } from "./spaces";
-import { FOLDED_PLAYBOOKS, SETUP_PLAYBOOK_ID } from "./onboard";
+import { FOLDED_PLAYBOOKS, SETUP_MODE, SETUP_PLAYBOOK_ID } from "./onboard";
 import { openSetup, readSetup, SETUP_FROM, type SetupDeps, type SetupFrom } from "./setup-chat";
 import type { Envelope } from "../org-envelope";
 
@@ -47,11 +47,19 @@ const opt = (v: unknown): string | undefined => (typeof v === "string" && v.trim
 function liveSetupDeps(app: Hono<any>): SetupDeps {
   return {
     startRun: (pid, input, envelope?: Envelope) => startOnboard(pid, input, envelope),
+    // A plain chat in the folder, made without a first message, set to the Setup chat's mode and model, then sent it.
     startChat: async (cwd, text, title, model) => {
-      const res = await app.request("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd, prompt: text, ...(model ? { model: model.model, ...(model.thinking ? { thinking: model.thinking } : {}) } : {}) }) });
+      const res = await app.request("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd }) });
       const json = (await res.json().catch(() => null)) as { id?: string; path?: string; error?: string } | null;
       if (res.status !== 201 || !json?.id || !json.path) throw new RuntimeRefusal(`The Setup chat didn't start: ${json?.error ?? `HTTP ${res.status}`}`, 409);
       (await import("../session-titles")).writeAutoTitle(json.id, title);
+      const chat = await (await import("../chat-handle")).acquireChatHandle(json.path);
+      await chat.switchMode({ mode: SETUP_MODE.mode, minorModes: [...SETUP_MODE.minorModes] });
+      if (model) {
+        await chat.setModel(model.model);
+        if (model.thinking) await chat.setThinking(model.thinking);
+      }
+      await chat.deliverToAgent(text);
       return { id: json.id, path: json.path };
     },
     archive: async (path) => {

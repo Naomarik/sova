@@ -3,7 +3,8 @@ import { describe, test } from "node:test";
 import type { MergeRun, MergeTrial } from "../../shared/merge-queue";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
 import { proposalOf, setupContext, setupTitle, trialView } from "./setup-chat";
-import { FOLDED_PLAYBOOKS, resolvePlaybookId, SETUP_PLAYBOOK_ID } from "./onboard";
+import { FOLDED_PLAYBOOKS, resolvePlaybookId, SETUP_MODE, SETUP_PLAYBOOK_ID } from "./onboard";
+import { playbookRunMode } from "../project-coding-mode";
 
 describe("the Setup chat's first message", () => {
   const base = { name: "Rakiba", root: "/w/rakiba", target: "main", served: false, releaseSteps: [], history: [] };
@@ -41,6 +42,10 @@ describe("the Setup chat's first message", () => {
     const t = setupContext({ ...base, definition: null, carryOn: { branch: "setup/x", worktree: "/w/.worktrees/x", from: "/s/b.jsonl" } });
     assert.match(t, /## Carrying on/);
     assert.match(t, /\/w\/\.worktrees\/x\) on its branch setup\/x/);
+  });
+
+  test("it runs normal with align only, whatever the host's default adds (never spec for the project)", () => {
+    assert.deepEqual(playbookRunMode({ mode: SETUP_MODE.mode, minorModes: [...SETUP_MODE.minorModes] }), { mode: "normal", minorModes: ["align"] });
   });
 
   test("its title, and the folded playbooks open it", () => {

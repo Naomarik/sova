@@ -612,6 +612,12 @@ export function SessionRow(props: {
             </Show>
             <p class="list-meta">
               {relativeTime(s().lastActiveAt, props.now)}
+              {/* A shut-down chat whose background job still runs (§app.background-jobs/pane): its
+                  end will wake the chat. The server sends the count only while the chat has no process. */}
+              <Show when={!s().chat && (s().jobsRunning ?? 0) > 0}>
+                {" · "}
+                <span class="session-job-running">job running</span>
+              </Show>
               {/* The branches this session's chat tracks: the very headline its composer status row says
                   ("1 needs a fix"), as the fact's own mark and its number, after the time, before the
                   badge and the model (cut first when the row is narrow). The words are in the title and

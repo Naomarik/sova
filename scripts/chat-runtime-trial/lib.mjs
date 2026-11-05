@@ -451,10 +451,10 @@ export function chatUnits(slice) {
 /** Processes a trial under `root` (a scratch dir, or a root of several) left: every process whose
     PI_CODING_AGENT_DIR lies under it (servers, chat processes, workers in either placement, their
     tools and fake claudes) and, unless `mock` is false, the mock LLM logging there. Never this process or its ancestors. */
-export function strays(root, { mock: withMock = true } = {}) {
+export function strays(root, { mock: withMock = true, spare = () => false } = {}) {
   const under = (v) => v === root || v.startsWith(root.endsWith("/") ? root : `${root}/`);
   const mine = new Set([process.pid, ...ancestors(process.pid)]);
-  const out = withEnv("PI_CODING_AGENT_DIR").filter((p) => !mine.has(p.pid) && under(p.value)).map((p) => ({ pid: p.pid, cmd: p.cmd }));
+  const out = withEnv("PI_CODING_AGENT_DIR").filter((p) => !mine.has(p.pid) && under(p.value) && !spare(p.pid)).map((p) => ({ pid: p.pid, cmd: p.cmd }));
   if (withMock)
     for (const p of table())
       if (!mine.has(p.pid) && !out.some((o) => o.pid === p.pid) && /mock-llm\.mjs/.test(p.cmd) && p.cmd.split(" ").some(under)) out.push({ pid: p.pid, cmd: p.cmd });
@@ -462,14 +462,14 @@ export function strays(root, { mock: withMock = true } = {}) {
 }
 
 /** Stops every stray of `root`: SIGTERM, then SIGKILL after `graceMs`. Returns what it found. */
-export async function sweep(root, { graceMs = 2000, mock = true } = {}) {
-  const found = strays(root, { mock });
+export async function sweep(root, { graceMs = 2000, mock = true, spare } = {}) {
+  const found = strays(root, { mock, spare });
   for (const p of found)
     try {
       process.kill(p.pid, "SIGTERM");
     } catch {}
   if (found.length) await sleep(graceMs);
-  for (const p of strays(root, { mock }))
+  for (const p of strays(root, { mock, spare }))
     try {
       process.kill(p.pid, "SIGKILL");
     } catch {}

@@ -21,20 +21,21 @@ type Check = { ok?: boolean; what?: string; detail?: string | null; note?: strin
 /** One describe block: each [check, title] a test running that check of run.mjs. */
 /** `spawnMs`: one check's budget (default 270 s). run-tests.mjs kills a file at 300 s (TEST_FILE_LIMIT_MS), so a file
     with one long check (t25, ~205 s) may take up to 285 s, and the test's own timeout sits 10 s above it. */
-export function trialSuite(title: string, checks: [string, string][], { spawnMs = 270_000 } = {}): void {
+export function trialSuite(title: string, checks: [string, string][], { spawnMs = 270_000, driver = "detached" }: { spawnMs?: number; driver?: "detached" | "systemd" } = {}): void {
   const root = mkdtempSync(join(tmpdir(), "sova-chat-trial-"));
   after(async () => {
     await sweep(root);
     rmSync(root, { recursive: true, force: true });
   });
   describe(title, () => {
-    for (const [check, name] of checks) test(name, { timeout: spawnMs + 10_000 }, () => trial(root, check, spawnMs));
+    for (const [check, name] of checks) test(name, { timeout: spawnMs + 10_000 }, () => trial(root, check, spawnMs, driver));
   });
 }
 
-async function trial(root: string, check: string, spawnMs: number): Promise<void> {
+/** `driver: "systemd"` runs the chats as units in a stand-in slice: it needs the user manager (the project's test verb has it). */
+async function trial(root: string, check: string, spawnMs: number, driver: "detached" | "systemd"): Promise<void> {
   const scratch = join(root, check);
-  const r = spawnSync("node", [RUN, check, "--scratch", scratch, "--mode", "child", "--driver", "detached"], { encoding: "utf8", timeout: spawnMs });
+  const r = spawnSync("node", [RUN, check, "--scratch", scratch, "--mode", "child", "--driver", driver], { encoding: "utf8", timeout: spawnMs });
   // The runner stops what it started, even on SIGTERM (the timeout here); a runner killed outright
   // cannot, so whatever still runs under its scratch dir is stopped here.
   const left: { pid: number; cmd: string }[] = await sweep(scratch);

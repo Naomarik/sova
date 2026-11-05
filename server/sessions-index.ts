@@ -43,6 +43,7 @@ import { removeSessionTours } from "./tours/lifecycle";
 import { byActivity } from "../src/lib/summary-diff";
 import { queueChatRole } from "../shared/merge-queue";
 import { opTrack } from "./stall-recorder";
+import { runningJobCount } from "./background-jobs";
 
 /**
  * What another layer adds to the list (organizations: a baton session's `baton`, an org session's `org`), and
@@ -100,6 +101,13 @@ type BaseSummary = Omit<SessionSummary, "live" | "workers" | "origin" | "archive
 const heldChatField = (path: string): Pick<SessionSummary, "chat"> => {
   const chat = heldChatState(path);
   return chat ? { chat } : {};
+};
+
+/** SessionSummary.jobsRunning: a shut-down chat's running background jobs (the list's `job running` marker). */
+const jobsField = (id: string, path: string): Pick<SessionSummary, "jobsRunning"> => {
+  if (heldChatState(path)) return {};
+  const n = runningJobCount(id);
+  return n > 0 ? { jobsRunning: n } : {};
 };
 
 const CHUNK = 16 * 1024;
@@ -1329,6 +1337,7 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
       ...(groups[s.id] !== undefined ? { groupId: groups[s.id] } : {}),
       busy: isSessionBusy(s.path),
       ...heldChatField(s.path),
+      ...jobsField(s.id, s.path),
       ...attentionFields(s, l, ownRec, seen),
       ...decisionFields(s, l, ownRec, seen, attention, stores),
       ...(preview !== undefined ? { draftPreview: preview } : {}),
@@ -1416,6 +1425,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...(groupId !== undefined ? { groupId } : {}),
     busy: isSessionBusy(s.path),
     ...heldChatField(s.path),
+    ...jobsField(s.id, s.path),
     ...attentionFields(s, l, ownRec, r.seen),
     ...decisionFields(s, l, ownRec, r.seen, r.attention),
     ...r.fields(s.path, s.id, s.cwd),

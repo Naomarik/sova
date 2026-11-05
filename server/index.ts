@@ -40,8 +40,11 @@ import { startSharedUsageHelper, stopSharedUsageHelper } from "./usage-helper/cl
 import { wireRequestChats } from "./owner-request-chat";
 import { cachedTitleOf, getSessionSummary, idOf, lastReplyOf, listSessions, listSessionsTracked, listStamps, onSessionArchived, onSummaryLineChanged, trackSessionFiles } from "./sessions-index";
 import { startScheduleKeeper } from "./schedule-routes";
+import { cancelChatWakes, startWakeKeeper } from "./wake-keeper-live";
+import { monitorJobs, startJobKeeper, stopJobsOf, sweepJobs } from "./background-jobs";
+import { onWorkerKilled } from "./chat-workers";
 import { attachWebSockets, upgradeSovaSocket, upgradeSovaStreamSocket } from "./ws";
-import { detachChatHost, startChatHost, stopWorkersOf } from "./chat-host";
+import { detachChatHost, startChatHost, stopWorkersOf, wakeOwnerOf, workerChatsOf } from "./chat-host";
 import { expectChatRouter } from "./chat-handle";
 import { meshApi, startMesh, stopMesh } from "./mesh";
 import { captureBootBuild } from "./mesh/build-id";
@@ -193,6 +196,12 @@ server.on("error", (err) => {
 startChatHost();
 // An archived chat's workers stop with it (§app.chat-processes/workers).
 onSessionArchived((sessionId) => void stopWorkersOf(sessionId, "its parent was archived").catch(() => {}));
+// Archiving or deleting a chat cancels its wake nudges for good, its workers' too (§chat.wake-nudges/archive).
+onSessionArchived(cancelChatWakes);
+// Archiving or deleting a chat stops its background jobs and its workers' (§app.background-jobs/stopping);
+// stopping a worker stops its own.
+onSessionArchived((sessionId) => void stopJobsOf([sessionId, ...workerChatsOf(sessionId)], "archive").then(() => sweepJobs()).catch(() => {}));
+onWorkerKilled((chatId) => void stopJobsOf([chatId], "worker").catch(() => {}));
 // An owner request follows the chat Start Chat opened for it (§app.project-assistant/request-chat).
 wireRequestChats();
 attachWebSockets(server);
@@ -213,6 +222,8 @@ setCardsDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
 startProjectOverseerLoop();
 startScheduleKeeper((path, init) => app.request(path, init));
+startWakeKeeper();
+startJobKeeper();
 noteStallHead(SERVER_HEAD);
 stallGauge("chat processes", () => chatHandles().length);
 // Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
@@ -220,6 +231,8 @@ startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
   held: () => chatHandles().map((c) => ({ path: c.path, sessionId: c.mirror.sessionId, cwd: c.mirror.cwd })),
   titleOf: cachedTitleOf,
+  // A background job has left its chat's unit: charged to that chat through its record.
+  jobs: () => monitorJobs(wakeOwnerOf),
 });
 // Every attached org's workspace repo: its residence statechart commits whatever changed at most hourly, then pushes.
 // Messages a crash or kill lost stop counting against their session's limit.

@@ -25,6 +25,7 @@ const full = (): Required<SessionSummary> => ({
   workerOf: { id: "p", path: "/s/p.jsonl", name: "spec writer" },
   busy: false,
   chat: { model: "zai/glm-5.3", thinking: "high", mode: "delegate", minorModes: ["align"], strict: false, applies: "now" },
+  jobsRunning: 1,
   origin: "web",
   archived: false,
   align: { openDocs: 2, openQuestions: 3, questionDocs: 1, lead: { id: "al_1", title: "Export" } },

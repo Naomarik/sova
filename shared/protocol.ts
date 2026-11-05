@@ -16,6 +16,29 @@ import type { OwnerRequestCard } from "./project-assistant";
 import type { CardInfo } from "./transcript-cards";
 export type { WakeInfo };
 
+/** One running background job, as `GET /api/sessions/jobs?path=` lists it (§app.background-jobs/pane):
+    the chat's own and its workers'. The server's `JobView` (server/background-jobs.ts). */
+export interface BackgroundJob {
+  /** `j1`, `j2`, …: unique within its chat (`sessionId`). */
+  id: string;
+  /** The chat that owns it: the session's own id, or one of its workers'. */
+  sessionId: string;
+  /** What runs: the command the chat ran, or the one it asked Sova to start. */
+  command: string;
+  cwd: string;
+  kind: "kept" | "requested";
+  /** When it was kept or started (ms). */
+  startedAt: number;
+  /** The file its output goes to, or null when it has none. */
+  output: string | null;
+  /** Its output still points at its command's closed output (§app.background-jobs/output). */
+  noOutput: boolean;
+  /** The worker it belongs to (its worker id), or null for the chat's own. */
+  worker: string | null;
+  /** Stop was pressed and the job hasn't ended yet. */
+  stopping: boolean;
+}
+
 export interface SessionSummary {
   /** Session id from the JSONL header line. */
   id: string;
@@ -93,6 +116,10 @@ export interface SessionSummary {
       socket's hello (§chat.composer/known-on-switch). The model supersedes the file-tail `model`.
       Absent for a session the server doesn't hold, and from older servers and peers. */
   chat?: HeldChatState;
+  /** How many background jobs this session's chat keeps running (§app.background-jobs/pane), its
+      workers' not counted. Present (≥ 1) only while the chat has shut down, i.e. `chat` is absent:
+      the session list's `job running` marker. Absent otherwise, and from older servers. */
+  jobsRunning?: number;
   /** "web" if spawned via this webapp's POST /api/sessions (tracked persistently by the server,
       survives restarts); "external" for anything else. Pane rule: top region shows
       live!=null || (origin==="web" && !archived); everything else goes to the bottom archive section. */

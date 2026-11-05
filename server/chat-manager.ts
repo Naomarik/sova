@@ -2,6 +2,7 @@ import { CREATE_SETTINGS_TOOL, createSettingsTool } from "./create-settings-tool
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, readSync } from "node:fs";
 import { homedir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { type ChatDialogInfo, type ChatLifecycleEvent, type ChatRunEvent, type ChatSpecialKind, type RunStartAnswer, type ServerToolCall, type ServerToolDecl, type ServerToolOutcome, type SpecialSpec, unsentRefusal, type WorkerHost, type WorkerSpec } from "../shared/chat-runtime";
 import { BUILTIN_TOOLS as WORKER_BUILTIN_TOOLS, WORKER_HOST_DISCOVER_EVENT, WORKER_HOST_EVENT, type WorkerHostAnnouncement } from "../pi-config/extensions/subagents/worker-host.ts";
 import { prepareOwnerArea } from "../shared/decisions";
@@ -64,6 +65,7 @@ import { forkCacheExtension } from "../pi-config/extensions/subagents/fork/cache
 import { VIS_CHECK_TOOL, visCheckExtension, type VisCheckHost } from "./vis-check";
 import { MEMORY_COMPACTION_REFUSAL, memoryExtension, type MemoryHost } from "./harness/pi/memory";
 import { deeperContextExtension } from "./harness/pi/deeper-context";
+import { backgroundJobsExtension } from "./harness/pi/background-jobs";
 import { mcpExtension } from "./harness/pi/mcp";
 import { nothingDeclared } from "./mcp/folder";
 import { NO_MCP, normalizeChatList, type McpChatList } from "./mcp/list";
@@ -98,6 +100,10 @@ import { MEMORY_TOOLS } from "../shared/memory";
 import { projectEngine } from "./project-services/routes";
 import { projectVerbsExtension, sessionInstanceNote } from "./project-services/tools";
 import { servedToolsExtension, servedVisToolsExtension } from "./served-tools";
+import { BACKGROUND_JOB_TOOL } from "./background-jobs-request";
+import { JOB_CARDS_ENV } from "./background-jobs";
+/** wake-nudge.ts of this code copy: a worker with no wake_nudge of its own still delivers its jobs' end cards (cards only). */
+const JOB_CARDS_EXTENSION = fileURLToPath(new URL("../pi-config/extensions/wake-nudge.ts", import.meta.url));
 import { TOUR_TOOLS } from "../shared/tour";
 import { tourTools } from "./tours/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, parseMine, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
@@ -282,6 +288,8 @@ export const DEFAULT_EXTENSION_FACTORIES = [
   SHELL_GUARD_FACTORY,
   // Subfolder AGENTS.md / CLAUDE.md files, attached to the read/edit/write result that first reaches them.
   deeperContextExtension(),
+  // What a bash call leaves running is kept as a background job (§app.background-jobs/keeping).
+  backgroundJobsExtension(),
 ];
 
 const mcpListHere: NonNullable<ChatHosts["mcpList"]> = async (ask) => (await import("./mcp/chat")).chatListFor(ask);
@@ -791,18 +799,22 @@ function workerHostExtension(pi: PiExtensionAPI): void {
 export function workerExtensionFactories(w: Pick<WorkerSpec, "kind"> & { builtins?: string[] | null } & Partial<Pick<WorkerSpec, "mcp" | "parent">>, path: string) {
   // Subfolder instruction files load for every kind whose loadout has a file tool (server/deeper-context.ts).
   const files = !w.builtins || w.builtins.some((t) => LOADING_TOOLS.has(t)) ? [deeperContextExtension()] : [];
+  // A hidden chat keeps no job: nothing would deliver its card or stop it.
   if (w.kind !== "worker") return [SHELL_GUARD_FACTORY, ...files];
   // Only what the chat named: a worker's list is fixed at its start and kept when it resumes (§app.mcp/who-gets).
   const mcp = w.mcp ? normalizeChatList(w.mcp) : null;
   return [
     SHELL_GUARD_FACTORY,
     ...files,
+    ...(!w.builtins || w.builtins.includes("bash") ? [backgroundJobsExtension()] : []),
     ...(mcp?.servers.length
       ? [mcpExtension({ list: async () => mcp, label: () => w.parent?.workerId ?? "A worker", tellParent: (note) => (chatHosts.mcpTell ?? mcpTellHere)(w.parent?.path ?? "", note) })]
       : []),
     servedDecls
       ? servedToolsExtension("sova-project-verbs", servedSpecs(path, (n) => n === "project_verbs"), chatHosts.instanceNote ?? ((ctx) => sessionInstanceNote(projectEngine, ctx)))
       : projectVerbsExtension(projectEngine),
+    // background_job: a job under the worker's own confinement, run by the server (§app.background-jobs/request).
+    ...(servedDecls && (!w.builtins || w.builtins.includes("bash")) ? [servedToolsExtension("sova-background-job", servedSpecs(path, (n) => n === BACKGROUND_JOB_TOOL))] : []),
   ];
 }
 
@@ -815,7 +827,7 @@ function workerBuild(w: WorkerSpec, path: string): PiBuild {
   return {
     loader: {
       noExtensions: true,
-      additionalExtensionPaths: [...w.extensions],
+      additionalExtensionPaths: [...w.extensions, ...(process.env[JOB_CARDS_ENV] === "only" ? [JOB_CARDS_EXTENSION] : [])],
       extensionFactories: workerExtensionFactories(w, path),
       ...(w.appendSystemPrompt ? { appendSystemPrompt: [w.appendSystemPrompt] } : {}),
     },

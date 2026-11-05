@@ -274,6 +274,7 @@ const VALIDATE_ONLY: Record<string, string> = {
   "session.sandbox.set": "acquires a chat handle, which starts the chat's process",
   "worker.resume": "acquires a chat handle, which starts the chat's process, and resumes a worker process",
   "session.group.send": "prompts each member, which starts their chat processes",
+  "session.job.stop": "a valid stop runs systemctl --user stop on the job's unit, the user's own service manager",
   "project.costs": "a valid call asks the usage helper, a process of its own (without it the route answers 503 usage-unavailable)",
   "project.preview.off": "needs a minted preview, and minting connects to the port it shows",
   "project.worktree.merge": "a valid call needs a coding session of the project (its build row and git worktree), which only starting a coding session makes, and that starts its chat process",
@@ -362,6 +363,8 @@ function anchors(c: CommandEntry): Anchor[] {
   if (c.id === "insights.usage.refresh") return [];
   const out: Anchor[] = [];
   // Tags are kept by id, for any id: a missing session is no refusal there (a finding, reported).
+  // The job id is checked before the session: a refused anchor (no such session) and a real one (no such job) both carry one.
+  if (c.id === "session.job.stop") return [{ anchor: { session: missing[0], id: "j1" }, refuse: true, kind: "refused" }, { anchor: { session: session()[0], id: "j1" }, refuse: false, kind: "real" }];
   if (c.id === "session.tags.set") return [{ anchor: { session: "no-such-id" }, refuse: false, kind: "real" }, { anchor: { session: session()[1] }, refuse: false, kind: "real" }];
   if (c.params.session) {
     out.push({ anchor: { session: sessionArg(c, missing) }, refuse: true, kind: "refused" });
@@ -509,6 +512,11 @@ const FIXTURES: Record<string, Fixture> = {
     values: () => ({ session: session(true)[0] }),
     status: 200,
     oracle: async (_b, v) => assert.equal((await read("GET", `/api/sessions/summary?id=${pathToId(v.session)}`)).archived, true),
+  },
+  "session.job.list": {
+    values: () => ({ session: session()[0] }),
+    status: 200,
+    oracle: async (body) => assert.deepEqual(body, { jobs: [] }),
   },
   "session.unarchive": {
     values: () => { const s = session(true); archived.push(s[0]); return { session: s[0] }; },

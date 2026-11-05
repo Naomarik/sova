@@ -204,7 +204,21 @@ export interface MonitorOptions {
   titleOf?: (path: string) => string | undefined;
   /** Runs `ps` with these arguments and resolves its stdout (macOS; tests inject a table). */
   ps?: (args: string[]) => Promise<string>;
+  /** The running background jobs, each with its unit's cgroup directory and
+      the chat it is charged to; asked at most every JOBS_EVERY_MS. Default: none. */
+  jobs?: () => MonitorJob[];
 }
+
+/** A running background job as the monitor charges it: its job unit's cgroup and its chat (a
+    worker's job: the worker's parent session and that worker). */
+export interface MonitorJob {
+  cgroup: string;
+  session: string;
+  worker?: string;
+}
+
+/** How often the job list is re-read (a job's processes are read from its cgroup every tick). */
+const JOBS_EVERY_MS = 10_000;
 
 interface ProcState {
   key: string;
@@ -287,6 +301,11 @@ export class ResourceMonitor {
   private cgroupDir?: string;
   /** The server's own cgroup path (relative to the cgroup root). */
   private serverCgroup?: string;
+  private readonly jobsOf: () => MonitorJob[];
+  private jobList: MonitorJob[] = [];
+  private jobsAt = -Infinity;
+  /** A process in a running background job's unit → who the job is charged to. */
+  private jobOwner: ReadonlyMap<number, Owner> = new Map();
   /** This tick's processes listed outside the server's unit or tree: chats in processes (units) of their own. */
   private outside: ReadonlySet<number> = new Set();
   /** This tick's processes in a chat's unit → that chat's process. */
@@ -337,6 +356,7 @@ export class ResourceMonitor {
     this.titleOf = opts.titleOf;
     this.ps = opts.ps ?? runPs;
     this.idleEvery = Math.max(1, Math.round(opts.idleEvery ?? IDLE_EVERY));
+    this.jobsOf = opts.jobs ?? (() => []);
     const held = opts.held;
     this.hostedOf = opts.hosted ?? (() => {
       const out: HostedInfo[] = [...hosted.values()].map((h) => ({
@@ -484,6 +504,27 @@ export class ResourceMonitor {
       }
     }
     if (roots.length) for (const pid of await this.tree(roots, deep)) if (!seen.has(pid)) { seen.add(pid); outside.add(pid); out.push(pid); }
+    // A background job has left its chat's unit for one of its own: its whole cgroup, charged to
+    // its chat through its record, running or not.
+    if (this.now() - this.jobsAt >= JOBS_EVERY_MS) {
+      this.jobsAt = this.now();
+      try {
+        this.jobList = this.jobsOf();
+      } catch {
+        this.jobList = [];
+      }
+    }
+    const jobOwner = new Map<number, Owner>();
+    for (const j of this.jobList) {
+      const text = readSync(join(j.cgroup, "cgroup.procs"));
+      if (text === null) continue;
+      const owner: Owner = { session: j.session, ...(j.worker ? { worker: j.worker } : {}), via: "descendant" };
+      for (const pid of pidList(text)) {
+        jobOwner.set(pid, owner);
+        if (!seen.has(pid)) { seen.add(pid); outside.add(pid); out.push(pid); }
+      }
+    }
+    this.jobOwner = jobOwner;
     this.outside = outside;
     this.unitOf = unitOf;
     for (const pid of this.chatCgroups.keys()) if (!chats.has(pid)) this.chatCgroups.delete(pid);
@@ -750,7 +791,7 @@ export class ResourceMonitor {
       for (const p of live.values()) byPid.set(p.stat.pid, { stat: p.stat, argv: p.argv, env: p.env, ...(p.cwd ? { cwd: p.cwd } : {}) });
       const { owners, inTree } = attribute({
         procs: byPid, serverPid: this.serverPid, hosted: hostedNow, sids: this.sids,
-        serverEnv: this.serverEnv, unitOf: this.unitOf,
+        serverEnv: this.serverEnv, unitOf: this.unitOf, jobOwner: this.jobOwner,
       });
       this.sids.learn(byPid, owners, at);
       // Unowned worker-looking children: a pid the runtime has not published yet; ask again

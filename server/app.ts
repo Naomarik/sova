@@ -1,6 +1,7 @@
 // The server's Hono app and its routes (buildApp), with nothing started: no listener, no
 // usage-helper child, no timers or loops. server/index.ts builds it, listens and boots everything
 // else; tests build it to drive routes through app.request() (no socket).
+import { registerJobRoutes } from "./background-jobs-routes";
 import { chatHostHealth } from "./chat-host";
 import { holderAlive, readLock } from "./chat-runtime/writer-lock";
 import { execFileSync } from "node:child_process";
@@ -618,6 +619,9 @@ export function buildApp(deps: AppDeps) {
     const r = await archiveSession(path, body.archived);
     return r.ok ? c.json(r.summary) : c.json({ error: r.error }, r.status);
   });
+
+  // A chat's background jobs and Stop (§app.background-jobs/pane).
+  registerJobRoutes(app);
 
   // Renames a session, in Sova ONLY (server/session-titles.ts): the id gets a stored title and
   // the .jsonl is never opened, let alone written — a session open in a TUI can be renamed here

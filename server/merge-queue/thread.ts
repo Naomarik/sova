@@ -54,7 +54,8 @@ export type ThreadEntry = Pick<MergeEntry, "id" | "branch" | "commit" | "target"
     `base...commit` even after it landed, when `target...commit` is empty. Absent: the target's name. */
 export type ThreadEvent =
   | { kind: "queued"; entry: ThreadEntry; base?: string }
-  | { kind: "conflict"; entry: ThreadEntry; run: string; files: string[]; base?: string }
+  /** `scratch`: the copy Sova made for the thread to resolve in (scratch.ts); `scratchError`: why none could be made. */
+  | { kind: "conflict"; entry: ThreadEntry; run: string; files: string[]; base?: string; scratch?: string; scratchError?: string }
   | { kind: "failed"; entry: ThreadEntry; run: string; summary?: string; base?: string }
   | { kind: "paused"; why: string }
   /** Nothing left to check and nothing running: `entry` changed last; `lastLanded` is the newest landing; `head` the target's. */
@@ -226,7 +227,10 @@ export function eventText(ev: ThreadEvent): string {
       const e = ev.entry;
       return [
         `Conflict: entry ${e.id} · ${e.branch} at ${short(e.commit)} conflicts with ${e.target} in ${ev.files.join(", ") || "(files in the run log)"}. Run ${ev.run}.`,
-        `Judge it (references/conflicts.md) and answer with merge.resolve {entry: "${e.id}", verdict, files, ours, theirs, proposal, commit?, note?}: no behaviour change → verdict "no-behaviour-change" with your resolution commit from a side worktree; the two sides want different behaviour → verdict "behaviour-differs", and the user decides.`,
+        ev.scratch
+          ? `Sova made a scratch copy for it at ${ev.scratch}: a worktree with no branch, at ${e.target}'s head. Resolve there, and never make a worktree of your own; Sova removes the copy when this attempt ends.`
+          : `Sova couldn't make a scratch copy for it${ev.scratchError ? ` (${ev.scratchError})` : ""}: judge it from the diff, and answer verdict "behaviour-differs" with no commit, so the user decides.`,
+        `Judge it (references/conflicts.md) and answer with merge.resolve {entry: "${e.id}", verdict, files, ours, theirs, proposal, commit?, note?}: no behaviour change → verdict "no-behaviour-change" with your resolution commit from the scratch copy; the two sides want different behaviour → verdict "behaviour-differs", and the user decides.`,
       ].join("\n");
     }
     case "failed": {

@@ -12,6 +12,8 @@ import * as c from "./worktree-cleanup";
 import { targetsRoot } from "./targets";
 import { besideGone, goneTreeState, resetRemovedWorktrees, type RemovedWorktree } from "./removed-worktrees";
 import type { GitRunner } from "./worktrees";
+import { realGit } from "./merge-queue/guard";
+import { makeScratchCopy, scratchCopyPath } from "./merge-queue/scratch";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-cleanup-test-")));
 const main = join(root, "repo");
@@ -117,6 +119,23 @@ test("classification: ancestry and content merges count as merged; no commit of 
   assert.deepEqual([of("unmerged")?.class, of("unmerged")?.why], ["unmerged", "Not merged into master."]);
   assert.equal(of("gone")?.gone, true);
   assert.equal(repo.trees.some((t) => t.path === main), false, "the main checkout is never one");
+});
+
+test("the merge queue's scratch copies (by their creation mark) are never listed; another detached worktree still is", async () => {
+  const other = join(root, "scratch-proj");
+  mkdirSync(other);
+  git(other, "init", "-q", "-b", "master");
+  commit(other, "a.txt", "a\n", "init");
+  const copy = await makeScratchCopy(realGit, { root: other, entry: "mq_cleanup1", base: git(other, "rev-parse", "HEAD") });
+  assert.equal(copy, scratchCopyPath(other, "mq_cleanup1"));
+  const plain = join(root, "scratch-proj-detached");
+  git(other, "worktree", "add", "-q", "--detach", plain);
+  const repo = await c.classifyRepo(other);
+  assert.ok(repo);
+  assert.deepEqual(repo.trees.map((t) => [t.path, t.why]), [[plain, "Not on a branch."]], "the scratch copy isn't there, as \"Not on a branch\" or anything else");
+  // Its folder gone (git still records it): still not listed, it is the queue's own to remove.
+  rmSync(copy, { recursive: true, force: true });
+  assert.deepEqual((await c.classifyRepo(other))?.trees.map((t) => t.path), [plain]);
 });
 
 test("the count covers every linked worktree in git's list, and a session with no repository gets none", async () => {

@@ -10,6 +10,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import { scratchRoot } from "../test-scratch";
+import { realGit } from "./guard";
+import { makeScratchCopy } from "./scratch";
 import {
   DEFAULT_PLAYBOOK_DIR,
   MergeThread,
@@ -370,6 +372,15 @@ test("each event names the verbs it is answered with, all of them merge verbs th
   }
 });
 
+test("conflict: the message names Sova's scratch copy to resolve in, or says none could be made and what to answer", () => {
+  const withCopy = eventText({ kind: "conflict", entry: entry("mq_5"), run: "mr_1", files: ["a.ts"], scratch: "/p/.worktrees/proj-conflict-mq_5" });
+  assert.match(withCopy, /Sova made a scratch copy for it at \/p\/\.worktrees\/proj-conflict-mq_5: a worktree with no branch, at master's head\. Resolve there, and never make a worktree of your own/);
+  assert.match(withCopy, /your resolution commit from the scratch copy/);
+  assert.doesNotMatch(withCopy, /side worktree/);
+  const none = eventText({ kind: "conflict", entry: entry("mq_5"), run: "mr_1", files: ["a.ts"], scratchError: "git worktree add failed: disk full" });
+  assert.match(none, /Sova couldn't make a scratch copy for it \(git worktree add failed: disk full\): judge it from the diff, and answer verdict "behaviour-differs" with no commit/);
+});
+
 test("idle: the queue is quiet; the newest landing and the target's head are named; the playbook decides, merge.hold is offered", () => {
   const text = eventText({ kind: "idle", entry: entry("mq_9"), lastLanded: { id: "mq_8", branch: "feat/x", sha: "c".repeat(40) }, head: "d".repeat(40) });
   assert.match(text, /^Idle: the queue has nothing left to check and nothing running \(the last change: entry mq_9 · /);
@@ -456,8 +467,10 @@ function standInModel(root: string, map: string, calls: VerbCall[]) {
     const c = /Conflict: entry (\S+) · (\S+) at (\w+) conflicts with (\S+) in/.exec(text);
     if (c) {
       const [, id, branch, , target] = c;
-      const side = join(root, "..", `resolve-${id}`);
-      git(root, "worktree", "add", "-q", "--detach", side, target!);
+      // The copy Sova names in the message, as the playbook says; a message without one: none to work in.
+      const named = /Sova made a scratch copy for it at (\S+): /.exec(text)?.[1];
+      const side = named ?? join(root, "..", `resolve-${id}`);
+      if (!named) git(root, "worktree", "add", "-q", "--detach", side, target!);
       try {
         git(side, "merge", "--no-ff", "--no-commit", branch!);
       } catch {
@@ -547,7 +560,8 @@ test("conflicts: both sides adding items is resolved as no behaviour change with
   const targetHead = commitFile(r, "list.txt", "alpha\ngamma\nomega\n", "add gamma");
   const calls: VerbCall[] = [];
   const { t, settle } = wiredThread(dir, standInModel(r, "/nonexistent", calls));
-  t.notify(r, { kind: "conflict", entry: entry("mq_add", { branch: "feat/add", commit: pinned }), run: "mr_1", files: ["list.txt"] });
+  const scratch = await makeScratchCopy(realGit, { root: r, entry: "mq_add", base: targetHead });
+  t.notify(r, { kind: "conflict", entry: entry("mq_add", { branch: "feat/add", commit: pinned }), run: "mr_1", files: ["list.txt"], scratch });
   await t.idle(r);
   await settle();
   const ok = calls.find((c) => c.args.entry === "mq_add")!;
@@ -566,6 +580,7 @@ test("conflicts: both sides adding items is resolved as no behaviour change with
   t.notify(r, { kind: "conflict", entry: entry("mq_change", { branch: "feat/change", commit: git(r, "rev-parse", "feat/change") }), run: "mr_2", files: ["list.txt"] });
   await t.idle(r);
   await settle();
+  assert.equal(git(scratch, "rev-parse", "HEAD"), commit, "the resolution was made in Sova's scratch copy");
   const differs = calls.find((c) => c.args.entry === "mq_change")!;
   assert.equal(differs.verb, "merge.resolve");
   assert.equal(differs.args.verdict, "behaviour-differs");

@@ -51,6 +51,11 @@ import { gitlabAdapter } from "./hosts/gitlab";
 import { suggestLanding } from "./hosts/repo";
 import { changeWords, editSettingsText, isEmptyChange, REVIEW_KIT_DIR, SettingsEditError } from "./settings-edit";
 import { PROJECT_PLAYBOOK } from "./thread";
+import { dropScratch, isScratchCopy, makeScratchCopy, pinResolution, sweepScratch } from "./scratch";
+
+/** Land's refusal of a worktree the merge queue made for itself (a conflict's scratch copy). */
+export const scratchRefusal = (what: string): string =>
+  `${what} is a scratch copy the merge queue made to resolve a conflict, not work of yours to land: land the branch it was made for instead`;
 
 /**
  * One merge queue per project: approved branches wait in line and are checked one at a time; a passed run lands
@@ -155,6 +160,9 @@ export interface QueueDeps {
   drafter?: Drafter;
   /** How often open requests are read on the host (default 3 min). */
   pollMs?: number;
+  /** The worktree was made by one of the merge queue's own chats (its creating tracker is a queue chat, owners.ts
+   *  queueMade): one of the scratch copies the merge thread made itself before Sova made them. Default: none is. */
+  queueMade?: (worktree: string) => Promise<boolean>;
 }
 
 /** What the queue tells the releaser about one of a release's entries. */
@@ -222,6 +230,10 @@ export class ProjectQueue {
   private publishTimer: ReturnType<typeof setTimeout> | null = null;
   private stopped = false;
   private checksCache: { head: string; def: ProjectDef | null; checks: ChecksDeclared; review: boolean; invalid?: string } | null = null;
+  /** Entries that may have a scratch copy or a pinned resolution (scratch.ts): each is removed once the entry is final. */
+  private scratchIds = new Set<string>();
+  /** Scratch copies are made and removed one at a time, in order (a retry's new copy never races the old one's removal). */
+  private scratchChain: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly deps: QueueDeps,
@@ -276,6 +288,65 @@ export class ProjectQueue {
     this.viewCache = null;
     this.store.write(this.q);
     this.schedulePublish();
+    this.tidyScratch();
+  }
+
+  // ---- scratch copies (scratch.ts) --------------------------------------------------------------
+
+  private scratchStep<T>(fn: () => Promise<T>): Promise<T> {
+    const p = this.scratchChain.then(fn, fn);
+    this.scratchChain = p.catch(() => {});
+    return p;
+  }
+
+  /** Each entry whose attempt ended (final: landed, sent back, cancelled, superseded) loses its copy and its ref. */
+  private tidyScratch(): void {
+    for (const id of [...this.scratchIds]) {
+      const e = this.entry(id);
+      if (e && !isFinal(e)) continue;
+      this.scratchIds.delete(id);
+      void this.scratchStep(async () => {
+        const r = await dropScratch(this.git, this.root, id);
+        if (r.copy || r.ref) this.log(`removed ${[r.copy ? "the scratch copy" : "", r.ref ? "the pinned resolution" : ""].filter(Boolean).join(" and ")} of ${id}`);
+      });
+    }
+  }
+
+  /** The conflict's scratch copy for the merge thread, at the target's head: its path, or why it couldn't be made. */
+  private makeScratch(e: Entry, base: string): Promise<{ scratch: string } | { scratchError: string }> {
+    this.scratchIds.add(e.id);
+    return this.scratchStep(async () => {
+      try {
+        return { scratch: await makeScratchCopy(this.git, { root: this.root, entry: e.id, base }) };
+      } catch (err) {
+        const why = err instanceof Error ? err.message : String(err);
+        this.log(`the scratch copy of ${e.id} couldn't be made: ${why}`);
+        return { scratchError: why };
+      }
+    });
+  }
+
+  /** At start: drop every copy and ref whose entry is final or gone from the queue file (pruned: final); keep the
+   *  open ones', and remember them for when they end. */
+  async sweepScratch(): Promise<string[]> {
+    const open = (id: string) => {
+      const e = this.entry(id);
+      const keep = !!e && !isFinal(e);
+      if (keep) this.scratchIds.add(id);
+      return keep;
+    };
+    return this.scratchStep(() => sweepScratch(this.git, this.root, open)).catch(() => [] as string[]);
+  }
+
+  /** Tests: wait for the scratch copies' makes and removals in flight. */
+  scratchIdle(): Promise<unknown> {
+    return this.scratchChain;
+  }
+
+  /** A worktree the merge queue made for itself: a scratch copy (by its mark), or one a queue chat created. */
+  private async queueOwned(path: string): Promise<boolean> {
+    if (isScratchCopy(path)) return true;
+    return (await this.deps.queueMade?.(path).catch(() => false)) ?? false;
   }
 
   private schedulePublish(): void {
@@ -806,6 +877,8 @@ export class ProjectQueue {
     for (const w of await worktreesOf(this.git, this.root)) {
       if (!w.branch || !w.head || w.path === this.root || w.branch === this.q.target || w.branch === "master" || w.branch === "main" || !existsSync(w.path)) continue;
       if (w.branch.startsWith("sova/")) continue;
+      // The queue's own scratch copies are never work to land, whatever branch one is on.
+      if (await this.queueOwned(w.path)) continue;
       const ahead = await countBetween(this.git, this.root, head, w.head);
       if (!ahead) continue;
       // Its subject and when it last changed (the head's committer date), in one read.
@@ -920,6 +993,7 @@ export class ProjectQueue {
   add(req: AddRequest): Promise<{ entry: MergeEntry; changed: boolean }> {
     return this.serial(async () => {
       let branch = req.branch?.replace(/^refs\/heads\//, "");
+      if (req.checkout && (await this.queueOwned(req.checkout))) throw new MergeFailure("invalid-request", scratchRefusal(req.checkout));
       if (!branch && req.checkout) {
         const r = await this.git(["symbolic-ref", "--quiet", "--short", "HEAD"], req.checkout);
         if (r.code !== 0 || !r.stdout.trim()) throw new MergeFailure("invalid-request", `${req.checkout} isn't on a branch`);
@@ -944,6 +1018,7 @@ export class ProjectQueue {
       const subject = (await this.git(["log", "-1", "--format=%s", commit], this.root)).stdout.trim();
       if (/^temp\b/i.test(subject)) throw new MergeFailure("invalid-request", `${branch}'s head is a TEMP commit ("${subject.slice(0, 60)}"): it isn't finished`);
       const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
+      if (wt && (await this.queueOwned(wt))) throw new MergeFailure("invalid-request", scratchRefusal(branch));
       if (wt && commit === tip) {
         const st = await this.git(statusArgs("--porcelain"), wt);
         const n = st.stdout.split("\n").filter(Boolean).length;
@@ -1204,6 +1279,11 @@ export class ProjectQueue {
         if (!s.ok) verdict = "behaviour-differs";
       } else if (verdict === "no-behaviour-change") throw new MergeFailure("invalid-request", "a resolution judged to change no behaviour names its commit (a merge of the target and the approved commit)");
       this.clearConflictTimer(e.id);
+      // The resolution stays reachable under a hidden ref until the run uses it (or the attempt ends).
+      if (commit) {
+        this.scratchIds.add(e.id);
+        await this.scratchStep(() => pinResolution(this.git, this.root, e.id, commit!)).catch((err) => this.log(`pinning the resolution of ${e.id} failed: ${err instanceof Error ? err.message : err}`));
+      }
       e.conflict = { files, verdict, ours: j.ours.trim(), theirs: j.theirs.trim(), proposal: j.proposal.trim(), ...(commit ? { commit } : {}), ...(sanity ? { sanity } : {}), at: this.iso() };
       if (j.note !== undefined) this.setNote(e, j.note, "thread");
       if (verdict === "no-behaviour-change") {
@@ -1305,6 +1385,11 @@ export class ProjectQueue {
         delete e.reason;
         delete e.sentBackFor;
         delete e.sentBackDrafts;
+        // Its resolution's pin went when it was sent back: one git no longer has is judged afresh by the next run.
+        if (e.conflict?.commit && (await this.git(["cat-file", "-e", `${e.conflict.commit}^{commit}`], this.root)).code !== 0) {
+          delete e.conflict;
+          e.notes = e.notes.filter((n) => n.kind !== "resolved");
+        }
         this.toFront(e);
       }
       if (this.q.paused && this.q.paused.kind !== "main-checkout-dirty") {
@@ -1886,6 +1971,9 @@ export class ProjectQueue {
           this.kickSoon();
           return;
         }
+        // The thread's scratch copy, made by Sova at the target's head (the thread never makes its own), before the
+        // entry reads as a conflict: once it does, the thread has been told where to work. Only when a thread is there.
+        const scratch = this.deps.thread ? await this.makeScratch(e, (await this.targetHead()) ?? run.base) : {};
         e.state = "conflict";
         const files = out.conflict?.files ?? [];
         delete e.conflict;
@@ -1893,7 +1981,8 @@ export class ProjectQueue {
         e.reason = `conflicts with ${this.q.target}${files.length ? ` in ${files.length} file${files.length === 1 ? "" : "s"}: ${files.slice(0, 3).join(", ")}${files.length > 3 ? ", …" : ""}` : ""}`;
         e.updatedAt = this.iso();
         this.save();
-        const asked = this.wake("conflict", e, run.id, { files });
+        const asked = this.wake("conflict", e, run.id, { files, ...scratch });
+        // No thread took it: the copy goes with the hand-back below (tidyScratch).
         if (!asked) this.handBack(e, run, `${e.reason}; no merge thread is there to judge it`, "conflict");
         else this.armConflictTimer(e, run);
         this.kickSoon();
@@ -2439,7 +2528,7 @@ export class ProjectQueue {
     kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "idle",
     e: Entry,
     run?: string,
-    extra: { files?: string[]; why?: string; namesFile?: string; lastLanded?: { id: string; branch: string; sha: string }; head?: string } = {},
+    extra: { files?: string[]; why?: string; namesFile?: string; lastLanded?: { id: string; branch: string; sha: string }; head?: string; scratch?: string; scratchError?: string } = {},
   ): boolean {
     if (!this.deps.thread) return false;
     // What the thread diffs against: the run's base, else the target as the queue last saw it.
@@ -2905,6 +2994,8 @@ export class MergeQueues {
         const q = new ProjectQueue(this.deps, root, this.deps.projectIdOf?.(root) ?? root);
         await q.load();
         const did = await q.recover();
+        const swept = await q.sweepScratch();
+        if (swept.length) did.push(`removed the scratch copies and pinned resolutions of ${swept.length} finished entr${swept.length === 1 ? "y" : "ies"} (${swept.join(", ")})`);
         for (const d of did) (this.deps.log ?? console.log)(`[merge-queue] ${q.id}: ${d}`);
         q.kickSoon();
         return q;

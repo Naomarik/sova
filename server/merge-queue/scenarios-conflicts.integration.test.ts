@@ -6,6 +6,8 @@ import { APP, LIST_PLUS, STATE, mergeCopyOf, mergesOnto, resolution, reversedRes
 import { Fixture, git, until } from "./testing/repo";
 import type { HarnessOptions } from "./testing/harness";
 import type { MergeEntry } from "../../shared/merge-queue";
+import type { ThreadEvent } from "./contract";
+import { resolveRef, scratchCopyPath, scratchMarkOf } from "./scratch";
 
 /**
  * The merge queue's use cases (team brief, TESTING): conflicts the merge thread judges. Each on a real git repository in a temp dir with a bare
@@ -191,5 +193,159 @@ describe("conflicts", () => {
     assert.equal(fx.head(), before);
     assert.match(`${s.reason ?? ""} ${JSON.stringify(s.conflict ?? {})}`, /src\/list\.txt|conflict/i, `${s.state}: ${s.reason} ${JSON.stringify(s.conflict)}`);
     assert.ok(!/machine|git merge failed/i.test(s.reason ?? ""), `not a machine failure: ${s.reason}`);
+  });
+
+  // ---- the scratch copy Sova makes for the thread (scratch.ts) --------------------------------------------------
+
+  /** The thread's resolution made where the Conflict message says: in Sova's scratch copy, never a worktree of its own. */
+  function resolveInScratch(h: { fx: Fixture }, ev: ThreadEvent, pinned: string, file: string, content: string): string {
+    assert.ok(ev.scratch, `the Conflict message names a scratch copy (${ev.scratchError ?? "no error"})`);
+    git(ev.scratch!, ["merge", "-q", "--no-ff", "--no-commit", pinned], { allowFail: true });
+    writeFileSync(join(ev.scratch!, file), content);
+    git(ev.scratch!, ["add", file]);
+    git(ev.scratch!, ["-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "--no-edit", "-m", "merge queue: resolve"]);
+    void h;
+    return git(ev.scratch!, ["rev-parse", "HEAD"]);
+  }
+  const refOf = (fx: Fixture, entry: string) => git(fx.project, ["for-each-ref", "--format=%(objectname)", resolveRef(entry)]);
+  const worktreeList = (fx: Fixture) => git(fx.project, ["worktree", "list", "--porcelain"]);
+  /** The copy and the pinned resolution of `entry` are gone (removed after the save that made the entry final). */
+  async function scratchGone(fx: Fixture, entry: string): Promise<void> {
+    const path = scratchCopyPath(fx.project, entry);
+    await until(`${entry}'s scratch copy and ref removed`, () => !existsSync(path) && !refOf(fx, entry) && !worktreeList(fx).includes(path));
+  }
+  /** What the copy looked like when the thread was told: there, detached at the target's head, marked, never Ready. */
+  type Seen = { path: string; detached: boolean; atHead: boolean; marked: boolean; readyBranches: string[]; readyTrees: string[] };
+  /** The Ready rows read from git now (the list is otherwise kept 15 s while the target stands still). */
+  const freshReady = (h: { queue(): unknown }) => {
+    const q = h.queue() as { readyCache: unknown; readyRows(): Promise<{ branch: string; worktree: string }[]> };
+    q.readyCache = null;
+    return q.readyRows();
+  };
+  async function look(h: { fx: Fixture; queue(): unknown }, ev: ThreadEvent): Promise<Seen> {
+    const path = ev.scratch!;
+    const rows = await freshReady(h);
+    return {
+      path,
+      detached: git(path, ["symbolic-ref", "-q", "HEAD"], { allowFail: true }) === "",
+      atHead: git(path, ["rev-parse", "HEAD"]) === h.fx.head(),
+      marked: scratchMarkOf(path)?.entry === ev.entry.id,
+      readyBranches: rows.map((r) => r.branch),
+      readyTrees: rows.map((r) => r.worktree),
+    };
+  }
+  const assertSeen = (s: Seen | null, entry: string, fx: Fixture) => {
+    assert.ok(s, "the thread was told of the conflict");
+    assert.equal(s.path, scratchCopyPath(fx.project, entry));
+    assert.ok(s.detached, "the copy is on no branch");
+    assert.ok(s.atHead, "the copy stands at the target's head");
+    assert.ok(s.marked, "the copy carries the queue's mark");
+    assert.ok(!s.readyTrees.includes(s.path), `never a Ready row: ${JSON.stringify(s.readyTrees)}`);
+  };
+
+  test("S2g: Sova makes the scratch copy, the thread resolves in it, it lands: the copy and its pinned resolution go", async () => {
+    let seen: Seen | null = null;
+    let pinned = "";
+    let res = "";
+    const { fx, h, b } = await twoAppenders({
+      thread: {
+        conflict: async (h, e, ev) => {
+          seen = await look(h, ev);
+          res = resolveInScratch(h, ev, e.commit, "src/list.txt", LIST_PLUS("delta\necho"));
+          await h.resolve(e.id, { verdict: "no-behaviour-change", files: ["src/list.txt"], ours: "master adds delta", theirs: "the branch adds echo", proposal: "keep both", commit: res });
+          pinned = refOf(h.fx, e.id);
+          // A branch made in the copy still never makes it Ready.
+          git(ev.scratch!, ["switch", "-q", "-c", `stray-${e.id}`]);
+          const rows = await freshReady(h);
+          assert.ok(!rows.some((r) => r.worktree === ev.scratch || r.branch === `stray-${e.id}`), `a branch switched to in the copy isn't Ready either: ${JSON.stringify(rows)}`);
+          git(ev.scratch!, ["switch", "-q", "--detach", res]);
+          git(h.fx.project, ["branch", "-D", `stray-${e.id}`]);
+        },
+      },
+    });
+    const eb = await h.add({ branch: b.branch });
+    const landed = await h.waitEntry(eb.id, settled);
+    assert.equal(landed.state, "landed", `${landed.state}: ${landed.reason}`);
+    assertSeen(seen, eb.id, fx);
+    assert.equal(pinned, res, "merge.resolve pinned the resolution under the hidden ref");
+    assert.equal(fx.head(), res);
+    await scratchGone(fx, eb.id);
+  });
+
+  test("S3c: behaviour differs, Send Back: the scratch copy and the proposal's pin go", async () => {
+    let seen: Seen | null = null;
+    const { fx, h, b } = await differing({
+      thread: {
+        conflict: async (h, e, ev) => {
+          seen = await look(h, ev);
+          const c = resolveInScratch(h, ev, e.commit, "src/app.txt", APP("THREE-B"));
+          await h.resolve(e.id, { verdict: "behaviour-differs", files: ["src/app.txt"], ours: "line 3 reads THREE-A", theirs: "line 3 reads THREE-B", proposal: "take THREE-B", commit: c });
+        },
+      },
+    });
+    const eb = await h.add({ branch: b.branch });
+    assert.equal((await h.waitEntry(eb.id, settled)).state, "behaviour-differs");
+    assertSeen(seen, eb.id, fx);
+    assert.ok(refOf(fx, eb.id), "the proposal is pinned while it waits for the user");
+    assert.ok(existsSync(scratchCopyPath(fx.project, eb.id)), "the copy stays while the attempt is open");
+    await h.answer(eb.id, "send-back");
+    assert.equal((await h.waitEntry(eb.id, ["needs-fix"])).state, "needs-fix");
+    await scratchGone(fx, eb.id);
+  });
+
+  test("S2h: a conflict cancelled while the thread works: the scratch copy goes", async () => {
+    let seen: Seen | null = null;
+    const { fx, h, b } = await twoAppenders({
+      thread: {
+        conflict: async (h, _e, ev) => {
+          seen = await look(h, ev);
+        },
+      },
+    });
+    const eb = await h.add({ branch: b.branch });
+    await h.waitEntry(eb.id, (x) => x.state === "conflict");
+    await until("the thread was told", () => seen);
+    assertSeen(seen, eb.id, fx);
+    await h.cancel(eb.id);
+    await scratchGone(fx, eb.id);
+  });
+
+  test("S2i: approved again at a newer commit while in conflict (superseded): the old attempt's copy goes", async () => {
+    const seen: Seen[] = [];
+    const { fx, h, b } = await twoAppenders({
+      thread: {
+        conflict: async (h, _e, ev) => {
+          seen.push(await look(h, ev));
+        },
+      },
+    });
+    const eb = await h.add({ branch: b.branch });
+    await h.waitEntry(eb.id, (x) => x.state === "conflict");
+    await until("the thread was told", () => seen.length > 0 || null);
+    assertSeen(seen[0]!, eb.id, fx);
+    fx.commitIn(b.checkout, { "src/more.txt": "more\n" }, "more on b");
+    const newer = await h.add({ branch: b.branch });
+    assert.notEqual(newer.id, eb.id);
+    assert.equal((await h.entry(eb.id)).state, "cancelled");
+    await scratchGone(fx, eb.id);
+  });
+
+  test("S2j: Sova restarts while a conflict waits: the open attempt keeps its copy; once it ends, it goes", async () => {
+    let seen: Seen | null = null;
+    const { fx, h, b } = await twoAppenders({
+      thread: {
+        conflict: async (h, _e, ev) => {
+          seen = await look(h, ev);
+        },
+      },
+    });
+    const eb = await h.add({ branch: b.branch });
+    await h.waitEntry(eb.id, (x) => x.state === "conflict");
+    await until("the thread was told", () => seen);
+    await h.restart();
+    assert.equal((await h.entry(eb.id)).state, "conflict");
+    assert.ok(existsSync(scratchCopyPath(fx.project, eb.id)), "the start's sweep keeps an open entry's copy");
+    await h.cancel(eb.id);
+    await scratchGone(fx, eb.id);
   });
 });

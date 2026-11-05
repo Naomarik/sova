@@ -20,6 +20,7 @@ import { canonical, isWithin, WORKTREES_ENTRY_TYPE } from "../pi-config/extensio
 import { readStoredCwd } from "./git-summary";
 import { lineHeader, lineNeedle } from "./harness/pi/reader";
 import { worktreesRemoved } from "./merge-readiness";
+import { scratchCopiesIn } from "./merge-queue/scratch";
 import { appendLedger, mergedByContent, resetContentMerges, type RemovedWorktree } from "./removed-worktrees";
 import { sandboxInfo } from "./sandbox-state";
 import { parseTargetCwd } from "./targets";
@@ -248,7 +249,11 @@ export async function classifyRepo(dir: string, git: GitRunner = need().git): Pr
     if (r.code === 0) for (const ref of r.stdout.split("\n")) if (ref.startsWith("refs/heads/")) ancestors.add(ref.slice(11));
   }
   const trees: ClassifiedTree[] = [];
+  // The merge queue's scratch copies (by the mark it leaves in each one's admin dir) are its own, removed when their
+  // landing attempt ends: never listed here, so never offered or kept with a reason.
+  const scratch = new Set(scratchCopiesIn(commonDir).map((c) => canonical(c.path)));
   for (const w of linked) {
+    if (scratch.has(canonical(w.path))) continue;
     const base: ClassifiedTree = { path: w.path, ...(w.branch ? { branch: w.branch } : {}), ...(w.head ? { head: w.head } : {}), locked: w.locked, gone: w.prunable || !existsSync(w.path), class: "unmerged", ancestor: false };
     if (!w.branch || !w.head) {
       trees.push({ ...base, why: "Not on a branch." });

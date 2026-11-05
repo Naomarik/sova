@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The conflicted hunks of a merge stopped on conflicts, for the merge thread to judge.
 //
-//   node conflict-hunks.mjs --repo <side worktree>
+//   node conflict-hunks.mjs --repo <scratch copy>
 //
 // Reads every unmerged file (`git diff --name-only --diff-filter=U`) and prints one JSON object:
 // {"files":[{"file","hunks":[{"line","ours":[…],"base":[…]|null,"theirs":[…]}]}], "other":[…]}.

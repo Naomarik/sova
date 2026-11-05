@@ -150,5 +150,8 @@ export interface ThreadEvent {
   lastLanded?: { id: string; branch: string; sha: string };
   /** idle: the target's head now. */
   head?: string;
+  /** conflict: the scratch copy Sova made for the thread to resolve in (scratch.ts), or why it couldn't. */
+  scratch?: string;
+  scratchError?: string;
 }
 export type WakeThread = (ev: ThreadEvent) => boolean;

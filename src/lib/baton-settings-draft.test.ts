@@ -43,8 +43,8 @@ test("photo limits: the saved settings read back as the form, and a number outsi
   assert.deepEqual(dirtyForms().map((f) => f.label), ["Organizations"]);
   for (const [bad, said] of [
     [{ perMessage: "9" }, "Photos per message must be a whole number from 1 to 8."],
-    [{ mb: "0" }, "Largest photo, MB must be a whole number from 1 to 10."],
-    [{ mb: "11" }, "Largest photo, MB must be a whole number from 1 to 10."],
+    [{ mb: "0" }, "Largest photo (MB) must be a whole number from 1 to 10."],
+    [{ mb: "11" }, "Largest photo (MB) must be a whole number from 1 to 10."],
     [{ perConversation: "201" }, "Photos per conversation must be a whole number from 1 to 200."],
     [{ perMessage: "2.5" }, "Photos per message must be a whole number from 1 to 8."],
   ] as const) {
@@ -62,7 +62,7 @@ test("the largest file (§app.baton/files): reads back as the form, and outside 
   assert.deepEqual(dirtyForms().map((f) => f.label), ["Organizations"]);
   for (const bad of ["0", "26", "2.5", ""]) {
     setBatonDraft(form({ fileMb: bad }));
-    assert.equal(invalidForms()[0]?.problem(), "Organizations: Largest file, MB must be a whole number from 1 to 25.", bad);
+    assert.equal(invalidForms()[0]?.problem(), "Organizations: Largest file (MB) must be a whole number from 1 to 25.", bad);
   }
   resetAllDrafts();
 });

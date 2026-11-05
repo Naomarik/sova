@@ -19,7 +19,7 @@ const whole = (label: string, b: { min: number; max: number }): WholeRule => ({ 
 export const BATON_RULES = {
   messagesMax: whole("Message limit", { min: MESSAGES_MIN, max: MESSAGES_CAP }),
   perMessage: whole("Photos per message", PHOTOS_PER_MESSAGE),
-  mb: whole("Largest photo, MB", PHOTO_MB),
+  mb: whole("Largest photo (MB)", PHOTO_MB),
   perConversation: whole("Photos per conversation", PHOTOS_PER_CONVERSATION),
-  fileMb: whole("Largest file, MB", FILE_MB),
+  fileMb: whole("Largest file (MB)", FILE_MB),
 };

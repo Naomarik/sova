@@ -426,26 +426,19 @@ function ExperimentalPanel() {
         your chats.
       </p>
       <div>
-        <label class="toggle toggle-switch settings-team-enable">
-          <span>Sova runs chat modes</span>
-          <input
-            type="checkbox"
-            // The server answers every switch; before it does, the switch waits disabled (never a guessed value).
-            checked={experimentalDraft()?.sovaModes ?? false}
-            disabled={experimentalSaving() || experimentalDraft() === null}
-            aria-describedby="experimental-sova-modes-hint"
-            onChange={(e) => {
-              const d = experimentalDraft();
-              if (d) setExperimentalDraft({ ...d, sovaModes: e.currentTarget.checked });
-            }}
-          />
-          <span class="toggle-box" />
-        </label>
-        <p class="field-hint" id="experimental-sova-modes-hint">
-          Sova runs every chat's modes itself, instead of the pi mode extension. Turn it off to go back to the old way;
-          nothing is lost either way. Open chats switch over at their next quiet moment; workers already running
-          finish the way they started.
-        </p>
+        <Toggle
+          switch
+          class="settings-team-enable"
+          label="Sova runs chat modes"
+          hint="Sova runs every chat's modes itself, instead of the pi mode extension. Turn it off to go back to the old way; nothing is lost either way. Open chats switch over at their next quiet moment; workers already running finish the way they started."
+          // The server answers every switch; before it does, the switch waits disabled (never a guessed value).
+          checked={experimentalDraft()?.sovaModes ?? false}
+          disabled={experimentalSaving() || experimentalDraft() === null}
+          onChange={(on) => {
+            const d = experimentalDraft();
+            if (d) setExperimentalDraft({ ...d, sovaModes: on });
+          }}
+        />
       </div>
       <Show when={webSettings.error}>
         <Banner tone="error" title="Couldn't read the experimental settings." body="Nothing was changed." />

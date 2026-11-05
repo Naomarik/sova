@@ -274,7 +274,7 @@ anyway: the gate knows names, not meaning (a chat title can say more than a name
 **Adding a shot:** add an entry to `SHOTS`: `id` (the file name), `alt`, `route` (a hash;
 `{project}` is the project's id), optional `steps` (`{ click: "<button text>" }` or
 `{ click: { css } }`, `{ scroll: "<selector>" }` to the top of its scroller, `{ wait: ms }`,
-`{ waitFor: "<css>" }`), `clip` (a selector, or several for the box around them; `pad`), `tall`
+`{ waitFor: "<css>" }`), `clip` (a selector, or several for the box around them; `pad`; `clipX` a selector for the left and right edges; `endAt` selectors, the first present sets the bottom, `endPad`), `tall`
 (viewport height in CSS px; the width is 1440), `project`, and `copy: true` for a shot that needs
 a test copy. Find selectors and button names with `--explore`. If something private shows, add a
 rule to `MASK` rather than to the shot.
@@ -296,10 +296,10 @@ first (the hold's own message names the file), then a shot of `acme-ready` (`cli
 
 | Shot | What | From |
 | --- | --- | --- |
-| `merge-queue-tab` | The Merge Queue tab: master and origin, the queue running, the merge thread, the branch checking now with its summary and progress, the branches waiting | live |
-| `merge-queue-run` | One run's page: the merge copy, the merge, setup, spec docs, review, each check with its time | live |
+| `merge-queue-tab` | Tab bar and card only (as are the run and Releases shots). The Merge Queue tab: master and origin, the queue running, the merge thread, the branch checking now with its summary and progress, the branches waiting | live |
+| `merge-queue-run` | One run's page: the merge copy, the merge, setup, spec docs, review, each check with its time; ends at a failed check's title, above its log | live |
 | `landing-progress` | Cropped: the branch being checked (check N of M, progress bar, time) and the next in line (In line · 1, starts in) | live |
-| `releases-tab` | Releases: latest release, landings since, Release Note and Start Release, history with the newest's notes open | live |
+| `releases-tab` | Releases: latest release, landings since, Release Note and Start Release, the newest four releases of the history | live |
 | `settings-merge-queue` | Settings → Merge Queue for one project: how it lands | live |
 | `settings-merge-queue-checks` | The same, at its checks | live |
 | `release-in-progress` | A release mid-way: done steps, gating checks passed, Try it on the staging copy held (Continue), a failed smoke test (Retry Step), Publish waiting | test copy |

@@ -50,14 +50,22 @@ const THEME = flag("--light") ? "light" : "dark";
 //   { click: "<visible text>" | { css: "<selector>" } }  (refused when it reads as an action)
 //   { scroll: "<selector>" } (to the top of its scroller; any Playwright selector, text=... too)  { wait: <ms> }  { waitFor: "<css>" }
 // clip: a CSS selector (or several: the box around the first match of each) to cut the shot to,
-// padded by pad (CSS px, default 16); none for the whole viewport.
+// padded by pad (CSS px, default 16); none for the whole viewport. clipX: a selector whose box
+// sets the left and right edges instead. endAt: selectors, the first one on the page sets the
+// bottom edge (its bottom, plus endPad, default pad).
 // tall: a viewport height for this shot (CSS px), for a long page.
+// A project tab's own card (the Merge Queue, a run, Releases): the tab panel's first child.
+const PANEL_CARD = "#project-tabpanel > *";
 const SHOTS = [
   {
     id: "merge-queue-tab",
     alt: "A project's Merge Queue tab: master and origin in step, the queue running with its merge thread idle, one branch being checked with its plain-words summary, and the branches queued behind it.",
     route: "#/projects/{project}/merge-queue",
-    tall: 1400,
+    tall: 2400,
+    // The tab bar and the tab's card: no sidebar, project header, Overseer line or stat chips.
+    clip: [".project-tabs", PANEL_CARD],
+    clipX: PANEL_CARD,
+    endAt: [".mq-list > li"],   // through the first branch waiting
   },
   {
     id: "merge-queue-run",
@@ -65,7 +73,12 @@ const SHOTS = [
     route: "#/projects/{project}/merge-queue",
     // The run being checked now (a link: it opens the run's page, nothing more).
     steps: [{ click: { css: '.mq-card[aria-label="Checking now"] a[href*="/merge-queue/"]' } }, { wait: 2500 }],
-    tall: 1300,
+    tall: 2400,
+    // The tab bar and the tab's card: no sidebar, project header, Overseer line or stat chips.
+    clip: [".project-tabs", PANEL_CARD],
+    clipX: PANEL_CARD,
+    // A failed check's log runs long and red: end at its title; else after the last step.
+    endAt: [".mq-step-failed .mq-step-name", ".mq-run-steps"],
   },
   {
     id: "landing-progress",
@@ -76,10 +89,14 @@ const SHOTS = [
   },
   {
     id: "releases-tab",
-    alt: "A project's Releases tab: the latest release and the landings since, Release Note and Start Release, and the history of published releases, the newest with its notes open.",
+    alt: "A project's Releases tab: the latest release and the landings since, Release Note and Start Release, and the history of published releases, each with its commit, age and notes.",
     route: "#/projects/{project}/releases",
-    tall: 1500,
-    steps: [{ click: { css: 'text="Notes"' } }],
+    tall: 2400,
+    // The tab bar and the tab's card: no sidebar, project header, Overseer line or stat chips.
+    clip: [".project-tabs", PANEL_CARD],
+    clipX: PANEL_CARD,
+    endAt: [".rel-history > li:nth-child(4)"],   // the newest four releases
+    endPad: 0,
   },
   {
     id: "settings-merge-queue",
@@ -306,8 +323,15 @@ for (const shot of todo) {
         boxes.push(box);
       }
       const pad = shot.pad ?? 16;
-      const x = Math.max(0, Math.min(...boxes.map((b) => b.x)) - pad), y = Math.max(0, Math.min(...boxes.map((b) => b.y)) - pad);
-      clip = { x, y, width: Math.max(...boxes.map((b) => b.x + b.width)) + pad - x, height: Math.max(...boxes.map((b) => b.y + b.height)) + pad - y };
+      const xs = shot.clipX ? [await page.locator(shot.clipX).first().boundingBox()] : boxes;
+      if (!xs[0]) throw new Error(`${shot.clipX}: not on the page`);
+      const x = Math.max(0, Math.min(...xs.map((b) => b.x)) - pad), y = Math.max(0, Math.min(...boxes.map((b) => b.y)) - pad);
+      let bottom = Math.max(...boxes.map((b) => b.y + b.height));
+      for (const sel of shot.endAt ?? []) {
+        const b = (await page.locator(sel).count()) ? await page.locator(sel).first().boundingBox() : null;
+        if (b) { bottom = b.y + b.height - pad + (shot.endPad ?? pad); break; }
+      }
+      clip = { x, y, width: Math.max(...xs.map((b) => b.x + b.width)) + pad - x, height: bottom + pad - y };
     }
     const png = await page.screenshot({ clip, animations: "disabled" });
     if (flag("--png")) { mkdirSync(DEBUG_DIR, { recursive: true }); writeFileSync(join(DEBUG_DIR, `${shot.id}.png`), png); }

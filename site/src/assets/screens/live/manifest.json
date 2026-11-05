@@ -2,13 +2,14 @@
   "shots": {
     "merge-queue-tab": {
       "file": "merge-queue-tab.webp",
-      "width": 2880,
-      "height": 2800,
+      "width": 1824,
+      "height": 2300,
       "theme": "dark",
       "alt": "A project's Merge Queue tab: master and origin in step, the queue running with its merge thread idle, one branch being checked with its plain-words summary, and the branches queued behind it.",
       "source": "live",
       "taken": "2026-11-05",
-      "bytes": 156360
+      "bytes": 110054,
+      "note": "the earlier live capture, re-cropped to the script's tab-panel crop (the live queue was idle at the retake)"
     },
     "landing-progress": {
       "file": "landing-progress.webp",
@@ -22,23 +23,24 @@
     },
     "releases-tab": {
       "file": "releases-tab.webp",
-      "width": 2880,
-      "height": 3000,
+      "width": 1824,
+      "height": 1582,
       "theme": "dark",
-      "alt": "A project's Releases tab: the latest release and the landings since, Release Note and Start Release, and the history of published releases, the newest with its notes open.",
+      "alt": "A project's Releases tab: the latest release and the landings since, Release Note and Start Release, and the history of published releases, each with its commit, age and notes.",
       "source": "live",
       "taken": "2026-11-05",
-      "bytes": 114976
+      "bytes": 41486
     },
     "merge-queue-run": {
       "file": "merge-queue-run.webp",
-      "width": 2880,
-      "height": 2600,
+      "width": 1824,
+      "height": 1958,
       "theme": "dark",
-      "alt": "One merge-queue run: the branch merged onto the newest master in its own copy, each check with its state and time, and the steps still to come.",
+      "alt": "One merge-queue run: the branch merged onto the newest master in its own copy, setup, spec docs, review, typecheck and unit tests passed, and the integration check, each with its time.",
       "source": "live",
       "taken": "2026-11-05",
-      "bytes": 132852
+      "bytes": 72958,
+      "note": "the earlier live capture, re-cropped to the script's tab-panel crop (the live queue was idle at the retake)"
     },
     "settings-merge-queue": {
       "file": "settings-merge-queue.webp",

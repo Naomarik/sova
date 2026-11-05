@@ -23,6 +23,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
 import type { MergeEntry, MergeThreadAsk } from "../../shared/merge-queue";
+import { mergeThreadTitle } from "../../shared/fixed-names";
 
 /** A thread without memory older than this is replaced at its next event (a thread with memory never ages out). */
 export const THREAD_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -465,9 +466,7 @@ export class MergeThread {
       why = `it refused messages (${r.error})`;
       this.say(`${root}: the thread refused a message three times (${r.error}); starting a fresh one`);
     } else if (rec) this.say(`${root}: a fresh thread, since ${why}`);
-    const date = new Date(now).toISOString().slice(0, 10);
-    const name = root.split("/").filter(Boolean).pop() ?? root;
-    const r = await withTimeout(this.deps.create(root, firstText(root, playbook, ev), `Merge thread · ${name} · ${date}`), ms, "starting the thread");
+    const r = await withTimeout(this.deps.create(root, firstText(root, playbook, ev), mergeThreadTitle(root, now)), ms, "starting the thread");
     if (!r.ok) throw new Error(`couldn't start a thread: ${r.error}`);
     const history = rec ? this.retireRecord(root, rec, why ?? "replaced", false) : (readStored(this.deps.file)[root]?.history ?? []);
     const all = readStored(this.deps.file);

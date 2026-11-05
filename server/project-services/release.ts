@@ -42,6 +42,7 @@ import {
   type StepState,
 } from "../../shared/release";
 import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
+import { releaseChatTitle, withdrawChatTitle } from "../../shared/fixed-names";
 import { type Git, isAncestor, realGit as queueGit, revParse } from "../merge-queue/guard";
 import type { ProjectQueue, ReleaseQueueEvent } from "../merge-queue/queue";
 import { MergeFailure } from "../merge-queue/queue";
@@ -580,7 +581,7 @@ export class Releaser {
 
   /** The release chat's title: the same shape throughout, with the tag once known. */
   titleOf(rec: ReleaseRecord): string {
-    return `Release ${rec.tag ?? "(version not picked yet)"} of ${basename(rec.project)}`;
+    return releaseChatTitle(rec);
   }
 
   private async failStart(rec: ReleaseRecord, q: ProjectQueue, why: string): Promise<never> {
@@ -963,7 +964,7 @@ export class Releaser {
       if (steps.length) {
         const woke = rec.thread?.path ? await this.deps.thread.wake(rec.thread.path, `Release ${tag} was withdrawn: ${why}. Run the withdraw steps now (${steps.map((x) => x.id).join(", ")}) and report each.`).catch(() => ({ ok: false as const, error: "wake failed" })) : { ok: false as const, error: "no chat" };
         if (!woke.ok && rec.thread?.checkout && existsSync(rec.thread.checkout)) {
-          const st = await this.deps.thread.start({ root, checkout: rec.thread.checkout, text: `Release ${rec.id} (${tag}) of ${root} was withdrawn: ${why}. Run its withdraw steps (${steps.map((x) => x.id).join(", ")}) following the project's release playbook, and report each with release.step {release: "${rec.id}", …}.`, title: `Withdraw ${tag}` });
+          const st = await this.deps.thread.start({ root, checkout: rec.thread.checkout, text: `Release ${rec.id} (${tag}) of ${root} was withdrawn: ${why}. Run its withdraw steps (${steps.map((x) => x.id).join(", ")}) following the project's release playbook, and report each with release.step {release: "${rec.id}", …}.`, title: withdrawChatTitle(tag) });
           if (!("error" in st)) {
             rec.thread = { ...rec.thread, session: st.id, path: st.path };
             this.save(rec);

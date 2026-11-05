@@ -34,8 +34,9 @@ import { dropSessionTags, tagsFor, tagsReader } from "./session-tags";
 import { branchesOverlay, pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { listGeneration } from "./list-generation";
 import { projectOf, projectOverseerOfPath, readPoState } from "./project-overseer-store";
-import { memoSovaChatNames, readSovaChatNames, type SovaChatName } from "./sova-chat-names";
-import { SOVA_NAMED_FALLBACK, sovaNamedKind, type FixedNameKind } from "../shared/fixed-names";
+import { memoSovaChatNames, readSovaChatNames, setSovaChatName, type SovaChatName } from "./sova-chat-names";
+import { rebuildSovaName } from "./sova-chat-origin";
+import { SOVA_NAMED_FALLBACK, sovaNamedKind, type FixedNameKind, type SovaNamedKind } from "../shared/fixed-names";
 import { projectOverseerUnread } from "./project-overseer-unread";
 import { engineBuildsReader, type EngineBuildsReader } from "./build-loadout";
 import { projectCodingIds, projectKeeps, projectSessionLookup } from "./project-sessions";
@@ -103,6 +104,8 @@ interface FixedFacts {
   projectOverseer?: { projectId: string } | null;
   baton?: boolean;
   profile?: SessionSummary["profile"];
+  /** The file's header time: tells a withdrawal's own chat from the release chat it followed. */
+  createdAt?: string;
 }
 export interface FixedName {
   kind: FixedNameKind;
@@ -122,10 +125,12 @@ function projectNameOf(projectId: string): string | null {
 
 /**
  * The name Sova fixes for a chat, or null for every other chat. The overseers' names are derived (the project's
- * current name); a merge queue chat's or release chat's is the one Sova recorded when it started the chat
- * (server/sova-chat-names.ts, a store no rename writes), else, for a chat started before that record, its stored
- * title when Sova's own namer wrote it, else the kind's word; a gathering's is its public title. Already-stored
- * titles of these chats, the user's or the Overseer's, are never read.
+ * current name); a gathering's is its public title; a merge queue chat's or release chat's is the one Sova recorded
+ * when it started the chat (server/sova-chat-names.ts, a store no rename writes). For a chat started before that
+ * record, the name is rebuilt from Sova's own records with the start paths' formatters (server/sova-chat-origin.ts)
+ * and recorded then, once; failing that, a merge chat's stored title when Sova wrote it (`auto`: the namer never
+ * names a merge chat), else the kind's word. A release chat's `auto` title is never trusted: the namer may have
+ * written it. Titles the user or the Overseer stored on these chats are never read.
  */
 export function fixedNameOf(f: FixedFacts, names: Readonly<Record<string, SovaChatName>> = memoSovaChatNames(), titles: Readonly<Record<string, StoredTitle>> = memoSessionTitleRecords()): FixedName | null {
   if (f.overseer) return { kind: "overseer", name: "Overseer" };
@@ -141,15 +146,36 @@ export function fixedNameOf(f: FixedFacts, names: Readonly<Record<string, SovaCh
   const kind = sovaNamedKind(f.profile) ?? given?.kind;
   if (!kind) return null;
   if (given) return { kind, name: given.name };
+  const rebuilt = rebuiltName(kind, f);
+  if (rebuilt) return { kind, name: rebuilt };
   const stored = titles[f.id];
-  return { kind, name: stored?.by === "auto" ? stored.title : SOVA_NAMED_FALLBACK[kind] };
+  return { kind, name: kind !== "release" && stored?.by === "auto" ? stored.title : SOVA_NAMED_FALLBACK[kind] };
+}
+
+/** Ids whose name couldn't be rebuilt, and when that was found: asked again a minute later at most. */
+const unrebuilt = new Map<string, number>();
+const UNREBUILT_MS = 60_000;
+
+/** The rebuilt Sova name of a chat started before Sova recorded it, recorded now so it is read once. */
+function rebuiltName(kind: SovaNamedKind, f: FixedFacts, now = Date.now()): string | null {
+  const miss = unrebuilt.get(f.id);
+  if (miss !== undefined && now - miss < UNREBUILT_MS) return null;
+  const name = rebuildSovaName(kind, f.id, f.path, f.createdAt);
+  if (!name) {
+    if (unrebuilt.size > 2000) unrebuilt.clear();
+    unrebuilt.set(f.id, now);
+    return null;
+  }
+  unrebuilt.delete(f.id);
+  setSovaChatName(f.id, kind, name);
+  return name;
 }
 
 /** The facts of one file from what is cached of it (or, with nothing cached, its id from the file name). */
 function fixedFactsOfPath(path: string, entry: CacheEntry | undefined = cache.get(path)): FixedFacts {
   const id = entry?.summary.id ?? idOf(path);
   const overseer = (entry ? entry.marked : true) && isOverseerId(id);
-  return { id, path, overseer, projectOverseer: overseer ? null : projectOverseerOfPath(path, id, entry?.mtimeMs), profile: entry?.summary.profile };
+  return { id, path, overseer, projectOverseer: overseer ? null : projectOverseerOfPath(path, id, entry?.mtimeMs), profile: entry?.summary.profile, createdAt: entry?.summary.createdAt };
 }
 
 /** A file's fixed name, from its cached summary when there is one (else its file name and Sova's records). */
@@ -1454,7 +1480,7 @@ async function buildSessionsNow(track?: { files: string[]; dirty: ReadonlySet<st
     const ownRec = own.get(s.path);
     // The husk check above reads the DERIVED title on purpose: what keeps an empty session out of
     // the list is that nobody has written in it, which renaming it doesn't change.
-    const fixed = fixedNameOf({ id: s.id, path: s.path, overseer: !!s.overseer, projectOverseer: special.projectOverseer, baton: !!special.baton, profile: s.profile }, sovaNames, titles);
+    const fixed = fixedNameOf({ id: s.id, path: s.path, overseer: !!s.overseer, projectOverseer: special.projectOverseer, baton: !!special.baton, profile: s.profile, createdAt: s.createdAt }, sovaNames, titles);
     const row: SessionSummary = {
       ...withFixedName(withTitle(s, titles), fixed),
       ...outlineOverlay(s, liveOutline(l, ownRec)),
@@ -1545,7 +1571,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
   const groupId = r.groups[s.id];
   const worker = await workerSessions.isWorker(s.path).catch(() => false);
   const special = r.fields(s.path, s.id, s.cwd);
-  const fixed = fixedNameOf({ id: s.id, path: s.path, overseer: !!s.overseer, projectOverseer: special.projectOverseer, baton: !!special.baton, profile: s.profile }, r.sovaNames, r.titles);
+  const fixed = fixedNameOf({ id: s.id, path: s.path, overseer: !!s.overseer, projectOverseer: special.projectOverseer, baton: !!special.baton, profile: s.profile, createdAt: s.createdAt }, r.sovaNames, r.titles);
   const row: SessionSummary = {
     ...withFixedName(withTitle(s, r.titles), fixed),
     ...outlineOverlay(s, liveOutline(l, ownRec)),

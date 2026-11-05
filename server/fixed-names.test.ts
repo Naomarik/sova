@@ -41,6 +41,9 @@ const { disposeAllChats } = await import("./chat-manager");
 const { nameSession } = await import("./session-autotitle");
 const { relabelFixed } = await import("./resource-monitor");
 const { sessionName } = await import("./session-names");
+const { stateRoot } = await import("./state-root");
+const { projectKey } = await import("./merge-queue/store");
+const { memoSovaChatNames } = await import("./sova-chat-names");
 
 after(async () => {
   await disposeAllChats();
@@ -54,6 +57,7 @@ const userLine = (text: string) => line({ type: "message", id: `u${++n}`, parent
 /** A pi session name (pi's /name, session_info): never a fixed chat's name either. */
 const piName = (name: string) => line({ type: "session_info", id: `n${++n}`, parentId: null, name });
 const sova = (id: string) => ({ id, label: id, icon: "branch", source: "sova" });
+const profileLine = (id: string) => line({ type: "custom", customType: "sova-profile", id: "p1", parentId: null, data: { v: 1, profile: sova(id) } });
 
 /** A session file in `dir`, with the given lines after its header. */
 function file(dir: string, lines: string[], id = newId()): { id: string; path: string } {
@@ -235,11 +239,14 @@ describe("the chats Sova starts with a name", () => {
     });
   }
 
-  test("a chat started before Sova recorded its name reads its own automatic title, else the kind's word", async () => {
-    const named = file(sessionsDir, [line({ type: "custom", customType: "sova-profile", id: "p1", parentId: null, data: { v: 1, profile: sova("release-thread") } }), userLine("huh")]);
-    writeAutoTitle(named.id, "Release v0.9 of sova");
-    await readsEverywhere(named.path, "Release v0.9 of sova");
-    const renamed = file(sessionsDir, [line({ type: "custom", customType: "sova-profile", id: "p1", parentId: null, data: { v: 1, profile: sova("merge-thread") } }), userLine("huh")]);
+  test("with no record of Sova's anywhere: a merge chat's own automatic title, else the kind's word; never a release chat's auto title", async () => {
+    const thread = file(sessionsDir, [profileLine("merge-thread"), userLine("huh")]);
+    writeAutoTitle(thread.id, "Merge thread · gone · 2026-01-01");
+    await readsEverywhere(thread.path, "Merge thread · gone · 2026-01-01");
+    const release = file(sessionsDir, [profileLine("release-thread"), userLine("huh")]);
+    writeAutoTitle(release.id, "Release v0.9 of sova");
+    await readsEverywhere(release.path, "Release chat");
+    const renamed = file(sessionsDir, [profileLine("merge-thread"), userLine("huh")]);
     setSessionTitle(renamed.id, "a user's rename from before");
     await readsEverywhere(renamed.path, "Merge thread");
   });
@@ -252,6 +259,50 @@ describe("the chats Sova starts with a name", () => {
     const plain = file(sessionsDir, [line({ type: "custom", customType: "sova-profile", id: "p1", parentId: null, data: { v: 1, profile: { ...sova("release-thread"), source: "user" } } }), userLine("huh")]);
     assert.equal((await listed(plain.path)).title, "huh");
     assert.equal((await listed(plain.path)).fixedName, undefined);
+  });
+});
+
+describe("a chat Sova started before it recorded its name: rebuilt from Sova's own records", () => {
+  const queueDir = () => join(stateRoot(), "merge-queue");
+  const writeJson = (path: string, v: unknown) => {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(v));
+  };
+
+  test("a merge thread renamed by the user goes back to the name Sova gave it (and it is recorded once)", async () => {
+    const s = file(sessionsDir, [profileLine("merge-thread"), userLine("huh")]);
+    writeJson(join(queueDir(), "threads.json"), { version: 1, threads: { "/w/p": { sessionId: s.id, path: s.path, startedAt: Date.parse("2026-11-02T10:00:00.000Z"), playbook: "" } } });
+    writeAutoTitle(s.id, "Merge thread · p · 2026-11-02");
+    setSessionTitle(s.id, "x", "user");
+    await readsEverywhere(s.path, "Merge thread · p · 2026-11-02");
+    assert.deepEqual(memoSovaChatNames()[s.id], { kind: "merge-thread", name: "Merge thread · p · 2026-11-02" }, "backfilled");
+  });
+
+  test("an earlier merge thread (the record's history) and a reviewer, by its run's commit or its own first message", async () => {
+    const old = file(sessionsDir, [profileLine("merge-thread"), userLine("huh")]);
+    const rev = file(sessionsDir, [profileLine("merge-reviewer"), userLine("huh")]);
+    const rev2 = file(sessionsDir, [profileLine("merge-reviewer"), userLine("Review one change before it lands.\n\n- Commit under review: 0123456789abcdef (branch feat/y merged onto the target at aaa).")]);
+    writeJson(join(queueDir(), "threads.json"), { version: 1, threads: { "/w/q": { history: [{ sessionId: old.id, path: old.path, startedAt: Date.parse("2026-10-30T23:59:00.000Z"), endedAt: 1, why: "replaced" }] } } });
+    writeJson(join(queueDir(), "chats.json"), {
+      version: 1,
+      projects: { "/w/q": { reviewers: [{ session: rev.id, path: rev.path, run: "mr_1", branch: "feat/x", attempt: 2, startedAt: "" }, { session: rev2.id, path: rev2.path, run: "mr_gone", branch: "feat/y", attempt: 1, startedAt: "" }] } },
+    });
+    writeJson(join(queueDir(), projectKey("/w/q"), "runs", "mr_1", "run.json"), { id: "mr_1", commit: "abcdef0123456789" });
+    for (const id of [old.id, rev.id, rev2.id]) setSessionTitle(id, "renamed", "user");
+    await readsEverywhere(old.path, "Merge thread · q · 2026-10-30");
+    await readsEverywhere(rev.path, "Review · feat/x · abcdef0 · attempt 2");
+    await readsEverywhere(rev2.path, "Review · feat/y · 0123456");
+  });
+
+  test("a release chat the namer renamed reads its Sova name (its release's tag as now); a withdrawal's own chat its own", async () => {
+    const s = file(sessionsDir, [profileLine("release-thread"), userLine("huh")]);
+    const dir = join(stateRoot(), "project-services", "release", projectKey("/w/proj"));
+    writeJson(join(dir, "rl_aaa.json"), { id: "rl_aaa", project: "/w/proj", tag: "v1.2.0", thread: { session: s.id } });
+    writeAutoTitle(s.id, "Fix the flaky tests", { redo: true }); // Name sessions, before release chats were skipped
+    await readsEverywhere(s.path, "Release v1.2.0 of proj");
+    const w = file(sessionsDir, [profileLine("release-thread"), userLine("huh")]); // created 2026-11-05
+    writeJson(join(dir, "rl_bbb.json"), { id: "rl_bbb", project: "/w/proj", tag: "v1.1.0", withdrawn: { at: "2026-11-04T00:00:00.000Z" }, thread: { session: w.id } });
+    await readsEverywhere(w.path, "Withdraw v1.1.0");
   });
 });
 

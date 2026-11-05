@@ -141,7 +141,7 @@ export const KEYS: readonly KeyRow[] = [
   {
     id: "menu.context",
     label: "Shift+F10 · Menu key",
-    does: "Opens the focused session's, group's, pane's or message's menu, as a right-click does. In a text field they stay the browser's.",
+    does: "Opens the focused session's, group's, pane's, message's or worktree's menu, as a right-click does. In a text field they stay the browser's.",
     target: "document",
     textEntry: "ignored",
     composing: "fires",

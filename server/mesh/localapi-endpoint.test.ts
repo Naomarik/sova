@@ -28,6 +28,7 @@ const { callerNode } = await import("./gate");
 const MAC = {
   missing: "Sova can't find Tailscale on this Mac. Install the Tailscale app from tailscale.com and sign in.",
   notRunning: "Tailscale isn't running on this Mac. Open the Tailscale app and connect.",
+  notRunningDaemon: "Tailscale (tailscaled) isn't running on this Mac. Start tailscaled.",
   notAdmin: "Only an administrator account on this Mac can ask Tailscale who's connected. Run Sova from an administrator account.",
   refused: "Tailscale on this Mac refused Sova's request. Quit and reopen the Tailscale app.",
   refusedDaemon: "Tailscale (tailscaled) on this Mac refused Sova's request. Restart tailscaled.",
@@ -436,7 +437,7 @@ describe("when the app isn't answering, the next kind", () => {
     serveTcp(61001, mac.app!.key, "refuse");
     mac.brew = true;
     serveSocket(BREW, "refuse");
-    assert.equal(await failure(localApiIdentity.status()), MAC.notRunning, "the socket refuses too");
+    assert.equal(await failure(localApiIdentity.status()), MAC.notRunningDaemon, "the socket refuses too: said for the last one asked, tailscaled");
   });
 
   test("nothing installed: Sova can't find Tailscale, after each kind in order", async () => {
@@ -513,6 +514,16 @@ describe("other failures on a Mac keep tailscaled's words, and still forget the 
     assert.equal((await localApiIdentity.status()).self.nodeId, "nSelfA1CNTRL");
     assert.equal(count("execFile"), 2, "forgotten: looked for again");
     assert.deepEqual(connections, [BREW, BREW]);
+  });
+
+  test("Homebrew's socket left behind with nothing listening: tailscaled isn't running, not the app", async () => {
+    asMac();
+    mac = { brew: true };
+    serveSocket(BREW).failCode = "ECONNREFUSED";
+    const said = await failure(localApiIdentity.status());
+    assert.ok(said.includes("tailscaled") && !said.includes("Tailscale app"), said);
+    assert.equal(said, MAC.notRunningDaemon);
+    assert.deepEqual(connections, [BREW], "no retry at a socket");
   });
 
   test("a 403 from Homebrew's tailscaled: its own advice, no retry, and forgotten", async () => {

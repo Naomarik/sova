@@ -45,11 +45,12 @@ export interface Identity {
 
 /** Why a Mac can't ask its Tailscale, when it is one a person can act on; each has its own words there.
     Every other failure (Linux, SOVA_TAILSCALE_SOCKET, a reset connection, an answer) keeps tailscaled's. */
-type Trouble = "missing" | "not-running" | "not-admin" | "refused" | "refused-daemon" | "slow";
+type Trouble = "missing" | "not-running" | "not-running-daemon" | "not-admin" | "refused" | "refused-daemon" | "slow";
 
 const ON_A_MAC: Record<Trouble, string> = {
   missing: "Sova can't find Tailscale on this Mac. Install the Tailscale app from tailscale.com and sign in.",
   "not-running": "Tailscale isn't running on this Mac. Open the Tailscale app and connect.",
+  "not-running-daemon": "Tailscale (tailscaled) isn't running on this Mac. Start tailscaled.",
   "not-admin": "Only an administrator account on this Mac can ask Tailscale who's connected. Run Sova from an administrator account.",
   refused: "Tailscale on this Mac refused Sova's request. Quit and reopen the Tailscale app.",
   "refused-daemon": "Tailscale (tailscaled) on this Mac refused Sova's request. Restart tailscaled.",
@@ -125,7 +126,7 @@ function trouble(err: unknown, at: Endpoint): Trouble | null {
   if (!unreachable(err)) return null;
   if (err.status !== undefined) return at.kind === "socket" ? "refused-daemon" : "refused";
   if (err.code === "ENOENT") return "missing";
-  if (err.code === "ECONNREFUSED") return "not-running";
+  if (err.code === "ECONNREFUSED") return at.kind === "socket" ? "not-running-daemon" : "not-running";
   if (err.code === "ETIMEDOUT") return "slow";
   return null; // ECONNRESET, EPIPE, EACCES on a socket, no code: tailscaled's own words
 }

@@ -13,6 +13,7 @@ import type { Browser, BrowserContext, Locator, Page } from "playwright-core";
 import type { MergeCard, MergeEntry, MergeQueueView, MergeRun, WorktreeMergeProject, WorktreeQueueInfo } from "../shared/merge-queue";
 import type { SessionSummary, SessionWorktreeInfo } from "../shared/protocol";
 import type { ProjectSummary } from "../shared/projects";
+import type { SetupProposal, SetupStatus } from "../shared/setup-chat";
 import { launchTourBrowser } from "./tours/browser";
 import { scratchRoot } from "./test-scratch";
 
@@ -39,6 +40,15 @@ const iso = (minAgo: number) => new Date(T0 - minAgo * 60_000).toISOString();
 const sha = (c: string) => c.repeat(40);
 const PID = "prj_sova0001";
 const ROOT_DIR = "/w/sova";
+const SETUP_BRANCH = "sova/setup-sova-1a2b3c";
+const SETUP_HEAD = "5e7c0de".padEnd(40, "0");
+const NO_SETUP: SetupStatus = { chat: null, setUp: { merge: false, release: false, deploy: false }, can: { open: true }, history: [] };
+/** The Setup chat proposes on its branch; `trial`: the trial of its head, or none yet. */
+function setupProposed(trial: "passed" | null): SetupStatus {
+  const t = trial ? { id: "mr_trial1", commit: SETUP_HEAD, at: "2026-11-05T05:00:00.000Z", pass: true, state: "passed" as const, checks: [{ name: "Tests", kind: "merge" as const, state: "passed" as const, durationMs: 1200, run: "mr_trial1", step: "check:tests" }] } : null;
+  const proposal = { branch: SETUP_BRANCH, target: "master", commit: SETUP_HEAD, served: false, hash: "sha256:setup", services: [], merge: { checks: [{ id: "tests", label: "Tests", run: ["sh", "test/run.sh"], timeoutSec: 60, optional: false, requires: [] }], target: "master", push: false, land: "local" }, trial: t, land: trial ? { can: true } : { can: false, why: "This setup branch has no passing trial at 5e7c0de: run a trial of it first." } } as unknown as SetupProposal;
+  return { chat: { sessionId: "s-setup", title: "Setup · sova", state: "proposed", startedAt: "2026-11-05T04:50:00.000Z", branch: SETUP_BRANCH, proposal, setUp: { merge: false, release: false, deploy: false } }, setUp: { merge: false, release: false, deploy: false }, can: { open: true }, history: [] };
+}
 const PATH = "/w/sessions/s1.jsonl";
 const NOTE = "Changes server code; restart Sova to pick it up.";
 
@@ -252,7 +262,7 @@ interface Opened {
 }
 
 /** Sova at `width` on `hash`, every request answered: the session, its worktrees, the project, its queue. */
-async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo[]; view?: MergeQueueView; cards?: MergeCard[]; items?: unknown[]; sessions?: SessionSummary[] } = {}): Promise<Opened> {
+async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo[]; view?: MergeQueueView; cards?: MergeCard[]; items?: unknown[]; sessions?: SessionSummary[]; setup?: () => SetupStatus } = {}): Promise<Opened> {
   const phone = width < 768;
   // Reduced motion: a screenshot shows each screen's end state, never a fade half-way.
   const ctx = await browser.newContext({ viewport: { width, height: 900 }, hasTouch: phone, isMobile: phone, reducedMotion: "reduce" });
@@ -291,6 +301,7 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
             : { ...run, verdict: "passed", why: "the checks pass on master" };
         return route.fulfill(json(ok(verb, { run })));
       }
+      if (verb === "merge.try") return route.fulfill(json(ok(verb, { trial: { run: "mr_trial1", commit: body.commit, verdict: "running" }, run: { ...RUN, id: "mr_trial1", verdict: "running" } })));
       if (verb === "merge.logs") {
         const run = body.run === "mr_fail" ? FAILED : body.run === "mr_unclear" ? UNCLEAR_RUN : RUN;
         return route.fulfill(json(ok(verb, { run, lines: [`log of ${String(body.step ?? "every step")}`, "14:06 ok"] })));
@@ -301,6 +312,13 @@ async function open(width: number, hash: string, o: { rows?: SessionWorktreeInfo
     if (p === "/api/diff/summary" || p === "/api/diff/patch") {
       diffs.push({ kind: p.endsWith("summary") ? "summary" : "patch", query: url.searchParams });
       return route.fulfill(json(p.endsWith("summary") ? { ...DIFF_SUMMARY, scope: Object.fromEntries(url.searchParams) } : { path: url.searchParams.get("file"), status: "M", patch: DIFF_PATCH, base: DIFF_SUMMARY.base, head: DIFF_SUMMARY.head }));
+    }
+    if (p === `/api/projects/${PID}/setup`) {
+      if (route.request().method() === "POST") {
+        calls.push({ verb: "setup.open", body: JSON.parse(route.request().postData() ?? "{}") });
+        return route.fulfill(json({ sessionId: SESSION.id, path: SESSION.path, reopened: false }, 201));
+      }
+      return route.fulfill(json(o.setup ? o.setup() : NO_SETUP));
     }
     if (p === `/api/projects/${PID}/runtime`) return route.fulfill(json(RUNTIME));
     if (p === `/api/projects/${PID}/overseer/worktrees`) return route.fulfill(json(WORKTREES));
@@ -755,12 +773,14 @@ for (const width of [1280, 390]) {
       assert.equal(await tab.getByRole("link", { name: "Open Merge Thread" }).count(), 1);
       assert.equal(await tab.locator(".mq-thread-card").getByRole("link", { name: "Open Merge Thread" }).count(), 1);
       assert.equal(await tab.locator(".mq-head").getByRole("link", { name: "Open Merge Thread" }).count(), 0);
-      // The head's buttons and the card's links: an even gap, on one centre line.
+      // The head's buttons and the card's links: an even gap. A row that runs out of room wraps (at 390 the head's
+      // three 44px buttons don't fit one line): neighbours on a line share its centre line ≥ 7.5px apart, and a
+      // wrapped line sits ≥ 7.5px below the one above.
       for (const scope of [".mq-head .button-row", ".mq-thread-card .button-row"]) {
-        const b = await tab.locator(scope).first().evaluate((row) => [...row.children].map((c) => c.getBoundingClientRect()).map((r) => ({ l: r.left, r: r.right, mid: r.top + r.height / 2 })));
+        const b = await tab.locator(scope).first().evaluate((row) => [...row.children].map((c) => c.getBoundingClientRect()).map((r) => ({ l: r.left, r: r.right, top: r.top, bottom: r.bottom, mid: r.top + r.height / 2 })));
         for (let i = 1; i < b.length; i++) {
-          assert.ok(b[i]!.l - b[i - 1]!.r >= 7.5, `${scope}: a gap between buttons ${i - 1} and ${i}`);
-          assert.ok(Math.abs(b[i]!.mid - b[0]!.mid) < 1, `${scope}: button ${i} on the first one's centre line`);
+          if (Math.abs(b[i]!.mid - b[i - 1]!.mid) < 1) assert.ok(b[i]!.l - b[i - 1]!.r >= 7.5, `${scope}: a gap between buttons ${i - 1} and ${i}`);
+          else assert.ok(b[i]!.top - b[i - 1]!.bottom >= 7.5, `${scope}: button ${i} wraps ≥ 7.5px below button ${i - 1}`);
         }
       }
       // Ready to land, not approved: Land and its ▾, on the queue's own page.
@@ -1150,52 +1170,40 @@ for (const width of [1280, 390]) {
       await f.ctx.close();
     });
 
-    test("onboarding: a project not set up says what should pass; Try It on Master, then Save Checks", async () => {
-      const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf({ checks: "unset", served: false, state: "idle", current: undefined, waiting: [], needsYou: [], needsFix: [], recent: [] }) });
+    test("not set up: what the queue does and Set Up with a Chat, never the old form; the Setup chat's proposal offers Run Trial until a trial of its head passed, then Merge Branch", async () => {
+      let status: SetupStatus = NO_SETUP;
+      const o = await open(width, `#/projects/${PID}/merge-queue`, { view: viewOf({ checks: "unset", served: false, state: "idle", current: undefined, waiting: [], needsYou: [], needsFix: [], recent: [] }), setup: () => status });
       const { page } = o;
-      // Listed, not set up (al_1 a11): the note and Initialize first; Initialize opens the existing onboarding.
       await page.getByText("No merge queue settings are set up for this project").waitFor({ timeout: 20_000 });
-      assert.equal(await page.getByText("Before the queue can land anything here, tell us what should pass.").count(), 0, "the onboarding waits for Initialize");
-      await page.getByRole("button", { name: "Initialize", exact: true }).click();
-      await page.getByText("Before the queue can land anything here, tell us what should pass.").waitFor({ timeout: 20_000 });
-      await page.getByRole("textbox", { name: "Command" }).fill("npm test");
-      assert.match(await words(page.locator(".mq-onboard")), /We run npm test there\./);
-      await page.getByRole("textbox", { name: "Start first" }).fill("db");
-      await page.getByRole("button", { name: "Try It on Master" }).click();
-      await until("a try", () => o.calls.some((c) => c.verb === "merge.setup" && c.body.dryRun === true));
-      assert.equal(lastCall(o, "merge.setup").body.command, "npm test");
-      assert.deepEqual(lastCall(o, "merge.setup").body.requires, ["db"]);
-      assert.equal(lastCall(o, "merge.setup").body.project, ROOT_DIR);
-      // The first try runs, then fails on master itself: the setup's to fix, no branch blamed; no Save yet.
-      const failed = page.locator(".mq-onboard .banner-error");
-      await failed.waitFor({ timeout: 15_000 });
-      assert.match(await words(failed), /Install stopped: no lockfile found: it fails on master itself/);
-      assert.match(await words(failed), /No branch was blamed\./);
-      assert.equal(await failed.getByRole("link", { name: "View Log" }).getAttribute("href"), `#/projects/${PID}/merge-queue/mr_try1`);
-      assert.equal(await page.getByRole("button", { name: "Save Checks" }).count(), 0);
-      // The second passes: Save Checks writes it.
-      await page.getByRole("button", { name: "Try It on Master" }).click();
-      await page.getByRole("button", { name: "Save Checks" }).waitFor({ timeout: 15_000 });
-      await page.getByRole("button", { name: "Save Checks" }).click();
-      await until("a save", () => o.calls.some((c) => c.verb === "merge.setup" && !c.body.dryRun));
-      await shot(page, `${width}-onboard`);
-      await noRestartOrLive(page, ".mq-onboard");
-      // List its checks: one per line; a line without a name is named back, and nothing is tried.
-      await page.getByText("List its checks").click();
-      await page.getByRole("textbox", { name: "Checks" }).fill("Typecheck: npm run typecheck\nnpm test");
-      const tries = o.calls.filter((c) => c.verb === "merge.setup").length;
-      await page.getByRole("button", { name: "Try It on Master" }).click();
-      await page.getByText("Line 2 needs a name, a colon, then its command.").waitFor();
-      assert.equal(o.calls.filter((c) => c.verb === "merge.setup").length, tries, "nothing tried");
-      await page.getByRole("textbox", { name: "Checks" }).fill("Typecheck: npm run typecheck\nUnit tests: npm test");
-      await page.getByRole("button", { name: "Try It on Master" }).click();
-      await until("a list try", () => o.calls.some((c) => c.verb === "merge.setup" && Array.isArray(c.body.commands)));
-      assert.deepEqual(lastCall(o, "merge.setup").body.commands, ["Typecheck: npm run typecheck", "Unit tests: npm test"]);
-      assert.equal(lastCall(o, "merge.setup").body.dryRun, true);
-      await page.getByText("This project has no automated tests").click();
-      assert.match(await words(page.locator(".mq-onboard")), /master moves to that merged commit/);
-      await page.getByRole("button", { name: "Try the Merge Copy" }).click();
-      await until("a none try", () => o.calls.some((c) => c.verb === "merge.setup" && c.body.none === true && c.body.dryRun === true));
+      assert.match(await words(page.locator(".mq-tab")), /Every branch you approve is merged onto master in a separate copy and checked there; master then moves to exactly that commit\. Once it is set up, branches land here only through the queue\./);
+      for (const gone of ["Initialize", "Try It on Master", "Save Checks", "Try the Merge Copy"]) assert.equal(await page.getByRole("button", { name: gone }).count(), 0, `no ${gone}`);
+      assert.equal(await page.getByRole("textbox", { name: "Command" }).count(), 0, "no check form");
+      // Set Up with a Chat opens the project's Setup chat and goes to it.
+      await page.getByRole("button", { name: "Set Up with a Chat", exact: true }).click();
+      await until("the setup chat opened", () => o.calls.some((c) => c.verb === "setup.open"));
+      assert.equal(lastCall(o, "setup.open").body.from, "merge-queue");
+      assert.equal(lastCall(o, "setup.open").body.fresh, undefined);
+      await until("on its chat", async () => (await hashOf(page)).includes(encodeURIComponent(SESSION.path)));
+      assert.equal(o.calls.filter((c) => c.verb === "merge.setup").length, 0, "the page never calls merge.setup");
+      // The chat proposes: no trial of its head yet, so Run Trial, not Merge Branch.
+      status = setupProposed(null);
+      await page.goto(`${ORIGIN}/#/projects/${PID}/merge-queue`);
+      const card = page.getByRole("group", { name: "Setup proposal" });
+      await card.waitFor({ timeout: 20_000 });
+      assert.equal(await card.getByRole("button", { name: /^(Merge Branch|Land) / }).count(), 0, "no Merge Branch before a passing trial");
+      assert.match(await words(card), /Run a trial of 5e7c0de first: it lands only once its own checks pass\./);
+      await card.getByRole("button", { name: `Run Trial of ${SETUP_BRANCH}` }).click();
+      await until("a trial", () => o.calls.some((c) => c.verb === "merge.try"));
+      assert.deepEqual({ branch: lastCall(o, "merge.try").body.branch, commit: lastCall(o, "merge.try").body.commit }, { branch: SETUP_BRANCH, commit: SETUP_HEAD });
+      // The trial of that head passed: Merge Branch, pinned to the head and the proposal's hash.
+      status = setupProposed("passed");
+      await page.reload();
+      await card.waitFor({ timeout: 20_000 });
+      assert.match(await words(card), /Trial of 5e7c0de: passed/);
+      await card.getByRole("button", { name: `Merge Branch ${SETUP_BRANCH}` }).click();
+      await until("Merge Branch", () => o.calls.some((c) => c.verb === "runtime.merge"));
+      assert.deepEqual(lastCall(o, "runtime.merge").body, { hash: "sha256:setup", commit: SETUP_HEAD });
+      await shot(page, `${width}-setup-proposal`);
       await noSideScroll(page);
       await o.ctx.close();
     });

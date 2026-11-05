@@ -188,7 +188,7 @@ export const shownCommit = (w: Partial<Pick<SessionWorktreeInfo, "readiness" | "
   w.mergeStats?.head ?? w.readiness?.landing?.commit;
 
 /** A sent-back row's line when the queue gave no reason. */
-export const SENT_BACK_LINE = "Sent back to its chat. Land comes back once its chat fixes it, or use Land This Commit Again.";
+export const SENT_BACK_LINE = "Sent back to its chat. Land comes back once its chat fixes it, or land its newest commit now.";
 
 /** The branch reads finished again at a commit other than the one sent back: the fix is in. */
 export const fixedPast = (w: { readiness?: { landing?: { commit: string } } }, sentBack: string): boolean => {
@@ -211,19 +211,30 @@ export function entryLandBlock(e: Pick<WorktreeQueueInfo, "state" | "redrafted" 
 /**
  * A sent-back branch's re-land, as every row and card draws it: it always lands the branch's newest commit (Land with
  * no pinned commit). "Land This Commit Again" while the branch's head is still the commit sent back, "Land Newest
- * Commit" once the branch has commits of its own past it; the line says how many it brings in and, when the newest
- * commit can't be landed now, why. Pure.
+ * Commit" once it moved: the line says how many of its own commits that brings in, or that it was rewritten (amended or
+ * rebased: nothing to count), and, when the newest commit isn't Ready to land, why. Pure.
  */
-export function landAgainOf(e: Pick<WorktreeQueueInfo, "newerCommits" | "newerBlocked"> | undefined): { label: "Land This Commit Again" | "Land Newest Commit"; included: string | null; blocked: string | null } {
+export function landAgainOf(e: Pick<WorktreeQueueInfo, "newerCommits" | "newerRewritten" | "newerBlocked"> | undefined): { label: "Land This Commit Again" | "Land Newest Commit"; included: string | null; blocked: string | null } {
   const n = e?.newerCommits ?? 0;
+  const moved = !!n || !!e?.newerRewritten;
   return {
-    label: n ? "Land Newest Commit" : "Land This Commit Again",
-    included: n ? `${n} newer commit${n === 1 ? "" : "s"} included` : null,
-    blocked: n && e?.newerBlocked ? `The newest commit isn't Ready to land: ${e.newerBlocked}.` : null,
+    label: moved ? "Land Newest Commit" : "Land This Commit Again",
+    included: n ? `${n} newer commit${n === 1 ? "" : "s"} included` : moved ? "the branch was rewritten since it was sent back" : null,
+    blocked: moved && e?.newerBlocked ? `The newest commit isn't Ready to land: ${e.newerBlocked}.` : null,
   };
 }
 
-/** The commit Land This Commit Again pins, where an item that knows only the branch's queue entry offers it (the
+/** The Overseer's menu item for that re-land: it lands `head`, the head its page read, so its words name that commit,
+ *  never the one sent back once they differ. */
+export function landAgainItem(e: Pick<WorktreeQueueInfo, "commit" | "newerCommits" | "newerRewritten" | "newerBlocked">, head: string | undefined): { label: "Land This Commit Again" | "Land Newest Commit"; description: string } {
+  const again = landAgainOf(e);
+  const same = again.label === "Land This Commit Again" && (!head || head === e.commit);
+  const what = same ? `${short(e.commit)} again` : head ? short(head) : "its newest commit";
+  const lines = [again.included, again.blocked].filter(Boolean).map((l) => (l!.endsWith(".") ? l! : `${l}.`));
+  return { label: same ? "Land This Commit Again" : "Land Newest Commit", description: [`Approves ${what}: every check runs from the start.`, ...lines].join(" ") };
+}
+
+/** The commit a sent-back entry was sent back at, where an item that knows only the branch's queue entry offers its re-land (the
  *  Overseer's coding-worktree menu, beside its Land that entryLandBlock turns off): a sent-back entry still needing a
  *  fix. None once its drafts are fixed (Land is on) or it settled (nothing left to land). */
 export const landThisAgainOf = (e: Pick<WorktreeQueueInfo, "state" | "commit" | "redrafted" | "settled"> | undefined): string | undefined =>
@@ -342,7 +353,7 @@ function queueRowOf(w: QueueRowInput): QueueRow {
       case "drafts-changed":
         return { ...base, key: "drafts-changed", label: "Drafts changed", tone: "warn", reason: e.reason ?? "Its spec drafts changed since you approved. Land again to approve them.", action: "land" };
       case "needs-fix":
-        // Sent back: no Land while its chat fixes it; Land This Commit Again (the same commit, every check from the
+        // Sent back: no Land while its chat fixes it; its re-land (the branch's newest commit, every check from the
         // start) and Remove from Queue instead. Once the branch reads finished again at a newer commit (clean, no
         // conflicts, its chat idle: Sova's ready reading), or sent back for its drafts and the queue says they're fixed,
         // that commit wins and the row is Ready with Land. Settled (a later entry for the branch, already in the
@@ -351,7 +362,7 @@ function queueRowOf(w: QueueRowInput): QueueRow {
         {
           // Its re-land takes the branch's newest commit: the line says what that brings in (landAgainOf).
           const again = landAgainOf(e);
-          const newer = [again.included, again.blocked].filter(Boolean).join(" ");
+          const newer = [again.included, again.blocked].filter(Boolean).join(" · ");
           return { ...base, newer: newer || undefined, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "land-this-again", ...(again.included ? { landNewest: true as const } : {}), remove: true };
         }
       case "landed":

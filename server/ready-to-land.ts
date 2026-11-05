@@ -1,7 +1,7 @@
 import { MERGE_QUEUE_SENT_PREFIX } from "../shared/senders";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ReadinessState, WorktreeLanding, WorktreeLandingDocs } from "../shared/protocol";
+import type { ReadinessState, WorktreeLanding, WorktreeLandingDocs, WorktreeReadiness } from "../shared/protocol";
 import { isExcluded, readDecisionSettings } from "./decide-settings";
 import { stateRoot } from "./state-root";
 import { latestOutcome, type TurnOutcomeRecord } from "./turn-outcomes";
@@ -130,6 +130,37 @@ export function blockedNoteText(branch: string, commit: string, blockers: readon
   const list = blockers.map((b) => b.text).join(", ");
   const fixes = blockers.map((b) => b.fix).join("; ");
   return `${MERGE_QUEUE_SENT_PREFIX} ${branch} is finished at ${commit.slice(0, 7)}, but it can't be queued to land yet: ${list}. On ${branch}, ${fixes}. Once nothing blocks it, the user's go-ahead lands it through the merge queue: they press Land, or type "land it" in this chat, which you record with the worktree tool's land action.`;
+}
+
+/**
+ * Why a sent-back branch's newest commit `tip` isn't Ready to land, from the tree as readiness publishes it: its chat's
+ * last check, a conflict, open questions, a running turn, drafts that don't fit. null: it is Ready to land at `tip`.
+ * undefined: this reading can't say (none, the tree merged or gone, or Ready to land at another commit, so it predates
+ * `tip`). Pure.
+ */
+export function newestBlockedOf(t: WorktreeReadiness | undefined, tip: string): string | null | undefined {
+  if (!t || t.merged || t.state === "merged" || t.state === "removed") return undefined;
+  if (t.landing) {
+    if (t.landing.commit !== tip) return undefined;
+    return t.landing.state === "ready" ? null : "its spec drafts don't fit";
+  }
+  if (t.state === "ready" || t.state === "waiting-approval") {
+    if (t.dirtyCount) return `${plural(t.dirtyCount, "uncommitted file")} in its folder: commit or remove them first`;
+    return "its chat hasn't said the work is finished";
+  }
+  return t.why ?? t.reason;
+}
+
+/** newestBlockedOf for a worktree, from its owning chat's last reading (never a fresh read). No owner, an archived one,
+ *  a chat never read, or a reading without this tree: undefined. */
+export async function newestReadingOf(worktree: string, tip: string, d: { owner(worktree: string): Promise<{ session: string; archived?: boolean } | null>; pathOf(session: string): Promise<string | undefined>; reading(path: string): { known: false } | { known: true; value?: { trees: WorktreeReadiness[] } }; canonical(path: string): string }): Promise<string | null | undefined> {
+  const owner = await d.owner(worktree).catch(() => null);
+  if (!owner || owner.archived) return undefined;
+  const path = await d.pathOf(owner.session);
+  const reading = path ? d.reading(path) : null;
+  if (!reading?.known) return undefined;
+  const tree = d.canonical(worktree);
+  return newestBlockedOf(reading.value?.trees.find((t) => t.path === tree), tip);
 }
 
 /** The line a session answers with when it can't land its specs. */

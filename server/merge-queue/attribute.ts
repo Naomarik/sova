@@ -16,7 +16,8 @@
  * - A test check (its command is the project's test command) that fails on the merge, on the tip again and on the
  *   target alone, each time with the same non-zero exit code and no test run: "broken" on the target (its command
  *   can't run there: a bad flag, a missing selector). Nobody's to fix in the branch: skipped for this branch, noted
- *   and flagged so the target gets fixed; the branch goes on. A build or typecheck failing on both sides is not this.
+ *   and flagged so the target gets fixed; the branch goes on. "No test run" comes only from a report that counts none:
+ *   no report at all may be a crash midway. A build or typecheck failing on both sides is not this, nor is a release.
  * - A timeout, an abort, a stopped server: void (run again from the start, nobody blamed).
  * - A conflict resolution the merge thread judged safe that then fails a check: "resolution", back to the user; the
  *   branch isn't blamed.

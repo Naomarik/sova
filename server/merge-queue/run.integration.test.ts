@@ -154,6 +154,26 @@ describe("a merge run", () => {
     expect(callsAt(fx, "setup").every((c) => c.env.SOVA_FRESH === undefined && c.env.SOVA_REUSE_SAMPLE === undefined)).toBe(true);
   });
 
+  test("a release run is never skipped past a test check that runs nothing: the same failure that is broken-on-target for a branch waits on the user there, its gates unrun", async () => {
+    const usage = { unitIsTestCommand: true, files: { "unit.usage": "1\n" } };
+    // Control: a branch's run, same fixture, skips and flags.
+    const branchFx = fixture(usage);
+    const plain = await run(branchFx, branchFx.branch("ok", { "b.txt": "b\n" }));
+    expect(plain.out.verdict).toBe("passed");
+    expect(plain.out.broken?.[0]?.check).toBe("unit");
+    const gate = { id: "gate", label: "Release gate", run: ["node", "checks/build.mjs"], timeout: 60, rerun: false, requires: [] };
+    for (const o of [{ release: true }, { releaseChecks: [gate] }, { release: true, releaseChecks: [gate] }]) {
+      const fx = fixture(usage);
+      const before = fx.head();
+      const r = await run(fx, fx.branch("rel", { "src/app.txt": "rel\n" }), o);
+      expect(r.out.verdict).toBe("unattributed");
+      expect(r.out.broken).toBeUndefined();
+      expect(r.out.unclear?.[0]?.check).toBe("unit");
+      for (const id of ["check:unit", "rerun-tip:unit", "rerun-master:unit"]) expect(r.steps.get(id)!.result).toBe("failed");
+      expect(fx.head()).toBe(before);
+    }
+  });
+
   test("reuse: every check of a release entry runs fresh, the release's own gates too; so does every check when merge.reuse is false", async () => {
     const fx = fixture();
     const gate = { id: "gate", label: "Release gate", run: ["node", "checks/build.mjs"], timeout: 60, rerun: false, requires: [] };

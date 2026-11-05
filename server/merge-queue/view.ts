@@ -135,6 +135,7 @@ export function worktreeQueueInfo(view: MergeQueueView, branch: string): Worktre
     commit: e.commit,
     ...(e.reason ? { reason: e.reason } : {}),
     ...(e.newerCommits ? { newerCommits: e.newerCommits } : {}),
+    ...(e.newerRewritten ? { newerRewritten: e.newerRewritten } : {}),
     ...(e.newerBlocked ? { newerBlocked: e.newerBlocked } : {}),
     ...(e.eta ? { eta: e.eta } : {}),
     notes: e.notes,

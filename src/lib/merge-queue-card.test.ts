@@ -98,7 +98,9 @@ test("a sent-back card's re-land: Land This Commit Again until the branch moves 
   assert.equal(cardActionLabel(card({ state: "needs-fix", newerCommits: 3 }), "land-this-again"), "Land Newest Commit");
   assert.equal(cardActionLabel(card({ state: "needs-fix", newerCommits: 3 }), "remove"), "Remove from Queue");
   assert.equal(cardNewer(card({ state: "needs-fix", newerCommits: 3 })), "3 newer commits included");
-  assert.equal(cardNewer(card({ state: "needs-fix", newerCommits: 1, newerBlocked: "1 uncommitted file in its folder: commit or remove them first" })), "1 newer commit included The newest commit isn't Ready to land: 1 uncommitted file in its folder: commit or remove them first.");
+  assert.equal(cardNewer(card({ state: "needs-fix", newerCommits: 1, newerBlocked: "1 uncommitted file in its folder: commit or remove them first" })), "1 newer commit included · The newest commit isn't Ready to land: 1 uncommitted file in its folder: commit or remove them first.");
   assert.equal(cardNewer(card({ state: "needs-fix" })), null);
+  assert.equal(cardActionLabel(card({ state: "needs-fix", newerRewritten: true }), "land-this-again"), "Land Newest Commit");
+  assert.equal(cardNewer(card({ state: "needs-fix", newerRewritten: true })), "the branch was rewritten since it was sent back");
   assert.equal(cardNewer(card({ state: "landed", newerCommits: 2 })), "2 newer commits not included", "a landed card keeps its words");
 });

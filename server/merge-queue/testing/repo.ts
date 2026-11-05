@@ -10,7 +10,8 @@
  *   `hang` (sleeps until killed): the `unit` check, which names its failing files in SOVA_OUT and reruns
  *   only the files passed as argv.
  *   `gate <name>` (held until the test opens the gate) | `forbid <w>...` (fails when src/list.txt holds every word).
- * - `unit.usage`: the `unit` check refuses its arguments (a usage line, exit 2, no test run, no report).
+ * - `unit.usage`: the `unit` check refuses its arguments (a usage line, a zero-count report, exit 2).
+ * - `unit.crash`: the `unit` check dies with no report at all (exit 1): whether tests ran can't be known.
  * - `deps.lock`: the `merge.install` step's input (an offline install when a branch changes it); `broken` fails it.
  *
  * Every script appends one JSON line per run to `<root>/state/calls.jsonl` ({script, cwd, head, argv,
@@ -116,8 +117,10 @@ log("pass");
 
 const UNIT = (s: string) => `${prelude(s, "unit")}
 // unit.usage at the root: the runner refuses its own arguments before running anything (as run-tests does on a bare
-// --groups): a usage line, exit 2, no report, no test run.
-if (existsSync("unit.usage")) { console.error("unit: --groups needs a value"); console.error("usage: unit [--groups <name>] [files]"); log("fail"); process.exit(2); }
+// --groups): a usage line, a report counting no test, exit 2.
+if (existsSync("unit.usage")) { console.error("unit: --groups needs a value"); console.error("usage: unit [--groups <name>] [files]"); out({ passed: 0, failed: 0, errors: 0, skipped: 0, failures: [], ranFiles: [] }); log("fail"); process.exit(2); }
+// unit.crash at the root: a runner that dies midway, or one that never writes a report: exit 1 and no report at all.
+if (existsSync("unit.crash")) { console.error("unit: segfault in the middle of the suite"); log("fail"); process.exit(1); }
 const sel = process.argv.slice(2);
 const all = existsSync("tests") ? readdirSync("tests").filter((f) => f.endsWith(".txt")).sort().map((f) => "tests/" + f) : [];
 const files = sel.length ? all.filter((f) => sel.includes(f)) : all;

@@ -51,7 +51,7 @@ import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGa
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { ActionMenu } from "./ActionMenu";
 import { land, refusal } from "../lib/merge-queue-client";
-import { queueRow, entryLandBlock, landAgainOf, landThisAgainOf } from "../lib/merge-queue";
+import { queueRow, entryLandBlock, landAgainItem, landThisAgainOf } from "../lib/merge-queue";
 import { createProjectQueue } from "../lib/project-queue";
 import { QueueChip } from "./WorktreesModal";
 import { LinksBanner, type Links } from "./LinksBanner";
@@ -1139,15 +1139,15 @@ function CodingSessions(props: {
                               }}
                             />
                             <Show when={row().worktree && landThisAgainOf(queue.info(row().branch))}>
-                              {(commit) => {
-                                // It lands the branch's newest commit (the head this page read), never only the one sent back.
-                                const again = () => landAgainOf(queue.info(row().branch));
+                              {(_sentBack) => {
+                                // It lands the head this page read (landRow pins it): the words name that commit.
+                                const again = () => landAgainItem(queue.info(row().branch)!, row().head);
                                 return (
                                   <menu.Item
                                     label={again().label}
                                     aria={`Land ${row().branch} at its newest commit`}
                                     icon={<Icon name="branch" small />}
-                                    description={again().included ? `${again().included}.${again().blocked ? ` ${again().blocked}` : ""}` : `Approves ${commit().slice(0, 7)} again: every check runs from the start.`}
+                                    description={again().description}
                                     disabled={(gestures().merge || undefined) ?? (working() ? "Working" : undefined)}
                                     onRun={() => {
                                       const r = row();

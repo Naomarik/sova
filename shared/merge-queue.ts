@@ -206,8 +206,11 @@ export interface MergeEntry {
   /** The branch moved past the pinned commit since approval: how many of its own commits (first-parent, none the
    *  target already has) are not included. On a sent-back entry: how many Land This Commit Again brings in. */
   newerCommits?: number;
-  /** Sent back with newer commits: why the branch's newest commit can't be landed now (a temporary commit,
-   *  uncommitted files); absent when it can. */
+  /** Sent back, and the branch was amended or rebased since: its tip isn't a descendant of the pinned commit. There is
+   *  nothing to count (`newerCommits` absent); the re-land still lands the tip. */
+  newerRewritten?: true;
+  /** Sent back and moved on: why the branch's newest commit isn't Ready to land (its chat's readiness reading, else a
+   *  temporary commit or uncommitted files); absent when it is. */
   newerBlocked?: string;
   /** The run now checking it, or the last one that did. */
   run?: string;
@@ -506,7 +509,7 @@ export interface MergeUnclear {
   why?: string;
 }
 
-export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "newerBlocked" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted"> & {
+export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "newerRewritten" | "newerBlocked" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted"> & {
   project: string;
   run?: string;
   /** The run's newest reviewer chat (Open Reviewer Chat on the branch's Worktrees row), while it runs and after. */
@@ -705,6 +708,7 @@ export interface MergeCard {
   eta?: MergeEntry["eta"];
   reason?: string;
   newerCommits?: number;
+  newerRewritten?: true;
   newerBlocked?: string;
   run?: string;
   /** Checking: steps finished of all the run's steps. */

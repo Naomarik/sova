@@ -80,15 +80,15 @@ export function notPushed(c: Pick<MergeCard, "state" | "landed">): string | null
 
 /** "1 newer commit not included", on a landed card (Land Again beside it). Needs a fix: what its re-land brings in
  *  ("2 newer commits included") and why the newest commit isn't Ready to land, when it isn't (landAgainOf). */
-export function cardNewer(c: Pick<MergeCard, "state" | "newerCommits"> & Partial<Pick<MergeCard, "newerBlocked">>): string | null {
+export function cardNewer(c: Pick<MergeCard, "state" | "newerCommits"> & Partial<Pick<MergeCard, "newerRewritten" | "newerBlocked">>): string | null {
   if (c.state === "landed") return newerWords(c.newerCommits);
   if (c.state !== "needs-fix") return null;
   const again = landAgainOf(c);
-  return [again.included, again.blocked].filter(Boolean).join(" ") || null;
+  return [again.included, again.blocked].filter(Boolean).join(" · ") || null;
 }
 
 /** A card action's button word: a sent-back card's re-land reads Land Newest Commit once its branch moved on. */
-export function cardActionLabel(c: Pick<MergeCard, "newerCommits">, a: CardAction): string {
+export function cardActionLabel(c: Pick<MergeCard, "newerCommits"> & Partial<Pick<MergeCard, "newerRewritten">>, a: CardAction): string {
   return a === "land-this-again" ? landAgainOf(c).label : CARD_ACTION_LABEL[a];
 }
 

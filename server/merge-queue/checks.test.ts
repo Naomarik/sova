@@ -237,10 +237,10 @@ describe("test checks and runs that ran no test", () => {
     expect(isTestCheck(raw as unknown as ProjectDef, by("build"))).toBe(false);
   });
 
-  test("ran no test: no report, or one counting none, naming no failing file or test; the first line is the error", async () => {
+  test("ran no test: a report that counts none and names no failing file or test; no report says nothing; the first line is the error", async () => {
     const { firstOutputLine, ranNoTest } = await import("./checks");
     const report = (o: Partial<{ passed: number | null; failed: number | null; failingNames: string[]; ranFiles: string[] }>) => ({ passed: null, failed: null, skipped: null, failures: [], failingFiles: [], failingNames: [], notes: [], ...o });
-    expect(ranNoTest({ failingFiles: [], report: null })).toBe(true);
+    expect(ranNoTest({ failingFiles: [], report: null })).toBe(false); // a crash midway, or a runner that writes none: tests may have run
     expect(ranNoTest({ failingFiles: [], report: report({ passed: 0, failed: 0 }) })).toBe(true);
     expect(ranNoTest({ failingFiles: ["a.test.ts"], report: null })).toBe(false);
     expect(ranNoTest({ failingFiles: [], report: report({ passed: 3, failed: 0 }) })).toBe(false);

@@ -67,6 +67,8 @@ export const PUSH_WAITS_NEXT_LANDING = "not pushed yet: goes out with the next l
 export const PUSH_HELD_NAMES = "push held: private names not set up yet";
 /** How long the merge thread's hold (merge.hold) lasts unless it is set again or cleared. */
 export const HOLD_MS = 5 * 60_000;
+/** How long one answer to "why isn't the newest commit Ready to land" is kept (view() runs often). */
+const NEWEST_MEMO_MS = 5_000;
 /** The reason a waiting entry shows while the merge thread holds the queue. */
 export const HOLD_WORDS = "Waiting: Sova is restarting";
 
@@ -94,6 +96,9 @@ export interface QueueDeps {
   listed?: (root: string) => boolean;
   /** A queue's view changed. */
   publish?: (view: MergeQueueView) => void;
+  /** Why the branch's newest commit `tip` isn't Ready to land, from its chat's readiness reading (read only, never a
+   *  fresh read): words, null when it is, undefined when no reading can say (the queue's own checks then answer). */
+  newestReading?: (worktree: string, tip: string) => Promise<string | null | undefined>;
   /** A test check was found broken on the target (heads.targetBroken): one notification for the user, so a session
    *  can be started to fix the target. Called once per check until a later run lifts it. */
   flagBroken?: (b: import("../../shared/merge-queue").TargetBroken, root: string) => void;
@@ -359,10 +364,16 @@ export class ProjectQueue {
     for (const e of this.q.entries) {
       if (isFinal(e) && !recentLanded.has(e.id) && !recentSentBack.has(e.id)) continue;
       const tip = await revParse(this.git, this.root, `refs/heads/${e.branch}`);
-      const n = tip && tip !== e.commit && (await isAncestor(this.git, this.root, e.commit, tip)) ? await ownCommitsPast(this.git, this.root, e.commit, tip, head || undefined) : 0;
+      const moved = !!tip && tip !== e.commit;
+      const descends = moved && (await isAncestor(this.git, this.root, e.commit, tip));
+      const n = descends ? await ownCommitsPast(this.git, this.root, e.commit, tip, head || undefined) : 0;
       if (n) e.newerCommits = n;
       else delete e.newerCommits;
-      const blocked = n && tip && e.state === "needs-fix" ? await this.newestBlocked(e.branch, tip) : null;
+      // Amended or rebased after the send-back: nothing to count, and the re-land still lands the tip.
+      const rewritten = moved && !descends && e.state === "needs-fix";
+      if (rewritten) e.newerRewritten = true;
+      else delete e.newerRewritten;
+      const blocked = (n || rewritten) && tip && e.state === "needs-fix" ? await this.newestBlocked(e.branch, tip) : null;
       if (blocked) e.newerBlocked = blocked;
       else delete e.newerBlocked;
     }
@@ -392,6 +403,8 @@ export class ProjectQueue {
       if (cause) e.sentBackFor = cause;
       if (!e.settled && redrafted.has(e.id)) e.redrafted = true;
     }
+    // A sent-back branch whose newest commit isn't Ready to land keeps its row, with why: no Ready row stands in for it.
+    const heldBack = new Set(v.needsFix.filter((e) => !e.settled && e.newerBlocked).map((e) => e.branch));
     const settings = head ? await this.settings().catch((err) => (this.log(`settings unreadable: ${err instanceof Error ? err.message : err}`), null)) : null;
     // Landing by request or push (al_3): what waits on the host, and how far local main is behind origin's.
     const weekAgo = new Date(this.now() - 7 * 24 * 3600_000).toISOString();
@@ -422,7 +435,7 @@ export class ProjectQueue {
     // An entry the hold keeps waiting has no start time: it starts once the release is published or abandoned.
     if (hold) for (const w of v.waiting) if (w.release !== hold.id) delete w.eta;
     const chats = this.deps.chatsOf?.(this.root) ?? {};
-    const readyRows = this.attachSummaries(v, ready);
+    const readyRows = this.attachSummaries(v, ready.filter((r) => !heldBack.has(r.branch)));
     return { ...v, served, ...(hold ? { release: structuredClone(hold) } : {}), ...(d.invalid ? { invalid: d.invalid } : {}), ...(readyRows.length ? { ready: readyRows } : {}), ...(thread ? { thread } : {}), ...chats, ...(tryRun ? { tryRun: structuredClone(tryRun) } : {}), ...(settings ? { settings } : {}) };
   }
 
@@ -915,12 +928,26 @@ export class ProjectQueue {
     void this.redraftedFacts().catch((err) => this.log(`docs check: ${err instanceof Error ? err.message : err}`));
   }
 
-  /** Why the branch's newest commit `tip` can't be landed now (what Land would refuse: a temporary commit, uncommitted
-   *  files in its folder), or null when it can. Read only. */
+  private newestMemo = new Map<string, { at: number; why: string | null }>();
+  /** Why the branch's newest commit `tip` isn't Ready to land (the chat's readiness reading, deps.newestReading), or
+   *  null when it is. No reading: what Land would refuse (a temporary commit, uncommitted files in its folder). Read
+   *  only; each answer is kept a few seconds, since view() runs often. */
   private async newestBlocked(branch: string, tip: string): Promise<string | null> {
+    const key = `${branch}\0${tip}`;
+    const hit = this.newestMemo.get(key);
+    if (hit && this.now() - hit.at < NEWEST_MEMO_MS) return hit.why;
+    const why = await this.newestBlockedNow(branch, tip);
+    if (this.newestMemo.size > 100) this.newestMemo.clear();
+    this.newestMemo.set(key, { at: this.now(), why });
+    return why;
+  }
+
+  private async newestBlockedNow(branch: string, tip: string): Promise<string | null> {
+    const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
+    const reading = wt ? await this.deps.newestReading?.(wt, tip).catch(() => undefined) : undefined;
+    if (reading !== undefined) return reading;
     const subject = (await this.git(["log", "-1", "--format=%s", tip], this.root)).stdout.trim();
     if (/^temp\b/i.test(subject)) return `its newest commit is a temporary commit ("${subject.slice(0, 60)}")`;
-    const wt = (await worktreesOf(this.git, this.root)).find((w) => w.branch === branch && w.path !== this.root)?.path;
     if (wt && existsSync(wt)) {
       const st = await this.git(statusArgs("--porcelain"), wt);
       const n = st.code === 0 ? st.stdout.split("\n").filter(Boolean).length : 0;

@@ -556,7 +556,8 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
           // Red on both: told apart only when both runs name their failures (a failure the target hasn't is the
           // branch's, whatever the counts); else it waits for the user, never landed as the target's.
           const onT = r.failingFiles.length ? r.failingFiles : namesOf(r);
-          if (runs && brokenOnTarget({ testCheck: isTestCheck(def, check), runs: [...runs, { code: r.proc.code, noTest: ranNoTest(r) }] })) {
+          // Never on a release: it must not pass with its test gates unrun; it waits on the user as before.
+          if (!release && runs && brokenOnTarget({ testCheck: isTestCheck(def, check), runs: [...runs, { code: r.proc.code, noTest: ranNoTest(r) }] })) {
             // A test check that runs no test anywhere, with the same exit each time: its command is broken on the
             // target (a bad flag, a missing selector). Not the branch's to fix: skipped for it, and flagged.
             const why = `${check.label} is broken on ${target}: no test ran (${firstOutputLine(r.proc.out) ?? `exit ${r.proc.code}`})`;

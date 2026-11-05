@@ -703,7 +703,11 @@ function SentBackRow(props: { projectId: string; root: string; entry: MergeEntry
         <RowHead projectId={props.projectId} branch={e().branch} session={e().session} chatOf={props.chatOf} />
         <p class="mq-facts">
           <QueueChip row={{ label: "Needs a fix", tone: "error" }} />
-          <span class="text-mono text-muted">{short(e().commit)}</span>
+          {/* Once the branch moved, this is the commit sent back, not the one the button lands. */}
+          <span class="text-muted">
+            <Show when={again().included}>sent back at </Show>
+            <span class="text-mono">{short(e().commit)}</span>
+          </span>
           <span class="text-muted">{relativeTime(e().updatedAt)}</span>
         </p>
         <BranchSummaryView summary={e().summary} projectId={props.projectId} branch={e().branch} />

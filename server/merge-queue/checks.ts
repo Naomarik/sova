@@ -351,10 +351,11 @@ export function isTestCheck(def: Pick<ProjectDef, "test"> | null, check: Pick<Pl
   return false;
 }
 
-/** A failed run that ran no test: no report or one counting none, naming no failing file and no failing test. */
+/** A failed run that shows it ran no test: its report counts none and names no failing file or test. No report shows
+ *  nothing (a crash midway, or a runner that writes none: real failures may be in there). */
 export function ranNoTest(r: Pick<CheckRun, "failingFiles" | "report">): boolean {
-  if (r.failingFiles.length || r.report?.failingNames.length || r.report?.ranFiles?.length) return false;
-  return !r.report || (r.report.passed ?? 0) + (r.report.failed ?? 0) === 0;
+  if (!r.report || r.failingFiles.length || r.report.failingNames.length || r.report.ranFiles?.length) return false;
+  return (r.report.passed ?? 0) + (r.report.failed ?? 0) === 0;
 }
 
 /** The first line a run printed that isn't the runner's own framing (the log's `$ …` and `[…]` lines): its error. */

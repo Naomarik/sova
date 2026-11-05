@@ -738,6 +738,11 @@ export async function startMergeQueue(
       publishFeed({ type: "merge_queue", project: view.project, view });
       cardsDo(mc.sync(view));
     },
+    // Why a sent-back branch's newest commit isn't Ready to land: its chat's last readiness reading, never a fresh read.
+    newestReading: async (worktree, tip) => {
+      const [{ listSessions }, { readinessReading }, { newestReadingOf }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
+      return newestReadingOf(worktree, tip, { owner: worktreeOwnerOf, pathOf: async (id) => (await listSessions()).find((s) => s.id === id)?.path, reading: readinessReading, canonical });
+    },
     // A test check broken on the target: one notification that opens the project's Merge Queue tab (its Needs you
     // holds the flag), so the user can start a chat to fix the target.
     flagBroken: (b, root) => {

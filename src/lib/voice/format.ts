@@ -77,6 +77,7 @@ export function micErrorSentence(err: unknown): string {
   const name = (err as { name?: string } | null)?.name ?? "";
   if (name === "NotAllowedError" || name === "SecurityError") return "The browser blocked the microphone. Allow it for this site, then try again.";
   if (name === "NotFoundError" || name === "OverconstrainedError" || name === "NotReadableError") return "No microphone found.";
+  if (name === "MicStartTimeout") return "The microphone didn't start within 10 seconds. Quit and reopen Sova or your browser, then try again.";
   return `Couldn't start the microphone. ${(err as Error)?.message || "Unknown error"}.`.replace(/\.\.$/, ".");
 }
 

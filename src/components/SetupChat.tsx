@@ -434,7 +434,7 @@ export function SetupLandButton(props: { projectId: string; proposal: SetupPropo
           <button
             type="button"
             class={`button button-sm${st().action === "trial" || st().action === "wait" ? "" : " button-primary"}`}
-            aria-label={st().action === "land" ? `Land ${p().branch}` : st().action === "merge" ? `Merge ${p().branch}` : `Run a trial of ${p().branch}`}
+            aria-label={st().action === "land" ? `Land ${p().branch}` : st().action === "merge" ? `Merge Branch ${p().branch}` : `Run Trial of ${p().branch}`}
             aria-disabled={busy() || !st().can ? "true" : undefined}
             aria-describedby={st().why ? whyId : undefined}
             title={st().action === "land" ? `Queues ${p().branch}: checked on ${p().target} first, then ${p().target} moves to it.` : st().action === "trial" ? "Runs the branch's own checks in the merge copy. Nothing is saved or merged." : undefined}

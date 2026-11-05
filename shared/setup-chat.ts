@@ -48,12 +48,20 @@ export interface SetupProposal {
   merge: MergeSetupReview | null;
   release?: ReleaseSetupReview;
   deploy?: DeployReview;
-  /** The files the branch changes against its target. */
-  files?: string[];
+  /** Every file the branch changes against its target at `commit` (from the merge base, renames as the new path),
+      sorted; `setup` marks the ones the land gate counts (server/merge-queue/setup-branch.ts). Always sent; [] when none. */
+  files: SetupProposalFile[];
   /** The newest trial of exactly `commit`; null: none yet. */
   trial: SetupTrial | null;
   /** Whether Land / Merge Branch is offered now, and why not. */
   land: { can: boolean; why?: string };
+}
+
+export interface SetupProposalFile {
+  path: string;
+  /** Added, modified, deleted or renamed. */
+  status: "A" | "M" | "D" | "R";
+  setup: boolean;
 }
 
 export interface SetupChatView {

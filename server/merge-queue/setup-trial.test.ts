@@ -4,7 +4,8 @@ import type { MergeCheckDecl } from "../../shared/project-contract";
 import type { MergeTrial } from "../../shared/merge-queue";
 import type { Caller } from "../project-services/engine";
 import { merger } from "./routes";
-import { changedSections, releaseFolders, trialReleaseChecks, untriedWhy } from "./setup-branch";
+import { changedFilesOf, changedSections, releaseFolders, trialReleaseChecks, untriedWhy } from "./setup-branch";
+import { realGit } from "./guard";
 import { makeKit, until } from "./testing/queue-kit";
 
 const op: Caller = { kind: "operator" };
@@ -66,6 +67,8 @@ describe("merge.try and the land gate", () => {
       queues: k.queues,
       served: { isListed: () => true, served: async () => true, bareView: async () => { throw new Error("served"); } },
       rootOf: async (p) => (p.startsWith(k.repo.scratch) ? k.repo.root : null),
+      isThreadChat: (root, sid) => root === k.repo.root && sid === "the-thread",
+      isReviewerChat: (sid) => sid === "a-reviewer",
     });
     const chat: Caller = { kind: "session", id: "setup-chat", root: k.repo.root, own: [] };
     return { k, call, chat };
@@ -95,6 +98,43 @@ describe("merge.try and the land gate", () => {
       const again = await call("merge.add", { project: k.repo.root, branch: "setup/checks" }, op);
       assert.equal(again.ok, false);
       assert.match(again.error!.message, new RegExp(`no passing trial at ${next.slice(0, 7)}`));
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("the merge thread and a run's reviewer run no trial; another chat of the project does", async () => {
+    const { k, call } = setup();
+    try {
+      k.repo.branch("setup/t", { ".sova/project.json": DEF_TEXT("true") });
+      for (const id of ["the-thread", "a-reviewer"]) {
+        const r = await call("merge.try", { project: k.repo.root, branch: "setup/t" }, { kind: "session", id, root: k.repo.root, own: [] });
+        assert.equal(r.error?.code, "forbidden", id);
+      }
+      assert.equal(k.run.inputs.length, 0, "a refused caller started nothing");
+      const ok = await call("merge.try", { project: k.repo.root, branch: "setup/t" }, { kind: "session", id: "other", root: k.repo.root, own: [] });
+      assert.equal(ok.ok, true, ok.error?.message);
+      const q = await k.q();
+      await until(() => q.trials()[0]?.verdict !== "running", "the trial's end");
+    } finally {
+      await k.done();
+    }
+  });
+
+  test("the proposal's files: every file the branch changes, sorted, setup marked by the gate's rule", async () => {
+    const { k } = setup();
+    try {
+      const b = k.repo.branch("setup/files", { ".sova/project.json": DEF_TEXT("true"), ".sova/playbooks/release/release.json": "{}\n", "scripts/check.sh": "true\n", ".sova/spec/drafts/x.md": "x\n" });
+      const files = await changedFilesOf(realGit, k.repo.root, k.repo.target, b.head);
+      assert.deepEqual(files, [
+        { path: ".sova/playbooks/release/release.json", status: "A", setup: true },
+        { path: ".sova/project.json", status: "A", setup: true },
+        { path: ".sova/spec/drafts/x.md", status: "A", setup: false },
+        { path: "scripts/check.sh", status: "A", setup: false },
+      ]);
+      // A project.json edit that leaves the counted sections alone isn't setup.
+      const p = k.repo.branch("feat/open", { "a.txt": "changed\n" });
+      assert.deepEqual(await changedFilesOf(realGit, k.repo.root, k.repo.target, p.head), [{ path: "a.txt", status: "M", setup: false }]);
     } finally {
       await k.done();
     }

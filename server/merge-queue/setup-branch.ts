@@ -108,6 +108,38 @@ export function trialReleaseChecks(branch: readonly MergeCheckDecl[], target: re
   return { run, notRun };
 }
 
+/** One file a branch changes, as the Setup chat's proposal lists it: `setup` by the land gate's own rule. */
+export interface ChangedFile {
+  path: string;
+  status: "A" | "M" | "D" | "R";
+  setup: boolean;
+}
+
+/**
+ * Every file a branch changes against its target at `head` (from the merge base; renames as their new path), each
+ * marked setup when the land gate counts it: `.sova/project.json` when its counted sections changed, and the release
+ * playbook folder's files. Sorted by path; null when Git can't tell.
+ */
+export async function changedFilesOf(git: Git, root: string, base: string, head: string): Promise<ChangedFile[] | null> {
+  const mb = await git(["merge-base", base, head], root);
+  const from = mb.code === 0 && mb.stdout.trim() ? mb.stdout.trim() : base;
+  const diff = await git(["diff", "--name-status", "-M", from, head], root);
+  if (diff.code !== 0) return null;
+  const change = await setupChangeOf(git, root, base, head);
+  const setupFiles = new Set(change?.files ?? []);
+  const out: ChangedFile[] = [];
+  for (const line of diff.stdout.split("\n")) {
+    const parts = line.split("\t");
+    const code = (parts[0] ?? "").trim();
+    if (!code) continue;
+    const path = (code.startsWith("R") ? parts[2] : parts[1]) ?? "";
+    const status = (code[0] === "A" || code[0] === "D" || code[0] === "R" ? code[0] : "M") as ChangedFile["status"];
+    const setup = path === CONTRACT_FILE ? !!change && change.sections.length > 0 : setupFiles.has(path) || (code.startsWith("R") && setupFiles.has(parts[1] ?? ""));
+    out.push({ path, status, setup });
+  }
+  return out.sort((a, b) => a.path.localeCompare(b.path));
+}
+
 export const isSetupChange = (c: SetupChange | null): boolean => !!c && (c.sections.length > 0 || c.files.length > 0);
 
 /** The newest trial of exactly `commit`, if any. Pure. */

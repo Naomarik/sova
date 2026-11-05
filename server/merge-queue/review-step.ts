@@ -73,6 +73,9 @@ const waiting = new Map<string, Waiting>();
 /** The reviewer chat a run is waiting on, if any (merge.review's caller check: only it may answer for that run). */
 export const reviewerOf = (runId: string): string | null => waiting.get(runId)?.sessionId ?? null;
 
+/** `sessionId` is a reviewer chat some run waits on now. */
+export const isReviewerChat = (sessionId: string): boolean => [...waiting.values()].some((w) => w.sessionId === sessionId);
+
 /** Every reviewer chat a review is waiting on now (the startup sweep leaves these alone). */
 export const activeReviewers = (): Set<string> => new Set([...waiting.values()].map((w) => w.sessionId).filter((id): id is string => !!id));
 

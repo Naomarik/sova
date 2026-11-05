@@ -184,7 +184,7 @@ export function trialView(t: MergeTrial, run: MergeRun | null): SetupTrial {
 }
 
 /** The proposal from the runtime's run review and the queue's trials. Pure. */
-export function proposalOf(view: ProjectRuntimeView, served: boolean, trials: readonly MergeTrial[], readRun: (id: string) => MergeRun | null, untried: string | null): SetupProposal | null {
+export function proposalOf(view: ProjectRuntimeView, served: boolean, trials: readonly MergeTrial[], readRun: (id: string) => MergeRun | null, untried: string | null, files: SetupProposal["files"] = []): SetupProposal | null {
   const pb = view.playbook;
   if (!pb || view.playbookState !== "proposed" || pb.proposes !== "pipeline" || !pb.branch || !pb.commit) return null;
   const r = pb.review;
@@ -203,6 +203,7 @@ export function proposalOf(view: ProjectRuntimeView, served: boolean, trials: re
     merge: r?.merge ?? null,
     ...(r?.release ? { release: r.release } : {}),
     ...(r?.deploy ? { deploy: r.deploy } : {}),
+    files,
     trial,
     land: why ? { can: false, why } : { can: true },
   };
@@ -238,7 +239,9 @@ export async function readSetup(projectId: string): Promise<SetupStatus> {
     if (pb && live === "proposed") {
       const q = await (await import("../merge-queue/wire")).setupTrialsAt(p.root);
       const untried = pb.commit ? await (await import("../merge-queue/wire")).setupUntriedAt(p.root, pb.commit) : null;
-      proposal = proposalOf(view, facts.served, q?.trials ?? [], q?.readRun ?? (() => null), untried);
+      const { changedFilesOf } = await import("../merge-queue/setup-branch");
+      const files = pb.commit ? ((await changedFilesOf(realGit, p.root, pb.target ?? facts.target, pb.commit).catch(() => null)) ?? []) : [];
+      proposal = proposalOf(view, facts.served, q?.trials ?? [], q?.readRun ?? (() => null), untried, files);
     }
     // A standing run between turns reads "running" in the registry: what its session does now decides working or idle.
     const state: SetupChatView["state"] = now?.working ? "working" : now?.questions ? "waiting" : live === "proposed" ? "proposed" : live === "waiting" ? "waiting" : live === "running" && !now ? "working" : "idle";

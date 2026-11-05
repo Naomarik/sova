@@ -35,6 +35,8 @@ export interface MergerDeps {
   bareSettings?: (root: string) => Promise<import("../../shared/merge-queue-settings").MergeQueueSettings | null>;
   /** The recorded merge thread of `root` is `sessionId`. */
   isThreadChat?: (root: string, sessionId: string) => boolean;
+  /** `sessionId` is a run's reviewer chat (any run's, current or recent). */
+  isReviewerChat?: (sessionId: string) => boolean;
   /** The reviewer chat run `run` waits on. */
   reviewerOf?: (run: string) => string | null;
   /** Hand a reviewer's verdict to the review step (review-step.ts deliverReview); false: none waits. */
@@ -266,7 +268,10 @@ function authorize(deps: MergerDeps, verb: MergeVerb, caller: Caller, root: stri
   if (sid && deps.isThreadChat?.(root, sid) && THREAD_VERBS.includes(verb)) return;
   if (reads && caller.kind !== "conform") return;
   // A trial saves and merges nothing: any chat on its own project may run one (the setup chat does); never merge.setup.
+  // Never the merge thread or a run's reviewer: neither sets anything up.
   if (verb === "merge.try") {
+    if (sid && deps.isThreadChat?.(root, sid)) throw new MergeFailure("forbidden", "the merge thread never sets anything up: it runs no trial");
+    if (sid && deps.isReviewerChat?.(sid)) throw new MergeFailure("forbidden", "a run's reviewer runs no trial");
     if (caller.kind === "session") return;
     throw new MergeFailure("forbidden", "only the user or a chat on this project runs a trial");
   }

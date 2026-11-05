@@ -817,6 +817,7 @@ export async function startMergeQueue(
     },
     isThreadChat: (root, sid) => threadMod.mergeThread().isThreadChat(root, sid),
     reviewerOf: review.reviewerOf,
+    isReviewerChat: review.isReviewerChat,
     deliverReview: review.deliverReview,
     ...(await threadVerbDeps(served)),
   });

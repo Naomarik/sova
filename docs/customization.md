@@ -8,6 +8,10 @@ Choose a built-in theme in **Settings → Themes**, or save a JSON file in
 `~/.pi/agent/sova/themes/`. While the Themes tab is open, the picker refreshes every 2 seconds—no
 rebuild or restart.
 
+Pick one light theme and one dark theme, then set **Appearance** to Light, Dark, or Auto. Auto
+shows your light theme while your system is set to light and your dark theme while it's dark,
+switching the moment the system does; Sova starts in Dark.
+
 For example, save this as `desk-lamp.json`:
 
 ```json

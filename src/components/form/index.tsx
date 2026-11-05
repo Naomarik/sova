@@ -128,16 +128,18 @@ export interface Option {
 }
 
 /** A list to pick from: `options`, or `<option>`s as children (for groups). */
+type SelectAttrs = Omit<JSX.SelectHTMLAttributes<HTMLSelectElement>, "value" | "onChange" | "id" | "class" | "children">;
+
 export function Select(
-  props: FieldProps & { value: string; onChange(value: string): void; options?: readonly Option[]; children?: JSX.Element; disabled?: boolean; selectClass?: string },
+  props: FieldProps & SelectAttrs & { value: string; onChange(value: string, el: HTMLSelectElement): void; options?: readonly Option[]; children?: JSX.Element; selectClass?: string },
 ) {
-  const [f, own] = splitProps(props, FIELD_KEYS);
+  const [f, own, rest] = splitProps(props, FIELD_KEYS, ["value", "onChange", "options", "children", "selectClass"]);
   return (
     <Field
       {...f}
       control={(aria) => (
         <div class="select-wrap">
-          <select class={cls("select", own.selectClass)} {...aria} disabled={own.disabled} onChange={(e) => own.onChange(e.currentTarget.value)}>
+          <select class={cls("select", own.selectClass)} {...rest} {...aria} onChange={(e) => own.onChange(e.currentTarget.value, e.currentTarget)}>
             <For each={own.options}>
               {(o) => (
                 <option value={o.value} selected={o.value === own.value}>
@@ -189,24 +191,50 @@ export function Toggle(props: {
   );
 }
 
-/** One of a few, as radio buttons; each option's hint follows its label. */
-export function Choice(props: { label: string; value: string; options: readonly Option[]; onChange(value: string): void; disabled?: boolean; class?: string }) {
+/** One of a few, as radio buttons; each option's hint follows its label (`cards`: a bordered card
+    per option, its label bold and its hint under it). Named by `label`, or by the element `labelledBy`. */
+export function Choice(props: {
+  label?: string;
+  labelledBy?: string;
+  value: string | null;
+  options: readonly Option[];
+  onChange(value: string): void;
+  cards?: boolean;
+  disabled?: boolean;
+  class?: string;
+}) {
   const name = createUniqueId();
   return (
-    <div role="radiogroup" aria-label={props.label} class={props.class}>
+    <div role="radiogroup" aria-label={props.label} aria-labelledby={props.labelledBy} class={props.class}>
       <For each={props.options}>
-        {(o) => (
-          <label class="toggle">
-            <input type="radio" name={name} checked={props.value === o.value} disabled={props.disabled} onChange={() => props.onChange(o.value)} />
-            <span class="toggle-box" aria-hidden="true" />
-            <span>
-              {o.label}
-              <Show when={o.hint}>
-                <span class="field-hint"> · {o.hint}</span>
-              </Show>
-            </span>
-          </label>
-        )}
+        {(o) => {
+          const input = <input type="radio" name={name} value={o.value} checked={props.value === o.value} disabled={props.disabled} onChange={() => props.onChange(o.value)} />;
+          return (
+            <Show
+              when={props.cards}
+              fallback={
+                <label class="toggle">
+                  {input}
+                  <span class="toggle-box" aria-hidden="true" />
+                  <span>
+                    {o.label}
+                    <Show when={o.hint}>
+                      <span class="field-hint"> · {o.hint}</span>
+                    </Show>
+                  </span>
+                </label>
+              }
+            >
+              <label class="mq-choice">
+                {input}
+                <span>
+                  <strong>{o.label}</strong>
+                  <span class="text-caption mq-choice-desc">{o.hint}</span>
+                </span>
+              </label>
+            </Show>
+          );
+        }}
       </For>
     </div>
   );

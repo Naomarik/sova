@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { MergeQueueSettings } from "../../shared/merge-queue-settings";
-import { changeLines, changesOf, draftHolds, draftProblem, freshChatWords, minutesTextOf, rebaseDraft, typedMinutes, checksCaption, minutes, modelWords, parseMinutes, savedWords, summaryLine, toProjectDraft } from "./merge-queue-settings";
+import { check as checkRule } from "../../shared/form-rules";
+import { changeLines, changesOf, draftHolds, draftProblem, freshChatWords, minutesTextOf, rebaseDraft, typedMinutes, checksCaption, minutes, modelWords, minutesRule, savedWords, summaryLine, toProjectDraft } from "./merge-queue-settings";
 
 const SHA = "97927e0c0a92041da839da63093e474719f83837";
 const check = (id: string, optional = false) => ({ id, label: id[0]!.toUpperCase() + id.slice(1), timeoutSec: 600, rerun: false, optional });
@@ -47,8 +48,8 @@ test("a save sends only what the user changed: an absent push stays absent", () 
 });
 
 test("time limits are whole minutes up to the cap", () => {
-  assert.equal(parseMinutes("25", 30), 25);
-  for (const bad of ["0", "31", "2.5", "", "x", "-3"]) assert.equal(parseMinutes(bad, 30), null, bad);
+  assert.deepEqual(checkRule(minutesRule(30), "25"), { ok: true, value: 25 });
+  for (const bad of ["0", "31", "2.5", "", "x", "-3"]) assert.equal(checkRule(minutesRule(30), bad).ok, false, bad);
   assert.equal(minutes(600), "10 min");
   assert.equal(minutes(90), "1 min 30 s");
   assert.equal(minutes(45), "45 s");
@@ -144,7 +145,7 @@ test("a time limit box keeps what was typed; a bad one holds the save and says w
     let d = typedMinutes(d0, "c1", "1", s);
     d = typedMinutes(d, "c1", bad, s);
     assert.equal(minutesTextOf(d, "c1", s), bad, `${JSON.stringify(bad)} stays as typed`);
-    assert.equal(draftProblem(d, s), "C1: a time limit is whole minutes, 1 to 30.", JSON.stringify(bad));
+    assert.equal(draftProblem(d, s), "C1: the time limit in minutes must be a whole number from 1 to 30.", JSON.stringify(bad));
     assert.equal(draftHolds(d, s, true), true, `${JSON.stringify(bad)} is an unsaved edit (it holds the close)`);
     // What would be saved never carries the old prefix: the save itself waits on the problem.
     assert.equal(changesOf(d, s, true)?.checks?.c1?.timeoutSec, 60, "the last good number is still staged, so the save must wait");

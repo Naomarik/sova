@@ -17,7 +17,7 @@ import {
   checksCaption,
   minutes,
   modelWords,
-  parseMinutes,
+  minutesRule,
   rebaseDraft,
   refusalWords,
   pendingSaveTitle,
@@ -36,6 +36,7 @@ import { announce, home, toast } from "../../lib/ui-state";
 import { FolderViewer } from "../FolderViewer";
 import { notSetUp, requestInitialize } from "../../lib/merge-queue-initialize";
 import { ModelPickButton } from "../ModelPickButton";
+import { NumberField, Select, Toggle } from "../form";
 import { Banner } from "../ui";
 import { MergeQueueLandHow, MergeQueueLandSuggestion } from "./MergeQueueLandHow";
 import "./MergeQueueSettings.css";
@@ -79,30 +80,21 @@ export function MergeQueueSettingsSection(props: { project: string | null }) {
           Merge queue
         </h3>
         <Show when={(projects() ?? []).length > 0}>
-          <label class="mqs-project">
-            <span class="field-label">Project</span>
-            <span class="select-wrap">
-              <select
-                class="select"
-                value={current()?.id ?? ""}
-                onChange={(e) => {
-                  const next = e.currentTarget.value;
-                  // Unsaved edits of another project's settings: ask before they go.
-                  if (stagedDirty() && stagedEdit()?.project !== next) {
-                    e.currentTarget.value = current()?.id ?? "";
-                    setAskSwitch(next);
-                    return;
-                  }
-                  setPicked(next);
-                }}
-              >
-                <For each={projects()}>{(p) => <option value={p.id}>{p.name}</option>}</For>
-              </select>
-              <span class="select-caret" aria-hidden="true">
-                ▾
-              </span>
-            </span>
-          </label>
+          <Select
+            class="mqs-project"
+            label="Project"
+            value={current()?.id ?? ""}
+            options={(projects() ?? []).map((p) => ({ value: p.id, label: p.name }))}
+            onChange={(next, el) => {
+              // Unsaved edits of another project's settings: ask before they go.
+              if (stagedDirty() && stagedEdit()?.project !== next) {
+                el.value = current()?.id ?? "";
+                setAskSwitch(next);
+                return;
+              }
+              setPicked(next);
+            }}
+          />
         </Show>
       </div>
       <Show when={askSwitch()}>
@@ -361,11 +353,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
         </Row>
         <Show when={showsPushToOrigin(s().how?.effective)}>
           <Row label="Push after each landing" end={<Tag source="project" />} hint={!props.hasOrigin ? "This project has no origin, so nothing is pushed." : undefined}>
-            <label class="toggle">
-              <input type="checkbox" checked={draft().push} disabled={locked() || !props.hasOrigin} onChange={(e) => setDraft({ ...draft(), push: e.currentTarget.checked })} />
-              <span class="toggle-box" aria-hidden="true" />
-              <span>{draft().push ? "On" : "Off"}</span>
-            </label>
+            <Toggle label={draft().push ? "On" : "Off"} checked={draft().push} disabled={locked() || !props.hasOrigin} onChange={(on) => setDraft({ ...draft(), push: on })} />
           </Row>
         </Show>
         <Row label="Private names" end={<Tag source="computer" />}>
@@ -381,42 +369,35 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
               // What was typed lives in the staged edit (kept across tabs, cleared by a discard or a save),
               // so a box that isn't a time limit holds the save instead of saving the last good number.
               const text = () => minutesTextOf(draft(), c.id, s());
-              const bad = () => parseMinutes(text(), capMin()) === null;
               return (
-                <Row label={c.label} end={<Tag source="project" />} hint={bad() ? `A time limit is whole minutes, 1 to ${capMin()}.` : undefined}>
+                <Row label={c.label} end={<Tag source="project" />}>
                   <span class="mqs-check">
-                    <label class="mqs-minutes">
-                      <input
-                        class="input text-num"
-                        type="text"
-                        inputmode="numeric"
-                        autocomplete="off"
-                        value={text()}
-                        disabled={locked()}
-                        aria-invalid={bad()}
-                        aria-label={`${c.label}: time limit in minutes`}
-                        onInput={(e) => {
-                          setDraft(typedMinutes(draft(), c.id, e.currentTarget.value, s()));
-                          setSaid(null);
-                          setSaidLink(null);
-                        }}
-                      />
-                      <span class="text-caption text-muted">min</span>
-                    </label>
-                    <label class="toggle">
-                      <input type="checkbox" checked={d().rerun} disabled={locked()} onChange={(e) => editCheck(c.id, { rerun: e.currentTarget.checked })} />
-                      <span class="toggle-box" aria-hidden="true" />
-                      <span>Reruns failed files</span>
-                    </label>
-                    <span class="select-wrap">
-                      <select class="select" aria-label={`${c.label}: when it runs`} value={d().optional ? "picked" : "always"} disabled={locked()} onChange={(e) => editCheck(c.id, { optional: e.currentTarget.value === "picked" })}>
-                        <option value="always">Every time</option>
-                        <option value="picked">Only when picked</option>
-                      </select>
-                      <span class="select-caret" aria-hidden="true">
-                        ▾
-                      </span>
-                    </span>
+                    <NumberField
+                      label={`${c.label}: time limit in minutes`}
+                      hideLabel
+                      rule={minutesRule(capMin(), c.label)}
+                      value={text()}
+                      disabled={locked()}
+                      afterClass="mqs-minutes"
+                      after={<span class="text-caption text-muted">min</span>}
+                      onInput={(v) => {
+                        setDraft(typedMinutes(draft(), c.id, v, s()));
+                        setSaid(null);
+                        setSaidLink(null);
+                      }}
+                    />
+                    <Toggle label="Reruns failed files" checked={d().rerun} disabled={locked()} onChange={(on) => editCheck(c.id, { rerun: on })} />
+                    <Select
+                      label={`${c.label}: when it runs`}
+                      hideLabel
+                      value={d().optional ? "picked" : "always"}
+                      options={[
+                        { value: "always", label: "Every time" },
+                        { value: "picked", label: "Only when picked" },
+                      ]}
+                      disabled={locked()}
+                      onChange={(v) => editCheck(c.id, { optional: v === "picked" })}
+                    />
                   </span>
                 </Row>
               );
@@ -449,11 +430,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
 
       <Group title="Review">
         <Row label="Review each landing" end={<Tag source="project" />} hint={!draft().review && !s().review.canTurnOn ? "Turning it on needs the review folder on the target: .sova/playbooks/review." : undefined}>
-          <label class="toggle">
-            <input type="checkbox" checked={draft().review} disabled={locked() || (!s().review.on && !s().review.canTurnOn)} onChange={(e) => setDraft({ ...draft(), review: e.currentTarget.checked })} />
-            <span class="toggle-box" aria-hidden="true" />
-            <span>{draft().review ? "On" : "Off"}</span>
-          </label>
+          <Toggle label={draft().review ? "On" : "Off"} checked={draft().review} disabled={locked() || (!s().review.on && !s().review.canTurnOn)} onChange={(on) => setDraft({ ...draft(), review: on })} />
         </Row>
         <Row
           label="Instructions"

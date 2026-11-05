@@ -692,7 +692,7 @@ describe("Merge Queue: a bad time-limit box holds the close", () => {
       const draft = mq.typedMinutes(mq.toProjectDraft(base, false), "unit", bad, base);
       held.stageEdit({ project: "prj_test", base, hasOrigin: false, draft });
       assert.equal(mq.minutesTextOf(draft, "unit", base), bad, "kept as typed");
-      assert.equal(mq.draftProblem(draft, base), "Unit tests: a time limit is whole minutes, 1 to 30.");
+      assert.equal(mq.draftProblem(draft, base), "Unit tests: the time limit in minutes must be a whole number from 1 to 30.");
       assert.deepEqual(heldEdits().map((h) => h.label), ["Merge Queue"], "the close-hold doesn't count it");
       resetAllDrafts();
       assert.deepEqual(heldEdits(), [], "Discard and Close leaves it held");

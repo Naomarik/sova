@@ -2,8 +2,8 @@ import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, onMo
 import { releaseControl } from "../lib/release-control";
 import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
 import { avatarLogins, composerLogin } from "../lib/claude-login";
-import { runControls } from "../lib/compact";
-import { createTouchMode, enterSends, notePress as pressAt, refocusAfterSend, type SendPress } from "../lib/input-mode";
+import { runControls, stopButton } from "../lib/compact";
+import { createTouchMode, enterSends, escStops, notePress as pressAt, refocusAfterSend, type SendPress } from "../lib/input-mode";
 import { watchKeyboard } from "../lib/voice/keyboard";
 import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
@@ -334,6 +334,15 @@ export function Composer(props: {
 
   const reason = () => props.readOnly ?? props.blocked ?? null;
   const controls = () => runControls(props.running, !!props.compacting);
+  /** Stop: hidden, aria-disabled or usable. Esc in the box asks the same question. */
+  const stopState = () =>
+    stopButton({
+      running: props.running,
+      compacting: !!props.compacting,
+      readOnly: !!props.readOnly,
+      stopping: props.stopping,
+      stopBlocked: !!props.stopBlocked,
+    });
   /** TUI-live, connecting, reconnecting: nothing attaches and nothing sends. */
   const disabled = () => !!reason();
   /** What the foot says: the state's reason, else that an attachment is still uploading. */
@@ -1278,6 +1287,13 @@ export function Composer(props: {
                     return;
                   }
                 }
+                // Esc does what Stop does, once the menus above, a dictation (its window capture
+                // listener) and any popover Esc closes have had their turn. Text and focus stay.
+                if (escStops(e, stopState(), () => !!document.querySelector(":popover-open:not([popover=manual])"))) {
+                  e.preventDefault();
+                  props.onAbort();
+                  return;
+                }
                 if (enterSends(e, touch())) void send(e);
               }}
             />
@@ -1310,7 +1326,7 @@ export function Composer(props: {
                 <span class="button-label">{controls().steer ? "Steer" : "Send"}</span>
               </button>
             </Show>
-            <Show when={controls().stop && !props.readOnly}>
+            <Show when={stopState() !== "hidden"}>
               {/* Icon only, at every width: the 44px square is the form the actions row already
                   collapses to under 480px, and the run-status row above says "Stopping…" — so the
                   word was repeating what the status row and the glyph already say. */}
@@ -1318,13 +1334,14 @@ export function Composer(props: {
                 type="button"
                 class="button button-destructive button-icon"
                 aria-label="Stop"
-                title="Stop"
-                aria-disabled={props.stopping || props.stopBlocked ? "true" : undefined}
+                title="Stop (Esc)"
+                aria-keyshortcuts="Escape"
+                aria-disabled={stopState() === "disabled" ? "true" : undefined}
                 aria-describedby={props.stopBlocked ? paneId("composer-reason") : undefined}
                 onPointerDown={notePress}
                 onClick={() => {
                   const p = takePress();
-                  if (!props.stopping && !props.stopBlocked) props.onAbort();
+                  if (stopState() === "usable") props.onAbort();
                   settleFocus(p);
                 }}
               >

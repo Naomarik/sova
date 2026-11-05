@@ -265,7 +265,22 @@ export function WorktreeQueueRow(props: {
         <div class="wt-queue-facts">
           <QueueChip row={row()} />
           <Show when={row().detail}>{(d) => <span class="text-caption text-mono">{d()}</span>}</Show>
-          <Show when={row().size}>{(z) => <span class="text-caption text-mono wt-queue-size">{z()}</span>}</Show>
+          {/* "3 commits · +40 −2 · 2d ago": the date is when the branch last changed, in full on hover. */}
+          <Show when={row().size || row().when}>
+            <span class="text-caption text-mono wt-queue-size">
+              {row().size}
+              <Show when={row().when}>
+                {(t) => (
+                  <>
+                    {row().size ? " · " : ""}
+                    <time class="wt-queue-when" dateTime={t().iso} title={t().full} aria-label={`last commit ${t().full}`}>
+                      {t().text}
+                    </time>
+                  </>
+                )}
+              </Show>
+            </span>
+          </Show>
           {props.chips}
         </div>
         <Show when={w().mergeServed}>

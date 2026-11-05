@@ -761,17 +761,28 @@ export class ProjectQueue {
       if (w.branch.startsWith("sova/")) continue;
       const ahead = await countBetween(this.git, this.root, head, w.head);
       if (!ahead) continue;
-      const subject = (await this.git(["log", "-1", "--format=%s", w.head], this.root)).stdout.trim();
+      // Its subject and when it last changed (the head's committer date), in one read.
+      const [subjectRaw = "", headAtRaw = ""] = (await this.git(["log", "-1", "--format=%s%x1f%cI", w.head], this.root)).stdout.trim().split("\u001f");
+      const subject = subjectRaw.trim();
+      const headAt = headAtRaw.trim();
       if (/^temp\b/i.test(subject)) continue;
       const st = await this.git(statusArgs("--porcelain"), w.path);
       if (st.code !== 0 || st.stdout.trim()) continue;
       const owner = ownerId(await this.deps.ownerOf?.(this.root, w.branch, w.path).catch(() => null));
       const short = await this.git(["diff", "--shortstat", `${head}...${w.head}`], this.root);
       const lines = short.code === 0 ? { added: Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0), removed: Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0) } : {};
-      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
+      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(headAt ? { headAt } : {}), ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
     }
     this.readyCache = { at: this.now(), head, list: out };
     return this.filterReady(out, redrafted);
+  }
+
+  /** The Ready to land, not approved rows as the view lists them, read from git only: no view is built, nothing is
+   *  published, no summary is asked for (the summaries' sweep, summary-sweep.ts). */
+  async readyRows(): Promise<MergeReady[]> {
+    const head = (await this.declared()).head || (await this.targetHead()) || "";
+    if (!head) return [];
+    return this.readyList(head, await this.redraftedFacts());
   }
   /** A branch sent back (needs-fix) is Ready again at a newer commit, or at the same commit once it was sent back for
    *  its drafts and they are fixed (`redrafted`: changed since the approval, and Sova's docs check reads clean). */

@@ -103,7 +103,18 @@ const shAsync = (host, script) =>
 const claudeSim = (host, cmd, extra = "") =>
   JSON.parse(sh(host, `cd /sova && node scripts/mesh-lab/mock-token-server/claude-sim.mjs ${cmd} --dir "$SOVA_SYNC_CLAUDE_DIR" --mock "$MOCK_TOKEN_URL" ${extra}`).split("\n").at(-1));
 
-const mock = async (path) => (await fetch(new URL(path, MOCK))).json();
+/** GET a mock harness endpoint from the laptop. A failure says what failed, never retried: a step that
+    can't reach the mock fails with its URL and cause. */
+const mock = async (path) => {
+  const url = new URL(path, MOCK);
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (e) {
+    throw new Error(`mock GET ${url}: ${e?.cause?.code ?? e?.cause?.message ?? e?.message} at ${new Date().toISOString()}`);
+  }
+  return res.json();
+};
 const lineage = async (id) => (await mock("/mock/lineages"))[id];
 /** The throwaway provider of the conflict scenarios; a fresh name has no logout history on the mesh. */
 const CONFLICT_PROVIDER = process.env.M3_CONFLICT_PROVIDER ?? "m3conflict";

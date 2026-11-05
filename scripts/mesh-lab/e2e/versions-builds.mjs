@@ -37,7 +37,7 @@ export const refOf = (name) => `${PREFIX}${name}`;
 /** What never reaches a host image, or only from the working tree at `lab up`/`swap`: the harnesses and the
     lab CLI. Everything else in the tree is in the image (git archive), so it counts, strictly; the lab's
     own build files (Dockerfile, host/) count too, since they shape the image. */
-export const HOST_EXCLUDES = ["scripts/mesh-lab/e2e", "scripts/mesh-lab/lab", "scripts/mesh-lab/lab.mjs", "scripts/mesh-lab/README.md", "scripts/mesh-lab/e2e.sh", "scripts/mesh-lab/headscale"];
+export const HOST_EXCLUDES = ["scripts/mesh-lab/e2e", "scripts/mesh-lab/lab", "scripts/mesh-lab/lab.mjs", "scripts/mesh-lab/README.md", "scripts/mesh-lab/e2e.sh", "scripts/mesh-lab/headscale", "scripts/mesh-lab/mock-token-server/m3-drive.mjs"];
 /** Whether two commits put the same files on a host. */
 export function sameOnHost(a, b) {
   const r = spawnSync("git", ["-C", ROOT, "diff", "--quiet", a, b, "--", ".", ...HOST_EXCLUDES.map((x) => `:(exclude)${x}`)]);

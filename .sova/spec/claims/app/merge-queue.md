@@ -209,7 +209,10 @@ run's own folder, so a failure at any step, the first included, has its log.
    deleted. A draft of the branch's own that doesn't fit hands the entry back to its chat ("your spec
    drafts don't fit…", with what to fix, then "Fix them in your drafts (no commit needed); Land comes
   back here, or type "land it" in this chat."), recorded as a send-back for its drafts, so Land can
-  come back at the same commit once they fit (§chat.composer/worktrees-control). The step is skipped, with its reason, for a project with
+  come back at the same commit once they fit (§chat.composer/worktrees-control). What it made
+   official (the spec commit, each draft's hash and the spec tool's promotion entries) is kept with
+   the run, for the landing to mark the branch's drafts with (§app.merge-queue/land,
+   §app.merge-queue/publish); nothing reaches the branch's folder here. The step is skipped, with its reason, for a project with
    no spec, an approval without its specs, or a branch with no drafts of its own ("no spec drafts
    of the branch's own").
 6. **Checks.** The checks run on that commit, in order (§app.merge-queue/checks), with the review
@@ -447,6 +450,19 @@ A branch never lands twice, and never half-lands.
 is fast-forwarded with it. If it has uncommitted edits, nothing is forced and the target isn't
 moved: the queue pauses with "The main checkout has uncommitted changes". On Resume, once the
 checkout is clean and the target hasn't moved, the tested commit lands without a rerun.
+
+**The drafts it landed are marked, never moved.** The branch's folder never receives the spec commit,
+so once the target is at the tested commit the queue writes the landing into each draft the run made
+official, in the branch folder's `draft.json`: the spec tool's own promotion entries, and a `landed`
+receipt naming the spec commit, the target and the draft's hash as it landed. Nothing is deleted or
+moved. A failed or voided run writes nothing, nor does a landing without its specs, and a draft
+edited since its approval gets nothing: it isn't what landed. A server stopped right after the target
+moved writes it when it finishes the landing at its next start. The write is atomic and takes the
+draft tool's own lock; a lock another writer holds for a few seconds leaves the draft unmarked,
+reading as lost, and is never taken over. `scripts/mark-landed-drafts.ts` writes the receipt for such
+a draft, and for one landed before receipts existed, given its spec commit: only when the draft is
+official in the spec at that commit and the commit is on the target; it changes nothing it finds
+already marked, and without `--write` only says what it would do.
 
 **After a landing**, the entry reads **Landed**, with its commit and its note
 (§app.merge-queue/note). In the branch's chat its queue card moves down as **Landed**, with the
@@ -1513,6 +1529,15 @@ and Sova tries again by itself. A branch that has moved past the approved commit
 its chat: "Land Again to include the newer commits".
 An approval without its specs, or a branch with no drafts of its own, gets no docs commit. The
 reviewer on the host sees the docs change with the code.
+
+**Its drafts read as landed.** Once the branch is published, each draft the run made official and
+unedited since gets the spec tool's promotion entries in the branch folder's `draft.json`, under the
+draft tool's lock, as it would have had the tool landed it there; nothing is deleted or moved. The
+folder holds the docs commit, so that is all the draft tool's own rule needs
+(§tools.spec/draft-official): a draft reads official however the host merges the request, squash
+included, and whether or not the local target has caught up. A record the landing gave
+`authority: "accepted"` needs this: without the entries it differs from the draft's, and the merged
+row would say its drafts didn't make it (§chat.worktrees/readiness).
 
 **Pushed as a fast-forward, never forced.** A branch on `origin` that has commits the published one
 lacks (someone pushed to it on the host) is refused with the reason, never overwritten, and nothing

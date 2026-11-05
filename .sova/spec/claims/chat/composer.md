@@ -733,8 +733,11 @@ Escape closes that first).
 while a served row's queue is paused, one line says so with its why, and that Land still takes the
 approval. Then comes one row per worktree
 (dropped ones left out):
-- the branch, in mono;
-- its state, in the one vocabulary the pane and the Merge Queue view also use: **Ready** (with its
+- first, the title of the chat that owns the branch (§app.merge-queue/owner), a link to that chat,
+  then the branch in small mono, then an "archived" tag when that chat is archived (a row whose
+  chat isn't known leads with its branch); the row names no worktree folder and carries no "Chat"
+  label;
+- on the line under it, its state, in the one vocabulary the pane and the Merge Queue view also use: **Ready** (with its
   short commit) · **Uncommitted** ("{n} files not committed", and to commit it in its chat) · **No
   commits yet** · **Queued · 2nd** (with "starts in ~N min · takes ~N min") · **Checking** ·
   **Conflict** · **Behaviour differs** (the target's side, the branch's side and the proposal) ·
@@ -743,7 +746,12 @@ approval. Then comes one row per worktree
   **See Why**) · **Landed** ("as {sha}", "· not pushed" when it wasn't, and every note, named by its
   writer: "Merge thread: …", "You: …", "Flaky: …") · **Merged** · **Removed**;
 - on a live row (ready, uncommitted, in the queue or waiting), its commits ahead of the target's
-  head and lines added and removed: "3 commits · +40 −2"; landed, merged and removed rows show none;
+  head, lines added and removed, and when the branch last changed (its head commit's committer
+  date, relative to now: "2h ago", "yesterday", "3d ago", then the day, "Nov 2", after a week; the
+  full date and time as its hover and for a screen reader): "3 commits · +40 −2 · 2d ago"; landed,
+  merged and removed rows show none of these, the date included;
+- under those facts, the branch's summary in up to 5 bullets, once written
+  (§app.merge-queue/branch-summary);
 - "1 newer commit not included" when the branch moved past the approved commit;
 - its action, where one applies:
   - **Land** on a Ready or Drafts changed row (on Needs a fix only as below), which asks once (§chat.composer/land-confirm),
@@ -810,8 +818,9 @@ the control reads "1 ready" with its success dot, and the summary says so.
 **Land asks once** (§chat.composer/land-confirm): a row's Land queues nothing until its confirmation's
 Land {n} Commits.
 
-**Row layout**, here, on the session pane's Worktrees rows (§chat.worktrees/pane) and on the Merge
-Queue tab's rows (§app.merge-queue/view) alike. On an unfolded screen (768px wide or more) a row puts its actions in a column at
+**Row layout**, here and on the session pane's Worktrees rows (§chat.worktrees/pane) alike; the Merge
+Queue tab's rows put their actions in the same places, by the queue's own room rather than the
+screen's width (§app.merge-queue/view). On an unfolded screen (768px wide or more) a row puts its actions in a column at
 its right, top-aligned, beside its title, facts and summary bullets, each button against the
 column's right edge, never stretched to the column's width. Folded (narrower), the actions
 sit on their own line under the bullets, right-aligned. Land's confirmation is right-aligned under
@@ -822,8 +831,8 @@ Remove from Queue, See Why, Set Up Queue, Review Changes) and both buttons of La
 are one size on every screen, a phone and a touch screen included: a small button's height (36px),
 only as wide as its label.
 
-On a phone (narrower than 600px) each row has 12px side padding, names its folder by its last name
-(the full path as its `title`), and keeps its actions on their own line at that same size:
+On a phone (narrower than 600px) each row has 12px side padding, wraps its title, branch and
+bullets (nothing scrolls sideways), and keeps its actions on their own line at that same size:
 Review Changes at the line's left and the row's other actions at its right. Land's confirmation
 stays right-aligned.
 

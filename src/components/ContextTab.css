@@ -1,11 +1,179 @@
-/* The Context tab (ContextTab.tsx): the headline and the line sizes; the rows are the shared list's. */
-/* Closed, the viewer's slot takes no gap in the tab's stack. */
-.context-viewer-slot:empty { display: none; }
+/* The Context tab (ContextTab.tsx): the headline, the fill bar, one row shape for every group and
+   part, and the drill-in sheet. Rows wear the shared .list-row; this adds the card, dividers, share
+   bars and sizes. The tab is its own query container, so the sheet asks the tab's width, not the
+   window's. */
+
+.context-tab {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  container: context-tab / inline-size;
+}
+
 .context-headline { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: 600; }
-.context-line-size { flex: none; font-variant-numeric: tabular-nums; }
-.context-lines .list-main,
-.context-subfolder .list-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.context-lines .list-title,
-.context-subfolder .list-title,
-.context-subfolder .list-meta { white-space: normal; overflow-wrap: anywhere; }
-.context-subfolder .chip { flex: none; }
+
+/* The fill bar: a part per group (and Other), as wide as its share of the window; the room left is
+   the track's empty end. Number first (the headline), bar second, so it is aria-hidden. */
+.context-meter {
+  display: flex;
+  height: 8px;
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  border-radius: var(--r-full);
+  background: var(--color-sunken);
+  overflow: hidden;
+}
+.context-meter-part { flex: none; height: 100%; background: var(--color-ink-muted); box-shadow: inset -1px 0 0 var(--color-surface); }
+.context-meter-other { background: var(--color-border-strong); }
+
+/* A list of rows is one card, with a divider between rows (each row is its li's only child, so the
+   shared .list-row:last-child rule leaves none of its own). */
+.context-list {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+.context-list > li + li { border-top: var(--stroke-thin) solid var(--color-border); }
+.context-list .list-row { padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4); }
+/* Other stands apart from the groups it isn't one of. */
+.context-apart { margin-top: var(--space-2); }
+
+.context-row-main { display: flex; flex-direction: column; gap: 2px; }
+.context-row-name { white-space: normal; overflow-wrap: anywhere; }
+.context-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-2);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+.context-row-meta-text { min-width: 0; overflow-wrap: anywhere; }
+.context-share {
+  display: block;
+  height: 3px;
+  margin-top: var(--space-1);
+  border-radius: var(--r-full);
+  background: var(--color-sunken);
+  overflow: hidden;
+}
+.context-share > span { display: block; height: 100%; background: var(--color-ink-muted); }
+.context-row-size {
+  flex: none;
+  min-width: 44px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--color-ink-2);
+}
+/* Every row keeps the arrow's column, so the sizes line up whether a row opens or not. */
+.context-row-chevron { flex: none; width: 16px; color: var(--color-ink-muted); }
+/* A row that doesn't open: no arrow, no hover, a muted name. */
+.context-row-static .context-row-name { color: var(--color-ink-2); font-weight: var(--fw-regular); }
+
+/* ---- The sheet: over the whole tab when narrow; a 520px drawer over the dimmed list when wide. */
+.context-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  background: var(--scrim);
+  animation: enter-fade var(--dur-base) var(--ease-standard);
+}
+.context-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--color-surface);
+  color: var(--color-ink-2);
+  /* A fade, not a slide: a sheet moved sideways overhangs the tab while it enters, and focusing Back then
+     could scroll the clipped tab sideways. */
+  animation: enter-fade var(--dur-base) var(--ease-standard);
+}
+@container context-tab (max-width: 639px) {
+  .context-scrim { display: none; }
+}
+@container context-tab (min-width: 640px) {
+  .context-sheet {
+    left: auto;
+    width: min(520px, 62%);
+    border-left: var(--stroke-thin) solid var(--color-border);
+    border-radius: var(--r-xl) 0 0 var(--r-xl);
+    box-shadow: var(--shadow-2);
+  }
+}
+
+.context-sheet-head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-4) var(--space-3) var(--space-1);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.context-crumbs { display: flex; align-items: center; min-width: 0; }
+.context-crumbs > ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+.context-crumbs li { display: inline-flex; align-items: center; min-width: 0; }
+.context-crumb {
+  min-height: var(--tap-min);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--color-accent);
+  font: inherit;
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+.context-crumb:hover { color: var(--color-accent-hover); text-decoration: underline; }
+.context-crumb:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.context-crumb-sep { padding: 0 2px; }
+.context-crumb-current { padding: 0 var(--space-2); overflow-wrap: anywhere; color: var(--color-ink-2); }
+.context-sheet-titles { display: flex; align-items: baseline; gap: var(--space-3); padding-left: var(--space-3); }
+.context-sheet-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+  overflow-wrap: anywhere;
+}
+.context-sheet-title.text-mono { font-size: var(--fs-body); }
+
+.context-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+}
+.context-sheet-body:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.context-sheet-sub { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.context-sheet-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.context-sheet-eyebrow { margin-top: var(--space-2); }
+/* A part reads at the sheet's width: the document is the sheet, not a centred column in it. */
+.context-sheet-body .md-viewer-doc { margin: 0; max-width: 72ch; }

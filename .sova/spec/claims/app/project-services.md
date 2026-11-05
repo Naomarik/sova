@@ -119,10 +119,15 @@ shell string is accepted anywhere: every command is an argv array of non-empty s
   review kit, relative to the checkout (§app.merge-queue/review); `land` (optional: `local`,
   `github-pr`, `gitlab-mr` or `push-branch`; absent: `local`), the project's way of landing, which
   this computer's own choice overrides (§app.merge-queue/strategies); and `request` (optional): the
-  folder of the project's request kit (§app.merge-queue/request-kit). With no `merge` section the queue
+  folder of the project's request kit (§app.merge-queue/request-kit); and `reuse` (optional boolean,
+  absent: true): whether checks may reuse passes from identical code (§app.merge-queue/checks),
+  `false` making every check run every file. With no `merge` section the queue
   uses `test` (§app.merge-queue/checks); with neither, the project's queue isn't set up
   (§app.merge-queue/setup). A check runs with `SOVA_VERB=merge`, `SOVA_STEP` (its id), `SOVA_OUT`,
-  `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths).
+  `SOVA_MERGE_BASE`, `SOVA_MERGE_TIP` and `SOVA_MERGE_CHANGED` (a file listing the changed paths),
+  and either `SOVA_FRESH=1` (a rerun that places the blame, a release's check, or reuse turned off:
+  run every file, reuse nothing) or `SOVA_REUSE_SAMPLE` (the share of reusable files to re-check,
+  0.05).
 - **`release`** (optional): how the project releases numbered versions, outside the definition's
   hash: `playbook`, `tag`, `scheme`, `channels`, `commit`, `checks` and `quietMin`
   (§app.release/settings). Absent, the project's releases aren't set up.
@@ -387,7 +392,8 @@ test command") and nothing changes. Otherwise test holds the instance's lock (§
 brings up the services `test.requires` names, with what they require, as up does
 (§app.project-services/up, on-demand ones included) and waits for their readiness, then runs `run`
 with the selectors appended as its last arguments (none: whatever the command runs with no
-arguments, which for Sova's own runner is the unit tier), in the instance's
+arguments, which for Sova's own runner is the unit tier; that runner reuses passes from identical
+code as it does anywhere, §app.server-runtime/test-reuse, and counts a reused file as passed), in the instance's
 checkout, as one waited-for unit `sova-hook-<state hash>-<instance>-test` with the instance's env
 plus `SOVA_VERB=test`, `SOVA_TEST_SELECT` (the selectors as a JSON array) and `SOVA_OUT`. At its
 timeout, or when the caller aborts (a cancelled tool call), the unit is killed whole. It runs
@@ -667,20 +673,24 @@ the one result shape with its own `merge` key (§app.project-services/result).
   `merge.extend` (an entry, the check ids it adds and why; never removes one), `merge.resolve` (an
   entry, its judgement, no behaviour change or behaviour differs, the files, both sides and the
   proposal in plain words, and the commit of its resolution), `merge.retry` (a project or entry
-  paused for the machine) and `merge.ask` (the question for the user, and the entry it is about:
-  §chat.merge-queue/asks). Each takes an optional `note`, recorded on the entry.
+  paused for the machine), `merge.ask` (the question for the user, and the entry it is about:
+  §chat.merge-queue/asks) and `merge.hold` (a project and `action`: `set` holds the queue's new
+  starts for 5 minutes, set again renewing them, and `clear` lifts the hold; it answers the hold
+  now: §app.merge-queue/empty). Each but `merge.hold`, which names no entry, takes an optional
+  `note`, recorded on the entry.
 - **The review step's**: `merge.review` (a run, its verdict `ok`, `notes` or `blocking`, and the
   reviewer's text).
 
 **Callers.**
 - The operator (the routes, the CLI, the Land and Cancel controls) calls the user's verbs (add,
-  cancel, pause, resume, answer, reply, fresh, clear, setup) and the reads, and may write a note.
+  cancel, pause, resume, answer, reply, fresh, clear, setup) and the reads, and may write a note
+  or hold the queue (`merge.hold`).
   Only the operator calls the user's verbs, with one exception: the chat a merge thread's question
   was asked in may call `merge.reply` for that question only, to pass on the user's answer.
 - A typed "land it" reaches `merge.add` as the user's approval through `worktree land`
   (§chat.worktrees/tool); no session can call `merge.add` as a tool.
 - The project's merge thread (§chat.merge-queue/thread) calls the reads and its own verbs (note,
-  extend, resolve, retry, ask), for its own project only.
+  extend, resolve, retry, ask, hold), for its own project only.
 - A review step's reviewer calls `merge.review` for its own run only (§app.merge-queue/review).
 - Any other chat reads its own project's queue; anything else is `forbidden`.
 

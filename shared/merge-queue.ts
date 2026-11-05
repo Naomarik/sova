@@ -294,6 +294,9 @@ export interface RunStep {
   log: string;
   counts?: { passed: number | null; failed: number | null; skipped: number | null } | null;
   failures?: { file?: string; name?: string; message?: string; blame?: Blame }[];
+  /** check: how many of its test files already passed on identical code (the re-checked ones too); the step's log
+   *  lists each and its source run. Its time says nothing about the check's full length (the estimate skips it). */
+  reused?: number;
 }
 
 export type RunVerdict =
@@ -432,6 +435,32 @@ export interface MergeQueueView {
   at: string;
 }
 
+/** A project's queue as the landing bar starts from it (GET /api/merge-queue/landing-summary): the view's fields the bar
+ *  reads, `recent` and `waitingOnHost` cut to the newest few. A whole MergeQueueView (the `merge_queue` feed frame) is one too. */
+export type LandingQueueCut = Pick<MergeQueueView, "project" | "root" | "target" | "state" | "paused" | "invalid" | "served" | "current" | "checking" | "waiting" | "needsYou" | "recent" | "waitingOnHost" | "release" | "reviewing" | "heads" | "at">;
+
+/** A project's releases as the landing bar starts from them: the open record and the last one (steps without their
+ *  `detail`), with Publish's gates and the quiet watch. `project` is the root, as in ReleaseView; a whole ReleaseView
+ *  (the `release` feed frame) is one too. */
+export type LandingReleaseCut = Pick<import("./release").ReleaseView, "project" | "initialized" | "open" | "last" | "gates" | "quiet" | "target" | "remote">;
+
+/** One project of this computer's Projects list in the landing summary. `queue` null: the queue doesn't serve it (or
+ *  has nothing loaded); `release` null: it has no release record. */
+export interface LandingSummaryProject {
+  id: string;
+  root: string;
+  name: string;
+  queue: LandingQueueCut | null;
+  release: LandingReleaseCut | null;
+}
+
+/** GET /api/merge-queue/landing-summary: every project's queue and releases in one quick read (no Ready-list or tag
+ *  history reads), for the landing bar at page open and at each reconnect; the feed's frames carry it on from there. */
+export interface LandingSummary {
+  projects: LandingSummaryProject[];
+  at: string;
+}
+
 /** The release holding a project's queue. `state`: the release record's (shared/release.ts ReleaseState). */
 export interface MergeReleaseHold {
   id: string;
@@ -511,6 +540,9 @@ export interface MergeReady {
   /** Lines added and removed on the branch's side (target...branch), when read. */
   added?: number;
   removed?: number;
+  /** When the branch last changed: its head's committer date (ISO 8601, `git log -1 --format=%cI`), when read.
+   *  Additive. */
+  headAt?: string;
 }
 
 /** SessionWorktreeInfo.mergeStats: the branch against the target, for the row's "N commits · +a −r". */
@@ -522,6 +554,8 @@ export interface WorktreeMergeStats {
   /** Lines added and removed, the branch's side only (target...branch). */
   added: number;
   removed: number;
+  /** When the branch last changed: its head's committer date (ISO 8601), when read. Additive. */
+  headAt?: string;
 }
 
 /** SessionWorktreeInfo.mergeProject: the project a worktree lands into, whatever its entry. */
@@ -570,6 +604,8 @@ export interface MergeReport {
   /** merge.fresh: whether a thread was retired; merge.clear: the chats deleted. */
   fresh?: boolean;
   cleared?: number;
+  /** merge.hold: the merge thread's hold now (null: none); `until` when it lifts by itself. */
+  hold?: { at: string; until: string } | null;
 }
 
 // ---- the WS feed --------------------------------------------------------------------------------

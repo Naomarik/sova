@@ -1,8 +1,9 @@
 import type { LanPairingAdd, LanRelayPut } from "../../shared/mesh-lan";
 import { MESH_CAPS, type MeshCardState, type MeshGrant } from "../../shared/mesh-access";
 import type { IncomingMessage } from "node:http";
-import { statSync } from "node:fs";
-import { hostname } from "node:os";
+import { readFileSync, realpathSync, statSync } from "node:fs";
+import { homedir, hostname } from "node:os";
+import { join } from "node:path";
 import type { Duplex } from "node:stream";
 import type { Context, Hono } from "hono";
 import type {
@@ -36,7 +37,7 @@ import { type ListenerDeps, PeerListener } from "./listener";
 import { addressIdentity, identityMode } from "./address-identity";
 import { REFUSED_HEADER } from "./hello";
 import { getIdentity, setIdentity, type TailnetStatus } from "./localapi";
-import { defaultSelfId, nextLabelAt, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
+import { defaultSelfId, type HomeBinding, nextLabelAt, type PeerEntry, type PeersConfig, peerPort, peerUrl, peersFile, readPeers, SYNC_CATEGORIES, validatePeers, writePeers } from "./peers";
 import { clickProofFor, takeClick } from "./click-proof";
 import { localRequest, PROXIED_HEADER, peerSocketRoute, proxyTail, proxyPeer, upgradePeerSocket } from "./proxy";
 import { fetchPeer, setLanClients } from "./dial";
@@ -47,6 +48,7 @@ import { bootBuild } from "./build-id";
 import { cleanBuild } from "./lan-handoff-protocol";
 import { applyLanPairing, applyLanRelay, lanRoutes, type LanRouteDeps } from "./lan-routes";
 import { loginKindsPin } from "../sync/logins-merge";
+import { agentRoot, stateRoot } from "../state-root";
 
 // The mesh (brief: settled decisions). ON exactly while peers.json lists a peer; OFF, nothing
 // here listens, polls, calls Tailscale or dials a peer, and every pre-existing route and socket
@@ -70,7 +72,11 @@ interface MeshRuntime {
   on: boolean;
   /** This node, from LocalAPI status, once the listener has asked. */
   self?: { nodeId: string; dnsName: string };
+  /** peers.json lists peers but belongs to another folder or machine: the mesh is off. */
+  homeMismatch?: HomeMismatch;
 }
+
+type HomeMismatch = NonNullable<MeshInfo["homeMismatch"]>;
 
 const rt: MeshRuntime = { config: null, listener: null, lan: null, on: false };
 
@@ -118,12 +124,65 @@ const emptyConfig = (): PeersConfig => ({ self: { id: defaultSelfId(), label: de
 
 export const meshEnabled = (): boolean => (rt.config?.peers.length ?? 0) > 0;
 
+const realpath = (p: string): string => {
+  try {
+    return realpathSync(p);
+  } catch {
+    return p;
+  }
+};
+/** Tests replace these to stand in for another computer, or another user's default root. */
+export const homeDeps = {
+  defaultRoot: (): string => join(homedir(), ".pi", "agent"),
+  machine: (): string | undefined => {
+    try {
+      return readFileSync("/etc/machine-id", "utf8").trim() || undefined;
+    } catch {
+      return undefined;
+    }
+  },
+};
+const hereHome = (): HomeBinding => {
+  const machine = homeDeps.machine();
+  return { path: realpath(stateRoot()), ...(machine ? { machine } : {}) };
+};
+/** Whether `home` is still claimed by its own folder's peers.json (the original of a copy). */
+const homeInUse = (home: HomeBinding): boolean => {
+  const r = readPeers(join(home.path, "peers.json"));
+  return r.ok && r.config.self.home?.path === home.path;
+};
+
+/** Whether peers.json belongs here; a default root with no binding yet is bound (written) now. */
+function checkHome(config: PeersConfig): HomeMismatch | null {
+  const here = hereHome();
+  const home = config.self.home;
+  if (!home) {
+    const dir = process.env.PI_CODING_AGENT_DIR;
+    if (dir && realpath(agentRoot()) !== realpath(homeDeps.defaultRoot())) return "unbound";
+    config.self.home = here;
+    writePeers(config);
+    peersStamp = stampOf(peersFile());
+    return null;
+  }
+  const otherMachine = !!home.machine && !!here.machine && home.machine !== here.machine;
+  if (otherMachine) return "other-machine";
+  if (home.path === here.path) return null;
+  return homeInUse(home) ? "copied" : "moved";
+}
+
 /** Re-read peers.json into the runtime (no side effects beyond the listener it implies). */
 function reload(): void {
   peersStamp = stampOf(peersFile());
   const r = readPeers();
-  if (r.ok) {
+  const mismatch = r.ok && r.config.peers.length ? checkHome(r.config) : null;
+  if (mismatch !== rt.homeMismatch && mismatch) console.warn(`[mesh] peers.json belongs to another folder or machine (${mismatch}); the mesh is off`);
+  if (mismatch) rt.homeMismatch = mismatch;
+  else delete rt.homeMismatch;
+  if (r.ok && !mismatch) {
     rt.config = r.config;
+    delete rt.error;
+  } else if (r.ok) {
+    rt.config = null;
     delete rt.error;
   } else {
     rt.config = null;
@@ -510,6 +569,7 @@ async function meshInfo(): Promise<MeshInfoView> {
     sync: on && syncProvider ? syncProvider() : [],
     frontDoor: c.frontDoor,
     ...(rt.error ? { error: rt.error } : {}),
+    ...(rt.homeMismatch ? { homeMismatch: rt.homeMismatch } : {}),
   };
   if (on && rt.self) Object.assign(info.self, { nodeId: rt.self.nodeId, dnsName: rt.self.dnsName });
   if (on && rt.listener) info.self.listen = rt.listener.info();
@@ -591,8 +651,9 @@ async function candidates(): Promise<MeshCandidate[]> {
 /** The config a write starts from: the file as it is now; a malformed file is never overwritten. */
 function baseForWrite(): { config: PeersConfig } | { error: string } {
   const r = readPeers();
-  if (r.ok) return { config: r.config };
-  if (r.missing) return { config: emptyConfig() };
+  // A file with no peers yet has no mesh to protect: the write that pairs on it binds it here.
+  if (r.ok) return { config: r.config.peers.length || r.config.self.home ? r.config : { ...r.config, self: { ...r.config.self, home: hereHome() } } };
+  if (r.missing) return { config: { ...emptyConfig(), self: { ...emptyConfig().self, home: hereHome() } } };
   return { error: `${r.error}; fix or remove it first` };
 }
 
@@ -928,6 +989,20 @@ export function meshRoutes(app: Hono): void {
     return c.json(await meshInfo());
   });
   app.put("/api/mesh/peers", putPeers);
+  // Reconnect Here: bind peers.json to this folder and machine. This host's browser only (as
+  // /api/mesh/access); never for a copy whose original still claims that home.
+  app.post("/api/mesh/home", async (c) => {
+    if (!localRequest(c)) return c.json({ error: "Not found" }, 404);
+    reload();
+    if (rt.homeMismatch === "copied") return c.json({ error: "the folder this was copied from is still in use" }, 409);
+    const r = readPeers();
+    if (r.ok && rt.homeMismatch) {
+      r.config.self.home = hereHome();
+      writePeers(r.config);
+      reload();
+    }
+    return c.json(await meshInfo());
+  });
   app.get("/api/mesh/candidates", async (c) => {
     try {
       return c.json(await candidates());

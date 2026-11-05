@@ -267,7 +267,10 @@ every chat, not only Create, and it ships before Create does.
 - **Each refusal says where to click,** in the words of §design.copy-deck/your-click, so a chat can
   tell the person what to do.
 - **Restarting and updating Sova.** This holds for every chat, and only for this server's own checkout:
-  another project's adopted unit is unchanged. It holds for your own terminal too: the road there is raw
+  another project's adopted unit is unchanged. One written exception: Sova's own merge thread restarts
+  Sova after landings that change its server code, by its project playbook's instruction
+  (§chat.merge-queue/sova-restart). It takes the raw road below, never these doors, which still refuse
+  it. It holds for your own terminal too: the road there is raw
   `systemctl`, or **Restart Sova** in the page. `server.restart` stays a command, and answers this refusal
   for anything but the page (§app.commands/catalogue). Refused Apply is the verb's own answer: 409
   `forbidden`, with no `yourClick`.

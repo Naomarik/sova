@@ -16,7 +16,7 @@ export function threadStateChip(t: Pick<MergeThreadInfo, "state">): { label: str
   return { label: "Idle", tone: "neutral" };
 }
 
-const EVENT_WORDS: Record<string, string> = { queued: "Read a queued branch", conflict: "Judged a conflict", failed: "Explained a failure", paused: "Told of a pause", names: "Asked for private names", answer: "Took your answer" };
+const EVENT_WORDS: Record<string, string> = { queued: "Read a queued branch", conflict: "Judged a conflict", failed: "Explained a failure", paused: "Told of a pause", names: "Asked for private names", answer: "Took your answer", idle: "Told the queue is idle" };
 
 /** The last event, in words: "Read a queued branch · feat/x". */
 export function lastEventWords(e: MergeThreadInfo["lastEvent"]): string | null {

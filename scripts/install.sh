@@ -13,8 +13,12 @@
 # of it runs, so a download cut short runs nothing.
 #
 # What it needs on the machine already: bash, git, node (>= 22.19), pnpm, curl, and unzip or python3.
-# Without pnpm it runs the version the repository pins through npx (npm ships with Node). The
-# server runs on Bun: the installer downloads the Bun release the repository pins (mise.toml) from
+# Without a pnpm that runs in the clone it runs the version the repository pins through npx (npm
+# ships with Node). Node or pnpm may be a mise shim: mise is told to ignore the repository's
+# mise.toml in the staging and install directories (MISE_IGNORED_CONFIG_PATHS, here and in the
+# launcher), so it doesn't refuse them and doesn't download what that file pins; mise's trust list
+# is never changed. The server runs on Bun: the installer downloads the Bun release the repository
+# pins (mise.toml) from
 # Bun's GitHub releases into <install dir>/.bun, checked against the sha256 the repository records
 # (scripts/bun-release.txt, through scripts/fetch-bun.sh). That keeps Bun inside the install
 # directory, at the version Sova is tested on, with no version manager and no edit to a shell rc
@@ -136,14 +140,9 @@ done
 command -v curl >/dev/null 2>&1 || die "curl is not installed; it downloads Bun. Install curl, then run this again."
 command -v unzip >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1 ||
 	die "unzip is not installed (nor python3); it unpacks Bun. Install unzip, then run this again."
-# pnpm on PATH is used as it is; otherwise npx runs pnpm (the version is read from the clone below).
-if command -v pnpm >/dev/null 2>&1; then
-	use_npx=false
-elif command -v npx >/dev/null 2>&1; then
-	use_npx=true
-else
+# Whether pnpm runs is asked in the clone, below: a version manager's shim can answer only there.
+command -v pnpm >/dev/null 2>&1 || command -v npx >/dev/null 2>&1 ||
 	die "pnpm is not installed, and there is no npx to run it with. Install pnpm (https://pnpm.io/installation), then run this again."
-fi
 
 node_version=$(node -v 2>/dev/null || true)         # v25.2.1
 node_version=${node_version#v}
@@ -358,6 +357,14 @@ if $rebuild; then
 	done
 	mkdir -p "$parent"        # the launcher's directory waits for a successful build
 	staging=$(mktemp -d "$parent/.sova-staging.XXXXXX")   # beside the target, so promoting is a rename
+	say "staging in $staging"
+
+	# Every program below runs on the user's own tools: mise neither refuses these folders' mise.toml
+	# nor downloads what it pins. Physical paths, because mise may match on the canonical path. Set
+	# as plain assignments first, so a failed cd stops here (set -e) rather than export a wrong path.
+	staging_real=$(cd -P "$staging" && pwd -P)
+	parent_real=$(cd -P "$parent" && pwd -P)
+	export MISE_IGNORED_CONFIG_PATHS="${MISE_IGNORED_CONFIG_PATHS:+$MISE_IGNORED_CONFIG_PATHS:}$staging_real:$parent_real/$(basename "$dir")"
 
 	say "cloning $repo at $ref"
 	git clone --quiet --depth 1 --branch "$ref" "$repo" "$staging/sova" 2>/dev/null ||
@@ -366,13 +373,19 @@ if $rebuild; then
 	git -C "$staging/sova" -c advice.detachedHead=false checkout --quiet "$ref" 2>/dev/null ||
 		die "'$ref' is not a tag, a branch or a commit of $repo; nothing was changed. Pass SOVA_REF=<tag, branch or commit>."
 
-	if $use_npx; then
+	if ( cd "$staging/sova" && pnpm --version ) >/dev/null 2>&1 </dev/null; then
+		pnpm=(pnpm)
+	elif command -v npx >/dev/null 2>&1; then
 		# The pnpm the repository pins in package.json's packageManager, or the latest without one.
 		pnpm_version=$(sed -n 's/^[[:space:]]*"packageManager":[[:space:]]*"pnpm@\([^"+]*\).*/\1/p' "$staging/sova/package.json")
 		pnpm=(npx --yes "pnpm@${pnpm_version:-latest}")
-		say "pnpm is not installed; running ${pnpm[2]} through npx"
+		if command -v pnpm >/dev/null 2>&1; then
+			say "pnpm is on PATH but does not run here; running ${pnpm[2]} through npx"
+		else
+			say "pnpm is not installed; running ${pnpm[2]} through npx"
+		fi
 	else
-		pnpm=(pnpm)
+		die "pnpm is on PATH but does not run here (a version manager's shim with no version set?), and there is no npx to run it with. Set a pnpm version or install pnpm (https://pnpm.io/installation), then run this again; nothing was changed"
 	fi
 
 	# The pinned Bun: the previous install's when it is still the pinned one, else downloaded.
@@ -679,6 +692,8 @@ export SOVA_BUN=${SOVA_BUN:-$dir/.bun/bin/bun}
 export PORT=$port
 # The server finds the install it runs from through its launcher (Settings → General's updates).
 export SOVA_LAUNCHER=$self
+# This install runs on your own tools: a mise shim neither refuses its mise.toml nor follows the pin.
+export MISE_IGNORED_CONFIG_PATHS="${MISE_IGNORED_CONFIG_PATHS:+$MISE_IGNORED_CONFIG_PATHS:}$(cd -P "$dir" && pwd -P)"
 exec "$dir/scripts/start-server.sh" "$@"
 LAUNCHER
 } | write_file "$launcher" 755

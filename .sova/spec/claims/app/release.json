@@ -85,12 +85,14 @@
       "src/lib/merge-queue-requests.ts",
       "src/lib/merge-queue-requests.test.ts",
       "src/components/settings/MergeQueueSettings.tsx",
-      "src/components/settings/MergeQueueLandHow.tsx"
+      "src/components/settings/MergeQueueLandHow.tsx",
+      "server/merge-queue/run.integration.test.ts",
+      "server/test-cache-guard.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-05T03:58Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
     }
   },
   "§app.release/deploy": {
@@ -340,9 +342,9 @@
       "site/README.md"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-04T20:51Z",
-      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+      "by": "user",
+      "at": "2026-11-04T22:57Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
     }
   },
   "§app.release/start": {
@@ -421,9 +423,9 @@
       "shared/protocol.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-04T20:51Z",
-      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+      "by": "user",
+      "at": "2026-11-05T03:27Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#f0aa11bd"
     }
   },
   "§app.release/verbs": {

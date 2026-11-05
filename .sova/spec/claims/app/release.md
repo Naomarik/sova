@@ -284,7 +284,8 @@ While a release is open, the project's merge queue is **frozen** for it (§app.m
 The **release entry** is added by Sova, approved `by: release`, without review, first in line. It must
 be cut from the release's base. It runs the merge's required checks and then the release's gating
 checks in order (a check the merge set already runs fully runs once; a project whose merge checks are
-`none` still runs them), and lands its commit on the target **without a push**. A conflict hands it
+`none` still runs them), every one of them fresh (`SOVA_FRESH=1`): a release reuses no earlier pass
+(§app.server-runtime/test-reuse), so it catches what reuse at landings could hide. It lands its commit on the target **without a push**. A conflict hands it
 straight back. Its outcome reaches the release: running, then **Done** ("passed; {sha} is on {target}
 (not pushed until Publish)") with the release commit recorded, or **Failed** with why, after which the
 operator may Retry Step (the entry runs again) or abandon. A **tag-only** release has no commit: once
@@ -391,7 +392,9 @@ On, an overseer told to release, publish and deploy does the whole chain, each a
 
 The project page has a **Releases** tab after Merge Queue (§app.organizations/project-page), at
 `#/projects/<pid>/releases`, reading `release.status` every 5 seconds and following the session feed's
-`release` frames; the tab, the Overview card and the Deploy card share that one read. Top to bottom:
+`release` frames; the tab, the Overview card and the Deploy card share that one read. The same frames,
+every project's, also drive the sidebar's landing bar, which never publishes or abandons: its Open
+Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
 
 - **Head**: "Releases" (a **Not set up** chip while not set up) and **Start Release**, while releases
   are set up and read, no release is open and the project isn't archived. Beside it, **Release Note**,
@@ -513,7 +516,7 @@ hash covers the section and the playbook folder together (§app.project-runtime/
 ## §app.release/sova — Sova's own release playbook
 
 Sova's `.sova/playbooks/release/` is its project release playbook in this form: `release.json` plans
-version, notes, bump, stamps, docs and commit before the checks; try-live (held: the operator's Apply on the live server, then a health check) before Publish;
+version, notes, bump, stamps, docs and commit before the checks; try-live (held: the operator's Apply on the live server, then a health check; Sova's merge thread never restarts Sova while a release is open, nor for its commit, §chat.merge-queue/sova-restart) before Publish;
 release-page (the notes out, `gh release create --verify-tag`) and outside-checks (held) after Publish;
 and release-page-withdrawn after a Withdraw. The **docs** step runs in every release unless the operator's Release Note
 says otherwise, and finishes on its own (never held): it lists every Docs page whose spec sources

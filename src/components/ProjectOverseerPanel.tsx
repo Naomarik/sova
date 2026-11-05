@@ -38,6 +38,7 @@ import {
   mergeCodingWorktree,
   startProjectCoding,
 } from "../lib/api";
+import { ForKey } from "../lib/for-key";
 import type { GatheringAbilities } from "../../shared/baton";
 import { ABILITIES_KEYS, abilitiesKey, abilitiesLabel, abilitiesOfKey, abilitiesWords, drawHtmlSavedToast, drawHtmlSettable, type AbilitiesKey } from "../lib/gathering-abilities";
 import { codingFromList, codingModeHint, codingRows, folderNote, mergeNote, rowGestures, startedBy, type CodingRow } from "../lib/coding-worktrees";
@@ -1039,27 +1040,30 @@ function CodingSessions(props: {
         <p class="orgs-empty">None yet. Yours and the overseer's are listed here.</p>
       </Show>
       <ul class="list project-worktrees">
-        <For each={rows()}>
+        <ForKey each={rows()} by={(r) => r.sessionId}>
           {(row) => {
-            const armed = () => confirming() === row.sessionId;
-            const folder = () => (row.worktree ? tildePath(row.worktree, home()) : "");
-            const title = () => row.title || UNTITLED_CODING;
+            const armed = () => confirming() === row().sessionId;
+            const folder = () => {
+              const w = row().worktree;
+              return w ? tildePath(w, home()) : "";
+            };
+            const title = () => row().title || UNTITLED_CODING;
             // Remembered branch facts (a reopened project) show at once, but no gesture acts on them.
-            const gestures = () => rowGestures(row, po().worktrees.fresh());
-            const facts = () => (row.facts && row.state !== undefined ? (row as CodingRow & CodingWorktree) : null);
+            const gestures = () => rowGestures(row(), po().worktrees.fresh());
+            const facts = () => (row().facts && row().state !== undefined ? (row() as CodingRow & CodingWorktree) : null);
             return (
               <li class="list-row orgs-row project-worktree">
                 <span class="list-main project-worktree-main">
-                  <Show when={row.path} fallback={<span class="list-title project-worktree-title" title={title()}>{title()}</span>}>
+                  <Show when={row().path} fallback={<span class="list-title project-worktree-title" title={title()}>{title()}</span>}>
                     {(path) => (
-                      <a class="list-title project-worktree-title" href={sessionHref(path())} title={title()} onClick={(e) => !row.title && openUntitled(e, row.sessionId)}>
+                      <a class="list-title project-worktree-title" href={sessionHref(path())} title={title()} onClick={(e) => !row().title && openUntitled(e, row().sessionId)}>
                         {title()}
                       </a>
                     )}
                   </Show>
                   <span class="list-meta project-worktree-meta">
-                    {startedBy(row)} · {row.running ? "working" : "idle"} · <time title={row.createdAt}>{relativeTime(row.createdAt)}</time>
-                    <Show when={row.branch}>
+                    {startedBy(row())} · {row().running ? "working" : "idle"} · <time title={row().createdAt}>{relativeTime(row().createdAt)}</time>
+                    <Show when={row().branch}>
                       {(b) => (
                         <>
                           {" · "}
@@ -1070,8 +1074,8 @@ function CodingSessions(props: {
                       )}
                     </Show>
                   </span>
-                  <Show when={!row.branch && row.inRoot}>{(why) => <span class="list-meta">In the project root: {why()}</span>}</Show>
-                  <Show when={!row.branch && !row.inRoot && row.later}>
+                  <Show when={!row().branch && row().inRoot}>{(why) => <span class="list-meta">In the project root: {why()}</span>}</Show>
+                  <Show when={!row().branch && !row().inRoot && row().later}>
                     <span class="list-meta">In the project root until it makes a worktree.</span>
                   </Show>
                   <Show when={facts()}>
@@ -1089,9 +1093,9 @@ function CodingSessions(props: {
                       </>
                     )}
                   </Show>
-                  <Show when={queue.info(row.branch)}>
+                  <Show when={queue.info(row().branch)}>
                     {(q) => {
-                      const qr = () => queueRow({ status: "active", exists: true, readiness: undefined, branch: row.branch ?? "", queue: q(), mergeServed: true });
+                      const qr = () => queueRow({ status: "active", exists: true, readiness: undefined, branch: row().branch ?? "", queue: q(), mergeServed: true });
                       return (
                         <span class="list-meta project-worktree-queue cluster">
                           <QueueChip row={qr()} />
@@ -1112,34 +1116,40 @@ function CodingSessions(props: {
                             fallback={
                               <menu.Item
                                 label="Merge Branch"
-                                aria={`Merge Branch: ${row.branch} into ${row.target}`}
+                                aria={`Merge Branch: ${row().branch} into ${row().target}`}
                                 icon={<Icon name="branch" small />}
-                                description={`${row.branch} into ${row.target}`}
+                                description={`${row().branch} into ${row().target}`}
                                 disabled={(gestures().merge || undefined) ?? (working() ? "Working" : undefined)}
-                                onRun={() => void act(row, () => mergeCodingWorktree(po().projectId(), row.sessionId), `Merged ${row.branch} into ${row.target}.`)}
+                                onRun={() => void act(row(), () => mergeCodingWorktree(po().projectId(), row().sessionId), `Merged ${row().branch} into ${row().target}.`)}
                               />
                             }
                           >
                             <menu.Item
                               label="Land"
-                              aria={`Land ${row.branch} on ${row.target}`}
+                              aria={`Land ${row().branch} on ${row().target}`}
                               icon={<Icon name="branch" small />}
-                              description={`Queues ${row.branch}: checked on ${row.target} first, then ${row.target} moves to it.`}
+                              description={`Queues ${row().branch}: checked on ${row().target} first, then ${row().target} moves to it.`}
                               disabled={
                                 (gestures().merge || undefined) ??
-                                (working() ? "Working" : !row.worktree ? "Its folder is gone: land it from its chat." : entryLandBlock(queue.info(row.branch)))
+                                (working() ? "Working" : !row().worktree ? "Its folder is gone: land it from its chat." : entryLandBlock(queue.info(row().branch)))
                               }
-                              onRun={() => row.worktree && void landRow({ ...row, worktree: row.worktree })}
+                              onRun={() => {
+                                const r = row();
+                                if (r.worktree) void landRow({ ...r, worktree: r.worktree });
+                              }}
                             />
-                            <Show when={row.worktree && landThisAgainOf(queue.info(row.branch))}>
+                            <Show when={row().worktree && landThisAgainOf(queue.info(row().branch))}>
                               {(commit) => (
                                 <menu.Item
                                   label="Land This Commit Again"
-                                  aria={`Land ${row.branch} at this commit again`}
+                                  aria={`Land ${row().branch} at this commit again`}
                                   icon={<Icon name="branch" small />}
                                   description={`Approves ${commit().slice(0, 7)} again: every check runs from the start.`}
                                   disabled={(gestures().merge || undefined) ?? (working() ? "Working" : undefined)}
-                                  onRun={() => row.worktree && void landRow({ ...row, worktree: row.worktree, head: commit() })}
+                                  onRun={() => {
+                                    const r = row();
+                                    if (r.worktree) void landRow({ ...r, worktree: r.worktree, head: commit() });
+                                  }}
                                 />
                               )}
                             </Show>
@@ -1150,26 +1160,26 @@ function CodingSessions(props: {
                             label="Remove Worktree…"
                             aria={`Remove Worktree: ${title()}`}
                             disabled={(gestures().remove || undefined) ?? (working() ? "Working" : undefined)}
-                            onRun={() => setConfirming(row.sessionId)}
+                            onRun={() => setConfirming(row().sessionId)}
                           />
                         </Show>
                       </>
                     )}
                   </ActionMenu>
                 </Show>
-                <Show when={errors()[row.sessionId]}>{(e) => <p class="field-error project-worktree-note">{e()}</p>}</Show>
+                <Show when={errors()[row().sessionId]}>{(e) => <p class="field-error project-worktree-note">{e()}</p>}</Show>
                 <Show when={armed() && facts() && po().worktrees.fresh()}>
                   <div class="person-confirm project-worktree-note" role="group" aria-label="Remove worktree">
                     <p class="orgs-line">
                       <Show
-                        when={row.merged}
+                        when={row().merged}
                         fallback={
                           <>
-                            The folder <span class="orgs-mono">{folder()}</span> goes away. The branch <span class="orgs-mono">{row.branch}</span> keeps its commits, and the session and its transcript stay.
+                            The folder <span class="orgs-mono">{folder()}</span> goes away. The branch <span class="orgs-mono">{row().branch}</span> keeps its commits, and the session and its transcript stay.
                           </>
                         }
                       >
-                        The folder <span class="orgs-mono">{folder()}</span> and the merged branch <span class="orgs-mono">{row.branch}</span> go away. The session and its transcript stay.
+                        The folder <span class="orgs-mono">{folder()}</span> and the merged branch <span class="orgs-mono">{row().branch}</span> go away. The session and its transcript stay.
                       </Show>
                     </p>
                     <div class="button-row">
@@ -1177,7 +1187,7 @@ function CodingSessions(props: {
                         type="button"
                         class="button button-sm button-destructive"
                         aria-disabled={working() ? "true" : undefined}
-                        onClick={() => void act(row, () => removeCodingWorktree(po().projectId(), row.sessionId), "Worktree removed.")}
+                        onClick={() => void act(row(), () => removeCodingWorktree(po().projectId(), row().sessionId), "Worktree removed.")}
                       >
                         Remove Worktree
                       </button>
@@ -1190,7 +1200,7 @@ function CodingSessions(props: {
               </li>
             );
           }}
-        </For>
+        </ForKey>
       </ul>
     </>
   );

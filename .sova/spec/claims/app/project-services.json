@@ -172,8 +172,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T20:12Z",
-      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+      "at": "2026-11-05T03:58Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
     }
   },
   "§app.project-services/create": {
@@ -454,8 +454,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T14:54Z",
-      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
+      "at": "2026-11-04T22:57Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
     },
     "code": [
       "server/merge-queue/routes.ts",
@@ -764,8 +764,14 @@
       "server/project-services/note.integration.test.ts",
       "shared/project-contract.test.ts",
       "server/project-services/adopt.test.ts",
-      "server/project-services/adopt.integration.test.ts"
-    ]
+      "server/project-services/adopt.integration.test.ts",
+      "scripts/run-tests.mjs"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T03:58Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+    }
   },
   "§app.project-services/up": {
     "kind": "behavior",

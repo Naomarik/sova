@@ -195,7 +195,8 @@
       "§chat.composer/worktrees-control",
       "§app.merge-queue/approve",
       "§chat.changes/entry",
-      "§chat.composer/land-confirm"
+      "§chat.composer/land-confirm",
+      "§app.merge-queue/branch-summary"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -219,7 +220,8 @@
       "src/components/ReviewChanges.tsx",
       "src/lib/merge-queue-sent-back.test.ts",
       "shared/merge-queue.ts",
-      "server/merge-queue/view.ts"
+      "server/merge-queue/view.ts",
+      "src/components/BranchSummary.tsx"
     ],
     "agreed": {
       "by": "user",
@@ -252,7 +254,9 @@
       "server/index.ts",
       "server/worktrees.ts",
       "server/worktrees-refs-stamp.test.ts",
-      "server/merge-queue/wire-unserved.integration.test.ts"
+      "server/merge-queue/wire-unserved.integration.test.ts",
+      "server/restart-paths.ts",
+      "server/restart-paths.test.ts"
     ],
     "requires": [
       "§chat.worktrees/entry",
@@ -262,8 +266,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T16:04Z",
-      "source": "pi-session:01a1a1b7-c99c-75b6-8a92-b66649ed6742#43572b80"
+      "at": "2026-11-04T22:57Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
     }
   },
   "§chat.worktrees/ready-to-land": {

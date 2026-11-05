@@ -17,8 +17,14 @@
     "code": [
       "server/mesh/peers.ts",
       "server/mesh/index.ts",
-      "server/mesh/peers.test.ts"
-    ]
+      "server/mesh/peers.test.ts",
+      "server/mesh/mesh.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:14Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#2783ea91"
+    }
   },
   "§mesh.peers/discovery": {
     "kind": "behavior",
@@ -130,8 +136,15 @@
       "server/mesh/index.ts",
       "server/mesh/peers.ts",
       "server/index.ts",
-      "server/app.ts"
-    ]
+      "server/app.ts",
+      "server/public-links-routes.ts",
+      "server/mesh/mesh.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:14Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#2783ea91"
+    }
   },
   "§mesh.peers/remote-commands": {
     "kind": "behavior",

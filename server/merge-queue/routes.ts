@@ -15,7 +15,8 @@ import { NOT_SERVED } from "./served";
  *
  * Callers:
  * - the operator (the screens' buttons, the CLI): every verb; `merge.answer` and `merge.add` are the user's alone;
- * - the project's merge thread (its recorded chat): status, logs, note, extend, resolve, retry, ask;
+ * - the project's merge thread (its recorded chat): status, logs, note, extend, resolve, retry, ask, hold (its own
+ *   hold while it restarts the project's server; merge.pause stays the user's);
  * - the chat a thread's question was asked in: reply to that question (the user's answer, relayed);
  * - the operator alone: fresh (Start Fresh) and clear (the History's Clear and Clear All);
  * - the run's reviewer chat: status, logs, review of that run;
@@ -51,7 +52,7 @@ export interface MergerDeps {
   now?: () => number;
 }
 
-const THREAD_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.note", "merge.extend", "merge.resolve", "merge.retry", "merge.ask"];
+const THREAD_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.note", "merge.extend", "merge.resolve", "merge.retry", "merge.ask", "merge.hold"];
 const REVIEWER_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs", "merge.review"];
 
 interface Req {
@@ -85,6 +86,7 @@ interface Req {
   takesMin?: number;
   requires?: string[];
   dryRun?: boolean;
+  action?: string;
 }
 
 const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings"> = {
@@ -118,6 +120,7 @@ const KEYS: Record<keyof Req, "string" | "boolean" | "number" | "strings"> = {
   takesMin: "number",
   requires: "strings",
   dryRun: "boolean",
+  action: "string",
 };
 
 function parse(body: unknown): Req {
@@ -382,6 +385,12 @@ async function dispatch(deps: MergerDeps, verb: MergeVerb, req: Req, q: ProjectQ
       const cleared = await deps.clearChats(q.root, need(req.chat, 'chat (a session id, or "all")'));
       return { changed: cleared > 0, report: { cleared, view: await viewOf() } };
     }
+    case "merge.hold": {
+      const action = need(req.action, 'action ("set" or "clear")');
+      if (action !== "set" && action !== "clear") throw new MergeFailure("invalid-request", '"action" is "set" or "clear"');
+      const r = await q.hold(action);
+      return { changed: r.changed, report: { hold: r.hold, view: await viewOf() } };
+    }
     case "merge.setup": {
       const r = await q.setup({
         ...(req.command ? { command: req.command } : {}),
@@ -454,6 +463,11 @@ export function registerMergeCardRoutes(app: import("hono").Hono): void {
     if (r.ok) return c.json({ ok: true, state: "writing" });
     const status = r.code === "not-found" ? 404 : r.code === "busy" ? 409 : r.code === "unsupported" ? 501 : 400;
     return c.json({ error: { code: r.code, message: r.message } }, status);
+  });
+  // The landing bar's starting picture: every project's queue and releases in one quick read (wire.ts landingSummary).
+  app.get("/api/merge-queue/landing-summary", async (c) => {
+    const { landingSummary } = await import("./wire");
+    return c.json(await landingSummary());
   });
   app.get("/api/merge-queue/cards", async (c) => {
     const raw = (c.req.query("path") ?? c.req.query("session"))?.trim();

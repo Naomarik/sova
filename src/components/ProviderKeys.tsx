@@ -21,6 +21,7 @@ import { AccountsSettingsSection } from "./AccountsSettings";
 import { OpenAiAccountSection } from "./OpenAiAccount";
 import { Banner, Chip } from "./ui";
 import { RetryButton, sentence } from "./WorkerSlotRow";
+import { Select, TextField } from "./form";
 import "./ProviderKeys.css";
 
 const message = (err: unknown) => sentence(err instanceof Error ? err.message : String(err));
@@ -166,26 +167,21 @@ function OtherProvider(props: { info: ProviderKeysInfo; onRow: (row: ProviderKey
         </h3>
       </div>
       <p class="settings-intro">Save a key for any other provider your chats can use. Sova saves it as given and doesn't check it.</p>
-      <label class="field">
-        <span class="field-label">Provider</span>
-        <span class="select-wrap">
-          <select class="select" onChange={(e) => setPicked(e.currentTarget.value)}>
-            <option value="" selected={!picked()}>
-              Choose a provider
-            </option>
-            <For each={props.info.others}>
-              {(o) => {
-                const saved = () => props.info.rows.some((r) => r.provider === o.id && r.saved);
-                return (
-                  <option value={o.id} selected={picked() === o.id}>
-                    {saved() ? `${o.name} · key saved` : o.name}
-                  </option>
-                );
-              }}
-            </For>
-          </select>
-        </span>
-      </label>
+      <Select label="Provider" value={picked() ?? ""} onChange={(v) => setPicked(v)}>
+        <option value="" selected={!picked()}>
+          Choose a provider
+        </option>
+        <For each={props.info.others}>
+          {(o) => {
+            const saved = () => props.info.rows.some((r) => r.provider === o.id && r.saved);
+            return (
+              <option value={o.id} selected={picked() === o.id}>
+                {saved() ? `${o.name} · key saved` : o.name}
+              </option>
+            );
+          }}
+        </For>
+      </Select>
       {/* Keyed by the provider, not the row: a refused paste keeps its field while the row is read again. */}
       <Show when={row() ? picked() : null} keyed>
         {(_id: string) => <KeyRow row={row()!} info={props.info} onRow={props.onRow} title={`${row()!.name} API key`} />}
@@ -301,11 +297,13 @@ function KeyRow(props: { row: ProviderKeyRow; info: ProviderKeysInfo; onRow: (ro
         when={editing()}
         fallback={
           <div class="accounts-key-field">
-            <input
-              class="input input-mono"
+            <TextField
+              label={`${r().name} key`}
+              hideLabel
+              inputClass="input-mono"
               readOnly
-              aria-label={`${r().name} key`}
               value={shown() ?? (r().command ? "A command saved on this computer" : maskKey(r().last4))}
+              onInput={() => {}}
               id={`${idBase}-value`}
             />
             <span class="button-row">
@@ -337,17 +335,18 @@ function KeyRow(props: { row: ProviderKeyRow; info: ProviderKeysInfo; onRow: (ro
         }
       >
         <div class="accounts-key-field">
-          <input
-            class="input input-mono"
+          <TextField
+            label={`Paste the ${r().name} key`}
+            hideLabel
+            inputClass="input-mono"
             type="password"
             autocomplete="off"
             spellcheck={false}
-            aria-label={`Paste the ${r().name} key`}
             placeholder="Paste the key"
             value={paste()}
             disabled={!!r().otherSignIn}
-            onInput={(e) => {
-              setPaste(e.currentTarget.value);
+            onInput={(v) => {
+              setPaste(v);
               setRefused(null);
             }}
             onKeyDown={(e) => {

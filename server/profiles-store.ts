@@ -1,6 +1,8 @@
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DEFAULT_PROFILE_ID, parseProfile, profileFileError, type Profile, type ProfilesFile } from "../shared/profiles";
+import { problemOf } from "../shared/form-rules";
+import { PROFILE_LABEL_RULE } from "../shared/profile-limits";
 import { stateRoot } from "./state-root";
 
 /**
@@ -84,8 +86,9 @@ export function addProfile(fields: NewProfile, file = profilesFile()): Profile {
   } catch (err) {
     throw new Error(`${file} can't be read (${err instanceof Error ? err.message : String(err)}), so nothing was saved. Fix or remove it first.`);
   }
+  const bad = problemOf(PROFILE_LABEL_RULE, fields.label);
+  if (bad) throw new Error(bad);
   const label = fields.label.trim();
-  if (!label) throw new Error("Give the profile a name.");
   if (current.profiles.some((p) => p.label.toLowerCase() === label.toLowerCase())) throw new Error(`You already have a profile named "${label}". Pick another name.`);
   const id = profileIdFor(label, new Set(current.profiles.map((p) => p.id)));
   const entry: Record<string, unknown> = { id, label, icon: fields.icon ?? "wrench" };

@@ -350,8 +350,8 @@ adds to rows, every row is exactly the row it was, and the pane asks nothing.
   `{n} needs you`, `{n} need you`, `{n} needs a fix`, `{n} need a fix`, `{n} ready`, `{n} checking`,
   `{n} queued`, `{n} worktree`, `{n} worktrees` (`1 needs you`, `2 ready`, `3 worktrees`), the
   worktree state words (`merged`, `stale`, `in progress`, `blocked`, `ready to merge`, `waiting for
-  your OK`, `removed`), and the host mark's state words (`down`, `refused`, `hidden`, `other
-  version`). Other keys are ignored.
+  your OK`, `removed`), and the host mark's state words (`read only`, `display may be wrong`, `update
+  needed`, `down`, `refused`, `hidden`, §mesh.compatibility/marks). Other keys are ignored.
 - **How many.** One chip from each extension on a row, and at most 2 on a row, from the extensions
   in manifest order.
 - **Drawing.** Each chip follows a ` · ` in the meta line's own muted voice. It has a dot in its

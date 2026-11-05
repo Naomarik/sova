@@ -164,7 +164,8 @@
       "server/subagent-profiles.ts",
       "src/lib/name-fit.ts",
       "src/lib/name-fit.test.ts",
-      "src/components/fold-fit.ts"
+      "src/components/fold-fit.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§chat.profiles/model",
@@ -189,6 +190,22 @@
     "requires": [
       "§chat.profiles/projects",
       "§chat.playbooks/what-gets-sent"
+    ]
+  },
+  "§chat.profiles/profile-name": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "code": [
+      "shared/profile-limits.ts",
+      "shared/profiles.ts",
+      "server/profiles-store.ts",
+      "src/components/ProfilePicker.tsx",
+      "src/components/form/index.tsx"
+    ],
+    "requires": [
+      "§chat.profiles/picker",
+      "§design.forms/limits"
     ]
   },
   "§chat.profiles/projects": {

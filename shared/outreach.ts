@@ -1,7 +1,7 @@
 /**
  * Wire types for outreach (§app/outreach): sending a roster person their gathering link on a
  * channel outside Sova, WhatsApp first. Imported by the server and the operator app, so it imports
- * nothing at runtime. Never added to shared/protocol.ts (its hash is the mesh's protocol version).
+ * only the pure form rules at runtime. Never added to shared/protocol.ts (its hash is the mesh's protocol version).
  *
  * Files (host-local, never committed):
  *   <stateRoot>/outreach.json            OutreachFile: 0600, atomic, strict parse
@@ -46,6 +46,8 @@
  * POST /api/peer/outreach/reconnect      {} -> the sender's answer; needs the `admin` grant (a full-control
  *                                        peer), never while blocked (403 { code: "refused" })
  */
+import { problemOf } from "./form-rules";
+import { SENDER_LABEL_RULE } from "./outreach-limits";
 
 export type ChannelId = "whatsapp";
 
@@ -65,15 +67,11 @@ export interface LocalNumber {
 export const NUMBER_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
 /** A sender's entry id (§app.outreach/sender-list): `local`, `local:<name>` or `peer:<StableID>`. */
 export const ENTRY_ID = /^(local|local:[a-z0-9][a-z0-9-]{0,31}|peer:[A-Za-z0-9_-]{1,128})$/;
-export const LABEL_MAX = 24;
-
-/** Why a number's label can't be kept, or null: at most 24 characters, never 4 digits in a row (a label never holds a number). */
+/** Why a number's label can't be kept, or null: its rule (shared/outreach-limits.ts), and never 4 digits in a row (a label never holds a number). */
 export function labelProblem(label: string): string | null {
   const t = label.trim();
   if (!t) return "A label can't be empty.";
-  if (t.length > LABEL_MAX) return `A label is at most ${LABEL_MAX} characters.`;
-  if (/\d{4}/.test(t.replace(/[\s\-().+]/g, ""))) return "A label can't hold a phone number: use a name, like Office.";
-  return null;
+  return problemOf(SENDER_LABEL_RULE, t) ?? (/\d{4}/.test(t.replace(/[\s\-().+]/g, "")) ? "A label can't hold a phone number: use a name, like Office." : null);
 }
 
 /** The entry id of a route (null: off). */

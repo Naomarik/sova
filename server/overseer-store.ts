@@ -14,6 +14,8 @@ import { canonicalClaudeId, latestClaude, resolveClaude } from "../pi-config/ext
 import { type Redactor, serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
+import { check, problemOf } from "../shared/form-rules";
+import { CAP_KEYS, CAP_RULES, DEFAULT_CAPS, EXTRA_PROMPT_RULE, NOTES_MAX, QA_RULES, qaLabel, QUICK_ACTIONS_MAX, TOO_MANY_QUICK_ACTIONS } from "../shared/overseer-limits";
 
 /**
  * The Overseer's Sova-owned files under the state root. Same store rules as web-sessions.ts:
@@ -32,16 +34,11 @@ export const overseerTurnFile = () => join(stateRoot(), "overseer-turn.json");
 
 /** How many previous Overseer files are kept (hidden, openable read-only). Older ones are deleted. */
 export const HISTORY_MAX = 20;
-/** Standing notes: what the prompt carries is capped, and so is what a save accepts. */
-export const NOTES_MAX = 8000;
-export const EXTRA_PROMPT_MAX = 8000;
-const QUICK_ACTIONS_MAX = 12;
-const CAP_MAX = 500;
+// The limits a save checks are the form's (shared/overseer-limits.ts), refused in its words.
+export { CAP_MAX, DEFAULT_CAPS, EXTRA_PROMPT_MAX, NOTES_MAX, QUICK_ACTIONS_MAX } from "../shared/overseer-limits";
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const PROACTIVITY: readonly OverseerProactivity[] = ["off", "badge", "brief"];
-
-export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 10, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3, extRunsPerTurn: 5 };
 
 /** Claude Opus 5 by any spelling (its catalog id, a 1M variant, a pi ref), never Opus 5.5 (`claude-opus-5-5`). */
 const isOpus5 = (model: string): boolean => resolveClaude(model)?.id === "claude-opus-5";
@@ -112,19 +109,18 @@ function readJson(file: string): unknown {
 }
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
-const isCap = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= CAP_MAX;
-
 // ---- settings --------------------------------------------------------------------------------
 
 /** A quick action as stored, or an error sentence. `strict` refuses what `tolerant` would drop. */
 function parseQuickAction(raw: unknown, i: number): OverseerQuickAction | string {
-  if (!isObj(raw)) return `quickActions[${i}] must be an object`;
-  const label = typeof raw.label === "string" ? raw.label.trim() : "";
-  const prompt = typeof raw.prompt === "string" ? raw.prompt.trim() : "";
-  const description = typeof raw.description === "string" ? raw.description.trim() : "";
-  if (!label || label.length > 40) return `quickActions[${i}].label must be 1–40 characters`;
-  if (!prompt || prompt.length > 2000) return `quickActions[${i}].prompt must be 1–2000 characters`;
-  if (description.length > 120) return `quickActions[${i}].description must be at most 120 characters`;
+  const n = `Quick action ${i + 1}`;
+  if (!isObj(raw)) return `${n} must be an object`;
+  const text = (k: keyof typeof QA_RULES) => (typeof raw[k] === "string" ? raw[k] : "");
+  for (const k of ["label", "description", "prompt"] as const) {
+    const why = problemOf(QA_RULES[k], text(k), qaLabel(i + 1, k));
+    if (why) return why;
+  }
+  const [label, description, prompt] = [text("label").trim(), text("description").trim(), text("prompt").trim()];
   const id = typeof raw.id === "string" && /^[\w-]{1,40}$/.test(raw.id) ? raw.id : `qa-${i}`;
   return { id, label, description, prompt };
 }
@@ -154,9 +150,10 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
     }
   }
   if (raw.extraSystemPrompt !== undefined) {
-    if (typeof raw.extraSystemPrompt === "string" && raw.extraSystemPrompt.length <= EXTRA_PROMPT_MAX) out.extraSystemPrompt = raw.extraSystemPrompt;
+    const why = problemOf(EXTRA_PROMPT_RULE, raw.extraSystemPrompt);
+    if (!why) out.extraSystemPrompt = raw.extraSystemPrompt as string;
     else {
-      const e = fail(`extraSystemPrompt must be a string of at most ${EXTRA_PROMPT_MAX} characters`);
+      const e = fail(why);
       if (e) return e;
     }
   }
@@ -169,7 +166,7 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
   }
   if (raw.quickActions !== undefined) {
     if (!Array.isArray(raw.quickActions) || raw.quickActions.length > QUICK_ACTIONS_MAX) {
-      const e = fail(`quickActions must be a list of at most ${QUICK_ACTIONS_MAX}`);
+      const e = fail(TOO_MANY_QUICK_ACTIONS);
       if (e) return e;
     } else {
       const list: OverseerQuickAction[] = [];
@@ -192,11 +189,12 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
       const e = fail("caps must be an object");
       if (e) return e;
     } else {
-      for (const key of Object.keys(DEFAULT_CAPS) as (keyof OverseerCaps)[]) {
+      for (const key of CAP_KEYS) {
         const v = raw.caps[key];
         if (v === undefined) continue;
-        if (isCap(v)) out.caps[key] = v;
-        else if (strict) return { error: `caps.${key} must be a whole number from 0 to ${CAP_MAX}` };
+        const r = check(CAP_RULES[key], typeof v === "number" ? v : null);
+        if (r.ok) out.caps[key] = r.value!;
+        else if (strict) return { error: r.message };
       }
     }
   }

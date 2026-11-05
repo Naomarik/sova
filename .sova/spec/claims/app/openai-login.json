@@ -70,7 +70,8 @@
       "server/harness/pi/sign-in.test.ts",
       "server/harness/pi/sign-in.integration.test.ts",
       "server/openai-login.integration.test.ts",
-      "server/openai-login.integration.fixture.ts"
+      "server/openai-login.integration.fixture.ts",
+      "src/components/form/index.tsx"
     ]
   },
   "§app.openai-login/sign-out": {

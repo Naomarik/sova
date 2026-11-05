@@ -33,7 +33,8 @@ import { watchUpdates } from "./lib/updates";
 import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloNews, weighHello, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
 import { noteSessionsHidden, sessionsHiddenBy } from "./lib/mesh";
-import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
+import { HostUpdatePage } from "./components/HostStateNotices";
+import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerProjects, notePeerSessions, peerCantOpen, peerInfo, sameMeshInfo, sessionRouteFromHash, updateNeededFor, setMeshState } from "./lib/mesh";
 import { bindKey, paletteKeyAction } from "./commands/keys";
 import { composerOf } from "./commands/composers";
 import { closePalette, paletteRequest, togglePaletteFromKey } from "./commands/palette-open";
@@ -765,7 +766,7 @@ export function App() {
     const h = hostOf(path);
     if (!h) return null;
     const p = peerInfo(h);
-    if (p) return peerUnavailable(p);
+    if (p) return peerCantOpen(p);
     if (meshError()) return `This host couldn't read its peers: ${meshError()}`;
     return meshState() ? `${h} isn't one of this host's peers.` : null;
   };
@@ -1290,17 +1291,22 @@ export function App() {
                   spins on a socket nobody answers. It opens again once the host is back. */}
               <Match when={route() && peerDown(route()!)}>
                 {(why) => (
-                  <div class="center-fill">
-                    <div class="empty">
-                      <p class="empty-title">{hostLabel(hostOf(route()!)!)} can't be reached.</p>
-                      <p class="empty-body">
-                        {why()} This session lives there, so it opens once that host is back. Nothing here changed.
-                      </p>
-                      <a class="button empty-action" href="#/mesh">
-                        See Hosts
-                      </a>
+                  <Show
+                    when={!updateNeededFor(route()!)}
+                    fallback={<HostUpdatePage host={hostOf(route()!)!} />}
+                  >
+                    <div class="center-fill">
+                      <div class="empty">
+                        <p class="empty-title">{hostLabel(hostOf(route()!)!)} can't be reached.</p>
+                        <p class="empty-body">
+                          {why()} This session lives there, so it opens once that host is back. Nothing here changed.
+                        </p>
+                        <a class="button empty-action" href="#/mesh">
+                          See Hosts
+                        </a>
+                      </div>
                     </div>
-                  </div>
+                  </Show>
                 )}
               </Match>
               {/* One session, the whole pane (#/s/<path>), exactly as before. Keyed on its host too: a

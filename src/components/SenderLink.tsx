@@ -4,6 +4,7 @@ import { encodeQr } from "../lib/qr";
 import { cancelLink, getLink, PHONE_DIGITS, startLink, unlinkSender } from "../lib/outreach";
 import { announce } from "../lib/ui-state";
 import { Banner } from "./ui";
+import { TextField } from "./form";
 
 /** How often a link in progress is read again, so each new QR the sender issues shows at once. */
 const POLL_MS = 1_000;
@@ -202,30 +203,24 @@ export function SenderLink(props: { sender?: string; link: boolean; unlink: bool
           }
         >
           <form
-            class="field sender-link-phone"
+            class="stack stack-2 sender-link-phone"
             onSubmit={(e) => {
               e.preventDefault();
               getCode();
             }}
           >
-            <label class="field-label" for="sender-link-phone">
-              The phone's number
-            </label>
-            <input
+            <TextField
               id="sender-link-phone"
-              class="input input-mono"
+              label="The phone's number"
+              hint="Country code first, digits only: 7 to 15."
+              error={phoneError()}
+              inputClass="input-mono"
               inputmode="numeric"
               autocomplete="off"
               placeholder="15550001234"
               value={phone()}
-              aria-invalid={phoneError() ? "true" : undefined}
-              aria-describedby="sender-link-phone-hint"
-              onInput={(e) => setPhone(e.currentTarget.value)}
+              onInput={setPhone}
             />
-            <span class="field-hint" id="sender-link-phone-hint">
-              Country code first, digits only: 7 to 15.
-            </span>
-            <Show when={phoneError()}>{(e) => <span class="field-error">{e()}</span>}</Show>
             <div class="outreach-actions">
               <button type="submit" class="button button-sm" disabled={busy() || props.disabled}>
                 {busy() ? "Asking…" : "Get Pairing Code"}
@@ -256,12 +251,7 @@ export function SenderLink(props: { sender?: string; link: boolean; unlink: bool
             body={
               <span class="stack stack-2">
                 <span>Sending from this number stops until you link a phone again; the chats on the phone stay.</span>
-                <span class="field">
-                  <label class="field-label" for="sender-unlink-confirm">
-                    Type UNLINK to confirm
-                  </label>
-                  <input id="sender-unlink-confirm" class="input input-mono" autocomplete="off" value={typed()} onInput={(e) => setTyped(e.currentTarget.value)} />
-                </span>
+                <TextField id="sender-unlink-confirm" label="Type UNLINK to confirm" inputClass="input-mono" autocomplete="off" value={typed()} onInput={setTyped} />
               </span>
             }
             action={

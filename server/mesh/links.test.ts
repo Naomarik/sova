@@ -3,6 +3,7 @@
 // its own Hono app with mountLinks, and a fake MeshApi whose peerFetch calls the other host's app
 // with the caller as the peer listener's verified peer. File offers pack and land through tar
 // in-process (links-transfer-test-fixtures.ts). State lives in a throwaway dir, removed after.
+import { WIRE_AREAS } from "../../shared/wire-areas";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
@@ -76,6 +77,8 @@ interface Host {
   onFetch?: (peerId: string, path: string) => void;
   /** The call reaches the peer, but its answer is lost on the way back. */
   loseAnswer?: (peerId: string, path: string) => boolean;
+  /** Peers this host reads as Update needed (§mesh.compatibility/host-acts). */
+  updateNeeded?: Set<string>;
   /** This host's LAN key pin (lower-case hex): it goes by lan:<pin> to its LAN pairings. */
   lanPin?: string;
   /** Peers this host is paired with over LAN: each names the other lan:<pin>. */
@@ -197,6 +200,7 @@ function makeHost(id: string, label: string, opts: Partial<Host> = {}): Host {
     sawPeer: (peerId: string, up: boolean) => void (up || h.sawDown.push(peerId)),
   };
   const deps = {
+    updateNeeded: async (peer: PeerEntry) => !!h.updateNeeded?.has(peer.id),
     root: () => h.root,
     summary: async (sid: string) => {
       if (h.stall) await h.stall;
@@ -698,6 +702,37 @@ describe("delivery (§mesh.links/delivery)", () => {
     assert.equal(A.links.pending().length, 0);
     assert.equal(A.links.armed(), false);
     assert.equal(A.links.inbox("sa")[0]!.deliveries![0]!.state, "started");
+  });
+
+  test("a host in Update needed: a message is refused at once, never held, and the link stays (§mesh.links/delivery)", async () => {
+    const v = await link();
+    A.updateNeeded = new Set(["b"]);
+    const r = await act<LinkSendResult>(A, "POST", "/api/mesh/links/send", { session: "sa", text: "x" });
+    const d = r.json.deliveries[0] as { state: string; message: string };
+    assert.equal(d.state, "refused");
+    assert.match(d.message, /^Beta runs another version of Sova/);
+    assert.equal(A.links.pending().length, 0, "not held in the outbox");
+    assert.equal(B.delivered.length, 0);
+    assert.equal(A.links.get(v.link.id)!.endedAt, undefined, "the link stays");
+    A.updateNeeded = new Set();
+    const again = await act<LinkSendResult>(A, "POST", "/api/mesh/links/send", { session: "sa", text: "y" });
+    assert.equal(again.json.deliveries[0]!.state, "started");
+  });
+
+  test("a host in Update needed can't be linked, and a member's host refuses another host-to-host number", async () => {
+    A.updateNeeded = new Set(["b"]);
+    const r = await act<LinkError>(A, "POST", "/api/mesh/links", { members: [{ session: "sa" }, { host: "b", session: "sb" }] });
+    assert.equal(r.status, 409);
+    assert.match(r.json.error, /Beta runs another version of Sova/);
+    A.updateNeeded = new Set();
+    const v = await link();
+    const sent = (n: string) =>
+      B.app.request(`/api/peer/links/${v.link.id}/message`, { method: "POST", headers: { "Content-Type": "application/json", "X-Sova-Peer-Area": n }, body: JSON.stringify({ message: { id: "m1", linkId: v.link.id, at: 1, from: { nodeId: A.nodeId, sessionId: "sa" }, to: [{ nodeId: B.nodeId, sessionId: "sb" }], text: "x" } }) }, { meshPeer: entryOf(A, B) });
+    const refused = await sent("99");
+    assert.equal(refused.status, 409);
+    assert.match(((await refused.json()) as { error: string }).error, /^Beta needs an update/);
+    assert.equal(B.delivered.length, 0);
+    assert.notEqual((await sent(String(WIRE_AREAS.peer))).status, 409, "its own number gets past the refusal");
   });
 
   test("a build without links answers 404: final, never queued", async () => {

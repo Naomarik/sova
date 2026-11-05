@@ -373,7 +373,9 @@
       "src/components/OutreachSettings.tsx",
       "src/lib/outreach.ts",
       "src/lib/outreach.test.ts",
-      "server/outreach-link.test.ts"
+      "server/outreach-link.test.ts",
+      "shared/outreach-limits.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.outreach/sender-route"

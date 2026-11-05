@@ -8,8 +8,12 @@
 //                                            409 while the stored file is malformed: it is never overwritten)
 // GET /api/provider-limits/waiting        -> ProviderWaiting (who waits now, from the queue files)
 
+import type { WholeRule } from "./form-rules";
+
 /** Provider id → how many of its requests may run at once on this device (1..999). Absent = no limit. */
 export type ProviderLimits = Record<string, number>;
+/** Settings → Models' "At once" box (blank: no limit), read by the form and the save; one of many: "{provider}'s At once". */
+export const LIMIT_RULE: WholeRule = { kind: "whole", label: "At once", min: 1, max: 999, optional: true };
 
 export interface ProviderLimitsInfo {
   /** The limits in effect: the file's, or the defaults when it is missing or can't be read. */

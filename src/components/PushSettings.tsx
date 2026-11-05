@@ -1,6 +1,7 @@
 import { createEffect, createResource, createSignal, For, Show } from "solid-js";
 import { PUSH_KINDS, type PushKind, type PushTestResult } from "../../shared/protocol";
-import { contactProblem } from "../../shared/push";
+import { CONTACT_RULE } from "../../shared/push-limits";
+import { TextField, Toggle } from "./form";
 import { deletePushSubscription, getPushInfo, sendPushTest } from "../lib/api";
 import { relativeTime, tildePath } from "../lib/format";
 import {
@@ -79,10 +80,6 @@ export function PushSettingsSection() {
   const edit = (patch: Partial<NonNullable<ReturnType<typeof draft>>>) => {
     const cur = d();
     if (cur) setPushDraft({ ...cur, ...patch });
-  };
-  const contactIssue = () => {
-    const c = d()?.contact.trim() ?? "";
-    return c ? contactProblem(c) : null;
   };
   const savedContact = () => !!loaded()?.settings.contact;
 
@@ -234,47 +231,29 @@ export function PushSettingsSection() {
               {(cur) => (
                 <fieldset class="settings-delegate-profile">
                   <legend class="settings-delegate-legend">Settings</legend>
-                  <label class="toggle toggle-switch settings-team-enable">
-                    <span>Send phone notifications</span>
-                    <input type="checkbox" checked={cur().enabled} disabled={saving()} onChange={(e) => edit({ enabled: e.currentTarget.checked })} />
-                    <span class="toggle-box" />
-                  </label>
-                  <p class="field-hint">Off, nothing is sent to any device. Send Test still works.</p>
-
-                  <div class="field">
-                    <label class="field-label" for="push-contact">
-                      Contact address
-                    </label>
-                    <input
-                      class="input text-mono"
-                      id="push-contact"
-                      type="text"
-                      inputmode="email"
-                      autocomplete="off"
-                      spellcheck={false}
-                      placeholder="mailto:you@example.com"
-                      value={cur().contact}
-                      aria-invalid={contactIssue() ? "true" : undefined}
-                      aria-describedby="push-contact-hint"
-                      disabled={saving()}
-                      onInput={(e) => edit({ contact: e.currentTarget.value })}
-                    />
-                    <Show
-                      when={contactIssue()}
-                      fallback={
-                        <span class="field-hint" id="push-contact-hint">
-                          A mailto: address or https:// URL for whoever runs this server. Push services require one, and nothing is sent without it.
-                        </span>
-                      }
-                    >
-                      {(p) => (
-                        <span class="field-error" id="push-contact-hint">
-                          {p()}
-                        </span>
-                      )}
-                    </Show>
-                  </div>
-
+                  <Toggle
+                    switch
+                    class="settings-team-enable"
+                    label="Send phone notifications"
+                    hint="Off, nothing is sent to any device. Send Test still works."
+                    checked={cur().enabled}
+                    disabled={saving()}
+                    onChange={(v) => edit({ enabled: v })}
+                  />
+                  <TextField
+                    inputClass="text-mono"
+                    id="push-contact"
+                    label="Contact address"
+                    hint="A mailto: address or https:// URL for whoever runs this server. Push services require one, and nothing is sent without it."
+                    rule={CONTACT_RULE}
+                    inputmode="email"
+                    autocomplete="off"
+                    spellcheck={false}
+                    placeholder="mailto:you@example.com"
+                    value={cur().contact}
+                    disabled={saving()}
+                    onInput={(raw) => edit({ contact: raw })}
+                  />
                   <div class="field">
                     <span class="field-label" id="push-kinds-label">
                       Notify me about
@@ -282,61 +261,32 @@ export function PushSettingsSection() {
                     <div class="push-kinds" role="group" aria-labelledby="push-kinds-label">
                       <For each={PUSH_KINDS}>
                         {(k) => (
-                          <label class="toggle">
-                            <input
-                              type="checkbox"
-                              checked={cur().kinds[k]}
-                              disabled={saving()}
-                              onChange={(e) => edit({ kinds: { ...cur().kinds, [k]: e.currentTarget.checked } })}
-                            />
-                            <span class="toggle-box" aria-hidden="true" />
-                            <span>
-                              {KIND[k].label}
-                              <span class="field-hint"> · {KIND[k].hint}</span>
-                            </span>
-                          </label>
+                          <Toggle
+                            label={
+                              <>
+                                {KIND[k].label}
+                                <span class="field-hint"> · {KIND[k].hint}</span>
+                              </>
+                            }
+                            checked={cur().kinds[k]}
+                            disabled={saving()}
+                            onChange={(v) => edit({ kinds: { ...cur().kinds, [k]: v } })}
+                          />
                         )}
                       </For>
                     </div>
                   </div>
-
-                  <label class="toggle toggle-switch settings-team-enable">
-                    <span>Quiet hours</span>
-                    <input
-                      type="checkbox"
-                      checked={cur().quietHours.enabled}
-                      disabled={saving()}
-                      onChange={(e) => edit({ quietHours: { ...cur().quietHours, enabled: e.currentTarget.checked } })}
-                    />
-                    <span class="toggle-box" />
-                  </label>
+                  <Toggle
+                    switch
+                    class="settings-team-enable"
+                    label="Quiet hours"
+                    checked={cur().quietHours.enabled}
+                    disabled={saving()}
+                    onChange={(v) => edit({ quietHours: { ...cur().quietHours, enabled: v } })}
+                  />
                   <div class="push-quiet">
-                    <div class="field">
-                      <label class="field-label" for="push-quiet-start">
-                        From
-                      </label>
-                      <input
-                        class="input text-num"
-                        id="push-quiet-start"
-                        type="time"
-                        value={cur().quietHours.start}
-                        disabled={saving() || !cur().quietHours.enabled}
-                        onInput={(e) => edit({ quietHours: { ...cur().quietHours, start: e.currentTarget.value } })}
-                      />
-                    </div>
-                    <div class="field">
-                      <label class="field-label" for="push-quiet-end">
-                        To
-                      </label>
-                      <input
-                        class="input text-num"
-                        id="push-quiet-end"
-                        type="time"
-                        value={cur().quietHours.end}
-                        disabled={saving() || !cur().quietHours.enabled}
-                        onInput={(e) => edit({ quietHours: { ...cur().quietHours, end: e.currentTarget.value } })}
-                      />
-                    </div>
+                    <TextField id="push-quiet-start" label="From" type="time" inputClass="text-num" value={cur().quietHours.start} disabled={saving() || !cur().quietHours.enabled} onInput={(raw) => edit({ quietHours: { ...cur().quietHours, start: raw } })} />
+                    <TextField id="push-quiet-end" label="To" type="time" inputClass="text-num" value={cur().quietHours.end} disabled={saving() || !cur().quietHours.enabled} onInput={(raw) => edit({ quietHours: { ...cur().quietHours, end: raw } })} />
                   </div>
                   <p class="field-hint">This server's clock. What arrives during quiet hours is never sent, not even later.</p>
                 </fieldset>

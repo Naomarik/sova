@@ -1,0 +1,208 @@
+/* The landing bar (al_1, components/LandingBar.tsx): a step-track row in the sidebar foot, a 44px strip
+   above the phone's foot bar, and an icon with a status dot in the spine's foot. Theme tokens only. */
+
+/* ---- the face: icon, one line (title · sub · count), the track under it; chevron at the end ------ */
+/* The desktop row's divider is an inset line, so the row is exactly the face's 44px. */
+.landing-bar { flex: none; box-shadow: inset 0 calc(-1 * var(--stroke-thin)) var(--color-border); }
+.landing-face,
+.landing-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.landing-face:hover,
+.landing-strip:hover { background: var(--color-sunken); }
+.landing-face:focus-visible,
+.landing-strip:focus-visible { outline: var(--focus-ring); outline-offset: calc((var(--focus-width) + var(--focus-offset)) * -1); }
+
+.landing-icon {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: var(--r-xs);
+}
+.landing-tone-accent  { background: var(--color-accent-tint); color: var(--color-accent); }
+.landing-tone-warn    { background: var(--status-warn-bg);    color: var(--status-warn); }
+.landing-tone-success { background: var(--status-success-bg); color: var(--status-success); }
+.landing-tone-error   { background: var(--status-error-bg);   color: var(--status-error); }
+.landing-icon > .icon { width: 12px; height: 12px; }
+
+.landing-lines { flex: 1; min-width: 0; display: grid; gap: 2px; }
+/* The heads (the sheet's, the popover's): every word, wrapping; the count in words under them. */
+.landing-line1 { display: grid; gap: 2px; min-width: 0; }
+.landing-line1 > .landing-count { justify-self: start; }
+.landing-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  font-weight: var(--fw-semibold);
+}
+.landing-sub {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
+.landing-count { flex: none; padding-block: 0; font-variant-numeric: tabular-nums; }
+.landing-chevron { flex: none; align-self: center; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.landing-chevron-open { transform: rotate(180deg); }
+
+/* ---- the row: the desktop's and the phone's, one form, exactly 44px, never wrapping ---------------- */
+/* "Title · sub +2" on one line, the track under it. The title shrinks only after the sub line has gone
+   (the sub's basis is 0), and the count is never cut; every word is in the hover card and the detail. */
+.landing-row {
+  flex: none;
+  align-items: center;
+  height: var(--tap-min);
+  min-height: 0;
+  padding-block: 0;
+  overflow: hidden;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+.landing-row .landing-icon { margin-top: 0; }
+.landing-row .landing-lines { gap: 0; }
+.landing-row .landing-line1 { display: flex; align-items: baseline; gap: var(--space-1); white-space: nowrap; }
+.landing-row .landing-title { flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+/* At least "· …": never a sliver of a letter. */
+.landing-row .landing-sub { flex: 1 1 0; min-width: 1.6em; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+.landing-row .landing-sub::before { content: "· "; }
+.landing-row .landing-count { margin-left: auto; }
+.landing-strip { border-top: var(--stroke-thin) solid var(--color-border); background: var(--color-surface); }
+
+/* ---- the step track: 4px segments, 3px apart, rounded --------------------------------------------- */
+.landing-track-row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin-top: 3px; }
+
+.landing-track { flex: 1; min-width: 0; display: flex; gap: 3px; }
+.landing-seg {
+  flex: 1 1 0;
+  min-width: 2px;
+  height: 4px;
+  border-radius: var(--r-full);
+  background: var(--color-border);
+}
+.landing-seg-passed  { background: var(--status-success); }
+.landing-seg-failed  { background: var(--status-error); }
+.landing-seg-held    { background: var(--status-warn); }
+.landing-seg-skipped { background: transparent; box-shadow: inset 0 0 0 1px var(--color-border); }
+.landing-seg-waiting { background: var(--color-border-strong); opacity: .45; }
+/* Running is the live-run indicator: the accent, pulsing (motion is one of the two exceptions). A gating
+   checks segment fills to its run's progress. */
+.landing-seg-running { background: var(--color-accent); animation: live-pulse 1.6s var(--ease-standard) infinite; }
+.landing-seg-running[style*="--landing-progress"] { position: relative; overflow: hidden; background: var(--color-accent-tint); }
+.landing-seg-running[style*="--landing-progress"]::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--landing-progress);
+  border-radius: inherit;
+  background: var(--color-accent);
+}
+
+/* ---- the detail: floating above the row (desktop), in the sheet (phone), in the popover (spine) ---- */
+.landing-detail {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4) var(--space-3);
+  background: var(--color-sunken);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.landing-detail-project { margin: 0; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.landing-detail-lines,
+.landing-detail-others { margin: 0; padding: 0; list-style: none; display: grid; gap: 2px; }
+.landing-line { overflow-wrap: anywhere; }
+.landing-line-mono { font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); }
+.landing-line-warn { color: var(--status-warn); }
+.landing-line-error { color: var(--status-error); }
+.landing-line a { color: inherit; }
+.landing-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.landing-detail-others { padding-top: var(--space-2); border-top: var(--stroke-thin) solid var(--color-border); }
+.landing-other { display: flex; align-items: center; gap: var(--space-2); min-width: 0; min-height: 28px; }
+.landing-other-dot { flex: none; width: 8px; height: 8px; border-radius: var(--r-full); background: currentColor; }
+.landing-other-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.landing-other-link { flex: none; }
+
+/* ---- phone: the sheet ---------------------------------------------------------------------------- */
+.landing-sheet { padding-bottom: env(safe-area-inset-bottom); }
+.landing-sheet-head,
+.landing-popover-head { display: flex; align-items: flex-start; gap: var(--space-2); padding: var(--space-2) var(--space-4); }
+.landing-sheet .landing-detail { background: transparent; padding-bottom: var(--space-4); }
+
+/* ---- collapsed: the spine's icon and its status dot, and the popover beside the spine ----------- */
+.landing-spine { position: relative; }
+.landing-spine-dot {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-full);
+  background: currentColor;
+  pointer-events: none;
+}
+.landing-spine-dot-live    { color: var(--color-accent); animation: live-pulse 1.6s var(--ease-standard) infinite; }
+.landing-spine-dot-warn    { color: var(--status-warn); }
+.landing-spine-dot-success { color: var(--status-success); }
+.landing-spine-dot-error   { color: var(--status-error); }
+.landing-popover {
+  position: fixed;
+  z-index: 60;
+  width: 320px;
+  max-width: calc(100vw - 80px);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 0;
+}
+.landing-popover .landing-detail { background: transparent; border-top: var(--stroke-thin) solid var(--color-border); }
+
+/* ---- desktop: the detail floats above the row, over the session list; nothing in the sidebar moves -- */
+.landing-float {
+  position: fixed;
+  z-index: 60;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+.landing-float .landing-detail { background: transparent; border-top: var(--stroke-thin) solid var(--color-border); }
+
+/* ---- the hover card: the floating card, neutral edge, above the row --------------------------------- */
+.landing-peek { position: fixed; top: 0; left: 0; z-index: 66; pointer-events: none; will-change: transform; }
+.landing-peek-card {
+  display: grid;
+  gap: 2px;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 16px));
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+  transform-origin: bottom center;
+}
+.landing-peek-below .landing-peek-card { transform-origin: top center; }
+.landing-peek-title { font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
+.landing-peek-sub { color: var(--color-ink-muted); overflow-wrap: anywhere; }
+/* A note may be long: two lines, then an ellipsis. */
+.landing-peek-line {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}

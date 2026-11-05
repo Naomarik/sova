@@ -6,6 +6,7 @@
 
 import { noteMergeCards, noteMergeFeed } from "./merge-queue-client";
 import { noteReleaseFeed } from "./releases-client";
+import { noteLandingQueue, noteLandingRelease, refreshLandingSummary } from "./landing-bar-store";
 import { createEffect, createSignal, onCleanup } from "solid-js";
 import type { AttentionDigest, LlmInflight, OverseerInfo, SessionFeedMessage } from "../../shared/protocol";
 import { sameInflight } from "./llm-inflight";
@@ -104,6 +105,8 @@ export function openSessionFeed(refreshList: () => void): void {
         void loadSessionGroups();
       }
       for (const l of listeners) l.resync();
+      // Frames are never sent on connect: the landing bar reads its starting picture once per open.
+      void refreshLandingSummary();
     },
     onMessage: (msg) => {
       if (following?.message(msg)) return;
@@ -120,8 +123,13 @@ export function openSessionFeed(refreshList: () => void): void {
       else if (msg.type === "attention") for (const l of listeners) l.attention(msg.digest);
       else if (msg.type === "overseer") for (const l of listeners) l.overseer(msg.info);
       // A project's merge queue moved: its tab takes the view, and worktree rows reload when an entry moved.
-      else if (msg.type === "merge_queue") noteMergeFeed(msg);
-      else if (msg.type === "release") noteReleaseFeed(msg);
+      else if (msg.type === "merge_queue") {
+        noteMergeFeed(msg);
+        noteLandingQueue(msg.view);
+      } else if (msg.type === "release") {
+        noteReleaseFeed(msg);
+        noteLandingRelease(msg.view);
+      }
       // A chat's merge queue cards moved: that chat's thread takes them.
       else if (msg.type === "merge_cards") noteMergeCards(msg);
     },

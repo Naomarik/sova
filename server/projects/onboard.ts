@@ -88,7 +88,7 @@ export async function onboardFacts(projectId: string, playbookId = ONBOARD_PLAYB
   const p = readProject(projectId);
   const remote = defaultRemoteOf(p.root);
   const local = !remote && !!p.root;
-  const catalog = local && existsSync(p.root) ? await listPlaybooks(p.root) : null;
+  const catalog = local && existsSync(p.root) ? await listPlaybooks(p.root, { withSetup: true }) : null;
   return {
     name: p.name || p.id,
     root: p.root,

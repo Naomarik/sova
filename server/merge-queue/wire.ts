@@ -281,7 +281,7 @@ let bareSettingsOf: ((root: string) => Promise<import("../../shared/merge-queue-
 /** A listed project's settings while the queue doesn't serve it, made without a queue (settings.ts bareSettings);
  *  null while the queue isn't started or its target has no commit. */
 /** The gate's answer when it can't read what it needs: never a quiet pass. */
-export const TRIAL_UNREADABLE = "Sova can't check this branch's trial now: try again in a moment.";
+export const TRIAL_UNREADABLE = "Sova can't confirm a passing trial of this branch now: try again in a moment.";
 
 /**
  * Why a branch head can't merge or land yet as a setup branch (setup-branch.ts): it changes the project's setup and no

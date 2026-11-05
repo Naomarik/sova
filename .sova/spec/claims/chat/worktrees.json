@@ -194,10 +194,11 @@
       "§chat.worktrees/inherit",
       "§chat.composer/worktrees-control",
       "§app.merge-queue/approve",
-      "§chat.changes/entry"
+      "§chat.changes/entry",
+      "§chat.composer/land-confirm"
     ],
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "code": [
       "server/insights.ts",
       "server/worktrees-state.ts",
@@ -222,8 +223,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T14:54Z",
-      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
+      "at": "2026-11-04T21:36Z",
+      "source": "pi-session:6295e4a0-38a1-4768-a7a6-2787ccf54172#23af1717"
     }
   },
   "§chat.worktrees/readiness": {

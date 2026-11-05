@@ -89,7 +89,8 @@ it go-aheads, and leaves the file as it is.
   with `worktree land` (§chat.worktrees/tool). That action refuses any message the user didn't type
   themselves (§chat.worktrees/land-own-word).
 
-Both approve the same thing, with no second confirm. Nothing else approves: not the merge thread,
+Both approve the same thing. The Land button asks once, on the row itself, before it approves
+(§chat.composer/land-confirm); a typed "land it" asks nothing more. Nothing else approves: not the merge thread,
 not an Overseer card, not another chat. The one entry no person approves is a release's own (its
 release commit, or the revert of an abandoned one): Sova adds it itself, approved `by: release`,
 without review (§app.release/checks).
@@ -751,6 +752,8 @@ shows, top to bottom:
   the list is read at most every 15 seconds, so that row may take that long to appear).
   Each shows its branch, commit, Ready chip, its chat, worktree and "{n} commits ahead · +{a} −{d}",
   and **Land** with the same menu as the modal's (Land Without Review, Land Without Its Specs…).
+  Land here asks once as the modal's does, its confirmation right-aligned under the row
+  (§chat.composer/land-confirm), and only Land {n} Commits queues the branch.
   Land there names no chat: the queue records the branch's owner by the same rule the row shows
   (§app.merge-queue/owner), so the chat the row shows is the one the queue records and tells.
 - **History**, at the bottom: every chat the queue has had for the project, each opening its chat,
@@ -788,9 +791,14 @@ viewer shows the files alone. What it compares, read by the server from the queu
 box: rows are split by hairlines, with 12px side padding. Each row stacks: the branch on its own
 line, wrapping anywhere; a facts line led by the state chip, then the commit and "{n} commits ahead
 · +{a} −{d}" (or the row's own facts); the chat line, where the worktree is named by its folder's
-last name, with the full path as its `title`; and an actions line, Review Changes on the left and
-Land ▾ (or the row's other actions) on the right, every control at least 44px tall. Nothing scrolls
-sideways at 390px. Wider screens keep the actions at the row's end and show the full path. Nothing
+last name, with the full path as its `title`; and the row's actions (Review Changes, Land ▾ or the
+row's other actions) on their own line under it, Review Changes at the line's left and the row's
+other actions at its right, each button the same size as on a
+wider screen (§chat.composer/worktrees-control, "Row layout").
+Nothing scrolls sideways at 390px. Wider screens show the full path, and lay the row out as the
+Worktrees modal's rows do (§chat.composer/worktrees-control, "Row layout"): from 768px wide the
+actions sit in a column at the row's right, top-aligned; narrower, on their own line under the
+row, right-aligned. Nothing
 is offered only on hover.
 
 **The run page** (`…/merge-queue/<run>`) shows:

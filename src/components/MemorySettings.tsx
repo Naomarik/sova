@@ -27,6 +27,7 @@ import { withoutSubagentMarks } from "../lib/session-title-settings-form";
 import { home } from "../lib/ui-state";
 import { Banner } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
+import { Select, Toggle } from "./form";
 
 /**
  * Settings → Memory (§app.settings-dialog/memory): which model writes memory's summaries — a
@@ -111,16 +112,14 @@ export function MemorySettingsSection() {
             otherwise="summaries wait until one can"
             onChange={(next) => update("primary", next)}
           />
-          <label class="toggle toggle-switch settings-delegate-fallback-toggle">
-            <span>Fallback</span>
-            <input
-              type="checkbox"
-              checked={draft()!.fallback !== null}
-              disabled={saving()}
-              onChange={(e) => update("fallback", fallbackFor(draft()!.primary, e.currentTarget.checked))}
-            />
-            <span class="toggle-box" />
-          </label>
+          <Toggle
+            switch
+            class="settings-delegate-fallback-toggle"
+            label="Fallback"
+            checked={draft()!.fallback !== null}
+            disabled={saving()}
+            onChange={(on) => update("fallback", fallbackFor(draft()!.primary, on))}
+          />
           <Show when={draft()!.fallback} fallback={<p class="field-hint">No fallback: when the primary can't run, summaries wait until it can.</p>}>
             {(fallback) => (
               <WorkerSlotRow
@@ -164,30 +163,16 @@ function SummarySizes(props: { defaults: MemorySettings; types: readonly MemoryT
   const setSize = (type: MemoryType, size: number) => setDraft({ ...d(), sizes: { ...d().sizes, [type]: size } });
   const defaultOf = (type: MemoryType) => toMemoryDraft(props.defaults).sizes[type];
   const SizeSelect = (p: { type: MemoryType; hint: string }) => (
-    <label class="field">
-      <span class="field-label">{typeInfo(props.types, p.type).label}</span>
-      <span class="select-wrap">
-        <select
-          class="select"
-          id={`memory-size-${p.type}`}
-          aria-describedby={`memory-size-${p.type}-hint memory-size-both-hint`}
-          disabled={saving()}
-          onChange={(e) => setSize(p.type, Number(e.currentTarget.value))}
-        >
-          <For each={sizeChoices(undefined, d().sizes[p.type])}>
-            {(n) => (
-              <option value={n} selected={d().sizes[p.type] === n}>
-                {sizeLabel(p.type, n)}
-                {n === defaultOf(p.type) ? " (default)" : ""}
-              </option>
-            )}
-          </For>
-        </select>
-      </span>
-      <span class="field-hint" id={`memory-size-${p.type}-hint`}>
-        {p.hint}
-      </span>
-    </label>
+    <Select
+      id={`memory-size-${p.type}`}
+      label={typeInfo(props.types, p.type).label}
+      hint={p.hint}
+      describedBy="memory-size-both-hint"
+      value={String(d().sizes[p.type])}
+      options={sizeChoices(undefined, d().sizes[p.type]).map((n) => ({ value: String(n), label: `${sizeLabel(p.type, n)}${n === defaultOf(p.type) ? " (default)" : ""}` }))}
+      disabled={saving()}
+      onChange={(v) => setSize(p.type, Number(v))}
+    />
   );
   return (
     <div class="memory-sizes" role="group" aria-labelledby="settings-memory-sizes-title">

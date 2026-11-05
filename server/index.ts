@@ -88,7 +88,7 @@ const HOST = process.env.HOST || "127.0.0.1";
 process.on("uncaughtException", (err) => console.error("[uncaughtException]", err));
 process.on("unhandledRejection", (err) => console.error("[unhandledRejection]", err));
 
-const { app, autoTitleSweep, claudeAccounts, meshResync } = buildApp({
+const { app, autoTitleSweep, claudeAccounts, openAiLogin, meshResync } = buildApp({
   extensionEntriesOf: async (path) => {
     const held = chatHandle(path);
     return extensionEntries(held ? await held.branch() : await readBranch(path));
@@ -341,6 +341,7 @@ async function shutdown() {
     process.exit(1);
   }, 20_000).unref();
   claudeAccounts.dispose();
+  openAiLogin.dispose();
   meshResync.dispose();
   markShutdown();
   // A merge run in flight is voided (rerun from its start at the next start; a landing intent is reconciled then).

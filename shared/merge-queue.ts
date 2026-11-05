@@ -432,6 +432,32 @@ export interface MergeQueueView {
   at: string;
 }
 
+/** A project's queue as the landing bar starts from it (GET /api/merge-queue/landing-summary): the view's fields the bar
+ *  reads, `recent` cut to the newest few. A whole MergeQueueView (the `merge_queue` feed frame) is one too. */
+export type LandingQueueCut = Pick<MergeQueueView, "project" | "root" | "target" | "state" | "paused" | "invalid" | "served" | "current" | "checking" | "waiting" | "needsYou" | "recent" | "release" | "reviewing" | "heads" | "at">;
+
+/** A project's releases as the landing bar starts from them: the open record and the last one (steps without their
+ *  `detail`), with Publish's gates and the quiet watch. `project` is the root, as in ReleaseView; a whole ReleaseView
+ *  (the `release` feed frame) is one too. */
+export type LandingReleaseCut = Pick<import("./release").ReleaseView, "project" | "initialized" | "open" | "last" | "gates" | "quiet" | "target" | "remote">;
+
+/** One project of this computer's Projects list in the landing summary. `queue` null: the queue doesn't serve it (or
+ *  has nothing loaded); `release` null: it has no release record. */
+export interface LandingSummaryProject {
+  id: string;
+  root: string;
+  name: string;
+  queue: LandingQueueCut | null;
+  release: LandingReleaseCut | null;
+}
+
+/** GET /api/merge-queue/landing-summary: every project's queue and releases in one quick read (no Ready-list or tag
+ *  history reads), for the landing bar at page open and at each reconnect; the feed's frames carry it on from there. */
+export interface LandingSummary {
+  projects: LandingSummaryProject[];
+  at: string;
+}
+
 /** The release holding a project's queue. `state`: the release record's (shared/release.ts ReleaseState). */
 export interface MergeReleaseHold {
   id: string;

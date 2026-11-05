@@ -149,6 +149,7 @@ export type CommandId =
   | "project.merge-queue.land-how.set"
   | "project.merge-queue.land-how.clear"
   | "project.merge-queue.branch-summary.retry"
+  | "project.merge-queue.landing-summary"
   | "overseer.attention"
   | "overseer.abilities"
   | "overseer.todo.list"
@@ -3061,6 +3062,8 @@ export interface CommandParams {
     /** The full commit id the row shows */
     "commit": string;
   };
+  /** Every project's merge queue and open release in one quick read: the run checking now, the line, what waits for you, the newest landings and the release's steps. (only looks; needs the card's owner trusted) */
+  "project.merge-queue.landing-summary": Record<string, never>;
   /** What needs the user now, as the Overseer's digest has it. (only looks; needs the card's owner trusted) */
   "overseer.attention": Record<string, never>;
   /** What the Overseer can do: its built-in abilities, its limits and the commands its extensions offer it. (only looks; needs the card's owner trusted) */
@@ -3622,6 +3625,7 @@ export const COMMAND_EFFECTS: Record<CommandId, "looks" | "changes"> = {
   "project.merge-queue.land-how.set": "changes",
   "project.merge-queue.land-how.clear": "changes",
   "project.merge-queue.branch-summary.retry": "changes",
+  "project.merge-queue.landing-summary": "looks",
   "overseer.attention": "looks",
   "overseer.abilities": "looks",
   "overseer.todo.list": "looks",

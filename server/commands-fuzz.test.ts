@@ -869,6 +869,7 @@ const FIXTURES: Record<string, Fixture> = {
   "playbook.list": { values: () => ({}), status: 200 },
   "draft-spec.list": { values: () => ({}), status: 200 },
   "mcp.servers.list": { values: () => ({}), status: 200 },
+  "project.merge-queue.landing-summary": { values: () => ({}), status: 200 },
   "mcp.server.status": { values: () => ({ id: "no-such-row" }), status: 404 },
 };
 /** A registered project (its overseer's settings read their defaults), made in the set-up. */

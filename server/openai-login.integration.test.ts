@@ -8,6 +8,7 @@
 // - The browser route, when OpenAI refuses the code: it says so, holds localhost:1455 while it waits,
 //   cancel frees the port and saves nothing; a pasted address of another sign-in keeps it waiting; the
 //   right address signs in, and the port is free afterwards.
+// - OpenAI down is no refusal: the sign-in fails in Sova's words, with no browser route.
 // Nothing Sova shows quotes pi's terminal wording.
 import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -24,7 +25,7 @@ const ROUTE = "/api/settings/accounts/openai";
 /** pi's terminal wording (its prompts and instructions), never Sova's. */
 const PI_WORDS = /browser window should open|Select OpenAI Codex|paste the authorization code|Device code login \(headless\)|OpenAI Codex/i;
 
-async function boot(mode: "code" | "refuse"): Promise<HermeticServer & { approve: string }> {
+async function boot(mode: "code" | "refuse" | "down"): Promise<HermeticServer & { approve: string }> {
   const approve = join(mkdtempSync(join(tmpdir(), "sova-openai-approve-")), "approve");
   const server = await startHermeticServer({ env: { BUN_OPTIONS: `--preload ${FIXTURE}`, FAKE_OPENAI_LOGIN: mode, FAKE_OPENAI_APPROVE: approve } });
   return Object.assign(server, { approve });
@@ -176,6 +177,26 @@ test("the browser route when OpenAI refuses the code: says why, holds 1455 while
     const info = await api<OpenAiAccountInfo>("GET", ROUTE);
     assert.equal(info.body.email, FAKE_EMAIL);
     assertNoCredential(info.raw, server);
+    assert.deepEqual(await server.stop(), []);
+  } finally {
+    await server.stop();
+  }
+});
+
+test("OpenAI down is no refusal: the sign-in fails in Sova's words, offers no browser route, saves nothing and frees the flow", { timeout: 120_000 }, async () => {
+  const server = await boot("down");
+  try {
+    const api = client(server);
+    const started = await api<OpenAiLoginFlow>("POST", `${ROUTE}/login`, {});
+    assert.equal(started.status, 200, started.raw);
+    const failed = await until("the sign-in ends", () => api<OpenAiLoginFlow>("GET", `${ROUTE}/login`), (r) => r.body?.state !== "starting");
+    assert.equal(failed.body?.state, "failed", failed.raw);
+    assert.doesNotMatch(failed.raw, PI_WORDS);
+    assert.doesNotMatch(failed.raw, /fake-outage|503/, "never OpenAI's reply");
+    const info = await api<OpenAiAccountInfo>("GET", ROUTE);
+    assert.equal(info.body.signedIn, false);
+    const again = await api<OpenAiLoginFlow>("POST", `${ROUTE}/login`, {});
+    assert.equal(again.status, 200, "a failed sign-in leaves room for the next");
     assert.deepEqual(await server.stop(), []);
   } finally {
     await server.stop();

@@ -4,7 +4,8 @@
 // every other request goes to the real fetch untouched.
 //
 // FAKE_OPENAI_LOGIN: "code" (default) offers the device code; "refuse" answers the code request 404,
-// as OpenAI does for an account without device codes, so Sova falls back to the browser route.
+// as OpenAI does for an account without device codes, so Sova falls back to the browser route;
+// "down" answers it 503, an outage, which is no refusal.
 // FAKE_OPENAI_APPROVE: a file; the device code is approved once it exists (until then: pending).
 // The browser route's token exchange accepts the code "fake-good-code" only.
 // Tokens are short fakes built at runtime: a JWT-shaped access token carrying the profile email and
@@ -29,6 +30,7 @@ function fake(url: URL, init: RequestInit | undefined): Response | null {
   if (url.host === "auth.openai.com") {
     if (url.pathname === "/api/accounts/deviceauth/usercode") {
       if (mode === "refuse") return json(404, { error: "not_found" });
+      if (mode === "down") return json(503, { error: "fake-outage" });
       return json(200, { device_auth_id: "fake-dev-01", user_code: FAKE_USER_CODE, interval: 1 });
     }
     if (url.pathname === "/api/accounts/deviceauth/token") {

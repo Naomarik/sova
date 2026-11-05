@@ -15,7 +15,7 @@ import { type Redactor, serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 import { sessionsChanged } from "./list-generation";
 import { check, problemOf } from "../shared/form-rules";
-import { CAP_KEYS, CAP_RULES, DEFAULT_CAPS, EXTRA_PROMPT_RULE, NOTES_MAX, QA_RULES, qaLabel, QUICK_ACTIONS_MAX } from "../shared/overseer-limits";
+import { CAP_KEYS, CAP_RULES, DEFAULT_CAPS, EXTRA_PROMPT_RULE, NOTES_MAX, QA_RULES, qaLabel, QUICK_ACTIONS_MAX, TOO_MANY_QUICK_ACTIONS } from "../shared/overseer-limits";
 
 /**
  * The Overseer's Sova-owned files under the state root. Same store rules as web-sessions.ts:
@@ -166,7 +166,7 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
   }
   if (raw.quickActions !== undefined) {
     if (!Array.isArray(raw.quickActions) || raw.quickActions.length > QUICK_ACTIONS_MAX) {
-      const e = fail(`There can be at most ${QUICK_ACTIONS_MAX} quick actions`);
+      const e = fail(TOO_MANY_QUICK_ACTIONS);
       if (e) return e;
     } else {
       const list: OverseerQuickAction[] = [];

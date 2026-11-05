@@ -59,6 +59,8 @@ interface Limit {
   /** The shared rule both sides read (shared/*-limits.ts): its edges are the values below, and the
       server refuses in the rule's own words. */
   rule?: Rule;
+  /** No rule, but the server still refuses in the form's sentence. */
+  sameWords?: boolean;
   /** Values at the limit (taken) and past it (refused). `v` is what the user types or the list they build. */
   takes: unknown[];
   refuses: unknown[];
@@ -107,7 +109,7 @@ const LIMITS: Limit[] = [
   ...(["label", "description", "prompt"] as const).map(
     (k): Limit => ({ ...ruled(limits.QA_RULES[k]), client: (v) => ovClient(withAction({ [k]: v })), server: (v) => ovServer(withAction({ [k]: v })) }),
   ),
-  { name: "Overseer quick actions (at most 12)", takes: [1, 12], refuses: [13], client: (v) => ovClient(withActions(v as number)), server: (v) => ovServer(withActions(v as number)) },
+  { name: "Overseer quick actions (at most 12)", sameWords: true, takes: [1, 12], refuses: [13], client: (v) => ovClient(withActions(v as number)), server: (v) => ovServer(withActions(v as number)) },
   { ...ruled(limits.EXTRA_PROMPT_RULE), client: (v) => ovClient({ ...ovSettings(), extraSystemPrompt: v }), server: (v) => ovServer({ ...ovSettings(), extraSystemPrompt: v }) },
   {
     ...ruled(limits.NOTES_RULE),
@@ -217,7 +219,7 @@ describe("each settings limit: the form and the server agree on both sides of it
         assert.notEqual(said, null, `${limit.name}: the form takes ${shown(v)}, past the limit (it would fail only at Save)`);
         const s = await limit.server(v);
         assert.ok(!s.ok, `${limit.name}: the server takes ${shown(v)}, past the limit`);
-        if (limit.rule) assert.equal(s.error, said, `${limit.name}: the server refuses ${shown(v)} in other words than the form`);
+        if (limit.rule || limit.sameWords) assert.equal(s.error, said, `${limit.name}: the server refuses ${shown(v)} in other words than the form`);
       }
     });
   }

@@ -278,7 +278,7 @@ describe("Settings QA: the server's Overseer limits, as the form checks them (fe
     assert.equal(err(qa({ prompt: "x".repeat(2000 + 1) })), "Quick action 2's prompt can be at most 2,000 characters.");
     assert.equal(err(qa({ description: "x".repeat(120 + 1) })), "Quick action 2's description can be at most 120 characters.");
     assert.equal(err(qa({ label: "x".repeat(40) })), undefined);
-    assert.equal(err({ quickActions: Array.from({ length: store.QUICK_ACTIONS_MAX + 1 }, () => ({ label: "a", prompt: "p" })) }), "There can be at most 12 quick actions");
+    assert.equal(err({ quickActions: Array.from({ length: store.QUICK_ACTIONS_MAX + 1 }, () => ({ label: "a", prompt: "p" })) }), "There can be at most 12 quick actions.");
     assert.equal(err({ quickActions: Array.from({ length: store.QUICK_ACTIONS_MAX }, () => ({ label: "a", prompt: "p" })) }), undefined);
     assert.equal(err({ extraSystemPrompt: "x".repeat(store.EXTRA_PROMPT_MAX + 1) }), "Extra instructions can be at most 8,000 characters.");
     assert.equal(err({ extraSystemPrompt: "x".repeat(store.EXTRA_PROMPT_MAX) }), undefined);

@@ -9,6 +9,8 @@ import type { OverseerCaps } from "./protocol";
 export const CAP_MAX = 1000;
 export const QUICK_ACTIONS_MAX = 12;
 export const NOTES_MAX = 8000;
+/** Past QUICK_ACTIONS_MAX: the form and the save say this. */
+export const TOO_MANY_QUICK_ACTIONS = `There can be at most ${QUICK_ACTIONS_MAX} quick actions.`;
 export const EXTRA_PROMPT_MAX = 8000;
 
 export const CAP_KEYS = ["createPerTurn", "promptsPerTurn", "archivesPerTurn", "concurrentSessions", "explorePerTurn", "linksPerTurn", "orgWritesPerTurn", "gatherPerTurn", "extRunsPerTurn"] as const satisfies readonly (keyof OverseerCaps)[];

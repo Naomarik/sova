@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { PUSH_KINDS, type PushDevice, type PushKind, type PushSettings } from "../shared/protocol";
-import { contactProblem, HHMM } from "../shared/push";
+import { HHMM, CONTACT_RULE } from "../shared/push-limits";
+import { problemOf } from "../shared/form-rules";
 import { writeAtomic } from "./overseer-store";
 import { stateRoot } from "./state-root";
 import { fromB64url, generateVapidKeys, type PushTarget, validVapidKeys, type VapidKeys } from "./web-push";
@@ -89,7 +90,7 @@ export function parsePushSettings(raw: unknown, strict: boolean): PushSettings |
   }
   if (raw.contact !== undefined && raw.contact !== null) {
     const c = typeof raw.contact === "string" ? raw.contact.trim() : null;
-    const problem = c === null ? "contact must be a string or null." : c === "" ? null : contactProblem(c);
+    const problem = c === null ? "contact must be a string or null." : problemOf(CONTACT_RULE, c);
     if (problem) {
       const e = fail(problem);
       if (e) return e;

@@ -89,6 +89,7 @@ const fresh = { mesh: await get("/api/mesh/settings"), overseer: await get("/api
 const subLimits = await import("../shared/subagent-limits");
 const profileLimits = await import("../shared/profile-limits");
 const meshLimits = await import("../shared/mesh-limits");
+const pushLimits = await import("../shared/push-limits");
 const { addProfile } = await import("./profiles-store");
 const teamSeed = (await get("/api/settings/team")).defaults;
 /** Subagents profile 0 with its teams on (on Claude Code picks, which this process can verify), edited by `edit`. */
@@ -207,6 +208,14 @@ const LIMITS: Limit[] = [
     refuses: ["24:00", "23:60", "7:00"],
     client: (v) => push.pushDraftProblem({ ...push.toPushDraft(fresh.push.settings), quietHours: { enabled: true, start: v as string, end: "06:00" } }),
     server: (v) => putStatus("/api/push/settings", { ...fresh.push.settings, quietHours: { enabled: true, start: v, end: "06:00" } }),
+  },
+  {
+    name: "Phone Notifications contact address (mailto: or https://, at most 200)",
+    rule: pushLimits.CONTACT_RULE,
+    takes: ["", "mailto:you@example.com", "https://ops.example.com", `mailto:${"a".repeat(180)}@example.com`],
+    refuses: ["ops@example.com", "mailto:a b@example.com", "https://u:p@example.com", "https://localhost", `mailto:${"a".repeat(190)}@example.com`],
+    client: (v) => problemOf(pushLimits.CONTACT_RULE, v),
+    server: (v) => putStatus("/api/push/settings", { ...fresh.push.settings, contact: v === "" ? null : v }),
   },
   {
     name: "Public links share port (1 to 65535)",

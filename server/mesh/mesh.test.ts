@@ -10,7 +10,9 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
+import type { MeshInfoView } from "../../shared/mesh-access";
 import type { MeshLocalSettings } from "../../shared/mesh-local";
+import { WIRE_AREAS } from "../../shared/wire-areas";
 import type { FrontDoorConfig, MeshCandidate, MeshHello, MeshInfo, MeshSessions, MeshSettings } from "../../shared/protocol";
 import { testApp } from "./app-test-fixtures";
 import { fakeWire } from "./peer-wire-test-fixtures";
@@ -40,14 +42,14 @@ setIdentity({
 
 const wire = fakeWire();
 const app = await testApp();
-const { homeDeps, listenerInfo, meshApi, stopMesh } = await import("./index");
+const { homeDeps, listenerInfo, meshApi, peerFetch, stopMesh } = await import("./index");
 const hookLog: string[] = [];
 meshApi.onMeshStart(() => hookLog.push("start"));
 meshApi.onMeshStop(() => hookLog.push("stop"));
 meshApi.onPeerUp((id) => hookLog.push(`up:${id}`));
 const settingsLog: string[] = [];
 meshApi.onSettingsChange((s) => settingsLog.push(s.hostLabel));
-const { clearProbes, ownProtocol } = await import("./hello");
+const { clearProbes, ownHello, ownProtocol } = await import("./hello");
 const { peersFile } = await import("./peers");
 // The mesh's link transfers probe tar when it starts: answered here, so no tar runs.
 (await import("./links-transfer")).setTarAvailableForTest(true);
@@ -57,13 +59,15 @@ const { peersFile } = await import("./peers");
 const B = "http://127.0.0.1:47001";
 const DEAD = "http://127.0.0.1:47002";
 let fakeHello: "same" | "other" | "refused" = "same";
+/** What the fake hello lists: nothing, or a list, on a fingerprint other than this host's. */
+let fakeAreas: unknown;
 let fakeSessions: unknown = [{ id: "s1", path: "/far/s1.jsonl" }];
 const json = (status: number, body: unknown, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...headers } });
 wire.serve(B, async (req) => {
   const url = new URL(req.url);
   if (url.pathname === "/api/peer/hello") {
     if (fakeHello === "refused") return json(403, { error: "not a peer" }, { "X-Sova-Mesh": "refused" });
-    const hello: MeshHello = { mesh: 1, id: "b", label: "B", hostname: "b", version: "0", protocol: fakeHello === "same" ? ownProtocol() : "0000", pi: "x", now: 1 };
+    const hello: MeshHello & { areas?: unknown } = { mesh: 1, id: "b", label: "B", hostname: "b", version: "0", protocol: fakeHello === "same" ? ownProtocol() : "0000", pi: "x", now: 1, ...(fakeAreas !== undefined ? { areas: fakeAreas } : {}) };
     return json(200, hello);
   }
   if (url.pathname === "/api/sessions") return json(200, fakeSessions);
@@ -71,7 +75,7 @@ wire.serve(B, async (req) => {
   if (url.pathname === "/api/own-403") return json(403, { error: "route says no" });
   if (url.pathname === "/api/sets-cookie") return json(200, { ok: true }, { "Set-Cookie": "planted=1; Path=/" });
   const h = req.headers;
-  return json(url.pathname === "/api/teapot" ? 418 : 200, { method: req.method, url: `${url.pathname}${url.search}`, body: await req.text(), fwd: h.get("x-forwarded-host"), relayed: h.get("x-sova-relayed"), cookie: h.get("cookie"), token: h.get("x-sova-token"), authorization: h.get("authorization") });
+  return json(url.pathname === "/api/teapot" ? 418 : 200, { method: req.method, url: `${url.pathname}${url.search}`, body: await req.text(), fwd: h.get("x-forwarded-host"), relayed: h.get("x-sova-relayed"), composer: h.get("x-sova-composer"), peerArea: h.get("x-sova-peer-area"), cookie: h.get("cookie"), token: h.get("x-sova-token"), authorization: h.get("authorization") });
 });
 wire.down(DEAD);
 
@@ -205,6 +209,44 @@ describe("mesh ON", () => {
     assert.equal(info.peers[0]!.priority, 2);
     assert.ok(info.peers[0]!.lastSeen);
     assert.equal(info.peers[1]!.lastSeen, null);
+  });
+
+  test("a host that lists its areas is up whatever its numbers and fingerprint; one that lists none is judged as before", async () => {
+    await putJson("/api/mesh/peers", { peers: [peersB, peersDead] });
+    const peer = async () => {
+      clearProbes();
+      const [, info] = await getJson<MeshInfoView>("/api/mesh");
+      return info.peers.find((p) => p.id === "b")!;
+    };
+    fakeHello = "other";
+    fakeAreas = { ...WIRE_AREAS, composer: 9, later: 2 };
+    let p = await peer();
+    assert.equal(p.state, "up");
+    assert.deepEqual(p.areas, { ...WIRE_AREAS, composer: 9 }, "only the four areas reach the page");
+    fakeAreas = { sessions: 1 }; // not a list: a host with none
+    p = await peer();
+    assert.equal(p.state, "skewed");
+    assert.equal(p.areas, undefined);
+    assert.equal((p.hello as { areas?: unknown } | undefined)?.areas, undefined);
+    fakeAreas = undefined;
+    assert.equal((await peer()).state, "skewed");
+    fakeHello = "same";
+    assert.equal((await peer()).state, "up");
+  });
+
+  test("this host's hello lists its running numbers, outside the fingerprint", () => {
+    assert.deepEqual(ownHello({ id: "a", label: "A" }).areas, WIRE_AREAS);
+  });
+
+  test("the proxy carries the writing number a page states, unchanged, even to a host on another number", async () => {
+    const [, echoed] = await call<{ composer: string | null }>("POST", "/peer/b/api/sessions/prompt", { path: "x" }, { "X-Sova-Composer": "7" });
+    assert.equal(echoed.composer, "7");
+  });
+
+  test("whatever this host runs states its own numbers to a peer, and a caller can't state others", async () => {
+    const res = await peerFetch("b", "/api/echo", { method: "POST", headers: { "X-Sova-Composer": "7" } });
+    const got = (await res.json()) as { composer: string; peerArea: string };
+    assert.deepEqual([got.composer, got.peerArea], [String(WIRE_AREAS.composer), String(WIRE_AREAS.peer)]);
   });
 
   test("GET /api/mesh/sessions: grouped by peer; a peer that stops answering keeps its last list, stale", async () => {

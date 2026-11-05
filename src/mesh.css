@@ -136,6 +136,9 @@
   cursor: pointer;
 }
 .mesh-link:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+/* A session's host state (§mesh/compatibility): the notice in the composer's place, the bar over the chat. */
+.host-send-notice { flex: none; padding: var(--space-2) var(--space-3) var(--space-3); }
+.host-display-bar { flex: none; padding: var(--space-2) var(--space-3) 0; }
 .mesh-host-warn { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--status-warn); }
 .mesh-address { display: flex; flex-direction: column; gap: var(--space-2); margin-top: var(--space-2); max-width: 36rem; }
 

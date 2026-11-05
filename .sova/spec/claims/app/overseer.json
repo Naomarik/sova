@@ -723,7 +723,10 @@
       "src/lib/hidden-rows.ts",
       "server/mesh/links.ts",
       "server/mesh/links.test.ts",
-      "server/mesh/links-transfer-test-fixtures.ts"
+      "server/mesh/links-transfer-test-fixtures.ts",
+      "server/harness/pi/golden/special-model-view.json",
+      "server/agent-loadouts.snapshot.json",
+      "server/app.ts"
     ],
     "requires": [
       "§app.overseer/tools",
@@ -736,7 +739,12 @@
       "§app/project-overseer",
       "§app.overseer/sent-marker",
       "§mesh.links/host-names"
-    ]
+    ],
+    "agreed": {
+      "by": "user (omar)",
+      "at": "2026-11-03T22:11Z",
+      "source": "pi-session:6413deaf-6a52-4216-a1d2-16b457f0680d#b04f2c84"
+    }
   },
   "§app.overseer/list-overview": {
     "kind": "behavior",
@@ -1436,7 +1444,9 @@
       "server/outreach/unit.ts",
       "server/overseer-code-history.ts",
       "server/overseer-whatsapp.ts",
-      "server/project-previews.ts"
+      "server/project-previews.ts",
+      "shared/wire-areas.ts",
+      "server/overseer-link-tools.test.ts"
     ],
     "requires": [
       "§app.overseer/caps",

@@ -2169,7 +2169,7 @@ export function Sidebar(props: {
 
   /**
    * Folded (<768): the foot as one 44px bar under the list (§app.insights/sidebar-foot-phone) —
-   * the mesh's connected count (while the mesh is on), the working count (the worker icon and the
+   * the mesh's connected count (while the mesh is on), the working count (the agents icon and the
    * Agents row's own figure), the load average, and every provider's usage cap as the glance shows it. Tapping the bar opens the
    * rows as a bottom sheet, verbatim. Focus leaves and returns with the sheet (trapFocus).
    */

@@ -393,6 +393,48 @@ test("H8 (flag on): with treatPiFileDeleteAsLogout, deleting auth.json logs ever
   assert.equal(a!.auth()["openai-codex"], undefined);
 });
 
+test("a fresh `{}` auth.json after a missing one is not a logout: no tombstone, the host re-pulls", async () => {
+  const [a, b] = makeMesh(2);
+  await a!.piLogin();
+  await converge([a!, b!]);
+  rmSync(b!.authPath);
+  await b!.sync.observe("pi");
+  writeFileSync(b!.authPath, "{}");
+  await b!.sync.observe("pi");
+  assert.equal(b!.sync.recordsSnapshot()[CODEX]?.tombstone, undefined);
+  await converge([a!, b!]);
+  assert.ok(a!.auth()["openai-codex"], "A keeps its login");
+  assert.ok(b!.auth()["openai-codex"], "B pulled it back");
+});
+
+test("a restarted host whose auth.json is `{}` at start, with a sidecar, logs nothing out", async () => {
+  const [a, b] = makeMesh(2);
+  await a!.piLogin();
+  await converge([a!, b!]);
+  writeFileSync(b!.authPath, "{}");
+  b!.boot(); // a fresh process on the same sidecar
+  await b!.sync.start();
+  try {
+    assert.equal(b!.sync.recordsSnapshot()[CODEX]?.tombstone, undefined);
+    await converge([a!, b!]);
+    assert.ok(a!.auth()["openai-codex"], "A keeps its login");
+    assert.ok(b!.auth()["openai-codex"], "B pulled it back");
+  } finally {
+    b!.sync.stop();
+  }
+});
+
+test("pi's /logout of its last entry while running (the file becomes `{}`) is still a logout everywhere", async () => {
+  const [a, b] = makeMesh(2);
+  await a!.piLogin();
+  await converge([a!, b!]);
+  await AuthStorage.create(b!.authPath).delete("openai-codex");
+  await b!.sync.observe("pi");
+  assert.ok(b!.sync.recordsSnapshot()[CODEX]?.tombstone, "a tombstone");
+  await converge([a!, b!]);
+  assert.equal(a!.auth()["openai-codex"], undefined);
+});
+
 test("H9: a torn auth.json is never merged or pushed; the complete file is, once", async () => {
   const [a, b] = makeMesh(2);
   await a!.piLogin();

@@ -13,7 +13,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 
 | What | Count |
 | --- | ---: |
-| Routes registered | 530 |
+| Routes registered | 531 |
 | Routes a catalogue entry points at | 159 |
 | Catalogue entries | 219 |
 | Class: Peer protocol | 39 |
@@ -27,7 +27,7 @@ up here. `server/commands-inventory.test.ts` holds all of it, exact both ways. T
 | Class: Trust grants | 17 |
 | Class: A card view's own calls | 4 |
 | Class: Middleware and fallbacks | 2 |
-| Class: Left as is, by choice | 249 |
+| Class: Left as is, by choice | 250 |
 | Class: Page plumbing | 10 |
 | Class: Steps of starting a chat | 2 |
 | Class: Live capability links | 1 |
@@ -450,7 +450,7 @@ What a transcript card's or a drawing's sealed view asks through its box, for it
 | `ALL /*` | full |
 | `ALL /api/*` | full |
 
-### Left as is, by choice (249)
+### Left as is, by choice (250)
 
 Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inventory/scan.ts`). A route there that a catalogue entry points at stays a command; the rest are not pending, and a new route there needs no entry.
 
@@ -494,6 +494,7 @@ Areas the user chose not to make scriptable (`OPTED_OUT` in `server/commands-inv
 | `GET /api/mesh/details` | full |
 | `GET /api/mesh/front-door` | full |
 | `GET /api/mesh/hello` | full |
+| `POST /api/mesh/home` | full |
 | `PUT /api/mesh/label` | full |
 | `GET /api/mesh/lan` | full |
 | `POST /api/mesh/lan/key` | full |

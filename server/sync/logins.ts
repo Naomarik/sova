@@ -311,6 +311,11 @@ export class CredentialSync {
    */
   private reconcile(store: CredentialStore, snap: StoreSnapshot): { pushed: EntryKey[]; pull: boolean; dirty: boolean } {
     const out = { pushed: [] as EntryKey[], pull: false, dirty: false };
+    // An empty pi file right after a missing one, or at start with a sidecar, is a fresh file (pi
+    // writes `{}` when it finds none), never a logout of everything: treated as missing.
+    const emptyAsMissing =
+      store.id === "pi" && snap.state === "ok" && snap.entries.size === 0 && snap.localOnly.size === 0 &&
+      (this.storeState.get(store.id) === "missing" || (this.initialScan && !this.firstRun));
     this.storeState.set(store.id, snap.state);
     if (snap.state === "invalid" || snap.state === "refused") return out;
     const now = this.now();
@@ -339,7 +344,7 @@ export class CredentialSync {
       // removal is nothing to tell anyone.
       const fileGone = snap.state === "missing";
       const logout =
-        !rec.meta.dead &&
+        !rec.meta.dead && !emptyAsMissing &&
         (!fileGone || store.fileDeleteIsLogout || (store.id === "pi" && !!this.opts.treatPiFileDeleteAsLogout));
       // A key this host doesn't sync (its own OAuth login, API-keys-only mode) is logged out here
       // only: no tombstone, so none travels later either, when the host goes back to "all".
@@ -402,6 +407,7 @@ export class CredentialSync {
             this.setRecord(key, { tombstone: rec.tombstone });
           }
         }
+        if (changes.size) this.storeState.set(id, "ok"); // written now: no longer missing
         dirty = r.dirty || JSON.stringify(this.records) !== before;
         if (dirty) this.persist();
         return { result, changes };

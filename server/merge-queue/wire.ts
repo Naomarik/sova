@@ -15,7 +15,8 @@ import { canonical } from "../../pi-config/extensions/worktrees/state.ts";
 import type { QueueSubject } from "../git-diff";
 import { type Owner, WorktreeOwners } from "./owners";
 import { engineServices, makeRunMerge } from "./run";
-import { worktreeQueueInfo } from "./view";
+import { queueGlanceOf, worktreeQueueInfo } from "./view";
+import type { ProjectGlanceQueue } from "../../shared/projects";
 import type { SessionBranchQueue, SessionBranchRow, SessionWorktreeInfo } from "../../shared/protocol";
 import { BranchSummaries, branchBulletWriter, readBranchFacts } from "./branch-summaries";
 import { SummarySweep } from "./summary-sweep";
@@ -161,6 +162,8 @@ interface KeptView {
   drafts: string[];
   /** The look taken before the newest view read for the list: at those refs, its stamp, and when. */
   seen?: { refs: string; stamp: string | null; at: number };
+  /** The project cards' cut of it (§app.projects/home-glance). */
+  glance: ProjectGlanceQueue | null;
 }
 
 /** Each queue's newest view, indexed by branch (the session list joins its rows' entries here, no Git read): kept from
@@ -222,6 +225,7 @@ export function noteQueueView(view: Pick<MergeQueueView, "root" | "at" | "projec
     worktrees: view.needsFix.flatMap((e) => (e.worktree ? [e.worktree] : [])),
     drafts: view.needsFix.flatMap((e) => (e.worktree && !e.settled && e.sentBackFor === "drafts" ? [e.worktree] : [])),
     ...(prev?.seen ? { seen: prev.seen } : {}),
+    glance: queueGlanceOf(view),
   });
   // A change re-lists; so does a queue's first view after a start when it holds entries: the rows' background reads
   // may be up to an idle cycle old, and the listing joins this view at once.
@@ -249,6 +253,13 @@ export function checkQueueViews(): number {
     n++;
   }
   return n;
+}
+
+/** A project card's figures from its queue's newest kept view (§app.projects/home-glance): null when no view of that
+ *  queue is kept (a queue that doesn't serve the project keeps none). Synchronous: never builds a view, never makes a
+ *  queue, no Git. */
+export function queueGlanceNow(root: string): ProjectGlanceQueue | null {
+  return latestViews.get(servedKey(root))?.glance ?? null;
 }
 
 /** A branch's newest entry in its queue's newest view: undefined when it has none there, null when no view of that

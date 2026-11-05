@@ -19,6 +19,19 @@ describe("a setup branch (pure rules)", () => {
     assert.deepEqual(changedSections({ release: { playbook: "a" } }, { release: { playbook: "b" }, deploy: { targets: [] } }), ["release", "deploy"]);
   });
 
+  test("services count only when a merge check requires the one changed, on either side", () => {
+    const svc = (name: string, port = 1) => ({ name, start: ["x"], ports: { http: port } });
+    const merge = (requires: string[]) => ({ checks: [{ id: "unit", run: ["true"], requires }] });
+    // A required service edited, added or removed: gated.
+    assert.deepEqual(changedSections({ services: [svc("db")], merge: merge(["db"]) }, { services: [svc("db", 2)], merge: merge(["db"]) }), ["services"]);
+    assert.deepEqual(changedSections({ services: [], merge: merge([]) }, { services: [svc("db")], merge: merge([]) }), [], "an unrequired service added: conformance's");
+    assert.deepEqual(changedSections({ services: [svc("db")], merge: merge(["db"]) }, { services: [], merge: merge(["db"]) }), ["services"], "a required one removed");
+    // The target's checks require it, the branch's don't any more: still gated (merge changed too).
+    assert.deepEqual(changedSections({ services: [svc("db")], merge: merge(["db"]) }, { services: [svc("db", 3)], merge: merge([]) }), ["services", "merge"]);
+    // Only an unrequired service edited, a required one left alone: not gated.
+    assert.deepEqual(changedSections({ services: [svc("db"), svc("web")], merge: merge(["db"]) }, { services: [svc("db"), svc("web", 9)], merge: merge(["db"]) }), []);
+  });
+
   test("the release playbook folders: either side's, plus the default", () => {
     assert.deepEqual(releaseFolders({ release: { playbook: "./ops/release/" } }, null), ["ops/release", ".sova/playbooks/release"]);
   });

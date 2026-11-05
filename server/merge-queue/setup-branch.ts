@@ -1,6 +1,6 @@
 /**
  * A setup branch (§app.merge-queue/setup): one whose changes reach the project's pipeline, the sections of
- * `.sova/project.json` the merge queue, releases and deploys act on (`merge`, `release`, `deploy`; services are proven by conformance), or
+ * `.sova/project.json` the merge queue, releases and deploys act on (`merge`, `release`, `deploy`; a service only when a merge check requires it, the rest are conformance's), or
  * the files of the project's release playbook folder. The queue checks a branch with the target's checks, not the
  * branch's own, so such a branch is offered Land only once a trial (merge.try) of its exact head passed.
  *
@@ -35,9 +35,31 @@ async function rawAt(git: Git, root: string, commit: string): Promise<Record<str
   }
 }
 
-/** Which pipeline sections differ between two raw definitions (absent counts as its own value). Pure. */
+/** The services a definition's merge checks require (its `merge.checks[].requires`). Pure. */
+export function requiredServices(def: Record<string, unknown> | null): Set<string> {
+  const checks = obj(def?.merge).checks;
+  const out = new Set<string>();
+  if (Array.isArray(checks)) for (const c of checks) for (const r of Array.isArray(obj(c).requires) ? (obj(c).requires as unknown[]) : []) if (typeof r === "string") out.add(r);
+  return out;
+}
+
+/** The services added, removed or edited between two raw definitions, by name. Pure. */
+export function changedServices(base: Record<string, unknown> | null, head: Record<string, unknown> | null): string[] {
+  const byName = (d: Record<string, unknown> | null) => new Map((Array.isArray(d?.services) ? (d!.services as unknown[]) : []).map((s) => [String(obj(s).name ?? ""), stable(s)] as const));
+  const a = byName(base);
+  const b = byName(head);
+  return [...new Set([...a.keys(), ...b.keys()])].filter((n) => a.get(n) !== b.get(n));
+}
+
+/**
+ * Which pipeline sections differ between two raw definitions (absent counts as its own value). `services` counts only
+ * when a service a merge check requires (on either side) was added, removed or edited: the others are conformance's. Pure.
+ */
 export function changedSections(base: Record<string, unknown> | null, head: Record<string, unknown> | null): string[] {
-  return PIPELINE_SECTIONS.filter((k) => stable(base?.[k]) !== stable(head?.[k]));
+  const out: string[] = PIPELINE_SECTIONS.filter((k) => stable(base?.[k]) !== stable(head?.[k]));
+  const required = new Set([...requiredServices(base), ...requiredServices(head)]);
+  if (changedServices(base, head).some((n) => required.has(n))) out.unshift("services");
+  return out;
 }
 
 /** The release playbook folders a change could touch: the one each side names, else the default. Pure. */

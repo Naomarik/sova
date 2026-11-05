@@ -514,6 +514,20 @@ export const PI_QUIRKS: readonly PiQuirk[] = [
     retireWhen: "pi lets a host hand a server its own token source and literal values",
   },
   {
+    id: "P37",
+    name: "openai-codex-login",
+    kind: "semantic",
+    relies: "The openai-codex login asks a `select` first with option ids `device_code` and `browser`; its code route fails before notifying `device_code` when OpenAI refuses it; its browser route notifies `auth_url` with the link's `state`, prompts `manual_code` with a signal that aborts when the callback wins, and closes its localhost:1455 server before `login` rejects on an abort.",
+    pi: ["ModelRuntime.login", "AuthInteraction.prompt", "AuthInteraction.notify", "openai-codex `login`"],
+    where: [
+      { file: "server/harness/pi/sign-in.ts", symbol: "piInteraction" },
+      { file: "server/harness/pi/sign-in.ts", symbol: "piProviderSignIn" },
+      { file: "server/openai-login.ts", symbol: "OpenAiLoginService.answer" },
+    ],
+    canary: "P37 openai-codex-login: the login asks a method menu with device_code and browser first, and a refused code route fails before any code is shown",
+    retireWhen: "pi takes the login method as an option and reports a refused method as its own error",
+  },
+  {
     id: "T1",
     name: "scripted-model (test-only)",
     kind: "private-write",

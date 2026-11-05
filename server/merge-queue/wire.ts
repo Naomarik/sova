@@ -782,6 +782,21 @@ export async function startMergeQueue(
         await (await import("./wake")).sendQueueWake(path, trialEndedText(t, run));
       })().catch((err) => console.warn(`[merge-queue] trial note to ${session}: ${err instanceof Error ? err.message : err}`));
     },
+    // Why a sent-back branch's newest commit isn't Ready to land: its chat's last readiness reading, never a fresh read.
+    newestReading: async (worktree, tip) => {
+      const [{ listSessions }, { readinessReading }, { newestReadingOf }] = await Promise.all([import("../sessions-index"), import("../merge-readiness"), import("../ready-to-land")]);
+      return newestReadingOf(worktree, tip, { owner: worktreeOwnerOf, pathOf: async (id) => (await listSessions()).find((s) => s.id === id)?.path, reading: readinessReading, canonical });
+    },
+    // A test check broken on the target: one notification that opens the project's Merge Queue tab (its Needs you
+    // holds the flag), so the user can start a chat to fix the target.
+    flagBroken: (b, root) => {
+      const id = projectIdOf(root);
+      void import("../push")
+        .then(({ notifyOnce }) =>
+          notifyOnce({ title: `The merge queue needs you · ${root.split("/").pop() ?? root}`, body: `${b.why}. Branches skip it until it's fixed: start a chat to fix it.`, hash: id ? `#/projects/${encodeURIComponent(id)}/merge-queue` : "#/projects", tag: `sova:merge-broken:${id ?? root}:${b.check}` }),
+        )
+        .catch((err) => console.warn(`[merge-queue] ${root}: notification not sent: ${err instanceof Error ? err.message : String(err)}`));
+    },
     // The branch's card in its own chat: raised at the approval, a revision at each outcome (cards.ts).
     notify: (kind, e, extra) => {
       // An approved branch was Ready to land at its commit: its summary is written if it has none yet.

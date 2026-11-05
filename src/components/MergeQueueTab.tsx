@@ -3,7 +3,7 @@ import { MergeThreadCard, QueueHistory, ReviewerLinks, ReviewRunningButton } fro
 import type { ChatRef } from "../lib/merge-chat";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import { relativeTime } from "../lib/format";
-import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, SENT_BACK_LINE, stillSentBack } from "../lib/merge-queue";
+import { headWhen, mins, notesOf, readyFactsWords, readyRowChip, unattributedWhy, sentence, pausedTitle, pushedWords, queueStateChip, runProgress, short, waitingHead, type MergeEntry, type MergeQueueView, SENT_BACK_LINE, stillSentBack, landAgainOf } from "../lib/merge-queue";
 import { answerEntry, cancelEntry, landBranch, type LandOptions, mergeChanged, mergeFeed, pauseQueue, readQueue, refusal, resumeQueue } from "../lib/merge-queue-client";
 import { createPoll } from "../lib/poll";
 import { mergeRunHref, projectSessionHref, projectTabHref } from "../lib/projects-route";
@@ -16,7 +16,7 @@ import { notSetUp } from "../lib/merge-queue";
 import { createSetupPoll, SetupChatButton, SetupChatState, SetupNotSetUp, type SetupPoll } from "./SetupChat";
 import { Banner, Icon } from "./ui";
 import { createLandConfirm, LandConfirms, LandSplit, QueueChip, UnclearChecks } from "./WorktreesModal";
-import type { LandHow, MergeReady } from "../../shared/merge-queue";
+import type { LandHow, MergeReady, TargetBroken } from "../../shared/merge-queue";
 import { BranchSummaryView } from "./BranchSummary";
 import type { DiffScope, WorktreeReadiness } from "../../shared/protocol";
 import { ReviewChangesButton } from "./ReviewChanges";
@@ -320,10 +320,11 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
       </Show>
       <CheckingNow projectId={props.projectId} view={v()} chatOf={props.chatOf} />
       <Waiting projectId={props.projectId} view={v()} chatOf={props.chatOf} onChanged={props.onChanged} />
-      <Show when={v().needsYou.length > 0}>
+      <Show when={v().needsYou.length > 0 || (v().heads.targetBroken?.length ?? 0) > 0}>
         <div class="stack-2">
           <h3 class="text-heading-s">Needs you</h3>
           <ul class="list mq-list">
+            <For each={v().heads.targetBroken ?? []}>{(b) => <BrokenRow projectId={props.projectId} target={v().target} broken={b} />}</For>
             <For each={v().needsYou}>
               {(e) =>
                 isRequestState(e.state) ? (
@@ -653,23 +654,54 @@ function NeedsYouRow(props: { projectId: string; root: string; target: string; e
   );
 }
 
-/** A branch sent back to its chat (Needs a fix): its reason, Land This Commit Again (a new approval of the same
- *  commit, every check from the start) and Remove from Queue (it leaves the queue; nothing is deleted). Once its chat
+/** A test check broken on the target (heads.targetBroken): every branch skips it meanwhile, so the user starts a chat
+ *  to fix it there. It leaves once a later run of that check runs tests again. */
+function BrokenRow(props: { projectId: string; target: string; broken: TargetBroken }) {
+  const b = () => props.broken;
+  return (
+    <li class="list-row mq-row" data-state="target-broken" data-check={b().check}>
+      <div class="list-main">
+        <p class="mq-facts">
+          <QueueChip row={{ label: `Broken on ${props.target}`, tone: "error" }} />
+          <span class="text-muted">{relativeTime(b().at)}</span>
+        </p>
+        <p class="list-meta">{sentence(b().why)}</p>
+        <p class="list-meta text-muted">Every branch skips it until it's fixed, and lands without it. Start a chat in this project to fix it on {props.target}.</p>
+      </div>
+      <div class="button-row mq-row-act">
+        <a class="button button-sm button-ghost" href={mergeRunHref(props.projectId, b().run)} aria-label={`View the log of ${b().label} on ${props.target}`}>
+          View the Log
+        </a>
+      </div>
+    </li>
+  );
+}
+
+/** A branch sent back to its chat (Needs a fix): its reason, Land This Commit Again (a new approval of the branch's
+ *  newest commit, every check from the start; Land Newest Commit once the branch has commits past the one sent back) and Remove from Queue (it leaves the queue; nothing is deleted). Once its chat
  *  fixes it (a newer finished commit, or its drafts fixed at the same commit) the Ready to land row stands for it. */
 function SentBackRow(props: { projectId: string; root: string; entry: MergeEntry; view: MergeQueueView; chatOf?: ChatOf; onChanged(): void }) {
   const e = () => props.entry;
   const act = useAct(props.onChanged);
+  /** It lands the branch's newest commit: the label and lines say what that brings in. */
+  const again = () => landAgainOf(e());
   return (
     <li class="list-row mq-row" classList={{ "mq-tap": !!e().session }} data-branch={e().branch} data-state="needs-fix" onClick={rowOpens(() => e().session && chatHref(props.projectId, e().session!, props.chatOf))}>
       <div class="list-main">
         <RowHead projectId={props.projectId} branch={e().branch} session={e().session} chatOf={props.chatOf} />
         <p class="mq-facts">
           <QueueChip row={{ label: "Needs a fix", tone: "error" }} />
-          <span class="text-mono text-muted">{short(e().commit)}</span>
+          {/* Once the branch moved, this is the commit sent back, not the one the button lands. */}
+          <span class="text-muted">
+            <Show when={again().included}>sent back at </Show>
+            <span class="text-mono">{short(e().commit)}</span>
+          </span>
           <span class="text-muted">{relativeTime(e().updatedAt)}</span>
         </p>
         <BranchSummaryView summary={e().summary} projectId={props.projectId} branch={e().branch} />
         <p class="list-meta">{e().reason ?? "It failed a check that passes on the target."}</p>
+        <Show when={again().included}>{(n) => <p class="list-meta">{n()}</p>}</Show>
+        <Show when={again().blocked}>{(why) => <p class="list-meta mq-error">{why()}</p>}</Show>
         <p class="list-meta text-muted">{SENT_BACK_LINE}</p>
         <ReviewerLinks projectId={props.projectId} view={props.view} run={e().run} />
         <Show when={act.error()}>{(m) => <p class="list-meta mq-error" role="alert">{m()}</p>}</Show>
@@ -686,12 +718,12 @@ function SentBackRow(props: { projectId: string; root: string; entry: MergeEntry
         <button
           type="button"
           class="button button-sm"
-          aria-label={`Land ${e().branch} at this commit again`}
-          title="Approve the same commit again: every check runs from the start."
+          aria-label={`Land ${e().branch} at its newest commit`}
+          title={again().included ? "Approve the branch's newest commit: every check runs from the start." : "Approve the same commit again: every check runs from the start."}
           disabled={!!act.busy()}
-          onClick={() => void act.run("land", () => landBranch(props.root, e().branch, { commit: e().commit }), `Queued ${e().branch} at ${short(e().commit)} again.`)}
+          onClick={() => void act.run("land", () => landBranch(props.root, e().branch, {}), `Queued ${e().branch} at its newest commit.`)}
         >
-          Land This Commit Again
+          {again().label}
         </button>
         <button
           type="button"

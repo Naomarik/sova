@@ -86,6 +86,8 @@ export interface QueueRow {
   sendBack?: boolean;
   /** Remove from Queue beside the action (Needs a fix): the entry leaves the queue; nothing is deleted. */
   remove?: boolean;
+  /** Needs a fix with commits of its own past the one sent back: its re-land reads Land Newest Commit. */
+  landNewest?: true;
   /** A run to See Why on. */
   run?: string;
 }
@@ -186,7 +188,7 @@ export const shownCommit = (w: Partial<Pick<SessionWorktreeInfo, "readiness" | "
   w.mergeStats?.head ?? w.readiness?.landing?.commit;
 
 /** A sent-back row's line when the queue gave no reason. */
-export const SENT_BACK_LINE = "Sent back to its chat. Land comes back once its chat fixes it, or use Land This Commit Again.";
+export const SENT_BACK_LINE = "Sent back to its chat. Land comes back once its chat fixes it, or land its newest commit now.";
 
 /** The branch reads finished again at a commit other than the one sent back: the fix is in. */
 export const fixedPast = (w: { readiness?: { landing?: { commit: string } } }, sentBack: string): boolean => {
@@ -206,7 +208,33 @@ export function entryLandBlock(e: Pick<WorktreeQueueInfo, "state" | "redrafted" 
   return undefined;
 }
 
-/** The commit Land This Commit Again pins, where an item that knows only the branch's queue entry offers it (the
+/**
+ * A sent-back branch's re-land, as every row and card draws it: it always lands the branch's newest commit (Land with
+ * no pinned commit). "Land This Commit Again" while the branch's head is still the commit sent back, "Land Newest
+ * Commit" once it moved: the line says how many of its own commits that brings in, or that it was rewritten (amended or
+ * rebased: nothing to count), and, when the newest commit isn't Ready to land, why. Pure.
+ */
+export function landAgainOf(e: Pick<WorktreeQueueInfo, "newerCommits" | "newerRewritten" | "newerBlocked"> | undefined): { label: "Land This Commit Again" | "Land Newest Commit"; included: string | null; blocked: string | null } {
+  const n = e?.newerCommits ?? 0;
+  const moved = !!n || !!e?.newerRewritten;
+  return {
+    label: moved ? "Land Newest Commit" : "Land This Commit Again",
+    included: n ? `${n} newer commit${n === 1 ? "" : "s"} included` : moved ? "the branch was rewritten since it was sent back" : null,
+    blocked: moved && e?.newerBlocked ? `The newest commit isn't Ready to land: ${e.newerBlocked}.` : null,
+  };
+}
+
+/** The Overseer's menu item for that re-land: it lands `head`, the head its page read, so its words name that commit,
+ *  never the one sent back once they differ. */
+export function landAgainItem(e: Pick<WorktreeQueueInfo, "commit" | "newerCommits" | "newerRewritten" | "newerBlocked">, head: string | undefined): { label: "Land This Commit Again" | "Land Newest Commit"; description: string } {
+  const again = landAgainOf(e);
+  const same = again.label === "Land This Commit Again" && (!head || head === e.commit);
+  const what = same ? `${short(e.commit)} again` : head ? short(head) : "its newest commit";
+  const lines = [again.included, again.blocked].filter(Boolean).map((l) => (l!.endsWith(".") ? l! : `${l}.`));
+  return { label: same ? "Land This Commit Again" : "Land Newest Commit", description: [`Approves ${what}: every check runs from the start.`, ...lines].join(" ") };
+}
+
+/** The commit a sent-back entry was sent back at, where an item that knows only the branch's queue entry offers its re-land (the
  *  Overseer's coding-worktree menu, beside its Land that entryLandBlock turns off): a sent-back entry still needing a
  *  fix. None once its drafts are fixed (Land is on) or it settled (nothing left to land). */
 export const landThisAgainOf = (e: Pick<WorktreeQueueInfo, "state" | "commit" | "redrafted" | "settled"> | undefined): string | undefined =>
@@ -325,13 +353,18 @@ function queueRowOf(w: QueueRowInput): QueueRow {
       case "drafts-changed":
         return { ...base, key: "drafts-changed", label: "Drafts changed", tone: "warn", reason: e.reason ?? "Its spec drafts changed since you approved. Land again to approve them.", action: "land" };
       case "needs-fix":
-        // Sent back: no Land while its chat fixes it; Land This Commit Again (the same commit, every check from the
+        // Sent back: no Land while its chat fixes it; its re-land (the branch's newest commit, every check from the
         // start) and Remove from Queue instead. Once the branch reads finished again at a newer commit (clean, no
         // conflicts, its chat idle: Sova's ready reading), or sent back for its drafts and the queue says they're fixed,
         // that commit wins and the row is Ready with Land. Settled (a later entry for the branch, already in the
         // target, its branch or folder removed): nothing to fix. entryKeyOf gives no key in those cases, and the row
         // reads as the worktree itself, below.
-        return { ...base, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "land-this-again", remove: true };
+        {
+          // Its re-land takes the branch's newest commit: the line says what that brings in (landAgainOf).
+          const again = landAgainOf(e);
+          const newer = [again.included, again.blocked].filter(Boolean).join(" · ");
+          return { ...base, newer: newer || undefined, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "land-this-again", ...(again.included ? { landNewest: true as const } : {}), remove: true };
+        }
       case "landed":
         return {
           ...base,
@@ -417,9 +450,9 @@ function queueRowOf(w: QueueRowInput): QueueRow {
 
 /** A row's buttons, as the Worktrees modal and the session pane draw them, in order. Set Up Queue needs the
     project to link to; Send Back follows the row's one action. */
-export type RowButton = "Land" | "Set Up Queue" | "Cancel" | "Accept" | "Land Anyway" | "Send Back" | "Land This Commit Again" | "Remove from Queue";
-export function rowButtons(row: Pick<QueueRow, "action" | "sendBack" | "remove">, projectId: string | undefined): RowButton[] {
-  const one: Partial<Record<RowAction, RowButton>> = { land: "Land", cancel: "Cancel", accept: "Accept", "land-anyway": "Land Anyway", "land-this-again": "Land This Commit Again" };
+export type RowButton = "Land" | "Set Up Queue" | "Cancel" | "Accept" | "Land Anyway" | "Send Back" | "Land This Commit Again" | "Land Newest Commit" | "Remove from Queue";
+export function rowButtons(row: Pick<QueueRow, "action" | "sendBack" | "remove"> & Partial<Pick<QueueRow, "landNewest">>, projectId: string | undefined): RowButton[] {
+  const one: Partial<Record<RowAction, RowButton>> = { land: "Land", cancel: "Cancel", accept: "Accept", "land-anyway": "Land Anyway", "land-this-again": row.landNewest ? "Land Newest Commit" : "Land This Commit Again" };
   const out: RowButton[] = [];
   if (row.action === "setup") {
     if (projectId) out.push("Set Up Queue");

@@ -1,7 +1,7 @@
 {
   "families": {
     "overseer": {
-      "bytes": 92267,
+      "bytes": 92447,
       "tools": [
         {
           "name": "sova_attention",
@@ -1825,7 +1825,7 @@
                   "type": "string"
                 },
                 "maxItems": 50,
-                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
               },
               "endpoint": {
                 "type": "string",
@@ -2899,7 +2899,7 @@
       ]
     },
     "overseer+copies": {
-      "bytes": 98052,
+      "bytes": 98232,
       "tools": [
         {
           "name": "sova_attention",
@@ -4809,7 +4809,7 @@
                   "type": "string"
                 },
                 "maxItems": 50,
-                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
               },
               "endpoint": {
                 "type": "string",
@@ -6082,7 +6082,7 @@
       ]
     },
     "project-overseer": {
-      "bytes": 39523,
+      "bytes": 39703,
       "tools": [
         {
           "name": "sova_project",
@@ -7199,7 +7199,7 @@
                   "type": "string"
                 },
                 "maxItems": 50,
-                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
               },
               "endpoint": {
                 "type": "string",
@@ -7404,7 +7404,7 @@
       ]
     },
     "project-overseer+onboard": {
-      "bytes": 39919,
+      "bytes": 40099,
       "tools": [
         {
           "name": "sova_project",
@@ -8527,7 +8527,7 @@
                   "type": "string"
                 },
                 "maxItems": 50,
-                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
               },
               "endpoint": {
                 "type": "string",
@@ -8601,7 +8601,7 @@
       ]
     },
     "project-overseer+gaps": {
-      "bytes": 39964,
+      "bytes": 40144,
       "tools": [
         {
           "name": "sova_project",
@@ -9730,7 +9730,7 @@
                   "type": "string"
                 },
                 "maxItems": 50,
-                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
               },
               "endpoint": {
                 "type": "string",
@@ -9804,7 +9804,7 @@
       ]
     },
     "project-overseer+copies": {
-      "bytes": 45541,
+      "bytes": 45721,
       "tools": [
         {
           "name": "sova_project",
@@ -11013,7 +11013,7 @@
                   "type": "string"
                 },
                 "maxItems": 50,
-                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
               },
               "endpoint": {
                 "type": "string",
@@ -11433,7 +11433,7 @@
       ]
     },
     "project-verbs:session": {
-      "bytes": 8587,
+      "bytes": 8829,
       "tools": [
         {
           "name": "project_verbs",
@@ -11557,7 +11557,7 @@
                   "type": "string"
                 },
                 "maxItems": 50,
-                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
               },
               "endpoint": {
                 "type": "string",
@@ -11642,7 +11642,7 @@
                 "items": {
                   "type": "string"
                 },
-                "description": "merge.extend: check ids from the project's merge section to add to this entry's run (never removes one); merge.try: release check ids to run although unchanged."
+                "description": "merge.extend {entry, checks, why, select}: check ids from the project's merge section to add to this entry's run (never removes one); send each pick's select with it; merge.try: release check ids to run although unchanged."
               },
               "verdict": {
                 "type": "string",
@@ -11689,7 +11689,7 @@
       ]
     },
     "project-verbs:overseer": {
-      "bytes": 6126,
+      "bytes": 6306,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -11783,7 +11783,7 @@
                   "type": "string"
                 },
                 "maxItems": 50,
-                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
               },
               "endpoint": {
                 "type": "string",
@@ -11857,7 +11857,7 @@
       ]
     },
     "project-verbs:overseer+onboard": {
-      "bytes": 6522,
+      "bytes": 6702,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -11957,7 +11957,7 @@
                   "type": "string"
                 },
                 "maxItems": 50,
-                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
               },
               "endpoint": {
                 "type": "string",
@@ -12031,7 +12031,7 @@
       ]
     },
     "project-verbs:project-overseer": {
-      "bytes": 7037,
+      "bytes": 7217,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -12125,7 +12125,7 @@
                   "type": "string"
                 },
                 "maxItems": 50,
-                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
               },
               "endpoint": {
                 "type": "string",
@@ -12199,7 +12199,7 @@
       ]
     },
     "project-verbs:overseer+copies": {
-      "bytes": 7971,
+      "bytes": 8151,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -12301,7 +12301,7 @@
                   "type": "string"
                 },
                 "maxItems": 50,
-                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
               },
               "endpoint": {
                 "type": "string",
@@ -12381,7 +12381,7 @@
       ]
     },
     "project-verbs:project-overseer+copies": {
-      "bytes": 8715,
+      "bytes": 8895,
       "tools": [
         {
           "name": "sova_project_verbs",
@@ -12483,7 +12483,7 @@
                   "type": "string"
                 },
                 "maxItems": 50,
-                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+                "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
               },
               "endpoint": {
                 "type": "string",

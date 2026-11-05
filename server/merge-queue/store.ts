@@ -63,7 +63,7 @@ export interface QueueFile {
   knownTarget?: string;
   /** Commits the queue moved the target to (tips, docs commits are inside them), newest last: the push rule reads them. */
   landed: string[];
-  heads: { pushed?: string; pushWhy?: string; targetRed?: string[] };
+  heads: { pushed?: string; pushWhy?: string; targetRed?: string[]; targetBroken?: import("../../shared/merge-queue").TargetBroken[] };
   /** Machine failures in a row, per entry (retry once, then pause). */
   machineTries: Record<string, number>;
   /** A settings save waiting for the branch checking now (applied at the next quiet point); `failed`: why it couldn't be. */

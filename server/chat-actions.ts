@@ -16,6 +16,7 @@ import type { ChatClientMessage } from "../shared/protocol";
 import { assertNotLive, BusyError, chatHandleTakenBack } from "./chat-handle";
 import { sessionsChanged } from "./list-generation";
 import { resolveSessionPath } from "./paths";
+import { notPage, type NotPage } from "./page-only";
 import { recordFrame } from "./ws";
 import { ARCHIVED_REFUSAL, isArchived } from "./archived-sessions";
 import { idOf } from "./sessions-index";
@@ -228,7 +229,7 @@ export const NOT_SENT = "The chat did not open; nothing was sent.";
  * the frame went over, and 503 `not-sent` when it goes away or never opens before. Every end closes
  * the recording socket and clears its timers.
  */
-export function runAction(path: string, action: ChatAction, waitMs: number, deps: ActionDeps = realDeps, requestId = `act-${randomUUID()}`): Promise<ActionAnswer> {
+export function runAction(path: string, action: ChatAction, waitMs: number, deps: ActionDeps = realDeps, requestId = `act-${randomUUID()}`, who: NotPage | null = "script"): Promise<ActionAnswer> {
   return new Promise((resolve) => {
     const m = createMatcher(action, requestId);
     let done = false;
@@ -279,7 +280,7 @@ export function runAction(path: string, action: ChatAction, waitMs: number, deps
       if (done) return;
       // The chat closed this client. An error before it already answered; anything else is unknown.
       unknown();
-    });
+    }, who);
   });
 }
 
@@ -328,7 +329,7 @@ export function mountChatActions(app: Hono, deps: ActionDeps = realDeps): void {
     const early = await beforeChat(path, action);
     if (early) return c.json(early.body, early.status);
     sessionsChanged();
-    const answer = await runAction(path, action, wait, deps);
+    const answer = await runAction(path, action, wait, deps, undefined, notPage(c));
     return c.json(answer.body, answer.status);
   });
 }

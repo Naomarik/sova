@@ -17,6 +17,7 @@ import {
   type OverseerInfo,
   type OverseerSaveResult,
   type OverseerSettings,
+  type OverseerAbilitiesInfo,
   type OverseerSettingsInfo,
   type SessionFeedMessage,
   type SessionSummary,
@@ -76,7 +77,7 @@ import { OVERSEER_SENDER_HEADER, overseerSender, senderSecret } from "./overseer
 
 import { onSessionPrompted, pathOfId, promptSession, sessionActivity, toolCatalogue, type PromptDelivery, type PromptResult } from "./session-prompt";
 import { contactRedactor } from "./overseer-org-view";
-import { CARDS_NOTE_MESSAGE, cardsNote, clickItems, foldCards, matchCardClick } from "../shared/overseer-card";
+import { CARDS_NOTE_MESSAGE, cardsNote, clickContext, type ClickContext, clickItems, foldCards, matchCardClick } from "../shared/overseer-card";
 import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type Permit, permitFromClick, RULE_ENTRY, type RuleEntry, sessionsText } from "../shared/overseer-grants";
 import { readAliases, sessionName, setAlias } from "./session-names";
 import { RESUME_DELAY_MS, type ResumeDeps, resumeInterrupted } from "./auto-resume";
@@ -116,6 +117,9 @@ import { overseerMemoryOf } from "./memory/settings";
 import { playbookReviews } from "./projects/playbook-review";
 import { tourSignInWaits } from "./tours/sign-in-notice";
 import { deployAttentionItems } from "./project-services/deploy-attention";
+import { extensionHealth, overseerExtCommands } from "./extensions";
+import { abilitiesInfo, extAbilities } from "./overseer-abilities";
+import { extJobTick, nameLine, noteReported, reportedRecently, type StatusAnswer, statusAnswerOf, watchedJobs, watchExtJob, type WatchedJob } from "./overseer-ext-jobs";
 
 /**
  * The Overseer: ONE special Sova session that watches every other session and acts on them
@@ -382,8 +386,10 @@ export function attentionDigest(list?: readonly SessionSummary[]): Promise<Retur
     // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
     // A deploy target whose latest deploy failed, and an overseer's request to deploy (§app.project-services/deploy-status).
     const deploys = await deployAttentionItems().catch(() => []);
+    // A release ready to publish, held for the operator, failed, gone quiet, or asked for (server/project-services/release.ts).
+    const releases = await (await import("./project-services/release-wire")).releaseAttentionItems().catch(() => []);
     // WhatsApp sending down (§app.outreach/sender-health): from the sender's last reading, no round trip.
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...senderAttention(), ...ownerAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys]);
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...senderAttention(), ...ownerAttention(), ...conflictAttention(), ...restartItems(sessions), ...deploys, ...releases]);
   })();
   digestMemo = { at: now, value, ...(fed ? { list: fed } : {}) };
   value.catch(() => {
@@ -448,6 +454,12 @@ export function overseerSettingsInfo(): OverseerSettingsInfo {
  * yet: the provider may simply not be registered), then applied to the held Overseer at once when
  * it is idle, else at its next turn boundary.
  */
+/** Why a save of `body` would be refused by its shape, or null. Writes nothing. */
+export const overseerSettingsProblem = (body: unknown): string | null => {
+  const parsed = parseSettings(body, true);
+  return "error" in parsed ? parsed.error : null;
+};
+
 export async function saveOverseerSettings(body: unknown): Promise<OverseerSaveResult | { error: string }> {
   const parsed = parseSettings(body, true);
   if ("error" in parsed) return parsed;
@@ -496,7 +508,8 @@ async function applySettingsNow(): Promise<void> {
   // record the new model — three info rows before the first message. A reopen seeds the runtime
   // from overseer.json directly (chat-manager createRuntime), so the file only ever records the
   // chosen model, at the first prompt. Open tabs get "reloaded" and reconnect.
-  const untouched = !(await chat.entries()).some(sentOrSet);
+  // Pristine first: a used conversation can be any size, and one with no message yet is a few lines.
+  const untouched = chat.mirror.pristine && !(await chat.entries()).some(sentOrSet);
   if (untouched) {
     await closeChat(chat.path, "The Overseer's model changed; reopening it.");
     return;
@@ -539,6 +552,13 @@ function overseerRun(): ServerToolRun | undefined {
 
 /** Sessions the Overseer created or prompted, for the running-at-once cap. */
 const started = new Set<string>();
+/** Sessions an extension command or job reported (this host's, by path): they count toward the
+    Overseer's own running-at-once cap (its next start or send), never toward the slots a schedule's
+    fire or an auto-resume takes (freeRunSlots, resumeDeps). The newest REPORTED_PATHS_MAX are kept. */
+const reportedPaths = new Set<string>();
+const REPORTED_PATHS_MAX = 200;
+/** The Overseer's own count: what it started and what its extensions reported, each session once. */
+const overseerCounted = (): Set<string> => new Set([...started, ...reportedPaths]);
 /** When the Overseer last created or prompted each local session (by path), for the sessions in
     play (§app.overseer/sessions-in-play); in memory, beside what its branch's tool results say. */
 const touchedAt = new Map<string, number>();
@@ -683,9 +703,17 @@ const host: OverseerToolHost = {
     peerPoll.unref?.();
   },
   links: meshLinks,
+  // The commands running extensions mark for it, and their jobs (§app.overseer/extension-commands).
+  ext: {
+    offered: () => overseerExtCommands(),
+    health: (id) => extensionHealth(id),
+    watch: (job) => watchExtJob(job),
+    watched: () => watchedJobs(),
+    noteReported: (ids) => reportSessions(ids),
+  },
   worktrees: archiveWorktrees(readBranch),
-  runningStarted: () => countRunning(started, running, promptedAt),
-  counted: (path) => countRunning(started.has(path) ? [path] : [], running, promptedAt) > 0,
+  runningStarted: () => countRunning(overseerCounted(), running, promptedAt),
+  counted: (path) => countRunning(started.has(path) || reportedPaths.has(path) ? [path] : [], running, promptedAt) > 0,
   attended: () => attended(),
   confirmed: () => {
     const run = overseerRun();
@@ -773,15 +801,14 @@ export function confirmedItems(card: string | null, branch: readonly HEntry[]): 
  * must carry `later` or `rule`. `all` is the whole file (numbering, one write per click). Pure.
  */
 export function permitOnClick(card: string | null, branch: readonly HEntry[], all: readonly HEntry[], now = new Date().toISOString()): ReturnType<typeof permitFromClick> {
-  if (!card) return undefined;
-  let last = branch.length - 1;
-  while (last >= 0 && branch[last]!.kind !== "user") last--;
-  const message = branch[last]?.id;
-  if (last < 0 || !message || clickWrote(all, message)) return undefined;
-  const c = foldCards(branch.slice(0, last)).find((x) => x.id === card);
-  if (!c || c.phase !== "open") return undefined;
-  const click = matchCardClick(c, joinedText(branch[last]!, { images: false }).trim());
-  return click ? permitFromClick(c, click, all, message, now) : undefined;
+  return card ? permitOfClick(clickContext(card, branch), all, now) : undefined;
+}
+
+/** permitOnClick from a click's facts. `all` may hold the state entries alone. */
+function permitOfClick(ctx: ClickContext | null, all: readonly HEntry[], now = new Date().toISOString()): ReturnType<typeof permitFromClick> {
+  if (!ctx || clickWrote(all, ctx.message.id)) return undefined;
+  const click = matchCardClick(ctx.card, joinedText(ctx.message, { images: false }).trim());
+  return click ? permitFromClick(ctx.card, click, all, ctx.message.id, now) : undefined;
 }
 
 /** "any act on these 3 sessions until 6:00 PM" / "rule: <text>". */
@@ -790,13 +817,32 @@ export function permitLabel(p: Permit): string {
   return `${p.card} ${p.option}: "${p.text}" (${actsText(p.acts)} on ${sessionsText(p.sessions)})`;
 }
 
-/** The Overseer file's entries: the held runtime's, else read from disk. */
+/** The state entries the approvals are folded from: a poll reads this, so it never carries the transcript. */
+const PERMIT_KEYS = [GRANT.type, RULE.type, REVOKE.type, GRANT_USE.type];
+
+/** A chat's approval entries. A chat still on older code has no stateEntries: it answers with everything. */
+async function permitEntries(chat: ChatHandle): Promise<{ branch: readonly HEntry[]; all: readonly HEntry[] }> {
+  try {
+    return await chat.stateEntries(PERMIT_KEYS);
+  } catch {
+    return { branch: await chat.branch(), all: await chat.entries() };
+  }
+}
+
+/** The approval or rule a click on `card` writes, reading the chat's branch only where it runs. */
+async function permitOfChat(chat: ChatHandle, card: string): Promise<ReturnType<typeof permitFromClick>> {
+  const { all } = await permitEntries(chat);
+  const ctx = await chat.clickContext(card).catch(async () => clickContext(card, await chat.branch()));
+  return permitOfClick(ctx, all);
+}
+
+/** The Overseer file's approval entries: the held runtime's, else read from disk. */
 async function overseerEntries(): Promise<{ path: string; branch: readonly HEntry[]; all: readonly HEntry[] } | null> {
   const st = readOverseerState();
   const path = st ? await pathOfId(st.current) : null;
   if (!path) return null;
   const chat = chatHandle(path);
-  if (chat) return { path, branch: await chat.branch(), all: await chat.entries() };
+  if (chat) return { path, ...(await permitEntries(chat)) };
   const { entries } = parsePi(await readFile(path, "utf8").catch(() => ""));
   return { path, branch: branchOf(entries), all: entries };
 }
@@ -804,7 +850,7 @@ async function overseerEntries(): Promise<{ path: string; branch: readonly HEntr
 /** GET /api/overseer/autonomy: the running count and cap, and every grant and rule. */
 export async function overseerAutonomy(): Promise<OverseerAutonomy> {
   const cap = readOverseerSettings().caps.concurrentSessions;
-  const count = countRunning(started, running, promptedAt);
+  const count = countRunning(overseerCounted(), running, promptedAt);
   const e = await overseerEntries();
   const schedules = await schedulesForWire().catch(() => []);
   return { running: count, cap, permits: e ? foldPermits(e.branch, e.all, Date.now()) : [], ...(schedules.length ? { schedules } : {}) };
@@ -836,7 +882,8 @@ export async function runNoteMessage(branch: readonly HEntry[], now = new Date()
   let note: { content: string; details: unknown };
   try {
     const prompted = touchedHere();
-    const states = await sessionsNow(runNoteSessionIds(branch, now.getTime(), prompted));
+    const reported = reportedRecently(now.getTime());
+    const states = await sessionsNow(runNoteSessionIds(branch, now.getTime(), prompted, reported));
     const digest = await attentionDigest();
     const act = digest.items.filter((i) => i.tier === "act");
     note = runNote({
@@ -845,6 +892,8 @@ export async function runNoteMessage(branch: readonly HEntry[], now = new Date()
       act: { keys: new Set(act.map(blockerKey)), complete: act.length >= digest.counts.act },
       session: (id) => states.get(id) ?? null,
       prompted,
+      reported,
+      extJobs: watchedJobs(),
       ...(cardsText ? { cardsText } : {}),
       redact: (t) => serverRedactor().redact(t),
       memory,
@@ -896,7 +945,7 @@ export async function compactNoteMessage(branch: readonly HEntry[], now = Date.n
   const cards = cardsNote(cardsOnBranch(branch), true, sessionActivity());
   let play: string | undefined;
   try {
-    const inPlay = sessionsInPlay(branch, now, touchedHere());
+    const inPlay = sessionsInPlay(branch, now, touchedHere(), reportedRecently(now));
     const states = await sessionsNow(inPlay.map((p) => p.id));
     const text = sessionsInPlayText(inPlay, (id) => states.get(id) ?? null, now);
     play = text ? serverRedactor().redact(text) : undefined;
@@ -986,10 +1035,28 @@ export function overseerValues(settings: OverseerSettings, now = new Date(), red
     NOTES: notes ? redactor().redact(notes.slice(0, 4000)) : "(none yet)",
     IDEAS: redactor().redact(promptToc(readManifest(), readOverseerState()?.current ?? "")),
     TODOS: promptTodos(readTodos()),
-    CAPS: `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions or explorers, ${c.archivesPerTurn} archive operations, ${c.explorePerTurn} explorers launched, ${c.linksPerTurn} links made, ${c.orgWritesPerTurn} organization writes, ${c.gatherPerTurn} gathering sessions or offers started; at most ${c.concurrentSessions} sessions you started running at once`,
+    CAPS: `${c.createPerTurn} new sessions, ${c.promptsPerTurn} prompts to other sessions or explorers, ${c.archivesPerTurn} archive operations, ${c.explorePerTurn} explorers launched, ${c.linksPerTurn} links made, ${c.orgWritesPerTurn} organization writes, ${c.gatherPerTurn} gathering sessions or offers started, ${c.extRunsPerTurn} extension commands run; at most ${c.concurrentSessions} sessions you started running at once`,
     EXTRA: extraInstructions(settings.extraSystemPrompt, redactor).join(""),
     IDS: idRule(settings),
+    EXT: extCommandsText(),
   };
+}
+
+/**
+ * The extension commands offered to the Overseer now (§app.overseer/extension-commands), as the prompt
+ * and the run note's `[changed]` part tell them: every installed command its extension marks for it.
+ * Whether its extension is running is sova_ext list's answer at the time, never part of this text, so
+ * a backend going up and down doesn't change the prompt's parts.
+ */
+export function extCommandsText(): string {
+  const mine = overseerExtCommands();
+  if (!mine.length) return "  (none: no installed extension marks a command for you)";
+  return mine.map((c) => `  - ${c.command.id}: ${nameLine(c.extension.title)} · ${nameLine(c.command.label, 48)}${c.job ? " (starts a job)" : ""}`).join("\n");
+}
+
+/** GET /api/overseer/abilities (§app.overseer/about): the same reading of its extension commands as sova_ext's. */
+export async function overseerAbilities(): Promise<OverseerAbilitiesInfo> {
+  return abilitiesInfo(await extAbilities(overseerExtCommands(), (id) => extensionHealth(id)), readOverseerSettings().caps);
 }
 
 /** The parts of the Overseer's prompt that can change while it runs, from its values. */
@@ -1001,6 +1068,7 @@ export function overseerLiveParts(values: Readonly<Record<string, string>>): Liv
     { key: "TODOS", title: "Todos checklist", text: v("TODOS") },
     { key: "CAPS", title: "Limits per message from the user", text: v("CAPS") },
     { key: "IDS", title: "Ids are copied, never typed", text: v("IDS") },
+    { key: "EXT", title: "Extension commands offered to you", text: v("EXT") },
     { key: "EXTRA", title: "The user's extra instructions for you", text: v("EXTRA").replace(/^# The user's extra instructions for you\n\n/, "") },
   ];
 }
@@ -1023,7 +1091,9 @@ export function renderOverseerPrompt(
     .replaceAll("{{NOTES}}", values.NOTES ?? "")
     .replaceAll("{{NOW}}", values.NOW ?? now.toString())
     .replaceAll("{{HOME}}", homedir())
-    .replaceAll("{{CAPS}}", values.CAPS ?? "");
+    .replaceAll("{{CAPS}}", values.CAPS ?? "")
+    // A function, so `$\``, `$'` and `$&` in an extension's title stay as written.
+    .replaceAll("{{EXT}}", () => values.EXT ?? extCommandsText());
 }
 
 /** The user's extra instructions (Settings → Overseer) as a prompt part, none when blank. Redacted
@@ -1218,9 +1288,8 @@ registerSpecialHost({
           setImmediate(() => {
             const chat = chatHandle(path);
             if (!chat) return done();
-            void Promise.all([chat.branch(), chat.entries()])
-              .then(([branch, entries]) => {
-                const w = permitOnClick(card, branch, entries);
+            void permitOfChat(chat, card)
+              .then((w) => {
                 if (!w) return;
                 return w.type === RULE_ENTRY ? chat.appendState(RULE, w.data) : chat.appendState(GRANT, w.data);
               })
@@ -1390,7 +1459,9 @@ async function sendBrief(body: string): Promise<void> {
 export const tickNowForTest = (o: { ignoreGap?: boolean } = {}): Promise<{ briefed: string[] } | { error: string }> => tick(!!o.ignoreGap);
 
 /** Free slots of the running-at-once cap, for a schedule's fire as for a resume (§chat.schedules/fire). */
-export const freeRunSlots = (): number => readOverseerSettings().caps.concurrentSessions - countRunning(started, running, promptedAt);
+export const freeRunSlots = (isRunning: (path: string) => boolean = running): number => freeSlotsWith(isRunning);
+/** The cap's free slots for a schedule's fire or an auto-resume: what the Overseer started only. */
+const freeSlotsWith = (isRunning: (path: string) => boolean): number => readOverseerSettings().caps.concurrentSessions - countRunning(started, isRunning, promptedAt);
 /** A session a schedule started or woke counts toward that cap, as a resumed one does. */
 export const countStarted = (path: string): void => host.started(path, true);
 /** One brief to the Overseer under Brief Me, nothing otherwise (a schedule found, §chat.schedules/where-shown). */
@@ -1411,7 +1482,7 @@ export function resumeCrashedChat(path: string, since: number, before: (path: st
   timer.unref();
 }
 
-function resumeDeps(): ResumeDeps {
+function resumeDeps(isRunning: (path: string) => boolean = running): ResumeDeps {
   const settings = readOverseerSettings();
   return {
     enabled: settings.autoResume !== false,
@@ -1420,7 +1491,7 @@ function resumeDeps(): ResumeDeps {
       if (!s) return null;
       return { ...s, name: sessionName(s, readAliases()[s.id]), projectOverseer: !!projectOverseerOfPath(path) };
     },
-    freeSlots: () => readOverseerSettings().caps.concurrentSessions - countRunning(started, running, promptedAt),
+    freeSlots: () => freeSlotsWith(isRunning),
     prompt: async (path, text, key) => {
       const r = await promptSession(path, text, readOverseerState()?.current, "followUp", undefined, key);
       if (!r.ok) throw new Error(r.error);
@@ -1447,5 +1518,98 @@ export function startOverseerLoop(): void {
       });
   }, TICK_MS);
   timer.unref();
+  // The extension jobs it started (§app.overseer/extension-commands): each asked every 15 s, told once when it ends.
+  const jobs = setInterval(() => {
+    if (extTicking) return;
+    extTicking = true;
+    extJobTick(extJobDeps())
+      .catch((err) => console.warn("[overseer] extension job watch failed:", err instanceof Error ? err.message : String(err)))
+      .finally(() => {
+        extTicking = false;
+      });
+  }, EXT_TICK_MS);
+  jobs.unref();
 }
+
+// ---- extension commands and their jobs (§app.overseer/extension-commands) ---------------------------
+
+const EXT_TICK_MS = 5_000;
+let extTicking = false;
+/** A job's status asked this long at most. */
+const EXT_STATUS_WAIT_MS = 30_000;
+
+/** Sessions a command or job reported: this host's count toward the Overseer's own running-at-once
+    cap from now on (while they run; never a refusal of what reported them, and never a schedule's or
+    auto-resume's slot), and all stay among the sessions in play. */
+async function reportSessions(ids: readonly string[]): Promise<void> {
+  for (const id of ids) {
+    const path = await pathOfId(id).catch(() => null);
+    if (path) noteReportedPath(path);
+  }
+  noteReported(ids, Date.now());
+}
+
+function noteReportedPath(path: string): void {
+  reportedPaths.delete(path);
+  reportedPaths.add(path);
+  for (const old of reportedPaths) {
+    if (reportedPaths.size <= REPORTED_PATHS_MAX) break;
+    reportedPaths.delete(old);
+  }
+}
+
+/** Test only: the running counts with these sessions reported (by path) and these running: the
+    Overseer's own (its cap), a schedule's free slots and auto-resume's. Clears what it added. */
+export function reportedCountsForTest(paths: readonly string[], isRunning: (path: string) => boolean): { overseer: number; scheduleSlots: number; resumeSlots: number } {
+  const before = new Set(reportedPaths);
+  for (const p of paths) noteReportedPath(p);
+  try {
+    return { overseer: countRunning(overseerCounted(), isRunning, new Map()), scheduleSlots: freeRunSlots(isRunning), resumeSlots: resumeDeps(isRunning).freeSlots() };
+  } finally {
+    reportedPaths.clear();
+    for (const p of before) reportedPaths.add(p);
+  }
+}
+
+/** A session id as the Overseer names it (§app.overseer/session-names): a link when it is a session here. */
+async function sessionLinks(ids: readonly string[]): Promise<string[]> {
+  const aliases = readAliases();
+  const out: string[] = [];
+  for (const id of ids) {
+    const path = await pathOfId(id).catch(() => null);
+    const s = path ? await getSessionSummary(path).catch(() => null) : null;
+    out.push(s ? `[${sessionName(s, aliases[s.id]).replace(/[[\]]/g, "")}](sova://s/${s.id})` : `${id} (no session here)`);
+  }
+  return out;
+}
+
+/** Ask an extension for one job's state, through the proxy as the Overseer's own call. */
+async function askJob(job: WatchedJob): Promise<StatusAnswer> {
+  const res = await host.request(`/ext/${encodeURIComponent(job.extension)}/api/commands/jobs/${encodeURIComponent(job.job)}`, { method: "GET", signal: AbortSignal.timeout(EXT_STATUS_WAIT_MS) });
+  // At most 64 KB read, like a run's answer; the timeout covers a body that stalls.
+  return statusAnswerOf(res);
+}
+
+const extJobDeps = () => ({
+  status: askJob,
+  links: sessionLinks,
+  reported: (ids: readonly string[]) => void reportSessions(ids),
+  busy: () => {
+    const p = overseerPath;
+    const chat = p ? chatHandle(p)?.mirror : undefined;
+    return !!chat && (chat.running || chat.queue.web > 0);
+  },
+  send: async (text: string, key: string) => {
+    const st = readOverseerState();
+    const path = st ? await pathOfId(st.current) : null;
+    if (!path) throw new Error("no Overseer conversation yet");
+    const overseer = await acquireChatHandle(path);
+    // Redacted like a brief; keyed by the job, so a lost answer's retry is the same message, sent once.
+    await overseer.send({ text: serverRedactor().redact(text), origin: "server", checkModel: true, key });
+  },
+  log: (line: string) => console.warn(line),
+});
+
+/** Test only: one pass of the extension job watch now. */
+export const extJobTickForTest = (): Promise<void> => extJobTick(extJobDeps());
 

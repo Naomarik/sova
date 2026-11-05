@@ -30,15 +30,19 @@
 
 import { existsSync, readFileSync, statSync } from "node:fs";
 import type { HarnessResources } from "../shared/harness";
+import type { SetupMcp } from "../shared/mcp";
 import { CHARS_PER_TOKEN, SETUP_FILE_MAX_BYTES, type SessionSetup, type SessionSetupFileText, type SessionSetupFile, type SessionSetupSkill } from "../shared/protocol";
 import { acquireChatHandle, assertNotLive, chatHandle, closeChat } from "./chat-handle";
 import { plan, readStoredCwd, type Plan } from "./git-summary";
 import { leavesOut, normalizeLoadout, type LoadoutEntryData } from "./session-loadout";
+import { dirname } from "node:path";
+import { candidateDirs, instructionFileIn } from "./deeper-context";
 import { getSessionSummary } from "./sessions-index";
 import { agentRoot } from "./state-root";
 import { readBranch } from "./harness/pi/reader";
 import { folderResources } from "./harness/pi/resources";
 import { LOADOUT } from "./harness/state-kinds";
+import type { McpSetupAsk } from "./mcp/chat";
 import { stateView } from "./harness/state-view";
 
 /** How long an answer stays fresh, per folder. The same size as the Git section's TTL. */
@@ -108,6 +112,8 @@ async function sessionSwitches(sessionPath: string): Promise<SessionSwitches> {
 
 type Loaded = Extract<SessionSetup, { state: "ok" }>;
 
+const mcpSetup = async (ask: McpSetupAsk) => (await import("./mcp/chat")).setupFor(ask);
+
 /** The folder's answer as one session sees it: its off rows marked, and whether it can switch them.
     A new object: the cached answer is never changed. */
 export function withSwitches(setup: Loaded, sw: SessionSwitches): Loaded {
@@ -144,6 +150,8 @@ export interface SetupDeps {
   loader?: (cwd: string) => Promise<Loadout>;
   /** One session's off set and switch window (default: the held chat, else the file's entry). */
   switches?: (sessionPath: string) => SessionSwitches | Promise<SessionSwitches>;
+  /** The MCP Servers group (default: server/mcp/chat.ts); never part of the folder's cached answer. */
+  mcp?: (ask: McpSetupAsk) => Promise<SetupMcp | undefined>;
   /** Whether a local path exists (default: fs.existsSync). */
   exists?: (path: string) => boolean;
   now?: () => number;
@@ -243,7 +251,10 @@ export async function getSessionSetup(sessionPath: string, opts: { fresh?: boole
     return { state: "unavailable", where: { kind: "local" }, cwd: stored, reason: `Sova couldn't place this session's folder: ${(err as Error)?.message || "unknown error"}.`, checkedAt: now() };
   }
   if (p.kind === "refuse") return p.summary(now());
-  if (p.kind === "remote") return { state: "remote", where: { kind: "remote", target: p.target }, cwd: p.place.cwd, checkedAt: now() };
+  if (p.kind === "remote") {
+    const mcp = await (deps.mcp ?? mcpSetup)({ path: sessionPath, cwd: p.place.cwd, remote: p.target, off: null });
+    return { state: "remote", where: { kind: "remote", target: p.target }, cwd: p.place.cwd, ...(mcp ? { mcp } : {}), checkedAt: now() };
+  }
 
   const folder = await folderSetup(p.place.cwd, sessionPath, opts, deps, now);
   if (folder.state !== "ok") return folder;
@@ -253,7 +264,8 @@ export async function getSessionSetup(sessionPath: string, opts: { fresh?: boole
   } catch {
     sw = { off: null, toggleable: false };
   }
-  return withSwitches(folder, sw);
+  const mcp = await (deps.mcp ?? mcpSetup)({ path: sessionPath, cwd: folder.cwd, off: sw.off }).catch(() => undefined);
+  return { ...withSwitches(folder, sw), ...(mcp ? { mcp } : {}) };
 }
 
 /** Every path this setup lists, in any of its groups: the only files /api/sessions/context/file reads. */
@@ -273,7 +285,10 @@ export async function readSetupFile(sessionPath: string, file: string, deps: Set
   const setup = await getSessionSetup(sessionPath, {}, deps);
   if (setup.state === "remote") return { ok: false, status: 409, error: "This session's files are on another machine." };
   if (setup.state !== "ok") return { ok: false, status: 409, error: setup.reason };
-  if (!listedPaths(setup).has(file)) return { ok: false, status: 404, error: "That file isn't in this session's system context." };
+  // An instruction file in a folder below cwd loads as the agent works there (server/deeper-context.ts): the
+  // Context tab opens those too, gated on the engine's own rule for one (its folder's first instruction file).
+  if (!listedPaths(setup).has(file) && !(instructionFileIn(dirname(file)) === file && candidateDirs(setup.cwd, file).includes(dirname(file))))
+    return { ok: false, status: 404, error: "That file isn't in this session's system context." };
   try {
     if (statSync(file).size > SETUP_FILE_MAX_BYTES) return { ok: false, status: 413, error: "That file is over 1 MB, too big to show here." };
     return { ok: true, file: { path: file, text: readFileSync(file, "utf8") } };
@@ -323,8 +338,8 @@ export function applyLoadout(path: string, body: unknown): Promise<LoadoutResult
 const sameSet = (a: readonly string[], b: readonly string[]) => a.length === b.length && [...a].sort().join("\0") === [...b].sort().join("\0");
 
 async function applyLoadoutNow(path: string, body: unknown): Promise<LoadoutResult> {
-  const b = (body ?? {}) as { offContext?: unknown; offSkills?: unknown };
-  const data = normalizeLoadout({ v: 1, offContext: b.offContext, offSkills: b.offSkills });
+  const b = (body ?? {}) as { offContext?: unknown; offSkills?: unknown; offMcp?: unknown; onMcp?: unknown };
+  const data = normalizeLoadout({ v: 1, offContext: b.offContext, offSkills: b.offSkills, offMcp: b.offMcp, onMcp: b.onMcp });
   if (!data) return { ok: false, status: 400, error: "Expected {path, offContext: absolute paths, offSkills: skill names}" };
   const s = await getSessionSummary(path);
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
@@ -345,7 +360,9 @@ async function applyLoadoutNow(path: string, body: unknown): Promise<LoadoutResu
     return { ok: false, status: 409, error: err instanceof Error ? err.message : String(err) };
   }
   const current = chat.mirror.loadout?.off;
-  const unchanged = leavesOut(current) ? sameSet(current.offContext, data.offContext) && sameSet(current.offSkills, data.offSkills) : !leavesOut(data);
+  const unchanged = leavesOut(current)
+    ? sameSet(current.offContext, data.offContext) && sameSet(current.offSkills, data.offSkills) && sameSet(current.offMcp ?? [], data.offMcp ?? []) && sameSet(current.onMcp ?? [], data.onMcp ?? [])
+    : !leavesOut(data);
   if (!unchanged) {
     try {
       await chat.writeLoadout(data);

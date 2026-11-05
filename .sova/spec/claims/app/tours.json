@@ -302,13 +302,19 @@
       "server/tours/runner.test.ts",
       "server/tours/browser-prediction.integration.test.ts",
       "server/tours/runner-proxy.ts",
-      "server/tours/runner-proxy.integration.test.ts"
+      "server/tours/runner-proxy.integration.test.ts",
+      "server/tours/mac-browser.integration.fixture.ts"
     ],
     "requires": [
       "§chat.sandbox/what-on-enforces",
       "§chat.sandbox/workers",
       "§chat.sandbox/fail-closed"
-    ]
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T19:28Z",
+      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#8d8457fc"
+    }
   },
   "§app.tours/sharing": {
     "kind": "behavior",

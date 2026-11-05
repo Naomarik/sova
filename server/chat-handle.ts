@@ -5,6 +5,7 @@
 // lifecycle events numbered per runtime; browser frames passed through. Today the chat runs in this
 // process: a call runs the chat's method at once (its guards run at the moment of the call, exactly
 // as a direct call did) and its answer comes back as a reply.
+import { createSettingsTool } from "./create-settings-tool";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { stat } from "node:fs/promises";
@@ -32,6 +33,7 @@ import type {
   SpecialSpec,
 } from "../shared/chat-runtime";
 import type { ChatAskMethod, ServerToolCtxWire } from "../shared/chat-runtime-wire";
+import type { McpNote } from "../shared/mcp";
 import type { HEntry, HookCtx, ImageInput, StateKind, ToolCtx, ToolResult, ToolSpec } from "../shared/harness";
 import type { ChatClientMessage, ChatModeResult, HeldChatState, ProjectModeApproval } from "../shared/protocol";
 import {
@@ -213,6 +215,10 @@ export abstract class ChatHandle {
   writeLoadout(data: LoadoutEntryData): Promise<null> {
     return this.call("writeLoadout", { data });
   }
+
+  noteMcp(note: McpNote): Promise<null> {
+    return this.call("noteMcp", { note });
+  }
   flushDeferredAppends(): Promise<null> {
     return this.call("flushDeferredAppends", {});
   }
@@ -240,6 +246,12 @@ export abstract class ChatHandle {
   entries() {
     return this.call("entries", {});
   }
+  stateEntries(keys: readonly string[]) {
+    return this.call("stateEntries", { keys: [...keys] });
+  }
+  clickContext(card: string) {
+    return this.call("clickContext", { card });
+  }
   fileState(kinds: readonly StateKind<unknown>[]): Promise<unknown[]> {
     return this.call("fileState", { kinds: kinds.map((k) => k.type) });
   }
@@ -251,6 +263,12 @@ export abstract class ChatHandle {
   }
   declaredTools() {
     return this.call("declaredTools", {});
+  }
+  promptSections() {
+    return this.call("promptSections", {});
+  }
+  specialLoader() {
+    return this.call("specialLoader", {});
   }
   resources() {
     return this.call("resources", {});
@@ -658,8 +676,11 @@ export async function fileSnapshot(path: string, w: Partial<ServerToolCtxWire> &
 /** The server-hosted tools of an ordinary chat in a process of its own, hosted here: their
     declarations go to the chat in its `open`, in loadout order. `known`: the title the chat reports
     (its pi session name, often none), used only when the session's display title can't be read. */
-export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => string | undefined, powers = false): ServerToolDecl[] {
+export function servedToolsFor(chatId: ChatId, sessionId: string, known: () => string | undefined, powers = false, plain = !powers): ServerToolDecl[] {
   const specs: ToolSpec[] = [sessionVerbsTool(() => projectEngine()), queuePushTool({ sessionId: () => sessionId, title: () => senderTitle(chatId, known) }), ...tourTools(sessionId, chatId)];
+  // Declared for a plain chat only: a special kind's own tool of this name (a project overseer's) must keep answering.
+  // Its extension keeps it active only in Create (§chat.create-mode/settings-cards).
+  if (plain) specs.push(createSettingsTool({ sessionId, mode: () => chatHandle(chatId)?.mirror.mode.mode, cwd: () => chatHandle(chatId)?.mirror.cwd ?? "" }));
   if (process.env.SOVA_CHAT_TEST_SERVED === "1") specs.push(trialServedSleep());
   // A powers profile's queue_open (its own extension registers it, from this declaration) and its
   // sends, a server action (§app.chat-processes/server-actions).
@@ -685,7 +706,7 @@ export function servedWorkerTools(chatId: ChatId): ServerToolDecl[] {
  * (§chat.offers/tool). Last in the list, so a chat with none declares exactly what it did before.
  */
 export async function servedToolsForChat(chatId: ChatId, sessionId: string, known: () => string | undefined, kind: string | null): Promise<ServerToolDecl[]> {
-  const decls = servedToolsFor(chatId, sessionId, known, kind === "powers");
+  const decls = servedToolsFor(chatId, sessionId, known, kind === "powers", kind === null);
   if (kind !== null && kind !== "powers") return decls;
   // Then its `card` tool when its snapshot has a type the agent may raise (§chat.transcript-cards/card-tool).
   const extra = [...(await sessionOfferTools(sessionId, chatId)), ...(await sessionCardTools(sessionId, chatId))];
@@ -779,6 +800,10 @@ export async function answerChatAsk(path: string, method: ChatAskMethod, args: u
       return fetchSessionTimings(String(a.sessionId ?? ""));
     case "offers.note":
       return offerNoteFor(String(a.sessionId ?? ""));
+    case "mcp.list":
+      return (await import("./mcp/chat")).chatListFor(a as never);
+    case "mcp.tell":
+      return (await import("./mcp/chat")).tellParent(a.parent, a.note as McpNote);
     case "cards.note":
       return withMergeCardNote(cardNoteFor(String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null), String(a.sessionId ?? ""), typeof a.since === "string" ? a.since : null);
     case "powers.sessions":

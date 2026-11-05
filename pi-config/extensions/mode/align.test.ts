@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { ALIGN_FILE_MAX_BYTES, readAlignFile } from "./align-file.ts";
+import { readAlignArgs } from "./align-tool.ts";
 import {
 	ALIGN_ENTRY_TYPE,
 	ALIGN_OP_FIELDS,
@@ -797,4 +798,19 @@ test("planSignal: the reply is judged without its working notes (b2)", () => {
 	const fenced = "Top.\n```md\n### Working notes\n```\nShould I go ahead?\n### Working notes\nx";
 	assert.equal(withoutWorkingNotes(fenced), "Top.\n```md\n### Working notes\n```\nShould I go ahead?\n");
 	assert.equal(withoutWorkingNotes("No notes here."), "No notes here.");
+});
+
+test("align's arguments: ops written as JSON text read as the list they mean; anything else is left for the schema check", () => {
+	const ops = [{ op: "change_request" }];
+	const text = JSON.stringify(ops);
+	assert.deepEqual(readAlignArgs({ ops: text }), { ops });
+	assert.deepEqual(readAlignArgs({ doc: "al_1", ops: [JSON.stringify(ops[0]), { op: "add" }] }), { doc: "al_1", ops: [ops[0], { op: "add" }] });
+	assert.deepEqual(readAlignArgs({ ops: [text] }), { ops }, "a list inside the list");
+	assert.deepEqual(readAlignArgs({ ops: ops[0] }), { ops }, "a lone op");
+	const fine = { ops };
+	assert.equal(readAlignArgs(fine), fine, "a good call is passed through untouched");
+	const bad = { ops: "not json" };
+	assert.equal(readAlignArgs(bad), bad, "the check refuses it, in its own words");
+	assert.deepEqual(readAlignArgs({ ops: ["not json"] }), { ops: ["not json"] });
+	for (const other of [null, "x", [1], {}]) assert.deepEqual(readAlignArgs(other), other);
 });

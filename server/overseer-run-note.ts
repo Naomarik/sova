@@ -1,6 +1,7 @@
 import type { HBlock, HEntry } from "../shared/harness";
 import { OVERSEER_BRIEF_PREFIX, type SessionReadiness } from "../shared/protocol";
 import type { OpeningDetails } from "./overseer-opening";
+import { nameLine, type WatchedJob } from "./overseer-ext-jobs";
 import { MEMORY_ZOOM_TOOL } from "../shared/memory";
 import { CARD_TOOL, CARDS_NOTE_MESSAGE, foldCardDetails, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../shared/overseer-card";
 
@@ -123,6 +124,10 @@ export interface RunNoteInput {
   cardsText?: string;
   /** Sessions the Overseer created or prompted, by id, with when (sessionsInPlay adds the briefed ones). */
   prompted?: readonly Touched[];
+  /** Sessions an extension command or job reported, by id, with when (§app.overseer/extension-commands). */
+  reported?: readonly Touched[];
+  /** The extension jobs Sova still watches for the Overseer (§app.overseer/extension-commands). */
+  extJobs?: readonly Pick<WatchedJob, "title" | "label" | "job" | "startedAt" | "n">[];
   /** Text from other sessions is redacted before it reaches the model. */
   redact?: (text: string) => string;
   /** The `[changed]` part (overseer-opening.ts changedText), when a part of the prompt changed. */
@@ -135,8 +140,8 @@ export interface RunNoteInput {
 
 /** The ids the note will ask `session` about: briefed blockers in the window, open cards' sessions,
     and the sessions in play. */
-export function runNoteSessionIds(branch: readonly HEntry[], now: number, prompted: readonly Touched[] = []): string[] {
-  const ids = new Set<string>(sessionsInPlay(branch, now, prompted).map((p) => p.id));
+export function runNoteSessionIds(branch: readonly HEntry[], now: number, prompted: readonly Touched[] = [], reported: readonly Touched[] = []): string[] {
+  const ids = new Set<string>(sessionsInPlay(branch, now, prompted, reported).map((p) => p.id));
   for (const b of briefedBlockers(branch)) if (now - b.at <= CLEARED_WINDOW_MS) ids.add(b.id);
   for (const c of openCardsOf(cardsOnBranch(branch))) for (const it of c.items) if (it.kind === "session") ids.add(it.id);
   return [...ids];
@@ -190,12 +195,24 @@ export function runNote(input: RunNoteInput): { content: string; details: RunNot
   }
   if (cardLines.length) parts.push(redact(["[card sessions] Sessions on open cards whose state moved. Drop or replace a card they make moot:", ...cardLines].join("\n")));
 
-  const play = sessionsInPlayText(sessionsInPlay(input.branch, now, input.prompted ?? []), input.session, now);
+  const jobs = extJobsText(input.extJobs ?? [], now);
+  if (jobs) parts.push(redact(jobs));
+
+  const play = sessionsInPlayText(sessionsInPlay(input.branch, now, input.prompted ?? [], input.reported ?? []), input.session, now);
   if (play) parts.push(redact(play));
   if (input.memory) parts.push(MEMORY_FIRST);
 
   if (input.cardsText) parts.push(input.cardsText);
   return { content: parts.join("\n\n"), details: { v: 1, ...(cleared.length ? { cleared } : {}), ...input.opening } };
+}
+
+/** The run note's extension jobs part (§app.overseer/extension-commands): each job Sova still watches; undefined when none. */
+export function extJobsText(jobs: readonly Pick<WatchedJob, "title" | "label" | "job" | "startedAt" | "n">[], now: number): string | undefined {
+  if (!jobs.length) return undefined;
+  return [
+    "[extension jobs] Jobs you started that Sova still watches. It tells you when each ends (a message tagged [ext_job xN]); don't poll them:",
+    ...jobs.map((j) => `- x${j.n}: ${nameLine(j.title)} · ${nameLine(j.label, 48)}, job ${j.job}, started ${ago(j.startedAt, now)}`),
+  ].join("\n");
 }
 
 // ---- sessions in play (§app.overseer/sessions-in-play) -------------------------------------------
@@ -209,10 +226,12 @@ export interface Touched {
   at: number;
 }
 
-/** A session in play: when the Overseer last created or prompted it, and the last brief that named it. */
+/** A session in play: when the Overseer last created or prompted it, when an extension command last
+    reported it, and the last brief that named it. */
 export interface InPlay {
   id: string;
   prompted?: number;
+  reported?: number;
   brief?: { kind: string; at: number };
 }
 
@@ -236,7 +255,7 @@ export function promptedOnBranch(branch: readonly HEntry[]): Touched[] {
  * server's own tracking since it started) and those a brief named, in the last 24 hours (the
  * cleared window); the most recently touched first, at most IN_PLAY_MAX. Pure.
  */
-export function sessionsInPlay(branch: readonly HEntry[], now: number, prompted: readonly Touched[] = []): InPlay[] {
+export function sessionsInPlay(branch: readonly HEntry[], now: number, prompted: readonly Touched[] = [], reported: readonly Touched[] = []): InPlay[] {
   const by = new Map<string, InPlay>();
   const get = (id: string) => by.get(id) ?? by.set(id, { id }).get(id)!;
   for (const t of [...promptedOnBranch(branch), ...prompted]) {
@@ -244,12 +263,17 @@ export function sessionsInPlay(branch: readonly HEntry[], now: number, prompted:
     const p = get(t.id);
     p.prompted = Math.max(p.prompted ?? 0, t.at);
   }
+  for (const t of reported) {
+    if (now - t.at > CLEARED_WINDOW_MS) continue;
+    const p = get(t.id);
+    p.reported = Math.max(p.reported ?? 0, t.at);
+  }
   for (const b of briefedBlockers(branch)) {
     if (now - b.at > CLEARED_WINDOW_MS) continue;
     const p = get(b.id);
     if (!p.brief || b.at >= p.brief.at) p.brief = { kind: b.kind, at: b.at };
   }
-  const touched = (p: InPlay) => Math.max(p.prompted ?? 0, p.brief?.at ?? 0);
+  const touched = (p: InPlay) => Math.max(p.prompted ?? 0, p.reported ?? 0, p.brief?.at ?? 0);
   return [...by.values()].sort((a, b) => touched(b) - touched(a)).slice(0, IN_PLAY_MAX);
 }
 
@@ -277,10 +301,12 @@ export function sessionsInPlayText(play: readonly InPlay[], session: (id: string
       if (!s) return `- ${p.id} — the session is gone`;
       const bits = [linkTo(s.name, p.id), p.id, s.archived ? "archived" : (s.state ?? "idle"), ...(s.branches ?? [])];
       if (p.prompted) bits.push(`you created or prompted it ${ago(p.prompted, now)}`);
+      if (p.reported) bits.push(`an extension command reported it ${ago(p.reported, now)}`);
       if (p.brief) bits.push(`last brief: ${p.brief.kind} ${ago(p.brief.at, now)}`);
       return `- ${bits.join(" · ")}`;
     });
-    parts.push(["[sessions in play] Sessions you created, prompted or were briefed about in the last 24 hours. Check one with sova_session before saying what it is doing:", ...rows].join("\n"));
+    const which = play.some((p) => p.reported) ? "created, prompted, were briefed about or an extension command reported" : "created, prompted or were briefed about";
+    parts.push([`[sessions in play] Sessions you ${which} in the last 24 hours. Check one with sova_session before saying what it is doing:`, ...rows].join("\n"));
   }
   // Round 3's open follow-ups go here, beside the sessions they watch.
   if (followUps.length) parts.push(["[follow-ups] Your open follow-ups:", ...followUps.map((f) => `- ${f}`)].join("\n"));

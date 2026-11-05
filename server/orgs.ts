@@ -163,12 +163,39 @@ export function orgDir(orgId: string): string {
 }
 setOrgVisitsDir(orgDir); // an org's visit log is in its workspace (server/visits.ts)
 
+/** How long `orgOfSessionPath` keeps a workspace's canonical path: a listing asks per row, and a folder
+    swapped behind `orgs.json` still shows within the second a listing already allows outside changes. */
+const ORG_ROOTS_MS = 1_000;
+let orgRootsClock = (): number => performance.now();
+/** Tests: move the clock `orgOfSessionPath`'s roots expire by; null restores it. */
+export function setOrgRootsClockForTest(fn: (() => number) | null): void {
+  orgRootsClock = fn ?? (() => performance.now());
+}
+let orgRoots: { index: OrgIndex; at: number; roots: string[] } | null = null;
+
+/** `<canonical workspace>/sessions`, aligned with `index.orgs`. Never the index's own roots: those last
+    as long as `orgs.json` is unchanged, however the folder changes. */
+function orgRootsOf(index: OrgIndex): string[] {
+  const now = orgRootsClock();
+  if (orgRoots?.index !== index || now - orgRoots.at >= ORG_ROOTS_MS) orgRoots = { index, at: now, roots: index.orgs.map((o) => join(canonicalDir(o.dir), "sessions")) };
+  return orgRoots.roots;
+}
+
+export type OrgOfSessionPath = (sessionPath: string) => { orgId: string; dir: string } | null;
+
+/** `orgOfSessionPath` for one listing pass: the index is read once, however many rows ask. */
+export function orgOfSessionPathReader(): OrgOfSessionPath {
+  const index = readIndex();
+  const roots = orgRootsOf(index);
+  return (sessionPath) => {
+    const o = index.orgs[roots.indexOf(dirname(sessionPath))];
+    return o ? { orgId: o.id, dir: o.dir } : null;
+  };
+}
+
 /** The attached org whose workspace sessions dir holds `sessionPath`, or null. */
 export function orgOfSessionPath(sessionPath: string): { orgId: string; dir: string } | null {
-  const parent = dirname(sessionPath);
-  const index = readIndex();
-  for (const o of index.orgs) if (join(canonicalDir(o.dir), "sessions") === parent) return { orgId: o.id, dir: o.dir };
-  return null;
+  return orgOfSessionPathReader()(sessionPath);
 }
 
 // ---- ids, slugs, dirs ------------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_PROFILE,
@@ -151,6 +151,13 @@ export async function findProfile(pick: ProfilePick, cwd?: string | null, deps: 
 }
 
 // ---- hidden from the pickers ---------------------------------------------------------------------
+
+/** Why a profile that isn't found can't be used: its own file's problem, in that problem's words, or null when no file of that name was refused. */
+export async function profileRefusedWhy(id: string, cwd?: string | null, deps: ProfileSourcesDeps = {}): Promise<string | null> {
+  const src = await profileSources(cwd, deps);
+  const problem = src.problems.find((x) => basename(x.file) === `${id}.json`);
+  return problem ? `The profile "${id}" can't be used: ${problem.error}` : null;
+}
 
 export const hiddenFile = () => join(stateRoot(), "profile-hidden.json");
 

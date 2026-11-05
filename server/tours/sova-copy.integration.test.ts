@@ -198,6 +198,11 @@ test("recording a managed Sova copy leaves its install token nowhere and never m
   await listSessions();
   let summaryChanges = 0;
   const unwatch = onSummaryLineChanged(() => { summaryChanges++; });
+  // The session feed a running copy has (index.ts configures it, buildApp doesn't). Without one every
+  // feed socket closes 4500 "no feed" and the page retries 1 s later, seen only in a view open that long.
+  const { configureSessionFeed } = await import("../session-feed");
+  let feedReads = 0;
+  const feed = configureSessionFeed({ list: () => { feedReads++; return listSessions(); } });
   const titlesBefore = titleAndSummaryRecords();
   const sessionBefore = readFileSync(seeded.path, "utf8");
   try {
@@ -249,7 +254,9 @@ test("recording a managed Sova copy leaves its install token nowhere and never m
     const log = `handshakes ${JSON.stringify(upgrades)}; document loads ${JSON.stringify(documents)}`;
     assert.deepEqual(tally(documents), expected, `one document load per app view, size and run: ${log}`);
     assert.deepEqual(tally(upgrades), expected, `one watch handshake per app view, size and run: ${log}`);
-    for (const u of upgrades) assert.deepEqual(u.keys, ["feed"], `the session feed, nothing else: ${JSON.stringify(u)}`);
+    for (const u of upgrades) assert.deepEqual(u.keys, ["feed", "rows"], `the session feed, nothing else: ${JSON.stringify(u)}`);
+    // The feed reads the list only for a socket it took, so a 0 is a copy that refused them all.
+    assert.ok(feedReads > 0, "the recorder's sockets reached a running session feed");
 
     // Positive control for the nudge counter: a summary line appears in the seeded session.
     const outline = JSON.stringify({ type: "custom", customType: "topic-outline", data: { version: 2, now: "A made-up assistant is reading.", overall: "A made-up draft review.", topics: [], generatedAt: 1 } });
@@ -263,6 +270,7 @@ test("recording a managed Sova copy leaves its install token nowhere and never m
     assert.ok(stub.requests.length > 0, `the stub counts a real model call (${named.text})`);
   } finally {
     unwatch();
+    feed.stop();
     runtime.close();
     await close(copyServer); await close(stubServer);
     rmSync(root, { recursive: true, force: true });

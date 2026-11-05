@@ -35,6 +35,8 @@ export interface WorkerSpec {
 	env: Record<string, string>;
 	/** useWorktreeConfig: pi's agent dir for this chat (its process's PI_CODING_AGENT_DIR). */
 	agentDir: string | null;
+	/** Its MCP servers, the list its parent named (Sova's server/mcp/list.ts; opaque here), kept in its session. */
+	mcp?: unknown;
 	/** Lower the process to the worker niceness (every kind but none today). */
 	lowered: true;
 }

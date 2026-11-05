@@ -19,6 +19,7 @@ const {
   isCapabilityNeutral,
   keyOf,
   lockedReason,
+  profileSentence,
   normalizeCaps,
   parseProfile,
   profileFileError,
@@ -33,6 +34,7 @@ type SessionSummary = import("../shared/protocol").SessionSummary;
 const { linkedPlaybook, playbookTurnText } = await import("../shared/playbooks");
 const { readProfiles } = await import("./profiles-store");
 const { findProfile, profileSources } = await import("./profile-sources");
+const { createNotNamed } = await import("../shared/profiles");
 const { profilesListing } = await import("./session-profile-routes");
 const { approve, trustFile } = await import("./profile-trust");
 const { clearProjectCache, projectOf } = await import("./project-root");
@@ -82,6 +84,14 @@ describe("the model", () => {
     assert.deepEqual(normalizeCaps([], ["sessions.message"]), { remove: [], grant: ["sessions.read", "sessions.message"] });
     assert.deepEqual(normalizeCaps([], ["sessions.all"]), { remove: [], grant: ["sessions.read", "sessions.all"] });
     assert.deepEqual(normalizeCaps(["web"], []), { remove: ["workers", "web"], grant: [] });
+    assert.deepEqual(normalizeCaps(["mcp"], []), { remove: ["mcp"], grant: [] }, "removing only MCP Servers leaves Workers alone");
+    assert.deepEqual(normalizeCaps(["web", "mcp"], []), { remove: ["workers", "web", "mcp"], grant: [] }, "any other removal behaves as before");
+    assert.equal(lockedReason("workers", ["mcp"]), null, "Workers can be switched with only MCP Servers off");
+    const words = (remove: ("workers" | "mcp" | "web")[]) => profileSentence({ label: "P", remove, grant: [] });
+    assert.match(words(["workers", "mcp"]), /Workers & teams, MCP Servers off/, "Workers off by hand are said");
+    assert.match(words(["workers"]), /has Workers & teams off/);
+    assert.ok(!words(["workers", "web"]).includes("Workers"), "taken by a removal, they go unsaid, as before");
+    assert.match(lockedReason("workers", ["web", "mcp"]) ?? "", /Workers would get every tool back/);
     assert.deepEqual(normalizeCaps(["nope", "shell"], ["root"]), { remove: ["shell", "workers"], grant: [] });
     assert.equal(lockedReason("workers", ["web", "workers"]), "Workers would get every tool back, so removing anything removes them too.");
     assert.equal(lockedReason("workers", ["workers"]), null);
@@ -93,8 +103,9 @@ describe("the model", () => {
     assert.deepEqual(src.builtins.map((p) => p.key), ["sova:default"]);
     assert.equal(src.builtins[0]!.label, "My settings");
     assert.deepEqual(src.problems, [], "a profiles/ folder with no profile files lists none, and is no problem");
-    // The merge queue's thread and reviewer: found only by an explicit Sova pick, never by a bare id, never in a list.
-    const system = ["merge-reviewer", "merge-thread"];
+    // The merge queue's thread and reviewer, and the release chat: found only by an explicit Sova pick, never by a bare
+    // id, never in a list.
+    const system = ["merge-reviewer", "merge-thread", "release-thread"];
     for (const id of system) {
       assert.equal((await findProfile({ source: "sova", id }, null))?.key, `sova:${id}`, id);
       assert.equal(await findProfile(id, null), null, `${id} by a bare id`);
@@ -104,7 +115,7 @@ describe("the model", () => {
     for (const id of system) assert.ok(!listed.includes(id), `${id} listed for a picker`);
     const { readdirSync } = await import("node:fs");
     const dir = join(import.meta.dirname, "..", "profiles", "system");
-    assert.deepEqual(readdirSync(dir).sort(), system.map((id) => `${id}.json`), "exactly these two system profiles");
+    assert.deepEqual(readdirSync(dir).sort(), system.map((id) => `${id}.json`), "exactly these system profiles");
   });
 
   test("a shipped profile file is listed after Default, in its normal form", async () => {
@@ -139,7 +150,7 @@ describe("the model", () => {
     assert.deepEqual((parseProfile({ id: "only-links", label: "L", remove: ["links"] }) as Profile).remove, []);
     // Still a typo next to it is an error, naming only the typo and the names that exist today.
     const err = profileFileError({ ...CAPTAIN, remove: ["links", "linkz"] }) ?? "";
-    assert.match(err, /unknown name "linkz"\. Known: shell, edit, workers, web, worktrees, timers\.$/);
+    assert.match(err, /unknown name "linkz"\. Known: shell, edit, workers, web, worktrees, timers, mcp\.$/);
   });
 
   test("parseProfile refuses bad ids and names, and clamps limits to whole numbers from 1", () => {
@@ -297,6 +308,16 @@ describe("where profiles come from (§chat.profiles/projects)", () => {
     writeFileSync(typo, JSON.stringify({ version: 1, profiles: [{ id: "a", label: "A", remove: ["shel"] }] }));
     const t = readProfiles(typo);
     assert.ok(!t.ok && /profiles\[0\]: "remove" has unknown name "shel"/.test(t.error));
+  });
+
+  test("a project profile naming Create can't start a chat, and the refusal says why, not that it's missing", async () => {
+    const root = project("create-named", { bad: { ...CAPTAIN, id: "bad", mode: "create" } });
+    const got = await resolveChoice("bad", root);
+    assert.equal(got.ok, false);
+    assert.ok(!got.ok && got.error.includes(createNotNamed("a profile")), JSON.stringify(got));
+    assert.ok(!got.ok && !got.error.startsWith("No profile"), "the file's reason, not a missing profile");
+    const gone = await resolveChoice("never-was", root);
+    assert.ok(!gone.ok && gone.error.startsWith(`No profile "never-was"`));
   });
 
   test("a project's files: each parsed alone, a bad one listed as a problem with its path and error, never hiding the rest", async () => {

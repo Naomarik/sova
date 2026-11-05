@@ -11,9 +11,12 @@
 /** What changes how every test runs: the testing guide's front-matter `watches`. */
 const TEST_SETUP = [
   "scripts/run-tests.mjs",
+  "scripts/test-env.mjs",
+  "scripts/test-cache.mjs",
   "scripts/test-tier-guard.mjs",
   "scripts/test-changed.mjs",
   "scripts/test-sentinel.mjs",
+  "scripts/test-temp-root.mjs",
   "scripts/hermetic-agent-dir.mjs",
   "pi-config/extensions/claude-code/tests/hermetic-env.mjs",
   "server/test-scratch.ts",

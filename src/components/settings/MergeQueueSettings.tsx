@@ -17,6 +17,7 @@ import {
   parseMinutes,
   rebaseDraft,
   refusalWords,
+  pendingSaveTitle,
   saveResultWords,
   freshChatWords,
   SOURCE_TAG,
@@ -338,7 +339,7 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
       <Show when={pending()}>
         <Banner
           tone={pendingFailed() ? "warn" : "info"}
-          title={pendingFailed() ? "The waiting save couldn't be applied." : "Saves when the current branch finishes."}
+          title={pendingSaveTitle(pending()!, !!pendingFailed())}
           body={`${changeLines(pending()!.changes, s()).join("; ")}.${pendingFailed() ? ` ${pendingFailed()!.replace(/[.]$/, "")}.` : ""}`}
           action={
             <button type="button" class="button button-sm button-ghost" disabled={busy()} onClick={() => void cancelPending()}>
@@ -430,6 +431,19 @@ function SettingsBody(props: { projectId: string; settings: MergeQueueSettings; 
               {showAll() ? "Show Fewer" : `Show ${s().checks.list.length - CHECKS_SHOWN} More`}
             </button>
           </Show>
+        </Show>
+        <Show when={s().checks.mode !== "none" && s().checks.mode !== "unset"}>
+          <Row
+            label="Reuse passes from identical code"
+            end={<Tag source="project" />}
+            hint={draft().reuse ? "A test file that already passed on exactly this code isn't run again; a few are re-checked at each landing. Reruns and releases always run in full." : "Every check runs in full."}
+          >
+            <label class="toggle">
+              <input type="checkbox" checked={draft().reuse} disabled={locked()} onChange={(e) => setDraft({ ...draft(), reuse: e.currentTarget.checked })} />
+              <span class="toggle-box" aria-hidden="true" />
+              <span>{draft().reuse ? "On" : "Off"}</span>
+            </label>
+          </Row>
         </Show>
         <Row label="Longest a check runs" end={<Tag source="sova" />}>
           {s().fixed.checkMaxMin} min

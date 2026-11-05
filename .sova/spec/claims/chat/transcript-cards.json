@@ -243,6 +243,7 @@
       "src/lib/card-box.test.ts",
       "src/lib/card-box-css.ts",
       "src/lib/card-box-css.test.ts",
+      "src/lib/card-view-box-style.test.ts",
       "server/card-box.integration.test.ts",
       "src/components/CardView.tsx",
       "src/components/TranscriptCard.tsx",
@@ -253,12 +254,13 @@
     "kind": "behavior",
     "authority": "accepted",
     "requires": [
-      "§chat.transcript/rendering"
+      "§chat.transcript/rendering",
+      "§app.updates/reload-note"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:25Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "user",
+      "at": "2026-11-03T20:00Z",
+      "source": "pi-session:f7abf7a7-3c8a-4801-a5d7-0e26b8fc21c6#019641ba"
     },
     "evidence": "verified",
     "code": [
@@ -273,19 +275,23 @@
       "src/lib/transcript-kinds-dom.snapshot.json",
       "src/lib/transcript-live-dom.test.ts",
       "src/lib/transcript-live-dom.snapshot.json",
-      "src/lib/work-run-handover.test.ts"
+      "src/lib/work-run-handover.test.ts",
+      "src/lib/module-load.ts",
+      "src/lib/module-load.test.ts",
+      "server/merge-card-page.integration.test.ts"
     ]
   },
   "§chat.transcript-cards/trust": {
     "kind": "behavior",
     "authority": "accepted",
     "requires": [
-      "§app.commands/catalogue"
+      "§app.commands/catalogue",
+      "§app.access/your-click"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:25Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     },
     "evidence": "verified",
     "code": [

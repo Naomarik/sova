@@ -7,10 +7,12 @@
 //   - a state mirror (`ChatStateMirror`) the server reads synchronously instead of asking the chat;
 //   - lifecycle events (`ChatLifecycleEvent`) numbered per runtime, for reconnecting `since` a seq;
 //   - browser frames (`ChatClientFrame`), passed through without the server parsing a reply.
+import type { McpNote } from "./mcp";
 import type { ModeState } from "../pi-config/extensions/mode/state";
 import type { SandboxState } from "../pi-config/extensions/sandbox/state";
 import type { HEntry } from "./harness-history";
 import type { HarnessResources, HarnessToolInfo, ImageInput } from "./harness-session";
+import type { ClickContext } from "./overseer-card";
 import type { PrepareRule } from "./harness-tools";
 import type { ProfileEntryData } from "./profiles";
 import type {
@@ -85,6 +87,8 @@ export interface ChatLoadoutChoice {
   v: 1;
   offContext: string[];
   offSkills: string[];
+  offMcp?: string[];
+  onMcp?: string[];
 }
 
 /** A mode switch, merged into the chat's own mode by the chat (server/mode-state.ts ModePatch). */
@@ -329,6 +333,7 @@ export interface ChatMethods {
   appendNote: { args: { noteType: string; text: string; details?: unknown }; result: boolean };
   writeProfile: { args: { data: ProfileEntryData }; result: null };
   writeLoadout: { args: { data: ChatLoadoutChoice }; result: null };
+  noteMcp: { args: { note: McpNote }; result: null };
   flushDeferredAppends: { args: Record<string, never>; result: null };
   /** Run the write guard now: true when another writer touched the file. */
   checkWrites: { args: Record<string, never>; result: boolean };
@@ -343,12 +348,21 @@ export interface ChatMethods {
   interruptKeepingQueued: { args: Record<string, never>; result: number };
   branch: { args: Record<string, never>; result: HEntry[] };
   entries: { args: Record<string, never>; result: HEntry[] };
+  /** Only the state entries under these keys, of the branch and of the whole file: a read that stays
+      small however long the conversation is, where `branch` and `entries` carry all of it. */
+  stateEntries: { args: { keys: string[] }; result: { branch: HEntry[]; all: HEntry[] } };
+  /** What a click on `card` needs of the branch (shared/overseer-card.ts clickContext): null when the card isn't open. */
+  clickContext: { args: { card: string }; result: ClickContext | null };
   /** The data of every record of these registered kinds the file holds (any branch), kind by kind,
       each oldest first. */
   fileState: { args: { kinds: string[] }; result: unknown[] };
   activeTools: { args: Record<string, never>; result: string[] };
   setActiveTools: { args: { names: string[] }; result: null };
   declaredTools: { args: Record<string, never>; result: HarnessToolInfo[] };
+  /** The system prompt the next request sends, by section (HarnessSession.promptSections). */
+  promptSections: { args: Record<string, never>; result: Record<string, string> };
+  /** A special chat's loader options as its spec gave them; null for any other chat. */
+  specialLoader: { args: Record<string, never>; result: SpecialSpec["loader"] | null };
   /** What the runtime loaded for its prompt, the unfiltered lists where switches left rows out. */
   resources: { args: Record<string, never>; result: HarnessResources };
   sandboxInfo: { args: Record<string, never>; result: SandboxInfo | null };
@@ -398,6 +412,8 @@ export type ChatReply<M extends ChatMethod = ChatMethod> =
 /** A browser on `/ws/chat`, as the chat sees it: which wire it reads and how it wants the transcript. */
 export interface ChatClientInfo {
   clientId: string;
+  /** Not the user's socket (ChatClient.notUser): what it sends runs, and no turn it opens is attended. */
+  notUser?: true;
   wire?: 2;
   tail?: boolean;
   pull?: { prefetch: boolean };

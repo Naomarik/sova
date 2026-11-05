@@ -1,0 +1,21 @@
+{
+  "on": true,
+  "maxSizeGB": 50,
+  "scratchDays": 7,
+  "toolCacheDays": 30,
+  "toolCaches": [
+    "pnpm",
+    "ms-playwright",
+    "pip",
+    "uv",
+    "go-build",
+    "node-gyp",
+    "yarn",
+    "deno",
+    "typescript",
+    "puppeteer",
+    "mise",
+    "huggingface",
+    "sova-voice-lab"
+  ]
+}

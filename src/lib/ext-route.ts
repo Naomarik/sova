@@ -14,7 +14,7 @@ const EXT_HASH_RE = /^#\/[A-Za-z0-9._~:%/-]*$/;
 
 export interface ExtRoute {
   id: string;
-  /** The extension's own route without its `#/` (`row/dataico:dataico-wt1`), or null for its home. */
+  /** The extension's own route without its `#/` (`row/acme:acme-wt1`), or null for its home. */
   sub: string | null;
 }
 

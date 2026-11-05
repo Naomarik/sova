@@ -46,6 +46,22 @@ test("a save sends only what the user changed: an absent push stays absent", () 
   assert.deepEqual(changesOf({ ...d, push: false }, s, true), { push: false });
 });
 
+test("Reuse passes from identical code: on unless the file says false; a save sends only a change of it", () => {
+  const s = settings();
+  const d = toProjectDraft(s, true);
+  assert.equal(d.reuse, true, "absent reads On");
+  assert.equal(changesOf({ ...d, reuse: true }, s, true), null);
+  const ch = changesOf({ ...d, reuse: false }, s, true)!;
+  assert.deepEqual(ch, { reuse: false });
+  assert.deepEqual(changeLines(ch, s), ["Reuse passes from identical code: off"]);
+  const off = { ...s, reuse: false };
+  assert.equal(toProjectDraft(off, true).reuse, false);
+  assert.deepEqual(changesOf({ ...toProjectDraft(off, true), reuse: true }, off, true), { reuse: true });
+  // A draft staged before the switch existed (no reuse) changes nothing.
+  const { reuse: _drop, ...old } = d;
+  assert.equal(changesOf(old as typeof d, s, true), null);
+});
+
 test("time limits are whole minutes up to the cap", () => {
   assert.equal(parseMinutes("25", 30), 25);
   for (const bad of ["0", "31", "2.5", "", "x", "-3"]) assert.equal(parseMinutes(bad, 30), null, bad);
@@ -116,10 +132,18 @@ test("a save says where it went: the target, waiting, a PR or MR opened, or a br
   const o = { target: "master", pushes: true, gitlab: false };
   assert.deepEqual(saveResultWords({ state: "saved", commit: "1a2b3c4d5e", pushed: false }, o), { text: "Saved to master as 1a2b3c4; pushed with the next landing." });
   assert.deepEqual(saveResultWords({ state: "waiting" }, o), { text: "Saves when the current branch finishes." });
+  assert.deepEqual(saveResultWords({ state: "waiting", release: "release v0.4.0" }, o), { text: "Saves once release v0.4.0 is published or abandoned." });
   const req = { state: "requested" as const, commit: "c", branch: "sova/settings-1", url: "https://example.invalid/pr/12", number: 12 };
   assert.deepEqual(saveResultWords(req, o), { text: "Opened PR #12 for the settings change. It applies once it's merged into master.", link: { href: req.url, label: "Open PR" } });
   assert.equal(saveResultWords(req, { ...o, gitlab: true }).text, "Opened MR !12 for the settings change. It applies once it's merged into master.");
   assert.equal(saveResultWords({ state: "pushed", commit: "c", branch: "sova/settings-1" }, o).text, "Pushed the settings change as sova/settings-1. It applies once it's merged into master.");
+});
+
+test("a waiting save's banner names the open release while one holds it; without one, the branch; failed says so", async () => {
+  const { pendingSaveTitle } = await import("./merge-queue-settings");
+  assert.equal(pendingSaveTitle({ release: "release v0.4.0" }, false), "Saves once release v0.4.0 is published or abandoned.");
+  assert.equal(pendingSaveTitle({}, false), "Saves when the current branch finishes.");
+  assert.equal(pendingSaveTitle({}, true), "The waiting save couldn't be applied.");
 });
 
 test("the Merge thread's Fresh chat row: one endless thread with memory, never a 24 h age; the half-context net and Start Fresh", () => {

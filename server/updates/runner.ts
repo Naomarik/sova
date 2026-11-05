@@ -18,7 +18,10 @@ import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync,
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { UpdateJob, UpdateSource, UpdateStep } from "../../shared/protocol";
-import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
+
+/** The flags that keep the job's own git fetch and merge from starting git's background cleanup: a copy of
+    server/git-no-background.ts's, since this file runs alone from the job's directory (a test holds them equal). */
+export const NO_BACKGROUND_CLEANUP: readonly string[] = ["-c", "maintenance.auto=false", "-c", "gc.auto=0"];
 
 export interface UpgradePlan {
   id: string;

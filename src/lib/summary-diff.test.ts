@@ -53,6 +53,7 @@ const full = (): Required<SessionSummary> => ({
   profile: { id: "reviewer", label: "Read-only reviewer", icon: "eye", source: "sova" },
   queueChat: { role: "reviewer" },
   readiness: { trees: [{ path: "/w/t", branch: "feat/x", state: "ready", why: "checks passed" }], badge: "ready", branch: "feat/x", since: 12 },
+  branches: [{ path: "/w/t", branch: "feat/x", status: "active", exists: true, queue: { state: "queued", commit: "abc", position: 1 }, mergeServed: true }],
 });
 
 /** A different value of the same shape, reaching inside objects. */

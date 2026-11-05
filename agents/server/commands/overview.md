@@ -28,8 +28,8 @@ list, or an extension, by default, without anyone re-implementing it. Spec: `§a
   command line exits 5 then (below). A chat that never opens, or goes away before the frame went
   over, answers 503 `not-sent` ("The chat did not open; nothing was sent."), exit 1. A session a terminal holds is refused before any chat is asked;
   Stop and Reload Now on a chat that isn't open start nothing; an action stamps no seen mark.
-- `docs/commands.md`: the generated inventory of every route (catalogue, not-a-command class, or a
-  pending row that may only shrink); `node scripts/commands-inventory.mjs` regenerates it and
+- `docs/commands.md`: the generated inventory of every route (catalogue, not-a-command class, the
+  areas left as is among them, or a pending row that may only shrink); `node scripts/commands-inventory.mjs` regenerates it and
   `--check` fails when it is stale (`server/commands-inventory.test.ts`).
 - `shared/commands-ext.ts`: an extension's `commands` manifest key, as the command line reads it.
 - `shared/commands-watch.ts`: `sova watch`'s lines: from the event stream (`/ws/events`,
@@ -91,10 +91,11 @@ list, or an extension, by default, without anyone re-implementing it. Spec: `§a
 
 | Rule | Held by |
 | --- | --- |
-| A new user-visible action gets a catalogue entry by default, in the same change | review, and this guide's `watches` |
+| A new user-visible action gets a catalogue entry by default, in the same change, outside the areas left as is (below) | review, this guide's `watches`, and `server/commands-inventory.test.ts`: a new route that is in no class arrives pending and fails |
+| The areas left as is by choice are one list, `OPTED_OUT` in `server/commands-inventory/scan.ts`: none of their routes is pending, none is in a second class, an entry on one still makes it a command; a route in a core area still counts as pending growth | `server/commands-inventory.test.ts` ("the areas left as is, by choice" and the real app's "no route in an area left as is is pending") |
 | An entry points at the existing route and never re-implements it: running it is the web app's own request | `server/commands-catalog.test.ts` (every route registered; an entry's request gets the route's own answer, refusals word for word) |
 | Additions only add: nothing intercepts, vetoes or rewrites one of Sova's actions | the catalogue holds no handler, only data; `src/lib/reply-slot.test.ts` (a chip can't take one of Sova's action names) |
-| Agents get an action only when it is opened to them on purpose | nothing in the catalogue becomes an agent tool by being listed; a tool is its own change, reviewed as one |
+| Agents get an action only when it is opened to them on purpose. The one opening of extension commands is the global Overseer's `sova_ext` (`server/overseer-ext-tools.ts`, §app.overseer/extension-commands): only a command its extension marks `overseer: true`, while that extension is running, through the proxy, in turns the user started (no per-command switch: the user stops it by turning the extension off; the About panel, `GET /api/overseer/abilities`, reads the same list, `server/overseer-abilities.ts`) | nothing in the catalogue becomes an agent tool by being listed; a tool is its own change, reviewed as one. `sova_ext`: `server/overseer-ext-tools.test.ts`, `server/overseer-runtime.test.ts` |
 | An entry's `meshNeed` is exactly what `server/mesh/access.ts` `classifyRequest` gives its route | `server/commands-catalog.test.ts` |
 | No entry points at the peer, auth, share-page or extension-proxy routes (`/api/peer`, `/peer`, `/api/auth`, `/h`, `/i`, `/s`, `/ext`) | `shared/commands-catalog.test.ts` |
 | Ids are append-only; core ids never start with `ext.` | `shared/commands-catalog.test.ts` against `shared/commands-ids.json` |
@@ -130,7 +131,9 @@ When a rule changes, change its test in the same change; a rule without a test i
   profile and schedule approvals, logins, keys, decisions settings, mesh grants, an offers
   file's run-button approval (`POST /api/projects/:pid/offers/approve`) and applying a project's
   Settings change card or landing its folder's settings edits (`POST /api/projects/:pid/settings/apply`,
-  §app.project-overseer/settings), the inventory's Trust grants class. The project overseer's own settings
+  §app.project-overseer/settings), the inventory's Trust grants class. Applying a Sova-wide card
+  (`POST /api/settings/apply`, §chat.create-mode/settings-cards) is in the settings area left as is,
+  page-only by its own guard. The project overseer's own settings
   PATCH is a command (`project.overseer.settings.set`): it is the page's and a script's plain write, and what
   the overseer widens reaches it only through a card the operator applies. A plain preference
   a person sets (`settings.align.set`, the Overseer's own notes `overseer.notes.set`) is a command.
@@ -139,6 +142,44 @@ When a rule changes, change its test in the same change; a rule without a test i
   prints live capability links (`project.preview.list`); revoking one (`project.preview.off`) is a command.
 - Background sweeps and internal plumbing (a request the page makes to draw itself, a hook, a
   helper). An entry is something a person does.
+- In the core areas these are classed one route at a time, by exact `METHOD /path` lists in
+  `server/commands-inventory/scan.ts`, never a prefix, so a new route beside them still arrives
+  pending: `page-plumbing` (`PAGE_PLUMBING`: attachments and uploads, a tool row's contents, a
+  link's thread and seen mark, the remote folder picker, the explanations feed, the sessions
+  folder's name), `chat-start` (`CHAT_START`: the new chat's setup card and profile pick),
+  `capability-links` (`CAPABILITY_LINKS`: a project's preview links) and `grants` (`GRANTS`:
+  schedule and draft-spec approval, schedule revoke, the Overseer's permits and their revoke).
+  Any chat can run catalogue actions with the operator's token, so an
+  approval or a grant is never one.
+- No entry sets an overseer working: of the Overseer and the project overseers the catalogue reads
+  them, keeps their lists and notes, and sets a project overseer's settings. Routes that start,
+  message, run, code or clear an overseer, or turn its memory on, spend model time: they stay pending
+  ("not yet"), never a class, so adding one is a decision of its own.
+- The other core routes left pending, on purpose, unclassified: `GET /api/sessions/by-id/:id` runs
+  the same `summaryById` as `session.get` (a duplicate); `POST /api/projects/:pid/services/:verb`
+  runs the same verbs as `project.verb.*`. Undecided: `GET /api/diff/patch` (one file's patch, maybe
+  only the viewer's page content); `GET /api/memory` and `/api/memory/open` (the Session tab's
+  read-only Memory section, not a picker); `GET /api/sessions/git` (the setup card's repository
+  read); `POST /api/sessions/connect` (starts a connection chat); `POST /api/subagents` (switches a
+  held chat's subagent profile); `GET`/`DELETE /api/projects/:pid/files/:id` (a download, and a
+  delete no one asked for yet); `GET /api/projects/:pid/runtime` and `POST …/runtime/merge`;
+  `POST /api/projects/:pid/held/:holdId/cancel` (cancels a held act, releases nothing);
+  `POST …/draft-specs/:sid/build` and `POST …/verbs/onboard` (both start model work).
+- **The areas left as is, by choice** (`§app.commands/opted-out`): every route under `/api/` in
+  `OPTED_OUT` (`server/commands-inventory/scan.ts`): orgs, outreach, mesh, session-shares,
+  public-links, previews, shares-overview, tours, voice, settings, claude, profiles, push, updates,
+  themes, visitor-logging, baton, monitor, provider-limits, services. The user chose not to make
+  them scriptable: the inventory classes them `opted-out`, never pending, and a new route there
+  needs no entry. An entry there still wins (the `settings.*` reads, `settings.align.set`,
+  `push.test`, `project.preview.off`, `org.owner.request.*` stay commands). Adding an area is the
+  user's decision, never a way past the pending check.
+- The core areas are not on that list and keep the default: sessions, projects, the Overseer, to-dos
+  and ideas, and chats. Their routes not yet converted stay pending ("not yet"), and a new
+  user-visible action there gets an entry.
+- **Taking an area back**: remove its name from `OPTED_OUT`. Its routes not yet converted turn
+  pending, and `pendingGrowth` fails by design, so the same change gives them entries, or lists each
+  one still left as is in `OPTED_OUT` as a single `"METHOD /path"`. Then regenerate the baseline and
+  `docs/commands.md`, and update `§app.commands/opted-out` through a spec draft.
 
 ## Adding an entry
 
@@ -169,7 +210,9 @@ of retired ids that must stay listed.
 
 | You change | Also |
 | --- | --- |
-| add or change a user-visible action (a route, a verb) | its catalogue entry and `shared/commands-ids.json` |
+| add or change a user-visible action (a route, a verb) | its catalogue entry and `shared/commands-ids.json`; none for a route in an area on `OPTED_OUT` |
+| add a route anywhere | the baseline (`SOVA_INVENTORY_OUT=$PWD/server/commands-inventory/baseline.json pnpm test -- server/commands-inventory.test.ts`) and `node scripts/commands-inventory.mjs`; never by hand |
+| `OPTED_OUT` in `server/commands-inventory/scan.ts` (only on the user's word, or to take an area back) | the baseline, `docs/commands.md`, "What is not a command" above, `§app.commands/opted-out` |
 | a route an entry points at (path, method, body keys) | the entry; the catalogue tests tell you which |
 | `shared/project-contract.ts` `VERBS` / `DEPLOY_VERBS` | the new `project.verb.*` id in `shared/commands-ids.json` |
 | `shared/project-contract.ts` `VERB_PARAMS` / `VERB_FLAGS` (a verb's params) | both the tools (`server/project-services/tools.ts`) and the catalogue change: a tool wording change regenerates `server/agent-loadouts.snapshot.json` and reviews it as one; a catalogue param change updates the hash in `server/project-verb-params.test.ts`; a new flag goes into `scripts/sova-project.mjs` `VALUE`/`FLAG` |

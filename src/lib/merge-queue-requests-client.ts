@@ -32,11 +32,14 @@ async function call<T>(url: string, method: string, body?: unknown): Promise<Ans
 
 const P = (project: string) => `/api/merge-queue/projects/${encodeURIComponent(project)}`;
 
-/** The project-file save answers as the settings save does: saved with its commit, or waiting for the current branch. */
-export type LandHowSaved = { state?: "saved" | "waiting"; commit?: string; pushed?: boolean };
+/** The project-file save answers as the settings save does: saved with its commit, or waiting for the current branch
+    or for the release holding the queue (`release`, as shown). */
+export type LandHowSaved = { state?: "saved" | "waiting"; commit?: string; pushed?: boolean; release?: string };
 
 export const saveLandHow = (project: string, how: LandHow, where: "project" | "computer") => call<LandHowSaved>(`${P(project)}/land-how`, "PUT", { how, where, confirm: true });
 export const clearLandHowOverride = (project: string) => call(`${P(project)}/land-how/override`, "DELETE");
 export const updateLocalMain = (project: string) => call<{ kind?: "updated" | "current"; head?: string }>(`${P(project)}/update-local-main`, "POST", {});
 export const publishRequest = (entry: string, text: { title: string; body: string; draft: boolean }) =>
   call(`/api/merge-queue/entries/${encodeURIComponent(entry)}/publish`, "POST", text);
+/** Try Again on a branch summary that failed: the same commit is written again. */
+export const retryBranchSummary = (project: string, branch: string, commit: string) => call<{ ok?: true; state?: "writing" }>(`${P(project)}/branch-summary`, "POST", { branch, commit });

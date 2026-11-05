@@ -21,6 +21,8 @@ const handle =
       if (err instanceof OrgError) return c.json({ error: err.message }, err.status);
       if (err instanceof SettingsRefusal) return c.json({ error: err.message }, 400);
       if (err instanceof SettingsGitError) return c.json({ error: `Git: ${err.message}` }, 409);
+      // A merge queue card's Apply is a Save: its refusals (dirty, busy, not served) in the queue's own words.
+      if (err instanceof Error && typeof (err as { code?: unknown }).code === "string") return c.json({ error: err.message, code: (err as unknown as { code: string }).code }, 409);
       throw err;
     }
   };
@@ -76,7 +78,9 @@ export function registerProjectSettingsRoutes(app: Hono<any>): void {
       const b = (await c.req.json().catch(() => ({}))) as Record<string, unknown> | null;
       const fingerprint = b && typeof b === "object" ? b.fingerprint : undefined;
       if (fingerprint !== undefined && typeof fingerprint !== "string") throw new OrgError("fingerprint must be the text the card showed.");
-      await withdrawCard(id, c.req.param("card") ?? "", { operator: true, fingerprint });
+      const cancelSave = b && typeof b === "object" ? b.cancelSave : undefined;
+      if (cancelSave !== undefined && typeof cancelSave !== "boolean") throw new OrgError("cancelSave must be true or false.");
+      await withdrawCard(id, c.req.param("card") ?? "", { operator: true, fingerprint, cancelSave: cancelSave === true });
       return c.json(await settingsInfo(id), 200, NO_STORE);
     }),
   );

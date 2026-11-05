@@ -1,0 +1,519 @@
+{
+  "§app.release/abandon": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.release/checks",
+      "§app.merge-queue/land"
+    ],
+    "code": [
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/release-git.ts",
+      "server/merge-queue/store.ts",
+      "server/merge-queue/checks.ts",
+      "server/merge-queue/run.ts",
+      "server/merge-queue/contract.ts",
+      "server/merge-queue/wire.ts",
+      "shared/merge-queue.ts",
+      "server/project-services/release.ts",
+      "server/project-services/release-wire.ts",
+      "server/project-services/release.test.ts",
+      "server/project-services/release-gates.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
+  },
+  "§app.release/callers": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.project-services/callers",
+      "§app.release/verbs",
+      "§app.release/power"
+    ],
+    "code": [
+      "server/project-services/release.ts",
+      "server/project-services/routes.ts",
+      "server/project-services/tools.ts",
+      "server/project-overseer-tools.ts",
+      "server/project-assistant-tools.ts",
+      "server/project-services/release.test.ts",
+      "server/project-services/release-e2e.integration.test.ts",
+      "server/project-services/release-power.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+    }
+  },
+  "§app.release/checks": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/run",
+      "§app.merge-queue/push",
+      "§app.release/steps",
+      "§app.merge-queue/settings-save",
+      "§app.merge-queue/requests",
+      "§app.merge-queue/strategies",
+      "§app.merge-queue/setup"
+    ],
+    "code": [
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/release-git.ts",
+      "server/merge-queue/store.ts",
+      "server/merge-queue/checks.ts",
+      "server/merge-queue/run.ts",
+      "server/merge-queue/contract.ts",
+      "server/merge-queue/wire.ts",
+      "shared/merge-queue.ts",
+      "server/project-services/release.ts",
+      "server/project-services/release-wire.ts",
+      "server/project-services/release.test.ts",
+      "server/project-services/release-publish.integration.test.ts",
+      "server/project-services/release-gates.integration.test.ts",
+      "shared/merge-queue-settings.ts",
+      "src/lib/merge-queue-settings.ts",
+      "src/lib/merge-queue-settings.test.ts",
+      "src/lib/merge-queue-requests.ts",
+      "src/lib/merge-queue-requests.test.ts",
+      "src/components/settings/MergeQueueSettings.tsx",
+      "src/components/settings/MergeQueueLandHow.tsx",
+      "server/merge-queue/run.integration.test.ts",
+      "server/test-cache-guard.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T03:58Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+    }
+  },
+  "§app.release/deploy": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.project-services/deploy-plan",
+      "§app.project-runtime/deploy-panel",
+      "§app.release/publish"
+    ],
+    "code": [
+      "server/project-services/deploy.ts",
+      "shared/project-contract.ts",
+      "src/components/ProjectDeployPanel.tsx",
+      "src/lib/releases.ts",
+      "src/lib/releases-client.ts",
+      "server/project-services/release-deploy.integration.test.ts",
+      "server/project-releases-ui.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
+  },
+  "§app.release/maker": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.project-runtime/verb-playbooks",
+      "§app.project-runtime/deploy-playbook",
+      "§app.release/settings",
+      "§app.release/manifest"
+    ],
+    "code": [
+      "playbooks/release-maker/PLAYBOOK.md",
+      "playbooks/release-maker/references/release.md",
+      "playbooks/release-maker/scripts/release-maker.mjs",
+      "playbooks/project-verbs/references/contract.md",
+      "playbooks/project-verbs/scripts/project-verbs.mjs",
+      "server/projects/release-proposal.ts",
+      "server/playbooks.ts",
+      "server/projects/onboard.ts",
+      "server/release-playbooks.test.ts",
+      "server/project-services/release-maker.integration.test.ts",
+      "src/components/ReleasesTab.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
+  },
+  "§app.release/manifest": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.release/settings"
+    ],
+    "code": [
+      "shared/release.ts",
+      "shared/project-contract-release.test.ts",
+      "server/project-services/release.ts",
+      "server/release-playbooks.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
+  },
+  "§app.release/playbook": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.playbooks/bundles",
+      "§app.release/steps"
+    ],
+    "code": [
+      "playbooks/release/PLAYBOOK.md",
+      "playbooks/release/scripts/release.mjs",
+      "server/release-playbooks.test.ts",
+      "server/playbooks-release.integration.test.ts",
+      "server/sova-release-playbook.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+    }
+  },
+  "§app.release/power": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.project-overseer/autonomy-levels",
+      "§app.project-overseer/holds",
+      "§app.release/publish"
+    ],
+    "code": [
+      "shared/powers.ts",
+      "statecharts/src/sova/statecharts/proj.cljc",
+      "statecharts/src/sova/statecharts/rules/powers.cljc",
+      "statecharts/EVENTS.md",
+      "statecharts/STATECHARTS.md",
+      "server/vendor/statecharts.js",
+      "server/project-overseer.ts",
+      "server/project-overseer-tools.ts",
+      "server/project-overseer-tools.test.ts",
+      "server/project-services/release.ts",
+      "server/project-services/release-power.integration.test.ts",
+      "server/project-services/release-chain.integration.test.ts",
+      "src/components/ReleasesTab.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
+  },
+  "§app.release/publish": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.release/checks",
+      "§app.merge-queue/push",
+      "§app.merge-queue/strategies",
+      "§app.merge-queue/settings-save"
+    ],
+    "code": [
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/release-git.ts",
+      "server/merge-queue/store.ts",
+      "server/merge-queue/checks.ts",
+      "server/merge-queue/run.ts",
+      "server/merge-queue/contract.ts",
+      "server/merge-queue/wire.ts",
+      "shared/merge-queue.ts",
+      "server/project-services/release.ts",
+      "server/project-services/release-wire.ts",
+      "server/project-services/release.test.ts",
+      "server/project-services/release-publish.integration.test.ts",
+      "server/project-services/release-local.integration.test.ts",
+      "server/project-services/release-gates.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
+  },
+  "§app.release/quiet": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.overseer/attention-digest",
+      "§app.session-list/needs-you",
+      "§app.release/callers"
+    ],
+    "code": [
+      "server/project-services/release.ts",
+      "server/project-services/release-wire.ts",
+      "server/project-services/release.test.ts",
+      "shared/protocol.ts",
+      "server/overseer.ts",
+      "src/lib/needs-you.ts",
+      "src/lib/needs-you.test.ts",
+      "src/components/Sidebar.tsx",
+      "src/lib/org-region.ts",
+      "src/lib/org-region.test.ts",
+      "server/project-services/release-gates.integration.test.ts",
+      "src/lib/needs-you-row.ts",
+      "src/lib/needs-you-row.test.ts",
+      "server/needs-you-rows-ui.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+    }
+  },
+  "§app.release/record": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.release/manifest"
+    ],
+    "code": [
+      "shared/release.ts",
+      "server/project-services/release.ts",
+      "server/project-services/release-wire.ts",
+      "server/project-services/release.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+    }
+  },
+  "§app.release/settings": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.project-services/contract",
+      "§app.merge-queue/push",
+      "§app.merge-queue/checks"
+    ],
+    "code": [
+      "shared/release.ts",
+      "shared/project-contract.ts",
+      "shared/project-contract-release.test.ts",
+      "server/project-services/def-hash.ts",
+      "shared/project-contract.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
+  },
+  "§app.release/sova": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.release/playbook",
+      "§app.release/settings"
+    ],
+    "code": [
+      ".sova/playbooks/release/PLAYBOOK.md",
+      ".sova/playbooks/release/release.json",
+      ".sova/playbooks/release/scripts/sova-release.mjs",
+      ".sova/project.json",
+      ".sova/playbooks/release/references/checks.md",
+      ".sova/playbooks/release/references/docs.md",
+      "server/sova-release-playbook.test.ts",
+      "server/sova-release-playbook.integration.test.ts",
+      "site/README.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T22:57Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
+    }
+  },
+  "§app.release/start": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.release/settings",
+      "§app.release/checks",
+      "§app.release/record",
+      "§app.merge-queue/strategies"
+    ],
+    "code": [
+      "server/project-services/release.ts",
+      "server/project-services/release-wire.ts",
+      "server/project-services/release.test.ts",
+      "profiles/system/release-thread.json",
+      "server/session-profiles.test.ts",
+      "server/merge-queue/thread.ts",
+      "server/project-services/release-publish.integration.test.ts",
+      "server/project-services/release-e2e.integration.test.ts",
+      "server/merge-queue/queue.ts",
+      "shared/release.ts",
+      "server/project-services/release-power.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+    }
+  },
+  "§app.release/steps": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.release/record",
+      "§app.release/manifest"
+    ],
+    "code": [
+      "server/project-services/release.ts",
+      "server/project-services/release-wire.ts",
+      "server/project-services/release.test.ts",
+      "shared/release.ts",
+      "server/project-services/release-publish.integration.test.ts",
+      "server/project-services/release-gates.integration.test.ts",
+      "server/project-services/release-local.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
+  },
+  "§app.release/tab": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.organizations/project-page",
+      "§app.release/verbs",
+      "§app.release/maker"
+    ],
+    "code": [
+      "src/components/ReleasesTab.tsx",
+      "src/lib/releases.ts",
+      "src/lib/releases.test.ts",
+      "src/lib/releases-client.ts",
+      "src/lib/api.ts",
+      "src/lib/session-feed.ts",
+      "src/components/ProjectPage.tsx",
+      "src/lib/projects-route.ts",
+      "src/lib/projects-route.test.ts",
+      "src/projects.css",
+      "server/project-releases-ui.integration.test.ts",
+      "shared/protocol.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+    }
+  },
+  "§app.release/verbs": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.project-services/result",
+      "§app.project-services/callers",
+      "§app/commands"
+    ],
+    "code": [
+      "shared/release.ts",
+      "shared/project-contract.ts",
+      "shared/project-contract-release.test.ts",
+      "server/project-services/release.ts",
+      "server/project-services/release-wire.ts",
+      "server/project-services/release.test.ts",
+      "server/project-services/engine.ts",
+      "server/project-services/routes.ts",
+      "server/project-services/tools.ts",
+      "scripts/sova-project.mjs",
+      "shared/commands/projects.ts",
+      "shared/commands-ids.json",
+      "shared/commands-catalog.test.ts",
+      "server/project-verb-params.test.ts",
+      "src/card-toolkit/commands.gen.ts",
+      "docs/commands.md",
+      "server/commands-inventory/baseline.json",
+      "scripts/sova.mjs",
+      "server/project-services/release-e2e.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-04T20:51Z",
+      "source": "pi-session:01a1a84e-e311-72d2-b9d3-59eb21917ab5#6c08d14e"
+    }
+  },
+  "§app.release/withdraw": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.release/publish",
+      "§app.updates/check"
+    ],
+    "code": [
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/release-git.ts",
+      "server/merge-queue/store.ts",
+      "server/merge-queue/checks.ts",
+      "server/merge-queue/run.ts",
+      "server/merge-queue/contract.ts",
+      "server/merge-queue/wire.ts",
+      "shared/merge-queue.ts",
+      "server/project-services/release.ts",
+      "server/project-services/release-wire.ts",
+      "server/project-services/release.test.ts",
+      "server/project-services/release-withdraw.integration.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:13Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
+  },
+  "§app/release": {
+    "kind": "surface",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app/merge-queue",
+      "§app/project-services",
+      "§app.organizations/project-page"
+    ],
+    "code": [
+      "shared/release.ts",
+      "shared/project-contract.ts",
+      "shared/project-contract-release.test.ts",
+      "server/project-services/release.ts",
+      "server/project-services/release-wire.ts",
+      "server/project-services/release.test.ts",
+      "src/components/ReleasesTab.tsx"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:13Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
+    }
+  }
+}

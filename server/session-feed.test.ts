@@ -294,3 +294,55 @@ test("cleanRows: the same array while clean, so the digest's memo can match it",
   assert.equal(feed.cleanRows(), a);
   off();
 });
+
+test("with no stamps to tell an early list by, a comparison never asks for a shared one", async () => {
+  const asked: boolean[] = [];
+  const feed = new SessionFeed({ list: async ({ join }) => (asked.push(join), []), debounceMs: 0, minGapMs: 0, intervalMs: 1_000_000 });
+  let snapshot = false;
+  const off = feed.add((m) => (snapshot ||= m.type === "marks"));
+  for (const end = Date.now() + 10_000; !snapshot; await new Promise((r) => setTimeout(r, 5))) assert.ok(Date.now() < end, "timed out");
+  feed.nudge(0);
+  for (const end = Date.now() + 10_000; asked.length < 2; await new Promise((r) => setTimeout(r, 5))) assert.ok(Date.now() < end, "timed out");
+  assert.deepEqual(asked, [false, false]);
+  off();
+});
+
+test("a list that started before the last signal is compared again, and is never clean", async () => {
+  let started = 5;
+  let listed = 6;
+  const asked: boolean[] = [];
+  let cleanBefore: unknown = "unread";
+  const feed = new SessionFeed({
+    list: async ({ join }) => {
+      asked.push(join);
+      // The follow-up the feed owes, with no second signal, reads a build after the signal.
+      if (asked.length === 3) {
+        cleanBefore = feed.cleanRows();
+        listed = 7;
+      }
+      return [row(`r${asked.length}`)];
+    },
+    stamps: { now: () => started, listed: () => listed },
+    debounceMs: 0,
+    minGapMs: 0,
+    intervalMs: 1_000_000,
+  });
+  const until = async (ok: () => boolean) => {
+    for (const end = Date.now() + 10_000; !ok(); await new Promise((r) => setTimeout(r, 5))) assert.ok(Date.now() < end, "timed out");
+  };
+  let snapshot = false;
+  const off = feed.add((m) => (snapshot ||= m.type === "marks"));
+  await until(() => snapshot);
+  assert.deepEqual(asked, [false], "a listener's snapshot joins nothing");
+  assert.notEqual(feed.cleanRows(), null);
+
+  // A signal with no build started since it: the list the re-diff reads started before it.
+  started = 6;
+  feed.nudge(0);
+  await until(() => asked.length === 3);
+  await feed.idle();
+  assert.equal(cleanBefore, null, "that list doesn't hold the signal");
+  assert.deepEqual(asked, [false, true, true]);
+  assert.notEqual(feed.cleanRows(), null, "a list after the signal is clean");
+  off();
+});

@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { claudeExecutable } from "../pi-config/extensions/claude-code/claude-executable.ts";
 import { producerId, setChildCounts } from "../pi-config/extensions/llm-inflight/tracker.ts";
 import { type ChatRuntimeMirror, type ChatRuntimeSettings, DEFAULT_RUNTIME_SETTINGS, type ExitCause, type FrameOf } from "../shared/chat-runtime-wire";
-import { sovaToken } from "./auth";
+import { chatServerUrl, sovaToken } from "./auth";
 import { callerKeys as serverCallerKeys, type CallerKeys } from "./caller-keys";
 import {
   acquireChatHandle,
@@ -213,6 +213,7 @@ export class ChatHostRouter {
       const id = this.codeFor.get(c.chatId) ?? build;
       const code = id === build ? currentCode : generationDir(id);
       const bun = this.bun() ?? process.execPath;
+      const serverUrl = chatServerUrl();
       return {
         argv: [bun, join(code, "server", "chat-runtime", "main.ts")],
         workdir: code,
@@ -224,7 +225,7 @@ export class ChatHostRouter {
           agentDir: w?.spec.agentDir ?? agentRoot(),
           extra: {
             ...withoutLoginContext(w?.spec.env),
-            ...(w?.spec.agentDir ? { SOVA_CHAT_STATE_ROOT: stateRoot() } : {}),
+            SOVA_CHAT_STATE_ROOT: stateRoot(),
             SOVA_CHAT_SOCK: c.sock,
             SOVA_CHAT_PATH: c.sessionPath,
             SOVA_CHAT_ID: c.chatId,
@@ -235,6 +236,8 @@ export class ChatHostRouter {
             // The project's Claude login for a chat in its folder, and the logins saved for other work
             // (§app.claude-logins/project-login); none on a host with no assignment.
             ...loginContextEnv(c.cwd),
+            // Its own server, whatever port that is; a server started from this chat's tools hands its chats its own.
+            ...(serverUrl ? { SOVA_URL: serverUrl } : {}),
             // After the worker spec's env: a loadout never chooses its key.
             SOVA_CALLER_KEY: this.callerKeys.issue(c.chatId, c.unit),
           },

@@ -101,13 +101,33 @@
       "server/chat-manager.ts",
       "server/extensions.ts",
       "server/resource-monitor.ts",
-      "pi-config/extensions/claude-code/tests/hermetic-env.mjs"
+      "pi-config/extensions/claude-code/tests/hermetic-env.mjs",
+      "server/stall-recorder.ts"
     ],
     "requires": [
       "§app.server-runtime/choice",
       "§chat.transcript/runaway-stream",
       "§app.resource-monitor/lightness-budget"
     ]
+  },
+  "§app.server-runtime/test-env": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/test-env.mjs",
+      "scripts/run-tests.mjs",
+      "server/test-cache-guard.test.ts",
+      "agents/testing/overview.md"
+    ],
+    "requires": [
+      "§app.server-runtime/test-tiers"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T03:57Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+    }
   },
   "§app.server-runtime/test-repo-fence": {
     "kind": "behavior",
@@ -131,6 +151,32 @@
     "requires": [
       "§app.server-runtime/choice"
     ]
+  },
+  "§app.server-runtime/test-reuse": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/run-tests.mjs",
+      "scripts/test-cache.mjs",
+      "scripts/test-cache.test.ts",
+      "scripts/test-cache-guard.test.ts",
+      "scripts/test-cache-guard.integration.test.ts",
+      "server/test-cache-guard.test.ts",
+      "scripts/test-tier-guard.mjs",
+      "package.json",
+      "agents/testing/overview.md",
+      "server/test-cache-guard.integration.test.ts"
+    ],
+    "requires": [
+      "§app.server-runtime/test-tiers",
+      "§app.server-runtime/test-env"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T03:57Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+    }
   },
   "§app.server-runtime/test-tiers": {
     "kind": "behavior",
@@ -165,8 +211,27 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:20Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#d05bfb13"
+      "at": "2026-11-05T03:57Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
+    }
+  },
+  "§app.server-runtime/typecheck-reuse": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/checked.mjs",
+      "package.json",
+      "scripts/test-cache.mjs",
+      "scripts/test-cache-checked.integration.test.ts"
+    ],
+    "requires": [
+      "§app.server-runtime/test-reuse"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T04:21Z",
+      "source": "pi-session:4c2be31e-b72f-4e3c-ae0b-8e551d522e03#18bf7727"
     }
   },
   "§app/server-runtime": {

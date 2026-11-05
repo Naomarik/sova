@@ -42,13 +42,14 @@ const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { ensureOverseer } = await import("./overseer");
 const { OVERSEER_SENDER_HEADER, senderSecret } = await import("./overseer-sender");
 const { approvalsFile, approvalsOf } = await import("./project-mode-approvals");
+const { pageHeaders } = await import("./testing/page");
 after(async () => {
   await disposeAllChats();
 });
 
 const json = { "content-type": "application/json" };
 const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
-  app.request(`/api/mode?path=${encodeURIComponent(path)}`, { method: "POST", headers: { ...json, ...headers }, body: JSON.stringify(body) });
+  app.request(`/api/mode?path=${encodeURIComponent(path)}`, { method: "POST", headers: { ...json, ...(Object.keys(headers).length ? {} : pageHeaders()), ...headers }, body: JSON.stringify(body) });
 const get = async (path: string) => (await (await app.request(`/api/mode?path=${encodeURIComponent(path)}`)).json()) as ChatModeResult;
 
 async function newChat(): Promise<string> {

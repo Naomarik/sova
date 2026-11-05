@@ -4756,7 +4756,7 @@ test("through pi's own argument check: members and agents as JSON strings are re
 		assert.equal(r[1].isError, true);
 		assert.match(r[1].text, /^members\[0\] \(a\): count is not a member setting; a member is one role\. Add one member per role instead/);
 		assert.equal(r[2].isError, true);
-		assert.match(r[2].text, /^members\[0\] \(a\): unknown setting "colour"\. A member takes role, prompt, ownedPaths, orchestrator, backend, model, effort, tools, systemPrompt, cwd, wake, backendOptions, extensions\.$/);
+		assert.match(r[2].text, /^members\[0\] \(a\): unknown setting "colour"\. A member takes role, prompt, ownedPaths, orchestrator, backend, model, effort, tools, mcpServers, systemPrompt, cwd, wake, backendOptions, extensions\.$/);
 		assert.equal(r[3].isError, true);
 		assert.match(r[3].text, /^Unsupported team default tools; defaults accept backend, model, effort, backendOptions, coordinator and monitor\. Put tools on each member that needs it\.$/);
 		assert.equal(r[4].isError, true);
@@ -5658,4 +5658,38 @@ test("runtime fallback: once the hour is over a new team retries the primary, wh
 		const replaced = (await h.call("team_succeed", { team: "Crew", role: "monitor-2" })).content[0].text;
 		assert.match(replaced, /^Started monitor-3 \(ag_\d+\) to succeed monitor-2 \(ag_04\) on pi\/claude-code-cli\/claude-sonnet-5-5\/low/, "the switched team keeps its fallback");
 	} finally { Date.now = realNow; await h.cleanup(); }
+});
+
+test("mcpServers: a worker's servers come from the chat's own answer, travel beside tools, and a name it refuses starts nothing", async () => {
+	const h = harness();
+	await h.start();
+	const asked: unknown[] = [];
+	h.bus.on("sova:mcp-list", (d: any) => {
+		asked.push(d.names);
+		d.reply(d.names.includes("nope") ? { refused: "Chat's servers are a, so a worker can't have nope." } : { list: { v: 1, servers: [{ name: "a" }] } });
+	});
+	await h.call("agent_spawn", { prompt: "uses a", mcpServers: ["a"], wake: false });
+	assert.deepEqual(h.workers[0].mcp, { v: 1, servers: [{ name: "a" }] });
+	assert.ok(!(h.workers[0].tools ?? []).includes("a"), "a server is no tools name");
+	await assert.rejects(h.call("agent_spawn", { prompt: "refused", mcpServers: ["nope"], wake: false }), /so a worker can't have nope\./);
+	assert.equal(h.workers.length, 1, "nothing started");
+	await h.call("agent_spawn", { prompt: "none named", wake: false });
+	assert.equal(h.workers[1].mcp, undefined, "none named: none");
+	assert.deepEqual(asked, [["a"], ["nope"]]);
+});
+
+test("mcpServers: a chat with no answer has none to give", async () => {
+	const h = harness();
+	await h.start();
+	await assert.rejects(h.call("agent_spawn", { prompt: "x", mcpServers: ["a"], wake: false }), /servers are none, so a worker can't have a\./);
+});
+
+test("mcpServers: a worker on its worktree's own config is refused at the start, by name, and asks the chat nothing", async () => {
+	const h = harness();
+	await h.start();
+	let asked = 0;
+	h.bus.on("sova:mcp-list", () => asked++);
+	await assert.rejects(h.call("agent_spawn", { prompt: "x", name: "fixer", mcpServers: ["a"], useWorktreeConfig: true, wake: false }), /^Error: fixer uses its worktree's own config, so it can't have MCP servers\.$/);
+	assert.equal(h.workers.length, 0);
+	assert.equal(asked, 0);
 });

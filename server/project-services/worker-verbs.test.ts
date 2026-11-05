@@ -46,20 +46,24 @@ test("a worker or team member is served project_verbs; a hidden chat nothing", (
   for (const hidden of ["explain", "handoff", "btw"]) assert.deepEqual(names(hidden), [], hidden);
 });
 
-test("a worker chat loads project_verbs with its instance note; a hidden chat loads no extension of Sova's", async () => {
+test("a worker chat loads project_verbs with its instance note; a hidden chat never does", async () => {
   const path = join(agentDir, "worker.jsonl");
   setServedTools(workerServed({ kind: "worker" }, path));
   setChatHosts({ instanceNote: async () => "Your copy: slot 1." });
   const factories = workerExtensionFactories({ kind: "worker" }, path);
-  assert.deepEqual(factories.map((f) => f.name), ["sova-project-verbs"]);
+  assert.deepEqual(factories.map((f) => f.name), ["sova-shell-guard", "sova-deeper-context", "sova-project-verbs"]);
   const { pi, tools, hooks } = fakePi();
-  factories[0]!.factory(pi as never);
+  factories[2]!.factory(pi as never);
   assert.deepEqual(tools, ["project_verbs"]);
   const ctx = { cwd: agentDir, sessionManager: { getSessionId: () => "w1", getLeafId: () => null, getBranch: () => [], getSessionFile: () => path } };
   const out = (await hooks.get("before_agent_start")!({}, ctx)) as { message?: { content?: unknown; customType?: string } } | undefined;
   assert.ok(out?.message, "the note reaches the worker at its turn's start");
   assert.match(JSON.stringify(out.message), /Your copy: slot 1\./);
-  for (const hidden of ["explain", "handoff", "btw"] as const) assert.deepEqual(workerExtensionFactories({ kind: hidden }, path), [], hidden);
+  // A hidden chat gets the kill guard (§chat/kill-guard) and the subfolder instruction loader, never project_verbs.
+  for (const hidden of ["explain", "handoff", "btw"] as const) {
+    assert.deepEqual(workerExtensionFactories({ kind: hidden }, path).map((f) => f.name), ["sova-shell-guard", "sova-deeper-context"], `${hidden}: the guard and the subfolder instruction loader`);
+    assert.deepEqual(workerExtensionFactories({ kind: hidden, builtins: ["bash", "grep"] }, path).map((f) => f.name), ["sova-shell-guard"], `${hidden} without file tools: the guard alone`);
+  }
 });
 
 test("a bare up from a worktree's cwd aims at that worktree; from the main checkout no checkout is filled", async () => {

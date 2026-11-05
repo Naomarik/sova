@@ -72,18 +72,19 @@
       "server/merge-queue/cards.test.ts",
       "server/git-diff.test.ts",
       "server/commands-fuzz.test.ts",
-      "server/merge-queue/notices.ts"
+      "server/merge-queue/notices.ts",
+      "server/merge-card-page.integration.test.ts"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:30Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
     }
   },
   "§chat.merge-queue/chat-turns": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "reviewed",
+    "evidence": "verified",
     "requires": [
       "§chat.merge-queue/chat-card",
       "§chat.profiles/delivery",
@@ -117,8 +118,40 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "at": "2026-11-04T14:54Z",
+      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
+    }
+  },
+  "§chat.merge-queue/sova-restart": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.merge-queue/thread",
+      "§app.merge-queue/note",
+      "§app.updates/restart",
+      "§app.release/checks",
+      "§app.release/sova",
+      "§chat.worktrees/readiness",
+      "§app.chat-processes/survives-restart",
+      "§app.access/your-click"
+    ],
+    "code": [
+      ".sova/playbooks/merge-queue/PLAYBOOK.md",
+      ".sova/playbooks/merge-queue/references/noting.md",
+      ".sova/playbooks/merge-queue/scripts/restart-sova.mjs",
+      "server/restart-paths.ts",
+      "server/restart-paths-walk.ts",
+      "server/merge-readiness.ts",
+      "playbooks/merge-queue/PLAYBOOK.md",
+      ".sova/playbooks/release/PLAYBOOK.md",
+      "server/merge-queue/restart-sova.test.ts",
+      "server/restart-paths.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T22:57Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
     }
   },
   "§chat.merge-queue/thread": {
@@ -137,8 +170,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "at": "2026-11-04T22:57Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
     },
     "code": [
       "server/merge-queue/thread.ts",

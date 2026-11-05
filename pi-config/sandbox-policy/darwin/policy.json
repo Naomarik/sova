@@ -18,6 +18,8 @@
     "~/.claude/.credentials.json",
     "$AGENT_DIR/claude-accounts",
     "$AGENT_DIR/auth.json",
+    "$AGENT_DIR/mcp-auth.json",
+    "$AGENT_DIR/sova/secrets/mcp",
     "$AGENT_DIR/sova/whatsapp"
   ],
   "readOnlyWithinWritable": [".git/hooks", ".git/config", ".envrc"],
@@ -43,5 +45,6 @@
     ]
   },
   "env": { "allow": [] },
-  "acceptPartial": false
+  "acceptPartial": false,
+  "browser": "none"
 }

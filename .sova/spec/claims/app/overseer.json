@@ -1,4 +1,35 @@
 {
+  "§app.overseer/about": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "src/components/OverseerAbout.tsx",
+      "src/overseer-about.css",
+      "src/components/OverseerView.tsx",
+      "src/lib/overseer-about.ts",
+      "src/lib/overseer-about.test.ts",
+      "src/lib/api.ts",
+      "server/overseer-abilities.ts",
+      "server/overseer-abilities.test.ts",
+      "server/overseer.ts",
+      "server/app.ts",
+      "shared/protocol.ts",
+      "shared/commands/overseer.ts",
+      "shared/commands-ids.json",
+      "server/commands-inventory/baseline.json",
+      "docs/commands.md"
+    ],
+    "requires": [
+      "§app.overseer/extension-commands",
+      "§app.overseer/caps"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T17:10Z",
+      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#42b7b210"
+    }
+  },
   "§app.overseer/alignment-read": {
     "kind": "behavior",
     "authority": "accepted",
@@ -78,15 +109,16 @@
       "server/project-holds.ts",
       "server/outreach-health.test.ts",
       "server/tours/sign-in-notice.ts",
-      "server/tours/sign-in-notice.test.ts"
+      "server/tours/sign-in-notice.test.ts",
+      "server/project-services/release-wire.ts"
     ],
     "requires": [
       "§app.overseer/seen"
     ],
     "agreed": {
-      "by": "Omar (user)",
-      "at": "2026-10-28T13:24Z",
-      "source": "pi-session:01a18245-0e17-7289-9604-86d2cebcb150#f4852ec2"
+      "by": "user",
+      "at": "2026-11-03T20:12Z",
+      "source": "pi-session:01a1a10e-e34d-75b6-8a92-b6101087b33f#38f36ba9"
     }
   },
   "§app.overseer/auto-resume": {
@@ -152,13 +184,14 @@
       "src/lib/settings-nav.ts",
       "src/design/base.css",
       "server/overseer-prompt.md",
-      "server/overseer-card-apply.test.ts"
+      "server/overseer-card-apply.test.ts",
+      "server/overseer-ext-counts.test.ts"
     ],
     "requires": [],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-27T09:33Z",
-      "source": "pi-session:01a16fb6-1014-7539-b91a-750b94daff7d#6f6f4e53"
+      "by": "Omar",
+      "at": "2026-11-04T12:24Z",
+      "source": "pi-session:01a1a628-48c2-7136-a762-464d5bf0599f#d0ac6d72"
     }
   },
   "§app.overseer/card-partial-apply": {
@@ -292,8 +325,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-28T13:39Z",
-      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§app.overseer/copies": {
@@ -435,6 +468,52 @@
       "§app.overseer/caps"
     ]
   },
+  "§app.overseer/extension-commands": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/overseer-ext-tools.ts",
+      "server/overseer-ext-jobs.ts",
+      "server/overseer-tools.ts",
+      "server/overseer.ts",
+      "server/overseer-store.ts",
+      "server/overseer-run-note.ts",
+      "server/overseer-prompt.md",
+      "server/extensions.ts",
+      "shared/commands-ext.ts",
+      "shared/wake.ts",
+      "shared/protocol.ts",
+      "server/overseer-ext-tools.test.ts",
+      "server/overseer-ext-jobs.test.ts",
+      "server/agent-loadouts.snapshot.json",
+      "server/harness/pi/golden/special-model-view.json",
+      "server/overseer-abilities.ts",
+      "server/overseer-abilities.test.ts",
+      "server/overseer-store.test.ts",
+      "server/overseer-ext-counts.test.ts",
+      "server/extension-offers-overseer.test.ts",
+      "docs/customization.md",
+      "server/overseer-run-note.test.ts"
+    ],
+    "requires": [
+      "§app.overseer/tools",
+      "§app.overseer/caps",
+      "§app.overseer/hosting",
+      "§app.commands/extension-commands",
+      "§app.extensions/serving",
+      "§app.overseer/session-names",
+      "§app.overseer/sessions-in-play",
+      "§app.overseer/run-note",
+      "§chat.transcript/transcript-items",
+      "§app.extensions/list"
+    ],
+    "agreed": {
+      "by": "Omar",
+      "at": "2026-11-04T12:24Z",
+      "source": "pi-session:01a1a628-48c2-7136-a762-464d5bf0599f#d0ac6d72"
+    }
+  },
   "§app.overseer/file-writes": {
     "kind": "behavior",
     "requires": [
@@ -503,7 +582,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-10T10:06Z"
+      "at": "2026-10-27T22:52Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
     }
   },
   "§app.overseer/id-check": {
@@ -562,7 +642,12 @@
     ],
     "requires": [
       "§app.overseer/ideas"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T01:37Z",
+      "source": "pi-session:915c7c2a-d21e-4992-8899-b2d3b2871536#805df6b6"
+    }
   },
   "§app.overseer/identity-and-clear": {
     "kind": "behavior",
@@ -792,8 +877,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-28T13:39Z",
-      "source": "pi-session:01a181b5-0126-7289-9604-86c617633d9d#8e5330a0"
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
   },
   "§app.overseer/org-project-add": {
@@ -1100,7 +1185,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-10T10:06Z"
+      "at": "2026-10-27T21:10Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
     }
   },
   "§app.overseer/seen": {
@@ -1244,8 +1330,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-10-25T21:42Z",
-      "source": "pi-session:299cd046-42df-4026-9a8d-950b1cec2ffb#a18554af"
+      "at": "2026-10-27T21:10Z",
+      "source": "pi-session:01a15967-632c-7701-8650-889f96aa9f4c#e877e3be"
     }
   },
   "§app.overseer/standing-notes": {
@@ -1355,12 +1441,14 @@
       "§app.overseer/caps",
       "§chat.model-menu/saved-default",
       "§mesh.links/by-id",
-      "§mesh.peers/listener"
+      "§mesh.peers/listener",
+      "§app.access/your-click",
+      "§chat.create-mode/per-chat-only"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:32Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-04T16:27Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#e85d747a"
     }
   },
   "§app.overseer/transcript-window": {

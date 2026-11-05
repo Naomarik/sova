@@ -28,7 +28,7 @@ test("every answer of one project reads its plain sentence", () => {
   assert.equal(read({ version: "team" }).try!.how, "The team starts it for you");
   assert.equal(read({ release: "now" }).release!.how, "Starts right away");
   assert.equal(read({ release: "held" }).release!.how, "Starts on its own in a few minutes");
-  assert.equal(read({ release: "team" }).release!.how, "The team releases it");
+  assert.equal(read({ release: "team" }).release!.how, "The team ships it");
   for (const l of abilityLines([A], abilities(ab(A, { fix: "held" })))) assert.equal(l.named, false, l.id);
 });
 
@@ -44,7 +44,7 @@ test("Try the latest version only while some project lists a version", () => {
 test("projects that differ are named, right away, then on its own, then the team", () => {
   const lines = byId(abilityLines([A, B, C], abilities(ab(A, { fix: "held", release: "team" }), ab(B, { fix: "team", release: "now" }), ab(C, { fix: "held", release: "held" }))));
   assert.equal(lineText(lines.fix!), "Get a problem fixed: on its own for RakibaDesigns and Notes, the team starts it for Rakiba Shop.");
-  assert.equal(lineText(lines.release!), "Release a new version: right away for Rakiba Shop, on its own for Notes, the team releases it for RakibaDesigns.");
+  assert.equal(lineText(lines.release!), "Ship the latest version: right away for Rakiba Shop, on its own for Notes, the team ships it for RakibaDesigns.");
   assert.equal(lines.fix!.named, true);
 });
 
@@ -73,10 +73,10 @@ test("what a tap starts in the message box", () => {
   assert.equal(one.new!.prefill, "I'd like something new: ");
   assert.equal(one.fix!.prefill, "Please fix this: ");
   assert.equal(one.try!.prefill, "Can I try the latest version of RakibaDesigns?");
-  assert.equal(one.release!.prefill, "Please release a new version of RakibaDesigns.");
+  assert.equal(one.release!.prefill, "Please ship the latest version of RakibaDesigns.");
   const two = byId(abilityLines([A, B], abilities(ab(A, { version: "team" }), ab(B, { version: "now" }))));
   assert.equal(two.ask!.prefill, "How are my projects going?");
-  assert.equal(two.release!.prefill, "Please release a new version of ");
+  assert.equal(two.release!.prefill, "Please ship the latest version of ");
   // The first project in Home's order that lists one.
   assert.equal(two.try!.prefill, "Can I try the latest version of RakibaDesigns?");
 });

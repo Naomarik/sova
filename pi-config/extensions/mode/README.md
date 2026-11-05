@@ -1,7 +1,7 @@
 # Mode switcher for Pi
 
-A **per-session** toggle between **normal** mode (pi as usual) and
-**delegate** mode, where the main agent becomes an orchestrator and routes work
+A **per-session** major mode: **normal** (pi as usual), **create** (below), or
+**delegate**, where the main agent becomes an orchestrator and routes work
 to background workers through the `subagents` extension (and `claude-code`, for
 Claude workers). Delegate sorts work into four **profiles**, each routed to one
 configurable worker — backend · model · effort — with an optional fallback:
@@ -48,10 +48,11 @@ edit" is a prompt-level rule the orchestrator checks.
 | `ctrl+p` → **Mode**, or bare `/mode` | Open the mode selector (see below) |
 | `alt+m` | Toggle normal ↔ delegate |
 | `/mode normal` · `/mode delegate` | Set explicitly |
+| Sova's mode menu, or `/mode create` typed in a Sova chat | Picks **create**, per chat; a terminal refuses it (see **Create**) |
 | `/mode status` | Show this session's mode, the default for new sessions, the Delegate routing (and, in delegate, what each profile is actually using), the spec writer (and, with spec on, what it is actually using), strict flag, minor modes, state file |
 | `/mode default` | Save this session's mode, strict flag and minor modes as the default for new sessions (the only command here that writes `mode.json`) |
 | `/mode sync` | Change nothing and say nothing: keep this session's mode block in the prompt whoever starts the turn (see below). Sova runs it at every chat open |
-| `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while in delegate (off by default) |
+| `/mode strict on\|off` | Also remove `edit`/`write` from the orchestrator while in delegate or create (off by default) |
 | `/mode align [on\|off]` | Toggle (or set) the `align` minor mode |
 | `/mode spec [on\|off]` | Toggle (or set) the `spec` minor mode |
 | `/mode project:<id> [on\|off]` | Toggle (or set) one of this checkout's project minor modes; the bare `<id>` works when no built-in has that name (see **Project minor modes**) |
@@ -108,7 +109,7 @@ full post-switch snapshot, which is what makes the state per session (see
 ## Minor modes
 
 Minor modes are extra instructions toggled independently of the major mode:
-zero or more can be active at once, in normal or delegate. Their blocks
+zero or more can be active at once, in any major mode. Their blocks
 are appended after the delegate block (when in delegate) in registry order
 (`align`, then `spec`). Only `align` adds a bridge paragraph to the delegate
 block (the planning worker hand-off, said only there and only for change
@@ -523,6 +524,24 @@ example `{ "align": "alt+l" }`) binds a toggle key per minor mode, also on the
 next reload; there are none by default. An optional `"viewerShortcut"`
 (default `"alt+a"`) opens the alignments viewer. Files written before minor modes
 existed load with no minor modes on.
+
+## Create
+
+Sova's third major mode, chosen per chat in Sova's mode menu or with `/mode create` typed in a Sova chat. It does everything delegate does, with
+delegate's prompt, routing, teams and strict, and adds what it knows about configuring and extending
+Sova. Its own block follows delegate's and changes nothing in it.
+
+- The guide is `create/`: `overview.md` is the mode's block, `shared.md` the rules every lookup returns,
+  and one file per topic, whose first line is that topic's line in the table of contents. `guide.ts`
+  reads them once at load, and `create-guide-tool.ts` is the `create_guide` lookup. The guide works from
+  any folder: it needs no project and no checkout.
+- `create_guide` is in the loadout only while the chat is in create. Workers get neither it nor the
+  table of contents.
+- Switching to create turns `align` on and moves no other minor mode.
+- No default holds it: `mode.json`, profiles and automations can't name it. Saving the default in a
+  create chat saves its last normal or delegate choice.
+- The terminal offers no create and has no shortcut for it. A terminal session that opens a chat saved
+  in create doesn't break.
 
 ## Delegate routing
 

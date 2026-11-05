@@ -26,7 +26,7 @@ export const POWERS = [
   "promote", "bookkeeping", // spec
   "codingStart", "codingPrompt", "onboard", "markMerged", // code
   "copiesRun", "copiesReset", // copies
-  "share", "deploy", // release
+  "share", "deploy", "release", // release
 ] as const;
 export type PowerId = (typeof POWERS)[number];
 export const isPowerId = (v: unknown): v is PowerId => typeof v === "string" && (POWERS as readonly string[]).includes(v);
@@ -61,6 +61,7 @@ export const POWER_INFO: Record<PowerId, PowerInfo> = {
   copiesReset: { group: "copies", oldLevel: "L3", assistant: false, label: "Reset or tear down running copies" },
   share: { group: "release", oldLevel: "L1", assistant: false, label: "Share a version to try" },
   deploy: { group: "release", oldLevel: null, assistant: true, label: "Deploy (the project's own recipe)" },
+  release: { group: "release", oldLevel: null, assistant: false, label: "Release (the project's release playbook; may publish after its waiting period)" },
 };
 
 export const POWER_GROUP_LABEL: Record<PowerGroup, string> = { people: "People", spec: "Spec", code: "Code", copies: "Running copies", release: "Release" };
@@ -77,6 +78,7 @@ export const ALWAYS_PHRASES: readonly string[] = [
   "stopping a running copy",
   "taking a share link back",
   "asking you to deploy",
+  "asking you to release",
 ];
 
 export const powersOfGroup = (g: PowerGroup): PowerId[] => POWERS.filter((p) => POWER_INFO[p].group === g);
@@ -202,10 +204,9 @@ const modelsOf = (v: unknown): WorkModels | undefined => {
 /**
  * overseer.json's `powers`, read tolerantly (ARCH §1's read rules). `raw` is the whole parsed file.
  * 1. No readable `powers`: the overseer column carries over from `autonomy` (default L1), the assistant is
- *    all Off, a one-time "carried-over" note. 2. `autonomy` differs from `powers.derivedAutonomy`: an older
- *    Sova changed the level: the overseer column re-derives from it, the assistant is kept, a "rederived"
- *    note. 3. Else per key: a boolean wins, anything else is its default (carry-over, or Off), and an
- *    assistant key the column can't set is Off. `now` stamps a new note.
+ *    all Off. 2. `autonomy` differs from `powers.derivedAutonomy`: an older
+ *    Sova changed the level: the overseer column re-derives from it, the assistant is kept. 3. Else per key: a boolean wins, anything else is its default (carry-over, or Off), and an
+ *    assistant key the column can't set is Off. `note` is always null (kept on the wire for older clients).
  */
 /** JSON with object keys sorted (arrays in order), so a writer that reorders keys stamps the same. */
 function canonicalJson(v: unknown): string {
@@ -256,9 +257,7 @@ export function readStoredPowers(raw: unknown, now: () => string = () => new Dat
     return mapOf((k) => POWER_INFO[k].assistant && o[k] === true);
   };
   if (!readable) {
-    // The note only for a file that had a level (an existing project): a new project carried nothing over.
-    const note: PowersNote | null = isLevel(file.autonomy) ? { kind: "carried-over", from: autonomy, at: now(), seen: false } : null;
-    return { version: 1, derivedAutonomy: derivedAutonomy(carryOver(autonomy)), overseer: carryOver(autonomy), assistant: assistantDefaults(), note };
+    return { version: 1, derivedAutonomy: derivedAutonomy(carryOver(autonomy)), overseer: carryOver(autonomy), assistant: assistantDefaults(), note: null };
   }
   const extras = {
     ...(modelsOf(p.assistantModels) ? { assistantModels: modelsOf(p.assistantModels) } : {}),
@@ -276,17 +275,13 @@ export function readStoredPowers(raw: unknown, now: () => string = () => new Dat
   const levelMoved = derived !== null && isLevel(file.autonomy) && file.autonomy !== derived;
   if (olderWriter || stampMoved || levelMoved) {
     const overseer = carryOver(autonomy);
-    return { version: 1, derivedAutonomy: derivedAutonomy(overseer), overseer, assistant, ...extras, note: { kind: "rederived", from: autonomy, at: now(), seen: false } };
+    return { version: 1, derivedAutonomy: derivedAutonomy(overseer), overseer, assistant, ...extras, note: null };
   }
   const o = p.overseer as Record<string, unknown>;
   const fallback = carryOver(derived ?? autonomy);
   const overseer = mapOf((k) => (typeof o[k] === "boolean" ? (o[k] as boolean) : fallback[k]));
-  const n = p.note as Record<string, unknown> | null | undefined;
-  const note: PowersNote | null =
-    n && typeof n === "object" && (n.kind === "carried-over" || n.kind === "rederived") && isLevel(n.from)
-      ? { kind: n.kind, from: n.from, at: typeof n.at === "string" ? n.at : now(), seen: n.seen === true }
-      : null;
-  return { version: 1, derivedAutonomy: derivedAutonomy(overseer), overseer, assistant, ...extras, note };
+  // A note stored by an earlier version is read and dropped: the one-time notes are gone.
+  return { version: 1, derivedAutonomy: derivedAutonomy(overseer), overseer, assistant, ...extras, note: null };
 }
 
 /** Apply a powers patch (already checked with powersPatchProblem). Pure: returns a new value. */
@@ -296,6 +291,21 @@ export function applyPowersPatch(s: StoredPowers, patch: { overseer?: Partial<Po
   for (const [k, v] of Object.entries(patch.overseer ?? {})) if (isPowerId(k) && typeof v === "boolean") overseer[k] = v;
   for (const [k, v] of Object.entries(patch.assistant ?? {})) if (isPowerId(k) && typeof v === "boolean") assistant[k] = v && POWER_INFO[k].assistant;
   return { ...s, overseer, assistant, derivedAutonomy: derivedAutonomy(overseer) };
+}
+
+/** Whether a PATCH …/overseer body, by `powers` or the older `autonomy`, turns On any power that is Off now. A body
+    that names neither, or that isn't valid, turns nothing on (it is refused for what it is). */
+export function powerTurnsOn(s: StoredPowers, body: { powers?: unknown; autonomy?: unknown }): boolean {
+  let overseer = s.overseer;
+  let assistant = s.assistant;
+  if (isLevel(body.autonomy)) overseer = carryOver(body.autonomy);
+  if (body.powers !== undefined) {
+    if (powersPatchProblem(body.powers)) return false;
+    const next = applyPowersPatch({ ...s, overseer }, body.powers as { overseer?: Partial<PowerMap>; assistant?: Partial<PowerMap> });
+    overseer = next.overseer;
+    assistant = next.assistant;
+  }
+  return POWERS.some((p) => (overseer[p] === true && s.overseer[p] !== true) || (assistant[p] === true && s.assistant[p] !== true));
 }
 
 // ---- the wire (GET/PATCH …/overseer, §3 of the design) --------------------------------------------

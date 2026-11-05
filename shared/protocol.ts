@@ -3,6 +3,7 @@
  * Do not change a shape without telling the other side (team_msg).
  */
 
+import type { McpNote, McpToolName, SetupMcp } from "./mcp";
 import type { WakeInfo } from "./wake";
 import type { BatonMark, BatonSummaryField } from "./baton";
 import type { LinkMessageInfo } from "./link-message";
@@ -410,6 +411,8 @@ export interface TranscriptItem {
       entry of a switch; `text` is its notice. Like the profile row it never counts toward the empty
       state, and the thread draws it where it sits once a message is sent. */
   loginNote?: true;
+  /** kind "info" only: a server's failure in this chat (§app.mcp/in-a-chat), the `sova-mcp-note` entry. */
+  mcpNote?: McpNote;
   /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
   teamEvent?: TeamEvent;
   /** kind "info" only: a /compact-handoff run's `compact-handoff-run` entry
@@ -440,6 +443,8 @@ export interface TranscriptItem {
   facts?: RowFacts;
   /** tool-call and tool-result rows. A lazy tool-result row carries no `text`. */
   tool?: ToolRowInfo;
+  /** tool-call and tool-result rows of a server's tool (§app.mcp/in-a-chat): the row reads these, never the name. */
+  mcp?: McpToolName;
   /** kind "unknown" only: the whole entry, for the card that shows it as JSON (signatures removed). */
   entry?: unknown;
 }
@@ -955,15 +960,20 @@ export interface ThemeList {
 export const PLAYBOOK_ENTRIES = ["PLAYBOOK.md", "SKILL.md"] as const;
 export type PlaybookEntry = (typeof PLAYBOOK_ENTRIES)[number];
 
+/** What a verb playbook's branch proposes: the project's settings, its deploy section, or its releases (the release
+    section plus the project's release playbook). */
+export const PLAYBOOK_PROPOSES = ["definition", "deploy", "release"] as const;
+export type PlaybookProposes = (typeof PLAYBOOK_PROPOSES)[number];
+
 /** One entry in the Sova playbook catalog. */
 export interface PlaybookInfo {
   id: string;                 // directory name; validate against /^[a-z0-9][a-z0-9-]*$/ (no traversal)
   title: string;              // frontmatter title, else name, else the id
   description: string;        // frontmatter description, else ""
   promptHint?: string;        // frontmatter promptHint: what the reader may want to specify for the first turn
-  /** Frontmatter `proposes: definition | deploy`: a verb playbook, whose branch the operator merges
+  /** Frontmatter `proposes: definition | deploy | release`: a verb playbook, whose branch the operator merges
       (§app.project-runtime/verb-playbooks). Absent (or any other value): not a verb playbook. */
-  proposes?: "definition" | "deploy";
+  proposes?: PlaybookProposes;
   source: "sova" | "user" | "project";
   dir: string;                // ABSOLUTE directory holding the playbook: its entry file, scripts/, references/…; every relative path in it resolves here
   entry: PlaybookEntry;       // the file read as the playbook: PLAYBOOK.md when the folder has one, else SKILL.md
@@ -1471,12 +1481,14 @@ export type SessionSetup =
           server holds the chat, it is local, ordinary, not TUI-live and before its first message.
           Worked out per session on every read, never cached with the folder's lists. */
       toggleable?: boolean;
+      /** The card's MCP Servers group (§chat.transcript/setup-card-toggles); absent: no group. */
+      mcp?: SetupMcp;
       checkedAt: number;
     }
   /** A target session: its cwd is a local placeholder, so its loadout can't be read here. */
-  | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; checkedAt: number }
+  | { state: "remote"; where: { kind: "remote"; target: string }; cwd: string; mcp?: SetupMcp; checkedAt: number }
   /** Nothing could be read: `reason` is a sentence for the user. Never cached. */
-  | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; checkedAt: number };
+  | { state: "unavailable"; where: GitWhere; cwd: string; reason: string; mcp?: SetupMcp; checkedAt: number };
 
 // GET /api/sessions/context/file?path=<session file>&file=<listed path> -> SessionSetupFileText
 //                                  (server/session-setup.ts, §chat.transcript/setup-card-open-file:
@@ -1493,6 +1505,66 @@ export interface SessionSetupFileText {
   path: string;
   text: string;
 }
+
+// GET /api/sessions/context-view?path=<session file> -> SessionContextView   (server/context-tab.ts:
+//                                  what fills one chat's context window now, for the session pane's
+//                                  Context tab. A worker is read by its own session file. The files
+//                                  and skills are /api/sessions/context's read; the mode, rules and
+//                                  tools are the HELD chat's prompt and declarations (`prompt: false`
+//                                  when this server doesn't hold it: they are unknown, not empty).
+//                                  Every size is an estimate (CHARS_PER_TOKEN). 400 a bad path, 404 a
+//                                  missing session file. Never cached; read-only.)
+// ---------------------------------------------------------------------------
+/** One part of the prompt. A file's text opens through /api/sessions/context/file with `path`; any other
+    part carries its `text`. */
+export interface SessionContextPart {
+  id: string;
+  label: string;
+  detail?: string;
+  /** ≈ tokens it costs in the prompt. */
+  tokens: number;
+  path?: string;
+  text?: string;
+}
+
+/** An instruction file in a folder below the chat's own, loaded when the agent reads, edits or writes a
+    file there. */
+export interface SessionContextNested {
+  /** Relative to cwd, e.g. "api/AGENTS.md". */
+  path: string;
+  /** Absolute: what /api/sessions/context/file reads. */
+  abs: string;
+  /** Its folder, relative to cwd. */
+  folder: string;
+  tokens: number;
+  /** Its text is in the context now (counts toward the total); else it shows only what it would cost. */
+  loaded: boolean;
+}
+
+export type SessionContextView =
+  | {
+      state: "ok";
+      cwd: string;
+      /** The model's context window; null unknown. */
+      window: number | null;
+      /** The last reply's input + cacheRead + cacheWrite; null before the first reply (or since a compaction). */
+      total: number | null;
+      /** The chat is held here, so mode, rules and tools were read; false: they are unknown. */
+      prompt: boolean;
+      instructions: SessionContextPart[];
+      mode: SessionContextPart | null;
+      rules: SessionContextPart[];
+      skills: SessionContextPart[];
+      tools: SessionContextPart[];
+      /** ≈ the messages in context, loaded nested files left out (they are `nested`). */
+      conversation: number;
+      nested: SessionContextNested[];
+      /** The walk below cwd stopped at its cap: the list may be incomplete. */
+      nestedIncomplete?: true;
+      checkedAt: number;
+    }
+  | { state: "remote"; cwd: string; checkedAt: number }
+  | { state: "unavailable"; cwd: string; reason: string; checkedAt: number };
 
 // GET /api/sessions/tools?path=<session file> -> SessionTools   (server/session-tools.ts,
 //                                  §chat.transcript/setup-card-tools: the tools the HELD chat declares
@@ -1528,7 +1600,7 @@ export type SessionTools =
   /** Not listed: `reason` is the sentence to show. */
   | { state: "unavailable"; reason: string; checkedAt: number };
 
-// POST /api/sessions/loadout {path, offContext, offSkills} -> SessionSetup
+// POST /api/sessions/loadout {path, offContext, offSkills, offMcp, onMcp} -> SessionSetup
 //                                  (§chat.transcript/setup-card-toggles: the session's whole off set
 //                                  — context files by absolute path, skills by name — written as its
 //                                  hidden `sova-loadout` entry; the runtime is rebuilt, open tabs get
@@ -1724,10 +1796,15 @@ export interface BatchPromptResult {
     new sessions** (~/.pi/agent/mode.json), never one chat's state. `strict` is shown, never
     changed here. `modes`/`minors` list what exists. */
 export interface ModeInfo {
-  mode: string; // "normal" | "delegate"
+  mode: string; // "normal" | "delegate" | "create"
   minorModes: string[]; // canonical order
   strict: boolean;
+  /** Only in Create: the mode Save as Default saves, the chat's last normal or Delegate choice (§chat.create-mode/per-chat-only). */
+  saveMode?: string;
   modes: { id: string; description: string }[];
+  /** Only in GET /api/mode with no path: modes a default can't hold but a chat here can pick (Create). A peer's chat
+      has no ?path= read, so its menu adds these to `modes`; a gathering chat has no menu at all. Absent: an older host. */
+  chatModes?: { id: string; description: string }[];
   minors: { id: string; description: string }[];
   /** The memory minor mode's choice (§chat/memory): in GET /api/mode the saved default new chats
       start from (Settings' memory file), in a ChatModeResult that chat's own. Absent from older servers. */
@@ -1858,6 +1935,9 @@ export interface HeldChatState {
     The same values reach every client of that chat as a "mode" server message. */
 export interface ChatModeResult extends ModeInfo, ChatProjectModes {
   applies: ModeApplies;
+  /** The mode Save as default writes, while it isn't `mode`: in Create, this chat's last normal or
+      Delegate choice (§chat.create-mode/per-chat-only). */
+  saveMode?: string;
 }
 
 // ---- Project minor modes (§chat.mode-menu/project-modes) ----------------------------------------
@@ -2426,7 +2506,7 @@ export interface HelloLive {
   /** The assistant message still streaming (not yet written): its parts so far, by index. */
   message?: { model?: string; parts: SovaPart[] };
   /** Tool calls of this run started and not ended, each with its latest output. */
-  tools?: { callId: string; name: string; args?: unknown; output: string; images: string[]; parentCallId?: string }[];
+  tools?: { callId: string; name: string; args?: unknown; mcp?: McpToolName; output: string; images: string[]; parentCallId?: string }[];
 }
 
 /**
@@ -2491,7 +2571,7 @@ export type ChatServerMessage =
   | { type: "append"; items: TranscriptItem[] }
   /** THIS chat's own mode, and how the last switch applies to it. Sent after hello and after
       every switch of this chat. No other chat's switch, and no write of the default, sends one. */
-  | ({ type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice } & ChatProjectModes)
+  | ({ type: "mode"; mode: string; minorModes: string[]; strict: boolean; applies: ModeApplies; memory?: ChatMemoryChoice; saveMode?: string } & ChatProjectModes)
   /** THIS chat's memory (§chat/memory): sent after hello while memory is on, and on every change once
       it was on; never from a runtime without the memory engine. None received: memory is off. */
   | { type: "memory_status"; status: MemoryStatus }
@@ -3363,6 +3443,13 @@ export interface SessionWorktreeInfo {
   /** Its branch against the project's merge target (commits ahead, lines +/−), for a registered project's worktree.
       Additive. */
   mergeStats?: import("./merge-queue").WorktreeMergeStats;
+  /** What its branch does, in a few bullets (§ the merge queue's branch summaries), once anything is known: at its
+      entry's commit while it has an open or landed entry, else at its head. Only where the queue serves the repo.
+      Additive. */
+  mergeSummary?: import("./merge-queue").BranchSummary;
+  /** The chat that owns its branch (server/merge-queue/owners.ts), for the row's title link. Only where the queue
+      serves the repo. Additive. */
+  mergeOwner?: { session: string; path?: string; title?: string; archived?: true };
   /** Present only when its repo is one the merge queue serves (on the Projects list and its merge setup done): Land,
       "Ready to land" and "Landing specs" key on it, never on `mergeProject` being missing. Absent: the repo merges
       plainly (the chat merges it into main). Additive. */
@@ -3470,6 +3557,7 @@ export interface OverseerCaps {
   linksPerTurn: number;       // default 3: links made (sova_link, §app.overseer/links-tools); absent on read → default
   orgWritesPerTurn: number;   // default 20: organization writes (§app.overseer/org-tools); absent on read → default
   gatherPerTurn: number;      // default 3: gathering sessions or offers started (sova_gather start/offer); absent on read → default
+  extRunsPerTurn: number;     // default 5: extension commands run (sova_ext run, §app.overseer/extension-commands); absent on read → default
 }
 
 /** `<stateRoot>/overseer.json`. Tolerant on read, strict on PUT. */
@@ -3495,6 +3583,25 @@ export interface OverseerSettings {
       UniiChat. Written only by PUT /api/overseer/memory; a settings PUT keeps the stored one. `size`: an older
       file's, kept but ignored (the size is Settings → Memory's for the type). */
   memory?: { on: boolean; type: MemoryType; size?: number };
+}
+
+/** GET /api/overseer/abilities: what the global Overseer can do, for its About panel (§app.overseer/about).
+    `extensions` is the same reading sova_ext uses (server/overseer-abilities.ts): each installed
+    extension that marks commands for it, with whether it is running now. */
+export interface OverseerAbilitiesInfo {
+  /** Its built-in abilities, one short line per area of its own tools. */
+  builtIn: { name: string; text: string }[];
+  /** Its limits now. */
+  caps: OverseerCaps;
+  extensions: {
+    id: string;
+    title: string;
+    /** Its backend answers its health check: the Overseer can run these now. */
+    running: boolean;
+    /** Why it isn't running, when it isn't. */
+    error?: string;
+    commands: { id: string; label: string; summary?: string; description?: string; job: boolean }[];
+  }[];
 }
 
 export interface OverseerSettingsInfo {
@@ -3558,6 +3665,11 @@ export type AttentionKind =
   | "playbook-review"     // act tier: a verb playbook's run is proposed and waits on Merge Branch (§app.project-runtime/review; the run's session, `playbook` set)
   | "deploy-failed"       // act tier, never pushed: a deploy target's latest deploy failed, its verify failed or its runner stopped (§app.project-services/deploy-status; no session: `path` "", `href` the project page)
   | "deploy-request"      // act tier, never pushed: an overseer asks the operator to deploy (deploy.request; no session: `path` "", `href` the project page)
+  | "release-ready"       // act tier, never pushed: a project's open release passed every gate and waits for Publish (shared/release.ts; no session: `path` "", `href` the project's Releases tab)
+  | "release-request"     // act tier, never pushed: an overseer or the Project Assistant asks the operator to release (release.request; no session: `path` "", `href` the Releases tab)
+  | "release-quiet"       // act tier, never pushed: the release chat sent no report for the project's quietMin while the queue is frozen (Open Chat, Abandon Release; `href` the Releases tab)
+  | "release-held"        // act tier, never pushed: a release step is held for the operator's Continue (`href` the Releases tab)
+  | "release-failed"      // act tier, never pushed: a release step or its gating checks failed (Retry Step, Abandon; `href` the Releases tab)
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "whatsapp-down"       // act tier, pushed (kind `whatsapp-down`): WhatsApp sending is down, logged out, replaced, blocked, unpaired, or unreachable 5 min (§app.outreach/sender-health; no session: `path` "", `href` "#/settings/outreach")
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
@@ -3622,7 +3734,7 @@ export interface AttentionItem {
   };
   /** kind `playbook-review` only: what Merge Branch needs (§app.project-runtime/merge). `hash`
       absent: the branch has no valid definition, so there is nothing to merge. */
-  playbook?: { projectId: string; label: string; hash?: string; branch: string; target: string; proposes?: "definition" | "deploy" };
+  playbook?: { projectId: string; label: string; hash?: string; branch: string; target: string; proposes?: PlaybookProposes };
 }
 
 /** Which org (and project) an organizational session belongs to; names as they read now. `projectId`
@@ -4101,6 +4213,11 @@ export interface ExtensionCommandInfo {
   /** It is an entry of this menu too: "session", the Agents board row's ⋯ menu
       (src/lib/menu-place.ts). Absent: in no menu. */
   menu?: "session";
+  /** ext-contract-v1.18: the extension offers it to the Overseer, which may run it while the
+      extension is running; nothing to switch on (§app.overseer/extension-commands). Absent: not offered. */
+  overseer?: true;
+  /** ext-contract-v1.18: running it starts a job the extension reports on later. */
+  job?: true;
 }
 /** A place on Sova's screens that Sova's own features and extensions both add to: "reply", under a
     delivered message; "row", line 3 of a session row in the sessions pane (src/lib/row-place.ts);
@@ -4134,6 +4251,8 @@ export type ScreenPlace = "reply" | "row" | "card";
 //                                  "expired" one can be claimed: it spreads once refreshed. 400 bad
 //                                  body or unknown key, 409 nothing here to claim (logged out or dead)
 //                                  or the logins switch is off, 404 while OFF)
+// POST /api/mesh/home          -> MeshInfo   (bind peers.json to this folder and machine; this host's
+//                                  browser only. 409 when its home is a copy's original, still in use)
 // GET  /api/mesh/hello          -> MeshHello   (this host's own, for the SPA's stale-tab check: id,
 //                                  version, protocol, build. Cheap (a stat), and answered with the
 //                                  mesh off too, no Tailscale call; nodeId only while on)
@@ -4225,6 +4344,9 @@ export interface MeshInfo {
   frontDoor: string | null;
   /** peers.json exists but can't be used (the mesh is OFF because of it). */
   error?: string;
+  /** peers.json belongs to another folder or machine (a copy, a move, unbound): the mesh is OFF.
+      POST /api/mesh/home (this host's browser only) rebinds it here, except for "copied". */
+  homeMismatch?: "copied" | "moved" | "other-machine" | "unbound";
 }
 
 export interface MeshPeerEntry {
@@ -4591,7 +4713,37 @@ export interface SessionSummary {
       gains it a moment after it first lists. Absent when the session tracks no worktree of its
       own, before git was first read, and from older servers. */
   readiness?: SessionReadiness;
+  /** The branches its chat's composer status row counts (WorktreesControl): every non-dropped worktree the chat
+      tracks, its own and those inherited from the chat it was forked from, with what that row reads besides
+      `readiness` (joined by path, as the chat joins it). The session list says the chat's headline from them.
+      Read in the background with readiness; each entry's queue state is joined at listing time from the merge
+      queue's newest view. Absent when it tracks none, before the first read, for sessions readiness never covers,
+      and from older servers. Additive. */
+  branches?: SessionBranchRow[];
 }
+
+/** One branch as the chat's worktree row reads it (SessionWorktreeInfo), cut to what its words need. */
+export interface SessionBranchRow {
+  /** Canonical top level (SessionWorktreeInfo.path; readiness trees join on it). */
+  path: string;
+  branch: string;
+  status: "active" | "merged";
+  exists: boolean;
+  /** Inherited from that session (a fork copied the entry): no readiness of this chat's speaks for it. */
+  sharedWith?: string;
+  /** status "active": git finds its branch already merged (SessionWorktreeInfo.mergedInto). */
+  mergedInto?: { target: string; sha: string };
+  /** Its newest merge queue entry, the fields a row's words read. */
+  queue?: SessionBranchQueue;
+  /** Its repo is one the merge queue serves (SessionWorktreeInfo.mergeServed). */
+  mergeServed?: true;
+  /** Its project's merge setup as the ready row words it (SessionWorktreeInfo.mergeProject, cut). */
+  mergeProject?: Pick<import("./merge-queue").WorktreeMergeProject, "target" | "checks" | "invalid">;
+}
+
+/** A branch's merge queue entry as the session list carries it: its state (never a precomputed key, so a new state
+    flows through) and what the row's words read. */
+export type SessionBranchQueue = import("./merge-queue").BranchQueueFacts;
 
 /** One worktree's merge readiness (§chat.worktrees/readiness). */
 /** A chat running in the home folder because its stored local working directory is gone
@@ -4771,6 +4923,8 @@ export type SessionFeedMessage =
   | import("./merge-queue").MergeQueueFeed
   /** One chat's merge queue cards changed (shared/merge-queue.ts MergeCard): all of that chat's cards. Additive. */
   | import("./merge-queue").MergeCardsFeed
+  /** A project's release view changed (shared/release.ts ReleaseView, as release.status answers it). Never on connect. Additive. */
+  | import("./release").ReleaseFeed
   | { type: "error"; message: string };
 
 /** Why an LlmInflight count is only a floor. `host` is the peer's id; absent = this host. */
@@ -5172,8 +5326,31 @@ export interface MonitorSampler {
   startedAt: number;
 }
 
+/** The stall recorder's latest records, one line each; `<stateRoot>/stalls/stalls.jsonl` holds them in full. */
+export interface MonitorStallRecord {
+  kind: "stall" | "stall-open" | "memory";
+  at: number;
+  pid: number;
+  /** A stall: the most it can have lasted. */
+  ms?: number;
+  rssBytes?: number;
+  /** The commonest innermost frame while it lasted. */
+  top?: string;
+  /** The oldest operations in flight. */
+  ops?: string[];
+  /** A stall its process never reported the end of: it died or was killed inside it. */
+  unfinished?: boolean;
+}
+
+export interface MonitorStalls {
+  state: "on" | "off" | "failed";
+  recent: MonitorStallRecord[];
+}
+
 export interface MonitorSnapshot {
   at: number;
+  /** The stall recorder, absent from a snapshot built by a server without it. */
+  stalls?: MonitorStalls;
   platform: string;
   scope: MonitorScope;
   /** `unit` only: the unit name, e.g. "sova-runtime.service". */
@@ -5653,7 +5830,10 @@ export type UpdateCheckResult =
   | { state: "up-to-date" }
   | { state: "available"; target: UpdateTarget; rewritten?: boolean }
   | { state: "ahead"; message: string }
-  | { state: "diverged"; target: UpdateTarget; message: string };
+  | { state: "diverged"; target: UpdateTarget; message: string }
+  /** What runs is a withdrawn release (its channel was moved back): told so with the reason, instead of `ahead`, and
+      offered `target`, the release the channel points at now (going back). */
+  | { state: "withdrawn"; tag: string; why: string; at: string; target: UpdateTarget; message: string };
 
 export interface UpdateCheck {
   at: string;

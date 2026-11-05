@@ -7,6 +7,7 @@ import { stampTime } from "../lib/format";
 import { stripPastedPaths } from "../lib/path-attachments";
 import { rowProvider } from "../lib/subagent-limit";
 import { tourLine } from "../lib/tour-rows";
+import { loadsModule } from "../lib/module-load";
 import type { AlignRowInfo } from "../../shared/protocol";
 import type { WakeInfo } from "../../shared/wake";
 import type { TopicBatchInfo } from "../../shared/topic-message";
@@ -33,8 +34,9 @@ import { SettingsToolCard } from "./SettingsChangeCard";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { BriefRow, CardRevision, DeckCard, LinkCard, linkDetails, NavigateGo, useOverseerThread } from "./OverseerCards";
 
-/** A card the running turn raised, before its row settles: the toolkit's own card view, loaded when first needed. */
-const LiveTranscriptCard = lazy(() => import("./TranscriptCard"));
+/** A card the running turn raised, before its row settles: the toolkit's own card view, loaded when
+    first needed; a failed load says so (lib/module-load). */
+const LiveTranscriptCard = lazy(loadsModule(() => import("./TranscriptCard")));
 
 /**
  * The live views of Sova's own kinds (lib/transcript-kinds.ts `live`): what a kind draws while its turn
@@ -179,6 +181,7 @@ function LiveToolRow(props: LiveKindViewProps<LiveCallBlock>) {
         fallback={
           <ToolCard
             name={b.name}
+            mcp={b.mcp ?? tool()?.mcp}
             summary={tourEarlier()}
             args={b.args ?? tool()?.args}
             argsText={b.argsText}

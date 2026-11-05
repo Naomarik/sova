@@ -21,6 +21,7 @@ import { availableParallelism, freemem, loadavg, platform, totalmem } from "node
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { loopDelaySampler, type LoopDelaySampler } from "./runtime-quirks";
+import { opTrack, publishStallFigures, stallRecorderStatus } from "./stall-recorder";
 import type { PiExtensionAPI } from "./harness/pi/extension-types";
 import { claudeSessionId } from "../pi-config/extensions/claude-code/provider/session-records.ts";
 import type {
@@ -410,7 +411,7 @@ export class ResourceMonitor {
     void this.log.rotate(this.now()).catch(() => {});
     this.lastRotate = this.now();
     void this.tick();
-    this.timer = setInterval(() => void this.tick(), this.intervalMs);
+    this.timer = setInterval(() => void opTrack("monitor tick", () => this.tick()), this.intervalMs);
     this.timer.unref();
   }
 
@@ -433,7 +434,7 @@ export class ResourceMonitor {
 
 
   snapshot(): MonitorSnapshot | null {
-    return this.snap;
+    return this.snap && { ...this.snap, stalls: stallRecorderStatus() };
   }
 
   async history(since: number, res: MonitorResolution): Promise<MonitorHistory> {
@@ -773,6 +774,7 @@ export class ResourceMonitor {
       // 6. Unit and server numbers.
       const unit = this.unitNumbers(elapsedSec);
       const mem = process.memoryUsage();
+      publishStallFigures(mem);
       const lag = (ns: number) => (Number.isFinite(ns) ? Math.max(0, ns / 1e6 - LOOP_RESOLUTION_MS) : 0);
       const loopMs = this.loop
         ? { p50: lag(this.loop.percentile(50)), p99: lag(this.loop.percentile(99)), max: lag(this.loop.max) }

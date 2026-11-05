@@ -8,7 +8,34 @@
  * GET   /api/projects/:pid               -> ProjectSummary
  * PATCH /api/projects/:pid {name?, root?} -> ProjectSummary
  * POST  /api/projects/:pid/archive | /unarchive -> ProjectSummary
+ *
+ * A project's icon (§app.projects/icon), kept on this host only:
+ * GET    /api/projects/:pid/icon?v=<v>    -> image/png | 404 (letters in use)
+ * GET    /api/projects/:pid/icon/info     -> ProjectIconInfo (rescans the folder)
+ * PUT    /api/projects/:pid/icon {png: base64 square PNG} -> ProjectIconInfo
+ * PATCH  /api/projects/:pid/icon {letters: boolean} -> ProjectIconInfo
+ * DELETE /api/projects/:pid/icon          -> ProjectIconInfo (removes the upload)
  */
+
+/** The picture a project shows instead of its letters: fetched as `GET /api/projects/:pid/icon?v=<v>`. */
+export interface ProjectIconRef {
+  kind: "image";
+  /** Uploaded by the operator, or found in the project's folder. */
+  source: "upload" | "found";
+  /** Changes whenever the picture does (the URL's cache key). */
+  v: string;
+}
+
+/** What the Settings tab's Icon card shows. */
+export interface ProjectIconInfo {
+  /** What is drawn now. */
+  use: "upload" | "found" | "letters";
+  /** Letters chosen over a picture. */
+  letters: boolean;
+  uploaded?: { v: string; at: string };
+  /** The first square PNG app icon in the folder, relative to its root. */
+  found?: { path: string; v: string; w: number; h: number };
+}
 
 /** Where a project lives: its own engine, or an organization that placed it. */
 export type ProjectSpace = { kind: "standalone" } | { kind: "org"; orgId: string; orgName: string };
@@ -27,6 +54,8 @@ export interface ProjectSummary {
   /** Archived: put away, nothing deleted. `via`: the global Overseer did it for the operator. */
   archived?: { at: string; via?: "overseer" };
   space: ProjectSpace;
+  /** A picture in use (absent: letters). Only on this host's own summaries; a peer's project is drawn as letters. */
+  icon?: ProjectIconRef;
 }
 
 export interface ProjectList {

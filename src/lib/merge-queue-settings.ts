@@ -1,6 +1,7 @@
 // The words of Settings → Merge Queue and of the Merge Queue tab's summary line: what the queue's
 // settings say, where each lives, and what an edit changes. Pure (no DOM, no Solid).
 import type { EffectiveModel, MergeQueueSettings, MergeSettingsChange, MergeSettingsSaveResult, SettingSource } from "../../shared/merge-queue-settings";
+import { settingsWaitingWords } from "../../shared/merge-queue-settings";
 import { pickLabel } from "./model-pick";
 import { modelLabel } from "./format";
 
@@ -62,13 +63,15 @@ export function modelWords(m: EffectiveModel): { value: string; today?: string; 
 export interface ProjectDraft {
   push: boolean;
   review: boolean;
+  /** Reuse passes from identical code. */
+  reuse: boolean;
   checks: Record<string, { timeoutSec: number; rerun: boolean; optional: boolean }>;
 }
 
 export function toProjectDraft(s: MergeQueueSettings, hasOrigin: boolean): ProjectDraft {
   const checks: ProjectDraft["checks"] = {};
   for (const c of s.checks.list) checks[c.id] = { timeoutSec: c.timeoutSec, rerun: c.rerun, optional: c.optional };
-  return { push: pushes(s, hasOrigin), review: s.review.on, checks };
+  return { push: pushes(s, hasOrigin), review: s.review.on, reuse: s.reuse !== false, checks };
 }
 
 /** Only what the user changed: an untouched field is never written (absent push stays absent). Pure. */
@@ -77,6 +80,7 @@ export function changesOf(d: ProjectDraft, s: MergeQueueSettings, hasOrigin: boo
   const out: MergeSettingsChange = {};
   if (d.push !== base.push) out.push = d.push;
   if (d.review !== base.review) out.review = d.review;
+  if (typeof d.reuse === "boolean" && d.reuse !== base.reuse) out.reuse = d.reuse;
   const checks: NonNullable<MergeSettingsChange["checks"]> = {};
   for (const [id, c] of Object.entries(d.checks)) {
     const b = base.checks[id];
@@ -96,6 +100,7 @@ export function changeLines(ch: MergeSettingsChange, s: MergeQueueSettings): str
   const lines: string[] = [];
   if (ch.push !== undefined) lines.push(ch.push ? "Push after each landing: on" : "Push after each landing: off");
   if (ch.review !== undefined) lines.push(ch.review ? "Review each landing: on" : "Review each landing: off");
+  if (ch.reuse !== undefined) lines.push(ch.reuse ? "Reuse passes from identical code: on" : "Reuse passes from identical code: off");
   for (const c of s.checks.list) {
     const x = ch.checks?.[c.id];
     if (!x) continue;
@@ -130,7 +135,7 @@ export function rebaseDraft(d: ProjectDraft, base: ProjectDraft, fresh: ProjectD
     const was = base.checks[id];
     checks[id] = mine && was ? { timeoutSec: pick(mine.timeoutSec, was.timeoutSec, now.timeoutSec), rerun: pick(mine.rerun, was.rerun, now.rerun), optional: pick(mine.optional, was.optional, now.optional) } : { ...now };
   }
-  return { push: pick(d.push, base.push, fresh.push), review: pick(d.review, base.review, fresh.review), checks };
+  return { push: pick(d.push, base.push, fresh.push), review: pick(d.review, base.review, fresh.review), reuse: pick(d.reuse, base.reuse, fresh.reuse), checks };
 }
 
 /** A refused call's words: the server's `{error: {code, message}}` envelope, a plain `{error}`, or the error's own message. Pure. */
@@ -147,13 +152,16 @@ export function threadFolderCaption(s: Pick<MergeQueueSettings, "thread" | "land
   return s.thread.playbooks.some((p) => p.differsFromFolder) ? `The merge thread reads the project folder's copy, which differs from ${s.landing.target}.` : null;
 }
 
-/** What a save says, by how it went: onto the target, waiting for the current branch, a PR/MR opened, or a branch pushed. Pure. */
+/** The waiting save's banner title: why it waits (the branch checking now, or the release holding the queue), or that it failed. Pure. */
+export const pendingSaveTitle = (p: { release?: string }, failed: boolean): string => (failed ? "The waiting save couldn't be applied." : `${settingsWaitingWords(p.release)}.`);
+
+/** What a save says, by how it went: onto the target, waiting for the current branch or the open release, a PR/MR opened, or a branch pushed. Pure. */
 export function saveResultWords(r: MergeSettingsSaveResult, o: { target: string; pushes: boolean; gitlab: boolean }): { text: string; link?: { href: string; label: string } } {
   switch (r.state) {
     case "saved":
       return { text: savedWords(o.target, r.commit, o.pushes) };
     case "waiting":
-      return { text: "Saves when the current branch finishes." };
+      return { text: `${settingsWaitingWords(r.release)}.` };
     case "requested": {
       const kind = o.gitlab ? `MR !${r.number}` : `PR #${r.number}`;
       return { text: `Opened ${kind} for the settings change. It applies once it's merged into ${o.target}.`, link: { href: r.url, label: o.gitlab ? "Open MR" : "Open PR" } };

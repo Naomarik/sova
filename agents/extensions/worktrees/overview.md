@@ -39,7 +39,7 @@ and each merge becomes a card.
   queue's target is refused; in any other repo `merge` into main is plain and `land` is that same plain merge, recording nothing.
 - `served.ts` (builtins only): `<state root>/merge-served.json`, which repos the merge queue serves (`{v: 1, at, roots:
   [{root, target}]}`), written by the server alone (`server/merge-queue/served.ts`, which imports its name and type from
-  here) and read afresh by `merge` and `land`; no `SOVA_CHAT_STATE_ROOT`: not served; file absent or damaged: served (fail closed).
+  here) and read afresh by `merge` and `land`; every chat Sova starts has `SOVA_CHAT_STATE_ROOT` (server/chat-host.ts); neither that nor `SOVA_CHAT_SOCK` (a terminal): not served; the socket alone, or a file absent or damaged: served (fail closed).
 
 `create <name>` runs `git worktree add -b feat/<name>` at `<parent of the main checkout>/.worktrees/<repo>-<name>`
 (AGENTS.md's worktree rule) and tracks it, so workers may start there. The dev watcher doesn't watch this directory: an edit reaches a running server only at

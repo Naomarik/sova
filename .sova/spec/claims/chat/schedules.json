@@ -8,18 +8,38 @@
       "server/schedule-routes.ts",
       "shared/schedules.ts",
       "server/schedules.test.ts",
-      "src/lib/api.ts"
+      "src/lib/api.ts",
+      "src/components/PlaybooksDialog.tsx"
     ],
     "requires": [
       "§chat.profiles/projects",
       "§chat.profiles/trust",
-      "§app.overseer/approvals"
+      "§app.overseer/approvals",
+      "§app.access/your-click"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-23T14:32Z",
-      "source": "pi-session:b12fa70a-e8d8-40c1-89f1-d1099cc1d8de#730a540e"
+      "by": "user",
+      "at": "2026-11-04T06:59Z",
+      "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
     }
+  },
+  "§chat.schedules/automation-file": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.schedules/header",
+      "§chat.schedules/approval",
+      "§chat.schedules/where-shown",
+      "§chat.memory/choice"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "shared/automations.ts",
+      "server/automation-files.ts",
+      "server/automation-session.ts",
+      "server/schedules.ts",
+      "server/schedule-routes.ts"
+    ]
   },
   "§chat.schedules/fire": {
     "kind": "behavior",

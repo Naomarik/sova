@@ -7,6 +7,7 @@ import { hostProcTable } from "../project-services/proctable";
 import { resolveTourTarget } from "../project-services/tour-target";
 import { assertTourCoverage, tourAsset, tourScriptDigest } from "./checks";
 import { isPublicRecordingAddress } from "./browser-addresses";
+import { chooseTourBrowser, TOUR_BROWSER_GUIDANCE, TourBrowserSetupError } from "./browser";
 import { killTourChild, spawnTourCommand, type TourProxyOptions, type TourRecordingContext } from "./sandbox";
 import { readBounded } from "./assets";
 import { join } from "node:path";
@@ -153,6 +154,11 @@ export async function runTourAttempt(options: TourAttemptOptions): Promise<TourA
     }
     throw refusal;
   };
+  // macOS: the server picks the browser (the confined child's environment can't), and a sandboxed
+  // attempt whose only browser is an app-bundle Chrome is refused here, before anything starts.
+  let browser: string | undefined;
+  try { browser = chooseTourBrowser(options.context.sandbox.on); }
+  catch (error) { throw new TourCaptureFailure({ message: error instanceof TourBrowserSetupError ? error.message : "The installed Chrome or Chromium could not be found.", guidance: TOUR_BROWSER_GUIDANCE }); }
   let stopForPolicy: (() => void) | undefined;
   let own: RunnerProxy | undefined;
   if (!proxied) {
@@ -283,7 +289,7 @@ export async function runTourAttempt(options: TourAttemptOptions): Promise<TourA
   });
   try {
     const exited = new Promise<number | null>((resolve, reject) => { proc.once("error", reject); proc.once("close", resolve); });
-    write({ type: "start", input: { script, origin: target.origin, dryRun: options.dryRun, proxied, declared: [...declared], ...(options.account ? { account: options.account } : {}), ...(sova ? { sova } : {}), ...(script.signIn ? { signIn: { origins: signInOrigins, ...(options.signInStorage ? { storage: options.signInStorage } : {}) } } : {}), ...(options.look ? { look: { ...(options.look.signInRoute ? { signInRoute: options.look.signInRoute } : {}) } } : {}) } });
+    write({ type: "start", input: { script, origin: target.origin, dryRun: options.dryRun, proxied, declared: [...declared], ...(browser ? { browser } : {}), ...(options.account ? { account: options.account } : {}), ...(sova ? { sova } : {}), ...(script.signIn ? { signIn: { origins: signInOrigins, ...(options.signInStorage ? { storage: options.signInStorage } : {}) } } : {}), ...(options.look ? { look: { ...(options.look.signInRoute ? { signInRoute: options.look.signInRoute } : {}) } } : {}) } });
     const code = await exited;
     if (policyError) throw policyError;
     if (failure) throw failure;

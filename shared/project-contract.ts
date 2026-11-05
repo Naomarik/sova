@@ -12,14 +12,22 @@ export type Verb = (typeof VERBS)[number];
 export const DEPLOY_VERBS = ["deploy.check", "deploy.plan", "deploy.run", "deploy.status", "deploy.logs", "deploy.rollback", "deploy.request"] as const;
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
 /** The merge queue's verbs (shared/merge-queue.ts): a project's queue, its entries and runs, never an instance. */
-export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear"] as const;
+export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold"] as const;
 export type MergeVerb = (typeof MERGE_VERBS)[number];
 /** The merge verbs that change nothing. */
 export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs"];
-export type AnyVerb = Verb | DeployVerb | MergeVerb;
+/** The release verbs (shared/release.ts): a project's release in progress and its history, never an instance. */
+export const RELEASE_VERBS = ["release.status", "release.logs", "release.request", "release.start", "release.step", "release.notes", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw", "release.note"] as const;
+export type ReleaseVerb = (typeof RELEASE_VERBS)[number];
+/** The release verbs that change nothing. */
+export const RELEASE_READ_VERBS: readonly ReleaseVerb[] = ["release.status", "release.logs"];
+/** The release verbs only the project's release chat calls, through its own tool; never from the operator's route. */
+export const RELEASE_THREAD_VERBS: readonly ReleaseVerb[] = ["release.step", "release.notes"];
+export type AnyVerb = Verb | DeployVerb | MergeVerb | ReleaseVerb;
 export const isDeployVerb = (v: unknown): v is DeployVerb => (DEPLOY_VERBS as readonly unknown[]).includes(v);
 export const isMergeVerb = (v: unknown): v is MergeVerb => (MERGE_VERBS as readonly unknown[]).includes(v);
-export const isVerb = (v: unknown): v is AnyVerb => (VERBS as readonly unknown[]).includes(v) || isDeployVerb(v) || isMergeVerb(v);
+export const isReleaseVerb = (v: unknown): v is ReleaseVerb => (RELEASE_VERBS as readonly unknown[]).includes(v);
+export const isVerb = (v: unknown): v is AnyVerb => (VERBS as readonly unknown[]).includes(v) || isDeployVerb(v) || isMergeVerb(v) || isReleaseVerb(v);
 /** Verbs that change nothing and take no lock. */
 export const READ_VERBS: readonly Verb[] = ["status", "logs", "doctor"];
 /** The deploy verbs anyone with the project in scope may call: they read (§app.project-services/deploy-callers). */
@@ -53,6 +61,8 @@ export interface VerbParam {
   cli?: { flag: string; description: string; deployDefault?: string };
   /** Only the merge verbs take it: on the merge thread's tool, never the generic project tools. */
   mergeOnly?: true;
+  /** Only the release verbs take it: on the release chat's tool, never the generic project tools. */
+  releaseOnly?: true;
 }
 
 export const VERB_PARAMS: readonly VerbParam[] = [
@@ -108,8 +118,22 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "takesMin", type: "integer", mergeOnly: true, cli: { flag: "takes-min", description: "merge.setup: about how many minutes the tests take" } },
   { wire: "requires", type: "list", mergeOnly: true, cli: { flag: "requires", description: "merge.setup: services that must start first, comma-separated" } },
   { wire: "dryRun", type: "boolean", mergeOnly: true, cli: { flag: "dry-run", description: "merge.setup: Try It on Main, saving nothing" } },
-  { wire: "text", type: "string", mergeOnly: true, tool: { name: "text", description: "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words." }, cli: { flag: "text", description: "Text" } },
+  { wire: "text", type: "string", mergeOnly: true, tool: { name: "text", description: "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; release.notes: the release notes, in full." }, cli: { flag: "text", description: "Text" } },
+  { wire: "action", type: "string", mergeOnly: true, tool: { name: "action", description: "merge.hold (the merge thread's): set | clear. set holds every new run for 5 minutes (set again renews it); a run already checking goes on." }, cli: { flag: "action", description: "merge.hold: set | clear" } },
   { wire: "ask", type: "string", mergeOnly: true, tool: { name: "ask", description: "merge.reply: the merge thread's question you relay the user's answer to, by its id (ak_…, in the merge queue's message)." }, cli: { flag: "ask", description: "A merge thread question id" } },
+  // The release verbs' own keys (shared/release.ts). On no generic tool: the release chat's tool lists them.
+  { wire: "release", type: "string", releaseOnly: true, tool: { name: "release", description: "release.*: a release, by its id (rl_…; default the open one)." }, cli: { flag: "release", description: "A release id" } },
+  { wire: "state", type: "string", releaseOnly: true, tool: { name: "state", description: "release.step: running | done | failed | skipped | held." }, cli: { flag: "state", description: "A step's state" } },
+  { wire: "summary", type: "string", releaseOnly: true, tool: { name: "summary", description: "release.step: the step's result in one line (at most 300 characters)." }, cli: { flag: "summary", description: "A step's one-line summary" } },
+  { wire: "detail", type: "string", releaseOnly: true, tool: { name: "detail", description: "release.step: what the step did, in full (optional)." }, cli: { flag: "detail", description: "A step's detail" } },
+  {
+    wire: "facts",
+    type: "list",
+    releaseOnly: true,
+    tool: { name: "facts", description: "release.step: facts Sova checks, each key=value: version, commit, branch, url, artifact (a path), sha256, size.", maxItems: 10 },
+    cli: { flag: "facts", description: "A step's facts, key=value, comma-separated" },
+  },
+  { wire: "tag", type: "string", releaseOnly: true, tool: { name: "tag", description: "release.withdraw: the published release, by its numbered tag (instead of its id)." }, cli: { flag: "tag", description: "A release's numbered tag" } },
   { wire: "overrideTests", type: "string", cli: { flag: "override-tests", description: "Why the tests are overridden" } },
   { wire: "overrideDirty", type: "string", cli: { flag: "override-dirty", description: "Why a dirty tree is overridden" } },
   { wire: "confirm", type: "boolean", cli: { flag: "confirm", description: "The operator's confirm" } },
@@ -117,10 +141,11 @@ export const VERB_PARAMS: readonly VerbParam[] = [
 ];
 
 /** The flags each kind of verb takes on the command line, in the order they are listed there. */
-export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy: readonly string[]; readonly merge: readonly string[] } = {
+export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy: readonly string[]; readonly merge: readonly string[]; readonly release: readonly string[] } = {
+  release: ["project", "release", "tag", "step", "state", "summary", "detail", "facts", "text", "commit", "why", "lines", "confirm", "dismiss"],
   instance: ["project", "instance", "checkout", "branch", "from", "slot", "services", "restart", "lines", "keep-data", "resources", "ref", "select", "endpoint", "days", "link", "confirm"],
   deploy: ["project", "target", "commit", "ref", "plan", "deploy", "why", "lines", "override-tests", "override-dirty", "confirm", "dismiss"],
-  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "via", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run", "ask"],
+  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "via", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run", "ask", "action"],
 };
 
 export const ERROR_CODES = [
@@ -146,6 +171,7 @@ export const ERROR_CODES = [
   "needs-override",
   "deploy-failed",
   "verify-failed",
+  "release-refused",
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 
@@ -168,6 +194,7 @@ const EXIT: Record<ErrorCode, ExitClass> = {
   forbidden: 2,
   "needs-confirm": 2,
   "deploy-refused": 2,
+  "release-refused": 2,
   "needs-override": 2,
   "invalid-request": 3,
   "invalid-definition": 3,
@@ -263,7 +290,34 @@ export interface ProjectDef {
   sources?: string[];
   /** How the merge queue lands branches (its checks): outside the definition's hash. */
   merge?: MergeDecl;
+  /** How the project releases (shared/release.ts): absent means releases are not set up. Outside the definition's hash. */
+  release?: ReleaseDecl;
 }
+
+/** How a reported version is checked: `semver` X.Y.Z (with an optional -pre), `calver` YYYY.MM[.DD][.N], `none` any tag-safe word. */
+export const RELEASE_SCHEMES = ["semver", "calver", "none"] as const;
+export type ReleaseScheme = (typeof RELEASE_SCHEMES)[number];
+/** The definition's `release` section: a pointer to the project's release playbook plus the facts Sova acts on itself
+ *  (the tag it makes, the channels it moves, the gating checks). `checks`: the release-only checks the queue runs on the
+ *  release entry after the merge required set, resolved (a merge check by id, or one declared here); `checkIds` in
+ *  declaration order. `commit: false`: tag-only, no release commit. `quietMin`: minutes without a report from the
+ *  release chat while master is frozen before Sova says so. */
+export interface ReleaseDecl {
+  playbook: string;
+  tag: string;
+  scheme: ReleaseScheme;
+  channels: string[];
+  commit: boolean;
+  checks: MergeCheckDecl[];
+  checkIds: string[];
+  quietMin: number;
+}
+export const RELEASE_TAG_DEFAULT = "v${version}";
+export const RELEASE_CHANNELS_MAX = 3;
+export const RELEASE_CHECKS_MAX = 20;
+export const RELEASE_QUIET_DEFAULT = 30;
+export const RELEASE_QUIET_MIN = 5;
+export const RELEASE_QUIET_MAX = 1440;
 
 /** One check the merge queue runs on a merged commit, in declaration order. `run` may use the definition's template
  *  variables and `${merge.base}`, `${merge.tip}`, `${merge.target}`. `rerun`: its failures name test files, and
@@ -283,7 +337,8 @@ export interface MergeCheckDecl {
  *  main checkout's). `push`: absent means push when an `origin` remote exists. `install`: run in the merge copy when
  *  a merged branch changes one of its `inputs` (an offline install). `review`: the review kit's folder. `land`: how a
  *  branch lands (al_3; absent: merged locally; this computer's own choice wins over it). `request`: the request skill
- *  folder (how a pull or merge request's title and description are written, and their checks). */
+ *  folder (how a pull or merge request's title and description are written, and their checks). `reuse`: false runs
+ *  every check in full (SOVA_FRESH=1); absent or true lets a check's runner reuse passes from identical code. */
 export interface MergeDecl {
   target?: string;
   push?: boolean;
@@ -292,6 +347,7 @@ export interface MergeDecl {
   review?: string;
   land?: import("./merge-queue").LandHow;
   request?: string;
+  reuse?: boolean;
 }
 
 /** The endpoints a copy may share (`"<service>.<port>"`, checkout services only; none when absent), at most `maxDays` per link, and whether at all. */
@@ -344,6 +400,8 @@ export interface DeployTargetDecl {
   rollback: DeployRollbackDecl;
   credentials: DeployCredentialDecl[];
   requires: { tests: (typeof DEPLOY_TESTS)[number] };
+  /** `"only"`: only a published, not withdrawn, numbered release's commit ships here. Absent: any commit on its branch. */
+  releases?: "only";
 }
 export interface DeployDecl {
   /** In declaration order. */
@@ -408,7 +466,7 @@ const isObj = (v: unknown): v is Obj => !!v && typeof v === "object" && !Array.i
 
 /** Every key the declaration accepts, by where it sits (the parse refuses any other; the playbook's reference is pinned to these). */
 export const DEFINITION_KEYS = {
-  top: ["version", "slots", "host", "setup", "data", "services", "open", "hooks", "test", "share", "deploy", "sources", "merge"],
+  top: ["version", "slots", "host", "setup", "data", "services", "open", "hooks", "test", "share", "deploy", "sources", "merge", "release"],
   slots: ["cap"],
   step: ["id", "run", "inputs", "timeout"],
   service: ["cmd", "static", "cwd", "env", "ports", "requires", "ready", "reload", "build", "scope", "container", "start", "about", "isolation", "adopt", "onMerge"],
@@ -426,15 +484,17 @@ export const DEFINITION_KEYS = {
   share: ["endpoints", "maxDays", "allow"],
   open: ["endpoint", "path"],
   deploy: ["targets"],
-  target: ["about", "branch", "build", "steps", "plan", "verify", "rollback", "credentials", "requires"],
+  target: ["about", "branch", "build", "steps", "plan", "verify", "rollback", "credentials", "requires", "releases"],
   deployStep: ["id", "run", "timeout"],
   verify: ["http", "expect", "timeout"],
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review", "land", "request"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse"],
   mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
   mergeInstall: ["run", "inputs", "timeout"],
+  release: ["playbook", "tag", "scheme", "channels", "commit", "checks", "quietMin"],
+  releaseCheck: ["id", "label", "run", "timeout", "rerun", "requires"],
 } as const;
 const K = DEFINITION_KEYS;
 
@@ -791,6 +851,10 @@ function deployTarget(nm: string, v: unknown, path: string): DeployTargetDecl {
     if (!(DEPLOY_TESTS as readonly unknown[]).includes(r.tests)) throw new DefinitionError(`${path}.requires.tests`, `must be one of ${DEPLOY_TESTS.join(", ")}`);
     out.requires = { tests: r.tests as DeployTargetDecl["requires"]["tests"] };
   }
+  if (o.releases !== undefined) {
+    if (o.releases !== "only") throw new DefinitionError(`${path}.releases`, 'must be "only" (only a numbered release ships here), or absent');
+    out.releases = "only";
+  }
   return out;
 }
 
@@ -882,7 +946,98 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
     out.land = o.land as (typeof MERGE_LAND_HOWS)[number];
   }
   if (o.request !== undefined) out.request = relPath(o.request, "$.merge.request", true);
+  if (o.reuse !== undefined) {
+    if (typeof o.reuse !== "boolean") throw new DefinitionError("$.merge.reuse", "must be true or false");
+    out.reuse = o.reuse;
+  }
   return out;
+}
+
+// ---- release (shared/release.ts) -----------------------------------------------------------------
+
+/** A git tag name Sova makes or moves: no spaces, no `..`, no `@{`, no leading `-` or `/`, no trailing `.lock`, `/` or `.`. */
+const TAG_NAME = /^[A-Za-z0-9][A-Za-z0-9._/+-]{0,100}$/;
+export const isTagName = (t: string): boolean => TAG_NAME.test(t) && !t.includes("..") && !t.includes("//") && !t.endsWith(".lock") && !t.endsWith("/") && !t.endsWith(".");
+/** The numbered tag of `version` under the section's `tag` pattern. */
+export const releaseTagOf = (pattern: string, version: string): string => pattern.replace("${version}", version);
+/** The version a tag names under the pattern, or null when the tag doesn't fit it. */
+export function versionOfTag(pattern: string, tag: string): string | null {
+  const i = pattern.indexOf("${version}");
+  if (i < 0) return null;
+  const pre = pattern.slice(0, i);
+  const post = pattern.slice(i + "${version}".length);
+  if (!tag.startsWith(pre) || !tag.endsWith(post) || tag.length <= pre.length + post.length) return null;
+  return tag.slice(pre.length, tag.length - post.length);
+}
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z][0-9A-Za-z.-]{0,40})?$/;
+const CALVER = /^\d{4}\.(0?[1-9]|1[0-2])(\.(0?[1-9]|[12]\d|3[01]))?(\.\d{1,4})?$/;
+const ANY_VERSION = /^[0-9A-Za-z][0-9A-Za-z._+-]{0,60}$/;
+/** Why `version` doesn't fit `scheme`, or null. */
+export function versionProblem(scheme: ReleaseScheme, version: string): string | null {
+  if (scheme === "semver") return SEMVER.test(version) ? null : `"${version}" is not a semantic version (X.Y.Z, an optional -pre)`;
+  if (scheme === "calver") return CALVER.test(version) ? null : `"${version}" is not a calendar version (YYYY.MM, an optional .DD and .N)`;
+  return ANY_VERSION.test(version) ? null : `"${version}" is not a version (letters, digits and . _ + -, at most 61)`;
+}
+
+function releaseDecl(v: unknown, merge: MergeDecl | undefined, services: readonly ServiceDecl[]): ReleaseDecl {
+  const o = obj(v, "$.release");
+  keysOnly(o, K.release, "$.release");
+  if (o.playbook === undefined) throw new DefinitionError("$.release.playbook", "name the project's release playbook folder (it holds release.json)");
+  const playbook = relPath(o.playbook, "$.release.playbook", true);
+  if (playbook === ".") throw new DefinitionError("$.release.playbook", "must be a folder inside the checkout, not the checkout itself");
+  let tag = RELEASE_TAG_DEFAULT;
+  if (o.tag !== undefined) {
+    if (typeof o.tag !== "string") throw new DefinitionError("$.release.tag", 'must be a tag pattern holding ${version} once, like "v${version}"');
+    tag = o.tag;
+  }
+  const vars = tag.match(/\$\{[^}]*\}/g) ?? [];
+  if (vars.length !== 1 || vars[0] !== "${version}") throw new DefinitionError("$.release.tag", 'must hold ${version} exactly once and no other variable, like "v${version}"');
+  if (!isTagName(releaseTagOf(tag, "1.0.0"))) throw new DefinitionError("$.release.tag", "must make a valid tag name (letters, digits and . _ / + -)");
+  let scheme: ReleaseScheme = "semver";
+  if (o.scheme !== undefined) {
+    if (!(RELEASE_SCHEMES as readonly unknown[]).includes(o.scheme)) throw new DefinitionError("$.release.scheme", `must be one of ${RELEASE_SCHEMES.join(", ")}`);
+    scheme = o.scheme as ReleaseScheme;
+  }
+  const channels = strList(o.channels, "$.release.channels");
+  if (channels.length > RELEASE_CHANNELS_MAX) throw new DefinitionError("$.release.channels", `at most ${RELEASE_CHANNELS_MAX} channels`);
+  for (const [i, c] of channels.entries()) {
+    if (!isTagName(c)) throw new DefinitionError(`$.release.channels[${i}]`, "must be a valid tag name (letters, digits and . _ / + -)");
+    if (versionOfTag(tag, c) !== null && versionProblem(scheme, versionOfTag(tag, c)!) === null) throw new DefinitionError(`$.release.channels[${i}]`, "a channel never looks like a numbered release's tag");
+  }
+  if (new Set(channels).size !== channels.length) throw new DefinitionError("$.release.channels", "each channel once");
+  let commit = true;
+  if (o.commit !== undefined) {
+    if (typeof o.commit !== "boolean") throw new DefinitionError("$.release.commit", "must be true (a release commit through the queue) or false (tag-only)");
+    commit = o.commit;
+  }
+  const checks: MergeCheckDecl[] = [];
+  if (o.checks !== undefined) {
+    if (!Array.isArray(o.checks)) throw new DefinitionError("$.release.checks", "must be a list: merge check ids, or checks declared here {id, run, ...}");
+    if (o.checks.length > RELEASE_CHECKS_MAX) throw new DefinitionError("$.release.checks", `at most ${RELEASE_CHECKS_MAX} checks`);
+    const merged = Array.isArray(merge?.checks) ? merge!.checks : [];
+    for (const [i, c] of o.checks.entries()) {
+      const path = `$.release.checks[${i}]`;
+      if (typeof c === "string") {
+        const m = merged.find((x) => x.id === c);
+        if (!m) throw new DefinitionError(path, `names no merge check "${c}" (declare it in merge.checks, or here as {id, run})`);
+        const { optional: _o, ...rest } = m;
+        checks.push(rest);
+        continue;
+      }
+      const x = obj(c, path);
+      keysOnly(x, K.releaseCheck, path);
+      const id = name(typeof x.id === "string" ? x.id : "", `${path}.id`);
+      if (merged.some((m) => m.id === id)) throw new DefinitionError(`${path}.id`, `"${id}" is a merge check's id: name it as a string instead`);
+      if (x.label !== undefined && (typeof x.label !== "string" || !x.label.trim() || x.label.length > 60)) throw new DefinitionError(`${path}.label`, "must be a short label (1 to 60 characters)");
+      if (x.rerun !== undefined && typeof x.rerun !== "boolean") throw new DefinitionError(`${path}.rerun`, "must be true or false");
+      const requires = strList(x.requires, `${path}.requires`);
+      for (const r of requires) if (!services.some((s) => s.name === r)) throw new DefinitionError(`${path}.requires`, `names no service "${r}"`);
+      checks.push({ id, label: typeof x.label === "string" ? x.label.trim() : id, run: argv(x.run, `${path}.run`), timeout: timeout(x.timeout, `${path}.timeout`, TEST_TIMEOUT_DEFAULT, HOOK_TIMEOUT_MAX), rerun: x.rerun === true, requires });
+    }
+    if (new Set(checks.map((c) => c.id)).size !== checks.length) throw new DefinitionError("$.release.checks", "each check once");
+  }
+  const quietMin = o.quietMin === undefined ? RELEASE_QUIET_DEFAULT : int(o.quietMin, "$.release.quietMin", RELEASE_QUIET_MIN, RELEASE_QUIET_MAX);
+  return { playbook, tag, scheme, channels, commit, checks, checkIds: checks.map((c) => c.id), quietMin };
 }
 
 export function parseDefinition(text: string): ProjectDef {
@@ -952,6 +1107,7 @@ export function parseDefinition(text: string): ProjectDef {
     ...(sources ? { sources } : {}),
     ...(o.merge !== undefined ? { merge: mergeDecl(o.merge, services) } : {}),
   };
+  if (o.release !== undefined) def.release = releaseDecl(o.release, def.merge, services);
   // requires: known, scope-consistent, acyclic.
   const byName = new Map(services.map((s) => [s.name, s]));
   for (const s of services)
@@ -1349,6 +1505,8 @@ export interface VerbResult {
   deploy?: DeployReport;
   /** The merge verbs' answer (shared/merge-queue.ts). */
   merge?: import("./merge-queue").MergeReport;
+  /** The release verbs' answer (shared/release.ts). */
+  release?: import("./release").ReleaseReport;
   error?: VerbError;
   defHash: string | null;
   at: string;
@@ -1379,6 +1537,7 @@ export function ordered(r: VerbResult): VerbResult {
     ...(r.tests !== undefined ? { tests: r.tests } : {}),
     ...(r.deploy !== undefined ? { deploy: r.deploy } : {}),
     ...(r.merge !== undefined ? { merge: r.merge } : {}),
+    ...(r.release !== undefined ? { release: r.release } : {}),
     ...(r.error !== undefined ? { error: r.error } : {}),
     defHash: r.defHash,
     at: r.at,
@@ -1393,7 +1552,7 @@ export function isVerbResult(v: unknown): v is VerbResult {
   const want = ["v", "verb", "project", "instance", "slot", "generation", "checkout", "branch", "ok", "changed", "state", "steps", "services", "data", "links"];
   if (keys.slice(0, want.length).join() !== want.join()) return false;
   const tail = keys.slice(want.length);
-  const optional = ["instances", "lines", "checks", "conform", "tests", "deploy", "merge", "error"];
+  const optional = ["instances", "lines", "checks", "conform", "tests", "deploy", "merge", "release", "error"];
   const fixedTail = ["defHash", "at"];
   if (tail.slice(-2).join() !== fixedTail.join()) return false;
   const mid = tail.slice(0, -2);

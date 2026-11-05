@@ -97,7 +97,7 @@ describe("a project overseer", async () => {
     assert.deepEqual(piSession(chat).getAllTools().map((t) => t.name).sort(), want, "no bash or extension tool");
     for (const t of ["write", "edit"]) assert.ok(want.includes(t), t);
     const loaded = piRuntime(chat).services.resourceLoader.getExtensions().extensions.map((e) => e.path);
-    assert.deepEqual(loaded, ["<inline:sova-project-overseer>", "<inline:sova-memory>"]);
+    assert.deepEqual(loaded, ["<inline:sova-project-overseer>", "<inline:sova-memory>", "<inline:sova-deeper-context>"]);
     assert.deepEqual(chat.memory.choice(), { on: true, type: "uniichat", size: 128 }, "no saved choice: on, UniiChat at 128 KB");
     assert.equal(chat.memoryOffered(), false, "no mode-menu memory row");
     await assert.rejects(() => chat.switchMode({ mode: "delegate" } as never), ModeRefusedError);

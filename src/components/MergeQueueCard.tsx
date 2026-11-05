@@ -55,6 +55,9 @@ const ACTION_LABEL: Record<CardAction, string> = {
   "land-anyway": "Land Anyway",
   "send-back": "Send Back",
   "land-again": "Land Again",
+  land: "Land",
+  "land-this-again": "Land This Commit Again",
+  remove: "Remove from Queue",
 };
 
 function Body(props: { data: QueueCard; readOnly?: boolean }) {
@@ -80,7 +83,7 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
     const answer = (x: MergeAnswer) => answerEntry(e, x);
     try {
       const r =
-        a === "cancel"
+        a === "cancel" || a === "remove"
           ? await cancelEntry(e)
           : a === "accept"
             ? await answer("accept")
@@ -88,7 +91,8 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
               ? await answer("land-anyway")
               : a === "send-back"
                 ? await answer("send-back")
-                : await landBranch(d().root, d().branch, { commit: d().head });
+                : // Land, Land This Commit Again: the commit the card was approved at; Land Again: the branch's head.
+                  await landBranch(d().root, d().branch, { commit: a === "land-again" ? d().head : d().commit });
       const no = refusal(r);
       if (no) {
         setError(no);
@@ -259,7 +263,7 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
             {(a) => (
               <button
                 type="button"
-                class={`button button-sm${a === "accept" || a === "land-anyway" ? " button-primary" : ""}${a === "send-back" ? " button-destructive" : ""}`}
+                class={`button button-sm${a === "accept" || a === "land-anyway" || a === "land" ? " button-primary" : ""}${a === "send-back" ? " button-destructive" : ""}`}
                 aria-label={`${ACTION_LABEL[a]} ${d().branch}`}
                 disabled={!!busy()}
                 aria-busy={busy() === a ? "true" : undefined}

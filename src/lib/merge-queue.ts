@@ -2,8 +2,10 @@
 // session pane's Worktrees rows and the project's Merge Queue tab, so the four always agree. Pure: no
 // Solid, no DOM. The shapes are the queue's (shared/merge-queue.ts); the verb calls live in
 // merge-queue-client.ts.
-import type { SessionWorktreeInfo } from "../../shared/protocol";
-import { newerWords, ordinal } from "../../shared/merge-queue";
+import type { SessionSummary, SessionWorktreeInfo, WorktreeReadiness } from "../../shared/protocol";
+import { newerWords, ordinal, type LandHow, type MergeReady } from "../../shared/merge-queue";
+import { clockTime, relativeTime } from "../../pi-config/extensions/stamp/format.ts";
+import { readinessChip } from "./worktrees";
 import type { MergeEntry, MergeNote, MergeProjectInfo, MergeQueueView, MergeRun, RunStep, WorktreeQueueInfo } from "./merge-queue-types";
 import { requestChip, requestReason } from "./merge-queue-requests";
 
@@ -36,7 +38,7 @@ export type Tone = "success" | "warn" | "error" | "info" | "accent" | "neutral";
 
 /** A row's one action. Land carries a ▾ with Land Without Review (only where the project has a
     review kit) and Land Without Its Specs…. */
-export type RowAction = "land" | "setup" | "cancel" | "accept" | "land-anyway" | "none";
+export type RowAction = "land" | "setup" | "cancel" | "accept" | "land-anyway" | "land-this-again" | "none";
 
 export type RowKey =
   | "uncommitted"
@@ -75,11 +77,15 @@ export interface QueueRow {
   newer?: string;
   /** The branch against the target's head: "3 commits · +40 −2". */
   size?: string;
+  /** When the branch last changed (its head's committer date), drawn after the size: "2d ago". */
+  when?: HeadWhen;
   /** Notes on it (the merge thread's first), each with what kind it is. */
   notes: { label: string; text: string }[];
   action: RowAction;
   /** Send Back beside the action (behaviour differs, review flagged). */
   sendBack?: boolean;
+  /** Remove from Queue beside the action (Needs a fix): the entry leaves the queue; nothing is deleted. */
+  remove?: boolean;
   /** A run to See Why on. */
   run?: string;
 }
@@ -106,9 +112,16 @@ export function notesOf(notes: readonly MergeNote[] | undefined): { label: strin
   return [...latest.values()].sort((a, b) => rank(a.kind) - rank(b.kind)).map((n) => ({ label: NOTE_LABEL[n.kind], text: n.text }));
 }
 
+/** A branch's queue entry as a row reads it: its state and pinned commit, the rest when the caller has it (the session
+    list carries only what the row's words need, shared/protocol.ts SessionBranchQueue). */
+export type RowQueueFacts = Pick<WorktreeQueueInfo, "state" | "commit"> & Partial<Omit<WorktreeQueueInfo, "state" | "commit">>;
+
 export type QueueRowInput = Pick<SessionWorktreeInfo, "status" | "exists" | "readiness" | "branch"> &
   // mergeServed: the repo is one the merge queue serves (listed, merge setup done): only then does a row offer Land.
-  Partial<Pick<SessionWorktreeInfo, "merge" | "mergedInto" | "gone" | "mergeStats" | "mergeServed">> & { queue?: WorktreeQueueInfo; mergeProject?: MergeProjectInfo };
+  Partial<Pick<SessionWorktreeInfo, "merge" | "mergedInto" | "gone" | "mergeStats" | "mergeServed">> & {
+    queue?: RowQueueFacts;
+    mergeProject?: Pick<MergeProjectInfo, "target" | "checks"> & Partial<MergeProjectInfo>;
+  };
 
 /** A finished branch's line where the queue doesn't serve the repo: the chat merges it plainly. */
 export const PLAIN_MERGE_LINE = "Say “land it” in the chat to merge it into main.";
@@ -117,51 +130,167 @@ export const PLAIN_MERGE_LINE = "Say “land it” in the chat to merge it into 
 export const sizeWords = (s: { ahead: number; added: number; removed: number } | undefined): string | undefined =>
   s ? `${s.ahead} ${s.ahead === 1 ? "commit" : "commits"} · +${s.added} −${s.removed}` : undefined;
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** When a branch last changed, as a row draws it in a <time>: `iso` its datetime, `text` relative ("2h ago",
+    "yesterday", "3d ago", "Nov 2" past a week: Sova's relativeTime), `full` the date and time for hover and screen
+    readers ("Nov 2, 2026, 1:43 PM"). Undefined when there's no date or it doesn't parse. */
+export interface HeadWhen {
+  iso: string;
+  text: string;
+  full: string;
+}
+export function headWhen(headAt: string | undefined, now = Date.now()): HeadWhen | undefined {
+  const ms = headAt ? Date.parse(headAt) : NaN;
+  if (!Number.isFinite(ms)) return undefined;
+  const d = new Date(ms);
+  return { iso: headAt!, text: relativeTime(ms, now), full: `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}, ${clockTime(ms)}` };
+}
+
+/** A Ready to land, not approved row's facts: "da69caa · 3 commits ahead · +1497 −309", then its date apart. */
+export const readyFactsWords = (r: Pick<MergeReady, "ahead" | "added" | "removed">): string =>
+  `${r.ahead} ${r.ahead === 1 ? "commit" : "commits"} ahead${r.added !== undefined && r.removed !== undefined ? ` · +${r.added} −${r.removed}` : ""}`;
+
+/** The chip on a Ready to land, not approved row: its chat's own readiness reading of the branch, in the words and
+    colour a Worktrees row's readiness chip uses (worktrees.ts readinessChip: Ready to land, In progress, Waiting for
+    your OK…), with a conflict said as such ("Conflicts with master"). No chat: a neutral "No chat". A chat whose
+    reading Sova doesn't have (it doesn't track the worktree, or isn't on the page's list): a neutral "No reading". */
+export interface ReadyChip {
+  label: string;
+  tone: Tone;
+  title: string;
+}
+export function readyRowChip(r: Pick<MergeReady, "session" | "sessionArchived" | "worktree" | "branch">, trees: readonly WorktreeReadiness[] | undefined): ReadyChip {
+  if (!r.session) return { label: "No chat", tone: "neutral", title: "No chat works on this branch: nothing reads it as finished or not." };
+  const t = trees?.find((x) => x.path === r.worktree) ?? trees?.find((x) => x.branch === r.branch);
+  if (!t) return { label: "No reading", tone: "neutral", title: `Sova has no reading of this branch from its chat${r.sessionArchived ? " (archived)" : ""}.` };
+  const conflict = t.reason && /^Conflicts with /.test(t.reason) ? t.reason.split(" · ")[0]! : null;
+  if (conflict) return { label: conflict, tone: "warn", title: `${t.reason}.` };
+  const chip = readinessChip({ readiness: t });
+  if (!chip) return { label: "Merged", tone: "success", title: "Its chat reads this branch as merged." };
+  return { label: chip.label, tone: chip.tone, title: chip.title };
+}
+
+/** The readiness readings a chat recorded by id holds (a worker's, then its top chat's), among `sessions`. */
+export function chatTreesOf(id: string | undefined, sessions: readonly Pick<SessionSummary, "id" | "path" | "readiness" | "workerSession" | "workerOf">[] | undefined): WorktreeReadiness[] | undefined {
+  if (!id) return undefined;
+  const all = sessions ?? [];
+  const s = all.find((x) => x.id === id || x.path === id);
+  if (!s) return undefined;
+  const top = s.workerSession && s.workerOf ? all.find((x) => x.path === s.workerOf!.path || x.id === s.workerOf!.id) : undefined;
+  return [...(s.readiness?.trees ?? []), ...(top?.readiness?.trees ?? [])];
+}
+
 /** The commit a Land pins: the head the row's numbers were read at, else the one readiness found finished. */
 export const shownCommit = (w: Partial<Pick<SessionWorktreeInfo, "readiness" | "mergeStats">>): string | undefined =>
   w.mergeStats?.head ?? w.readiness?.landing?.commit;
 
 /** A sent-back row's line when the queue gave no reason. */
-export const SENT_BACK_LINE = "Sent back to its chat. Land comes back here once its chat commits a fix and finishes.";
+export const SENT_BACK_LINE = "Sent back to its chat. Land comes back once its chat fixes it, or use Land This Commit Again.";
 
 /** The branch reads finished again at a commit other than the one sent back: the fix is in. */
-export const fixedPast = (w: Pick<QueueRowInput, "readiness">, sentBack: string): boolean => {
+export const fixedPast = (w: { readiness?: { landing?: { commit: string } } }, sentBack: string): boolean => {
   const c = w.readiness?.landing?.commit;
   return !!c && c !== sentBack;
 };
 
 /** Why a Land item that knows only the branch's queue entry (no readiness: the Overseer's coding-worktree menu) is
- *  off, or undefined when it's on. Sent back: off, as on every row (al_4); with no readiness it can't see a fixed,
- *  finished commit, so Land comes back on the rows that can. In line: off. Drafts changed: on (Land re-approves). */
-export function entryLandBlock(e: Pick<WorktreeQueueInfo, "state"> | undefined): string | undefined {
+ *  off, or undefined when it's on. Sent back: off, as on every row (al_4), until the queue says its drafts are fixed
+ *  (`redrafted`: sent back for its drafts, changed since, and Sova's docs check reads clean), then on at the same
+ *  commit; with no readiness it can't see a fixed, finished commit, so Land comes back on the rows that can. In line:
+ *  off. Drafts changed: on (Land re-approves). */
+export function entryLandBlock(e: Pick<WorktreeQueueInfo, "state" | "redrafted" | "settled"> | undefined): string | undefined {
   if (!e) return undefined;
-  if (e.state === "needs-fix") return SENT_BACK_LINE;
+  if (e.state === "needs-fix") return e.redrafted || e.settled ? undefined : SENT_BACK_LINE;
   if ((["queued", "checking", "conflict", "behaviour-differs", "review-flagged"] as string[]).includes(e.state)) return "Already in the merge queue.";
   return undefined;
 }
 
+/** The commit Land This Commit Again pins, where an item that knows only the branch's queue entry offers it (the
+ *  Overseer's coding-worktree menu, beside its Land that entryLandBlock turns off): a sent-back entry still needing a
+ *  fix. None once its drafts are fixed (Land is on) or it settled (nothing left to land). */
+export const landThisAgainOf = (e: Pick<WorktreeQueueInfo, "state" | "commit" | "redrafted" | "settled"> | undefined): string | undefined =>
+  e?.state === "needs-fix" && !e.redrafted && !e.settled ? e.commit : undefined;
+
 /** The tab's Sent back list: only entries that still need a fix. One the queue marks settled (a later entry for its
  *  branch, already in the target, its branch or folder removed) leaves it, and so does one whose branch already reads
- *  ready at a newer commit (the Ready to land row, with Land, stands for it). Capped at 20, after leaving. */
+ *  ready at a newer commit, or at the same commit once its drafts are fixed (`redrafted`): the Ready to land row, with
+ *  Land, stands for it. Capped at 20, after leaving. */
 export const stillSentBack = (v: Pick<MergeQueueView, "needsFix" | "ready">): MergeEntry[] =>
-  v.needsFix.filter((e) => !e.settled && !(v.ready ?? []).some((r) => r.branch === e.branch && r.commit !== e.commit)).slice(0, 20);
+  v.needsFix.filter((e) => !e.settled && !e.redrafted && !(v.ready ?? []).some((r) => r.branch === e.branch && r.commit !== e.commit)).slice(0, 20);
 
 /** The worktree is merged or removed: that wins over Needs a fix (nothing is left to fix). */
-const pastSentBack = (w: QueueRowInput): boolean => w.status === "merged" || !!w.mergedInto || !w.exists || !!w.gone || w.readiness?.state === "merged";
+const pastSentBack = (w: RowKeyInput): boolean => w.status === "merged" || !!w.mergedInto || !w.exists || !!w.gone || w.readiness?.state === "merged";
 
 /** Rows past the queue (landed, merged, gone) carry no size: there's nothing left to land. */
 const SIZED: RowKey[] = ["ready", "uncommitted", "queued", "checking", "conflict", "behaviour-differs", "review-flagged", "unattributed", "needs-fix", "drafts-changed", "request-review"];
 
+/** What a row's key reads: the fields of QueueRowInput the ladder below looks at, and nothing else. */
+export type RowKeyInput = Pick<QueueRowInput, "status" | "exists"> &
+  Partial<Pick<QueueRowInput, "mergedInto" | "gone">> & {
+    readiness?: Pick<NonNullable<QueueRowInput["readiness"]>, "state" | "dirtyCount" | "noCommits" | "landing">;
+    queue?: Pick<RowQueueFacts, "state" | "commit" | "request" | "settled" | "redrafted">;
+  };
+
+/** The key its queue entry gives a row, or null when the entry doesn't speak for it (none, cancelled, a sent-back
+    branch whose fix reads finished at a newer commit, whose drafts the queue says are fixed at the same commit, is
+    settled, or whose tree is merged or removed; a state this build doesn't know): the tree's own key then. */
+export function entryKeyOf(w: RowKeyInput): RowKey | null {
+  const e = w.queue;
+  if (!e) return null;
+  switch (e.state) {
+    case "queued":
+    case "checking":
+    case "conflict":
+    case "behaviour-differs":
+    case "unattributed":
+    case "review-flagged":
+    case "drafts-changed":
+    case "landed":
+    case "request-review":
+    case "pushed":
+    case "closed":
+      return e.state;
+    case "needs-fix":
+      // Sent back: once the branch reads finished again at a newer commit, that commit wins (Ready with Land); sent
+      // back for its drafts and the queue says they're fixed (`redrafted`), the same commit reads Ready again.
+      // Settled by the queue, or the worktree merged or removed: nothing is left to fix (the tree's own key).
+      return e.settled || e.redrafted || fixedPast(w, e.commit) || pastSentBack(w) ? null : "needs-fix";
+    case "requested":
+      // The host merged it while the queue hasn't moved the entry yet: it reads as landed.
+      return e.request?.facts?.state === "merged" ? "landed" : "requested";
+    default:
+      return null;
+  }
+}
+
+/** The key a row reads with no entry speaking for it: from its tracked state, its folder and its readiness. */
+export function treeKeyOf(w: RowKeyInput): RowKey {
+  if (w.status === "merged" || w.mergedInto) return "merged";
+  if (w.status === "dropped") return "dropped";
+  if (!w.exists || w.gone) return "removed";
+  const r = w.readiness;
+  if (r?.state === "merged") return "merged";
+  if (r?.dirtyCount) return "uncommitted";
+  if (r?.noCommits) return "no-commits";
+  return "ready";
+}
+
+/** A row's key: the one rule the chat's rows, its composer control and the session list's status read. */
+export const rowKeyOf = (w: RowKeyInput): RowKey => entryKeyOf(w) ?? treeKeyOf(w);
+
 /** The words for one worktree, from its tracked state, its readiness and its queue entry. */
 export function queueRow(w: QueueRowInput): QueueRow {
   const r = queueRowOf(w);
-  const size = SIZED.includes(r.key) ? sizeWords(w.mergeStats) : undefined;
-  return size ? { ...r, size } : r;
+  if (!SIZED.includes(r.key)) return r;
+  const size = sizeWords(w.mergeStats);
+  const when = headWhen(w.mergeStats?.headAt);
+  return { ...r, ...(size ? { size } : {}), ...(when ? { when } : {}) };
 }
 function queueRowOf(w: QueueRowInput): QueueRow {
   const e = w.queue;
   const base = { notes: notesOf(e?.notes), newer: newerWords(e?.newerCommits) ?? undefined, run: e?.run };
-  if (e) {
+  if (e && entryKeyOf(w)) {
     switch (e.state) {
       case "queued":
         return {
@@ -196,11 +325,13 @@ function queueRowOf(w: QueueRowInput): QueueRow {
       case "drafts-changed":
         return { ...base, key: "drafts-changed", label: "Drafts changed", tone: "warn", reason: e.reason ?? "Its spec drafts changed since you approved. Land again to approve them.", action: "land" };
       case "needs-fix":
-        // Sent back: no Land at all while its chat fixes it. Once the branch reads finished again at a newer commit
-        // (clean, no conflicts, its chat idle: Sova's ready reading), that commit wins and the row is Ready with Land.
-        // Settled (a later entry for the branch, already in the target, its branch or folder removed): nothing to fix.
-        if (e.settled || fixedPast(w, e.commit) || pastSentBack(w)) break;
-        return { ...base, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "none" };
+        // Sent back: no Land while its chat fixes it; Land This Commit Again (the same commit, every check from the
+        // start) and Remove from Queue instead. Once the branch reads finished again at a newer commit (clean, no
+        // conflicts, its chat idle: Sova's ready reading), or sent back for its drafts and the queue says they're fixed,
+        // that commit wins and the row is Ready with Land. Settled (a later entry for the branch, already in the
+        // target, its branch or folder removed): nothing to fix. entryKeyOf gives no key in those cases, and the row
+        // reads as the worktree itself, below.
+        return { ...base, key: "needs-fix", label: "Needs a fix", tone: "error", reason: e.reason ?? SENT_BACK_LINE, action: "land-this-again", remove: true };
       case "landed":
         return {
           ...base,
@@ -217,8 +348,8 @@ function queueRowOf(w: QueueRowInput): QueueRow {
       case "closed": {
         // Past Sova's checks on a request or push project: the host's words (merge-queue-requests.ts).
         const chip = requestChip(e.state, e.request, e.reason);
-        // The host merged it while the queue hasn't moved the entry yet: it reads as landed.
-        const key: RowKey = e.state === "requested" && e.request?.facts?.state === "merged" ? "landed" : e.state;
+        // The host merged it while the queue hasn't moved the entry yet: it reads as landed (entryKeyOf).
+        const key = entryKeyOf(w)!;
         return {
           ...base,
           newer: e.state === "requested" || e.state === "pushed" ? base.newer : undefined,
@@ -231,20 +362,28 @@ function queueRowOf(w: QueueRowInput): QueueRow {
           action: e.state === "closed" && w.mergeServed ? "land" : "none",
         };
       }
-      case "cancelled":
-        break; // reads as the worktree itself again, below
+      default:
+        break; // cancelled (entryKeyOf): reads as the worktree itself again, below
     }
   }
   const quiet = { notes: [] as QueueRow["notes"] };
   const merged = w.merge ?? w.mergedInto;
-  if (w.status === "merged" || w.mergedInto) return { ...quiet, key: "merged", label: "Merged", tone: "success", detail: merged ? `into ${merged.target} at ${short(merged.sha)}` : undefined, action: "none" };
-  if (w.status === "dropped") return { ...quiet, key: "dropped", label: "Dropped", tone: "neutral", action: "none" };
-  if (!w.exists || w.gone) return { ...quiet, key: "removed", label: "Removed", tone: "neutral", action: "none" };
   const r = w.readiness;
-  if (r?.state === "merged") return { ...quiet, key: "merged", label: "Merged", tone: "success", action: "none" };
-  if (r?.dirtyCount)
-    return { ...quiet, key: "uncommitted", label: "Uncommitted", tone: "neutral", detail: `${r.dirtyCount} ${r.dirtyCount === 1 ? "file" : "files"} not committed`, reason: w.mergeServed ? "Commit it in its chat, then Land." : "Commit it in its chat.", action: "none" };
-  if (r?.noCommits) return { ...quiet, key: "no-commits", label: "No commits yet", tone: "neutral", action: "none" };
+  switch (treeKeyOf(w)) {
+    case "merged":
+      // Its tracked merge or git's says where it went; readiness alone only that it did.
+      return { ...quiet, key: "merged", label: "Merged", tone: "success", detail: (w.status === "merged" || w.mergedInto) && merged ? `into ${merged.target} at ${short(merged.sha)}` : undefined, action: "none" };
+    case "dropped":
+      return { ...quiet, key: "dropped", label: "Dropped", tone: "neutral", action: "none" };
+    case "removed":
+      return { ...quiet, key: "removed", label: "Removed", tone: "neutral", action: "none" };
+    case "uncommitted":
+      return { ...quiet, key: "uncommitted", label: "Uncommitted", tone: "neutral", detail: `${r!.dirtyCount} ${r!.dirtyCount === 1 ? "file" : "files"} not committed`, reason: w.mergeServed ? "Commit it in its chat, then Land." : "Commit it in its chat.", action: "none" };
+    case "no-commits":
+      return { ...quiet, key: "no-commits", label: "No commits yet", tone: "neutral", action: "none" };
+    default:
+      break; // ready, below
+  }
   // A repo the queue doesn't serve merges plainly from its chat: no Land, never the queue's words. A listed
   // project with no merge setup keeps Set Up Queue; a repo off the Projects list offers nothing.
   if (!w.mergeServed) {
@@ -278,14 +417,15 @@ function queueRowOf(w: QueueRowInput): QueueRow {
 
 /** A row's buttons, as the Worktrees modal and the session pane draw them, in order. Set Up Queue needs the
     project to link to; Send Back follows the row's one action. */
-export type RowButton = "Land" | "Set Up Queue" | "Cancel" | "Accept" | "Land Anyway" | "Send Back";
-export function rowButtons(row: Pick<QueueRow, "action" | "sendBack">, projectId: string | undefined): RowButton[] {
-  const one: Partial<Record<RowAction, RowButton>> = { land: "Land", cancel: "Cancel", accept: "Accept", "land-anyway": "Land Anyway" };
+export type RowButton = "Land" | "Set Up Queue" | "Cancel" | "Accept" | "Land Anyway" | "Send Back" | "Land This Commit Again" | "Remove from Queue";
+export function rowButtons(row: Pick<QueueRow, "action" | "sendBack" | "remove">, projectId: string | undefined): RowButton[] {
+  const one: Partial<Record<RowAction, RowButton>> = { land: "Land", cancel: "Cancel", accept: "Accept", "land-anyway": "Land Anyway", "land-this-again": "Land This Commit Again" };
   const out: RowButton[] = [];
   if (row.action === "setup") {
     if (projectId) out.push("Set Up Queue");
   } else if (one[row.action]) out.push(one[row.action]!);
   if (row.sendBack) out.push("Send Back");
+  if (row.remove) out.push("Remove from Queue");
   return out;
 }
 
@@ -296,8 +436,29 @@ export function modalHead(rows: Pick<QueueRowInput, "mergeServed" | "mergeProjec
   if (!served) return { intro: null, paused: null };
   const p = rows.find((w) => w.mergeServed && w.mergeProject)?.mergeProject;
   return {
-    intro: `Land queues a branch. It's merged onto ${p?.target ?? "the target branch"}, checked there on its own, and lands as exactly the commit that was tested.`,
+    intro: "Land queues a branch; it lands as the commit that was tested.",
     paused: p?.paused ? `The queue is paused: ${p.paused}. Land still takes your approval; it's checked once the queue resumes.` : null,
+  };
+}
+
+/** What Land's confirm says: the branch, how many commits go to the queue (the row's own count, else none named) and
+    what moves once the checks pass, by the way of landing when the caller knows it (else the target moves). */
+export function landConfirmWords(branch: string, ahead: number | undefined, target: string | undefined, how?: LandHow): { title: string; line: string; confirm: string } {
+  const n = typeof ahead === "number" && ahead > 0 ? ahead : undefined;
+  const to = target ?? "the target branch";
+  const go = n === undefined ? "Its commits go" : `${n} ${n === 1 ? "commit goes" : "commits go"}`;
+  const after =
+    how === "github-pr"
+      ? "a pull request opens on GitHub once checks pass."
+      : how === "gitlab-mr"
+        ? "a merge request opens on GitLab once checks pass."
+        : how === "push-branch"
+          ? "the branch is pushed once checks pass."
+          : `${to} moves once checks pass.`;
+  return {
+    title: `Land ${branch}?`,
+    line: `${go} to the merge queue; ${after}`,
+    confirm: n === undefined ? "Land Branch" : `Land ${n} ${n === 1 ? "Commit" : "Commits"}`,
   };
 }
 
@@ -343,21 +504,51 @@ export function rowsSummary(rows: Pick<QueueRow, "key">[]): string {
     .join(" · ");
 }
 
+/** Which fact the headline states, the first that holds: needs you, needs a fix, ready, checking, queued, else how
+    many worktrees. */
+export type HeadlineKind = "you" | "fix" | "ready" | "checking" | "queued" | "worktrees";
+
+/** The headline's words per fact, the one table the composer control, the session list's row status and the words
+    extensions may not take on a row (src/lib/row-place.ts) all read. */
+export const HEADLINE_WORDS: Record<HeadlineKind, (n: number) => string> = {
+  you: (n) => `${n} ${n === 1 ? "needs" : "need"} you`,
+  fix: (n) => `${n} ${n === 1 ? "needs" : "need"} a fix`,
+  ready: (n) => `${n} ready`,
+  // Said as one, as the control always has.
+  checking: () => "1 checking",
+  queued: (n) => `${n} queued`,
+  worktrees: (n) => `${n} ${n === 1 ? "worktree" : "worktrees"}`,
+};
+
+const HEADLINE_DOT: Record<HeadlineKind, "ok" | "warn" | "err" | null> = { you: "warn", fix: "err", ready: "ok", checking: null, queued: null, worktrees: null };
+
+/** The rows' keys that need you (the headline's first fact). */
+export const NEEDS_YOU_KEYS: readonly RowKey[] = ["behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "request-review"];
+
+/** The one most useful fact about a set of rows: which, its words, its number and its dot. Null with no rows. */
+export function headline(rows: Pick<QueueRow, "key">[]): { kind: HeadlineKind; text: string; n: number; dot: "ok" | "warn" | "err" | null } | null {
+  const kind = headlineKind(rows);
+  if (!kind) return null;
+  const count = (...k: readonly RowKey[]) => rows.filter((r) => k.includes(r.key)).length;
+  const n = kind === "you" ? count(...NEEDS_YOU_KEYS) : kind === "fix" ? count("needs-fix") : kind === "ready" ? count("ready") : kind === "checking" ? 1 : kind === "queued" ? count("queued") : rows.length;
+  const text = HEADLINE_WORDS[kind](n);
+  return { kind, text, n: Number(/^\d+/.exec(text)?.[0] ?? rows.length), dot: HEADLINE_DOT[kind] };
+}
+function headlineKind(rows: Pick<QueueRow, "key">[]): HeadlineKind | null {
+  if (rows.length === 0) return null;
+  const has = (...k: readonly RowKey[]) => rows.some((r) => k.includes(r.key));
+  if (has(...NEEDS_YOU_KEYS)) return "you";
+  if (has("needs-fix")) return "fix";
+  if (has("ready")) return "ready";
+  if (has("checking")) return "checking";
+  if (has("queued")) return "queued";
+  return "worktrees";
+}
+
 /** The composer control's words and dot: the one most useful fact. Null with no worktrees (it hides). */
 export function controlWords(rows: Pick<QueueRow, "key">[]): { text: string; n: number; dot: "ok" | "warn" | "err" | null } | null {
-  const w = controlWordsOf(rows);
-  return w && { ...w, n: Number(/^\d+/.exec(w.text)?.[0] ?? rows.length) };
-}
-function controlWordsOf(rows: Pick<QueueRow, "key">[]): { text: string; dot: "ok" | "warn" | "err" | null } | null {
-  if (rows.length === 0) return null;
-  const n = (...k: RowKey[]) => rows.filter((r) => k.includes(r.key)).length;
-  const you = n("behaviour-differs", "review-flagged", "unattributed", "drafts-changed", "request-review");
-  if (you) return { text: `${you} ${you === 1 ? "needs" : "need"} you`, dot: "warn" };
-  if (n("needs-fix")) return { text: `${n("needs-fix")} ${n("needs-fix") === 1 ? "needs" : "need"} a fix`, dot: "err" };
-  if (n("ready")) return { text: `${n("ready")} ready`, dot: "ok" };
-  if (n("checking")) return { text: "1 checking", dot: null };
-  if (n("queued")) return { text: `${n("queued")} queued`, dot: null };
-  return { text: `${rows.length} ${rows.length === 1 ? "worktree" : "worktrees"}`, dot: null };
+  const h = headline(rows);
+  return h && { text: h.text, n: h.n, dot: h.dot };
 }
 
 // ---- the Merge Queue tab ----------------------------------------------------------------------
@@ -374,6 +565,79 @@ export function sourceTag(s: RunStep["source"]): { label: string; tone: Tone } |
     default:
       return null;
   }
+}
+
+// ---- the run page's Checks and why ------------------------------------------------------------
+
+/** A step's status mark: a check, a cross, a clock, a plain dash (skipped, or setup unchanged since the last run),
+    or no icon at all (`null`: an empty muted ring, waiting). Nothing here looks like something to expand. */
+export interface StepMark {
+  icon: "check" | "close" | "clock" | "minus" | null;
+  cls: string;
+  word: string;
+}
+const MARKS: Record<RunStep["result"], StepMark> = {
+  passed: { icon: "check", cls: "mq-pass", word: "Passed" },
+  failed: { icon: "close", cls: "mq-fail", word: "Failed" },
+  running: { icon: "clock", cls: "mq-running", word: "Running" },
+  pending: { icon: null, cls: "mq-wait", word: "Waiting" },
+  skipped: { icon: "minus", cls: "mq-skip", word: "Skipped" },
+};
+export const stepMark = (s: Pick<RunStep, "result">): StepMark => MARKS[s.result];
+
+/** A step's time column: "" while waiting or skipped; a running step counts up from its start (`now`); a
+    finished one shows what it took. */
+export function stepTime(s: Pick<RunStep, "result" | "ms" | "startedAt">, now: number): string {
+  if (s.result === "pending" || s.result === "skipped") return "";
+  if (s.result === "running") {
+    const at = s.startedAt ? Date.parse(s.startedAt) : NaN;
+    if (Number.isFinite(at)) return clock(now - at);
+    return s.ms > 0 ? clock(s.ms) : "";
+  }
+  return clock(s.ms);
+}
+
+/** A check's test counts, for its description line ("11496 passed", "5 skipped"; `failed` drawn red). None for a
+    skipped or waiting step, and none when every count is zero or unknown ("0 passed" says nothing). */
+export function stepCounts(s: Pick<RunStep, "result" | "counts">): { text: string; failed?: true }[] {
+  const c = s.counts;
+  if (!c || s.result === "skipped" || s.result === "pending") return [];
+  if (!c.passed && !c.failed && !c.skipped) return [];
+  return [
+    ...(c.passed != null ? [{ text: `${c.passed} passed` }] : []),
+    ...(c.failed ? [{ text: `${c.failed} failed`, failed: true as const }] : []),
+    ...(c.skipped ? [{ text: `${c.skipped} skipped` }] : []),
+  ];
+}
+
+/** Shows every `<home>/…` path inside a line as `~/…`, and the home folder alone as `~`. Only a path that starts
+    there counts: at the line's start or after a space, a quote, a bracket, `=`, `:` or `,` (never inside
+    `/mnt<home>/…`), and only the folder itself (followed by `/`, a space or the end, never `<home>2/…`). */
+export function tildeIn(text: string, home: string | null): string {
+  if (!home) return text;
+  const h = home.replace(/\/+$/, "");
+  if (!h) return text;
+  const esc = h.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return text.replace(new RegExp(`(^|[\\s"'\`([{<=:,])${esc}(?=/|\\s|$)`, "g"), "$1~");
+}
+
+const SHA_RE = /^[0-9a-f]{7,40}$/;
+/** A step's detail with paths shortened (~/…). The queue's own facts (a copy's folder and commit, a merge's commit)
+    come back split, the folder and commit marked `mono`; any other detail is one plain part. */
+export function stepDetail(s: Pick<RunStep, "id" | "kind" | "result" | "detail">, home: string | null): { text: string; mono?: true }[] {
+  if (!s.detail) return [];
+  const text = tildeIn(s.detail, home);
+  const structured = s.result === "passed" && (s.kind === "copy" || s.kind === "merge" || s.id === "rerun-master:copy");
+  if (!structured) return [{ text }];
+  const out: { text: string; mono?: true }[] = [];
+  for (const word of text.split(/(\s+)/)) {
+    if (!word) continue;
+    const mono = SHA_RE.test(word) || word.startsWith("/") || word.startsWith("~");
+    const last = out[out.length - 1];
+    if (!mono && last && !last.mono) last.text += word;
+    else out.push(mono ? { text: word, mono: true } : { text: word });
+  }
+  return out;
 }
 
 /** A definition that doesn't parse, as one sentence: the parser's path and message, then what to do. */

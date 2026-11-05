@@ -8,7 +8,7 @@ import type { IconName } from "../components/ui";
  */
 export type ModeGlyph = { kind: "icon"; id: string; icon: IconName } | { kind: "letter"; id: string; letter: string };
 
-const MAJOR_ICONS: Record<string, IconName> = { delegate: "mode-delegate" };
+const MAJOR_ICONS: Record<string, IconName> = { delegate: "mode-delegate", create: "mode-create" };
 const MINOR_ICONS: Record<string, IconName> = {
   align: "mode-align",
   spec: "mode-spec",

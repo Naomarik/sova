@@ -47,6 +47,7 @@ import { isLoginNoteRow } from "./change-rows";
 import { infoEstimate } from "./tail-render";
 import { CARD_TOOLS, isAlignMarkOnly } from "./hidden-rows";
 import { toolCallArgs } from "./message";
+import { loadsModule } from "./module-load";
 
 /** Where a kind draws: in the page (Sova's own), as one of Sova's data cards, or in a sealed frame. */
 export type KindHost = "page" | "data" | "frame";
@@ -147,7 +148,7 @@ export interface LiveForm {
 }
 
 /** The views drawn in the page (components/TranscriptKind.tsx `PAGE_VIEWS`), by name. */
-export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
+export type PageView = "wake" | "topic" | "compaction" | "info" | "worktree-merge" | "settings" | "offer" | "show-changes" | "tour" | "owner-request" | "handoff-run" | "mcp-note" | "overseer-answer" | "profile-mark" | "brief" | "explain" | "team-report" | "report" | "baton" | "user" | "assistant-text" | "thinking" | "tool-result" | "tool" | "align-report" | "align";
 
 /**
  * A kind's view: one of Sova's page views by name (drawn at once, as before, in the page's own
@@ -275,6 +276,8 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
   // An owner request a Start Chat put at the top (§app.project-assistant/request-chat).
   kind({ id: "owner-request", match: (it) => it.kind === "info" && it.ownerRequest, host: "page", placement: "anchored", view: { page: "owner-request" } }),
   kind({ id: "handoff-run", match: (it) => it.kind === "info" && it.handoffRun, host: "page", placement: "anchored", view: { page: "handoff-run" } }),
+  // A server's failure in this chat, with its link (§app.mcp/in-a-chat).
+  kind({ id: "mcp-note", match: (it) => it.kind === "info" && it.mcpNote, host: "page", placement: "anchored", view: { page: "mcp-note" } }),
   kind({ id: "compaction", match: (it) => it.kind === "info" && rowFacts(it)?.compaction, estimate: () => "36px", host: "page", placement: "anchored", view: { page: "compaction" } }),
   // A Claude login note waits for the first message, like the profile row.
   kind({ id: "login-note-waiting", match: (it, ctx) => isLoginNoteRow(it) && !ctx.hasUserRow(), host: "page", placement: "anchored", drawsNothing: true }),
@@ -335,7 +338,8 @@ export const TRANSCRIPT_KINDS: readonly TranscriptKind[] = [
     host: "data",
     placement: "follow",
     key: (_it, card: CardInfo) => (card.placement === "follow" && card.key ? `${card.type}\u0000${card.key}` : undefined),
-    view: { load: () => import("../components/TranscriptCard") as unknown as Promise<{ default: Component<KindViewProps> }> },
+    // A failed load says so (lib/module-load): the box then asks for the newer Sova, not a redraw.
+    view: { load: loadsModule(() => import("../components/TranscriptCard") as unknown as Promise<{ default: Component<KindViewProps> }>) },
     // The running turn's card is drawn as soon as its call returns (§chat.transcript-cards/card-tool).
     live: { match: (input, ctx) => normalizeRaisedCard(doneCall(input, ctx, named(CARD_TOOL))), view: "card" },
   }),

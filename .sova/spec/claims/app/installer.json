@@ -5,7 +5,8 @@
       "§app/installer",
       "§app.installer/service",
       "§app.access/token",
-      "§app.access/unlock"
+      "§app.access/unlock",
+      "§app.installer/mac-app"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -17,8 +18,9 @@
       "site/src/content/docs/install.md"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-10-11T11:27Z"
+      "by": "user",
+      "at": "2026-11-03T20:41Z",
+      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#42b7b210"
     }
   },
   "§app.installer/bun": {
@@ -33,7 +35,12 @@
       "scripts/install.test.sh",
       "scripts/fetch-bun.sh",
       "scripts/bun-release.txt"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T04:07Z",
+      "source": "pi-session:acc171bf-620a-497e-9494-116d3a0b1243#a0dd6569"
+    }
   },
   "§app.installer/claude-code-provider": {
     "kind": "behavior",
@@ -57,6 +64,32 @@
     "agreed": {
       "by": "naomarik",
       "at": "2026-10-11T11:27Z"
+    }
+  },
+  "§app.installer/mac-app": {
+    "kind": "behavior",
+    "requires": [
+      "§app.shell/installable",
+      "§app.shell/window-controls-overlay",
+      "§app.access/unlock",
+      "§app.access/gate"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "scripts/install.sh",
+      "scripts/install.test.sh",
+      "scripts/mac-app.ts",
+      "scripts/mac-app-store.ts",
+      "scripts/mac-app-store.test.ts",
+      "scripts/mac-app.integration.test.ts",
+      "docs/getting-started.md",
+      "site/src/content/docs/install.md"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-03T20:47Z",
+      "source": "pi-session:01a1a223-d1c6-777f-889a-669e88c11280#42b7b210"
     }
   },
   "§app.installer/pi-extensions": {
@@ -108,6 +141,22 @@
       "docs/running-as-a-service.md"
     ]
   },
+  "§app.installer/version-managers": {
+    "kind": "behavior",
+    "requires": [
+      "§app/installer"
+    ],
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "scripts/install.sh"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T04:07Z",
+      "source": "pi-session:acc171bf-620a-497e-9494-116d3a0b1243#a0dd6569"
+    }
+  },
   "§app/installer": {
     "kind": "surface",
     "authority": "accepted",
@@ -118,8 +167,9 @@
       "scripts/install.integration.test.ts"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-10-14T15:54Z"
+      "by": "naomarik",
+      "at": "2026-11-05T04:07Z",
+      "source": "pi-session:acc171bf-620a-497e-9494-116d3a0b1243#a0dd6569"
     },
     "notOwned": [
       "§app/access",

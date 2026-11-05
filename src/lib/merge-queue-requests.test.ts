@@ -8,6 +8,7 @@ import {
   introWords,
   LAND_HOWS,
   HOW_LABEL,
+  HOW_SHORT,
   publishBlocked,
   publishLabel,
   requestActions,
@@ -15,6 +16,7 @@ import {
   requestChecksWords,
   requestChip,
   requestReason,
+  landHowWaitingWords,
   requestRef,
   showsPushToOrigin,
   signInWords,
@@ -209,4 +211,9 @@ test("the tab's intro says what happens after the checks, by the way in effect",
   assert.match(introWords("main", "github-pr"), /pull request opens on GitHub\. You merge it there\.$/);
   assert.doesNotMatch(introWords("main", "gitlab-mr"), /exactly that commit/);
   assert.match(introWords("main", "push-branch"), /pushed to origin/);
+});
+
+test("a project-file save that waits says what for: the open release, else the current branch", () => {
+  assert.equal(landHowWaitingWords("github-pr", "release v0.4.0"), `${HOW_SHORT["github-pr"]} saves to the project file once release v0.4.0 is published or abandoned.`);
+  assert.equal(landHowWaitingWords("local"), `${HOW_SHORT.local} saves to the project file when the current branch finishes.`);
 });

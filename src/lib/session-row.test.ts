@@ -3,7 +3,7 @@
 // extension adding to rows, every row is exactly the row it was before line 3 became a place, its
 // readiness badge included. Drawn with Solid's SSR build (src/lib/align-card-ssr.mjs) and compared
 // with session-row.snapshot.json, taken from the rows as they stood before the place existed (base
-// 9d508bba). Hydration keys and marker comments are left out: they say how Solid drew it, not what
+// 9d508bba), retaken when the branch status replaced the "N of M" count (feat/pane-branch-status). Hydration keys and marker comments are left out: they say how Solid drew it, not what
 // the page holds. Regenerate only for a change you mean:
 // WRITE_ROW_SNAPSHOT=1 pnpm test -- src/lib/session-row.test.ts
 import assert from "node:assert/strict";
@@ -38,17 +38,35 @@ const session = (over: Partial<SessionSummary> = {}): SessionSummary =>
 
 const tree = (branch: string, state: SessionReadiness["trees"][number]["state"], merged = false) => ({ path: `/work/${branch}`, branch, state, ...(merged ? { merged: true as const } : {}) });
 
-/** Every line-3 shape a row has today: no readiness, a count alone, each badge, a remote row. */
+type SessionBranchRow = import("../../shared/protocol").SessionBranchRow;
+/** A branch as the list carries it, in a repo the queue serves. */
+const branch = (name: string, over: Partial<SessionBranchRow> = {}): SessionBranchRow => ({ path: `/work/${name}`, branch: name, status: "active", exists: true, mergeServed: true, mergeProject: { target: "main", checks: "declared" }, ...over });
+const SHA = "a".repeat(40);
+
+/** Every line-3 shape a row has: no branches, each branch status, each badge after one, a remote row. */
 const ROWS: Record<string, SessionSummary> = {
   plain: session(),
   "no model": session({ model: null }),
-  "count only": session({ readiness: { trees: [tree("feat/a", "ready"), tree("feat/b", "in-progress")], since: 0 } }),
-  "restart pending": session({ readiness: { trees: [tree("feat/a", "merged", true)], badge: "restart", since: 0, restartPending: true } }),
+  "ready, beside one in progress": session({
+    readiness: { trees: [tree("feat/a", "ready"), { ...tree("feat/b", "in-progress"), dirtyCount: 2 }], since: 0 },
+    branches: [branch("feat/a"), branch("feat/b")],
+  }),
+  "needs a fix": session({ branches: [branch("feat/login", { queue: { state: "needs-fix", commit: SHA, reason: "Unit tests failed on the merge" } })] }),
+  "needs you": session({ branches: [branch("feat/a", { queue: { state: "review-flagged", commit: SHA } }), branch("feat/b", { queue: { state: "needs-fix", commit: SHA } })] }),
+  checking: session({ branches: [branch("feat/a", { queue: { state: "checking", commit: SHA } })] }),
+  queued: session({ branches: [branch("feat/a", { queue: { state: "queued", commit: SHA, position: 2 } }), branch("feat/b", { queue: { state: "queued", commit: SHA, position: 3 } })] }),
+  "inherited, ready": session({ branches: [branch("feat/parent", { sharedWith: "s-0" })] }),
+  "restart pending": session({
+    readiness: { trees: [tree("feat/a", "merged", true)], badge: "restart", since: 0, restartPending: true },
+    branches: [branch("feat/a", { queue: { state: "landed", commit: SHA } })],
+  }),
   "2 follow-ups": session({
     readiness: { trees: [tree("feat/a", "merged", true), tree("feat/c", "stale", true)], badge: "merged", since: 0, followUps: 2, followUp: { weight: "small", cue: "tidy the docs" } },
+    branches: [branch("feat/a"), branch("feat/c")],
   }),
-  "merged, no follow-up": session({ readiness: { trees: [tree("feat/a", "merged", true)], badge: "merged", since: 0 } }),
-  remote: session({ id: "s-r", path: "/peer/sessions/r.jsonl", readiness: { trees: [tree("feat/r", "merged", true)], badge: "restart", since: 0 } }),
+  "merged, no follow-up": session({ readiness: { trees: [tree("feat/a", "merged", true)], badge: "merged", since: 0 }, branches: [branch("feat/a", { status: "merged" })] }),
+  "archived, sent back": session({ archived: true, branches: [branch("feat/old", { queue: { state: "needs-fix", commit: SHA } })] }),
+  remote: session({ id: "s-r", path: "/peer/sessions/r.jsonl", readiness: { trees: [tree("feat/r", "merged", true)], badge: "restart", since: 0 }, branches: [branch("feat/r", { status: "merged" })] }),
 };
 mesh.noteHost("/peer/sessions/r.jsonl", "peer-1");
 
@@ -71,6 +89,34 @@ test("with no extension adding to rows, every row is exactly the row it was", ()
   assert.match(snapshot["restart pending"]!, /<span class="session-readiness" title="[^"]*">restart pending<\/span>/);
   assert.match(snapshot["2 follow-ups"]!, />2 follow-ups<\/span>/);
   assert.doesNotMatch(snapshot.plain!, /session-readiness/);
+  // The branch status: the chat's headline as a mark and a number, after the time, before the badge and the model.
+  assert.doesNotMatch(snapshot.plain!, /session-branch-status/, "no branches: nothing");
+  const mark = (name: string) => /<span class="session-branch-status ([^"]+)" title="([^"]*)"><span class="icon icon-sm" style="--icon:url\(\/icons\/([a-z-]+)\.svg\)" aria-hidden="true"><\/span><span class="text-num" aria-hidden="true">(\d+)<\/span><span class="visually-hidden">([^<]*)<\/span><\/span>/.exec(snapshot[name]!);
+  const expect: Record<string, [cls: string, icon: string, n: string, first: string]> = {
+    "ready, beside one in progress": ["session-branch-status-success session-branch-status-ready", "check-circle", "1", "1 ready"],
+    "needs a fix": ["session-branch-status-error session-branch-status-fix", "alert-triangle", "1", "1 needs a fix"],
+    "needs you": ["session-branch-status-warn session-branch-status-you", "alert-circle", "1", "1 needs you"],
+    checking: ["session-branch-status-accent session-branch-status-checking", "progress", "1", "1 checking"],
+    queued: ["session-branch-status-info session-branch-status-queued", "clock", "2", "2 queued"],
+    "inherited, ready": ["session-branch-status-success session-branch-status-ready", "check-circle", "1", "1 ready"],
+    "restart pending": ["session-branch-status-muted session-branch-status-worktrees", "branch", "1", "1 worktree"],
+    // A stale tree reads Ready in the chat's rows too (its readiness isn't "merged", nothing uncommitted is counted).
+    "2 follow-ups": ["session-branch-status-success session-branch-status-ready", "check-circle", "1", "1 ready"],
+    "merged, no follow-up": ["session-branch-status-muted session-branch-status-worktrees", "branch", "1", "1 worktree"],
+    "archived, sent back": ["session-branch-status-error session-branch-status-fix", "alert-triangle", "1", "1 needs a fix"],
+  };
+  for (const [name, [cls, icon, n, first]] of Object.entries(expect)) {
+    const m = mark(name);
+    assert.ok(m, name);
+    assert.deepEqual([m[1], m[3], m[4]], [cls, icon, n], name);
+    assert.equal(m[2]!.split("\n")[0], first, `${name}: the title starts with the chat's words`);
+    assert.equal(m[5]!.split(". ")[0], first, `${name}: so does the row's name`);
+  }
+  assert.match(mark("needs a fix")![2]!, /\nfeat\/login: Needs a fix · Unit tests failed on the merge$/, "then each branch in the Worktrees window's words");
+  assert.match(mark("restart pending")![2]!, /\nA merge changed the server since it started: restart it to run the new code\.$/, "then what follows a merge");
+  assert.match(snapshot["restart pending"]!, /ago · <span class="session-branch-status [^]*?<\/span><\/span> · <span class="session-readiness"[^>]*>restart pending<\/span> · <span class="text-mono"/, "time, status, badge, model");
+  assert.match(snapshot["2 follow-ups"]!, /<\/span><\/span> · <span class="session-readiness"[^>]*>2 follow-ups<\/span>/);
+  for (const html of Object.values(snapshot)) assert.doesNotMatch(html, /\d+ of \d+/, "the old count is gone");
 });
 
 test("what extensions add stands after the readiness badge and before the model, as plain text", () => {

@@ -319,7 +319,7 @@ export class LinuxBwrapBackend implements Backend {
 				// Both the runtime's agent dir and pi's default one: a hermetic agent dir (the test
 				// server's) does not make the user's real credentials any less real.
 				// Sova's topic store too: its open topics are other sessions' return addresses.
-				...uniq([ctx.agentDir, h(".pi/agent")]).flatMap((a) => [join(a, "auth.json"), join(a, "sova", "api-token"), join(a, "claude-accounts"), join(a, "sova", "topics")]),
+				...uniq([ctx.agentDir, h(".pi/agent")]).flatMap((a) => [join(a, "auth.json"), join(a, "mcp-auth.json"), join(a, "sova", "api-token"), join(a, "sova", "secrets", "mcp"), join(a, "claude-accounts"), join(a, "sova", "topics")]),
 			],
 			// Not the host caches: ~/.cache holds code host tools run later (AUR build dirs installed
 			// as root, nvim bytecode, browser binaries), ~/.npm/_npx what npx runs, ~/.m2 Maven's
@@ -371,6 +371,8 @@ export class LinuxBwrapBackend implements Backend {
 			}
 		}
 		if (policy.network.localPorts?.length) notes.push("network: localPorts is not implemented; those ports are unreachable");
+		// macOS-only rules (darwin-seatbelt BROWSER_RULES); the probe caches this note once per policy.
+		if (policy.browser) notes.push("browser: no effect on Linux");
 
 		// A write-only worker keeps the host's /tmp (read-only, sockets masked) when its sockets can be
 		// listed; its temp files go to its own tmp, bound writable at its own path by the mount plan.

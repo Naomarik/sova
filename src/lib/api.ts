@@ -3,7 +3,8 @@ import type { OrgClaudeLogin, ProjectClaudeLogin } from "../../shared/projects";
 import type { ModelPick, WorkModels } from "../../shared/powers";
 import type { OfferCard, ProjectOffersAnswer, SessionOffersAnswer } from "../../shared/session-offers";
 import type { CardAnswerValue, CardInfo, ProjectCardsAnswer, SessionCardsAnswer } from "../../shared/transcript-cards";
-import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow } from "../../shared/project-settings";
+import type { ProjectSettingsInfo, SettingsApplyResult, SettingsCardView, SettingsHistoryRow, SovaCardsInfo } from "../../shared/project-settings";
+import type { McpNewServer, McpProjectServers, McpServerRow, McpServers, McpSignIn } from "../../shared/mcp";
 import type { ProfilesListing } from "../../shared/profiles";
 import type { ProjectFilesAnswer } from "../../shared/project-files";
 import type { DeployVerb, VerbResult } from "../../shared/project-contract";
@@ -53,6 +54,7 @@ import type {
   OverseerSettings,
   OverseerSettingsInfo,
   OverseerAction,
+  OverseerAbilitiesInfo,
   OverseerTodosInfo,
   TodoPatch,
   PlaybookCatalog,
@@ -68,6 +70,7 @@ import type {
   SessionInsight,
   SessionSetup,
   SessionSetupFileText,
+  SessionContextView,
   SessionTools,
   SessionSummary,
   ThemeList,
@@ -117,7 +120,7 @@ import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { UsagePerformance } from "../../shared/usage/perf";
 import { MAX_USAGE_SESSIONS, type PricesInfo, type UsageCosts, type UsageSessionSpend, type UsageSessionsRequest, type UsageSessionsTotals, type UsageToday } from "../../shared/usage/wire";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
-import type { ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
+import type { ProjectIconInfo, ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch, ProjectWorktrees } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
@@ -426,6 +429,8 @@ export const patchOverseerIdea = (id: string, patch: IdeaPatch) =>
 
 /** The user's todos, in list order, with the open and done counts. Every write returns the whole list. */
 export const getOverseerTodos = () => request<OverseerTodosInfo>("/api/overseer/todos");
+/** What the Overseer can do, for its About panel (§app.overseer/about). */
+export const getOverseerAbilities = () => request<OverseerAbilitiesInfo>("/api/overseer/abilities");
 export const addOverseerTodo = (text: string) => request<OverseerTodosInfo>("/api/overseer/todos", { method: "POST", body: JSON.stringify({ text }) });
 /** `patch.base` (sent for text edits) = the updatedAt the edit started from: the server refuses (409,
     a TodoConflict carrying the current list in `ApiError.body`) when the todo changed since. */
@@ -1005,12 +1010,14 @@ export const fetchSessionSetup = (path: string, fresh = false) =>
 /** One file the session's setup lists, as text (§chat.transcript/setup-card-open-file). Never cached. */
 export const fetchSetupFile = (path: string, file: string) =>
   request<SessionSetupFileText>(`/api/sessions/context/file?path=${encodeURIComponent(path)}&file=${encodeURIComponent(file)}`);
+/** What fills a chat's context window now, for the Context tab; a worker by its own session file. Never cached. */
+export const fetchSessionContextView = (path: string) => request<SessionContextView>(`/api/sessions/context-view?path=${encodeURIComponent(path)}`);
 /** The tools a held chat declares to its model now (§chat.transcript/setup-card-tools). Never cached. */
 export const fetchSessionTools = (path: string) => request<SessionTools>(`/api/sessions/tools?path=${encodeURIComponent(path)}`);
 /** Switch a new session's context files and skills (§chat.transcript/setup-card-toggles): the
     whole off set; the answer is the card's fresh read of the rebuilt runtime. */
-export const setSessionLoadout = (path: string, offContext: string[], offSkills: string[]) =>
-  request<SessionSetup>("/api/sessions/loadout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, offContext, offSkills }) });
+export const setSessionLoadout = (path: string, offContext: string[], offSkills: string[], mcp: { offMcp: string[]; onMcp: string[] } = { offMcp: [], onMcp: [] }) =>
+  request<SessionSetup>("/api/sessions/loadout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, offContext, offSkills, ...mcp }) });
 
 /** The worktrees of a session's repository, counted (§chat.worktrees/cleanup). */
 export const fetchWorktreesSummary = (path: string) => request<WorktreesSummary>(`/api/worktrees/summary?path=${encodeURIComponent(path)}`);
@@ -1056,6 +1063,9 @@ export const fetchMesh = (init?: RequestInit) => request<MeshInfo>("/api/mesh", 
 
 /** This host's own hello: its version and wire-contract fingerprint. */
 export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello", meshReadInit(true));
+
+/** Reconnect Here: bind peers.json to this folder and machine; the answer is the mesh after it. */
+export const reconnectMeshHere = () => request<MeshInfo>("/api/mesh/home", { method: "POST" });
 
 /** Replace peers.json's list; the answer is the mesh as it stands after the write. An entry
     without `nodeId` is resolved by its name on the tailnet. `grants` names the preset of a peer this
@@ -1288,6 +1298,11 @@ export const patchProject = (pid: string, patch: { name?: string; root?: string 
 /** Archive a project (§app.organizations/archive): 409 naming what is open; Unarchive brings it back. */
 export const archiveProject = (pid: string) => request<ProjectSummary>(`${projectPath(pid)}/archive`, jsonInit("POST", {}));
 export const unarchiveProject = (pid: string) => request<ProjectSummary>(`${projectPath(pid)}/unarchive`, jsonInit("POST", {}));
+/** A project's icon (§app.projects/icon): what it is now (rescans the folder), an upload, letters on or off, the upload removed. */
+export const getProjectIconInfo = (pid: string) => request<ProjectIconInfo>(`${projectPath(pid)}/icon/info`, { cache: "no-store" });
+export const uploadProjectIcon = (pid: string, png: string) => request<ProjectIconInfo>(`${projectPath(pid)}/icon`, jsonInit("PUT", { png }));
+export const setProjectIconLetters = (pid: string, letters: boolean) => request<ProjectIconInfo>(`${projectPath(pid)}/icon`, jsonInit("PATCH", { letters }));
+export const removeProjectIcon = (pid: string) => request<ProjectIconInfo>(`${projectPath(pid)}/icon`, { method: "DELETE" });
 
 // ---- the org's owner and the Owner page (§app/owner-page; routes in shared/owner.ts) ----
 /** Set the org's owner (an active roster person's id), or none. */
@@ -1491,6 +1506,20 @@ export async function runMergeVerb(project: string | null, verb: `merge.${string
     throw err;
   }
 }
+/** A release verb as the operator (release.status, release.start, release.publish, …): `project` is the project's root.
+    A refusal is a result too, never thrown. */
+export async function runReleaseVerb(project: string, verb: `release.${string}`, body: Record<string, unknown> = {}): Promise<VerbResult> {
+  try {
+    return await request<VerbResult>(`/api/project-services/${verb}`, jsonInit("POST", { ...body, project }));
+  } catch (err) {
+    const b = err instanceof ApiError ? (err.body as Partial<VerbResult> | undefined) : undefined;
+    if (b && b.v === 1 && typeof b.verb === "string") return b as VerbResult;
+    throw err;
+  }
+}
+/** Set Up Releases: the Release playbook maker, a guided setup that proposes the project's release playbook and settings. */
+export const runReleaseSetup = (projectId: string) =>
+  request<{ sessionId: string; path: string; worktree?: { path: string; branch: string }; notPrompted?: string }>(`${projectPath(projectId)}/verbs/onboard`, jsonInit("POST", { playbook: "release-maker" }));
 /** A chat's merge queue cards: one per branch it owns, from its approval on (`session.merge-cards`). */
 export const getMergeCards = (sessionId: string) => request<{ cards: import("../../shared/merge-queue").MergeCard[] }>(`/api/merge-queue/cards?session=${encodeURIComponent(sessionId)}`);
 /** What runs on this host now, every project's (Running branches on `#/projects`). */
@@ -1638,6 +1667,13 @@ export const applySettingsCard = (projectId: string, card: string, fingerprint: 
 /** Dismiss a card (Discard, for "local", with the fingerprint it showed). */
 export const withdrawSettingsCard = (projectId: string, card: string, fingerprint?: string) =>
   request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings/cards/${encodeURIComponent(card)}/withdraw`, jsonInit("POST", fingerprint ? { fingerprint } : {}));
+/** Sova-wide cards, which have no project: only the chat that prepared one shows it (§chat.create-mode/settings-cards). */
+export const getSovaSettingsCards = () => request<SovaCardsInfo>("/api/settings/cards", { cache: "no-store" });
+/** `input`: what the person typed on the card; it goes with this request and nowhere else. */
+export const applySovaSettingsCard = (card: string, fingerprint: string, input?: string) => request<SettingsApplyResult>("/api/settings/apply", jsonInit("POST", { card, fingerprint, ...(input !== undefined ? { input } : {}) }));
+export const withdrawSovaSettingsCard = (card: string) => request<SovaCardsInfo>(`/api/settings/cards/${encodeURIComponent(card)}/withdraw`, jsonInit("POST", {}));
+/** Cancel the held Save of the folder's edits: `cancelSave` keeps them, where the same call without it is Discard. */
+export const cancelLocalSettingsSave = (projectId: string) => request<ProjectSettingsInfo>(`${projectPath(projectId)}/settings/cards/local/withdraw`, jsonInit("POST", { cancelSave: true }));
 export const undoSettingsRow = (projectId: string, id: string) =>
   request<{ undone?: SettingsHistoryRow[]; card?: SettingsCardView }>(`${projectPath(projectId)}/settings/undo`, jsonInit("POST", { id }));
 export const getProjectOffers = (projectId: string) => request<ProjectOffersAnswer>(`${projectPath(projectId)}/offers`, { cache: "no-store" });
@@ -1691,3 +1727,23 @@ export const saveMergeSettings = (projectId: string, changes: import("../../shar
   request<import("../../shared/merge-queue-settings").MergeSettingsSaveResult>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings`, jsonInit("POST", { changes, confirm: true }));
 /** Cancels a save waiting for the current branch. */
 export const cancelMergeSettings = (projectId: string) => request<unknown>(`/api/merge-queue/projects/${encodeURIComponent(projectId)}/settings/pending`, { method: "DELETE" });
+
+// -- MCP servers (§app/mcp) --
+const mcpRow = (id: string, tail = "") => `/api/mcp/rows/${encodeURIComponent(id)}${tail}`;
+export const getMcpServers = () => request<McpServers>("/api/mcp/servers");
+export const getProjectMcp = (projectId: string) => request<McpProjectServers>(`/api/projects/${encodeURIComponent(projectId)}/mcp`);
+/** Add and Check: answers once the Check has finished; a failed Check is a row in state failed. */
+export const addMcpServer = (server: McpNewServer) => request<McpServerRow>("/api/mcp/servers", jsonInit("POST", server));
+export const editMcpServer = (id: string, entry: { address: string; secret?: string } | { command: string; secret?: string; secretName?: string }) =>
+  request<McpServerRow>(mcpRow(id), jsonInit("PUT", entry));
+export const removeMcpServer = (id: string) => request<McpServers>(mcpRow(id), { method: "DELETE" });
+export const switchMcpServer = (id: string, change: { newChats: boolean } | { tool: string; on: boolean }) => request<McpServerRow>(mcpRow(id), jsonInit("PATCH", change));
+/** Approves the version shown. 409 `{code: "changed", row}` when the entry has moved on. */
+export const approveMcpServer = (id: string, version: string) => request<McpServerRow>(mcpRow(id, "/approve"), jsonInit("POST", { version }));
+export const checkMcpServer = (id: string) => request<McpServerRow>(mcpRow(id, "/check"), { method: "POST" });
+export const saveMcpSecret = (id: string, name: string, value: string) => request<McpServerRow>(mcpRow(id, `/secrets/${encodeURIComponent(name)}`), jsonInit("PUT", { value }));
+export const removeMcpSecret = (id: string, name: string) => request<McpServerRow>(mcpRow(id, `/secrets/${encodeURIComponent(name)}`), { method: "DELETE" });
+export const startMcpSignIn = (id: string) => request<McpSignIn>(mcpRow(id, "/sign-in"), { method: "POST" });
+export const readMcpSignIn = (id: string) => request<McpSignIn>(mcpRow(id, "/sign-in"));
+export const finishMcpSignIn = (id: string, address: string) => request<McpSignIn>(mcpRow(id, "/sign-in/address"), jsonInit("POST", { address }));
+export const cancelMcpSignIn = (id: string) => request<unknown>(mcpRow(id, "/sign-in"), { method: "DELETE" });

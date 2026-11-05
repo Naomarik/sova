@@ -77,6 +77,27 @@ test("two releases: the numbers decide, so a Stable moved back to an older relea
   assert.equal(result.state, "ahead");
 });
 
+test("a withdrawn release: a copy on it is told so with the reason and offered the release Stable is back on, never 'ahead' (a8)", async () => {
+  const r = world();
+  const copy = r.clone("at-v020-w", { ref: "v0.2.0" });
+  r.tag(r.origin, "stable", r.c.c1);
+  r.git(r.origin, "tag", "-a", "withdrawn/v0.2.0", "-m", "breaks the settings file", r.c.c2);
+  const result = await run(r, copy, { kind: "stable" }, "installer");
+  assert.equal(result.state, "withdrawn");
+  if (result.state !== "withdrawn") return;
+  assert.equal(result.tag, "v0.2.0");
+  assert.equal(result.why, "breaks the settings file");
+  assert.ok(result.at, "when");
+  assert.equal(result.target.sha, r.c.c1);
+  assert.equal(result.target.label, "v0.1.0");
+  assert.equal(result.message, "v0.2.0 was withdrawn: breaks the settings file. Stable is back on v0.1.0.");
+  assert.equal(offersUpgrade(result, "installer"), true, "an installed copy may go back");
+  assert.equal(offersUpgrade(result, "developer"), false, "a developer copy is never moved back");
+  // A copy on another, not withdrawn, release is unaffected; following master never reads the marker.
+  const later = await run(r, copy, { kind: "master" }, "installer");
+  assert.notEqual(later.state, "withdrawn");
+});
+
 test("Stable diverged from a copy that already holds a newer release is ahead, not an offer", async () => {
   const r = world();
   // v0.3.0 on master (c3), then a v0.2.1 hotfix off v0.2.0 that stable points at; the copy runs c4,

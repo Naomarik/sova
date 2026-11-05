@@ -221,6 +221,16 @@
                                                              (:target e) (assoc :target (:target e))
                                                              (:commit e) (assoc :commit (:commit e))
                                                              (:why e) (assoc :why (:why e)))))))
+      ;; Release (power release, al_1 q3/q12): starting a release through the project's release playbook, or
+      ;; publishing one whose every gate passed, once the act goes ahead (held for the waiting period when nobody's
+      ;; turn started it). The releaser decides the rest: a publish past a failed gating check is refused there,
+      ;; and there are no overrides.
+      (dsl/act {:sova/feed :feed :event :release/run :checks [not-archived invalid]}
+        (dsl/effect :release-run (fn [d] (let [e (b/evt d)] (cond-> {:by (some-> (:by e) name) :attended (true? (:attended e))
+                                                                    :verb (if (= "publish" (:verb e)) "publish" "start")}
+                                                              (:release e) (assoc :release (:release e))
+                                                              (:version e) (assoc :version (:version e))
+                                                              (:why e) (assoc :why (:why e)))))))
       ;; Sharing one of them (§app.project-overseer/previews): L1, held when unattended, as preview/start; the
       ;; engine checked the share before the act, and the effect mints the link (again checked) once it goes
       ;; ahead. Revoking one is no act.
@@ -288,6 +298,11 @@
    :services/reset    {:power "copiesReset" :tool "sova_project_verbs"}
    :deploy/run        {:power "deploy" :tool "sova_project_verbs" :code-facing true :hold true
                        :what (fn [d] (str "A deploy" (when-let [t (:target (b/evt d))] (str " to " t)) " through the project's own recipe"))}
+   :release/run       {:power "release" :tool "sova_project_verbs" :code-facing true :hold true
+                       :what (fn [d] (let [e (b/evt d)]
+                                       (if (= "publish" (:verb e))
+                                         (str "Publishing release " (or (:version e) (:release e) "") " (public, can't be taken back)")
+                                         "A release through the project's release playbook")))}
    :services/share    {:power "share" :tool "sova_project_verbs" :people-facing true :hold true :what share-what}
    :verbs/onboard     {:power "onboard" :tool "sova_project_verbs" :code-facing true :counts "create" :hold true
                        :what (fn [d] (str "The Project verbs playbook on " (:name d)))}

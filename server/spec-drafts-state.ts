@@ -11,17 +11,102 @@ import { draftOfficial } from "../pi-config/extensions/spec/core/official.mjs";
  * it read changes.
  */
 
-/** What the cache compares: the modification time and the size, so a rewrite within one tick still shows. */
+/** What the cache compares: the inode, size and both times, so a rewrite that keeps the size and puts the time back still shows. */
 const stamp = (path: string): string => {
   try {
     const st = statSync(path);
-    return `${st.mtimeMs}:${st.size}`;
+    return `${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
   } catch {
     return "-";
   }
 };
 
-const cache = new Map<string, { stamps: string; names: string[] }>();
+/** The same to the nanosecond: what a file's hash may be reused on. */
+const fileStamp = (st: { ino: bigint; size: bigint; mtimeNs: bigint; ctimeNs: bigint }): string => `${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}`;
+
+/** A file written this recently may be written again within one clock tick, unseen by its stat: no hash of it is kept. */
+const SETTLED_MS = 2000;
+const MAX_HASHES = 100_000;
+/** A draft's own files, most of them what its base says: their hashes, while their stats stand. */
+const hashes = new Map<string, { stamp: string; hash: string | undefined }>();
+
+/** One spec file's claims by name and content: `cut` is a function of the two, and most worktrees of a repository hold
+    the same files. Bounded by the bytes they were cut from, oldest first. */
+const MAX_CUT_BYTES = 64 * 1024 * 1024;
+const cuts = new Map<string, { value: unknown; bytes: number }>();
+let cutBytes = 0;
+
+function keepCut(key: string, value: unknown, bytes: number): void {
+  cuts.set(key, { value, bytes });
+  cutBytes += bytes;
+  for (const [k, v] of cuts) {
+    if (cutBytes <= MAX_CUT_BYTES) break;
+    cuts.delete(k);
+    cutBytes -= v.bytes;
+  }
+}
+
+/** What judging one folder's drafts shares: each file read once, each draft's meta parsed once, and the record files
+    cut once, however many drafts ask. `seen` lists every path the answer rests on. */
+function draftPass(seen: Set<string>) {
+  const files = new Map<string, Buffer | null>();
+  const metas = new Map<string, unknown>();
+  return {
+    seen: (path: string) => void seen.add(path),
+    read(path: string): Buffer | null {
+      if (!files.has(path)) {
+        seen.add(path);
+        draftWork.reads++;
+        files.set(path, readOr(path));
+      }
+      return files.get(path)!;
+    },
+    hash(path: string): string | undefined {
+      let st;
+      try {
+        st = statSync(path, { bigint: true });
+      } catch {
+        return undefined;
+      }
+      const now = fileStamp(st);
+      const hit = hashes.get(path);
+      if (hit?.stamp === now) return hit.hash;
+      draftWork.reads++;
+      const buf = readOr(path);
+      const hash = buf ? sha(buf) : undefined;
+      if (Date.now() - Number(st.mtimeNs / 1_000_000n) > SETTLED_MS && Date.now() - Number(st.ctimeNs / 1_000_000n) > SETTLED_MS) {
+        if (hashes.size >= MAX_HASHES) hashes.clear();
+        hashes.set(path, { stamp: now, hash });
+      }
+      return hash;
+    },
+    cut<T>(rel: string, buf: Buffer | null, cut: (rel: string, buf: Buffer | null) => T): T {
+      if (!buf) return cut(rel, buf);
+      const key = `${rel}\0${sha(buf)}`;
+      const hit = cuts.get(key);
+      if (hit) {
+        cuts.delete(key);
+        cuts.set(key, hit);
+        return hit.value as T;
+      }
+      draftWork.cuts++;
+      const value = cut(rel, buf);
+      keepCut(key, value, buf.length);
+      return value;
+    },
+    json<T>(dir: string, parse: (dir: string) => T): T {
+      const path = join(dir, "draft.json");
+      seen.add(path);
+      if (!metas.has(path)) metas.set(path, parse(dir));
+      return metas.get(path) as T;
+    },
+  };
+}
+
+/** Tests: the work done, cumulative; a shared read or cut doesn't count. */
+export const draftWork = { reads: 0, cuts: 0 };
+
+const cache = new Map<string, { stamps: [path: string, stamp: string][]; names: string[] }>();
 
 /** The names of the drafts in `<dir>/.sova/spec/drafts/` not official (or unreadable), sorted (§chat.worktrees/ready-to-land);
     undefined when the folder has none. */
@@ -36,17 +121,18 @@ export function unofficialDrafts(dir: string): string[] | undefined {
   }
   if (!names.length) return undefined;
   const hit = cache.get(dir);
-  if (hit && hit.stamps === stampOf(hit.stamps)) return [...hit.names];
+  if (hit && hit.stamps.every(([p, was]) => stamp(p) === was)) return [...hit.names];
   const left: string[] = [];
-  const read: string[] = [draftsDir];
+  const read = new Set<string>([draftsDir]);
+  const pass = draftPass(read);
   for (const n of names) {
-    const r = draftOfficial(specRoot, join(draftsDir, n), draftsDir);
+    const r = draftOfficial(specRoot, join(draftsDir, n), draftsDir, pass);
     // Unreadable: nobody knows its state, so it isn't official (as the merge queue's docs step reads it too).
-    if (r) read.push(...r.read);
-    else read.push(join(draftsDir, n, "draft.json"));
+    if (r) for (const p of r.read) read.add(p);
+    else read.add(join(draftsDir, n, "draft.json"));
     if (!r?.official) left.push(n);
   }
-  const stamps = JSON.stringify([...new Set(read)].map((p) => [p, stamp(p)]));
+  const stamps = [...read].map((p): [string, string] => [p, stamp(p)]);
   if (cache.size > 200) cache.clear();
   cache.set(dir, { stamps, names: left });
   return [...left];
@@ -165,16 +251,6 @@ export async function draftsLeft(dir: string, isAncestor: AncestorCheck): Promis
   return out;
 }
 
-/** The same stamps re-read now: equal means nothing that was read has changed. */
-function stampOf(stamps: string): string {
-  try {
-    const list = JSON.parse(stamps) as [string, string][];
-    return JSON.stringify(list.map(([p]) => [p, stamp(p)]));
-  } catch {
-    return "";
-  }
-}
-
 /** The spec drafts as an approval pins them (§chat.worktrees/landing-answers): one hash over every file under each
     draft's `spec/` (lines `<draft>/<path under spec/> <sha256>`, sorted, joined by "\n"; `draft.json`, where notes,
     evidence and receipts go, apart), each draft's own hash over its lines, and the names. The draft tool's `land`
@@ -249,4 +325,38 @@ export function draftsChanged(pressed: { hash: string; names: string[]; each?: R
   const names = [...new Set([...pressed.names, ...(now?.names ?? [])])].sort();
   if (!pressed.each) return names;
   return names.filter((n) => (pressed.each![n] ?? null) !== (now?.each[n] ?? null));
+}
+
+/** A cheap stamp of a worktree's drafts folder (every file under `.sova/spec/drafts/`, by path, size and mtime): a
+    drafts edit moves it, with no commit (the merge queue's watch on a branch sent back for its drafts). "" when none. */
+export function draftsStamp(dir: string): string {
+  const draftsDir = join(dir, ".sova", "spec", "drafts");
+  const parts: string[] = [];
+  for (const rel of filesUnder(draftsDir).sort()) {
+    try {
+      const st = statSync(join(draftsDir, rel));
+      parts.push(`${rel}:${st.size}:${st.mtimeMs}`);
+    } catch {
+      parts.push(`${rel}:-`);
+    }
+  }
+  return parts.join("\n");
+}
+
+/** A content hash over every file under a worktree's `.sova/spec/drafts/` (each draft's `draft.json`, where notes and
+    evidence go, included): what a fix that only records a note moves, which `draftsHash` leaves out by design.
+    undefined: no drafts folder. */
+export function draftsFingerprint(dir: string): string | undefined {
+  const draftsDir = join(dir, ".sova", "spec", "drafts");
+  try {
+    statSync(draftsDir);
+  } catch {
+    return undefined;
+  }
+  const lines: string[] = [];
+  for (const rel of filesUnder(draftsDir).sort()) {
+    const buf = readOr(join(draftsDir, rel));
+    lines.push(`${rel} ${buf ? sha(buf) : "-"}`);
+  }
+  return createHash("sha256").update(lines.join("\n")).digest("hex");
 }

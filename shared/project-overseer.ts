@@ -234,7 +234,7 @@ export interface CodingModeNow {
 }
 
 /** A mode as people read it: `normal · spec · visuals` (`vis` said as "visuals"). */
-export const codingModeWords = (m: Pick<ProjectCodingMode, "mode" | "minorModes">): string =>
+export const codingModeWords = (m: { mode: string; minorModes: string[] }): string =>
   [m.mode, ...m.minorModes.map((x) => (x === "vis" ? "visuals" : x))].join(" · ");
 
 export interface ProjectOverseerSettings {

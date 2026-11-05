@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import { launchTourBrowser, TourBrowserSetupError } from "./browser";
+import { launchTourBrowser, TOUR_BROWSER_GUIDANCE, TourBrowserSetupError } from "./browser";
 import { TourBrowserAddresses } from "./browser-addresses";
 import { createTourContactSheets } from "./contact-sheet";
 import { TourCaptureFailure, TOUR_TARGET_OUTSIDE, revealTourTarget, settledBox, stableTourBox, tourLocator, tourMark, tourNearby, uniqueTourTarget } from "./targets";
@@ -79,8 +79,8 @@ async function run(input: TourAttemptInput): Promise<void> {
     // Sandbox off: the attempt's own proxy is the browser's only way out; without it, nothing runs.
     const ownProxy = !input.proxied ? process.env.HTTPS_PROXY : undefined;
     if (!input.proxied && !(ownProxy && /^http:\/\/127\.0\.0\.1:\d+$/.test(ownProxy))) throw new TourCaptureFailure({ message: "Recording couldn't start its network guard, so nothing ran.", guidance: "Retry in a moment. Recording never runs with a direct connection." });
-    try { browser = await launchTourBrowser(); }
-    catch (error) { throw new TourCaptureFailure({ message: error instanceof TourBrowserSetupError ? error.message : "The installed Chrome or Chromium could not launch inside the recording policy.", guidance: "Check the installed browser and this chat's sandbox on the recording host. Sova never downloads a browser or disables the sandbox to make recording work." }); }
+    try { browser = await launchTourBrowser(typeof input.browser === "string" ? input.browser : undefined); }
+    catch (error) { throw new TourCaptureFailure({ message: error instanceof TourBrowserSetupError ? error.message : "The installed Chrome or Chromium could not launch inside the recording policy.", guidance: TOUR_BROWSER_GUIDANCE }); }
     activeBrowser = browser;
     const addresses = new TourBrowserAddresses(undefined, input.proxied === true);
     const assets = new Map<string, Uint8Array>();
@@ -591,7 +591,7 @@ function sovaWatch(url: string, origin: string): boolean {
     const u = new URL(url);
     if (!["ws:", "wss:"].includes(u.protocol) || `${u.protocol === "wss:" ? "https" : "http"}://${u.host}` !== origin || u.pathname !== "/ws/watch" || u.username || u.password || u.hash) return false;
     const keys = [...u.searchParams.keys()];
-    if (new Set(keys).size !== keys.length || keys.some(k => !["path", "feed", "tail", "wire", "have", "claude"].includes(k))) return false;
+    if (new Set(keys).size !== keys.length || keys.some(k => !["path", "feed", "tail", "wire", "have", "claude", "rows"].includes(k))) return false;
     return !u.searchParams.has("feed") || u.searchParams.get("feed") === "sessions";
   } catch { return false; }
 }

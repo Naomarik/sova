@@ -57,7 +57,8 @@ also update Y" list live in its guide: read the guide of every area your task to
   **Landing**). Uncommitted edits in the live tree block a release.
   One exception: applying a Project Overseer's Settings change card on Sova's own project
   (§app.project-overseer/settings) lands its settings files on master in the live tree as one commit,
-  at the operator's click; Sova refuses it when it would touch anything but settings files.
+  at the operator's click; Sova refuses it when it would touch anything but settings files, and it
+  waits while a branch is checking, landing at the queue's next quiet point.
   Another: a save from Settings → Merge Queue (§app.merge-queue/settings-save) lands the changed values
   of `.sova/project.json`'s `merge` section on master as one commit, at the operator's confirm; it
   waits while a branch is checking and is refused while the project folder has an uncommitted edit.
@@ -96,8 +97,8 @@ also update Y" list live in its guide: read the guide of every area your task to
   alone). It holds for that commit until the branch changes or lands. Land is offered on it.
 - **The user's typed word.** When the user types "land it" or "merge it" in the chat that owns the
   branch, commit what is left and record it with `worktree land` (it refuses anything but their own
-  newest message, and a message the Overseer, a baton or another session sent is never theirs,
-  whatever it says); the queue takes it as an approval of that commit. "land it without its specs"
+  newest message; one the Overseer, a baton or another session sent is refused, whatever it says, though a
+  program holding the token may still pass as their word); the queue takes it as an approval of that commit. "land it without its specs"
   and "land it, skip review" are recorded as said. Never send a session "land it" on the user's
   behalf. When the work is done, say what still blocks landing (Sova's note names it), or that they
   can press Land or type "land it" here.
@@ -117,8 +118,8 @@ also update Y" list live in its guide: read the guide of every area your task to
 - **The exceptions:** a Project Overseer's settings change card on Sova's own project lands its
   settings files on master at your Apply (§app.project-overseer/settings); Save Checks and a save from
   Settings → Merge Queue each land one commit of the project file's `merge` section at your confirm
-  (§app.merge-queue/setup, §app.merge-queue/settings-save). The save waits while a branch is checking,
-  so it never moves master under a run.
+  (§app.merge-queue/setup, §app.merge-queue/settings-save). The card and the save each wait while a
+  branch is checking, so neither moves master under a run.
 
 ## Live server restart
 
@@ -139,13 +140,22 @@ goes live on `systemctl --user restart sova-runtime.service` (macOS:
   `Reload Now`). That holds for pi-config edits too, the claude-code bridge included. Reloads go one
   chat at a time and stop at the first chat that fails to start on the new code.
 - After a server-side change, say that it is not live yet and needs that restart. Then confirm with
-  `GET /api/health` (`startedAt`, `head`).
-- You may run the restart from inside a chat: your chat is not the server's child. A sandboxed session
-  can't reach the user bus, by design. Never work around that: ask the user.
+  `GET /api/health` (`startedAt`, `head`). A change that lands through the merge queue goes live on its
+  own: the merge thread restarts Sova once the queue is idle (below).
+- A chat never restarts or updates Sova: it asks the user. Both pass only on the user's own click in
+  the page (§app.access/your-click), and `server.restart` answers with where to click. The server can't
+  stop raw `systemctl`, `launchctl` or `kill`, so this is a rule, not a wall.
+- **The one exception: Sova's own merge thread**, after landings, once the queue is idle (nothing queued
+  or checking), outside a release, and only as `.sova/playbooks/merge-queue/PLAYBOOK.md` "When the
+  queue is idle" says: it holds the queue (`merge.hold`), builds the main checkout, restarts
+  `sova-runtime.service` and checks `/api/health`'s head. No other chat, worker or script does;
+  `POST /api/updates/restart` still refuses every chat.
+- The operator's ways: **Restart Sova** in Settings → General, Apply on the project's Branches tab, or
+  from their own terminal the raw `systemctl` or `launchctl` line above.
 - The verb form (Sova as its own project, `.sova/project.json`; slot 0 adopts `sova-runtime.service`)
-  is the operator's Apply on the Services tab, or `sova-project apply --checkout ~/webapps/sova
-  --confirm` (`--project` alone is refused, `invalid-request`). It always needs the operator's confirm,
-  then restarts the unit 3 s later. up, down, reset and teardown of slot 0 are refused.
+  is that Apply, which always needs the operator's confirm, then restarts the unit 3 s later. A page on
+  another of the user's computers can press it too. `sova-project apply` of Sova's own slot 0 is refused,
+  confirmed or not. up, down, reset and teardown of slot 0 are refused.
 - Never restart `sova-runtime.service` to test something: tests use hermetic servers and stand-in
   units.
 
@@ -161,8 +171,11 @@ The server runs on Bun; Node only when the user asks (server guide). An agent ne
   every model).
 - Throwaway test sessions run on `zai/glm-5.3`. New web sessions default to a costlier model: set the
   model before the first prompt, and archive the session afterwards.
-- Never `git stash`, `checkout`, `reset` or `restore` in a worktree others share. Take baselines with
-  `git archive <rev> | tar -x -C ~/.cache/<name>`, never `git worktree add` (it writes the shared `.git`).
+- Never `git stash`, `checkout`, `reset` or `restore` in a worktree others share. Take baselines in
+  your worktree's gitignored `.cache/`: `mkdir -p .cache/<name> && git archive <rev> | tar -x -C
+  .cache/<name>`, and delete it when done; never `git worktree add` (it writes the shared `.git`). Never
+  `~/.cache`: inside the sandbox that is a private copy shared by every sandboxed chat, which nobody
+  outside it sees. Throwaway files go in the temp dir (`$TMPDIR`, else `/tmp`).
 - Run `mise trust <worktree>` in a fresh worktree before any node/pnpm command (again after a
   `mise.toml` change).
 - Retire a worker past 50% of its context window: have it write a checkpoint, then hand off to a fresh
@@ -227,24 +240,19 @@ messages and `§workspace.groups/decisions`):
 - Every reach into pi's internals is a quirk row in `server/harness/pi/QUIRKS.md`, with its canary and
   sites, in the same change.
 
-## Commands and extensibility (detail: [agents/server/commands/overview.md](agents/server/commands/overview.md))
+## Commands and extensibility (detail and the tests: [agents/server/commands/overview.md](agents/server/commands/overview.md))
 
-- **New user-visible actions go on the catalogue by default** (`shared/commands-catalog.ts`), so Sova
-  stays extensible: a script, a later server list or an extension reaches them with no new code.
-  When you add or change a user-visible action, also update the catalogue and `shared/commands-ids.json`.
-- An entry points at the existing route and never re-implements it. Additions only add: nothing
-  intercepts, vetoes or rewrites one of Sova's actions.
-- Agents get an action only when it is opened to them on purpose; being listed opens nothing.
-- Each entry's `meshNeed` equals what `server/mesh/access.ts` `classifyRequest` gives its route.
-  Entries never point at the peer, share, auth or extension-proxy routes. Ids are append-only.
-- Extension content on Sova's screens is data Sova draws, or a walled-off frame; never markup in the page.
-- **Sova's own features use the same places on its screens as extensions**, so new work is extensible
-  from day one: a place draws Sova's built-ins first (trusted, interactive), then what extensions add
-  (walled). A new action under a message is a built-in of the reply place (`src/lib/reply-place.ts`),
-  never a strip of its own. A place asks only the extensions whose `offers` name it, never per item.
-  Held by `src/lib/reply-place-rule.test.ts` and `src/lib/reply-place.browser.test.ts`.
-- The ratchet: each rule has a test that fails when it breaks (the guide names them, and lists what
-  is not a command). Change a rule and its test together.
+- **A new user-visible action gets a catalogue entry** (`shared/commands-catalog.ts`, its id in
+  `shared/commands-ids.json`) pointing at its existing route, in sessions, projects, the Overseer,
+  to-dos and ideas, and chats. The areas left as is by choice (`OPTED_OUT` in
+  `server/commands-inventory/scan.ts`: settings, orgs, mesh, voice, tours, shares…) need none;
+  adding an area there is the user's call.
+- An entry's `meshNeed` is `classifyRequest`'s for its route; never the peer, auth, share or `/ext`
+  routes; ids are append-only. Additions only add; listing an action never opens it to agents.
+- Extension content is data Sova draws, or a walled-off frame. Sova's own features use the same
+  places on its screens as extensions, built-ins first (an action under a message is a reply-place
+  built-in); a place asks only the extensions whose `offers` name it.
+- Each rule has a test; change them together.
 
 ## Conventions
 

@@ -3,7 +3,8 @@
 // a bun test running on, growing to ~100 GB), nor a chat process a test's server left in its slice.
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { once } from "node:events";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { after, test } from "node:test";
 import { resolveBun } from "../server/runtime-choice";
@@ -31,6 +32,9 @@ test("a runner killed by SIGKILL takes its test files' processes, and its chat s
   const systemd = spawnSync("systemctl", ["--user", "show-environment"], { stdio: "ignore" }).status === 0;
   const unit = `sova_test_hang_${process.pid}_${Date.now()}.service`;
   const pidFile = join(base, "pid");
+  // The file's temp root, which it says itself. The runner killed below can't remove it (on macOS it can
+  // be outside this file's own root, under /tmp), so this test does, by that exact path once the file is gone.
+  const rootFile = join(base, "killed-root");
   const probe = join(base, "hang.integration.test.ts");
   // A chat process its server left in the run's slice stands in as a unit there.
   writeFileSync(
@@ -41,6 +45,7 @@ import { test } from "node:test";
 test("hangs", { timeout: 120_000 }, async () => {
   const slice = process.env.SOVA_CHAT_SLICE ?? "";
   if (${systemd} && /^sova_test_/.test(slice)) execFileSync("systemd-run", ["--user", "--quiet", "--collect", "--slice=" + slice, "--unit=${unit}", "sleep", "300"]);
+  writeFileSync(${JSON.stringify(rootFile)}, process.env.TMPDIR ?? "");
   writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));
   await new Promise((r) => setTimeout(r, 90_000));
 });
@@ -53,6 +58,7 @@ test("hangs", { timeout: 120_000 }, async () => {
   try {
     assert.ok(await until(() => existsSync(pidFile) && readFileSync(pidFile, "utf8") !== "", 30_000), "the test file started");
     filePid = Number(readFileSync(pidFile, "utf8"));
+    assert.match(readFileSync(rootFile, "utf8"), /\/sova-test-home-[^/]+$/, "the file said its root, so the cleanup below can't silently do nothing");
     assert.ok(alive(filePid));
     runner.kill("SIGKILL");
     assert.ok(await until(() => !alive(filePid), 8_000), `the test file's process ${filePid} still runs 8 s after its runner was killed`);
@@ -61,6 +67,11 @@ test("hangs", { timeout: 120_000 }, async () => {
     runner.kill("SIGKILL");
     if (filePid && alive(filePid)) process.kill(filePid, "SIGKILL");
     if (systemd) spawnSync("systemctl", ["--user", "stop", unit], { stdio: "ignore" });
+    const killedRoot = existsSync(rootFile) ? readFileSync(rootFile, "utf8") : "";
+    if (/\/sova-test-home-[^/]+$/.test(killedRoot)) {
+      rmSync(killedRoot, { recursive: true, force: true });
+      assert.ok(!existsSync(killedRoot), `the killed runner's root is gone: ${killedRoot}`);
+    }
   }
 });
 
@@ -147,5 +158,54 @@ test("leaves a chat process behind", async () => {
     assert.ok(alive(pids!.other), "a process whose start time doesn't match its record is never touched");
   } finally {
     for (const pid of [pids?.chat, pids?.other]) if (pid && alive(pid)) process.kill(pid, "SIGKILL");
+  }
+});
+
+test("macOS, a temp dir too long for Chromium's sockets: a file's root goes under /tmp, and goes when the file ends and when the runner is stopped", { timeout: 90_000, skip: process.platform !== "darwin" ? "macOS only" : false }, async (t) => {
+  const bun = process.versions.bun ? { path: process.execPath } : resolveBun();
+  if (!("path" in bun)) return t.skip(`no Bun to run the runner on (${bun.missing})`);
+  try { rmSync(mkdtempSync("/tmp/sova-root-check-"), { recursive: true }); } catch { return t.skip("/tmp is closed here"); }
+  const long = join(base, "x".repeat(60));
+  mkdirSync(long, { recursive: true });
+  const seen = join(base, "root-seen");
+  const probe = (name: string, body: string) => {
+    const file = join(base, name);
+    writeFileSync(file, `import { writeFileSync } from "node:fs";
+import { test } from "node:test";
+test("says its temp dir", { timeout: 60_000 }, async () => {
+  writeFileSync(${JSON.stringify(seen)}, process.env.TMPDIR ?? "");
+  ${body}
+});
+`);
+    return file;
+  };
+  const env: NodeJS.ProcessEnv = { ...process.env, SOVA_BUN: bun.path, TMPDIR: long };
+  delete env.SOVA_RUNTIME;
+  const run = (file: string) => spawn("node", [join(ROOT, "scripts", "run-tests.mjs"), "--runtime", "bun", file], { cwd: ROOT, env, stdio: "ignore" });
+  const rootSeen = () => {
+    const root = readFileSync(seen, "utf8");
+    assert.match(root, /^\/tmp\/sova-test-home-[^/]+$/, "a file's temp dir is its own root under /tmp, not the long one");
+    return root;
+  };
+
+  // A file that ends: its root goes with it.
+  const ends = run(probe("ends.integration.test.ts", ""));
+  await once(ends, "close");
+  assert.ok(!existsSync(rootSeen()), "gone when the file ended");
+
+  // A runner stopped by a signal while the file still runs: its exit takes the root.
+  rmSync(seen, { force: true });
+  const hangs = run(probe("hangs.integration.test.ts", "await new Promise((r) => setTimeout(r, 50_000));"));
+  try {
+    assert.ok(await until(() => existsSync(seen) && readFileSync(seen, "utf8") !== "", 30_000), "the test file started");
+    const root = rootSeen();
+    assert.ok(existsSync(root), "control: the root is there while the file runs");
+    hangs.kill("SIGTERM");
+    assert.ok(await until(() => !existsSync(root), 8_000), `${root} still there 8 s after its runner was stopped`);
+  } finally {
+    hangs.kill("SIGKILL");
+    // Only when the assertion above failed: the runner never got to remove it.
+    const left = existsSync(seen) ? readFileSync(seen, "utf8") : "";
+    if (/^\/tmp\/sova-test-home-[^/]+$/.test(left)) rmSync(left, { recursive: true, force: true });
   }
 });

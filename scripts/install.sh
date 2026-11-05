@@ -13,8 +13,12 @@
 # of it runs, so a download cut short runs nothing.
 #
 # What it needs on the machine already: bash, git, node (>= 22.19), pnpm, curl, and unzip or python3.
-# Without pnpm it runs the version the repository pins through npx (npm ships with Node). The
-# server runs on Bun: the installer downloads the Bun release the repository pins (mise.toml) from
+# Without a pnpm that runs in the clone it runs the version the repository pins through npx (npm
+# ships with Node). Node or pnpm may be a mise shim: mise is told to ignore the repository's
+# mise.toml in the staging and install directories (MISE_IGNORED_CONFIG_PATHS, here and in the
+# launcher), so it doesn't refuse them and doesn't download what that file pins; mise's trust list
+# is never changed. The server runs on Bun: the installer downloads the Bun release the repository
+# pins (mise.toml) from
 # Bun's GitHub releases into <install dir>/.bun, checked against the sha256 the repository records
 # (scripts/bun-release.txt, through scripts/fetch-bun.sh). That keeps Bun inside the install
 # directory, at the version Sova is tested on, with no version manager and no edit to a shell rc
@@ -30,7 +34,12 @@
 #                          ${XDG_DATA_HOME:-~/.local/share}/applications/sova.desktop and its icon
 #                          .../icons/hicolor/512x512/apps/sova.png, on macOS ~/Applications/Sova.app.
 #                          `sova app` keeps its browser profile in ~/.config/sova-browser (Linux) or
-#                          ~/Library/Application Support/sova-browser (macOS).
+#                          ~/Library/Application Support/sova-browser (macOS). On macOS it also
+#                          installs Sova in that profile as an app of its own, its title bar hidden
+#                          (scripts/mac-app.ts, through `sova app --install`; it records the result
+#                          in the profile's sova-app.json), and the browser writes its own launcher
+#                          for the app in ~/Applications/<browser> Apps.localized/ (--no-app-entry
+#                          skips this too).
 #   <agent dir>/extensions/<name>
 #                          one symlink per extension in <install dir>/pi-config/extensions, where
 #                          <agent dir> is $PI_CODING_AGENT_DIR, else ~/.pi/agent (--no-extensions
@@ -93,6 +102,13 @@ entry_marker="X-Sova-Launcher=v1"
 label=io.github.naomarik.sova
 
 die() { printf 'sova install: %s\n' "$1" >&2; exit 1; }
+# A terminal to talk to: $tty opens, and when it is a device, it is a terminal. /dev/null opens too,
+# and an upgrade from Settings hands it over (SOVA_TTY, server/updates/runner.ts): that run has no
+# one at a terminal. (A plain file stands in for a terminal in scripts/install.test.sh.)
+has_terminal() {
+	(: <"$tty") 2>/dev/null || return 1
+	[ ! -c "$tty" ] || (exec <"$tty" && [ -t 0 ]) 2>/dev/null
+}
 say() { printf '%s\n' "$1"; }
 
 while [ $# -gt 0 ]; do
@@ -124,14 +140,9 @@ done
 command -v curl >/dev/null 2>&1 || die "curl is not installed; it downloads Bun. Install curl, then run this again."
 command -v unzip >/dev/null 2>&1 || command -v python3 >/dev/null 2>&1 ||
 	die "unzip is not installed (nor python3); it unpacks Bun. Install unzip, then run this again."
-# pnpm on PATH is used as it is; otherwise npx runs pnpm (the version is read from the clone below).
-if command -v pnpm >/dev/null 2>&1; then
-	use_npx=false
-elif command -v npx >/dev/null 2>&1; then
-	use_npx=true
-else
+# Whether pnpm runs is asked in the clone, below: a version manager's shim can answer only there.
+command -v pnpm >/dev/null 2>&1 || command -v npx >/dev/null 2>&1 ||
 	die "pnpm is not installed, and there is no npx to run it with. Install pnpm (https://pnpm.io/installation), then run this again."
-fi
 
 node_version=$(node -v 2>/dev/null || true)         # v25.2.1
 node_version=${node_version#v}
@@ -245,7 +256,7 @@ if [ "$service" = ask ]; then
 		service=yes        # installed by this script before: keep it, and keep it current
 	elif [ "$service_kind" = none ]; then
 		service=no
-	elif (: <"$tty") 2>/dev/null; then
+	elif has_terminal; then
 		if [ "$service_kind" = launchd ]; then what="a launchd agent"; else what="a systemd user service"; fi
 		printf 'Run Sova as %s that starts at login, on port %s? [y/N] ' "$what" "$port" >>"$tty"
 		answer=
@@ -346,6 +357,14 @@ if $rebuild; then
 	done
 	mkdir -p "$parent"        # the launcher's directory waits for a successful build
 	staging=$(mktemp -d "$parent/.sova-staging.XXXXXX")   # beside the target, so promoting is a rename
+	say "staging in $staging"
+
+	# Every program below runs on the user's own tools: mise neither refuses these folders' mise.toml
+	# nor downloads what it pins. Physical paths, because mise may match on the canonical path. Set
+	# as plain assignments first, so a failed cd stops here (set -e) rather than export a wrong path.
+	staging_real=$(cd -P "$staging" && pwd -P)
+	parent_real=$(cd -P "$parent" && pwd -P)
+	export MISE_IGNORED_CONFIG_PATHS="${MISE_IGNORED_CONFIG_PATHS:+$MISE_IGNORED_CONFIG_PATHS:}$staging_real:$parent_real/$(basename "$dir")"
 
 	say "cloning $repo at $ref"
 	git clone --quiet --depth 1 --branch "$ref" "$repo" "$staging/sova" 2>/dev/null ||
@@ -354,13 +373,19 @@ if $rebuild; then
 	git -C "$staging/sova" -c advice.detachedHead=false checkout --quiet "$ref" 2>/dev/null ||
 		die "'$ref' is not a tag, a branch or a commit of $repo; nothing was changed. Pass SOVA_REF=<tag, branch or commit>."
 
-	if $use_npx; then
+	if ( cd "$staging/sova" && pnpm --version ) >/dev/null 2>&1 </dev/null; then
+		pnpm=(pnpm)
+	elif command -v npx >/dev/null 2>&1; then
 		# The pnpm the repository pins in package.json's packageManager, or the latest without one.
 		pnpm_version=$(sed -n 's/^[[:space:]]*"packageManager":[[:space:]]*"pnpm@\([^"+]*\).*/\1/p' "$staging/sova/package.json")
 		pnpm=(npx --yes "pnpm@${pnpm_version:-latest}")
-		say "pnpm is not installed; running ${pnpm[2]} through npx"
+		if command -v pnpm >/dev/null 2>&1; then
+			say "pnpm is on PATH but does not run here; running ${pnpm[2]} through npx"
+		else
+			say "pnpm is not installed; running ${pnpm[2]} through npx"
+		fi
 	else
-		pnpm=(pnpm)
+		die "pnpm is on PATH but does not run here (a version manager's shim with no version set?), and there is no npx to run it with. Set a pnpm version or install pnpm (https://pnpm.io/installation), then run this again; nothing was changed"
 	fi
 
 	# The pinned Bun: the previous install's when it is still the pinned one, else downloaded.
@@ -447,11 +472,15 @@ $marker
 #                Chromium-family browser with a profile of its own (a tab of the default browser
 #                when there is none), starting the server first when nothing answers on the port.
 #                What the app-launcher entry runs. \`sova app --print-browser\` names the browser.
+#                On macOS it opens Sova's installed app instead when there is one (scripts/mac-app.ts).
+#   sova app --install   macOS: install Sova as an app of its own in that browser's Sova profile,
+#                even when the install passed --no-app-entry (which only stops it happening unasked)
 #   sova open    the same as sova app
 set -euo pipefail
 dir=$(printf '%q' "$dir")
 self=$(printf '%q' "$launcher")
 install_port=$port
+app_auto=$app_entry
 tool_path=$(printf '%q' "$service_path")
 agent=\${PI_CODING_AGENT_DIR:-$(printf '%q' "$agent")}
 LAUNCHER
@@ -539,7 +568,8 @@ pick_browser() {       # a Chromium-family browser's executable, or nothing
 			net.imput.helium) want=Helium ;;
 		esac
 		for name in ${want:+"$want"} "Google Chrome" Chromium "Brave Browser" "Microsoft Edge" Vivaldi Helium; do
-			for d in /Applications "$HOME/Applications"; do
+			# SOVA_APP_SYSTEM_APPS: install.test.sh only, so a test never finds (or starts) the Mac's own apps.
+			for d in "${SOVA_APP_SYSTEM_APPS:-/Applications}" "$HOME/Applications"; do
 				app="$d/$name.app"
 				[ -d "$app" ] || continue
 				exe=$(defaults read "$app/Contents/Info" CFBundleExecutable 2>/dev/null || true)
@@ -568,8 +598,37 @@ pick_browser() {       # a Chromium-family browser's executable, or nothing
 	done
 	return 1
 }
+mac_app() {            # the install's macOS app helper, on the install's Bun
+	"${SOVA_BUN:-$dir/.bun/bin/bun}" "$dir/scripts/mac-app.ts" "$@"
+}
+mac_profile="$HOME/Library/Application Support/sova-browser"
+install_app() {        # sova app --install [--auto] [--close-running]: macOS only
+	local browser started= rc
+	[ "$os" = Darwin ] || { echo "sova: sova app --install is for macOS" >&2; exit 2; }
+	[ -f "$dir/scripts/mac-app.ts" ] || { echo "sova: this install has no scripts/mac-app.ts" >&2; exit 1; }
+	browser=$(pick_browser) || { echo "sova: no Chrome, Chromium, Brave, Edge, Vivaldi or Helium to install Sova in" >&2; exit 1; }
+	mkdir -p "$mac_profile"
+	chmod 700 "$mac_profile"
+	# Already installed, or nothing to do this run: said, and nothing started.
+	set +e
+	mac_app check --browser "$browser" --profile "$mac_profile" --port "$port" "$@"
+	rc=$?
+	set -e
+	case "$rc" in 0 | 3) exit "$rc" ;; esac
+	if ! healthy; then
+		start_server
+		wait_up
+		started=$pid       # a server started in the background for this alone stops again below
+	fi
+	set +e
+	mac_app install --browser "$browser" --profile "$mac_profile" --port "$port" --token-file "$agent/sova/auth-token" "$@"
+	rc=$?
+	set -e
+	[ -z "$started" ] || kill "$started" 2>/dev/null || true
+	exit "$rc"
+}
 open_app() {
-	local tok url browser profile
+	local tok url browser profile no_install=
 	if ! healthy; then
 		start_server
 		wait_up
@@ -578,8 +637,18 @@ open_app() {
 	url="http://127.0.0.1:$port/#t=$tok"
 	if browser=$(pick_browser); then
 		if [ "$os" = Darwin ]; then
-			profile="$HOME/Library/Application Support/sova-browser"
+			profile=$mac_profile
 			mkdir -p "$profile"
+			chmod 700 "$profile"
+			# Sova's installed app when there is one (installed now if nothing was ever tried and
+			# the browser is closed, unless the install opted out with --no-app-entry); else, status
+			# 10 or any failure, the bare window below.
+			"$app_auto" || no_install=--no-install
+			if [ -f "$dir/scripts/mac-app.ts" ] &&
+				mac_app open --browser "$browser" --profile "$profile" --port "$port" --url "$url" \
+					--token-file "$agent/sova/auth-token" $no_install >/dev/null 2>&1 </dev/null; then
+				exit 0
+			fi
 		else
 			profile="${XDG_CONFIG_HOME:-$HOME/.config}/sova-browser"
 			mkdir -p "$profile"
@@ -603,13 +672,18 @@ open_app() {
 case "${1:-}" in
 	token) token; exit 0 ;;
 	app | open)
-		if [ "${2:-}" = --print-browser ]; then pick_browser; exit 0; fi
+		case "${2:-}" in
+			--print-browser) pick_browser; exit 0 ;;
+			--install) shift 2; install_app "$@" ;;
+		esac
 		open_app ;;
 esac
 export SOVA_BUN=${SOVA_BUN:-$dir/.bun/bin/bun}
 export PORT=$port
 # The server finds the install it runs from through its launcher (Settings → General's updates).
 export SOVA_LAUNCHER=$self
+# This install runs on your own tools: a mise shim neither refuses its mise.toml nor follows the pin.
+export MISE_IGNORED_CONFIG_PATHS="${MISE_IGNORED_CONFIG_PATHS:+$MISE_IGNORED_CONFIG_PATHS:}$(cd -P "$dir" && pwd -P)"
 exec "$dir/scripts/start-server.sh" "$@"
 LAUNCHER
 } | write_file "$launcher" 755
@@ -882,6 +956,29 @@ UNIT
 	fi
 fi
 
+# ---- macOS: Sova as an app of its own, in the app entry's browser (scripts/mac-app.ts) ----
+
+# After the service: the install needs the server answering on the port (`sova app --install`
+# starts one in the background for itself when nothing answers, and stops it again). The browser
+# on Sova's profile has to be closed for it: a run with a terminal closes Sova's window, one
+# without (an upgrade from Settings, which runs in that window) skips it, and `sova app` finishes
+# it later. Any failure leaves the bare --app window as it was.
+app_install_note=
+if [ "$entry_kind" = bundle ] && [ -n "$app_browser" ] && [ -f "$dir/scripts/mac-app.ts" ]; then
+	close_flag=
+	if has_terminal; then close_flag=--close-running; fi
+	set +e
+	app_install_out=$("$launcher" app --install --auto $close_flag 2>&1 </dev/null)
+	app_install_status=$?
+	set -e
+	[ -z "$app_install_out" ] || say "$app_install_out"
+	case "$app_install_status" in
+		0) app_install_note="Sova is an app of its own, with its own icon in the Dock and the app switcher" ;;
+		3) app_install_note="not installed as an app this run (see above)" ;;
+		*) app_install_note="couldn't install Sova as an app; 'Sova' opens it in a bare browser window instead (sova app --install tries again)" ;;
+	esac
+fi
+
 say ""
 if $rebuild; then
 	say "installed $ref ($commit) in $dir"
@@ -892,6 +989,7 @@ say "launcher: $launcher"
 if [ -n "$entry_note" ]; then
 	say "app entry: $entry_note — 'Sova' in your app launcher opens it in its own window (sova app)"
 fi
+[ -z "$app_install_note" ] || say "app: $app_install_note"
 if [ -z "$app_browser" ] && { [ "$os" = Linux ] || [ "$os" = Darwin ]; }; then
 	say "an app window needs Chrome, Chromium, Brave, Edge or Vivaldi; until one is installed, the app"
 	say "entry and 'sova open' open Sova in a tab of your default browser"

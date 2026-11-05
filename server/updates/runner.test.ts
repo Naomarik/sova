@@ -276,3 +276,19 @@ test("developer copy: the job itself refuses a branch other than the source's, b
   const ok = world(dev(), [CO, `${CO}/dist`]);
   assert.equal((await runUpgrade(devPlan({ source: { kind: "master" } }), ok.deps)).state, "succeeded", "on master it moves");
 });
+
+// ---- the job runs this file alone, copied into its own directory ----
+
+test("runner.ts imports nothing at run time but node's builtins (the job runs a lone copy of it)", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("./runner.ts", import.meta.url), "utf8");
+  const runtime = [...src.matchAll(/^import\s+(?!type\b)[^;]*?from\s+["']([^"']+)["']/gm)].map((m) => m[1]!);
+  assert.ok(runtime.length > 0, "the scan found the file's imports");
+  assert.deepEqual(runtime.filter((s) => !s.startsWith("node:")), [], "a run-time import of a Sova file breaks every upgrade: copy what it needs into runner.ts");
+});
+
+test("runner.ts's NO_BACKGROUND_CLEANUP is the server's", async () => {
+  const { NO_BACKGROUND_CLEANUP: own } = await import("./runner");
+  const { NO_BACKGROUND_CLEANUP: server } = await import("../git-no-background");
+  assert.deepEqual(own, server);
+});

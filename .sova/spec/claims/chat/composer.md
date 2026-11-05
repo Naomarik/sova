@@ -725,16 +725,19 @@ that holds:
 A chat with no worktrees has no control. At a narrow width the control shows the number alone, and
 its words stay in its accessible name ("Worktrees: 2 ready · 1 queued"). It is a button with
 `aria-haspopup="dialog"` and `aria-expanded`. Enter or a click opens the modal, and Escape closes it
-and returns focus to the control (with the Land menu open, Escape closes the menu first).
+and returns focus to the control (with the Land menu or a Land confirmation (§chat.composer/land-confirm) open,
+Escape closes that first).
 
 **The Worktrees modal** is titled "Worktrees", with the chat's title and a summary under it ("2 ready
-· 1 queued · 1 landed"). When a row's repository is one the merge queue serves, one line says what
-Land does: the branch is merged onto the target, checked there on its own, and lands as exactly the
-commit that was tested; while that queue is paused, a line says so with its why, and that Land still
-takes the approval. With no served row, neither line shows. Then comes one row per worktree
+· 1 queued · 1 landed"), and the header's ✕, which closes it. The body explains nothing about Land;
+while a served row's queue is paused, one line says so with its why, and that Land still takes the
+approval. Then comes one row per worktree
 (dropped ones left out):
-- the branch, in mono;
-- its state, in the one vocabulary the pane and the Merge Queue view also use: **Ready** (with its
+- first, the title of the chat that owns the branch (§app.merge-queue/owner), a link to that chat,
+  then the branch in small mono, then an "archived" tag when that chat is archived (a row whose
+  chat isn't known leads with its branch); the row names no worktree folder and carries no "Chat"
+  label;
+- on the line under it, its state, in the one vocabulary the pane and the Merge Queue view also use: **Ready** (with its
   short commit) · **Uncommitted** ("{n} files not committed", and to commit it in its chat) · **No
   commits yet** · **Queued · 2nd** (with "starts in ~N min · takes ~N min") · **Checking** ·
   **Conflict** · **Behaviour differs** (the target's side, the branch's side and the proposal) ·
@@ -743,10 +746,16 @@ takes the approval. With no served row, neither line shows. Then comes one row p
   **See Why**) · **Landed** ("as {sha}", "· not pushed" when it wasn't, and every note, named by its
   writer: "Merge thread: …", "You: …", "Flaky: …") · **Merged** · **Removed**;
 - on a live row (ready, uncommitted, in the queue or waiting), its commits ahead of the target's
-  head and lines added and removed: "3 commits · +40 −2"; landed, merged and removed rows show none;
+  head, lines added and removed, and when the branch last changed (its head commit's committer
+  date, relative to now: "2h ago", "yesterday", "3d ago", then the day, "Nov 2", after a week; the
+  full date and time as its hover and for a screen reader): "3 commits · +40 −2 · 2d ago"; landed,
+  merged and removed rows show none of these, the date included;
+- under those facts, the branch's summary in up to 5 bullets, once written
+  (§app.merge-queue/branch-summary);
 - "1 newer commit not included" when the branch moved past the approved commit;
 - its action, where one applies:
-  - **Land** on a Ready or Drafts changed row (never on Needs a fix, below), with a menu holding **Land Without
+  - **Land** on a Ready or Drafts changed row (on Needs a fix only as below), which asks once (§chat.composer/land-confirm),
+    a compact button with a ▾ menu, a narrow tab of its own beside it, holding **Land Without
     Review** (only when the project has a review kit) and **Land Without Its Specs…**, which asks
     first: "Its spec drafts stay drafts in this worktree. Only the code lands.";
   - **Set Up Queue** on a Ready to merge row of a project on the Projects list whose merge setup
@@ -757,6 +766,7 @@ takes the approval. With no served row, neither line shows. Then comes one row p
   - **Cancel** on a queued row;
   - **Accept** and **Send Back** on Behaviour differs;
   - **Land Anyway** and **Send Back** on Review flagged and on Can't tell whose failure;
+  - **Land This Commit Again** and **Remove from Queue** on every Needs a fix row (below);
 - its reviewer line while the branch's review runs and after it ends, with **Open Reviewer Chat**,
   the same row as the pane's (§chat.worktrees/pane);
 - **Review Changes**, first among the row's actions, on every row of an active worktree whose folder
@@ -767,31 +777,92 @@ takes the approval. With no served row, neither line shows. Then comes one row p
   (§chat.changes/endpoint). Close or Esc
   closes the viewer alone, never the modal behind it, and focus returns to the row's Review Changes.
 
-**Nothing to land while it's sent back.** A branch the queue sent back to its chat (Needs a fix,
+**Land comes back once its chat fixes it.** A branch the queue sent back to its chat (Needs a fix,
 after Send Back or a failed check) offers no Land and no Land menu, here, in the session pane and on
-the Merge Queue tab, while its chat fixes it. Its line is the queue's reason, else "Sent back to its
-chat. Land comes back here once its chat commits a fix and finishes." It stays so at the sent-back
-commit, whatever that commit reads, until the branch is merged into the target (the row reads
-**Merged**) or its worktree folder is removed (**Removed**); after that, a later note on the old
-sent-back entry never brings Needs a fix back. Once the branch reads ready again at a newer commit (clean, no
-conflicts, its chat idle, §chat.worktrees/ready-to-land), that commit wins: the row reads Ready, with
-Land, at the new commit. No row says whether its chat is working on the fix meanwhile.
+the Merge Queue tab, until its chat has fixed it. Its line is the queue's reason, else "Sent back to
+its chat. Land comes back once its chat fixes it, or use Land This Commit Again." What counts as
+fixed depends on why it was sent back:
+- **Sent back for its spec drafts** (the docs step found drafts that don't fit,
+  §app.merge-queue/run): fixing them needs no commit. Once its drafts have changed since it was sent
+  back (a verification note added is a change) and Sova's try of them finds nothing left that doesn't fit
+  (§chat.worktrees/ready-to-land), the row reads Ready again at the same commit, with Land and its
+  menu. Until then it keeps the queue's reason. The rows change by themselves when the drafts are
+  edited, with no reload.
+- **Sent back for anything else** (a check it broke, a conflict, Send Back): Land never comes back
+  at the sent-back commit, whatever that commit reads. Once the branch reads ready again at a newer
+  commit (clean, no conflicts, its chat idle, §chat.worktrees/ready-to-land), that commit wins: the
+  row reads Ready, with Land, at the new commit. A new commit does the same for a drafts send-back.
+
+It stays Needs a fix until one of those, or until the branch is merged into the target (the row
+reads **Merged**) or its worktree folder is removed (**Removed**); after that, a later note on the
+old sent-back entry never brings Needs a fix back. No row says whether its chat is working on the
+fix meanwhile.
+
+**Land This Commit Again and Remove from Queue.** Every Needs a fix row, here, in the session pane,
+on the Merge Queue tab and on the chat's queue card (§chat.merge-queue/chat-card), offers both,
+whatever it was sent back for:
+- **Land This Commit Again** is a new approval of the sent-back commit, with the branch's drafts as
+  they are now (§app.merge-queue/approve): the entry joins the end of the line and runs every check
+  from the start.
+- **Remove from Queue** takes the entry off the queue at once, with no confirm. It deletes nothing:
+  the branch, its folder, its commits, its drafts and its run's logs all stay. The entry ends as
+  cancelled, "removed by you", the chat's queue card gets a final **Removed** revision, and the row
+  then reads as the branch itself does (Ready with Land when it is ready to land, else its
+  readiness).
 
 **In a repository the merge queue doesn't serve** (§app.merge-queue/served) no row reads Ready,
 Landing specs or a queue state, and none offers Land: a ready branch reads **Ready to merge**, with
 "Say “land it” in the chat to merge it into main.". Such a row counts as ready all the same:
 the control reads "1 ready" with its success dot, and the summary says so.
 
-On a phone (narrower than 600px) each row has 12px side padding, names its folder by its last name
-(the full path as its `title`), and puts its actions on a line of their own, Review Changes on the
-left and the row's queue action on the right, each at least 44px tall.
+**Land asks once** (§chat.composer/land-confirm): a row's Land queues nothing until its confirmation's
+Land {n} Commits.
 
-The modal ends with **View Merge Queue**, which opens the project's Merge Queue view
-(§app.merge-queue/view), and **Close**. View Merge Queue shows only when a row's repository is a
-project on the Projects list, set up or not; in a repository that isn't on the list it is left out.
+**Row layout**, here and on the session pane's Worktrees rows (§chat.worktrees/pane) alike; the Merge
+Queue tab's rows put their actions in the same places, by the queue's own room rather than the
+screen's width (§app.merge-queue/view). On an unfolded screen (768px wide or more) a row puts its actions in a column at
+its right, top-aligned, beside its title, facts and summary bullets, each button against the
+column's right edge, never stretched to the column's width. Folded (narrower), the actions
+sit on their own line under the bullets, right-aligned. Land's confirmation is right-aligned under
+the row in both.
+
+Every row action (Land and its ▾, Cancel, Accept, Land Anyway, Send Back, Land This Commit Again,
+Remove from Queue, See Why, Set Up Queue, Review Changes) and both buttons of Land's confirmation
+are one size on every screen, a phone and a touch screen included: a small button's height (36px),
+only as wide as its label.
+
+On a phone (narrower than 600px) each row has 12px side padding, wraps its title, branch and
+bullets (nothing scrolls sideways), and keeps its actions on their own line at that same size:
+Review Changes at the line's left and the row's other actions at its right. Land's confirmation
+stays right-aligned.
+
+The modal has no Close button in its footer (the header's ✕ closes it). The footer holds, on the
+left, one line, "Land queues a branch; it lands as the commit that was tested.", shown only when a
+row's repository is one the merge queue serves, and, on the right, **View Merge Queue**, which
+opens the project's Merge Queue view (§app.merge-queue/view). View Merge Queue shows only when a
+row's repository is a project on the Projects list, set up or not; in a repository that isn't on
+the list it is left out. With neither, the modal has no footer.
 
 The actions are the merge verbs (§app.project-services/merge-verbs). Land sends the commit the row
 showed, so a branch that moved meanwhile lands what the user saw (§app.merge-queue/approve). After one, the row is read again
 at once and then follows the queue's feed. A refusal shows its reason under the row and leaves the
 row as it was. The modal, the control and the pane's Worktrees rows (§chat.worktrees/pane) read the
-same state, so they always agree. Nothing here shows live state or offers a restart.
+same state, so they always agree. The chat's row in the session list shows the control's headline
+too, by the same rule from the rows the list last read, as a symbol and its figure with these
+words in its hover; how far it can lag is §app.session-list/content-rules "Row line 3". Nothing here shows live state or offers a restart.
+
+## §chat.composer/land-confirm — Land asks once
+
+Everywhere Land appears (the composer's Worktrees modal, §chat.composer/worktrees-control, the
+session pane's Worktrees rows, §chat.worktrees/pane, and the Merge Queue tab, §app.merge-queue/view) the button reads **Land**, a
+compact button with its ▾ menu as a narrow tab beside it, and pressing it queues nothing: it replaces the row's actions with a confirmation, right-aligned
+under the row: "Land {branch}?", then "{n} commits go to the merge queue; {target} moves once checks
+pass.", with **Not Yet** on the left and **Land {n} Commits** rightmost. One commit reads "1 commit
+goes" and **Land 1 Commit**; a row whose count isn't known reads "Its commits go" and **Land
+Branch**. A project that lands by pull request, merge request or pushing the branch
+(§app.merge-queue/strategies) ends the line with what happens instead: "a pull request opens on
+GitHub once checks pass.", "a merge request opens on GitLab once checks pass.", "the branch is
+pushed once checks pass.". The confirmation's action takes focus when it opens. Only Land {n} Commits
+approves the branch, at the commit the row showed. Not Yet, or Escape, puts the row's actions back
+and queues nothing. The ▾ menu stays as it was, a narrow tab distinct from Land: its items act
+without this confirmation (Land Without Its Specs… keeps its own question).

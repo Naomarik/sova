@@ -17,7 +17,9 @@ watcher, the price seed and the share listener. The pi harness boundary has its 
   launchd examples, the Node switch), [docs/bun-quirks.md](../../docs/bun-quirks.md) (the Bun quirk
   registry), [server/harness/pi/README.md](../../server/harness/pi/README.md) and
   [QUIRKS.md](../../server/harness/pi/QUIRKS.md). The restart rules every task follows are in
-  [AGENTS.md](../../AGENTS.md#live-server-restart).
+  [AGENTS.md](../../AGENTS.md#live-server-restart), with its one exception: Sova's own merge thread restarts
+  the live unit after landings, once the queue is idle (`.sova/playbooks/merge-queue/PLAYBOOK.md`; the
+  path rule is `server/restart-paths.ts`).
 - Spec: `§app/server-runtime`.
 - The command catalogue, the `scripts/sova.mjs` command line and what extensions may add:
   [commands/overview.md](commands/overview.md).
@@ -39,9 +41,8 @@ watcher, the price seed and the share listener. The pi harness boundary has its 
   each as an operator stop, through the supervisor's records, never a process found by name.
 - On macOS the live server is the launchd agent `sova-runtime` (`~/Library/LaunchAgents/sova-runtime.plist`,
   the launchd example in docs/running-as-a-service.md), and every restart rule holds. Its restart is
-  `launchctl kickstart -k gui/$(id -u)/sova-runtime`; the verb form
-  (`sova-project apply --checkout ~/webapps/sova --confirm`) runs it 3 s later from a process detached
-  from the server. Pid and state: `launchctl print gui/$(id -u)/sova-runtime`; start time:
+  `launchctl kickstart -k gui/$(id -u)/sova-runtime`; Apply on the project's Branches tab runs it 3 s later
+  from a process detached from the server. `sova-project apply` of Sova's own slot 0 is refused. Pid and state: `launchctl print gui/$(id -u)/sova-runtime`; start time:
   `ps -o lstart= -p <pid>`; log: `~/Library/Logs/sova-runtime.log`.
 - The claude-code bridge's `globalThis` singleton is a `Symbol.for` registry entry in each chat's
   process: a chat gets a bridge from new code only when it reloads onto that code.
@@ -133,6 +134,30 @@ The server runs on Bun (`bun server/index.ts`, Bun 1.4.2, pinned in `mise.toml`)
   (`vite build --mode share`); `SOVA_SHARE_DIST=<dir>` names another build, read per request (tests
   point it at a stub page). With no built page it answers 503.
 
+### The stall recorder
+
+`server/stall-recorder*.ts` keeps the record of a long stall or a memory spike, for afterwards. It
+starts first (`server/stall-recorder-boot.ts` is `server/index.ts`'s first import, so it may import
+nothing heavy) and writes `<state root>/stalls/stalls.jsonl`, 1 MiB then rotated to `stalls.1.jsonl`;
+`/api/monitor`'s `stalls` is its last few records in a line each.
+
+- **Nothing on a stalled main thread runs**, so what must be seen during a stall is a thread's job
+  (`stall-recorder-worker.ts`, the log's writer) or already in shared memory (the board in
+  `stall-recorder-core.ts`, written with plain Int32 stores). The main thread only beats once a
+  second and answers afterwards.
+- **Stacks reach the log when a stall ends.** They come from JSC's sampling profiler at 10 Hz, which
+  only the main thread can read: a process killed inside a stall leaves the board and the watchdog's
+  /proc readings instead. It is the sampler behind `bun --cpu-prof`, whose unread buffer took a live
+  run to 60 GB: this one is drained every 30 s and stops itself at the second memory rung. **Never
+  raise its rate or stop its drain.** One sampler per process: `--cpu-prof`, `--inspect` and
+  `BUN_INSPECT` keep it for themselves, and the recorder runs without stacks.
+- **A name on the board is a route pattern or fixed text**, never a value from a request, session
+  or file. `opTrack("name", fn)` names an operation; `opNote(name, bytes)` a large read or frame;
+  `stallGauge(name, read)` a count read on the monitor's tick. Each is cheap and can't throw.
+- `SOVA_STALL_RECORDER=off` turns it off, `SOVA_STALL_STACKS=off` keeps it without the sampler.
+- The watcher follows imports, and `stall-recorder-worker.ts` is loaded by URL: the dev watcher
+  doesn't restart on an edit to it alone.
+
 ## When you change X, also update Y
 
 | You change | Also |
@@ -142,7 +167,8 @@ The server runs on Bun (`bun server/index.ts`, Bun 1.4.2, pinned in `mise.toml`)
 | `bun` in `mise.toml` | `scripts/bun-release.txt` checksum lines; `mise trust <worktree>` |
 | `scripts/dev-server.mjs` watch set | this guide's watcher paragraph and the extensions guide's "not watched" list |
 | `shared/protocol.ts` | coordinate with the frontend first; `shared/wire-v1.ts` if v1 frames are affected |
-| anything in `server/**` or `shared/**` | say the live server needs a restart (AGENTS.md) |
+| anything in `server/**` or `shared/**` | say the live server needs a restart (AGENTS.md); the merge thread does it after the landing |
+| a new runtime import of a `src/` file from `server/` or `shared/` | add it to `SERVER_SRC_IMPORTS` in `server/restart-paths.ts` (`restart-paths.test.ts` fails until you do) and to the frontend guide's list |
 
 While working: `pnpm test` constantly, `pnpm test:int --changed` before asking to land, `pnpm run
 typecheck`. Landing (the merge queue) runs both tiers in full.

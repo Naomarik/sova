@@ -142,8 +142,8 @@ the merge queue doesn't serve, §chat.worktrees/tool); a declined or unanswerabl
 nothing. Every active worktree of the set is a writable root of the session and of its workers
 while the sandbox is on (one under a shadowed cache stays a real root, like the session's cwd),
 and its `.agent` directory stays read-only inside it, like the session's own agent dir. A
-worker's sandbox scope also carries the parent's hidden list and proxy and environment
-allowlists, so a worker on a worktree's own agent dir (§chat.worktrees/worktree-config) is never
+worker's sandbox scope also carries the parent's hidden list, proxy and environment
+allowlists and `browser` setting (§chat.sandbox/policy-file), so a worker on a worktree's own agent dir (§chat.worktrees/worktree-config) is never
 looser than its parent because of that dir's policy file.
 
 ## §chat.worktrees/workers — Where workers may start
@@ -162,7 +162,10 @@ only it starts under the sandbox in **write-only** confinement: its writes go on
 worktree, its git dirs and a private scratch tmp (and the sandbox's private copies of the host
 caches). Its reads are the host's, no secret is hidden, the network is the host's (its resolver
 included) and the environment is passed as it is, but for `TMPDIR` (below) and the
-sandbox's own git config, `GIT_CONFIG_SYSTEM` (§chat.sandbox/git-cleanup). No policy file is read for it.
+sandbox's own git config, `GIT_CONFIG_SYSTEM` (§chat.sandbox/git-cleanup). No policy file is read
+for it, except that it gets the parent's `browser` setting (§chat.sandbox/policy-file): the parent
+reads its own policy file and its cwd's project file when the worker starts, and a file it cannot
+read means no browser, never a refused start.
 
 - **`/tmp`.** On Linux it sees the host's `/tmp` read-only, so a file another session wrote
   there (a brief) is readable, and every Unix socket found there as its command or its process
@@ -273,8 +276,11 @@ worktree tracked active whose folder is gone counted as its status chip reads), 
 worktree in recorded order, dropped and merged ones included. When the branch tracks none the
 section stays, with one line: "This session tracks no worktrees." While the insight's first load
 is out the section shows its heading over a placeholder line as tall as that sentence (most
-sessions track none), never the sentence itself. A row
-names the branch and the path, and carries a status chip — Active, Dropped, or Merged with "into
+sessions track none), never the sentence itself. A row is
+the modal's row (§chat.composer/worktrees-control): the title of the chat that owns the branch,
+as a link, then the branch, then "archived" when that chat is archived; it names no worktree
+folder. Under its facts it shows the branch's summary once written
+(§app.merge-queue/branch-summary). It carries a status chip — Active, Dropped, or Merged with "into
 <target> at <sha>" — plus, when true, `.agent`, the number of
 this session's workers with a live process inside it, and "Shared with session <id>" linking the
 session it was inherited from. An active worktree whose branch git finds already in its target
@@ -288,7 +294,7 @@ chip and adds Removed or Cleaned up. A row with a readiness
 (§chat.worktrees/readiness) adds a chip after the status chip — Ready to merge (the row's and
 the digest's words), Waiting for your OK, In progress, Blocked or Stale, with the reason as its
 `title` — and none while merged or removed, which the status chip already says. Its tone follows
-mergeability, as the list row's lit worktree count does (§app.session-list/content-rules): Ready
+mergeability: Ready
 to merge and Waiting for your OK are success, In progress neutral, Blocked and Stale warn. A
 worktree that is Ready to land (§chat.worktrees/ready-to-land) reads **Ready** (success) in
 place of Ready to merge or Waiting for your OK, and its line starts "Ready to land"; one Landing
@@ -301,8 +307,12 @@ its entry's state instead, in the words the composer's worktrees control uses
 Conflict, Behaviour differs, Review flagged, Can't tell whose failure, Drafts changed, Needs a fix, and Landed with its commit
 and its notes (§app.merge-queue/note) under it, plus "1 newer commit not included" when the branch
 moved past the approved commit. **The row's action** is the modal's, from the same row: Land (with
-its menu) on Ready or Drafts changed (never on Needs a fix: a sent-back branch offers no Land until
-it reads ready again at a newer commit, §chat.composer/worktrees-control), Cancel on a queued row, Accept and Send Back on Behaviour differs, Land Anyway and Send Back on
+its menu), which asks once before it queues anything, its confirmation right-aligned under the row
+(§chat.composer/land-confirm), laid out as the modal's rows are (§chat.composer/worktrees-control, "Row
+layout"), on Ready or Drafts changed (on Needs a fix only once its chat has fixed it: at the same
+commit for a branch sent back for its drafts once they fit, else at a newer commit,
+§chat.composer/worktrees-control), Land This Commit Again and Remove from Queue on every Needs a fix
+row, Cancel on a queued row, Accept and Send Back on Behaviour differs, Land Anyway and Send Back on
 Review flagged and on Can't tell whose failure. While the branch's review runs, and after it ends,
 the row adds a line for its run's newest reviewer chat: "Review running" or "Review: {verdict}"
 ("no verdict" when it failed), then **Open Reviewer Chat**, or "· Reviewer chat cleared" with no
@@ -315,7 +325,7 @@ uncommitted files included and marked as uncommitted; a merged branch shows what
 Ready, Landing specs or a queue state and offers no Land: a ready branch reads Ready to merge, and
 its line ends "Say “land it” in the chat to merge it into main.". A project on the Projects list
 whose merge setup isn't done keeps **Set Up Queue** on such a row, which opens its Merge Queue tab
-(§app.merge-queue/setup). The section's **View Merge Queue** shows, as the modal's does, only for
+(§app.merge-queue/setup). The section's **View Merge Queue** shows, as the modal's Merge Queue link does, only for
 a repository on the Projects list (§chat.composer/worktrees-control). The pane, the composer's control and the Merge Queue view read the same
 state and stay in sync; nothing in the section shows live state or offers a restart. Under the facts, one visible
 muted line gives the reason, so a phone gets it without hover: the readiness's `reason` ("Ready to
@@ -385,35 +395,73 @@ working now", "Merged", "Merged · still tracked active", "Merged · cleaned up"
 Routine follow-ups, also mechanical:
 
 - **restart pending** — a merge this session made (a merge card) landed in the branch this
-  server's own checkout runs, changed a file under `server/`, `shared/` or `pi-config/` (or
-  `package.json`, `pnpm-lock.yaml`), and happened after this server process started. A merge of
-  only `src/` or docs never asks for a restart. The next start clears it.
+  server's own checkout runs, changed a file the server runs, and happened after this server
+  process started. The files the server runs are the ones Sova's merge thread restarts for
+  (§chat.merge-queue/sova-restart): code under `server/`, `shared/` or `pi-config/` but not tests
+  or Markdown docs, a `src/` file the server itself imports, and `package.json`, `pnpm-lock.yaml`,
+  `pnpm-workspace.yaml` and `mise.toml`. A merge of only other `src/` files, tests or docs never
+  asks for a restart. It reads file names only, so a release commit, whose `package.json` changes
+  only its version, still asks for one, though the merge thread doesn't restart for it. The next
+  start clears it.
 - **not pushed** — the merge's commit is not yet on the target's `origin` branch. Said in the
   badge's `title`, never counted as a follow-up.
 - **cleanup** — merged worktrees still tracked active.
 
 Git is read in the background, at most every 20 seconds per session while the file doesn't change,
 and only for session files that ever wrote a `worktrees` entry, so a listing never waits on git.
+The same read also reads the branches the session's chat counts in its worktrees control
+(§chat.composer/worktrees-control): every non-dropped worktree, its own and inherited ones, each with
+its folder, git's "already merged" and its merge queue entry, which travel with the row
+(`SessionSummary.branches`) for the row's branch status (§app.session-list/content-rules "Row line
+3"). It reads them for every session but an Overseer or a project Overseer, a worker's, a baton's
+and a target session's included, though readiness itself still covers none of those and they never
+own a branch.
 
-**The row's count** (§app.session-list/content-rules) counts a worktree as merged when git finds
+Each branch's queue entry is joined at listing time from its queue's newest view, with no git read,
+and a change there re-lists the sessions, as does a queue's first view after a server start when it
+holds entries. So a change the queue makes reaches the list within seconds, as the queue publishes
+it. Reading a row runs no queue view unless the list has none of that queue yet. Every few seconds
+while the list is being watched, a look that spawns no git catches what moves with no queue change:
+the target's head, a sent-back branch or its worktree going, a project leaving the list. That reads
+the view once; a read that failed counts for nothing and is tried again at the next look, and refs
+moving during a read get it read again. A repo nothing can stamp has its view read every 20 seconds.
+
+Git's "already merged" answer and a repo's merge setup are kept while the refs they rest on don't
+change, so sessions on one tree share a read and an idle row asks git nothing; refs moving during a
+read are never taken as seen. Past that:
+
+- each is kept 30 minutes at most, which bounds what no stamp sees (the queue's view has the same
+  limit) and all a failed "already merged" read can last. A setup read that found no commit, or that
+  failed outright, is never kept;
+- where nothing can stamp them (a folder with no `.git` left, a reftable repo), an "already merged"
+  answer stands five minutes and a merge setup isn't kept at all;
+- a tree's project stands while its `.git` is unchanged, five minutes where it has none.
+
+A row whose queue view failed is put right by its next read. Rows read before the queue started and
+rows of a repo gaining service are read again then, archived ones too, and a queue leaving service
+takes its facts off its rows. What this means for a row against its chat, and the known bounds, is
+in §app.session-list/content-rules "Row line 3".
+
+**Merged, clean or not.** Each worktree's readiness carries, beside its state, whether git finds
 its branch merged into its base (the merged rule above without the clean tree), clean or not, or,
-its folder gone, when it reads merged by the removed rule above. A merged tree with uncommitted changes therefore
-counts as merged there while its own state stays stale or in progress, as above: the count's
-`title`, the Session tab's chip, the badge and the attention digest still read that state. Each
-worktree's readiness carries the fact (`merged: true`) beside its state.
+its folder gone, whether it reads merged by the removed rule above (`merged: true`). A merged tree
+with uncommitted changes carries it while its own state stays stale or in progress, as above: the
+Session tab's chip, the badge and the attention digest still read that state. The session row no
+longer counts merged worktrees: it shows the chat's branch status instead
+(§app.session-list/content-rules "Row line 3", §chat.composer/worktrees-control).
 
 **The row's badge** (§app.session-list/anatomy) is one short phrase from the session's worktrees,
 the first that holds: "Waiting for your OK" (a worktree waits for the go-ahead) and "Ready to
-merge" (one is ready) — the two states the row's count already lights for, and the two the
+merge" (one is ready) — two states the row's branch status already says, and the two the
 Overseer's decide tier words ("Ready to merge: {branch}", §app.overseer/attention-digest) — none
 while another worktree is in progress, stale or blocked (the busy and open-question
 marks say it), "restart pending", the follow-up count ({n} = only the
 §app.decisions/merge-followup answer when it names small or significant work; leftover worktrees
 — cleanup — are said only in the `title`, never counted), and "merged". **The row writes only the
-two a count cannot**: "restart pending", and the follow-up count as "{n} follow-up(s)" — never
-"merged", which the count already says, and never the ready or waiting phrases, which the count's
-own light and `title` carry. An **empty leftover
-worktree** — no commit of its own, a clean tree, nothing running — never changes the count. Its `title` names each worktree with its state and every
+two its branch status cannot**: "restart pending", and the follow-up count as "{n} follow-up(s)",
+after the status — never "merged", and never the ready or waiting phrases, which the status and
+its words carry. An **empty leftover
+worktree** — no commit of its own, a clean tree, nothing running — never changes the badge. Its `title` names each worktree with its state and every
 routine follow-up in words, one line each.
 The session's `readiness` travels with its row in the session list (`SessionSummary.readiness`),
 so the Overseer reads the same answer. An open offer card (§chat.offers/card) is no reply that
@@ -424,7 +472,8 @@ once the turn ends (§chat.offers/conditions).
 "merged {sha7} · pushed (or not pushed) · live (or restart owed) · spec promoted (or {n} spec
 draft(s) not promoted)". Merged and the commit come from the merge card; pushed from the target's
 `origin` branch (left out when there is no `origin`); live when this server already runs the
-merge (it started after it, or the merge changed no server file), else restart owed; spec from
+merge (it started after it, or the merge changed no file the server runs, the set above), else
+restart owed; spec from
 the merged worktree's own `.sova/spec/drafts/`, while that folder still exists: a draft counts as
 promoted when it is official (§tools.spec/draft-official), the one rule the merge queue's docs
 step reads too; a draft that rule can't read counts as not promoted. The
@@ -481,7 +530,8 @@ stops holding (a new uncommitted file, a failing check, an open question, a turn
 merge queue makes them official in its merge copy before the checks run (§app.merge-queue/run;
 whether a draft is official is §tools.spec/draft-official). Each promise in them still needs its chat's
 own short verification note (the draft tool's `evidence --note`, §tools.spec/land) before the head
-counts as Ready to land. Once per head commit and set of drafts, Sova tries the drafts the way the
+counts as Ready to land. Once per head commit and set of drafts (their files and verification notes
+alike, so a note added later is tried again), Sova tries the drafts the way the
 landing will (the draft tool's `land` without writing, in a process of its own for at most a
 minute, never holding up readiness) and keeps the answer per worktree, head and drafts; until it
 has answered, the head isn't Ready to land yet. When they would land, the landing is Ready to land
@@ -495,6 +545,17 @@ when it can't, to answer with one line `Can't land specs: <why>`; the user is ne
 session's newest reply with that line gives the why, shown on the chip. Drafts whose files change
 after the user approved the branch are the queue's to catch: the entry waits as "Drafts changed
 since you approved" until a new Land (§app.merge-queue/approve).
+
+**After a send-back for its drafts.** When the queue's docs step sent the branch back because its
+drafts don't fit (§app.merge-queue/run), the sent-back commit can be Ready to land again with no new
+commit: once its drafts have changed since it was sent back (adding a verification note counts),
+the branch's head is still that commit, its worktree is still there, and Sova's try of the drafts as
+they are now finds nothing that doesn't fit, the head reads Ready to land at that same
+commit and Land is offered on it (§chat.composer/worktrees-control). An edit that leaves something
+unfit keeps it sent back. A branch sent back for any other reason is never Ready to land at the
+sent-back commit; a newer commit is. Either way, "land it" typed in its chat at the sent-back commit
+is still the user's approval of that commit, with its drafts as they are then
+(§app.merge-queue/approve).
 
 **What still blocks landing.** When the session's latest turn outcome says its work is finished
 but a worktree it tracks isn't Ready to land at its head for reasons the session can fix itself
@@ -583,7 +644,8 @@ merge stays non-destructive.
   true}` answers what would go (path, branch, merged or empty, and whether its branch would be
   deleted) and what stays, each with its reason. A removal posts `{path, expect: [paths]}` and acts
   only on those paths, each only if it is still removable at that moment; every other tree is left
-  alone. The answer says, per path, removed or kept and why.
+  alone. A `dryRun` that is present and not a boolean ("dryRun must be true or false"), or an
+  `expect` that is not a list of absolute paths, is a 400 before anything is removed. The answer says, per path, removed or kept and why.
 - **Removal.** From the main checkout, `git worktree remove -- <path>`, never `--force`, so git
   refuses a tree that changed under it; for a folder already gone the same command only drops it
   from git's list. The branch is deleted with `git branch -d` only when it is an ancestor of the

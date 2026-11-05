@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { entryLandBlock, type QueueRowInput, queueRow, rowButtons, SENT_BACK_LINE, type WorktreeQueueInfo } from "./merge-queue";
+import { entryLandBlock, landThisAgainOf, type MergeEntry, type QueueRowInput, queueRow, rowButtons, SENT_BACK_LINE, stillSentBack, type WorktreeQueueInfo } from "./merge-queue";
 
 /**
- * al_4: a branch the queue sent back to its chat (needs-fix) offers no Land anywhere until its chat commits a fix and
- * the branch reads finished again at that newer commit; then that commit wins and the row is Ready with Land. The Land
- * button and its ▾ menu (Land Without Review, Land Without Its Specs…) are drawn only when rowButtons holds "Land"
+ * al_4, as al_1 changed it: a branch the queue sent back to its chat (needs-fix) offers no Land until its chat fixes it:
+ * a fix committed and the branch finished again at that newer commit, or (sent back for its drafts only) the queue
+ * saying its drafts are fixed at the same commit (`redrafted`). Then the row is Ready with Land. Meanwhile every Needs
+ * a fix row offers Land This Commit Again (a new approval of the same commit) and Remove from Queue. The Land button and
+ * its ▾ menu (Land Without Review, Land Without Its Specs…) are drawn only when rowButtons holds "Land"
  * (WorktreesModal.tsx), so "no Land" here means no button and no menu items.
  */
 
@@ -24,7 +26,25 @@ test("sent back, at its sent-back commit: Needs a fix, no Land button and no Lan
     assert.equal(r.label, "Needs a fix");
     assert.notEqual(r.action, "land", "no Land on a sent-back row");
     assert.deepEqual(rowButtons(r, "prj_1").filter((b) => b === "Land" || b === "Land Anyway"), [], "no Land button (and so no Land menu)");
+    assert.deepEqual(rowButtons(r, "prj_1"), ["Land This Commit Again", "Remove from Queue"], "never left without a button");
   }
+});
+
+test("sent back for its drafts, fixed at the same commit (the queue says redrafted): Ready, with Land at that commit", () => {
+  const r = queueRow(wt({ queue: sentBack({ redrafted: true }), readiness: finishedAt(SENT) }));
+  assert.equal(r.key, "ready");
+  assert.equal(r.action, "land");
+  assert.deepEqual(rowButtons(r, "prj_1"), ["Land"]);
+  assert.equal(r.detail, SENT.slice(0, 7), "Land pins the same commit");
+  // A check's send-back at the same commit never reads redrafted (the server says it only for drafts): still no Land.
+  assert.equal(queueRow(wt({ queue: sentBack(), readiness: finishedAt(SENT) })).key, "needs-fix");
+});
+
+test("the tab's Sent back list: a redrafted entry leaves it (the Ready to land row, at the same commit, stands for it)", () => {
+  const e = { id: "me_1", branch: "feat/x", commit: SENT, state: "needs-fix" } as MergeEntry;
+  const ready = [{ branch: "feat/x", commit: SENT } as never];
+  assert.deepEqual(stillSentBack({ needsFix: [e], ready }), [e], "not redrafted: still sent back at its commit");
+  assert.deepEqual(stillSentBack({ needsFix: [{ ...e, redrafted: true }], ready }), []);
 });
 
 test("sent back, a newer commit not finished yet (uncommitted files, or still in progress): still no Land", () => {
@@ -46,9 +66,18 @@ test("the same branch after a new commit, finished (clean, no conflicts, chat id
   assert.deepEqual(rowButtons(r, "prj_1"), ["Land"]);
 });
 
-test("the Overseer's coding-worktree menu (no readiness): Land is off on a sent-back branch, with the sent-back line", () => {
+test("the Overseer's coding-worktree menu (no readiness): Land is off on a sent-back branch, with the sent-back line, until its drafts are fixed", () => {
   assert.equal(entryLandBlock(sentBack()), SENT_BACK_LINE);
-  assert.match(SENT_BACK_LINE, /Sent back to its chat/);
+  assert.equal(SENT_BACK_LINE, "Sent back to its chat. Land comes back once its chat fixes it, or use Land This Commit Again.");
+  assert.equal(entryLandBlock(sentBack({ redrafted: true })), undefined, "sent back for its drafts, fixed: Land on");
+  // The menu offers what that line names: Land This Commit Again, at the sent-back commit, while it still needs a fix.
+  assert.equal(landThisAgainOf(sentBack()), SENT);
+  assert.equal(landThisAgainOf(sentBack({ redrafted: true })), undefined, "its drafts fixed: Land is on instead");
+  for (const settled of ["superseded", "merged", "gone"] as const) {
+    assert.equal(landThisAgainOf(sentBack({ settled })), undefined, `settled ${settled}: nothing to land again`);
+    assert.equal(entryLandBlock(sentBack({ settled })), undefined, `settled ${settled}: the row reads as the branch itself`);
+  }
+  for (const state of ["queued", "landed", "drafts-changed"] as const) assert.equal(landThisAgainOf(sentBack({ state })), undefined, state);
   // In line: off as before; nothing in the queue, or Drafts changed (Land re-approves): on.
   for (const state of ["queued", "checking", "conflict", "behaviour-differs", "review-flagged"] as const) assert.equal(entryLandBlock(sentBack({ state })), "Already in the merge queue.", state);
   assert.equal(entryLandBlock(undefined), undefined);

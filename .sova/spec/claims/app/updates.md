@@ -6,7 +6,8 @@ The **Updates · this machine** section at the bottom of Settings → General
 newer, and upgrades this machine's copy when the operator says so, or by itself when Upgrade
 automatically is on. The **Server · this machine** block above it says when this server started
 and restarts it, from there or from Sova's command line (§app.updates/restart). An upgrade never
-moves to older code, never touches a copy it can't move
+moves to older code on its own (going back from a withdrawn release is the operator's button only),
+never touches a copy it can't move
 safely, and keeps the version that runs now until the new one answers. The server owns all of it:
 checks run whether or not a browser is open, and the state lives in `<stateRoot>/updates.json`.
 
@@ -66,8 +67,9 @@ checks once a day, whether or not any browser is open. When the last check ran i
 check waits for the rest of the day. A check that couldn't reach the repository tries again an hour
 later. **Check Now** checks at once, whatever the checkbox says.
 
-A check reads the repository's refs with `git ls-remote` (no GitHub API), and fetches the source's
-commit into a private ref namespace of the checkout (`refs/sova-updates/*`), touching no branch,
+A check reads the repository's refs with `git ls-remote` (no GitHub API), the numbered releases'
+withdrawn markers (`refs/tags/withdrawn/*`, §app.release/withdraw) among them, and fetches the
+source's commit and those markers into a private ref namespace of the checkout (`refs/sova-updates/*`), touching no branch,
 no tag, no `HEAD` and no working file. In a shallow clone (the installer's) the first check fetches
 the history it needs to compare. It finds one of:
 
@@ -80,6 +82,12 @@ the history it needs to compare. It finds one of:
   resume when Stable catches up." No button. Sova never moves to older code: a newer numbered
   release is the only way forward from a release, and otherwise the source must contain the
   running commit.
+- **Withdrawn** — for Stable, the release that runs carries a withdrawn marker: a warning says
+  "{tag} was withdrawn: {why}." and "This copy runs a release that was taken back {when}. Nothing
+  changes on its own; Go Back to {previous} moves it to the release before.", the result line says
+  "Stable is back on {previous}.", never "ahead", and an installed copy is offered **Go Back to
+  {previous}** (the upgrade's own confirm and job). A developer copy is told the same and offered
+  nothing: it is never moved back.
 - **Diverged** — neither contains the other (the branch was rewritten, or the copy runs a branch
   the source never had). An installed copy offers to install the source as it is now, saying it was
   rewritten; a developer copy refuses ("Your copy's branch isn't part of master's history, so we
@@ -138,7 +146,8 @@ Sessions, settings and chats are never touched by an upgrade.
   contains the old one. It then installs dependencies (`pnpm install --frozen-lockfile`), builds into
   a staging directory, swaps the build into `dist/` and `dist-share/`, and restarts the unit. A
   rollback moves the branch back to the commit it was at, reinstalls and puts the previous build
-  back. Local branches, other worktrees, stashes and untracked files are never touched.
+  back. Local branches, other worktrees, stashes and untracked files are never touched. It runs no
+  installer, so the launcher and the app entry stay as they are (§app.installer/mac-app).
 
 Only one upgrade runs at a time, and Check Now waits while it does. No upgrade starts while a
 restart is scheduled (§app.updates/restart). A finished upgrade's outcome
@@ -150,7 +159,8 @@ stays in the section for a day, with the path of its log, and is kept in `update
 **Upgrade automatically** is a checkbox, **off by default**. On, a check that finds an update this
 copy can install starts the same upgrade the button would, with the same refusals, keep-previous and
 rollback; nothing is asked. A refusal (uncommitted changes, not a fast-forward, another branch) is shown in the
-section and tried again only at the next check. A version that was put back because it didn't start
+section and tried again only at the next check. Going back from a withdrawn release is never automatic: Upgrade automatically never
+takes Go Back. A version that was put back because it didn't start
 within a minute is never installed again automatically ("v0.3.3 was put back last time, so it isn't
 installed again automatically. Upgrade by hand to try it again."); the button
 still offers it. An upgrade that failed and changed nothing (a network error) is tried again at the
@@ -212,17 +222,14 @@ in mono (`master · abc1234`), and offers **Restart Sova**. What it shows comes 
   restarting. Upgrade once it's back."). A scheduled restart that hasn't stopped this server
   within 2 minutes didn't happen: both refusals clear and the button is back.
 
-**Who may.** `POST /api/updates/restart` answers the operator at a signed-in browser (a
-same-origin request on the main listener, as §app.updates/operator says) and a script on this
-machine: a call on the main listener that passed the gate and shows the token in `x-sova-token`,
-as the command line's does. The catalogue lists it as `server.restart` (§app/settings-commands),
-so `sova run server.restart` restarts Sova from a terminal, without the inline question. A call
-from the peer listener (a mesh peer, `sova run server.restart --host <peer>` included), a call
-with no socket (the Overseer's in-process dispatch, a schedule), a call carrying the Overseer's
-sender header, and an extension's backend (its key isn't the token) are refused with 403
-("Restart Sova is the operator's: open Settings → General, or run `sova run server.restart` on
-this machine."). No agent tool offers it; a chat's shell that runs the command line reaches it as
-any script on this machine does. Every restart asked for is recorded with its origin: the server's
+**Who may.** `POST /api/updates/restart` answers only your own page on this machine
+(§app.access/your-click). The catalogue lists it as `server.restart` (§app/settings-commands), so the
+command exists, and it answers anything but the page with 403 ("Only the user restarts Sova. Ask them to
+press Restart Sova in Settings → General. Nothing was restarted."): a script, a chat's terminal, a call from
+the peer listener, a call with no socket (the Overseer's in-process dispatch, a schedule), the Overseer's
+sender header and an extension's backend. No agent tool offers it. The one chat that restarts Sova,
+its own merge thread after a landing (§chat.merge-queue/sova-restart), does it with the service
+manager, as the operator's terminal does, and this request refuses it too. Every restart asked for is recorded with its origin: the server's
 log names who asked (`browser`, `command server.restart (<caller>)` or `script (<caller>)`, the
 caller as §app.command-audit/attribution names it), the unit, and whether it was scheduled or
 refused; a script's call also leaves its row in Sova's record of who ran what
@@ -230,14 +237,10 @@ refused; a script's call also leaves its row in Sova's record of who ran what
 
 ## §app.updates/operator — Only the operator
 
-Only the operator, at a signed-in browser, can check, change the update settings or upgrade
-(restarting is the one Updates action a script on this machine may also take,
-§app.updates/restart):
-`POST /api/updates/check`, `PUT /api/updates/settings` and `POST /api/updates/apply` answer a
-request on the main listener that passed the gate (§app.access/gate) and that a browser marks as
-same-origin (`Sec-Fetch-Site: same-origin`). A call with no socket (the Overseer's in-process
-dispatch, a schedule), a call from the peer listener, and a call carrying the Overseer's sender
-header are refused with 403 ("Updates are the operator's: open Settings → General."). No agent tool
+Only the operator, at a signed-in browser, can check, change the update settings or upgrade:
+`POST /api/updates/check`, `PUT /api/updates/settings` and `POST /api/updates/apply` answer only your own
+page on this machine (§app.access/your-click). Anything else is refused with 403 ("Only the user updates
+Sova. Ask them to do it in Settings → General. Nothing was changed."). No agent tool
 reaches them, none of them is on the command catalogue, and a mesh peer needs the `full` grant even to read them (§mesh.peers/grants). `GET /api/updates` (what runs, what the last check found, the job's progress) is
 readable like any gated route. The daily check and Upgrade automatically are the server's own.
 
@@ -255,5 +258,12 @@ The banner says "A newer Sova is available." and "Reload when you're ready.", th
 the mesh on or off, with **Reload Tab**, which reloads the page, and **Dismiss**, which hides it
 until the next change. A different wire protocol
 shows the banner's warning instead, with Reload Tab and no Dismiss. There is no other notice: no
-note in a corner of the page. Chats move to the new code when they're idle, as after any restart
-(§app/chat-processes).
+note in a corner of the page. A card that can't load its code because Sova changed under the page
+also points to the update: its box asks for a page reload (§chat.transcript-cards/toolkit), and the
+page checks for the banner at that moment too. Chats move to the new code when they're idle, as
+after any restart (§app/chat-processes).
+
+Sova keeps no previous build's files. A request for an app code file under `/assets/` that this
+build doesn't have is answered "not found", never with the app's page in its place, on the main
+listener and the share listener alike (§app.baton/share-listener); every other app page address
+still opens the app.

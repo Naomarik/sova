@@ -20,8 +20,17 @@
       "src/components/MeshView.tsx",
       "src/lib/claude-pool.ts",
       "src/lib/mesh.ts",
-      "src/mesh.css"
-    ]
+      "src/mesh.css",
+      "shared/protocol.ts",
+      "src/lib/api.ts",
+      "server/mesh/index.ts",
+      "server/mesh/mesh.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:14Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#2783ea91"
+    }
   },
   "§mesh.ui/settings": {
     "kind": "behavior",

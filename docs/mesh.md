@@ -43,6 +43,21 @@ needs whatever the peer may do here. They carry no cookies or redirects and get 
 Content-Security-Policy. Anything other than JSON, plain text or a raster image arrives only as a
 download.
 
+## Tailscale on a Mac
+
+Sova finds Tailscale on a Mac on its own, with no setting. It tries Tailscale's app from
+tailscale.com first, then the App Store app, then `tailscaled` installed with Homebrew.
+`SOVA_TAILSCALE_SOCKET` still names a socket by hand, on a Mac as on Linux. When Tailscale restarts,
+Sova picks up the change at its next request, with no restart of Sova.
+
+With the app from tailscale.com, run Sova from an administrator account. The app answers other
+programs only when they show a key, and only administrators on the Mac can read it. From any other
+account, Add Peer, Find Hosts and this host's row on the Mesh page say so, and other hosts are
+refused.
+
+If the Mac's firewall is on, macOS asks once, the first time Sova opens to other hosts, whether to
+accept incoming connections. Choose **Allow**, or other hosts can't reach this one.
+
 ## Front door
 
 The Mesh page generates a [Caddy](https://caddyserver.com) configuration that sends the page to

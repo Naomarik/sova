@@ -618,6 +618,7 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .project-settings-row .list-main { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .project-settings-row .list-meta { overflow-wrap: anywhere; }
 .project-settings-state { font-size: var(--fs-caption); color: var(--color-ink-2); }
+.settings-card-place { color: var(--color-ink-2); }
 .settings-card-lands { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
 
 /* The copy limit at the top of the Branches tab (§app.project-services/services-ui). */
@@ -630,3 +631,35 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .services-limit-cost { margin: 0; }
 .services-limit-cost-warn { color: var(--status-warn); }
 .services-limit-places { margin: 0; }
+
+/* The Releases tab: the merge queue's strip, card and list, with a release's own steps, notes and confirms. */
+.rel-card .deploy-confirm,
+.rel-row .deploy-confirm { margin-top: var(--space-2); }
+.rel-steps { margin: 0; }
+.rel-step .mq-pos { font-family: var(--font-mono); }
+.rel-step-done .mq-pos { color: var(--status-success); }
+.rel-step-failed .mq-pos { color: var(--status-error); }
+.rel-step-held .mq-pos { color: var(--status-warn); }
+.rel-summary { margin: var(--space-1) 0 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
+.rel-notes summary { cursor: pointer; min-height: var(--tap-min); display: flex; align-items: center; color: var(--color-accent); }
+.rel-notes-text { margin: 0; max-height: 360px; overflow: auto; padding: var(--space-2) var(--space-3); border-radius: var(--r-sm); background: var(--color-sunken); font-family: var(--font-body); font-size: var(--fs-caption); white-space: pre-wrap; overflow-wrap: anywhere; }
+.rel-artifacts { margin: 0; padding-left: var(--space-4); }
+.rel-actions .rel-abandon { margin-left: auto; }
+.rel-why { margin: 0; }
+.rel-saved-note { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+.rel-saved-note p { margin: 0; }
+.rel-note-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9lh; overflow: auto; }
+.rel-start-context { display: flex; flex-direction: column; gap: var(--space-2); }
+.rel-note-editor .textarea { min-height: 96px; resize: vertical; }
+.rel-note-editor .field-hint { margin: 0; }
+.rel-note-count { margin-left: auto; font-variant-numeric: tabular-nums; }
+.rel-row .list-title { flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
+.deploy-release { display: block; margin-top: var(--space-1); }
+@media (max-width: 767px) {
+  .rel-actions .rel-abandon { margin-left: 0; flex-basis: 100%; }
+  .rel-step { grid-template-columns: 24px minmax(0, 1fr); }
+  .rel-step .mq-step-end { grid-column: 2; justify-content: flex-start; }
+}
+
+/* The page's title takes focus on opening a project (for screen readers); it is no keyboard stop, so it shows no ring. */
+.project-page .session-head-title[tabindex="-1"]:focus { outline: none; }

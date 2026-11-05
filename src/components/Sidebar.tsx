@@ -5,7 +5,7 @@ import { builtOnceOpen } from "../lib/built-once";
 import { projectSummaryKey, remember } from "../lib/page-cache";
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Portal } from "solid-js/web";
-import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
+import type { AgentsInsight, AttentionDigest, AttentionItem, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
 import { autoTitleSessions, fetchTargets, listProjects, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
@@ -22,10 +22,10 @@ import {
   overseerEye,
   regionCount,
   rowLine,
+  heldProjectId,
   orgCount,
   orgNeedsYouRows,
   orgProjectItems,
-  orgPlaceLabel,
   orgRows,
   ORGS_KEY,
   orgSearchText,
@@ -44,7 +44,9 @@ import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
 import { archiveDragOf, archivedDropToast, archivedProjectOf, blockedDropSentence, unarchivedProjectOf, unarchivedToast } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
-import { NEEDS_YOU_KEY, needsYouCut, needsYouItems, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
+import { itemRow, rowLabels, sessionRow } from "../lib/needs-you-row";
+import { NeedsYouRowView } from "./NeedsYouRow";
+import { isReleaseItem, NEEDS_YOU_KEY, type NeedsYouRow, needsYouCut, needsYouItems, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
 import { byActivity, type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
 import {
   createGroup,
@@ -60,7 +62,7 @@ import {
 import { announce, hasLocalDraft, home, localRunning, localWorking, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
 import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTooltip, signalWords, stalledPaths, tagSearchText, turnErrorTitle } from "../lib/signals";
-import { readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
+import { rowBranchStatus } from "../lib/branch-status";
 import { ROW_BUILT_INS, RowPlaceContext, useRowAdditions } from "../lib/row-place";
 import { RowPlaceView } from "./RowPlace";
 import { orgHref } from "../lib/orgs-route";
@@ -100,7 +102,6 @@ import { ArchiveCleanup } from "./ArchiveCleanup";
 import { ContextRing } from "./ContextRing";
 import { CancelHeldButton } from "./HeldAct";
 import { MergeRunButton } from "./PlaybookReview";
-import { heldWaitLine } from "../lib/pipeline-view";
 import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
@@ -279,8 +280,6 @@ export function SessionRow(props: {
   targets: TargetInfo[];
   /** Needs you only: the digest's sentence, which takes line 2's place (`title`: every sentence). */
   detail?: { text: string; title: string } | null;
-  /** The Organizations region's Needs you only: where the row lives, "{org} · {project}". */
-  place?: string;
 }) {
   const s = () => props.session;
   /** The row's own remote mark: one row answers for itself, never its
@@ -304,8 +303,8 @@ export function SessionRow(props: {
   const needsYou = createMemo(() => rowNeedsYou(s(), { selected: props.selected, busy: isBusy(), stalled: stalled().has(s().path) }));
   /** Line 1's leading state mark (src/lib/signals.ts): the turn-error mark, else the unread dot. */
   const leadMark = () => rowLeadMark(s(), props.selected);
-  /** Line 3's worktree count, "2 of 3", after the time: muted, lit while one is ready to merge. */
-  const trees = () => readinessCount(s().readiness);
+  /** Line 3's branch status, after the time: the headline its chat's composer status row says, as a mark and a number. */
+  const branchStatus = createMemo(() => rowBranchStatus(s()));
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
   const working = () => sessionWorking(s());
   /** The row's context fill: the open session's live value wins over the list's tail value, and a
@@ -613,23 +612,20 @@ export function SessionRow(props: {
             </Show>
             <p class="list-meta">
               {relativeTime(s().lastActiveAt, props.now)}
-              {/* The worktrees this session tracks: "2 of 3" merged, after the time, before the
-                  badge and the model. Muted, and lit while one of them is ready to merge. The
-                  digits are aria-hidden: the words after them are what the row's name says. */}
-              <Show when={trees()}>
-                {(c) => (
+              {/* The branches this session's chat tracks: the very headline its composer status row says
+                  ("1 needs a fix"), as the fact's own mark and its number, after the time, before the
+                  badge and the model (cut first when the row is narrow). The words are in the title and
+                  the row's name: the chat's words, then each branch, then what follows a merge. */}
+              <Show when={branchStatus()}>
+                {(b) => (
                   <>
                     {" · "}
-                    <span
-                      class="session-worktrees"
-                      classList={{ "session-worktrees-ready": c().ready }}
-                      title={readinessTitle(s().readiness) ?? undefined}
-                    >
-                      <Icon name="branch" small />
+                    <span class={`session-branch-status session-branch-status-${b().tone} session-branch-status-${b().kind}`} title={b().lines.join("\n")}>
+                      <Icon name={b().icon} small />
                       <span class="text-num" aria-hidden="true">
-                        {c().merged} of {c().total}
+                        {b().n}
                       </span>
-                      <span class="visually-hidden">{readinessCountWords(c())}</span>
+                      <span class="visually-hidden">{b().lines.join(". ")}</span>
                     </span>
                   </>
                 )}
@@ -637,24 +633,11 @@ export function SessionRow(props: {
               {/* The row place (lib/row-place): its built-in, the merge-readiness badge, between the
                   count and the model, then the chips extensions add. The topic is search-only. */}
               <RowPlaceView session={s()} builtIns={ROW_BUILT_INS} />
-              {/* The region's Needs you says where the row lives in the model's place. */}
-              <Show
-                when={props.place}
-                fallback={
-                  <Show when={s().model}>
-                    {" · "}
-                    <span class="text-mono" title={s().model!}>
-                      {modelLabel(s().model)}
-                    </span>
-                  </Show>
-                }
-              >
-                {(p) => (
-                  <>
-                    {" · "}
-                    <span class="org-place">{p()}</span>
-                  </>
-                )}
+              <Show when={s().model}>
+                {" · "}
+                <span class="text-mono" title={s().model!}>
+                  {modelLabel(s().model)}
+                </span>
               </Show>
             </p>
             <Show when={contextOf(s())}>{(c) => <ContextRing info={c()} />}</Show>
@@ -1188,9 +1171,9 @@ function VelocityScrubCard(props: { reading: VelocityColumnReading; x: number; y
 
 /** The sova wordmark, a link to the list (`#/`): the list's head, and the overview's head on a
     phone (§app.shell/overview). */
-export function BrandLink() {
+export function BrandLink(props: { onClick?(e: MouseEvent): void } = {}) {
   return (
-    <a class="brand" href="#/">
+    <a class="brand" href="#/" onClick={(e) => props.onClick?.(e)}>
       <span class="icon" style={{ "--icon": "url(/icons/sova-mark.svg)" }} aria-hidden="true" />
       sova
     </a>
@@ -1485,6 +1468,14 @@ export function Sidebar(props: {
     const r = needsYou().find((row) => row.session.path === path);
     return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
   };
+  /** Needs you's rows as drawn (lib/needs-you-row): a held act's minutes on the list's clock, read at the real time. */
+  const needsItemRow = (it: AttentionItem) => itemRow(it, { home: home(), now: Math.max(props.now, Date.now()) });
+  const chatRow = (r: NeedsYouRow, detail: { text: string; title: string } | null) => {
+    const host = hostOf(r.session.path);
+    return sessionRow(r, { href: sessionHref(r.session.path), home: home(), host: host ? hostLabel(host) : null, detail });
+  };
+  const needsChatRow = (r: NeedsYouRow) => chatRow(r, needsYouDetail(r.session.path));
+  const needsLabels = createMemo(() => rowLabels([...needsYou().map(needsChatRow), ...needsYouProject().map(needsItemRow)]));
   // The Archive splits by date first (Today … Older), then by cwd inside each date section.
   // The date sections move only when the calendar day does, so they read the start of today,
   // not the 30 s clock: a tick that stays inside one day re-runs nothing below.
@@ -1631,6 +1622,8 @@ export function Sidebar(props: {
     const text = [r?.detail, waiting].filter(Boolean).join(" · ");
     return text ? { text, title: [...(r?.details ?? []), waiting ?? ""].filter(Boolean).join(" ") } : null;
   };
+  const orgChatRow = (r: NeedsYouRow) => chatRow(r, orgNeedsYouDetail(r.session.path));
+  const orgLabels = createMemo(() => rowLabels([...orgNeedsYou().map(orgChatRow), ...orgItems().map(needsItemRow)]));
   const waitingTitle = (k: number) => (k === 1 ? "1 session waiting on you." : `${k} sessions waiting on you.`);
   const orgNeedsTitle = (k: number) =>
     k === 1 ? "The 1 organization session waiting on you." : `The ${k} organization sessions waiting on you, newest first.`;
@@ -2567,7 +2560,7 @@ export function Sidebar(props: {
             <details class="sidebar-region sidebar-needs-you" aria-labelledby="r-needs-you" open={needsYouRegionOpen()} onToggle={onNeedsYouToggle}>
               {/* The Groups head's pattern: the <summary> toggles, the <h2> is what the outline reads. */}
               <summary class="sidebar-needs-you-summary">
-                <h2 class="sidebar-region-head" id="r-needs-you" title={needsYouTitle(needsYou().length, needsYouProject().filter((i) => i.kind !== "whatsapp-down").length, needsYouProject().some((i) => i.kind === "whatsapp-down"))}>
+                <h2 class="sidebar-region-head" id="r-needs-you" title={needsYouTitle(needsYou().length, needsYouProject().filter((i) => i.kind !== "whatsapp-down" && !isReleaseItem(i)).length, needsYouProject().some((i) => i.kind === "whatsapp-down"), needsYouProject().filter(isReleaseItem).length)}>
                   <Icon name="chevron-right" small class="icon-twist" />
                   Needs you <span class="sidebar-region-count">· {needsYouCount()}</span>
                 </h2>
@@ -2576,42 +2569,15 @@ export function Sidebar(props: {
                 {/* Keyed by path (lib/for-key): a row is updated in place, never remounted, by a refresh. */}
                 <ForKey each={needsYouHard()} by={(r) => r.session.path}>
                   {(r) => (
-                    <>
-                      <SessionRow session={r().session} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(r().session.path)} />
-                      {/* A proposed playbook run: its one button, under its row (§app.project-runtime/review). */}
-                      <Show when={needsYouPlaybook(r().session.path)}>
-                        {(pb) => (
-                          <li class="needs-you-playbook">
-                            <MergeRunButton projectId={pb().projectId} run={pb()} />
-                          </li>
-                        )}
-                      </Show>
-                    </>
+                    <NeedsYouRowView row={needsChatRow(r())} label={needsLabels().get(r().session.path)} current={props.selected === r().session.path}>
+                      {/* A proposed playbook run: its one button, beside the row's link (§app.project-runtime/review). */}
+                      <Show when={needsYouPlaybook(r().session.path)}>{(pb) => <MergeRunButton projectId={pb().projectId} run={pb()} />}</Show>
+                    </NeedsYouRowView>
                   )}
                 </ForKey>
-                {/* A project's deploy item, of no session: the row opens the project page, where its Deploy panel is.
-                    WhatsApp sending down: the row and its one button open Settings → Outreach (#/settings/outreach). */}
+                {/* An item of no session: a project's deploy or release, an owner's request, WhatsApp sending down. The row opens its page. */}
                 <ForKey each={needsYouProject()} by={(x) => x.id}>
-                  {(it) => (
-                    <>
-                      <li>
-                        <a class="list-row list-row-interactive org-needs-item" href={it().href} title={it().detail}>
-                          <span class="list-main">
-                            <span class="list-title">{it().title}</span>
-                            <span class="list-meta org-needs-item-detail">{it().detail}</span>
-                            <span class="list-meta">{it().where}</span>
-                          </span>
-                        </a>
-                      </li>
-                      <Show when={it().kind === "whatsapp-down"}>
-                        <li class="needs-you-playbook">
-                          <a class="button button-sm" href={it().href}>
-                            Open Outreach Settings
-                          </a>
-                        </li>
-                      </Show>
-                    </>
-                  )}
+                  {(it) => <NeedsYouRowView row={needsItemRow(it())} label={needsLabels().get(it().id)} />}
                 </ForKey>
               </ul>
               {/* The softer tier: guesses from the last reply (§app.overseer/attention-digest), under the blockers. */}
@@ -2621,7 +2587,7 @@ export function Sidebar(props: {
                 </p>
                 <ul class="list" aria-labelledby="r-needs-you-soft">
                   <ForKey each={needsYouSoft()} by={(r) => r.session.path}>
-                    {(r) => <SessionRow session={r().session} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(r().session.path)} />}
+                    {(r) => <NeedsYouRowView row={needsChatRow(r())} label={needsLabels().get(r().session.path)} current={props.selected === r().session.path} />}
                   </ForKey>
                 </ul>
               </Show>
@@ -2866,41 +2832,18 @@ export function Sidebar(props: {
                   </h3>
                   <ul class="list">
                     <ForKey each={orgNeedsYou()} by={(r) => r.session.path}>
-                      {(r) => (
-                        <SessionRow
-                          session={r().session}
-                          selected={props.selected}
-                          now={props.now}
-                          targets={targets()}
-                          detail={orgNeedsYouDetail(r().session.path)}
-                          place={orgPlaceLabel(r().session)}
-                        />
-                      )}
+                      {(r) => <NeedsYouRowView row={orgChatRow(r())} label={orgLabels().get(r().session.path)} current={props.selected === r().session.path} />}
                     </ForKey>
-                    {/* A project's own item (a held act, a conflict to settle, a stakeholder to pick): no
-                        session, the row opens the project page. A held act recounts its minutes and has Cancel. */}
+                    {/* A project's own item (a held act, a conflict to settle, a stakeholder to pick): no session, the row
+                        opens the project page. A held act recounts its minutes, and Cancel stands beside the row's link. */}
                     <ForKey each={orgItems()} by={(x) => x.id}>
-                      {(it) => {
-                        // Recounted on the list's clock, read at the real time: the clock lags up to a tick, and a count must never run high.
-                        const detail = () => {
-                          const held = it().held;
-                          return held ? heldWaitLine(held, Math.max(props.now, Date.now())) : it().detail;
-                        };
-                        return (
-                          <li classList={{ "org-needs-held": !!it().held }}>
-                            <a class="list-row list-row-interactive org-needs-item" href={it().href} title={detail()}>
-                              <span class="list-main">
-                                <span class="list-title">{it().title}</span>
-                                <span class="list-meta org-needs-item-detail">{detail()}</span>
-                                <span class="list-meta">{it().where}</span>
-                              </span>
-                            </a>
-                            <Show when={it().held && it().org?.projectId ? { held: it().held!, projectId: it().org!.projectId! } : null}>
-                              {(h) => <CancelHeldButton projectId={h().projectId} holdId={h().held.id} what={h().held.what} class="org-needs-cancel" />}
-                            </Show>
-                          </li>
-                        );
-                      }}
+                      {(it) => (
+                        <NeedsYouRowView row={needsItemRow(it())} label={orgLabels().get(it().id)}>
+                          <Show when={it().held && heldProjectId(it()) ? { held: it().held!, projectId: heldProjectId(it())! } : null}>
+                            {(h) => <CancelHeldButton projectId={h().projectId} holdId={h().held.id} what={h().held.what} />}
+                          </Show>
+                        </NeedsYouRowView>
+                      )}
                     </ForKey>
                   </ul>
                 </section>

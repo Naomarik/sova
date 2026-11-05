@@ -39,7 +39,8 @@ import { CardJumpContext } from "../lib/card-refs";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
-import { sandboxOffMissing, type SandboxState } from "../lib/sandbox";
+import { createLimits } from "../lib/mode-menu";
+import { sandboxOffMissing, sandboxStateOf, type SandboxState } from "../lib/sandbox";
 import { approveSchedule, fetchTranscriptRows, forkSession, getAlignTriage, getChatClaudeAccounts, getOverseerAutonomy, getSubagentProfiles, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { adversarialReview, NO_REVIEWER, reviewRequestMessage } from "../lib/align-review";
 import type { MemoryStatus, OverseerAutonomy, ScheduleInfo, V1EventFrame, V2EventFrame } from "../../shared/protocol";
@@ -119,6 +120,7 @@ import { isChangeRow, isProfileRow, isLoginNoteRow } from "../lib/change-rows";
 import { ProfilePicker } from "./ProfilePicker";
 import { handBackText, type RewindControl, type RewindResult } from "../lib/inputs";
 import type { RewindRefusal } from "../../shared/protocol";
+import type { CardInfo } from "../../shared/transcript-cards";
 import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
 import { COMPACT_STREAMING_REASON, COMPACTING_REASON, compactedAnnouncement } from "../lib/compact";
 import {
@@ -148,6 +150,7 @@ import { type LoginControl, type SandboxControl, type ThinkingControl, type Undo
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
 import { toolsKeyOf } from "../lib/session-tools";
+import { setupServersKey } from "../lib/mcp";
 import { EmptyWorktrees } from "./EmptyWorktrees";
 import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
@@ -523,6 +526,8 @@ export function ChatView(props: {
   });
   /** The socket's `profile` message (§chat.profiles/applying); null until one arrives. */
   const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
+  /** Picks applied here: the setup card reads again at once, ahead of a chat socket still in its reconnect wait. */
+  const [profilePicks, setProfilePicks] = createSignal(0);
   /** A One at a time race at Send (§chat.profiles/singleton): the session that has it. */
   const [profileRace, setProfileRace] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
   const [sandboxPending, setSandboxPending] = createSignal<SandboxState | null>(null);
@@ -1088,6 +1093,7 @@ export function ChatView(props: {
             minorModes: msg.minorModes,
             strict: msg.strict,
             applies: msg.applies,
+            ...(msg.saveMode ? { saveMode: msg.saveMode } : {}),
             ...(msg.memory ? { memory: msg.memory } : {}),
             ...(msg.projectModes ? { projectModes: msg.projectModes } : {}),
             ...(msg.project ? { project: msg.project } : {}),
@@ -1690,11 +1696,39 @@ export function ChatView(props: {
   if (raisedCards) createEffect(on(() => live.running, (now, before) => void (before && !now && raisedCards.refresh()), { defer: true }));
   // The merge queue's cards for this chat's branches (one per branch, from Land on): Sova's own, placed like outside cards.
   const queueCards = props.overseer || props.projectOverseer ? undefined : createMergeCards(() => props.summary?.()?.id);
+  const outsideCards = createMemo(() => [...(raisedCards?.outside() ?? []), ...(queueCards?.rows() ?? [])]);
+  const outsideById = createMemo(() => new Map(outsideCards().map((c) => [c.id, c] as const)));
+  /** Each outside card's row, one object for its life: the thread keys its rows by object, so a fresh
+      one per update (a merge card's every step) drew the card anew, at its estimate for a frame, and
+      the rows above it jumped. The row reads its card as it is now, by id (as CardContext.card does). */
+  const outsideRows = new Map<string, TranscriptItem>();
+  const outsideRow = (first: CardInfo): TranscriptItem => {
+    const id = outsideCardRowId(first.id);
+    let row = outsideRows.get(id);
+    if (!row) {
+      let last = first;
+      const now = () => (last = outsideById().get(first.id) ?? last);
+      row = {
+        id,
+        kind: "card",
+        get at() {
+          return now().at;
+        },
+        get card() {
+          return now();
+        },
+      };
+      outsideRows.set(id, row);
+    }
+    return row;
+  };
   /** The thread's rows with the cards raised from outside the chat placed where they were raised (lib/transcript-placement). */
   const threadItems = createMemo(() => {
     const list = items();
-    const outside = [...(raisedCards?.outside() ?? []), ...(queueCards?.rows() ?? [])];
-    return list && outside.length ? placeOutsideCards(list, outside, (card): TranscriptItem => ({ id: outsideCardRowId(card.id), kind: "card", at: card.at, card })) : list;
+    const outside = outsideCards();
+    const ids = new Set(outside.map((c) => outsideCardRowId(c.id)));
+    for (const id of outsideRows.keys()) if (!ids.has(id)) outsideRows.delete(id);
+    return list && outside.length ? placeOutsideCards(list, outside, outsideRow) : list;
   });
   /** Show in Chat for an offer card (§chat.composer/waiting-dialog): its `offer` call's row (the
       jump's highlight included), else the card where it stands (the tray at the thread's end). */
@@ -1951,10 +1985,14 @@ export function ChatView(props: {
     },
   };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
+  const createLimitsHere = () => {
+    const s = sandbox();
+    return createLimits({ sandboxOn: !!s && sandboxStateOf(s) === "on", remote: !!remote });
+  };
   const modeControl: ModeControl = { state: modeState, path: props.path, blocked: () => {
       const r = blocked();
       return r?.quiet ? r.text : null;
-    }, ready: chatReady, wake };
+    }, ready: chatReady, wake, limits: createLimitsHere };
   /** What the setup card's Tools group re-reads on (§chat.transcript/setup-card-tools): the model, the
       mode triple and each (re)connect, as one string, so only a change of value re-reads (the mode
       signal's objects are new on every "mode" message). */
@@ -2399,7 +2437,7 @@ export function ChatView(props: {
                   focusComposer();
                 },
               }}>
-              <SettingsCardContext.Provider value={!!props.projectOverseer && !archivedPane()}>
+              <SettingsCardContext.Provider value={{ overseer: !!props.projectOverseer && !archivedPane(), create: !archivedPane() }}>
               <OfferContext.Provider value={offers}>
               <CardContext.Provider value={raisedCards}>
               <HistoryItems
@@ -2475,6 +2513,7 @@ export function ChatView(props: {
                       <Show when={profileInfo()?.pickable && !profileInfo()?.locked && profileInfo()}>
                         {(info) => (
                           <ProfilePicker
+                            onApplied={() => setProfilePicks((n) => n + 1)}
                             path={props.path}
                             cwd={props.summary?.()?.cwd ?? null}
                             info={info()}
@@ -2486,7 +2525,8 @@ export function ChatView(props: {
                           />
                         )}
                       </Show>
-                      <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} toolsKey={toolsKey()} />
+                      <SessionSetupCard path={props.path} editable={!!profileInfo()?.pickable && !profileInfo()?.locked} toolsKey={toolsKey()} serversKey={`${setupServersKey(profileInfo()?.profile, sandbox() ? sandboxStateOf(sandbox()!) : undefined)}:${profilePicks()}`} />
+                      <Show when={modeState()?.mode === "create" ? createLimitsHere() : null}>{(limits) => <p class="empty-body">{limits()}</p>}</Show>
                       <p class="empty-body">Your first message becomes its title.</p>
                       <EmptyWorktrees path={props.path} />
                     </div>

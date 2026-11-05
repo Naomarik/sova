@@ -67,7 +67,7 @@ export interface RuntimePlaybook {
       every sentence about the run names it by, and what it proposes. */
   playbookId: string;
   label: string;
-  proposes: "definition" | "deploy";
+  proposes: "definition" | "deploy" | "release";
   /** While waiting: the open alignment questions its session asks the operator. */
   questions?: number;
   /** Its session file on this host, when known (the card links it). */
@@ -111,6 +111,20 @@ export interface RuntimeRunReview {
   proof: RuntimeProof | null;
   /** A deploy-setup run's recipe at the branch's tip, as Sova renders it (absent for a definition). */
   deploy?: DeployReview;
+  /** A release-setup run's settings and steps at the branch's tip (server/projects/release-proposal.ts). */
+  release?: ReleaseSetupReview;
+}
+
+/** What a Release playbook maker run's branch proposes: the `release` section and the playbook folder's step list. */
+export interface ReleaseSetupReview {
+  /** The setup's own hash (the section and the playbook folder's tree); "" when it has a problem. */
+  hash: string;
+  /** null: the section doesn't parse (problem says why). */
+  settings: { playbook: string; tag: string; scheme: string; channels: string[]; commit: boolean; checks: string[]; quietMin: number } | null;
+  steps: { id: string; label: string; phase: "prepare" | "check" | "after" | "withdraw"; held?: true; artifact?: true }[];
+  /** The playbook folder's files at the tip, relative to it. */
+  files: string[];
+  problem?: string;
 }
 
 export interface RuntimeFeedLine {

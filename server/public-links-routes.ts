@@ -2,6 +2,7 @@ import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AdvertisedGateway, PublicLinksFile, PublicLinksInfo, RoutedHost, VerifyResult, VisitorLogging } from "../shared/public-links";
 import { advertisedGateways } from "./mesh/hello";
+import { meshApi } from "./mesh/index";
 import { localRequest } from "./mesh/proxy";
 import { patchPublicLinks, pinnedByEnv, readPublicLinks, writeServerFields } from "./public-links";
 import { frontGuide, verifyPreviewUrl, verifyPublicUrl } from "./share/front";
@@ -36,7 +37,11 @@ export interface PublicLinksSources {
   /** The longest a via PUT waits for the gateway's answer; absent: VIA_ANSWER_WAIT_MS. */
   viaAnswerWait?: () => Promise<void>;
 }
-const SOURCES: PublicLinksSources = { routed: () => routedHosts(), gateways: () => advertisedGateways() };
+const SOURCES: PublicLinksSources = {
+  routed: () => routedHosts(),
+  // The mesh's own peers: none while it is off, a copied folder's included (server/mesh/index.ts).
+  gateways: () => advertisedGateways(() => meshApi.config()?.peers ?? []),
+};
 
 /** The answer of GET and PUT: `routed` only while this host is the gateway (route "self"),
     `gateways` always (none while the mesh is off). */

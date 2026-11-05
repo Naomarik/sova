@@ -3,9 +3,11 @@
 // process, server/chat-runtime/host.ts for the chat a chat process hosts, answering its socket's calls.
 import { randomUUID } from "node:crypto";
 import type { ChatCall, ChatMethod, ChatMethods, ChatRefusal, ChatReply, ChatSendReceipt, ChatTurnEnd } from "../../shared/chat-runtime";
-import type { StateKind } from "../../shared/harness";
+import type { HEntry, StateKind } from "../../shared/harness";
+import { clickContext } from "../../shared/overseer-card";
 import { acquireChat, assertNotLive, BusyError, type ChatSession, ConfigError, drainQueueThenAbort, emitChatEvent, markRunResuming, ModeRefusedError, RefusedError } from "../chat-manager";
 import { stateKindOf } from "../harness/state-kinds";
+import { SANDBOX_LOWER_REFUSAL, sandboxCommand, sandboxLowers } from "../sandbox-state";
 import { mergeMode } from "../mode-state";
 
 /** A typed refusal for an error the chat threw, or null for any other error. */
@@ -63,6 +65,10 @@ export const METHODS: Impl = {
     const known = a.key !== undefined ? ctx.keys?.get(a.key) : undefined;
     if (known) return known.receipt;
     if (a.checkModel) chat.assertModelAllowed();
+    // A send is never the page's composer (that is a chat socket's prompt), so it never lowers the sandbox
+    // (§app.access/your-click), by whichever road it came. A replay runs no command.
+    const asked = a.replay ? null : sandboxCommand(a.text);
+    if (asked && sandboxLowers(chat.sandboxInfo()?.state, asked)) throw new RefusedError(SANDBOX_LOWER_REFUSAL);
     // The next run names the tag, unless the chat refuses this message.
     const tagWas = chat.runTag.next;
     if (a.runTag !== undefined) chat.runTag.next = a.runTag;
@@ -152,6 +158,7 @@ export const METHODS: Impl = {
   appendNote: (chat, { noteType, text, details }) => chat.appendNote(noteType, text, details),
   writeProfile: (chat, { data }) => (chat.writeProfile(data), null),
   writeLoadout: (chat, { data }) => (chat.writeLoadout(data), null),
+  noteMcp: (chat, { note }) => (chat.noteMcp(note), null),
   flushDeferredAppends: (chat) => (chat.flushDeferredAppends(), null),
   checkWrites: (chat) => chat.hasForeignWrites(),
   assertNoForeignWrites: (chat) => (chat.assertNoForeignWrites(), null),
@@ -161,6 +168,12 @@ export const METHODS: Impl = {
   interruptKeepingQueued: (chat) => chat.interruptKeepingQueued(),
   branch: (chat) => [...chat.harness.branch()],
   entries: (chat) => [...chat.harness.entries()],
+  stateEntries: (chat, { keys }) => {
+    const wanted = new Set(keys);
+    const pick = (list: readonly HEntry[]) => list.filter((e) => e.kind === "state" && wanted.has(e.key));
+    return { branch: pick(chat.harness.branch()), all: pick(chat.harness.entries()) };
+  },
+  clickContext: (chat, { card }) => clickContext(card, chat.harness.branch()),
   fileState: (chat, { kinds }) => {
     const file = chat.state.file();
     return kinds.flatMap((kind) => file.written(kindOf(kind)).map((r) => r.data));
@@ -168,6 +181,8 @@ export const METHODS: Impl = {
   activeTools: (chat) => chat.harness.activeTools(),
   setActiveTools: (chat, { names }) => (chat.harness.setActiveTools(names), null),
   declaredTools: (chat) => chat.harness.declaredTools(),
+  promptSections: (chat) => chat.harness.promptSections(),
+  specialLoader: (chat) => chat.specialSpec?.loader ?? null,
   resources: (chat) => {
     const loadout = chat.harness.resources();
     const base = chat.loadoutState;

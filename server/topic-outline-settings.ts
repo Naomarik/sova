@@ -98,6 +98,19 @@ export function readSummarizerSettings(file = topicOutlineFile()): SummarizerSet
 }
 
 /**
+ * The chain as it runs (primary, then fallback), each with the per-entry timeoutMs / maxBudgetUsd the file keeps for
+ * it: the merge queue's branch summaries (server/merge-queue/branch-summaries.ts) ask the same models.
+ */
+export function summarizerChainEntries(file = topicOutlineFile()): { choice: SummarizerChoice; timeoutMs?: number; maxBudgetUsd?: number }[] {
+  const { chain } = effectiveChain(readStored(file));
+  return chain.slice(0, 2).map((e) => ({
+    choice: choiceOf(e),
+    ...(typeof e.timeoutMs === "number" && e.timeoutMs > 0 ? { timeoutMs: e.timeoutMs } : {}),
+    ...(typeof e.maxBudgetUsd === "number" && e.maxBudgetUsd > 0 ? { maxBudgetUsd: e.maxBudgetUsd } : {}),
+  }));
+}
+
+/**
  * The PUT body, strictly: `{ primary: {backend, model}, fallback: {backend, model} | null }` and
  * nothing else. Model shapes are the ones each backend can run: a pi ref is "provider/model"
  * (the extension's pi summarizer refuses anything else), a Claude Code model is a bare alias or id

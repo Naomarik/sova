@@ -234,6 +234,9 @@ a machine event fired the turn, not the person. Same `.toolcard` shell as tool-c
 - **A schedule's fire** (§chat.schedules/fire) is a wake too: tagged `[schedule s1] …`, it draws the
   same card named "Scheduled run s1", with `· {late} late` from its "Late by … (Sova was not
   running)." line, and is treated as a wake everywhere below.
+- **An extension job's end** (§app.overseer/extension-commands) is a wake too: tagged
+  `[ext_job x1] …`, it draws the same card named "Extension job x1", its `Reason:` line in the arg
+  slot, and is treated as a wake everywhere below.
 - **Arg slot.** The parsed reason (`WakeInfo.reason`), muted, truncated with an ellipsis, full text
   in `title`. Empty when the extension wrote `Reason: (none)`.
 - **Fired time.** Muted, `fired {HH:MM}` from the entry's own timestamp, same clock as every other
@@ -1236,25 +1239,31 @@ and the 120-second rule applies.
 ## §chat.transcript/landing-page — The overview (`#/`)
 
 With no session selected the main pane is the overview: not an empty state with a grid bolted on — it is one
-page with up to seven parts, in this order (the Mesh card, §mesh.ui/card, sits after the Sessions
-card). On a phone it is `#/overview`, under the list's head row (§app.shell/overview):
+page with up to eight parts, in this order (the Mesh card, §mesh.ui/card, sits after the Sessions
+card). On a phone it is `#/overview`, under the list's head row, and opening Sova lands on it
+(§app.shell/overview):
 
 1. **The title**: `.overview-head` holding a plain `h1.overview-title`, "Overview" (`--fs-heading-m`,
    semibold, left-aligned on the sections' own left edge and cap), at every width — no mark and no
    body line; the session count lives only in the Sessions card.
-2. **The Start section**, under a `Start` section eyebrow: one action card per way to start
+2. **The Projects section**, always (with no project too), under a `Projects` section eyebrow
+   with an `All Projects` link to `#/projects` at its right: a grid of cards, one per project on
+   this host that is not archived, the ones that need you first, each with its icon, what is
+   happening in it and a one-press `New Chat`, then a dashed `Add Project` tile
+   (§app.projects/home-cards). It is the first section at every width.
+3. **The Start section**, under a `Start` section eyebrow: one action card per way to start
    something, in a `ul.overview-actions` grid — `New Session` ("Start a chat with pi in any folder
    or on any host."), the only one. Organizations is not a Start
-   card: it has its own section, the page's last (part 7). Each card is one
+   card: it has its own section, the page's last (part 8). Each card is one
    `.card.action-card`: its icon (`plus`) on a 36px `--color-sunken` tile, the
    title (`--fs-heading-s`, semibold) and the line (`--color-ink-2`). The whole card is the control,
    a `<button>` that opens its dialog (New Session's), named by
    its title (`aria-labelledby`) and described by its line (`aria-describedby`). Hover lifts the
    border to `--color-border-strong` and the shadow to `--shadow-2`, like the extension cards; focus
    is the ring round the whole card. The grid is one column, and two once `.overview` (the
-   `overview` query container) is at least 640px wide. It is the first thing read at every width
-   after the title.
-3. **The Sessions card**, always (at every width, with no sessions too), under a `Sessions`
+   `overview` query container) is at least 640px wide. It is read right after Projects at every
+   width.
+4. **The Sessions card**, always (at every width, with no sessions too), under a `Sessions`
    section eyebrow: one `.card.home-sessions`. It reads: `{n} session(s) across {m} folder(s)` as
    its title — main threads, archived included, and their distinct folders;
    `{live} live · {working} working now` — live = every open session (open in a
@@ -1270,16 +1279,16 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
    Pressing it opens the session list: on a phone it goes back to the list (§app.shell/overview);
    at 768px and up it expands the pane if it is collapsed into the spine, and focuses the list's
    search.
-4. **The Extensions section**, shown **only when at least one extension is installed**: one card
+5. **The Extensions section**, shown **only when at least one extension is installed**: one card
    per extension, under the same section eyebrow (§app.extensions/cards).
-5. **The Explanations card**, always (with no explanations too), under an `Explanations`
+6. **The Explanations card**, always (with no explanations too), under an `Explanations`
    section eyebrow: the Mesh card's shape (§mesh.ui/card) — one full-width `a.card.ext-card` to
    `#/explanations` (§app.insights/explanations-page) with the `file` icon, the title
    `Explanations`, a count chip (`{n}`), and one line: `Latest · {topic} · {relative time}`, or,
    with none, "No explanations yet. Run `/explain` in a session to write one." Before the first
    list has loaded the line reads "Reading explanations…". It is the way to the page at every
    width, and on a phone the only one outside a session (list → Overview → the card).
-6. **The Shares card**, always (with no public link too), under a `Shares` section eyebrow, after
+7. **The Shares card**, always (with no public link too), under a `Shares` section eyebrow, after
    the Explanations card and before Organizations: the Explanations card's shape — one full-width
    `a.card.ext-card` to `#/shares` (§app.session-share/shares-page) with the `external` icon, the
    title `Shares`, a count chip (`{n}`: every live public link counted on the line), and one line:
@@ -1296,7 +1305,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
    while the overview is shown, and never while it isn't. It is the way to the Shares page at
    every width: the sidebar foot, its phone sheet and the spine have no Shares entry
    (§app.insights/sidebar-foot).
-7. **The Organizations section**, always and always last (below Mesh, Extensions, Explanations and Shares),
+8. **The Organizations section**, always and always last (below Mesh, Extensions, Explanations and Shares),
    under an `Organizations` section eyebrow: one full-width `.card.overview-orgs`, the entry point
    to `#/orgs` (§app/organizations). Its head is the `network` icon on the same 36px sunken tile as
    the Start cards, the title `Organizations` (`--fs-heading-s`, semibold) — a link to `#/orgs`,
@@ -1329,6 +1338,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 ```html
 <div class="overview">
   <div class="overview-head"><h1 class="overview-title">Overview</h1></div>
+  <section class="explain-section" aria-labelledby="overview-projects-title">…Projects · All Projects, one .card.project-card per project, the Add Project tile (§app.projects/home-cards)…</section>
   <section class="explain-section" aria-labelledby="overview-start-title">…Start, one .card.action-card per action…</section>
   <section class="explain-section" aria-labelledby="home-sessions-title">…Sessions, the .card.home-sessions…</section>
   <!-- only when at least one extension is installed (§app.extensions/cards) -->
@@ -1358,8 +1368,8 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
   — with the count as the `.text-num` span inside it, in `--color-ink-muted` and no casing. A
   `display-l` page opener was rejected: this is the second thing on the page, not its title.
 - **Where the CSS lives.** `.overview`, `.overview-head`, `.overview-title`, `.explain-section` and
-  `.explain-section-head` are in `src/design/base.css`; the Start grid, `.action-card` and the
-  Organizations card are in `src/home.css`, beside the Sessions card; the Explanations and Shares
+  `.explain-section-head` are in `src/design/base.css`; the project cards' grid, the Start grid,
+  `.action-card` and the Organizations card are in `src/home.css`, beside the Sessions card; the Explanations and Shares
   cards are extension cards (`src/extensions.css`); `.explain-grid` and every `.explain-tile` rule are in
   `src/explain.css`, which owns the tile on the Explanations page.
 - **No grid here.** The overview no longer lists the pages themselves: the card leads to the
@@ -1372,7 +1382,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 
 | State | What renders |
 |---|---|
-| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Start section's action card (`New Session`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
+| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Projects section's cards (§app.projects/home-cards), the Start section's action card (`New Session`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
 | Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the profile cards and what the picked profile changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title.", then, for a local folder in a git repository with linked worktrees, the worktrees line and its `Clean Up Merged` button (§chat.transcript/empty-worktrees). The composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows, the profile entry and a Claude login note (§app.claude-logins/switch-login) draw nothing and don't count (the login note is drawn where it sits once a message is on the branch), while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state. It opens at its top (the title, then the profile cards), not at its end, and doesn't follow the end; the first rendered row puts the view back to following. Jump to Latest never shows over it: scrolling the empty state (the cards, the setup card) has no latest to jump to |
@@ -1401,6 +1411,7 @@ main-pane rows.
       <div class="setup-group">…Context (/setup-card-context)…</div>
       <div class="setup-group">…Skills (/setup-card-skills)…</div>
       <div class="setup-group">…Tools…</div>
+      <div class="setup-group">…MCP Servers (/setup-card-toggles)…</div>
     </details>
     <div class="setup-group">
       <h2 class="text-eyebrow setup-label">Repository</h2>
@@ -1417,8 +1428,8 @@ main-pane rows.
   picked profile changes (§chat.profiles/picker) sit between the title and this card. The
   `sova-profile` entry draws no row, so picking a profile keeps the empty state.
 - **System context is folded.** Everything on the card but Repository, that is the loadout (the
-  `System context` line, Context and Skills, or the one line in their place) and the Tools group,
-  sits in one `<details class="setup-context">`, closed by default. Its `<summary>` is the
+  `System context` line, Context and Skills, or the one line in their place), the Tools group and
+  the MCP Servers group, sits in one `<details class="setup-context">`, closed by default. Its `<summary>` is the
   `System context` line with a chevron, and reads just "System context" when there is no sum to
   show. Repository stays outside it, always shown. Opening or closing it is kept for that session
   while the page is open, so the redraw after a profile pick or a switch flip (the runtime reopens)
@@ -1433,10 +1444,11 @@ main-pane rows.
   card has gone, or for a session it no longer shows, is dropped. Nothing on it polls or links: no
   Refresh button, no timer, no anchors (a file's name is a button that reads that one file when
   pressed, /setup-card-open-file), and a commit's age is worked out when the card draws and
-  doesn't tick. The loadout is redrawn in two cases only, both from
-  /setup-card-toggles: a flip of a row's switch draws the server's answer in place, and when the
+  doesn't tick. The loadout is redrawn in three cases only, the first two from
+  /setup-card-toggles: a flip of a row's switch draws the server's answer in place; when the
   chat says the switch window has opened after the first read, the loadout is read again,
-  skipping the cache. Neither redraw draws over a newer answer. Either answer can be the server's cached read of that folder, up
+  skipping the cache; and a profile pick that takes MCP Servers away or gives them back, or a
+  sandbox change, reads the MCP Servers group again. None of them draws over a newer answer. Either answer can be the server's cached read of that folder, up
   to 30s old for the loadout and 10s for the repository, and a repository read already running
   for the same session is joined rather than repeated.
 - **Order.** The loadout comes first and Repository last, every time. For a local folder pi's
@@ -1749,15 +1761,27 @@ skills it is offered, for this one session only.
   and not open in a terminal. Otherwise the card is as before, with no switches, though a row
   this session keeps off still reads off (except while a terminal has it open, since the TUI
   loads every row).
-- **On by default, every time.** Each new session starts with every row on. Nothing is
+- **On by default, every time.** Each new session starts with every file and skill row on. Nothing is
   remembered between sessions, per folder or globally: the choice lives in the session alone.
+- **MCP Servers.** The card's MCP Servers group, after Tools, has one row for each server the chat
+  could list (§app.mcp/tool-list): its name, its token cost measured at its last Check, and a switch
+  that follows this section's window and flip. A server starts as its New Chats switch says, not
+  always on, and a flip holds for this chat alone. A server that can't be switched on here keeps its
+  row with no switch and says why: Waiting for You, no Check yet, or an address server under
+  sandbox On (§app.mcp/sandbox). A refused entry (§app.mcp/rows) has no row at all. The group is one line, with no rows, in a remote chat and on a
+  profile that removes MCP Servers, and only when this computer has a server or the folder declares
+  one. A folder that is no project says its `.mcp.json` won't run (§app.mcp/project-servers). With no
+  server on the computer and none declared there is no group. It adds nothing
+  to the `System context` figures.
 - **A flip applies at once.** The card sends the session's whole off set
-  (`POST /api/sessions/loadout {path, offContext, offSkills}`), and while it applies every switch
+  (`POST /api/sessions/loadout {path, offContext, offSkills, offMcp, onMcp}`), and while it applies every switch
   is disabled. The server writes a hidden `custom` entry `customType: "sova-loadout"`, data
-  `{v: 1, offContext: [absolute paths], offSkills: [skill names]}`, newest on the branch wins, then
+  `{v: 1, offContext: [absolute paths], offSkills: [skill names], offMcp: [server names], onMcp:
+  [server names]}`, the last two only where a flip differs from the server's New Chats switch, newest
+  on the branch wins, then
   rebuilds the session's runtime the way a profile pick does: open tabs get `reloaded` and
   reconnect, keeping the draft. The answer is the card's new loadout, which it draws in place. A
-  refusal (409: "Context files and skills are fixed once a message is sent.", mid-turn, open in a
+  refusal (409: "Context files, skills and MCP servers are fixed once a message is sent.", mid-turn, open in a
   terminal, a foreign writer, a special session) changes nothing and is shown as a toast. A set
   equal to the one the session already has writes nothing and rebuilds nothing.
 - **The entry.** It records exclusions only, never context: no file text, no skill text. It draws
@@ -1787,7 +1811,8 @@ skills it is offered, for this one session only.
 
 Each row's name in Context and Skills (/setup-card-context, /setup-card-skills), the
 `SYSTEM.md` and `APPEND_SYSTEM.md` rows included, is a button that opens that file in the
-markdown viewer (§app/markdown-viewer), on Rendered: the whole text as it is on disk now.
+markdown viewer (§app/markdown-viewer) by its type, a markdown file on Rendered: the whole text as
+it is on disk now, its front matter left out.
 
 ```html
 <span class="setup-name">
@@ -1806,7 +1831,10 @@ markdown viewer (§app/markdown-viewer), on Rendered: the whole text as it is on
 - **The read.** Pressing the name asks the server for that file's text,
   `GET /api/sessions/context/file?path=<session file>&file=<listed path>`, then opens the viewer.
   The server serves only a path that this session's own setup read lists (context, skills,
-  `SYSTEM.md`, `APPEND_SYSTEM.md`), so the request reads no other file on disk; any other path is a
+  `SYSTEM.md`, `APPEND_SYSTEM.md`), or a subfolder instruction file the session could load as it
+  works: its folder's own instruction file, in a folder below the session's folder that the loading
+  doesn't skip (§chat.subfolder-instructions/loading; the Context tab opens these,
+  §app.subagents-pane/context-tab). So the request reads no other file on disk; any other path is a
   404, "That file isn't in this session's system context." A remote session has no rows to press,
   and its request is refused. A file over 1 MB is refused with "That file is over 1 MB, too big to
   show here." Whatever goes wrong is a toast that starts "Couldn't open that file." and gives the

@@ -898,6 +898,32 @@ function toolHost(rt: Rt): PoToolHost {
       const r = (fx?.result ?? {}) as { deployId?: string; target?: string; state?: string };
       return `Deploy ${r.deployId ?? ""} to ${r.target ?? q.target ?? "its target"} is ${r.state ?? "running"}: the project's own recipe runs it and decides whether it ships. deploy.status follows it.`;
     },
+    async releaseAct(q) {
+      const root = projectOf(projectId).root;
+      const { releaser } = await import("./project-services/release-wire");
+      const r = releaser();
+      const open = r?.openRecord(root) ?? null;
+      const rec = q.verb === "publish" ? (q.release ? r?.record(root, q.release) : open) : null;
+      if (q.verb === "publish") {
+        if (!rec) throw new OrgError("No release is open to publish.", 409);
+        // Never past a failed gating check, and never held for a release that isn't ready: refused before the act.
+        await r!.refreshPushBlock(root);
+        const gates = r!.gatesOf(rec);
+        if (gates.why.length) throw new OrgError(`Not ready to publish: ${gates.why.join("; ")}.`, 409);
+      }
+      const out = await actOrThrow(engine(), projectSessionSid, "release/run", { verb: q.verb, ...(rec ? { release: rec.id, ...(rec.version ? { version: rec.version } : {}) } : {}), ...(q.why ? { why: q.why } : {}) }, envelope(), { settle: true });
+      if (out.held) {
+        const h = heldAt(projectSessionSid, out.held);
+        if (rec) r?.notePowerHold(root, rec.id, { heldUntil: new Date(h.until).toISOString(), act: h.id });
+        return q.verb === "publish"
+          ? `Held: publishing ${rec?.tag ?? rec?.id} waits until ${new Date(h.until).toISOString()} so the operator can cancel it; it goes ahead then unless cancelled (held act ${h.id}). Publishing is public and can't be taken back.`
+          : `Held: a release through the project's release playbook waits until ${new Date(h.until).toISOString()} so the operator can cancel it (held act ${h.id}).`;
+      }
+      const fx = out.effects?.find((e) => e.kind === "release-run");
+      if (fx?.error) throw new OrgError(fx.error, 409);
+      const res = (fx?.result ?? {}) as { release?: string; state?: string; tag?: string | null };
+      return q.verb === "publish" ? `Published ${res.tag ?? res.release ?? ""}: release.status follows its after-publish steps.` : `Release ${res.release ?? ""} started (${res.state ?? "preparing"}): its release chat follows the playbook; release.status follows it.`;
+    },
     async software() {
       const { readRuntime, softwareLines } = await import("./projects/runtime");
       return softwareLines(await readRuntime(projectId, { observe: false }));
@@ -970,7 +996,7 @@ export function codingModeNowWords(now = codingModeNow()): string {
 /** The Overseer's mode request on a start (POST …/items/code): its mode, or a 400 before anything is taken. */
 function itemCodeMode(body: ModeRequest): ProjectCodingMode | undefined {
   if (body.mode === undefined && body.minor_modes === undefined && body.subagent_profile === undefined) return undefined;
-  const c = checkedCodingModeChoice(body);
+  const c = checkedCodingModeChoice({ ...body, by: "the Overseer" });
   if ("error" in c) throw new OrgError(c.error, 400);
   return c.mode;
 }
@@ -1767,6 +1793,25 @@ async function runDeployAct(projectId: string, e: Record<string, unknown>): Prom
   return { deployId: rec?.id ?? "", target: rec?.target ?? plan.target, state: rec?.state ?? "running" };
 }
 
+/**
+ * The project statechart's `release/run`, taken (or released from its hold): the releaser starts a release, or
+ * publishes the one named, as its caller (the release act: `releaseAct`). The releaser checks every gate again at
+ * that moment: a publish past a failed gating check is refused, never overridden.
+ */
+async function runReleaseAct(projectId: string, e: Record<string, unknown>): Promise<{ release: string; state: string; tag: string | null }> {
+  const root = projectOf(projectId).root;
+  const by = String(e.by ?? "");
+  const caller: Caller =
+    by === "operator" ? { kind: "operator", confirm: true }
+    : { kind: "project-overseer", id: readPoState(projectOverseerPaths(projectId))?.current ?? "", root, act: async () => {}, releaseAct: true };
+  const { projectEngine } = await import("./project-services/routes");
+  const verb = e.verb === "publish" ? "release.publish" : "release.start";
+  const r = await projectEngine().run(verb, { project: root, ...(typeof e.release === "string" ? { release: e.release } : {}), ...(verb === "release.publish" ? { confirm: true } : {}) }, caller);
+  if (r.error) throw new Error(`${verb === "release.publish" ? "Not published" : "Not started"}: ${r.error.code}: ${r.error.message}`);
+  const rec = r.release?.release;
+  return { release: rec?.id ?? "", state: rec?.state ?? "", tag: rec?.tag ?? null };
+}
+
 // ---- archive: what must stop first (§app.organizations/archive) -------------------------------------------
 
 /**
@@ -1974,6 +2019,8 @@ onOrgHostOpened((host, engine) => {
   // again as the project overseer, every check again, and keeps the link host-local; the result names the link only.
   // The project statechart's deploy/run, taken or released: the project's own recipe plans and runs (power deploy).
   host.effects.register("deploy-run", async (e) => runDeployAct(String(host.data(String(e.sessionId))?.projectId ?? host.data(String(e.sessionId))?.id ?? ""), e as Record<string, unknown>));
+  // The project statechart's release/run, taken or released: the releaser starts or publishes (power release).
+  host.effects.register("release-run", async (e) => runReleaseAct(String(host.data(String(e.sessionId))?.projectId ?? host.data(String(e.sessionId))?.id ?? ""), e as Record<string, unknown>));
   host.effects.register("services-share", async (e) =>
     shareFromAct({
       projectId: String(host.data(String(e.sessionId))?.projectId ?? ""),

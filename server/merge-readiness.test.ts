@@ -196,9 +196,9 @@ test("a failed or missing check: failed keeps it off ready, none is still ready 
   assert.equal(r.CHECK_RE.test("git status"), false);
 });
 
-test("R5: only server-side files ask for a restart; src/, docs and tests never do", () => {
-  for (const f of ["server/index.ts", "shared/protocol.ts", "pi-config/extensions/mode/align.ts", "package.json", "pnpm-lock.yaml"]) assert.ok(r.needsRestart(f), f);
-  for (const f of ["src/components/Sidebar.tsx", "server/README.md", "server/attention.test.ts", ".sova/spec/manifest.json", "e2e/x.mjs"]) assert.equal(r.needsRestart(f), false, f);
+test("R5: only server-side files ask for a restart (the src/ files the server imports among them); the page, docs and tests never do", () => {
+  for (const f of ["server/index.ts", "shared/protocol.ts", "pi-config/extensions/mode/align.ts", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "mise.toml", "src/lib/message.ts"]) assert.ok(r.needsRestart(f), f);
+  for (const f of ["src/app.tsx", "src/components/Sidebar.tsx", "server/README.md", "server/attention.test.ts", ".sova/spec/manifest.json", "e2e/x.mjs"]) assert.equal(r.needsRestart(f), false, f);
 });
 
 test("R8: one restart item for the whole server, however many sessions ask", () => {
@@ -1157,7 +1157,9 @@ test("b1: idle, check ok, asks nothing and a finished turn outcome is Ready to l
   const read = async () => (await r.readReadinessScan(path, fs.statSync(path).size, null)).facts!;
   const HEAD = "a".repeat(40);
   let status: WorktreeStatus & { head?: string } = { path: "/wt/agents-row-dropdown", source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 1, behind: 0, dirty: false, head: HEAD };
-  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: (sid) => (sid === SID ? { turnId: (lines.at(-1) as { id: string }).id, asks: false } : undefined), now: () => 0, processStart: 0, landing: fileLandingStore(() => store), drafts: () => undefined, nudge: undefined });
+  // The merge queue hears each Ready to land reading (its branch summary is written then).
+  const told: { path: string; branch: string; commit: string }[] = [];
+  r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: (sid) => (sid === SID ? { turnId: (lines.at(-1) as { id: string }).id, asks: false } : undefined), now: () => 0, processStart: 0, landing: fileLandingStore(() => store), drafts: () => undefined, nudge: undefined, readyToLand: (t) => void told.push(t) });
   try {
     const firstReply = (lines.at(-1) as { id: string }).id;
     recordTurnOutcome(SID, { turnId: firstReply, replyAt: Date.parse("2026-10-23T10:05:00.000Z"), at: 1, provider: "pi", model: "m", answers: { outcome: { type: "choice", choice: "did-what-was-asked" } } as never });
@@ -1165,6 +1167,7 @@ test("b1: idle, check ok, asks nothing and a finished turn outcome is Ready to l
     const one = await r.computeReadiness(summary(path), facts);
     assert.equal(one?.trees[0]?.state, "ready");
     assert.deepEqual(one?.trees[0]?.landing, { state: "ready", commit: HEAD }, "landing-eligible");
+    assert.deepEqual(told, [{ path: "/wt/agents-row-dropdown", branch: "feat/agents-row-dropdown", commit: HEAD }], "the queue is told it reads Ready to land");
 
     // A follow-up: the user says thanks, the agent replies, asking nothing; its outcome is a progress report.
     const more = chain([user("thanks", "2026-10-23T10:06:00.000Z"), assistant([{ type: "text", text: "Noted." }], "stop", "2026-10-23T10:07:00.000Z")]);
@@ -1181,8 +1184,10 @@ test("b1: idle, check ok, asks nothing and a finished turn outcome is Ready to l
     status = { ...status, head: "b".repeat(40), ahead: 2 };
     const three = await r.computeReadiness(summary(path), facts2);
     assert.equal(three?.trees[0]?.landing, undefined);
+    assert.ok(!told.some((t) => t.commit === "b".repeat(40)), "a head that doesn't read Ready to land isn't told");
     assert.equal(fileLandingStore(() => store).held(SID, "/wt/agents-row-dropdown"), undefined, "the moved head dropped the record");
   } finally {
+    r.configureReadiness({ readyToLand: undefined });
     writeDecisionSettings(decisionDefaults());
     servedReset();
   }
@@ -1313,6 +1318,53 @@ test("Ready to land: decisions off falls back to the code-only conditions; a run
   }
 });
 
+test("a held head, then a reading at a new commit: Landing specs keeps it held and tells the queue nothing; Ready to land holds it and tells the queue once", async () => {
+  const { fileLandingStore } = await import("./ready-to-land");
+  const store = join(agentDir, "rtl-hold-order.json");
+  const landing = fileLandingStore(() => store);
+  const lines = chain([worktrees([tracked()], "2026-10-25T10:00:00.000Z"), assistant([{ type: "text", text: "Done." }], "stop", "2026-10-25T10:05:00.000Z")]);
+  const path = sessionFile(lines);
+  const fs = await import("node:fs");
+  const facts = { ...(await r.readReadinessScan(path, fs.statSync(path).size, null)).facts!, lastCheck: { at: 1, ok: true } };
+  const WT = "/wt/agents-row-dropdown";
+  const [A, B, C] = ["1".repeat(40), "2".repeat(40), "3".repeat(40)];
+  let status: WorktreeStatus & { head?: string } = { path: WT, source: "session", exists: true, branch: "feat/agents-row-dropdown", base: "master", merged: "no", ahead: 1, behind: 0, dirty: false, head: B };
+  let problems: string[] = ["§x/a (draft d): §x/a has no verification note from its chat"];
+  const told: string[] = [];
+  r.configureReadiness({
+    insights: { treeStatus: async () => status },
+    git: fakeGit({}),
+    asksUser: () => undefined,
+    now: () => 0,
+    processStart: 0,
+    landing,
+    drafts: () => ["d"],
+    draftsHash: () => undefined,
+    docsPreview: () => ({ drafts: ["d"], added: [], changed: [], problems }),
+    finished: () => "off",
+    nudge: undefined,
+    readyToLand: (t) => void told.push(t.commit),
+  });
+  try {
+    landing.hold(SID, WT, { branch: "feat/agents-row-dropdown", commit: A, at: 0 });
+    // Landing specs at a new commit B: held at B, never dropped; the queue isn't told.
+    const specs = await r.computeReadiness(summary(path), facts);
+    assert.equal(specs?.trees[0]?.landing?.state, "specs");
+    assert.equal(landing.held(SID, WT)?.commit, B, "a Landing specs reading keeps its head held");
+    assert.deepEqual(told, []);
+    // Ready to land at a new commit C: held at C, the queue told once.
+    status = { ...status, head: C };
+    problems = [];
+    const ready = await r.computeReadiness(summary(path), facts);
+    assert.equal(ready?.trees[0]?.landing?.state, "ready");
+    assert.equal(landing.held(SID, WT)?.commit, C);
+    assert.deepEqual(told, [C]);
+  } finally {
+    r.configureReadiness({ readyToLand: undefined, docsPreview: undefined, draftsHash: undefined });
+    servedReset();
+  }
+});
+
 test("a finished branch that can't be queued to land: Sova names what blocks it once per commit, never naming a card, and only where the project's merge queue is set up", async () => {
   const { fileLandingStore, landingBlockers, blockedNoteText } = await import("./ready-to-land");
   const live = { running: false, openQuestions: 0 };
@@ -1375,4 +1427,125 @@ test("a finished branch that can't be queued to land: Sova names what blocks it 
   } finally {
     servedReset();
   }
+});
+
+test("a grown session file: only the lines appended are scanned, and what they say counts", async () => {
+  const lines = chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z"), user("hello", "2026-09-29T15:37:00.000Z"), assistant([{ type: "text", text: "Shall I merge?" }], "stop", "2026-09-29T15:38:00.000Z")]);
+  const path = sessionFile(lines);
+  const fs = await import("node:fs");
+  const first = await r.readReadinessScan(path, fs.statSync(path).size, null);
+  assert.ok(first.facts?.lastReply);
+  const more = chain([user("no", "2026-09-29T15:39:00.000Z")]);
+  (more[0] as { parentId: string | null }).parentId = (lines.at(-1) as { id: string }).id;
+  writeFileSync(path, `${JSON.stringify(more[0])}\n`, { flag: "a" });
+  const scanned = r.readinessScanWork.lines;
+  const again = await r.readReadinessScan(path, fs.statSync(path).size, first.scan);
+  assert.equal(r.readinessScanWork.lines - scanned, 1, "the one new line");
+  assert.equal(again.facts?.lastReply, undefined, "and it is read");
+  // Growing again carries on from the digest this read kept.
+  const third = chain([assistant([{ type: "text", text: "Done." }], "stop", "2026-09-29T15:40:00.000Z")]);
+  (third[0] as { parentId: string | null }).parentId = (more[0] as { id: string }).id;
+  writeFileSync(path, `${JSON.stringify(third[0])}\n`, { flag: "a" });
+  const before = r.readinessScanWork.lines;
+  const last = await r.readReadinessScan(path, fs.statSync(path).size, again.scan);
+  assert.equal(r.readinessScanWork.lines - before, 1);
+  assert.equal(last.facts?.lastReply?.text, "Done.");
+});
+
+test("a rewrite in place that grows, line starts where they were: nothing old is carried", async () => {
+  const lines = chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z"), user("hello", "2026-09-29T15:37:00.000Z")]);
+  const path = sessionFile(lines);
+  const fs = await import("node:fs");
+  const first = await r.readReadinessScan(path, fs.statSync(path).size, null);
+  assert.equal(first.facts?.trees[0]?.branch, "feat/agents-row-dropdown");
+  const old = fs.readFileSync(path, "utf8");
+  const ino = fs.statSync(path).ino;
+  // Same length, so every line still starts where it did; a line follows, so the size grew.
+  const fh = fs.openSync(path, "r+");
+  fs.writeSync(fh, old.replace("feat/agents-row-dropdown", "feat/agents-row-otherwis"), 0);
+  fs.writeSync(fh, `${JSON.stringify({ ...user("more", "2026-09-29T15:38:00.000Z"), id: "e-late", parentId: (lines.at(-1) as { id: string }).id })}\n`, Buffer.byteLength(old));
+  fs.closeSync(fh);
+  assert.equal(fs.statSync(path).ino, ino);
+  const before = r.readinessScanWork.lines;
+  const again = await r.readReadinessScan(path, fs.statSync(path).size, first.scan);
+  assert.equal(again.facts?.trees[0]?.branch, "feat/agents-row-otherwis");
+  assert.ok(r.readinessScanWork.lines - before > 1, "from the start");
+});
+
+test("the listing's refresh carries a growing file on, and a replacement (a new inode) never does", async () => {
+  servedReset();
+  const lines = chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z"), user("hello", "2026-09-29T15:37:00.000Z")]);
+  const path = sessionFile(lines);
+  const fs = await import("node:fs");
+  r.configureReadiness({ insights: { treeStatus: async () => readyStatus() }, asksUser: () => undefined });
+  try {
+    r.readinessOverlay(summary(path));
+    await r.readinessIdle();
+    const more = chain([user("again", "2026-09-29T15:38:00.000Z")]);
+    (more[0] as { parentId: string | null }).parentId = (lines.at(-1) as { id: string }).id;
+    writeFileSync(path, `${JSON.stringify(more[0])}\n`, { flag: "a" });
+    let before = r.readinessScanWork.lines;
+    r.readinessOverlay(summary(path));
+    await r.readinessIdle();
+    assert.equal(r.readinessScanWork.lines - before, 1, "the appended line alone");
+    const tmp = `${path}.new`;
+    fs.writeFileSync(tmp, fs.readFileSync(path));
+    fs.renameSync(tmp, path);
+    before = r.readinessScanWork.lines;
+    r.readinessOverlay(summary(path));
+    await r.readinessIdle();
+    assert.ok(r.readinessScanWork.lines - before > 1, "a new file is read whole");
+  } finally { await r.readinessIdle(); servedReset(); }
+});
+
+test("served: one question per repository at a time and per 2 s; a new answer is seen after that; a failure isn't kept", async () => {
+  let now = 1000, asked = 0, answer = true, fail = false;
+  let release = () => {};
+  let gate: Promise<void> = Promise.resolve();
+  const served = r.servedReader(async (dir) => (dir.startsWith("/none") ? null : dir.split("/")[1]!), async () => {
+    asked++;
+    await gate;
+    if (fail) throw new Error("no");
+    return answer;
+  }, () => now);
+  gate = new Promise((go) => { release = go; });
+  const both = Promise.all([served("/repo/a"), served("/repo/b"), served("/repo/c")]);
+  await new Promise<void>((done) => queueMicrotask(done));
+  release();
+  assert.deepEqual(await both, [true, true, true]);
+  assert.equal(asked, 1, "three trees of one repository, one question");
+  await served("/other/a");
+  assert.equal(asked, 2, "another repository asks for itself");
+  assert.equal(await served("/none/x"), false);
+  assert.equal(asked, 2, "no repository: nothing to ask");
+  answer = false;
+  now += r.SERVED_TTL_MS - 1;
+  assert.equal(await served("/repo/a"), true, "within the bound");
+  now += 1;
+  assert.equal(await served("/repo/a"), false, "past it");
+  fail = true;
+  now += r.SERVED_TTL_MS;
+  await assert.rejects(served("/repo/a"));
+  fail = false;
+  assert.equal(await served("/repo/a"), false, "the failure was not kept");
+});
+
+test("one listing's rows share their stats, the next doesn't inherit them", async () => {
+  servedReset();
+  const paths = [sessionFile(chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z")])), sessionFile(chain([worktrees([tracked()], "2026-09-29T15:36:00.000Z")]))];
+  const seen: (Map<string, unknown> | undefined)[] = [];
+  r.configureReadiness({ insights: { treeStatus: async () => readyStatus() }, asksUser: () => undefined, treeStamp: (_dir, together) => { seen.push(together); return "stamp"; } });
+  try {
+    const rows = paths.map((p) => summary(p));
+    for (const row of rows) r.readinessOverlay(row);
+    await r.readinessIdle();
+    seen.length = 0;
+    for (const row of rows) r.readinessOverlay(row);
+    assert.equal(seen.length, 2);
+    assert.ok(seen[0] && seen[0] === seen[1], "one listing, one map");
+    await Promise.resolve();
+    await Promise.resolve();
+    r.readinessOverlay(rows[0]!);
+    assert.notEqual(seen[2], seen[0], "the next listing starts fresh");
+  } finally { await r.readinessIdle(); servedReset(); }
 });

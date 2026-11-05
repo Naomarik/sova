@@ -5,7 +5,7 @@
 // file is listed once, the ones not yet loaded last; skills say Read or Not read yet; Conversation opens to
 // its counts and the kept summary, with no transcript button; a failed read is a toast and the sheet stays. At 390, 880 and 1440 px,
 // every row is a 44px target and nothing scrolls sideways.
-// SOVA_CONTEXT_TAB_SHOTS=<dir> also saves screenshots of each step, light and dark, at each width.
+// CTX_UI_SHOTS=<dir> also saves screenshots of each step, light and dark, at each width.
 // Chrome or Chromium must be installed (as the tour tests: nothing is downloaded).
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -19,7 +19,7 @@ import { scratchRoot } from "./test-scratch";
 
 const ROOT = join(import.meta.dirname, "..");
 const ORIGIN = "http://sova.test";
-const SHOTS = process.env.SOVA_CONTEXT_TAB_SHOTS ?? "";
+const SHOTS = process.env.CTX_UI_SHOTS ?? "";
 let dist = "";
 let browser: Browser;
 

@@ -124,6 +124,9 @@ mesh        pair [a,b,c] [--no-restart] · unpair [a,b,c] · frontdoor [order a,
   `docker builder prune`.
 - `pair` writes each listed host's `$AGENT/sova/peers.json` in mesh-core's format
   (`server/mesh/peers.ts`): `{version:1, self:{id,label}, peers:[{id,label,nodeId,dnsName:"<id>.mesh.lab",priority}]}`.
+  It writes `self.home` too (the realpath of the host's state root and its `/etc/machine-id`, read inside
+  the container): Sova keeps the mesh off for a peers.json with no binding in a non-default agent dir
+  ("unbound"), as every lab host's `/sova/.agent` is; a build from before the binding ignores the field.
   It keeps any `sync` and `frontDoor` keys already in the file, then restarts Sova. `pair a,b` on a
   3-host lab leaves c listing a and b while they no longer list c (the one-sided "refused" case).
   `unpair` deletes the file (mesh off).
@@ -164,7 +167,13 @@ Tests drive the lab through `e2e/lib.mjs`:
 - `exec` / `sh` / `execBackground` into a node
 - `curlFrom(node, url, {method, body, headers})` → `{status, json, headers, error}`, where
   status 0 means no HTTP answer
-- `laptopFetch(node, path)`, `wsFrom(node, url)`
+- `laptopFetch(node, path)`, `wsFrom(node, url)`. `laptopFetch` (and the m3 drive's own calls) go through
+  `e2e/fresh-fetch.mjs`: fetch's shape on a new socket per request, never pooled and never retried. A harness
+  blocks its event loop in `spawnSync` for seconds, and a pooled keep-alive socket the host closed meanwhile is
+  still handed out before its FIN is read ("other side closed").
+- `labPageHeaders()`: the install's cookie and no token header, which is how the operator's page shows itself.
+  A socket or request that shows the token is a script (§app.access/your-click): its prompts are no user turn,
+  so the Overseer acts on nothing it says.
 - `localapi(node, "status" | "whois?addr=…")`, `tailnetIp`, `nodeId`, `dockerIp`, `magicName`
 - `readAgentFile` / `writeAgentFile`
 - `chaos.*`, `waitFor(fn, {timeoutMs})`, `waitTailnetHealth(from, to)`
@@ -266,7 +275,10 @@ The harnesses:
   and `LAB_MODEL=ollama/qwen3:4b` puts other harnesses on it; leaves a, b and c on base, paired): hosts on different builds (§mesh/compatibility), each host on its own commit through `lab swap`, each state
   asserted on the page and against a raw send. Screenshots go to `SHOTS`. Resync uses a git history and a stand-in
   deploy script injected into the newer host, and the update itself is a `lab swap`: it proves the offer, the job,
-  the wait on the hello and the state afterwards, never `deploy.sh` over ssh.
+  the wait on the hello and the state afterwards, never `deploy.sh` over ssh. `versions-builds.mjs make` keeps every
+  ref while nothing that reaches a host changed (`same`: the tree minus the harnesses and the lab CLI, listed in
+  `HOST_EXCLUDES`), so a harness-only commit rebuilds no image; `prepare` puts each host on base, swapping only one
+  that runs another commit. A commit's images are built on its first swap, then reused.
 
 - **m7-grants** (takes the LOCK; no LLM turns; leaves a,b,c paired with no `mesh-access.json`):
   per-peer grants (§mesh.peers/grants). With no grants file anywhere, a peer reaches everything as

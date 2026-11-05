@@ -98,19 +98,20 @@ test("the open idea follows a rename: its own id while live, else the idea renam
   assert.equal(followRename(ideas, "§mesh/gone"), null);
 });
 
-test("headIdeasCount: two ideas, both dropped, count 0", () => {
-  const both: IdeasToc = {
+test("headIdeasCount: two ideas both done count 0, one done and one dropped count 0", () => {
+  const two = (x: IdeaStatus, y: IdeaStatus): IdeasToc => ({
     total: 2,
     namespaces: [
-      { ns: "a", counts: counts({ dropped: 1 }), entries: [{ id: "§a/x", title: "X", status: "dropped" }] },
-      { ns: "b", counts: counts({ dropped: 1 }), entries: [{ id: "§b/y", title: "Y", status: "dropped" }] },
+      { ns: "a", counts: counts({ [x]: 1 }), entries: [{ id: "§a/x", title: "X", status: x }] },
+      { ns: "b", counts: counts({ [y]: 1 }), entries: [{ id: "§b/y", title: "Y", status: y }] },
     ],
-  };
-  assert.equal(headIdeasCount(both), 0);
+  });
+  assert.equal(headIdeasCount(two("done", "done")), 0);
+  assert.equal(headIdeasCount(two("done", "dropped")), 0);
 });
 
-test("headIdeasCount: leaves out only dropped ideas, done ones still count", () => {
+test("headIdeasCount: leaves out done and dropped ideas, counts open, exploring and started", () => {
   // toc: 6 ideas, of them 1 done and 1 dropped.
-  assert.equal(headIdeasCount(toc), 5);
+  assert.equal(headIdeasCount(toc), 4);
   assert.equal(headIdeasCount({ total: 0, namespaces: [] }), 0);
 });

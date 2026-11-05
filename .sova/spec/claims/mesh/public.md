@@ -404,7 +404,9 @@ mesh off. Copy is §design.copy-deck/public-links.
   (§app.settings-dialog/save-bar), which sends only what changed (the whole gateway block when any
   of its fields did). A field an environment variable pins is read-only with the pinned hint, and
   isn't checked. An address that isn't a bare `https` host, a port outside 1–65535, or a Through
-  without a gateway shows its error on the field and holds Save. A failed save shows "Couldn't save
+  without a gateway shows its error on the field and holds Save: every wrong field at once, each
+  red with its own sentence (the form kit's, §design/forms). The save (`PUT /api/public-links`)
+  refuses the same fields in the same sentences, from one table (`shared/public-links-limits.ts`). A failed save shows "Couldn't save
   the public links setting." and keeps the saved setting.
 - **Verify** acts on the saved address: it is disabled, saying why beside it, until the gateway
   setting and any new address are saved. A pass shows "Verified {time}. {url} reaches this

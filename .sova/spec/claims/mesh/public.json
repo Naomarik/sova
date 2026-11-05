@@ -157,7 +157,10 @@
       "src/lib/public-links.test.ts",
       "src/components/SettingsDialog.tsx",
       "src/components/MeshView.tsx",
-      "server/public-links-routes.ts"
+      "server/public-links-routes.ts",
+      "shared/public-links-limits.ts",
+      "server/public-links.ts",
+      "src/components/form/index.tsx"
     ],
     "agreed": {
       "by": "naomarik",

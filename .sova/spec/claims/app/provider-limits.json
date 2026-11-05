@@ -96,7 +96,12 @@
       "src/design/base.css",
       "server/index.ts",
       "server/app.ts",
-      "src/lib/provider-groups.ts"
+      "src/lib/provider-groups.ts",
+      "shared/provider-limits.ts",
+      "server/provider-limits.ts",
+      "server/provider-limits.test.ts",
+      "server/settings-limits-parity.test.ts",
+      "src/components/form/index.tsx"
     ],
     "requires": [
       "§app.provider-limits/file",

@@ -758,7 +758,7 @@ Organizations region's own Needs you, never the global one.
   they are not private: they are no contact detail. Only the operator writes them. The person's
   page and the org's reads say whether they are in hours now and, if not, when their next window
   opens (`hoursNow`, worked out on each read, never stored). With no hours set, the person is always in
-  hours, as before.
+  hours.
 - **Company hours, the default.** The org may have a time zone and working hours of its own, in
   the same shape; they are not private. A person with no hours of their own uses the company's;
   their own win when set; with neither, they are always in hours. Only the operator sets them, on
@@ -793,8 +793,7 @@ Organizations region's own Needs you, never the global one.
   count: the company's hours apply ({company line})." or, when the company has no zone and hours,
   "Without a time zone these don't count: they are always in hours." Everything below reads these
   effective hours. They limit only what reaches a person: the overseer's looks and held acts that
-  reach nobody are not held to them, and the operator's own clicks go at once, with the off-hours
-  note. A change to someone's working hours (their own, the company's, or a revert of either) moves
+  reach nobody are not held to them, and the operator's own clicks go at once. A change to someone's working hours (their own, the company's, or a revert of either) moves
   every act waiting for their hours (a held act waiting for them, an offer waiting to reach them)
   to their new window, or at once when they are in hours now; the act is checked against the
   hours in force when it goes.
@@ -819,7 +818,7 @@ Organizations region's own Needs you, never the global one.
   from the browser's zone list), a toggle "Set working hours", then the days Mon…Sun (Mon–Fri by
   default) and "From"/"To" (09:00–17:00 by default), "In their time zone. An end before the start
   runs overnight." It refuses, before sending: "\"{zone}\" isn't a time zone this browser knows. Use
-  an IANA name, like Europe/Istanbul.", "Pick at least one working day, or turn working hours off.",
+  an IANA name, like Europe/Istanbul." (live, under its box), "Pick at least one working day, or turn working hours off.",
   "Working hours need a start and an end." It sends only a changed zone or hours; turning hours off
   clears them.
 - **Shown** on the People card and the person's page as an "Hours" fact: "{days} {from}–{to}

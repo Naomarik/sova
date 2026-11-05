@@ -56,7 +56,7 @@ opening by itself.
   copies its address), "Open this link, sign in, then paste the
   address the page ends on.", a field **Address after signing in** and **Finish Sign-In**. An
   address with no code in it, or from another sign-in, keeps the panel waiting for another, with the
-  reason; once OpenAI rejects the exchange itself the sign-in fails. Only OpenAI's refusal of the
+  reason as the field's one sentence under it (§design/forms); once OpenAI rejects the exchange itself the sign-in fails. Only OpenAI's refusal of the
   code route offers the browser route: OpenAI unreachable or failing ends the sign-in as failed. While pi finishes:
   "Signing in…".
 - **Done:** "Signed in", the account's email when known, and **Done**; the section shows the new

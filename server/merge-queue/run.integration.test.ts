@@ -24,13 +24,15 @@ const fixture = (o: ConstructorParameters<typeof Fixture>[0] = {}) => {
 };
 
 let n = 0;
-async function run(fx: Fixture, br: { branch: string; commit: string; checkout?: string }, o: { deps?: RunDeps; resolution?: string; drafts?: boolean; review?: boolean; picks?: RunInput["picks"]; signal?: AbortSignal; awaitReview?: RunInput["awaitReview"]; tryOnly?: boolean } = {}) {
+async function run(fx: Fixture, br: { branch: string; commit: string; checkout?: string }, o: { deps?: RunDeps; resolution?: string; drafts?: boolean; review?: boolean; picks?: RunInput["picks"]; signal?: AbortSignal; awaitReview?: RunInput["awaitReview"]; tryOnly?: boolean; release?: boolean; releaseChecks?: RunInput["releaseChecks"]; reuse?: false } = {}) {
   const runId = `mr_t${++n}`;
   const runDir = join(fx.root, "runs", runId);
   mkdirSync(runDir, { recursive: true });
   const base = fx.head();
   const defText = fx.fileAt(base, ".sova/project.json");
-  const entry = { id: `me_${n}`, project: "p1", target: fx.target, branch: br.branch, commit: br.commit, approval: { by: "land-button", at: new Date().toISOString(), commit: br.commit }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: "", updatedAt: "" } as MergeEntry;
+  const entry = { id: `me_${n}`, project: "p1", target: fx.target, branch: br.branch, commit: br.commit, approval: { by: "land-button", at: new Date().toISOString(), commit: br.commit }, state: "checking", runs: [runId], picks: [], notes: [], createdAt: "", updatedAt: "", ...(o.release ? { release: "rl_t", releaseKind: "release" } : {}) } as MergeEntry;
+  const parsed = defText ? parseDefinition(defText) : null;
+  const def = parsed && o.reuse === false ? { ...parsed, merge: { ...parsed.merge, reuse: false } } : parsed;
   const steps = new Map<string, RunStep>();
   const order: string[] = [];
   let checks: unknown[] = [];
@@ -38,13 +40,14 @@ async function run(fx: Fixture, br: { branch: string; commit: string; checkout?:
   const input: RunInput = {
     runId,
     entry,
-    project: { id: "p1", root: fx.project, target: fx.target, def: defText ? parseDefinition(defText) : null },
+    project: { id: "p1", root: fx.project, target: fx.target, def },
     base,
     commit: br.commit,
     ...(o.resolution ? { resolution: o.resolution } : {}),
     runDir,
     ...(o.drafts && br.checkout ? { draftsDir: join(br.checkout, ".sova/spec/drafts") } : {}),
     picks: o.picks ?? [],
+    ...(o.releaseChecks ? { releaseChecks: o.releaseChecks } : {}),
     review: !!o.review,
     signal: o.signal ?? new AbortController().signal,
     // The review answers through deliverReview here (review-step.ts), never the queue's own waiter.
@@ -130,6 +133,63 @@ describe("a merge run", () => {
     expect(new Set(units.map((c) => c.cwd))).toEqual(new Set([mergeCopyPath(fx.project)]));
     expect(r.order).toEqual(expect.arrayContaining(["rerun-tip:unit", "rerun-master:copy", "rerun-master:unit"]));
     expect(r.steps.get("check:unit")!.failures?.[0]).toMatchObject({ file: "tests/a.txt" });
+  });
+
+  test("reuse: a landing's checks may reuse passes (re-checking 5%); reruns on the merge and on the target alone run fresh", async () => {
+    const fx = fixture();
+    const br = fx.branch("red-reuse", { "tests/a.txt": "fail\n" });
+    await run(fx, br);
+    const units = callsAt(fx, "unit");
+    expect(units.length).toBe(3);
+    // The first run on the merge: passes from identical code may stand, a share re-checked; never fresh.
+    expect(units[0]!.env).toMatchObject({ SOVA_STEP: "unit", SOVA_REUSE_SAMPLE: "0.05" });
+    expect(units[0]!.env.SOVA_FRESH).toBeUndefined();
+    // rerun-tip and rerun-master exist to get new evidence: fresh, no sample.
+    for (const c of units.slice(1)) {
+      expect(c.env.SOVA_FRESH).toBe("1");
+      expect(c.env.SOVA_REUSE_SAMPLE).toBeUndefined();
+    }
+    expect(units.map((c) => c.env.SOVA_STEP)).toEqual(["unit", "rerun-tip:unit", "rerun-master:unit"]);
+    // Setup is no check: told nothing about reuse.
+    expect(callsAt(fx, "setup").every((c) => c.env.SOVA_FRESH === undefined && c.env.SOVA_REUSE_SAMPLE === undefined)).toBe(true);
+  });
+
+  test("reuse: every check of a release entry runs fresh, the release's own gates too; so does every check when merge.reuse is false", async () => {
+    const fx = fixture();
+    const gate = { id: "gate", label: "Release gate", run: ["node", "checks/build.mjs"], timeout: 60, rerun: false, requires: [] };
+    const r = await run(fx, fx.branch("rel", { "src/app.txt": "rel\n" }), { release: true, releaseChecks: [gate] });
+    expect(r.out.verdict).toBe("passed");
+    expect(r.order).toEqual(expect.arrayContaining(["check:build", "check:unit", "check:gate"]));
+    const ran = [...callsAt(fx, "build"), ...callsAt(fx, "unit")];
+    expect(ran.length).toBe(3);
+    for (const c of ran) expect(c.env).toMatchObject({ SOVA_FRESH: "1" });
+    expect(ran.every((c) => c.env.SOVA_REUSE_SAMPLE === undefined)).toBe(true);
+    const fx2 = fixture();
+    await run(fx2, fx2.branch("off", { "src/app.txt": "off\n" }), { reuse: false });
+    const off = [...callsAt(fx2, "build"), ...callsAt(fx2, "unit")];
+    expect(off.length).toBe(2);
+    for (const c of off) expect(c.env).toMatchObject({ SOVA_FRESH: "1" });
+    // On (the default), a plain landing: each check may reuse.
+    const fx3 = fixture();
+    await run(fx3, fx3.branch("on", { "src/app.txt": "on\n" }));
+    for (const c of [...callsAt(fx3, "build"), ...callsAt(fx3, "unit")]) expect(c.env).toMatchObject({ SOVA_REUSE_SAMPLE: "0.05" });
+  });
+
+  test("reuse: a check that reused passes reads 'N ran, M already passed on identical code'; its log lists each file and its source run", async () => {
+    const fx = fixture();
+    const br = fx.branch("reuse", { "tests/r1.txt": "reused\n", "tests/r2.txt": "reused\n" });
+    const r = await run(fx, br);
+    expect(r.out.verdict).toBe("passed");
+    const unit = r.steps.get("check:unit")!;
+    const all = git(fx.project, ["ls-tree", "--name-only", `${r.out.tip}:tests`]).split("\n").filter((f) => f.endsWith(".txt")).length;
+    expect(all > 2).toBe(true);
+    expect(unit).toMatchObject({ result: "passed", reused: 2, detail: `${all - 2} ran, 2 already passed on identical code` });
+    const log = r.log("check:unit");
+    expect(log).toContain("[passes from identical code may stand; 5% of them re-checked (SOVA_REUSE_SAMPLE=0.05)]");
+    expect(log).toContain("reused tests/r1.txt · passed 2026-11-05T14:02:00.000Z · feat/x's chat · run t_src");
+    expect(log).toContain("reused tests/r2.txt");
+    // Build reused nothing: no reuse words, no count.
+    expect(r.steps.get("check:build")!.reused).toBeUndefined();
   });
 
   test("flaky (passes on a rerun) and failing on the target too are noted, never blocking", async () => {

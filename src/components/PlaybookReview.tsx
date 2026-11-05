@@ -10,6 +10,7 @@ import { landBranch, refusal } from "../lib/merge-queue-client";
 import { queueRow } from "../lib/merge-queue";
 import { createProjectQueue } from "../lib/project-queue";
 import { QueueChip } from "./WorktreesModal";
+import { createSetupPoll, SetupLandButton } from "./SetupChat";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
@@ -36,6 +37,44 @@ export function proposedRun(v: ProjectRuntimeView | undefined): (PlaybookReviewW
  * button's place shows its queue state from then on.
  */
 export function MergeRunButton(props: {
+  projectId: string;
+  run: Pick<PlaybookReviewWords, "hash" | "target" | "branch" | "proposes"> & { commit?: string };
+  class?: string;
+  onDone?(view?: ProjectRuntimeView): void;
+}) {
+  // A Setup chat's proposal lands only once a trial of its head passed: the proposal card's own button, Run Trial and
+  // its reason included, wherever the run is offered (the banner, the Needs-you row).
+  return (
+    <Show when={props.run.proposes === "pipeline"} fallback={<PlainMergeRunButton {...props} />}>
+      <SetupRunButton projectId={props.projectId} branch={props.run.branch} onDone={() => props.onDone?.()} />
+    </Show>
+  );
+}
+
+/** The Setup chat's proposal of `branch`, read as the card reads it; while it isn't read yet, nothing is offered. */
+function SetupRunButton(props: { projectId: string; branch: string; onDone(): void }) {
+  const setup = createSetupPoll(props.projectId);
+  const proposal = () => {
+    const p = setup.data()?.chat?.proposal;
+    return p && p.branch === props.branch ? p : null;
+  };
+  return (
+    <Show when={proposal()} fallback={<span class="text-caption text-muted">{setup.error() ? `Couldn't read the setup proposal. ${setup.error()}` : "Reading the setup proposal."}</span>}>
+      {(p) => (
+        <SetupLandButton
+          projectId={props.projectId}
+          proposal={p()}
+          onDone={() => {
+            setup.refetch();
+            props.onDone();
+          }}
+        />
+      )}
+    </Show>
+  );
+}
+
+function PlainMergeRunButton(props: {
   projectId: string;
   run: Pick<PlaybookReviewWords, "hash" | "target" | "branch"> & { commit?: string };
   class?: string;

@@ -378,7 +378,7 @@ function CheckRow(props: { projectId: string; name: string; id?: string; command
  * Land (a project the queue serves: the branch joins the queue at the commit the card read) or Merge Branch (one it
  * doesn't), once a trial of that exact commit passed. Until then Run Trial stands in their place, with why.
  */
-function SetupLandButton(props: { projectId: string; proposal: SetupProposal; onDone(): void }) {
+export function SetupLandButton(props: { projectId: string; proposal: SetupProposal; onDone(): void }) {
   const p = () => props.proposal;
   const st = () => landState(p());
   const queue = createProjectQueue(() => props.projectId);

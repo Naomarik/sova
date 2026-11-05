@@ -32,6 +32,8 @@ const add = (name: string, commits = 1) => {
 };
 
 const sessions: SessionSummary[] = [];
+/** Worktrees the stubbed queueMade calls a merge queue chat's own (owners.ts queueMade in the server). */
+const queueMadeTrees = new Set<string>();
 /** Every session file the service read (bytes, and active branches parsed). */
 const reads = { file: [] as string[], branch: [] as string[] };
 const branches = new Map<string, unknown[]>();
@@ -93,6 +95,7 @@ before(() => {
   // whose cwd is there is worktree-cleanup.integration.test.ts.
   let scan: ReturnType<typeof c.scanProcesses> | null = null;
   c.configureCleanup({
+    queueMade: async (p) => queueMadeTrees.has(p),
     processes: () => (scan ??= c.scanProcesses().then((ps) => [...ps, { pid: process.ppid, command: "sleep", paths: [wt("proc")] }])),
     summary: async (p) => sessions.find((s) => s.path === p) ?? null,
     sessionFiles: async () => [...new Set([...sessions.map((s) => s.path), join(root, "sessions", "01a1026f-c64e-70a4.jsonl"), HOME_SESSION()])],
@@ -136,6 +139,30 @@ test("the merge queue's scratch copies (by their creation mark) are never listed
   // Its folder gone (git still records it): still not listed, it is the queue's own to remove.
   rmSync(copy, { recursive: true, force: true });
   assert.deepEqual((await c.classifyRepo(other))?.trees.map((t) => t.path), [plain]);
+});
+
+test("a worktree a merge queue chat made itself (old style, no mark) is never listed, merged or not; a user's beside it is", async () => {
+  // Under a folder that sorts after the shared repo: the gone-folder reader below scans siblings in order.
+  const other = join(root, "zz-queue-made", "proj");
+  mkdirSync(other, { recursive: true });
+  git(other, "init", "-q", "-b", "master");
+  commit(other, "a.txt", "a\n", "init");
+  const made = join(root, "zz-queue-made", "proj-resolve-mq_1");
+  const mine = join(root, "zz-queue-made", "proj-mine");
+  for (const [path, branch] of [[made, "feat/resolve-mq_1"], [mine, "feat/mine"]] as const) {
+    git(other, "worktree", "add", "-q", "-b", branch, path);
+    commit(path, `${branch.replace(/\//g, "-")}.txt`, "x\n", branch);
+    git(other, "merge", "-q", "--ff-only", branch);
+  }
+  queueMadeTrees.add(made);
+  try {
+    const repo = await c.classifyRepo(other);
+    assert.ok(repo);
+    assert.deepEqual(repo.trees.map((t) => [t.path, t.class]), [[mine, "merged"]], "only the user's merged worktree is offered");
+  } finally {
+    queueMadeTrees.delete(made);
+  }
+  assert.deepEqual((await c.classifyRepo(other))?.trees.map((t) => t.path).sort(), [made, mine].sort(), "without the stub both are there: the test can tell");
 });
 
 test("the count covers every linked worktree in git's list, and a session with no repository gets none", async () => {

@@ -145,6 +145,40 @@ describe("scratch copies: the queue", () => {
     }
   });
 
+  test("a retry after the hand-back, its resolution's pin gone and git no longer having it: judged afresh, never run on the missing commit", async () => {
+    const k = makeKit({ threadAnswers: true, deps: { sanity: async () => ({ ok: true, files: ["a.txt"] }) } });
+    try {
+      const q = await k.q();
+      conflicting(k);
+      // The resolution's run fails on the branch: sent back with its resolution recorded.
+      k.run.set((input) => (input.resolution ? { verdict: "failed", blame: "branch", why: "unit failed" } : {}));
+      const c = await q.add({ branch: "feat/c", by: "land-button" });
+      await told(k, c.entry.id);
+      const path = scratchCopyPath(k.repo.root, c.entry.id);
+      tryGit(path, "merge", "--no-ff", "--no-commit", c.entry.commit);
+      writeFileSync(join(path, "a.txt"), "one\nTWO-both\nthree\n");
+      sh(path, "add", "a.txt");
+      sh(path, "-c", "user.name=t", "-c", "user.email=t@t.invalid", "commit", "-q", "--no-edit");
+      const res = sh(path, "rev-parse", "HEAD");
+      await q.resolve(c.entry.id, { verdict: "no-behaviour-change", ours: "o", theirs: "t", proposal: "keep both", commit: res });
+      await until(async () => (await k.entry(c.entry.id)).state === "needs-fix", "sent back");
+      assert.equal((await k.entry(c.entry.id)).conflict?.commit, res, "the hand-back keeps the recorded resolution");
+      await until(async () => !existsSync(path) && !refAt(k.repo.root, c.entry.id), "copy and pin removed");
+      // Nothing holds the resolution any more: git's cleanup drops it.
+      sh(k.repo.root, "reflog", "expire", "--expire=now", "--all");
+      sh(k.repo.root, "-c", "maintenance.auto=false", "gc", "-q", "--prune=now");
+      assert.notEqual(tryGit(k.repo.root, "cat-file", "-e", `${res}^{commit}`).code, 0, "the resolution is gone from git");
+      const runs = k.run.inputs.length;
+      await q.retry(c.entry.id);
+      await until(async () => k.run.inputs.length > runs, "the retry ran");
+      assert.equal(k.run.inputs.at(-1)!.resolution, undefined, "the retry merges afresh, not the missing resolution");
+      await until(async () => (await k.entry(c.entry.id)).state === "conflict", "a conflict again, for the thread to judge");
+      assert.ok(!(await k.entry(c.entry.id)).notes.some((n) => n.kind === "resolved"), "the old resolution's note went with it");
+    } finally {
+      await k.done();
+    }
+  });
+
   test("sent back (the thread never judged in time): the copy goes", async () => {
     const k = makeKit({ threadAnswers: true, deps: { conflictWaitMs: 80 } });
     try {

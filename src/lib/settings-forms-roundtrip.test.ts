@@ -407,7 +407,8 @@ const ROWS: Row[] = [
     load: async () => experimental.setExperimentalSaved((await api.getWebSettings()).experimental),
     draft: () => experimental.experimentalDraft(),
     setDraft: experimental.setExperimentalDraft,
-    fields: {},
+    // On unless saved off, so the edit that changes something is off.
+    fields: { sovaModes: { valid: false } },
   },
   // Last: the providers it turns off would refuse the model picks of the forms above.
   {

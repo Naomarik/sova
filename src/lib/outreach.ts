@@ -1,5 +1,7 @@
 import { createSignal } from "solid-js";
-import { labelProblem, NUMBER_ID, routeEntryId, type LocalNumber, type OrgSenderView, type OutreachFile, type OutreachInfo, type OutreachPatch, type SenderEntry, type SenderLinkView, type SenderList, type SenderRoute, type SenderStatus } from "../../shared/outreach";
+import { labelProblem, routeEntryId, type LocalNumber, type OrgSenderView, type OutreachFile, type OutreachInfo, type OutreachPatch, type SenderEntry, type SenderLinkView, type SenderList, type SenderRoute, type SenderStatus } from "../../shared/outreach";
+import { problemOf } from "../../shared/form-rules";
+import { NUMBER_NAME_RULE, SOCKET_RULE } from "../../shared/outreach-limits";
 import { relativeIn, stampTime } from "./format";
 import { createDraftStore } from "./settings-draft";
 
@@ -109,10 +111,10 @@ export const sameOutreach = (d: OutreachDraft, f: OutreachFile): boolean =>
 
 /** Why the draft can't be saved, or null. */
 export function outreachProblem(d: OutreachDraft): string | null {
-  if (d.sender === "local" && d.socket.trim() && !d.socket.trim().startsWith("/")) return "The socket path must be absolute.";
+  if (d.sender === "local" && problemOf(SOCKET_RULE, d.socket)) return problemOf(SOCKET_RULE, d.socket);
   for (const n of d.numbers) {
-    if (!NUMBER_ID.test(n.id)) return "A number's name is lowercase letters, digits and dashes, at most 32.";
-    if (!n.socket.startsWith("/")) return `${n.id}: the socket path must be absolute.`;
+    const why = problemOf(NUMBER_NAME_RULE, n.id) ?? (problemOf(SOCKET_RULE, n.socket || "-") && `${n.id}: the socket path must be absolute.`);
+    if (why) return why;
   }
   if (new Set(d.numbers.map((n) => n.id)).size !== d.numbers.length) return "Two numbers have the same name.";
   if (new Set(d.numbers.map((n) => n.socket)).size !== d.numbers.length) return "Two numbers use the same socket.";

@@ -1,17 +1,20 @@
 import { createSignal } from "solid-js";
 import type { DecisionSaveResult, DecisionSettings, DecisionSettingsInfo } from "../../shared/protocol";
 import { ApiError, getDecisionSettings, putDecisionSettings } from "./api";
-import { draftOf, exclusionIssue, noWarnings, placeWarnings, rebaseDecision, sameDecision, settingsOf, type DecisionDraft, type PlacedWarnings } from "./decision-form";
+import { EXCLUSIONS_RULE } from "../../shared/decision-limits";
+import { firstIssue } from "../../shared/form-rules";
+import { draftOf, noWarnings, placeWarnings, rebaseDecision, sameDecision, settingsOf, type DecisionDraft, type PlacedWarnings } from "./decision-form";
 import { sameChoice, type DraftChoice } from "./delegate-form";
 import { createDraftStore, failureOf, saveRebased } from "./settings-draft";
 
-/** Why a Decisions draft can't be saved, for the dialog's footer, or null — `decisionDraftReady`, in words. Pure. */
-export function decisionDraftProblem(d: DecisionDraft): string | null {
-  if (d.fallback && !d.fallback.model) return "Decisions needs a fallback model.";
-  if (d.fallback && !d.fallback.effort) return "Decisions needs an effort for its fallback model.";
-  const folders = exclusionIssue(d.exclusions);
-  return folders ? `Decisions: ${folders}` : null;
-}
+/** The form's checks in page order (the draft store's `fields`): the fallback row, then the Folders box. */
+export const decisionFields = (d: DecisionDraft) => [
+  { message: d.fallback && !d.fallback.model ? "Choose a fallback model." : d.fallback && !d.fallback.effort ? "Choose an effort for the fallback model." : null },
+  { rule: EXCLUSIONS_RULE, value: d.exclusions },
+];
+
+/** Why a Decisions draft can't be saved, or null — `decisionDraftReady`, in words. Pure. */
+export const decisionDraftProblem = (d: DecisionDraft): string | null => firstIssue(decisionFields(d))?.message ?? null;
 
 /** The last save's notes, placed under the section each is about. */
 const [notes, setNotes] = createSignal<PlacedWarnings>(noWarnings());
@@ -30,7 +33,7 @@ const store = createDraftStore<DecisionDraft, DecisionSettings, DecisionSettings
   toDraft: draftOf,
   same: sameDecision,
   rebase: rebaseDecision,
-  problem: decisionDraftProblem,
+  fields: decisionFields,
   write: async (d, base) => {
     let sent: DecisionSettings | null = null;
     try {

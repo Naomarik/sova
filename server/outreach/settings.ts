@@ -1,6 +1,8 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
+import { problemOf } from "../../shared/form-rules";
+import { NUMBER_NAME_RULE, SOCKET_RULE } from "../../shared/outreach-limits";
 import { ENTRY_ID, labelProblem, NUMBER_ID, type LocalNumber, type OutreachFile, type OutreachPatch, type SenderRoute } from "../../shared/outreach";
 import { agentRoot, stateRoot } from "../state-root";
 
@@ -54,7 +56,7 @@ function parseRoute(v: unknown): SenderRoute {
     onlyKeys(v.local, ["socket"], "sender.local");
     const socket = v.local.socket;
     if (socket === undefined || socket === "") return { local: {} };
-    if (typeof socket !== "string" || !isAbsolute(socket)) return fail("sender.local.socket must be an absolute path");
+    if (typeof socket !== "string" || !isAbsolute(socket)) return fail(SOCKET_RULE.issue(String(socket))!);
     return { local: { socket } };
   }
   if ("via" in v) {
@@ -73,11 +75,12 @@ function parseNumbers(v: unknown): LocalNumber[] {
   for (const n of v) {
     if (!isObj(n)) return fail("each number must be an object");
     onlyKeys(n, ["id", "socket"], "numbers[]");
-    if (typeof n.id !== "string" || !NUMBER_ID.test(n.id)) return fail("a number's name must be lowercase letters, digits and dashes, at most 32");
-    if (typeof n.socket !== "string" || !isAbsolute(n.socket)) return fail(`number ${n.id}: socket must be an absolute path`);
+    const why = problemOf(NUMBER_NAME_RULE, n.id);
+    if (why) return fail(why);
+    if (typeof n.socket !== "string" || !isAbsolute(n.socket)) return fail(`${n.id}: ${SOCKET_RULE.issue(String(n.socket))!.replace(/^T/, "t")}`);
     if (out.some((x) => x.id === n.id)) return fail(`two numbers are named ${n.id}`);
     if (out.some((x) => x.socket === n.socket)) return fail(`two numbers use the socket ${n.socket}`);
-    out.push({ id: n.id, socket: n.socket });
+    out.push({ id: n.id as string, socket: n.socket });
   }
   return out;
 }
@@ -111,7 +114,7 @@ export function parseOutreach(raw: unknown): OutreachFile {
       if (!ENTRY_ID.test(k)) fail(`labels: ${JSON.stringify(k)} is not a sender's id`);
       if (typeof x !== "string") return fail(`labels.${k} must be a string`);
       const why = labelProblem(x);
-      return why ? fail(`labels.${k}: ${why}`) : x.trim();
+      return why ? fail(why) : x.trim();
     });
   if (raw.orgs !== undefined)
     out.orgs = parseIdMap(raw.orgs, "orgs", (k, x) => {

@@ -63,7 +63,7 @@ describe("what a landing runs", () => {
       assert.deepEqual(landing([f]).ran, ["trial"], f);
     }
     // The test setup triggers every group a landing runs.
-    for (const f of ["scripts/run-tests.mjs", "scripts/test-groups.mjs"]) assert.deepEqual(landing([f]).ran, ["trial", "merge-queue"], f);
+    for (const f of ["scripts/run-tests.mjs", "scripts/test-groups.mjs"]) assert.deepEqual(landing([f]).ran, ["trial", "merge-queue", "forms"], f);
   });
 
   test("a tours-only change runs no group at landing (Tours never run there), and the everyday set still runs", () => {
@@ -79,13 +79,13 @@ describe("what a landing runs", () => {
   test("Tours never run at landing, even when every trigger changed", () => {
     const r = landing(["server/tours/runner.ts", "package.json", "scripts/run-tests.mjs"]);
     assert.ok(!r.files.includes(tour) && !r.files.includes(nearTours));
-    assert.deepEqual(r.ran, ["trial", "merge-queue"]);
+    assert.deepEqual(r.ran, ["trial", "merge-queue", "forms"]);
   });
 
   test("an unrelated change runs only the everyday set, naming both groups as skipped", () => {
     const r = landing(["src/components/Sidebar.tsx"]);
     assert.deepEqual(r.files, [tourNoChrome, everyday]);
-    assert.deepEqual(r.skipped.map((s) => [s.name, s.why]), [["trial", "untriggered"], ["tours", "never"], ["merge-queue", "untriggered"]]);
+    assert.deepEqual(r.skipped.map((s) => [s.name, s.why]), [["trial", "untriggered"], ["tours", "never"], ["merge-queue", "untriggered"], ["forms", "untriggered"]]);
     assert.equal(setKey(r.ran), "core");
     assert.equal(setKey(landing(["package.json"]).ran), "core+trial");
   });
@@ -97,6 +97,18 @@ describe("what a landing runs", () => {
     }
     assert.deepEqual(landing(["src/components/Sidebar.tsx"]).ran, []);
     assert.deepEqual(landing(["package.json"]).ran, ["trial"]);
+  });
+
+  test("form code, and only form code, runs Forms in a browser", () => {
+    const settings = "server/settings-browser.integration.test.ts";
+    assert.equal(groupOf(settings)?.name, "forms");
+    assert.equal(groupOf("server/forms-project-browser.integration.test.ts")?.name, "forms", "an area's Chrome file is in the group");
+    const run = (changed: string[]) => selectFiles([settings, everyday], changed, { mode: "landing" });
+    for (const f of ["src/components/OverseerSettings.tsx", "src/components/SettingsDialog.tsx", "src/lib/overseer-draft.ts", "src/lib/session-title-settings-form.ts", "src/lib/settings-draft.ts", "server/decide-settings.ts", "server/updates/routes.ts", "src/components/settings/MergeQueueSettings.tsx", "src/lib/merge-queue-settings.ts", "server/merge-queue/settings-edit.ts", "src/components/form/TextField.tsx", "src/components/HoursFields.tsx", "src/components/McpAddServer.tsx", "src/components/ProfilePicker.tsx", "shared/form-rules.ts", "shared/overseer-limits.ts", "server/forms-browser.test.helper.ts", "server/settings-browser-temp.test.helper.ts", settings]) {
+      assert.ok(run([f]).ran.includes("forms"), f);
+      assert.ok(run([f]).files.includes(settings), f);
+    }
+    for (const f of ["src/components/Sidebar.tsx", "package.json", "server/merge-queue/run.ts", "src/lib/settings-forms-roundtrip.test.ts"]) assert.ok(!run([f]).ran.includes("forms"), f);
   });
 
   test("a changed test file triggers only its own group, never the area it sits in", () => {
@@ -130,6 +142,6 @@ describe("what a session's --changed adds", () => {
 describe("--groups", () => {
   test("only the named groups' files; all is every group", () => {
     assert.deepEqual(selectFiles(files, [], { mode: "groups", only: ["tours"] }).files, [tour, nearTours]);
-    assert.deepEqual(selectFiles(files, [], { mode: "groups", only: ["all"] }).ran, ["trial", "tours", "merge-queue"]);
+    assert.deepEqual(selectFiles(files, [], { mode: "groups", only: ["all"] }).ran, ["trial", "tours", "merge-queue", "forms"]);
   });
 });

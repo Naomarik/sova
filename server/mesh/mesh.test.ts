@@ -123,6 +123,14 @@ describe("mesh OFF (no peers.json)", () => {
     assert.equal(identityCalls, 0);
     assert.equal((await putJson("/api/mesh/settings", { frontDoor: "ftp://x" }))[0], 400);
     assert.deepEqual(settingsLog, ["Host A"], "not after a refused write");
+    // Refusals read like the form's own words, never a raw key (Settings QA D9).
+    const refused = async (body: unknown) => ((await putJson<{ error: string }>("/api/mesh/settings", body))[1] as { error: string }).error;
+    assert.equal(await refused({ hostLabel: "x".repeat(81) }), "This host's name can be at most 80 characters.");
+    assert.equal(await refused({ hostLabel: "  " }), "This host needs a name.");
+    assert.equal(await refused({ frontDoor: "not a url" }), "The front door must be a web address, like https://sova.example.ts.net.");
+    assert.equal(await refused({ frontDoor: "ftp://x" }), "The front door must start with http:// or https://.");
+    assert.equal(await refused({ frontDoor: "https://x/path" }), "The front door is a scheme, host and port only, with no path.");
+    assert.equal((await putJson("/api/mesh/settings", { hostLabel: "x".repeat(80) }))[0], 200);
   });
 });
 

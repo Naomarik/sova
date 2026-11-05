@@ -2,6 +2,7 @@ import { createEffect, createResource, createSignal, onCleanup, Show } from "sol
 import { cancelOpenAiLogin, fetchUsage, getOpenAiAccount, getOpenAiLogin, sendOpenAiLoginAnswer, signOutOpenAi, startOpenAiLogin } from "../lib/api";
 import { loadModels } from "../lib/models";
 import { EXPIRED_TEXT, failedText, flowOpen, type OpenAiAccountInfo, type OpenAiLoginFlow, sectionNote, signedInFacts, signOutText, standingOf } from "../lib/openai-login";
+import { TextField } from "./form";
 import { Banner, Chip } from "./ui";
 import { RetryButton, sentence } from "./WorkerSlotRow";
 
@@ -281,21 +282,19 @@ export function OpenAiAccountSection() {
                           <Show when={b().refused}>{(r) => <p class="field-hint">{sentence(r())}</p>}</Show>
                           <p class="field-hint">Open this link, sign in, then paste the address the page ends on.</p>
                           <Link url={b().url} label="Open OpenAI's sign-in page" />
-                          <label class="field">
-                            <span class="field-label">Address after signing in</span>
-                            <input
-                              class="input input-mono"
-                              value={answer()}
-                              autocomplete="off"
-                              spellcheck={false}
-                              placeholder="http://localhost:1455/auth/callback?code=…"
-                              onInput={(e) => setAnswer(e.currentTarget.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") void finish();
-                              }}
-                            />
-                          </label>
-                          <Show when={b().error}>{(e) => <p class="field-error">{sentence(e())}</p>}</Show>
+                          <TextField
+                            label="Address after signing in"
+                            inputClass="input-mono"
+                            value={answer()}
+                            autocomplete="off"
+                            spellcheck={false}
+                            placeholder="http://localhost:1455/auth/callback?code=…"
+                            error={b().error ? sentence(b().error!) : null}
+                            onInput={setAnswer}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") void finish();
+                            }}
+                          />
                           <span class="button-row">
                             <CancelButton />
                             <button type="button" class="button button-sm button-primary" disabled={!answer().trim()} onClick={() => void finish()}>

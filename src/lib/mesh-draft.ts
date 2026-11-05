@@ -2,6 +2,8 @@ import type { MeshSettings, SyncCategory } from "../../shared/protocol";
 import { fetchMesh, putMeshSettings } from "./api";
 import { setMeshState } from "./mesh";
 import { createDraftStore } from "./settings-draft";
+import { firstIssue } from "../../shared/form-rules";
+import { FRONT_DOOR_RULE, HOST_LABEL_RULE } from "../../shared/mesh-limits";
 
 /**
  * Settings → Mesh's unsaved edits (settings-draft.ts: module state, held on close, forgotten once
@@ -45,18 +47,21 @@ export function meshChanges(d: MeshDraft, s: MeshSettings): Partial<MeshSettings
 
 export const sameMesh = (d: MeshDraft, s: MeshSettings): boolean => Object.keys(meshChanges(d, s)).length === 0;
 
+/** The typed fields in page order, with the server's own rules (shared/mesh-limits.ts). */
+const meshFields = (d: MeshDraft) => [
+  { rule: HOST_LABEL_RULE, value: d.hostLabel },
+  { rule: FRONT_DOOR_RULE, value: d.frontDoor },
+];
+
 /** Why the draft can't be saved, one sentence, or null. */
-export const meshDraftIssue = (d: MeshDraft): string | null => (d.hostLabel.trim() ? null : "This host needs a name.");
+export const meshDraftIssue = (d: MeshDraft): string | null => firstIssue(meshFields(d))?.message ?? null;
 
 const store = createDraftStore<MeshDraft, MeshSettings>({
   tab: "mesh",
   label: "Mesh",
   toDraft: meshDraftOf,
   same: sameMesh,
-  problem: (d) => {
-    const issue = meshDraftIssue(d);
-    return issue ? `Mesh: ${issue}` : null;
-  },
+  fields: meshFields,
   write: async (d, s) => {
     const next = await putMeshSettings(meshChanges(d, s));
     // The name shows on the card, in New Session and on the Mesh page: they read the mesh state.

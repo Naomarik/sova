@@ -92,7 +92,16 @@
 
 (defn- run-of? [_ d] (and (= (:from (b/moved d)) (get-in d [:playbook :sid])) (= "build" (:statechart (b/moved d)))))
 (defn- moved-to [k] (fn [env d] (and (run-of? env d) (= k (rr/run-moved (b/moved d))))))
-(defn- moved-to-end [env d] (and (run-of? env d) (contains? #{:merged :removed :not-started :no-change} (rr/run-moved (b/moved d)))))
+(defn- standing-run?
+  "A pipeline run (the Setup chat, §app.project-setup/chat) is a standing chat: a turn that ends with no commits (its
+   first turn summarises the current setup and asks what to change) never ends it; only a merge, its tree's removal
+   or a start that never happened does."
+  [d] (= "pipeline" (get-in d [:playbook :proposes])))
+(defn- moved-to-end [env d]
+  (and (run-of? env d)
+       (let [k (rr/run-moved (b/moved d))]
+         (or (contains? #{:merged :removed :not-started} k)
+             (and (= :no-change k) (not (standing-run? d)))))))
 
 (def result-of {:merged "merged" :removed "removed" :not-started "not-started" :no-change "no-change"})
 

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, trialChip, trialLine, trialStale, type SetupProposal, type SetupTrial, type SetupTrialCheck } from "./setup-chat";
+import { changedFiles, changesHead, chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, trialChip, trialLine, trialStale, type SetupProposal, type SetupTrial, type SetupTrialCheck } from "./setup-chat";
 
 const HEAD = "a1b2c3d4e5f6a7b8c9d0";
 const OLD = "0f9e8d7c6b5a49382716";
@@ -96,4 +96,15 @@ test("no automated tests: a trial of the merge copy alone passes with no checks,
   const p = proposal({ merge: { checks: "none" }, trial: trial("passed", { checks: [] }) });
   assert.equal(trialLine(p), "Trial of a1b2c3d: passed");
   assert.deepEqual(landState(p), { action: "land", can: true });
+});
+
+test("what it brings in: every changed file, the setup's own first, the rest flagged; unknown is not none", () => {
+  assert.equal(changedFiles(undefined), null);
+  assert.deepEqual(changedFiles([]), { setup: [], other: [], count: 0 });
+  const f = changedFiles([".sova/spec/claims/app/x.md", ".sova/project.json", { path: ".sova/playbooks/release/PLAYBOOK.md", status: "A" }, "scripts/ci.sh"])!;
+  assert.deepEqual(f.setup, [".sova/project.json", ".sova/playbooks/release/PLAYBOOK.md"]);
+  assert.deepEqual(f.other, [".sova/spec/claims/app/x.md", "scripts/ci.sh"]);
+  assert.equal(f.count, 4);
+  assert.equal(changesHead(1), "Changes 1 file");
+  assert.equal(changesHead(4), "Changes 4 files");
 });

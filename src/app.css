@@ -1870,6 +1870,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .setup-check-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); }
 .setup-check-result { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-left: auto; }
 .setup-trial-line { overflow-wrap: anywhere; }
+.setup-files { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); }
+.setup-files > li { overflow-wrap: anywhere; font-size: var(--fs-mono); line-height: var(--lh-mono); }
+.setup-file-other .chip { margin-left: var(--space-1); }
 
 /* The merge queue's card in the branch's chat: the Merged card's frame, plus its lines and actions. */
 .mq-chat-card .mq-card-line { margin: 0; overflow-wrap: anywhere; white-space: normal; }

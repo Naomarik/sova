@@ -7,13 +7,14 @@ import { createPoll, type Poll } from "../lib/poll";
 import { createProjectQueue } from "../lib/project-queue";
 import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
 import { requestListRefresh } from "../lib/list-refresh";
-import { chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, trialChip, trialLine, trialStale, type SetupChatView, type SetupProposal, type SetupSurface } from "../lib/setup-chat";
+import { changedFiles, changesHead, chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, trialChip, trialLine, trialStale, type SetupChatView, type SetupProposal, type SetupSurface } from "../lib/setup-chat";
 import { announce, toast } from "../lib/ui-state";
 import { DeployRecipeSteps } from "./ProjectDeployPanel";
 import { ReleaseSetupSteps } from "./ReleasesTab";
 import type { MergeSetupReview } from "../../shared/project-runtime";
 import { Banner, Chip, Icon } from "./ui";
 import { QueueChip } from "./WorktreesModal";
+import { ReviewChangesButton } from "./ReviewChanges";
 
 /** The chat's state moves by the minute; a trial's checks by the second while one runs. */
 const POLL_MS = 5000;
@@ -282,11 +283,30 @@ export function SetupProposalCard(props: { projectId: string; chat: SetupChatVie
       <Section title="Deploy">
         <Show when={p().deploy} fallback={<p class="project-card-note">No deploy recipe in this proposal.</p>}>{(d) => <DeployRecipeSteps recipe={d()} />}</Show>
       </Section>
-      <Show when={p().files?.length}>
-        <p class="project-card-note">
-          Changes <span class="text-mono">{p().files!.join(", ")}</span>
-        </p>
-      </Show>
+      <Section title="What it brings in">
+        <Show when={changedFiles(p().files)} fallback={<p class="project-card-note">Reading what the branch changes. Review Changes shows it in full.</p>}>
+          {(f) => (
+            <>
+              <p class="project-card-note">
+                {changesHead(f().count)} against {p().target}
+                {f().other.length ? `; ${f().other.length} outside the setup, which ${p().served ? "Land" : "Merge Branch"} brings in too.` : "."}
+              </p>
+              <Show when={f().count}>
+                <ul class="setup-files" aria-label={`Files ${p().branch} changes`}>
+                  <For each={f().setup}>{(path) => <li class="text-mono">{path}</li>}</For>
+                  <For each={f().other}>
+                    {(path) => (
+                      <li class="text-mono setup-file-other">
+                        {path} <Chip tone="warn">Outside the setup</Chip>
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+            </>
+          )}
+        </Show>
+      </Section>
       <p class="text-caption setup-trial-line" role="status">
         <Show when={trialLine(p())} fallback={<span class="text-muted">No trial yet. A trial runs the proposed checks on the branch in the merge copy; it saves and merges nothing.</span>}>
           {(l) => (
@@ -303,6 +323,11 @@ export function SetupProposalCard(props: { projectId: string; chat: SetupChatVie
       </p>
       <div class="deploy-actions">
         <SetupLandButton projectId={props.projectId} proposal={p()} onDone={props.onDone} />
+        <ReviewChangesButton
+          branch={p().branch}
+          scope={() => ({ kind: "queue", project: props.projectId, branch: p().branch })}
+          title="The branch as it is now against the branch it lands on. Nothing is changed."
+        />
         <Show when={props.chat.path}>
           {(path) => (
             <>

@@ -100,3 +100,21 @@ export function landState(p: SetupProposal): { action: "land" | "merge" | "trial
   if (!p.land.can) return { action: merge, can: false, why: p.land.why ?? "Not ready to land." };
   return { action: merge, can: true };
 }
+
+/** A path the setup itself owns: the project's definition, or a playbook under .sova/playbooks/. */
+export const isSetupFile = (path: string): boolean => path === ".sova/project.json" || path.startsWith(".sova/playbooks/");
+
+/**
+ * What Land or Merge Branch brings in, as the card lists it: every file the branch changes against its target, the
+ * setup's own first, then the rest, which the card flags (they land too). null while the host hasn't said.
+ */
+export function changedFiles(files: readonly (string | { path: string; status?: string })[] | undefined): { setup: string[]; other: string[]; count: number } | null {
+  if (!files) return null;
+  const paths = files.map((f) => (typeof f === "string" ? f : f.path));
+  const setup = paths.filter(isSetupFile);
+  const other = paths.filter((f) => !isSetupFile(f));
+  return { setup, other, count: paths.length };
+}
+
+/** The heading's count: "Changes 3 files". */
+export const changesHead = (n: number): string => `Changes ${n} ${n === 1 ? "file" : "files"}`;

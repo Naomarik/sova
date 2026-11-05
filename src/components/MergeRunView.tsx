@@ -43,7 +43,11 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
   };
   return (
     <div class="stack mq-run" aria-labelledby="mq-run-title">
+      {/* Back to Queue is the arrow before the path, never a third action that wraps onto a line of its own. */}
       <nav class="mq-crumbs text-caption" aria-label="Breadcrumb">
+        <a class="button button-sm button-ghost button-icon mq-back" href={projectTabHref(props.projectId, "merge-queue")} aria-label="Back to Queue" title="Back to Queue">
+          <Icon name="chevron-left" small />
+        </a>
         <a href={projectTabHref(props.projectId, "merge-queue")}>Merge queue</a>
         <span aria-hidden="true"> › </span>
         <span>{run()?.branch ?? props.runId}</span>
@@ -92,10 +96,6 @@ export function MergeRunView(props: { projectId: string; view: MergeQueueView; r
                   </a>
                 )}
               </Show>
-              <a class="button button-sm button-ghost" href={projectTabHref(props.projectId, "merge-queue")}>
-                <Icon name="chevron-left" small />
-                Back to Queue
-              </a>
             </div>
             <Show when={allLogs()}>
               <AllLogs run={r()} />
@@ -266,6 +266,11 @@ function followScroll(text: Accessor<string | undefined>, running: () => boolean
   };
 }
 
+/** A step's name but its last word, with the space before that word ("Changed " of "Changed extensions"). */
+const headWords = (label: string): string => label.slice(0, label.trimEnd().lastIndexOf(" ") + 1);
+/** A step's name's last word, which its tag is held to. */
+const lastWord = (label: string): string => label.trimEnd().slice(label.trimEnd().lastIndexOf(" ") + 1);
+
 function StepRow(props: { run: MergeRun; step: RunStep; now: Accessor<number> }) {
   const s = () => props.step;
   const tag = () => sourceTag(s().source);
@@ -294,9 +299,19 @@ function StepRow(props: { run: MergeRun; step: RunStep; now: Accessor<number> })
         <span class="visually-hidden">{mark().word}</span>
       </span>
       <div class="mq-step-main">
-        <p class="cluster mq-step-name">
-          <span>{s().label}</span>
-          <Show when={tag()}>{(t) => <QueueChip row={t()} />}</Show>
+        {/* The tag stays on its name's line: it is held to the name's last word, and only the name wraps. */}
+        <p class="mq-step-name">
+          <Show when={tag()} fallback={<span>{s().label}</span>}>
+            {(t) => (
+              <span>
+                {headWords(s().label)}
+                <span class="mq-step-tail">
+                  {lastWord(s().label)}
+                  <QueueChip row={t()} />
+                </span>
+              </span>
+            )}
+          </Show>
         </p>
         <Show when={line()}>
           <p class="text-caption text-muted mq-step-desc" title={line()}>

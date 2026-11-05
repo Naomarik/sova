@@ -686,16 +686,16 @@ shows, top to bottom:
   "Not pushed yet: goes out with the next landing." When a check is red on the target alone, a line
   says so: "Red on {target} alone: {check}". Nothing about live state, and no Restart control.
 - **The queue's head**: its state (Idle, Running, Paused, Not set up, Definition invalid; **Frozen for a
-  release** while a release holds it and it isn't paused), **Pause Queue** or **Resume
-  Queue**, **Queue Settings**, and **Open Merge Thread** when the project has one. While a review
-  runs, **Review running · {branch} · Open** sits beside it (§app.merge-queue/chats). One summary line
+  release** while a release holds it and it isn't paused), **Queue Settings**, and **Pause Queue** or
+  **Resume Queue**. Open Merge Thread is not in the head: it is only in the Merge thread card. While a
+  review runs, **Review running · {branch} · Open** sits beside them (§app.merge-queue/chats). One summary line
   is always shown under it: the checks, the review and its model, and how it lands ("11 checks ·
   review on, Opus 5.5 · pushes to origin"; "opens pull requests on GitHub"). **Queue Settings**
   opens Settings at its Merge Queue tab, on this project (§app.merge-queue/settings). The queue is described as "One branch
   at a time, in order. Each is merged onto {target} in a separate copy and checked there; {target}
   then moves to exactly that commit."
 - **The Merge thread card**, under the head: the thread's state, a question waiting on the user,
-  **Open Merge Thread** and **Start Fresh…**, or a line saying no thread runs now
+  **Open Merge Thread** (the tab's only one) and **Start Fresh…**, or a line saying no thread runs now
   (§app.merge-queue/chats).
 - **Paused**, when paused: the reason in plain words (by you; the target moved outside the queue;
   setup failed on the target itself, twice; the project folder has uncommitted edits; the reviewer failed twice; a landing in flight at a stop needs a look), the
@@ -787,27 +787,39 @@ viewer shows the files alone. What it compares, read by the server from the queu
   one on the branch, against its merge-base with the target;
 - **Recent**: what that landing brought in, from the target before it to the landed commit.
 
-**On a phone** (a screen narrower than 600px) the sections lose their outer card frame and inner
-box: rows are split by hairlines, with 12px side padding. Each row stacks: the branch on its own
-line, wrapping anywhere; a facts line led by the state chip, then the commit and "{n} commits ahead
-· +{a} −{d}" (or the row's own facts); the chat line, where the worktree is named by its folder's
-last name, with the full path as its `title`; and the row's actions (Review Changes, Land ▾ or the
-row's other actions) on their own line under it, Review Changes at the line's left and the row's
-other actions at its right, each button the same size as on a
-wider screen (§chat.composer/worktrees-control, "Row layout").
-Nothing scrolls sideways at 390px. Wider screens show the full path, and lay the row out as the
-Worktrees modal's rows do (§chat.composer/worktrees-control, "Row layout"): from 768px wide the
-actions sit in a column at the row's right, top-aligned; narrower, on their own line under the
-row, right-aligned. Nothing
-is offered only on hover.
+**Its layout follows the queue's own room**, the width the project page gives the tab, never the
+screen's: a phone, the Fold with the sidebar open and a narrow window read alike, and opening or
+closing the sidebar can change it.
+- **Under about 600px of room** the tab loses its outer card frame, and the strip, the Merge thread
+  card, Checking now, the lists and the run page's cards run edge to edge, split by hairlines, with
+  12px side padding. Banners stay boxed, their button under their words. Each row stacks: the
+  branch on its own line, wrapping anywhere; a facts line led by the state chip, then the commit and
+  "{n} commits ahead · +{a} −{d}" (or the row's own facts); the chat line, where the worktree is
+  named by its folder's last name, with the full path as its `title`; and the row's actions
+  (Review Changes, Land ▾ or the row's other actions) on their own line under it, Review Changes at
+  the line's left and the row's other actions at its right, each button the same size as with room.
+  A card's head (Checking now, the Merge thread, History) puts its buttons on their own line under
+  its title. Nothing scrolls sideways at 360px.
+- **With room**, every row of the tab alike (Checking now, Waiting, Needs you, Ready to land, Sent
+  back, Recent and History) shows the full path and puts its actions in a column at its top right,
+  each button at its own width; an open Land confirmation spans the row, at its right. A card's head
+  keeps its title and its buttons on one line.
+
+Where a row's actions sit is decided by the room alone, never by how long the row's words are.
+**Buttons**: every group of buttons on the tab, the run page and the Merge thread card has one even
+gap between buttons and holds them on one centre line, wrapping as a group; a borderless button that
+starts a line lines up with the words above it. On a touch screen the head's, the Merge thread
+card's, banners', History's and the run page's buttons are 44px tall; a row's own actions keep
+Land's size. Nothing is offered only on hover.
 
 **The run page** (`…/merge-queue/<run>`) shows:
+- its path, "Merge queue › {branch}", led by a back arrow named **Back to Queue** that opens the
+  tab (44px square on a touch screen);
 - the branch and its verdict, the base, the branch's commit and the tested commit, when it started
   and how long it took, its chat, and how it was approved;
 - one action row: **View Logs** (outlined, opening full width below the row: every step's log, in
-  order, from the copy's first line), **Open Merge Thread** and **Back to Queue** (both borderless,
-  Back to Queue with a back arrow), all on one line (on a phone, Back to Queue wraps below the other
-  two);
+  order, from the copy's first line) and **Open Merge Thread** (borderless), on one line at every
+  width; Back to Queue is the path's arrow, never a third action;
 - its review, when it has one: each attempt's reviewer chat, as on the rows
   (§app.merge-queue/chats);
 - "Nothing has merged from this run. {target} moves only once every check passes." while it runs,
@@ -821,7 +833,9 @@ is offered only on hover.
 - for a red run, a "Whose failure is it?" block (machine or setup, already failing on the target,
   flaky), drawn from the reruns (§app.merge-queue/blame);
 - **Checks and why**, its legend under the title: every step with its tag and reason, its failures,
-  time and counts, and its log. Each row reads, in this order: its status mark, its name with its
+  time and counts, and its log. Each row reads, in this order: its status mark, its name (its tag,
+  such as **Required**, held to the name's last word: only the name wraps, and the tag drops under it
+  only when that word and the tag can't share a line at all) with its
   description under it (the test counts there too, "11496 passed · 5 skipped", a failed count in
   red), its time in a fixed column aligned right, then **Log**, in the same place on every row. A
   description shows at most 2 lines and ends in "…" when cut; a path in it that starts at the home
@@ -902,14 +916,15 @@ The project's Merge Queue tab (§app.merge-queue/view) is where they are found, 
 **The Merge thread card**, under the queue's head: "Merge thread" with its state chip (**Idle**,
 **Working** while its turn runs, **Asking you** while a question is open), its memory type
 ("UniiChat"; "No memory" when it runs without), when it started, and its last event ("last: Read a
-queued branch · {branch}, {when}"). It has **Open Merge Thread** and **Start Fresh…**, which asks
+queued branch · {branch}, {when}"). It has **Open Merge Thread**, the tab's only one, and **Start
+Fresh…**, on one line, which asks
 first ("This thread is archived once its turn ends, and its memory of past landings goes with it.
 The next event starts a new one. The old thread stays readable in History.", **Cancel** /
 **Start Fresh**). A question it asks shows on the card (§chat.merge-queue/asks). With no thread:
 "No merge thread now: the next event starts one (it reads each branch as it is queued)."
 
-**A running review.** While a review runs, a button beside Open Merge Thread at the top of the
-tab reads "Review running · {branch} · Open" (" (attempt {n})" after the branch on a retry) and
+**A running review.** While a review runs, a button in the queue's head, beside Queue Settings and
+Pause Queue, reads "Review running · {branch} · Open" (" (attempt {n})" after the branch on a retry) and
 opens that reviewer's chat; it goes away when the review ends.
 
 **History**, at the bottom of the tab when the queue has had any chat: every one, the current
@@ -939,7 +954,10 @@ that is refused leaves the row as it was. Both are catalogue commands over `merg
 Every setting a project's merge queue uses shows in one place: the **Merge Queue** tab of the
 Settings dialog (§app/settings-dialog). **Queue Settings** on a project's Merge Queue tab
 (§app.merge-queue/view) opens it already showing that project. The tab shows one project at a
-time, picked in its head from the projects that aren't archived (opened any other way, the first).
+time, picked in its head from the projects that aren't archived (opened any other way, the first);
+the heading stays on one line beside the picker at every width, the picker giving way. A row's tag
+(**Project file**, **This computer**, **Set by Sova**) is a small tag at its own width: at the row's
+end, or under its value once a narrow screen stacks the row, never stretched across it.
 A project the queue doesn't serve yet (its merge setup isn't done) shows, in place of the groups, the
 Merge Queue tab's own words, "No merge queue settings are set up for this project" and "Until they
 are, its chats merge branches into {target} themselves when you ask.", with **Initialize**, and under

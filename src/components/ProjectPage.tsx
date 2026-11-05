@@ -8,6 +8,7 @@ import { createPoll } from "../lib/poll";
 import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, type ProjectTab } from "../lib/projects-route";
 import { summaryChips } from "../lib/project-page";
 import { isGap, openIdeas } from "../lib/project-overseer-view";
+import { projectHostOf } from "../lib/mesh";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { PreviewsCard } from "./PreviewsCard";
@@ -23,6 +24,8 @@ import { ProjectFilesCard } from "./ProjectFilesCard";
 import { ProjectCardsCard } from "./ProjectCardsCard";
 import { ProjectMcpCard } from "./ProjectMcpCard";
 import { ProjectOffersCard } from "./ProjectOffersCard";
+import { ProjectIcon } from "./ProjectIcon";
+import { ProjectIconCard } from "./ProjectIconCard";
 import { createProjectSettings, ProjectAllSettings, ProjectSettingsChanges, ProjectSettingsHistory } from "./ProjectSettingsCards";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
@@ -196,6 +199,7 @@ export function ProjectPage(props: {
     <InsightsPage
       title={project().name}
       titleTip
+      lead={<ProjectIcon project={project()} size={32} local={!projectHostOf(projectId)} class="project-page-icon" />}
       class="project-page"
       back={org?.back() ?? { href: PROJECTS_HREF, label: "Back to Projects" }}
       actions={
@@ -368,6 +372,10 @@ export function ProjectPage(props: {
               const settings = createProjectSettings(projectId);
               return (
                 <>
+                  {/* Its icon (§app.projects/icon): kept on this host. A peer's project shows no card. */}
+                  <Show when={!projectHostOf(projectId)}>
+                    <ProjectIconCard project={project()} onChanged={() => props.refetchProject()} />
+                  </Show>
                   <ProjectSettingsChanges projectId={projectId} data={settings} />
                   <OverseerSettings po={po} placed={!!org} />
                   {org?.settings()}

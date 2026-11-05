@@ -4294,6 +4294,8 @@ export type ScreenPlace = "reply" | "row" | "card";
 //                                  "expired" one can be claimed: it spreads once refreshed. 400 bad
 //                                  body or unknown key, 409 nothing here to claim (logged out or dead)
 //                                  or the logins switch is off, 404 while OFF)
+// POST /api/mesh/home          -> MeshInfo   (bind peers.json to this folder and machine; this host's
+//                                  browser only. 409 when its home is a copy's original, still in use)
 // GET  /api/mesh/hello          -> MeshHello   (this host's own, for the SPA's stale-tab check: id,
 //                                  version, protocol, build. Cheap (a stat), and answered with the
 //                                  mesh off too, no Tailscale call; nodeId only while on)
@@ -4385,6 +4387,9 @@ export interface MeshInfo {
   frontDoor: string | null;
   /** peers.json exists but can't be used (the mesh is OFF because of it). */
   error?: string;
+  /** peers.json belongs to another folder or machine (a copy, a move, unbound): the mesh is OFF.
+      POST /api/mesh/home (this host's browser only) rebinds it here, except for "copied". */
+  homeMismatch?: "copied" | "moved" | "other-machine" | "unbound";
 }
 
 export interface MeshPeerEntry {

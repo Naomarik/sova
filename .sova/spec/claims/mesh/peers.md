@@ -17,7 +17,8 @@ node at its own tailnet address (§mesh.peers/discovery).
 
 ## §mesh.peers/off — With no peer configured, nothing changes
 
-The mesh is **on** exactly when this host's `peers.json` lists at least one peer. While it is off,
+The mesh is **on** exactly when this host's `peers.json` lists at least one peer and belongs here
+(§mesh.peers/allowlist). While it is off,
 Sova behaves as it did before the mesh existed, except for the Mesh card, the `#/mesh` page and the
 Mesh section of Settings: no new listening port, no Tailscale call, no timer, no outbound request, no
 write to `auth.json`, to Claude Code credentials or to any settings file (apart from what the user
@@ -33,6 +34,16 @@ only, and a `SessionSummary` carries no host or peer field.
 `peers.json` in Sova's state directory (mode 0600, written atomically) names this host and the
 peers it trusts, by Tailscale node identity. The user curates it, from the Mesh page or by hand.
 Discovery only suggests candidates; a node never becomes a peer by being on the tailnet.
+`peers.json` also records where it lives: its folder and this computer. A `peers.json` in Sova's
+usual state directory with no record records this itself the first time Sova starts there, and a
+write Sova makes to a `peers.json` with no peers yet (a first pairing) records this folder; one with
+no record in any other folder is not trusted. A `peers.json` recorded for another folder or another
+computer, or not trusted, leaves the mesh fully off (§mesh.peers/off): no connections and no sync of
+logins, settings, themes or extensions, until the user confirms it with Reconnect Here on the Mesh
+page (§mesh.ui/page), which moves the record here and answers only this host's own browser. A moved
+folder never reconnects on its own. A copy on the same computer while the recorded folder still holds
+its own `peers.json` never joins: it has no Reconnect Here and no override. Known gap: on a computer
+whose id Sova can't read (macOS), only the folder is compared.
 Pairing a peer from the Mesh page's form also records what it may see and do here (§mesh.peers/grants),
 `presence` unless the user picks more.
 

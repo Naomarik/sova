@@ -122,7 +122,7 @@ import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { UsagePerformance } from "../../shared/usage/perf";
 import { MAX_USAGE_SESSIONS, type PricesInfo, type UsageCosts, type UsageSessionSpend, type UsageSessionsRequest, type UsageSessionsTotals, type UsageToday } from "../../shared/usage/wire";
 import type { ProjectRuntimeView } from "../../shared/project-runtime";
-import type { ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
+import type { ProjectIconInfo, ProjectList, ProjectRegistered, ProjectSummary } from "../../shared/projects";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch, ProjectWorktrees } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
@@ -1076,6 +1076,9 @@ export const fetchMesh = (init?: RequestInit) => request<MeshInfo>("/api/mesh", 
 /** This host's own hello: its version and wire-contract fingerprint. */
 export const fetchMeshHello = () => request<MeshHello>("/api/mesh/hello", meshReadInit(true));
 
+/** Reconnect Here: bind peers.json to this folder and machine; the answer is the mesh after it. */
+export const reconnectMeshHere = () => request<MeshInfo>("/api/mesh/home", { method: "POST" });
+
 /** Replace peers.json's list; the answer is the mesh as it stands after the write. An entry
     without `nodeId` is resolved by its name on the tailnet. `grants` names the preset of a peer this
     write pairs (by id; §mesh.peers/grants). */
@@ -1307,6 +1310,11 @@ export const patchProject = (pid: string, patch: { name?: string; root?: string 
 /** Archive a project (§app.organizations/archive): 409 naming what is open; Unarchive brings it back. */
 export const archiveProject = (pid: string) => request<ProjectSummary>(`${projectPath(pid)}/archive`, jsonInit("POST", {}));
 export const unarchiveProject = (pid: string) => request<ProjectSummary>(`${projectPath(pid)}/unarchive`, jsonInit("POST", {}));
+/** A project's icon (§app.projects/icon): what it is now (rescans the folder), an upload, letters on or off, the upload removed. */
+export const getProjectIconInfo = (pid: string) => request<ProjectIconInfo>(`${projectPath(pid)}/icon/info`, { cache: "no-store" });
+export const uploadProjectIcon = (pid: string, png: string) => request<ProjectIconInfo>(`${projectPath(pid)}/icon`, jsonInit("PUT", { png }));
+export const setProjectIconLetters = (pid: string, letters: boolean) => request<ProjectIconInfo>(`${projectPath(pid)}/icon`, jsonInit("PATCH", { letters }));
+export const removeProjectIcon = (pid: string) => request<ProjectIconInfo>(`${projectPath(pid)}/icon`, { method: "DELETE" });
 
 // ---- the org's owner and the Owner page (§app/owner-page; routes in shared/owner.ts) ----
 /** Set the org's owner (an active roster person's id), or none. */

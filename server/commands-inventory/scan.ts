@@ -55,7 +55,7 @@ const exactly = (routes: readonly RouteKey[]) => (m: string, p: string) => route
 export const PAGE_PLUMBING: readonly RouteKey[] = [
   "GET /api/attachment", "DELETE /api/attachment", "POST /api/upload", "GET /api/transcript/tool",
   "GET /api/links/:id/thread", "POST /api/links/:id/seen", "GET /api/targets/:name/folders", "GET /api/explanations",
-  "GET /api/sessions/dir", "GET /api/projects/:pid/mcp",
+  "GET /api/sessions/dir", "GET /api/projects/:pid/mcp", "GET /api/projects/:pid/icon",
 ];
 /** Steps of starting a chat, on its empty screen before the first message (`session.create` takes a profile itself). */
 export const CHAT_START: readonly RouteKey[] = ["POST /api/sessions/loadout", "POST /api/sessions/profile"];
@@ -144,7 +144,7 @@ export const ROUTE_CLASSES: readonly RouteClass[] = [
   {
     id: "page-plumbing",
     label: "Page plumbing",
-    why: "Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name). Exactly these routes (`PAGE_PLUMBING`).",
+    why: "Requests a view, the composer or a link card makes to draw itself (attachments and uploads, a tool row's contents, a link's thread and seen mark, the remote folder picker's listing, the explanations feed, the empty list's folder name, a project's icon picture). Exactly these routes (`PAGE_PLUMBING`).",
     matches: exactly(PAGE_PLUMBING),
   },
   {

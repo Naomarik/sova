@@ -571,3 +571,41 @@ test("conflicts: both sides adding items is resolved as no behaviour change with
   assert.equal(differs.args.verdict, "behaviour-differs");
   assert.equal(differs.args.commit, undefined);
 });
+
+// ---- picks carry their select; the method is reread at every event ----------------------------------
+
+test("queued: the pick's call shape carries select, as the method's picks page says", () => {
+  const text = eventText(queued("mq_9"));
+  assert.ok(text.includes('merge.extend {entry: "mq_9", checks: [id], why, select}'), text);
+  assert.match(text, /select is part of the pick/);
+  const picks = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "references", "picks.md"), "utf8");
+  assert.ok(picks.includes("`merge.extend {entry, checks: [id], why, select}`"));
+  assert.ok(readFileSync(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md"), "utf8").includes("`merge.extend {entry, checks: [id], why, select}`"));
+});
+
+test("every event tells the thread to read its moment's Read as you go row now, never from memory, and the method has a row for each", async () => {
+  const { READ_AS_YOU_GO } = await import("./thread");
+  const evs: ThreadEvent[] = [
+    queued(),
+    { kind: "conflict", entry: entry(), run: "mr_1", files: ["a.ts"] },
+    { kind: "failed", entry: entry(), run: "mr_1" },
+    { kind: "paused", why: "x" },
+    { kind: "idle", entry: entry() },
+    { kind: "names", file: "/s/names.json", target: "main" },
+    { kind: "answer", ask: { id: "ak_1", question: "q?" }, text: "yes", from: "the user" },
+  ];
+  assert.deepEqual(evs.map((e) => e.kind).sort(), Object.keys(READ_AS_YOU_GO).sort(), "every event kind the thread is sent has a moment");
+  const method = readFileSync(join(DEFAULT_PLAYBOOK_DIR, "PLAYBOOK.md"), "utf8");
+  const table = method.slice(method.indexOf("## Read as you go"), method.indexOf("## Each event"));
+  assert.ok(table.length > 20, "the method has its Read as you go section");
+  for (const ev of evs) {
+    const text = eventText(ev);
+    const moment = READ_AS_YOU_GO[ev.kind];
+    assert.ok(text.endsWith(`read your playbook's "Read as you go" row for ${moment} and the pages it names, now, never from memory (the project's own playbook wins where its list differs).`), `${ev.kind}: ${text}`);
+    assert.ok(table.includes(`| **${moment}** |`), `the method's table has a ${moment} row`);
+  }
+  // Memory is for history only; the project's own table may override the rows.
+  assert.match(method, /use it for history only/);
+  assert.match(method, /never from memory/);
+  assert.match(table, /A project's own playbook may give its own "Read as you go" table: its row wins where it differs/);
+});

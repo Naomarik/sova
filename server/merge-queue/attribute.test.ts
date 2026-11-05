@@ -48,7 +48,7 @@ describe("whose failure is it", () => {
   });
 
   test("nothing red: passed, no notes", () => {
-    expect(summarize([])).toEqual({ verdict: "passed", notes: [], targetRed: [], unclear: [] });
+    expect(summarize([])).toEqual({ verdict: "passed", notes: [], targetRed: [], unclear: [], broken: [] });
   });
 
   test("a whole check red on both sides naming nothing: unattributed, never passed as the target's; the branch's own failure still wins", () => {
@@ -71,5 +71,31 @@ describe("a file the target's rerun never ran", () => {
     expect(a.unclear).toEqual([{ id: "integration", label: "Integration", why: "can't tell whose failure: Integration's g.integration.test.ts didn't run on master alone" }]);
     // A failure proven the branch's still fails the run.
     expect(summarize([{ id: "integration", label: "Integration", unclearFiles: ["g.ts"], files: [{ file: "e.ts", blame: "branch" }] }]).verdict).toBe("failed");
+  });
+});
+
+describe("broken on the target", () => {
+  test("a test check red with the same non-zero exit and no test run on the merge, the tip and the target alone is broken there", async () => {
+    const { brokenOnTarget } = await import("./attribute");
+    const two = { code: 2, noTest: true };
+    expect(brokenOnTarget({ testCheck: true, runs: [two, two, two] })).toBe(true);
+    expect(brokenOnTarget({ testCheck: false, runs: [two, two, two] })).toBe(false); // a build or typecheck keeps its own rules
+    expect(brokenOnTarget({ testCheck: true, runs: [two, two, { code: 1, noTest: true }] })).toBe(false); // another exit
+    expect(brokenOnTarget({ testCheck: true, runs: [two, two, { code: 2, noTest: false }] })).toBe(false); // tests ran on the target
+    expect(brokenOnTarget({ testCheck: true, runs: [{ code: 0, noTest: true }, { code: 0, noTest: true }, { code: 0, noTest: true }] })).toBe(false);
+    expect(brokenOnTarget({ testCheck: true, runs: [{ code: null, noTest: true }, { code: null, noTest: true }, { code: null, noTest: true }] })).toBe(false); // killed
+    expect(brokenOnTarget({ testCheck: true, runs: [two, two] })).toBe(false); // never without the target's run
+  });
+
+  test("a broken check never blocks: noted as red on the target, flagged, the run passes", () => {
+    const why = "Slow test group is broken on master: no test ran (run-tests: --groups needs a value)";
+    const a = summarize([{ id: "integration-group", label: "Slow test group", whole: "broken", why }]);
+    expect(a.verdict).toBe("passed");
+    expect(a.notes).toEqual([{ kind: "master-red", text: why }]);
+    expect(a.targetRed).toEqual(["Slow test group"]);
+    expect(a.broken).toEqual([{ id: "integration-group", label: "Slow test group", why }]);
+    expect(a.unclear).toEqual([]);
+    // Beside a branch's own failure, the branch's still decides.
+    expect(summarize([{ id: "integration-group", label: "Slow test group", whole: "broken", why }, { id: "unit", label: "Unit", whole: "branch" }]).verdict).toBe("failed");
   });
 });

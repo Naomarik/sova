@@ -203,8 +203,15 @@ export interface MergeEntry {
   position?: number;
   /** One line: why it stands where it stands ("conflicts in 2 files", "unit failed: src/a.test.ts"). */
   reason?: string;
-  /** The branch moved past the pinned commit since approval: how many commits are not included. */
+  /** The branch moved past the pinned commit since approval: how many of its own commits (first-parent, none the
+   *  target already has) are not included. On a sent-back entry: how many Land This Commit Again brings in. */
   newerCommits?: number;
+  /** Sent back, and the branch was amended or rebased since: its tip isn't a descendant of the pinned commit. There is
+   *  nothing to count (`newerCommits` absent); the re-land still lands the tip. */
+  newerRewritten?: true;
+  /** Sent back and moved on: why the branch's newest commit isn't Ready to land (its chat's readiness reading, else a
+   *  temporary commit or uncommitted files); absent when it is. */
+  newerBlocked?: string;
   /** The run now checking it, or the last one that did. */
   run?: string;
   /** Every run it had, oldest first. */
@@ -294,6 +301,9 @@ export interface RunStep {
   log: string;
   counts?: { passed: number | null; failed: number | null; skipped: number | null } | null;
   failures?: { file?: string; name?: string; message?: string; blame?: Blame }[];
+  /** rerun-master: the check is broken on the target (a test check that ran no test anywhere): skipped for this
+   *  branch, `detail` the flag line. */
+  broken?: true;
   /** check: how many of its test files already passed on identical code (the re-checked ones too); the step's log
    *  lists each and its source run. Its time says nothing about the check's full length (the estimate skips it). */
   reused?: number;
@@ -358,6 +368,18 @@ export interface PauseInfo {
  *  nothing yet (onboarding; no approval accepted). */
 export type ChecksDeclared = "declared" | "test-command" | "none" | "unset";
 
+/** One test check broken on the target: "<label> is broken on <target>: no test ran (<first log line>)". */
+export interface TargetBroken {
+  check: string;
+  label: string;
+  why: string;
+  /** The run that found it, and its step on the target alone (its log). */
+  run: string;
+  step: string;
+  /** When it was first found (ISO); later runs that find it again keep it. */
+  at: string;
+}
+
 export interface MergeQueueHeads {
   /** The target's head now. */
   target: string;
@@ -369,6 +391,9 @@ export interface MergeQueueHeads {
   pushWhy?: string;
   /** Checks red on the target alone, by label. */
   targetRed?: string[];
+  /** Test checks broken on the target (no test ran on the merge, the tip or the target alone, same exit each time):
+   *  skipped for every branch meanwhile, shown in the tab's Needs you until a later run of that check runs tests. */
+  targetBroken?: TargetBroken[];
   /** Request projects: how many commits local target is behind origin's (as last fetched); Update Local Main. */
   behind?: number;
   /** Update Local Main can't now: why (the main folder has uncommitted edits). */
@@ -484,7 +509,7 @@ export interface MergeUnclear {
   why?: string;
 }
 
-export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted"> & {
+export type WorktreeQueueInfo = Pick<MergeEntry, "id" | "state" | "position" | "commit" | "reason" | "newerCommits" | "newerRewritten" | "newerBlocked" | "eta" | "notes" | "landed" | "conflict" | "review" | "unclear" | "request" | "settled" | "redrafted"> & {
   project: string;
   run?: string;
   /** The run's newest reviewer chat (Open Reviewer Chat on the branch's Worktrees row), while it runs and after. */
@@ -683,6 +708,8 @@ export interface MergeCard {
   eta?: MergeEntry["eta"];
   reason?: string;
   newerCommits?: number;
+  newerRewritten?: true;
+  newerBlocked?: string;
   run?: string;
   /** Checking: steps finished of all the run's steps. */
   progress?: { done: number; total: number };

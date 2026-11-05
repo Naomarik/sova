@@ -95,7 +95,8 @@
 // 50 failures; `failingFiles` lists every failing file, uncapped; `ranFiles` every file it ran, after any
 // --landing/--changed/--groups selection, so a merge run tells a file that passed from one never run): one per failing test (bun's `(fail)` lines, the error printed above each as its
 // message), and a file that failed with no failing test (a crash, a load error, a kill) counts as an
-// error with the file as its name. On Node (whose output isn't read) only failing files are named.
+// error with the file as its name. On Node (whose output isn't read) only failing files are named. A usage
+// error writes a report counting nothing too (exit 2), so a merge check can tell "no test ran" from a crash (no report).
 // --plan and an empty selection write none. With reuse, reused files count as passed (and in
 // ranFiles), and `reused: {files, of, at, from, rechecked, list: [{file, at, from, run}]}` says which
 // stood on an earlier pass; a run that ran nothing writes `skipped: "already passed on identical code
@@ -305,7 +306,7 @@ for (let i = 0; i < argv.length; i++) {
   const a = argv[i];
   if (a === "--") continue;
   if (!(a in own)) { rest.push(a); continue; }
-  if (own[a] && (i + 1 >= argv.length || argv[i + 1].startsWith("-"))) { console.error(`run-tests: ${a} needs a value\n${USAGE}`); process.exit(2); }
+  if (own[a] && (i + 1 >= argv.length || argv[i + 1].startsWith("-"))) usageExit(`run-tests: ${a} needs a value\n${USAGE}`);
   opts[a] = own[a] ? argv[++i] : true;
 }
 const runtime = opts["--runtime"] ?? chosenRuntime();
@@ -313,10 +314,7 @@ const picks = ["--changed", "--landing", "--groups"].filter((o) => opts[o]);
 const groupNames = opts["--groups"] ? opts["--groups"].split(",").map((s) => s.trim()).filter(Boolean) : [];
 const badGroup = groupNames.find((n) => n !== "all" && !GROUPS.some((g) => g.name === n));
 if (badGroup) console.error(`run-tests: no test group ${badGroup} (groups: ${GROUPS.map((g) => g.name).join(", ")}, all)`);
-if ((runtime !== "node" && runtime !== "bun") || (opts["--integration"] && opts["--all"]) || picks.length > 1 || (opts["--base"] && !opts["--changed"] && !opts["--landing"]) || badGroup || (opts["--groups"] && !groupNames.length)) {
-  console.error(USAGE);
-  process.exit(2);
-}
+if ((runtime !== "node" && runtime !== "bun") || (opts["--integration"] && opts["--all"]) || picks.length > 1 || (opts["--base"] && !opts["--changed"] && !opts["--landing"]) || badGroup || (opts["--groups"] && !groupNames.length)) usageExit(USAGE);
 // The slow groups are integration files: --landing and --groups mean that tier unless one is named.
 if ((opts["--landing"] || opts["--groups"]) && !opts["--all"]) opts["--integration"] = true;
 // Tests make plain folders in the temp dir and register them as projects; inside a checkout each one
@@ -334,10 +332,7 @@ const named = rest.filter((a) => !a.startsWith("-"));
 // A folder reaches the test runner whole, each tier's files in one lane: a fixture whose setup the tier guard stops then
 // writes to its empty root, which is this checkout. Name the files.
 const folder = named.find((a) => fs.statSync(path.resolve(ROOT, a), { throwIfNoEntry: false })?.isDirectory());
-if (folder) {
-  console.error(`run-tests: ${folder} is a folder: name its test files, or use --changed\n${USAGE}`);
-  process.exit(2);
-}
+if (folder) usageExit(`run-tests: ${folder} is a folder: name its test files, or use --changed\n${USAGE}`);
 const tiersAsked = opts["--all"] ? ["unit", "integration"] : opts["--integration"] ? ["integration"] : ["unit"];
 let files = named.length
   ? named
@@ -440,6 +435,14 @@ if (!sets.length) {
   console.log("run-tests: no test file to run.");
   writeSovaOut({ passed: 0, failed: 0, errors: 0, skipped: 0, failures: [], ranFiles: [] });
   process.exit(0);
+}
+
+/** A usage error: nothing ran, and the report says so (a merge check reads "no test ran" only from a report that counts
+ *  none; no report at all could be a crash midway). Reachable from the argument parsing: a hoisted function over `fs`. */
+function usageExit(message) {
+  console.error(message);
+  writeSovaOut({ passed: 0, failed: 0, errors: 0, skipped: 0, failures: [], ranFiles: [] });
+  process.exit(2);
 }
 
 /** The run's report in $SOVA_OUT, when the caller asked for one (the header). Best effort. */

@@ -148,19 +148,20 @@
   background: var(--color-surface);
 }
 .landing-strip .landing-icon { margin-top: 0; }
-.landing-strip .landing-lines { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-1); row-gap: 0; }
-.landing-strip .landing-head { flex: 0 1 auto; max-width: 70%; }
+/* One line, "Title · sub [chip]", the track under it. A grid, so the title (then the sub) ellipsizes first: the
+   title's column gives way down to nothing, the sub keeps 64px, and the chip is never cut (the strip shows its
+   first chip only, the warn one when there is one; the sheet and the accessible name carry them all). */
+.landing-strip .landing-lines { display: grid; grid-template-columns: minmax(0, auto) minmax(min-content, 1fr); align-items: baseline; column-gap: var(--space-1); row-gap: 0; }
+.landing-strip .landing-head { min-width: 0; }
 .landing-strip .landing-title,
 .landing-strip .landing-sub { display: block; white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
-.landing-strip .landing-subrow { flex: 1 1 0; flex-wrap: nowrap; }
-.landing-strip .landing-subrow > .landing-sub { flex: 1 1 0; }
-/* The strip shows its first chip only (the warn one when there is one); the sheet shows them all. Never past the
-   chevron: the chips give way before the sub line's last 64px. */
-.landing-strip .landing-chips { flex: 0 1 auto; flex-wrap: nowrap; min-width: 0; overflow: hidden; }
-.landing-strip .landing-chips > .landing-chip:not(:first-child) { display: none; }
-.landing-strip .landing-subrow > .landing-sub { min-width: 64px; }
+.landing-strip .landing-subrow { min-width: 0; flex-wrap: nowrap; }
+/* width 0: the column sizes by the 64px floor and the chip, never by the sub line's whole text. */
+.landing-strip .landing-subrow > .landing-sub { flex: 1 1 0; width: 0; min-width: 64px; }
 .landing-strip .landing-sub::before { content: "· "; }
-.landing-strip .landing-track-row { flex: 0 0 100%; margin-top: 3px; }
+.landing-strip .landing-chips { flex: none; flex-wrap: nowrap; }
+.landing-strip .landing-chips > .landing-chip:not(:first-child) { display: none; }
+.landing-strip .landing-track-row { grid-column: 1 / -1; margin-top: 3px; }
 .landing-strip .landing-chip { padding-block: 0; }
 .landing-sheet { padding-bottom: env(safe-area-inset-bottom); }
 .landing-sheet-head,

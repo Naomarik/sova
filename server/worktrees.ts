@@ -26,7 +26,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, statSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, normalize, resolve, sep } from "node:path";
@@ -35,6 +35,7 @@ import type { SessionWorktrees, WorktreeStatus, WorktreesInsight } from "../shar
 import { headerOf } from "./harness/pi/reader";
 import { resolveSessionPath } from "./paths";
 import { parseTargetCwd } from "./targets";
+import { trialMergeTree } from "./merge-tree-probe";
 
 const GIT_TIMEOUT_MS = 5_000;
 const MAX_CONCURRENT = 4;
@@ -1000,14 +1001,13 @@ export class WorktreeInsights {
   /** Whether merging HEAD into the base would leave the base's tree unchanged (a squash or rebase
       merge already landed it). true / false, `{conflicts}` when the merge conflicts (how many
       files), or why it couldn't tell. The merge's new objects go to a temporary object directory,
-      so the repository is not written. */
+      so the repository is not written, and git runs outside the checkout (merge-tree-probe.ts): a
+      merge driver's temp files can never be left in it. */
   private async mergesToBase(cwd: string, layout: Layout, base: string, head: string): Promise<boolean | { conflicts: number } | string> {
-    let scratch: string | null = null;
     try {
-      scratch = await mkdtemp(join(this.scratchDir ?? tmpdir(), "sova-merge-tree-"));
-      const env = { GIT_OBJECT_DIRECTORY: scratch, GIT_ALTERNATE_OBJECT_DIRECTORIES: join(layout.commonDir, "objects") };
+      const git: GitRunner = (args, opts) => this.git(opts.cwd, args, opts.env);
       const [merged, baseTree] = await Promise.all([
-        this.git(cwd, ["merge-tree", "--write-tree", "--no-messages", base, head], env),
+        trialMergeTree(git, { top: layout.top, gitDir: layout.gitDir, commonDir: layout.commonDir, base, head, ...(this.scratchDir ? { scratchParent: this.scratchDir } : {}) }),
         this.git(cwd, ["rev-parse", `${base}^{tree}`]),
       ]);
       if (merged.code === 1) return { conflicts: conflictedFiles(merged.stdout) }; // conflicts: not in the base
@@ -1016,8 +1016,6 @@ export class WorktreeInsights {
       return (merged.stdout.split("\n", 1)[0] ?? "").trim() === baseTree.stdout.trim();
     } catch (err) {
       return `merge-tree: ${(err as Error).message}`;
-    } finally {
-      if (scratch) await rm(scratch, { recursive: true, force: true }).catch(() => {});
     }
   }
 

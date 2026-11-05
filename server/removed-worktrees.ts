@@ -4,11 +4,10 @@
 // `goneTreeState` so an owner whose merged worktree was removed (by the cleanup button, another
 // session's plain git, or by hand) reads merged, never in progress. Git by argv, read-only.
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import type { TrackedWorktree } from "../pi-config/extensions/worktrees/state.ts";
 import { stateRoot } from "./state-root";
+import { trialMergeTree } from "./merge-tree-probe";
 import { execGit, type GitRunner } from "./worktrees";
 
 /** One removal Sova's cleanup made. */
@@ -67,26 +66,26 @@ export function appendLedger(add: readonly RemovedWorktree[], file = ledgerFile(
   cached = null;
 }
 
-/** Merged by content: merging `tip` into `main` leaves main's tree as it is. Objects go to a throwaway directory. */
+/** Merged by content: merging `tip` into `main` leaves main's tree as it is. Objects go to a throwaway directory, and
+    git runs outside the checkout `cwd` (merge-tree-probe.ts). */
 const contentCache = new Map<string, boolean>();
 export async function mergedByContent(git: GitRunner, cwd: string, commonDir: string, main: string, tip: string): Promise<boolean> {
   const key = `${commonDir}\0${main}\0${tip}`;
   const hit = contentCache.get(key);
   if (hit !== undefined) return hit;
-  let scratch: string | null = null;
   let value = false;
   try {
-    scratch = await mkdtemp(join(tmpdir(), "sova-cleanup-merge-tree-"));
-    const env = { GIT_OBJECT_DIRECTORY: scratch, GIT_ALTERNATE_OBJECT_DIRECTORIES: join(commonDir, "objects") };
-    const [merged, tree] = await Promise.all([git(["merge-tree", "--write-tree", "--no-messages", main, tip], { cwd, env }), git(["rev-parse", `${main}^{tree}`], { cwd })]);
+    // Outside the checkout (merge-tree-probe.ts): a driver's temp files can never be left in it.
+    const [merged, tree] = await Promise.all([
+      trialMergeTree(git, { top: cwd, gitDir: commonDir, commonDir, base: main, head: tip }),
+      git(["rev-parse", `${main}^{tree}`], { cwd }),
+    ]);
     if (merged.code !== 0 && merged.code !== 1) return false; // can't tell: not merged (and not cached)
     value = merged.code === 0 && tree.code === 0 && (merged.stdout.split("\n", 1)[0] ?? "").trim() === tree.stdout.trim();
     contentCache.set(key, value);
     if (contentCache.size > 2000) contentCache.delete(contentCache.keys().next().value!);
   } catch {
     return false;
-  } finally {
-    if (scratch) await rm(scratch, { recursive: true, force: true }).catch(() => {});
   }
   return value;
 }

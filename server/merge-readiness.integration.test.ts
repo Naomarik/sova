@@ -148,7 +148,7 @@ test("a node merge driver run from an absolute path: an edit to a file it import
     writeFileSync(join(core, "decide.mjs"), "export const code = 0;\n");
     await tick(1);
     assert.equal(state()?.state, "merged", "the imported file's change alone: the trial merge now lands nothing new");
-    assert.ok(calls.some((a) => a[0] === "merge-tree"));
+    assert.ok(calls.some((a) => a.includes("merge-tree")));
   } finally {
     await r.readinessIdle();
     r.resetReadiness();

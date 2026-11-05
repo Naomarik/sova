@@ -37,9 +37,10 @@ workers, team members, the spec writer and the reviewer. Each chat picks one in 
 - [Worktrees and changes](/docs/worktrees-and-changes/): work in a separate worktree, and read
   every change as steps before it lands.
 - [Merge queue](/docs/merge-queue/): each branch is merged onto the newest main branch in a copy,
-  checked there, and lands as exactly the commit that was tested.
+  checked there, and lands as exactly the commit that was tested. Its
+  [settings](/docs/merge-queue-settings/) are in Settings → Merge Queue.
 - [Releases](/docs/releases/): cut a numbered version from a project's Releases tab, and publish it
-  when you say so.
+  when you say so. Its [settings](/docs/release-settings/) live in the project's own files.
 - [MCP servers](/docs/mcp-servers/): give your chats more tools, from an address, a command or a
   project's `.mcp.json`.
 - [Needs you and phone notifications](/docs/needs-you/): the sessions waiting on you, in the sidebar

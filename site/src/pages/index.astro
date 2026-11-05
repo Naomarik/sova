@@ -10,6 +10,7 @@ import FoldDevice from "../components/screens/FoldDevice.astro";
 import ScreenFrame from "../components/screens/ScreenFrame.astro";
 import Overseer from "../components/screens/Overseer.astro";
 import Phones from "../components/screens/Phones.astro";
+import ShotFrame from "../components/screens/ShotFrame.astro";
 import { themes } from "../data/themes";
 import { hasVideo } from "../data/screens";
 import * as site from "../data/site";
@@ -40,6 +41,14 @@ const cards = [
     body: "A read-only link to a session or part of it, as a snapshot or live. You see who opened each one.",
     limit: `Needs an address you set up (<a href="${site.publicLinksDoc}">how</a>). Recipients need no account.`,
   },
+];
+
+// From approval to landing, in the merge queue's order.
+const landing = [
+  { title: "You approve it", body: "Press <strong>Land</strong>, or type “land it” in the branch's own chat. Only your own word counts." },
+  { title: "Merged in a copy", body: "Onto the newest main branch, in a copy beside the project, never in your folders." },
+  { title: "Checked", body: "The project's checks run on that merge, plus any the merge thread picks for what changed." },
+  { title: "Landed as tested", body: "The main branch moves to exactly the commit that passed, then it's pushed." },
 ];
 
 const beyond = [
@@ -180,6 +189,54 @@ const beyond = [
             <p class="feature-more"><a href="/docs/phone/">Phone docs<Icon name="arrow-right" size={14} /></a></p>
           </div>
           <div class="feature-visual"><Phones /></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- LANDING AND RELEASES -->
+    <section class="section" id="landing" aria-labelledby="landing-title">
+      <div class="wrap">
+        <div class="section-head section-head-center">
+          <span class="eyebrow">Landing and releases</span>
+          <h2 class="h-section" id="landing-title">Branches land one at a time, as they were tested.</h2>
+          <p class="lead">Each project gets a merge queue. Nothing reaches its main branch until you say so, and what lands is exactly the commit that passed.</p>
+        </div>
+
+        <ol class="perks perks-four landing-steps">
+          {landing.map((s, i) => (
+            <li class="perk">
+              <h3><span class="eyebrow-num">{String(i + 1).padStart(2, "0")}</span>{s.title}</h3>
+              <p set:html={s.body} />
+            </li>
+          ))}
+        </ol>
+
+        <article class="feature landing-feature">
+          <div class="feature-copy">
+            <span class="eyebrow">Merge queue</span>
+            <h3 class="h-feature">One queue per project, one branch at a time.</h3>
+            <div class="prose">
+              <p>The project's Merge Queue tab shows what is being checked now, the branches waiting in line, and the recent landings. A red check counts against the branch only once the same check has passed on the main branch alone.</p>
+              <p>The merge thread, a chat of the queue's own, notes each landing, picks extra tests and judges conflicts. It never moves the main branch itself.</p>
+            </div>
+            <p class="limit"><Icon name="info" size={18} /><span>A project joins the queue once you set up its checks, from <strong>Initialize</strong> on its Merge Queue tab. It can land by pull or merge request instead.</span></p>
+            <p class="feature-more"><a href="/docs/merge-queue/">Merge queue docs<Icon name="arrow-right" size={14} /></a><a href="/docs/merge-queue-settings/">Its settings<Icon name="arrow-right" size={14} /></a></p>
+          </div>
+          <div class="feature-visual"><ShotFrame shot="merge-queue-tab" focus="80%" alt="A project's Merge Queue tab: the main branch at its commit, the branch being checked with its meter, the branches waiting in line, and the recent landings with their notes." /></div>
+        </article>
+
+        <article class="feature feature-flip">
+          <div class="feature-copy">
+            <span class="eyebrow">Releases</span>
+            <h3 class="h-feature">Cut a release. Publish when you say so.</h3>
+            <div class="prose">
+              <p><strong>Start Release</strong> opens a chat that follows the project's release playbook: it picks the version, writes the notes and makes the release commit. The queue holds every other branch while it runs, the release checks run on its commit, and a held step, such as trying it on your live server, waits for your Continue.</p>
+              <p><strong>Publish</strong> tags the release, moves its channel and pushes them to <code>origin</code> in one step, or changes nothing.</p>
+            </div>
+            <p class="limit"><Icon name="info" size={18} /><span>Off until you set them up (<strong>Set Up Releases</strong>). A numbered tag is never moved or deleted; Withdraw moves only the channel back.</span></p>
+            <p class="feature-more"><a href="/docs/releases/">Releases docs<Icon name="arrow-right" size={14} /></a><a href="/docs/release-settings/">Release settings<Icon name="arrow-right" size={14} /></a></p>
+          </div>
+          <div class="feature-visual"><ShotFrame shot="releases-tab" focus="55%" alt="A project's Releases tab: a release in progress with its steps and their states, a step held for you, and Publish." /></div>
         </article>
       </div>
     </section>

@@ -137,3 +137,7 @@
   .docs-pager-next { grid-column: 1; }
   .docs-pager > span:empty { display: none; }
 }
+
+/* A screenshot in a page (a `screen:` line): the column's width, in a rounded frame like the app's. */
+.docs-body .docs-shot { margin-block: var(--space-5); }
+.docs-shot img { display: block; width: 100%; height: auto; border-radius: var(--r-lg); border: var(--stroke-thin) solid var(--color-border); box-shadow: var(--shadow-1); }

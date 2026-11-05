@@ -33,6 +33,24 @@ export function screen(slot: string): Screen {
   return byId(id, `slot ${slot}`);
 }
 
+// Shots captured from a running Sova rather than the demo story (site/scripts/screens/capture-live.mjs)
+// sit in live/ with their own manifest; either may be missing.
+const later = import.meta.glob<{ default: ImageMetadata }>(["../assets/screens/*.webp", "../assets/screens/live/*.webp"], { eager: true });
+const liveManifest = Object.values(import.meta.glob<{ shots?: Record<string, ShotEntry> }>("../assets/screens/live/manifest.json", { eager: true, import: "default" }))[0];
+const liveShots: Record<string, ShotEntry> = liveManifest?.shots ?? {};
+
+/** A shot that may not be captured yet (the merge queue and release screens), by its shot id in the screens manifest or the
+    live/ one, else by a master named `<id>.webp` in either folder with `alt` as its words. Null when neither is there: the landing shows a
+    marked placeholder in its place, and a docs page leaves its figure out. */
+export function optionalShot(id: string, alt: string): Screen | null {
+  for (const [dir, shots] of [["", m.shots], ["live/", liveShots]] as const) {
+    const entry = shots[id];
+    const image = later[`../assets/screens/${dir}${entry?.file ?? `${id}.webp`}`]?.default;
+    if (image) return { id, image, alt: entry?.alt ?? alt, viewport: entry?.viewport ?? "desktop" };
+  }
+  return null;
+}
+
 export interface Video {
   /** AV1 first, H.264 as the fallback: the browser plays the first whose type it can. */
   sources: VideoSource[];

@@ -22,7 +22,8 @@ Releases are off until a project is set up for them. On the project page's **Rel
 version, its changelog, its remotes and checks) and asks you how it releases: the version rule, the
 notes, the channel, each step and who does it, the checks only a release runs, a live try-out, and
 what happens after publishing. It then proposes a release playbook and a `release` section of the
-project's `.sova/project.json` on a branch, which you review and **Land**.
+project's `.sova/project.json` on a branch, which you review and **Land**. [Release
+settings](/docs/release-settings/) says what each holds.
 
 ## Start a release
 
@@ -67,6 +68,8 @@ its message, moves the channel (such as `stable`) to it, and pushes the main bra
 channel to `origin` in one step. A project with no `origin` tags and moves its channel on this
 machine only.
 
+<!-- screen: release-publish | Publish's confirm on the Releases tab: what goes out to origin in one step, and that the numbered tag is never moved or deleted. -->
+
 If Publish fails, every local change is put back, the release stays Ready, and the step reads
 **Publish failed** with why. **Retry Publish** tries again. Publish lifts the freeze: the waiting
 branches land and push as usual.
@@ -103,3 +106,5 @@ you to release; its request shows in Needs you.
 The Releases tab lists every numbered version, newest first, with its notes, whether it was
 withdrawn, and which deploy targets run it. Its strip shows the latest release and how many
 landings came since.
+
+<!-- screen: releases-tab | A project's Releases tab with no release open: the latest release and the landings since, Release Note and Start Release, and the history of published releases. -->

@@ -453,3 +453,11 @@
 
 /* ---- REDUCED MOTION: the live dot holds still. -------------------------------- */
 @media (prefers-reduced-motion: reduce) { .live-dot { animation: none; } }
+
+/* A screenshot not captured yet (ShotFrame): the frame's shape, dashed, naming the shot it waits for. */
+.shot-pending { display: grid; place-items: center; aspect-ratio: 16 / 10; border-radius: var(--r-xl); border: var(--stroke-thin) dashed var(--color-border-strong); background: var(--color-sunken); }
+.shot-pending-body { display: flex; flex-direction: column; align-items: center; gap: var(--space-2); max-width: 44ch; padding: var(--space-5); text-align: center; color: var(--color-ink-muted); font-size: 13px; line-height: 1.5; }
+.shot-pending-tag { font-weight: var(--fw-semibold); color: var(--color-ink); }
+/* A tall capture cropped to a 4:3 window (ShotFrame's focus), showing the part its focus names. */
+.shot-crop .frame-body > picture { aspect-ratio: 4 / 3; overflow: hidden; }
+.shot-crop .screen-img { width: 100%; height: 100%; object-fit: cover; }

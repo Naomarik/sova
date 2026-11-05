@@ -13,11 +13,13 @@ The install script is safe to pipe from `curl`, needs no `sudo`, and installs no
 - bash (Alpine has none until you `apk add bash`)
 - Git
 - Node.js 22.19 or later
-- pnpm, or npx to run the pnpm Sova pins
+- pnpm, or npx to run the pnpm Sova pins when yours doesn't run
 - curl
 - unzip or python3
 
 The server runs on Bun, and so does every chat and worker, each in a process of its own. The installer downloads the Bun version Sova pins into Sova's own folder and checks it against a recorded checksum; if it can't, it stops and changes nothing. It doesn't install a version manager or edit your shell profile.
+
+If your Node or pnpm comes through mise, the versions your own mise configuration names are the ones used. The installer and the launcher tell mise to ignore the `mise.toml` in Sova's folders, so nothing it pins is downloaded and your list of trusted folders doesn't change. A pnpm that doesn't run there, such as one with no version set, is passed over for npx.
 
 ## Install
 
@@ -27,7 +29,7 @@ curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/stable/scripts/instal
 
 This installs Sova's newest stable release (the `stable` tag, which each release moves to itself); running it again updates to the newest stable release then.
 
-The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead (`SOVA_REF=v0.10.0` stays on that release, `SOVA_REF=master` follows the latest commit); one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
+The whole script is one function that runs only after bash has read its last line, so a download cut short runs nothing. To install another tag, branch or commit, end the command with `| SOVA_REF=<ref> bash` instead (`SOVA_REF=v0.10.2` stays on that release, `SOVA_REF=master` follows the latest commit); one that doesn't exist stops it before it changes anything. It builds Sova in a staging folder and only replaces your install once the build has succeeded; if anything fails, the previous install stays.
 
 What it puts on your machine:
 

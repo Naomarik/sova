@@ -383,7 +383,8 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   overseer's column only, with no act only an organization has (gatherings, WhatsApp, owner updates,
   the roster), as the server lists them. An idea or to-do offers **Send to person…** only while placed;
   **Start Coding Session** always.
-- **Head.** The page head is the project's name (§app.organizations/org-page: cut with an
+- **Head.** The page head is the project's icon at 32px (§app.projects/icon; its letters for a
+  project on a peer), then its name (§app.organizations/org-page: cut with an
   ellipsis, the whole name as its `title`), the meta line (the org · folder while placed, the folder
   alone otherwise), **Refresh Project**, and a
   **⋯** menu ("Project actions · {project}") holding **Settings** (a link to the Settings tab) and
@@ -460,10 +461,11 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   opening the add form.
 - **Branches**: the project's running copies on this host, one per branch, each opening its app where the project declares an entry (§app.project-services/services-ui).
 - **Cost**: the Cost card (§app.project-costs/card).
-- **Settings.** In this order: **Settings changes waiting** (only while a project overseer's Settings
+- **Settings.** In this order: **Icon** (§app.projects/icon: the project's icon, where it comes
+  from, and Upload, Replace, Remove, Use Letters or Use Picture; only for a project on this host); **Settings changes waiting** (only while a project overseer's Settings
   change card or the folder's uncommitted settings edits wait, §app.project-overseer/settings); **Overseer** (the Watch switch and its hint); **What may happen
   without you** (§design.copy-deck/project-powers: the always-allowed line, the Paused banner with
-  Resume while braked, the one-time note until dismissed, and the switches in groups, one column for
+  Resume while braked, and the switches in groups, one column for
   the overseer on its own and, while an organization places the project, one for the Project
   Assistant from a client); **Sessions it starts** (the gathering and coding sessions'
   model, thinking, abilities and mode selects, three to a row where they fit); **Claude login**
@@ -632,7 +634,7 @@ the URL, and opens on its Projects (§app.organizations/org-page); each roster p
   the never-looser level beside them. When a host whose Sova doesn't know switches saves that file (it
   writes `confirmKinds`/`confirmKindsKnown`, or leaves the switches' `stamp` stale, whatever level it
   writes, the same one included), this host reads the overseer column again from that level by the
-  carry-over, with the one-time note (§app.project-overseer/autonomy-levels).
+  carry-over, with no note (§app.project-overseer/autonomy-levels).
 - **This host's view is derived again.** For each baton session the attach sets its listing title
   to the public title, and for each overseer conversation "Overseer · <project>" (a title the
   operator already gave one here stays); marks them as web sessions; and records their files'

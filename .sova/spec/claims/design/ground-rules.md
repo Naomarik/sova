@@ -115,6 +115,12 @@ theme. Add `class="icon"` (20px) or `class="icon icon-sm"` (16px) to the `<svg>`
 `aria-hidden="true"` whenever a text label sits next to it. An icon-only button gets its name from
 `aria-label`, never from the SVG.
 
+**One exception: a project's picture is content, not a glyph.** A project's icon
+(§app.projects/icon) shows its uploaded or found PNG as an `<img>` with an empty `alt` (the name
+is always beside it), on a `--color-sunken` tile so a transparent logo reads in both themes, and
+its letters as text on a coloured tile. Neither is a UI glyph, so neither goes through
+`currentColor`; every UI glyph stays a mask or inline SVG.
+
 Two supported forms, both inheriting `currentColor`:
 
 - **Mask span (used by the frontend):**
@@ -185,6 +191,7 @@ and `fill="none" stroke="currentColor"`.
 | `shield-on.svg`, `shield-partial.svg`, `shield-off.svg` | The composer's sandbox shield, one per state (§chat.composer/sandbox-shield): a heavy rim with a filled core, the core's left half, a thin dashed outline |
 | `star.svg` | The model menu's favourite toggle; the Overseer's Ideas button |
 | `expand.svg` | Focus (§chat.transcript/focus-view): the round button in the transcript's corner. Four corner brackets. New, drawn on the system grid |
+| `minus.svg` | The merge queue run page's mark for a skipped check or setup unchanged since the last run (§app.merge-queue/view): a plain dash. Drawn on the system grid |
 | `x-circle.svg`, `menu.svg` | Drawings only (vis): the error tone icon, and wireframe icons |
 
 The effort ring (§chat.composer/behavior) has no file either: the ring and its mark, the max

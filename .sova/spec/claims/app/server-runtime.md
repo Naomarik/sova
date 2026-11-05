@@ -188,9 +188,12 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   file?}]`) and `ranFiles` (every test file it actually ran, repo-relative), the shape the project
   verbs read (§app.project-services/test), so a merge check or a `test` verb run has real counts,
   the failing files to rerun, and the proof of which files a rerun ran (§app.merge-queue/blame).
+  A file reused from an earlier pass counts as passed and run; `reused` says how many were
+  (§app.server-runtime/test-reuse).
 - **The tier guard.** A second test preload (`scripts/test-tier-guard.mjs`) records, for each file
   in either tier, the programs it starts, the addresses it listens on or connects to, the URLs it
-  fetches and whether it imports `server/index.ts`, merged into `.cache/test-audit.json`. By
+  fetches, whether it imports `server/index.ts` and whether it reads the project's own Git
+  history (§app.server-runtime/test-reuse), merged into `.cache/test-audit.json`. By
   default it refuses, in a unit file, any of these except running Git: the call throws an error
   naming the file and telling to rename it (or split those cases into) `.integration.test.ts`, the
   runner fails the file even when the error was caught, and after the run it lists each such file.
@@ -199,11 +202,8 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   `server/tier-guard.test.ts` proves each refusal on both runtimes: an ESM named-import `spawn`,
   `execFileSync`, `net.connect`, `http.createServer().listen`, a `fetch` to localhost (and Bun's
   `Bun.connect`, `Bun.spawn`, `Bun.serve`), and a dynamic import of `server/index.ts`.
-- **No chat's variables.** Before any test runs, the runner drops the variables a chat process
-  carries (Sova's chat variables, apart from the test's own slice and code pin; the caller key; the
-  Claude login context; the spec landing file; pi's session id and file; the team-member and
-  built-in-tools marks of subagents), so a run started from a chat is as hermetic as one started by
-  hand.
+- **One list of settings.** Tests see only the settings one list names, the same whoever started
+  the run, and nothing else the caller carries (§app.server-runtime/test-env).
 - **No real Claude program.** Every test process the runner starts, in either tier and on either
   runtime, finds a stand-in `claude` (`scripts/fake-claude.mjs`) first on its `PATH`, so code under
   test that runs the Claude program (§app.claude-code-provider/one-program) never reaches the
@@ -212,3 +212,109 @@ The suite has two tiers, told apart by file name alone, so a file's tier can't d
   them through `server/testing/agent-dir.ts`, whose topic-outline settings run the outline's check
   at once after each turn and never call a summarizer model on their own: a summary is a model
   call, and the unit tier starts no program.
+
+## §app.server-runtime/test-reuse — A test file that already passed on identical code isn't run again
+
+One rule wherever Sova's runner runs (a chat, a worker, the project's test verb, a merge check): a
+test file that already passed on exactly the same inputs isn't run again, and its earlier pass is
+counted instead. Nobody is told about it: no prompt, guide or note changes for everyday work, and no
+model takes part. Only runs on Bun reuse and keep passes; `--runtime node` runs every file and keeps
+nothing, silently.
+
+- **The inputs.** Every file of the checkout as it is on disk, by content and file mode:
+  uncommitted edits, new files, files taken out of the index but still on disk, and files Git is
+  told to assume unchanged, all read from disk; files Git ignores left out. Commits play no part, so
+  a pass before committing still counts after it. The spec claims and their index
+  (`.sova/spec/claims/**`, `.sova/spec/manifest.json`), the only files a landing makes official, are
+  left out too, and so are the leftover `.merge_file_*` files of a spec merge. A guard test fails
+  when a test starts reading the checkout's own claims or index; such a test takes that path off
+  the exclusion. To the files the
+  runner adds the settings tests see that can change a result (§app.server-runtime/test-env), the
+  versions of the tools tests use (Bun, Node, Git, Python, the platform), the installed packages and
+  the tier; never the system's kernel release. A difference in any of them means the file runs.
+- **Only identical code.** A pass counts only for the exact inputs it ran on. When the target has
+  moved on since a chat's run, a test whose own code didn't change still runs.
+- **Only full passes are kept.** A file counts as passed when it exited cleanly within its time
+  limit with at least one passing test, none failing, none skipped, nothing the tier guard refused,
+  and no read of the project's Git history. A failure is never kept: a file that failed runs again.
+- **Runs that neither reuse nor keep.** A narrowed or unusual run never stands in for a full one
+  and is never kept: any runner flag but the default time limit, a different per-file limit, the
+  tier guard only reporting or off, a switch that writes test output elsewhere, a folder that isn't
+  a Git checkout, or one with no installed packages. Neither does a run given test files outside the
+  project, nor one started from inside a test. Such a run says so once, "run-tests: nothing reused or
+  remembered this run: {why}.", except a run started from inside a test, which says nothing.
+- **Per file, from any run.** Results are kept per test file, whatever selected it, so a chat's
+  `--changed` run covers part of a landing's set and the landing runs only the rest. Any run on this
+  computer may supply a pass: a chat's, a worker's (sandboxed or not), the test verb's or the merge
+  queue's own.
+- **Edits during a run.** The runner reads the checkout again about every 5 s while it runs. A file
+  keeps its pass only when every reading from its start to its end matched: the files whose run
+  overlapped an edit keep nothing, and the rest of the run still counts.
+- **Git history readers always run.** A test file that runs Git on the project's own repository
+  (found as Git finds it: `GIT_DIR`, else its folder or `-C`) is never reused: its result depends on
+  more than the files. Asking only for the commit's name or the repository's folders, `git init`,
+  `git config`, `git var`, a version or help, or cloning another repository doesn't count. The tier
+  guard notes such a file as reading history.
+- **Fresh runs.** `--fresh`, or `SOVA_FRESH=1` in the environment, runs every file; that run still
+  keeps its passes.
+- **What a run says.** A reused file prints no line of its own. Files that ran though they passed
+  before are summed up by why, naming only the reasons that apply: "run-tests: not reused: 3 code changed, 1 settings differ, 2 not
+  passed before, 1 read this repository's git history (always run)." The reused ones get one line:
+  "run-tests: 568 of 980 files already passed on identical code at 14:02 and weren't run again
+  (--fresh runs them)" (a pass from an earlier day reads "Nov 4 14:02"). Where a pass came from
+  reads "(feat/x's chat)" for a branch's run, "(an earlier landing run)" for the merge copy's. The
+  final counts line includes reused files as passed, and they count as run; a reused file's time is
+  never recorded and it isn't among the slowest, so the longest-first order and the estimates don't
+  move. `SOVA_OUT` adds `reused` (`{files, of, at, from, rechecked, list}`, each listed file with
+  when it passed, where and its run), and a run where nothing ran writes `skipped` ("already passed
+  on identical code at 14:02 (feat/x's chat)") and `skippedTests`. `--plan` lists the files it
+  would reuse and estimates only the rest.
+- **A sample re-checked.** When `SOVA_REUSE_SAMPLE` names a fraction (the merge queue's 0.05,
+  §app.merge-queue/checks), the runner runs that share of the files it would reuse, at least 1,
+  picked at random per run, and says "run-tests: re-checked {n} file(s) that had already passed on
+  identical code; all passed again." A sampled file that fails is a failure like any other, its
+  output saying "run-tests: this file already passed on identical code at 14:02 (x's chat), and that
+  pass didn't hold here."; the runs it was reused from are dropped, and every other file the run
+  would have reused runs again in the same run ("…failed (…); running the {m} other reused files
+  again.").
+- **Where results are kept.** In the project's shared Git folder (`sova-test-results/` in the
+  common Git directory), which the main checkout, every worktree and the merge copy share, and which
+  sandboxed chats can write. Results last 14 days, up to about 100 MB, oldest dropped first.
+  Each holds counts, a time and where it ran (the branch or the merge copy, and the folder's name):
+  no test output and no setting values. Deleting them costs only speed.
+- **The type check** reuses passes too (§app.server-runtime/typecheck-reuse).
+
+## §app.server-runtime/test-env — Tests see one list of settings, whoever starts them
+
+Every test process the runner starts, on Bun and on Node, sees only the settings on one list
+(`scripts/test-env.mjs`), the same whether the run started in a chat, a worker, the test verb or the
+merge queue:
+- the user and locale (`USER`, `LOGNAME`, `LANG`, `C.UTF-8` when unset, `LC_ALL`, `TZ`, `SHELL`);
+- the runner's own switches (its runtime, the tier guard, time limits, lane widths, the chat slice,
+  `SOVA_FRESH`, `SOVA_REUSE_SAMPLE`);
+- the switches test files read, each named there (browsers, snapshot and golden recording, extra
+  output files, debug marks);
+- `XDG_RUNTIME_DIR`, to integration files only;
+- a `PATH` the runner builds: the stand-in `claude`, Node's own folder, the tools `mise` pins, then
+  the system folders (on macOS, Homebrew's first).
+
+No name that reads as a credential (a token, secret, key, password or login) is ever passed.
+Everything else the caller carries is held back: a chat process's variables, credentials such as
+`GH_TOKEN` or `ANTHROPIC_API_KEY`, the merge queue's bookkeeping (`SOVA_OUT`, `SOVA_MERGE_*`,
+`SOVA_PORT_*`), `NODE_OPTIONS`, `CI`, `npm_config_*`, proxies, and the rest of the shell.
+
+This changes what a test sees: before, it saw the caller's whole shell bar a chat's variables and
+the variables that point Git or pi elsewhere, on the caller's own `PATH`; now it sees what the
+queue's checks see, so a pass in one can stand for the other (§app.server-runtime/test-reuse). A
+guard test fails when a test file reads a setting the list lacks, or the list names a credential.
+
+## §app.server-runtime/typecheck-reuse — The type check isn't run again on identical code
+
+`pnpm run typecheck`, and the type check that starts Build, reuse a passing check
+(`scripts/checked.mjs`) on the same files (as §app.server-runtime/test-reuse reads them), command,
+Node, platform and installed packages, and print one line: "tsc --noEmit: already passed on
+identical code at 14:02 (feat/x's chat) and wasn't run again (--fresh runs it)". As a merge check,
+Typecheck then reads Skipped with those words (§app.merge-queue/checks); inside Build the reuse
+never marks Build skipped. `--fresh` or `SOVA_FRESH=1` runs it and still keeps a pass; a pass is kept
+only when the checkout didn't change while it ran, and a check started from inside a test just
+runs. The rest of Build always runs, since the walkthroughs and the server use what it makes.

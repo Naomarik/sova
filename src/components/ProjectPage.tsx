@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, type JSX, Match, on, Show, Switch } from "solid-js";
 import { chatRefOf } from "../lib/merge-chat";
+import { chatTreesOf } from "../lib/merge-queue";
 import type { ProjectSummary } from "../../shared/projects";
 import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, archiveProject, getProjectPreviews, unarchiveProject } from "../lib/api";
@@ -8,6 +9,7 @@ import { createPoll } from "../lib/poll";
 import { PROJECT_TABS, PROJECTS_HREF, projectTabHref, type ProjectTab } from "../lib/projects-route";
 import { summaryChips } from "../lib/project-page";
 import { isGap, openIdeas } from "../lib/project-overseer-view";
+import { projectHostOf } from "../lib/mesh";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { PreviewsCard } from "./PreviewsCard";
@@ -23,6 +25,8 @@ import { ProjectFilesCard } from "./ProjectFilesCard";
 import { ProjectCardsCard } from "./ProjectCardsCard";
 import { ProjectMcpCard } from "./ProjectMcpCard";
 import { ProjectOffersCard } from "./ProjectOffersCard";
+import { ProjectIcon } from "./ProjectIcon";
+import { ProjectIconCard } from "./ProjectIconCard";
 import { createProjectSettings, ProjectAllSettings, ProjectSettingsChanges, ProjectSettingsHistory } from "./ProjectSettingsCards";
 import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, type ItemSendForm, OverseerSettings, OverseerSummary, type ProjectOverseer, TodosCard } from "./ProjectOverseerPanel";
 import { Banner, Icon } from "./ui";
@@ -196,6 +200,7 @@ export function ProjectPage(props: {
     <InsightsPage
       title={project().name}
       titleTip
+      lead={<ProjectIcon project={project()} size={32} local={!projectHostOf(projectId)} class="project-page-icon" />}
       class="project-page"
       back={org?.back() ?? { href: PROJECTS_HREF, label: "Back to Projects" }}
       actions={
@@ -353,6 +358,8 @@ export function ProjectPage(props: {
               run={props.run}
               // The queue records a chat by its id (an older record by its path); a worker is named as its chat's.
               chatOf={(id) => chatRefOf(id, props.sessions?.())}
+              // A Ready row's chip: its chat's own readiness reading of the branch.
+              treesOf={(id) => chatTreesOf(id, props.sessions?.())}
             />
           </Match>
           <Match when={tab() === "releases"}>
@@ -368,6 +375,10 @@ export function ProjectPage(props: {
               const settings = createProjectSettings(projectId);
               return (
                 <>
+                  {/* Its icon (§app.projects/icon): kept on this host. A peer's project shows no card. */}
+                  <Show when={!projectHostOf(projectId)}>
+                    <ProjectIconCard project={project()} onChanged={() => props.refetchProject()} />
+                  </Show>
                   <ProjectSettingsChanges projectId={projectId} data={settings} />
                   <OverseerSettings po={po} placed={!!org} />
                   {org?.settings()}

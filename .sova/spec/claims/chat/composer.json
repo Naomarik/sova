@@ -179,6 +179,28 @@
       "server/claude-login-state.ts"
     ]
   },
+  "§chat.composer/land-confirm": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "unreviewed",
+    "requires": [
+      "§chat.composer/worktrees-control",
+      "§chat.worktrees/pane",
+      "§app.merge-queue/view",
+      "§app.merge-queue/approve",
+      "§app.merge-queue/strategies"
+    ],
+    "code": [
+      "src/components/WorktreesModal.tsx",
+      "src/components/MergeQueueTab.tsx",
+      "src/app.css"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T21:36Z",
+      "source": "pi-session:6295e4a0-38a1-4768-a7a6-2787ccf54172#23af1717"
+    }
+  },
   "§chat.composer/memory-status": {
     "kind": "behavior",
     "requires": [
@@ -297,14 +319,17 @@
       "§chat.timeline/inputs-only",
       "§chat.changes/viewer",
       "§chat.changes/endpoint",
+      "§chat.composer/land-confirm",
       "§chat.merge-queue/chat-card",
       "§app.merge-queue/run",
-      "§chat.worktrees/ready-to-land"
+      "§chat.worktrees/ready-to-land",
+      "§app.merge-queue/owner",
+      "§app.merge-queue/branch-summary"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T14:54Z",
-      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
+      "at": "2026-11-05T04:24Z",
+      "source": "pi-session:01a1a9da-15c8-731e-9587-23927c9ff121#9c4c7735"
     },
     "code": [
       "src/components/WorktreesControl.tsx",
@@ -331,7 +356,10 @@
       "shared/merge-queue.ts",
       "server/merge-queue/view.ts",
       "server/docs-preview.ts",
-      "server/spec-drafts-state.ts"
+      "server/spec-drafts-state.ts",
+      "src/components/BranchSummary.tsx",
+      "shared/protocol.ts",
+      "server/merge-queue/verbs.test.ts"
     ]
   },
   "§chat/composer": {

@@ -76,13 +76,20 @@ export interface RelaySetting {
   exposure?: "lan" | "internet";
 }
 
+/** Where this mesh membership lives: the state root's real path and the machine's id when readable.
+    A copy of the folder elsewhere (or on another machine) doesn't match it, so its mesh stays off. */
+export interface HomeBinding {
+  path: string;
+  machine?: string;
+}
+
 export const SYNC_CATEGORIES: readonly SyncCategory[] = ["settings", "themes", "extensions", "logins"];
 
 export interface PeersConfig {
   /** `labelAt`: when this host last renamed itself (ms epoch); absent: never, since recorded.
       `browserAccess`: this host's own Browser access setting; absent: SOVA_BROWSER_ACCESS decides.
       `browserAccessAt`: when it was last set (ms epoch). */
-  self: { id: string; label: string; serveUrl?: string; labelAt?: number; browserAccess?: boolean; browserAccessAt?: number; relay?: RelaySetting };
+  self: { id: string; label: string; serveUrl?: string; labelAt?: number; browserAccess?: boolean; browserAccessAt?: number; relay?: RelaySetting; home?: HomeBinding };
   peers: PeerEntry[];
   /** Per-category sync switches the user has set; an absent category is on. */
   sync: Partial<Record<SyncCategory, boolean>>;
@@ -155,6 +162,9 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
   if (selfServe && "error" in selfServe) return { error: `self.serveUrl ${selfServe.error}` };
   const relay = selfRaw.relay === undefined || selfRaw.relay === null ? null : checkRelay(selfRaw.relay);
   if (relay && "error" in relay) return { error: `self.relay ${relay.error}` };
+  const home = selfRaw.home as Record<string, unknown> | undefined;
+  if (home !== undefined && (typeof home !== "object" || home === null || typeof home.path !== "string" || !home.path || (home.machine !== undefined && typeof home.machine !== "string")))
+    return { error: "self.home must be { path, machine? }" };
   if (r.peers !== undefined && !Array.isArray(r.peers)) return { error: "peers must be an array" };
   const peers: PeerEntry[] = [];
   const ids = new Set([selfId]);
@@ -234,6 +244,7 @@ export function validatePeers(raw: unknown): { config: PeersConfig } | { error: 
     ...(typeof selfRaw.browserAccess === "boolean" ? { browserAccess: selfRaw.browserAccess } : {}),
     ...(selfRaw.browserAccessAt !== undefined ? { browserAccessAt: selfRaw.browserAccessAt as number } : {}),
     ...(relay ? { relay: relay.relay } : {}),
+    ...(home ? { home: { path: home.path as string, ...(typeof home.machine === "string" ? { machine: home.machine } : {}) } } : {}),
   };
   return {
     config: {

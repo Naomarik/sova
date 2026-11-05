@@ -55,8 +55,8 @@ A pick that names a deleted profile falls through to the default. A missing defa
 **Off**; so does a default that is broken or names no profile, and then Sova says why where it
 shows the current profile.
 
-The profile is read in both major modes: normal mode uses its teams and spec writer too. Only the
-Delegate routing is Delegate's own.
+The profile is read in every major mode: normal mode uses its teams and spec writer too. Only the
+Delegate routing is Delegate's own, and [Create](/docs/modes/create/)'s, which shares it.
 
 A switch reaches the chat from its next turn and its next team action. A running team adds members
 and starts successors under the chat's current profile; a worker that's already running keeps the

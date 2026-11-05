@@ -77,7 +77,8 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `project.verb.release.start`, `project.verb.release.step`, `project.verb.release.notes`,
   `project.verb.release.continue`, `project.verb.release.retry`, `project.verb.release.publish`,
   `project.verb.release.abandon`, `project.verb.release.withdraw`, `mcp.servers.list`,
-  `mcp.server.status`.
+  `mcp.server.status`, `project.verb.release.note`, `project.coding.start`, `project.icon.get`,
+  `project.icon.upload`, `project.icon.letters`, `project.icon.remove`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).
@@ -103,7 +104,9 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   project's or an extension's cards is a trust grant and no entry (§chat.transcript-cards/trust).
   `mcp.servers.list` and `mcp.server.status` read the MCP server list and one server's status
   (§app.mcp/reads); approving, adding or editing a server and signing in to one are the page's and
-  no entry (§app.mcp/approval).
+  no entry (§app.mcp/approval). `project.coding.start` starts a chat in a project, a home card's
+  New Chat, and the `project.icon.*` entries read and set a project's icon
+  (§app.project-commands/projects-sweep, §app.projects/icon).
 - **Its mesh reach is its route's.** Each entry's `meshNeed` is the capability the peer listener's
   classifier gives its method and path (§mesh.peers/grants), and a test fails when they differ.
 - **Never a door the operator keeps closed.** No entry targets the peer routes (`/api/peer`,

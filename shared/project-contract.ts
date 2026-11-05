@@ -12,12 +12,12 @@ export type Verb = (typeof VERBS)[number];
 export const DEPLOY_VERBS = ["deploy.check", "deploy.plan", "deploy.run", "deploy.status", "deploy.logs", "deploy.rollback", "deploy.request"] as const;
 export type DeployVerb = (typeof DEPLOY_VERBS)[number];
 /** The merge queue's verbs (shared/merge-queue.ts): a project's queue, its entries and runs, never an instance. */
-export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear"] as const;
+export const MERGE_VERBS = ["merge.status", "merge.logs", "merge.add", "merge.cancel", "merge.pause", "merge.resume", "merge.note", "merge.extend", "merge.resolve", "merge.answer", "merge.review", "merge.retry", "merge.setup", "merge.ask", "merge.reply", "merge.fresh", "merge.clear", "merge.hold"] as const;
 export type MergeVerb = (typeof MERGE_VERBS)[number];
 /** The merge verbs that change nothing. */
 export const MERGE_READ_VERBS: readonly MergeVerb[] = ["merge.status", "merge.logs"];
 /** The release verbs (shared/release.ts): a project's release in progress and its history, never an instance. */
-export const RELEASE_VERBS = ["release.status", "release.logs", "release.request", "release.start", "release.step", "release.notes", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw"] as const;
+export const RELEASE_VERBS = ["release.status", "release.logs", "release.request", "release.start", "release.step", "release.notes", "release.continue", "release.retry", "release.publish", "release.abandon", "release.withdraw", "release.note"] as const;
 export type ReleaseVerb = (typeof RELEASE_VERBS)[number];
 /** The release verbs that change nothing. */
 export const RELEASE_READ_VERBS: readonly ReleaseVerb[] = ["release.status", "release.logs"];
@@ -119,6 +119,7 @@ export const VERB_PARAMS: readonly VerbParam[] = [
   { wire: "requires", type: "list", mergeOnly: true, cli: { flag: "requires", description: "merge.setup: services that must start first, comma-separated" } },
   { wire: "dryRun", type: "boolean", mergeOnly: true, cli: { flag: "dry-run", description: "merge.setup: Try It on Main, saving nothing" } },
   { wire: "text", type: "string", mergeOnly: true, tool: { name: "text", description: "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; release.notes: the release notes, in full." }, cli: { flag: "text", description: "Text" } },
+  { wire: "action", type: "string", mergeOnly: true, tool: { name: "action", description: "merge.hold (the merge thread's): set | clear. set holds every new run for 5 minutes (set again renews it); a run already checking goes on." }, cli: { flag: "action", description: "merge.hold: set | clear" } },
   { wire: "ask", type: "string", mergeOnly: true, tool: { name: "ask", description: "merge.reply: the merge thread's question you relay the user's answer to, by its id (ak_…, in the merge queue's message)." }, cli: { flag: "ask", description: "A merge thread question id" } },
   // The release verbs' own keys (shared/release.ts). On no generic tool: the release chat's tool lists them.
   { wire: "release", type: "string", releaseOnly: true, tool: { name: "release", description: "release.*: a release, by its id (rl_…; default the open one)." }, cli: { flag: "release", description: "A release id" } },
@@ -144,7 +145,7 @@ export const VERB_FLAGS: { readonly instance: readonly string[]; readonly deploy
   release: ["project", "release", "tag", "step", "state", "summary", "detail", "facts", "text", "commit", "why", "lines", "confirm", "dismiss"],
   instance: ["project", "instance", "checkout", "branch", "from", "slot", "services", "restart", "lines", "keep-data", "resources", "ref", "select", "endpoint", "days", "link", "confirm"],
   deploy: ["project", "target", "commit", "ref", "plan", "deploy", "why", "lines", "override-tests", "override-dirty", "confirm", "dismiss"],
-  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "via", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run", "ask"],
+  merge: ["project", "branch", "checkout", "commit", "entry", "run", "step", "lines", "note", "without-specs", "without-review", "chat", "via", "checks", "select", "why", "verdict", "files", "ours", "theirs", "proposal", "answer", "text", "command", "commands", "none", "takes-min", "requires", "dry-run", "ask", "action"],
 };
 
 export const ERROR_CODES = [
@@ -336,7 +337,8 @@ export interface MergeCheckDecl {
  *  main checkout's). `push`: absent means push when an `origin` remote exists. `install`: run in the merge copy when
  *  a merged branch changes one of its `inputs` (an offline install). `review`: the review kit's folder. `land`: how a
  *  branch lands (al_3; absent: merged locally; this computer's own choice wins over it). `request`: the request skill
- *  folder (how a pull or merge request's title and description are written, and their checks). */
+ *  folder (how a pull or merge request's title and description are written, and their checks). `reuse`: false runs
+ *  every check in full (SOVA_FRESH=1); absent or true lets a check's runner reuse passes from identical code. */
 export interface MergeDecl {
   target?: string;
   push?: boolean;
@@ -345,6 +347,7 @@ export interface MergeDecl {
   review?: string;
   land?: import("./merge-queue").LandHow;
   request?: string;
+  reuse?: boolean;
 }
 
 /** The endpoints a copy may share (`"<service>.<port>"`, checkout services only; none when absent), at most `maxDays` per link, and whether at all. */
@@ -487,7 +490,7 @@ export const DEFINITION_KEYS = {
   rollback: [["steps"], ["none"]],
   credential: ["name", "kind", "check"],
   requires: ["tests"],
-  merge: ["target", "push", "checks", "install", "review", "land", "request"],
+  merge: ["target", "push", "checks", "install", "review", "land", "request", "reuse"],
   mergeCheck: ["id", "label", "run", "timeout", "rerun", "requires", "optional"],
   mergeInstall: ["run", "inputs", "timeout"],
   release: ["playbook", "tag", "scheme", "channels", "commit", "checks", "quietMin"],
@@ -943,6 +946,10 @@ function mergeDecl(v: unknown, services: readonly ServiceDecl[]): MergeDecl {
     out.land = o.land as (typeof MERGE_LAND_HOWS)[number];
   }
   if (o.request !== undefined) out.request = relPath(o.request, "$.merge.request", true);
+  if (o.reuse !== undefined) {
+    if (typeof o.reuse !== "boolean") throw new DefinitionError("$.merge.reuse", "must be true or false");
+    out.reuse = o.reuse;
+  }
   return out;
 }
 

@@ -120,6 +120,8 @@ let feedSocket: WebSocketRoute | null = null;
 async function open(w: World, width: number): Promise<Page> {
   const phone = width < 768;
   const ctx = await browser.newContext({ viewport: { width, height: 800 }, hasTouch: phone, isMobile: phone });
+  // This tab has been opened before: a phone's first launch would land on Home, one Back above the list (§app.shell/overview).
+  await ctx.addInitScript(() => sessionStorage.setItem("sova:launched", "1"));
   const page = await ctx.newPage();
   const json = (body: unknown, status = 200) => ({ status, contentType: "application/json", body: JSON.stringify(body) });
   feedSocket = null;

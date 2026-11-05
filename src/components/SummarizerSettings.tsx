@@ -91,6 +91,7 @@ export function SummarizerSettingsSection() {
         A small model writes the line under each session's title as the session goes. Pick it, and a fallback for when
         it can't run. A change applies to sessions started afterwards, here and in pi in the terminal.
       </p>
+      <p class="settings-intro">This model also writes the merge queue's branch summaries.</p>
 
       <Show when={info.error}>
         <Banner

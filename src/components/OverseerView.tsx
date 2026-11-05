@@ -3,6 +3,7 @@ import type { OverseerInfo, OverseerProactivity, SessionSummary } from "../../sh
 import { clearOverseer, getOverseer, getOverseerIdeas, getOverseerSettings, getOverseerTodos, putOverseerSettings } from "../lib/api";
 import { modelLabel, relativeTime } from "../lib/format";
 import { nextProactivity, OVERSEER_HASH, overseerHistoryHref, PROACTIVITY, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
+import { headIdeasCount } from "../lib/ideas";
 import { isMainThread } from "../lib/regions";
 import { settingsOpenAt } from "../lib/settings-nav";
 import { announce, toast } from "../lib/ui-state";
@@ -346,13 +347,13 @@ export function OverseerView(props: {
           ref={ideasButton}
           aria-expanded={ideasOpen()}
           aria-controls="overseer-ideas"
-          aria-label={ideasInfo() ? `Ideas, ${ideasInfo()!.toc.total}` : "Ideas"}
+          aria-label={ideasInfo() ? `Ideas, ${headIdeasCount(ideasInfo()!.toc)}` : "Ideas"}
           title="The ideas the Overseer has filed for later."
           onClick={() => (ideasOpen() ? closeIdeas() : setIdeasOpen(true))}
         >
           <Icon name="star" small />
           <span class="overseer-ideas-word">Ideas</span>
-          <Show when={ideasInfo()}>{(i) => <span class="chip chip-count">{i().toc.total}</span>}</Show>
+          <Show when={ideasInfo()}>{(i) => <span class="chip chip-count">{headIdeasCount(i().toc)}</span>}</Show>
         </button>
         <button
           type="button"

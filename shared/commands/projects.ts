@@ -151,6 +151,25 @@ const MERGE_SETTINGS: CommandEntry[] = [
   },
 ];
 
+/** A branch's summary on the queue's rows: Try Again after a failed one (a summary that worked is never rewritten). */
+const MERGE_SUMMARY: CommandEntry[] = [
+  {
+    id: "project.merge-queue.branch-summary.retry",
+    label: "Try Again",
+    summary: "Write a branch's summary again after it failed, for the same commit; refused for a summary that worked.",
+    effect: "changes",
+    params: {
+      project: mqProject,
+      branch: { type: "string", description: "The branch", in: "body", required: true },
+      commit: { type: "string", description: "The full commit id the row shows", in: "body", required: true },
+    },
+    route: { method: "POST", path: "/api/merge-queue/projects/:project/branch-summary" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+];
+
 /** How a branch lands (al_3): Update Local Main, a request's Publish, How it lands. The operator's own page only. */
 const MERGE_LANDING: CommandEntry[] = [
   {
@@ -233,6 +252,42 @@ const PROJECTS_SWEEP: CommandEntry[] = [
     sessionFile: "never",
     meshNeed: "admin",
   },
+  changes("project.coding.start", "New Chat in Project", "Start a coding chat in a project: in its root (or a folder inside it), on the project's coding model and mode; with worktree later it cuts its own branch once the work has a name.", "POST", "/api/projects/:pid/overseer/coding", {
+    pid,
+    title: { type: "string", description: "Names the chat (and, with worktree now, its branch)", in: "body" },
+    model: { type: "string", description: "Its model (provider/model); absent: the project's coding model", in: "body" },
+    thinking: { type: "string", description: "Its thinking level", in: "body" },
+    worktree: { type: "string", description: "now: cut its worktree at the start; later: start in the root, adopt the first worktree it makes", in: "body", enum: ["now", "later"], default: "now" },
+    cwd: { type: "path", description: "Where it starts: the root, a folder inside it, or one inside its worktrees (default: the root)", in: "body" },
+  }),
+  // A project's icon (§app.projects/icon): kept on this host only.
+  looks("project.icon.get", "Show Project Icon", "What a project's icon is: an uploaded picture, one found in its folder, or letters (rescans the folder).", "/api/projects/:pid/icon/info"),
+  {
+    id: "project.icon.upload",
+    label: "Upload Project Icon",
+    summary: "Set a project's icon to a picture: a square PNG of 64 to 1024 px, at most 1 MB, base64. Kept on this computer only.",
+    effect: "changes",
+    params: { pid, png: { type: "string", description: "The picture: a square PNG, base64", in: "body", required: true } },
+    route: { method: "PUT", path: "/api/projects/:pid/icon" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
+  changes("project.icon.letters", "Use Project Letters", "Show a project's letters instead of its picture (true), or its picture again (false).", "PATCH", "/api/projects/:pid/icon", {
+    pid,
+    letters: { type: "boolean", description: "true: letters; false: the uploaded or found picture", in: "body", required: true },
+  }),
+  {
+    id: "project.icon.remove",
+    label: "Remove Project Icon",
+    summary: "Remove a project's uploaded picture: back to the icon found in its folder, or letters.",
+    effect: "changes",
+    params: { pid },
+    route: { method: "DELETE", path: "/api/projects/:pid/icon" },
+    sessionKey: null,
+    sessionFile: "never",
+    meshNeed: "admin",
+  },
   changes("project.archive", "Archive Project", "Archive a project; refused while anything in it is open.", "POST", "/api/projects/:pid/archive", { pid }),
   changes("project.unarchive", "Unarchive Project", "Bring an archived project back.", "POST", "/api/projects/:pid/unarchive", { pid }),
   changes("project.preview.off", "Turn Off Preview Link", "Turn a preview link off at once.", "POST", "/api/previews/:id/off", { id: previewId }),
@@ -296,4 +351,5 @@ export const PROJECT_ENTRIES: CommandEntry[] = [
   ...PROJECTS_SWEEP,
   ...MERGE_SETTINGS,
   ...MERGE_LANDING,
+  ...MERGE_SUMMARY,
 ];

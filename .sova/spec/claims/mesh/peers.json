@@ -17,8 +17,14 @@
     "code": [
       "server/mesh/peers.ts",
       "server/mesh/index.ts",
-      "server/mesh/peers.test.ts"
-    ]
+      "server/mesh/peers.test.ts",
+      "server/mesh/mesh.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:14Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#2783ea91"
+    }
   },
   "§mesh.peers/discovery": {
     "kind": "behavior",
@@ -27,7 +33,12 @@
     "code": [
       "server/mesh/index.ts",
       "server/mesh/localapi.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T01:37Z",
+      "source": "pi-session:915c7c2a-d21e-4992-8899-b2d3b2871536#1d2b9d7c"
+    }
   },
   "§mesh.peers/grants": {
     "kind": "behavior",
@@ -110,7 +121,12 @@
       "server/mesh/listener.ts",
       "server/mesh/localapi.ts",
       "server/mesh/paths.ts"
-    ]
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T01:37Z",
+      "source": "pi-session:915c7c2a-d21e-4992-8899-b2d3b2871536#1d2b9d7c"
+    }
   },
   "§mesh.peers/off": {
     "kind": "behavior",
@@ -120,8 +136,15 @@
       "server/mesh/index.ts",
       "server/mesh/peers.ts",
       "server/index.ts",
-      "server/app.ts"
-    ]
+      "server/app.ts",
+      "server/public-links-routes.ts",
+      "server/mesh/mesh.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T02:14Z",
+      "source": "pi-session:81302e3d-7b15-4fa0-95f1-97e31f1f4300#2783ea91"
+    }
   },
   "§mesh.peers/remote-commands": {
     "kind": "behavior",
@@ -178,6 +201,23 @@
       "by": "user",
       "at": "2026-11-04T06:59Z",
       "source": "pi-session:5b3349ca-a4e6-4bb7-8a78-16e639eb61df#40d50679"
+    }
+  },
+  "§mesh.peers/tailscale-on-mac": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§mesh.peers/listener"
+    ],
+    "code": [
+      "server/mesh/localapi.ts",
+      "server/mesh/localapi-endpoint.ts"
+    ],
+    "agreed": {
+      "by": "naomarik",
+      "at": "2026-11-05T01:37Z",
+      "source": "pi-session:915c7c2a-d21e-4992-8899-b2d3b2871536#1d2b9d7c"
     }
   },
   "§mesh/peers": {

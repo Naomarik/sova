@@ -190,8 +190,7 @@ user row.
   organization places the project), then " Paused: {reason}." while braked, and " Change." It opens
   the project page's switches (§design.copy-deck/project-powers): the always-allowed line, the
   columns, the groups and, opened, their acts, the Paused banner with **Resume** while braked; each
-  switch saves at once (`PATCH …/overseer {powers}`) with the same toasts. The one-time note stays on
-  the project page. Full settings (limits, models, watch pace) stay on the project page
+  switch saves at once (`PATCH …/overseer {powers}`) with the same toasts. Full settings (limits, models, watch pace) stay on the project page
   (§app.project-overseer/limits).
 - **Run Now** (`POST …/overseer/run`, §app.project-overseer/watch-loop): disabled while it works, with
   the reason "Working now"; done: "The overseer is looking now."; refused: the server's sentence.
@@ -296,19 +295,17 @@ user row.
   roster has someone again (then the brake can come back if it empties). Changing a switch alone
   never ends the pause. A standalone project has no roster brake.
 - **Stored with the workspace, readable by an older Sova.** `overseer.json` keeps `powers {version: 1,
-  derivedAutonomy, overseer, assistant, assistantModels?, emptyRosterResumedAt?, note?, stamp}` (`stamp`: a
+  derivedAutonomy, overseer, assistant, assistantModels?, emptyRosterResumedAt?, stamp}` (`stamp`: a
   hash of the whole file as saved, written last, only by a Sova that knows switches) and, on every
   save, `autonomy` set to the highest level whose every old power is On in the overseer column, so
   an older Sova on another host reading only the level is never looser than the switches; the old
   `confirmKinds` and `confirmKindsKnown` are read and ignored, and no longer written (an older reader
-  then confirms every kind: stricter). A bad value of one switch reads as its carry-over default.
+  then confirms every kind: stricter); a `note` an earlier version stored is read and dropped. A bad value of one switch reads as its carry-over default.
 - **Carry-over.** A project with no `powers` (every project before this change) reads its overseer
   column from its level: each power whose old level is at or below the project's level is On, every
-  other Off (`deploy` had no level: Off); the Project Assistant column starts all Off; a one-time note
-  says levels are now switches and that held acts no longer wait for the overseer's own approval
-  (the old checklist), so an On act goes ahead after its waiting period alone. A level written by a
-  Sova that doesn't know switches re-derives the overseer column from that level the same way, and
-  the note says so. Such a save is told by what only a Sova that knows switches controls, never by the
+  other Off (`deploy` had no level: Off); the Project Assistant column starts all Off. No note
+  announces it. A level written by a Sova that doesn't know switches re-derives the overseer
+  column from that level the same way, silently too. Such a save is told by what only a Sova that knows switches controls, never by the
   level's value alone (an older Sova rewriting the same level, to rule coding out, still turns
   `codingStart` Off): `confirmKinds` or `confirmKindsKnown` in the file (an older Sova always writes
   them), a `stamp` that no longer matches the file, or `autonomy` differing from
@@ -967,6 +964,10 @@ judgement.
   with Merge Branch and Remove Worktree… both disabled, "Reading its branch": no branch gesture
   acts on a state the page hasn't read. Once they arrive the menu is as above. Merge Branch and Remove Worktree
   answer the branch read's shape, and the page reads the overseer's state again after either.
+  A refresh (either read again, or any chat changing) updates the rows in place, each matched by
+  its session, and never rebuilds the list: an open **⋯** menu stays open and the page keeps its
+  scroll position and keyboard focus, while a row's text, chips and menu entries still change as
+  they arrive, and a menu entry acts on what its row shows when it is chosen.
 - **Merge Branch** is the operator's gesture; the overseer has no tool for it. It merges
   `sova/<name>` into `target` in the project root's checkout, which must have `target` checked
   out, no tracked changes and no merge, rebase or cherry-pick in progress: a fast-forward when
@@ -1279,7 +1280,8 @@ judgement.
   the same coding settings, mode and pin. It gets no `sova-coding-worktree` note and no commit
   paragraph at start; the conversation names its worktree later, with the session's own
   `worktree` tool, and the project adopts it then (§app.project-overseer/coding-worktrees,
-  **Adopted later**). The answer carries no `worktree`. A request's Start Chat on the org's Requests tab
+  **Adopted later**). The answer carries no `worktree`. A project card's New Chat on the overview
+  sends exactly what the Project tab sends (§app.projects/home-cards). A request's Start Chat on the org's Requests tab
   starts the same session with `"later"` and the request's title (§app.project-assistant/request-chat). The project page's New Coding Session
   button, Start Coding Session and the overseers' starts never send it: they cut the worktree at
   create, as above. In a project root that can't have worktrees (§app.project-overseer/coding-worktrees,

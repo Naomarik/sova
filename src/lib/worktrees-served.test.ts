@@ -51,7 +51,8 @@ test("Land keys on mergeServed alone: a listed project with checks but no mergeS
 test("the modal's head: the queue's intro and paused line only where some row is served", () => {
   assert.deepEqual(modalHead([unlisted, listedUnset, unlistedDirty]), { intro: null, paused: null });
   const both = modalHead([unlisted, { ...served, mergeProject: project({ paused: "you paused it" }) }]);
-  assert.match(both.intro!, /^Land queues a branch\. It's merged onto master,/);
+  // One line in the dialog's foot (fold layout): what Land does and what lands, no target named.
+  assert.equal(both.intro, "Land queues a branch; it lands as the commit that was tested.");
   assert.equal(both.paused, "The queue is paused: you paused it. Land still takes your approval; it's checked once the queue resumes.");
   // A listed-not-set-up project's paused facts never speak for the queue: no row there is served.
   assert.equal(modalHead([{ ...listedUnset, mergeProject: project({ checks: "unset", paused: "x" }) }]).paused, null);

@@ -646,6 +646,13 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .rel-artifacts { margin: 0; padding-left: var(--space-4); }
 .rel-actions .rel-abandon { margin-left: auto; }
 .rel-why { margin: 0; }
+.rel-saved-note { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+.rel-saved-note p { margin: 0; }
+.rel-note-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9lh; overflow: auto; }
+.rel-start-context { display: flex; flex-direction: column; gap: var(--space-2); }
+.rel-note-editor .textarea { min-height: 96px; resize: vertical; }
+.rel-note-editor .field-hint { margin: 0; }
+.rel-note-count { margin-left: auto; font-variant-numeric: tabular-nums; }
 .rel-row .list-title { flex-wrap: wrap; gap: var(--space-1) var(--space-2); }
 .deploy-release { display: block; margin-top: var(--space-1); }
 @media (max-width: 767px) {

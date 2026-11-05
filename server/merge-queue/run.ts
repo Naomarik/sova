@@ -22,7 +22,7 @@ import { slotLayoutOf } from "../../shared/project-slots";
 import { NO_BACKGROUND_CLEANUP } from "../git-no-background";
 import { agentRoot } from "../state-root";
 import { blameCheck, blameFile, blameSetup, type CheckBlame, summarize } from "./attribute";
-import { checksOf, countsOf, type CopyScope, envOf, type PlannedCheck, picksOf, planChecks, runCheck, templateVarsOf } from "./checks";
+import { type CheckRun, checksOf, countsOf, type CopyScope, envOf, freshOf, type PlannedCheck, picksOf, planChecks, reusedWords, runCheck, templateVarsOf } from "./checks";
 import type { RunHooks, RunInput, RunMerge, RunOutcome } from "./contract";
 import { assertCopyOutsideState, CopyRefused, gitOut, gitProc, mergeCopyPath, moveCopy, prepareCopy, runProc } from "./copy";
 import { reviewStep, type ReviewDeps } from "./review-step";
@@ -44,6 +44,8 @@ export interface RunDeps extends ReviewDeps {
 
 const now = () => new Date().toISOString();
 const short = (sha: string) => sha.slice(0, 7);
+/** At most `n` characters; a cut text ends in "…" (the full text is in the step's log). */
+export const clip = (s: string, n: number): string => (s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s);
 const tail = (s: string, n = 1) => s.trim().split("\n").slice(-n).join(" ").slice(0, 300);
 
 /** The steps of one run: each with its own log file from its first line, every change reported to the queue. */
@@ -85,6 +87,32 @@ class Step {
 /** A rerun's report says it ran no test at all (none listed in `ranFiles`, and no passed or failed test): its exit 0
  *  proves nothing. No report at all says nothing either way (a build check writes none). */
 const ranNothingIn = (r: import("./checks").CheckReport | null): boolean => !!r && !(r.ranFiles?.length) && (r.passed ?? 0) + (r.failed ?? 0) === 0;
+
+/** A release's entry (a release or its revert): every check runs fresh, the merge set as well as the release's gates. */
+export const isReleaseRun = (input: Pick<RunInput, "entry" | "releaseChecks">): boolean => !!input.entry?.release || !!input.releaseChecks;
+
+/**
+ * How a check that exited 0 ends: skipped with the runner's why, else passed, with what it reused in `detail` ("412
+ * ran, 568 already passed on identical code (28 re-checked)") and `reused` set (the estimate learns nothing from it).
+ * A check that reused passes is never shown Skipped while the re-check sampled anything.
+ */
+export function passedEnd(r: Pick<CheckRun, "report">, counts: RunStep["counts"]): [StepResult, Partial<RunStep>] {
+  const used = r.report?.reused;
+  const words = used ? reusedWords(used) : null;
+  if (used && words && (used.rechecked > 0 || used.files < used.of)) return ["passed", { counts, detail: words, reused: used.files + used.rechecked }];
+  if (r.report?.skippedWhy) return ["skipped", { counts, detail: `skipped: ${r.report.skippedWhy}`, ...(used?.files ? { reused: used.files } : {}) }];
+  return ["passed", { counts, ...(words ? { detail: words, reused: used!.files + used!.rechecked } : {}) }];
+}
+
+/** The step's log names each test file that wasn't run again and the run its pass came from (the run page shows the log). */
+function logReused(st: Step, r: CheckRun): void {
+  const used = r.report?.reused;
+  if (!used || used.files + used.rechecked <= 0) return;
+  const words = reusedWords(used);
+  st.log(`\n== ${words}${used.at ? `; newest pass ${used.at}` : ""}${used.from ? ` (${used.from})` : ""}\n`);
+  for (const f of used.list) st.log(`  reused ${f.file}${f.at ? ` · passed ${f.at}` : ""}${f.from ? ` · ${f.from}` : ""}${f.run ? ` · run ${f.run}` : ""}\n`);
+  if (used.list.length < used.files) st.log(`  (${used.files - used.list.length} more not listed)\n`);
+}
 
 export const mergeSlotOf = (def: ProjectDef): number => Math.max(...slotLayoutOf(def, null).scratch) + 1;
 
@@ -335,6 +363,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
 
   // 6. checks, with the review beside them
   const list = planChecks(def, input.picks, input.releaseChecks);
+  const release = isReleaseRun(input);
   checksShown = picksOf(list);
   hooks.checks(checksShown);
   const review = input.review ? startReview({ input, copy, tip, steps, deps, def }) : null;
@@ -369,12 +398,13 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     const blames: CheckBlame[] = [];
     for (const check of list) {
       const st = steps.start(`check:${check.id}`, "check", check.label, { source: check.source, ...(check.why ? { why: check.why } : {}) });
-      const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, signal });
+      const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, fresh: freshOf(def, { release }), signal });
       if (r.proc.aborted || signal.aborted) return finish((st.end("failed", { detail: "aborted" }), voided("aborted")));
       if (r.proc.timedOut) return finish((st.end("failed", { detail: `timed out after ${check.timeoutSec} s` }), voided(`${check.label} timed out after ${check.timeoutSec} s`)));
       const counts = countsOf(r.report);
+      logReused(st, r);
       if (r.proc.code === 0) {
-        st.end(r.report?.skippedWhy ? "skipped" : "passed", { counts, ...(r.report?.skippedWhy ? { detail: `skipped: ${r.report.skippedWhy}` } : {}) });
+        st.end(...passedEnd(r, counts));
         continue;
       }
       st.end("failed", { counts, detail: r.failingFiles.length ? `${r.failingFiles.length} failing file${r.failingFiles.length === 1 ? "" : "s"}` : `exit ${r.proc.code}`, failures: (r.report?.failures ?? r.failingFiles.map((file) => ({ file }))).slice(0, 50) });
@@ -387,7 +417,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
       const files = check.rerun && !byName ? r.failingFiles : [];
       const names = byName ? idsOf(r) : [];
       const again = steps.start(`rerun-tip:${check.id}`, "rerun-tip", `${check.label} again${files.length ? ` (${files.length} file${files.length === 1 ? "" : "s"})` : ""}`);
-      const r2 = await runCheck({ def, scope, check, stepId: `rerun-tip:${check.id}`, logFile: again.file, ...(files.length ? { files } : {}), signal });
+      const r2 = await runCheck({ def, scope, check, stepId: `rerun-tip:${check.id}`, logFile: again.file, ...(files.length ? { files } : {}), fresh: freshOf(def, { rerun: true }), signal });
       if (r2.proc.aborted || signal.aborted) return finish((again.end("failed", { detail: "aborted" }), voided("aborted")));
       if (r2.proc.timedOut) return finish((again.end("failed", { detail: "timed out" }), voided(`${check.label} timed out on its rerun`)));
       // Never a pass on a guess: the rerun counts for a file only when it shows it ran it (`ranFiles`, or for a runner that
@@ -458,7 +488,7 @@ async function runOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
           blames.push({ id: check.id, label: check.label, files: files.map((file) => ({ file, blame: "branch" as const })) });
           continue;
         }
-        const r = await runCheck({ def, scope: baseScope, check, stepId: `rerun-master:${check.id}`, logFile: st.file, ...(files.length ? { files: onBase } : {}), signal });
+        const r = await runCheck({ def, scope: baseScope, check, stepId: `rerun-master:${check.id}`, logFile: st.file, ...(files.length ? { files: onBase } : {}), fresh: freshOf(def, { rerun: true }), signal });
         if (r.proc.aborted || signal.aborted) return finish((st.end("failed", { detail: "aborted" }), voided("aborted")));
         if (r.proc.timedOut) return finish((st.end("failed", { detail: "timed out" }), voided(`${check.label} timed out on ${target} alone`)));
         if (names?.length) {
@@ -604,16 +634,17 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     const red: string[] = [];
     for (const check of list) {
       const st = steps.start(`check:${check.id}`, "check", check.label, { source: check.source });
-      const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, signal });
+      const r = await runCheck({ def, scope, check, stepId: check.id, logFile: st.file, fresh: freshOf(def, { release: isReleaseRun(input) }), signal });
       if (r.proc.aborted || signal.aborted) return (st.end("failed", { detail: "aborted" }), voided("aborted"));
       if (r.proc.timedOut) return (st.end("failed", { detail: `timed out after ${check.timeoutSec} s` }), out({ verdict: "failed", why: `${check.label} timed out after ${check.timeoutSec} s on ${target} itself`, copy }));
+      logReused(st, r);
       if (r.proc.code === 0) {
-        st.end(r.report?.skippedWhy ? "skipped" : "passed", { counts: countsOf(r.report), ...(r.report?.skippedWhy ? { detail: `skipped: ${r.report.skippedWhy}` } : {}) });
+        st.end(...passedEnd(r, countsOf(r.report)));
         continue;
       }
       st.end("failed", { counts: countsOf(r.report), detail: `exit ${r.proc.code}`, failures: (r.report?.failures ?? []).slice(0, 50) });
       const again = steps.start(`rerun-tip:${check.id}`, "rerun-tip", `${check.label} again`);
-      const r2 = await runCheck({ def, scope, check, stepId: `rerun-tip:${check.id}`, logFile: again.file, signal });
+      const r2 = await runCheck({ def, scope, check, stepId: `rerun-tip:${check.id}`, logFile: again.file, fresh: freshOf(def, { rerun: true }), signal });
       if (r2.proc.aborted || signal.aborted) return (again.end("failed", { detail: "aborted" }), voided("aborted"));
       if (r2.proc.code === 0 && !ranNothingIn(r2.report)) {
         again.end("passed", { detail: "passes on a rerun: flaky" });
@@ -636,8 +667,8 @@ function reviewed(r: ReviewResult | null, o: RunOutcome): RunOutcome {
   if (!r.ok) return { ...o, verdict: "machine", blame: "reviewer", why: `the review couldn't finish: ${r.why}` };
   const v = r.verdict;
   if (v.verdict === "ok") return { ...o, review: v };
-  if (v.verdict === "notes") return { ...o, review: v, notes: [...o.notes, { kind: "review", text: (v.text ?? "review notes").slice(0, 300), at: v.at }] };
-  return { ...o, review: v, verdict: "review-flagged", why: `review flagged: ${(v.text ?? "").slice(0, 200)}` };
+  if (v.verdict === "notes") return { ...o, review: v, notes: [...o.notes, { kind: "review", text: clip(v.text ?? "review notes", 300), at: v.at }] };
+  return { ...o, review: v, verdict: "review-flagged", why: `review flagged: ${clip(v.text ?? "", 200)}` };
 }
 
 type ReviewResult = { ok: true; verdict: ReviewVerdict } | { ok: false; why: string };
@@ -655,7 +686,7 @@ function startReview(o: { input: RunInput; copy: string; tip: string; steps: Ste
       return { ok: true as const, verdict: { verdict: "ok" as const, commit: o.tip, at: now(), text: "no review kit" } };
     }
     const r = await reviewStep({ awaitReview: o.input.awaitReview, runId: o.input.runId, projectId: o.input.project.id, root: o.input.project.root, copy: o.copy, base: o.input.base, commit: o.tip, branch: o.input.entry.branch, kit, target: o.input.project.target, log: st.log, signal: ctl.signal }, o.deps);
-    if (r.ok) st.end(r.verdict.verdict === "blocking" ? "failed" : "passed", { detail: `${r.verdict.verdict}${r.verdict.text ? `: ${r.verdict.text.slice(0, 200)}` : ""}` });
+    if (r.ok) st.end(r.verdict.verdict === "blocking" ? "failed" : "passed", { detail: `${r.verdict.verdict}${r.verdict.text ? `: ${clip(r.verdict.text, 200)}` : ""}` });
     else st.end("failed", { detail: r.why });
     return r;
   })().finally(() => {

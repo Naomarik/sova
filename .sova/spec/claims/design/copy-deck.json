@@ -174,7 +174,9 @@
       "server/merge-queue/wake.ts",
       "src/lib/merge-queue-chats.ts",
       "src/lib/merge-queue-settings.ts",
-      "server/merge-queue/notices.ts"
+      "server/merge-queue/notices.ts",
+      "src/components/BranchSummary.tsx",
+      "src/components/SummarizerSettings.tsx"
     ]
   },
   "§design.copy-deck/merge-queue-chats": {

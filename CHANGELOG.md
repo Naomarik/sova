@@ -4,6 +4,30 @@ What changed in each Sova release, newest first: the highlights, written by hand
 list. The install command installs the newest release (the `stable` tag); `SOVA_REF=vX.Y.Z` installs
 or keeps one release. How a release is cut: [CONTRIBUTING.md](CONTRIBUTING.md#releases).
 
+## v0.10.2 — 2026-11-05
+
+Branch summaries in the merge queue, a Land that asks first, and Tailscale on a Mac with no
+setting. 27 commits since v0.10.1. The highlights:
+
+- **Branch summaries.** Once a branch reads Ready to land, its row in the Merge Queue tab and in the
+  Worktrees rows (the composer's dialog and the session pane) gets up to five plain bullets saying
+  what it does, written in the background by the model Settings → Summaries names. Rows now lead
+  with the owning chat's title, then the branch, then the bullets. A summary that failed offers Try
+  Again; one from an earlier commit says so.
+- **Land asks first.** Land opens a short confirm in the row ("Land <branch>?", how many commits go
+  to the queue), with Not Yet and Land <N> Commits. Escape or Not Yet backs out. Land Without Its
+  Specs… uses the same confirm. The Worktrees dialog is tighter and fits the Fold, and every row
+  action keeps its button's own size.
+- **Tailscale on a Mac.** Add Peer by name, Find Hosts and the peer listener now work on macOS with
+  no setting: Sova finds the tailscale.com app, the App Store app or Homebrew tailscaled on its own,
+  and each problem it hits says what to do (start tailscaled, use an administrator account, Allow
+  the firewall prompt). `SOVA_TAILSCALE_SOCKET` still wins when set. The mesh guide covers it.
+- **Smaller fixes.** The Overseer's Ideas count leaves out dropped and done ideas. A branch whose
+  landing specs are still being checked stays held instead of dropping out of the queue.
+
+Going back to `v0.10.1` (`SOVA_REF=v0.10.1`) keeps your settings and sessions as they are; v0.10.1
+ignores the stored branch summaries, and Land goes back to queueing without a confirm.
+
 ## v0.10.1 — 2026-11-04
 
 Create mode, Upgrade in Settings working again, and a Release Note for each release. 270 commits

@@ -5,7 +5,7 @@
 // is either a named exemption below, with its reason, or counted in server/form-inventory-baseline.test.json:
 // the controls not moved to the kit yet. The baseline only shrinks: a new control outside the kit
 // fails here, and so does a file that now has fewer than its baseline says (lower it with
-// FORM_INVENTORY_WRITE=1 pnpm test -- server/form-inventory.test.ts, which never raises a count).
+// WRITE_FORM_INVENTORY_SNAPSHOT=1 pnpm test -- server/form-inventory.test.ts, which never raises a count).
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, relative } from "node:path";
@@ -57,12 +57,12 @@ test("every control outside the form kit is a named exemption or in the shrinkin
   const baseline = JSON.parse(readFileSync(BASELINE, "utf8")) as Record<string, number>;
   const grown = Object.entries(now).filter(([f, n]) => n > (baseline[f] ?? 0));
   assert.deepEqual(grown, [], `controls drawn by hand outside ${KIT}: draw them with the kit (TextField, NumberField, TextArea, Select, Toggle, Choice, SearchField)`);
-  if (process.env.FORM_INVENTORY_WRITE) {
+  if (process.env.WRITE_FORM_INVENTORY_SNAPSHOT) {
     const lowered = Object.fromEntries(Object.keys(baseline).filter((f) => now[f]).sort().map((f) => [f, now[f]]));
     writeFileSync(BASELINE, `${JSON.stringify(lowered, null, 2)}\n`);
   }
   const shrunk = Object.entries(baseline).filter(([f, n]) => (now[f] ?? 0) < n);
-  assert.deepEqual(shrunk, [], `${relative(ROOT, BASELINE)} counts controls these files no longer draw by hand: lower it (FORM_INVENTORY_WRITE=1)`);
+  assert.deepEqual(shrunk, [], `${relative(ROOT, BASELINE)} counts controls these files no longer draw by hand: lower it (WRITE_FORM_INVENTORY_SNAPSHOT=1)`);
 });
 
 test("every exemption still matches a control (one that matches none comes off the list)", () => {

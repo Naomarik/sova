@@ -338,6 +338,35 @@ export function rerunArgvOf(def: ProjectDef, check: Pick<PlannedCheck, "run" | "
   return [...rendered, ...(check.select ?? [])];
 }
 
+/**
+ * A test check: one whose command is the project's own test command (`test.run`, found whole inside the check's
+ * command, after any wrapper such as `nice`, with any selection flags after it: the same reading rerunArgvOf makes).
+ * Only such a check is ever "broken on the target" (it ran no test at all, everywhere): a build or typecheck that
+ * fails on both sides keeps its own rules. A project with no `test.run` has no test check. Pure.
+ */
+export function isTestCheck(def: Pick<ProjectDef, "test"> | null, check: Pick<PlannedCheck, "run">): boolean {
+  const test = def?.test?.run ?? [];
+  if (!test.length || test.length > check.run.length) return false;
+  for (let i = 0; i + test.length <= check.run.length; i++) if (test.every((a, j) => check.run[i + j] === a)) return true;
+  return false;
+}
+
+/** A failed run that shows it ran no test: its report counts none and names no failing file or test. No report shows
+ *  nothing (a crash midway, or a runner that writes none: real failures may be in there). */
+export function ranNoTest(r: Pick<CheckRun, "failingFiles" | "report">): boolean {
+  if (!r.report || r.failingFiles.length || r.report.failingNames.length || r.report.ranFiles?.length) return false;
+  return (r.report.passed ?? 0) + (r.report.failed ?? 0) === 0;
+}
+
+/** The first line a run printed that isn't the runner's own framing (the log's `$ …` and `[…]` lines): its error. */
+export function firstOutputLine(out: string): string | undefined {
+  for (const raw of out.split("\n")) {
+    const line = raw.trim();
+    if (line && !line.startsWith("$ ") && !/^\[.*\]$/.test(line)) return line.slice(0, 200);
+  }
+  return undefined;
+}
+
 /** Run `check` (with `files` appended, for a rerun) in the copy, its output appended to `logFile`. */
 export async function runCheck(o: {
   def: ProjectDef;

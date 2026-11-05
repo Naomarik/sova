@@ -213,3 +213,40 @@ describe("reuse of passes from identical code", () => {
     expect(passedEnd(rep({ skippedWhy: "no change to its paths" }), counts)).toEqual(["skipped", { counts, detail: "skipped: no change to its paths" }]);
   });
 });
+
+describe("test checks and runs that ran no test", () => {
+  test("a test check is one whose command holds the project's test command whole (after a wrapper, before its flags)", async () => {
+    const { isTestCheck } = await import("./checks");
+    const def = { test: { run: ["node", "scripts/run-tests.mjs"] } } as Pick<ProjectDef, "test">;
+    expect(isTestCheck(def, { run: ["node", "scripts/nice.mjs", "node", "scripts/run-tests.mjs", "--integration", "--groups"] })).toBe(true);
+    expect(isTestCheck(def, { run: ["node", "scripts/run-tests.mjs"] })).toBe(true);
+    expect(isTestCheck(def, { run: ["pnpm", "run", "typecheck"] })).toBe(false);
+    expect(isTestCheck(def, { run: ["node", "scripts/run-tests.mjs.bak"] })).toBe(false);
+    expect(isTestCheck(null, { run: ["node", "scripts/run-tests.mjs"] })).toBe(false);
+    expect(isTestCheck({} as Pick<ProjectDef, "test">, { run: ["node", "x"] })).toBe(false);
+  });
+
+  test("Sova's own integration-group check is a test check by that rule, and its build and typecheck aren't", async () => {
+    const { isTestCheck } = await import("./checks");
+    const { readFileSync } = await import("node:fs");
+    const raw = JSON.parse(readFileSync(join(import.meta.dirname, "..", "..", ".sova", "project.json"), "utf8")) as { test: { run: string[] }; merge: { checks: { id: string; run: string[] }[] } };
+    const by = (id: string) => raw.merge.checks.find((c) => c.id === id)!;
+    expect(isTestCheck(raw as unknown as ProjectDef, by("integration-group"))).toBe(true);
+    expect(isTestCheck(raw as unknown as ProjectDef, by("unit"))).toBe(true);
+    expect(isTestCheck(raw as unknown as ProjectDef, by("typecheck"))).toBe(false);
+    expect(isTestCheck(raw as unknown as ProjectDef, by("build"))).toBe(false);
+  });
+
+  test("ran no test: a report that counts none and names no failing file or test; no report says nothing; the first line is the error", async () => {
+    const { firstOutputLine, ranNoTest } = await import("./checks");
+    const report = (o: Partial<{ passed: number | null; failed: number | null; failingNames: string[]; ranFiles: string[] }>) => ({ passed: null, failed: null, skipped: null, failures: [], failingFiles: [], failingNames: [], notes: [], ...o });
+    expect(ranNoTest({ failingFiles: [], report: null })).toBe(false); // a crash midway, or a runner that writes none: tests may have run
+    expect(ranNoTest({ failingFiles: [], report: report({ passed: 0, failed: 0 }) })).toBe(true);
+    expect(ranNoTest({ failingFiles: ["a.test.ts"], report: null })).toBe(false);
+    expect(ranNoTest({ failingFiles: [], report: report({ passed: 3, failed: 0 }) })).toBe(false);
+    expect(ranNoTest({ failingFiles: [], report: report({ failingNames: ["x"] }) })).toBe(false);
+    expect(ranNoTest({ failingFiles: [], report: report({ ranFiles: ["a.test.ts"] }) })).toBe(false);
+    expect(firstOutputLine("$ node scripts/run-tests.mjs --integration --groups\n[fresh: every test file runs (SOVA_FRESH=1)]\n\nrun-tests: --groups needs a value\nusage: …\n")).toBe("run-tests: --groups needs a value");
+    expect(firstOutputLine("\n\n")).toBe(undefined);
+  });
+});

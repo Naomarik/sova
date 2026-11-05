@@ -209,3 +209,24 @@ test("says its temp dir", { timeout: 60_000 }, async () => {
     if (/^\/tmp\/sova-test-home-[^/]+$/.test(left)) rmSync(left, { recursive: true, force: true });
   }
 });
+
+test("a usage error writes a report counting no test (SOVA_OUT), so the merge queue can tell \"no test ran\" from a crash", async () => {
+  const { ranNoTest, readCheckOut } = await import("../server/merge-queue/checks");
+  const cases: [string[], RegExp][] = [
+    [["--integration", "--groups"], /--groups needs a value/],
+    [["--groups", "no-such-group"], /no test group no-such-group/],
+    [["--integration", "--all"], /usage:/],
+    [["server"], /is a folder/],
+  ];
+  for (const [args, said] of cases) {
+    const out = join(base, `usage-${args.join("_").replace(/\W/g, "")}.json`);
+    const r = spawnSync("node", ["scripts/run-tests.mjs", ...args], { cwd: ROOT, env: { ...process.env, SOVA_OUT: out }, encoding: "utf8" });
+    assert.equal(r.status, 2, `${args.join(" ")}: ${r.stderr}`);
+    assert.match(r.stderr, said);
+    const report = readCheckOut(out);
+    assert.ok(report, `${args.join(" ")}: a report at ${out}`);
+    assert.equal(report.passed, 0);
+    assert.equal(report.failed, 0);
+    assert.equal(ranNoTest({ failingFiles: report.failingFiles, report }), true, args.join(" "));
+  }
+});

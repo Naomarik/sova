@@ -313,6 +313,90 @@
       "server/merge-queue/guard.test.ts"
     ]
   },
+  "§app.merge-queue/landing-bar": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/landing-bar-states",
+      "§app.merge-queue/landing-bar-detail",
+      "§app.merge-queue/view",
+      "§app.release/tab",
+      "§app.insights/sidebar-foot",
+      "§app/commands"
+    ],
+    "code": [
+      "src/lib/landing-bar.ts",
+      "src/lib/landing-bar-store.ts",
+      "src/components/LandingBar.tsx",
+      "src/components/Sidebar.tsx",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/wire.ts",
+      "server/merge-queue/queue.ts",
+      "server/project-services/release.ts",
+      "shared/merge-queue.ts",
+      "src/components/LandingBar.css",
+      "src/lib/landing-bar.test.ts",
+      "server/merge-queue/landing-summary.integration.test.ts",
+      "src/lib/api.ts",
+      "src/lib/session-feed.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T09:00Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#59b1a0ac"
+    }
+  },
+  "§app.merge-queue/landing-bar-detail": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/view",
+      "§app.release/tab",
+      "§app.insights/sidebar-foot-phone",
+      "§app.session-list/spine",
+      "§app.project-services/merge-verbs",
+      "§app.release/verbs"
+    ],
+    "code": [
+      "src/components/LandingBar.tsx",
+      "src/components/Sidebar.tsx",
+      "src/lib/landing-bar-store.ts",
+      "src/components/LandingBar.css",
+      "src/lib/landing-bar.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T09:00Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#59b1a0ac"
+    }
+  },
+  "§app.merge-queue/landing-bar-states": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§app.merge-queue/view",
+      "§app.merge-queue/blame",
+      "§app.merge-queue/strategies",
+      "§app.merge-queue/requests",
+      "§app.release/tab",
+      "§app.release/checks",
+      "§app.release/quiet",
+      "§app.release/power"
+    ],
+    "code": [
+      "src/lib/landing-bar.ts",
+      "src/components/LandingBar.tsx",
+      "src/lib/landing-bar.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T09:00Z",
+      "source": "pi-session:7a8b8c03-b81f-47d1-9e59-15d1a003d310#59b1a0ac"
+    }
+  },
   "§app.merge-queue/master-moved": {
     "kind": "behavior",
     "authority": "accepted",

@@ -392,7 +392,9 @@ On, an overseer told to release, publish and deploy does the whole chain, each a
 
 The project page has a **Releases** tab after Merge Queue (§app.organizations/project-page), at
 `#/projects/<pid>/releases`, reading `release.status` every 5 seconds and following the session feed's
-`release` frames; the tab, the Overview card and the Deploy card share that one read. Top to bottom:
+`release` frames; the tab, the Overview card and the Deploy card share that one read. The same frames,
+every project's, also drive the sidebar's landing bar, which never publishes or abandons: its Open
+Releases opens this tab for both (§app.merge-queue/landing-bar). Top to bottom:
 
 - **Head**: "Releases" (a **Not set up** chip while not set up) and **Start Release**, while releases
   are set up and read, no release is open and the project isn't archived. Beside it, **Release Note**,

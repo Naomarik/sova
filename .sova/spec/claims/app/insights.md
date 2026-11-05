@@ -86,8 +86,11 @@ working worker is never the one it leaves out.
 ```
 
 **Unfolded (≥768)** the foot holds **two stacked rows, and both are always present**, so the layout never
-jumps: the Usage row is 44px and the Agents row 64px, the extra 20px holding the token chart
-(§app.insights/token-velocity) on a second line. Those two are the foot's only rows: it has no
+jumps under them: the Usage row is 44px and the Agents row 64px, the extra 20px holding the token chart
+(§app.insights/token-velocity) on a second line. Only the **landing bar** comes and goes, above them
+(above the host filter row while the mesh is on), while a merge queue or an open release has something
+to show (§app.merge-queue/landing-bar); it is drawn by its own claim, not here. Besides it, those two
+are the foot's only rows: it has no
 Shares row, and the spine's foot has no Shares button — the Shares page is reached from the
 overview's Shares card (§chat.transcript/landing-page) and from each Sharing section
 (§app.session-share/shares-page). **Folded (<768) none of this shows**: a
@@ -212,7 +215,7 @@ Usage glance needs the room.
   The row itself has room for the figures, not for the sentences.
 
 The rows take no chip, because the pages carry the status, and no color but the usage meters'
-fill tone. Each truncates with an ellipsis.
+fill tone (the landing bar above them has its own icon, count and tones). Each truncates with an ellipsis.
 
 ## §app.insights/sidebar-foot-phone — The foot on a phone: one bar, one sheet
 
@@ -227,7 +230,10 @@ Nothing in them is rewritten, only re-homed: the Agents row's chart scrubs in th
 too, by a 500ms hold on the row and then a drag, and the sheet never scrolls under that drag
 (§app.insights/velocity-scrub). At ≥768 the bar never shows and the foot
 is §app.insights/sidebar-foot as drawn there; the spine is untouched by either. The sheet's
-accessible name is "Hosts, usage and agents".
+accessible name is "Hosts, usage and agents". While a merge queue or an open release has something
+to show, the landing bar's own 44px strip sits directly above this bar, with its own sheet
+(§app.merge-queue/landing-bar); it is neither part of this bar nor in this sheet, and the bar
+itself stays 44px.
 
 The bar itself reads the same data as the rows, left to right:
 
@@ -1313,7 +1319,10 @@ usage fetch reads (Claude Code's `~/.claude/.credentials.json`, pi's `auth.json`
 Codex CLI's `~/.codex/auth.json`), re-read only when a file changes; on macOS a Claude login with no
 credentials file is read from its keychain item instead, for the fetch and for these numbers
 (§app.claude-logins/macos-keychain), and then carries no `refreshedAt`. It carries numbers, enums and
-booleans only: no string from a credential file ever leaves the server. Claude's
+booleans only: no string from a credential file ever leaves the server, with one named exception:
+OpenAI's sign-in through pi (`openai-codex`) also carries the signed-in account's `email`, read on
+the server from the access token's own claims (§app.openai-login/section); never the token or any
+other string from it. Claude's
 `refreshedAt` is the credentials file's modification time, and only while that time agrees (to
 within 10 minutes) with an 8-hour token lifetime ending at `expiresAt`; otherwise it is left out
 rather than guessed. OpenAI signed in through pi has an expiry and no renewal time; signed in only
@@ -1325,6 +1334,9 @@ when Claude Code itself runs; the Usage page says so (§app.insights/usage-cards
 renewing it. The one exception is Settings → Accounts (§app.claude-logins/add-remove): at the
 user's request Sova runs Claude Code's own `claude auth login` and `claude auth logout` in an added
 login's directory, and deletes that directory on removal. Claude Code writes those credentials.
+The second is OpenAI in Settings → Accounts (§app.openai-login/sign-in, §app.openai-login/sign-out):
+at the user's request Sova runs pi's own sign-in and sign-out for `openai-codex`, which save the
+sign-in to, and remove it from, pi's `auth.json`. pi renews it while chats use it; Sova never does.
 
 **Every Claude login's usage.** Claude Code's own credentials are read from its own directory
 (`$CLAUDE_CONFIG_DIR` when set, else `~/.claude`), as its spawns use it. Each other Claude login

@@ -420,6 +420,8 @@ Under the logins, one plain line says whether the Claude Code CLI was found
 exists (§app.claude-logins/macos-keychain), so **Add a login** finishes there too; and when this
 device's own login can be read neither from its file nor from the keychain, a muted line under
 **This device's own login** says "On macOS, add your Claude login under Settings → Accounts."
+Below the Claude logins, an **OpenAI** section signs in to a ChatGPT subscription for Sova's chats
+(§app.openai-login/section).
 
 **While the mesh is on** the section is the pool (§app.claude-logins/pool): an intro that every
 device shares these logins, one at a time, borrowed from the keeper and given back after a limit,

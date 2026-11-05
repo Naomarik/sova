@@ -78,7 +78,8 @@ terminal has the session open, `new` makes a new one) and a `meshNeed`.
   `project.verb.release.continue`, `project.verb.release.retry`, `project.verb.release.publish`,
   `project.verb.release.abandon`, `project.verb.release.withdraw`, `mcp.servers.list`,
   `mcp.server.status`, `project.verb.release.note`, `project.coding.start`, `project.icon.get`,
-  `project.icon.upload`, `project.icon.letters`, `project.icon.remove`.
+  `project.icon.upload`, `project.icon.letters`, `project.icon.remove`,
+  `project.merge-queue.landing-summary`.
   The `project.verb.*` ids are made from the verb lists of `shared/project-contract.ts`, so a new
   verb is a new entry. The in-chat actions are the `chat.*` entries (§app.chat-actions/catalogue),
   and `chat.mode-command` runs a project mode's command (§chat.mode-menu/project-mode-commands).

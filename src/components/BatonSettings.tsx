@@ -51,8 +51,10 @@ export function BatonSettingsSection() {
     const d = batonDraft();
     if (d) setBatonDraft({ ...d, ...patch });
   };
+  /** Photo boxes are off while photos are; an accessor, so a draft edit never rebuilds the box (and steals its focus). */
+  const photosOff = () => !batonDraft()?.photosOn;
   /** A number box; its range is its hint, and its rule's sentence when it is out of it. */
-  const box = (key: keyof typeof BATON_RULES, label: string, opts: { hint?: string; off?: boolean } = {}) => {
+  const box = (key: keyof typeof BATON_RULES, label: string, opts: { hint?: string; off?: () => boolean } = {}) => {
     const r = BATON_RULES[key];
     return (
       <NumberField
@@ -60,7 +62,7 @@ export function BatonSettingsSection() {
         hint={opts.hint ?? `${r.min}–${r.max}`}
         rule={r}
         value={batonDraft()?.[key] ?? ""}
-        disabled={saving() || opts.off}
+        disabled={saving() || !!opts.off?.()}
         onInput={(v) => edit({ [key]: v })}
       />
     );
@@ -86,9 +88,9 @@ export function BatonSettingsSection() {
         </h4>
         <Toggle switch label="People can send photos" checked={batonDraft()?.photosOn ?? true} disabled={saving()} onChange={(on) => edit({ photosOn: on })} />
         <div class="orgs-fields" role="group" aria-labelledby="settings-orgs-photos">
-          {box("perMessage", "Per message", { off: !batonDraft()?.photosOn })}
-          {box("mb", "Largest photo (MB)", { off: !batonDraft()?.photosOn })}
-          {box("perConversation", "Per conversation", { off: !batonDraft()?.photosOn })}
+          {box("perMessage", "Per message", { off: photosOff })}
+          {box("mb", "Largest photo (MB)", { off: photosOff })}
+          {box("perConversation", "Per conversation", { off: photosOff })}
         </div>
         <p class="field-hint">Applies to every gathering session on this host, from its next message.</p>
         <h4 class="settings-type-title" id="settings-orgs-files">

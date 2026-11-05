@@ -45,7 +45,7 @@ working worker is never the one it leaves out.
     <a class="list-row list-row-interactive insights-row sidebar-foot-link" href="#/usage" aria-current="page"
        title="Usage&#10;Claude 5-hour: 10% used · 2h 10m of 5h · resets 6:59 PM; 7-day: 47% used · day 4 of 7 · resets Oct 9 10:00 PM&#10;OpenAI 7-day: 95% used · day 2 of 7 · resets Oct 8 9:30 PM&#10;…"
        aria-label="Usage: Claude 5-hour: 10% used · 2h 10m of 5h · resets 6:59 PM; 7-day: 47% used · day 4 of 7 · resets Oct 9 10:00 PM. OpenAI 7-day: …">
-      <span class="icon" style="--icon: url(/icons/gauge.svg)" aria-hidden="true"></span>
+      <span class="icon" style="--icon: url(/icons/usage-coin.svg)" aria-hidden="true"></span>
       <span class="insights-row-text usage-glance">
         <!-- a two-window provider: the short window thin on top, the long one below -->
         <span class="usage-glance-item"><span class="usage-glance-tag">C</span>
@@ -68,7 +68,7 @@ working worker is never the one it leaves out.
   <a class="list-row list-row-interactive insights-row" href="#/agents"
      title="Agents: 7 agents working now: 2 sessions and 5 subagents. Output tokens a minute: 48k over the last 5 minutes, 12k over 30. Replies still being written aren't counted yet."
      aria-label="Agents: 7 agents working now: 2 sessions and 5 subagents. Output tokens a minute: 48k over the last 5 minutes, 12k over 30. Replies still being written aren't counted yet.">
-    <span class="icon" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
+    <span class="icon" style="--icon: url(/icons/agents-working.svg)" aria-hidden="true"></span>
     <span class="agents-ticker">
       <span class="agents-line">
         <span class="insights-row-text"><span class="text-num">7</span> agents</span>
@@ -239,7 +239,7 @@ The bar itself reads the same data as the rows, left to right:
 
 - **Mesh.** The connected count `{up}/{total}`, the host filter row's own figures
   (`connectedCount`) — shown only while the mesh is on, the same rule as the row.
-- **Agents working.** The `worker` icon and the Agents row's own figure, the working count
+- **Agents working.** The Agents row's icon (`agents-working`, a small bot head with sparks) and the Agents row's own figure, the working count
   (§app.session-list/working-now: the bare `{n}` whenever known, a floor too, `–` while unknown),
   no word — the bar is a strip of figures; the accessible name says it. Always shown, a complete
   `0` included.

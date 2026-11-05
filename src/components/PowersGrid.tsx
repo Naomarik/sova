@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, Show } from "solid-js";
 import type { PowerMap } from "../../shared/powers";
 import type { ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
-import { ALWAYS_DISCLOSURE, ALWAYS_LINE, COLUMN_LABEL, COLUMN_SHORT, NONE_TIP, STATE_WORD, actCount, alwaysItems, brakeBody, brakeDone, assistantGroups, cellState, columnsFor, expandName, nextOn, noneName, powerGroups, powersNote, powersPatch, switchDone, switchLabel, switchName, type CellState, type PowerColumn, type PowerGroupRow, type PowerRow } from "../lib/powers-view";
+import { ALWAYS_DISCLOSURE, ALWAYS_LINE, COLUMN_LABEL, COLUMN_SHORT, NONE_TIP, STATE_WORD, actCount, alwaysItems, brakeBody, brakeDone, assistantGroups, cellState, columnsFor, expandName, nextOn, noneName, powerGroups, powersPatch, switchDone, switchLabel, switchName, type CellState, type PowerColumn, type PowerGroupRow, type PowerRow } from "../lib/powers-view";
 import { ApiError, getProjectOverseer, patchProjectOverseer } from "../lib/api";
 import { announce, toast } from "../lib/ui-state";
 import { unchangedError } from "../lib/unchanged-error";
@@ -77,21 +77,20 @@ function PowersAlways(props: { items: readonly string[] }) {
 
 /**
  * What may happen without you (§design.copy-deck/project-powers): the lead, the always-allowed
- * line, the Paused banner with Resume, the one-time note and the grid. The Settings tab and the
+ * line, the Paused banner with Resume and the grid. The Settings tab and the
  * chat head's menu both draw this; `save` sends one PATCH and says `done` once it is saved.
  */
 export function PowersPanel(props: {
   info: ProjectOverseerInfo;
   busy: boolean;
   idPrefix: string;
-  /** The head's menu: no lead sentence, and the note stays on the project page. */
+  /** The head's menu: no lead sentence. */
   compact?: boolean;
   save(patch: ProjectOverseerPatch, done: string): void;
 }) {
   const p = () => props.info.settings.powers;
   const groups = createMemo(() => powerGroups(p()));
   const cols = () => columnsFor(p());
-  const note = () => (props.compact ? null : powersNote(p().note));
   return (
     <div class="powers">
       <Show when={!props.compact}>
@@ -107,20 +106,6 @@ export function PowersPanel(props: {
             action={
               <button type="button" class="button button-sm" aria-disabled={props.busy ? "true" : undefined} onClick={() => !props.busy && props.save({ resume: true }, brakeDone)}>
                 Resume
-              </button>
-            }
-          />
-        )}
-      </Show>
-      <Show when={note()}>
-        {(n) => (
-          <Banner
-            tone="info"
-            title={n().title}
-            body={n().body}
-            action={
-              <button type="button" class="button button-sm button-ghost" aria-disabled={props.busy ? "true" : undefined} onClick={() => !props.busy && props.save({ powersNoteSeen: true }, "Note dismissed.")}>
-                Dismiss
               </button>
             }
           />

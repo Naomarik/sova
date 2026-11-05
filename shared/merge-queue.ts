@@ -294,6 +294,9 @@ export interface RunStep {
   log: string;
   counts?: { passed: number | null; failed: number | null; skipped: number | null } | null;
   failures?: { file?: string; name?: string; message?: string; blame?: Blame }[];
+  /** check: how many of its test files already passed on identical code (the re-checked ones too); the step's log
+   *  lists each and its source run. Its time says nothing about the check's full length (the estimate skips it). */
+  reused?: number;
 }
 
 export type RunVerdict =
@@ -511,6 +514,9 @@ export interface MergeReady {
   /** Lines added and removed on the branch's side (target...branch), when read. */
   added?: number;
   removed?: number;
+  /** When the branch last changed: its head's committer date (ISO 8601, `git log -1 --format=%cI`), when read.
+   *  Additive. */
+  headAt?: string;
 }
 
 /** SessionWorktreeInfo.mergeStats: the branch against the target, for the row's "N commits · +a −r". */
@@ -522,6 +528,8 @@ export interface WorktreeMergeStats {
   /** Lines added and removed, the branch's side only (target...branch). */
   added: number;
   removed: number;
+  /** When the branch last changed: its head's committer date (ISO 8601), when read. Additive. */
+  headAt?: string;
 }
 
 /** SessionWorktreeInfo.mergeProject: the project a worktree lands into, whatever its entry. */
@@ -570,6 +578,8 @@ export interface MergeReport {
   /** merge.fresh: whether a thread was retired; merge.clear: the chats deleted. */
   fresh?: boolean;
   cleared?: number;
+  /** merge.hold: the merge thread's hold now (null: none); `until` when it lifts by itself. */
+  hold?: { at: string; until: string } | null;
 }
 
 // ---- the WS feed --------------------------------------------------------------------------------

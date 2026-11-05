@@ -82,7 +82,7 @@ import { createHash } from "node:crypto";
 const STATE = ${JSON.stringify(stateDir)};
 const head = (() => { try { return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(); } catch { return ""; } })();
 const pick = (k) => process.env[k];
-const ENV = Object.fromEntries(["SOVA_VERB","SOVA_STEP","SOVA_OUT","SOVA_MERGE_BASE","SOVA_MERGE_TIP","SOVA_MERGE_CHANGED","SOVA_INSTANCE","SOVA_SLOT","CLAUDE_CONFIG_DIR","SOVA_CHAT_ID","FIXTURE_LEAK"].map((k) => [k, pick(k)]));
+const ENV = Object.fromEntries(["SOVA_VERB","SOVA_STEP","SOVA_OUT","SOVA_MERGE_BASE","SOVA_MERGE_TIP","SOVA_MERGE_CHANGED","SOVA_INSTANCE","SOVA_SLOT","CLAUDE_CONFIG_DIR","SOVA_CHAT_ID","FIXTURE_LEAK","SOVA_FRESH","SOVA_REUSE_SAMPLE"].map((k) => [k, pick(k)]));
 const log = (result) => appendFileSync(STATE + "/calls.jsonl", JSON.stringify({ script: ${JSON.stringify(script)}, cwd: process.cwd(), head, argv: process.argv.slice(2), env: ENV, at: Date.now(), result }) + "\\n");
 const conf = (f, d) => (existsSync(f) ? readFileSync(f, "utf8").trim() : d);
 const once = (key) => { mkdirSync(STATE + "/once", { recursive: true }); const p = STATE + "/once/" + createHash("sha1").update(key).digest("hex"); if (existsSync(p)) return false; writeFileSync(p, key); return true; };
@@ -119,8 +119,11 @@ const files = sel.length ? all.filter((f) => sel.includes(f)) : all;
 if (existsSync("unit.basename") && sel.length && !files.length) { console.log("unit: could not locate " + sel.join(" ")); out({ passed: 0, failed: 0, errors: 1, skipped: 0, failures: [{ name: "test run", message: "could not locate " + sel.join(" ") }] }); log("fail"); process.exit(1); }
 const failures = [];
 let passed = 0;
+// "reused": a file that already passed on identical code (as Sova's runner reuses one), unless SOVA_FRESH=1.
+const reused = [];
 for (const f of files) {
   const c = readFileSync(f, "utf8").trim();
+  if (c === "reused" && process.env.SOVA_FRESH !== "1") { reused.push(f); passed++; continue; }
   if (c === "hang") { console.log("unit: " + f + " hangs"); log("hang"); setInterval(() => {}, 1000); await new Promise(() => {}); }
   if (c.startsWith("gate")) {
     // Held until the test writes <state>/gates/<name> (released) — a check that is "running" for as long as a test needs.
@@ -143,7 +146,8 @@ for (const f of files) {
   if (bad) { failures.push({ ...named, name, message: "expected pass, got " + c }); console.log("not ok " + f); }
   else { passed++; console.log("ok " + f); }
 }
-out({ passed, failed: failures.length, errors: 0, skipped: 0, failures });
+const at = "2026-11-05T14:02:00.000Z";
+out({ passed, failed: failures.length, errors: 0, skipped: 0, failures, ...(reused.length ? { reused: { files: reused.length, of: files.length, rechecked: 0, at, from: "feat/x's chat", list: reused.map((file) => ({ file, at, from: "feat/x's chat", run: "t_src" })) } } : {}) });
 log(failures.length ? "fail" : "pass");
 process.exit(failures.length ? 1 : 0);
 `;

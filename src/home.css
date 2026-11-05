@@ -268,7 +268,7 @@
 }
 .overview-projects-grid > li { display: flex; min-width: 0; }
 
-.project-card {
+.overview-project-card {
   position: relative;
   flex: 1;
   min-width: 0;
@@ -284,12 +284,12 @@
   padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
   transition: border-color var(--dur-fast) var(--ease-standard), box-shadow var(--dur-fast) var(--ease-standard);
 }
-.project-card:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-2); }
-.project-card-needs,
-.project-card-needs:hover { border-color: var(--status-warn); }
-.project-card-icon { grid-area: icon; }
-.project-card-names { grid-area: names; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.project-card-name {
+.overview-project-card:hover { border-color: var(--color-border-strong); box-shadow: var(--shadow-2); }
+.overview-project-card-needs,
+.overview-project-card-needs:hover { border-color: var(--status-warn); }
+.overview-project-card-icon { grid-area: icon; }
+.overview-project-card-names { grid-area: names; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.overview-project-card-name {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -298,10 +298,10 @@
   color: var(--color-ink);
   text-decoration: none;
 }
-.project-card-name::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
-.project-card-name:focus-visible { outline: none; }
-.project-card-name:focus-visible::after { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.project-card-where {
+.overview-project-card-name::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.overview-project-card-name:focus-visible { outline: none; }
+.overview-project-card-name:focus-visible::after { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.overview-project-card-where {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -310,10 +310,10 @@
   line-height: var(--lh-caption);
   color: var(--color-ink-muted);
 }
-.project-card-menu { grid-area: menu; align-self: start; position: relative; z-index: 1; }
+.overview-project-card-menu { grid-area: menu; align-self: start; position: relative; z-index: 1; }
 /* The status line and New Chat share the card's last row; New Chat drops under the chips only when they can't fit. */
-.project-card-foot { grid-area: foot; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
-.project-card-status {
+.overview-project-card-foot { grid-area: foot; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.overview-project-card-status {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
@@ -322,9 +322,9 @@
   gap: var(--space-1);
   min-height: var(--control-sm);
 }
-.project-card-when { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.project-card-new { flex: none; margin-left: auto; position: relative; z-index: 1; }
-.project-card-error {
+.overview-project-card-when { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.overview-project-card-new { flex: none; margin-left: auto; position: relative; z-index: 1; }
+.overview-project-card-error {
   grid-area: error;
   position: relative;
   z-index: 1;
@@ -334,7 +334,7 @@
   color: var(--status-error);
   overflow-wrap: anywhere;
 }
-.project-card-add {
+.overview-project-card-add {
   flex: 1;
   min-height: 108px;
   display: inline-flex;
@@ -351,8 +351,8 @@
   cursor: pointer;
   transition: border-color var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard), background-color var(--dur-fast) var(--ease-standard);
 }
-.project-card-add:hover { border-color: var(--color-ink-muted); color: var(--color-ink); background: var(--color-sunken); }
-.project-card-add:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.overview-project-card-add:hover { border-color: var(--color-ink-muted); color: var(--color-ink); background: var(--color-sunken); }
+.overview-project-card-add:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
 
 .overview-projects-empty { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); padding: var(--space-4); }
 .overview-projects-empty-title { margin: 0; font-weight: var(--fw-semibold); color: var(--color-ink); }
@@ -362,7 +362,7 @@
    across the whole card. New Chat is a + button. Every control is at least 44px tall. */
 @container overview (max-width: 479px) {
   .overview-projects-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 156px), 1fr)); gap: var(--space-2); }
-  .project-card {
+  .overview-project-card {
     grid-template-columns: auto minmax(0, 1fr) auto auto;
     grid-template-areas:
       "icon . new menu"
@@ -373,11 +373,11 @@
     column-gap: var(--space-1);
     padding: var(--space-3);
   }
-  .project-card-foot { display: contents; }
-  .project-card-status { grid-area: status; min-height: var(--control-sm); }
-  .project-card-new { grid-area: new; margin-left: 0; min-width: var(--tap-min); min-height: var(--tap-min); padding: 0; justify-content: center; }
-  .project-card-menu { align-self: center; }
-  .project-card-menu .button { min-width: var(--tap-min); min-height: var(--tap-min); }
-  .project-card-new-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .project-card-add { min-height: 132px; }
+  .overview-project-card-foot { display: contents; }
+  .overview-project-card-status { grid-area: status; min-height: var(--control-sm); }
+  .overview-project-card-new { grid-area: new; margin-left: 0; min-width: var(--tap-min); min-height: var(--tap-min); padding: 0; justify-content: center; }
+  .overview-project-card-menu { align-self: center; }
+  .overview-project-card-menu .button { min-width: var(--tap-min); min-height: var(--tap-min); }
+  .overview-project-card-new-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .overview-project-card-add { min-height: 132px; }
 }

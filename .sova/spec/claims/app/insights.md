@@ -422,7 +422,8 @@ host and every connected host.**
 
 **Every model call made on this device by Sova or pi (main sessions, the Overseer, org and baton
 sessions, workers at any depth, pi or Claude Code, and one-shots: decisions, titles, topic
-outlines, image descriptions, compaction, branch summaries, cache warming) writes one usage record
+outlines, image descriptions, compaction, branch summaries, cache warming, the merge queue's branch
+summaries) writes one usage record
 at its end, and every figure of spend Sova shows is read from these records and priced by one
 function.** Standalone `claude` use outside Sova and pi is not recorded.
 
@@ -430,7 +431,9 @@ function.** Standalone `claude` use outside Sova and pi is not recorded.
   1-hour part when the provider reports it), the provider, the model asked for and the model that
   answered, when the call ended, the session that owns it, that session's parent (a worker's
   session), the kind (`main`, `worker`, `overseer`, `oneshot`), the purpose of a side call
-  (`title`, `decide`, `outline`, `vision`, `branch-summary`, `compaction`, `cache-warm`, …), the
+  (`title`, `decide`, `outline`, `vision`, `branch-summary`, `compaction`, `cache-warm`, …, and
+  `git-branch-summary`, the merge queue's branch summaries, with their project set, kept apart from
+  `branch-summary`, which is a conversation's), the
   working directory and the org project when known, and a key that names the call. A call that
   reports no tokens writes nothing. Each attempt of a retried call is its own record.
 - **How a Claude process started.** The first record of each Claude Code child the provider bridge

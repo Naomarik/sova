@@ -12,10 +12,12 @@ import type { Git } from "./guard";
 /**
  * What a branch does, in up to 5 plain bullets, on the merge queue's rows and the Worktrees rows. Written in the
  * background by the summary-line model (Settings → Summaries, topic-outline.json: its primary, then its fallback)
- * once a branch reads Ready to land at a commit, from its commit messages and the parts it changed with +/−, never
+ * for each branch on the Ready to land list once its chat is idle (the sweep, summary-sweep.ts), when a chat reads
+ * Ready to land at a commit, or at an approval; from its commit messages and the parts it changed with +/−, never
  * the code change. Kept per project and commit in `<queue dir>/branch-summaries.json` (atomic tmp+rename): a record
- * per commit, `{branch, at, bullets, model}` or `{branch, at, failed: true}`. A failure stays until Try Again
- * (`retry`), a summary that worked is never rewritten. One write in flight per project and commit. Pruned once the
+ * per commit, `{branch, at, bullets, model}` or `{branch, at, failed: true, cause}`. A failure stays until Try Again
+ * (`retry`), except one automatic retry of a model service that didn't answer (`autoRetry`); a summary that worked is
+ * never rewritten. One write at a time on the whole server, in one line (an approval's first). Pruned once the
  * branch has landed or is gone (`prune`), keeping what the queue's landed rows still show.
  */
 
@@ -159,23 +161,33 @@ export interface ChainModel {
   maxBudgetUsd?: number;
 }
 
-/** Writes the bullets for an ask; null when no model could. */
-export type BulletWriter = (prompt: string, project: string) => Promise<{ bullets: string[]; model: string } | null>;
+/** Why no bullets were written: `unavailable`, no model could be reached or run (no model, no auth, a timeout, a
+ *  provider error), worth one automatic retry later; `unusable`, a model answered with nothing usable, never retried by
+ *  itself. */
+export type SummaryFailure = "unavailable" | "unusable";
+/** A writer's answer: the bullets, or why there are none (null reads as `unavailable`). */
+export type WriterAnswer = { bullets: string[]; model: string } | { failed: SummaryFailure } | null;
+/** Writes the bullets for an ask. */
+export type BulletWriter = (prompt: string, project: string) => Promise<WriterAnswer>;
 
-/** Each model once, in order: the first usable answer wins; a model that can't run (`deps.problem`) is skipped. */
-export async function bulletsFromChain(chain: readonly ChainModel[], prompt: string, deps: TitleDeps): Promise<{ bullets: string[]; model: string } | null> {
+/** Each model once, in order: the first usable answer wins; a model that can't run (`deps.problem`) is skipped. With
+ *  none usable: `unusable` when any model answered (an answer that isn't bullets, or isn't JSON), else `unavailable`. */
+export async function bulletsFromChain(chain: readonly ChainModel[], prompt: string, deps: TitleDeps): Promise<{ bullets: string[]; model: string } | { failed: SummaryFailure }> {
   const fail = (failure: ConstructorParameters<typeof DecisionError>[0], message: string) => new DecisionError(failure, message.slice(0, 300));
+  let answered = false;
   for (const m of chain) {
     if (await deps.problem?.(m.choice)) continue;
     try {
       const raw = await askOne(m, prompt, deps, fail);
       const ok = validBullets(raw);
       if (ok) return { bullets: ok, model: `${m.choice.backend === "pi" ? "" : "claude-code/"}${m.choice.model}` };
-    } catch {
-      /* the next model */
+      answered = true;
+    } catch (err) {
+      // A reply that wasn't the JSON asked for is an answer; anything else is the service not answering.
+      if (err instanceof DecisionError && err.failure === "malformed-answer") answered = true;
     }
   }
-  return null;
+  return { failed: answered ? "unusable" : "unavailable" };
 }
 
 async function askOne(m: ChainModel, prompt: string, deps: TitleDeps, fail: (f: ConstructorParameters<typeof DecisionError>[0], msg: string) => DecisionError): Promise<unknown> {
@@ -221,7 +233,9 @@ export const branchBulletWriter = (): BulletWriter | null => writer;
 
 // ---- the store ---------------------------------------------------------------------------------------------------------
 
-export type SummaryRecord = { branch: string; at: string; bullets: string[]; model: string } | { branch: string; at: string; failed: true };
+/** A failure keeps its `cause` (absent in records from before it was kept: read as `unusable`, never retried by
+ *  itself) and whether the sweep's one automatic retry was spent (`retried`). */
+export type SummaryRecord = { branch: string; at: string; bullets: string[]; model: string } | { branch: string; at: string; failed: true; cause?: SummaryFailure; retried?: true };
 interface SummaryFile {
   version: 1;
   commits: Record<string, SummaryRecord>;
@@ -240,7 +254,7 @@ export function readSummaryFile(file: string): Record<string, SummaryRecord> {
   const commits = isObj(raw) && isObj(raw.commits) ? raw.commits : {};
   for (const [sha, v] of Object.entries(commits)) {
     if (!SHA.test(sha) || !isObj(v) || typeof v.branch !== "string" || typeof v.at !== "string") continue;
-    if (v.failed === true) out[sha] = { branch: v.branch, at: v.at, failed: true };
+    if (v.failed === true) out[sha] = { branch: v.branch, at: v.at, failed: true, ...(v.cause === "unavailable" || v.cause === "unusable" ? { cause: v.cause } : {}), ...(v.retried === true ? { retried: true as const } : {}) };
     else if (Array.isArray(v.bullets) && v.bullets.every((b) => typeof b === "string") && v.bullets.length) out[sha] = { branch: v.branch, at: v.at, bullets: v.bullets as string[], model: typeof v.model === "string" ? v.model : "" };
   }
   return out;
@@ -270,9 +284,28 @@ export interface BranchSummaryDeps {
 
 export type EnsureResult = "started" | "busy" | "known" | "no-writer";
 
-/** The project's branch summaries: read for the rows, written once a branch reads Ready to land. */
+/** Waits this long after an `unavailable` failure before the sweep's one automatic retry. */
+export const AUTO_RETRY_AFTER_MS = 10 * 60_000;
+
+interface Job {
+  root: string;
+  branch: string;
+  commit: string;
+  /** The sweep's automatic retry: a failure again is kept as retried (no second one). */
+  retried?: true;
+  done: Promise<void>;
+  resolve: () => void;
+}
+
+/** The project's branch summaries: read for the rows, written for each branch Ready to land, not approved. Writes go
+ *  one at a time across every project and every trigger (the sweep, a chat reading Ready to land, an approval): one
+ *  line per server, an approval's write going to its front. */
 export class BranchSummaries {
-  private readonly writing = new Map<string, Promise<void>>();
+  /** Queued or being written, by root and commit. */
+  private readonly writing = new Map<string, Job>();
+  /** Waiting their turn, in order. */
+  private readonly line: Job[] = [];
+  private running = false;
   private readonly cache = new Map<string, Record<string, SummaryRecord>>();
   constructor(private readonly deps: BranchSummaryDeps) {}
 
@@ -292,9 +325,14 @@ export class BranchSummaries {
     return `${root}\0${commit}`;
   }
 
-  /** Whether a write for this commit is in flight. */
+  /** Whether a write for this commit is queued or in flight. */
   isWriting(root: string, commit: string): boolean {
     return this.writing.has(this.key(root, commit));
+  }
+
+  /** How many writes wait their turn (the one in flight not counted). */
+  waiting(): number {
+    return this.line.length;
   }
 
   /** The row's summary for `branch` at `commit`, or undefined when nothing is known. Never starts a write. */
@@ -312,31 +350,74 @@ export class BranchSummaries {
   }
 
   /** Write the bullets for `branch` at `commit` unless they are known (written, or failed: Try Again asks again) or
-   *  being written. Resolves at once; `done` resolves when the write ends. */
-  ensure(root: string, branch: string, commit: string): { result: EnsureResult; done: Promise<void> } {
+   *  queued. Resolves at once; `done` resolves when the write ends. `front`: an approval's, written next (the one in
+   *  flight finishes first). */
+  ensure(root: string, branch: string, commit: string, opts: { front?: boolean } = {}): { result: EnsureResult; done: Promise<void> } {
+    return this.enqueue(root, branch, commit, opts);
+  }
+
+  private enqueue(root: string, branch: string, commit: string, opts: { front?: boolean; retried?: true }): { result: EnsureResult; done: Promise<void> } {
     if (!SHA.test(commit)) return { result: "known", done: Promise.resolve() };
     const k = this.key(root, commit);
     const busy = this.writing.get(k);
-    if (busy) return { result: "busy", done: busy };
+    if (busy) {
+      const at = this.line.indexOf(busy);
+      if (opts.front && at > 0) this.line.unshift(...this.line.splice(at, 1));
+      return { result: "busy", done: busy.done };
+    }
     if (this.records(root)[commit]) return { result: "known", done: Promise.resolve() };
-    const w = this.deps.writer();
-    if (!w) return { result: "no-writer", done: Promise.resolve() };
-    const run = (async () => {
-      const facts = await this.deps.facts(root, branch, commit).catch(() => null);
-      const out = facts ? await w(branchSummaryPrompt(facts), this.deps.projectOf(root)).catch(() => null) : null;
-      const at = new Date(this.now()).toISOString();
-      const next = { ...this.records(root) };
-      next[commit] = out ? { branch, at, bullets: out.bullets, model: out.model } : { branch, at, failed: true };
-      this.save(root, next);
-    })()
-      .catch((err) => this.deps.log?.(`[branch-summaries] ${branch}: ${err instanceof Error ? err.message : String(err)}`))
-      .finally(() => {
-        this.writing.delete(k);
-        this.deps.changed(root);
-      });
-    this.writing.set(k, run);
+    if (!this.deps.writer()) return { result: "no-writer", done: Promise.resolve() };
+    let resolve!: () => void;
+    const done = new Promise<void>((r) => (resolve = r));
+    const job: Job = { root, branch, commit, ...(opts.retried ? { retried: true as const } : {}), done, resolve };
+    this.writing.set(k, job);
+    if (opts.front) this.line.unshift(job);
+    else this.line.push(job);
     this.deps.changed(root);
-    return { result: "started", done: run };
+    this.pump();
+    return { result: "started", done };
+  }
+
+  /** The next write, once the one in flight ends. Only a write's end starts the next one; never a read. */
+  private pump(): void {
+    if (this.running) return;
+    const job = this.line.shift();
+    if (!job) return;
+    this.running = true;
+    void this.write(job)
+      .catch((err) => this.deps.log?.(`[branch-summaries] ${job.branch}: ${err instanceof Error ? err.message : String(err)}`))
+      .finally(() => {
+        this.writing.delete(this.key(job.root, job.commit));
+        this.running = false;
+        this.deps.changed(job.root);
+        job.resolve();
+        this.pump();
+      });
+  }
+
+  private async write(job: Job): Promise<void> {
+    const w = this.deps.writer();
+    if (!w) return;
+    const facts = await this.deps.facts(job.root, job.branch, job.commit).catch(() => null);
+    const out: WriterAnswer = facts ? await w(branchSummaryPrompt(facts), this.deps.projectOf(job.root)).catch(() => null) : null;
+    const at = new Date(this.now()).toISOString();
+    const next = { ...this.records(job.root) };
+    next[job.commit] = out && "bullets" in out ? { branch: job.branch, at, bullets: out.bullets, model: out.model } : { branch: job.branch, at, failed: true, cause: out?.failed ?? "unavailable", ...(job.retried ? { retried: true as const } : {}) };
+    this.save(job.root, next);
+  }
+
+  /** The sweep's one automatic retry: a summary that failed because no model could be reached (`unavailable`), once,
+   *  `afterMs` after that failure. A failure for unusable bullets, or one already retried, waits for Try Again. */
+  autoRetry(root: string, branch: string, commit: string, afterMs = AUTO_RETRY_AFTER_MS): { result: EnsureResult | "no-retry"; done: Promise<void> } {
+    if (this.isWriting(root, commit)) return { result: "busy", done: this.writing.get(this.key(root, commit))!.done };
+    const rec = this.records(root)[commit];
+    if (!rec || !("failed" in rec) || rec.branch !== branch || rec.cause !== "unavailable" || rec.retried) return { result: "no-retry", done: Promise.resolve() };
+    if (this.now() - Date.parse(rec.at) < afterMs) return { result: "no-retry", done: Promise.resolve() };
+    if (!this.deps.writer()) return { result: "no-writer", done: Promise.resolve() };
+    const next = { ...this.records(root) };
+    delete next[commit];
+    this.save(root, next);
+    return this.enqueue(root, branch, commit, { retried: true });
   }
 
   /** Try Again: only for a commit whose summary failed. */
@@ -348,7 +429,7 @@ export class BranchSummaries {
     const next = { ...this.records(root) };
     delete next[commit];
     this.save(root, next);
-    const r = this.ensure(root, branch, commit);
+    const r = this.ensure(root, branch, commit, { front: true });
     return { ok: true, done: r.done };
   }
 

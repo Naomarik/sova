@@ -63,6 +63,10 @@ export const invalidWords = (error: string): string => `The project's .sova/proj
 /** heads.pushWhy while the checks' setup commit waits for the next landing's push. */
 export const PUSH_WAITS_NEXT_LANDING = "not pushed yet: goes out with the next landing";
 export const PUSH_HELD_NAMES = "push held: private names not set up yet";
+/** How long the merge thread's hold (merge.hold) lasts unless it is set again or cleared. */
+export const HOLD_MS = 5 * 60_000;
+/** The reason a waiting entry shows while the merge thread holds the queue. */
+export const HOLD_WORDS = "Waiting: Sova is restarting";
 
 export class MergeFailure extends Error {
   constructor(
@@ -204,6 +208,11 @@ export class ProjectQueue {
   private current: Current | null = null;
   private chain: Promise<unknown> = Promise.resolve();
   private holdUntil = 0;
+  /** The entry whose run started or that was cancelled last since the thread was last told the queue went idle
+   *  (wakeIdle); null: nothing to tell. */
+  private idleOwed: string | null = null;
+  /** The merge thread's hold has its expiry kick armed. */
+  private holdKick = false;
   private timers = new Set<ReturnType<typeof setTimeout>>();
   private conflictTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private reviewWaiters = new Map<string, { resolve: (v: ReviewVerdict) => void; reject: (e: Error) => void }>();
@@ -752,17 +761,28 @@ export class ProjectQueue {
       if (w.branch.startsWith("sova/")) continue;
       const ahead = await countBetween(this.git, this.root, head, w.head);
       if (!ahead) continue;
-      const subject = (await this.git(["log", "-1", "--format=%s", w.head], this.root)).stdout.trim();
+      // Its subject and when it last changed (the head's committer date), in one read.
+      const [subjectRaw = "", headAtRaw = ""] = (await this.git(["log", "-1", "--format=%s%x1f%cI", w.head], this.root)).stdout.trim().split("\u001f");
+      const subject = subjectRaw.trim();
+      const headAt = headAtRaw.trim();
       if (/^temp\b/i.test(subject)) continue;
       const st = await this.git(statusArgs("--porcelain"), w.path);
       if (st.code !== 0 || st.stdout.trim()) continue;
       const owner = ownerId(await this.deps.ownerOf?.(this.root, w.branch, w.path).catch(() => null));
       const short = await this.git(["diff", "--shortstat", `${head}...${w.head}`], this.root);
       const lines = short.code === 0 ? { added: Number(/(\d+) insertion/.exec(short.stdout)?.[1] ?? 0), removed: Number(/(\d+) deletion/.exec(short.stdout)?.[1] ?? 0) } : {};
-      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
+      out.push({ branch: w.branch, worktree: w.path, commit: w.head, ahead, ...lines, ...(headAt ? { headAt } : {}), ...(owner ? { session: owner.session, ...(owner.archived ? { sessionArchived: true as const } : {}) } : {}) });
     }
     this.readyCache = { at: this.now(), head, list: out };
     return this.filterReady(out, redrafted);
+  }
+
+  /** The Ready to land, not approved rows as the view lists them, read from git only: no view is built, nothing is
+   *  published, no summary is asked for (the summaries' sweep, summary-sweep.ts). */
+  async readyRows(): Promise<MergeReady[]> {
+    const head = (await this.declared()).head || (await this.targetHead()) || "";
+    if (!head) return [];
+    return this.readyList(head, await this.redraftedFacts());
   }
   /** A branch sent back (needs-fix) is Ready again at a newer commit, or at the same commit once it was sent back for
    *  its drafts and they are fixed (`redrafted`: changed since the approval, and Sova's docs check reads clean). */
@@ -1024,6 +1044,7 @@ export class ProjectQueue {
         return e;
       }
       if (isFinal(e)) throw new MergeFailure("invalid-request", `${e.branch} is ${e.state === "landed" ? "landed" : e.state === "cancelled" ? "already cancelled" : "handed back already"}`);
+      this.idleOwed = e.id;
       if (this.current?.entry === e.id) {
         this.current.voidWhy = "cancelled";
         this.current.ac.abort();
@@ -1445,12 +1466,100 @@ export class ProjectQueue {
   }
 
   private async startNext(): Promise<void> {
+    await this.startNextRun();
+    this.wakeIdle();
+  }
+
+  /** Nothing left to check and nothing running: the thread hears it once per busy stretch (`idle`). An entry waiting for
+   *  the user (a judgement, a review) is not checked by the queue and doesn't keep it busy; a conflict waiting for the
+   *  thread's judgement does. */
+  private wakeIdle(): void {
+    if (!this.idleOwed || this.stopped || this.current || this.trying || this.landing) return;
+    if (this.q.entries.some((e) => e.state === "queued" || e.state === "checking" || e.state === "conflict")) return;
+    const last = this.entry(this.idleOwed);
+    this.idleOwed = null;
+    if (!last) return;
+    const landed = this.newestLanded();
+    this.wake("idle", last, undefined, {
+      ...(landed ? { lastLanded: { id: landed.id, branch: landed.branch, sha: landed.landed!.sha } } : {}),
+      ...(this.q.knownTarget ? { head: this.q.knownTarget } : {}),
+    });
+  }
+
+  /** The queue's newest landing, if any. */
+  private newestLanded(): Entry | undefined {
+    return this.q.entries.filter((e) => e.state === "landed" && e.landed).sort((a, b) => (a.landed!.at < b.landed!.at ? 1 : a.landed!.at > b.landed!.at ? -1 : 0))[0];
+  }
+
+  // ---- the merge thread's hold (merge.hold) -------------------------------------------------------
+
+  /** Whether the thread's hold keeps new runs from starting now; an expired one is lifted here. */
+  private held(): boolean {
+    const h = this.q.hold;
+    if (!h) return false;
+    if (h.until <= this.now()) {
+      this.liftHold();
+      this.log("the merge thread's hold expired");
+      return false;
+    }
+    let changed = false;
+    for (const e of this.queued()) {
+      if (e.reason === HOLD_WORDS) continue;
+      e.reason = HOLD_WORDS;
+      changed = true;
+    }
+    if (changed) this.save();
+    if (!this.holdKick) {
+      this.holdKick = true;
+      this.later(Math.max(0, h.until - this.now()) + 10, () => {
+        this.holdKick = false;
+        this.kickSoon();
+      });
+    }
+    return true;
+  }
+
+  private liftHold(): boolean {
+    if (!this.q.hold) return false;
+    delete this.q.hold;
+    for (const e of this.queued()) if (e.reason === HOLD_WORDS) delete e.reason;
+    this.save();
+    return true;
+  }
+
+  /** merge.hold (the merge thread's): `set` holds every new run for HOLD_MS (set again: renewed); `clear` lifts it.
+   *  A run already checking or landing goes on. Answers whether anything changed and the hold now. */
+  hold(action: "set" | "clear"): Promise<{ changed: boolean; hold: { at: string; until: string } | null }> {
+    return this.serial(async () => {
+      let changed: boolean;
+      if (action === "set") {
+        this.q.hold = { at: this.iso(), until: this.now() + HOLD_MS };
+        this.save();
+        this.log("held by the merge thread");
+        changed = true;
+      } else {
+        changed = this.liftHold();
+        if (changed) this.log("the merge thread lifted its hold");
+      }
+      this.kickSoon();
+      return { changed, hold: this.holdNow() };
+    });
+  }
+
+  /** The thread's hold as the verb answers it, or null. */
+  holdNow(): { at: string; until: string } | null {
+    const h = this.q.hold;
+    return h && h.until > this.now() ? { at: h.at, until: new Date(h.until).toISOString() } : null;
+  }
+
+  private async startNextRun(): Promise<void> {
     if (this.stopped || this.current || this.trying || this.landing) return;
     // A settings card held for the branch just checked, then a settings save, go before the next branch starts on the target.
     await this.quietCards();
     if (this.q.pendingSave) await this.applyPendingSave();
     if (this.q.paused) return;
     if (this.holdUntil > this.now()) return;
+    if (this.held()) return;
     const head = await this.targetHead();
     if (!head) return;
     const line = this.releaseLine(this.queued());
@@ -1542,6 +1651,7 @@ export class ProjectQueue {
 
   /** `own`: the branch's own definition, when the target's doesn't parse and this branch fixes it. */
   private async startRun(e: Entry, base: string, own?: ProjectDef, localBase: string = base): Promise<void> {
+    this.idleOwed = e.id;
     const declared = await this.declared();
     const d = own ? { ...declared, def: own, review: (this.deps.hasReviewKit ?? ((x) => !!x?.merge?.review))(own, this.root) } : declared;
     const runId = newId("mr");
@@ -2263,7 +2373,12 @@ export class ProjectQueue {
     await this.push(head, (await this.declared()).def);
   }
 
-  private wake(kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names", e: Entry, run?: string, extra: { files?: string[]; why?: string; namesFile?: string } = {}): boolean {
+  private wake(
+    kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "idle",
+    e: Entry,
+    run?: string,
+    extra: { files?: string[]; why?: string; namesFile?: string; lastLanded?: { id: string; branch: string; sha: string }; head?: string } = {},
+  ): boolean {
     if (!this.deps.thread) return false;
     // What the thread diffs against: the run's base, else the target as the queue last saw it.
     const runBase = run ? (this.current?.run.id === run ? this.current.run.base : this.store.readRun(run)?.base) : undefined;
@@ -2413,6 +2528,8 @@ export class ProjectQueue {
     for (const e of this.queued()) if (this.isWaitingWords(e.reason)) delete e.reason;
     if (this.q.pendingSave) this.settingsChanged();
     this.log(`hold of release ${h.id} lifted`);
+    // The thread hears Idle again once the line is quiet: what it put off during the release (a restart) is owed now.
+    this.idleOwed = this.newestLanded()?.id ?? this.idleOwed;
     this.kickSoon();
   }
 
@@ -2594,6 +2711,11 @@ export class ProjectQueue {
   /** At load: reconcile a landing intent left by a stop, requeue runs a stop interrupted, re-arm conflict waits. */
   async recover(): Promise<string[]> {
     const did: string[] = [];
+    // The merge thread's hold is for a restart of the server: this start is its end.
+    if (this.q.hold) {
+      this.liftHold();
+      did.push("lifted the merge thread's hold");
+    }
     const head = await this.targetHead();
     const intent = this.q.intent;
     if (intent) {

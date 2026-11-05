@@ -6,7 +6,7 @@
 // listener, the gate, real hops (sockets, WebSockets, blackholed and wedged peers) and revocation:
 // mesh.integration.test.ts.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
@@ -40,7 +40,7 @@ setIdentity({
 
 const wire = fakeWire();
 const app = await testApp();
-const { listenerInfo, meshApi, stopMesh } = await import("./index");
+const { homeDeps, listenerInfo, meshApi, stopMesh } = await import("./index");
 const hookLog: string[] = [];
 meshApi.onMeshStart(() => hookLog.push("start"));
 meshApi.onMeshStop(() => hookLog.push("stop"));
@@ -345,5 +345,87 @@ describe("mesh ON", () => {
     assert.equal((await putJson("/api/mesh/settings", { hostLabel: "x" }))[0], 409);
     assert.equal(readFileSync(peersFile(), "utf8"), "{broken", "never overwritten");
     rmSync(peersFile());
+  });
+});
+
+// ---- home binding: a copy, a move or another machine keeps the mesh off -------------------------
+
+describe("home binding", () => {
+  const here = () => realpathSync(join(tmp, "agent", "sova"));
+  const doc = (home?: object) => ({ version: 1, self: { id: "a", label: "A", ...(home ? { home } : {}) }, peers: [{ id: "b", label: "B", nodeId: "nB", dnsName: "127.0.0.1", url: B }] });
+  const writeDoc = (home?: object) => writeFileSync(peersFile(), JSON.stringify(doc(home)));
+  const home = () => (JSON.parse(readFileSync(peersFile(), "utf8")) as { self: { home?: { path: string; machine?: string } } }).self.home;
+  const offAs = async (kind: string) => {
+    const fetches = wire.fetches;
+    const [, info] = await getJson<MeshInfo>("/api/mesh");
+    assert.equal(info.enabled, false, kind);
+    assert.equal(info.homeMismatch, kind);
+    assert.equal(listenerInfo(), null);
+    assert.equal(wire.fetches, fetches, "nothing went out");
+  };
+  const reconnect = () => call<MeshInfo & { error?: string }>("POST", "/api/mesh/home");
+  const realMachine = homeDeps.machine;
+  after(() => {
+    homeDeps.machine = realMachine;
+    rmSync(peersFile(), { force: true });
+  });
+
+  test("a peers.json with peers and no home, outside the default root, stays off and isn't bound", async () => {
+    writeDoc();
+    await offAs("unbound");
+    assert.equal(home(), undefined);
+  });
+
+  test("Reconnect Here is this host's browser only, and binds it here", async () => {
+    writeDoc();
+    assert.equal((await call("POST", "/api/mesh/home", undefined, { "X-Sova-Relayed": "1" }))[0], 404);
+    const [s, info] = await reconnect();
+    assert.equal(s, 200);
+    assert.equal(info.enabled, true);
+    assert.equal(info.homeMismatch, undefined);
+    assert.equal(home()?.path, here());
+  });
+
+  test("the default root binds itself on its first read", async () => {
+    const realRoot = homeDeps.defaultRoot;
+    mkdirSync(join(tmp, "h", ".pi"), { recursive: true });
+    symlinkSync(join(tmp, "agent"), join(tmp, "h", ".pi", "agent")); // the same folder by another path
+    homeDeps.defaultRoot = () => join(tmp, "h", ".pi", "agent");
+    try {
+      writeDoc();
+      const [, info] = await getJson<MeshInfo>("/api/mesh");
+      assert.equal(info.enabled, true);
+      assert.equal(home()?.path, here());
+    } finally {
+      homeDeps.defaultRoot = realRoot;
+    }
+  });
+
+  test("a moved folder stays off until Reconnect Here", async () => {
+    writeDoc({ path: join(tmp, "gone", "sova") });
+    await offAs("moved");
+    assert.equal((await reconnect())[1].enabled, true);
+    assert.equal(home()?.path, here());
+  });
+
+  test("another machine stays off until Reconnect Here, which binds this machine", async () => {
+    homeDeps.machine = () => "machine-here";
+    writeDoc({ path: here(), machine: "machine-other" });
+    await offAs("other-machine");
+    assert.equal((await reconnect())[1].enabled, true);
+    assert.deepEqual(home(), { path: here(), machine: "machine-here" });
+  });
+
+  test("a copy whose original is still in use stays off, and Reconnect Here is refused", async () => {
+    const orig = join(tmp, "orig", "sova");
+    mkdirSync(orig, { recursive: true });
+    const origHome = { path: realpathSync(orig), machine: "machine-here" };
+    writeFileSync(join(orig, "peers.json"), JSON.stringify(doc(origHome)));
+    writeDoc(origHome);
+    await offAs("copied");
+    const [s] = await reconnect();
+    assert.equal(s, 409);
+    assert.deepEqual(home(), origHome, "not rebound");
+    await offAs("copied");
   });
 });

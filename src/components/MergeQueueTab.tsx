@@ -276,14 +276,6 @@ function QueueBody(props: { projectId: string; view: MergeQueueView; chatOf?: Ch
             </button>
           </Show>
           <ReviewRunningButton projectId={props.projectId} view={v()} />
-          <Show when={v().thread}>
-            {(t) => (
-              <a class="button button-sm button-ghost" href={projectSessionHref(props.projectId, t().path ?? t().session)}>
-                <Icon name="chat" small />
-                Open Merge Thread
-              </a>
-            )}
-          </Show>
         </div>
       </div>
       <QueueSummaryLine view={v()} />

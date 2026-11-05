@@ -11505,7 +11505,7 @@
       ]
     },
     "project-verbs:session": {
-      "bytes": 8230,
+      "bytes": 8425,
       "tools": [
         {
           "name": "project_verbs",
@@ -11555,6 +11555,7 @@
                   "merge.reply",
                   "merge.fresh",
                   "merge.clear",
+                  "merge.hold",
                   "release.status",
                   "release.logs",
                   "release.request",
@@ -11740,6 +11741,10 @@
               "text": {
                 "type": "string",
                 "description": "merge.review: the reviewer's notes, short; merge.ask: the merge thread's question for the user; merge.reply: the user's answer, in their words; release.notes: the release notes, in full."
+              },
+              "action": {
+                "type": "string",
+                "description": "merge.hold (the merge thread's): set | clear. set holds every new run for 5 minutes (set again renews it); a run already checking goes on."
               },
               "ask": {
                 "type": "string",

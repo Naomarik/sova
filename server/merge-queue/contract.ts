@@ -128,9 +128,11 @@ export type EstimateRun = (projectId: string, root: string) => number | null;
 /** What the queue tells the merge thread (merge-thread: server/merge-queue/thread.ts wakes the project's thread).
  *  `queued`: read the branch, maybe pick checks (merge.extend) and write a note (merge.note). `conflict`: judge it
  *  (merge.resolve). `failed`: explain the failure (merge.note). `paused`: a machine pause to look at. `landed`: the note
- *  may still be written. Answers whether a thread was asked: false (none, or off) never delays anything. */
+ *  may still be written. `idle`: nothing is left to check and nothing runs (after a landing, a failure, a conflict or a
+ *  cancel); `entry` is the one that changed last, `lastLanded` the newest landing. Answers whether a thread was asked:
+ *  false (none, or off) never delays anything. */
 export interface ThreadEvent {
-  kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names";
+  kind: "queued" | "conflict" | "failed" | "paused" | "landed" | "names" | "idle";
   project: string;
   root: string;
   target: string;
@@ -144,5 +146,9 @@ export interface ThreadEvent {
    *  diffs `base...entry.commit`, which stays right after the entry lands. */
   base?: string;
   why?: string;
+  /** idle: the newest landed entry of the queue, and the commit it landed as. */
+  lastLanded?: { id: string; branch: string; sha: string };
+  /** idle: the target's head now. */
+  head?: string;
 }
 export type WakeThread = (ev: ThreadEvent) => boolean;

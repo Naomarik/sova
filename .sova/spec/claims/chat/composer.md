@@ -810,8 +810,9 @@ the control reads "1 ready" with its success dot, and the summary says so.
 **Land asks once** (§chat.composer/land-confirm): a row's Land queues nothing until its confirmation's
 Land {n} Commits.
 
-**Row layout**, here, on the session pane's Worktrees rows (§chat.worktrees/pane) and on the Merge
-Queue tab's rows (§app.merge-queue/view) alike. On an unfolded screen (768px wide or more) a row puts its actions in a column at
+**Row layout**, here and on the session pane's Worktrees rows (§chat.worktrees/pane) alike; the Merge
+Queue tab's rows put their actions in the same places, by the queue's own room rather than the
+screen's width (§app.merge-queue/view). On an unfolded screen (768px wide or more) a row puts its actions in a column at
 its right, top-aligned, beside its title, facts and summary bullets, each button against the
 column's right edge, never stretched to the column's width. Folded (narrower), the actions
 sit on their own line under the bullets, right-aligned. Land's confirmation is right-aligned under

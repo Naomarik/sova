@@ -57,6 +57,8 @@ export type ThreadEvent =
   | { kind: "conflict"; entry: ThreadEntry; run: string; files: string[]; base?: string }
   | { kind: "failed"; entry: ThreadEntry; run: string; summary?: string; base?: string }
   | { kind: "paused"; why: string }
+  /** Nothing left to check and nothing running: `entry` changed last; `lastLanded` is the newest landing; `head` the target's. */
+  | { kind: "idle"; entry: ThreadEntry; lastLanded?: { id: string; branch: string; sha: string }; head?: string }
   /** The project has no private-names list: pushes are held until the user answers the interview. */
   | { kind: "names"; file: string; target: string }
   /** The user's answer to a merge.ask, relayed by the chat it was asked in (or typed on the tab). */
@@ -236,6 +238,14 @@ export function eventText(ev: ThreadEvent): string {
     }
     case "paused":
       return [`The queue paused: ${ev.why}.`, `If the logs say why and the pause holds an entry, explain it on that entry with merge.note (references/failures.md). Never resume it yourself.`].join("\n");
+    case "idle": {
+      const e = ev.entry;
+      const l = ev.lastLanded;
+      return [
+        `Idle: the queue has nothing left to check and nothing running (the last change: entry ${e.id} · ${e.branch}).${l ? ` The newest landing: entry ${l.id} · ${l.branch} as ${short(l.sha)}.` : ""}${ev.head ? ` ${e.target} is at ${short(ev.head)}.` : ""}`,
+        `If the project's playbook says what to do once the queue is quiet ("When the queue is idle"), do it now, through the verbs; merge.hold {action: "set"} keeps new runs from starting meanwhile and {action: "clear"} lifts it. Otherwise nothing is needed: end your turn.`,
+      ].join("\n");
+    }
     case "names":
       return [
         `Names: this project has no private-names list, so every push of ${ev.target} is held. Landings go on.`,

@@ -46,7 +46,9 @@ must stay DOM- and Solid-free), browser testing, and the project skills.
 ### `src/` files the server imports (keep them DOM- and Solid-free)
 
 One runtime import direction runs from the server into `src/`, so these files must load without a DOM
-or Solid, and an edit to them reaches the running server only at its restart:
+or Solid, and an edit to them reaches the running server only at its restart. The complete list, with
+everything they import in turn, is `SERVER_SRC_IMPORTS` in `server/restart-paths.ts` (`restart-paths.test.ts`
+walks the server's imports and fails when it is stale); the entry points are:
 
 - `server/mesh/resync.ts` imports `src/lib/mesh-resync.ts`: a Create card's resync shows the confirm sheet's own
   sentences (`cardSheet`, `sheetText`).
@@ -86,7 +88,7 @@ for the browser, so each imports nothing at all; the rules are in
 
 | You change | Also |
 | --- | --- |
-| a server-imported `src/` file (list above) | keep it DOM- and Solid-free; say the live server needs a restart (AGENTS.md) |
+| a server-imported `src/` file (list above) | keep it DOM- and Solid-free; say the live server needs a restart (AGENTS.md); a new one goes in `SERVER_SRC_IMPORTS` (`server/restart-paths.ts`) |
 | a new server import of a `src/` file | add it to the list above |
 | a `src/` import of pi-config | the extensions guide's list; the file must import nothing |
 | UI | follow the fold-ai-dev-design skill; `src/design/` and `public/` are the designer's |

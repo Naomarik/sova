@@ -113,9 +113,9 @@
       "src/app.css"
     ],
     "agreed": {
-      "by": "user",
-      "at": "2026-11-03T18:31Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#b312ae24"
+      "by": "Omar",
+      "at": "2026-11-05T02:42Z",
+      "source": "pi-session:ca4bcdc5-a6ff-4dbd-bf8b-509ecc177885#bcd45c06"
     }
   },
   "§app.merge-queue/checks": {
@@ -171,6 +171,38 @@
       "server/merge-queue/scenarios-conflicts.integration.test.ts",
       "server/merge-queue/queue.test.ts"
     ]
+  },
+  "§app.merge-queue/empty": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "requires": [
+      "§chat.merge-queue/thread",
+      "§app.project-services/merge-verbs",
+      "§app.merge-queue/run",
+      "§app.merge-queue/view",
+      "§app.merge-queue/chats",
+      "§app.release/checks"
+    ],
+    "code": [
+      "server/merge-queue/queue.ts",
+      "server/merge-queue/routes.ts",
+      "server/merge-queue/thread.ts",
+      "server/merge-queue/store.ts",
+      "server/merge-queue/contract.ts",
+      "server/merge-queue/wire.ts",
+      "shared/merge-queue.ts",
+      "shared/project-contract.ts",
+      "src/lib/merge-queue-chats.ts",
+      "server/merge-queue/queue-idle-hold.test.ts",
+      "server/merge-queue/verbs.test.ts",
+      "server/merge-queue/thread.test.ts"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-04T22:57Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
+    }
   },
   "§app.merge-queue/hosts": {
     "kind": "behavior",
@@ -284,8 +316,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-02T15:04Z",
-      "source": "pi-session:01a18cc7-de77-77ee-b9d9-74931ef12371#107e6fc0"
+      "at": "2026-11-04T23:49Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
     },
     "code": [
       "server/merge-queue/queue.ts",
@@ -482,8 +514,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T14:54Z",
-      "source": "pi-session:01a1a6f9-5dcf-74f6-b12f-7830b9e88f6c#1caf806d"
+      "at": "2026-11-04T22:57Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
     },
     "code": [
       "server/merge-queue/run.ts",
@@ -574,9 +606,9 @@
       "src/lib/merge-queue-initialize.test.ts"
     ],
     "agreed": {
-      "by": "naomarik",
-      "at": "2026-11-04T00:35Z",
-      "source": "pi-session:7a7258e9-bad0-4fcd-9d36-2acd1d3e9527#1e870985"
+      "by": "Omar",
+      "at": "2026-11-05T02:42Z",
+      "source": "pi-session:ca4bcdc5-a6ff-4dbd-bf8b-509ecc177885#bcd45c06"
     }
   },
   "§app.merge-queue/settings-save": {
@@ -692,8 +724,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T22:53Z",
-      "source": "pi-session:6295e4a0-38a1-4768-a7a6-2787ccf54172#0f3d5679"
+      "at": "2026-11-05T03:18Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#2d7267d2"
     },
     "code": [
       "server/merge-queue/view.ts",
@@ -744,8 +776,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-03T11:29Z",
-      "source": "pi-session:01a1a0ef-d11c-75b6-8a92-b5f9fc2f951f#11ba6150"
+      "at": "2026-11-04T22:57Z",
+      "source": "pi-session:01a1a87a-1991-72d2-b9d3-5a131e125dc1#f6b2ecc1"
     },
     "code": [
       "server/merge-queue/queue.ts",

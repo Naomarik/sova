@@ -34,7 +34,10 @@ The queue knows nothing about any one project. It reads only the project's defin
 (`.sova/project.json`) and the existing verbs, so it works the same for every project: Sova's own
 repository, a site with one test command, a project that has no tests. The queue models no "live"
 or "not live" state anywhere and has no Restart Server control. Restarting stays where it is
-(§app.updates/restart and the operator's Apply verb).
+(§app.updates/restart and the operator's Apply verb), with one exception that is no queue feature:
+Sova's own merge thread restarts Sova after landings that change its server code
+(§chat.merge-queue/sova-restart). The queue's part is generic: it tells the thread when nothing is
+left to check, and holds new starts while the thread asks it to (§app.merge-queue/empty).
 
 Batching ("test up to N branches together") is a per-project setting fixed at 1 and not shown.
 There is no trial phase and no switch: a served project's queue is how its branches land.
@@ -229,6 +232,9 @@ merge included, has a run page with each step's log (§app.merge-queue/view).
 release's entries, first in line; every other entry waits with "waits for {tag} to be published or
 abandoned", and a run of another branch checking when the release starts is voided and goes back to
 the front of the line, never blamed.
+
+**Held for a restart.** While the merge thread holds new starts (§app.merge-queue/empty), no
+waiting entry starts, each saying "Waiting: Sova is restarting"; a run already checking finishes.
 
 **Stopping.** A run that times out, is killed, or loses its server mid-way is **void**: it is
 rerun from the start for the same entry, which keeps its place, and is never blamed.
@@ -471,7 +477,7 @@ retry pushes what was held.
 
 Each entry may carry **notes**: short free text about what is worth knowing after it lands. The
 merge thread's note is one text of at most 300 characters, for example "changes server code;
-restart Sova to pick it up", or "regenerated the lockfile". Sova adds its own beside it:
+Sova restarts itself once the queue is idle", or "regenerated the lockfile". Sova adds its own beside it:
 - the review's notes;
 - flaky tests;
 - tests already failing on the target;
@@ -616,6 +622,39 @@ Land (§app.project-overseer/coding-worktrees, §app.project-runtime/merge), and
 of a coding branch into it, whoever asks, is refused: "{target} takes branches only through the
 merge queue: Land the branch instead (nothing was merged)."
 
+## §app.merge-queue/empty — When nothing is left to check, and holding new starts
+
+Two things every project's queue does for its merge thread (§chat.merge-queue/thread), whatever
+the project. What the thread makes of them is its playbook's business; Sova's own uses them to
+restart Sova (§chat.merge-queue/sova-restart).
+
+- **Telling the thread the queue is idle.** When the queue has nothing left to check and nothing
+  running after it was busy, it tells its merge thread so, once (**Idle**). That happens when a run
+  ends (it landed, was handed back for a failure, or waits for the user after a judged conflict, a
+  flagged review or a failure whose owner can't be told) and nothing else is in line, when a cancel
+  takes out the last entry in line or checking, and when a release's hold of the queue lifts at its
+  Publish or Abandon. "Nothing left to check" means no entry checking or in line, and no conflict
+  waiting for the thread's judgement; entries waiting for the user, on the host or sent back to
+  their chat don't count. The message names the entry that changed last, the queue's newest landing
+  with its commit, and the target's head. It is sent again only after the queue was busy again (or
+  a release's hold lifted). Like every other call to the thread, it is fire-and-forget, never holds
+  the line, and a thread that is missing or fails changes nothing. The Merge thread card reads it as
+  "Told the queue is idle" (§app.merge-queue/chats).
+- **Holding new starts.** `merge.hold {action: "set"}` holds the queue's new starts for 5 minutes,
+  and `{action: "clear"}` lifts the hold (§app.project-services/merge-verbs). The project's merge
+  thread may call it, for its own project, and the operator may too. Setting it again renews the 5
+  minutes from then. While held, no waiting entry starts a run, a release's included; a run already
+  checking or landing goes on to its end, and approvals are still taken into the line. Each waiting
+  entry's reason says "Waiting: Sova is restarting", in the Merge Queue view and in `merge.status`
+  (§app.merge-queue/view), over any other wait it had. A hold ends at the first of:
+  - a clear;
+  - Sova's server starting again (the hold is saved with the queue, and a start lifts it);
+  - 5 minutes after it was last set.
+
+  Then the hold's words go and waiting entries start as before. A hold is not a pause: the queue's
+  state stays what it was, Resume doesn't end it, and nothing records it as the user's. `merge.pause`
+  and `merge.resume` stay the user's alone (§app.merge-queue/run); the thread can call neither.
+
 ## §app.merge-queue/setup — A project not set up yet
 
 A project on the Projects list with no checks declared and no test command isn't served by the
@@ -686,16 +725,16 @@ shows, top to bottom:
   "Not pushed yet: goes out with the next landing." When a check is red on the target alone, a line
   says so: "Red on {target} alone: {check}". Nothing about live state, and no Restart control.
 - **The queue's head**: its state (Idle, Running, Paused, Not set up, Definition invalid; **Frozen for a
-  release** while a release holds it and it isn't paused), **Pause Queue** or **Resume
-  Queue**, **Queue Settings**, and **Open Merge Thread** when the project has one. While a review
-  runs, **Review running · {branch} · Open** sits beside it (§app.merge-queue/chats). One summary line
+  release** while a release holds it and it isn't paused), **Queue Settings**, and **Pause Queue** or
+  **Resume Queue**. Open Merge Thread is not in the head: it is only in the Merge thread card. While a
+  review runs, **Review running · {branch} · Open** sits beside them (§app.merge-queue/chats). One summary line
   is always shown under it: the checks, the review and its model, and how it lands ("11 checks ·
   review on, Opus 5.5 · pushes to origin"; "opens pull requests on GitHub"). **Queue Settings**
   opens Settings at its Merge Queue tab, on this project (§app.merge-queue/settings). The queue is described as "One branch
   at a time, in order. Each is merged onto {target} in a separate copy and checked there; {target}
   then moves to exactly that commit."
 - **The Merge thread card**, under the head: the thread's state, a question waiting on the user,
-  **Open Merge Thread** and **Start Fresh…**, or a line saying no thread runs now
+  **Open Merge Thread** (the tab's only one) and **Start Fresh…**, or a line saying no thread runs now
   (§app.merge-queue/chats).
 - **Paused**, when paused: the reason in plain words (by you; the target moved outside the queue;
   setup failed on the target itself, twice; the project folder has uncommitted edits; the reviewer failed twice; a landing in flight at a stop needs a look), the
@@ -712,7 +751,9 @@ shows, top to bottom:
   state chip ("In line · 2"), its branch and commit, its chat, when it was approved and how (the Land button, or typed in its chat), its
   options (without review, without its specs), "starts in ~N min · takes ~N min", newer commits not
   included, and **Cancel Landing**. A release's own entry reads **Release** as its chip; while a
-  release holds the queue, the other entries show no estimate and say why they wait.
+  release holds the queue, the other entries show no estimate and say why they wait. While the
+  merge thread holds new starts (§app.merge-queue/empty), each waiting entry says "Waiting: Sova is
+  restarting" instead.
 - **Needs you**: entries waiting for the user, in full words:
   - **Behaviour differs · waiting for you**, with the target's side, the branch's side and the merge
     thread's proposal, and Accept and Send Back;
@@ -787,27 +828,39 @@ viewer shows the files alone. What it compares, read by the server from the queu
   one on the branch, against its merge-base with the target;
 - **Recent**: what that landing brought in, from the target before it to the landed commit.
 
-**On a phone** (a screen narrower than 600px) the sections lose their outer card frame and inner
-box: rows are split by hairlines, with 12px side padding. Each row stacks: the branch on its own
-line, wrapping anywhere; a facts line led by the state chip, then the commit and "{n} commits ahead
-· +{a} −{d}" (or the row's own facts); the chat line, where the worktree is named by its folder's
-last name, with the full path as its `title`; and the row's actions (Review Changes, Land ▾ or the
-row's other actions) on their own line under it, Review Changes at the line's left and the row's
-other actions at its right, each button the same size as on a
-wider screen (§chat.composer/worktrees-control, "Row layout").
-Nothing scrolls sideways at 390px. Wider screens show the full path, and lay the row out as the
-Worktrees modal's rows do (§chat.composer/worktrees-control, "Row layout"): from 768px wide the
-actions sit in a column at the row's right, top-aligned; narrower, on their own line under the
-row, right-aligned. Nothing
-is offered only on hover.
+**Its layout follows the queue's own room**, the width the project page gives the tab, never the
+screen's: a phone, the Fold with the sidebar open and a narrow window read alike, and opening or
+closing the sidebar can change it.
+- **Under about 600px of room** the tab loses its outer card frame, and the strip, the Merge thread
+  card, Checking now, the lists and the run page's cards run edge to edge, split by hairlines, with
+  12px side padding. Banners stay boxed, their button under their words. Each row stacks: the
+  branch on its own line, wrapping anywhere; a facts line led by the state chip, then the commit and
+  "{n} commits ahead · +{a} −{d}" (or the row's own facts); the chat line, where the worktree is
+  named by its folder's last name, with the full path as its `title`; and the row's actions
+  (Review Changes, Land ▾ or the row's other actions) on their own line under it, Review Changes at
+  the line's left and the row's other actions at its right, each button the same size as with room.
+  A card's head (Checking now, the Merge thread, History) puts its buttons on their own line under
+  its title. Nothing scrolls sideways at 360px.
+- **With room**, every row of the tab alike (Checking now, Waiting, Needs you, Ready to land, Sent
+  back, Recent and History) shows the full path and puts its actions in a column at its top right,
+  each button at its own width; an open Land confirmation spans the row, at its right. A card's head
+  keeps its title and its buttons on one line.
+
+Where a row's actions sit is decided by the room alone, never by how long the row's words are.
+**Buttons**: every group of buttons on the tab, the run page and the Merge thread card has one even
+gap between buttons and holds them on one centre line, wrapping as a group; a borderless button that
+starts a line lines up with the words above it. On a touch screen the head's, the Merge thread
+card's, banners', History's and the run page's buttons are 44px tall; a row's own actions keep
+Land's size. Nothing is offered only on hover.
 
 **The run page** (`…/merge-queue/<run>`) shows:
+- its path, "Merge queue › {branch}", led by a back arrow named **Back to Queue** that opens the
+  tab (44px square on a touch screen);
 - the branch and its verdict, the base, the branch's commit and the tested commit, when it started
   and how long it took, its chat, and how it was approved;
 - one action row: **View Logs** (outlined, opening full width below the row: every step's log, in
-  order, from the copy's first line), **Open Merge Thread** and **Back to Queue** (both borderless,
-  Back to Queue with a back arrow), all on one line (on a phone, Back to Queue wraps below the other
-  two);
+  order, from the copy's first line) and **Open Merge Thread** (borderless), on one line at every
+  width; Back to Queue is the path's arrow, never a third action;
 - its review, when it has one: each attempt's reviewer chat, as on the rows
   (§app.merge-queue/chats);
 - "Nothing has merged from this run. {target} moves only once every check passes." while it runs,
@@ -821,7 +874,9 @@ is offered only on hover.
 - for a red run, a "Whose failure is it?" block (machine or setup, already failing on the target,
   flaky), drawn from the reruns (§app.merge-queue/blame);
 - **Checks and why**, its legend under the title: every step with its tag and reason, its failures,
-  time and counts, and its log. Each row reads, in this order: its status mark, its name with its
+  time and counts, and its log. Each row reads, in this order: its status mark, its name (its tag,
+  such as **Required**, held to the name's last word: only the name wraps, and the tag drops under it
+  only when that word and the tag can't share a line at all) with its
   description under it (the test counts there too, "11496 passed · 5 skipped", a failed count in
   red), its time in a fixed column aligned right, then **Log**, in the same place on every row. A
   description shows at most 2 lines and ends in "…" when cut; a path in it that starts at the home
@@ -902,14 +957,15 @@ The project's Merge Queue tab (§app.merge-queue/view) is where they are found, 
 **The Merge thread card**, under the queue's head: "Merge thread" with its state chip (**Idle**,
 **Working** while its turn runs, **Asking you** while a question is open), its memory type
 ("UniiChat"; "No memory" when it runs without), when it started, and its last event ("last: Read a
-queued branch · {branch}, {when}"). It has **Open Merge Thread** and **Start Fresh…**, which asks
+queued branch · {branch}, {when}"). It has **Open Merge Thread**, the tab's only one, and **Start
+Fresh…**, on one line, which asks
 first ("This thread is archived once its turn ends, and its memory of past landings goes with it.
 The next event starts a new one. The old thread stays readable in History.", **Cancel** /
 **Start Fresh**). A question it asks shows on the card (§chat.merge-queue/asks). With no thread:
 "No merge thread now: the next event starts one (it reads each branch as it is queued)."
 
-**A running review.** While a review runs, a button beside Open Merge Thread at the top of the
-tab reads "Review running · {branch} · Open" (" (attempt {n})" after the branch on a retry) and
+**A running review.** While a review runs, a button in the queue's head, beside Queue Settings and
+Pause Queue, reads "Review running · {branch} · Open" (" (attempt {n})" after the branch on a retry) and
 opens that reviewer's chat; it goes away when the review ends.
 
 **History**, at the bottom of the tab when the queue has had any chat: every one, the current
@@ -939,7 +995,10 @@ that is refused leaves the row as it was. Both are catalogue commands over `merg
 Every setting a project's merge queue uses shows in one place: the **Merge Queue** tab of the
 Settings dialog (§app/settings-dialog). **Queue Settings** on a project's Merge Queue tab
 (§app.merge-queue/view) opens it already showing that project. The tab shows one project at a
-time, picked in its head from the projects that aren't archived (opened any other way, the first).
+time, picked in its head from the projects that aren't archived (opened any other way, the first);
+the heading stays on one line beside the picker at every width, the picker giving way. A row's tag
+(**Project file**, **This computer**, **Set by Sova**) is a small tag at its own width: at the row's
+end, or under its value once a narrow screen stacks the row, never stretched across it.
 A project the queue doesn't serve yet (its merge setup isn't done) shows, in place of the groups, the
 Merge Queue tab's own words, "No merge queue settings are set up for this project" and "Until they
 are, its chats merge branches into {target} themselves when you ask.", with **Initialize**, and under

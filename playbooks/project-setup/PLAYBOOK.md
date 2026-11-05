@@ -105,7 +105,11 @@ the releases and the deploys **fresh** each time you start a change.
 7. **Check.** `project-setup.mjs fmt`, then `project-setup.mjs check --base <target>` until it exits
    0. With a deploy: `deploy.check {ref: <your branch>}` (at most 3 runs; missing host values and
    credentials are the user's to set, listed in your report). Commit by explicit path (`git add
-   .sova/project.json <each file>`), message `Setup: <what>`.
+   .sova/project.json <each file>`), message `Setup: <what>`. The next step after the commit is the
+   trial: setting up a pipeline is configuration, not a product change, so Sova's spec procedure
+   (drafts, `agree`, evidence, reading claims) is no part of it, whatever minor mode this chat has on.
+   Write no spec drafts in the project and read no spec claims for a setup, unless the project's own
+   setup notes (`.sova/playbooks/project-setup/PLAYBOOK.md`) say to.
 8. **Trial.** `merge.try` on your branch (`references/behaviour.md`, "Trials"): it runs the head's
    own merge checks (optional ones too) in the merge copy, and the release-only checks that are new
    or changed against the target's (name an unchanged one in `checks` when your change touches what
@@ -139,6 +143,8 @@ the releases and the deploys **fresh** each time you start a change.
 - Write a field no answer or measurement settled, keep a candidate the user didn't confirm, or
   propose a check you didn't measure.
 - Weaken, skip or rewrite a check, a guard or a conformance check to make a trial or a check pass.
+- Follow a spec procedure for the setup: no drafts under the project's `.sova/spec/`, no `agree` or
+  `evidence`, unless the project's own setup notes ask for it.
 - Print or copy a secret: read `.env`-like files masked, never put one in a report, a fixture, a
   commit or a message.
 

@@ -57,12 +57,12 @@ export const TEST_ENV_UNKEYED = ["TEST_BUN_JOBS", "TEST_INT_JOBS", "SOVA_CHAT_SL
 
 /** Switches a test, or the code under it, reads from its environment to run differently (a slow mode, a recording,
  *  a browser, a snapshot rewrite): passed when set, and keyed. A name ending in `*` is a prefix. A switch that rewrites
- *  a tracked file (`*_UPDATE`, `*_OUT`, `WRITE_*_SNAPSHOT`, SOVA_GOLDEN_RECORD) also changes the work tree, so its run
- *  keeps nothing anyway. A new switch goes here, or it never reaches a test. */
+ *  a tracked file (`*_UPDATE`, `*_OUT`, `WRITE_*_SNAPSHOT`, SOVA_GOLDEN_RECORD, SOVA_MODES_GOLDEN=record) also
+ *  changes the work tree, so its run keeps nothing anyway. A new switch goes here, or it never reaches a test. */
 export const TEST_SWITCHES = [
   "SOVA_TOUR_BROWSER", "PLAYWRIGHT_BROWSERS_PATH", "SOVA_TEST_SYSTEMD", "ORG_HOST_BENCH", "KILL9_ROUNDS", "SLOW", "LATE",
   "SOVA_LOADOUT_UPDATE", "SOVA_INVENTORY_OUT", "SOVA_SPEC_LAYOUT_ALLOW_OUT", "SOVA_BOUNDARY_OUT", "SOVA_HEADLESS_FILES_OUT",
-  "SOVA_GOLDEN_MODE", "SOVA_GOLDEN_RECORD", "SOVA_GOLDEN_REAL_DIR", "SOVA_GOLDEN_SETS",
+  "SOVA_GOLDEN_MODE", "SOVA_GOLDEN_RECORD", "SOVA_GOLDEN_REAL_DIR", "SOVA_GOLDEN_SETS", "SOVA_MODES_GOLDEN", "SOVA_MODES_DUMP",
   "SOVA_INSERTION_ALL", "SOVA_INSERTION_DEBUG", "SOVA_STATE_ASSERT", "SOVA_SYNC_LOGIN_KINDS", "SOVA_PARITY_BASE",
   "OWNER_SHOTS", "MQ_UI_SHOTS", "REL_UI_SHOTS", "NY_UI_SHOTS", "MODE_TEST_SCRATCH", "SOVA_TAR_FIXTURES_WRITE",
   "E2E_RELEASE_NOTES", "PI_CLAUDE_CODE_DEBUG", "WRITE_*_SNAPSHOT",

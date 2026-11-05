@@ -107,7 +107,7 @@ describe("the settings tests see: one list, covering every switch they read", ()
   });
 
   test("the documented developer switches reach tests", () => {
-    for (const n of ["SOVA_GOLDEN_MODE", "SOVA_GOLDEN_RECORD", "SOVA_GOLDEN_REAL_DIR", "SOVA_GOLDEN_SETS", "SOVA_LOADOUT_UPDATE", "SOVA_INVENTORY_OUT", "SOVA_TOUR_BROWSER", "SLOW", "WRITE_ROW_SNAPSHOT", "SOVA_MQ_UI_DIST", "CHAT_TRIAL_ROOT"])
+    for (const n of ["SOVA_GOLDEN_MODE", "SOVA_GOLDEN_RECORD", "SOVA_GOLDEN_REAL_DIR", "SOVA_GOLDEN_SETS", "SOVA_MODES_GOLDEN", "SOVA_MODES_DUMP", "SOVA_LOADOUT_UPDATE", "SOVA_INVENTORY_OUT", "SOVA_TOUR_BROWSER", "SLOW", "WRITE_ROW_SNAPSHOT", "SOVA_MQ_UI_DIST", "CHAT_TRIAL_ROOT"])
       expect({ n, unit: testEnvMod.passesToTests(n, "unit"), int: testEnvMod.passesToTests(n, "integration") }).toEqual({ n, unit: true, int: true });
   });
 

@@ -418,8 +418,8 @@ function ExperimentalPanel() {
   return (
     <>
       <p class="settings-intro">
-        Unfinished features. They can change or disappear, and they apply to sessions you start
-        after switching them on — chats already open keep the setup they began with.
+        Unfinished features. They can change or disappear, and each one says when a change reaches
+        your chats.
       </p>
       <div>
         <label class="toggle toggle-switch settings-team-enable">
@@ -439,7 +439,8 @@ function ExperimentalPanel() {
         </label>
         <p class="field-hint" id="experimental-sova-modes-hint">
           Sova runs every chat's modes itself, instead of the pi mode extension. Turn it off to go back to the old way;
-          nothing is lost either way. Applies to chats when they next start or reload.
+          nothing is lost either way. Open chats switch over at their next quiet moment; workers already running
+          finish the way they started.
         </p>
       </div>
       <Show when={webSettings.error}>

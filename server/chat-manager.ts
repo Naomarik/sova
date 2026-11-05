@@ -1145,6 +1145,18 @@ class ChatSession {
   cwdFallback: CwdFallback | null = null;
   /** Whether Sova runs this chat's modes (§chat.mode-menu/sova-runs-modes): the switch as the open found it. */
   sovaModes = false;
+  /** Whether a mode owner applies to this chat at all: an ordinary chat, or a special loadout that discovers
+      the operator's extensions (the Overseer). Never a worker (its owner is its spec's) nor a loadout that
+      loads no extension. Set by the open. */
+  modesApply = false;
+  /** Who runs this chat's modes, as its open decided (the state mirror's `modesOwner`): null where none applies. */
+  get modesOwner(): "sova" | "extension" | null {
+    return this.modesApply ? (this.sovaModes ? "sova" : "extension") : null;
+  }
+  /** Quiet enough to rebuild: no run, compaction, turn on its way, queued send or open dialog. */
+  get quietForReload(): boolean {
+    return !this.disposed && !this.harness.isRunning() && !this.isCompacting() && !this.turnStarting && !this.hasPendingSends() && this.pendingDialogs().length === 0;
+  }
   /** Sova's mode engine in this chat's current runtime (modesBridgeExtension), once it announced itself;
       null with the pi mode extension (the switch off), or before its session started. Set by the open. */
   modesSource: () => ModesHandle | null = () => null;
@@ -4503,9 +4515,11 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
   /** The last build's special loadout, if this chat is a special kind's. */
   const last: { special: { spec: SpecialSpec; port: SpecialPort } | null } = { special: null };
   const worker = presetWorkers.get(path) ?? null;
-  // Who runs this chat's modes (§chat.mode-menu/sova-runs-modes): the saved switch as this open finds it,
-  // for every runtime it builds, until the chat's next start or reload. A worker's is its spec's (workerBuild).
-  const modes: { sova: boolean; handle: ModesHandle | null } = { sova: !worker && sovaRunsModesSaved(), handle: null };
+  // Who runs this chat's modes (§chat.mode-menu/sova-runs-modes): the saved switch as this open finds it, kept for
+  // every runtime this open builds. A save that flips the switch has the chat reload at its next quiet moment
+  // (chat-host.ts modesSwitched through the rollout; chatModesSwitchedHere in-process), and that reload's open
+  // reads it anew; a flip back before then cancels it. A worker's is its spec's, stamped at its start (workerBuild).
+  const modes: { sova: boolean; applies: boolean; handle: ModesHandle | null } = { sova: !worker && sovaRunsModesSaved(), applies: false, handle: null };
   const build = async ({ cwd, read }: { cwd: string; read: OpenRead }): Promise<PiBuild> => {
     // A worker chat (§app.chat-processes/workers) is its loadout and nothing else, its messages labelled
     // with the keys of the sends they came from (§app.chat-processes/worker-instructions).
@@ -4525,6 +4539,8 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     const special = kind ? await specialOf(kind, path) : null;
     last.special = special;
     const spec = special?.spec ?? null;
+    // A loadout that discovers no extension has no mode slot: no owner applies to it.
+    modes.applies = !spec?.loader.noExtensions;
     // A loadout that loads no extension never registers the provider itself: it waits for the
     // runtime's own start, when this process started it (the server at boot; a chat's own process).
     if (spec?.loader.noExtensions && runtimeWarm) await runtimeWarm;
@@ -4700,6 +4716,7 @@ async function openLocked(path: string, onDisposed: () => void, onStep: (step: s
     chat.sendKeys = sendKeys;
     chat.cwdFallback = fallback;
     chat.sovaModes = modes.sova;
+    chat.modesApply = !worker && modes.applies;
     chat.modesSource = () => modes.handle;
     // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).
     chat.topicsPaused = topicStore().receiverPaused(path);
@@ -4850,6 +4867,45 @@ export async function acquireChat(path: string, force = false, onStep: (step: st
 }
 
 /** Every fully opened runtime this server holds. Each keeps its own mode; there is no fan-out. */
+/**
+ * A save that changed "Sova runs chat modes" (§chat.mode-menu/sova-runs-modes), for the chats held in this
+ * process (in-process chats: tests, a server with no supervisor). Each held chat a mode owner applies to and
+ * whose owner differs from `on` is rebuilt at its next quiet moment: disposed as a reload (its panes told
+ * `reloaded`, so they reconnect and the next acquire opens it anew, re-reading the switch), the way a profile
+ * pick or "Chat anyway" rebuilds an in-process runtime. A flip back before that moment cancels it; a worker
+ * keeps the owner of its start. Returns the paths now waiting.
+ */
+export function chatModesSwitchedHere(on: boolean): string[] {
+  modesWanted = on;
+  modesWaiting.clear();
+  for (const chat of heldChats()) {
+    if (chat.modesOwner === null || chat.sovaModes === on) continue;
+    modesWaiting.add(chat.path);
+  }
+  for (const path of [...modesWaiting]) modesReloadIfQuiet(path);
+  if (modesWaiting.size && !modesListening) {
+    modesListening = true;
+    onChatEvent((e) => {
+      if (e.type === "settled" || e.type === "receiverIdle") setTimeout(() => modesReloadIfQuiet(e.chatId), 0);
+    });
+  }
+  return [...modesWaiting];
+}
+let modesWanted: boolean | null = null;
+const modesWaiting = new Set<string>();
+let modesListening = false;
+function modesReloadIfQuiet(path: string): void {
+  if (!modesWaiting.has(path)) return;
+  const chat = held.get(path);
+  if (!chat || chat.disposed || chat.modesOwner === null || chat.sovaModes === modesWanted) {
+    modesWaiting.delete(path);
+    return;
+  }
+  if (!chat.quietForReload) return;
+  modesWaiting.delete(path);
+  void disposeHeldChat(path, "Sova runs chat modes changed: reconnect").catch((err) => console.error("[chat] modes reload failed", err));
+}
+
 export const heldChats = (): ChatSession[] => [...held.values()].filter((c) => !c.disposed);
 
 /** The open chat for a session file (already through resolveSessionPath), for POST /api/mode?path=. */

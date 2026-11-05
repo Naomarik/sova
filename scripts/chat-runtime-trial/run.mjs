@@ -55,6 +55,8 @@
 //     t17c      the same for a claude-code worker (scripts/fake-claude.mjs on the server's PATH)
 //     t18       the parent reloads (Reload now, build a → b) mid worker run: the worker keeps its pid,
 //               agent_list shows it running, a steer after the reload reaches it once, one completion
+//     tmodes    a save of "Sova runs chat modes" reaches an open chat at its next quiet moment through the
+//               rollout: never mid-reply, a new process after it settles; a flip back before then reloads nothing
 //     t18b      kill -9 of the parent mid-run: its crash resume; the worker keeps its process; one
 //               completion
 //     t19       a team across a restart: alpha's team_msg to beta just before it arrives once; a
@@ -160,7 +162,7 @@ const opt = (name, fallback) => {
   const i = argv.indexOf(`--${name}`);
   return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : fallback;
 };
-const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "hermetic", "tyourclick"];
+const ALL = ["t1", "t1b", "t1c", "t1d", "t1e", "t2", "t3", "t4", "t4fail", "t6", "t7", "t8", "t9", "t10", "t11", "t11b", "t11c", "t12a", "t12b", "t12c", "t12d", "t13", "t14", "t15", "t16", "t17", "t17c", "t18", "t18b", "tmodes", "t19", "t19n", "t20", "t21", "t21c", "t21h", "t21l", "t21r", "t21rx", "tsend", "t23", "t24", "t25", "t27", "trestart", "tdefault", "tserverless", "tstopchats", "hermetic", "tyourclick"];
 const valued = new Set(["--port", "--scratch", "--slice", "--model", "--auth", "--mode", "--driver"]);
 const asked = argv.filter((a, i) => !a.startsWith("--") && !valued.has(argv[i - 1]));
 for (const a of asked) if (![...ALL, "plumbing", "serve", "real", "all"].includes(a)) (console.error(`unknown check ${a}; checks: ${ALL.join(" ")} real`), process.exit(2));
@@ -1840,6 +1842,39 @@ async function t18() {
 
 // T18b: kill -9 of the parent mid-run while its worker runs: the parent's crash resume reopens it;
 // the worker keeps its process; its completion arrives and is announced once.
+async function tmodes() {
+  const putModes = (on) => c.api("/api/settings", { method: "PUT", body: JSON.stringify({ experimental: { sovaModes: on } }) });
+  await putModes(true);
+  const { path, s } = await newChat();
+  const p1 = chatPid(path);
+  // A flip and a flip back during a reply: nothing reloads, then or after it settles.
+  let from = s.got.length;
+  prompt(s, "[long 6 #tmodesa] a reply");
+  await s.until(delta(/part 1\//), 60000, "the reply streams", from);
+  await putModes(false);
+  await putModes(true);
+  await settled(s, from, 60000);
+  await sleep(3000);
+  R.check(chatPid(path) === p1, `tmodes: a flip back before the quiet moment reloads nothing (pid ${p1} → ${chatPid(path) || "none"})`);
+  // A flip during a reply: the chat keeps its process until the reply settles, then moves to a new one.
+  from = s.got.length;
+  prompt(s, "[long 6 #tmodesb] another reply");
+  await s.until(delta(/part 1\//), 60000, "the reply streams", from);
+  await putModes(false);
+  await sleep(1000);
+  R.check(chatPid(path) === p1, `tmodes: not reloaded mid-reply (pid ${p1} → ${chatPid(path) || "none"})`);
+  await settled(s, from, 60000);
+  const moved = await waitFor(() => chatPid(path) && chatPid(path) !== p1, 60000);
+  R.check(moved, `tmodes: reloaded at its quiet moment into a new process (pid ${p1} → ${chatPid(path) || "none"})`);
+  // Its replacement opened on the switch as saved: it answers a turn there.
+  const s2 = await chat(c, path);
+  const f2 = s2.got.length;
+  prompt(s2, "hello again");
+  await settled(s2, f2, 60000);
+  R.check(chatPid(path) !== p1, "tmodes: the reloaded chat answers a turn in its new process");
+  s2.close();
+  await putModes(true);
+}
 async function t18b() {
   const { path, s } = await newChat();
   // Held by the mock until the parent's crash and resume are checked: the worker runs through them
@@ -3347,7 +3382,7 @@ async function serve() {
 
 // ── run ─────────────────────────────────────────────────────────────────────────────────────────
 
-const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, hermetic, plumbing, serve, real: () => t1(opt("model")) };
+const table = { tyourclick, t1: () => t1(), t1b, t1c, t1d, t1e, t2, t3, t4, t4fail, t6, t7, t8, t9, t10, t11, t11b, t11c, t12a, t12b, t12c, t12d, t13, t14, t15, t16, t17: () => t17(), t17c: () => t17(true), t18, t18b, tmodes, t19, t19n, t20, t21, t21c, t21h, t21l, t21r: () => t21r(), t21rx: () => t21r("either"), tsend, t23, t24, t25, t27, trestart, tdefault, tserverless, tstopchats, hermetic, plumbing, serve, real: () => t1(opt("model")) };
 let code = 0;
 let finished = null;
 /** Stops the server, every chat process and the mock, and writes results.json; once. */

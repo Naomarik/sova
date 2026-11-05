@@ -967,6 +967,10 @@ judgement.
   with Merge Branch and Remove Worktree… both disabled, "Reading its branch": no branch gesture
   acts on a state the page hasn't read. Once they arrive the menu is as above. Merge Branch and Remove Worktree
   answer the branch read's shape, and the page reads the overseer's state again after either.
+  A refresh (either read again, or any chat changing) updates the rows in place, each matched by
+  its session, and never rebuilds the list: an open **⋯** menu stays open and the page keeps its
+  scroll position and keyboard focus, while a row's text, chips and menu entries still change as
+  they arrive, and a menu entry acts on what its row shows when it is chosen.
 - **Merge Branch** is the operator's gesture; the overseer has no tool for it. It merges
   `sova/<name>` into `target` in the project root's checkout, which must have `target` checked
   out, no tracked changes and no merge, rebase or cherry-pick in progress: a fast-forward when

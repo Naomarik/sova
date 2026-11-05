@@ -25,6 +25,50 @@ export interface MessageMenuRow {
   run(): void | Promise<void>;
 }
 
+/** Each reply's strip by its entry: where an earlier text block of a reply drawn as several finds the strip hung off its last. */
+export function repliesByEntry(strips: Iterable<MessageStrip>): Map<string, MessageStrip> {
+  const by = new Map<string, MessageStrip>();
+  for (const s of strips) if (s.role === "assistant") by.set(s.entryId, s);
+  return by;
+}
+
+/**
+ * The strip whose menu a right-click on a row opens: the row's own, or, for any text block of a
+ * reply, that reply's (one strip per entry, under its last text block: lib/message-actions
+ * `messageStrips`). Tool cards, thinking and every other row open none.
+ */
+export function menuStripOf(row: TranscriptItem, own: MessageStrip | undefined, replies: ReadonlyMap<string, MessageStrip>): MessageStrip | undefined {
+  return own ?? (row.kind === "assistant-text" ? replies.get(entryIdOf(row.id)) : undefined);
+}
+
+/** The few element calls `focusOnce` makes, so the rule runs on a stand-in too. */
+export interface FocusRow {
+  hasAttribute(name: string): boolean;
+  setAttribute(name: string, value: string): void;
+  removeAttribute(name: string): void;
+  addEventListener(type: "blur", fn: (e: { relatedTarget: unknown }) => void): void;
+  removeEventListener(type: "blur", fn: (e: { relatedTarget: unknown }) => void): void;
+}
+
+/**
+ * Where focus goes back to after a menu opened by the pointer: the message row itself, focusable
+ * for that (tabindex -1, so never a Tab stop) until focus leaves it for anything but the menu
+ * (`intoMenu`; the press of a right-click may focus the row before the menu takes focus). Not the
+ * strip's first button: focus inside the strip shows it (:focus-within), so the strip would stay up
+ * after the menu closed. A row that already takes focus is left as it is.
+ */
+export function focusOnce<T extends FocusRow>(row: T, intoMenu: (to: unknown) => boolean): T {
+  if (row.hasAttribute("tabindex")) return row;
+  row.setAttribute("tabindex", "-1");
+  const left = (e: { relatedTarget: unknown }) => {
+    if (intoMenu(e.relatedTarget)) return;
+    row.removeAttribute("tabindex");
+    row.removeEventListener("blur", left);
+  };
+  row.addEventListener("blur", left);
+  return row;
+}
+
 /** The screen a branch action's confirm is shown on. */
 export const confirmScreen = (kind: MessageMenuKind) => `confirm:${kind}`;
 

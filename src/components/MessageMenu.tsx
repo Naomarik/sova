@@ -7,7 +7,7 @@
  */
 import { createEffect, createMemo, createUniqueId, Index, Match, on, Switch } from "solid-js";
 import { COPY_PLAIN, type MessageStrip, stripLabel } from "../lib/message-actions";
-import { confirmRow, type MessageBlock, type MessageMenuKind, messageMenuRows, plainText, rowAct } from "../lib/message-menu";
+import { confirmRow, focusOnce, type MessageBlock, type MessageMenuKind, messageMenuRows, plainText, rowAct } from "../lib/message-menu";
 import { builtInItems, type ReplyPlace } from "../lib/reply-place";
 import { copyText } from "../lib/ui-state";
 import type { ActionMenuApi } from "./ActionMenu";
@@ -42,7 +42,11 @@ export function readDrawnBlock(scope: ParentNode, id: string): string | null {
     let depth = 0;
     for (let up = list; up && up !== copy; up = up.parentElement) if (up.tagName === "LI") depth++;
     const mark = list?.tagName === "OL" ? `${(list as HTMLOListElement).start + Array.from(list.children).indexOf(li)}.` : "•";
-    li.prepend(`${"  ".repeat(depth)}${mark} `);
+    // In a span of its own that keeps its spaces: innerText drops leading white space, and the indent with it.
+    const lead = document.createElement("span");
+    lead.style.whiteSpace = "pre";
+    lead.textContent = `${"  ".repeat(depth)}${mark} `;
+    li.prepend(lead);
   }
   // innerText needs a laid-out box: the copy sits off screen for the one read, then goes.
   copy.setAttribute("aria-hidden", "true");
@@ -141,15 +145,16 @@ export function MessageMenuBody(props: { menu: ActionMenuApi; label: string; ite
 
 /**
  * A message row's right-click and Shift+F10: the strip's actions as a menu, at the pointer or under
- * the focused element. `el` is the row (`.entry`); `blocks` the rows its message is drawn as (for
- * Copy as Plain Text). Focus goes back to the strip, the message's own keyboard stop.
+ * the focused element. `el` is the row (`.entry`) right-clicked, any text block of the message;
+ * `blocks` the rows its message is drawn as (for Copy as Plain Text). Focus goes back to that row
+ * (lib/message-menu `focusOnce`), so the strip isn't left showing; from a key, to the focused element.
  */
 export function openMessageMenu(e: MouseEvent, at: { el: HTMLElement; place: ReplyPlace; strip: MessageStrip; blocks: () => MessageBlock[] }) {
   return openContextMenu(e, {
     el: at.el,
     menu: () => ({
       label: stripLabel(at.strip.role),
-      origin: at.el.querySelector<HTMLElement>(".message-actions button") ?? at.el,
+      origin: focusOnce(at.el, (to) => to instanceof Element && !!to.closest("[popover]")),
       body: (menu) => (
         <MessageMenuBody
           menu={menu}

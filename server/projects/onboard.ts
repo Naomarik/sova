@@ -3,7 +3,7 @@ import { linkedPlaybook, playbookTurnText } from "../../shared/playbooks";
 import type { PlaybookInfo, PlaybookProposes } from "../../shared/protocol";
 import { defaultRemoteOf } from "../files";
 import { listModels } from "../models";
-import { listPlaybooks } from "../playbooks";
+import { FOLDED_SETUP_PLAYBOOKS, listPlaybooks } from "../playbooks";
 import { OrgError } from "../org-error";
 import { readProject } from "./spaces";
 import { latestClaude } from "../../pi-config/extensions/claude-code/catalog.ts";
@@ -19,7 +19,7 @@ export const ONBOARD_PLAYBOOK_ID = "project-verbs";
 /** The Setup chat's playbook (§app.project-setup/chat): it proposes the whole pipeline. */
 export const SETUP_PLAYBOOK_ID = "project-setup";
 /** The setup playbooks folded into the Setup chat: a start by their id opens the Setup chat (old ids still resolve). */
-export const FOLDED_PLAYBOOKS: readonly string[] = ["release-maker", "project-deploy"];
+export const FOLDED_PLAYBOOKS: readonly string[] = FOLDED_SETUP_PLAYBOOKS;
 /** The playbook a start by `id` runs: a folded one's is the Setup chat's. Pure. */
 export const resolvePlaybookId = (id: string): string => (FOLDED_PLAYBOOKS.includes(id) ? SETUP_PLAYBOOK_ID : id);
 

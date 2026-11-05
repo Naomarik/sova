@@ -265,6 +265,7 @@ const PROJECTS_SWEEP: CommandEntry[] = [
   changes("project.setup.open", "Set Up with a Chat", "Open the project's Setup chat (Change Setup on a project already set up): the one it has, else a new one on its own branch. fresh: Start Fresh, archiving the open one.", "POST", "/api/projects/:pid/setup", {
     pid,
     fresh: { type: "boolean", description: "Start Fresh: archive the open Setup chat and start a new one", in: "body" },
+    from: { type: "string", description: "Which part the user came from: the chat starts there", in: "body", enum: ["merge-queue", "releases", "deploy", "settings"] },
     why: { type: "string", description: "A note for the chat: what to set up or change", in: "body" },
     model: { type: "string", description: "Its model (provider/model); absent: Opus through Claude Code, else gpt-6-astra", in: "body" },
     thinking: { type: "string", description: "Its thinking level", in: "body" },

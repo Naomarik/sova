@@ -1480,7 +1480,8 @@ export class ProjectQueue {
       } catch (err) {
         throw new MergeFailure("invalid-request", `.sova/project.json at ${commit.slice(0, 7)} is invalid: ${err instanceof Error ? err.message : err}`);
       }
-      if (this.deps.checksOf(def) === "unset" && !def.release?.checks.length) throw new MergeFailure("invalid-request", `.sova/project.json at ${commit.slice(0, 7)} declares no merge checks and no release checks: there is nothing to try`);
+      // No merge checks declared: the trial is the copy and the setup alone, as "no automated tests" is.
+      if (this.deps.checksOf(def) === "unset") def = { ...def, merge: { ...(def.merge ?? {}), checks: "none" } } as ProjectDef;
       // Release checks are long: a trial runs those new or changed against the target's release section, and the ones
       // named for it; the rest are reported not run (unchanged).
       const onTarget = (await this.declared()).def?.release?.checks ?? [];

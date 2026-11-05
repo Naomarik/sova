@@ -5,7 +5,7 @@ import { OVERSEER_CARD_HEADER, OVERSEER_SENDER_HEADER, overseerCard, overseerSen
 import { mergeRun, readRuntime, RuntimeRefusal, startOnboard, startRuntimeTick } from "./runtime";
 import { operatorEnvelopeOf, type OperatorBy } from "./spaces";
 import { FOLDED_PLAYBOOKS, SETUP_PLAYBOOK_ID } from "./onboard";
-import { openSetup, readSetup, type SetupDeps } from "./setup-chat";
+import { openSetup, readSetup, SETUP_FROM, type SetupDeps, type SetupFrom } from "./setup-chat";
 import type { Envelope } from "../org-envelope";
 
 /**
@@ -73,7 +73,8 @@ export function registerRuntimeRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const pid = c.req.param("pid") ?? "";
       const b = await body(c);
-      const input = { ...(b.fresh === true ? { fresh: true } : {}), ...(opt(b.why) ? { why: opt(b.why) } : {}), ...(opt(b.model) ? { model: opt(b.model) } : {}), ...(opt(b.thinking) ? { thinking: opt(b.thinking) } : {}) };
+      if (b.from !== undefined && !(SETUP_FROM as readonly unknown[]).includes(b.from)) return c.json({ error: `from is one of ${SETUP_FROM.join(", ")}.` }, 400);
+      const input = { ...(b.fresh === true ? { fresh: true } : {}), ...(b.from ? { from: b.from as SetupFrom } : {}), ...(opt(b.why) ? { why: opt(b.why) } : {}), ...(opt(b.model) ? { model: opt(b.model) } : {}), ...(opt(b.thinking) ? { thinking: opt(b.thinking) } : {}) };
       const made = await openSetup(pid, input, liveSetupDeps(app), operatorEnvelopeOf(pid, operatorBy(c)));
       return c.json(made, made.reopened ? 200 : 201, NO_STORE);
     }),

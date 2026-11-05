@@ -280,17 +280,28 @@ let bareSettingsOf: ((root: string) => Promise<import("../../shared/merge-queue-
 
 /** A listed project's settings while the queue doesn't serve it, made without a queue (settings.ts bareSettings);
  *  null while the queue isn't started or its target has no commit. */
+/** The gate's answer when it can't read what it needs: never a quiet pass. */
+export const TRIAL_UNREADABLE = "Sova can't check this branch's trial now: try again in a moment.";
+
 /**
  * Why a branch head can't merge or land yet as a setup branch (setup-branch.ts): it changes the project's setup and no
- * trial of exactly `head` passed; null when it isn't a setup branch, its trial passed, or no queue can be read here.
- * Merge Branch on a project the queue doesn't serve asks this too.
+ * trial of exactly `head` passed; null when it isn't a setup branch or its trial passed. Merge Branch on a project the
+ * queue doesn't serve asks this too. Fails closed: when the trials can't be read, a setup branch is refused.
  */
 export async function setupUntriedAt(root: string, head: string): Promise<string | null> {
-  if (!queues || !head || !root) return null;
-  const q = (await queues.peek(root)) ?? (await queues.get(root).catch(() => null));
-  if (!q) return null;
-  const target = await q.targetHead();
-  return target ? q.setupUntried(target, head) : null;
+  if (!head || !root) return TRIAL_UNREADABLE;
+  const q = queues ? ((await queues.peek(root)) ?? (await queues.get(root).catch(() => null))) : null;
+  if (q) {
+    const target = await q.targetHead();
+    return target ? q.setupUntried(target, head) : TRIAL_UNREADABLE;
+  }
+  // No queue here: a branch that leaves the setup alone needs none; a setup branch can't be checked, so it waits.
+  const { isSetupChange, setupChangeOf } = await import("./setup-branch");
+  const { resolveTarget } = await import("./served");
+  const { definitionAt } = await import("../project-services/deploy-recipe");
+  const target = await resolveTarget(realGit, root, (r, ref) => definitionAt(r, ref)).catch(() => null);
+  const change = target ? await setupChangeOf(realGit, root, target, head) : null;
+  return change && !isSetupChange(change) ? null : TRIAL_UNREADABLE;
 }
 
 /** A project's trials and target as its queue keeps them (the Setup chat's tab reads them); null: no queue here. */

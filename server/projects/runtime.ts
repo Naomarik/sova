@@ -12,6 +12,7 @@ import { deployNotes } from "../project-services/deploy";
 import { projectEngine } from "../project-services/routes";
 import { landThroughQueue, mergeCodingWorktree, startOnboardSession, type StartedCoding } from "../project-overseer";
 import { projectRootOf } from "../project-root";
+import { realGit } from "../project-services/engine";
 import { readWorktree } from "../project-worktrees";
 import { onboardStart } from "./onboard";
 import { branchReview, DEFAULT_PLAYBOOK_LABEL, memoryIn, playbookReviewOf, proposesOf, runLive } from "./playbook-review";
@@ -418,6 +419,7 @@ const CHANGED_SINCE = "The definition changed since it was shown: look again.";
 const DEPLOY_CHANGED_SINCE = "The deploy recipe changed since it was shown: look again.";
 const RELEASE_CHANGED_SINCE = "The release setup changed since it was shown: look again.";
 const PIPELINE_CHANGED_SINCE = "The proposed setup changed since it was shown: look again.";
+const BRANCH_MOVED = "The branch has a newer commit than the one shown: look again.";
 
 /** What Merge Branch answers: the registry, read again; on a refused merge, `refused` says why. */
 export interface MergeRunOutcome {
@@ -438,8 +440,12 @@ export async function mergeRun(projectId: string, hash: string, commit?: string)
   if (!review) throw new RuntimeRefusal(NO_RUN_PROPOSED, 409);
   // Never main's hash by mistake: only the one the branch proposes now.
   if (!review.hash || review.hash !== hash) throw new RuntimeRefusal(review.proposes === "deploy" ? DEPLOY_CHANGED_SINCE : review.proposes === "release" ? RELEASE_CHANGED_SINCE : review.proposes === "pipeline" ? PIPELINE_CHANGED_SINCE : CHANGED_SINCE, 409);
-  // A setup branch merges (or lands) only once a trial of its exact head passed (§app.project-setup/land-gate).
-  const untried = await (await import("../merge-queue/wire")).setupUntriedAt(readProject(projectId).root, commit ?? review.commit ?? "");
+  // A setup branch merges (or lands) only once a trial of its exact head passed (§app.project-setup/land-gate): the
+  // head the merge takes now, which must be the one shown.
+  const root = readProject(projectId).root;
+  const head = (await realGit(["rev-parse", "--verify", "--quiet", `refs/heads/${review.branch}^{commit}`], root)).stdout.trim();
+  if (head && (commit ?? review.commit) && head !== (commit ?? review.commit)) throw new RuntimeRefusal(BRANCH_MOVED, 409);
+  const untried = await (await import("../merge-queue/wire")).setupUntriedAt(root, head);
   if (untried) throw new RuntimeRefusal(untried, 409);
   try {
     // Once the project's merge queue is set up, Merge Branch is Land: approved at the branch head in the queue.

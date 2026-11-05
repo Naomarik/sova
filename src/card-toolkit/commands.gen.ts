@@ -3016,6 +3016,8 @@ export interface CommandParams {
     "pid": string;
     /** Start Fresh: archive the open Setup chat and start a new one */
     "fresh"?: boolean;
+    /** Which part the user came from: the chat starts there */
+    "from"?: "merge-queue" | "releases" | "deploy" | "settings";
     /** A note for the chat: what to set up or change */
     "why"?: string;
     /** Its model (provider/model); absent: Opus through Claude Code, else gpt-6-astra */

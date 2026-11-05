@@ -573,7 +573,8 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
   const declared = checksOf(def);
   if (declared === "unset") return out({ verdict: "machine", why: "no checks given to try", copy });
   const changedFile = join(input.runDir, "changed.txt");
-  writeFileSync(changedFile, "\n");
+  // A trial runs every check in full: every tracked file of the commit reads as changed, and each check as picked.
+  writeFileSync(changedFile, input.trialOf ? `${(await gitOut(copy, ["ls-tree", "-r", "--name-only", "HEAD"]).catch(() => "")).trim()}\n` : "\n");
   const names = input.namesFile ?? deps.leakNames?.({ id: project.id, root: project.root }) ?? null;
   const scope: CopyScope = { project: project.root, projectId: project.id, copy, slot: mergeSlotOf(def), data: join(input.runDir, "data"), target, base, tip: base, changedFile, ...(names ? { leakNames: names } : {}) };
   mkdirSync(scope.data, { recursive: true });
@@ -586,7 +587,7 @@ async function tryOnce(input: RunInput, hooks: RunHooks, deps: RunDeps): Promise
     if (again) return out({ verdict: "failed", why: `setup (${again.failed.id}) fails on ${where} (log: ${again.step.log})`, copy });
     notes.push({ kind: "flaky", text: `setup (${failed.failed.id}) failed, then passed on a rerun`, at: now() });
   }
-  const list = planChecks(def, input.picks, input.releaseChecks);
+  const list = planChecks(def, input.picks, input.releaseChecks).map((c) => (input.trialOf ? { ...c, picked: true as const } : c));
   checksShown = picksOf(list);
   hooks.checks(checksShown);
   if (declared === "none" && !list.length) return out({ verdict: "passed", noChecks: true, copy });

@@ -93,7 +93,18 @@ export interface SetupContextFacts {
   /** Start Fresh while a proposal was open: the branch and folder this chat carries on in. */
   carryOn?: { branch?: string; worktree?: string; from: string };
   why?: string;
+  /** Which part the user came from: the chat starts there. */
+  from?: SetupFrom;
 }
+
+export const SETUP_FROM = ["merge-queue", "releases", "deploy", "settings"] as const;
+export type SetupFrom = (typeof SETUP_FROM)[number];
+const FROM_WORDS: Record<SetupFrom, string> = {
+  "merge-queue": "the Merge Queue tab: start with how branches land (the merge checks)",
+  releases: "the Releases tab: start with releases",
+  deploy: "the deploy panel: start with deploys",
+  settings: "Settings → Merge Queue: start with how branches land (the merge checks)",
+};
 
 /** The host's block after the playbook's turn: `## This project`, `## Current setup`, `## Earlier setup chats`, `## The user's note`. Pure. */
 export function setupContext(f: SetupContextFacts): string {
@@ -118,10 +129,11 @@ export function setupContext(f: SetupContextFacts): string {
   for (const h of [...f.history].reverse()) out.push(`- ${h.path} (started ${h.startedAt}, ${h.why === "fresh" ? "closed by Start Fresh" : "ended"} ${h.endedAt}${h.branch ? `, branch ${h.branch}` : ""})`);
   out.push("");
   out.push("## The user's note", f.why?.trim() || "None.");
+  if (f.from) out.push("", `They came from ${FROM_WORDS[f.from]}.`);
   return out.join("\n");
 }
 
-async function contextFacts(projectId: string, extra: Pick<SetupContextFacts, "carryOn" | "why">): Promise<SetupContextFacts> {
+async function contextFacts(projectId: string, extra: Pick<SetupContextFacts, "carryOn" | "why" | "from">): Promise<SetupContextFacts> {
   const p = readProject(projectId);
   const { servedByQueue } = await import("../merge-queue/served");
   const served = await servedByQueue(p.root).catch(() => false);
@@ -254,6 +266,7 @@ function cannotOpen(projectId: string, view: ProjectRuntimeView): string | null 
 
 export interface OpenSetupInput {
   fresh?: boolean;
+  from?: SetupFrom;
   why?: string;
   model?: string;
   thinking?: string;
@@ -304,7 +317,7 @@ export async function openSetup(projectId: string, input: OpenSetupInput, deps: 
   const model = input.model ? { model: input.model, ...(input.thinking ? { thinking: input.thinking } : {}) } : undefined;
   if (liveRun && cur?.worktree) {
     // Start Fresh with a proposal open: the new chat carries on in its folder and branch; the proposal stays the run's.
-    const facts = await contextFacts(projectId, { carryOn: { ...(cur.branch ? { branch: cur.branch } : {}), worktree: cur.worktree, from: cur.path }, ...(input.why ? { why: input.why } : {}) });
+    const facts = await contextFacts(projectId, { carryOn: { ...(cur.branch ? { branch: cur.branch } : {}), worktree: cur.worktree, from: cur.path }, ...(input.why ? { why: input.why } : {}), ...(input.from ? { from: input.from } : {}) });
     const { onboardStart } = await import("./onboard");
     const start = await onboardStart(projectId, { playbook: SETUP_PLAYBOOK_ID, context: setupContext(facts), title, ...(input.model ? { model: input.model } : {}), ...(input.thinking ? { thinking: input.thinking } : {}) });
     if (start.invalid) throw new OrgError(start.invalid, 409);
@@ -313,7 +326,7 @@ export async function openSetup(projectId: string, input: OpenSetupInput, deps: 
     saveRecord(projectId, { current: next, history: setupRecordOf(projectId).history });
     return { sessionId: made.id, path: made.path, reopened: false, worktree: { path: cur.worktree, branch: cur.branch ?? "" } };
   }
-  const facts = await contextFacts(projectId, input.why ? { why: input.why } : {});
+  const facts = await contextFacts(projectId, { ...(input.why ? { why: input.why } : {}), ...(input.from ? { from: input.from } : {}) });
   const made = await deps.startRun(projectId, { playbook: SETUP_PLAYBOOK_ID, context: setupContext(facts), title, ...(input.why ? { why: input.why } : {}), ...(input.model ? { model: input.model } : {}), ...(input.thinking ? { thinking: input.thinking } : {}) }, envelope);
   if (made.held || !made.sessionId || !made.path) throw new OrgError("The Setup chat didn't start.", 409);
   const next: SetupCurrent = { sessionId: made.sessionId, path: made.path, startedAt: iso(), run: made.sessionId, ...(made.worktree ? { branch: made.worktree.branch, worktree: made.worktree.path } : {}) };

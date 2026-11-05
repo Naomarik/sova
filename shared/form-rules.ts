@@ -24,24 +24,13 @@ export interface TextRule {
   /** The sentence for a blank required box, instead of "{label} can't be empty." */
   empty?: string;
 }
-/** One of `values`. */
-export interface ChoiceRule {
-  kind: "choice";
-  label: string;
-  values: readonly string[];
-}
-/** A time of day, "HH:MM" from 00:00 to 23:59. */
-export interface TimeRule {
-  kind: "time";
-  label: string;
-}
 /** Anything else: `issue` names the problem with the (trimmed) text, or null. */
 export interface CustomRule {
   kind: "custom";
   label: string;
   issue(text: string): string | null;
 }
-export type Rule = WholeRule | TextRule | ChoiceRule | TimeRule | CustomRule;
+export type Rule = WholeRule | TextRule | CustomRule;
 
 export type Checked<T = unknown> = { ok: true; value: T } | { ok: false; message: string };
 
@@ -75,10 +64,6 @@ export function check(rule: Rule, raw: unknown, label = rule.label): Checked {
     if (min > 0 && text.length === 0) return no(rule.empty ?? `${label} can't be empty.`);
     if (text.length < min) return no(`${label} must be at least ${count(min)} characters.`);
     if (text.length > rule.max) return no(`${label} can be at most ${count(rule.max)} characters.`);
-  } else if (rule.kind === "choice") {
-    if (!rule.values.includes(text)) return no(`${label} must be one of ${rule.values.join(", ")}.`);
-  } else if (rule.kind === "time") {
-    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(text)) return no(`${label} must be a time from 00:00 to 23:59.`);
   } else {
     const why = rule.issue(text);
     if (why) return no(why);

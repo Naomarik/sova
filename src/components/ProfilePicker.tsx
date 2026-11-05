@@ -22,9 +22,6 @@ import { openSettings } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
 import { PROFILE_GRID_CUSTOM, ProfileGrid } from "./ProfileGrid";
 import { Banner, Icon } from "./ui";
-import { TextField, Toggle } from "./form";
-import { problemOf } from "../../shared/form-rules";
-import { PROFILE_LABEL_RULE } from "../../shared/profile-limits";
 
 /** Sessions whose Custom board is open, by path (module state: see `board`). */
 const boardsOpen = new Set<string>();
@@ -217,18 +214,33 @@ export function ProfilePicker(props: {
             void saveCurrent();
           }}
         >
-          <TextField
-            class="profile-save-field"
-            label="Name"
-            hint="Saves this session's model, effort and subagent profile to Yours. Nothing else changes."
-            rule={PROFILE_LABEL_RULE}
-            error={saveError()}
-            value={saveName()}
-            onInput={(raw) => (setSaveName(raw), setSaveError(null))}
-            ref={(el: HTMLInputElement) => queueMicrotask(() => el.focus())}
-          />
+          <label class="field profile-save-field">
+            <span class="field-label">Name</span>
+            <input
+              class="input"
+              type="text"
+              maxLength={60}
+              required
+              value={saveName()}
+              aria-invalid={saveError() ? "true" : undefined}
+              aria-describedby={saveError() ? "profile-save-error" : undefined}
+              onInput={(e) => {
+                setSaveName(e.currentTarget.value);
+                setSaveError(null);
+              }}
+              ref={(el) => queueMicrotask(() => el.focus())}
+            />
+            <span class="field-hint">Saves this session's model, effort and subagent profile to Yours. Nothing else changes.</span>
+            <Show when={saveError()}>
+              {(msg) => (
+                <span class="field-error" id="profile-save-error" role="alert">
+                  {msg()}
+                </span>
+              )}
+            </Show>
+          </label>
           <div class="profile-alert-actions">
-            <button type="submit" class="button button-sm button-primary" disabled={!!problemOf(PROFILE_LABEL_RULE, saveName()) || savingNow()}>
+            <button type="submit" class="button button-sm button-primary" disabled={!saveName().trim() || savingNow()}>
               Save Profile
             </button>
             <button
@@ -362,15 +374,21 @@ export function ProfilePicker(props: {
               {(cap) => {
                 const why = () => lockedReason(cap, caps().remove);
                 return (
-                  <span title={why() ?? undefined}>
-                    <Toggle switch class="profile-toggle" label={CAPABILITY_LABEL[cap]} checked={!caps().remove.includes(cap)} disabled={!!pending() || !!why()} onChange={(v) => flip(cap, v)} />
-                  </span>
+                  <label class="toggle toggle-switch profile-toggle" title={why() ?? undefined}>
+                    <span>{CAPABILITY_LABEL[cap]}</span>
+                    <input type="checkbox" checked={!caps().remove.includes(cap)} disabled={!!pending() || !!why()} onChange={(e) => flip(cap, e.currentTarget.checked)} />
+                    <span class="toggle-box" />
+                  </label>
                 );
               }}
             </For>
             <For each={[...GRANTABLE]}>
               {(cap) => (
-                <Toggle switch class="profile-toggle profile-toggle-grant" label={CAPABILITY_LABEL[cap]} checked={caps().grant.includes(cap)} disabled={!!pending()} onChange={(v) => flip(cap, v)} />
+                <label class="toggle toggle-switch profile-toggle profile-toggle-grant">
+                  <span>{CAPABILITY_LABEL[cap]}</span>
+                  <input type="checkbox" checked={caps().grant.includes(cap)} disabled={!!pending()} onChange={(e) => flip(cap, e.currentTarget.checked)} />
+                  <span class="toggle-box" />
+                </label>
               )}
             </For>
           </div>

@@ -33,11 +33,7 @@ describe("rules", () => {
     assert.equal(problemOf({ ...text, empty: "This host needs a name." }, ""), "This host needs a name.");
     assert.equal(problemOf(text, 5), "Label must be text.");
   });
-  test("choice, time and custom", () => {
-    assert.equal(problemOf({ kind: "choice", label: "Mode", values: ["a", "b"] }, "b"), null);
-    assert.equal(problemOf({ kind: "choice", label: "Mode", values: ["a", "b"] }, "c"), "Mode must be one of a, b.");
-    for (const t of ["00:00", "23:59"]) assert.equal(problemOf({ kind: "time", label: "Start" }, t), null);
-    for (const t of ["24:00", "23:60", "7:00"]) assert.equal(problemOf({ kind: "time", label: "Start" }, t), "Start must be a time from 00:00 to 23:59.");
+  test("custom", () => {
     assert.equal(problemOf({ kind: "custom", label: "Url", issue: (t) => (t.startsWith("https://") ? null : "Use https.") }, " http://x "), "Use https.");
   });
   test("the first issue in page order, a rule's or a form's own sentence", () => {

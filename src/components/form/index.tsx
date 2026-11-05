@@ -1,12 +1,10 @@
 /**
- * The form kit: every box, list and switch in Sova. A box keeps exactly what was typed (never a
- * number input, which hands back "" for "1e" and loses it); a value its rule refuses turns the box
- * red with one sentence under it (shared/form-rules.ts, the same words the server refuses in), and a
- * limited text shows "n / most". Labels, hints and errors are wired to the control by id. Base CSS
- * classes only (`.field`, `.input`, `.field-error`, `.toggle`), no app state: src/card-toolkit
- * re-exports it.
+ * The form kit: every box, list and switch in Sova. A box keeps exactly what was typed; a value its
+ * rule (shared/form-rules.ts) refuses is red with one sentence under it, limited text shows "n / most".
+ * Base CSS classes only, no app state: src/card-toolkit re-exports it.
  */
 import { createMemo, createUniqueId, For, type JSX, Show, splitProps } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import { count, measured, problemOf, type Rule } from "../../../shared/form-rules";
 
 interface FieldProps {
@@ -84,42 +82,34 @@ function Field(p: FieldProps & { value?: string; control: (aria: Aria) => JSX.El
 }
 
 type InputAttrs = Omit<JSX.InputHTMLAttributes<HTMLInputElement>, "value" | "onInput" | "id" | "class">;
-export type TextFieldProps = FieldProps & InputAttrs & { value: string; onInput(raw: string): void; inputClass?: string };
+type AreaAttrs = Omit<JSX.TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onInput" | "id" | "class">;
+type BoxProps<A> = FieldProps & A & { value: string; onInput(raw: string): void; inputClass?: string };
+export type TextFieldProps = BoxProps<InputAttrs>;
 
-/** A one-line text box. */
-export function TextField(props: TextFieldProps) {
-  const [f, own, rest] = splitProps(props, FIELD_KEYS, ["value", "onInput", "inputClass"]);
+/** A box that keeps what was typed: `input` for one line, `textarea` for long text. */
+function Box(props: BoxProps<InputAttrs | AreaAttrs> & { tag: "input" | "textarea" }) {
+  const [f, own, rest] = splitProps(props, FIELD_KEYS, ["value", "onInput", "inputClass", "tag"]);
   return (
     <Field
       {...f}
       value={own.value}
       control={(aria) => (
-        <input class={cls("input", own.inputClass)} {...rest} {...aria} value={own.value} onInput={(e) => own.onInput(e.currentTarget.value)} />
+        <Dynamic component={own.tag} class={cls("input", own.tag === "textarea" && "textarea", own.inputClass)} {...rest} {...aria} value={own.value} onInput={(e: InputEvent & { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => own.onInput(e.currentTarget.value)} />
       )}
     />
   );
 }
+
+/** A one-line text box. */
+export const TextField = (props: TextFieldProps) => <Box tag="input" {...props} />;
+
+/** A long text box, with "n / most" under it when its rule limits it. */
+export const TextArea = (props: BoxProps<AreaAttrs>) => <Box tag="textarea" {...props} />;
 
 /** A number box: text that keeps what was typed ("", "1e", "-"), checked by its whole-number rule. */
 export const NumberField = (props: TextFieldProps) => (
   <TextField type="text" inputmode="numeric" autocomplete="off" {...props} inputClass={cls("text-num", props.inputClass)} />
 );
-
-type AreaAttrs = Omit<JSX.TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onInput" | "id" | "class">;
-
-/** A long text box, with "n / most" under it when its rule limits it. */
-export function TextArea(props: FieldProps & AreaAttrs & { value: string; onInput(raw: string): void; inputClass?: string }) {
-  const [f, own, rest] = splitProps(props, FIELD_KEYS, ["value", "onInput", "inputClass"]);
-  return (
-    <Field
-      {...f}
-      value={own.value}
-      control={(aria) => (
-        <textarea class={cls("input textarea", own.inputClass)} {...rest} {...aria} value={own.value} onInput={(e) => own.onInput(e.currentTarget.value)} />
-      )}
-    />
-  );
-}
 
 export interface Option {
   value: string;

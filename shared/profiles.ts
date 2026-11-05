@@ -2,10 +2,8 @@
  * Session profiles (§chat/profiles): what one session can do. Capabilities, Default (the only
  * profile in code; the others are files, §chat.profiles/projects), a profile's identity, the
  * snapshot a session keeps in its `sova-profile` entry, and the words both sides print. Shared by the
- * server and the client; imports only the pure form rules.
+ * server and the client; imports nothing.
  */
-import { check } from "./form-rules";
-import { PROFILE_LABEL_RULE } from "./profile-limits";
 
 /** Removable capabilities, in the order every list shows them. */
 export const REMOVABLE = ["shell", "edit", "workers", "web", "worktrees", "timers", "mcp"] as const;
@@ -351,9 +349,8 @@ export function parseProfile(raw: unknown): Profile | { error: string } {
   if (!o || typeof o !== "object") return { error: "A profile must be an object." };
   const id = typeof o.id === "string" ? o.id.trim() : "";
   if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id)) return { error: `Profile id "${id}" is not valid (lowercase letters, digits and dashes).` };
-  const named = check(PROFILE_LABEL_RULE, typeof o.label === "string" ? o.label : "");
-  if (!named.ok) return { error: named.message };
-  const label = named.value as string;
+  const label = typeof o.label === "string" ? o.label.trim() : "";
+  if (!label || label.length > 60) return { error: "A profile needs a name of up to 60 characters." };
   const caps = normalizeCaps(Array.isArray(o.remove) ? (o.remove as string[]) : [], Array.isArray(o.grant) ? (o.grant as string[]) : []);
   const l = (o.limits ?? {}) as Record<string, unknown>;
   const limits: ProfileLimits = {

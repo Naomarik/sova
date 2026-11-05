@@ -63,13 +63,15 @@ export function modelWords(m: EffectiveModel): { value: string; today?: string; 
 export interface ProjectDraft {
   push: boolean;
   review: boolean;
+  /** Reuse passes from identical code. */
+  reuse: boolean;
   checks: Record<string, { timeoutSec: number; rerun: boolean; optional: boolean }>;
 }
 
 export function toProjectDraft(s: MergeQueueSettings, hasOrigin: boolean): ProjectDraft {
   const checks: ProjectDraft["checks"] = {};
   for (const c of s.checks.list) checks[c.id] = { timeoutSec: c.timeoutSec, rerun: c.rerun, optional: c.optional };
-  return { push: pushes(s, hasOrigin), review: s.review.on, checks };
+  return { push: pushes(s, hasOrigin), review: s.review.on, reuse: s.reuse !== false, checks };
 }
 
 /** Only what the user changed: an untouched field is never written (absent push stays absent). Pure. */
@@ -78,6 +80,7 @@ export function changesOf(d: ProjectDraft, s: MergeQueueSettings, hasOrigin: boo
   const out: MergeSettingsChange = {};
   if (d.push !== base.push) out.push = d.push;
   if (d.review !== base.review) out.review = d.review;
+  if (typeof d.reuse === "boolean" && d.reuse !== base.reuse) out.reuse = d.reuse;
   const checks: NonNullable<MergeSettingsChange["checks"]> = {};
   for (const [id, c] of Object.entries(d.checks)) {
     const b = base.checks[id];
@@ -97,6 +100,7 @@ export function changeLines(ch: MergeSettingsChange, s: MergeQueueSettings): str
   const lines: string[] = [];
   if (ch.push !== undefined) lines.push(ch.push ? "Push after each landing: on" : "Push after each landing: off");
   if (ch.review !== undefined) lines.push(ch.review ? "Review each landing: on" : "Review each landing: off");
+  if (ch.reuse !== undefined) lines.push(ch.reuse ? "Reuse passes from identical code: on" : "Reuse passes from identical code: off");
   for (const c of s.checks.list) {
     const x = ch.checks?.[c.id];
     if (!x) continue;
@@ -131,7 +135,7 @@ export function rebaseDraft(d: ProjectDraft, base: ProjectDraft, fresh: ProjectD
     const was = base.checks[id];
     checks[id] = mine && was ? { timeoutSec: pick(mine.timeoutSec, was.timeoutSec, now.timeoutSec), rerun: pick(mine.rerun, was.rerun, now.rerun), optional: pick(mine.optional, was.optional, now.optional) } : { ...now };
   }
-  return { push: pick(d.push, base.push, fresh.push), review: pick(d.review, base.review, fresh.review), checks };
+  return { push: pick(d.push, base.push, fresh.push), review: pick(d.review, base.review, fresh.review), reuse: pick(d.reuse, base.reuse, fresh.reuse), checks };
 }
 
 /** A refused call's words: the server's `{error: {code, message}}` envelope, a plain `{error}`, or the error's own message. Pure. */

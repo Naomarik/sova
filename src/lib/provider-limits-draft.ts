@@ -1,6 +1,6 @@
 import type { ProviderLimits, ProviderLimitsInfo } from "../../shared/provider-limits";
 import { getProviderLimits, putProviderLimits } from "./api";
-import { limitsDraftOf, limitsOfDraft, limitsProblem, rebaseLimits, sameLimits, type LimitsDraft } from "./provider-limits";
+import { limitsDraftOf, limitsFields, limitsOfDraft, limitsProblem, rebaseLimits, sameLimits, type LimitsDraft } from "./provider-limits";
 import { createDraftStore, saveRebased } from "./settings-draft";
 
 /**
@@ -14,7 +14,7 @@ const store = createDraftStore<LimitsDraft, ProviderLimits, ProviderLimitsInfo>(
   toDraft: limitsDraftOf,
   same: sameLimits,
   rebase: rebaseLimits,
-  problem: (d) => limitsProblem(d),
+  fields: limitsFields,
   write: async (d, base) => {
     const { result } = await saveRebased(d, base, {
       read: () => getProviderLimits(),

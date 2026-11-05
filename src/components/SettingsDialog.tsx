@@ -32,7 +32,8 @@ import {
   setRecentCount,
 } from "../lib/recent";
 import { setShowSummaries, showSummaries } from "../lib/summary-line";
-import { NumberField, Toggle } from "./form";
+import { LIMIT_RULE } from "../../shared/provider-limits";
+import { NumberField, SearchField, Toggle } from "./form";
 import { compressWork, setCompressWork } from "../lib/work-compression";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
 import { settingsProject, type SettingsTab } from "../lib/settings-nav";
@@ -40,7 +41,6 @@ import { setExperimentalSaved } from "../lib/experimental-draft";
 import { AlignmentSettings } from "./AlignmentSettings";
 import { policyDraft, policySaveError, policySaving, setPolicyDraft, setPolicySaved } from "../lib/model-policy-draft";
 import { limitsDraft, limitsSaveError, limitsSaveResult, limitsSaving, setLimitsDraft, setLimitsSaved } from "../lib/provider-limits-draft";
-import { LIMIT_MAX, LIMIT_MIN, parseLimitField } from "../lib/provider-limits";
 import {
   dirtyForms,
   failedForms,
@@ -626,19 +626,7 @@ function ModelsPanel() {
         }
       >
         <div class="model-policy-search">
-          <div class="search">
-            <Icon name="search" />
-            <input
-              class="input"
-              type="search"
-              aria-label="Search models and providers"
-              placeholder="Search models"
-              autocomplete="off"
-              spellcheck={false}
-              value={query()}
-              onInput={(e) => setQuery(e.currentTarget.value)}
-            />
-          </div>
+          <SearchField label="Search models and providers" placeholder="Search models" spellcheck={false} value={query()} onInput={setQuery} />
         </div>
         <Show
           when={policy() && models() && !models.loading}
@@ -694,39 +682,34 @@ function ModelsPanel() {
                                 <span class="model-policy-meta">{providerMeta(group, p())}</span>
                               </button>
                             </Show>
-                            <label class="toggle toggle-switch model-policy-switch">
-                              <input
-                                type="checkbox"
-                                aria-label={`Enable ${group.provider}`}
-                                checked={providerEnabled(p(), group.provider)}
-                                disabled={busy()}
-                                onChange={(e) => edit((cur) => setProviderEnabled(cur, group.provider, e.currentTarget.checked))}
-                              />
-                              <span class="toggle-box" />
-                            </label>
-                            <label class="toggle toggle-switch model-policy-switch">
-                              <input
-                                type="checkbox"
-                                aria-label={`Allow subagents to use ${group.provider}`}
-                                checked={providerSubagentPreference(p(), group.provider)}
-                                disabled={busy() || !providerEnabled(p(), group.provider)}
-                                title={providerEnabled(p(), group.provider) ? undefined : `${group.provider} is off, so subagents can't use it either`}
-                                onChange={(e) => edit((cur) => setProviderSubagents(cur, group.provider, e.currentTarget.checked))}
-                              />
-                              <span class="toggle-box" />
-                            </label>
-                            <input
-                              class="input model-policy-limit text-num"
-                              type="text"
-                              inputmode="numeric"
-                              autocomplete="off"
-                              aria-label={`Requests at once for ${group.provider}`}
-                              aria-invalid={parseLimitField(limitField(group.provider)) === "invalid" ? "true" : undefined}
+                            <Toggle
+                              switch
+                              class="model-policy-switch"
+                              label={<span class="visually-hidden">Enable {group.provider}</span>}
+                              checked={providerEnabled(p(), group.provider)}
+                              disabled={busy()}
+                              onChange={(on) => edit((cur) => setProviderEnabled(cur, group.provider, on))}
+                            />
+                            <Toggle
+                              switch
+                              class="model-policy-switch"
+                              label={<span class="visually-hidden">Allow subagents to use {group.provider}</span>}
+                              checked={providerSubagentPreference(p(), group.provider)}
+                              disabled={busy() || !providerEnabled(p(), group.provider)}
+                              title={providerEnabled(p(), group.provider) ? undefined : `${group.provider} is off, so subagents can't use it either`}
+                              onChange={(on) => edit((cur) => setProviderSubagents(cur, group.provider, on))}
+                            />
+                            <NumberField
+                              label={`Requests at once for ${group.provider}`}
+                              hideLabel
+                              rule={LIMIT_RULE}
+                              ruleLabel={`${group.provider}'s At once`}
+                              inputClass="model-policy-limit"
                               placeholder="No limit"
-                              title={loweredNote(group.provider) ?? `How many ${group.provider} requests may run at once on this device (${LIMIT_MIN}–${LIMIT_MAX}); empty for no limit`}
+                              title={loweredNote(group.provider) ?? `How many ${group.provider} requests may run at once on this device (${LIMIT_RULE.min}–${LIMIT_RULE.max}); empty for no limit`}
                               value={limitField(group.provider)}
                               disabled={limitsBusy() || !limitsDraft()}
-                              onInput={(e) => editLimit(group.provider, e.currentTarget.value)}
+                              onInput={(v) => editLimit(group.provider, v)}
                             />
                           </div>
                           <Show when={group.models.length > 0 && isOpen(group.provider)}>
@@ -737,34 +720,30 @@ function ModelsPanel() {
                                     <span class="model-policy-model-name" title={m.ref}>
                                       {m.id}
                                     </span>
-                                    <label class="toggle toggle-switch model-policy-switch">
-                                      <input
-                                        type="checkbox"
-                                        aria-label={`Enable ${m.ref}`}
-                                        checked={modelEnabled(p(), m.ref)}
-                                        disabled={busy() || !providerEnabled(p(), m.provider)}
-                                        title={providerEnabled(p(), m.provider) ? undefined : `${m.provider} is off, so this model is too`}
-                                        onChange={(e) => edit((cur) => setModelEnabled(cur, m.ref, e.currentTarget.checked))}
-                                      />
-                                      <span class="toggle-box" />
-                                    </label>
-                                    <label class="toggle toggle-switch model-policy-switch">
-                                      <input
-                                        type="checkbox"
-                                        aria-label={`Allow subagents to use ${m.ref}`}
-                                        checked={modelSubagentPreference(p(), m.ref) && providerSubagentPreference(p(), m.provider)}
-                                        disabled={busy() || !modelEnabled(p(), m.ref) || !providerSubagentEnabled(p(), m.provider)}
-                                        title={
-                                          modelEnabled(p(), m.ref)
-                                            ? modelSubagentEnabled(p(), m.ref) || providerSubagentEnabled(p(), m.provider)
-                                              ? undefined
-                                              : `${m.provider} is off for subagents, so this model is too`
-                                            : "This model is off, so subagents can't use it either"
-                                        }
-                                        onChange={(e) => edit((cur) => setModelSubagents(cur, m.ref, e.currentTarget.checked))}
-                                      />
-                                      <span class="toggle-box" />
-                                    </label>
+                                    <Toggle
+                                      switch
+                                      class="model-policy-switch"
+                                      label={<span class="visually-hidden">Enable {m.ref}</span>}
+                                      checked={modelEnabled(p(), m.ref)}
+                                      disabled={busy() || !providerEnabled(p(), m.provider)}
+                                      title={providerEnabled(p(), m.provider) ? undefined : `${m.provider} is off, so this model is too`}
+                                      onChange={(on) => edit((cur) => setModelEnabled(cur, m.ref, on))}
+                                    />
+                                    <Toggle
+                                      switch
+                                      class="model-policy-switch"
+                                      label={<span class="visually-hidden">Allow subagents to use {m.ref}</span>}
+                                      checked={modelSubagentPreference(p(), m.ref) && providerSubagentPreference(p(), m.provider)}
+                                      disabled={busy() || !modelEnabled(p(), m.ref) || !providerSubagentEnabled(p(), m.provider)}
+                                      title={
+                                        modelEnabled(p(), m.ref)
+                                          ? modelSubagentEnabled(p(), m.ref) || providerSubagentEnabled(p(), m.provider)
+                                            ? undefined
+                                            : `${m.provider} is off for subagents, so this model is too`
+                                          : "This model is off, so subagents can't use it either"
+                                      }
+                                      onChange={(on) => edit((cur) => setModelSubagents(cur, m.ref, on))}
+                                    />
                                     {/* The limit is the provider's: a model row keeps the column empty. */}
                                     <span aria-hidden="true" />
                                   </li>

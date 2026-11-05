@@ -75,6 +75,7 @@ const limits = await import("../shared/overseer-limits");
 const batonLimits = await import("../shared/baton-limits");
 const titleLimits = await import("../shared/session-title-limits");
 const decisionLimits = await import("../shared/decision-limits");
+const providerLimitRules = await import("../shared/provider-limits");
 const { firstIssue, problemOf } = await import("../shared/form-rules");
 /** A rule's edges: the values at it (taken) and just past it (refused). */
 function ruled(rule: Rule): Pick<Limit, "name" | "rule" | "takes" | "refuses"> {
@@ -137,9 +138,7 @@ const LIMITS: Limit[] = [
     server: async (v) => putStatus("/api/overseer/notes", { text: v, base: (await get("/api/overseer/notes")).text }),
   },
   {
-    name: "Request limits At once (1 to 999, whole)",
-    takes: [1, 999],
-    refuses: [0, 1000, 1.5],
+    ...ruled(providerLimitRules.LIMIT_RULE),
     client: (v) => providerLimits.limitsProblem({ zai: String(v) }),
     server: (v) => putStatus("/api/settings/provider-limits", { limits: { zai: v } }),
   },

@@ -144,18 +144,18 @@ export function OverviewProjects(props: {
                 };
                 return (
                   <li>
-                    <div class="card project-card" classList={{ "project-card-needs": c().needsYou > 0 }}>
-                      <ProjectIcon project={c().project} size={40} local class="project-card-icon" />
-                      <div class="project-card-names">
+                    <div class="card overview-project-card" classList={{ "overview-project-card-needs": c().needsYou > 0 }}>
+                      <ProjectIcon project={c().project} size={40} local class="overview-project-card-icon" />
+                      <div class="overview-project-card-names">
                         {/* The card's one big target: its ::after covers the card, under the buttons. */}
-                        <a class="project-card-name" href={projectHref(c().project.id)}>
+                        <a class="overview-project-card-name" href={projectHref(c().project.id)}>
                           {c().project.name}
                         </a>
-                        <span class="project-card-where" title={c().project.space.kind === "org" ? undefined : c().project.root}>
+                        <span class="overview-project-card-where" title={c().project.space.kind === "org" ? undefined : c().project.root}>
                           {where(c())}
                         </span>
                       </div>
-                      <div class="project-card-menu">
+                      <div class="overview-project-card-menu">
                         <ActionMenu label={`Project actions · ${c().project.name}`} title="Project actions">
                           {(menu) => (
                             <div class="model-menu-list" role="menu" aria-label={`Project actions · ${c().project.name}`}>
@@ -174,12 +174,12 @@ export function OverviewProjects(props: {
                           )}
                         </ActionMenu>
                       </div>
-                      <div class="project-card-foot">
-                        <div class="project-card-status">
+                      <div class="overview-project-card-foot">
+                        <div class="overview-project-card-status">
                           <Show
                             when={c().needsYou > 0 || c().working > 0}
                             fallback={
-                              <span class="project-card-when" title={activeAt() ? stampTime(activeAt()!) : undefined}>
+                              <span class="overview-project-card-when" title={activeAt() ? stampTime(activeAt()!) : undefined}>
                                 {activeAt() ? `Active ${relativeTime(activeAt()!, props.now)}` : "No chats yet"}
                               </span>
                             }
@@ -198,7 +198,7 @@ export function OverviewProjects(props: {
                         </div>
                         <button
                           type="button"
-                          class="button button-sm project-card-new"
+                          class="button button-sm overview-project-card-new"
                           aria-label={state()?.pending ? `Starting a chat in ${c().project.name}…` : `New chat in ${c().project.name}`}
                           disabled={!!state()?.pending}
                           onClick={() => void newChat(c())}
@@ -208,17 +208,17 @@ export function OverviewProjects(props: {
                             fallback={
                               <>
                                 <Icon name="progress" small />
-                                <span class="project-card-new-label">Starting…</span>
+                                <span class="overview-project-card-new-label">Starting…</span>
                               </>
                             }
                           >
                             <Icon name="plus" small />
-                            <span class="project-card-new-label">New Chat</span>
+                            <span class="overview-project-card-new-label">New Chat</span>
                           </Show>
                         </button>
                       </div>
                       <Show when={state()?.error}>
-                        <p class="project-card-error" role="alert">
+                        <p class="overview-project-card-error" role="alert">
                           Couldn't start a chat: {state()!.error}
                         </p>
                       </Show>
@@ -229,7 +229,7 @@ export function OverviewProjects(props: {
             </ForKey>
             <Show when={!filter().trim()}>
               <li>
-                <button type="button" class="project-card-add" onClick={() => setAdding(true)}>
+                <button type="button" class="overview-project-card-add" onClick={() => setAdding(true)}>
                   <Icon name="plus" />
                   Add Project
                 </button>

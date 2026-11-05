@@ -115,8 +115,13 @@ export function SetupChatState(props: { projectId: string; poll: SetupPoll; fres
 }
 
 /** The Setup chat's card line: its state, when it started, Open Chat, and (on a set-up project) Start Fresh. */
+/** The server's own refusal while the chat's turn runs: Start Fresh waits for it. */
+const WORKING_WHY = "The Setup chat is working: wait for its turn to end (or stop it), then Start Fresh.";
+
 function SetupChatLine(props: { projectId: string; chat: SetupChatView; poll: SetupPoll; fresh?: boolean }) {
   const line = () => chatLine(props.chat);
+  const working = () => props.chat.state === "working";
+  const freshWhy = createUniqueId();
   const [confirm, setConfirm] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -126,7 +131,7 @@ function SetupChatLine(props: { projectId: string; chat: SetupChatView; poll: Se
     setError(null);
     try {
       await openSetupChat(props.projectId, { fresh: true });
-      const done = "Started fresh: the next Change Setup starts a new setup chat.";
+      const done = "Archived the setup chat. The next Change Setup starts a new one.";
       toast(done);
       announce(done);
       setConfirm(false);
@@ -154,16 +159,32 @@ function SetupChatLine(props: { projectId: string; chat: SetupChatView; poll: Se
             )}
           </Show>
           <Show when={props.fresh}>
-            <button type="button" class="button button-sm button-ghost" disabled={busy() || confirm()} onClick={() => setConfirm(true)}>
+            <button
+              type="button"
+              class="button button-sm button-ghost"
+              aria-disabled={busy() || confirm() || working() ? "true" : undefined}
+              aria-describedby={working() ? freshWhy : undefined}
+              title={working() ? WORKING_WHY : undefined}
+              onClick={() => !busy() && !confirm() && !working() && setConfirm(true)}
+            >
               Start Fresh…
             </button>
           </Show>
         </div>
       </div>
       <p class="list-meta text-muted">Started {relativeTime(props.chat.startedAt)}. It reads the project and asks what it can't tell; nothing it proposes changes {props.chat.proposal?.target ?? "anything"} until you land it.</p>
-      <Show when={confirm()}>
+      <Show when={props.fresh && working()}>
+        <p class="text-caption text-muted" id={freshWhy}>
+          {WORKING_WHY}
+        </p>
+      </Show>
+      <Show when={confirm() && !working()}>
         <div class="mq-confirm" role="group" aria-label="Start a fresh setup chat">
-          <p class="field-hint">This chat is archived once its turn ends, and what it learned goes with it. Its setup branch and an open proposal stay; the next Set Up with a Chat or Change Setup starts a new chat that carries on from them.</p>
+          <p class="field-hint">
+            {props.chat.proposal
+              ? `This chat is archived, and what it learned goes with it. Its proposal on ${props.chat.proposal.branch} stays open: the next Change Setup starts a new chat that carries on in that branch.`
+              : "This chat is archived, and what it learned goes with it. The next Set Up with a Chat or Change Setup starts a new chat."}
+          </p>
           <span class="button-row">
             <button type="button" class="button button-sm button-ghost" onClick={() => setConfirm(false)}>
               Cancel

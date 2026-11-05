@@ -94,6 +94,17 @@ const meshLimits = await import("../shared/mesh-limits");
 const pushLimits = await import("../shared/push-limits");
 const linkLimits = await import("../shared/public-links-limits");
 const outreachLimits = await import("../shared/outreach-limits");
+const mcpLimits = await import("../shared/mcp-limits");
+const mcpLib = await import("../src/lib/mcp");
+/** The add route's own parse of the form's body (the route then checks the server, which the unit tier never reaches). */
+const mcpAdd = async (b: Json) => {
+  try {
+    (await import("./mcp/routes")).entryOfNew(b);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+};
 const outreach = await import("../src/lib/outreach");
 const outreachStore = await import("./outreach/settings");
 /** The save's own parse (the route also asks the senders, which the unit tier never reaches). */
@@ -132,6 +143,22 @@ const withActions = (n: number) => {
 };
 
 const LIMITS: Limit[] = [
+  {
+    name: "MCP server name (never sova)",
+    rule: mcpLimits.SERVER_NAME_RULE,
+    takes: ["docs", "sova2"],
+    refuses: ["sova", "SOVA", " sova "],
+    client: (v) => problemOf(mcpLimits.SERVER_NAME_RULE, v),
+    server: (v) => mcpAdd({ way: "address", name: v, address: "https://mcp.example.com" }),
+  },
+  {
+    name: "MCP secret's name (letters, digits and underscores)",
+    rule: mcpLimits.SECRET_NAME_RULE,
+    takes: ["", "API_KEY", "_x1"],
+    refuses: ["1KEY", "a-b", "a.b"],
+    client: (v) => mcpLib.secretNameIssue(v as string),
+    server: (v) => mcpAdd({ way: "command", name: "docs", command: "docs-server", secretName: v }),
+  },
   {
     ...ruled(outreachLimits.SENDER_LABEL_RULE),
     client: async (v) => outreach.outreachProblem({ ...(await outreachDraft()), labels: { local: v as string } }),

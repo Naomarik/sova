@@ -2165,10 +2165,7 @@ for that idea that plans with the user and edits nothing.
 
 An **Ideas** button in the Overseer page's head, with the idea count, opens a panel: beside the
 chat on a wide window, over it on a narrow one. Below a 660px head the button is its icon with
-the count as a corner badge, so the head still fits (§app.overseer/head-layout). The count, in
-the chip, the badge and the button's label ("Ideas, 2"), leaves dropped ideas out and keeps every
-other status, done included: a backlog of two ideas, both dropped, reads 0. The panel's own counts
-still count every idea.
+the count as a corner badge, so the head still fits (§app.overseer/head-layout).
 
 - **Table of contents** grouped by namespace, with counts, one row per idea (sub-entries under their
   main entry) and a status chip each.

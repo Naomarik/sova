@@ -94,6 +94,8 @@ export function queueDeps(stateRoot: string, extra: Partial<QueueDeps> & { git?:
 
 export class QueueHarness {
   readonly notices: Notice[] = [];
+  /** The broken-on-target flags the queue raised (QueueDeps.flagBroken: the user's one notification each). */
+  readonly flags: import("../../../shared/merge-queue").TargetBroken[] = [];
   readonly threadErrors: unknown[] = [];
   readonly reviews: { commit: string; runId: string }[] = [];
   queues!: MergeQueues;
@@ -112,6 +114,7 @@ export class QueueHarness {
 
   private deps(): QueueDeps {
     return queueDeps(this.stateRoot, {
+      flagBroken: (b) => void this.flags.push(b),
       notify: (kind, e, extra) => this.notices.push({ kind, to: e.session ?? "", branch: e.branch, text: noticeText(kind, e, extra) }),
       thread: (ev) => this.wakeThread(ev),
       ...(this.o.reviewer ? { reviewer: this.startReviewer } : {}),

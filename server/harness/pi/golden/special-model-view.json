@@ -1905,7 +1905,7 @@
         "type": "string"
        },
        "maxItems": 50,
-       "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+       "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
       },
       "endpoint": {
        "type": "string",
@@ -4297,7 +4297,7 @@
         "type": "string"
        },
        "maxItems": 50,
-       "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite."
+       "description": "test: selectors appended to the project's test command (files, namespaces, test names); none runs the whole suite. merge.extend: part of a pick: the selectors the picked check runs with (a slow test group, files, tours: the pick's select); a check that takes one runs bare without it and fails."
       },
       "endpoint": {
        "type": "string",

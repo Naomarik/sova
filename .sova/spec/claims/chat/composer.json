@@ -311,7 +311,7 @@
   "§chat.composer/worktrees-control": {
     "kind": "behavior",
     "authority": "accepted",
-    "evidence": "verified",
+    "evidence": "reviewed",
     "requires": [
       "§chat/worktrees",
       "§chat.worktrees/pane",
@@ -330,8 +330,8 @@
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-05T04:24Z",
-      "source": "pi-session:01a1a9da-15c8-731e-9587-23927c9ff121#9c4c7735"
+      "at": "2026-11-05T19:18Z",
+      "source": "pi-session:01a1acf3-91f6-7735-96f5-970a0699e9c9#85bf6ed9"
     },
     "code": [
       "src/components/WorktreesControl.tsx",

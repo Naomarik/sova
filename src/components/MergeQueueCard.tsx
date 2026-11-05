@@ -2,7 +2,7 @@ import { createSignal, For, Show } from "solid-js";
 import type { MergeAnswer } from "../../shared/merge-queue";
 import type { CardInfo } from "../../shared/transcript-cards";
 import { clockTime, tildePath } from "../lib/format";
-import { cardActions, cardFacts, cardLabel, cardNewer, cardNotes, cardPill, cardSha, foldedLine, isNewest, notPushed, queueRowOf, type CardAction, type QueueCard, type QueueCardRow } from "../lib/merge-queue-card";
+import { cardActionLabel, cardActions, cardFacts, cardLabel, cardNewer, cardNotes, cardPill, cardSha, foldedLine, isNewest, notPushed, queueRowOf, type CardAction, type QueueCard, type QueueCardRow } from "../lib/merge-queue-card";
 import { answerEntry, cancelEntry, landBranch, refusal } from "../lib/merge-queue-client";
 import { mergeRunHref, projectTabHref } from "../lib/projects-route";
 import { announce, home, toast } from "../lib/ui-state";
@@ -49,16 +49,6 @@ function Folded(props: { row: QueueCardRow }) {
   );
 }
 
-const ACTION_LABEL: Record<CardAction, string> = {
-  cancel: "Cancel",
-  accept: "Accept",
-  "land-anyway": "Land Anyway",
-  "send-back": "Send Back",
-  "land-again": "Land Again",
-  land: "Land",
-  "land-this-again": "Land This Commit Again",
-  remove: "Remove from Queue",
-};
 
 function Body(props: { data: QueueCard; readOnly?: boolean }) {
   const d = () => props.data;
@@ -91,14 +81,17 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
               ? await answer("land-anyway")
               : a === "send-back"
                 ? await answer("send-back")
-                : // Land, Land This Commit Again: the commit the card was approved at; Land Again: the branch's head.
-                  await landBranch(d().root, d().branch, { commit: a === "land-again" ? d().head : d().commit });
+                : a === "land-this-again"
+                  ? // Needs a fix: the branch's newest commit (its tip now), never only the one sent back.
+                    await landBranch(d().root, d().branch, {})
+                  : // Land: the commit the card was approved at; Land Again: the branch's head.
+                    await landBranch(d().root, d().branch, { commit: a === "land-again" ? d().head : d().commit });
       const no = refusal(r);
       if (no) {
         setError(no);
         announce(no);
       } else {
-        const done = `${ACTION_LABEL[a]}: ${d().branch}.`;
+        const done = `${cardActionLabel(d(), a)}: ${d().branch}.`;
         toast(done);
         announce(done);
       }
@@ -264,12 +257,12 @@ function Body(props: { data: QueueCard; readOnly?: boolean }) {
               <button
                 type="button"
                 class={`button button-sm${a === "accept" || a === "land-anyway" || a === "land" ? " button-primary" : ""}${a === "send-back" ? " button-destructive" : ""}`}
-                aria-label={`${ACTION_LABEL[a]} ${d().branch}`}
+                aria-label={`${cardActionLabel(d(), a)} ${d().branch}`}
                 disabled={!!busy()}
                 aria-busy={busy() === a ? "true" : undefined}
                 onClick={() => void act(a)}
               >
-                {ACTION_LABEL[a]}
+                {cardActionLabel(d(), a)}
               </button>
             )}
           </For>

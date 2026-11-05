@@ -108,3 +108,9 @@ test("what it brings in: every changed file, the setup's own first, the rest fla
   assert.equal(changesHead(1), "Changes 1 file");
   assert.equal(changesHead(4), "Changes 4 files");
 });
+
+test("the host's setup mark wins; the fallback knows the proposal's own release playbook folder", () => {
+  const f = changedFiles([{ path: "release/steps.md", setup: true }, { path: ".sova/playbooks/x.md", setup: false }, "ops/release/run.sh", "README.md"], "./ops/release/")!;
+  assert.deepEqual(f.setup, ["release/steps.md", "ops/release/run.sh"]);
+  assert.deepEqual(f.other, [".sova/playbooks/x.md", "README.md"]);
+});

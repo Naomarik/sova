@@ -7,7 +7,7 @@ import { createPoll, type Poll } from "../lib/poll";
 import { createProjectQueue } from "../lib/project-queue";
 import { mergeRunHref, projectSessionHref } from "../lib/projects-route";
 import { requestListRefresh } from "../lib/list-refresh";
-import { changedFiles, changesHead, chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, trialChip, trialLine, trialStale, type SetupChatView, type SetupProposal, type SetupSurface } from "../lib/setup-chat";
+import { type ChangedFile, changedFiles, changesHead, chatLine, durationWords, landState, notSetUpWords, setupButtonLabel, trialChip, trialLine, trialStale, type SetupChatView, type SetupProposal, type SetupSurface } from "../lib/setup-chat";
 import { announce, toast } from "../lib/ui-state";
 import { DeployRecipeSteps } from "./ProjectDeployPanel";
 import { ReleaseSetupSteps } from "./ReleasesTab";
@@ -284,7 +284,7 @@ export function SetupProposalCard(props: { projectId: string; chat: SetupChatVie
         <Show when={p().deploy} fallback={<p class="project-card-note">No deploy recipe in this proposal.</p>}>{(d) => <DeployRecipeSteps recipe={d()} />}</Show>
       </Section>
       <Section title="What it brings in">
-        <Show when={changedFiles(p().files)} fallback={<p class="project-card-note">Reading what the branch changes. Review Changes shows it in full.</p>}>
+        <Show when={changedFiles(p().files as readonly ChangedFile[] | undefined, p().release?.settings?.playbook)} fallback={<p class="project-card-note">Reading what the branch changes. Review Changes shows it in full.</p>}>
           {(f) => (
             <>
               <p class="project-card-note">

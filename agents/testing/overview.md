@@ -1,5 +1,5 @@
 ---
-watches: ["scripts/run-tests.mjs", "scripts/test-env.mjs", "scripts/test-cache.mjs", "scripts/checked.mjs", "scripts/test-groups.mjs", "scripts/test-tier-guard.mjs", "scripts/test-changed.mjs", "scripts/test-sentinel.mjs", "scripts/test-temp-root.mjs", "scripts/hermetic-agent-dir.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "server/test-scratch.ts", "scripts/sova-scenario.mjs", "server/testing/hermetic-server.ts"]
+watches: ["scripts/run-tests.mjs", "scripts/test-env.mjs", "scripts/test-cache.mjs", "scripts/test-groups.mjs", "scripts/test-tier-guard.mjs", "scripts/test-changed.mjs", "scripts/test-sentinel.mjs", "scripts/test-temp-root.mjs", "scripts/hermetic-agent-dir.mjs", "pi-config/extensions/claude-code/tests/hermetic-env.mjs", "server/test-scratch.ts", "scripts/sova-scenario.mjs", "server/testing/hermetic-server.ts"]
 alsoUpdate: ["agents/testing/overview.md"]
 ---
 # Testing

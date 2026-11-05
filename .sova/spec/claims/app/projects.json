@@ -71,7 +71,13 @@
       "src/home.css",
       "src/App.tsx",
       "src/components/ProjectIcon.tsx",
-      "src/lib/home-projects-keyed.browser.test.ts"
+      "src/lib/home-projects-keyed.browser.test.ts",
+      "src/lib/api.ts",
+      "shared/projects.ts",
+      "src/lib/home-glance.ts",
+      "src/lib/home-glance.test.ts",
+      "src/lib/landing-bar.ts",
+      "src/lib/home-ready-row.test.ts"
     ],
     "requires": [
       "§chat.transcript/landing-page",
@@ -83,12 +89,50 @@
       "§app.project-overseer/new-coding-session",
       "§app.projects/registration",
       "§app.organizations/project-page",
-      "§app.merge-queue/approve"
+      "§app.merge-queue/approve",
+      "§app.projects/home-glance",
+      "§app.merge-queue/view",
+      "§app.release/tab",
+      "§app.project-services/instances"
     ],
     "agreed": {
       "by": "user",
-      "at": "2026-11-04T22:53Z",
-      "source": "pi-session:01a1a881-85c2-72d2-b9d3-5a1d4c60dbfe#b1ee7dfc"
+      "at": "2026-11-05T13:41Z",
+      "source": "pi-session:01a1ab30-f643-72b7-9a70-76331f9c7523#21128e50"
+    }
+  },
+  "§app.projects/home-glance": {
+    "kind": "behavior",
+    "authority": "accepted",
+    "evidence": "verified",
+    "code": [
+      "server/projects/glance.ts",
+      "server/projects/glance.test.ts",
+      "server/projects/routes.ts",
+      "shared/projects.ts",
+      "server/project-services/drivers.ts",
+      "server/projects/glance.integration.test.ts",
+      "server/merge-queue/view.ts",
+      "server/merge-queue/wire.ts",
+      "server/project-services/release-wire.ts",
+      "server/project-services/release.ts",
+      "server/sessions-index.ts",
+      "shared/commands/projects.ts"
+    ],
+    "requires": [
+      "§app.merge-queue/view",
+      "§app.merge-queue/landing-bar",
+      "§app.release/record",
+      "§app.project-services/instances",
+      "§app.projects/folder-sessions",
+      "§app.resource-monitor/sampling-and-history",
+      "§app.resource-monitor/attribution",
+      "§app.resource-monitor/lightness-budget"
+    ],
+    "agreed": {
+      "by": "user",
+      "at": "2026-11-05T13:41Z",
+      "source": "pi-session:01a1ab30-f643-72b7-9a70-76331f9c7523#21128e50"
     }
   },
   "§app.projects/icon": {

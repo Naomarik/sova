@@ -1,0 +1,117 @@
+{
+  "shots": {
+    "merge-queue-tab": {
+      "file": "merge-queue-tab.webp",
+      "width": 1824,
+      "height": 2300,
+      "theme": "dark",
+      "alt": "A project's Merge Queue tab: master and origin in step, the queue running with its merge thread idle, one branch being checked with its plain-words summary, and the branches queued behind it.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 110054,
+      "note": "the earlier live capture, re-cropped to the script's tab-panel crop (the live queue was idle at the retake)"
+    },
+    "landing-progress": {
+      "file": "landing-progress.webp",
+      "width": 1756,
+      "height": 1478,
+      "theme": "dark",
+      "alt": "Landing progress, branch by branch: the branch being checked with its plain-words summary, the check it is on and a progress bar, and the next branch in line with when it starts.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 76166
+    },
+    "releases-tab": {
+      "file": "releases-tab.webp",
+      "width": 1824,
+      "height": 1582,
+      "theme": "dark",
+      "alt": "A project's Releases tab: the latest release and the landings since, Release Note and Start Release, and the history of published releases, each with its commit, age and notes.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 41486
+    },
+    "merge-queue-run": {
+      "file": "merge-queue-run.webp",
+      "width": 1824,
+      "height": 1958,
+      "theme": "dark",
+      "alt": "One merge-queue run: the branch merged onto the newest master in its own copy, setup, spec docs, review, typecheck and unit tests passed, and the integration check, each with its time.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 72958,
+      "note": "the earlier live capture, re-cropped to the script's tab-panel crop (the live queue was idle at the retake)"
+    },
+    "settings-merge-queue": {
+      "file": "settings-merge-queue.webp",
+      "width": 1520,
+      "height": 1280,
+      "theme": "dark",
+      "alt": "Settings, Merge Queue, for one project: how a branch lands (merged locally, a pull request on GitHub, a merge request on GitLab, or the branch pushed only), each value marked with where it comes from.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 50622
+    },
+    "settings-merge-queue-checks": {
+      "file": "settings-merge-queue-checks.webp",
+      "width": 1520,
+      "height": 1280,
+      "theme": "dark",
+      "alt": "Settings, Merge Queue, further down: the checks every landing runs (Typecheck, Unit tests, Integration and more), which rerun their failed files, setup before the checks, and the review of each landing.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 31048
+    },
+    "release-in-progress": {
+      "file": "release-in-progress.webp",
+      "width": 1756,
+      "height": 1646,
+      "theme": "dark",
+      "alt": "A release in progress, step by step: the version, notes and release commit done, the gating checks passed, Try it on the staging copy held for you with Continue, a failed smoke test with Retry Step, a check still running, and Publish waiting its turn.",
+      "source": "copy",
+      "taken": "2026-11-05",
+      "bytes": 77714
+    },
+    "usage-limits": {
+      "file": "usage-limits.webp",
+      "width": 2556,
+      "height": 878,
+      "theme": "dark",
+      "alt": "One Claude account on the Usage page: each 7-day window's share used, when it resets, the pace per day and when it runs out at that pace, last week for comparison, the week's burn chart, and the account's logins.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 47322
+    },
+    "project-cost": {
+      "file": "project-cost.webp",
+      "width": 1824,
+      "height": 796,
+      "theme": "dark",
+      "alt": "A project's Cost tab: what its sessions would cost at API prices, as of when it was counted, split by who started them, with the breakdown by kind and model behind a disclosure.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 28176
+    },
+    "usage-costs": {
+      "file": "usage-costs.webp",
+      "width": 2752,
+      "height": 1580,
+      "theme": "dark",
+      "alt": "The Agents page's Costs tab over the last 30 days: the total and its split into main sessions, workers and one-shots, each with its cache hit rate, the cost per day, and tokens, hit rate and cost by provider and by kind.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 48606
+    },
+    "usage-models": {
+      "file": "usage-models.webp",
+      "width": 2752,
+      "height": 1622,
+      "theme": "dark",
+      "alt": "The Costs tab's By model table: one row per model with its new input, cache reads, cache hit rate, output and cost.",
+      "source": "live",
+      "taken": "2026-11-05",
+      "bytes": 37074
+    }
+  },
+  "_generated": "by site/scripts/screens/capture-live.mjs; edit its SHOTS instead"
+}

@@ -1,7 +1,7 @@
 # §site/docs — The docs pages on Sova's site
 
 The site's `/docs/` section explains Sova to the person running it: how a chat's modes shape what
-the agent does, the features the landing page names, and how to install it. Each page is a
+the agent does, the features the landing page names and their settings, and how to install it. Each page is a
 hand-written Markdown file in the site's docs collection, written in the user's words from the
 claims its record `requires`, and it promises nothing those claims don't say. The pages carry no §
 ids, no source paths and no API routes; this area is where a page's sources are recorded, so a
@@ -24,6 +24,10 @@ and a footer with links to Sova home, Sova on GitHub, the licence and pi, and th
 were written from the spec. Nothing on a page widens it: each table sits in its own sideways
 scrolling region named after the heading above it, code blocks scroll inside themselves and inline
 code breaks anywhere. Code blocks are plain, in the site's own colours, with no syntax highlighting.
+A page may place a product screenshot with a `<!-- screen: <shot id> | <words> -->` line: it becomes
+a figure the column's width, served as AVIF and WebP at several widths, its words the screens
+manifest's (else the line's own). A shot not captured yet leaves nothing on the page, and the build
+warns but never fails for it.
 The site builds to static HTML and CSS.
 
 ## §site.docs/chrome — The header and theme the docs pages share
@@ -60,8 +64,27 @@ always runs in it.
 ## §site.docs/delegate — Delegate (`/docs/modes/delegate/`)
 
 The orchestrating major mode: the four kinds of work and where each is routed, fallbacks and Off,
-teams, watching workers, and workers after a restart. Create (§site.docs/create) does all of this
-and shares these settings.
+teams (linking to their own page, §site.docs/teams), watching workers, and workers after a restart.
+Create (§site.docs/create) does all of this and shares these settings.
+
+## §site.docs/teams — Teams (`/docs/teams/`)
+
+The first page of the Features group, linked from the Delegate page, the docs front page and the
+landing's Teams section: getting a team (asking for one in Delegate always starts a real team, and
+when the agent starts one unasked; any major mode can), what a team starts with (name and shared
+objective, one role per member, declared ownership that is a plan, not a lock), all or nothing at
+start and the limits of 24 running workers per chat and 24 seats per team; how members talk
+(`team_msg`, `team_inbox`, `team_ask`) with examples of members settling things between themselves;
+the inbox (idle members woken, busy ones never interrupted, urgent items at the next step, questions
+waiting for an answer, a replaced member's messages going to its successor, inbox zero and the
+safety net, open items returned to their senders, nothing lost to a restart); the coordinator (from
+the subagent profile's Teams section; sees every assignment and the roster, steers by role, answers
+members' questions, the one voice back to the user's chat with `team_report` and `team_ask`, its own
+result starting a turn only once no member works, successors and handover notes, a team with no live
+coordinator reporting to the chat directly, and none under Off); the monitor (context wrap-up, the
+usage pause and resume with an early resume refused, no checks while the team is idle); watching a
+team (the composer's count, the Session detail pane's member rows, the Inbox tab, read-only, and
+the Agents page's team chips).
 
 ## §site.docs/subagent-profiles — Subagent profiles (`/docs/subagent-profiles/`)
 
@@ -262,7 +285,33 @@ copy, the checks, the optional review and landing exactly the tested commit, or 
 request; the branch's card in its chat; whose failure a red check is and each waiting state (Needs a
 fix, Can't tell whose failure, Conflict and Behaviour differs, Review flagged, Drafts changed) with
 its actions; the Merge Queue tab; the merge thread and the queue's own chats; setting it up and
-Settings → Merge Queue; the freeze while a release is open.
+Settings → Merge Queue, linking to its own page (§site.docs/merge-queue-settings); each run's page; the freeze while a release is open. Screenshots of the Merge Queue tab, a run's page and the branch's card in its chat, once captured.
+
+## §site.docs/merge-queue-settings — Merge queue settings (`/docs/merge-queue-settings/`)
+
+Settings → Merge Queue, in Features after Merge queue: how it opens (Queue Settings, the picker, the
+project's Settings tab row); each row's tag (Project file, This computer, Set by Sova) and that the
+project-file values are read from the main branch, not the folder; the groups (Landing, Checks with
+reuse of passes, Before the checks, Review, Merge thread, Request, Where it checks) and Open Folder;
+what can be changed there (how it lands and where it is kept, the two models, push, review, each
+check's time limit, reruns and when it runs, reuse) and that the rest changes in a branch; saving
+(a computer value at once; a project-file change gathered, confirmed and saved as one commit on the
+main branch, unchecked, pushed with the next landing; waiting for a running branch or an open
+release, with Cancel Save; blocked by an uncommitted edit; never dropped silently; a request or
+pushed branch on a project that lands on its host); Initialize on a project not served yet.
+Two screenshots of the tab: its top (Landing, how it lands) and its Checks rows.
+
+## §site.docs/release-settings — Release settings (`/docs/release-settings/`)
+
+How a project releases, in Features after Releases: that releases have no Settings tab and their
+settings live in the project's files, landing through the queue, with the Release Note the one kept
+outside them; Set Up Releases writing both; the `release` section's keys with what each says and its
+default (playbook, tag, scheme, channels, commit, checks, quietMin), that no key names a remote and
+when Publish pushes, a file that doesn't read stopping releases, and a change counting from the next
+Start; the playbook's `release.json` steps (id, label, phase prepare/check/after/withdraw, the
+`commit` step, `held`) with Sova's own two steps and Sova's method beneath the project's playbook;
+that releases need Merge locally and what waits while one is open; the Release Note. It has no
+screenshot: no screen shows these settings.
 
 ## §site.docs/releases — Releases (`/docs/releases/`)
 
@@ -271,4 +320,23 @@ Sova holding what can't be undone; Set Up Releases; Start Release and the frozen
 steps and their states, Continue on a held step, Retry Step, the quiet warning; the release checks
 and that nothing overrides a failed one; Publish, all or nothing, Publish failed and Retry Publish;
 Abandon Release; after-publish steps and Plan Deploy of a release; Withdraw and the numbered tag that
-never moves; the release power and the Project Assistant's ask; the history on the Releases tab.
+never moves; the release power and the Project Assistant's ask; the history on the Releases tab; a
+link to its settings page (§site.docs/release-settings). Screenshots of the Releases tab's history and of
+a release in progress (a held step, a failed step, Publish waiting).
+
+## §site.docs/usage — Usage and costs (`/docs/usage/`)
+
+What Sova counts, in Features: every model call on this computer recorded once when it ends (main
+sessions, workers at any depth, one-shot side calls, the Overseer), priced at each provider's API
+prices from models.dev at the price in force at the call's time, a model with no price counted but
+unpriced and a local model free; that these figures are not the bill. The Agents page's Costs tab:
+range and filters, the four stat cards and the cache hit rate, cost per day, the provider, kind,
+model (with where a model's cost went) and project tables, top sessions, the prices line and Refresh
+Prices, and that it counts this computer only; today's spend in the Agents page's head. A project's
+Cost tab: the total as of its count, who started what, the most expensive sessions, the breakdown by
+kind and model, and its notes. A session's Usage tab: its spend, by model and where (main thread,
+side calls, subagents). The Usage page: one card per provider, each window's share used, reset, pace,
+run-out and last week, a Claude account's logins, a balance for prepaid credit, how it stays fresh
+and Refresh Usage; the glance at the foot of the session list. Screenshots, from the live app with
+real figures: the Costs tab's top, its By model table, a Claude account's limits and a project's
+Cost tab.

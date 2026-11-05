@@ -4,6 +4,7 @@
 import type { AttentionDigest, OverseerProactivity, SessionSummary } from "../../shared/protocol";
 import type { ProjectSummary } from "../../shared/projects";
 import { needsYouRows, needsYouShown } from "./needs-you";
+import { projectDone } from "./project-region";
 import { isMainThread } from "./regions";
 
 export interface ProjectCard {
@@ -12,6 +13,10 @@ export interface ProjectCard {
   needsYou: number;
   /** Its chats running a turn now. */
   working: number;
+  /** Its chats still open: neither archived nor done (the sidebar's project heading's count). */
+  open: number;
+  /** Its archived chats. */
+  archived: number;
   /** Its newest chat activity (ms), or null: no chats. */
   lastActivity: number | null;
 }
@@ -19,6 +24,10 @@ export interface ProjectCard {
 /** Cards shown before Show all: 8, or 6 in a narrow overview (a phone, a folded Fold). */
 export const CARD_LIMIT = 8;
 export const CARD_LIMIT_NARROW = 6;
+/** The overview's width under which the grid is one column (home.css's container query) and 6 cards show. */
+export const NARROW_PX = 560;
+/** How many cards show before Show all at an overview `width` (px): the limit switches where the columns do. */
+export const cardLimitAt = (width: number): number => (width < NARROW_PX ? CARD_LIMIT_NARROW : CARD_LIMIT);
 /** The filter field shows above the grid past this many projects. */
 export const FILTER_FROM = 8;
 
@@ -48,6 +57,11 @@ export function projectCards(
   const live = projects.filter((p) => !p.archived);
   const ids = new Set(live.map((p) => p.id));
   const chats = sessions.filter((s) => isMainThread(s) && !s.archived && !!s.project && ids.has(s.project.projectId));
+  // A project's own conversation with its overseer is the overseer's eye, never one of its chats.
+  const archivedBy = new Map<string, number>();
+  for (const s of sessions)
+    if (isMainThread(s) && s.archived && s.project && s.project.kind !== "overseer" && ids.has(s.project.projectId))
+      archivedBy.set(s.project.projectId, (archivedBy.get(s.project.projectId) ?? 0) + 1);
   const rows = needsYouRows(digest, chats);
   const shown = needsYouShown(proactivity, rows.length);
   const needs = new Map<string, number>();
@@ -66,6 +80,8 @@ export function projectCards(
         project,
         needsYou: needs.get(project.id) ?? 0,
         working: mine.filter(isWorking).length,
+        open: mine.filter((s) => s.project!.kind !== "overseer" && !projectDone(s)).length,
+        archived: archivedBy.get(project.id) ?? 0,
         lastActivity: times.length ? Math.max(...times) : null,
       };
     })

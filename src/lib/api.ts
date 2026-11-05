@@ -1313,6 +1313,8 @@ export const setProjectStakeholder = (id: string, pid: string, stakeholder: stri
 
 const projectPath = (pid: string) => `/api/projects/${encodeURIComponent(pid)}`;
 export const listProjects = () => request<ProjectList>("/api/projects");
+/** The overview cards' runtime figures (§app.projects/home-glance). */
+export const getProjectGlance = () => request<import("../../shared/projects").ProjectGlanceList>("/api/projects/glance");
 export const getProject = (pid: string) => request<ProjectSummary>(projectPath(pid));
 /** Register a folder as a project (Add Project, Add as Project); its checkout root, said back when it differs. */
 export const addProject = (root: string) => request<ProjectRegistered>("/api/projects", jsonInit("POST", { root }));

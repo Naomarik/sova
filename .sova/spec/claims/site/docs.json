@@ -198,7 +198,8 @@
       "§app.overseer/hosting",
       "§app.chat-processes/workers",
       "§app.chat-processes/survives-restart",
-      "§site.docs/create"
+      "§site.docs/create",
+      "§site.docs/teams"
     ],
     "authority": "accepted",
     "evidence": "reviewed",
@@ -259,7 +260,8 @@
       "site/src/data/docs.ts",
       "site/src/styles/docs.css",
       "site/src/content.config.ts",
-      "site/astro.config.mjs"
+      "site/astro.config.mjs",
+      "site/src/data/screens.ts"
     ],
     "agreed": {
       "by": "user",
@@ -411,13 +413,30 @@
       "§app.merge-queue/settings",
       "§app.merge-queue/strategies",
       "§chat.worktrees/tool",
-      "§chat.composer/worktrees-control"
+      "§chat.composer/worktrees-control",
+      "§site.docs/merge-queue-settings"
     ],
     "agreed": {
       "by": "user",
       "at": "2026-11-04T20:20Z",
       "source": "pi-session:01a1a7b1-62c9-754f-a095-5fcceffc995c#7c5470f2"
     }
+  },
+  "§site.docs/merge-queue-settings": {
+    "kind": "behavior",
+    "requires": [
+      "§app.merge-queue/settings",
+      "§app.merge-queue/settings-save",
+      "§app.merge-queue/models",
+      "§app.merge-queue/strategies",
+      "§app.merge-queue/setup",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/merge-queue-settings.md"
+    ]
   },
   "§site.docs/modes": {
     "kind": "behavior",
@@ -646,6 +665,25 @@
     },
     "evidence": "reviewed"
   },
+  "§site.docs/release-settings": {
+    "kind": "behavior",
+    "requires": [
+      "§app.release/settings",
+      "§app.release/manifest",
+      "§app.release/playbook",
+      "§app.release/maker",
+      "§app.release/start",
+      "§app.release/tab",
+      "§app.merge-queue/strategies",
+      "§app.merge-queue/settings-save",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/release-settings.md"
+    ]
+  },
   "§site.docs/releases": {
     "kind": "behavior",
     "authority": "accepted",
@@ -666,7 +704,8 @@
       "§app.release/quiet",
       "§app.release/power",
       "§app.release/tab",
-      "§app.release/deploy"
+      "§app.release/deploy",
+      "§site.docs/release-settings"
     ],
     "agreed": {
       "by": "user",
@@ -752,6 +791,38 @@
       "source": "pi-session:edb3d4e1-f79f-4177-8482-4377cb9bf1de#a0c6ea0d"
     }
   },
+  "§site.docs/teams": {
+    "kind": "behavior",
+    "requires": [
+      "§chat.mode-menu/delegate-teams",
+      "§app/teams",
+      "§app.teams/requests",
+      "§app.teams/running-limit",
+      "§app.teams/seats",
+      "§app.teams/inbox",
+      "§app.teams/inbox-zero",
+      "§teams/defaults",
+      "§teams.defaults/coordinator",
+      "§teams.defaults/routing",
+      "§teams.defaults/team-report",
+      "§teams.defaults/monitor",
+      "§teams.defaults/wake-nudge",
+      "§teams.defaults/handover",
+      "§app.subagents-pane/trigger",
+      "§app.subagents-pane/worker-rows",
+      "§app.subagents-pane/member-inbox",
+      "§app.insights/team-cards",
+      "§chat.subagent-profiles/off",
+      "§site.docs/delegate",
+      "§site.docs/subagent-profiles"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/teams.md",
+      "site/src/content/docs/index.md"
+    ]
+  },
   "§site.docs/updates": {
     "kind": "behavior",
     "requires": [
@@ -777,6 +848,30 @@
       "by": "user",
       "at": "2026-10-16T05:27Z"
     }
+  },
+  "§site.docs/usage": {
+    "kind": "behavior",
+    "requires": [
+      "§app.insights/usage-ledger",
+      "§app.project-costs/pricing",
+      "§app.project-costs/price-table",
+      "§app.insights/cost-history",
+      "§app.insights/cost-by-project",
+      "§app.insights/usage-page-and-agents-page",
+      "§app.project-costs/card",
+      "§app.subagents-pane/tabs",
+      "§app.insights/usage-cards",
+      "§app.insights/usage-burn",
+      "§app.insights/usage-refresh",
+      "§app.insights/sidebar-foot",
+      "§site.docs/frame"
+    ],
+    "authority": "accepted",
+    "evidence": "reviewed",
+    "code": [
+      "site/src/content/docs/usage.md",
+      "site/src/assets/screens/live/manifest.json"
+    ]
   },
   "§site.docs/vis": {
     "kind": "behavior",
